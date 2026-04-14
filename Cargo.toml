@@ -1,0 +1,76 @@
+[package]
+name = "rustle"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+default-run = "rustle"
+
+[lib]
+path = "src/rustle/lib.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+
+# BAM/SAM parsing - pure Rust, no system dependencies
+noodles = { version = "0.85", features = ["bam", "sam"] }
+noodles-bam = "0.70"
+noodles-bgzf = "0.33"
+noodles-sam = "0.66"
+
+# Fast hashmap - significantly faster than std
+hashbrown = "0.15"
+fixedbitset = "0.5"
+
+# Fast hashing (used in junction_set.rs)
+fxhash = "0.2"
+
+# Parallel processing
+rayon = "1.10"
+
+# Memory-mapped I/O
+memmap2 = "0.9"
+
+# Bitset operations for fast junction matching
+roaring = "0.10"
+lru = "0.12"
+
+# Random sampling for rarefaction analysis
+rand = "0.8"
+# MILP for gene-family read assignment (`--gene-family-milp`). Default: pure-Rust `microlp`.
+# For COIN-OR Cbc (faster / more stable on huge MIPs), install OS `cbc` dev libs so `pkg-config --libs cbc` works, then set:
+#   good_lp = { version = "1.15", default-features = false, features = ["coin_cbc", "singlethread-cbc"] }
+# and use the same `default_solver` call site in `multimap_mflp.rs` (Cbc becomes default when that feature is on).
+good_lp = { version = "1.15", default-features = false, features = ["microlp"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = "fat"       # Full LTO for maximum runtime speed
+codegen-units = 1 # Single codegen unit for best optimization
+panic = "abort"
+
+[profile.dev-opt]   # Fast compile, decent runtime
+inherits = "release"
+lto = false
+codegen-units = 16
+opt-level = 2
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+
+[profile.quick]     # Fastest build for development iteration
+inherits = "dev"
+opt-level = 0       # No optimization at all
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+codegen-units = 256 # Maximum parallelism
+panic = "unwind"
+
+[[bin]]
+name = "rustle"
+path = "src/bin/rustle.rs"

@@ -1,0 +1,46 @@
+# Ignore everything by default
+*
+
+# Allow the essentials
+!/.gitignore
+!/Cargo.toml
+!/Cargo.lock
+!/README.md
+!/src/
+!/src/**
+!/scripts/
+!/scripts/**
+!/.cargo/
+!/.cargo/**
+
+# Specifically allow our analysis scripts for now if they are useful
+!/analyze_missed_patterns.py
+!/find_missed_loci.py
+!/analyze_novel.py
+
+# But still ignore target and other common build artifacts
+/target/
+**/*.rs.bk
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+.claude/
+
+# Old source files
+/src/*.rs
+/src/bin/
+/src_prev/
+*.py
+/scripts/
+/stringtie_debug/
+*.bam
+*.bam.bai
+*.gtf
+*.gff
+*.fasta
+*.fasta.fai
+*.fa
+*.fa.fai
+/gene_family_detector/
+/target/

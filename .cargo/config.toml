@@ -1,0 +1,27 @@
+[build]
+pipelining = true
+
+# Use all available cores (48 on this system)
+jobs = 48
+
+[profile.release]
+strip = "debuginfo"
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]
+
+[profile.quick]
+# Fastest build for development - optimize for compile time, not runtime
+inherits = "dev"
+opt-level = 0
+lto = false
+codegen-units = 256  # Maximum parallelism - one per core roughly
+panic = "unwind"
+
+[term]
+quiet = false
+progress.when = "auto"
+
+# Use sparse registry protocol for faster dependency fetching
+[registries.crates-io]
+protocol = "sparse"
