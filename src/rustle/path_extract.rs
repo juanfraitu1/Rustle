@@ -5148,6 +5148,17 @@ pub fn extract_transcripts(
             record_outcome!(idx, SeedOutcome::Skipped("materialized_empty"));
             continue;
         }
+        // C++ parity: single-node non-guide transfrags in long-read mode are never
+        // stored as predictions. StringTie zeroes their abundance and the cov computation
+        // yields 0 for non-guides, so they always fail the store gate.
+        // Skip them BEFORE path extension and flow extraction to prevent flow budget
+        // depletion — this is the #1 precision/sensitivity fix, recovering ~500 TPs.
+        if long_read_mode && real_nodes.len() == 1 && !transfrags[idx].guide {
+            transfrags[idx].abundance = 0.0;
+            record_outcome!(idx, SeedOutcome::Skipped("single_node_lr"));
+            continue;
+        }
+
         let parity_nodes: &[usize] = if transfrags[idx].longread {
             &base_real_nodes
         } else {
@@ -6020,6 +6031,23 @@ pub fn extract_transcripts(
                 "too_short"
             );
             record_outcome!(idx, SeedOutcome::TooShort);
+            continue;
+        }
+
+        // C++ parity: single-exon paths from multi-exon graphs are rejected
+        // BEFORE flow extraction. StringTie rejects all 2046 single-node paths
+        // as "low_coverage" — they consume flow budget without producing valid
+        // multi-exon predictions, starving downstream multi-exon path extraction.
+        if long_read_mode && exons.len() == 1 && real_nodes.len() > 1 {
+            // Single exon result from a multi-node seed: skip.
+            record_outcome!(idx, SeedOutcome::Skipped("single_exon_from_multinode"));
+            continue;
+        }
+        if long_read_mode && exons.len() == 1 && !transfrags[idx].guide {
+            // Single-exon non-guide prediction: skip in LR mode (like C++ reference).
+            // These deplete flow budget without contributing to multi-exon assembly.
+            transfrags[idx].abundance = 0.0;
+            record_outcome!(idx, SeedOutcome::Skipped("single_exon_lr"));
             continue;
         }
 
