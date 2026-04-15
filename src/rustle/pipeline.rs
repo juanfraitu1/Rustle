@@ -8104,6 +8104,11 @@ pub fn run<P: AsRef<Path>>(
                 cpp_subbundles
             };
 
+            // Per-bundlenode processing: when RUSTLE_PER_BNODE is set, iterate through
+            // each bundlenode in the merged bundle and create a SEPARATE graph for each,
+            // matching C++ reference architecture (per-bundlenode graphs with shared read mapping).
+            let per_bnode_mode = bundle_graph_mode && std::env::var_os("RUSTLE_PER_BNODE").is_some();
+
             for (cpp_bundle_idx, cpp_bundle) in effective_subbundles.iter().enumerate() {
                 if cpp_bundle.strand == '.' {
                     continue;
@@ -8141,10 +8146,44 @@ pub fn run<P: AsRef<Path>>(
                     continue;
                 }
 
-                // C++ parity (C++ reference): skip bundles shorter than mintranscriptlen.
-                // the reference assembler does not create graphs for short bundles, preventing tiny
-                // isolated regions from generating single-transfrag noise.
-                let bundle_exonic_len = {
+                // Collect individual bundlenodes for per-bnode processing.
+                // In per-bnode mode, we iterate through each bundlenode and
+                // create a separate graph, but use the FULL chain for read mapping.
+                let bnode_list: Vec<(u64, u64, f64, usize)> = {
+                    let mut v = Vec::new();
+                    let mut cur = cpp_bundle.bnode_head.as_ref();
+                    while let Some(bn) = cur {
+                        v.push((bn.start, bn.end, bn.cov, bn.bid));
+                        cur = bn.next.as_deref();
+                    }
+                    v
+                };
+
+                // Per-bnode mode: process each bundlenode as a separate graph
+                let bnode_iter: Vec<Option<(u64, u64, f64, usize)>> = if per_bnode_mode && bnode_list.len() > 1 {
+                    bnode_list.iter().map(|b| Some(*b)).collect()
+                } else {
+                    vec![None] // Single pass with full bundlenode chain
+                };
+
+                for single_bnode in &bnode_iter {
+
+                // Determine the bundlenode chain and range for this iteration.
+                let (iter_bnode_head, iter_start, iter_end): (Option<CBundlenode>, u64, u64) = if let Some((bs, be, bc, bid)) = single_bnode {
+                    // Per-bnode: create a single-node chain for the graph, but keep full chain for mapping
+                    let single = CBundlenode {
+                        start: *bs, end: *be, cov: *bc, bid: *bid,
+                        next: None, hardstart: false, hardend: false,
+                    };
+                    (Some(single), *bs, *be)
+                } else {
+                    (cpp_bundle.bnode_head.clone(), cpp_bundle.start, cpp_bundle.end)
+                };
+
+                // C++ parity: skip bundles shorter than mintranscriptlen.
+                let bundle_exonic_len = if single_bnode.is_some() {
+                    single_bnode.map(|(s, e, _, _)| e.saturating_sub(s)).unwrap_or(0)
+                } else {
                     let mut cur = cpp_bundle.bnode_head.as_ref();
                     let mut len = 0u64;
                     while let Some(bn) = cur {
@@ -8159,12 +8198,23 @@ pub fn run<P: AsRef<Path>>(
 
                 let mut sub_bundle = crate::types::Bundle {
                     chrom: bundle.chrom.clone(),
-                    start: cpp_bundle.start,
-                    end: cpp_bundle.end,
+                    start: iter_start,
+                    end: iter_end,
                     strand: cpp_bundle.strand,
                     reads: sub_reads.clone(),
                     junction_stats: Default::default(),
-                    bundlenodes: cpp_bundle.bnode_head.clone(),
+                    // For per-bnode mode: use single bundlenode for graph construction,
+                    // but the FULL chain is used for read mapping (via bundle2graph).
+                    // For normal mode: use the full chain for both.
+                    // In per-bnode mode: use the single bundlenode for graph building.
+                    // The FULL chain is used for read mapping (build_bundle2graph sees all nodes).
+                    // In normal mode: use the full merged chain.
+                    bundlenodes: if single_bnode.is_some() {
+                        // Graph built from single bundlenode, but bundle2graph uses full chain
+                        iter_bnode_head.clone()
+                    } else {
+                        cpp_bundle.bnode_head.clone()
+                    },
                     read_bnodes: Some(sub_read_bnodes.clone()),
                     bnode_colors: Some(cpp_bundle.bnode_colors.clone()),
                 };
@@ -8447,10 +8497,21 @@ pub fn run<P: AsRef<Path>>(
                     }
                 }
 
+                // In per-bnode mode: use single bundlenode for graph construction
+                // but the FULL merged chain for read mapping (bundle2graph).
+                let graph_bnodes = if single_bnode.is_some() {
+                    iter_bnode_head.clone()
+                } else {
+                    cpp_bundle.bnode_head.clone()
+                };
+                // For read mapping: always use full merged chain so reads
+                // see ALL bundlenodes in the region.
+                let mapping_bnodes = cpp_bundle.bnode_head.clone();
+
                 let (txs, pre_filter, seed_outcomes) = process_graph(
                     &sub_bundle,
                     sub_junctions.clone(),
-                    cpp_bundle.bnode_head.clone(),
+                    mapping_bnodes,
                     &sub_bundle.reads,
                     &sub_bundle.reads,
                     Some(&sub_read_bnodes),
@@ -8467,7 +8528,8 @@ pub fn run<P: AsRef<Path>>(
                     raw_for_trace_mutex.lock().unwrap().push((sub_bundle.clone(), trace_txs, junc_tuples, seed_outcomes));
                 }
                 bundle_txs.extend(txs);
-            }
+            } // end for single_bnode
+            } // end for cpp_bundle_idx
 
             if trace_log_style {
                 eprintln!(
