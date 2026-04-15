@@ -8159,20 +8159,26 @@ pub fn run<P: AsRef<Path>>(
                     v
                 };
 
-                // Per-bnode mode: split merged bundle into color components.
-                // Each color component is a connected set of bundlenodes linked by junctions.
+                // Per-bnode mode: split merged bundle into junction-connected components.
+                // Each component = bundlenodes reachable from each other via junctions.
                 // Process each component as a SEPARATE graph with its own flow decomposition,
                 // but use the FULL merged bundle for read mapping (cross-component sharing).
                 // This matches C++ reference: per-junction-network graphs with shared read context.
+                let sub_junctions_for_split: Vec<Junction> = sub_reads.iter()
+                    .flat_map(|r| r.junctions.iter().copied())
+                    .collect();
                 let color_groups: Vec<Option<Vec<(u64, u64, f64, usize)>>> = if per_bnode_mode && bnode_list.len() > 1 {
-                    // Group bundlenodes by color from bnode_colors
-                    let colors = &cpp_bundle.bnode_colors;
-                    let mut groups: std::collections::HashMap<usize, Vec<(u64, u64, f64, usize)>> = Default::default();
-                    for (i, &(s, e, c, bid)) in bnode_list.iter().enumerate() {
-                        let color = colors.get(bid).copied().unwrap_or(bid);
-                        groups.entry(color).or_default().push((s, e, c, bid));
+                    let components = crate::per_bnode_graph::find_junction_connected_components(
+                        &bnode_list, &sub_junctions_for_split,
+                    );
+                    if components.len() > 1 {
+                        // Multiple components: process each separately
+                        components.iter().map(|comp| {
+                            Some(comp.iter().map(|&i| bnode_list[i]).collect())
+                        }).collect()
+                    } else {
+                        vec![None] // Single component = process as one graph
                     }
-                    groups.into_values().map(Some).collect()
                 } else {
                     vec![None] // Single pass with full bundlenode chain
                 };

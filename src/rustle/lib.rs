@@ -72,6 +72,9 @@ pub mod parity_stage;
 pub mod pipeline; // main long-read assembly pipeline
 pub mod shortread_pipeline; // short-read assembly pipeline // mixed short+long read mode
 
+// ── Per-bundlenode graph processing ───────────────────────────────────────────
+pub mod per_bnode_graph; // junction-expanded per-bundlenode graphs
+
 // ── Variation graph (gene family) mode ───────────────────────────────────────
 pub mod vg; // family group discovery, EM reweighting
 pub mod vg_mflp; // MFLP (minimum flow linear program) solver
