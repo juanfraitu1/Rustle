@@ -514,11 +514,35 @@ fn create_graph_inner(
         }
 
         let mut completed = false;
+        // Longtrim state: pointers into lstart/lend arrays (never backtrack).
+        let mut nls = 0usize;
+        let mut nle = 0usize;
+        let has_longtrim = !lstart.is_empty() || !lend.is_empty();
+        // Skip lstart/lend events before this bundlenode.
+        while nls < lstart.len() && lstart[nls].pos < currentstart { nls += 1; }
+        while nle < lend.len() && lend[nle].pos < currentstart { nle += 1; }
 
         // Process events in coordinate order (C++ reference do-while loop).
         let mut ei = 0;
         while ei < events.len() && !completed {
             let (pos, ev_type) = events[ei];
+
+            // C++ parity: call longtrim BEFORE each junction event to process
+            // any lstart/lend events between the current node and this junction.
+            if has_longtrim {
+                if let Some(bpc) = bpcov {
+                    let nodeend = pos; // Process up to this junction position.
+                    let has_junction_start = graph.nodes[graphnode_id].parents.count_ones() > 0
+                        && !graph.nodes[graphnode_id].parents.contains(graph.source_id);
+                    let has_junction_end = ev_type == JunctionEventType::Start; // junction starts here = exon boundary
+                    longtrim_inline(
+                        &mut graph, &mut graphnode_id, &mut nls, &mut nle,
+                        lstart, lend, bpc, _bundle_start, nodeend,
+                        has_junction_start, has_junction_end, source_bid,
+                        &mut sink_parents,
+                    );
+                }
+            }
 
             match ev_type {
                 JunctionEventType::Start => {
@@ -654,6 +678,18 @@ fn create_graph_inner(
                         }
                     }
                 }
+            }
+        }
+
+        // C++ parity: call longtrim for remaining events up to endbundle.
+        if has_longtrim && !completed {
+            if let Some(bpc) = bpcov {
+                longtrim_inline(
+                    &mut graph, &mut graphnode_id, &mut nls, &mut nle,
+                    lstart, lend, bpc, _bundle_start, endbundle,
+                    true, true, source_bid,
+                    &mut sink_parents,
+                );
             }
         }
 
@@ -963,6 +999,136 @@ fn apply_iterative_longtrim_splits(
     splits
 }
 
+/// Inline longtrim: process lstart/lend events within the current graphnode
+/// up to `nodeend`. Matches C++ reference longtrim() (rlink.cpp:2647-2740).
+///
+/// Splits the current graphnode at validated read boundary positions.
+/// - lstart events: split at pos, new node gets source edge + hardstart.
+/// - lend events: split at pos+1, left half gets sink edge + hardend.
+///
+/// `nls`/`nle` are advancing pointers into the sorted lstart/lend arrays.
+#[allow(clippy::too_many_arguments)]
+fn longtrim_inline(
+    graph: &mut Graph,
+    graphnode_id: &mut usize,
+    nls: &mut usize,
+    nle: &mut usize,
+    lstart: &[ReadBoundary],
+    lend: &[ReadBoundary],
+    bpcov: &Bpcov,
+    bundle_start: u64,
+    nodeend: u64,
+    startcov: bool, // true if junction exists at current node start
+    endcov: bool,   // true if junction exists at nodeend
+    source_bid: usize,
+    sink_parents: &mut Vec<usize>,
+) {
+    const CHI_THR: i64 = 50;
+    const DROP: f64 = 0.5;
+    const LONGINTRONANCHOR: u64 = 25;
+    const ERROR_PERC: f64 = 0.1;
+
+    let bpcov_len = bpcov.cov.len();
+    let source_id = graph.source_id;
+
+    let get_cov = |s: i64, e: i64| -> f64 {
+        if s < 0 || e < s || s as usize >= bpcov_len { return 0.0; }
+        bpcov.get_cov_range(s as usize, (e as usize).min(bpcov_len - 1))
+    };
+
+    // Skip events before current node.
+    let gstart = graph.nodes[*graphnode_id].start;
+    while *nls < lstart.len() && lstart[*nls].pos < gstart { *nls += 1; }
+    while *nle < lend.len() && lend[*nle].pos < gstart { *nle += 1; }
+
+    // Process events within [gstart, nodeend).
+    while (*nls < lstart.len() && lstart[*nls].pos < nodeend)
+        || (*nle < lend.len() && lend[*nle].pos < nodeend)
+    {
+        let use_start = if *nle >= lend.len() {
+            true
+        } else if *nls >= lstart.len() {
+            false
+        } else {
+            lstart[*nls].pos <= lend[*nle].pos
+        };
+
+        if use_start {
+            let pos = lstart[*nls].pos;
+            let cur_start = graph.nodes[*graphnode_id].start;
+
+            // Proximity check (C++ reference: startcov/endcov + longintronanchor).
+            let start_ok = startcov || pos > cur_start + LONGINTRONANCHOR;
+            let end_ok = endcov || pos < nodeend + LONGINTRONANCHOR;
+
+            let mut tmpcov = 0.0;
+            if start_ok && end_ok && pos > cur_start {
+                let startpos = (pos - bundle_start) as i64;
+                let winstart = (startpos - CHI_THR).max(0);
+                let winend = (startpos + CHI_THR - 1).min(bpcov_len as i64 - 1);
+                tmpcov = (get_cov(startpos, winend) - get_cov(winstart, startpos - 1))
+                    / (DROP * CHI_THR as f64);
+            }
+            if tmpcov <= 0.0 && lstart[*nls].cov < 0.0 {
+                tmpcov = ERROR_PERC;
+            }
+            if tmpcov > 0.0 {
+                let cur_end = graph.nodes[*graphnode_id].end;
+                if pos > graph.nodes[*graphnode_id].start && pos < cur_end {
+                    // Split: [cur_start, pos) and [pos, cur_end)
+                    graph.nodes[*graphnode_id].end = pos;
+                    let new_node = graph.add_node(pos, cur_end);
+                    new_node.source_bnode = Some(source_bid);
+                    new_node.hardstart = true;
+                    let new_id = new_node.node_id;
+                    // Source → new (hardstart boundary)
+                    graph.add_edge(source_id, new_id);
+                    // Prev → new (contiguous)
+                    graph.add_edge(*graphnode_id, new_id);
+                    *graphnode_id = new_id;
+                }
+            }
+            *nls += 1;
+        } else {
+            let pos = lend[*nle].pos;
+            let cur_start = graph.nodes[*graphnode_id].start;
+
+            let start_ok = !startcov || pos > cur_start + LONGINTRONANCHOR;
+            let end_ok = !endcov || pos < nodeend + LONGINTRONANCHOR;
+
+            let mut tmpcov = 0.0;
+            if start_ok && end_ok && pos > cur_start {
+                let endpos = (pos - bundle_start) as i64;
+                let winstart = (endpos - CHI_THR + 1).max(0);
+                let winend = (endpos + CHI_THR).min(bpcov_len as i64 - 1);
+                tmpcov = (get_cov(winstart, endpos) - get_cov(endpos + 1, winend))
+                    / (DROP * CHI_THR as f64);
+            }
+            if tmpcov <= 0.0 && lend[*nle].cov < 0.0 {
+                tmpcov = ERROR_PERC;
+            }
+            if tmpcov > 0.0 {
+                let split = pos + 1; // half-open boundary
+                let cur_end = graph.nodes[*graphnode_id].end;
+                if split > graph.nodes[*graphnode_id].start && split < cur_end {
+                    // Split: [cur_start, split) and [split, cur_end)
+                    graph.nodes[*graphnode_id].end = split;
+                    graph.nodes[*graphnode_id].hardend = true;
+                    let new_node = graph.add_node(split, cur_end);
+                    new_node.source_bnode = Some(source_bid);
+                    let new_id = new_node.node_id;
+                    // Prev → new (contiguous)
+                    graph.add_edge(*graphnode_id, new_id);
+                    // Prev → sink (hardend)
+                    sink_parents.push(*graphnode_id);
+                    *graphnode_id = new_id;
+                }
+            }
+            *nle += 1;
+        }
+    }
+}
+
 /// Build graph and, when enabled, apply longtrim at graph-build stage.
 /// This keeps long-read boundary splitting in the create_graph flow instead of
 /// as a later pipeline-only post-step.
@@ -981,8 +1147,8 @@ pub fn create_graph_with_longtrim(
     enable_longtrim: bool,
     longtrim_min_boundary_cov: f64,
 ) -> (Graph, Vec<GraphTransfrag>, CreateGraphLongtrimStats) {
-    let lt_starts = if enable_longtrim { lstart } else { &[] };
-    let lt_ends = if enable_longtrim { lend } else { &[] };
+    let lt_starts: &[ReadBoundary] = if enable_longtrim { lstart } else { &[] };
+    let lt_ends: &[ReadBoundary] = if enable_longtrim { lend } else { &[] };
     let mut graph = create_graph_inner(
         junctions,
         bundle_start,
