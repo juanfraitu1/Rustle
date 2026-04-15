@@ -1191,7 +1191,7 @@ pub fn create_graph_with_longtrim(
         oracle_starts_owned = starts;
         oracle_ends_owned = ends;
         (&oracle_starts_owned, &oracle_ends_owned)
-    } else if enable_longtrim {
+    } else if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() {
         (lstart, lend)
     } else {
         (&[] as &[ReadBoundary], &[] as &[ReadBoundary])
