@@ -3669,13 +3669,13 @@ fn fwd_to_sink_fast_long(
             };
             let mut childcov = 0.0;
             let mut tchild: Option<usize> = None;
-            let _endpath = coord_max_node(graph, *maxpath, c);
-            // For support counting at this step, only require transfrag compatibility across
-            // the immediate edge window (i -> c). Requiring compatibility across the full
-            // current min/max path span over-rejects branchy long-read transfrags and drives
-            // `zero_flux` failures on hard loci (e.g. STRG.319).
-            let compat_min = coord_min_node(graph, i, c);
-            let compat_max = coord_max_node(graph, i, c);
+            let endpath = coord_max_node(graph, *maxpath, c);
+            // C++ parity (rlink.cpp:8287): use minpath..endpath for onpath_long
+            // compatibility, matching StringTie's full-path-span check.
+            // This prevents transfrags that are edge-compatible but path-incompatible
+            // from inflating coverage, which causes over-extension.
+            let compat_min = *minpath;
+            let compat_max = endpath;
             if c == i + 1
                 && i < gno.saturating_sub(2)
                 && inode_end == cnode.start
