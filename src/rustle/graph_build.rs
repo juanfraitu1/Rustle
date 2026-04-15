@@ -406,7 +406,7 @@ pub fn create_graph(
     bpcov: Option<&Bpcov>,
 ) -> Graph {
     create_graph_inner(junctions, _bundle_start, bundle_end, bundlenodes,
-        junction_support, _reads, bundle_strand, junction_stats, bpcov, &[], &[])
+        junction_support, _reads, bundle_strand, junction_stats, bpcov, None, &[], &[])
 }
 
 fn create_graph_inner(
@@ -419,6 +419,7 @@ fn create_graph_inner(
     bundle_strand: char,
     junction_stats: Option<&JunctionStats>,
     bpcov: Option<&Bpcov>,
+    bpcov_stranded: Option<&BpcovStranded>,
     lstart: &[ReadBoundary],
     lend: &[ReadBoundary],
 ) -> Graph {
@@ -537,7 +538,8 @@ fn create_graph_inner(
                     let has_junction_end = ev_type == JunctionEventType::Start; // junction starts here = exon boundary
                     longtrim_inline(
                         &mut graph, &mut graphnode_id, &mut nls, &mut nle,
-                        lstart, lend, bpc, _bundle_start, nodeend,
+                        lstart, lend, bpc, bpcov_stranded, bundle_strand,
+                        _bundle_start, nodeend,
                         has_junction_start, has_junction_end, source_bid,
                         &mut sink_parents,
                     );
@@ -686,7 +688,8 @@ fn create_graph_inner(
             if let Some(bpc) = bpcov {
                 longtrim_inline(
                     &mut graph, &mut graphnode_id, &mut nls, &mut nle,
-                    lstart, lend, bpc, _bundle_start, endbundle,
+                    lstart, lend, bpc, bpcov_stranded, bundle_strand,
+                    _bundle_start, endbundle,
                     true, true, source_bid,
                     &mut sink_parents,
                 );
@@ -1016,6 +1019,8 @@ fn longtrim_inline(
     lstart: &[ReadBoundary],
     lend: &[ReadBoundary],
     bpcov: &Bpcov,
+    bpcov_stranded: Option<&BpcovStranded>,
+    bundle_strand: char,
     bundle_start: u64,
     nodeend: u64,
     startcov: bool, // true if junction exists at current node start
@@ -1031,9 +1036,25 @@ fn longtrim_inline(
     let bpcov_len = bpcov.cov.len();
     let source_id = graph.source_id;
 
+    // C++ parity (rlink.cpp:2664): use strand-specific coverage for longtrim.
+    // StringTie uses get_cov_sign(2*s, ...) which computes total - opposite_strand,
+    // giving the coverage on the current strand only. This prevents false splits
+    // where total coverage is constant but strand-specific coverage drops.
     let get_cov = |s: i64, e: i64| -> f64 {
         if s < 0 || e < s || s as usize >= bpcov_len { return 0.0; }
-        bpcov.get_cov_range(s as usize, (e as usize).min(bpcov_len - 1))
+        let su = s as usize;
+        let eu = (e as usize).min(bpcov_len - 1);
+        if let Some(bps) = bpcov_stranded {
+            let total = bps.get_cov_range(BPCOV_STRAND_ALL, su, eu);
+            let opposite = match bundle_strand {
+                '-' => bps.get_cov_range(BPCOV_STRAND_PLUS, su, eu),
+                '+' => bps.get_cov_range(BPCOV_STRAND_MINUS, su, eu),
+                _ => 0.0, // unstranded: use total
+            };
+            (total - opposite).max(0.0)
+        } else {
+            bpcov.get_cov_range(su, eu)
+        }
     };
 
     // Skip events before current node.
@@ -1159,6 +1180,7 @@ pub fn create_graph_with_longtrim(
     bundle_strand: char,
     junction_stats: Option<&JunctionStats>,
     bpcov: &Bpcov,
+    bpcov_stranded: Option<&BpcovStranded>,
     lstart: &[ReadBoundary],
     lend: &[ReadBoundary],
     enable_longtrim: bool,
@@ -1206,6 +1228,7 @@ pub fn create_graph_with_longtrim(
         bundle_strand,
         junction_stats,
         Some(bpcov),
+        bpcov_stranded,
         lt_starts,
         lt_ends,
     );

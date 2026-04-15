@@ -7247,6 +7247,7 @@ pub fn run<P: AsRef<Path>>(
                     graph_bundle.strand,
                     Some(&graph_bundle.junction_stats),
                     &bpcov,
+                    Some(&graph_bpcov_stranded),
                     &lstart,
                     &lend,
                     longtrim_in_graph,
