@@ -522,9 +522,15 @@ fn create_graph_inner(
         // bpcov is available, generate per-bundlenode boundaries here.
         let bnode_lstart_owned;
         let bnode_lend_owned;
+        // C++ parity: compute boundaries per-bundlenode when longtrim is active
+        // and no external boundaries were provided. External boundaries come from
+        // CPAS/poly-A evidence; when absent, use coverage-derivative detection.
+        let bnode_span = endbundle.saturating_sub(currentstart);
+        let min_lt_span = 2 * (100 + 50) + 50; // 2*(CHI_WIN+CHI_THR) + margin = 350
         let (effective_lstart, effective_lend): (&[ReadBoundary], &[ReadBoundary]) =
             if lstart.is_empty() && lend.is_empty()
                 && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some()
+                && bnode_span >= min_lt_span
             {
                 if let Some(bpc) = bpcov {
                     // Build strand-specific bpcov for this bundlenode
@@ -1125,6 +1131,10 @@ fn longtrim_inline(
         // Minimum accumulated reads at this boundary to be considered for splitting.
         // Positions with only 1-2 reads are alignment jitter, not real TSS/TES.
         const MIN_BOUNDARY_READS: f64 = 3.0;
+        // Minimum tmpcov (window coverage contrast) to accept a split.
+        // StringTie's observed minimum is 16.2; use 10 as a conservative filter
+        // that removes weak splits without losing real boundaries.
+        const MIN_TMPCOV: f64 = 25.0;
 
         if use_start {
             let pos = lstart[*nls].pos;
@@ -1152,7 +1162,7 @@ fn longtrim_inline(
             if tmpcov <= 0.0 && lstart[*nls].cov < 0.0 {
                 tmpcov = ERROR_PERC;
             }
-            if tmpcov > 0.0 {
+            if tmpcov >= MIN_TMPCOV {
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if pos > graph.nodes[*graphnode_id].start && pos < cur_end {
                     // Split: [cur_start, pos) and [pos, cur_end)
@@ -1193,7 +1203,7 @@ fn longtrim_inline(
             if tmpcov <= 0.0 && lend[*nle].cov < 0.0 {
                 tmpcov = ERROR_PERC;
             }
-            if tmpcov > 0.0 {
+            if tmpcov >= MIN_TMPCOV {
                 let split = pos + 1; // half-open boundary
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if split > graph.nodes[*graphnode_id].start && split < cur_end {
@@ -1262,7 +1272,10 @@ pub fn create_graph_with_longtrim(
         oracle_ends_owned = ends;
         (&oracle_starts_owned, &oracle_ends_owned)
     } else if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() {
-        (lstart, lend)
+        // Pass empty externals so per-bundlenode coverage-derivative detection
+        // runs inside create_graph_inner (C++ parity: StringTie generates
+        // boundaries per-bundlenode, not externally per-bundle).
+        (&[] as &[ReadBoundary], &[] as &[ReadBoundary])
     } else {
         (&[] as &[ReadBoundary], &[] as &[ReadBoundary])
     };
