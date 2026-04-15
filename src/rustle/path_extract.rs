@@ -3725,10 +3725,12 @@ fn fwd_to_sink_fast_long(
                         continue;
                     };
                     if c == sink {
-                        // C++ parity: For sink connections, accept transfrags that start at or
-                        // before current node and reach the sink. This handles bundle runoff
-                        // nodes where transfrags may start earlier and bypass intermediate nodes.
-                        let accepted = first <= i && last >= c;
+                        // C++ parity (rlink.cpp:8280): For sink connections, accept only
+                        // transfrags that start EXACTLY at current node and the path hasn't
+                        // already extended forward. This prevents transfrags from earlier
+                        // in the graph from inflating sink coverage, which causes
+                        // over-extension (131 cases where Rustle adds extra exons).
+                        let accepted = first == i && *maxpath <= i && last >= c;
                         if trace_fwd {
                             eprintln!(
                                 "[TRACE_FWD_SINK]   tf={} first={} last={} abundance={:.4} maxpath={} i={} accepted={}",
