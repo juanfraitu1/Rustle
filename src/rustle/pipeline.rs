@@ -6739,17 +6739,13 @@ pub fn run<P: AsRef<Path>>(
             config.long_reads,
             config.eonly,
         );
-        // C++ parity (C++ reference): after good_junc and higherr, the build_graphs
-        // per-read loop converts mm<0 → strand=0.  Higherr sets mm=-1 for bad junctions
-        // (e.g., single-read all-bad-mapping junctions below 1.25x threshold), but good_junc
-        // doesn't check mm.  Without this conversion, mm=-1 junctions pass filter_junctions
-        // (which only checks strand != 0) and end up in good_junctions_set, preventing
-        // color breaks during bundle building and causing over-merged bundles.
-        for cj in cjunctions.iter_mut() {
-            if cj.mm < 0.0 && cj.strand != 0 {
-                cj.strand = 0;
-            }
-        }
+        // C++ parity (rlink.cpp:15264-15373): after good_junc sets mm=-1 on bad
+        // junctions, StringTie's per-read loop creates REPLACEMENT junctions with
+        // the read's splice strand (non-zero).  This means mm<0 junctions with
+        // non-zero strand effectively stay alive for color propagation in CGroup
+        // building.  We replicate this by NOT converting mm<0 → strand=0 here.
+        // The killed_juncs computation (line ~7000) only includes strand==Some(0)
+        // junctions, so mm<0-but-stranded junctions stay out of the kill set.
         if stage_debug {
             let killed = cjunctions
                 .iter()
@@ -8413,15 +8409,9 @@ pub fn run<P: AsRef<Path>>(
                     config.long_reads,
                     config.eonly,
                 );
-                // C++ parity (C++ reference): mm<0→strand=0 after good_junc + higherr.
-                // Same conversion as the region-level pass — must also apply per-subbundle
-                // so that filter_junctions correctly excludes deferred-bad junctions from
-                // the graph construction junction set.
-                for cj in sub_cjunctions.iter_mut() {
-                    if cj.mm < 0.0 && cj.strand != 0 {
-                        cj.strand = 0;
-                    }
-                }
+                // C++ parity (rlink.cpp:15264-15373): mm<0 junctions with non-zero
+                // strand are kept alive (read-redirect creates replacement junctions
+                // in StringTie). Do NOT convert mm<0→strand=0.
                 sub_junction_stats_corr =
                     crate::types::cjunctions_to_junction_stats(&sub_cjunctions);
                 // C++ parity (C++ reference): second-stage good_junc with subbundle bpcov.
