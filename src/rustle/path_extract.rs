@@ -5283,20 +5283,31 @@ pub fn extract_transcripts(
             // Contiguous extension parent within the same exon (parent end == node start).
             // This is the specific case where the source-helper can wrongly dominate parentcov
             // and truncate the 5' end (e.g. STRG.171 seed 55: 33->105).
-            let minp_has_contig_parent = graph
+            // Only prefer non-source parent extension when the seed's first node
+            // has a contiguous parent AND does NOT have source as parent.
+            // If source is a parent, this node is a valid starting point (from a
+            // junction or hardstart boundary) and back_to_source should stop here
+            // rather than extending backward through contiguous exonic regions.
+            let minp_has_source_parent = graph
                 .nodes
                 .get(minp)
-                .map(|n| {
-                    n.parents.ones().any(|p| {
-                        p != source_id
-                            && graph
-                                .nodes
-                                .get(p)
-                                .map(|pn| pn.end == n.start)
-                                .unwrap_or(false)
-                    })
-                })
+                .map(|n| n.parents.contains(source_id))
                 .unwrap_or(false);
+            let minp_has_contig_parent = !minp_has_source_parent
+                && graph
+                    .nodes
+                    .get(minp)
+                    .map(|n| {
+                        n.parents.ones().any(|p| {
+                            p != source_id
+                                && graph
+                                    .nodes
+                                    .get(p)
+                                    .map(|pn| pn.end == n.start)
+                                    .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
             let maxp_has_non_sink_child = graph
                 .nodes
                 .get(maxp)
