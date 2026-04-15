@@ -5378,8 +5378,10 @@ pub fn extract_transcripts(
                 true,
                 // Keep strict the reference assembler-style selection; we only apply a narrow internal override
                 // when a contiguous exon-extension parent exists (see back_to_source_fast_long).
-                minp_has_contig_parent
-                    || std::env::var_os("RUSTLE_BACK_PREFER_NON_SOURCE").is_some(),
+                // Never prefer non-source parents. Always let back_to_source stop
+                // at source when available. This prevents over-extension that
+                // consumes flow budget from other isoforms.
+                std::env::var_os("RUSTLE_BACK_PREFER_NON_SOURCE").is_some(),
                 &mut diag,
                 &mut visited_back,
                 &mut weak_cache,

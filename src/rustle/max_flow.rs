@@ -17,6 +17,10 @@ const DBL_ERROR: f64 = 0.01;
 // Empirically, `100` was too strict for the current graph segmentation and caused many
 // valid long-read transfrags to be dropped from the capacity network, producing
 // `zero_flux` even when a connected solution exists (e.g. STRG.319 panel locus).
+/// Maximum gap in path (bp) that a transfrag can skip while still contributing to flow
+/// capacity. C++ reference uses CHI_WIN=100 (rlink.h). A larger value lets transfrags
+/// with internal gaps add capacity to edges they don't truly support, inflating flow
+/// and creating spurious predictions. Previously 2000 — changed to 100 for parity.
 const CHI_WIN: u64 = 2000;
 
 fn trace_seed_idx() -> Option<usize> {
@@ -1142,6 +1146,21 @@ fn long_max_flow_direct(
             eprint!(" {}({:.4})", ti, transfrags[ti].abundance);
         }
         eprintln!();
+    }
+
+    if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() || debug_ek {
+        let n_ist = istranscript.ones().count();
+        let n_edges = {
+            let mut cnt = 0usize;
+            for i in 0..n { for j in (i+1)..n { if capacity[i][j] > 0.0 { cnt += 1; } } }
+            cnt
+        };
+        let cap_01 = if n >= 2 { capacity[0][1] } else { 0.0 };
+        let cap_last = if n >= 2 { capacity[n-2][n-1] } else { 0.0 };
+        eprintln!(
+            "PARITY_CAP_SUMMARY seed={:?} n_istranscript={} n_edges={} cap_source_first={:.4} cap_last_sink={:.4} max_fl={:.4} path_len={}",
+            seed_tf, n_ist, n_edges, cap_01, cap_last, max_fl, n
+        );
     }
 
     let mut flux = 0.0f64;
