@@ -1483,6 +1483,18 @@ fn long_max_flow_direct(
                     else {
                         continue;
                     };
+                    // Alt-splice protection: if this transfrag diverges from the
+                    // path at an alt-splice node, DON'T deplete it. Check if the
+                    // transfrag's second node matches the path's next node.
+                    // If they diverge, this is a minor isoform that should survive.
+                    if transfrags[t_idx].node_ids.len() >= 2 && i + 1 < path.len() {
+                        let tf_next = transfrags[t_idx].node_ids[1];
+                        let path_next = path[i + 1];
+                        if tf_next != path_next && tf_next != graph.sink_id && path_next != graph.sink_id {
+                            // Transfrag goes to a different child — preserve it
+                            continue;
+                        }
+                    }
                     let fl = flow_mat[i][end_i];
                     if fl > 0.0 {
                         if fl < transfrags[t_idx].abundance {
