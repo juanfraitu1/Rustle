@@ -4050,9 +4050,10 @@ pub fn print_predcluster_with_summary(
         // derived from the max-flow decomposition (nodeflux_abs * noderate) and can be
         // below 1.0 for real minor isoforms supported by multiple reads.  Fall back to
         // longcov (pre-depletion read_count) as a secondary acceptance gate: if the path
-        // has ≥2 actual reads supporting it, keep it regardless of flow coverage.
-        // Threshold 2.0 prevents single-read (longcov=1.0) noise from bypassing the gate.
-        if t.is_longread && t.longcov >= 2.0 {
+        // has ≥2 actual reads supporting it, keep it unless flow coverage is too low.
+        // Still require a minimum flow coverage floor (0.6) to prevent ultra-thin flow
+        // paths from sneaking through — StringTie never outputs cov < 1.0.
+        if t.is_longread && t.longcov >= 2.0 && t.coverage >= 0.6 {
             return true;
         }
         readthr_allow_longcov_fallback() && t.is_longread && t.longcov >= threshold

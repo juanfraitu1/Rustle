@@ -8567,6 +8567,41 @@ pub fn run<P: AsRef<Path>>(
             } // end for color_group
             } // end for cpp_bundle_idx
 
+            // Per-bnode deduplication: when multiple components produce the same
+            // intron chain, keep only the copy with highest coverage.  This
+            // prevents duplicate transcripts from overlapping junction-connected
+            // components.
+            if per_bnode_mode && bundle_txs.len() > 1 {
+                let pre_dedup = bundle_txs.len();
+                let mut seen: std::collections::HashMap<Vec<(u64, u64)>, usize> =
+                    std::collections::HashMap::new();
+                let mut keep = vec![true; bundle_txs.len()];
+                for (i, tx) in bundle_txs.iter().enumerate() {
+                    if let Some(&prev) = seen.get(&tx.exons) {
+                        // Same intron chain: keep the higher-coverage copy.
+                        if tx.coverage > bundle_txs[prev].coverage {
+                            keep[prev] = false;
+                            seen.insert(tx.exons.clone(), i);
+                        } else {
+                            keep[i] = false;
+                        }
+                    } else {
+                        seen.insert(tx.exons.clone(), i);
+                    }
+                }
+                let mut deduped: Vec<crate::path_extract::Transcript> = Vec::new();
+                for (i, tx) in bundle_txs.into_iter().enumerate() {
+                    if keep[i] { deduped.push(tx); }
+                }
+                if deduped.len() < pre_dedup && trace_log_style {
+                    eprintln!(
+                        "--- per_bnode_dedup: removed {} duplicate transcripts ({} -> {})",
+                        pre_dedup - deduped.len(), pre_dedup, deduped.len()
+                    );
+                }
+                bundle_txs = deduped;
+            }
+
             if trace_log_style {
                 eprintln!(
                     "--- infer_transcripts: AFTER_BUILD_GRAPHS bdata={}-{} npred={}",
@@ -9247,6 +9282,29 @@ pub fn run<P: AsRef<Path>>(
                 c,
                 100.0 * c as f64 / n as f64,
                 src
+            );
+        }
+    }
+
+    // Final coverage floor: remove ultra-low-coverage transcripts that survived the
+    // readthr gate via the longcov fallback but represent thin flow decomposition noise.
+    // StringTie never emits transcripts with coverage < 1.0; we use a softer 0.5 floor
+    // that preserves real minor isoforms with partial flow depletion while catching
+    // genuine noise (flow-derived coverage near zero).
+    // Guide-matched transcripts (eonly zero-cov guides) are exempt.
+    {
+        const FINAL_COV_FLOOR: f64 = 0.5;
+        let before = all_transcripts.len();
+        all_transcripts.retain(|t| {
+            t.coverage >= FINAL_COV_FLOOR
+                || t.transcript_id.is_some() // eonly guide passthrough
+                || t.ref_transcript_id.is_some() // guide-matched
+        });
+        let removed = before - all_transcripts.len();
+        if removed > 0 && config.verbose {
+            eprintln!(
+                "    final_cov_floor: removed {} transcript(s) with coverage < {}",
+                removed, FINAL_COV_FLOOR
             );
         }
     }
