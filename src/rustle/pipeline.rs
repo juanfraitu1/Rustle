@@ -7591,6 +7591,12 @@ pub fn run<P: AsRef<Path>>(
                         );
                     }
                 }
+                // C++ parity: compute reachability BEFORE process_transfrags so
+                // that compatible_long/conflict can use childpat/parentpat.
+                // StringTie computes reachability during create_graph (traverse_dfs)
+                // which runs before process_transfrags.
+                graph_mut.compute_reachability();
+
                 transfrags = process_transfrags(
                     transfrags,
                     &mut graph_mut,
