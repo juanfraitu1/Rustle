@@ -8159,30 +8159,62 @@ pub fn run<P: AsRef<Path>>(
                     v
                 };
 
-                // Per-bnode mode: process each bundlenode as a separate graph
-                let bnode_iter: Vec<Option<(u64, u64, f64, usize)>> = if per_bnode_mode && bnode_list.len() > 1 {
-                    bnode_list.iter().map(|b| Some(*b)).collect()
+                // Per-bnode mode: split merged bundle into color components.
+                // Each color component is a connected set of bundlenodes linked by junctions.
+                // Process each component as a SEPARATE graph with its own flow decomposition,
+                // but use the FULL merged bundle for read mapping (cross-component sharing).
+                // This matches C++ reference: per-junction-network graphs with shared read context.
+                let color_groups: Vec<Option<Vec<(u64, u64, f64, usize)>>> = if per_bnode_mode && bnode_list.len() > 1 {
+                    // Group bundlenodes by color from bnode_colors
+                    let colors = &cpp_bundle.bnode_colors;
+                    let mut groups: std::collections::HashMap<usize, Vec<(u64, u64, f64, usize)>> = Default::default();
+                    for (i, &(s, e, c, bid)) in bnode_list.iter().enumerate() {
+                        let color = colors.get(bid).copied().unwrap_or(bid);
+                        groups.entry(color).or_default().push((s, e, c, bid));
+                    }
+                    groups.into_values().map(Some).collect()
                 } else {
                     vec![None] // Single pass with full bundlenode chain
                 };
 
-                for single_bnode in &bnode_iter {
+                for color_group in &color_groups {
 
                 // Determine the bundlenode chain and range for this iteration.
-                let (iter_bnode_head, iter_start, iter_end): (Option<CBundlenode>, u64, u64) = if let Some((bs, be, bc, bid)) = single_bnode {
-                    // Per-bnode: create a single-node chain for the graph, but keep full chain for mapping
-                    let single = CBundlenode {
-                        start: *bs, end: *be, cov: *bc, bid: *bid,
-                        next: None, hardstart: false, hardend: false,
-                    };
-                    (Some(single), *bs, *be)
+                let (iter_bnode_head, iter_start, iter_end): (Option<CBundlenode>, u64, u64) = if let Some(group) = color_group {
+                    // Build a bundlenode chain from this color group
+                    let mut sorted = group.clone();
+                    sorted.sort_by_key(|&(s, _, _, _)| s);
+                    if sorted.is_empty() {
+                        (None, 0, 0)
+                    } else {
+                        let start = sorted.first().map(|&(s,_,_,_)| s).unwrap_or(0);
+                        let end = sorted.last().map(|&(_,e,_,_)| e).unwrap_or(0);
+                        let mut head = CBundlenode {
+                            start: sorted[0].0, end: sorted[0].1,
+                            cov: sorted[0].2, bid: sorted[0].3,
+                            next: None, hardstart: false, hardend: false,
+                        };
+                        let mut tail = &mut head;
+                        for &(s, e, c, bid) in &sorted[1..] {
+                            tail.next = Some(Box::new(CBundlenode {
+                                start: s, end: e, cov: c, bid,
+                                next: None, hardstart: false, hardend: false,
+                            }));
+                            tail = tail.next.as_mut().unwrap();
+                        }
+                        (Some(head), start, end)
+                    }
                 } else {
                     (cpp_bundle.bnode_head.clone(), cpp_bundle.start, cpp_bundle.end)
                 };
 
+                let single_bnode = &color_group.as_ref().and_then(|g| {
+                    if g.len() == 1 { Some(g[0]) } else { None }
+                });
+
                 // C++ parity: skip bundles shorter than mintranscriptlen.
-                let bundle_exonic_len = if single_bnode.is_some() {
-                    single_bnode.map(|(s, e, _, _)| e.saturating_sub(s)).unwrap_or(0)
+                let bundle_exonic_len = if color_group.is_some() {
+                    color_group.as_ref().map(|g| g.iter().map(|(s,e,_,_)| e.saturating_sub(*s)).sum()).unwrap_or(0)
                 } else {
                     let mut cur = cpp_bundle.bnode_head.as_ref();
                     let mut len = 0u64;
@@ -8209,7 +8241,7 @@ pub fn run<P: AsRef<Path>>(
                     // In per-bnode mode: use the single bundlenode for graph building.
                     // The FULL chain is used for read mapping (build_bundle2graph sees all nodes).
                     // In normal mode: use the full merged chain.
-                    bundlenodes: if single_bnode.is_some() {
+                    bundlenodes: if color_group.is_some() {
                         // Graph built from single bundlenode, but bundle2graph uses full chain
                         iter_bnode_head.clone()
                     } else {
@@ -8497,15 +8529,13 @@ pub fn run<P: AsRef<Path>>(
                     }
                 }
 
-                // In per-bnode mode: use single bundlenode for graph construction
-                // but the FULL merged chain for read mapping (bundle2graph).
-                let graph_bnodes = if single_bnode.is_some() {
+                // In per-bnode mode: use the color group's bundlenodes for graph construction.
+                // For read mapping: always use full merged chain (cross-component sharing).
+                let graph_bnodes = if color_group.is_some() {
                     iter_bnode_head.clone()
                 } else {
                     cpp_bundle.bnode_head.clone()
                 };
-                // For read mapping: always use full merged chain so reads
-                // see ALL bundlenodes in the region.
                 let mapping_bnodes = cpp_bundle.bnode_head.clone();
 
                 let (txs, pre_filter, seed_outcomes) = process_graph(
@@ -8528,7 +8558,7 @@ pub fn run<P: AsRef<Path>>(
                     raw_for_trace_mutex.lock().unwrap().push((sub_bundle.clone(), trace_txs, junc_tuples, seed_outcomes));
                 }
                 bundle_txs.extend(txs);
-            } // end for single_bnode
+            } // end for color_group
             } // end for cpp_bundle_idx
 
             if trace_log_style {
