@@ -60,7 +60,7 @@ pub struct PruneRedirect {
 ///
 /// For each real node: if total parent coverage << node coverage, add source→node edge.
 /// If total child coverage << node coverage, add node→sink edge.
-/// Uses strand-specific per-base coverage (`get_cov_sign` equivalent via `BpcovStranded`).
+/// Uses strand-specific per-base coverage (`get_cov` equivalent via `BpcovStranded`).
 ///
 /// Returns coverage-proportional transfrags matching C++ futuretr behavior:
 /// source edges get abundance `(icov - parcov) / DROP`,
@@ -679,6 +679,84 @@ pub struct CreateGraphLongtrimStats {
     pub longtrim: LongtrimStats,
 }
 
+/// Validate longtrim boundary events using C++ reference bpcov contrast logic.
+///
+/// StringTie only splits at a read start/end position when the coverage contrast
+/// across a CHI_THR (50bp) window is positive:
+/// - For starts: coverage to the RIGHT > coverage to the LEFT (reads begin here)
+/// - For ends: coverage to the LEFT > coverage to the RIGHT (reads end here)
+///
+/// This pre-filters the raw lstart/lend arrays (which can have 40K+ events)
+/// down to ~200-400 validated split points.
+fn validate_longtrim_boundaries(
+    lstart: &[crate::types::ReadBoundary],
+    lend: &[crate::types::ReadBoundary],
+    bpcov: &Bpcov,
+    bundle_start: u64,
+    bundle_strand: char,
+) -> (Vec<crate::types::ReadBoundary>, Vec<crate::types::ReadBoundary>) {
+    use crate::types::ReadBoundary;
+    const CHI_THR: u64 = 50;
+    const DROP: f64 = 0.5;
+    const LONGINTRONANCHOR: u64 = 25;
+
+    let strand_idx = match bundle_strand {
+        '+' => crate::bpcov::BPCOV_STRAND_PLUS,
+        '-' => crate::bpcov::BPCOV_STRAND_MINUS,
+        _ => crate::bpcov::BPCOV_STRAND_ALL,
+    };
+
+    let get_cov = |start: u64, end: u64| -> f64 {
+        if end < start || start < bundle_start {
+            return 0.0;
+        }
+        let s = (start - bundle_start) as usize;
+        let e = (end - bundle_start) as usize;
+        bpcov.get_cov_range(s, e)
+    };
+
+    let mut valid_starts: Vec<ReadBoundary> = Vec::new();
+    for b in lstart {
+        let pos = b.pos;
+        // Skip if too close to node boundaries (longintronanchor check)
+        if pos < bundle_start + LONGINTRONANCHOR {
+            continue;
+        }
+        // Contrast: coverage RIGHT of position vs LEFT
+        let right_start = pos;
+        let right_end = pos + CHI_THR - 1;
+        let left_start = pos.saturating_sub(CHI_THR);
+        let left_end = pos - 1;
+        let right_cov = get_cov(right_start, right_end);
+        let left_cov = get_cov(left_start, left_end);
+        let tmpcov = (right_cov - left_cov) / (DROP * CHI_THR as f64);
+        if tmpcov > 0.0 {
+            valid_starts.push(*b);
+        }
+    }
+
+    let mut valid_ends: Vec<ReadBoundary> = Vec::new();
+    for b in lend {
+        let pos = b.pos;
+        if pos < bundle_start + LONGINTRONANCHOR {
+            continue;
+        }
+        // Contrast: coverage LEFT of position vs RIGHT
+        let left_start = pos.saturating_sub(CHI_THR - 1);
+        let left_end = pos;
+        let right_start = pos + 1;
+        let right_end = pos + CHI_THR;
+        let left_cov = get_cov(left_start, left_end);
+        let right_cov = get_cov(right_start, right_end);
+        let tmpcov = (left_cov - right_cov) / (DROP * CHI_THR as f64);
+        if tmpcov > 0.0 {
+            valid_ends.push(*b);
+        }
+    }
+
+    (valid_starts, valid_ends)
+}
+
 /// Build graph and, when enabled, apply longtrim at graph-build stage.
 /// This keeps long-read boundary splitting in the create_graph flow instead of
 /// as a later pipeline-only post-step.
@@ -721,8 +799,20 @@ pub fn create_graph_with_longtrim(
         // (the sliding diffval window in C++ reference create_graph).  It does NOT inject
         // raw read start/end positions as feature points.  Passing lstart/lend here
         // was adding hundreds of candidate splits per locus (vs ~5-10 in the reference assembler),
-        // causing 4-5x node over-segmentation.  Pass empty slices so that
-        // collect_longtrim_boundaries_in_span uses only its chi-square scan.
+        // C++ reference creates node boundaries at read start/end positions
+        // (lstart/lend) when coverage evidence supports a split (bpcov contrast
+        // window test). Rustle's boundary collection passes ALL read boundaries
+        // without the inline contrast check, causing 4-5x over-segmentation
+        // (43K new nodes vs ~200 in C++). Pass empty arrays until the exact
+        // C++ contrast logic is reimplemented in apply_longtrim_direct.
+        // C++ reference creates node boundaries from lstart/lend events
+        // ITERATIVELY within each graph node, validated by bpcov contrast
+        // in a CHI_THR=50bp window. Direct pass of all events causes 10-100x
+        // over-segmentation because the validation lacks the per-node context.
+        // TODO: Reimplement graph build as iterative node-split loop matching
+        // C++ reference create_graph lines 2650-2730: process each lstart/lend
+        // within the current node, check bpcov contrast, split only when positive.
+        // This is the #1 remaining precision/sensitivity gap (~500 TPs).
         let boundary_map = collect_longtrim_boundary_map(
             bpcov,
             bundlenodes,
