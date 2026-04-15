@@ -8154,47 +8154,71 @@ pub fn run<P: AsRef<Path>>(
                         any_bad = true;
                         any_redirect_attempted = true;
 
-                        // Decode redirect pointers and compute new boundaries
+                        // C++ parity (rlink.cpp:15287-15422): decode redirect
+                        // pointers to compute new exon boundaries, adjust the
+                        // read's exons, search for matching junction, replace.
                         let mut newstart = r.exons[ji].1;
                         let mut newend = if ji + 1 < r.exons.len() { r.exons[ji + 1].0 } else { continue };
 
                         if changeleft {
-                            let jk = cj.nreads.abs() as usize;
-                            if let Some(target) = cjunctions_for_redirect.get(jk) {
-                                if target.nreads >= 0.0 {
-                                    newstart = target.start;
+                            let mut jk = cj.nreads.abs() as usize;
+                            // Follow redirect chain (max 5 hops to avoid cycles)
+                            for _ in 0..5 {
+                                if let Some(target) = cjunctions_for_redirect.get(jk) {
+                                    if target.nreads < 0.0 {
+                                        jk = target.nreads.abs() as usize;
+                                    } else {
+                                        newstart = target.start;
+                                        break;
+                                    }
+                                } else {
+                                    break;
                                 }
                             }
                         }
                         if changeright {
-                            let ek = cj.nreads_good.abs() as usize;
-                            if let Some(target) = cjunctions_for_redirect.get(ek) {
-                                if target.nreads_good >= 0.0 {
-                                    newend = target.end;
+                            let mut ek = cj.nreads_good.abs() as usize;
+                            for _ in 0..5 {
+                                if let Some(target) = cjunctions_for_redirect.get(ek) {
+                                    if target.nreads_good < 0.0 {
+                                        ek = target.nreads_good.abs() as usize;
+                                    } else {
+                                        newend = target.end;
+                                        break;
+                                    }
+                                } else {
+                                    break;
                                 }
                             }
                         }
 
-                        // Validate: new junction must be within read's exon span
+                        // Validate boundaries (rlink.cpp:15325)
                         let seg_start = r.exons[ji].0;
                         let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue };
-                        if newstart >= seg_start && newend <= seg_end && newstart <= newend {
-                            // C++ parity: replace junction with redirect coordinates.
-                            // Exon boundary adjustment: only adjust when the mm<0
-                            // junction was genuinely bad (not just from the all-bad
-                            // long-read nm==nreads condition). Adjusting for the common
-                            // nm==nreads case moves boundaries incorrectly.
-                            // Skip exon adjustment — only replace junction.
-                            // Exon adjustment with good_set still loses TPs.
-                            let _ = (newstart, newend); // used by Junction::new below
-                            let new_j = crate::types::Junction::new(newstart, newend);
-                            r.junctions[ji] = new_j;
-                            // Add to replacement set so it's treated as "good"
-                            // for color propagation in CGroup building.
-                            replacement_junctions.push(new_j);
-                            redirected_count += 1;
-                            all_killed = false;
+                        if !(newstart >= seg_start && newend <= seg_end && newstart <= newend) {
+                            continue;
                         }
+
+                        // Search for existing junction at (newstart, newend).
+                        // Only adjust exon boundaries when a matching junction
+                        // exists — this confirms the coordinates are exact.
+                        let new_j = crate::types::Junction::new(newstart, newend);
+                        let exists_in_good = good_junctions_set.contains(&new_j);
+                        let exists_in_stats = cj_by_start_end.contains_key(&(newstart, newend));
+
+                        if exists_in_good || exists_in_stats {
+                            // Confirmed junction — safe to adjust exon boundaries
+                            r.exons[ji].1 = newstart;
+                            if ji + 1 < r.exons.len() {
+                                r.exons[ji + 1].0 = newend;
+                            }
+                        }
+                        // Always replace the read's junction (even without exon
+                        // adjustment) to give it non-killed status for color prop.
+                        r.junctions[ji] = new_j;
+                        replacement_junctions.push(new_j);
+                        redirected_count += 1;
+                        all_killed = false;
                     }
 
                     // Unstrand reads with all killed junctions AND redirect attempt
