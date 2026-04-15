@@ -81,9 +81,13 @@ struct GuideJunctionCacheKey {
     strand: char,
 }
 
-fn init_rayon_pool(_threads: usize) {
-    // Rayon disabled: bundle processing is sequential.
-    // Avoids spawning all available CPUs (often 48+ on HPC nodes) despite cgroup limiting to 1.
+fn init_rayon_pool(threads: usize) {
+    if threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+            .ok(); // ignore error if pool already initialized
+    }
 }
 
 fn consensus_cache_capacity() -> NonZeroUsize {
@@ -6549,7 +6553,9 @@ pub fn run<P: AsRef<Path>>(
 
 
     let snapshot_all = std::env::var_os("RUSTLE_SNAPSHOT_ALL").is_some();
-    bundles.into_iter().enumerate().try_for_each(|(bundle_idx, mut bundle)| -> Result<()> {
+    use rayon::prelude::*;
+    let bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
+    bundles_vec.into_par_iter().try_for_each(|(bundle_idx, mut bundle)| -> Result<()> {
         let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
         let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
             LruCache::new(consensus_cache_capacity());
