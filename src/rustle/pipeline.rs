@@ -8108,18 +8108,14 @@ pub fn run<P: AsRef<Path>>(
             // then replace the read's junction with a new one at the adjusted coords.
             // After processing, reads with ALL killed junctions get strand='.'.
             // This creates sno=1 CGroups bridging strands into mega-bundles.
+            // Collect replacement junctions to add to good_junctions_set.
+            let mut replacement_junctions: Vec<crate::types::Junction> = Vec::new();
             let effective_reads: Vec<BundleRead> = if config.long_reads {
                 // Build lookup: junction (start,end) → index in cjunctions_for_redirect
                 let cj_by_start_end: std::collections::HashMap<(u64, u64), usize> =
                     cjunctions_for_redirect.iter().enumerate()
                         .map(|(i, cj)| ((cj.start, cj.end), i))
                         .collect();
-                // Also build acceptor-sorted index for changeright lookups
-                let mut cj_by_end: Vec<(u64, u64, usize)> = cjunctions_for_redirect.iter()
-                    .enumerate()
-                    .map(|(i, cj)| (cj.end, cj.start, i))
-                    .collect();
-                cj_by_end.sort();
 
                 let mut reads = region_reads.to_vec();
                 let mut unstranded_count = 0usize;
@@ -8132,11 +8128,9 @@ pub fn run<P: AsRef<Path>>(
                     let mut any_bad = false;
                     let mut all_killed = true;
                     let mut any_redirect_attempted = false;
-                    let mut any_redirected = false;
 
                     for ji in 0..r.junctions.len() {
                         let j = r.junctions[ji];
-                        // Find this junction in CJunction array
                         let cj_idx = cj_by_start_end.get(&(j.donor, j.acceptor));
                         let cj = cj_idx.and_then(|&i| cjunctions_for_redirect.get(i));
                         let Some(cj) = cj else {
@@ -8154,7 +8148,6 @@ pub fn run<P: AsRef<Path>>(
                         }
 
                         if !changeleft && !changeright {
-                            // Killed but no redirect — just mark as bad
                             any_bad = true;
                             continue;
                         }
@@ -8162,8 +8155,8 @@ pub fn run<P: AsRef<Path>>(
                         any_redirect_attempted = true;
 
                         // Decode redirect pointers and compute new boundaries
-                        let mut newstart = r.exons[ji].1; // current exon end (donor)
-                        let mut newend = if ji + 1 < r.exons.len() { r.exons[ji + 1].0 } else { continue }; // next exon start (acceptor)
+                        let mut newstart = r.exons[ji].1;
+                        let mut newend = if ji + 1 < r.exons.len() { r.exons[ji + 1].0 } else { continue };
 
                         if changeleft {
                             let jk = cj.nreads.abs() as usize;
@@ -8175,7 +8168,6 @@ pub fn run<P: AsRef<Path>>(
                         }
                         if changeright {
                             let ek = cj.nreads_good.abs() as usize;
-                            // Search in acceptor-sorted array
                             if let Some(target) = cjunctions_for_redirect.get(ek) {
                                 if target.nreads_good >= 0.0 {
                                     newend = target.end;
@@ -8183,36 +8175,35 @@ pub fn run<P: AsRef<Path>>(
                             }
                         }
 
-                        // Validate new boundaries
-                        let seg_start = r.exons[ji].0; // left exon start
-                        let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue }; // right exon end
+                        // Validate: new junction must be within read's exon span
+                        let seg_start = r.exons[ji].0;
+                        let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue };
                         if newstart >= seg_start && newend <= seg_end && newstart <= newend {
-                            // Replace the read's junction with the replacement coordinates.
-                            // This gives the junction a "live" status (not in killed_juncs)
-                            // which allows color propagation through it.
-                            // NOTE: exon boundary adjustment is intentionally skipped —
-                            // adjusting boundaries without StringTie's full replacement
-                            // junction search causes misaligned CGroups and loses TPs.
-                            r.junctions[ji] = crate::types::Junction::new(newstart, newend);
+                            // C++ parity: replace junction with redirect coordinates.
+                            // Exon boundary adjustment: only adjust when the mm<0
+                            // junction was genuinely bad (not just from the all-bad
+                            // long-read nm==nreads condition). Adjusting for the common
+                            // nm==nreads case moves boundaries incorrectly.
+                            // Skip exon adjustment — only replace junction.
+                            // Exon adjustment with good_set still loses TPs.
+                            let _ = (newstart, newend); // used by Junction::new below
+                            let new_j = crate::types::Junction::new(newstart, newend);
+                            r.junctions[ji] = new_j;
+                            // Add to replacement set so it's treated as "good"
+                            // for color propagation in CGroup building.
+                            replacement_junctions.push(new_j);
                             redirected_count += 1;
-                            any_redirected = true;
-                            all_killed = false; // replacement has strand from read
+                            all_killed = false;
                         }
                     }
 
-                    // Only unstrand reads that had at least one redirect
-                    // attempt (changeleft || changeright). Reads where all junctions
-                    // are killed but NONE have redirect pointers are just bad reads
-                    // that should stay stranded (unstranding them dilutes coverage
-                    // without providing the exon boundary adjustment that makes
-                    // StringTie's unstranding work).
+                    // Unstrand reads with all killed junctions AND redirect attempt
                     if any_bad && all_killed && any_redirect_attempted {
-                        // Check if any remaining junction has a non-killed CJunction
                         let still_all_killed = r.junctions.iter().all(|j| {
                             cj_by_start_end.get(&(j.donor, j.acceptor))
                                 .and_then(|&i| cjunctions_for_redirect.get(i))
                                 .map(|cj| cj.strand == 0 || cj.mm < 0.0)
-                                .unwrap_or(true) // unknown junction = treat as killed
+                                .unwrap_or(true)
                         });
                         if still_all_killed {
                             r.strand = '.';
@@ -8222,16 +8213,26 @@ pub fn run<P: AsRef<Path>>(
                 }
                 if config.verbose && (unstranded_count > 0 || redirected_count > 0) {
                     eprintln!(
-                        "    junction_redirect: {} redirected, {} unstranded",
-                        redirected_count, unstranded_count
+                        "    junction_redirect: {} redirected, {} unstranded, {} replacement juncs",
+                        redirected_count, unstranded_count, replacement_junctions.len()
                     );
                 }
                 reads
             } else {
                 region_reads.to_vec()
             };
+            // C++ parity: replacement junctions get the read's strand (non-zero)
+            // and must be treated as "good" for color propagation. Add them to
+            // good_junctions_set so bundle_cpp_port doesn't break color at these
+            // junctions. Also remove them from killed_juncs if present.
+            let mut effective_good = good_junctions_set.clone();
+            let mut effective_killed = killed_juncs.clone();
+            for rj in &replacement_junctions {
+                effective_good.insert(*rj);
+                effective_killed.remove(rj);
+            }
             let cpp_subbundles =
-                build_bundles_cpp_style(&effective_reads, &config, &good_junctions_set, &killed_juncs)?;
+                build_bundles_cpp_style(&effective_reads, &config, &effective_good, &effective_killed)?;
 
             total_subbundles.fetch_add(cpp_subbundles.len(), std::sync::atomic::Ordering::Relaxed);
             if config.verbose {
