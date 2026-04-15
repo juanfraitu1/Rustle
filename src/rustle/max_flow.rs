@@ -6,7 +6,6 @@ use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
 
 use crate::bitvec::GBitVec;
 use crate::bitset::NodeSet;
-use crate::constants::FLOW_EPSILON;
 use crate::graph::{Graph, GraphTransfrag};
 
 const EPSILON: f64 = crate::constants::FLOW_EPSILON;

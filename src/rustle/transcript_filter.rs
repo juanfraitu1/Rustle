@@ -9,7 +9,6 @@
 use crate::assembly_mode::LONGINTRONANCHOR;
 use crate::bitset::SmallBitset;
 use crate::bpcov::Bpcov;
-use crate::constants::FLOW_EPSILON;
 use crate::coord::{len_half_open, overlaps_half_open};
 use crate::path_extract::Transcript;
 use crate::reference_gtf::RefTranscript;

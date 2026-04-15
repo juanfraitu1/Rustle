@@ -798,6 +798,8 @@ pub struct CreateGraphLongtrimStats {
 ///
 /// This pre-filters the raw lstart/lend arrays (which can have 40K+ events)
 /// down to ~200-400 validated split points.
+#[allow(dead_code)]
+#[allow(dead_code)]
 fn validate_longtrim_boundaries(
     lstart: &[crate::types::ReadBoundary],
     lend: &[crate::types::ReadBoundary],
@@ -810,7 +812,7 @@ fn validate_longtrim_boundaries(
     const DROP: f64 = 0.5;
     const LONGINTRONANCHOR: u64 = 25;
 
-    let strand_idx = match bundle_strand {
+    let _strand_idx = match bundle_strand {
         '+' => crate::bpcov::BPCOV_STRAND_PLUS,
         '-' => crate::bpcov::BPCOV_STRAND_MINUS,
         _ => crate::bpcov::BPCOV_STRAND_ALL,
@@ -877,6 +879,8 @@ fn validate_longtrim_boundaries(
 ///   The new node gets a source edge (hardstart).
 /// End splits: creates two nodes [node.start, pos] and [pos+1, node.end].
 ///   The left node gets a sink edge (hardend).
+#[allow(dead_code)]
+#[allow(dead_code)]
 fn apply_iterative_longtrim_splits(
     graph: &mut Graph,
     lstart: &[ReadBoundary],

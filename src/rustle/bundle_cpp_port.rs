@@ -1192,7 +1192,7 @@ fn process_read_for_group(
                 let j = Junction::new(seg_end, active_read.exons[ei + 1].0);
                 good_junctions.contains(&j)
             };
-            let has_bad_left = ei > 0 && {
+            let _has_bad_left = ei > 0 && {
                 let j = Junction::new(active_read.exons[ei - 1].1, seg_start);
                 killed_junctions.contains(&j)
             };
@@ -1482,7 +1482,7 @@ fn process_read_for_group(
                 let j = Junction::new(seg_end, active_read.exons[ei + 1].0);
                 good_junctions.contains(&j)
             };
-            let has_bad_left = ei > 0 && {
+            let _has_bad_left = ei > 0 && {
                 let j = Junction::new(active_read.exons[ei - 1].1, seg_start);
                 killed_junctions.contains(&j)
             };

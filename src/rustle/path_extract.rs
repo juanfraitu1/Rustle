@@ -1329,6 +1329,8 @@ const EPS: f64 = crate::constants::FLOW_EPSILON;
 /// When checktrf rescues a failed transfrag, only redistribute it onto an existing kept path
 /// if the intron chain agrees within this tolerance. This prevents collapsing distinct
 /// alternative splice-site isoforms into a single dominant path.
+#[allow(dead_code)]
+#[allow(dead_code)]
 const CHECKTRF_REDISTRIBUTE_INTRON_TOL: u64 = 5;
 
 /// Build exons from a path of node IDs: merge overlapping/contiguous nodes (half-open).
@@ -2067,6 +2069,7 @@ fn nodes_are_contiguous(graph: &Graph, a: usize, b: usize) -> bool {
     }
 }
 
+#[allow(dead_code)]
 fn intron_chain_from_nodes(graph: &Graph, nodes: &[usize]) -> Vec<(u64, u64)> {
     let mut out: Vec<(u64, u64)> = Vec::new();
     for w in nodes.windows(2) {
@@ -2081,6 +2084,7 @@ fn intron_chain_from_nodes(graph: &Graph, nodes: &[usize]) -> Vec<(u64, u64)> {
     out
 }
 
+#[allow(dead_code)]
 fn intron_chains_equal_tol(a: &[(u64, u64)], b: &[(u64, u64)], tol: u64) -> bool {
     if a.len() != b.len() {
         return false;
@@ -2260,6 +2264,8 @@ fn build_lr_witness_splice_junctions(
 }
 
 #[inline]
+#[allow(dead_code)]
+#[allow(dead_code)]
 fn lr_witnesses_splice_edge(
     graph: &Graph,
     la: usize,
@@ -4823,7 +4829,7 @@ pub fn extract_transcripts(
     let guided_mode = transfrags
         .iter()
         .any(|tf| tf.guide || tf.guide_tid.is_some());
-    let lr_witness_splice_junctions: Option<HashSet<(u64, u64)>> = if long_read_mode {
+    let _lr_witness_splice_junctions: Option<HashSet<(u64, u64)>> = if long_read_mode {
         Some(build_lr_witness_splice_junctions(graph, transfrags))
     } else {
         None
@@ -5295,7 +5301,7 @@ pub fn extract_transcripts(
                 .get(minp)
                 .map(|n| n.parents.contains(source_id))
                 .unwrap_or(false);
-            let minp_has_contig_parent = !minp_has_source_parent
+            let _minp_has_contig_parent = !minp_has_source_parent
                 && graph
                     .nodes
                     .get(minp)

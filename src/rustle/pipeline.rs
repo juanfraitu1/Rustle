@@ -6008,7 +6008,7 @@ pub fn run<P: AsRef<Path>>(
         Vec::new()
     };
     // Build set of bundle indices that belong to a family group (for deferred processing).
-    let vg_family_bundle_set: std::collections::HashSet<usize> = vg_families
+    let _vg_family_bundle_set: std::collections::HashSet<usize> = vg_families
         .iter()
         .flat_map(|f| f.bundle_indices.iter().copied())
         .collect();
@@ -8404,7 +8404,7 @@ pub fn run<P: AsRef<Path>>(
                     (cpp_bundle.bnode_head.clone(), cpp_bundle.start, cpp_bundle.end)
                 };
 
-                let single_bnode = &color_group.as_ref().and_then(|g| {
+                let _single_bnode = &color_group.as_ref().and_then(|g| {
                     if g.len() == 1 { Some(g[0]) } else { None }
                 });
 
@@ -8721,7 +8721,7 @@ pub fn run<P: AsRef<Path>>(
 
                 // In per-bnode mode: use the color group's bundlenodes for graph construction.
                 // For read mapping: always use full merged chain (cross-component sharing).
-                let graph_bnodes = if color_group.is_some() {
+                let _graph_bnodes = if color_group.is_some() {
                     iter_bnode_head.clone()
                 } else {
                     cpp_bundle.bnode_head.clone()

@@ -572,7 +572,7 @@ pub fn run_em_reweighting(
             // Normalize and compute delta.
             let original_nh = entry.locs.len() as f64;
             for (i, score) in scores.iter().enumerate() {
-                let new_w = score / total * original_nh.recip() * original_nh;
+                let _new_w = score / total * original_nh.recip() * original_nh;
                 // new_w sums to 1.0 across copies (like 1/NH but redistributed).
                 let new_w = score / total;
                 let delta = (new_w - entry.weights[i]).abs();
@@ -721,7 +721,7 @@ pub fn junction_compatibility(read: &BundleRead, bundle: &Bundle) -> f64 {
     let mut matched = 0usize;
     for j in &read.junctions {
         // Check if this junction is in the bundle's junction stats.
-        let found = bundle.junction_stats.iter().any(|(bj, st)| {
+        let found = bundle.junction_stats.iter().any(|(bj, _st)| {
             // Match within a tolerance window (junction correction distance).
             let d_start = if j.donor > bj.donor {
                 j.donor - bj.donor

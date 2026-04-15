@@ -25,8 +25,8 @@ struct Args {
     #[arg(short = 'o', long)]
     output: Option<String>,
 
-    /// Long-read mode -L). Without -L: short-read mode (coverage trim, srabund).
-    #[arg(short = 'L', long)]
+    /// Long-read mode (default). -L is accepted for compatibility but always on.
+    #[arg(short = 'L', long, default_value_t = true)]
     long_reads: bool,
 
     /// Mixed mode: both short and long reads --mix). Sets -L and long-read min length.
@@ -435,18 +435,9 @@ pub fn run_cli() -> anyhow::Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("output path required (e.g. -o out.gtf)"))?;
 
-    let (long_reads, long_read_min_len) = if args.mix {
-        (
-            true,
-            if args.long_read_min_len == 0 {
-                1
-            } else {
-                args.long_read_min_len
-            },
-        )
-    } else {
-        (args.long_reads, args.long_read_min_len)
-    };
+    // Long-read mode is always on. Mixed mode is deprecated.
+    let long_reads = true;
+    let long_read_min_len = 0u64;
 
     let (readthr, transcript_isofrac, no_coverage_trim) = if args.conservative {
         (1.5, 0.05, true)
