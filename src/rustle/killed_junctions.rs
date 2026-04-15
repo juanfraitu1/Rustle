@@ -308,12 +308,14 @@ fn cj_reliable(cj: &CJunction) -> bool {
     cj.guide_match || cj.nm + 1e-9 < cj.nreads
 }
 
-fn resolved_cj_index(order: &[usize], slot_neg: f64) -> Option<usize> {
-    let slot = (-slot_neg).round() as isize;
-    if slot <= 0 {
+fn resolved_cj_index(_order: &[usize], slot_neg: f64) -> Option<usize> {
+    // Redirect pointers now store the cjunctions ARRAY index directly
+    // (as -(idx+1)), so we just decode without going through the order array.
+    let idx = (-slot_neg).round() as isize - 1;
+    if idx < 0 {
         return None;
     }
-    order.get(slot as usize - 1).copied()
+    Some(idx as usize)
 }
 
 #[cfg(test)]
@@ -1222,7 +1224,9 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
                         reliable = true;
-                        cjunctions[idx_i].nreads = -((j as usize + 1) as f64);
+                        // Store the CJUNCTIONS ARRAY index (not sorted order position)
+                        // so the per-read redirect can decode it directly.
+                        cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
                                 "HE_DEMOTE_LEFT {}-{} -> {}-{} left={:.1}->{:.1}",
@@ -1241,7 +1245,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                 {
-                    cjunctions[idx_i].nreads = -((j as usize + 1) as f64);
+                    cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                     support = cand.leftsupport;
                     if gjd {
                         eprintln!(
@@ -1284,7 +1288,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                         && cand.leftsupport > cur.leftsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
-                        cjunctions[idx_i].nreads = -((j + 1) as f64);
+                        cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
                                 "HE_DEMOTE_LEFT {}-{} -> {}-{} left={:.1}->{:.1}",
@@ -1304,7 +1308,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                 {
-                    cjunctions[idx_i].nreads = -((j + 1) as f64);
+                    cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                     support = cand.leftsupport;
                     if gjd {
                         eprintln!(
@@ -1364,7 +1368,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
                         reliable = true;
-                        cjunctions[idx_i].nreads_good = -((j as usize + 1) as f64);
+                        cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
                                 "HE_DEMOTE_RIGHT {}-{} -> {}-{} right={:.1}->{:.1}",
@@ -1383,7 +1387,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                     && cand.rightsupport * tolerance > cur.rightsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                 {
-                    cjunctions[idx_i].nreads_good = -((j as usize + 1) as f64);
+                    cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                     support = cand.rightsupport;
                     if gjd {
                         eprintln!(
@@ -1428,7 +1432,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
                         && cand.rightsupport > cur.rightsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
-                        cjunctions[idx_i].nreads_good = -((j + 1) as f64);
+                        cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
                                 "HE_DEMOTE_RIGHT {}-{} -> {}-{} right={:.1}->{:.1}",
