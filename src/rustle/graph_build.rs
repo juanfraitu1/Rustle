@@ -1164,8 +1164,38 @@ pub fn create_graph_with_longtrim(
     enable_longtrim: bool,
     longtrim_min_boundary_cov: f64,
 ) -> (Graph, Vec<GraphTransfrag>, CreateGraphLongtrimStats) {
-    let lt_starts: &[ReadBoundary] = if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() { lstart } else { &[] };
-    let lt_ends: &[ReadBoundary] = if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() { lend } else { &[] };
+    // Oracle splits: read exact split positions from a file (for debugging/validation).
+    // Format: one line per split, "position type" where type is "start" or "end".
+    // Positions are 0-based. Set RUSTLE_ORACLE_SPLITS=/path/to/splits.txt
+    let oracle_starts_owned;
+    let oracle_ends_owned;
+    let (lt_starts, lt_ends): (&[ReadBoundary], &[ReadBoundary]) = if let Some(path) = std::env::var_os("RUSTLE_ORACLE_SPLITS") {
+        let mut starts = Vec::new();
+        let mut ends = Vec::new();
+        if let Ok(content) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+            for line in content.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(pos) = parts[0].parse::<u64>() {
+                        if pos >= bundle_start && pos <= bundle_end {
+                            let b = ReadBoundary { pos, cov: -1.0 }; // cov=-1 forces split via ERROR_PERC
+                            if parts[1] == "start" { starts.push(b); }
+                            else { ends.push(b); }
+                        }
+                    }
+                }
+            }
+        }
+        starts.sort_by_key(|b| b.pos);
+        ends.sort_by_key(|b| b.pos);
+        oracle_starts_owned = starts;
+        oracle_ends_owned = ends;
+        (&oracle_starts_owned, &oracle_ends_owned)
+    } else if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() {
+        (lstart, lend)
+    } else {
+        (&[] as &[ReadBoundary], &[] as &[ReadBoundary])
+    };
     let mut graph = create_graph_inner(
         junctions,
         bundle_start,
