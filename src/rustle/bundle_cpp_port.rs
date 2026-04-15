@@ -1793,11 +1793,6 @@ fn create_bundles_cpp_global(
     let mut bundlecol: Vec<i64> = vec![-1; eqcol.len()];
     let trace_bundle = std::env::var_os("RUSTLE_PARITY_BUNDLE_DEEP").is_some();
     let trace_bnode = std::env::var_os("RUSTLE_BNODE_TRACE").is_some();
-    // Unified bundle mode: don't split by color — all CGroups go into ONE bundle
-    // per strand. This matches StringTie's architecture where one bundle contains
-    // all bundlenodes in a region, and color boundaries create separate graph
-    // components rather than separate bundles. Reads are shared across all nodes.
-    let unified_bundle = std::env::var_os("RUSTLE_UNIFIED_BUNDLE").is_some();
 
     while currgroup[0].is_some() || currgroup[1].is_some() || currgroup[2].is_some() {
         let Some((nextgr, gidx)) = get_min_start(&currgroup, strand_data) else {
@@ -1821,27 +1816,12 @@ fn create_bundles_cpp_global(
                 if color_root >= bundlecol.len() {
                     bundlecol.resize(color_root + 1, -1);
                 }
-                let was_new_bundle;
-                let mut bno;
-                if unified_bundle {
-                    // All groups go into one bundle per strand.
-                    if bundles[target_sno].is_empty() {
-                        bundles[target_sno].push(TmpBundle::default());
-                        was_new_bundle = true;
-                    } else {
-                        was_new_bundle = false;
-                    }
-                    bno = 0;
-                    // Still record color→bundle so rootgrid_to_scale works.
-                    bundlecol[color_root] = 0;
-                } else {
-                    was_new_bundle = bundlecol[color_root] < 0;
-                    bno = bundlecol[color_root];
-                    if bno < 0 {
-                        bno = bundles[target_sno].len() as i64;
-                        bundlecol[color_root] = bno;
-                        bundles[target_sno].push(TmpBundle::default());
-                    }
+                let was_new_bundle = bundlecol[color_root] < 0;
+                let mut bno = bundlecol[color_root];
+                if bno < 0 {
+                    bno = bundles[target_sno].len() as i64;
+                    bundlecol[color_root] = bno;
+                    bundles[target_sno].push(TmpBundle::default());
                 }
                 let bidx = bno as usize;
                 if bidx >= bundles[target_sno].len() {

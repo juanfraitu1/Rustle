@@ -8544,103 +8544,26 @@ pub fn run<P: AsRef<Path>>(
                 };
                 let mapping_bnodes = cpp_bundle.bnode_head.clone();
 
-                // Unified bundle mode: split bundlenodes by color into separate
-                // graph components, each processed independently. This matches
-                // StringTie's architecture: one bundle with shared reads, but
-                // separate per-bundlenode-component graphs.
-                let unified_bundle_mode = std::env::var_os("RUSTLE_UNIFIED_BUNDLE").is_some();
-                let color_comps: Vec<Option<Vec<(usize, u64, u64, f64)>>> =
-                    if unified_bundle_mode && bnode_list.len() > 1 && !cpp_bundle.bnode_colors.is_empty() {
-                        let comps = bundlenode_components_by_color(
-                            cpp_bundle.bnode_head.as_ref(),
-                            &cpp_bundle.bnode_colors,
-                        );
-                        if comps.len() > 1 {
-                            comps.into_iter().map(Some).collect()
-                        } else {
-                            vec![None]
-                        }
-                    } else {
-                        vec![None]
-                    };
-
-                for color_comp in &color_comps {
-                    let (comp_bundle, comp_reads, comp_read_bnodes) = if let Some(comp) = color_comp {
-                        // Build a sub-bundle with just this component's bundlenodes.
-                        let comp_bn = vec_to_bundlenodes(comp);
-                        let comp_start = comp.first().map(|v| v.1).unwrap_or(sub_bundle.start);
-                        let comp_end = comp.last().map(|v| v.2).unwrap_or(sub_bundle.end);
-                        let comp_exonic_len: u64 = comp.iter().map(|(_, s, e, _)| e.saturating_sub(*s)).sum();
-                        if comp_exonic_len < config.min_transcript_length {
-                            continue;
-                        }
-                        // Filter reads to those overlapping this component's range.
-                        let comp_bids: std::collections::HashSet<usize> =
-                            comp.iter().map(|v| v.0).collect();
-                        let mut cr: Vec<BundleRead> = Vec::new();
-                        let mut crb: Vec<Vec<usize>> = Vec::new();
-                        for (i, read) in sub_bundle.reads.iter().enumerate() {
-                            // Include read if any of its mapped bnodes are in this component.
-                            let mapped = sub_read_bnodes.get(i).cloned().unwrap_or_default();
-                            let touches = mapped.iter().any(|b| comp_bids.contains(b));
-                            if !touches {
-                                // Fallback: coordinate overlap.
-                                let overlaps = read.exons.iter().any(|&(es, ee)| {
-                                    es < comp_end && ee > comp_start
-                                });
-                                if !overlaps {
-                                    continue;
-                                }
-                            }
-                            cr.push(read.clone());
-                            crb.push(mapped);
-                        }
-                        if cr.is_empty() {
-                            continue;
-                        }
-                        let mut cb = sub_bundle.clone();
-                        cb.start = comp_start;
-                        cb.end = comp_end;
-                        cb.bundlenodes = comp_bn;
-                        cb.reads = cr.clone();
-                        (cb, cr, crb)
-                    } else {
-                        (sub_bundle.clone(), sub_bundle.reads.clone(), sub_read_bnodes.clone())
-                    };
-
-                    let comp_mapping = mapping_bnodes.clone();
-                    let comp_junctions = if color_comp.is_some() {
-                        let cs = comp_bundle.start;
-                        let ce = comp_bundle.end;
-                        sub_junctions.iter()
-                            .filter(|j| j.donor >= cs && j.acceptor <= ce)
-                            .copied()
-                            .collect()
-                    } else {
-                        sub_junctions.clone()
-                    };
-
-                    let (txs, pre_filter, seed_outcomes) = process_graph(
-                        &comp_bundle,
-                        comp_junctions.clone(),
-                        comp_mapping,
-                        &comp_reads,
-                        &comp_reads,
-                        Some(&comp_read_bnodes),
-                        &sub_good_junctions,
-                        &sub_killed_junction_pairs,
-                    );
-                    accumulate_seed_outcomes(&mut baseline_seed_summary, &seed_outcomes);
-                    if trace_reference.is_some() {
-                        let junc_tuples: Vec<(u64, u64)> = comp_junctions
-                            .iter()
-                            .map(|j| (j.donor, j.acceptor))
-                            .collect();
-                        let trace_txs = pre_filter.unwrap_or_else(|| txs.clone());
-                        raw_for_trace_mutex.lock().unwrap().push((comp_bundle.clone(), trace_txs, junc_tuples, seed_outcomes));
-                    }
-                    bundle_txs.extend(txs);
-                } // end for color_comp
+                let (txs, pre_filter, seed_outcomes) = process_graph(
+                    &sub_bundle,
+                    sub_junctions.clone(),
+                    mapping_bnodes,
+                    &sub_bundle.reads,
+                    &sub_bundle.reads,
+                    Some(&sub_read_bnodes),
+                    &sub_good_junctions,
+                    &sub_killed_junction_pairs,
+                );
+                accumulate_seed_outcomes(&mut baseline_seed_summary, &seed_outcomes);
+                if trace_reference.is_some() {
+                    let junc_tuples: Vec<(u64, u64)> = sub_junctions
+                        .iter()
+                        .map(|j| (j.donor, j.acceptor))
+                        .collect();
+                    let trace_txs = pre_filter.unwrap_or_else(|| txs.clone());
+                    raw_for_trace_mutex.lock().unwrap().push((sub_bundle.clone(), trace_txs, junc_tuples, seed_outcomes));
+                }
+                bundle_txs.extend(txs);
             } // end for color_group
             } // end for cpp_bundle_idx
 
