@@ -8131,6 +8131,8 @@ pub fn run<P: AsRef<Path>>(
                     }
                     let mut any_bad = false;
                     let mut all_killed = true;
+                    let mut any_redirect_attempted = false;
+                    let mut any_redirected = false;
 
                     for ji in 0..r.junctions.len() {
                         let j = r.junctions[ji];
@@ -8157,6 +8159,7 @@ pub fn run<P: AsRef<Path>>(
                             continue;
                         }
                         any_bad = true;
+                        any_redirect_attempted = true;
 
                         // Decode redirect pointers and compute new boundaries
                         let mut newstart = r.exons[ji].1; // current exon end (donor)
@@ -8184,22 +8187,26 @@ pub fn run<P: AsRef<Path>>(
                         let seg_start = r.exons[ji].0; // left exon start
                         let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue }; // right exon end
                         if newstart >= seg_start && newend <= seg_end && newstart <= newend {
-                            // Adjust exon boundaries
-                            r.exons[ji].1 = newstart;
-                            if ji + 1 < r.exons.len() {
-                                r.exons[ji + 1].0 = newend;
-                            }
-                            // Replace junction with new coordinates and read's strand
+                            // Replace the read's junction with the replacement coordinates.
+                            // This gives the junction a "live" status (not in killed_juncs)
+                            // which allows color propagation through it.
+                            // NOTE: exon boundary adjustment is intentionally skipped —
+                            // adjusting boundaries without StringTie's full replacement
+                            // junction search causes misaligned CGroups and loses TPs.
                             r.junctions[ji] = crate::types::Junction::new(newstart, newend);
                             redirected_count += 1;
+                            any_redirected = true;
                             all_killed = false; // replacement has strand from read
                         }
                     }
 
-                    // Unstrand if ALL junctions killed and no successful redirect.
-                    // Gate behind env var for testing — unstranding without full
-                    // StringTie-style exon adjustment can lose TPs.
-                    if any_bad && all_killed {
+                    // Only unstrand reads that had at least one redirect
+                    // attempt (changeleft || changeright). Reads where all junctions
+                    // are killed but NONE have redirect pointers are just bad reads
+                    // that should stay stranded (unstranding them dilutes coverage
+                    // without providing the exon boundary adjustment that makes
+                    // StringTie's unstranding work).
+                    if any_bad && all_killed && any_redirect_attempted {
                         // Check if any remaining junction has a non-killed CJunction
                         let still_all_killed = r.junctions.iter().all(|j| {
                             cj_by_start_end.get(&(j.donor, j.acceptor))
