@@ -5878,7 +5878,7 @@ pub fn extract_transcripts(
         // the reference assembler (C++ reference): for each pair of consecutive splice edges in the
         // path, require at least one transfrag whose node list contains BOTH edges in order.
         // This prevents stitching novel junction combinations from separate reads.
-        if checkpath && long_read_mode && use_last >= use_start {
+        if checkpath && long_read_mode && use_last >= use_start && std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some() {
             let mut splice_pos: Vec<usize> = Vec::new();
             for p in use_start..=use_last {
                 if p == use_start {
@@ -6908,7 +6908,8 @@ pub fn extract_transcripts(
     // checktrf rescue pass (C++ reference parse_trflong follow-up):
     // 1) try to reassign skipped transfrag support to best kept paths
     // 2) if unmatched, store direct complete transfrag as an independent transcript
-    if long_read_mode && !checktrf.is_empty() {
+    let checktrf_enabled = std::env::var_os("RUSTLE_DISABLE_CHECKTRF").is_none();
+    if long_read_mode && !checktrf.is_empty() && checktrf_enabled {
         // Dedup while preserving insertion order.
         let mut seen: HashSet<usize> = Default::default();
         let mut uniq_check = Vec::new();
