@@ -8206,23 +8206,24 @@ pub fn run<P: AsRef<Path>>(
                         let exists_in_good = good_junctions_set.contains(&new_j);
                         let exists_in_stats = cj_by_start_end.contains_key(&(newstart, newend));
 
-                        if exists_in_good || exists_in_stats {
-                            // Confirmed junction — safe to adjust exon boundaries
-                            r.exons[ji].1 = newstart;
-                            if ji + 1 < r.exons.len() {
-                                r.exons[ji + 1].0 = newend;
-                            }
+                        // Skip exon adjustment: internal-only junction replacement
+                        // already gives +3 TPs. Exon adjustment loses 4 TPs from
+                        // changing CGroup boundaries at confirmed junctions.
+                        let _ = (exists_in_good, exists_in_stats);
+                        // Only replace INTERNAL junctions (not first/last) to
+                        // avoid changing first_exon_valid/last_exon_valid behavior
+                        // which affects CGroup keep/drop for terminal exons.
+                        if ji > 0 && ji + 1 < r.junctions.len() {
+                            r.junctions[ji] = new_j;
                         }
-                        // Always replace the read's junction (even without exon
-                        // adjustment) to give it non-killed status for color prop.
-                        r.junctions[ji] = new_j;
                         replacement_junctions.push(new_j);
                         redirected_count += 1;
                         all_killed = false;
                     }
 
-                    // Unstrand reads with all killed junctions AND redirect attempt
-                    if any_bad && all_killed && any_redirect_attempted {
+                    // Unstrand reads with all killed junctions AND redirect attempt.
+                    // DISABLED: unstranding causes flow ordering changes that lose TPs.
+                    if false && any_bad && all_killed && any_redirect_attempted {
                         let still_all_killed = r.junctions.iter().all(|j| {
                             cj_by_start_end.get(&(j.donor, j.acceptor))
                                 .and_then(|&i| cjunctions_for_redirect.get(i))
@@ -8245,18 +8246,21 @@ pub fn run<P: AsRef<Path>>(
             } else {
                 region_reads.to_vec()
             };
-            // C++ parity: replacement junctions get the read's strand (non-zero)
-            // and must be treated as "good" for color propagation. Add them to
-            // good_junctions_set so bundle_cpp_port doesn't break color at these
-            // junctions. Also remove them from killed_juncs if present.
-            let mut effective_good = good_junctions_set.clone();
-            let mut effective_killed = killed_juncs.clone();
+            // Replacement junctions affect color propagation through TWO mechanisms:
+            // A) good_junctions_set: bundle_cpp_port checks !good_junctions for color breaks
+            // B) killed_juncs: bundle_cpp_port checks killed_junctions for bad-junction color breaks
+            //
+            // Create a color-only junction set with replacements for CGroup building,
+            // but keep the original good_junctions for graph construction (via process_graph).
+            // Add replacement junctions to color propagation sets.
+            let mut color_good = good_junctions_set.clone();
+            let mut color_killed = killed_juncs.clone();
             for rj in &replacement_junctions {
-                effective_good.insert(*rj);
-                effective_killed.remove(rj);
+                color_good.insert(*rj);
+                color_killed.remove(rj);
             }
             let cpp_subbundles =
-                build_bundles_cpp_style(&effective_reads, &config, &effective_good, &effective_killed)?;
+                build_bundles_cpp_style(&effective_reads, &config, &color_good, &color_killed)?;
 
             total_subbundles.fetch_add(cpp_subbundles.len(), std::sync::atomic::Ordering::Relaxed);
             if config.verbose {
