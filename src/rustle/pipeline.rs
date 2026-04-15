@@ -6987,13 +6987,29 @@ pub fn run<P: AsRef<Path>>(
         //
         // C++ two-step kill: higherr block sets mm=-1, then SR bundle loop sets strand=0
         // for mm<0 junctions (C++ reference build_graphs: `if(jd.mm<0) jd.strand=0`).
-        // In rustle, good_junc_stats / apply_bad_mm_neg_stage set mm=-1 but never strand=0,
-        // so we must include mm<0 junctions here to match the C++ color-chain-break behavior.
-        let good_junctions_set: HashSet<crate::types::Junction> =
+        // C++ parity (rlink.cpp:15275-15373): when a junction has mm<0 (higherr
+        // demotion), StringTie's read loop creates a REPLACEMENT junction with the
+        // read's strand (non-zero).  CGroup building then sees non-zero strand and
+        // allows color propagation.  In Rustle, we approximate this by keeping mm<0
+        // junctions with non-zero strand OUT of killed_juncs AND IN good_junctions_set.
+        // This allows color to propagate through higherr-demoted junctions that have
+        // valid splice strand, matching StringTie's per-read junction replacement.
+        let mut good_junctions_set: HashSet<crate::types::Junction> =
             junctions.iter().copied().collect();
+        // Add mm<0 junctions with non-zero strand to good_junctions (read-redirect parity).
+        for (j, s) in &junction_stats_corr_final {
+            if s.mm < 0.0 && s.strand != Some(0) && s.nreads_good >= config.min_junction_reads {
+                good_junctions_set.insert(*j);
+            }
+        }
         let mut killed_juncs: HashSet<crate::types::Junction> = junction_stats_corr_final
             .iter()
-            .filter(|(_, s)| s.strand == Some(0) || s.mm < 0.0)
+            .filter(|(_, s)| {
+                // strand==0: junction genuinely has no strand support → killed.
+                // mm<0 with strand!=0: higherr demotion, but StringTie's read-redirect
+                // creates a replacement with non-zero strand → NOT killed for color purposes.
+                s.strand == Some(0)
+            })
             .map(|(j, _)| *j)
             .collect();
         if std::env::var_os("RUSTLE_PROPAGATE_KILLED_CORRECTED").is_some() {
