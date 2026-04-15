@@ -405,6 +405,23 @@ pub fn create_graph(
     junction_stats: Option<&JunctionStats>,
     bpcov: Option<&Bpcov>,
 ) -> Graph {
+    create_graph_inner(junctions, _bundle_start, bundle_end, bundlenodes,
+        junction_support, _reads, bundle_strand, junction_stats, bpcov, &[], &[])
+}
+
+fn create_graph_inner(
+    junctions: &[Junction],
+    _bundle_start: u64,
+    bundle_end: u64,
+    bundlenodes: Option<&CBundlenode>,
+    junction_support: u64,
+    _reads: Option<&[BundleRead]>,
+    bundle_strand: char,
+    junction_stats: Option<&JunctionStats>,
+    bpcov: Option<&Bpcov>,
+    lstart: &[ReadBoundary],
+    lend: &[ReadBoundary],
+) -> Graph {
     let mut graph = Graph::new();
     let trace_s = trace_strand_index(bundle_strand);
     let trace_g = 0usize;
@@ -757,6 +774,195 @@ fn validate_longtrim_boundaries(
     (valid_starts, valid_ends)
 }
 
+/// Iterative node-split pass matching C++ reference longtrim().
+///
+/// For each existing graph node, processes sorted lstart/lend events that fall
+/// within the node's range. At each event position, computes bpcov contrast in
+/// a CHI_THR=50bp window. If the contrast is positive, the node is split.
+///
+/// Start splits: creates two nodes [node.start, pos-1] and [pos, node.end].
+///   The new node gets a source edge (hardstart).
+/// End splits: creates two nodes [node.start, pos] and [pos+1, node.end].
+///   The left node gets a sink edge (hardend).
+fn apply_iterative_longtrim_splits(
+    graph: &mut Graph,
+    lstart: &[ReadBoundary],
+    lend: &[ReadBoundary],
+    bpcov: &Bpcov,
+    bundle_start: u64,
+    _bundle_strand: char,
+) -> usize {
+    const CHI_THR: i64 = 50;
+    const DROP: f64 = 0.5;
+    const LONGINTRONANCHOR: u64 = 25;
+    const ERROR_PERC: f64 = 0.1;
+
+    if lstart.is_empty() && lend.is_empty() {
+        return 0;
+    }
+
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let bpcov_len = bpcov.cov.len();
+
+    let get_cov_range = |s: i64, e: i64| -> f64 {
+        if s < 0 || e < s || s as usize >= bpcov_len {
+            return 0.0;
+        }
+        let si = s as usize;
+        let ei = (e as usize).min(bpcov_len.saturating_sub(1));
+        bpcov.get_cov_range(si, ei)
+    };
+
+    // Collect non-source/sink nodes sorted by start position.
+    let mut node_ids: Vec<usize> = (0..graph.nodes.len())
+        .filter(|&i| i != source_id && i != sink_id && graph.nodes[i].end > graph.nodes[i].start)
+        .collect();
+    node_ids.sort_by_key(|&i| graph.nodes[i].start);
+
+    let mut nls: usize = 0; // Pointer into lstart (never backtracks)
+    let mut nle: usize = 0; // Pointer into lend
+
+    let mut splits = 0usize;
+
+    for &orig_nid in &node_ids {
+        let node_start = graph.nodes[orig_nid].start;
+        let node_end = graph.nodes[orig_nid].end;
+
+        // Is this node bounded by junctions?
+        let has_junction_at_start = graph.nodes[orig_nid].parents.count_ones() > 1
+            || (graph.nodes[orig_nid].parents.count_ones() == 1
+                && !graph.nodes[orig_nid].parents.contains(source_id));
+        let has_junction_at_end = graph.nodes[orig_nid].children.count_ones() > 1
+            || (graph.nodes[orig_nid].children.count_ones() == 1
+                && !graph.nodes[orig_nid].children.contains(sink_id));
+
+        // Skip lstart/lend events before this node.
+        while nls < lstart.len() && lstart[nls].pos < node_start {
+            nls += 1;
+        }
+        while nle < lend.len() && lend[nle].pos < node_start {
+            nle += 1;
+        }
+
+        let mut cur_nid = orig_nid;
+        let mut ls = nls;
+        let mut le = nle;
+
+        // Process events within this node.
+        while (ls < lstart.len() && lstart[ls].pos < node_end)
+            || (le < lend.len() && lend[le].pos < node_end)
+        {
+            let use_start = if le >= lend.len() {
+                true
+            } else if ls >= lstart.len() {
+                false
+            } else {
+                lstart[ls].pos <= lend[le].pos
+            };
+
+            if use_start {
+                let pos = lstart[ls].pos;
+                let cur_start = graph.nodes[cur_nid].start;
+                let cur_end = graph.nodes[cur_nid].end;
+
+                // Proximity check: not too close to junction boundaries
+                let start_ok = has_junction_at_start || pos > cur_start + LONGINTRONANCHOR;
+                let end_ok = has_junction_at_end || pos < node_end + LONGINTRONANCHOR;
+
+                if start_ok && end_ok && pos > cur_start && pos < cur_end {
+                    // Bpcov contrast: coverage RIGHT vs LEFT of pos
+                    let startpos = (pos - bundle_start) as i64;
+                    let winstart = (startpos - CHI_THR).max(0);
+                    let winend = (startpos + CHI_THR - 1).min(bpcov_len as i64 - 1);
+                    let right_cov = get_cov_range(startpos, winend);
+                    let left_cov = get_cov_range(winstart, startpos - 1);
+                    let mut tmpcov = (right_cov - left_cov) / (DROP * CHI_THR as f64);
+
+                    // Negative longcov: force a small positive cov for re-estimation
+                    if tmpcov <= 0.0 && lstart[ls].cov < 0.0 {
+                        tmpcov = ERROR_PERC;
+                    }
+
+                    if tmpcov > 0.0 {
+                        // SPLIT: [cur_start, pos-1] and [pos, cur_end]
+                        graph.nodes[cur_nid].end = pos; // Rustle uses half-open [start, end)
+
+                        let new_nid = graph.nodes.len();
+                        let mut new_node = crate::graph::GraphNode::new(0, 0, 0);
+                        new_node.node_id = new_nid;
+                        new_node.start = pos;
+                        new_node.end = cur_end;
+                        new_node.hardstart = true;
+                        graph.nodes.push(new_node);
+                        graph.n_nodes = graph.nodes.len();
+
+                        // Edge: source → new node (hardstart)
+                        graph.nodes[source_id].children.insert_grow(new_nid);
+                        graph.nodes[new_nid].parents.insert_grow(source_id);
+                        // Edge: prev → new (contiguous)
+                        graph.nodes[cur_nid].children.insert_grow(new_nid);
+                        graph.nodes[new_nid].parents.insert_grow(cur_nid);
+
+                        cur_nid = new_nid;
+                        splits += 1;
+                    }
+                }
+                ls += 1;
+            } else {
+                let pos = lend[le].pos;
+                let cur_start = graph.nodes[cur_nid].start;
+                let cur_end = graph.nodes[cur_nid].end;
+
+                let start_ok = !has_junction_at_start || pos > cur_start + LONGINTRONANCHOR;
+                let end_ok = !has_junction_at_end || pos < node_end + LONGINTRONANCHOR;
+
+                if start_ok && end_ok && pos > cur_start && pos < cur_end {
+                    // Bpcov contrast: coverage LEFT vs RIGHT of pos
+                    let endpos = (pos - bundle_start) as i64;
+                    let winstart = (endpos - CHI_THR + 1).max(0);
+                    let winend = (endpos + CHI_THR).min(bpcov_len as i64 - 1);
+                    let left_cov = get_cov_range(winstart, endpos);
+                    let right_cov = get_cov_range(endpos + 1, winend);
+                    let mut tmpcov = (left_cov - right_cov) / (DROP * CHI_THR as f64);
+
+                    if tmpcov <= 0.0 && lend[le].cov < 0.0 {
+                        tmpcov = ERROR_PERC;
+                    }
+
+                    if tmpcov > 0.0 {
+                        // SPLIT: [cur_start, pos] and [pos+1, cur_end]
+                        // In half-open: [cur_start, pos+1) and [pos+1, cur_end)
+                        let split_pos = pos + 1; // half-open boundary
+                        graph.nodes[cur_nid].end = split_pos;
+                        graph.nodes[cur_nid].hardend = true;
+
+                        let new_nid = graph.nodes.len();
+                        let mut new_node = crate::graph::GraphNode::new(0, 0, 0);
+                        new_node.node_id = new_nid;
+                        new_node.start = split_pos;
+                        new_node.end = cur_end;
+                        graph.nodes.push(new_node);
+                        graph.n_nodes = graph.nodes.len();
+
+                        // Edge: prev → sink (hardend)
+                        graph.nodes[sink_id].parents.insert_grow(cur_nid);
+                        // Edge: prev → new (contiguous)
+                        graph.nodes[cur_nid].children.insert_grow(new_nid);
+                        graph.nodes[new_nid].parents.insert_grow(cur_nid);
+
+                        cur_nid = new_nid;
+                        splits += 1;
+                    }
+                }
+                le += 1;
+            }
+        }
+    }
+
+    splits
+}
+
 /// Build graph and, when enabled, apply longtrim at graph-build stage.
 /// This keeps long-read boundary splitting in the create_graph flow instead of
 /// as a later pipeline-only post-step.
@@ -775,7 +981,9 @@ pub fn create_graph_with_longtrim(
     enable_longtrim: bool,
     longtrim_min_boundary_cov: f64,
 ) -> (Graph, Vec<GraphTransfrag>, CreateGraphLongtrimStats) {
-    let mut graph = create_graph(
+    let lt_starts = if enable_longtrim { lstart } else { &[] };
+    let lt_ends = if enable_longtrim { lend } else { &[] };
+    let mut graph = create_graph_inner(
         junctions,
         bundle_start,
         bundle_end,
@@ -785,6 +993,8 @@ pub fn create_graph_with_longtrim(
         bundle_strand,
         junction_stats,
         Some(bpcov),
+        lt_starts,
+        lt_ends,
     );
 
     let mut stats = CreateGraphLongtrimStats {
@@ -805,14 +1015,12 @@ pub fn create_graph_with_longtrim(
         // without the inline contrast check, causing 4-5x over-segmentation
         // (43K new nodes vs ~200 in C++). Pass empty arrays until the exact
         // C++ contrast logic is reimplemented in apply_longtrim_direct.
-        // C++ reference creates node boundaries from lstart/lend events
-        // ITERATIVELY within each graph node, validated by bpcov contrast
-        // in a CHI_THR=50bp window. Direct pass of all events causes 10-100x
-        // over-segmentation because the validation lacks the per-node context.
-        // TODO: Reimplement graph build as iterative node-split loop matching
-        // C++ reference create_graph lines 2650-2730: process each lstart/lend
-        // within the current node, check bpcov contrast, split only when positive.
-        // This is the #1 remaining precision/sensitivity gap (~500 TPs).
+        // NOTE: Iterative longtrim splits (apply_iterative_longtrim_splits) must
+        // happen INSIDE create_graph, before transfrags are built. Post-creation
+        // splits break transfrag patterns and edge consistency.
+        // TODO: Integrate longtrim splitting into create_graph's node iteration loop.
+        //
+        // For now, pass empty arrays to the standard boundary map.
         let boundary_map = collect_longtrim_boundary_map(
             bpcov,
             bundlenodes,
