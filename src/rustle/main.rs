@@ -387,8 +387,8 @@ struct Args {
     #[arg(long)]
     vg_report: Option<String>,
 
-    /// Multi-mapping resolution method: em, mflp, or flow [default: em]
-    #[arg(long, default_value = "em")]
+    /// Multi-mapping resolution method: none (discover only), em, mflp, or flow [default: none]
+    #[arg(long, default_value = "none")]
     vg_solver: String,
 
     /// Use SNPs (from MD tag) for copy assignment in VG mode

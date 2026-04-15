@@ -6041,6 +6041,10 @@ pub fn run<P: AsRef<Path>>(
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
         match config.vg_solver {
+            VgSolver::None => {
+                eprintln!("[VG] Discovery only — no multi-mapping resolution (use --vg-solver em to enable)");
+                Vec::new()
+            }
             VgSolver::Em => {
                 if config.vg_snp {
                     eprintln!("[VG] Using EM solver with SNP-based copy assignment");

@@ -672,7 +672,9 @@ impl BundleData {
 /// Multi-mapping resolution method for VG mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VgSolver {
-    /// Expectation-Maximization with junction-based compatibility (default).
+    /// No multi-mapping resolution — discovery/reporting only (default).
+    None,
+    /// Expectation-Maximization with junction-based compatibility.
     Em,
     /// Minimum Flow Linear Program using good_lp.
     Mflp,
@@ -682,7 +684,7 @@ pub enum VgSolver {
 
 impl Default for VgSolver {
     fn default() -> Self {
-        Self::Em
+        Self::None
     }
 }
 
@@ -690,10 +692,11 @@ impl std::str::FromStr for VgSolver {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "none" | "off" | "discover" => Ok(Self::None),
             "em" => Ok(Self::Em),
             "mflp" | "lp" | "milp" => Ok(Self::Mflp),
             "flow" => Ok(Self::Flow),
-            _ => Err(format!("unknown VG solver '{}': expected em, mflp, or flow", s)),
+            _ => Err(format!("unknown VG solver '{}': expected none, em, mflp, or flow", s)),
         }
     }
 }
@@ -701,6 +704,7 @@ impl std::str::FromStr for VgSolver {
 impl std::fmt::Display for VgSolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::None => write!(f, "none"),
             Self::Em => write!(f, "em"),
             Self::Mflp => write!(f, "mflp"),
             Self::Flow => write!(f, "flow"),
