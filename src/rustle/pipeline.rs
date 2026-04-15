@@ -6760,6 +6760,10 @@ pub fn run<P: AsRef<Path>>(
                 killed
             );
         }
+        // Save CJunction array for per-read junction redirect (rlink.cpp:15264-15373).
+        // The cjunctions contain redirect pointers (negative nreads/nreads_good)
+        // from apply_higherr_demotions, needed to adjust read exon boundaries.
+        let cjunctions_for_redirect = cjunctions.clone();
         junction_stats_corr = crate::types::cjunctions_to_junction_stats(&cjunctions);
         apply_bad_mm_neg_stage(
             &mut junction_stats_corr,
@@ -8098,8 +8102,129 @@ pub fn run<P: AsRef<Path>>(
         let mut baseline_seed_summary = SeedOutcomeSummary::default();
 
         if use_region_bundle_pass {
+            // C++ parity (rlink.cpp:15264-15461): per-read junction redirect and
+            // unstranding. When a junction has mm<0 AND nreads<0 (higherr redirect),
+            // adjust the read's exon boundaries to match the replacement junction,
+            // then replace the read's junction with a new one at the adjusted coords.
+            // After processing, reads with ALL killed junctions get strand='.'.
+            // This creates sno=1 CGroups bridging strands into mega-bundles.
+            let effective_reads: Vec<BundleRead> = if config.long_reads {
+                // Build lookup: junction (start,end) → index in cjunctions_for_redirect
+                let cj_by_start_end: std::collections::HashMap<(u64, u64), usize> =
+                    cjunctions_for_redirect.iter().enumerate()
+                        .map(|(i, cj)| ((cj.start, cj.end), i))
+                        .collect();
+                // Also build acceptor-sorted index for changeright lookups
+                let mut cj_by_end: Vec<(u64, u64, usize)> = cjunctions_for_redirect.iter()
+                    .enumerate()
+                    .map(|(i, cj)| (cj.end, cj.start, i))
+                    .collect();
+                cj_by_end.sort();
+
+                let mut reads = region_reads.to_vec();
+                let mut unstranded_count = 0usize;
+                let mut redirected_count = 0usize;
+
+                for r in reads.iter_mut() {
+                    if r.strand == '.' || r.junctions.is_empty() {
+                        continue;
+                    }
+                    let mut any_bad = false;
+                    let mut all_killed = true;
+
+                    for ji in 0..r.junctions.len() {
+                        let j = r.junctions[ji];
+                        // Find this junction in CJunction array
+                        let cj_idx = cj_by_start_end.get(&(j.donor, j.acceptor));
+                        let cj = cj_idx.and_then(|&i| cjunctions_for_redirect.get(i));
+                        let Some(cj) = cj else {
+                            all_killed = false;
+                            continue;
+                        };
+
+                        let changeleft = cj.nreads < 0.0;
+                        let changeright = cj.nreads_good < 0.0;
+                        let is_killed = cj.strand == 0 || cj.mm < 0.0;
+
+                        if !is_killed {
+                            all_killed = false;
+                            continue;
+                        }
+
+                        if !changeleft && !changeright {
+                            // Killed but no redirect — just mark as bad
+                            any_bad = true;
+                            continue;
+                        }
+                        any_bad = true;
+
+                        // Decode redirect pointers and compute new boundaries
+                        let mut newstart = r.exons[ji].1; // current exon end (donor)
+                        let mut newend = if ji + 1 < r.exons.len() { r.exons[ji + 1].0 } else { continue }; // next exon start (acceptor)
+
+                        if changeleft {
+                            let jk = cj.nreads.abs() as usize;
+                            if let Some(target) = cjunctions_for_redirect.get(jk) {
+                                if target.nreads >= 0.0 {
+                                    newstart = target.start;
+                                }
+                            }
+                        }
+                        if changeright {
+                            let ek = cj.nreads_good.abs() as usize;
+                            // Search in acceptor-sorted array
+                            if let Some(target) = cjunctions_for_redirect.get(ek) {
+                                if target.nreads_good >= 0.0 {
+                                    newend = target.end;
+                                }
+                            }
+                        }
+
+                        // Validate new boundaries
+                        let seg_start = r.exons[ji].0; // left exon start
+                        let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue }; // right exon end
+                        if newstart >= seg_start && newend <= seg_end && newstart <= newend {
+                            // Adjust exon boundaries
+                            r.exons[ji].1 = newstart;
+                            if ji + 1 < r.exons.len() {
+                                r.exons[ji + 1].0 = newend;
+                            }
+                            // Replace junction with new coordinates and read's strand
+                            r.junctions[ji] = crate::types::Junction::new(newstart, newend);
+                            redirected_count += 1;
+                            all_killed = false; // replacement has strand from read
+                        }
+                    }
+
+                    // Unstrand if ALL junctions killed and no successful redirect.
+                    // Gate behind env var for testing — unstranding without full
+                    // StringTie-style exon adjustment can lose TPs.
+                    if any_bad && all_killed {
+                        // Check if any remaining junction has a non-killed CJunction
+                        let still_all_killed = r.junctions.iter().all(|j| {
+                            cj_by_start_end.get(&(j.donor, j.acceptor))
+                                .and_then(|&i| cjunctions_for_redirect.get(i))
+                                .map(|cj| cj.strand == 0 || cj.mm < 0.0)
+                                .unwrap_or(true) // unknown junction = treat as killed
+                        });
+                        if still_all_killed {
+                            r.strand = '.';
+                            unstranded_count += 1;
+                        }
+                    }
+                }
+                if config.verbose && (unstranded_count > 0 || redirected_count > 0) {
+                    eprintln!(
+                        "    junction_redirect: {} redirected, {} unstranded",
+                        redirected_count, unstranded_count
+                    );
+                }
+                reads
+            } else {
+                region_reads.to_vec()
+            };
             let cpp_subbundles =
-                build_bundles_cpp_style(region_reads, &config, &good_junctions_set, &killed_juncs)?;
+                build_bundles_cpp_style(&effective_reads, &config, &good_junctions_set, &killed_juncs)?;
 
             total_subbundles.fetch_add(cpp_subbundles.len(), std::sync::atomic::Ordering::Relaxed);
             if config.verbose {
@@ -8118,7 +8243,7 @@ pub fn run<P: AsRef<Path>>(
             // in a region contribute to one unified graph per color component).
             let bundle_graph_mode = std::env::var_os("RUSTLE_BUNDLE_GRAPH").is_some();
             let effective_subbundles: Vec<crate::bundle_cpp_port::CppBundleResult> = if bundle_graph_mode {
-                merge_overlapping_subbundles(&cpp_subbundles, region_reads)
+                merge_overlapping_subbundles(&cpp_subbundles, &effective_reads)
             } else {
                 cpp_subbundles
             };
@@ -8135,7 +8260,7 @@ pub fn run<P: AsRef<Path>>(
 
                 let mut sub_reads: Vec<BundleRead> = Vec::new();
                 let mut sub_read_bnodes: Vec<Vec<usize>> = Vec::new();
-                for (ri, read) in region_reads.iter().enumerate() {
+                for (ri, read) in effective_reads.iter().enumerate() {
                     let scale = cpp_bundle.read_scale.get(ri).copied().unwrap_or(0.0);
                     let mapped = cpp_bundle
                         .read_to_bnodes
