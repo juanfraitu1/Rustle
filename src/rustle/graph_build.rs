@@ -1053,9 +1053,20 @@ fn longtrim_inline(
             lstart[*nls].pos <= lend[*nle].pos
         };
 
+        // Minimum accumulated reads at this boundary to be considered for splitting.
+        // Positions with only 1-2 reads are alignment jitter, not real TSS/TES.
+        const MIN_BOUNDARY_READS: f64 = 3.0;
+
         if use_start {
             let pos = lstart[*nls].pos;
+            let boundary_cov = lstart[*nls].cov;
             let cur_start = graph.nodes[*graphnode_id].start;
+
+            // Skip boundaries with insufficient read support.
+            if boundary_cov.abs() < MIN_BOUNDARY_READS {
+                *nls += 1;
+                continue;
+            }
 
             // Proximity check (C++ reference: startcov/endcov + longintronanchor).
             let start_ok = startcov || pos > cur_start + LONGINTRONANCHOR;
@@ -1091,7 +1102,13 @@ fn longtrim_inline(
             *nls += 1;
         } else {
             let pos = lend[*nle].pos;
+            let boundary_cov = lend[*nle].cov;
             let cur_start = graph.nodes[*graphnode_id].start;
+
+            if boundary_cov.abs() < MIN_BOUNDARY_READS {
+                *nle += 1;
+                continue;
+            }
 
             let start_ok = !startcov || pos > cur_start + LONGINTRONANCHOR;
             let end_ok = !endcov || pos < nodeend + LONGINTRONANCHOR;
