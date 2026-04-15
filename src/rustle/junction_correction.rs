@@ -161,8 +161,33 @@ pub fn correct_bundle_junctions_higherr(
     let mut junctions: Vec<Junction> = stats.keys().copied().collect();
     junctions.sort_by_key(|j| (j.donor, j.acceptor));
 
-    let is_bad = |s: &JunctionStat| s.nm > 0.0 && s.nm >= s.mrcount && s.mrcount > 0.0;
-    let is_reliable = |s: &JunctionStat| s.mrcount > 0.0 && !is_bad(s);
+    // C++ parity (rlink.cpp:14403): nm==nreads marks a junction as having ONLY
+    // mismatch-bearing reads. For long reads, nm==nreads is ALWAYS true (every
+    // long read counts as mismatch in C++ processRead:915). StringTie only kills
+    // such junctions if they're long introns (>100kb) with very low coverage
+    // (<10 reads). It does NOT redirect them to nearby stronger junctions.
+    //
+    // The previous is_bad check (nm >= mrcount) was too aggressive for long reads:
+    // it flagged ALL long-read-only junctions as bad, redirecting rare but valid
+    // junctions to nearby strong ones. This killed small exons that StringTie keeps.
+    //
+    // Fix: require nm > mrcount (strict inequality) OR require the junction to be
+    // a long intron with low coverage, matching StringTie's good_junc logic.
+    let longintron = 100_000u64;
+    let chi_win_error = 10.0f64; // CHI_WIN(100) * ERROR_PERC(0.1)
+    let is_bad = |s: &JunctionStat, j: &Junction| {
+        if s.nm <= 0.0 || s.mrcount <= 0.0 {
+            return false;
+        }
+        if s.nm < s.mrcount {
+            return false; // some reads are mismatch-free → not bad
+        }
+        // nm >= mrcount: all reads have mismatches. For long reads this is always true.
+        // Only flag as bad if it's a long intron with very low coverage (C++ parity).
+        let intron_len = j.acceptor.saturating_sub(j.donor);
+        intron_len > longintron && s.nreads_good < chi_win_error
+    };
+    let is_reliable = |s: &JunctionStat, j: &Junction| s.mrcount > 0.0 && !is_bad(s, j);
 
     let mut donor_redirect: HashMap<Junction, Junction> = Default::default();
     let mut acceptor_redirect: HashMap<Junction, Junction> = Default::default();
@@ -180,7 +205,7 @@ pub fn correct_bundle_junctions_higherr(
 
     for j in &junctions {
         let Some(cur) = stats.get(j) else { continue };
-        if !is_bad(cur) {
+        if !is_bad(cur, j) {
             continue;
         }
         let mut best: Option<(Junction, f64)> = None;
@@ -200,7 +225,7 @@ pub fn correct_bundle_junctions_higherr(
             let Some(cand) = stats.get(&cand_j) else {
                 continue;
             };
-            if !is_reliable(cand) {
+            if !is_reliable(cand, &cand_j) {
                 continue;
             }
             if !(cand.leftsupport > cur.leftsupport * tolerance) {
@@ -222,7 +247,7 @@ pub fn correct_bundle_junctions_higherr(
 
     for j in &junctions {
         let Some(cur) = stats.get(j) else { continue };
-        if !is_bad(cur) {
+        if !is_bad(cur, j) {
             continue;
         }
         let mut best: Option<(Junction, f64)> = None;
@@ -242,7 +267,7 @@ pub fn correct_bundle_junctions_higherr(
             let Some(cand) = stats.get(&cand_j) else {
                 continue;
             };
-            if !is_reliable(cand) {
+            if !is_reliable(cand, &cand_j) {
                 continue;
             }
             if !(cand.rightsupport > cur.rightsupport * tolerance) {
@@ -264,7 +289,7 @@ pub fn correct_bundle_junctions_higherr(
 
     for j in &junctions {
         let Some(cur) = stats.get(j) else { continue };
-        if !is_bad(cur) {
+        if !is_bad(cur, j) {
             continue;
         }
         let left = donor_redirect.get(j).copied();
@@ -274,7 +299,7 @@ pub fn correct_bundle_junctions_higherr(
             (Some(l), Some(r)) => {
                 let synth = Junction::new(l.donor, r.acceptor);
                 if let Some(s) = stats.get(&synth) {
-                    if is_reliable(s) {
+                    if is_reliable(s, &synth) {
                         Some(synth)
                     } else {
                         Some(l)
