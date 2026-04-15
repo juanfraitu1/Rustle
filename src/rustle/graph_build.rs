@@ -529,7 +529,7 @@ fn create_graph_inner(
         let min_lt_span = 2 * (100 + 50) + 50; // 2*(CHI_WIN+CHI_THR) + margin = 350
         let (effective_lstart, effective_lend): (&[ReadBoundary], &[ReadBoundary]) =
             if lstart.is_empty() && lend.is_empty()
-                && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some()
+                && std::env::var_os("RUSTLE_DISABLE_LONGTRIM").is_none()
                 && bnode_span >= min_lt_span
             {
                 if let Some(bpc) = bpcov {
@@ -1271,7 +1271,7 @@ pub fn create_graph_with_longtrim(
         oracle_starts_owned = starts;
         oracle_ends_owned = ends;
         (&oracle_starts_owned, &oracle_ends_owned)
-    } else if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() {
+    } else if enable_longtrim && std::env::var_os("RUSTLE_DISABLE_LONGTRIM").is_none() {
         // Pass empty externals so per-bundlenode coverage-derivative detection
         // runs inside create_graph_inner (C++ parity: StringTie generates
         // boundaries per-bundlenode, not externally per-bundle).
