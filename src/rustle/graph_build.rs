@@ -515,13 +515,61 @@ fn create_graph_inner(
         }
 
         let mut completed = false;
+        // C++ parity (rlink.cpp:3757-3880): compute longtrim boundaries PER
+        // BUNDLENODE using the coverage derivative sliding window. StringTie
+        // runs this detection inside the create_graph per-bundlenode loop,
+        // not externally per-bundle. When external lstart/lend are empty but
+        // bpcov is available, generate per-bundlenode boundaries here.
+        let bnode_lstart_owned;
+        let bnode_lend_owned;
+        let (effective_lstart, effective_lend): (&[ReadBoundary], &[ReadBoundary]) =
+            if lstart.is_empty() && lend.is_empty()
+                && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some()
+            {
+                if let Some(bpc) = bpcov {
+                    // Build strand-specific bpcov for this bundlenode
+                    let strand_bpc = if let Some(bps) = bpcov_stranded {
+                        let n = bpc.cov.len();
+                        let mut cov = vec![0.0f64; n];
+                        let opp = match bundle_strand {
+                            '-' => BPCOV_STRAND_PLUS,
+                            '+' => BPCOV_STRAND_MINUS,
+                            _ => BPCOV_STRAND_ALL,
+                        };
+                        for k in 0..n {
+                            let total = bps.get_cov_range(BPCOV_STRAND_ALL, k, k + 1);
+                            let o = if opp != BPCOV_STRAND_ALL {
+                                bps.get_cov_range(opp, k, k + 1)
+                            } else { 0.0 };
+                            cov[k] = (total - o).max(0.0);
+                        }
+                        crate::bpcov::Bpcov::from_cov(cov, bpc.bundle_start, bpc.bundle_end)
+                    } else {
+                        bpc.clone()
+                    };
+                    let (ls, le) = crate::read_boundaries::collect_longtrim_boundaries_in_span(
+                        &strand_bpc, currentstart, endbundle, &[], &[],
+                    );
+                    bnode_lstart_owned = ls;
+                    bnode_lend_owned = le;
+                    (bnode_lstart_owned.as_slice(), bnode_lend_owned.as_slice())
+                } else {
+                    bnode_lstart_owned = Vec::new();
+                    bnode_lend_owned = Vec::new();
+                    (lstart, lend)
+                }
+            } else {
+                bnode_lstart_owned = Vec::new();
+                bnode_lend_owned = Vec::new();
+                (lstart, lend)
+            };
         // Longtrim state: pointers into lstart/lend arrays (never backtrack).
         let mut nls = 0usize;
         let mut nle = 0usize;
-        let has_longtrim = !lstart.is_empty() || !lend.is_empty();
-        // Skip lstart/lend events before this bundlenode.
-        while nls < lstart.len() && lstart[nls].pos < currentstart { nls += 1; }
-        while nle < lend.len() && lend[nle].pos < currentstart { nle += 1; }
+        let has_longtrim = !effective_lstart.is_empty() || !effective_lend.is_empty();
+        // Skip events before this bundlenode.
+        while nls < effective_lstart.len() && effective_lstart[nls].pos < currentstart { nls += 1; }
+        while nle < effective_lend.len() && effective_lend[nle].pos < currentstart { nle += 1; }
 
         // Process events in coordinate order (C++ reference do-while loop).
         let mut ei = 0;
@@ -538,7 +586,7 @@ fn create_graph_inner(
                     let has_junction_end = ev_type == JunctionEventType::Start; // junction starts here = exon boundary
                     longtrim_inline(
                         &mut graph, &mut graphnode_id, &mut nls, &mut nle,
-                        lstart, lend, bpc, bpcov_stranded, bundle_strand,
+                        effective_lstart, effective_lend, bpc, bpcov_stranded, bundle_strand,
                         _bundle_start, nodeend,
                         has_junction_start, has_junction_end, source_bid,
                         &mut sink_parents,
