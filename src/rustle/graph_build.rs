@@ -1147,8 +1147,8 @@ pub fn create_graph_with_longtrim(
     enable_longtrim: bool,
     longtrim_min_boundary_cov: f64,
 ) -> (Graph, Vec<GraphTransfrag>, CreateGraphLongtrimStats) {
-    let lt_starts: &[ReadBoundary] = if enable_longtrim { lstart } else { &[] };
-    let lt_ends: &[ReadBoundary] = if enable_longtrim { lend } else { &[] };
+    let lt_starts: &[ReadBoundary] = if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() { lstart } else { &[] };
+    let lt_ends: &[ReadBoundary] = if enable_longtrim && std::env::var_os("RUSTLE_LONGTRIM_SPLITS").is_some() { lend } else { &[] };
     let mut graph = create_graph_inner(
         junctions,
         bundle_start,
