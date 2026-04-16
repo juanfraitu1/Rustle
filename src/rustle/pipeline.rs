@@ -3654,13 +3654,24 @@ fn repair_reads_after_junction_quality(
         }
 
         // If bad junctions and no remaining stranded junctions -> unstrand.
+        // Matching the original algorithm (lines 15276-15278 + 15457-15461):
+        // Killed junctions (mm < 0) have their strand forced to 0 (line 15278).
+        // Then: if ALL of a read's junctions have strand=0, unstrand the read.
+        // A junction has strand=0 if it's killed OR has ambiguous splice motif.
+        // This places the read on sno=1 (unknown strand) during CGroup building,
+        // allowing it to bridge neg and pos strand bundles.
         if has_bad_junction && (reads[n].strand == '+' || reads[n].strand == '-') {
             let has_stranded_junction = reads[n].junctions.iter().any(|j| {
-                !killed_junction_pairs.contains(j)
-                    && junction_stats
-                        .get(j)
-                        .map(|st| st.strand != Some(0))
-                        .unwrap_or(false)
+                // Killed junctions are treated as strand=0 (line 15278)
+                let killed = killed_junction_pairs.contains(j);
+                if killed {
+                    return false; // strand=0 → not stranded
+                }
+                // Non-killed junctions: check actual strand evidence
+                junction_stats
+                    .get(j)
+                    .map(|st| st.strand != Some(0))
+                    .unwrap_or(false)
             });
             if !has_stranded_junction {
                 reads[n].strand = '.';
@@ -8239,9 +8250,12 @@ pub fn run<P: AsRef<Path>>(
                         all_killed = false;
                     }
 
-                    // Unstrand reads with all killed junctions AND redirect attempt.
-                    // DISABLED: unstranding causes flow ordering changes that lose TPs.
-                    if false && any_bad && all_killed && any_redirect_attempted {
+                    // Unstrand reads whose junctions are all killed (mm<0 or strand=0).
+                    // Matching the original algorithm (line 15278 + 15457-15461):
+                    // killed junctions have strand forced to 0; reads with all
+                    // strand=0 junctions get unstranded → placed on sno=1 →
+                    // creates cross-strand bridges that merge bnodes.
+                    if any_bad && all_killed {
                         let still_all_killed = r.junctions.iter().all(|j| {
                             cj_by_start_end.get(&(j.donor, j.acceptor))
                                 .and_then(|&i| cjunctions_for_redirect.get(i))
