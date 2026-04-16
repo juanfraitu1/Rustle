@@ -1,4 +1,4 @@
-//! Trie-like structure for transfrag lookup (C++ reference CTreePat).
+//! Trie-like structure for transfrag lookup (CTreePat).
 
 use crate::graph::Graph;
 

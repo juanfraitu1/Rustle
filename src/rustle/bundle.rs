@@ -1,5 +1,5 @@
 //! Bundle detection: group reads by chromosome/strand and junction connectivity.
-//! Optional CGroup-based bundlenode construction (C++ reference union-find grouping).
+//! Optional CGroup-based bundlenode construction (union-find grouping).
 
 use anyhow::Result;
 use std::path::Path;
@@ -13,7 +13,7 @@ use crate::types::{
     JunctionStat, JunctionStats, RunConfig,
 };
 
-// C++ header: CHI_THR=50, DROP=0.5 (CGroup small-exon logic)
+// header: CHI_THR=50, DROP=0.5 (CGroup small-exon logic)
 const CGROUP_CHI_THR: u64 = 50;
 const CGROUP_DROP: f64 = 0.5;
 
@@ -219,7 +219,7 @@ fn push_pending_pair(
         .push((read_idx, weight));
 }
 
-/// One coverage group from union-find grouping (C++ reference CGroup / STGroup).
+/// One coverage group from union-find grouping (CGroup / STGroup).
 #[derive(Debug, Clone)]
 struct CGroup {
     start: u64,
@@ -254,7 +254,7 @@ fn merge_colors(color1: usize, color2: usize, eqcol: &mut [usize]) {
     }
 }
 
-/// Merge group2 into group1 (forward merge along list). C++ reference merge_fwd_groups.
+/// Merge group2 into group1 (forward merge along list). merge_fwd_groups.
 fn merge_fwd_groups(
     group: &mut [CGroup],
     g1_idx: usize,
@@ -278,7 +278,7 @@ fn merge_fwd_groups(
 }
 
 /// Keep exon in CGroup building when groups already exist on this strand
-/// (C++ reference merge_read_to_group, currgroup!=NULL branch).
+/// (merge_read_to_group, currgroup!=NULL branch).
 fn cgroup_keep_exon_existing(
     exon_len: u64,
     exon_idx: usize,
@@ -317,7 +317,7 @@ fn cgroup_keep_exon_existing(
 }
 
 /// Keep exon in CGroup building when no groups yet exist on this strand
-/// (C++ reference merge_read_to_group, currgroup==NULL branch).
+/// (merge_read_to_group, currgroup==NULL branch).
 fn cgroup_keep_exon_new(
     exon_len: u64,
     exon_idx: usize,
@@ -340,9 +340,9 @@ fn cgroup_keep_exon_new(
     junc_supported[exon_idx - 1] || junc_supported[exon_idx]
 }
 
-/// Merge groups within bundledist (C++ reference, st_merge_close_groups).
+/// Merge groups within bundledist ( st_merge_close_groups).
 ///
-/// C++ parity: checks boundaryleft/boundaryright before merging (C++ reference).
+/// checks boundaryleft/boundaryright before merging
 /// If guides are present, merging is prevented across junction boundaries.
 fn merge_close_groups(
     group: &mut [CGroup],
@@ -362,7 +362,7 @@ fn merge_close_groups(
         if let Some(li) = lastgroup_idx {
             let gap = group[pi].start.saturating_sub(group[li].end);
             if gap <= bundledist {
-                // C++ parity: check boundaryleft/boundaryright (C++ reference).
+                // check boundaryleft/boundaryright
                 // Don't merge if there's a boundary at lastgroup.end or procgroup.start.
                 let has_boundary = (!boundary_left.is_empty()
                     && boundary_left.contains(&group[li].end))
@@ -402,7 +402,7 @@ fn read_is_long_class(read: &BundleRead, config: &RunConfig) -> bool {
     rlen >= config.long_read_min_len
 }
 
-/// C++ reference processRead(701-745): trim terminal polyA/T artifact exons before
+/// processRead(701-745): trim terminal polyA/T artifact exons before
 /// duplicate matching/pair linking. Returns false when the read should be discarded.
 fn apply_processread_terminal_poly_trim(read: &mut BundleRead) -> bool {
     if read.exons.len() < 2 {
@@ -488,7 +488,7 @@ fn apply_processread_terminal_poly_trim(read: &mut BundleRead) -> bool {
         if let Some((_, e)) = read.exons.last().copied() {
             read.ref_end = e;
         }
-        // C++ reference processRead: infer unknown strand from poly evidence when unambiguous.
+        // processRead: infer unknown strand from poly evidence when unambiguous.
         if read.strand == '.' {
             let plus = read.has_poly_end_unaligned || read.has_poly_end_aligned;
             let minus = read.has_poly_start_unaligned || read.has_poly_start_aligned;
@@ -600,7 +600,7 @@ fn deljuncmatch(prev: &BundleRead, jd: &[Junction]) -> bool {
 
 /// Same CGroup bundling pass, but also returns the exact per-read bundlenode ids implied by the
 /// CGroup -> group2bundle flow, so multigraph read mapping can reuse standard readgroup order.
-/// Third element: CGroup color root per bundlenode — used for C++ parity bundle splitting.
+/// Third element: CGroup color root per bundlenode — used for bundle splitting.
 pub fn build_bundlenodes_and_readgroups_from_cgroups(
     reads: &[BundleRead],
     good_junctions: &HashSet<Junction>,
@@ -649,9 +649,9 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
             r.weight,
         ));
     }
-    // C++ reference parity: sort by (start, end) to match C++ GSeg sort / coordStableCmp.
-    // For longreads mode: C++ does readlist.Sort() which uses GSeg comparison (start, then end).
-    // For mixed mode: C++ uses coordStableCmp stable sort (start, then end, then pre-sort index).
+    // sort by (start, end) to match GSeg sort / coordStableCmp.
+    // For longreads mode:readlist.Sort() which uses GSeg comparison (start, then end).
+    // For mixed mode: uses coordStableCmp stable sort (start, then end, then pre-sort index).
     // Rust sort_by_key is stable, so equal (start, end) pairs preserve insertion order — matching both.
     reads_sorted.sort_unstable_by_key(|r| (r.1, r.2));
 
@@ -667,8 +667,8 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
         bundledist.saturating_add(25)
     };
 
-    // RUSTLE_PARITY_BUNDLE env var enables detailed bundle/bundlenode debug output
-    let parity_bundle = std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some();
+    // RUSTLE_DEBUG_BUNDLE env var enables detailed bundle/bundlenode debug output
+    let debug_bundle = std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some();
 
     for (read_idx, start, end, exons, junc_supported, readcov) in reads_sorted {
         let had_existing_groups = currgroup_idx.is_some();
@@ -679,8 +679,8 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
         let mut thisgroup_idx = currgroup_idx;
 
         for (ei, &(seg_start, seg_end)) in exons.iter().enumerate() {
-            // C++ parity: break color chain on bad junctions (C++ reference ~1477).
-            // In C++, color breaks when juncs[i-1]->strand == 0 (junction was killed).
+            // break color chain on bad junctions (~1477).
+            // Color breaks when juncs[i-1]->strand == 0 (junction was killed).
             // We check if the junction is in the killed_junctions set (strand == Some(0)).
             let bad_junction_before = if ei > 0 {
                 let j = Junction::new(exons[ei - 1].1, exons[ei].0);
@@ -709,7 +709,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
                     }
                 }
                 if !had_existing_groups && ei == 0 {
-                    // C++ reference currgroup==NULL branch still creates the first group even when the
+                    // currgroup==NULL branch still creates the first group even when the
                     // first exon is not kept, but does not attach it to readgroup.
                 } else {
                     continue;
@@ -758,12 +758,12 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
                 group[ti].cov_sum += (seg_len as f64) * readcov;
                 group[ti].multi += (seg_len as f64) * readcov;
 
-                // C++ parity: on bad junction, adopt group's color WITHOUT union-find merge
-                // (C++ reference ~1428-1431: readcol = thisgroup->color). This keeps colors
+                // on bad junction, adopt group's color WITHOUT union-find merge
+                // (~1428-1431: readcol = thisgroup->color). This keeps colors
                 // on opposite sides of a bad junction separate → different bundles.
                 if bad_junction_before {
                     let group_root = find_color_root(group[ti].color, &eqcol);
-                    if parity_bundle {
+                    if debug_bundle {
                         eprintln!(
                             "  COLOR_ADOPT read={} exon={} group_root={} old_read_color={}",
                             read_idx, ei, group_root, read_color
@@ -774,7 +774,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
                     let this_root = find_color_root(group[ti].color, &eqcol);
                     let read_root = find_color_root(read_color, &eqcol);
                     if this_root != read_root {
-                        if parity_bundle {
+                        if debug_bundle {
                             eprintln!(
                                 "  COLOR_MERGE read={} exon={} this_root={} read_root={} -> merge",
                                 read_idx, ei, this_root, read_root
@@ -789,12 +789,12 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
                     }
                 }
             } else {
-                // C++ parity (C++ reference merge_read_to_group):
+                // (merge_read_to_group):
                 // create a new color on bad-junction boundaries only when this exon
                 // starts a new group (non-overlap path), not on every bad junction.
                 if bad_junction_before {
                     let new_color = eqcol.len();
-                    if parity_bundle {
+                    if debug_bundle {
                         eprintln!(
                             "  COLOR_BREAK_NEWGROUP read={} exon={} junction={}-{} new_color={}",
                             read_idx,
@@ -812,7 +812,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
                 group.push(CGroup {
                     start: seg_start,
                     end: seg_end,
-                    color: read_color, // C++ parity: C++ reference uses readcol
+                    color: read_color, // uses readcol
                     grid: ngroup,
                     cov_sum: (seg_len as f64) * readcov,
                     multi: (seg_len as f64) * readcov,
@@ -885,15 +885,15 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
     canonical.sort_unstable_by_key(|c| c.1);
 
     let localdist_bnode = bundledist;
-    // RUSTLE_PARITY_BUNDLE: detailed CGroup/bundlenode state for C++ parity comparison
-    let parity_debug = std::env::var_os("RUSTLE_PARITY_DEBUG").is_some();
-    if parity_debug || parity_bundle {
+    // RUSTLE_DEBUG_BUNDLE: detailed CGroup/bundlenode state for comparison
+    let debug_detail = std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some();
+    if debug_detail || debug_bundle {
         let mut color_set = crate::bitset::SmallBitset::with_capacity(canonical.len().min(64));
         for &(_, _, _, _, col) in &canonical {
             color_set.insert_grow(col);
         }
         eprintln!(
-            "PARITY_CGROUP canonical={} colors={} localdist_bnode={}",
+            "DEBUG_CGROUP canonical={} colors={} localdist_bnode={}",
             canonical.len(),
             color_set.count_ones(),
             localdist_bnode
@@ -904,12 +904,12 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
                 root, start, end, cov, col
             );
         }
-        // Emit PARITY_BG_GRP lines matching C++ format for cross-comparison
-        eprintln!("PARITY_BG_GROUPS ngroups={}", canonical.len());
-        eprintln!("PARITY_BG_DISTINCT_COLORS total={}", color_set.count_ones());
+        // Emit DEBUG_BG_GRP lines matching format for cross-comparison
+        eprintln!("DEBUG_BG_GROUPS ngroups={}", canonical.len());
+        eprintln!("DEBUG_BG_DISTINCT_COLORS total={}", color_set.count_ones());
         for &(root, start, end, cov, col) in &canonical {
             eprintln!(
-                "PARITY_BG_GRP grid={} start={} end={} color={} cov={:.1}",
+                "DEBUG_BG_GRP grid={} start={} end={} color={} cov={:.1}",
                 root,
                 start + 1,
                 end,
@@ -918,7 +918,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
             );
         }
         // Print eqcol state for debugging color union-find
-        eprintln!("PARITY_EQCOL len={}", eqcol.len());
+        eprintln!("DEBUG_EQCOL len={}", eqcol.len());
         for (i, &root) in eqcol.iter().enumerate() {
             if i != root {
                 eprintln!("  EQCOL color={} -> root={}", i, root);
@@ -968,9 +968,9 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
         }
     }
 
-    // RUSTLE_PARITY_BUNDLE: detailed bundlenode output
-    if parity_bundle {
-        eprintln!("PARITY_BNODE_LIST count={}", bnode_list.len());
+    // RUSTLE_DEBUG_BUNDLE: detailed bundlenode output
+    if debug_bundle {
+        eprintln!("DEBUG_BNODE_LIST count={}", bnode_list.len());
         for (i, bn) in bnode_list.iter().enumerate() {
             let color = bnode_colors.get(i).copied().unwrap_or(0);
             eprintln!(
@@ -987,7 +987,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
         for (i, &color) in bnode_colors.iter().enumerate() {
             color_to_bnodes.entry(color).or_default().push(i);
         }
-        eprintln!("PARITY_COLOR_MAP unique_colors={}", color_to_bnodes.len());
+        eprintln!("DEBUG_COLOR_MAP unique_colors={}", color_to_bnodes.len());
         for (color, bnodes) in color_to_bnodes.iter() {
             eprintln!("  COLOR {} -> bnodes {:?}", color, bnodes);
         }
@@ -1004,7 +1004,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
     (Some(head), read_bnodes, bnode_colors)
 }
 
-/// 3-strand CGroup/bundle construction using C++ group-color flow
+/// 3-strand CGroup/bundle construction using group-color flow
 /// (`add_read_to_group`, `set_strandcol`, `eqnegcol/eqposcol`).
 ///
 /// Returns bundlenodes for `target_strand` only, but computes color propagation using
@@ -1032,7 +1032,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     cfg.bundle_merge_dist = bundledist;
     cfg.junction_support = junction_support;
 
-    let cpp_bundles = match crate::bundle_cpp_port::build_bundles_cpp_style(
+    let sub_bundles = match crate::bundle_builder::build_sub_bundles(
         region_reads,
         &cfg,
         good_junctions,
@@ -1040,9 +1040,9 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     ) {
         Ok(v) => v,
         Err(e) => {
-            if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+            if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
                 eprintln!(
-                    "PARITY_3STRAND_ERROR strand={} reads={} err={}",
+                    "DEBUG_3STRAND_ERROR strand={} reads={} err={}",
                     target_strand,
                     region_reads.len(),
                     e
@@ -1057,31 +1057,31 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
         }
     };
 
-    // C++ parity: for stranded targets, include the unstranded (sno=1) lane so
+    // for stranded targets, include the unstranded (sno=1) lane so
     // rprop-weighted neutral evidence can contribute to +/- graph construction.
     // Keep an explicit opt-out for A/B diagnostics.
     let include_dot_for_stranded =
         target_strand != '.' && std::env::var_os("RUSTLE_DISABLE_3STRAND_INCLUDE_DOT").is_none();
-    // Diagnostic parity mode: when processing an unstranded ('.') bundle in Rust's
+    // Diagnostic debug mode: when processing an unstranded ('.') bundle in Rust's
     // per-bundle pipeline, include projected +/- strand bundle outputs from the
-    // C++ 3-strand sweep as well. C++ processes all three bundle arrays together,
+    // 3-strand sweep as well. processes all three bundle arrays together,
     // while Rust currently invokes this per target bundle.
     let include_projected_for_dot =
         target_strand == '.' && std::env::var_os("RUSTLE_3STRAND_DOT_INCLUDE_STRANDED").is_some();
     let diag_strand_count = std::env::var_os("RUSTLE_3STRAND_STRANDCOUNT").is_some();
-    let mut n_cpp_neg = 0usize;
-    let mut n_cpp_dot = 0usize;
-    let mut n_cpp_pos = 0usize;
+    let mut n_neg = 0usize;
+    let mut n_dot = 0usize;
+    let mut n_pos = 0usize;
     if diag_strand_count {
-        for b in &cpp_bundles {
+        for b in &sub_bundles {
             match b.strand {
-                '-' => n_cpp_neg += 1,
-                '+' => n_cpp_pos += 1,
-                _ => n_cpp_dot += 1,
+                '-' => n_neg += 1,
+                '+' => n_pos += 1,
+                _ => n_dot += 1,
             }
         }
     }
-    let mut strand_bundles: Vec<crate::bundle_cpp_port::CppBundleResult> = cpp_bundles
+    let mut strand_bundles: Vec<crate::bundle_builder::SubBundleResult> = sub_bundles
         .into_iter()
         .filter(|b| {
             if include_projected_for_dot {
@@ -1105,13 +1105,13 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
             }
         }
         eprintln!(
-            "PARITY_3STRAND_COUNTS target={} include_dot_for_stranded={} include_dot_proj={} cpp_all(-/.+/)={}/{}/{} selected(-/.+/)={}/{}/{} region_reads={}",
+            "DEBUG_3STRAND_COUNTS target={} include_dot_for_stranded={} include_dot_proj={} all(-/.+/)={}/{}/{} selected(-/.+/)={}/{}/{} region_reads={}",
             target_strand,
             include_dot_for_stranded,
             include_projected_for_dot,
-            n_cpp_neg,
-            n_cpp_dot,
-            n_cpp_pos,
+            n_neg,
+            n_dot,
+            n_pos,
             n_sel_neg,
             n_sel_dot,
             n_sel_pos,
@@ -1215,7 +1215,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     (Some(head), read_bnodes_new, sorted_colors, read_scales)
 }
 
-/// Detect bundles from BAM using runoff distance (reference assembler.cpp:598).
+/// Detect bundles from BAM using runoff distance (original algorithm.cpp:598).
 /// Single stream in BAM order: all alignments (incl. secondary/supplementary) define bundle
 /// boundaries; only primary alignments are added to bundle.reads (reference _assign_reads_to_bundles_by_chrom).
 /// Coordinates 0-based [start_incl, end_incl]. New bundle when ref_start > current_end + runoffdist.
@@ -1239,7 +1239,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
     let mut current_end_incl: u64 = 0;
     let mut has_current = false;
 
-    // C++ C++ parity: readlist ingestion should include all mapped alignments by default.
+    // readlist ingestion should include all mapped alignments by default.
     // Keep a diagnostic env switch to force primary-only behavior for A/B tests.
     let mut reads_by_chrom: HashMap<String, Vec<BundleRead>> = Default::default();
     let mut pair_pending_by_chrom: HashMap<String, HashMap<PairKey, Vec<(usize, f64)>>> =
@@ -1287,7 +1287,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
                 }
             }
         } else if !boundary_primary_only || is_primary {
-            // Default parity mode: preserve historical region construction from full alignment stream.
+            // Default mode: preserve historical region construction from full alignment stream.
             if let Some((ref_start, ref_end_excl)) = record_ref_span(&record) {
                 boundary_span = Some((ref_start, ref_end_excl.saturating_sub(1)));
             }
@@ -1319,7 +1319,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
             }
         }
 
-        // processRead parity:
+        // processRead:
         // - drop secondary/supplementary for long-read-class alignments
         // - singleton long-read artifact screening
         // - terminal poly exon trimming before duplicate matching / pair linking
@@ -1358,7 +1358,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
                 );
             }
             if (!reads_primary_only || is_primary) && !drop_sec_supp_for_mode {
-                // C++ reference processRead: for de novo long-read flow (ovlpguide=false),
+                // processRead: for de novo long-read flow (ovlpguide=false),
                 // discard <=2 exon long reads with aligned poly artifact.
                 if this_long
                     && read.exons.len() <= 2
@@ -1451,7 +1451,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
                     );
                 }
 
-                // C++ reference mismatch gate is per alignment event (before collapsing into readlist entry).
+                // mismatch gate is per alignment event (before collapsing into readlist entry).
                 let anchor_start = if has_current {
                     current_start
                 } else {
@@ -1467,7 +1467,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
 
                 let event_weight = read.weight;
                 let chrom_reads = reads_by_chrom.entry(name.clone()).or_default();
-                // C++ reference exonmatch/deljuncmatch parity: if an immediately preceding
+                // exonmatch/deljuncmatch: if an immediately preceding
                 // same-start read has identical exon structure (and deletion-aware
                 // junction offsets for long/mixed), aggregate into that read record.
                 let mut matched_idx: Option<usize> = None;
@@ -1534,11 +1534,11 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
                         prev.countfrag_len += read.countfrag_len;
                         prev.countfrag_num += read.countfrag_num;
                         prev.junc_mismatch_weight += read.junc_mismatch_weight;
-                        // C++ reference parity: retain smallest NH across redundant alignments.
+                        // retain smallest NH across redundant alignments.
                         if read.nh < prev.nh {
                             prev.nh = read.nh;
                         }
-                        // C++ reference parity: poly evidence is accumulated only for long-read entries.
+                        // poly evidence is accumulated only for long-read entries.
                         if this_long {
                             prev.has_poly_start |= read.has_poly_start;
                             prev.has_poly_end |= read.has_poly_end;
@@ -1718,7 +1718,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
         dump_stranded_junction_counts("stored_del", &early_debug.stored_del);
     }
 
-    // C++ parity: Create per-strand bundles like C++ does (C++ reference)
+    // Create per-strand bundles does
     // Each strand gets its own bundle with its own junction_stats.
     // Cross-strand color mapping (eqposcol/eqnegcol) happens at the CGroup level.
     let mut bundles: Vec<Bundle> = Vec::new();
@@ -1753,8 +1753,8 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
             continue;
         }
 
-        // Create separate bundles for each strand (C++ parity)
-        // C++ sno: 0 = negative, 1 = unstranded, 2 = positive
+        // Create separate bundles for each strand (
+        // sno: 0 = negative, 1 = unstranded, 2 = positive
         for strand in ['-', '.', '+'] {
             let strand_reads: Vec<BundleRead> = bundle_reads
                 .iter()
@@ -1776,8 +1776,8 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
             let mut junction_stats: JunctionStats = Default::default();
 
             for r in &strand_reads {
-                // C++ parity: compute cumulative max exon lengths from left and right
-                // (C++ reference count_good_junctions: leftsup[i] = max seg length from start to i,
+                // compute cumulative max exon lengths from left and right
+                // (count_good_junctions: leftsup[i] = max seg length from start to i,
                 // rightsup[nex-i-1] = max seg length from end to nex-i).
                 let nex = r.exons.len();
                 let mut leftsup = vec![0u64; nex];
@@ -1814,8 +1814,8 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
                     {
                         continue;
                     }
-                    // C++ leftsup[i-1] → cumulative max exon length from exon 0..=i
-                    // C++ rightsup[nex-i-1] → cumulative max exon length from exon nex-1..=i+1
+                    // leftsup[i-1] → cumulative max exon length from exon 0..=i
+                    // rightsup[nex-i-1] → cumulative max exon length from exon nex-1..=i+1
                     let left_anchor = leftsup.get(i).copied().unwrap_or(0);
                     let right_anchor = rightsup.get(i + 1).copied().unwrap_or(0);
                     let st = junction_stats
@@ -1832,16 +1832,16 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
                         st.leftsupport += r.weight;
                         if right_anchor >= anchor {
                             st.rightsupport += r.weight;
-                            // C++ reference count_good_junctions: nreads_good increments only when both sides pass anchor.
+                            // count_good_junctions: nreads_good increments only when both sides pass anchor.
                             st.nreads_good += r.weight;
                         }
                     } else if right_anchor >= anchor {
                         st.rightsupport += r.weight;
                     }
-                    // C++ reference processRead parity: nm is accumulated per event (`mismatch || nh>2`),
+                    // processRead: nm is accumulated per event (`mismatch || nh>2`),
                     // then carried by merged read entries as junc_mismatch_weight.
                     st.nm += r.junc_mismatch_weight;
-                    // C++ reference: mm counts reads where both flanking exons > LONGINTRONANCHOR
+                    // mm counts reads where both flanking exons > LONGINTRONANCHOR
                     if leftsup.get(i).copied().unwrap_or(0) > LONGINTRONANCHOR
                         && rightsup.get(i + 1).copied().unwrap_or(0) > LONGINTRONANCHOR
                     {
@@ -1913,7 +1913,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
     Ok(bundles)
 }
 
-/// Parsed region from the reference assembler bundle log: >bundle CHROM:START-END. Log is 1-based inclusive.
+/// Parsed region from the original algorithm bundle log: >bundle CHROM:START-END. Log is 1-based inclusive.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BundleLogRegion {
     pub chrom: String,
@@ -1923,7 +1923,7 @@ pub struct BundleLogRegion {
     pub end: u64,
 }
 
-/// Parse the reference assembler -v log for bundle lines. Returns 0-based inclusive (start, end).
+/// Parse the original algorithm -v log for bundle lines. Returns 0-based inclusive (start, end).
 pub fn parse_bundle_log<P: AsRef<Path>>(log_path: P) -> Result<Vec<BundleLogRegion>> {
     let s = std::fs::read_to_string(log_path)?;
     let mut out = Vec::new();

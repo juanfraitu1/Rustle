@@ -1,4 +1,4 @@
-//! Graph-based merge of transcripts (C++ reference merge mode: CMTransfrag, process_merge_transfrags,
+//! Graph-based merge of transcripts (merge mode: CMTransfrag, process_merge_transfrags,
 //! merge_transfrags, printMergeResults). Builds a splice graph from the union of input exons,
 //! creates one transfrag per transcript, runs process_merge_transfrags and merge_transfrags,
 //! then filters and writes GTF (printMergeResults-style).
@@ -14,7 +14,7 @@ use std::collections::HashMap as StdHashMap;
 use std::io::Write;
 
 /// Merge transfrag: wraps a graph transfrag with optional source file/name for GTF attributes
-/// (C++ reference CMTransfrag: transfrag + read indices; for GTF merge we store source_file_idx).
+/// CMTransfrag: transfrag + read indices; for GTF merge we store source_file_idx).
 #[derive(Debug, Clone)]
 pub struct MergeTransfrag {
     pub transfrag: GraphTransfrag,
@@ -24,7 +24,7 @@ pub struct MergeTransfrag {
     pub source_name: Option<String>,
 }
 
-/// the reference assembler naming parity (`CMTransfrag` in C++ header merge mode).
+/// naming convention (`CMTransfrag` in merge mode).
 pub type CMTransfrag = MergeTransfrag;
 
 #[inline]
@@ -47,7 +47,7 @@ fn max_compon_size_with_penalty_rec(
     removable: &[bool],
     computed: &mut StdHashMap<String, (f64, Vec<usize>)>,
 ) -> Option<(f64, Vec<usize>)> {
-    // C++ reference MIN_VAL sentinel (effectively "invalid").
+    // MIN_VAL sentinel (effectively "invalid").
     const MIN_VAL: f64 = -1.0e12;
 
     if set.is_empty() {
@@ -122,7 +122,7 @@ fn max_compon_size_with_penalty_rec(
     result.map(|set| (maxsize, set))
 }
 
-/// Port of C++ reference `max_compon_size_with_penalty` (C++ reference).
+/// Port of `max_compon_size_with_penalty`.
 /// Returns (best_size, selected transcript indices).
 fn max_compon_size_with_penalty(
     trnumber: usize,
@@ -131,7 +131,7 @@ fn max_compon_size_with_penalty(
     mark: &[bool],
     removable: &[bool],
 ) -> Option<(f64, Vec<usize>)> {
-    // C++ assumes `set` sorted by trno.
+    // Assumes `set` sorted by trno.
     set.sort_by_key(|s| s.trno);
     let mut memo: StdHashMap<String, (f64, Vec<usize>)> = StdHashMap::new();
     max_compon_size_with_penalty_rec(trnumber, &set, compatible, mark, removable, &mut memo)
@@ -292,7 +292,7 @@ fn transcripts_to_transfrags(graph: &Graph, transcripts: &[Transcript]) -> Vec<G
     out
 }
 
-/// Convert path (node ids) to exons; merge contiguous nodes into one exon (C++ reference store_merge_prediction exons).
+/// Convert path (node ids) to exons; merge contiguous nodes into one exon (store_merge_prediction exons).
 fn path_to_exons(graph: &Graph, path: &[usize]) -> Vec<(u64, u64)> {
     let mut nodes: Vec<(u64, u64)> = Vec::new();
     for &nid in path {
@@ -325,7 +325,7 @@ fn path_to_exons(graph: &Graph, path: &[usize]) -> Vec<(u64, u64)> {
 }
 
 /// merge_transfrags-style: sort by abundance, extend paths with compatible (contained) transfrags,
-/// produce one prediction per "path" with aggregated coverage (C++ reference merge_transfrags + store_merge_prediction).
+/// produce one prediction per "path" with aggregated coverage (merge_transfrags + store_merge_prediction).
 fn merge_transfrags_to_predictions(
     graph: &Graph,
     transfrags: &mut [GraphTransfrag],
@@ -348,7 +348,7 @@ fn merge_transfrags_to_predictions(
 
     let mut predictions: Vec<Transcript> = Vec::new();
     let mut used = vec![false; transfrags.len()];
-    // Parity with C++ reference component selection helper:
+    // Parity with component selection helper:
     // keep only the best compatible transfrag component before greedy path growth.
     let selected = select_max_compatible_transfrags(graph, transfrags);
     if !selected.is_empty() {
@@ -536,7 +536,7 @@ pub fn print_merge_results<W: Write>(
     Ok(out_list.len())
 }
 
-/// C++ reference process_merge_transfrags: sort/merge/absorb contained transfrags for merge mode.
+/// process_merge_transfrags: sort/merge/absorb contained transfrags for merge mode.
 fn process_merge_transfrags(graph: &mut Graph, transfrags: &mut Vec<GraphTransfrag>) {
     if transfrags.is_empty() {
         return;

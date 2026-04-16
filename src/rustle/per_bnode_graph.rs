@@ -1,7 +1,7 @@
 //! Per-bundlenode junction-expanded graph processing.
 //!
 //! Splits a merged bundle into junction-connected bundlenode components,
-//! then builds a separate graph per component. This matches StringTie's
+//! then builds a separate graph per component. This matches the original
 //! architecture where each graph contains the bundlenodes reachable via
 //! junctions from a seed bundlenode, not the entire bundle.
 //!

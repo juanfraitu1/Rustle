@@ -1,6 +1,6 @@
-//! C++ parity trace events for pairwise debugging with the reference assembler.
+//! trace events for pairwise debugging with the original algorithm.
 //!
-//! Output format matches C++ reference instrumentation so logs can be grepped,
+//! Output format matches instrumentation so logs can be grepped,
 //! counted, and diff'd.
 //!
 //! ## Environment variables
@@ -21,7 +21,7 @@
 //! | `RUSTLE_DISABLE_TERMINAL_ALT_ACCEPTOR` | Skip terminal alt-acceptor rescue (fewer `terminal_alt_acceptor` transcripts) |
 //! | `RUSTLE_DISABLE_MICRO_EXON_RESCUE` | Skip micro-exon insertion rescue |
 //! | `RUSTLE_CHECKTRF_ABUNDANCE_FLOOR_FRAC` | Stricter partial-depletion floor for checktrf (default `0.05`) |
-//! | `RUSTLE_READTHR_LONGCOV_FALLBACK` | Allow `longcov >= readthr` when `coverage` is below threshold (off by default; C++ reference uses `pred->cov`) |
+//! | `RUSTLE_READTHR_LONGCOV_FALLBACK` | Allow `longcov >= readthr` when `coverage` is below threshold (off by default; uses `pred->cov`) |
 
 use crate::path_extract::Transcript;
 
@@ -58,8 +58,8 @@ fn span_overlaps_trace(start: u64, end: u64) -> bool {
 }
 
 #[inline]
-fn to_cpp_inclusive(start: u64, end: u64) -> (u64, u64) {
-    // Rust graph nodes are half-open [start,end). C++ traces use inclusive coordinates.
+fn to_1based_inclusive(start: u64, end: u64) -> (u64, u64) {
+    // Rust graph nodes are half-open [start,end). traces use inclusive coordinates.
     // Convert: [s,e) -> [s+1, e] in 1-based inclusive space.
     (start.saturating_add(1), end)
 }
@@ -104,7 +104,7 @@ pub fn parse_trace_locus() -> Option<(u64, u64)> {
     Some((start.min(end), start.max(end)))
 }
 
-// --- PATH_update_abund events (568K C++ events) ---
+// --- PATH_update_abund events (568K events) ---
 
 pub fn path_set_longstart(read_idx: usize, s: usize, g: usize, rstart: u64, longstart: u64) {
     if !path_update_abund_trace() || !trace_read_match(read_idx) {
@@ -462,7 +462,7 @@ pub fn path_skip_single_node(
     );
 }
 
-// --- PATH_read_pattern events (2.3M C++ events) ---
+// --- PATH_read_pattern events (2.3M events) ---
 
 pub fn path_read_pattern_intersect(
     read_idx: usize,
@@ -548,7 +548,7 @@ pub fn path_read_pattern_unitig_trim_last(read_idx: usize, s: usize, g: usize, g
     );
 }
 
-// --- LONGTRIM_* events (126K C++ events) ---
+// --- LONGTRIM_* events (126K events) ---
 
 pub fn longtrim_bound_start(s: usize, bnode_start: u64, bnode_end: u64, start_at: i32, cov: f64) {
     if !longtrim_trace() {
@@ -557,11 +557,11 @@ pub fn longtrim_bound_start(s: usize, bnode_start: u64, bnode_end: u64, start_at
     if !span_overlaps_trace(bnode_start, bnode_end) {
         return;
     }
-    let (bs, be) = to_cpp_inclusive(bnode_start, bnode_end);
-    let start_cpp = start_at.saturating_add(1);
+    let (bs, be) = to_1based_inclusive(bnode_start, bnode_end);
+    let start_1b = start_at.saturating_add(1);
     eprintln!(
         "LONGTRIM_BOUND s={} bnode={}-{} start_at={} cov={:.1}",
-        s, bs, be, start_cpp, cov
+        s, bs, be, start_1b, cov
     );
 }
 
@@ -572,11 +572,11 @@ pub fn longtrim_bound_end(s: usize, bnode_start: u64, bnode_end: u64, end_at: i3
     if !span_overlaps_trace(bnode_start, bnode_end) {
         return;
     }
-    let (bs, be) = to_cpp_inclusive(bnode_start, bnode_end);
-    let end_cpp = end_at.saturating_add(1);
+    let (bs, be) = to_1based_inclusive(bnode_start, bnode_end);
+    let end_1b = end_at.saturating_add(1);
     eprintln!(
         "LONGTRIM_BOUND s={} bnode={}-{} end_at={} cov={:.1}",
-        s, bs, be, end_cpp, cov
+        s, bs, be, end_1b, cov
     );
 }
 
@@ -594,12 +594,12 @@ pub fn longtrim_bnode(
     if !span_overlaps_trace(bnode_start, bnode_end) {
         return;
     }
-    let (bundle_cs, bundle_ce) = to_cpp_inclusive(bundle_start, bundle_end);
-    let (bs, be) = to_cpp_inclusive(bnode_start, bnode_end);
-    let refstart_cpp = refstart.saturating_add(1);
+    let (bundle_cs, bundle_ce) = to_1based_inclusive(bundle_start, bundle_end);
+    let (bs, be) = to_1based_inclusive(bnode_start, bnode_end);
+    let refstart_1b = refstart.saturating_add(1);
     eprintln!(
         "LONGTRIM_BNODE s={} bundle={}-{} bnode={}-{} refstart={}",
-        s, bundle_cs, bundle_ce, bs, be, refstart_cpp
+        s, bundle_cs, bundle_ce, bs, be, refstart_1b
     );
 }
 
@@ -617,8 +617,8 @@ pub fn longtrim_split(
     if !span_overlaps_trace(bnode_start, bnode_end) {
         return;
     }
-    let (bs, be) = to_cpp_inclusive(bnode_start, bnode_end);
-    let split_cpp = split_at.saturating_add(1);
+    let (bs, be) = to_1based_inclusive(bnode_start, bnode_end);
+    let split_1b = split_at.saturating_add(1);
     let split_label = match split_type {
         "start" => "start_split_at",
         "end" => "end_split_at",
@@ -626,11 +626,11 @@ pub fn longtrim_split(
     };
     eprintln!(
         "LONGTRIM_SPLIT s={} {}={} tmpcov={:.2} bnode={}-{}",
-        s, split_label, split_cpp, tmpcov, bs, be
+        s, split_label, split_1b, tmpcov, bs, be
     );
 }
 
-// --- create_graph node events (38K C++ events) ---
+// --- create_graph node events (38K events) ---
 
 pub fn create_graph_new_node(s: usize, g: usize, nodeid: usize, start: u64, end: u64, note: &str) {
     if !create_graph_trace() {
@@ -639,7 +639,7 @@ pub fn create_graph_new_node(s: usize, g: usize, nodeid: usize, start: u64, end:
     if !span_overlaps_trace(start, end) {
         return;
     }
-    let (cs, ce) = to_cpp_inclusive(start, end);
+    let (cs, ce) = to_1based_inclusive(start, end);
     eprintln!(
         "--- create_graph: NEW_NODE s={} g={} nodeid={} {}-{} ({})",
         s, g, nodeid, cs, ce, note
@@ -661,12 +661,12 @@ pub fn create_graph_node_shrink_jstart(
     if !span_overlaps_trace(start, old_end) && !span_overlaps_trace(start, new_end) {
         return;
     }
-    let (ws, we) = to_cpp_inclusive(start, old_end);
-    let (ns, ne) = to_cpp_inclusive(start, new_end);
-    let pos_cpp = pos.saturating_add(1);
+    let (ws, we) = to_1based_inclusive(start, old_end);
+    let (ns, ne) = to_1based_inclusive(start, new_end);
+    let pos_1b = pos.saturating_add(1);
     eprintln!(
         "--- create_graph: NODE_SHRINK_JSTART s={} g={} nodeid={} was={}-{} now={}-{} junc_start={}",
-        s, g, nodeid, ws, we, ns, ne, pos_cpp
+        s, g, nodeid, ws, we, ns, ne, pos_1b
     );
 }
 
@@ -685,12 +685,12 @@ pub fn create_graph_node_shrink_jend(
     if !span_overlaps_trace(start, old_end) && !span_overlaps_trace(start, new_end) {
         return;
     }
-    let (ws, we) = to_cpp_inclusive(start, old_end);
-    let (ns, ne) = to_cpp_inclusive(start, new_end);
-    let pos_cpp = pos.saturating_add(1);
+    let (ws, we) = to_1based_inclusive(start, old_end);
+    let (ns, ne) = to_1based_inclusive(start, new_end);
+    let pos_1b = pos.saturating_add(1);
     eprintln!(
         "--- create_graph: NODE_SHRINK_JEND s={} g={} nodeid={} was={}-{} now={}-{} pos={}",
-        s, g, nodeid, ws, we, ns, ne, pos_cpp
+        s, g, nodeid, ws, we, ns, ne, pos_1b
     );
 }
 
@@ -701,7 +701,7 @@ pub fn create_graph_node_final_end(s: usize, g: usize, nodeid: usize, start: u64
     if !span_overlaps_trace(start, end) {
         return;
     }
-    let (cs, ce) = to_cpp_inclusive(start, end);
+    let (cs, ce) = to_1based_inclusive(start, end);
     eprintln!(
         "--- create_graph: NODE_FINAL_END s={} g={} nodeid={} {}-{}",
         s, g, nodeid, cs, ce
@@ -887,7 +887,7 @@ pub fn predcluster_final_ledger(
     );
 }
 
-/// Full pred[N] dump: coords, coverage, readcov, strand, exon structure (C++ pred[N] 10K entries).
+/// Full pred[N] dump: coords, coverage, readcov, strand, exon structure (pred[N] 10K entries).
 pub fn predcluster_pred_full(n: usize, tx: &Transcript) {
     if !predcluster_trace() {
         return;
@@ -992,7 +992,7 @@ pub fn route_unstranded(read_idx: usize, group: usize) {
     );
 }
 
-// --- parse_trflong seed details (11K C++ events) ---
+// --- parse_trflong seed details (11K events) ---
 
 pub fn seed_pathpat(seed_idx: usize, pathpat_bits: usize, node_count: usize, edge_count: usize) {
     if !predcluster_trace() {

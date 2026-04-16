@@ -1,12 +1,12 @@
-//! Junction correction helpers that mirror the reference assembler's inline junction handling.
+//! Junction correction helpers that mirror the original algorithm's inline junction handling.
 //! Rustle intentionally does not keep a separate ratio-cluster rewrite pass here,
-//! because `C++ reference` performs the relevant demotions inline in the `higherr` block.
+//! because `` performs the relevant demotions inline in the `higherr` block.
 
 use crate::types::{
     BundleRead, DetHashMap as HashMap, DetHashSet as HashSet, Junction, JunctionStat, JunctionStats,
 };
 
-/// C++ junc_ratio_threshold tiers (C++ reference).
+/// junc_ratio_threshold tiers
 #[inline]
 pub fn junc_ratio_threshold(na: f64) -> f64 {
     if na <= 25.0 {
@@ -20,7 +20,7 @@ pub fn junc_ratio_threshold(na: f64) -> f64 {
     }
 }
 
-/// C++ ok_to_demote parity gate: current support relative to better support.
+/// ok_to_demote gate: current support relative to better support.
 #[inline]
 pub fn ok_to_demote(cur: &JunctionStat, better: &JunctionStat) -> bool {
     let nb = better.mrcount.max(0.0);
@@ -31,9 +31,9 @@ pub fn ok_to_demote(cur: &JunctionStat, better: &JunctionStat) -> bool {
     (na / nb) <= junc_ratio_threshold(na)
 }
 
-/// Mismatch/deletion/insertion near splice anchors (C++ reference mismatch_anchor-style).
+/// Mismatch/deletion/insertion near splice anchors (mismatch_anchor-style).
 ///
-/// `anchor_ref_start` follows the reference assembler's `mismatch_anchor(..., refstart, ...)` call site,
+/// `anchor_ref_start` follows the original algorithm's `mismatch_anchor(..., refstart, ...)` call site,
 /// where `refstart` is the current bundle start.
 pub fn mismatch_anchor(read: &BundleRead, junction_support: u64, anchor_ref_start: u64) -> bool {
     if read.exons.len() < 2 {
@@ -41,7 +41,7 @@ pub fn mismatch_anchor(read: &BundleRead, junction_support: u64, anchor_ref_star
     }
     let seg_len = |idx: usize| -> u64 { read.exons[idx].1.saturating_sub(read.exons[idx].0) };
 
-    // MD pass: mirrors C++ reference mismatch_anchor behavior, including bundle-start anchoring.
+    // MD pass: mirrors mismatch_anchor behavior, including bundle-start anchoring.
     if let Some(md) = &read.md {
         let bytes = md.as_bytes();
         let mut p = 0usize;
@@ -119,7 +119,7 @@ pub fn mismatch_anchor(read: &BundleRead, junction_support: u64, anchor_ref_star
         }
     }
 
-    // CIGAR insertion pass: mimic C++ reference behavior (parsed starts at 0 and advances on
+    // CIGAR insertion pass: mimic behavior (parsed starts at 0 and advances on
     // reference-consuming ops in the original CIGAR scan).
     let mut i = 0usize;
     let mut parsed;
@@ -147,7 +147,7 @@ pub fn mismatch_anchor(read: &BundleRead, junction_support: u64, anchor_ref_star
 }
 
 /// High-error junction correction: redirect all-bad nearby junctions to a stronger nearby one
-/// (subset of C++ reference higherr branch).
+/// (subset of higherr branch).
 pub fn correct_bundle_junctions_higherr(
     stats: &JunctionStats,
     window: u64,
@@ -161,18 +161,18 @@ pub fn correct_bundle_junctions_higherr(
     let mut junctions: Vec<Junction> = stats.keys().copied().collect();
     junctions.sort_by_key(|j| (j.donor, j.acceptor));
 
-    // C++ parity (rlink.cpp:14403): nm==nreads marks a junction as having ONLY
+    // : nm==nreads marks a junction as having ONLY
     // mismatch-bearing reads. For long reads, nm==nreads is ALWAYS true (every
-    // long read counts as mismatch in C++ processRead:915). StringTie only kills
+    // long read counts as mismatch in processRead:915). the original implementation only kills
     // such junctions if they're long introns (>100kb) with very low coverage
     // (<10 reads). It does NOT redirect them to nearby stronger junctions.
     //
     // The previous is_bad check (nm >= mrcount) was too aggressive for long reads:
     // it flagged ALL long-read-only junctions as bad, redirecting rare but valid
-    // junctions to nearby strong ones. This killed small exons that StringTie keeps.
+    // junctions to nearby strong ones. This killed small exons that the original implementation keeps.
     //
     // Fix: require nm > mrcount (strict inequality) OR require the junction to be
-    // a long intron with low coverage, matching StringTie's good_junc logic.
+    // a long intron with low coverage, matching the original good_junc logic.
     let longintron = 100_000u64;
     let chi_win_error = 10.0f64; // CHI_WIN(100) * ERROR_PERC(0.1)
     let is_bad = |s: &JunctionStat, j: &Junction| {
@@ -183,7 +183,7 @@ pub fn correct_bundle_junctions_higherr(
             return false; // some reads are mismatch-free → not bad
         }
         // nm >= mrcount: all reads have mismatches. For long reads this is always true.
-        // Only flag as bad if it's a long intron with very low coverage (C++ parity).
+        // Only flag as bad if it's a long intron with very low coverage (
         let intron_len = j.acceptor.saturating_sub(j.donor);
         intron_len > longintron && s.nreads_good < chi_win_error
     };
@@ -359,7 +359,7 @@ pub fn correct_bundle_junctions_higherr(
     (new_stats, redirect)
 }
 
-/// Guide-based coordinate snapping for high-mismatch junctions (C++ reference).
+/// Guide-based coordinate snapping for high-mismatch junctions
 /// For junctions where nm >= nreads (all reads are high-mismatch), snaps donor/acceptor
 /// to the closest guide junction within `sserror` tolerance.
 /// Returns (updated JunctionStats, correction map from old Junction to new Junction).
@@ -384,11 +384,11 @@ pub fn snap_junctions_to_guides(
     guides_by_acceptor.sort_by_key(|j| j.acceptor);
     guides_by_acceptor.dedup();
 
-    // Sort junctions by donor (C++ junction list is sorted by start)
+    // Sort junctions by donor (junction list is sorted by start)
     let mut junctions: Vec<Junction> = stats.keys().copied().collect();
     junctions.sort_by_key(|j| (j.donor, j.acceptor));
 
-    // Sort the same junctions by acceptor (C++ ejunction sorted by end)
+    // Sort the same junctions by acceptor (ejunction sorted by end)
     let mut junctions_by_acc: Vec<Junction> = junctions.clone();
     junctions_by_acc.sort_by_key(|j| (j.acceptor, j.donor));
 
@@ -408,8 +408,8 @@ pub fn snap_junctions_to_guides(
     let mut new_acceptors: HashMap<Junction, u64> = Default::default();
     let _new_strands: HashMap<Junction, Option<i8>> = Default::default();
 
-    // Pass 1: snap donors (C++ lines 16710-16750)
-    // Use a sliding window pointer like C++
+    // Pass 1: snap donors (lines 16710-16750)
+    // Use a sliding window pointer
     let mut s = 0usize;
     for jn in &junctions {
         let st = match stats.get(jn) {
@@ -434,7 +434,7 @@ pub fn snap_junctions_to_guides(
 
         while k < guides_by_donor.len() && guides_by_donor[k].donor <= jn.donor + sserror {
             let gj = &guides_by_donor[k];
-            // C++ strand check: (!junction[i]->strand || gjunc[k]->strand==junction[i]->strand || longreads)
+            // strand check: (!junction[i]->strand || gjunc[k]->strand==junction[i]->strand || longreads)
             // In longreads mode, always accept
             if longreads || st.strand.is_none() || st.strand == Some(0) {
                 // Accept any guide
@@ -469,7 +469,7 @@ pub fn snap_junctions_to_guides(
         }
     }
 
-    // Pass 2: snap acceptors (C++ lines 16751-16789)
+    // Pass 2: snap acceptors (lines 16751-16789)
     let mut e = 0usize;
     for jn in &junctions_by_acc {
         let st = match stats.get(jn) {
@@ -543,7 +543,7 @@ pub fn snap_junctions_to_guides(
             // First entry for this junction — copy all fields
             *entry = st.clone();
         } else {
-            // Merge: sum counts (C++ reference)
+            // Merge: sum counts
             entry.mrcount += st.mrcount;
             entry.nm += st.nm;
             entry.mm += st.mm;
@@ -565,7 +565,7 @@ pub fn snap_junctions_to_guides(
         }
     }
 
-    // Kill junctions that were merged into another (C++ sets strand=0, nreads=0)
+    // Kill junctions that were merged into another (sets strand=0, nreads=0)
     // These are junctions whose old key still exists but got merged into a different new key.
     // The snap_map already tracks old→new, so reads can be remapped.
     // We also need to handle the case where the original junction key is NOT in new_stats

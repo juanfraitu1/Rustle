@@ -30,7 +30,7 @@ fn fnv1a64(s: &str) -> u64 {
 }
 
 #[derive(Debug, Default)]
-struct CigarParityParse {
+struct CigarCompatParse {
     exons: Vec<(u64, u64)>,
     /// Per-intron deletion offsets: (left_del_before_N, right_del_after_N).
     junc_del_offsets: Vec<(u64, u64)>,
@@ -39,13 +39,13 @@ struct CigarParityParse {
     insertion_sites: Vec<u64>,
 }
 
-/// Parse CIGAR with the reference assembler `GSamRecord::setupCoordinates` parity semantics.
+/// Parse CIGAR with CIGAR coordinates following the original algorithm.
 ///
 /// Coordinates are returned as 0-based half-open intervals.
-fn parse_cigar_parity(ref_start: u64, cigar: &Cigar) -> CigarParityParse {
-    let mut out = CigarParityParse::default();
+fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
+    let mut out = CigarCompatParse::default();
 
-    // Mirrors GSam.cpp state machine variables.
+    // CIGAR state machine state machine variables.
     let mut l = 0u64;
     let mut exstart = ref_start;
     let mut exon_started = false;
@@ -87,18 +87,18 @@ fn parse_cigar_parity(ref_start: u64, cigar: &Cigar) -> CigarParityParse {
                 ins = false;
             }
             Kind::Insertion => {
-                // Same reference position tracking as C++ mismatch_anchor CIGAR pass.
+                // Same reference position tracking as mismatch_anchor CIGAR pass.
                 out.insertion_sites.push(ref_start.saturating_add(l));
                 ins = true;
             }
             Kind::Skip => {
-                // C++ guard: anomalous leading intron before any exon.
+                // guard: anomalous leading intron before any exon.
                 if !exon_started {
-                    // GSamRecord::setupCoordinates() only skips this CIGAR op;
+                    // The original algorithm only skips this CIGAR op;
                     // it does not abort parsing the rest of the alignment.
                     continue;
                 }
-                // C++: if (!ins || !intron) close previous exon.
+                // if (!ins || !intron) close previous exon.
                 if !ins || !intron {
                     let exon_end = ref_start.saturating_add(l);
                     if exon_end > exstart {
@@ -165,7 +165,7 @@ fn parse_tag(tag_name: &str) -> Option<Tag> {
 }
 
 fn exons_from_cigar_impl(ref_start: u64, cigar: &Cigar) -> io::Result<Vec<(u64, u64)>> {
-    Ok(parse_cigar_parity(ref_start, cigar).exons)
+    Ok(parse_cigar_compat(ref_start, cigar).exons)
 }
 
 /// Exons = alignment blocks (N = intron splits). 0-based [start, end).
@@ -182,7 +182,7 @@ pub fn junctions_from_exons(exons: &[(u64, u64)]) -> Vec<Junction> {
     j
 }
 
-/// NH tag (alignment hit count) for multi-mapper weight: weight = 1/NH (C++ reference, 899; reference assembler 1/NH).
+/// NH tag (alignment hit count) for multi-mapper weight: weight = 1/NH ( 899; original algorithm 1/NH).
 fn get_nh(record: &RecordBuf) -> u32 {
     let data = record.data();
     data.get(&Tag::ALIGNMENT_HIT_COUNT)
@@ -197,14 +197,14 @@ fn get_tag_int(record: &RecordBuf, tag_name: &str) -> Option<u32> {
         .and_then(|v| v.as_int().and_then(|n| u32::try_from(n).ok()))
 }
 
-/// HI tag (alignment hit index), used by the reference assembler to disambiguate mate matching keys.
+/// HI tag (alignment hit index), used by the original algorithm to disambiguate mate matching keys.
 fn get_hi(record: &RecordBuf) -> u32 {
     get_tag_int(record, "HI").unwrap_or(0)
 }
 
-/// NM/nM edit distance with C++ parity adjustments.
+/// NM/nM edit distance with adjustments.
 ///
-/// C++ behavior (C++ reference):
+/// behavior
 /// - `nm = tag_int("NM")`
 /// - if `nm == 0`, fallback to `tag_int("nM")`
 /// - if fallback came from `nM` and read is paired, divide by 2
@@ -294,7 +294,7 @@ fn parse_md_mismatches(md: Option<&str>, ref_start: u64, record: &RecordBuf) -> 
     mismatches
 }
 
-/// YC tag (alignment count): the reference assembler rdcount uses YC when present, then scales by NH.
+/// YC tag (alignment count): the original algorithm rdcount uses YC when present, then scales by NH.
 fn get_yc(record: &RecordBuf) -> f64 {
     let Some(tag) = parse_tag("YC") else {
         return 1.0;
@@ -322,7 +322,7 @@ fn get_yc(record: &RecordBuf) -> f64 {
     1.0
 }
 
-/// YK tag: unitig coverage (C++ reference unitig_cov=brec.tag_float("YK")).
+/// YK tag: unitig coverage (unitig_cov=brec.tag_float("YK")).
 fn get_yk(record: &RecordBuf) -> f64 {
     let Some(tag) = parse_tag("YK") else {
         return 0.0;
@@ -382,7 +382,7 @@ fn inferred_read_strand(record: &RecordBuf) -> char {
             '-'
         }
     } else {
-        // C++ can keep unknown strand (0 / '.') and infer it later from
+        // can keep unknown strand (0 / '.') and infer it later from
         // junction/polyA evidence; do not force orientation fallback here.
         '.'
     }
@@ -406,7 +406,7 @@ const POLYA_MIN_FRAC: f64 = 0.8;
 
 // detect_polya_from_record removed — inlined at call site to share seq_bytes buffer.
 
-/// C++ reference check_last_exon_polyA/check_first_exon_polyT parity:
+/// check_last_exon_polyA/check_first_exon_polyT:
 /// ratio of A on last exon, ratio of T on first exon (>=0.8 triggers trim candidate).
 /// Exons are 0-based half-open, so exon length is end-start.
 fn detect_terminal_exon_poly_flags_with_seq(
@@ -468,7 +468,7 @@ fn detect_terminal_exon_poly_flags_with_seq(
 
 /// For boundary detection only: ref span for any mapped alignment (incl. secondary/supplementary).
 /// Returns (ref_start_0based_incl, ref_end_0based_excl). None if unmapped or invalid.
-/// reference assembler.cpp:516 — mapped_len >= 10. SAM positions are 1-based so we convert.
+/// original algorithm.cpp:516 — mapped_len >= 10. SAM positions are 1-based so we convert.
 pub fn record_ref_span(record: &RecordBuf) -> Option<(u64, u64)> {
     if record.flags().is_unmapped() {
         return None;
@@ -486,7 +486,7 @@ pub fn record_ref_span(record: &RecordBuf) -> Option<(u64, u64)> {
 }
 
 /// Convert one BAM record to BundleRead (exons, weight, poly). 0-based coordinates.
-/// Returns None for unmapped; callers should also skip secondary/supplementary for readlist (C++ reference).
+/// Returns None for unmapped; callers should also skip secondary/supplementary for readlist
 pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     if record.flags().is_unmapped() {
         return None;
@@ -495,12 +495,12 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     let end_1b = start_1b
         .saturating_add(record.cigar().alignment_span() as u64)
         .saturating_sub(1);
-    // reference assembler.cpp:516 — reject invalid/very short mappings globally.
+    // original algorithm.cpp:516 — reject invalid/very short mappings globally.
     if end_1b <= start_1b || end_1b.saturating_sub(start_1b) < 9 {
         return None;
     }
     let ref_start = start_1b.saturating_sub(1);
-    let parsed = parse_cigar_parity(ref_start, record.cigar());
+    let parsed = parse_cigar_compat(ref_start, record.cigar());
     let exons = parsed.exons;
     if exons.is_empty() {
         return None;
@@ -541,7 +541,7 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     };
     let (has_last_exon_polya, has_first_exon_polyt) =
         detect_terminal_exon_poly_flags_with_seq(&seq_bytes, &exons, clip_left, clip_right);
-    // the reference assembler CReadAln stores integer unaligned poly tail evidence counters.
+    // the original algorithm CReadAln stores integer unaligned poly tail evidence counters.
     // One BAM alignment contributes one unit of support when tail evidence is present.
     let unaligned_poly_t: u16 = if has_poly_start_unaligned { 1 } else { 0 };
     let unaligned_poly_a: u16 = if has_poly_end_unaligned { 1 } else { 0 };
@@ -567,7 +567,7 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     }
 
     // Keep active junction stream deletion-aware (existing pipeline behavior),
-    // while retaining raw exon-boundary junctions for parity audits.
+    // while retaining raw exon-boundary junctions audits.
     let junctions = junctions_del.clone();
     let junction_valid = vec![true; junctions.len()];
     let mate_start = record
@@ -575,7 +575,7 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
         .map(|p| (p.get() as u64).saturating_sub(1));
     let exon_bp: u64 = exons.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
     let nh_f = (nh as f64).max(1.0);
-    // C++ reference countFragment parity:
+    // countFragment:
     //   frag_len += sum(exon_len)/NH
     //   num_fragments += 1/NH for unpaired OR read1 OR (read2 && mate_unmapped)
     let flags = record.flags();

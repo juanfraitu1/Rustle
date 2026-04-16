@@ -1,8 +1,8 @@
-//! Per-bundle stage TSV (`--parity-stage-tsv` or env `RUSTLE_PARITY_STAGE_TSV`).
+//! Per-bundle stage TSV (`--debug-stage-tsv` or env `RUSTLE_DEBUG_STAGE_TSV`).
 //!
 //! In needy-locus runs (`--trace-reference`, `--debug-bundle` / `--only-debug-bundle`, or
 //! `RUSTLE_TRACE_LOCUS`), rustle also writes `{output}.needy_bundle_summary.tsv` unless
-//! `RUSTLE_DISABLE_AUTO_BUNDLE_SUMMARY` is set. Same schema as `--parity-stage-tsv`.
+//! `RUSTLE_DISABLE_AUTO_BUNDLE_SUMMARY` is set. Same schema as `--debug-stage-tsv`.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -20,7 +20,7 @@ use crate::types::{Bundle, CBundlenode};
 static STAGE_WRITER: OnceLock<Mutex<Option<BufWriter<File>>>> = OnceLock::new();
 static STAGE_IO_ENABLED: AtomicBool = AtomicBool::new(false);
 
-/// Fast path: `false` when no `--parity-stage-tsv` (avoids a mutex lock per `emit*` call).
+/// Fast path: `false` when no `--debug-stage-tsv` (avoids a mutex lock per `emit*` call).
 #[inline]
 pub fn is_enabled() -> bool {
     STAGE_IO_ENABLED.load(Ordering::Relaxed)

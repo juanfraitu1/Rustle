@@ -1,5 +1,5 @@
-//! Read boundaries for longtrim (C++ reference lstart/lend; reference assembler collect_read_boundaries).
-//! CPred in C++ reference has predno (position) and cov; used by longtrim to split nodes at read starts/ends.
+//! Read boundaries for longtrim (lstart/lend; original algorithm collect_read_boundaries).
+//! CPred in has predno (position) and cov; used by longtrim to split nodes at read starts/ends.
 
 use crate::bpcov::Bpcov;
 use crate::tss_tts::{
@@ -86,14 +86,14 @@ fn push_boundary(boundaries: &mut Vec<ReadBoundary>, pos: u64, cov: f64) {
     boundaries.push(ReadBoundary { pos, cov });
 }
 
-/// Direct port of the reference assembler's longtrim boundary scan from `create_graph()`.
+/// Direct port of the original algorithm's longtrim boundary scan from `create_graph()`.
 ///
 /// This follows the `diffval`/`sumstartleft`/`sumstartright` logic in
-/// `reference assembler_debug/C++ reference` and returns candidate start/end boundaries for
+/// `original algorithm_debug/` and returns candidate start/end boundaries for
 /// the half-open node span `[span_start, span_end)`.
 ///
 /// `start_features`/`end_features` are optional external hard boundaries. When
-/// their `cov` is negative, they behave like the reference assembler's `CPred(..., -1)` point
+/// their `cov` is negative, they behave like the original algorithm's `CPred(..., -1)` point
 /// features and suppress nearby diff-based candidates within `CHI_WIN`.
 pub fn collect_longtrim_boundaries_in_span(
     bpcov: &Bpcov,
@@ -218,9 +218,9 @@ pub fn collect_longtrim_boundaries_in_span(
 pub type LongtrimBoundaryMap =
     crate::types::DetHashMap<usize, (Vec<ReadBoundary>, Vec<ReadBoundary>)>;
 
-/// Build one the reference assembler-style longtrim boundary stream per original bundlenode.
+/// Build one the original algorithm-style longtrim boundary stream per original bundlenode.
 ///
-/// the reference assembler computes `lstart/lend` once for the full bundlenode span, then reuses
+/// the original algorithm computes `lstart/lend` once for the full bundlenode span, then reuses
 /// that stream across inline `longtrim()` calls while create_graph keeps splitting
 /// the same bundlenode. This map preserves that bundlenode-scoped behavior.
 pub fn collect_longtrim_boundary_map(
@@ -233,7 +233,7 @@ pub fn collect_longtrim_boundary_map(
     let mut out: LongtrimBoundaryMap = Default::default();
     let mut cur = bundlenodes;
     while let Some(bn) = cur {
-        // the reference assembler longtrim uses read-boundary peaks (lstart/lend) as candidates, plus optional
+        // the original algorithm longtrim uses read-boundary peaks (lstart/lend) as candidates, plus optional
         // negative-cov "feature points" that suppress nearby diff-based candidates.
         // Keep this list compact by pre-filtering to points that can actually trigger a split.
         let keep = |b: &ReadBoundary| b.cov < 0.0 || b.cov >= min_boundary_cov;
@@ -266,13 +266,13 @@ pub fn collect_longtrim_boundary_map(
 
 /// Collect (lstart, lend): sorted lists of (position, coverage) for read starts and ends.
 /// Simple read-count approach: sums weighted read start/end positions.
-/// Used by short-read coverage_trim (C++ reference trimnode_all).
+/// Used by short-read coverage_trim (trimnode_all).
 pub fn collect_read_boundaries(reads: &[BundleRead]) -> (Vec<ReadBoundary>, Vec<ReadBoundary>) {
     let (start_counts, end_counts) = collect_raw_boundaries(reads);
     finalize_boundaries(start_counts, end_counts)
 }
 
-/// C++-named endpoint transport (`CPred`) for parity-friendly plumbing.
+/// Endpoint transport (`CPred`) for pipeline plumbing.
 pub fn collect_read_cpreds(reads: &[BundleRead]) -> (Vec<CPred>, Vec<CPred>) {
     let (lstart, lend) = collect_read_boundaries(reads);
     (
@@ -283,7 +283,7 @@ pub fn collect_read_cpreds(reads: &[BundleRead]) -> (Vec<CPred>, Vec<CPred>) {
 
 /// Collect read boundaries and inject clustered long-read CPAS points.
 ///
-/// Parity intent with C++ reference
+/// Parity intent with 
 /// - CPAS from long reads is gathered from unaligned poly tail evidence.
 /// - plus-strand CPAS contributes to `lend` (sink-side boundaries).
 /// - minus-strand CPAS contributes to `lstart` (source-side boundaries).
@@ -316,7 +316,7 @@ pub fn collect_read_boundaries_with_cpas(
             Some(e) => e.1.saturating_sub(1),
             None => continue,
         };
-        // Match C++ reference CPAS weighting: use integer unaligned tail evidence counts.
+        // Match CPAS weighting: use integer unaligned tail evidence counts.
         let w_plus = r.unaligned_poly_a as f64;
         let w_minus = r.unaligned_poly_t as f64;
 
@@ -369,7 +369,7 @@ pub fn collect_read_boundaries_with_cpas(
     finalize_boundaries(start_counts, end_counts)
 }
 
-/// CPAS-augmented endpoints exported as C++-named `CPred` entries.
+/// CPAS-augmented endpoints exported as `CPred` entries.
 pub fn collect_read_cpreds_with_cpas(
     reads: &[BundleRead],
     mode: AssemblyMode,

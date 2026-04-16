@@ -1,5 +1,5 @@
-//! Faithful port of C++ the reference assembler bundling logic from C++ reference
-//! This module implements build_graphs bundle creation with exact C++ parity.
+//! Faithful port of the original algorithm bundling logic from 
+//! This module implements build_graphs bundle creation with exact
 
 use anyhow::Result;
 use hashbrown::{HashMap as HbHashMap, HashSet as HbHashSet};
@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use crate::types::{BundleRead, CBundlenode, DetHashSet as HashSet, Junction, RunConfig};
 
-/// CGroup structure matching C++ C++ header:145-155 exactly
-/// next_gr is the index of the next group in the linked list (like C++ pointer)
+/// CGroup structure matching header:145-155 exactly
+/// next_gr is the index of the next group in the linked list (like pointer)
 #[derive(Debug, Clone)]
 struct CGroup {
     start: u64,
@@ -42,7 +42,7 @@ impl CGroup {
     }
 }
 
-/// CBundle structure matching C++ C++ header:260-268
+/// CBundle structure matching header:260-268
 #[derive(Debug, Clone)]
 struct CBundle {
     _len: u64,
@@ -86,15 +86,15 @@ impl StrandBundles {
     }
 }
 
-/// Result of C++-style bundle creation
-pub struct CppBundleResult {
+/// Result of Original-style bundle creation
+pub struct SubBundleResult {
     pub strand: char,
     pub start: u64,
     pub end: u64,
     pub bnode_head: Option<CBundlenode>,
     pub read_to_bnodes: Vec<Vec<usize>>, // Maps read index to bundlenode IDs
     pub bnode_colors: Vec<usize>,        // Color for each bundlenode (by bid)
-    pub read_scale: Vec<f64>,            // Per-read strand proportion (C++ rprop parity)
+    pub read_scale: Vec<f64>,            // Per-read strand proportion (rprop)
 }
 
 /// Union-find find operation
@@ -273,7 +273,7 @@ fn count_reachable_groups(sb: &StrandBundles) -> (usize, bool) {
     (seen.len(), false)
 }
 
-/// Set cross-strand color equivalence (C++: set_strandcol C++ reference).
+/// Set cross-strand color equivalence (set_strandcol 
 /// `eqmap` is either eqnegcol or eqposcol and is keyed by the overlapped stranded color.
 fn set_strandcol(
     prev_color: usize,
@@ -310,11 +310,11 @@ fn set_strandcol(
     }
 }
 
-/// C++ CHI_THR constant for small exon filtering (C++ header:58)
+/// CHI_THR constant for small exon filtering (header:58)
 const CHI_THR: u64 = 50;
-/// C++ DROP constant for long read small exon filtering (C++ reference constants)
+/// DROP constant for long read small exon filtering (constants)
 const DROP: f64 = 0.5;
-/// C++ epsilon-like threshold when deciding whether a single fragment count remains.
+/// epsilon-like threshold when deciding whether a single fragment count remains.
 const EPSILON: f64 = 1e-9;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -406,7 +406,7 @@ fn build_local_pair_links(reads: &[BundleRead]) -> Vec<Vec<(usize, f64)>> {
     out
 }
 
-/// Determine if exon should be kept (C++: keep exon logic from C++ reference)
+/// Determine if exon should be kept (keep exon logic from 
 /// For long reads, also checks CHI_THR and DROP thresholds
 fn should_keep_exon(
     seg_len: u64,
@@ -418,7 +418,7 @@ fn should_keep_exon(
     is_long_read: bool,
     read_len: u64,
 ) -> bool {
-    // C++ reference
+    // 
     // seg_len < junctionsupport || (longread && seg_len < CHI_THR && seg_len < DROP * read_len)
     let is_small = seg_len < junction_support
         || (is_long_read && seg_len < CHI_THR && (seg_len as f64) < DROP * (read_len as f64));
@@ -502,14 +502,14 @@ fn fragment_pair_joinable(
         && first_exon_valid(right, junction_support, killed_junctions)
 }
 
-/// Main C++-style bundle building function
+/// Main Original-style bundle building function
 /// Returns bundles per strand
-pub fn build_bundles_cpp_style(
+pub fn build_sub_bundles(
     reads: &[BundleRead],
     config: &RunConfig,
     good_junctions: &HashSet<Junction>,
     killed_junctions: &HashSet<Junction>,
-) -> Result<Vec<CppBundleResult>> {
+) -> Result<Vec<SubBundleResult>> {
     if reads.is_empty() {
         return Ok(Vec::new());
     }
@@ -531,13 +531,13 @@ pub fn build_bundles_cpp_style(
     let mut eqcol: Vec<usize> = Vec::new();
     let mut merge: Vec<usize> = Vec::new();
 
-    // Cross-strand color mapping for unknown strand reads (C++: eqnegcol, eqposcol)
-    // C++ pre-sizes both arrays to equalcolor.Count() before phase 1.
+    // Cross-strand color mapping for unknown strand reads 
+    // pre-sizes both arrays to equalcolor.Count() before phase 1.
     // Initialized after eqcol is fully built (phase 1 sweep below).
     let mut eqnegcol: Vec<i64>; // color -> equivalent negative strand color
     let mut eqposcol: Vec<i64>; // color -> equivalent positive strand color
 
-    // Track which global-group IDs each read belongs to (C++ readgroup[n] stores group->grid IDs).
+    // Track which global-group IDs each read belongs to (readgroup[n] stores group->grid IDs).
     let mut readgroups: Vec<Vec<usize>> = vec![Vec::new(); reads.len()];
     let pair_links = build_local_pair_links(reads);
     if profile_3strand {
@@ -559,14 +559,14 @@ pub fn build_bundles_cpp_style(
     let mut grid_to_group: Vec<(usize, usize)> = Vec::new();
     let mut next_group_grid: usize = 0;
 
-    // Sort reads by (start, end) like C++
+    // Sort reads by (start, end)
     let mut read_order: Vec<usize> = (0..reads.len()).collect();
     read_order.sort_unstable_by_key(|&i| {
         let r = &reads[i];
         (r.ref_start, r.ref_end)
     });
 
-    // Process each read (C++ add_read_to_group style: pair_count first, then single_count).
+    // Process each read (add_read_to_group style: pair_count first, then single_count).
     for (ord_pos, &read_idx) in read_order.iter().enumerate() {
         let read = &reads[read_idx];
         if read.exons.is_empty() {
@@ -611,7 +611,7 @@ pub fn build_bundles_cpp_style(
                 continue;
             }
 
-            // C++ merge_read_to_group early-return path when pair was already consumed
+            // merge_read_to_group early-return path when pair was already consumed
             // as a contiguous fragment in the earlier read.
             if pair_idx < read_idx
                 && fragment_pair_joinable(
@@ -774,7 +774,7 @@ pub fn build_bundles_cpp_style(
         }
     }
 
-    // C++ only runs this pass when bundledist>0 (or guide-driven in short-read mode).
+    // only runs this pass when bundledist>0 (or guide-driven in short-read mode).
     // For long-read de novo with bundledist=0, this pass is skipped.
     let t_merge = Instant::now();
     if config.bundle_merge_dist > 0 {
@@ -806,9 +806,9 @@ pub fn build_bundles_cpp_style(
         }
     }
 
-    // Phase 1: Cross-strand color assignment (C++: C++ reference)
+    // Phase 1: Cross-strand color assignment (
     // Process all 3 strands together in coordinate order
-    // C++ long-read path (C++ reference ~16165+) uses strict overlap (no bundledist)
+    // long-read path (~16165+) uses strict overlap (no bundledist)
     // for cross-strand color projection of unstranded groups.
     let overlap_dist = if config.long_reads {
         0u64
@@ -864,7 +864,7 @@ pub fn build_bundles_cpp_style(
                     };
                     if ug_start <= ng_end.saturating_add(overlap_dist) {
                         let ug_col = strand_data[1].groups[gidx].color;
-                        // C++ parity: previous-group overlap passes raw prevgroup->color
+                        // previous-group overlap passes raw prevgroup->color
                         // into set_strandcol (no pre-canonicalization at call site).
                         {
                             let ng = &mut strand_data[0].groups[pg0];
@@ -880,7 +880,7 @@ pub fn build_bundles_cpp_style(
                 }
             }
 
-            // Current negative overlaps (advance pointer like C++).
+            // Current negative overlaps (advance pointer).
             while let Some(cg0) = currgroup[0] {
                 if cg0 >= strand_data[0].groups.len() {
                     currgroup[0] = None;
@@ -936,7 +936,7 @@ pub fn build_bundles_cpp_style(
                     };
                     if ug_start <= pg_end.saturating_add(overlap_dist) {
                         let ug_col = strand_data[1].groups[gidx].color;
-                        // C++ parity: previous-group overlap passes raw prevgroup->color
+                        // previous-group overlap passes raw prevgroup->color
                         // into set_strandcol (no pre-canonicalization at call site).
                         {
                             let pg = &mut strand_data[2].groups[pg2];
@@ -1012,10 +1012,10 @@ pub fn build_bundles_cpp_style(
             t_start.elapsed().as_millis()
         );
     }
-    if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+    if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
         for sno in 0..3 {
             eprintln!(
-                "PARITY_BG_GROUPS sno={} ngroups={}",
+                "DEBUG_BG_GROUPS sno={} ngroups={}",
                 sno,
                 strand_data[sno].groups.len()
             );
@@ -1029,11 +1029,11 @@ pub fn build_bundles_cpp_style(
                 rows.push((sno, g.grid, g.start, g.end, root, g.cov_sum));
             }
         }
-        eprintln!("PARITY_BG_DISTINCT_COLORS total={}", color_set.len());
+        eprintln!("DEBUG_BG_DISTINCT_COLORS total={}", color_set.len());
         rows.sort_unstable_by_key(|r| (r.0, r.2, r.3, r.1));
         for (sno, grid, start, end, color, cov) in rows {
             eprintln!(
-                "PARITY_BG_GRP sno={} grid={} start={} end={} color={} cov={:.1}",
+                "DEBUG_BG_GRP sno={} grid={} start={} end={} color={} cov={:.1}",
                 sno,
                 grid,
                 start.saturating_add(1),
@@ -1042,9 +1042,9 @@ pub fn build_bundles_cpp_style(
                 cov
             );
         }
-        if std::env::var_os("RUSTLE_PARITY_BUNDLE_DEEP").is_some() {
+        if std::env::var_os("RUSTLE_DEBUG_BUNDLE_DEEP").is_some() {
             eprintln!(
-                "PARITY_EQCOL_TABLE eqneg_size={} eqpos_size={} equalcolor_size={}",
+                "DEBUG_EQCOL_TABLE eqneg_size={} eqpos_size={} equalcolor_size={}",
                 eqnegcol.len(),
                 eqposcol.len(),
                 eqcol.len()
@@ -1062,7 +1062,7 @@ pub fn build_bundles_cpp_style(
 
     // Phase 2: Create bundles in one coordinate-ordered 3-strand sweep.
     let t_phase2 = Instant::now();
-    let out = create_bundles_cpp_global(
+    let out = create_bundles_global(
         &strand_data,
         &eqcol,
         &eqnegcol,
@@ -1106,7 +1106,7 @@ pub fn build_bundles_cpp_style(
     out
 }
 
-/// Process a single read for group assignment (C++: merge_read_to_group equivalent)
+/// Process a single read for group assignment 
 fn process_read_for_group(
     read_idx: usize,
     read: &BundleRead,
@@ -1140,7 +1140,7 @@ fn process_read_for_group(
     let mut active_pair_precedes = pair_precedes;
     let mut pending_forward = pair_forward;
 
-    // C++ merge_read_to_group pointer flow
+    // merge_read_to_group pointer flow
     let mut currgroup = strand_data.currgroup;
 
     if currgroup.is_some() {
@@ -1197,7 +1197,7 @@ fn process_read_for_group(
                 killed_junctions.contains(&j)
             };
 
-            // C++ parity (C++ reference): in the currgroup!=NULL branch,
+            // in the currgroup!=NULL branch,
             // keep-exon includes the long-read CHI_THR/DROP clause.
             let keep = should_keep_exon(
                 seg_len,
@@ -1303,7 +1303,7 @@ fn process_read_for_group(
                 }
 
                 if readcol != group_color {
-                    // C++ parity (C++ reference): non-canonical junction (strand==0)
+                    // non-canonical junction (strand==0)
                     // prevents color propagation — readcol takes group's color instead of merging.
                     // Equivalent in rustle: junction not in good_junctions (!has_good_left).
                     if ei > 0 && !has_good_left {
@@ -1337,7 +1337,7 @@ fn process_read_for_group(
                     }
                     readcol = rc as usize;
                 } else if ei > 0 && !has_good_left {
-                    // C++ parity (C++ reference): non-canonical junction → fresh color.
+                    // non-canonical junction → fresh color.
                     // Breaks color chain so groups across non-canonical introns are separate.
                     usedcol[sno] = next_color as i64;
                     readcol = next_color;
@@ -1393,7 +1393,7 @@ fn process_read_for_group(
                 thisgroup = Some(ngroup);
             }
 
-            // C++ pair-fragment continuation inside merge_read_to_group:
+            // pair-fragment continuation inside merge_read_to_group:
             // process forward pair in-place at the end of current read.
             if keep && ei + 1 == ncoord {
                 if let Some(np) = pending_forward {
@@ -1503,7 +1503,7 @@ fn process_read_for_group(
             }
 
             if ei > 0 && !has_good_left {
-                // C++ parity (C++ reference): non-canonical junction → fresh color.
+                // non-canonical junction → fresh color.
                 // When creating entirely new groups, a non-canonical junction breaks color chain.
                 usedcol[sno] = next_color as i64;
                 readcol = next_color;
@@ -1559,7 +1559,7 @@ fn process_read_for_group(
             grid_to_group[ngroup_grid] = (sno, ngroup);
             *next_group_grid += 1;
 
-            // C++ pair-fragment continuation for currgroup == NULL branch.
+            // pair-fragment continuation for currgroup == NULL branch.
             if keep && ei + 1 == ncoord {
                 if let Some(np) = pending_forward {
                     if np < reads.len()
@@ -1613,7 +1613,7 @@ fn process_read_for_group(
     Ok(ProcessReadResult { next_color })
 }
 
-/// Merge two groups forward (C++: merge_fwd_groups)
+/// Merge two groups forward 
 fn merge_fwd_groups(
     strand_data: &mut StrandBundles,
     g1_idx: usize,
@@ -1638,7 +1638,7 @@ fn merge_fwd_groups(
         }
     }
 
-    // C++ parity (C++ reference):
+    // :
     // - group1 is the merge target
     // - group2 grid maps directly to group1 grid
     // - color union does not use merge roots
@@ -1672,7 +1672,7 @@ fn merge_fwd_groups(
     Ok(())
 }
 
-/// Merge close groups pass (C++: merge_fwd_groups after all reads processed)
+/// Merge close groups pass 
 fn merge_close_groups(
     strand_data: &mut StrandBundles,
     merge: &mut Vec<usize>,
@@ -1687,7 +1687,7 @@ fn merge_close_groups(
         }
     }
 
-    // C++: for each strand, merge groups within bundledist
+    // for each strand, merge groups within bundledist
     let mut lastgroup_idx = strand_data.startgroup;
     let mut outer_loops = 0;
 
@@ -1760,8 +1760,8 @@ fn add_group_to_tmp_bundle(nodes: &mut Vec<CBundlenode>, group: &CGroup, localdi
     }
 }
 
-/// C++-style bundle creation pass (C++ reference).
-fn create_bundles_cpp_global(
+/// Original-style bundle creation pass
+fn create_bundles_global(
     strand_data: &[StrandBundles; 3],
     eqcol: &[usize],
     eqnegcol: &[i64],
@@ -1770,7 +1770,7 @@ fn create_bundles_cpp_global(
     readgroups: &[Vec<usize>],
     merge: &[usize],
     config: &RunConfig,
-) -> Result<Vec<CppBundleResult>> {
+) -> Result<Vec<SubBundleResult>> {
     let localdist = config.bundle_merge_dist;
     let mut currgroup: [Option<usize>; 3] = [
         strand_data[0].startgroup,
@@ -1783,15 +1783,15 @@ fn create_bundles_cpp_global(
         nodes: Vec<CBundlenode>,
         node_colors: Vec<usize>,
         color_root: Option<usize>,
-        // C++ group2bundle semantics: merge-root grid -> lastnodeid when group is added.
+        // group2bundle semantics: merge-root grid -> lastnodeid when group is added.
         rootgrid_to_node: HbHashMap<usize, usize>,
-        // C++ rprop support: merge-root grid -> strand proportion for this bundle.
+        // rprop support: merge-root grid -> strand proportion for this bundle.
         rootgrid_to_scale: HbHashMap<usize, f64>,
     }
 
     let mut bundles: [Vec<TmpBundle>; 3] = [Vec::new(), Vec::new(), Vec::new()];
     let mut bundlecol: Vec<i64> = vec![-1; eqcol.len()];
-    let trace_bundle = std::env::var_os("RUSTLE_PARITY_BUNDLE_DEEP").is_some();
+    let trace_bundle = std::env::var_os("RUSTLE_DEBUG_BUNDLE_DEEP").is_some();
     let trace_bnode = std::env::var_os("RUSTLE_BNODE_TRACE").is_some();
 
     while currgroup[0].is_some() || currgroup[1].is_some() || currgroup[2].is_some() {
@@ -1877,7 +1877,7 @@ fn create_bundles_cpp_global(
                         target_sno,
                         bidx,
                         group.grid,
-                        group.start.saturating_add(1), // 1-based like C++
+                        group.start.saturating_add(1), // 1-based
                         group.end,
                         group.cov_sum * scale,
                         color_root,
@@ -2024,7 +2024,7 @@ fn create_bundles_cpp_global(
             }
             let start = nodes.first().map(|n| n.start).unwrap_or(0);
             let end = nodes.last().map(|n| n.end).unwrap_or(0);
-            results.push(CppBundleResult {
+            results.push(SubBundleResult {
                 strand,
                 start,
                 end,

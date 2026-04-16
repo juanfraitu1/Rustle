@@ -1,5 +1,5 @@
 //! Longtrim direct-style node splitting from read-boundary points (lstart/lend).
-//! This mirrors C++ reference longtrim behavior more closely than simple peak splitting:
+//! This mirrors longtrim behavior more closely than simple peak splitting:
 //! scan boundary events in genomic order, split when local coverage contrast supports
 //! a start/end boundary, and add source/sink + continuity edges.
 
@@ -110,7 +110,7 @@ fn split_node_keep_children(graph: &mut Graph, nid: usize, cut: u64) -> Option<u
 /// Returns synthetic transfrags to append before process_transfrags, plus stats.
 ///
 /// Detects read-boundary events from weighted read start/end counts (lstart/lend),
-/// validates each event with a 50-bp bpcov contrast window (matching C++ longtrim()
+/// validates each event with a 50-bp bpcov contrast window (matching longtrim()
 /// re-validation: `tmpcov = (right_sum - left_sum) / (DROP * CHI_THR)`), and splits
 /// nodes where coverage contrast confirms a real transcript start or end.
 pub fn apply_longtrim_direct(
@@ -257,10 +257,10 @@ pub fn apply_longtrim_direct(
                         continue;
                     }
 
-                    // C++ reference parity note:
+                    // note:
                     // LONGINTRONANCHOR spacing avoids creating tiny nodes from noisy boundary spikes.
                     // However, in real loci we can have a low-support early end and a strong true end
-                    // within <25 bp; the reference assembler still needs to represent the strong end.
+                    // within <25 bp; the original algorithm still needs to represent the strong end.
                     // Treat high-support boundary events as "strong" and allow them to bypass spacing.
                     let strong_boundary = b.cov >= (min_boundary_cov.max(1.0) * 4.0);
                     let allow = ((startcov
@@ -482,7 +482,7 @@ fn guide2sink_abundance(bpcov: &Bpcov, node_start: u64, split_excl: u64, node_en
     (leftcov - rightcov).max(TRTHR)
 }
 
-/// Guide-boundary splitting akin to source2guide/guide2sink in C++ reference create_graph flow.
+/// Guide-boundary splitting akin to source2guide/guide2sink in create_graph flow.
 /// Splits first/last guide nodes at guide transcript boundaries and creates source/sink
 /// support transfrags so guide boundaries participate in transfrag processing.
 pub fn apply_guide_boundary_splits(

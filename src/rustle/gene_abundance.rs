@@ -1,4 +1,4 @@
-//! Gene-level abundance summary output (parity scaffold for C++ reference geneabundance mode).
+//! Gene-level abundance summary output (compatibility scaffold for geneabundance mode).
 
 use crate::types::DetHashMap as HashMap;
 use std::fs::File;
@@ -10,7 +10,7 @@ use crate::path_extract::Transcript;
 
 /// Strand-weighted bpcov contribution from a genomic window.
 ///
-/// Port of C++ reference switch(s) block.
+/// Port of switch(s) block.
 /// `localcov[0]` = rev strand coverage, `localcov[1]` = total coverage, `localcov[2]` = fwd strand coverage.
 /// - '+' strand (s=2): fwd + unstranded × fwd/(fwd+rev) — if rev > 0, else total
 /// - '-' strand (s=0): rev + unstranded × rev/(fwd+rev) — if fwd > 0, else total
@@ -20,7 +20,7 @@ pub fn strand_weighted_cov(fwd: f64, total: f64, rev: f64, strand: char) -> f64 
     let sum = fwd + rev;
     match strand {
         '+' => {
-            // C++: if(localcov[0]) — condition is rev > 0
+            // if(localcov[0]) — condition is rev > 0
             if rev > 0.0 {
                 fwd + unstranded * fwd / sum
             } else {
@@ -28,20 +28,20 @@ pub fn strand_weighted_cov(fwd: f64, total: f64, rev: f64, strand: char) -> f64 
             }
         }
         '-' => {
-            // C++: if(localcov[2]) — condition is fwd > 0
+            // if(localcov[2]) — condition is fwd > 0
             if fwd > 0.0 {
                 rev + unstranded * rev / sum
             } else {
                 total
             }
         }
-        _ => unstranded, // C++: cov+=localcov[1]-localcov[2]-localcov[0]
+        _ => unstranded, // cov+=localcov[1]-localcov[2]-localcov[0]
     }
 }
 
 /// Compute strand-weighted bpcov sum over all exon bases for a transcript.
 ///
-/// Port of C++ reference per-transcript bpcov accumulation used in gene_abundance output.
+/// Port of per-transcript bpcov accumulation used in gene_abundance output.
 /// Sums `strand_weighted_cov(fwd, total, rev, tx.strand)` over each base position in the transcript's exons.
 /// Returns 0.0 if bpcov is empty or exons are empty.
 pub fn compute_transcript_bpcov(tx: &Transcript, bpcov: &BpcovStranded) -> f64 {
@@ -185,7 +185,7 @@ pub fn write_gene_abundance<P: AsRef<Path>>(
         eagg.end = eagg.end.max(e);
         eagg.n_tx += 1;
         // Use strand-weighted bpcov sum if computed; fall back to path abundance.
-        // C++ reference uses per-base bpcov for gene-level coverage.
+        // uses per-base bpcov for gene-level coverage.
         eagg.cov_sum += if tx.bpcov_cov > 0.0 {
             tx.bpcov_cov
         } else {

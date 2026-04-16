@@ -264,12 +264,12 @@ impl SmallBitset {
 
     // ── GBitVec compatibility API ─────────────────────────────────────────────
 
-    /// Create with capacity `n` (GBitVec::new parity).
+    /// Create with capacity `n` (sizing convention).
     pub fn new(n: usize) -> Self {
         Self::with_capacity(n)
     }
 
-    /// Grow to at least `new_size` bits (GBitVec::grow parity).
+    /// Grow to at least `new_size` bits (growth convention).
     pub fn grow(&mut self, new_size: usize) {
         if new_size > self.capacity() {
             match self {
@@ -306,18 +306,18 @@ impl SmallBitset {
         self.count_ones()
     }
 
-    /// self |= other (GBitVec::or_assign parity).
+    /// self |= other (bitwise OR assign).
     pub fn or_assign(&mut self, other: &Self) {
         self.union_with(other);
     }
 
-    /// True iff every bit in `other` is set in `self` (GBitVec::contains_pattern parity).
+    /// True iff every bit in `other` is set in `self` (pattern containment check).
     pub fn contains_pattern(&self, other: &Self) -> bool {
         self.contains_all(other)
     }
 
     /// True iff every bit in 0..n_nodes set in `other` is also set in `self`
-    /// (GBitVec::contains_nodes_only parity).
+    /// (nodes-only containment check).
     pub fn contains_nodes_only(&self, other: &Self, n_nodes: usize) -> bool {
         other
             .ones()
@@ -350,7 +350,7 @@ impl Iterator for SmallBitsetOnes<'_> {
     }
 }
 
-// ── BitAnd / BitOr (GBitVec operator parity) ─────────────────────────────────
+// ── BitAnd / BitOr (GBitVec operator compatibility) ─────────────────────────────────
 
 impl std::ops::BitAnd for SmallBitset {
     type Output = SmallBitset;

@@ -1,11 +1,11 @@
-//! TSS/TTS clustering and trim points (C++ reference cluster_positions_with_counts, add_cpas_trimpoint).
+//! TSS/TTS clustering and trim points (cluster_positions_with_counts, add_cpas_trimpoint).
 
-/// C++ reference CPAS_POS_BIN (merge positions within this many bp).
+/// CPAS_POS_BIN (merge positions within this many bp).
 pub const CPAS_POS_BIN: u64 = 5;
-/// C++ reference CPAS_MIN_SUPPORT (minimum weight in a cluster to emit).
+/// CPAS_MIN_SUPPORT (minimum weight in a cluster to emit).
 pub const CPAS_MIN_SUPPORT: u64 = 20;
 
-/// Cluster (pos, count) into representative (center, total_count) (C++ reference cluster_positions_with_counts).
+/// Cluster (pos, count) into representative (center, total_count) (cluster_positions_with_counts).
 /// Positions within `window` bp are merged; center = round(weighted average); clusters with total count < min_support are dropped.
 pub fn cluster_positions_with_counts(
     positions: &[(u64, f64)],
@@ -61,7 +61,7 @@ pub fn cluster_positions_with_counts(
     out
 }
 
-/// Merge or append (pos, cov) into list; if existing point within window, merge (average pos, add cov) (C++ reference add_cpas_trimpoint).
+/// Merge or append (pos, cov) into list; if existing point within window, merge (average pos, add cov) (add_cpas_trimpoint).
 pub fn add_cpas_trimpoint(list: &mut Vec<(u64, f64)>, pos: u64, cov: f64, window: u64) {
     let win = if window > 0 { window } else { CPAS_POS_BIN };
     for (p, c) in list.iter_mut() {

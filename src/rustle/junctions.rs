@@ -6,16 +6,16 @@ use crate::types::{
 };
 
 /// Filter to junctions with mrcount >= min_junction_reads.
-/// C++ parity: only keep junctions with non-negative `nreads_good` at threshold
+/// only keep junctions with non-negative `nreads_good` at threshold
 /// and positive mrcount (actual read support).  Junctions with mrcount=0 are
 /// counting artifacts — they have nreads_good > 0 from anchor-based accounting but
 /// zero actual read coverage.  These create spurious graph node boundaries and
-/// generate excess transfrags (7.7x over the reference assembler in the worst loci).
+/// generate excess transfrags (7.7x over the original algorithm in the worst loci).
 pub fn filter_junctions(stats: &JunctionStats, min_reads: f64) -> Vec<Junction> {
     stats
         .iter()
         // IMPORTANT: `mm` can be used as a temporary BAD_MM_NEG marker in higherr/long-read
-        // parity paths (C++ uses `mm=-1` as a marker, not an immediate deletion).
+        // paths (uses `mm=-1` as a marker, not an immediate deletion).
         // Dropping junctions purely because `mm < 0` can remove real junctions prematurely.
         .filter(|(_, s)| s.strand != Some(0) && s.nreads_good >= min_reads && s.mrcount > 0.0)
         .map(|(j, _)| *j)
@@ -51,7 +51,7 @@ pub fn filter_weak_junctions(
 
 const NEARBY_WEAK_WINDOW: u64 = 25;
 /// Minimum read-count fraction relative to the strongest nearby junction.
-/// C++ default is ~5% but long-read aligners produce shifted splice site calls
+/// default is ~5% but long-read aligners produce shifted splice site calls
 /// (same junction offset by 1-30bp) that create redundant graph node boundaries
 /// and 3.3x transfrag proliferation.  10% threshold removes the weakest shifted
 /// copies while preserving genuine alternative splice sites.
@@ -289,7 +289,7 @@ pub fn coalesce_junctions(
     new_stats
 }
 
-/// Per-splice-site isofrac filter (C++ ref): remove junctions whose mrcount is < isofrac% of
+/// Per-splice-site isofrac filter (ref): remove junctions whose mrcount is < isofrac% of
 /// the total mrcount at that donor site. isofrac is in percent (e.g. 1.0 = 1%).
 pub fn filter_per_splice_site_isofrac(
     stats: &JunctionStats,
@@ -328,7 +328,7 @@ pub fn apply_junction_filters(
     min_junction_reads: f64,
     verbose: bool,
 ) -> JunctionStats {
-    // strand=0 marks killed junctions (good_junc/good_merge_junc parity); remove from active set.
+    // strand=0 marks killed junctions (good_junc/good_merge_junc); remove from active set.
     let killed: Vec<Junction> = stats
         .iter()
         .filter(|(_, s)| s.strand == Some(0))
@@ -372,7 +372,7 @@ pub fn apply_junction_filters_and_canonicalize(
 }
 
 /// Run correction-only stage and return correction map.
-/// C++ only corrects bad junctions via higherr (C++ reference).
+/// only corrects bad junctions via higherr
 pub fn correct_junctions_with_map(
     stats: &JunctionStats,
     verbose: bool,

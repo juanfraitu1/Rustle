@@ -1,8 +1,8 @@
 //! Global flow extraction layer — sole long-read extractor using proven edmonds_karp from max_flow.rs.
 //!
-//! This module implements the C++ flow pipeline:
-//! 1. `compute_global_nodecov`: C++ get_trf_long nodecov precomputation (C++ reference)
-//! 2. `extract_transcripts_global_flow`: C++ parse_trflong (C++ reference) seed iteration
+//! This module implements the flow pipeline:
+//! 1. `compute_global_nodecov`: get_trf_long nodecov precomputation
+//! 2. `extract_transcripts_global_flow`: parse_trflong seed iteration
 //!    with edmonds_karp flow + retry logic matching path_extract.rs
 
 use crate::bitvec::GBitVec;
@@ -125,12 +125,12 @@ fn intron_chains_equal_tol(a: &[(u64, u64)], b: &[(u64, u64)], tol: u64) -> bool
 // ─── Step 1: Flow engine (using proven edmonds_karp from max_flow.rs) ───────
 
 
-// ─── Step 2: C++ get_trf_long nodecov precomputation (C++ reference) ─
+// ─── Step 2: get_trf_long nodecov precomputation ─
 
 /// Compute per-node coverage from transfrags: nodecov[i] = max(abundin, abundout).
 /// Also computes noderate[i] = node.coverage / nodecov[i].
 ///
-/// This matches C++ get_trf_long (C++ reference) exactly:
+/// This matches get_trf_long exactly:
 /// - Skip guide transfrags with abundance < trthr*ERROR_PERC+epsilon
 /// - Skip source-to-sink transfrags unless single-exon gene
 /// - abundin = sum(tf.abundance where tf.nodes[0] < i)
@@ -179,7 +179,7 @@ pub fn compute_global_nodecov(
                 continue;
             }
 
-            // C++ filter: skip guides with low abundance
+            // filter: skip guides with low abundance
             if tf.guide && tf.abundance < TRTHR * ERROR_PERC + 1e-9 {
                 continue;
             }
@@ -187,7 +187,7 @@ pub fn compute_global_nodecov(
             let first_node = tf.node_ids[0];
             let last_node = *tf.node_ids.last().unwrap();
 
-            // C++ filter: skip source-to-sink unless single-exon gene
+            // filter: skip source-to-sink unless single-exon gene
             let single_exon_gene = gno == 3
                 && (single_exon_poly_start > 10.0
                     || single_exon_poly_end > 10.0
@@ -196,13 +196,13 @@ pub fn compute_global_nodecov(
             if !single_exon_gene && (first_node == source_id && last_node == sink_id) {
                 continue;
             }
-            // C++ also requires: first_node != source AND last_node != sink
+            // also requires: first_node != source AND last_node != sink
             // (for non-single-exon-gene transfrags)
             if !single_exon_gene && (first_node == source_id || last_node == sink_id) {
                 continue;
             }
 
-            // C++ uses node ID comparison (not coordinate comparison)
+            // uses node ID comparison (not coordinate comparison)
             if first_node < i {
                 abundin += tf.abundance;
             }
@@ -221,8 +221,8 @@ pub fn compute_global_nodecov(
         if rate <= 0.0 {
             rate = 1.0;
         }
-        // C++: inode->cov is per-base (total/len), so noderate = per_base_cov / nodecov
-        // Rust: inode.coverage is total, so divide by length to match C++
+        // inode->cov is per-base (total/len), so noderate = per_base_cov / nodecov
+        // Rust: inode.coverage is total, so divide by length to match the original
         rate = inode.coverage / rate / inode.length() as f64;
         noderate[i] = rate;
     }
@@ -230,11 +230,11 @@ pub fn compute_global_nodecov(
     (nodecov, noderate)
 }
 
-// ─── Step 3: C++ parse_trflong (C++ reference) ─────────────────────
+// ─── Step 3: parse_trflong ─────────────────────
 
-/// Extract transcripts using the C++ global flow pipeline.
+/// Extract transcripts using the global flow pipeline.
 ///
-/// This is a faithful port of C++ `parse_trflong` (C++ reference):
+/// This is a faithful port of `parse_trflong`
 /// 1. Iterate trflong seeds in reverse order (highest abundance first)
 /// 2. For each seed: construct path via back_to_source + fwd_to_sink
 /// 3. Run edmonds_karp flow + retry to get flux and nodeflux
@@ -248,7 +248,7 @@ pub fn extract_transcripts_global_flow(
     config: &RunConfig,
 ) -> Vec<Transcript> {
     let debug = global_flow_debug();
-    let parity_debug = std::env::var_os("PARITY_DEBUG").is_some();
+    let debug_detail = std::env::var_os("DEBUG_DEBUG").is_some();
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
 
@@ -321,11 +321,11 @@ pub fn extract_transcripts_global_flow(
         let mut minp = real_nodes[0];
         let mut maxp = *real_nodes.last().unwrap();
 
-        // C++ parity: add edge bits for consecutive node pairs in seed
+        // add edge bits for consecutive node pairs in seed
         for w in transfrags[idx].node_ids.windows(2) {
             edge_set(&mut pathpat, graph, w[0], w[1], true);
         }
-        // C++ parity: set source→minp and maxp→sink edge bits
+        // set source→minp and maxp→sink edge bits
         edge_set(&mut pathpat, graph, source_id, minp, true);
         edge_set(&mut pathpat, graph, maxp, sink_id, true);
 
@@ -422,7 +422,7 @@ pub fn extract_transcripts_global_flow(
             continue;
         }
 
-        // Poly-tail path trimming (C++ reference 10197-10275)
+        // Poly-tail path trimming (10197-10275)
         let poly_start = transfrags[idx].poly_start_unaligned;
         let poly_end = transfrags[idx].poly_end_unaligned;
         let mut effective_start = startnode;
@@ -479,7 +479,7 @@ pub fn extract_transcripts_global_flow(
                 (newpath, 1, real_nodes.len())
             } else {
                 checktrf.push(idx);
-                continue; // deferred to checktrf in C++
+                continue; // deferred to checktrf
             }
         } else {
             (path, effective_start, effective_last)
@@ -520,13 +520,13 @@ pub fn extract_transcripts_global_flow(
             }
         }
 
-        // PARITY_DEBUG: seed entry + path
-        if parity_debug {
+        // DEBUG_DEBUG: seed entry + path
+        if debug_detail {
             let minp = use_path.get(use_start).copied().unwrap_or(0);
             let maxp = use_path.get(use_last).copied().unwrap_or(0);
-            eprintln!("PARITY_SEED idx={} maxi={} minp={} maxp={} guide={} abund={}",
+            eprintln!("DEBUG_SEED idx={} maxi={} minp={} maxp={} guide={} abund={}",
                 idx, minp, minp, maxp, if transfrags[idx].guide { 1 } else { 0 }, longcov);
-            eprint!("PARITY_SEED_NODES");
+            eprint!("DEBUG_SEED_NODES");
             for &p in use_path.iter() { eprint!(" {}", p); }
             eprintln!();
         }
@@ -562,13 +562,13 @@ pub fn extract_transcripts_global_flow(
             (orig_flux, orig_nodeflux)
         };
 
-        // PARITY_DEBUG: flow result
-        if parity_debug {
-            eprintln!("PARITY_FLOW idx={} flux={}", idx, flux);
-            eprint!("PARITY_NODEFLUX");
+        // DEBUG_DEBUG: flow result
+        if debug_detail {
+            eprintln!("DEBUG_FLOW idx={} flux={}", idx, flux);
+            eprint!("DEBUG_NODEFLUX");
             for v in &nodeflux { eprint!(" {}", v); }
             eprintln!();
-            eprint!("PARITY_NODECOV");
+            eprint!("DEBUG_NODECOV");
             for &p in use_path.iter() {
                 eprint!(" {}", nodecov.get(p).copied().unwrap_or(0.0));
             }
@@ -576,8 +576,8 @@ pub fn extract_transcripts_global_flow(
         }
 
         if flux <= 0.0 && !transfrags[idx].guide {
-            if parity_debug {
-                eprintln!("PARITY_SKIP idx={} reason=zero_flux", idx);
+            if debug_detail {
+                eprintln!("DEBUG_SKIP idx={} reason=zero_flux", idx);
             }
             if debug {
                 eprintln!("[GLOBAL_FLOW] seed {} flux=0 → checktrf", idx);
@@ -587,7 +587,7 @@ pub fn extract_transcripts_global_flow(
         }
 
         // Build exons from path[use_start..=use_last], compute coverage using nodeflux*noderate
-        // C++ reference: nodeflux[j] capped to nodecov[path[j]], then
+        // nodeflux[j] capped to nodecov[path[j]], then
         // ecov = nodeflux[j] * noderate[path[j]]; nodecov[path[j]] -= nodeflux[j]
         let mut exons: Vec<(u64, u64)> = Vec::new();
         let mut cov_total = 0.0f64;
@@ -644,7 +644,7 @@ pub fn extract_transcripts_global_flow(
                     break;
                 }
                 let raw_nflux = nodeflux[k];
-                // Cap to nodecov, then subtract (C++ reference)
+                // Cap to nodecov, then subtract
                 let nflux = raw_nflux.min(nodecov[nid].max(0.0));
                 nodecov[nid] = (nodecov[nid] - nflux).max(0.0);
                 if nodecov[nid] < EPSILON {
@@ -657,7 +657,7 @@ pub fn extract_transcripts_global_flow(
             }
         }
 
-        // Normalize per-exon coverage by exon length (C++ reference)
+        // Normalize per-exon coverage by exon length
         let mut exon_cov: Vec<f64> = Vec::new();
         for (ei, &(es, ee)) in exons.iter().enumerate() {
             let elen = len_half_open(es, ee) as f64;
@@ -669,7 +669,7 @@ pub fn extract_transcripts_global_flow(
         }
 
         let length: u64 = exons.iter().map(|(s, e)| e - s).sum();
-        // C++ parse_trflong stores cov directly without dividing by length (C++ reference)
+        // parse_trflong stores cov directly without dividing by length
         let coverage = if cov_total > 0.0 {
             cov_total
         } else if flux > 0.0 {
@@ -690,9 +690,9 @@ pub fn extract_transcripts_global_flow(
             );
         }
 
-        // PARITY_DEBUG: store prediction
-        if parity_debug {
-            eprint!("PARITY_STORE idx={} cov={} len={} nexon={} exons=",
+        // DEBUG_DEBUG: store prediction
+        if debug_detail {
+            eprint!("DEBUG_STORE idx={} cov={} len={} nexon={} exons=",
                 idx, coverage, length, exons.len());
             for (ei, &(s, e)) in exons.iter().enumerate() {
                 if ei > 0 { eprint!(","); }
@@ -734,7 +734,7 @@ pub fn extract_transcripts_global_flow(
         kept_paths.push((inner_nodes, coverage, transfrags[idx].guide, out_idx));
     }
 
-    // ─── checktrf rescue pass (C++ reference) ───
+    // ─── checktrf rescue pass ───
     // For failed seeds: try to redistribute to best-matched kept paths,
     // or create independent predictions from complete transfrags.
     if !checktrf.is_empty() {
@@ -841,7 +841,7 @@ pub fn extract_transcripts_global_flow(
             }
 
             // Independent rescue: store complete transfrag as its own prediction.
-            // C++ reference: `else if(!eonly || guide)` — in non-eonly mode always rescues.
+            // `else if(!eonly || guide)` — in non-eonly mode always rescues.
             let mut complete = true;
             for w in tf_nodes.windows(2) {
                 let a = w[0];
@@ -1006,7 +1006,7 @@ pub fn extract_transcripts_global_flow(
     }
 
     // Post-pass: redistribute remaining long-read transfrags to best kept predictions
-    // (C++ reference second-pass redistribution)
+    // (second-pass redistribution)
     if !out.is_empty() && !kept_paths.is_empty() {
         let has_guide_kept = kept_paths.iter().any(|(_, _, g, _)| *g);
         for t in 0..transfrags.len() {
@@ -1059,7 +1059,7 @@ pub fn extract_transcripts_global_flow(
         }
     }
 
-    // C++ reference: after ALL seeds processed, zero ALL longread transfrag abundances
+    // after ALL seeds processed, zero ALL longread transfrag abundances
     for tf in transfrags.iter_mut() {
         if tf.longread {
             tf.abundance = 0.0;

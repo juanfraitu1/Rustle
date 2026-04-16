@@ -1,11 +1,11 @@
-//! Per-node coverage from transfrags (C++ reference compute_nodecov).
+//! Per-node coverage from transfrags (compute_nodecov).
 
 use crate::graph::{Graph, GraphTransfrag};
 
 const TRTHR: f64 = 1.0;
 const ERROR_PERC: f64 = 0.1;
 const CHI_WIN: f64 = 100.0;
-/// Guide-transfrag abundance threshold: trthr * ERROR_PERC + epsilon (C++ get_trf_long:11086).
+/// Guide-transfrag abundance threshold: trthr * ERROR_PERC + epsilon (get_trf_long:11086).
 const GUIDE_ABUND_THR: f64 = TRTHR * ERROR_PERC + 1e-9;
 
 /// Compute per-node coverage: for each node, max(abundin, abundout).
@@ -13,7 +13,7 @@ const GUIDE_ABUND_THR: f64 = TRTHR * ERROR_PERC + 1e-9;
 /// - abundout: sum of abundance of transfrags that pass through and have last_node > nid.
 /// Excludes source/sink-only transfrags unless single-exon gene (n_nodes==3 with poly evidence).
 ///
-/// C++ parity: eliminate_transfrags_under_thr removes fully-internal non-guide transfrags with
+/// eliminate_transfrags_under_thr removes fully-internal non-guide transfrags with
 /// abundance < trthr=1.0 before inode->trf[] is built. Guide transfrags are kept but filtered in
 /// get_trf_long with abundance >= trthr*ERROR_PERC=0.1+eps. Source/sink-anchored transfrags are
 /// not removed by eliminate_transfrags_under_thr but are filtered out in get_trf_long.
@@ -68,11 +68,11 @@ pub fn compute_nodecov(
             if !single_exon_gene {
                 continue;
             }
-            // Single-exon gene source-to-sink: no abundance threshold (C++ doesn't eliminate these)
+            // Single-exon gene source-to-sink: no abundance threshold (doesn't eliminate these)
         } else if first_node == source_id || last_node == sink_id {
             continue; // source/sink-anchored: filtered in get_trf_long, not in eliminate_transfrags_under_thr
         } else {
-            // Fully internal transfrag: apply C++ elimination threshold
+            // Fully internal transfrag: apply elimination threshold
             // Non-guides need abundance >= trthr=1.0; guides need >= trthr*ERROR_PERC+eps=0.1+eps
             let threshold = if tf.guide || tf.guide_tid.is_some() {
                 GUIDE_ABUND_THR
@@ -93,7 +93,7 @@ pub fn compute_nodecov(
             continue;
         }
 
-        // C++ parity (C++ reference): uses node ID comparison, not genomic coordinates.
+        // uses node ID comparison, not genomic coordinates.
         // `transfrag[t]->nodes[0] < i` for abundin, `transfrag[t]->nodes.Last() > i` for abundout.
         let first_real = real_nodes[0];
         let last_real = *real_nodes.last().unwrap();
@@ -235,7 +235,7 @@ pub fn compute_nodecov(
         }
     }
 
-    // Persist per-node coverage state for parity with C++ ref's node accounting.
+    // Persist per-node coverage state with ref's node accounting.
     for nid in 0..n_nodes {
         if let Some(node) = graph.nodes.get_mut(nid) {
             let ai = abundin.get(nid).copied().unwrap_or(0.0);
@@ -285,7 +285,7 @@ pub fn compute_nodecov(
     nodecov
 }
 
-/// Mark transfrags that have a weak link (coverage drop between consecutive contiguous nodes) (C++ reference compute_weak).
+/// Mark transfrags that have a weak link (coverage drop between consecutive contiguous nodes) (compute_weak).
 /// threshold = drop + error_perc (e.g. 0.6). Returns count of transfrags marked weak.
 pub fn compute_weak(
     transfrags: &mut [GraphTransfrag],

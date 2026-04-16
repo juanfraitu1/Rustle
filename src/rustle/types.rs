@@ -1,14 +1,14 @@
 //! Core data structures: Bundle, Junction, Bundlenode, RunConfig.
 //!
-//! ## Transcript extraction mode (C++ reference find_transcripts)
-//! - **Eonly** (config.eonly, -e): Only guide flow runs (C++ ref: only guides_pushmaxflow). No parse_trf,
+//! ## Transcript extraction mode (find_transcripts)
+//! - **Eonly** (config.eonly, -e): Only guide flow runs (ref: only guides_pushmaxflow). No parse_trf,
 //!   no get_trf_long_mix. Output is only guide-matched transcripts. When eonly && guides present we call
 //!   extract_eonly_transcripts; when eonly && no guides we fall through and other extractors output nothing (store gate).
-//! - **Short-read** (no -L/--long-read-min-len): same extract_transcripts path with abundance order (C++ reference parse_trf ordering differs; we unify for long/mix/guided/short).
+//! - **Short-read** (no -L/--long-read-min-len): same extract_transcripts path with abundance order (parse_trf ordering differs; we unify for long/mix/guided/short).
 //! - **Long-read** (long_reads, long_read_min_len=0): extract_transcripts with long order only (get_trf_long).
 //! - **Mixed** (long_reads, long_read_min_len>0): extract_transcripts with mixed order (get_trf_long_mix + parse_trf).
 //!
-//! Assembly modes (C++ reference / reference script):
+//! Assembly modes (/ reference script):
 //! - **Long-read** (-L): long_reads=true, long_read_min_len=0. All reads contribute to abundance;
 //!   graph can use longtrim (read boundaries) when implemented; coverage trim optional.
 //! - **Short-read**: long_reads=false. Coverage trim (trimnode_all); localdist=bundledist+anchor;
@@ -26,14 +26,14 @@ pub type FixedBuild = fxhash::FxBuildHasher;
 pub type DetHashMap<K, V> = std::collections::HashMap<K, V, FixedBuild>;
 pub type DetHashSet<T> = std::collections::HashSet<T, FixedBuild>;
 
-/// C++ naming parity: generic vector.
+/// naming convention: generic vector.
 pub type GVec<T> = Vec<T>;
-/// C++ naming parity: pointer vector (modeled as plain Vec in Rust).
+/// naming convention: pointer vector (modeled as plain Vec in Rust).
 pub type GPVec<T> = Vec<T>;
-/// C++ naming parity: sorted/unique array container (modeled as Vec in Rust).
+/// naming convention: sorted/unique array container (modeled as Vec in Rust).
 pub type GArray<T> = Vec<T>;
 
-/// Guide edge (C++ `GEdge` in `C++ header`): boundary value + opposite boundary + strand.
+/// Guide edge (`GEdge` in `header`): boundary value + opposite boundary + strand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GEdge {
     /// One boundary coordinate.
@@ -53,7 +53,7 @@ impl GEdge {
         }
     }
 
-    /// C++ comment parity: when `val < endval`, this marks a start boundary.
+    /// comment: when `val < endval`, this marks a start boundary.
     pub fn is_start(self) -> bool {
         self.val < self.endval
     }
@@ -74,7 +74,7 @@ impl PartialOrd for GEdge {
 }
 
 /// Assembly mode: long-read only, short-read only, or mixed (long + short in same BAM).
-/// Derived from RunConfig (C++ reference longreads/mixedMode; reference script longreads/long_read_min_len).
+/// Derived from RunConfig (longreads/mixedMode; reference script longreads/long_read_min_len).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssemblyMode {
     /// Long-read assembly (-L). All reads treated as long; abundance only.
@@ -107,7 +107,7 @@ pub struct Bundle {
     /// Read alignments (reference start, reference end, exons as (start,end), weight, is_reverse)
     pub reads: Vec<BundleRead>,
     pub junction_stats: JunctionStats,
-    /// Pre-computed bundlenodes (e.g., from C++ faithful implementation)
+    /// Pre-computed bundlenodes (e.g., faithful implementation)
     pub bundlenodes: Option<CBundlenode>,
     /// Read-to-bundlenode mappings (indexes into bundlenodes)
     pub read_bnodes: Option<Vec<Vec<usize>>>,
@@ -140,7 +140,7 @@ pub struct BundleRead {
     pub junction_valid: Vec<bool>,
     /// Raw splice junctions from exon boundaries.
     pub junctions_raw: Vec<Junction>,
-    /// Deletion-aware splice junctions extracted from CIGAR (C++ reference juncsdel-adjusted boundaries).
+    /// Deletion-aware splice junctions extracted from CIGAR (juncsdel-adjusted boundaries).
     pub junctions_del: Vec<Junction>,
     pub weight: f64,
     pub is_reverse: bool,
@@ -151,29 +151,29 @@ pub struct BundleRead {
     pub has_poly_start: bool,
     /// PolyA/T at 3' (read) end (aligned OR soft-clip)
     pub has_poly_end: bool,
-    /// PolyA/T in the aligned sequence at 5' end. C++ reference aligned_polyT.
+    /// PolyA/T in the aligned sequence at 5' end. aligned_polyT.
     pub has_poly_start_aligned: bool,
-    /// PolyA/T in the 5' soft-clipped tail. C++ reference unaligned_polyT.
+    /// PolyA/T in the 5' soft-clipped tail. unaligned_polyT.
     pub has_poly_start_unaligned: bool,
-    /// PolyA/T in the aligned sequence at 3' end. C++ reference aligned_polyA.
+    /// PolyA/T in the aligned sequence at 3' end. aligned_polyA.
     pub has_poly_end_aligned: bool,
-    /// PolyA/T in the 3' soft-clipped tail. C++ reference unaligned_polyA.
+    /// PolyA/T in the 3' soft-clipped tail. unaligned_polyA.
     pub has_poly_end_unaligned: bool,
-    /// C++ reference unaligned_polyT support count (long-read CPAS evidence multiplicity).
+    /// unaligned_polyT support count (long-read CPAS evidence multiplicity).
     pub unaligned_poly_t: u16,
-    /// C++ reference unaligned_polyA support count (long-read CPAS evidence multiplicity).
+    /// unaligned_polyA support count (long-read CPAS evidence multiplicity).
     pub unaligned_poly_a: u16,
-    /// C++ reference check_last_exon_polyA >= 0.8: last exon's bases in read are ≥80% A.
+    /// check_last_exon_polyA >= 0.8: last exon's bases in read are ≥80% A.
     /// When true (and !ovlpguide), the entire last exon is removed before junction build.
     pub has_last_exon_polya: bool,
-    /// C++ reference check_first_exon_polyT >= 0.8: first exon's bases in read are ≥80% T.
+    /// check_first_exon_polyT >= 0.8: first exon's bases in read are ≥80% T.
     /// When true (and !ovlpguide), the entire first exon is removed before junction build.
     pub has_first_exon_polyt: bool,
     /// Query (read) length in bp; used in mixed mode to classify long vs short (long if len >= long_read_min_len).
     pub query_length: Option<u64>,
-    /// Left soft-clip length (query side, bp). C++ reference clipL; used for mismatch penalty and poly detection.
+    /// Left soft-clip length (query side, bp). clipL; used for mismatch penalty and poly detection.
     pub clip_left: u32,
-    /// Right soft-clip length (query side, bp). C++ reference clipR; used for mismatch penalty and poly detection.
+    /// Right soft-clip length (query side, bp). clipR; used for mismatch penalty and poly detection.
     pub clip_right: u32,
     /// NH alignment hit count; used for standard multi-mapper mismatch penalty (nh > 2).
     pub nh: u32,
@@ -183,25 +183,25 @@ pub struct BundleRead {
     pub md: Option<String>,
     /// Reference positions of CIGAR insertions (anchor checks near splice sites).
     pub insertion_sites: Vec<u64>,
-    /// Unitig read (from -U option). C++ reference isunitig;YK tag for unitig coverage.
+    /// Unitig read (from -U option). isunitig;YK tag for unitig coverage.
     pub unitig: bool,
-    /// Unitig coverage from YK tag (C++ reference unitig_cov=brec.tag_float("YK")).
+    /// Unitig coverage from YK tag (unitig_cov=brec.tag_float("YK")).
     pub unitig_cov: f64,
-    /// Read count from YC tag (C++ reference rdcount=brec.tag_int("YC")).
+    /// Read count from YC tag (rdcount=brec.tag_int("YC")).
     pub read_count_yc: f64,
-    /// the reference assembler `countFragment` contribution to `frag_len` (sum exon_len / NH) for this read entry.
+    /// the original algorithm `countFragment` contribution to `frag_len` (sum exon_len / NH) for this read entry.
     /// Aggregated across all redundant alignments merged into this entry.
     pub countfrag_len: f64,
-    /// the reference assembler `countFragment` contribution to `num_fragments` for this read entry.
+    /// the original algorithm `countFragment` contribution to `num_fragments` for this read entry.
     /// Aggregated across all redundant alignments merged into this entry.
     pub countfrag_num: f64,
     /// Sum of per-alignment `rdcount` where junction mismatch gate is true
-    /// (`mismatch || nh>2` in C++ reference processRead).
+    /// (`mismatch || nh>2` in processRead).
     /// Applied per junction when initializing BundleData-like junction stats.
     pub junc_mismatch_weight: f64,
-    /// Pair read indices (C++ reference pair_idx). Index into read list of paired reads.
+    /// Pair read indices (pair_idx). Index into read list of paired reads.
     pub pair_idx: Vec<usize>,
-    /// Pair read counts (C++ reference pair_count). Weight of each pair connection.
+    /// Pair read counts (pair_count). Weight of each pair connection.
     pub pair_count: Vec<f64>,
     // ── VG gene family fields (populated when --vg is active) ────────────
     /// Mapping quality (MAPQ). Used for filtering supplementary alignments in VG mode.
@@ -215,14 +215,14 @@ pub struct BundleRead {
     pub ps_tag: Option<u32>,
 }
 
-/// C++ `CPred` transport for longtrim boundary points (predno, cov).
+/// `CPred` transport for longtrim boundary points (predno, cov).
 #[derive(Debug, Clone, Copy)]
 pub struct CPred {
     pub predno: u64,
     pub cov: f64,
 }
 
-/// Read boundary for longtrim (C++ reference CPred predno+cov; reference assembler ReadBoundary).
+/// Read boundary for longtrim (CPred predno+cov; original algorithm ReadBoundary).
 /// lstart = list of (position, coverage) for read starts; lend = read ends.
 #[derive(Debug, Clone, Copy)]
 pub struct ReadBoundary {
@@ -248,8 +248,8 @@ impl From<ReadBoundary> for CPred {
     }
 }
 
-/// Prediction object parity with C++ `CPrediction` (bundle.h).
-/// This is the C++-shaped transport model; assembly still primarily uses `Transcript`.
+/// Prediction object compatible with `CPrediction` (bundle.h).
+/// This is the legacy transport model; assembly still primarily uses `Transcript`.
 #[derive(Debug, Clone)]
 pub struct CPrediction {
     pub geneno: i32,
@@ -260,7 +260,7 @@ pub struct CPrediction {
     pub cov: f64,
     pub longcov: f64,
     pub strand: char,
-    /// Transcript length sentinel/parity field (C++ `tlen`; long-read uses negative conventions).
+    /// Transcript length sentinel/field (`tlen`; long-read uses negative conventions).
     pub tlen: i32,
     pub flag: bool,
     /// Linked nascent prediction index in the same prediction vector.
@@ -301,7 +301,7 @@ impl CPrediction {
     }
 }
 
-/// C++ interval node payload (C++ reference `CExon` used in `CMaxIntv.node`).
+/// interval node payload (`CExon` used in `CMaxIntv.node`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CExon {
     pub predno: usize,
@@ -319,7 +319,7 @@ impl CExon {
     }
 }
 
-/// Max-overlap interval list node parity with C++ `CMaxIntv` (print_predcluster internals).
+/// Max-overlap interval list node compatible with `CMaxIntv` (print_predcluster internals).
 #[derive(Debug, Clone)]
 pub struct CMaxIntv {
     pub start: u64,
@@ -351,7 +351,7 @@ impl CMaxIntv {
     }
 }
 
-/// Merge component member parity with C++ `CTrInfo` (C++ header).
+/// Merge component member compatible with `CTrInfo` (header).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct CTrInfo {
     pub trno: usize,
@@ -369,7 +369,7 @@ impl CTrInfo {
     }
 }
 
-/// Memoized component payload parity with C++ `CComponent` (C++ header).
+/// Memoized component payload compatible with `CComponent` (header).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CComponent {
     pub size: f64,
@@ -395,8 +395,8 @@ impl Junction {
     }
 }
 
-/// compatible junction record (C++ `CJunction` shape).
-/// This mirrors the fields used by C++ reference junction filtering/gating logic.
+/// compatible junction record (`CJunction` shape).
+/// This mirrors the fields used by junction filtering/gating logic.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CJunction {
     pub start: u64,
@@ -458,7 +458,7 @@ impl CJunction {
 }
 
 /// Deterministic conversion from internal Junction+JunctionStat map
-/// to the reference assembler-shaped `CJunction` records.
+/// to the original algorithm-shaped `CJunction` records.
 pub fn junction_stats_to_cjunctions(junction_stats: &JunctionStats) -> Vec<CJunction> {
     let mut out: Vec<CJunction> = junction_stats
         .iter()
@@ -468,14 +468,14 @@ pub fn junction_stats_to_cjunctions(junction_stats: &JunctionStats) -> Vec<CJunc
     out
 }
 
-/// Convert the reference assembler-shaped `CJunction` records back to internal `JunctionStats`.
+/// Convert the original algorithm-shaped `CJunction` records back to internal `JunctionStats`.
 /// When duplicate (start,end) entries exist, numeric support fields are aggregated.
 pub fn cjunctions_to_junction_stats(cjunctions: &[CJunction]) -> JunctionStats {
     let mut out: JunctionStats = Default::default();
     for cj in cjunctions {
         let key = Junction::new(cj.start, cj.end);
         let entry = out.entry(key).or_insert_with(JunctionStat::default);
-        // IMPORTANT: In the reference assembler `higherr` mode, `CJunction.nreads` and `CJunction.nreads_good`
+        // IMPORTANT: In the original algorithm `higherr` mode, `CJunction.nreads` and `CJunction.nreads_good`
         // can temporarily store negative demotion pointers (indices) rather than counts.
         // Those pointer values must never be aggregated back into numeric support fields.
         entry.mrcount += cj.nreads.max(0.0);
@@ -512,34 +512,34 @@ pub fn cjunctions_to_junction_stats(cjunctions: &[CJunction]) -> JunctionStats {
     out
 }
 
-/// Per-junction statistics (mrcount, etc.). C++ reference CJunction: nreads, nreads_good, strand (0=killed), leftsupport, rightsupport.
+/// Per-junction statistics (mrcount, etc.). CJunction: nreads, nreads_good, strand (0=killed), leftsupport, rightsupport.
 #[derive(Debug, Clone)]
 pub struct JunctionStat {
     pub mrcount: f64,
-    /// Reads with both donor+acceptor anchors passing threshold (C++ reference nreads_good).
+    /// Reads with both donor+acceptor anchors passing threshold (nreads_good).
     pub nreads_good: f64,
     pub rcount: u32,
-    /// Strand: None = unknown, Some(0) = killed (C++ reference good_junc sets strand=0), Some(1) = +, Some(-1) = -.
+    /// Strand: None = unknown, Some(0) = killed (good_junc sets strand=0), Some(1) = +, Some(-1) = -.
     pub strand: Option<i8>,
-    /// Mismatch-weighted count: reads with high mismatch rate crossing this junction (C++ reference nm; reference assembler jd.nm). Used in junction correction.
+    /// Mismatch-weighted count: reads with high mismatch rate crossing this junction (nm; original algorithm jd.nm). Used in junction correction.
     pub nm: f64,
     /// Well-anchored count: reads where BOTH flanking exons exceed LONGINTRONANCHOR (25bp).
-    /// C++ reference jd.mm; used by dynamic anchor escalation (D3: not all-bad if mm>0).
+    /// jd.mm; used by dynamic anchor escalation (D3: not all-bad if mm>0).
     pub mm: f64,
-    /// Support on donor (left) side of splice (C++ reference leftsupport); used by good_junc / witness left.
+    /// Support on donor (left) side of splice (leftsupport); used by good_junc / witness left.
     pub leftsupport: f64,
-    /// Support on acceptor (right) side of splice (C++ reference rightsupport); used by good_junc / witness right.
+    /// Support on acceptor (right) side of splice (rightsupport); used by good_junc / witness right.
     pub rightsupport: f64,
-    /// True if this junction matches a guide annotation intron. C++ reference jd.guide_match.
-    /// Used by eonly mode: kills all non-guide junctions (C++ reference good_junc:13972).
+    /// True if this junction matches a guide annotation intron. jd.guide_match.
+    /// Used by eonly mode: kills all non-guide junctions (good_junc:13972).
     pub guide_match: bool,
-    /// Canonical left (donor) dinucleotide check (C++ reference jd.consleft).
+    /// Canonical left (donor) dinucleotide check (jd.consleft).
     /// -1 = unknown (no genome available, never fires kill); 0 = non-canonical; 1 = canonical (GT/GC for +, CT for -).
-    /// C++ reference: kill if !guide_match && consleft==0 && nreads_good < DROP/ERROR_PERC.
+    /// kill if !guide_match && consleft==0 && nreads_good < DROP/ERROR_PERC.
     pub consleft: i8,
-    /// Canonical right (acceptor) dinucleotide check (C++ reference jd.consright).
+    /// Canonical right (acceptor) dinucleotide check (jd.consright).
     /// -1 = unknown; 0 = non-canonical; 1 = canonical (AG for +, AC/GC for -).
-    /// C++ reference: kill if !guide_match && consright==0 && nreads_good < DROP/ERROR_PERC.
+    /// kill if !guide_match && consright==0 && nreads_good < DROP/ERROR_PERC.
     pub consright: i8,
 }
 
@@ -555,7 +555,7 @@ impl Default for JunctionStat {
             leftsupport: 0.0,
             rightsupport: 0.0,
             guide_match: false,
-            consleft: -1, // -1 = unknown; mimics C++ char leftcons=-1 (no genome → !(-1)=false → never kills)
+            consleft: -1, // -1 = unknown; mimics char leftcons=-1 (no genome → !(-1)=false → never kills)
             consright: -1,
         }
     }
@@ -563,7 +563,7 @@ impl Default for JunctionStat {
 
 pub type JunctionStats = DetHashMap<Junction, JunctionStat>;
 
-/// Bundlenode: contiguous segment from merged read coverage (C++ reference CBundlenode).
+/// Bundlenode: contiguous segment from merged read coverage (CBundlenode).
 #[derive(Debug, Clone)]
 pub struct CBundlenode {
     pub start: u64,
@@ -590,7 +590,7 @@ impl CBundlenode {
     }
 }
 
-/// Maps bundlenode id -> list of (graph_id, node_id) for graph nodes created from that bnode (C++ reference CGraphinfo / bundle2graph).
+/// Maps bundlenode id -> list of (graph_id, node_id) for graph nodes created from that bnode (CGraphinfo / bundle2graph).
 pub type Bundle2Graph = Vec<Vec<(usize, usize)>>;
 
 impl CBundlenode {
@@ -607,7 +607,7 @@ impl CBundlenode {
     }
 }
 
-/// Bundle aggregate parity with C++ `BundleData` (subset of high-impact fields for Rust pipeline handoff).
+/// Bundle aggregate compatible with `BundleData` (subset of high-impact fields for Rust pipeline handoff).
 #[derive(Debug, Clone)]
 pub struct BundleData {
     pub idx: usize,
@@ -717,7 +717,7 @@ impl std::fmt::Display for VgSolver {
 pub struct RunConfig {
     /// Long-read mode (-L). When true, reads contribute to abundance and longstart/longend; when false, short-read mode (srabund, coverage trim).
     pub long_reads: bool,
-    /// With -L: mixed mode if >0. Reads with query_length >= this are long, others short (C++ reference mixedMode; reference assembler --long-read-min-len).
+    /// With -L: mixed mode if >0. Reads with query_length >= this are long, others short (mixedMode; original algorithm --long-read-min-len).
     pub long_read_min_len: u64,
     pub min_junction_reads: f64,
     pub junction_support: u64,
@@ -733,7 +733,7 @@ pub struct RunConfig {
     pub min_intron_length: u64,
     /// Merge distance (bp) for building bundlenodes from exons (0 for long-read).
     pub bundle_merge_dist: u64,
-    /// Gap (bp) to start a new bundle; reference assembler.cpp:598 — new bundle when read start > current_end + runoffdist. Default 200.
+    /// Gap (bp) to start a new bundle; original algorithm.cpp:598 — new bundle when read start > current_end + runoffdist. Default 200.
     pub bundle_runoff_dist: u64,
     /// Junction support for CGroup small-exon keep rule (e.g. 10).
     pub cgroup_junction_support: u64,
@@ -744,7 +744,7 @@ pub struct RunConfig {
     pub min_exon_length: u64,
     pub label: String,
     pub verbose: bool,
-    /// Estimate-only mode: only output transcripts matching guide annotations (C++ reference -e flag).
+    /// Estimate-only mode: only output transcripts matching guide annotations (-e flag).
     /// Kills non-guide junctions, restricts keeptrf to guide transfrags, filters non-guide output.
     pub eonly: bool,
     /// Debug bundle ID (e.g., "chr1:1000-2000") to trace flow computation.
@@ -757,11 +757,11 @@ pub struct RunConfig {
     pub trace_intron_chain: Option<Vec<(u64, u64)>>,
     /// Emit contained isoforms by trimming transcript ends (may increase output).
     pub emit_contained_isoforms: bool,
-    /// Emit additional transcripts by enumerating splice graph paths (max sensitivity; not C++ reference default).
+    /// Emit additional transcripts by enumerating splice graph paths (max sensitivity; not default).
     pub emit_junction_paths: bool,
-    /// Emit terminal alt-acceptor rescue transcripts (LR-only; the reference assembler does not do this).
+    /// Emit terminal alt-acceptor rescue transcripts (LR-only; the original algorithm does not do this).
     pub emit_terminal_alt_acceptor: bool,
-    /// Emit micro-exon insertion rescue transcripts (LR-only; the reference assembler does not do this).
+    /// Emit micro-exon insertion rescue transcripts (LR-only; the original algorithm does not do this).
     pub emit_micro_exon_rescue: bool,
     /// Max number of junction-path transcripts to emit per bundle.
     pub max_junction_paths: usize,
@@ -775,13 +775,13 @@ pub struct RunConfig {
     /// Min read-abundance (max of longcov/coverage) to retain through long-read interval isofrac
     /// even when below the dominant isoform fraction (0 = off). Default 1.0 ≈ one supporting read.
     pub transcript_isofrac_keep_min: f64,
-    /// Low isofrac (C++ header lowisofrac=0.02): keep transcript if cov >= this * neighbor (pairwise filter). Lower = more permissive.
+    /// Low isofrac (header lowisofrac=0.02): keep transcript if cov >= this * neighbor (pairwise filter). Lower = more permissive.
     pub lowisofrac: f64,
     /// Merge consecutive exons when gap <= this (bp); 0 = off.
     pub merge_micro_intron_max_gap: u64,
     /// Compute and output TPM in GTF attributes.
     pub output_tpm: bool,
-    /// Rawreads mode (C++ ref): emit predictions directly from kept transfrags.
+    /// Rawreads mode (ref): emit predictions directly from kept transfrags.
     pub rawreads: bool,
     /// If set, write Ballgown-style t_data.ctab and e_data.ctab into this directory.
     pub ballgown_dir: Option<String>,
@@ -796,7 +796,7 @@ pub struct RunConfig {
     pub relax_filters: bool,
     /// Enable pairwise overlap filter (junction inclusion + containment).
     pub pairwise_overlap_filter: bool,
-    /// Pairwise: drop single-exon contained if cov < this fraction of container (C++ reference isofrac; lower = keep more).
+    /// Pairwise: drop single-exon contained if cov < this fraction of container (isofrac; lower = keep more).
     pub pairwise_isofrac: f64,
     pub pairwise_error_perc: f64,
     pub pairwise_drop: f64,
@@ -820,42 +820,42 @@ pub struct RunConfig {
     /// Enable direct port trial of back_to_source_fast_long/fwd_to_sink_fast_long in strict long-read mode.
     /// When false, strict mode keeps current stable extension behavior.
     pub strict_longrec_port: bool,
-    /// Nascent transcription mode (C++ reference isnascent flag): run a second parse_trflong pass
-    /// for non-guide transfrags to build nascent transcript extensions (C++ reference).
+    /// Nascent transcription mode (isnascent flag): run a second parse_trflong pass
+    /// for non-guide transfrags to build nascent transcript extensions
     pub isnascent: bool,
     /// Maximum active internal graph nodes before prune_graph_nodes is applied.
     pub allowed_graph_nodes: usize,
-    /// When true, use junction-edge pruning (C++ reference delete_connection style) instead of node removal.
+    /// When true, use junction-edge pruning (delete_connection style) instead of node removal.
     pub use_prune_by_junction: bool,
-    /// Long intron threshold (C++ header `longintron`).
+    /// Long intron threshold (header `longintron`).
     pub longintron: u64,
-    /// Mismatch fraction threshold (C++ header `mismatchfrac`).
+    /// Mismatch fraction threshold (header `mismatchfrac`).
     pub mismatchfrac: f64,
-    /// Low coverage threshold (C++ header `lowcov`).
+    /// Low coverage threshold (header `lowcov`).
     pub lowcov: f64,
-    /// Splice-site error tolerance (C++ reference `sserror`).
+    /// Splice-site error tolerance (`sserror`).
     pub sserror: u64,
     /// Optional genome FASTA for splice consensus checks.
     pub genome_fasta: Option<String>,
-    /// Merge-mode BAM parity scaffold flag; currently warning-only.
-    pub merge_bam_parity: bool,
+    /// Merge-mode BAM compatibility scaffold flag; currently warning-only.
+    pub merge_bam_compat: bool,
     /// When true (default in merge mode), use graph-based merge (CMTransfrag, process_merge_transfrags, printMergeResults).
     pub use_graph_merge: bool,
-    /// Disable coverage-based trimming (the reference assembler -t), including long-read terminal coverage trim on reads.
+    /// Disable coverage-based trimming (the original algorithm -t), including long-read terminal coverage trim on reads.
     pub no_coverage_trim: bool,
-    /// Reference sequence IDs to exclude from assembly, comma-separated (the reference assembler -x).
+    /// Reference sequence IDs to exclude from assembly, comma-separated (the original algorithm -x).
     pub exclude_seqids: Vec<String>,
-    /// Minimum anchor length for junctions in bp (the reference assembler -a).
+    /// Minimum anchor length for junctions in bp (the original algorithm -a).
     pub min_anchor_length: u64,
     /// Zero all isofrac/coverage filters for maximum sensitivity (diagnostic mode).
     pub max_sensitivity: bool,
-    /// Optional TSV path for compact live parity stage summaries.
-    pub parity_stage_tsv: Option<String>,
+    /// Optional TSV path for compact live debug stage summaries.
+    pub debug_stage_tsv: Option<String>,
     /// Optional TSV path for keeptrf/usepath export from process_transfrags.
     pub keeptrf_usepath_tsv: Option<String>,
     /// Optional JSONL path: dump per-bundle snapshots (graph + transfrags) for 1:1 comparisons.
     pub snapshot_jsonl: Option<String>,
-    /// True when `--trace-reference` was passed (reference fate / parity tracing).
+    /// True when `--trace-reference` was passed (reference fate / debug tracing).
     pub trace_reference: bool,
     /// Emit `ref_chain_junction_witness` assists when all ref introns are in good junctions but
     /// graph/guide extraction fails. Also enabled when `trace_reference` is true unless
@@ -934,7 +934,7 @@ impl RunConfig {
     /// `filter_contained` or per-splice graph pruning in the default path—those crushed gffcompare
     /// Sn on full BAM. For maximum precision, pass `--filter-contained` and/or
     /// `--per-splice-site-isofrac 0.02`, or set `RUSTLE_STRICT_PRESET=strict`.
-    pub fn apply_parity_preset(&mut self) {
+    pub fn apply_compat_preset(&mut self) {
         let strict = std::env::var("RUSTLE_STRICT_PRESET")
             .map(|s| s.eq_ignore_ascii_case("strict"))
             .unwrap_or(false);
@@ -952,10 +952,10 @@ impl RunConfig {
             return;
         }
 
-        // the reference assembler uses isofrac=0.01 (the default) for long-read mode (-L).
+        // the original algorithm uses isofrac=0.01 (the default) for long-read mode (-L).
         // isofrac=0.05 is only for --conservative mode.
-        // lowisofrac stays at 0.02 (C++ header const, not changed for long reads).
-        // The keep_min_abundance floor is set to 0 to match the reference assembler (no floor).
+        // lowisofrac stays at 0.02 (header const, not changed for long reads).
+        // The keep_min_abundance floor is set to 0 to match the original algorithm (no floor).
         const ISO: f64 = 0.01;
         const LOW_ISO: f64 = 0.02;
         self.transcript_isofrac = self.transcript_isofrac.max(ISO);
@@ -965,13 +965,13 @@ impl RunConfig {
         if self.max_junction_paths > 600 {
             self.max_junction_paths = 600;
         }
-        // In long-read mode, the reference assembler only emits transcripts backed by complete read paths
+        // In long-read mode, the original algorithm only emits transcripts backed by complete read paths
         // (transfrags). It never enumerates novel junction combinations via DFS — that was
         // designed for short reads where no single read spans the full transcript. In LR mode,
         // junction-path DFS is the dominant FP source (~71% of overemission), generating
         // combinatorial A→B→C paths from reads that only individually span A→B and B→C.
         // Similarly, terminal_alt_acceptor_rescue and micro_exon_insertion_rescue are rustle
-        // extensions that the reference assembler never performs; disabling them in LR parity mode removes
+        // extensions that the original algorithm never performs; disabling them in LR debug mode removes
         // ~2,376 FP transcripts (1,868 + 508) at no sensitivity cost.
         if self.long_reads {
             self.emit_junction_paths = false;
@@ -989,10 +989,10 @@ impl RunConfig {
             self.junction_canonical_tolerance = self.junction_canonical_tolerance.max(10);
         }
         // filter_contained and retained_intron_filter are too aggressive for sensitivity;
-        // they're available via CLI but not forced by the parity preset.
+        // they're available via CLI but not forced by the compatibility preset.
     }
 
-    /// Assembly mode from flags (C++ reference longreads/mixedMode; reference assembler -L and --long-read-min-len).
+    /// Assembly mode from flags (longreads/mixedMode; original algorithm -L and --long-read-min-len).
     pub fn assembly_mode(&self) -> AssemblyMode {
         if !self.long_reads {
             AssemblyMode::ShortRead
@@ -1009,18 +1009,18 @@ impl Default for RunConfig {
         Self {
             long_reads: true,
             long_read_min_len: 0,
-            min_junction_reads: 1.0, // the reference assembler default junctionthr=1 (reference assembler.cpp:142)
+            min_junction_reads: 1.0, // the original algorithm default junctionthr=1 (original algorithm.cpp:142)
             junction_support: 10,
             junction_correction_window: 30,
             junction_correction_tolerance: 0.0,
             junction_canonical_tolerance: 2, // Enable 2bp tolerance for canonicalization
             per_splice_site_isofrac: 0.05, // Enable 5% per-splice-site isofrac
             min_intron_length: 20,
-            bundle_merge_dist: 0,  // Long reads use 0; C++ sets bundledist=0 for longreads
+            bundle_merge_dist: 0,  // Long reads use 0; sets bundledist=0 for longreads
             bundle_runoff_dist: 200,
             cgroup_junction_support: 10,
-            readthr: 1.0, // the reference assembler/reference -L: READTHR_LONGREAD=1.0 (reference assembler.cpp:143)
-            singlethr: 4.75, // the reference assembler/reference -L: SINGLETHR_LONGREAD=4.75
+            readthr: 1.0, // the original algorithm/reference -L: READTHR_LONGREAD=1.0 (original algorithm.cpp:143)
+            singlethr: 4.75, // the original algorithm/reference -L: SINGLETHR_LONGREAD=4.75
             min_transcript_length: 200,
             min_exon_length: 0,
             label: "RUSTLE".to_string(),
@@ -1038,9 +1038,9 @@ impl Default for RunConfig {
             max_junction_path_len: 200,
             threads: 0, // 0 = auto-detect available CPUs
             filter_contained: false,
-            transcript_isofrac: 0.01, // the reference assembler default -f 0.01
+            transcript_isofrac: 0.01, // the original algorithm default -f 0.01
             transcript_isofrac_keep_min: 1.0,
-            lowisofrac: 0.02, // the reference assembler default lowisofrac=0.02
+            lowisofrac: 0.02, // the original algorithm default lowisofrac=0.02
             merge_micro_intron_max_gap: 0,
             output_tpm: false,
             rawreads: false,
@@ -1050,7 +1050,7 @@ impl Default for RunConfig {
             min_terminal_exon_len: 0,
             relax_filters: false,
             pairwise_overlap_filter: true,
-            pairwise_isofrac: 0.01, // the reference assembler default isofrac=0.01
+            pairwise_isofrac: 0.01, // the original algorithm default isofrac=0.01
             pairwise_error_perc: 0.1,
             pairwise_drop: 0.5,
             retained_intron_filter: false,
@@ -1072,13 +1072,13 @@ impl Default for RunConfig {
             lowcov: LOWCOV,
             sserror: SSERROR,
             genome_fasta: None,
-            merge_bam_parity: false,
+            merge_bam_compat: false,
             use_graph_merge: true,
             no_coverage_trim: false,
             exclude_seqids: Vec::new(),
             min_anchor_length: 10,
             max_sensitivity: false,
-            parity_stage_tsv: None,
+            debug_stage_tsv: None,
             keeptrf_usepath_tsv: None,
             snapshot_jsonl: None,
             trace_reference: false,

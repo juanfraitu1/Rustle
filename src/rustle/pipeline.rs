@@ -18,7 +18,7 @@ use crate::bundle::{
     build_bundlenodes_and_readgroups_from_cgroups_3strand, compare_bundles_to_log,
     detect_bundles_from_bam, parse_bundle_log,
 };
-use crate::bundle_cpp_port::build_bundles_cpp_style;
+use crate::bundle_builder::build_sub_bundles;
 
 use crate::coord::len_half_open;
 use crate::coverage_trim::apply_coverage_trim;
@@ -43,8 +43,8 @@ use crate::killed_junctions::{
 };
 use crate::map_reads::{map_reads_to_graph, map_reads_to_graph_bundlenodes};
 use crate::nodecov::compute_nodecov;
-use crate::parity_stage;
-use crate::parity_stage::StageDetail;
+use crate::debug_stage;
+use crate::debug_stage::StageDetail;
 use crate::path_extract::{
     extract_rawreads_transcripts, extract_shortread_transcripts, extract_transcripts,
     LongRecSummary, Transcript,
@@ -101,15 +101,15 @@ fn consensus_cache_capacity() -> NonZeroUsize {
 }
 
 /// Merge overlapping same-strand subbundles into larger bundles.
-/// the reference assembler processes all bundlenodes in a color component as ONE graph.
-/// Rustle's build_bundles_cpp_style creates separate subbundles for each
+/// the algorithm processes all bundlenodes in a color component as ONE graph.
+/// Rustle's build_sub_bundles creates separate subbundles for each
 /// component. This function merges overlapping same-strand subbundles so
-/// that reads can see all graph nodes in the region, matching the reference assembler.
+/// that reads can see all graph nodes in the region, matching the expected behavior.
 fn merge_overlapping_subbundles(
-    subs: &[crate::bundle_cpp_port::CppBundleResult],
+    subs: &[crate::bundle_builder::SubBundleResult],
     reads: &[crate::types::BundleRead],
-) -> Vec<crate::bundle_cpp_port::CppBundleResult> {
-    use crate::bundle_cpp_port::CppBundleResult;
+) -> Vec<crate::bundle_builder::SubBundleResult> {
+    use crate::bundle_builder::SubBundleResult;
     use crate::types::CBundlenode;
 
     if subs.is_empty() {
@@ -151,7 +151,7 @@ fn merge_overlapping_subbundles(
         if group.len() == 1 {
             // Single subbundle — pass through (rebuild to avoid Clone requirement)
             let sub = &subs[group[0]];
-            result.push(CppBundleResult {
+            result.push(SubBundleResult {
                 strand: sub.strand,
                 start: sub.start,
                 end: sub.end,
@@ -236,7 +236,7 @@ fn merge_overlapping_subbundles(
         // Merge bnode_colors from first subbundle (colors are global)
         let bnode_colors = subs[group[0]].bnode_colors.clone();
 
-        result.push(CppBundleResult {
+        result.push(SubBundleResult {
             strand,
             start,
             end,
@@ -1440,7 +1440,7 @@ mod tests {
     use crate::types::{Junction, JunctionStat, JunctionStats};
 
     #[test]
-    fn bad_mm_neg_donor_uses_cpp_probe_base() {
+    fn bad_mm_neg_donor_uses_probe_base() {
         let refstart = 100u64;
         let j = Junction::new(110, 200);
         let mut stats: JunctionStats = Default::default();
@@ -1457,7 +1457,7 @@ mod tests {
         );
 
         let mut bpcov = BpcovStranded::empty(refstart, 250);
-        // C++ probes donor support at start-refstart (0-based index relative to refstart).
+        // Probes donor support at start-refstart (0-based index relative to refstart).
         // With donor=110 and refstart=100, point=10.
         // leftcov reads at index 10 (genomic 110), rightcov at index 11 (genomic 111).
         // To keep the junction, we need rightcov <= 0.9 * leftcov (tolerance = 1 - 0.1).
@@ -2072,7 +2072,7 @@ fn emit_junction_paths(
         };
         let longcov = lc_bottleneck;
         // Junction paths need stronger evidence than flow-extracted transcripts.
-        // Rustle's coverage is ~1.8x lower than the reference assembler's for the same transcript,
+        // Rustle's coverage is ~1.8x lower than the expected value for the same transcript,
         // so we compensate with a 2x multiplier to avoid flooding predcluster with
         // low-confidence graph walks.
         let thr = (config.readthr * 2.0).max(f64::EPSILON);
@@ -2084,7 +2084,7 @@ fn emit_junction_paths(
         // (path A→B→C where reads only span A→B and B→C separately), because node B's coverage
         // counts all reads passing through it regardless of which junctions they use.
         // Guide-matched junctions (from annotation) bypass this check.
-        // This aligns with the reference assembler's DIRECT_LOW_COV rejection for zero-flow paths.
+        // This aligns with the DIRECT_LOW_COV rejection for zero-flow paths.
         {
             let junc_thr = config.readthr.max(1.0);
             for i in 0..exons.len().saturating_sub(1) {
@@ -2876,12 +2876,12 @@ fn trace_intron_chain_graph(graph: &Graph, bundle: &crate::types::Bundle, config
     }
 }
 
-/// Split bundlenodes into components using junction connectivity (C++ parity).
+/// Split bundlenodes into components using junction connectivity.
 ///
-/// In C++, `good_junc()` rejects low-quality junctions (setting strand=0), which breaks
+/// `good_junc()` rejects low-quality junctions (setting strand=0), which breaks
 /// color propagation in `merge_read_to_group`. This naturally separates gene loci that are
 /// only connected by bad-junction reads into different bundles with separate graphs
-/// (C++ reference, 15408-15420).
+///.
 ///
 /// This function achieves the same effect: two bundlenodes are in the same component only
 /// if a GOOD junction (one that passed filter_junctions) bridges them.
@@ -2891,10 +2891,10 @@ fn bundlenode_components_by_junctions(
     good_junctions: &[Junction],
 ) -> Vec<Vec<(usize, u64, u64, f64)>> {
     let bnodes = bundlenodes_to_vec(bn);
-    let parity_debug = std::env::var_os("RUSTLE_PARITY_DEBUG").is_some();
+    let parity_debug = std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some();
     if parity_debug {
         eprintln!(
-            "PARITY_JUNC_SPLIT bnodes={} good_junctions={}",
+            "DEBUG_JUNC_SPLIT bnodes={} good_junctions={}",
             bnodes.len(),
             good_junctions.len()
         );
@@ -2958,7 +2958,7 @@ fn bundlenode_components_by_junctions(
     out.sort_unstable_by_key(|g| g.first().map(|v| v.1).unwrap_or(0));
 
     if parity_debug {
-        eprintln!("PARITY_JUNC_SPLIT result: {} components", out.len());
+        eprintln!("DEBUG_JUNC_SPLIT result: {} components", out.len());
         for (ci, comp) in out.iter().enumerate() {
             let start = comp.first().map(|v| v.1).unwrap_or(0);
             let end = comp.last().map(|v| v.2).unwrap_or(0);
@@ -2975,12 +2975,12 @@ fn bundlenode_components_by_junctions(
     out
 }
 
-/// Split bundlenodes into components by CGroup color root (C++ parity).
+/// Split bundlenodes into components by CGroup color root.
 ///
-/// In C++, CGroups on opposite sides of killed junctions (strand==0) get different
+/// CGroups on opposite sides of killed junctions (strand==0) get different
 /// `equalcolor` roots, and groups with the same color root → same `CBundle`
-/// (C++ reference). Each CBundle gets its own `create_graph` call with
-/// shared reads/bpcov (C++ reference).
+/// . Each CBundle gets its own `create_graph` call with
+/// shared reads/bpcov .
 ///
 /// `bnode_colors` is the color root for each bundlenode (computed in bundle.rs).
 fn bundlenode_components_by_color(
@@ -2995,7 +2995,7 @@ fn bundlenode_components_by_color(
         return vec![bnodes];
     }
 
-    let parity_debug = std::env::var_os("RUSTLE_PARITY_DEBUG").is_some();
+    let parity_debug = std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some();
     let mut groups: HashMap<usize, Vec<(usize, u64, u64, f64)>> = Default::default();
     for (i, item) in bnodes.into_iter().enumerate() {
         let color = bnode_colors.get(i).copied().unwrap_or(0);
@@ -3079,7 +3079,7 @@ fn count_fragment_metrics_for_bundle(bundle: &crate::types::Bundle) -> (f64, f64
     let mut num_fragments = 0.0f64;
     let mut frag_len_sum = 0.0f64;
     for r in &bundle.reads {
-        // C++ countFragment parity: these are accumulated per-alignment event during ingest
+        // countFragment: these are accumulated per-alignment event during ingest
         // and carried on merged read entries.
         if r.countfrag_len > 0.0 {
             frag_len_sum += r.countfrag_len;
@@ -3125,7 +3125,7 @@ fn read_strand_counts(reads: &[BundleRead]) -> StrandReadCounts {
 
 /// Split a read at killed junction boundaries and return neutral fragments that
 /// have no surviving internal splice edges (typically single-exon remnants).
-/// These fragments model the C++ sno=1 contribution of partially unsupported
+/// These fragments model the sno=1 contribution of partially unsupported
 /// reads without forcing the whole read to unstranded.
 fn killed_junction_neutral_fragments(
     read: &BundleRead,
@@ -3202,7 +3202,7 @@ fn shorten_first_exon_to_2bp(read: &mut BundleRead) {
     if e.saturating_sub(s) <= 2 {
         return;
     }
-    // C++ shortenFirstExon: newStart = segs[0].end - 2 (2bp from end)
+    // shortenFirstExon: newStart = segs[0].end - 2 (2bp from end)
     read.exons[0].0 = e.saturating_sub(2);
 }
 
@@ -3237,7 +3237,7 @@ fn read_is_long_class_for_processread(read: &BundleRead, config: &RunConfig) -> 
     rlen >= config.long_read_min_len
 }
 
-/// C++ reference processRead parity (C++ reference):
+/// processRead logic:
 /// remove terminal exons if they are mostly polyA/polyT.
 /// Returns false when read should be discarded.
 fn apply_processread_terminal_poly_trim(read: &mut BundleRead) -> bool {
@@ -3324,7 +3324,7 @@ fn apply_processread_terminal_poly_trim(read: &mut BundleRead) -> bool {
             read.ref_end = e;
         }
 
-        // C++ parity: infer unknown strand from poly tail evidence when unambiguous.
+        // infer unknown strand from poly tail evidence when unambiguous.
         if read.strand == '.' {
             let plus = read.has_poly_end_unaligned || read.has_poly_end_aligned;
             let minus = read.has_poly_start_unaligned || read.has_poly_start_aligned;
@@ -3343,16 +3343,16 @@ fn apply_processread_terminal_poly_trim(read: &mut BundleRead) -> bool {
     true
 }
 
-/// C++ reference — shorten terminal exons for all long reads with aligned polyA/T.
-/// C++ applies this at the start of infer_transcripts, before count_good_junctions/build_graphs.
+/// Algorithm: shorten terminal exons for all long reads with aligned polyA/T.
+/// Applied at the start of infer_transcripts, before count_good_junctions/build_graphs.
 /// Only applied to multi-exon long reads.
 fn shorten_polya_terminal_exons(reads: &mut [crate::types::BundleRead]) {
     for r in reads.iter_mut() {
         if r.exons.len() < 2 {
             continue;
         }
-        // C++: strand 0 or +1 → shorten last exon if aligned_polyA && !unaligned_polyA
-        // C++: strand 0 or -1 → shorten first exon if aligned_polyT && !unaligned_polyT
+        // Strand 0 or +1 → shorten last exon if aligned_polyA && !unaligned_polyA
+        // Strand 0 or -1 → shorten first exon if aligned_polyT && !unaligned_polyT
         // aligned && !unaligned: polyA is inside the alignment (RT artifact), not a genuine tail.
         let shorten_last = r.has_poly_end_aligned && !r.has_poly_end_unaligned && r.strand != '-';
         let shorten_first =
@@ -3368,14 +3368,14 @@ fn shorten_polya_terminal_exons(reads: &mut [crate::types::BundleRead]) {
         }
         if shorten_first {
             let (s, e) = r.exons[0];
-            // C++ shortenFirstExon: newStart = segs[0].end - 2 (2bp, asymmetric with last=3bp)
+            // shortenFirstExon: newStart = segs[0].end - 2 (2bp, asymmetric with last=3bp)
             if e.saturating_sub(s) > 2 {
                 r.exons[0].0 = e.saturating_sub(2);
                 changed = true;
             }
         }
         if changed {
-            // C++ shortenFirstExon/shortenLastExon only moves the terminal exon
+            // shortenFirstExon/shortenLastExon only moves the terminal exon
             // boundary. Internal splice junction identities stay unchanged, so do
             // not rebuild junctions_raw/junctions_del here.
             if let Some((s, _)) = r.exons.first().copied() {
@@ -3389,7 +3389,7 @@ fn shorten_polya_terminal_exons(reads: &mut [crate::types::BundleRead]) {
 }
 
 /// Trim terminal exons of long reads where coverage drops significantly (5x).
-/// This mimics the reference assembler's CMaxIntv trimming to avoid over-extending transfrags into noise.
+/// This mimics CMaxIntv trimming to avoid over-extending transfrags into noise.
 ///
 /// Aggressive outer-window thresholds inflate gffcompare class **`j`** (same intron chain, different
 /// terminal exons): reads get shortened before junction/graph work. Keep the outer ceiling tight.
@@ -3492,7 +3492,7 @@ fn resolve_corr(mut j: Junction, m: &HashMap<Junction, Junction>) -> Junction {
     j
 }
 
-/// C++ build_graphs per-read junction repair (C++ reference).
+/// build_graphs per-read junction repair .
 ///
 /// For each read, for each junction:
 /// - If killed (strand=0) AND has redirect: adjust exon boundaries to redirect target
@@ -3500,7 +3500,7 @@ fn resolve_corr(mut j: Junction, m: &HashMap<Junction, Junction>) -> Junction {
 /// - After all junctions: if no stranded junctions remain, unstrand the read
 ///
 /// Key difference from previous Rust version: does NOT truncate reads at killed junctions.
-/// C++ keeps reads intact with dead junctions; CGroup builder handles color breaks.
+/// Keeps reads intact with dead junctions; CGroup builder handles color breaks.
 fn repair_reads_after_junction_quality(
     reads: &mut [BundleRead],
     corrected_map: &HashMap<Junction, Junction>,
@@ -3547,7 +3547,7 @@ fn repair_reads_after_junction_quality(
 
             has_bad_junction = true;
 
-            // C++ parity (C++ reference): changeleft/changeright junction repair.
+            // changeleft/changeright junction repair.
             // When a junction is killed and no direct redirect exists, search nearby
             // junctions for a better alternative with similar donor or acceptor.
             // This prevents reads from being fragmented at killed junctions.
@@ -3603,13 +3603,13 @@ fn repair_reads_after_junction_quality(
             }
 
             if has_redirect {
-                // C++ 14920-14924: Adjust exon boundaries to redirect target.
+                // Adjust exon boundaries to redirect target.
                 let left = reads[n].exons[i];
                 let right = reads[n].exons[i + 1];
                 let mut newstart = mapped.donor;
                 let mut newend = mapped.acceptor;
 
-                // Keep half-open exons non-empty while matching the C++ inclusive clamps.
+                // Keep half-open exons non-empty while matching inclusive boundary clamps.
                 let left_min_end = left.0.saturating_add(1);
                 if newstart < left_min_end {
                     newstart = left_min_end;
@@ -3653,7 +3653,7 @@ fn repair_reads_after_junction_quality(
             reads_to_unpair.push(n);
         }
 
-        // C++ 15052-15056: if bad junctions and no remaining stranded junctions -> unstrand.
+        // If bad junctions and no remaining stranded junctions -> unstrand.
         if has_bad_junction && (reads[n].strand == '+' || reads[n].strand == '-') {
             let has_stranded_junction = reads[n].junctions.iter().any(|j| {
                 !killed_junction_pairs.contains(j)
@@ -3668,7 +3668,7 @@ fn repair_reads_after_junction_quality(
         }
     }
 
-    // C++ 15145-15156 parity: when a read is rejected by bad junctions, unlink all pairs
+    // When a read is rejected by bad junctions, unlink all pairs
     // reciprocally; if mate is single-exon, unstrand mate.
     for &n in &reads_to_unpair {
         if n >= reads.len() {
@@ -3688,7 +3688,7 @@ fn repair_reads_after_junction_quality(
         }
     }
 
-    // C++ 15180-15209 parity: keepstrand for stranded single-exon reads based on future mates.
+    // keepstrand for stranded single-exon reads based on future mates.
     for n in 0..reads.len() {
         if reads[n].strand != '+' && reads[n].strand != '-' {
             continue;
@@ -3831,7 +3831,7 @@ fn inject_guide_transfrags(
             added += 1;
         }
 
-        // C++ parity: guide boundaries imply trusted start/end and support source/sink links.
+        // guide boundaries imply trusted start/end and support source/sink links.
         // Use sorted node_ids for first/last
         let mut sorted_for_bounds = gi.node_ids.clone();
         sorted_for_bounds.sort_unstable_by(|&a, &b| {
@@ -3941,7 +3941,7 @@ fn tx_cov_from_bpcov(tx: &Transcript, bpcov: &Bpcov) -> f64 {
         tlen += elen;
         cov_sum += bpcov.get_cov_range(bpcov.idx(s), bpcov.idx(e));
     }
-    // Return per-base coverage (the reference assembler `pred->cov` scale), not total bp mass.
+    // Return per-base coverage (the `pred->cov` scale), not total bp mass.
     cov_sum / (tlen.max(1) as f64)
 }
 
@@ -4315,7 +4315,7 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
         let (fs, fe) = tx.exons[0];
         if fe > fs {
             if let Some(first_nid) = find_node_containing(fs) {
-                // Extend across collinear parent chain (C++ parse_trflong terminal exon extension).
+                // Extend across collinear parent chain (parse_trflong terminal exon extension).
                 let mut cur = first_nid;
                 loop {
                     let cur_node = match graph.nodes.get(cur) {
@@ -4383,7 +4383,7 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
         if le > ls {
             let probe = le.saturating_sub(1);
             if let Some(last_nid) = find_node_containing(probe) {
-                // Extend across collinear child chain (C++ parse_trflong terminal exon extension).
+                // Extend across collinear child chain (parse_trflong terminal exon extension).
                 let mut cur = last_nid;
                 loop {
                     let cur_node = match graph.nodes.get(cur) {
@@ -4619,7 +4619,7 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
-    // refresh_graph_node_bp_coverage_from_bpcov(graph_mut, bpcov_stranded);  // C++ parity: node.cov is not refreshed from bpcov
+    // refresh_graph_node_bp_coverage_from_bpcov(graph_mut, bpcov_stranded);  // node.cov is not refreshed from bpcov
     trace_graph_numeric_state("extract:after_bpcov_refresh", graph_mut, transfrags);
     let _nodecov = compute_nodecov(graph_mut, transfrags, config.verbose);
     trace_graph_numeric_state("extract:after_compute_nodecov", graph_mut, transfrags);
@@ -4717,7 +4717,7 @@ fn extract_bundle_transcripts_for_graph(
         &seed_outcomes_buf,
     );
 
-    // C++ reference: extend terminal exon boundaries to match guide coordinates.
+    // extend terminal exon boundaries to match guide coordinates.
     // When a transcript is guide-derived, extend first exon start to guide start and
     // last exon end to guide end (if guide boundary overlaps the exon).
     for tx in txs.iter_mut() {
@@ -4798,7 +4798,7 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
-    // Guided parity: keep exact guide exon coordinates for guide-derived predictions.
+    // Guided mode: keep exact guide exon coordinates for guide-derived predictions.
     // Without this, graph-extracted guide models can inherit shifted internal boundaries
     // from local nodes (e.g. STRG.554.*), which later appear as not_extracted:junctions_present.
     if !guide_transcripts.is_empty() {
@@ -4835,12 +4835,12 @@ fn extract_bundle_transcripts_for_graph(
     }
     trace_stage("guide_exact_restore", &txs);
 
-    // Compute strand-weighted bpcov_cov for each transcript (C++ reference gene_abundance bpcov parity).
+    // Compute strand-weighted bpcov_cov for each transcript (gene_abundance bpcov calculation).
     for tx in txs.iter_mut() {
         tx.bpcov_cov = compute_transcript_bpcov(tx, bpcov_stranded);
         // IMPORTANT: do not overwrite `tx.coverage` (flow-derived) by default.
-        // the reference assembler pred->cov is flow-derived; using raw bpcov makes cov wildly larger on deep loci
-        // (e.g. STRG.27.3: ~31 vs the reference assembler ~6) and breaks isofrac/pairwise decisions.
+        // the pred->cov flow value is flow-derived; using raw bpcov makes cov wildly larger on deep loci
+        // (e.g. STRG.27.3: ~31 vs the expected ~6) and breaks isofrac/pairwise decisions.
         //
         // If you explicitly want the bpcov-proxy coverage for diagnostics, enable:
         //   RUSTLE_USE_BPCOV_COV=1
@@ -4850,7 +4850,7 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
-    // C++ reference print_predcluster parity blocks (keep active in strict mode).
+    // print_predcluster filtering blocks (keep active in strict mode).
     txs = correct_two_exon_split_errors(txs, bpcov, config.verbose);
     trace_stage("correct_two_exon_split_errors", &txs);
     txs = collapse_covered_microintrons(txs, bpcov, config.verbose);
@@ -4860,7 +4860,7 @@ fn extract_bundle_transcripts_for_graph(
     txs =
         apply_checkincomplete_subset_filter(txs, mapped_guides, guide_transcripts, config.verbose);
     trace_stage("apply_checkincomplete_subset_filter", &txs);
-    // C++ reference — delete non-guide predictions shorter than mintranscriptlen
+    // Algorithm: delete non-guide predictions shorter than mintranscriptlen
     // before the equal_pred merge loop.
     if config.min_transcript_length > 0 {
         let before = txs.len();
@@ -4879,7 +4879,7 @@ fn extract_bundle_transcripts_for_graph(
     txs = adjust_overlap_endpoints_opposite_strand(txs, bpcov, config, config.verbose);
     trace_stage("adjust_overlap_endpoints_opposite_strand", &txs);
 
-    // C++ reference: second parse_trflong pass for nascent transcript extensions.
+    // second parse_trflong pass for nascent transcript extensions.
     if config.isnascent && !config.eonly && !guide_transcripts.is_empty() {
         let nascent_txs = extract_transcripts(
             graph_mut,
@@ -5003,7 +5003,7 @@ fn find_endpoints_bpcov(lastval: u64, firstval: u64, bpcov: &Bpcov) -> Option<(u
     Some((s, e))
 }
 
-/// C++ parity utility: `find_midhash(refstart,start,end,bpcov)` (C++ reference, currently disabled upstream).
+/// `find_midhash(refstart,start,end,bpcov)` (currently disabled upstream).
 /// Returns low-coverage split point within [start+anchor, end-anchor).
 #[allow(dead_code)]
 fn find_midhash(refstart: u64, start: u64, end: u64, bpcov: &Bpcov) -> Option<u64> {
@@ -5044,7 +5044,7 @@ fn find_midhash(refstart: u64, start: u64, end: u64, bpcov: &Bpcov) -> Option<u6
     Some(midpoint)
 }
 
-/// Port of C++ reference printResults opposite-strand overlap endpoint adjustment (~20737-20884).
+/// Port of printResults opposite-strand overlap endpoint adjustment (~20737-20884).
 /// Trim conflicting multi-exon terminal boundaries to local low-coverage gap.
 fn adjust_overlap_endpoints_opposite_strand(
     transcripts: Vec<Transcript>,
@@ -5167,7 +5167,7 @@ fn adjust_overlap_endpoints_opposite_strand(
     txs
 }
 
-/// Conservative port of C++ reference 2-exon split-alignment error pruning.
+/// Conservative 2-exon split-alignment error pruning.
 /// Removes isolated non-guide 2-exon transcripts when first-vs-last exon window
 /// coverages differ by >10x (ERROR_PERC threshold).
 fn correct_two_exon_split_errors(
@@ -5216,7 +5216,7 @@ fn correct_two_exon_split_errors(
 
         let mut drop = false;
 
-        // C++ reference block A (~20708): non-guide 2-exon + immediate overlapping next + no previous overlap.
+        // Block A: non-guide 2-exon + immediate overlapping next + no previous overlap.
         // Drop when first exon window is much weaker than the last one.
         if !is_guide_tx(tx) {
             if let Some(q) = next {
@@ -5240,7 +5240,7 @@ fn correct_two_exon_split_errors(
             }
         }
 
-        // C++ reference block B (~20934 + last prediction branch): isolated-right context.
+        // Block B: isolated-right context.
         // Drop when the last exon window is much weaker than the first one.
         if !drop {
             let next_non_overlap = next
@@ -5445,7 +5445,7 @@ fn apply_guide_internal_split_merge(
     txs
 }
 
-/// Port of C++ reference checkincomplete-style elimination:
+/// Port of checkincomplete-style elimination:
 /// in guided mode, drop non-guide multi-exon predictions whose introns are all present
 /// in mapped guide introns for the current bundle.
 fn apply_checkincomplete_subset_filter(
@@ -5529,7 +5529,7 @@ fn apply_checkincomplete_subset_filter(
     filtered
 }
 
-/// Port of guided single-exon reflink absorption from C++ reference (around add_pred usage ~20463).
+/// Port of guided single-exon reflink absorption (around add_pred usage).
 fn apply_guide_reflink_absorption(
     txs: Vec<Transcript>,
     mapped_guides: &[GuideInfo],
@@ -5719,7 +5719,7 @@ fn apply_guide_reflink_absorption(
 }
 
 /// Create single-exon predictions from bundle coverage for unstranded bundles
-/// with no multi-exon reads (C++ reference).
+/// with no multi-exon reads .
 fn create_single_exon_predictions_from_bundle(
     bundle: &crate::types::Bundle,
     bpcov_stranded: &BpcovStranded,
@@ -5729,7 +5729,7 @@ fn create_single_exon_predictions_from_bundle(
 ) -> Vec<Transcript> {
     let mut predictions: Vec<Transcript> = Vec::new();
 
-    // Use unstranded coverage (bpcov[1] in C++)
+    // Use unstranded coverage (bpcov[1] = unstranded)
     let all_cov = match &bpcov_stranded.all {
         Some(c) => c,
         None => return predictions,
@@ -5743,7 +5743,7 @@ fn create_single_exon_predictions_from_bundle(
     let bundle_end = bpcov_stranded.minus.bundle_end;
 
     // Simple approach: create single-exon predictions from continuous high-coverage regions
-    // This mirrors C++ behavior for unstranded single-exon bundles
+    // This mirrors standard behavior for unstranded single-exon bundles
     let mut current_start: Option<u64> = None;
     let mut current_end: u64 = 0;
     let mut in_exon = false;
@@ -5765,7 +5765,7 @@ fn create_single_exon_predictions_from_bundle(
             if let Some(start) = current_start {
                 let len = current_end.saturating_sub(start).saturating_add(1);
                 if len >= min_transcript_length {
-                    // Calculate coverage (C++ parity: coverage field stores total base coverage)
+                    // Calculate coverage (coverage field stores total base coverage)
                     let start_idx = (start - bundle_start) as usize;
                     let end_idx = (current_end - bundle_start) as usize;
                     let sum_cov: f64 = all_cov[start_idx..=end_idx].iter().sum();
@@ -5866,16 +5866,16 @@ fn needy_locus_diagnostics_wanted(config: &crate::types::RunConfig, trace_refere
         || std::env::var_os("RUSTLE_TRACE_LOCUS").is_some()
 }
 
-/// Resolve `--parity-stage-tsv`, then `RUSTLE_PARITY_STAGE_TSV`, then auto path for needy runs.
-fn resolve_parity_stage_tsv_path(
+/// Resolve `--parity-stage-tsv`, then `RUSTLE_DEBUG_STAGE_TSV`, then auto path for needy runs.
+fn resolve_debug_stage_tsv_path(
     config: &crate::types::RunConfig,
     output_gtf: &Path,
     trace_reference: Option<&str>,
 ) -> Option<PathBuf> {
-    if let Some(p) = config.parity_stage_tsv.as_ref() {
+    if let Some(p) = config.debug_stage_tsv.as_ref() {
         return Some(PathBuf::from(p));
     }
-    if let Ok(p) = std::env::var("RUSTLE_PARITY_STAGE_TSV") {
+    if let Ok(p) = std::env::var("RUSTLE_DEBUG_STAGE_TSV") {
         if !p.is_empty() {
             return Some(PathBuf::from(p));
         }
@@ -5909,10 +5909,10 @@ pub fn run<P: AsRef<Path>>(
         };
     }
     init_rayon_pool(config.threads);
-    let parity_tsv_resolved = resolve_parity_stage_tsv_path(&config, output_gtf.as_ref(), trace_reference);
-    if let Some(ref p) = parity_tsv_resolved {
-        let auto_path = config.parity_stage_tsv.is_none()
-            && std::env::var_os("RUSTLE_PARITY_STAGE_TSV").is_none();
+    let diag_tsv_resolved = resolve_debug_stage_tsv_path(&config, output_gtf.as_ref(), trace_reference);
+    if let Some(ref p) = diag_tsv_resolved {
+        let auto_path = config.debug_stage_tsv.is_none()
+            && std::env::var_os("RUSTLE_DEBUG_STAGE_TSV").is_none();
         if auto_path {
             eprintln!(
                 "rustle: needy-locus diagnostics: writing per-bundle summary TSV to {}",
@@ -5920,7 +5920,7 @@ pub fn run<P: AsRef<Path>>(
             );
         }
     }
-    parity_stage::init(parity_tsv_resolved.as_deref())?;
+    debug_stage::init(diag_tsv_resolved.as_deref())?;
     let snapshot_writer = std::sync::Arc::new(std::sync::Mutex::new(snapshot::SnapshotWriter::new(config.snapshot_jsonl.as_deref())?));
     let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
     let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
@@ -5943,10 +5943,10 @@ pub fn run<P: AsRef<Path>>(
         (acc.0 + n, acc.1 + s)
     });
     let mut n_bundles = bundles.len();
-    if parity_stage::is_enabled() {
+    if debug_stage::is_enabled() {
         for bundle in &bundles {
             let n_junctions: usize = bundle.reads.iter().map(|r| r.junctions.len()).sum();
-            parity_stage::emit_with_detail(
+            debug_stage::emit_with_detail(
                 "bundle_context",
                 &bundle.chrom,
                 bundle.start,
@@ -5961,7 +5961,7 @@ pub fn run<P: AsRef<Path>>(
                 0,
                 0,
                 0,
-                parity_stage::bundle_detail(bundle),
+                debug_stage::bundle_detail(bundle),
                 "detected_bundle",
             );
         }
@@ -6147,12 +6147,12 @@ pub fn run<P: AsRef<Path>>(
     let shadow_bundle_diags_mutex = std::sync::Mutex::new(Vec::<ShadowStrictBundleDiag>::new());
 
     // Pre-compute per-strand coverage for ALL bundles at each region.
-    // C++ processes all strands in one bundle and has bpcov[3] (minus/all/plus).
+    // The algorithm processes all strands in one bundle and has bpcov[3] (minus/all/plus).
     // Rust splits by strand, so each bundle lacks coverage from other strands.
     // Build a global BpcovStranded per (chrom, start, end) from ALL strand bundles.
     // This is used for:
     //   1. Cross-strand resolution in '.' bundles
-    //   2. Strand-signed coverage (get_cov_sign parity) in good_junc gate for stranded bundles
+    //   2. Strand-signed coverage (get_cov_sign logic) in good_junc gate for stranded bundles
     t!("setup");
     // Build strand evidence map in parallel: chrom -> junction -> (has_plus, has_minus).
     let chrom_junction_strand_evidence = collect_chrom_junction_strand_evidence_parallel(&bundles);
@@ -6180,7 +6180,7 @@ pub fn run<P: AsRef<Path>>(
                 }
                 _ => {
                     // '.' (neutral/unstranded) reads: add to 'all' channel only
-                    // C++ bpcov[1] includes all reads; neutral reads go to bpcov[1] via sno=1
+                    // bpcov[1] includes all reads; neutral reads go to bpcov[1] via sno=1
                     for r in &bundle.reads {
                         for &(s, e) in &r.exons {
                             entry.add_coverage(BPCOV_STRAND_ALL, s, e, r.weight);
@@ -6213,10 +6213,10 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // C++ parity: dual-add reads predicted to become unstranded into opposite-strand bundles.
+    // dual-add reads predicted to become unstranded into opposite-strand bundles.
     // Keep enabled by default; allow explicit opt-out only for diagnostics.
     if !use_region_bundle_pass && std::env::var_os("RUSTLE_DISABLE_DUAL_ADD_UNSTRANDED").is_none() {
-        let strand_audit = std::env::var_os("RUSTLE_PARITY_STRAND_AUDIT").is_some();
+        let strand_audit = std::env::var_os("RUSTLE_DEBUG_STRAND_AUDIT").is_some();
         let mut unstranded_reads: HbHashMap<(String, u64, u64), Vec<BundleRead>> =
             Default::default();
         // Keep neutralization indices strand-scoped; region-only indexing leaks +/- indices.
@@ -6245,7 +6245,7 @@ pub fn run<P: AsRef<Path>>(
                 shorten_polya_terminal_exons(&mut reads_clone);
             }
 
-            // C++ parity: count support first, then apply higherr/snap correction stages.
+            // count support first, then apply higherr/snap correction stages.
             let mut junction_stats_corr = bundle.junction_stats.clone();
 
             // Count support on cloned reads
@@ -6263,7 +6263,7 @@ pub fn run<P: AsRef<Path>>(
                 &chrom_junction_strand_evidence,
             );
 
-            // the reference assembler does not run a separate ratio-cluster rewrite pass here.
+            // the algorithm does not run a separate ratio-cluster rewrite pass here.
             // Keep only the direct coordinate correction / guide snap stages.
             let (corrected_stats, _corrected_map) =
                 correct_junctions_with_map(&junction_stats_corr, false);
@@ -6309,8 +6309,8 @@ pub fn run<P: AsRef<Path>>(
             }
             let mut cjunctions = crate::types::junction_stats_to_cjunctions(&junction_stats_corr);
             aggregate_splice_site_support(&mut cjunctions);
-            // C++ parity: apply_higherr_demotions before good_junc
-            // In C++, the higherr block runs before the good_junc call in build_graphs
+            // apply_higherr_demotions before good_junc
+            // The higherr block runs before the good_junc call in build_graphs
             apply_higherr_demotions(&mut cjunctions, config.sserror, config.min_junction_reads);
             good_junc(
                 &mut cjunctions,
@@ -6430,7 +6430,7 @@ pub fn run<P: AsRef<Path>>(
         }
 
         // Reads that lose stranded junction evidence are neutralized in-place.
-        // This keeps C++-style sno=1 semantics in the original bundle.
+        // This keeps sno=1 semantics in the original bundle.
         for bundle in bundles.iter_mut() {
             if bundle.strand != '+' && bundle.strand != '-' {
                 continue;
@@ -6470,7 +6470,7 @@ pub fn run<P: AsRef<Path>>(
                         .copied()
                         .unwrap_or(0);
                     eprintln!(
-                        "PARITY_STRAND_NEUTRALIZE chrom={} range={}-{} bundle_strand={} flagged={} idxs={} changed={} before(-/.+/o)={}/{}/{}/{} after(-/.+/o)={}/{}/{}/{}",
+                        "DEBUG_STRAND_NEUTRALIZE chrom={} range={}-{} bundle_strand={} flagged={} idxs={} changed={} before(-/.+/o)={}/{}/{}/{} after(-/.+/o)={}/{}/{}/{}",
                         bundle.chrom,
                         bundle.start + 1,
                         bundle.end,
@@ -6507,7 +6507,7 @@ pub fn run<P: AsRef<Path>>(
                     bundle.reads.iter().map(read_sig_nostrand).collect();
                 let mut inserted = 0usize;
                 for r in reads {
-                    // C++ parity target: dual-add as neutral (sno=1), not forced +/-.
+                    // Target: dual-add as neutral (sno=1), not forced +/-.
                     // Deduplicate against existing reads in this bundle.
                     if seen.insert(read_sig_nostrand(r)) {
                         bundle.reads.push(r.clone());
@@ -6518,7 +6518,7 @@ pub fn run<P: AsRef<Path>>(
                     let after = read_strand_counts(&bundle.reads);
                     let before = before.unwrap_or_default();
                     eprintln!(
-                        "PARITY_STRAND_INJECT chrom={} range={}-{} bundle_strand={} source_neutral={} inserted={} before(-/.+/o)={}/{}/{}/{} after(-/.+/o)={}/{}/{}/{}",
+                        "DEBUG_STRAND_INJECT chrom={} range={}-{} bundle_strand={} source_neutral={} inserted={} before(-/.+/o)={}/{}/{}/{} after(-/.+/o)={}/{}/{}/{}",
                         bundle.chrom,
                         bundle.start + 1,
                         bundle.end,
@@ -6541,7 +6541,7 @@ pub fn run<P: AsRef<Path>>(
 
     t!("pre_processing_pass");
 
-    // Keep 3-strand groupflow on by default for parity, with an explicit opt-out.
+    // Keep 3-strand groupflow on by default for compatibility, with an explicit opt-out.
     let use_3strand_groupflow = std::env::var_os("RUSTLE_DISABLE_3STRAND_GROUPFLOW").is_none();
     let mut region_reads_for_groupflow: HbHashMap<(String, u64, u64), Vec<BundleRead>> =
         Default::default();
@@ -6600,13 +6600,13 @@ pub fn run<P: AsRef<Path>>(
                 payload,
             });
         }
-        // C++ reference + 701-745 parity:
+        // Read processing:
         // (1) discard <=2-exon long reads with aligned poly artifact
         // (2) trim/remove terminal poly exons before junction/graph processing
         if config.long_reads {
             let mut kept_reads: Vec<BundleRead> = Vec::with_capacity(bundle.reads.len());
             for mut r in std::mem::take(&mut bundle.reads) {
-                // processRead parity: these gates apply only to long-read-class entries
+                // processRead filter: these gates apply only to long-read-class entries
                 // (longreads || mixedMode&&uval), not to short-read entries in mixed mode.
                 if read_is_long_class_for_processread(&r, &config) {
                     if r.exons.len() <= 2 && (r.has_poly_end_aligned || r.has_poly_start_aligned) {
@@ -6620,17 +6620,17 @@ pub fn run<P: AsRef<Path>>(
             }
             bundle.reads = kept_reads;
         }
-        // C++ reference: shorten terminal exons for long reads with poly flags.
+        // shorten terminal exons for long reads with poly flags.
         if config.long_reads {
             shorten_polya_terminal_exons(&mut bundle.reads);
-            // the reference assembler `-t` / `no_coverage_trim`: skip read-level terminal coverage trim (still keep
-            // poly-A shorten above — C++ reference processRead parity). Helps gffcompare terminal class `j`.
+            // the `-t` / `no_coverage_trim`: skip read-level terminal coverage trim (still keep
+            // poly-A shorten above — processRead logic). Helps gffcompare terminal class `j`.
             if !config.no_coverage_trim {
                 let bpcov_temp = BpcovStranded::from_reads(&bundle.reads, bundle.start, bundle.end);
                 trim_terminal_exons_by_coverage(&mut bundle.reads, &bpcov_temp, bundle.start);
             }
         }
-        // C++ parity order:
+        // Processing order:
         // 1. Count support on observed junction/read coordinates
         // 2. Apply higherr correction
         // 3. Apply guide-based snap correction (long-read, guide present)
@@ -6638,7 +6638,7 @@ pub fn run<P: AsRef<Path>>(
         let mut junction_stats_corr = bundle.junction_stats.clone();
         let mut junction_redirect_map: HashMap<Junction, Junction> = Default::default();
 
-        // Recompute support from adjusted segments (C++ count_good_junctions parity)
+        // Recompute support from adjusted segments (count_good_junctions)
         let cross_cov = if bundle.strand == '.' {
             let key = (bundle.chrom.clone(), bundle.start, bundle.end);
             cross_strand_cov.get(&key)
@@ -6696,7 +6696,7 @@ pub fn run<P: AsRef<Path>>(
             dump_junction_redirects("post_higherr_redirects", &junction_redirect_map);
         }
 
-        // C++ reference: guide-based coordinate snapping for high-mismatch junctions.
+        // guide-based coordinate snapping for high-mismatch junctions.
         if !guide_transcripts.is_empty() && config.long_reads {
             let guide_junctions_vec = cached_bundle_guide_junctions(
                 &mut guide_junction_cache,
@@ -6745,7 +6745,7 @@ pub fn run<P: AsRef<Path>>(
             );
         }
         aggregate_splice_site_support(&mut cjunctions);
-        // C++ parity: apply_higherr_demotions before good_junc
+        // apply_higherr_demotions before good_junc
         apply_higherr_demotions(&mut cjunctions, config.sserror, config.min_junction_reads);
         good_junc(
             &mut cjunctions,
@@ -6757,8 +6757,8 @@ pub fn run<P: AsRef<Path>>(
             config.long_reads,
             config.eonly,
         );
-        // C++ parity (rlink.cpp:15264-15373): after good_junc sets mm=-1 on bad
-        // junctions, StringTie's per-read loop creates REPLACEMENT junctions with
+        // after good_junc sets mm=-1 on bad
+        // junctions, the per-read loop creates REPLACEMENT junctions with
         // the read's splice strand (non-zero).  This means mm<0 junctions with
         // non-zero strand effectively stay alive for color propagation in CGroup
         // building.  We replicate this by NOT converting mm<0 → strand=0 here.
@@ -6778,7 +6778,7 @@ pub fn run<P: AsRef<Path>>(
                 killed
             );
         }
-        // Save CJunction array for per-read junction redirect (rlink.cpp:15264-15373).
+        // Save CJunction array for per-read junction redirect .
         // The cjunctions contain redirect pointers (negative nreads/nreads_good)
         // from apply_higherr_demotions, needed to adjust read exon boundaries.
         let cjunctions_for_redirect = cjunctions.clone();
@@ -6876,14 +6876,14 @@ pub fn run<P: AsRef<Path>>(
             }
         }
 
-        // C++ parity: C++ processes ALL bundles through build_graphs, including single-exon.
-        // The single-exon shortcut below is disabled by default for parity.
+        // The algorithm processes ALL bundles through build_graphs, including single-exon.
+        // The single-exon shortcut below is disabled by default for compatibility.
         // Set RUSTLE_SINGLE_EXON_SHORTCUT=1 to re-enable the optimized path.
         let use_single_exon_shortcut = std::env::var_os("RUSTLE_SINGLE_EXON_SHORTCUT").is_some();
         if use_single_exon_shortcut && bundle.strand == '.' {
             let has_multiexon = bundle.reads.iter().any(|r| r.exons.len() > 1);
             if !has_multiexon {
-                // Create single-exon predictions from bundle coverage (C++ reference)
+                // Create single-exon predictions from bundle coverage
                 let single_exon_txs = create_single_exon_predictions_from_bundle(
                     &bundle,
                     &bpcov_stranded,
@@ -6975,11 +6975,11 @@ pub fn run<P: AsRef<Path>>(
             }
         }
 
-        // C++ parity: after count_good_junctions trims exons, also correct exon boundaries
+        // after count_good_junctions trims exons, also correct exon boundaries
         // for redirected junctions (higherr + guide snap), so CGroup color break checks use
         // final coordinates.
         // Only touch exons where the junction was actually redirected.
-        // (C++ reference: rd.segs[i].end=newstart; rd.segs[i+1].start=newend)
+        // (rd.segs[i].end=newstart; rd.segs[i+1].start=newend)
         if !junction_redirect_map.is_empty() {
             for r in &mut bundle.reads {
                 for j_idx in 0..r.junctions.len() {
@@ -6996,25 +6996,25 @@ pub fn run<P: AsRef<Path>>(
             }
         }
 
-        if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() {
-            eprintln!("PARITY_CGROUP_CHECK reads={}", bundle.reads.len());
+        if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() {
+            eprintln!("DEBUG_CGROUP_CHECK reads={}", bundle.reads.len());
         }
-        // C++ parity: color breaks when juncs[i-1]->strand == 0 (killed junction).
+        // color breaks when juncs[i-1]->strand == 0 (killed junction).
         // Use killed status from final corrected junction stats directly. Optional
         // A/B propagation across corrected_map can be enabled for diagnostics.
         //
-        // C++ two-step kill: higherr block sets mm=-1, then SR bundle loop sets strand=0
-        // for mm<0 junctions (C++ reference build_graphs: `if(jd.mm<0) jd.strand=0`).
-        // C++ parity (rlink.cpp:15275-15373): when a junction has mm<0 (higherr
-        // demotion), StringTie's read loop creates a REPLACEMENT junction with the
+        // Two-step kill: higherr block sets mm=-1, then SR bundle loop sets strand=0
+        // for mm<0 junctions (build_graphs: `if(jd.mm<0) jd.strand=0`).
+        // when a junction has mm<0 (higherr
+        // demotion), the read loop creates a REPLACEMENT junction with the
         // read's strand (non-zero).  CGroup building then sees non-zero strand and
         // allows color propagation.  In Rustle, we approximate this by keeping mm<0
         // junctions with non-zero strand OUT of killed_juncs AND IN good_junctions_set.
         // This allows color to propagate through higherr-demoted junctions that have
-        // valid splice strand, matching StringTie's per-read junction replacement.
+        // valid splice strand, matching per-read junction replacement.
         let mut good_junctions_set: HashSet<crate::types::Junction> =
             junctions.iter().copied().collect();
-        // Add mm<0 junctions with non-zero strand to good_junctions (read-redirect parity).
+        // Add mm<0 junctions with non-zero strand to good_junctions (read-redirect compatibility).
         for (j, s) in &junction_stats_corr_final {
             if s.mm < 0.0 && s.strand != Some(0) && s.nreads_good >= config.min_junction_reads {
                 good_junctions_set.insert(*j);
@@ -7024,7 +7024,7 @@ pub fn run<P: AsRef<Path>>(
             .iter()
             .filter(|(_, s)| {
                 // strand==0: junction genuinely has no strand support → killed.
-                // mm<0 with strand!=0: higherr demotion, but StringTie's read-redirect
+                // mm<0 with strand!=0: higherr demotion, but the read-redirect
                 // creates a replacement with non-zero strand → NOT killed for color purposes.
                 s.strand == Some(0)
             })
@@ -7044,14 +7044,14 @@ pub fn run<P: AsRef<Path>>(
             }
         }
 
-        if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+        if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
             let sno = match bundle.strand {
                 '-' => 0i32,
                 '+' => 2,
                 _ => 1,
             };
             eprintln!(
-                "PARITY_BG_CONTEXT sno={} chrom={} range={}-{} reads={} junctions={}",
+                "DEBUG_BG_CONTEXT sno={} chrom={} range={}-{} reads={} junctions={}",
                 sno,
                 bundle.chrom,
                 bundle.start + 1,
@@ -7060,7 +7060,7 @@ pub fn run<P: AsRef<Path>>(
                 junctions.len()
             );
         }
-        // C++ parity: in stranded bundles, reads neutralized by killed-junction
+        // in stranded bundles, reads neutralized by killed-junction
         // handling should not feed the stranded CGroup sweep.
         let skip_neutralized = (bundle.strand == '+' || bundle.strand == '-')
             && std::env::var_os("RUSTLE_INCLUDE_NEUTRALIZED").is_none();
@@ -7083,7 +7083,7 @@ pub fn run<P: AsRef<Path>>(
             .unwrap_or_else(|| bundle.reads.as_slice());
         let (boundary_left, boundary_right) =
             collect_guide_boundary_sets_for_bundle(&guide_transcripts, &bundle);
-        // Keep 3-strand flow on all bundles by default for parity. Allow explicit opt-out.
+        // Keep 3-strand flow on all bundles by default for compatibility. Allow explicit opt-out.
         let use_3strand_all_strands = std::env::var_os("RUSTLE_DISABLE_3STRAND_ALL_STRANDS")
             .is_none()
             || std::env::var_os("RUSTLE_3STRAND_ALL_STRANDS").is_some();
@@ -7130,9 +7130,9 @@ pub fn run<P: AsRef<Path>>(
                         subset_read_scales[i] = read_scale_all.get(*ri).copied().unwrap_or(0.0);
                     }
                 }
-                if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() && mapped_ratio < 1.0 {
+                if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() && mapped_ratio < 1.0 {
                     eprintln!(
-                        "PARITY_3STRAND_MAP mapped={}/{} ratio={:.3} chrom={} range={}-{}",
+                        "DEBUG_3STRAND_MAP mapped={}/{} ratio={:.3} chrom={} range={}-{}",
                         mapped_reads,
                         cgroup_reads.len(),
                         mapped_ratio,
@@ -7144,7 +7144,7 @@ pub fn run<P: AsRef<Path>>(
                 let no_assignments =
                     !cgroup_reads.is_empty() && subset_read_bnodes.iter().all(|v| v.is_empty());
                 let mapped_ratio_threshold = if tighten_3strand_fallback { 0.90 } else { 0.98 };
-                // Strict parity default: do not auto-fallback away from 3-strand output.
+                // Strict default: do not auto-fallback away from 3-strand output.
                 // Legacy fallback heuristics remain opt-in for A/B diagnostics only.
                 let mut suspicious_3strand = false;
                 let three_assigned = subset_read_bnodes.iter().filter(|v| !v.is_empty()).count();
@@ -7170,9 +7170,9 @@ pub fn run<P: AsRef<Path>>(
                         );
                         (bn, rb, bc, vec![1.0; cgroup_reads.len()])
                     };
-                    if config.verbose || std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+                    if config.verbose || std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
                         eprintln!(
-                        "PARITY_3STRAND_FALLBACK chrom={} range={}-{} strand={} mapped_ratio={:.3} no_assignments={} 3s_bnodes={} 3s_assigned={}",
+                        "DEBUG_3STRAND_FALLBACK chrom={} range={}-{} strand={} mapped_ratio={:.3} no_assignments={} 3s_bnodes={} 3s_assigned={}",
                         bundle.chrom,
                         bundle.start + 1,
                         bundle.end,
@@ -7247,8 +7247,8 @@ pub fn run<P: AsRef<Path>>(
                 let graph_bpcov_stranded =
                     BpcovStranded::from_reads(coverage_reads, graph_bundle.start, graph_bundle.end);
                 let mode = config.assembly_mode();
-                // C++ parity: always collect read boundaries for long-read mode
-                // the reference assembler uses lstart/lend for longtrim during graph construction
+                // always collect read boundaries for long-read mode
+                // the algorithm uses lstart/lend for longtrim during graph construction
                 let _longtrim_on = config.enable_longtrim; // unused: longtrim always enabled for long-read mode
                 let longtrim_in_graph = use_longtrim(mode); // longtrim always enabled for long-read mode
                 let (lstart, lend) = collect_read_boundaries_with_cpas(
@@ -7372,8 +7372,8 @@ pub fn run<P: AsRef<Path>>(
                     )
                 };
 
-                // Add source/sink edges for coverage drops (C++ reference 4145-4209).
-                // C++ parity: uses strand-indexed get_cov_sign(sno, ...).
+                // Add source/sink edges for coverage drops (per-coverage source/sink logic).
+                // uses strand-indexed get_cov_sign(sno, ...).
                 let covlinks_sno = match graph_bundle.strand {
                     '-' => BPCOV_STRAND_MINUS,
                     '+' => BPCOV_STRAND_PLUS,
@@ -7385,7 +7385,7 @@ pub fn run<P: AsRef<Path>>(
                     covlinks_sno,
                 );
 
-                // Coverage-based node splitting: short-read always (C++ reference trimnode_all); long/mixed when longtrim not yet implemented
+                // Coverage-based node splitting: short-read always (trimnode_all); long/mixed when longtrim not yet implemented
                 let synthetic = if use_coverage_trim(mode) {
                     // trimnode_all can expose new candidate nodes after a split; run a few passes.
                     const MAX_COVERAGE_TRIM_PASSES: usize = 1;
@@ -7419,8 +7419,8 @@ pub fn run<P: AsRef<Path>>(
                     Vec::new()
                 };
 
-                // C++ ref:4319-4320: in long-read mode, futuretr transfrags get longread=true.
-                // In mixed mode, C++ creates both a non-longread and a longread copy (C++ ref:4313-4317).
+                // In long-read mode, futuretr transfrags get longread=true.
+                // In mixed mode, the algorithm creates both a non-longread and a longread copy .
                 let mut coverage_synth = coverage_synth;
                 if mode.is_long_read() {
                     for tf in &mut coverage_synth {
@@ -7506,7 +7506,7 @@ pub fn run<P: AsRef<Path>>(
                         None,
                     )
                 };
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "graph_evolution",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7515,13 +7515,13 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     0,
                     0,
                     0,
                     0,
-                    parity_stage::graph_detail(&graph_mut, &transfrags),
+                    debug_stage::graph_detail(&graph_mut, &transfrags),
                     "after_map_reads",
                 );
                 trace_graph_numeric_state("graph:after_map_reads", &graph_mut, &transfrags);
@@ -7604,7 +7604,7 @@ pub fn run<P: AsRef<Path>>(
                 register_transfrag_range_on_nodes(&mut graph_mut, &transfrags, start_add);
                 annotate_hard_boundaries(&mut graph_mut, &transfrags, graph_bundle.strand);
                 if mode.is_mixed() {
-                    // C++ reference mixed mode: redistribute short-read support to compatible long transfrags.
+                    // Mixed mode: redistribute short-read support to compatible long transfrags.
                     let sr_touched = process_mixed_srfrag(&mut transfrags, &graph_mut);
                     if config.verbose {
                         eprintln!(
@@ -7613,9 +7613,9 @@ pub fn run<P: AsRef<Path>>(
                         );
                     }
                 }
-                // C++ parity: compute reachability BEFORE process_transfrags so
+                // compute reachability BEFORE process_transfrags so
                 // that compatible_long/conflict can use childpat/parentpat.
-                // StringTie computes reachability during create_graph (traverse_dfs)
+                // The algorithm computes reachability during create_graph (traverse_dfs)
                 // which runs before process_transfrags.
                 graph_mut.compute_reachability();
 
@@ -7676,8 +7676,8 @@ pub fn run<P: AsRef<Path>>(
                 let _nodecov = compute_nodecov(&mut graph_mut, &transfrags, config.verbose);
                 trace_graph_numeric_state("graph:after_compute_nodecov", &graph_mut, &transfrags);
 
-                // PARITY_GRAPH: emit graph stats for comparison with C++ PARITY_GRAPH/PARITY_GRAPH_POST
-                if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+                // DEBUG_GRAPH: emit graph stats for comparison with expected graph stats
+                if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
                     let sno = match graph_bundle.strand {
                         '-' => 0i32,
                         '+' => 2,
@@ -7687,7 +7687,7 @@ pub fn run<P: AsRef<Path>>(
                     let active_trf = transfrags.iter().filter(|t| t.abundance > 0.0).count();
                     let long_trf = transfrags.iter().filter(|t| t.longread).count();
                     eprintln!(
-                        "PARITY_GRAPH sno={} range={}-{} nodes={} transfrags={} active={} long={}",
+                        "DEBUG_GRAPH sno={} range={}-{} nodes={} transfrags={} active={} long={}",
                         sno,
                         graph_bundle.start + 1,
                         graph_bundle.end,
@@ -7719,7 +7719,7 @@ pub fn run<P: AsRef<Path>>(
                 // Grow all patterns to current pattern_size FIRST: transfrags created early (in
                 // map_reads_to_graph with psize = pre-synthesis value) may have smaller sizes than
                 // edge IDs added later by synthesize_terminal_transfrags / process_transfrags.
-                // Keep the original edge-bit structure intact: C++ transfrag patterns preserve
+                // Keep the original edge-bit structure intact: transfrag patterns preserve
                 // missing edge bits for incomplete paths, and long-recursion relies on that.
                 let needed_psize = graph_mut.pattern_size();
                 for tf in transfrags.iter_mut() {
@@ -7745,7 +7745,7 @@ pub fn run<P: AsRef<Path>>(
                     good_junctions_local,
                     &bpcov,
                     &graph_bpcov_stranded,
-                    trace_reference.is_some() || config.parity_stage_tsv.is_some(),
+                    trace_reference.is_some() || config.debug_stage_tsv.is_some(),
                 );
                 // Read-chain witness filter: remove transcripts whose intron
                 // chain pairs are not witnessed by any read. This prevents the
@@ -7795,8 +7795,8 @@ pub fn run<P: AsRef<Path>>(
                         txs.len()
                     );
                 }
-                let mut parity_seed_summary = SeedOutcomeSummary::default();
-                accumulate_seed_outcomes(&mut parity_seed_summary, &seed_outcomes);
+                let mut seed_summary = SeedOutcomeSummary::default();
+                accumulate_seed_outcomes(&mut seed_summary, &seed_outcomes);
                 let pre_filter_count = pre_filter_txs
                     .as_ref()
                     .map(|v| v.len())
@@ -7819,7 +7819,7 @@ pub fn run<P: AsRef<Path>>(
                 let readthr_removed = predcluster_summary
                     .after_polymerase_runon
                     .saturating_sub(predcluster_summary.after_readthr);
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "seed_flow",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7828,18 +7828,18 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     txs.len(),
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
+                    seed_summary.total,
+                    seed_summary.stored,
                     0,
                     StageDetail {
-                        seed_unwitnessed: parity_seed_summary.unwitnessed,
-                        seed_zero_flux: parity_seed_summary.zero_flux,
-                        seed_low_cov: parity_seed_summary.low_coverage,
-                        seed_back_fail: parity_seed_summary.back_fail,
-                        seed_fwd_fail: parity_seed_summary.fwd_fail,
+                        seed_unwitnessed: seed_summary.unwitnessed,
+                        seed_zero_flux: seed_summary.zero_flux,
+                        seed_low_cov: seed_summary.low_coverage,
+                        seed_back_fail: seed_summary.back_fail,
+                        seed_fwd_fail: seed_summary.fwd_fail,
                         longrec_back_no_choice: longrec_summary.back_no_choice,
                         longrec_fwd_no_choice: longrec_summary.fwd_no_choice,
                         longrec_back_no_reach: longrec_summary.back_no_reach,
@@ -7850,11 +7850,11 @@ pub fn run<P: AsRef<Path>>(
                     },
                     &format!(
                         "unwitnessed={} zero_flux={} low_cov={} back_fail={} fwd_fail={} longrec_attempted={} longrec_succeeded={} longrec_fallback={} back_no_choice={} fwd_no_choice={} back_no_reach={} fwd_no_reach={} back_unreachable={} fwd_unreachable={}",
-                        parity_seed_summary.unwitnessed,
-                        parity_seed_summary.zero_flux,
-                        parity_seed_summary.low_coverage,
-                        parity_seed_summary.back_fail,
-                        parity_seed_summary.fwd_fail,
+                        seed_summary.unwitnessed,
+                        seed_summary.zero_flux,
+                        seed_summary.low_coverage,
+                        seed_summary.back_fail,
+                        seed_summary.fwd_fail,
                         longrec_summary.attempted,
                         longrec_summary.succeeded,
                         longrec_summary.fallback,
@@ -7866,7 +7866,7 @@ pub fn run<P: AsRef<Path>>(
                         longrec_summary.fwd_unreachable_maxpath
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "checktrf",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7875,25 +7875,25 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     txs.len(),
-                    parity_seed_summary.checktrf_total,
+                    seed_summary.checktrf_total,
                     0,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
-                        checktrf_total: parity_seed_summary.checktrf_total,
+                        checktrf_total: seed_summary.checktrf_total,
                         checktrf_pre_filter: pre_filter_count,
                         ..StageDetail::default()
                     },
                     &format!(
                         "checktrf_total={} rescued={} pre_filter={}",
-                        parity_seed_summary.checktrf_total,
-                        parity_seed_summary.checktrf_rescued,
+                        seed_summary.checktrf_total,
+                        seed_summary.checktrf_rescued,
                         pre_filter_count
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "pairwise_overlap_filter",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7902,12 +7902,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     predcluster_summary.after_pairwise,
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.entry_count,
                         predcluster_removed: pairwise_removed,
@@ -7929,7 +7929,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.pairwise_summary.exact_reason_note
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "isofrac",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7938,12 +7938,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     predcluster_summary.after_isofrac,
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.after_pairwise,
                         predcluster_removed: isofrac_removed,
@@ -7957,7 +7957,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.isofrac_summary.longunder_kill
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "collapse_single_exon_runoff",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7966,12 +7966,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     predcluster_summary.after_runoff,
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.after_isofrac,
                         predcluster_removed: runoff_removed,
@@ -7982,7 +7982,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.after_isofrac, runoff_removed
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "polymerase_runoff_filter",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -7991,12 +7991,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     predcluster_summary.after_polymerase_runoff,
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.after_runoff,
                         predcluster_removed: polymerase_runoff_removed,
@@ -8007,7 +8007,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.after_runoff, polymerase_runoff_removed
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "polymerase_runon_filter",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -8016,12 +8016,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     predcluster_summary.after_polymerase_runon,
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.after_polymerase_runoff,
                         predcluster_removed: polymerase_runon_removed,
@@ -8032,7 +8032,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.after_polymerase_runoff, polymerase_runon_removed
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "readthr_gate",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -8041,12 +8041,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     predcluster_summary.after_readthr,
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.after_polymerase_runon,
                         predcluster_removed: readthr_removed,
@@ -8057,7 +8057,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.after_polymerase_runon, readthr_removed
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "junction_support_filter",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -8066,12 +8066,12 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     txs.len(),
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
                         predcluster_before: predcluster_summary.after_readthr,
                         predcluster_removed: junction_support_removed,
@@ -8083,7 +8083,7 @@ pub fn run<P: AsRef<Path>>(
                         predcluster_summary.after_readthr, junction_support_removed
                     ),
                 );
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "final_family_selection",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -8092,19 +8092,19 @@ pub fn run<P: AsRef<Path>>(
                     reads.len(),
                     junctions.len(),
                     graph_mut.n_nodes.saturating_sub(2),
-                    parity_stage::graph_edge_count(&graph_mut),
+                    debug_stage::graph_edge_count(&graph_mut),
                     transfrags.len(),
                     txs.len(),
-                    parity_seed_summary.total,
-                    parity_seed_summary.stored,
-                    parity_seed_summary.checktrf_rescued,
+                    seed_summary.total,
+                    seed_summary.stored,
+                    seed_summary.checktrf_rescued,
                     StageDetail {
-                        seed_unwitnessed: parity_seed_summary.unwitnessed,
-                        seed_zero_flux: parity_seed_summary.zero_flux,
-                        seed_low_cov: parity_seed_summary.low_coverage,
-                        seed_back_fail: parity_seed_summary.back_fail,
-                        seed_fwd_fail: parity_seed_summary.fwd_fail,
-                        checktrf_total: parity_seed_summary.checktrf_total,
+                        seed_unwitnessed: seed_summary.unwitnessed,
+                        seed_zero_flux: seed_summary.zero_flux,
+                        seed_low_cov: seed_summary.low_coverage,
+                        seed_back_fail: seed_summary.back_fail,
+                        seed_fwd_fail: seed_summary.fwd_fail,
+                        checktrf_total: seed_summary.checktrf_total,
                         checktrf_pre_filter: pre_filter_count,
                         predcluster_before: pre_filter_count,
                         predcluster_removed: pre_filter_count.saturating_sub(txs.len()),
@@ -8120,7 +8120,7 @@ pub fn run<P: AsRef<Path>>(
         let mut baseline_seed_summary = SeedOutcomeSummary::default();
 
         if use_region_bundle_pass {
-            // C++ parity (rlink.cpp:15264-15461): per-read junction redirect and
+            // per-read junction redirect and
             // unstranding. When a junction has mm<0 AND nreads<0 (higherr redirect),
             // adjust the read's exon boundaries to match the replacement junction,
             // then replace the read's junction with a new one at the adjusted coords.
@@ -8172,7 +8172,7 @@ pub fn run<P: AsRef<Path>>(
                         any_bad = true;
                         any_redirect_attempted = true;
 
-                        // C++ parity (rlink.cpp:15287-15422): decode redirect
+                        // decode redirect
                         // pointers to compute new exon boundaries, adjust the
                         // read's exons, search for matching junction, replace.
                         let mut newstart = r.exons[ji].1;
@@ -8210,7 +8210,7 @@ pub fn run<P: AsRef<Path>>(
                             }
                         }
 
-                        // Validate boundaries (rlink.cpp:15325)
+                        // Validate boundaries
                         let seg_start = r.exons[ji].0;
                         let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue };
                         if !(newstart >= seg_start && newend <= seg_end && newstart <= newend) {
@@ -8265,8 +8265,8 @@ pub fn run<P: AsRef<Path>>(
                 region_reads.to_vec()
             };
             // Replacement junctions affect color propagation through TWO mechanisms:
-            // A) good_junctions_set: bundle_cpp_port checks !good_junctions for color breaks
-            // B) killed_juncs: bundle_cpp_port checks killed_junctions for bad-junction color breaks
+            // A) good_junctions_set: bundle_builder checks !good_junctions for color breaks
+            // B) killed_juncs: bundle_builder checks killed_junctions for bad-junction color breaks
             //
             // Create a color-only junction set with replacements for CGroup building,
             // but keep the original good_junctions for graph construction (via process_graph).
@@ -8277,47 +8277,47 @@ pub fn run<P: AsRef<Path>>(
                 color_good.insert(*rj);
                 color_killed.remove(rj);
             }
-            let cpp_subbundles =
-                build_bundles_cpp_style(&effective_reads, &config, &color_good, &color_killed)?;
+            let raw_subbundles =
+                build_sub_bundles(&effective_reads, &config, &color_good, &color_killed)?;
 
-            total_subbundles.fetch_add(cpp_subbundles.len(), std::sync::atomic::Ordering::Relaxed);
+            total_subbundles.fetch_add(raw_subbundles.len(), std::sync::atomic::Ordering::Relaxed);
             if config.verbose {
                 eprintln!(
-                    "[BUNDLE_COUNT] region {}:{}-{} -> {} cpp_subbundles (total: {})",
+                    "[BUNDLE_COUNT] region {}:{}-{} -> {} raw_subbundles (total: {})",
                     bundle.chrom,
                     bundle.start,
                     bundle.end,
-                    cpp_subbundles.len(),
+                    raw_subbundles.len(),
                     total_subbundles.load(std::sync::atomic::Ordering::Relaxed)
                 );
             }
 
             // Per-bundle graph mode: merge overlapping same-strand subbundles into
-            // larger bundles (matching the reference assembler's architecture where all bundlenodes
+            // larger bundles (matching the architecture where all bundlenodes
             // in a region contribute to one unified graph per color component).
             let bundle_graph_mode = std::env::var_os("RUSTLE_BUNDLE_GRAPH").is_some();
-            let effective_subbundles: Vec<crate::bundle_cpp_port::CppBundleResult> = if bundle_graph_mode {
-                merge_overlapping_subbundles(&cpp_subbundles, &effective_reads)
+            let effective_subbundles: Vec<crate::bundle_builder::SubBundleResult> = if bundle_graph_mode {
+                merge_overlapping_subbundles(&raw_subbundles, &effective_reads)
             } else {
-                cpp_subbundles
+                raw_subbundles
             };
 
             // Per-bundlenode processing: when RUSTLE_PER_BNODE is set, iterate through
             // each bundlenode in the merged bundle and create a SEPARATE graph for each,
-            // matching C++ reference architecture (per-bundlenode graphs with shared read mapping).
+            // matching architecture (per-bundlenode graphs with shared read mapping).
             let per_bnode_mode = bundle_graph_mode && std::env::var_os("RUSTLE_PER_BNODE").is_some();
 
-            for (cpp_bundle_idx, cpp_bundle) in effective_subbundles.iter().enumerate() {
-                if cpp_bundle.strand == '.' {
+            for (sbr_idx, sbr) in effective_subbundles.iter().enumerate() {
+                if sbr.strand == '.' {
                     continue;
                 }
 
-                let sub_cap = cpp_bundle.read_scale.len();
+                let sub_cap = sbr.read_scale.len();
                 let mut sub_reads: Vec<BundleRead> = Vec::with_capacity(sub_cap);
                 let mut sub_read_bnodes: Vec<Vec<usize>> = Vec::with_capacity(sub_cap);
                 for (ri, read) in effective_reads.iter().enumerate() {
-                    let scale = cpp_bundle.read_scale.get(ri).copied().unwrap_or(0.0);
-                    let mapped = cpp_bundle
+                    let scale = sbr.read_scale.get(ri).copied().unwrap_or(0.0);
+                    let mapped = sbr
                         .read_to_bnodes
                         .get(ri)
                         .cloned()
@@ -8326,7 +8326,7 @@ pub fn run<P: AsRef<Path>>(
                         continue;
                     }
                     let mut routed = read.clone();
-                    routed.strand = cpp_bundle.strand;
+                    routed.strand = sbr.strand;
                     if (scale - 1.0).abs() > f64::EPSILON {
                         routed.weight *= scale;
                         routed.junc_mismatch_weight *= scale;
@@ -8350,7 +8350,7 @@ pub fn run<P: AsRef<Path>>(
                 // create a separate graph, but use the FULL chain for read mapping.
                 let bnode_list: Vec<(u64, u64, f64, usize)> = {
                     let mut v = Vec::new();
-                    let mut cur = cpp_bundle.bnode_head.as_ref();
+                    let mut cur = sbr.bnode_head.as_ref();
                     while let Some(bn) = cur {
                         v.push((bn.start, bn.end, bn.cov, bn.bid));
                         cur = bn.next.as_deref();
@@ -8362,7 +8362,7 @@ pub fn run<P: AsRef<Path>>(
                 // Each component = bundlenodes reachable from each other via junctions.
                 // Process each component as a SEPARATE graph with its own flow decomposition,
                 // but use the FULL merged bundle for read mapping (cross-component sharing).
-                // This matches C++ reference: per-junction-network graphs with shared read context.
+                // This matches per-junction-network graphs with shared read context.
                 let sub_junctions_for_split: Vec<Junction> = sub_reads.iter()
                     .flat_map(|r| r.junctions.iter().copied())
                     .collect();
@@ -8410,18 +8410,18 @@ pub fn run<P: AsRef<Path>>(
                         (Some(head), start, end)
                     }
                 } else {
-                    (cpp_bundle.bnode_head.clone(), cpp_bundle.start, cpp_bundle.end)
+                    (sbr.bnode_head.clone(), sbr.start, sbr.end)
                 };
 
                 let _single_bnode = &color_group.as_ref().and_then(|g| {
                     if g.len() == 1 { Some(g[0]) } else { None }
                 });
 
-                // C++ parity: skip bundles shorter than mintranscriptlen.
+                // skip bundles shorter than mintranscriptlen.
                 let bundle_exonic_len = if color_group.is_some() {
                     color_group.as_ref().map(|g| g.iter().map(|(s,e,_,_)| e.saturating_sub(*s)).sum()).unwrap_or(0)
                 } else {
-                    let mut cur = cpp_bundle.bnode_head.as_ref();
+                    let mut cur = sbr.bnode_head.as_ref();
                     let mut len = 0u64;
                     while let Some(bn) = cur {
                         len += bn.end.saturating_sub(bn.start);
@@ -8437,7 +8437,7 @@ pub fn run<P: AsRef<Path>>(
                     chrom: bundle.chrom.clone(),
                     start: iter_start,
                     end: iter_end,
-                    strand: cpp_bundle.strand,
+                    strand: sbr.strand,
                     reads: sub_reads.clone(),
                     junction_stats: Default::default(),
                     // For per-bnode mode: use single bundlenode for graph construction,
@@ -8450,22 +8450,22 @@ pub fn run<P: AsRef<Path>>(
                         // Graph built from single bundlenode, but bundle2graph uses full chain
                         iter_bnode_head.clone()
                     } else {
-                        cpp_bundle.bnode_head.clone()
+                        sbr.bnode_head.clone()
                     },
                     read_bnodes: Some(sub_read_bnodes.clone()),
-                    bnode_colors: Some(cpp_bundle.bnode_colors.clone()),
+                    bnode_colors: Some(sbr.bnode_colors.clone()),
                 };
 
-                // PARITY_BUNDLE: emit bundle summary matching C++ format.
-                if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
-                    let sno = match cpp_bundle.strand {
+                // DEBUG_BUNDLE: emit bundle summary matching expected format.
+                if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
+                    let sno = match sbr.strand {
                         '-' => 0i32,
                         '+' => 2,
                         _ => 1,
                     };
                     // Walk the linked list of bundlenodes
                     let mut bn_list: Vec<(u64, u64, f64)> = Vec::new();
-                    let mut cur = cpp_bundle.bnode_head.as_ref();
+                    let mut cur = sbr.bnode_head.as_ref();
                     while let Some(bn) = cur {
                         bn_list.push((bn.start, bn.end, bn.cov));
                         cur = bn.next.as_deref();
@@ -8475,9 +8475,9 @@ pub fn run<P: AsRef<Path>>(
                     let bstart = bn_list.first().map(|&(s, _, _)| s).unwrap_or(0);
                     let bend = bn_list.last().map(|&(_, e, _)| e).unwrap_or(0);
                     eprintln!(
-                        "PARITY_BUNDLE sno={} b={} start={} end={} cov={:.1} len={} bnodes={} reads={}",
+                        "DEBUG_BUNDLE sno={} b={} start={} end={} cov={:.1} len={} bnodes={} reads={}",
                         sno,
-                        cpp_bundle_idx,
+                        sbr_idx,
                         bstart + 1,
                         bend,
                         cov,
@@ -8488,14 +8488,14 @@ pub fn run<P: AsRef<Path>>(
                     for (ni, &(ns, ne, ncov)) in bn_list.iter().enumerate() {
                         eprintln!(
                             "  BNODE sno={} b={} n={} start={} end={} cov={:.1}",
-                            sno, cpp_bundle_idx, ni, ns + 1, ne, ncov
+                            sno, sbr_idx, ni, ns + 1, ne, ncov
                         );
                     }
                 }
 
                 let sub_n_junctions: usize =
                     sub_bundle.reads.iter().map(|r| r.junctions.len()).sum();
-                parity_stage::emit_with_detail(
+                debug_stage::emit_with_detail(
                     "bundle_context",
                     &sub_bundle.chrom,
                     sub_bundle.start,
@@ -8510,8 +8510,8 @@ pub fn run<P: AsRef<Path>>(
                     0,
                     0,
                     0,
-                    parity_stage::bundle_detail(&sub_bundle),
-                    "cpp_subbundle",
+                    debug_stage::bundle_detail(&sub_bundle),
+                    "subbundle",
                 );
                 let mut sub_junction_stats_corr = compute_initial_junction_stats_for_reads(
                     &sub_bundle.reads,
@@ -8580,7 +8580,7 @@ pub fn run<P: AsRef<Path>>(
                 let mut sub_cjunctions =
                     crate::types::junction_stats_to_cjunctions(&sub_junction_stats_corr);
                 aggregate_splice_site_support(&mut sub_cjunctions);
-                // C++ parity: apply_higherr_demotions before good_junc
+                // apply_higherr_demotions before good_junc
                 apply_higherr_demotions(
                     &mut sub_cjunctions,
                     config.sserror,
@@ -8596,13 +8596,13 @@ pub fn run<P: AsRef<Path>>(
                     config.long_reads,
                     config.eonly,
                 );
-                // C++ parity (rlink.cpp:15264-15373): mm<0 junctions with non-zero
+                // mm<0 junctions with non-zero
                 // strand are kept alive (read-redirect creates replacement junctions
-                // in StringTie). Do NOT convert mm<0→strand=0.
+                // in the standard algorithm). Do NOT convert mm<0→strand=0.
                 sub_junction_stats_corr =
                     crate::types::cjunctions_to_junction_stats(&sub_cjunctions);
-                // C++ parity (C++ reference): second-stage good_junc with subbundle bpcov.
-                // In C++, good_junc is called per-read in the build_graphs loop with full
+                // second-stage good_junc with subbundle bpcov.
+                // good_junc is called per-read in the build_graphs loop with full
                 // coverage context. Edge-case junctions (all-bad mapping, marginal support)
                 // that survive the initial good_junc are re-evaluated against local coverage.
                 // This catches junctions where nreads << bpcov (e.g., 1 read vs 700x coverage)
@@ -8699,9 +8699,9 @@ pub fn run<P: AsRef<Path>>(
                     .collect();
                 sub_bundle.junction_stats = sub_junction_stats.clone();
 
-                // PARITY_JUNCTION: emit junction list for per-bundle comparison.
-                if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
-                    let sno = match cpp_bundle.strand {
+                // DEBUG_JUNCTION: emit junction list for per-bundle comparison.
+                if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
+                    let sno = match sbr.strand {
                         '-' => 0i32,
                         '+' => 2,
                         _ => 1,
@@ -8716,14 +8716,14 @@ pub fn run<P: AsRef<Path>>(
                         .collect();
                     jlist.sort_unstable_by_key(|&(d, a, _, _)| (d, a));
                     eprintln!(
-                        "PARITY_JUNCTIONS sno={} b={} count={} range={}-{}",
-                        sno, cpp_bundle_idx, jlist.len(),
+                        "DEBUG_JUNCTIONS sno={} b={} count={} range={}-{}",
+                        sno, sbr_idx, jlist.len(),
                         sub_bundle.start + 1, sub_bundle.end
                     );
                     for (d, a, mr, ng) in &jlist {
                         eprintln!(
                             "  JUNC sno={} b={} donor={} acceptor={} mrcount={:.1} nreads_good={:.1}",
-                            sno, cpp_bundle_idx, d, a, mr, ng
+                            sno, sbr_idx, d, a, mr, ng
                         );
                     }
                 }
@@ -8733,9 +8733,9 @@ pub fn run<P: AsRef<Path>>(
                 let _graph_bnodes = if color_group.is_some() {
                     iter_bnode_head.clone()
                 } else {
-                    cpp_bundle.bnode_head.clone()
+                    sbr.bnode_head.clone()
                 };
-                let mapping_bnodes = cpp_bundle.bnode_head.clone();
+                let mapping_bnodes = sbr.bnode_head.clone();
 
                 let (txs, pre_filter, seed_outcomes) = process_graph(
                     &sub_bundle,
@@ -8758,7 +8758,7 @@ pub fn run<P: AsRef<Path>>(
                 }
                 bundle_txs.extend(txs);
             } // end for color_group
-            } // end for cpp_bundle_idx
+            } // end for sbr_idx
 
             // Per-bnode deduplication: when multiple components produce the same
             // intron chain, keep only the copy with highest coverage.  This
@@ -8807,15 +8807,15 @@ pub fn run<P: AsRef<Path>>(
             return Ok(());
         }
 
-        // C++ parity: split bundlenodes into components by CGroup color root.
-        // In C++, CGroup colors break on killed junctions (strand==0), and each color
+        // split bundlenodes into components by CGroup color root.
+        // CGroup colors break on killed junctions (strand==0), and each color
         // group becomes a separate sub-bundle with its own create_graph call (shared
-        // reads/bpcov, C++ reference, 15340-15430). We use color roots directly.
+        // reads/bpcov, We use color roots directly.
         // Components without their own junctions are merged back into the largest component
         // (single-exon islands can't form multi-exon transcripts independently).
         //
-        // C++ parity: keep ALL color-split components as separate bundles.
-        // In C++, each distinct color root → separate CBundle, even single-bnode components.
+        // keep ALL color-split components as separate bundles.
+        // Each distinct color root → separate CBundle, even single-bnode components.
         let comps = bundlenode_components_by_color(bundlenodes.as_ref(), &bnode_colors);
         let baseline_components = comps.len();
         let baseline_bnodes = bundlenodes_to_vec(bundlenodes.as_ref()).len();
@@ -8831,10 +8831,10 @@ pub fn run<P: AsRef<Path>>(
             );
             let allowed_junction_idx = build_allowed_junction_index(&junctions);
 
-            // PARITY_BUNDLE: match C++ reference bundle accounting.
+            // DEBUG_BUNDLE: match bundle accounting.
             // If a component contains only unstranded reads after junction repair,
-            // classify it as sno=1 (neutral) for parity counting.
-            if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+            // classify it as sno=1 (neutral) for compatibility counting.
+            if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
                 let bundle_sno = match bundle.strand {
                     '-' => 0,
                     '+' => 2,
@@ -8851,7 +8851,7 @@ pub fn run<P: AsRef<Path>>(
                     let cov: f64 = comp.iter().map(|v| v.3).sum();
                     let len: u64 = comp.iter().map(|v| v.2.saturating_sub(v.1)).sum();
                     eprintln!(
-                        "PARITY_BUNDLE sno={} b={} start={} end={} cov={:.1} len={} bnodes={}",
+                        "DEBUG_BUNDLE sno={} b={} start={} end={} cov={:.1} len={} bnodes={}",
                         sno,
                         ci,
                         s + 1,
@@ -8874,7 +8874,7 @@ pub fn run<P: AsRef<Path>>(
                 }
             }
 
-            if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() {
+            if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() {
                 eprintln!(
                     "COLOR_SPLIT_FINAL bundle={}:{}-{} comps={}",
                     bundle.chrom,
@@ -8897,7 +8897,7 @@ pub fn run<P: AsRef<Path>>(
             }
             for (ci, comp) in comps.into_iter().enumerate() {
                 let comp_bn = vec_to_bundlenodes(&comp);
-                // C++ parity: component junctions are those carried by component reads,
+                // component junctions are those carried by component reads,
                 // then intersected with the active bundle junction set.
                 let comp_junctions = select_component_junctions_from_reads_indexed(
                     &comp_reads[ci],
@@ -8926,8 +8926,8 @@ pub fn run<P: AsRef<Path>>(
                 bundle_txs.extend(txs);
             }
         } else {
-            // PARITY_BUNDLE single-component case.
-            if std::env::var_os("RUSTLE_PARITY_BUNDLE").is_some() {
+            // DEBUG_BUNDLE single-component case.
+            if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
                 let all_dot =
                     !bundle.reads.is_empty() && bundle.reads.iter().all(|r| r.strand == '.');
                 let sno = if all_dot {
@@ -8946,7 +8946,7 @@ pub fn run<P: AsRef<Path>>(
                     let cov: f64 = comp.iter().map(|v| v.3).sum();
                     let len: u64 = comp.iter().map(|v| v.2.saturating_sub(v.1)).sum();
                     eprintln!(
-                        "PARITY_BUNDLE sno={} b=0 start={} end={} cov={:.1} len={} bnodes={}",
+                        "DEBUG_BUNDLE sno={} b=0 start={} end={} cov={:.1} len={} bnodes={}",
                         sno,
                         s + 1,
                         e,
@@ -9222,14 +9222,14 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // C++ parity: C++ reference cross-strand filtering.
-    // C++ print_predcluster processes both strands of a locus together; single-exon
+    // Cross-strand filtering.
+    // print_predcluster processes both strands of a locus together; single-exon
     // transcripts on the minority strand are eliminated by higher-scored opposite-strand
     // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
     all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
 
     // Add single-exon predictions from unstranded bundles
-    // C++ parity: filter by singlethr (per-base coverage threshold)
+    // filter by singlethr (per-base coverage threshold)
     if !single_exon_predictions.is_empty() {
         let singlethr = config.singlethr;
         let original_count = single_exon_predictions.len();
@@ -9313,9 +9313,9 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // C++ reference parity: -e (eonly) mode should emit the guide annotation models exactly.
+    // Algorithm: -e (eonly) mode should emit the guide annotation models exactly.
     // We still run extraction to estimate coverages, but transcript boundaries must match the
-    // guide exons (the reference assembler keeps guide boundaries in -e mode; otherwise gffcompare reports
+    // guide exons (the algorithm keeps guide boundaries in -e mode; otherwise gffcompare reports
     // "j" instead of "=" for guide isoforms).
     if config.eonly && !guide_transcripts.is_empty() {
         let guide_by_id: HashMap<&str, &RefTranscript> = guide_transcripts
@@ -9342,7 +9342,7 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // C++ reference: eonly mode — emit unassembled guide transcripts with cov=0.
+    // eonly mode — emit unassembled guide transcripts with cov=0.
     // Optional guided sensitivity mode: set RUSTLE_GUIDE_FORCE_RECOVER=1 to apply the same
     // recovery in regular guided runs (not only -e). This prioritizes exact-guide sensitivity.
     let force_guide_recover = !config.eonly
@@ -9437,7 +9437,7 @@ pub fn run<P: AsRef<Path>>(
 
     t!("main_bundle_loop");
 
-    // C++ parity: C++ reference output loop — delete non-guide predictions shorter than mintranscriptlen.
+    // Output loop — delete non-guide predictions shorter than mintranscriptlen.
     if config.min_transcript_length > 0 {
         let before = all_transcripts.len();
         all_transcripts
@@ -9451,7 +9451,7 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // Compute TPM/FPKM globally across the whole run (the reference assembler-style).
+    // Compute TPM/FPKM globally across the whole run (standard).
     compute_tpm_fpkm(&mut all_transcripts, global_num_frag, global_frag_len_sum);
 
     if std::env::var_os("RUSTLE_SOURCE_HISTOGRAM").is_some() {
@@ -9482,7 +9482,7 @@ pub fn run<P: AsRef<Path>>(
 
     // Final coverage floor: remove ultra-low-coverage transcripts that survived the
     // readthr gate via the longcov fallback but represent thin flow decomposition noise.
-    // StringTie never emits transcripts with coverage < 1.0. A floor of 0.8 removes
+    // The algorithm never emits transcripts with coverage < 1.0. A floor of 0.8 removes
     // 44 FPs while losing only 4 marginal TPs (cov 0.56-0.79), giving +0.7% F1.
     // Guide-matched transcripts (eonly zero-cov guides) are exempt.
     {
@@ -9504,8 +9504,8 @@ pub fn run<P: AsRef<Path>>(
 
     let mut f = std::fs::File::create(output_gtf.as_ref())?;
     write_gtf(&all_transcripts, &mut f, &config.label)?;
-    let (emit_start, emit_end) = parity_stage::transcript_span(&all_transcripts).unwrap_or((0, 0));
-    parity_stage::emit(
+    let (emit_start, emit_end) = debug_stage::transcript_span(&all_transcripts).unwrap_or((0, 0));
+    debug_stage::emit(
         "transcript_emission",
         "*",
         emit_start,
@@ -9522,7 +9522,7 @@ pub fn run<P: AsRef<Path>>(
         0,
         "final_gtf",
     );
-    parity_stage::flush();
+    debug_stage::flush();
 
     if let Some(ref ballgown_dir) = config.ballgown_dir {
         write_ballgown(&all_transcripts, ballgown_dir, &config.label)?;
@@ -9602,8 +9602,8 @@ pub fn run<P: AsRef<Path>>(
 }
 
 /// Recompute junction support (leftsupport, rightsupport, nreads_good) from
-/// post-correction read segments, matching C++ `count_good_junctions`
-/// (C++ reference).
+/// post-correction read segments, matching `count_good_junctions`
+/// .
 ///
 /// Phase 1: Adjust read exon boundaries to match corrected junction coordinates.
 /// Phase 2: Clear stale support fields (preserve mrcount/nm/mm from BAM reading).
@@ -9654,13 +9654,12 @@ fn count_good_junctions(
     }
 
     // Save original exon boundaries before Phase 1 trimming — needed for DEL AWARE resolution.
-    // C++ runs DEL AWARE checks on raw (pre-trim) exon boundaries (C++ reference),
+    // DEL AWARE checks run on raw (pre-trim) exon boundaries ,
     // detecting deletion offsets by comparing rd.segs[i-1].end vs rd.juncs[i-1]->start.
     // Phase 1 trims exons to match junctions, which would mask the deletion offsets.
     let original_exons: Vec<Vec<(u64, u64)>> = reads.iter().map(|r| r.exons.clone()).collect();
 
     // Phase 1: Adjust read exon boundaries to match junction coordinates
-    // C++ reference
     for r in reads.iter_mut() {
         for i in 0..r.junctions.len() {
             let junc = r.junctions[i];
@@ -9677,8 +9676,8 @@ fn count_good_junctions(
         }
     }
 
-    // Compute per-read inferred strand from junction strands (C++ reference).
-    // C++ cumulatively sets rd.strand from stranded junctions during Phase 1.
+    // Compute per-read inferred strand from junction strands .
+    // Cumulatively sets rd.strand from stranded junctions during Phase 1.
     let inferred_strands: Vec<i8> = reads
         .iter()
         .map(|r| {
@@ -9736,10 +9735,10 @@ fn count_good_junctions(
         }
     }
 
-    // Phase 1b: DEL-AWARE junction resolution (C++ reference)
+    // Phase 1b: DEL-AWARE junction resolution
     // When a read has a DEL-adjusted junction whose ORIGINAL exon boundaries
     // (pre-trim) don't match the active coordinates, try to resolve it the same
-    // way C++ does for `juncsdel` edits that were ingested with strand=0:
+    // way done for `juncsdel` edits that were ingested with strand=0:
     // 1. Look up (junc.donor, junc.acceptor, read.strand) in junction_stats → merge support
     // 2. Fallback: look up (orig_exons[i].1, orig_exons[i+1].0, read.strand) → use that junction
     // 3. Last resort: fix unstranded junction in-place with read's boundaries and strand
@@ -9751,7 +9750,7 @@ fn count_good_junctions(
         for i in 0..r.junctions.len() {
             let junc = r.junctions[i];
             // Check if ORIGINAL exon boundaries differ from junction (deletion offset indicator)
-            // Using pre-trim boundaries matches C++ which checks raw rd.segs vs rd.juncs
+            // Using pre-trim boundaries matches the algorithm which checks raw rd.segs vs rd.juncs
             let orig_exon_end = if i < orig.len() { orig[i].1 } else { continue };
             let orig_exon_start_next = if i + 1 < orig.len() {
                 orig[i + 1].0
@@ -9771,8 +9770,8 @@ fn count_good_junctions(
             if junc_strand != 0 && !(del_adjusted && !guide_matched) {
                 continue;
             }
-            // C++ cumulative strand: rd.strand is set from previous stranded junctions
-            // (C++ reference). Use inferred_strand which accumulates junction strands,
+            // Cumulative strand: rd.strand is set from previous stranded junctions
+            // . Use inferred_strand which accumulates junction strands,
             // falling back to bundle_strand for unstranded reads.
             let read_strand_val = match r.strand {
                 '+' => 1i8,
@@ -9801,7 +9800,7 @@ fn count_good_junctions(
             // Phase 2: Try junction at original exon boundaries with read strand
             let exon_junc = Junction::new(orig_exon_end, orig_exon_start_next);
             if stat_strand(junction_stats, exon_junc) == read_strand_val {
-                // C++ only reuses the raw-boundary junction when the lookup matches
+                // Only reuses the raw-boundary junction when the lookup matches
                 // the exact coordinates and the exact strand.
                 if let Some(old_st) = junction_stats.get(&junc).cloned() {
                     if let Some(new_st) = junction_stats.get_mut(&exon_junc) {
@@ -9815,7 +9814,7 @@ fn count_good_junctions(
             }
 
             // Phase 3: Fix unstranded junction at the read's raw exon boundaries.
-            // C++ mutates a shared CJunction object and resorts later. With coord-keyed
+            // The algorithm mutates a shared CJunction object and resorts later. With coord-keyed
             // storage we cannot safely move the old entry, because later reads may still
             // reference the original coordinates. Keep the additive redirect behavior here.
             if exon_junc != junc {
@@ -9844,7 +9843,7 @@ fn count_good_junctions(
     }
 
     // Phase 3: Recompute support from adjusted read segments
-    // C++ reference (same logic as bundle.rs:977-1048)
+    // same logic as bundle.rs:977-1048
     let end_incl = bundle_end;
     for r in reads.iter() {
         let nex = r.exons.len();
@@ -9903,13 +9902,13 @@ fn count_good_junctions(
         }
     }
 
-    // Phase 4: Cross-strand resolution for unstranded reads (C++ reference)
-    // C++ processes all strands in one bundle, so count_good_junctions can resolve
+    // Phase 4: Cross-strand resolution for unstranded reads
+    // The algorithm processes all strands in one bundle, so count_good_junctions can resolve
     // unstranded reads using bpcov[2] (plus) and bpcov[0] (minus) coverage.
     // In Rust, '.' bundles lack stranded coverage — use pre-computed cross_cov.
     //
     // Optional A/B: also look up strand evidence from stranded bundles on the same chromosome.
-    // Disabled by default for strict C++ parity.
+    // Disabled by default for strict algorithm.
     if bundle_strand == '.' {
         let use_chrom_evidence = std::env::var_os("RUSTLE_CHROM_JUNC_EVIDENCE").is_some();
         if let Some(xcov) = cross_cov {
@@ -9964,7 +9963,7 @@ fn count_good_junctions(
                 } else if neg_junc && !pos_junc {
                     r.strand = '-';
                 } else {
-                    // Coverage-based tiebreak (C++ reference)
+                    // Coverage-based tiebreak
                     if neg < 1.0 {
                         neg = 0.0;
                     }
@@ -9978,7 +9977,7 @@ fn count_good_junctions(
                     }
                 }
 
-                // Update junction strand from resolved read (C++ reference)
+                // Update junction strand from resolved read
                 if r.strand == '+' || r.strand == '-' {
                     for j_ref in &r.junctions {
                         if let Some(st) = junction_stats.get_mut(j_ref) {

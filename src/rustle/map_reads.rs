@@ -1,6 +1,6 @@
-//! Map bundle reads onto graph -> transfrags (C++ reference get_fragment_pattern + update_abundance).
+//! Map bundle reads onto graph -> transfrags (get_fragment_pattern + update_abundance).
 //!
-//! Mode (C++ reference longreads/mixedMode; reference assembler -L, --long-read-min-len):
+//! Mode (longreads/mixedMode; original algorithm -L, --long-read-min-len):
 //! - LongRead: all reads → abundance, longread=true.
 //! - ShortRead: all reads → srabund (abundance set from srabund later if needed).
 //! - Mixed: read length >= long_read_min_len → abundance + longread; else → srabund.
@@ -54,7 +54,7 @@ fn collect_candidate_nodes_sorted(
             Some(idx)
         })
         .collect();
-    // C++ reference walks graph nodes in genomic order. Rust node ids can be out of coordinate order
+    // walks graph nodes in genomic order. Rust node ids can be out of coordinate order
     // after trim/split operations, so restore genomic ordering before exon->node assignment.
     sort_node_ids_by_coord(graph, &mut out);
     out
@@ -154,7 +154,7 @@ fn build_transfrag_pattern(
             junctions
                 .iter()
                 .any(|j| {
-                    // the reference assembler -E parity: accept donor/acceptor mismatch within the correction window.
+                    // the original algorithm -E: accept donor/acceptor mismatch within the correction window.
                     j.donor.abs_diff(na.end) <= junction_correction_window
                         && j.acceptor.abs_diff(nb.start) <= junction_correction_window
                 })
@@ -241,7 +241,7 @@ fn is_long_read(read: &BundleRead, long_read_min_len: u64) -> bool {
     read.query_length.map_or(true, |q| q >= long_read_min_len)
 }
 
-/// Return the node path (fragment pattern) for one read (C++ reference get_fragment_pattern).
+/// Return the node path (fragment pattern) for one read (get_fragment_pattern).
 /// Uses same logic as map_reads_to_graph: exon→node assignment, unique_nodes, split at disconnected/killed; returns primary (longest) path.
 pub fn read_to_path(
     read: &BundleRead,
@@ -387,7 +387,7 @@ fn readgroup_for_bundlenodes(read: &BundleRead, bnodes: &[(usize, u64, u64)]) ->
     out
 }
 
-/// Return node path using bundlenode->graph mapping (C++ reference get_read_pattern).
+/// Return node path using bundlenode->graph mapping (get_read_pattern).
 pub fn read_to_path_bundlenodes(
     read: &BundleRead,
     graph: &Graph,
@@ -411,7 +411,7 @@ pub fn read_to_path_bundlenodes(
 /// For each read, find path of nodes that overlap its exons; create/update transfrags.
 /// In mixed mode, long reads add to abundance and set longread; short reads add to srabund.
 /// If killed_junction_pairs is Some, reads are split at killed junctions and segments to the
-/// right of a killed junction get killed_junction_orphan = true (reference assembler V99).
+/// right of a killed junction get killed_junction_orphan = true (original algorithm V99).
 pub fn map_reads_to_graph(
     reads: &[BundleRead],
     graph: &mut Graph,
@@ -463,7 +463,7 @@ pub fn map_reads_to_graph(
             continue;
         }
 
-        // Trace: dump read-to-node mapping for parity comparison with the reference assembler.
+        // Trace: dump read-to-node mapping for debug comparison with the original algorithm.
         if std::env::var_os("RUSTLE_READ_PATTERN_TRACE").is_some() {
             for (si, seg) in segments.iter().enumerate() {
                 if seg.path.is_empty() { continue; }
@@ -493,7 +493,7 @@ pub fn map_reads_to_graph(
             if seg.path.is_empty() {
                 continue;
             }
-            // C++ parity: skip single-node fragments from multi-exon reads.
+            // skip single-node fragments from multi-exon reads.
             // When a multi-exon long read has killed junctions, split_read_segments
             // fragments it into tiny segments. Single-node fragments from such reads
             // are alignment artifacts that inflate node coverage and create spurious
@@ -536,7 +536,7 @@ pub fn map_reads_to_graph(
     transfrags
 }
 
-/// Map reads using bundlenode->graph mapping (C++ reference get_read_pattern).
+/// Map reads using bundlenode->graph mapping (get_read_pattern).
 pub fn map_reads_to_graph_bundlenodes(
     reads: &[BundleRead],
     graph: &mut Graph,
@@ -651,7 +651,7 @@ pub fn map_reads_to_graph_bundlenodes(
             continue;
         }
 
-        // Trace: dump read-to-node mapping for parity comparison with the reference assembler.
+        // Trace: dump read-to-node mapping for debug comparison with the original algorithm.
         if std::env::var_os("RUSTLE_READ_PATTERN_TRACE").is_some() {
             for (si, seg) in segments.iter().enumerate() {
                 if seg.path.is_empty() { continue; }
@@ -678,7 +678,7 @@ pub fn map_reads_to_graph_bundlenodes(
             if seg.path.is_empty() {
                 continue;
             }
-            // C++ parity: skip single-node fragments from multi-exon reads.
+            // skip single-node fragments from multi-exon reads.
             // When a multi-exon long read has killed junctions, split_read_segments
             // fragments it into tiny segments. Single-node fragments from such reads
             // are alignment artifacts that inflate node coverage and create spurious
@@ -727,7 +727,7 @@ struct ReadPathSegment {
     orphan: bool,
 }
 
-/// the reference assembler get_fragment_pattern parity: walk the read left-to-right and emit a new
+/// the original algorithm get_fragment_pattern: walk the read left-to-right and emit a new
 /// segment only when the current read junction is invalid for the current node pair,
 /// or when a unitig was trimmed through source/sink sidecars.
 fn split_read_segments(
@@ -788,8 +788,8 @@ fn split_read_segments(
                 }
             }
         } else if std::env::var_os("RUSTLE_BUNDLE_GRAPH").is_some() {
-            // C++ parity: the reference assembler never splits reads at junction gaps.
-            // With bundle graph mode, match the reference assembler's behavior exactly.
+            // the original algorithm never splits reads at junction gaps.
+            // With bundle graph mode, match the original algorithm's behavior exactly.
         } else {
             while junc_idx < read.junctions.len()
                 && read.junctions[junc_idx]
@@ -806,7 +806,7 @@ fn split_read_segments(
                     .saturating_sub(junction_correction_window)
                     <= prev_node.end
                 {
-                    // the reference assembler -E parity: accept donor/acceptor mismatch within the correction window,
+                    // the original algorithm -E: accept donor/acceptor mismatch within the correction window,
                     // and treat the splice as matching the node boundary junction (prev_end -> curr_start).
                     let within_window = junc.donor.abs_diff(prev_node.end) <= junction_correction_window
                         && junc.acceptor.abs_diff(curr_node.start) <= junction_correction_window;
@@ -826,10 +826,10 @@ fn split_read_segments(
                     let valid = !killed
                         && (within_window
                             || (junc.donor == prev_node.end && junc.acceptor == curr_node.start));
-                    // C++ parity (C++ reference get_read_pattern:4431-4512): the reference assembler
+                    // (get_read_pattern:4431-4512): the original algorithm
                     // adds ALL nodes the read intersects to a single pattern.  When a
-                    // junction is killed, the reference assembler's changeleft/changeright repair
-                    // (C++ reference) redirects to a nearby good junction,
+                    // junction is killed, the original algorithm's changeleft/changeright repair
+                    // redirects to a nearby good junction,
                     // keeping the path intact.  Only split when the junction is killed
                     // AND there's no nearby good junction to redirect to — this
                     // indicates a genuinely bad alignment that can't be repaired.
@@ -925,7 +925,7 @@ fn add_or_update_transfrag(
     if is_long && std::env::var_os("RUSTLE_DISABLE_LR_PATH_TRIM").is_none() {
         trim_longread_path_for_update_abundance(graph, &mut key, ref_start, ref_end);
     } else if key.len() == 1 {
-        // C++ reference update_abundance: skip single-node non-long transfrags.
+        // update_abundance: skip single-node non-long transfrags.
         if ua_trace {
             let nid = key[0];
             let (ns, ne) = graph
@@ -986,7 +986,7 @@ fn add_or_update_transfrag(
     let (cand_longstart, cand_longend) = if is_long {
         if let Some((node_start, node_end)) = first_last {
             (
-                // C++ reference PATH_update_abund only records longstart/longend when
+                // PATH_update_abund only records longstart/longend when
                 // the read boundary lies inside the first/last node of this path.
                 // Do not invent a boundary for split/orphan suffix/prefix fragments.
                 if ref_start >= node_start {
@@ -1038,7 +1038,7 @@ fn add_or_update_transfrag(
             }
         }
         if is_long {
-            // C++ parity: longstart/longend are only set when read bounds fall inside
+            // longstart/longend are only set when read bounds fall inside
             // first/last node bounds; otherwise they remain 0.
             if cand_longstart > 0 && (tf.longstart == 0 || cand_longstart < tf.longstart) {
                 tf.longstart = cand_longstart;
@@ -1141,7 +1141,7 @@ fn cov_drop_significant(prev_cov: f64, prev_len: u64, cur_cov: f64, cur_len: u64
     prev_cov * DROP * (cur_len as f64) > cur_cov * (prev_len as f64)
 }
 
-/// C++ reference update_abundance parity:
+/// update_abundance:
 /// For long reads, trim terminal contiguous nodes if read starts/ends near adjacent node boundary
 /// and coverage/hard-boundary heuristics indicate the end-node is better represented by source/sink linkage.
 fn trim_longread_path_for_update_abundance(

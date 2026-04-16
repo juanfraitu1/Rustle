@@ -1,4 +1,4 @@
-//! Unstranded strand resolution (C++ reference).
+//! Unstranded strand resolution.
 //! Assigns strand to unstranded multi-exon reads using junction evidence and coverage.
 
 use crate::bpcov::{BpcovStranded, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
@@ -6,7 +6,7 @@ use crate::types::{BundleRead, Junction, JunctionStats};
 
 /// Resolve strand for unstranded multi-exon reads.
 ///
-/// Algorithm (C++ reference):
+/// Algorithm:
 /// 1. For each unstranded multi-exon read, check junction strand evidence
 /// 2. If junctions don't resolve: use plus vs minus coverage ratio
 /// 3. Assign strand to read, propagate to junctions
@@ -22,12 +22,12 @@ pub fn resolve_unstranded_reads(
     let mut resolved = 0;
 
     for read in reads.iter_mut() {
-        // Only process unstranded multi-exon reads (C++ reference)
+        // Only process unstranded multi-exon reads
         if read.strand != '.' || read.exons.len() < 2 {
             continue;
         }
 
-        // Check bounds (C++ reference)
+        // Check bounds
         if read.ref_start < bundle_start {
             continue;
         }
@@ -46,7 +46,7 @@ pub fn resolve_unstranded_reads(
                 neg_cov += bpcov_stranded.get_cov_range(BPCOV_STRAND_MINUS, s, e);
             }
 
-            // Check junction strand between this exon and the next (C++ reference)
+            // Check junction strand between this exon and the next
             if ei > 0 {
                 let junc = if ei - 1 < read.junctions.len() {
                     read.junctions[ei - 1]
@@ -60,7 +60,7 @@ pub fn resolve_unstranded_reads(
                         Some(s) if s < 0 => negjunc = true,
                         _ => {
                             // Junction has no strand or killed — check if a stranded
-                            // version exists in the stats (C++ does binary search by
+                            // version exists in the stats (uses binary search by
                             // creating CJunction with strand=1 then strand=-1).
                             // In Rust, junctions are keyed by (donor, acceptor) only,
                             // so strand info is already in the stat. If strand is None/0,
@@ -71,7 +71,7 @@ pub fn resolve_unstranded_reads(
             }
         }
 
-        // Resolve strand (C++ reference)
+        // Resolve strand
         let new_strand = if posjunc && !negjunc {
             '+'
         } else if negjunc && !posjunc {
@@ -96,7 +96,7 @@ pub fn resolve_unstranded_reads(
         read.strand = new_strand;
         resolved += 1;
 
-        // Propagate strand to unstranded junctions (C++ reference)
+        // Propagate strand to unstranded junctions
         let strand_val: i8 = if new_strand == '+' { 1 } else { -1 };
         for j in &read.junctions {
             if let Some(stat) = junction_stats.get_mut(j) {

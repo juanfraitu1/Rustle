@@ -1,5 +1,5 @@
 //! Parse reference GTF for trace mode: load transcripts with exons (0-based start inclusive, end exclusive).
-//! process_refguides: map guides to graph paths and set hardstart/hardend (C++ reference process_refguides).
+//! process_refguides: map guides to graph paths and set hardstart/hardend (process_refguides).
 
 use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
 use anyhow::Result;
@@ -95,7 +95,7 @@ fn parse_gtf_attr(attrs: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Result of mapping one guide to the graph (C++ reference CGuide / reference assembler guide_infos).
+/// Result of mapping one guide to the graph (CGuide — guide mapping info).
 #[derive(Debug, Clone)]
 pub struct GuideInfo {
     pub node_ids: Vec<usize>,
@@ -105,8 +105,8 @@ pub struct GuideInfo {
     pub tx_end: u64,
 }
 
-/// Find a path of graph node IDs that matches the guide exons (C++ reference find_guide_pat).
-/// Direct port of C++ reference.
+/// Find a path of graph node IDs that matches the guide exons (find_guide_pat).
+/// Direct port of.
 /// Walks sequentially through graph nodes, following child edges for splice junctions
 /// and contiguous sub-nodes within the same exon.
 pub fn find_guide_pat(
@@ -130,14 +130,14 @@ pub fn find_guide_pat(
         return None;
     }
 
-    // C++ reference: find start node — first interior node overlapping guide's first exon.
+    //: find start node — first interior node overlapping guide's first exon.
     // Walk forward past contiguous sub-nodes that also overlap first exon, choosing the last
-    // contiguous chain node as start (C++ skips nodes linked by introns to later overlapping nodes).
+    // contiguous chain node as start (the algorithm skips nodes linked by introns to later overlapping nodes).
     let first_exon_start = guide.exons[0].0;
     let first_exon_end = guide.exons[0].1;
 
     let mut start_i = None;
-    let mut i = 1; // skip source (node 0 in C++)
+    let mut i = 1; // skip source (node 0)
     while i < gno.saturating_sub(1) {
         // skip source and sink
         if i == source_id || i == sink_id {
@@ -147,7 +147,7 @@ pub fn find_guide_pat(
         let node = &graph.nodes[i];
         if node.start < first_exon_end && node.end > first_exon_start {
             // This node overlaps the first guide exon.
-            // C++ ref:12134-12136: walk forward past contiguous sub-nodes that also overlap.
+            // Walk forward past contiguous sub-nodes that also overlap.
             let mut j = i + 1;
             while j < gno.saturating_sub(1) && j != source_id && j != sink_id {
                 let nj = &graph.nodes[j];
@@ -165,7 +165,7 @@ pub fn find_guide_pat(
                         != j
                 {
                     // Not contiguous or not first child — this is an intron-linked node.
-                    // C++: i=j-1 then break (pick the last contiguous node before the jump).
+                    // i=j-1 then break (pick the last contiguous node before the jump).
                     start_i = Some(j.saturating_sub(1));
                     break;
                 }
@@ -183,7 +183,7 @@ pub fn find_guide_pat(
     let mut nodes = vec![i];
     let mut j = 0usize; // guide exon index
 
-    // C++ reference: walk through guide exons, matching to graph nodes.
+    //: walk through guide exons, matching to graph nodes.
     while j < n_exons {
         let inode = &graph.nodes[i];
         let ex_end = guide.exons[j].1; // guide exon end (exclusive, 0-based)
@@ -191,14 +191,14 @@ pub fn find_guide_pat(
 
         if ex_end + ssdist < inode.end {
             // Guide exon ends before node ends — guide exon is contained in this node.
-            // C++ reference: if last exon, create transfrag and return.
+            //: if last exon, create transfrag and return.
             if j == n_exons - 1 {
                 return Some(nodes);
             }
             return Some(nodes); // guide fully consumed
         } else if end_diff <= ssdist {
             // Guide exon end matches node end exactly.
-            // C++ reference: move to next exon, find child matching next exon start.
+            //: move to next exon, find child matching next exon start.
             if j == n_exons - 1 {
                 return Some(nodes);
             }
@@ -222,7 +222,7 @@ pub fn find_guide_pat(
             }
         } else {
             // Guide exon end > node end — exon spans beyond this node.
-            // C++ reference: walk to contiguous next sub-node.
+            //: walk to contiguous next sub-node.
             // Find a contiguous child node (node.end == child.start, first child).
             let mut walked = false;
             for child_id in inode.children.ones() {
@@ -238,7 +238,7 @@ pub fn find_guide_pat(
                 }
             }
             if !walked {
-                // No contiguous sub-node. C++ ref:12186-12188: if last exon, store; else fail.
+                // No contiguous sub-node. If last exon, store; else fail.
                 if j == n_exons - 1 {
                     return Some(nodes);
                 }
@@ -376,7 +376,7 @@ fn find_guide_pat_fallback(
     None
 }
 
-/// Map reference guides to graph paths, set hardstart/hardend on guide terminal nodes (C++ reference process_refguides).
+/// Map reference guides to graph paths, set hardstart/hardend on guide terminal nodes (process_refguides).
 pub fn process_refguides(
     graph: &mut Graph,
     guides: &[RefTranscript],

@@ -34,7 +34,7 @@ use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 
-const MAX_NODE: i64 = i64::MAX - 1; // C++ reference unset lens sentinel
+const MAX_NODE: i64 = i64::MAX - 1; // unset lens sentinel
 const SSDIST: i64 = 25;
 const EDGEDIST: i64 = 100;
 const DROP: f64 = 0.5; // abundance ratio for ret=1 replacement
@@ -379,7 +379,7 @@ fn has_sink_completion(
 /// Promote terminal split-tail evidence into full-length long-read seed variants.
 ///
 /// Rust already materializes 2-node synthetic tail links like `[82, 255]`, but some long-read
-/// transfrags that end at the parent node keep only `... -> 82`. C++ can still recover the
+/// transfrags that end at the parent node keep only `... -> 82`. can still recover the
 /// full terminal seed via later seed/path handling. To avoid losing that family before seed
 /// extraction, synthesize a companion transfrag `[..., 82, 255]` when:
 /// - the transfrag is long-read,
@@ -708,7 +708,7 @@ fn trace_locus_active_span(start: u64, end: u64, trace_locus: Option<(u64, u64)>
 }
 
 /// compatible_long return: 0 = incompatible, 1 = tf1 extends past tf2, 2 = tf2 extends past tf1, 3 = same/compatible.
-/// lens: [len0, len1, len2, len3] for distance checks (C++ reference len[]).
+/// lens: [len0, len1, len2, len3] for distance checks (len[]).
 pub fn compatible_long(
     tf1: &GraphTransfrag,
     tf2: &GraphTransfrag,
@@ -771,7 +771,7 @@ pub fn compatible_long(
         return incompat;
     }
 
-    // C++ reference compatible_long zeroes len[0..3] internally for compatible cases.
+    // compatible_long zeroes len[0..3] internally for compatible cases.
     // MAX_NODE is only a caller-side sentinel before the function is invoked.
     let mut lens = [0i64, 0, 0, 0];
     let mut rets = 3u8;
@@ -893,7 +893,7 @@ pub fn compatible_long(
         lens[2] = -lens[2];
     }
 
-    // Middle compatibility with hard-edge pattern check (strict C++ reference 5738-5771 port)
+    // Middle compatibility with hard-edge pattern check (strict 5738-5771 port)
     let mut fi = f;
     let mut si = s;
     let mut ii = [i[0], i[1]];
@@ -925,7 +925,7 @@ pub fn compatible_long(
             {
                 return incompat; // gap filled
             }
-            // Hard-edge pattern check (C++ reference 5756-5759):
+            // Hard-edge pattern check (5756-5759):
             // if gap is hard in both transcripts, they are incompatible.
             if ii[fi] < nodes[fi].len() && ii[si] < nodes[si].len() {
                 let f_prev = nodes[fi][ii[fi] - 1];
@@ -1082,7 +1082,7 @@ fn trf_real(tf_idx: usize, graph: &Graph, transfrags: &mut [GraphTransfrag]) -> 
     }
 }
 
-/// Process one short-read fragment: redistribute srabund to compatible transfrags (C++ reference process_srfrag; mixed mode).
+/// Process one short-read fragment: redistribute srabund to compatible transfrags (process_srfrag; mixed mode).
 /// u_idx indexes the transfrag with srabund to redistribute. Modifies transfrags in place.
 pub fn process_srfrag(
     transfrags: &mut [GraphTransfrag],
@@ -1182,7 +1182,7 @@ pub fn process_srfrag(
         return;
     }
 
-    // C++ reference stitch_trf parity: assemble a chain of compatible included transfrags
+    // stitch_trf: assemble a chain of compatible included transfrags
     // to explain remaining sr abundance.
     let mut seltrfrag: Vec<usize> = Vec::new();
     for (t_idx, t) in transfrags.iter().enumerate() {
@@ -1348,7 +1348,7 @@ pub fn eliminate_transfrags_under_thr(
                 continue;
             }
             if tf.guide {
-                // C++ reference parity: guide transfrags are preserved in threshold elimination.
+                // guide transfrags are preserved in threshold elimination.
                 continue;
             }
             if tf.node_ids[0] == source_id || tf.node_ids.last().copied() == Some(sink_id) {
@@ -1547,7 +1547,7 @@ pub fn process_transfrags(
     let mut hassink: Vec<Option<usize>> = vec![None; node_count];
     let mut active_indices = collect_active_transfrag_indices(&transfrags, source_id, sink_id);
 
-    // Incomplete transfrag handling parity (assign_incomplete_trf_to_nodes + trf_real).
+    // Incomplete transfrag handling (assign_incomplete_trf_to_nodes + trf_real).
     let mut incompletetrf: Vec<usize> = Vec::new();
     for &tf_idx in &active_indices {
         if tf_idx >= transfrags.len() || transfrags[tf_idx].node_ids.is_empty() {
@@ -1622,13 +1622,13 @@ pub fn process_transfrags(
                 .collect();
             rebuild_node_trf_ids(graph, &transfrags);
         }
-        // C++ iterates the longtrCmp-sorted transfrag array directly. Rebuild the
+        // iterates the longtrCmp-sorted transfrag array directly. Rebuild the
         // active non-source/non-sink index list after sorting so later keeptrf and
         // source/sink bookkeeping use the sorted identities, not stale pre-sort ids.
         active_indices = collect_active_transfrag_indices(&transfrags, source_id, sink_id);
     }
 
-    // C++ reference parity sorting:
+    // sorting:
     // - longreads: longtrCmp (guide first, then abundance, then structure)
     // - non-longreads: trCmp-like (larger node count first, then abundance)
     if long_mode {
@@ -1646,8 +1646,8 @@ pub fn process_transfrags(
                 .then_with(|| tb.pattern.len_bits().cmp(&ta.pattern.len_bits()))
         });
     } else {
-        // C++ reference trCmp: reach first (last node - first node), then node count,
-        // then pattern completeness, then abundance. C++ reference.
+        // trCmp: reach first (last node - first node), then node count,
+        // then pattern completeness, then abundance. 
         active_indices.sort_unstable_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
@@ -1670,7 +1670,7 @@ pub fn process_transfrags(
         });
     }
 
-    // C++ reference parity: in longread mode, hassource/hassink are assigned while
+    // in longread mode, hassource/hassink are assigned while
     // iterating transfrags in longtrCmp order (including source/sink transfrags).
     if long_mode {
         let mut all_order: Vec<usize> = (0..transfrags.len()).collect();
@@ -1727,13 +1727,13 @@ pub fn process_transfrags(
         let mut included = false;
         let mut included_via_group = false;
         let mut pending_guide_replace: Option<(usize, usize)> = None; // (kept_rep_idx, tf_idx)
-        let mut mark_weak = false; // C++ parity: defer weak marking to avoid borrow conflict
+        let mut mark_weak = false; // defer weak marking to avoid borrow conflict
         for (kept_idx, group, kept_cov) in keeptrf.iter_mut() {
             let kept_tf = &transfrags[*kept_idx];
             let trace_pair = tf_overlaps_trace_graph(tf, graph, trace_locus)
                 || tf_overlaps_trace_graph(kept_tf, graph, trace_locus);
 
-            // C++ reference guide containment branch (~6032-6081):
+            // guide containment branch (~6032-6081):
             // - if non-guide tf is fully contained in kept guide => included
             // - if kept guide is fully contained in non-guide tf and side distances are close => included;
             //   if kept guide has zero abundance, replace its abundance with tf abundance.
@@ -1828,7 +1828,7 @@ pub fn process_transfrags(
                 continue;
             }
             if ret == 3 {
-                // Opposing hard boundaries → keep both (C++ reference, reference 10759-10765)
+                // Opposing hard boundaries → keep both ( reference 10759-10765)
                 let tf_first_node = &graph.nodes[first_nid];
                 let tf_last_node = &graph.nodes[last_nid];
                 let kt_first_node = &graph.nodes[kept_tf.node_ids[0]];
@@ -1853,11 +1853,11 @@ pub fn process_transfrags(
                         continue; // keep both — different transcript boundaries
                     }
                 }
-                // Merge only if both terminal distances < edgedist (C++ reference); signed lens[0], lens[2]
+                // Merge only if both terminal distances < edgedist; signed lens[0], lens[2]
                 let left_dist = lens[0];
                 let right_dist = lens[2];
                 if (!tf.guide || !kept_tf.guide) && left_dist < EDGEDIST && right_dist < EDGEDIST {
-                    // C++ reference 6144-6145:
+                    // 6144-6145:
                     // replace kept with current only if current is guide OR
                     // kept is non-guide and current has hardstart+hardend.
                     let new_rep = tf.guide
@@ -1887,7 +1887,7 @@ pub fn process_transfrags(
                 }
             }
             if ret == 1 {
-                // tf extends past kept: absorb kept into tf (tf becomes new rep) only if (C++ reference, reference 10828-10835)
+                // tf extends past kept: absorb kept into tf (tf becomes new rep) only if ( reference 10828-10835)
                 let kt_first = &graph.nodes[kept_tf.node_ids[0]];
                 let kt_last = &graph.nodes[kept_tf.node_ids[kept_tf.node_ids.len() - 1]];
                 let left_dist = lens[1];
@@ -1921,7 +1921,7 @@ pub fn process_transfrags(
                 }
             }
             if ret == 2 {
-                // kept extends past tf: absorb tf into kept only if (C++ reference, reference 10869-10895)
+                // kept extends past tf: absorb tf into kept only if ( reference 10869-10895)
                 let left_dist = lens[1];
                 let right_dist = lens[3];
                 if !tf.guide && left_dist < SSDIST && right_dist < SSDIST {
@@ -1978,7 +1978,7 @@ pub fn process_transfrags(
             included = false;
         }
         if !included {
-            // C++ parity (C++ reference): guides are added to keeptrf even without proper boundaries.
+            // guides are added to keeptrf even without proper boundaries.
             let has_source_strict = first_node.hardstart || tf.longstart != 0;
             let has_sink = last_node.hardend || tf.longend != 0;
             if tf.guide || (has_source_strict && has_sink) || novel_splice_rescue {
@@ -2015,11 +2015,11 @@ pub fn process_transfrags(
                 }
                 keeptrf.push((tf_idx, vec![tf_idx], tf_weight(tf)));
             } else {
-                // C++ parity: transcript not included and lacks boundaries -> mark as weak
+                // transcript not included and lacks boundaries -> mark as weak
                 transfrags[tf_idx].weak = 1;
             }
         } else {
-            // C++ parity (C++ reference): ALL included transcripts are marked as weak.
+            // ALL included transcripts are marked as weak.
             // Defer weak marking to avoid borrow conflict.
             mark_weak = true;
             if !included_via_group {
@@ -2045,15 +2045,15 @@ pub fn process_transfrags(
             transfrags[rep_idx].abundance = new_ab;
             transfrags[src_idx].abundance = 0.0;
         }
-        // C++ parity: apply deferred weak marking to avoid borrow conflict
+        // apply deferred weak marking to avoid borrow conflict
         if mark_weak {
             transfrags[tf_idx].weak = 1;
         }
     }
 
-    // C++ reference parity: compute keepsource/keepsink from the final keeptrf groups.
+    // compute keepsource/keepsink from the final keeptrf groups.
     //
-    // Important nuance (matches the reference assembler behavior in practice): keep source/sink support only
+    // Important nuance (matches the original algorithm behavior in practice): keep source/sink support only
     // for the representative start/end nodes that survived keeptrf selection. Computing these
     // flags over all active transfrags can incorrectly keep helpers at internal nodes (nodes
     // with non-source parents / non-sink children), which can siphon flux and cause misses.
@@ -2070,7 +2070,7 @@ pub fn process_transfrags(
                 continue;
             }
             let tf = &transfrags[gid];
-            // C++ reference: eonly skips non-guide transfrags in keepsource/keepsink collection.
+            // eonly skips non-guide transfrags in keepsource/keepsink collection.
             if eonly && !tf.guide {
                 continue;
             }
@@ -2098,7 +2098,7 @@ pub fn process_transfrags(
         }
     }
 
-    // C++ reference parity: build trflong seed order from keeptrf before source/sink rewiring.
+    // build trflong seed order from keeptrf before source/sink rewiring.
     // pass 1 (reverse keeptrf): incomplete non-guide
     // pass 2 (reverse keeptrf): complete or guide
     let rep_order_now: Vec<usize> = keeptrf.iter().map(|(r, _, _)| *r).collect();
@@ -2203,7 +2203,7 @@ pub fn process_transfrags(
         }
     }
 
-    // C++ reference parity: source/sink support rewiring after keeptrf selection.
+    // source/sink support rewiring after keeptrf selection.
     // Aggregate grouped abundance by representative start/end, then
     // create/update source->start and end->sink transfrags for hard boundaries.
     let mut addsource = vec![0.0; node_count];
@@ -2224,7 +2224,7 @@ pub fn process_transfrags(
             if gid >= transfrags.len() || transfrags[gid].node_ids.is_empty() {
                 continue;
             }
-            // C++ reference: skip guide transfrags in addsource/addsink accumulation
+            // skip guide transfrags in addsource/addsink accumulation
             if transfrags[gid].guide {
                 continue;
             }
@@ -2515,7 +2515,7 @@ pub fn process_transfrags(
     // before long-read path extension stages consume parentpat/childpat.
     graph.compute_reachability();
 
-    // C++ reference keeps grouped support in keeptrf.cov and leaves the representative transfrag
+    // keeps grouped support in keeptrf.cov and leaves the representative transfrag
     // abundance unchanged for parse_trflong/checktrf. Only mark absorbed members here.
     let rep_set: HashSet<usize> = keeptrf.iter().map(|(r, _, _)| *r).collect();
     for tf in transfrags.iter_mut() {
@@ -2529,7 +2529,7 @@ pub fn process_transfrags(
             .filter(|&idx| idx != *rep_idx)
             .collect();
         
-        // C++ parity: update representative's longstart/longend to encompass
+        // update representative's longstart/longend to encompass
         // all absorbed transfrags. This ensures transcript boundaries reflect
         // the full extent of merged transfrags.
         let mut min_longstart = transfrags[*rep_idx].longstart;
@@ -2634,7 +2634,7 @@ pub fn process_transfrags(
             n_absorbed
         );
     }
-    // C++ reference: fill disconnected parent-child edges with trthr transfrags.
+    // fill disconnected parent-child edges with trthr transfrags.
     // For each parent-child edge in the graph, if no existing transfrag covers that edge,
     // create a minimal 2-node transfrag so path extraction can route through it.
     {
@@ -2677,7 +2677,7 @@ pub fn process_transfrags(
                 new_tfs.len()
             );
         }
-        // Register new transfrags with their nodes' trf_ids (C++ reference)
+        // Register new transfrags with their nodes' trf_ids
         let base_idx = transfrags.len();
         for (offset, tf) in new_tfs.iter().enumerate() {
             let tf_idx = base_idx + offset;
@@ -2691,7 +2691,7 @@ pub fn process_transfrags(
         rebuild_node_trf_ids(graph, &transfrags);
     }
 
-    // C++ reference
+    // 
     // Normalize terminal helper abundances after compatibilities are built:
     // - for nodes whose only parent is source, source->node helper abundance becomes the
     //   total abundance of the other transfrags ending/continuing at that node

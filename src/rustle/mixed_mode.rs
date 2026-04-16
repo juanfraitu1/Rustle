@@ -1,6 +1,6 @@
 //! Mixed mode coordinator: handle both long and short reads together.
 //!
-//! C++ reference mixedMode: process_srfrag redistributes srabund to compatible transfrags
+//! mixedMode: process_srfrag redistributes srabund to compatible transfrags
 
 use crate::shortread_pipeline::{ReadClassifier, ReadType};
 use crate::types::{BundleRead, RunConfig};
@@ -98,7 +98,7 @@ pub struct MixedModeStats {
 }
 
 /// Process short-read abundance (srabund) redistribution
-/// C++ ref: process_srfrag redistributes srabund to compatible long-read transfrags
+/// ref: process_srfrag redistributes srabund to compatible long-read transfrags
 pub fn redistribute_srabund(
     short_reads: &[BundleRead],
     transfrags: &mut [crate::graph::GraphTransfrag],

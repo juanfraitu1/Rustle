@@ -1,4 +1,4 @@
-//! Killed junctions and witness logic (C++ reference good_junc strand=0; reference assembler V99 killed_junction_pairs,
+//! Killed junctions and witness logic (good_junc strand=0; original algorithm V99 killed_junction_pairs,
 //! killed_junction_orphan; has_lr_witness_two_splices; witness left/right = leftsupport/rightsupport).
 
 use crate::bpcov::{BpcovStranded, BPCOV_STRAND_ALL, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
@@ -23,7 +23,7 @@ fn trace_cjunction_acceptor(cj: &CJunction) -> u64 {
     cj.end.saturating_add(1)
 }
 
-/// Junctions with strand == 0 (C++ reference good_junc), map-based variant.
+/// Junctions with strand == 0 (good_junc), map-based variant.
 /// Key = (donor, acceptor) same as Junction.
 pub fn compute_killed_junction_pairs_stats(junction_stats: &JunctionStats) -> HashSet<Junction> {
     junction_stats
@@ -35,11 +35,11 @@ pub fn compute_killed_junction_pairs_stats(junction_stats: &JunctionStats) -> Ha
         .collect()
 }
 
-/// Second-stage good_junc validation for read-loop use (C++ build_graphs parity).
+/// Second-stage good_junc validation for read-loop use (build_graphs).
 /// 
-/// In C++, good_junc is called TWICE:
+/// good_junc is called TWICE:
 /// 1. During initial junction filtering (before build_graphs)
-/// 2. AGAIN inside the read loop during build_graphs (C++ reference)
+/// 2. AGAIN inside the read loop during build_graphs
 /// 
 /// This second-stage validation catches junctions that passed initial filtering
 /// but fail when re-evaluated with current coverage context.
@@ -141,7 +141,7 @@ pub fn good_junc_second_stage(
         }
     }
     
-    // Step 6 (C++ reference): don't keep if splice fraction is extremely low
+    // Step 6 don't keep if splice fraction is extremely low
     // if nreads*10 < ERROR_PERC*leftsupport || nreads*10 < ERROR_PERC*rightsupport
     // (simplified: check if junction represents < 1% of coverage on either side)
     if st.mrcount * 10.0 < ERROR_PERC * st.leftsupport
@@ -181,7 +181,7 @@ pub fn has_non_kjo(
     true
 }
 
-/// Witness left: support on donor (left) side of splice (C++ reference leftsupport).
+/// Witness left: support on donor (left) side of splice (leftsupport).
 #[inline]
 pub fn witness_left(junction: Junction, junction_stats: &JunctionStats) -> f64 {
     junction_stats
@@ -190,7 +190,7 @@ pub fn witness_left(junction: Junction, junction_stats: &JunctionStats) -> f64 {
         .unwrap_or(0.0)
 }
 
-/// Witness right: support on acceptor (right) side of splice (C++ reference rightsupport).
+/// Witness right: support on acceptor (right) side of splice (rightsupport).
 #[inline]
 pub fn witness_right(junction: Junction, junction_stats: &JunctionStats) -> f64 {
     junction_stats
@@ -218,7 +218,7 @@ fn path_junctions(path: &[usize], graph: &Graph) -> Vec<Junction> {
 }
 
 /// At least one long-read transfrag contains both junctions (in order) within tolerance.
-/// C++ reference has_lr_witness_two_splices; reference assembler: consecutive junction pairs must be connected.
+/// has_lr_witness_two_splices; original algorithm: consecutive junction pairs must be connected.
 pub fn has_lr_witness_two_splices(
     junctions: &[Junction],
     transfrags: &[GraphTransfrag],
@@ -333,7 +333,7 @@ mod tests {
             all: Some(vec![7.0, 7.0, 7.0, 0.0]),
         };
 
-        // Long-read parity: signed window = all - opposite strand.
+        // Long-read: signed window = all - opposite strand.
         let plus_signed = cov_sign_window(&bpcov, BPCOV_STRAND_PLUS, 0, 3, true);
         let minus_signed = cov_sign_window(&bpcov, BPCOV_STRAND_MINUS, 0, 3, true);
         assert!((plus_signed - 15.0).abs() < 1e-9);
@@ -444,11 +444,11 @@ mod tests {
 }
 
 /// Aggregate leftsupport by donor site and rightsupport by acceptor site (per strand), map-based variant.
-/// Matches C++ reference: before good_junc gating, accumulates support
+/// Matches  before good_junc gating, accumulates support
 /// from all junctions sharing the same splice site so the witness checks (step 4)
 /// and low_splice_frac (step 6) use the aggregate.
 ///
-/// C++ quirk: the last donor group (left) and last acceptor group (right) are NOT
+/// quirk: the last donor group (left) and last acceptor group (right) are NOT
 /// propagated — the loop ends without a trailing propagation pass.
 pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
     if stats.len() < 2 {
@@ -457,8 +457,8 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
 
     let gjd = goodjunc_trace_active();
 
-    // Part A: leftsupport aggregation by donor (C++ reference)
-    // C++ junction array is sorted by start (donor). Group by donor, accumulate
+    // Part A: leftsupport aggregation by donor
+    // junction array is sorted by start (donor). Group by donor, accumulate
     // leftsupport per strand, propagate to all group members when entering next group.
     {
         let mut keys: Vec<Junction> = stats.keys().copied().collect();
@@ -473,7 +473,7 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
             let strand = stats.get(&jn).map(|s| s.strand.unwrap_or(0)).unwrap_or(0);
 
             if jn.donor != current_donor {
-                // Propagate to previous group (C++ reference)
+                // Propagate to previous group
                 for j in group_start_idx..idx {
                     let prev_jn = keys[j];
                     if let Some(prev_st) = stats.get_mut(&prev_jn) {
@@ -495,7 +495,7 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
                     }
                 }
 
-                // Reset and init new group (C++ reference)
+                // Reset and init new group
                 leftsupport = [0.0, 0.0];
                 if strand != 0 {
                     let si = ((1 + strand as i32) / 2) as usize;
@@ -504,16 +504,16 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
                 current_donor = jn.donor;
                 group_start_idx = idx;
             } else if strand != 0 {
-                // Same donor group — accumulate (C++ reference)
+                // Same donor group — accumulate
                 let si = ((1 + strand as i32) / 2) as usize;
                 leftsupport[si] += stats.get(&jn).map(|s| s.leftsupport).unwrap_or(0.0);
             }
         }
-        // C++ quirk: last donor group is NOT propagated (loop ends at 14533)
+        // quirk: last donor group is NOT propagated (loop ends at 14533)
     }
 
-    // Part B: rightsupport aggregation by acceptor (C++ reference)
-    // C++ ejunction is sorted by end (acceptor). Same algorithm for rightsupport.
+    // Part B: rightsupport aggregation by acceptor
+    // ejunction is sorted by end (acceptor). Same algorithm for rightsupport.
     {
         let mut keys: Vec<Junction> = stats.keys().copied().collect();
         keys.sort_by_key(|j| (j.acceptor, j.donor));
@@ -527,7 +527,7 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
             let strand = stats.get(&jn).map(|s| s.strand.unwrap_or(0)).unwrap_or(0);
 
             if jn.acceptor != current_acceptor {
-                // Propagate to previous group (C++ reference)
+                // Propagate to previous group
                 for j in group_start_idx..idx {
                     let prev_jn = keys[j];
                     if let Some(prev_st) = stats.get_mut(&prev_jn) {
@@ -549,7 +549,7 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
                     }
                 }
 
-                // Reset and init new group (C++ reference)
+                // Reset and init new group
                 rightsupport = [0.0, 0.0];
                 if strand != 0 {
                     let si = ((1 + strand as i32) / 2) as usize;
@@ -558,21 +558,21 @@ pub fn aggregate_splice_site_support_stats(stats: &mut JunctionStats) {
                 current_acceptor = jn.acceptor;
                 group_start_idx = idx;
             } else if strand != 0 {
-                // Same acceptor group — accumulate (C++ reference)
+                // Same acceptor group — accumulate
                 let si = ((1 + strand as i32) / 2) as usize;
                 rightsupport[si] += stats.get(&jn).map(|s| s.rightsupport).unwrap_or(0.0);
             }
         }
-        // C++ quirk: last acceptor group is NOT propagated
+        // quirk: last acceptor group is NOT propagated
     }
 
-    // Part C: Same-position opposite-strand conflict resolution (C++ reference)
+    // Part C: Same-position opposite-strand conflict resolution
     // Not applicable in Rust: Junction key is (donor, acceptor) without strand,
     // so only one entry per coordinate pair exists.
 
-    // Part D: Consensus splice-site kills (C++ reference, 14493)
+    // Part D: Consensus splice-site kills ( 14493)
     // Skipped: genome sequence not available in -L mode without -G genome.fa.
-    // The C++ if(bdata->gseq) guard means C++ also skips this.
+    // The if(bdata->gseq) guard means also skips this.
 }
 
 /// Strict good_junc/good_merge_junc-style gating for junctions, map-based variant.
@@ -615,7 +615,7 @@ pub fn good_junc_stats(
             );
         }
 
-        // C++ reference: eonly kills all non-guide junctions.
+        // eonly kills all non-guide junctions.
         if eonly && !st.guide_match {
             if gjd {
                 eprintln!(
@@ -630,7 +630,7 @@ pub fn good_junc_stats(
             continue;
         }
 
-        // C++ reference: guide-matched junctions always pass.
+        // guide-matched junctions always pass.
         if st.guide_match {
             continue;
         }
@@ -650,7 +650,7 @@ pub fn good_junc_stats(
             continue;
         }
 
-        // C++ higherr parity (C++ reference + 15365):
+        // higherr (+ 15365):
         // all-bad junctions (nm >= nreads) under 1.25*junctionthr are marked with mm=-1
         // (mm=-1 there, then strand=0 in read loop only if good_junc fails).
         // This gate is critical for long-read weak all-bad junction splitting behavior.
@@ -671,7 +671,7 @@ pub fn good_junc_stats(
             // Don't continue - let junction survive to apply_bad_mm_neg_stage
         }
 
-        // good_junc step 5: all-bad long intron with low count (C++ reference: jd.nm >= jd.nreads).
+        // good_junc step 5: all-bad long intron with low count ( jd.nm >= jd.nreads).
         let mismatch = all_bad;
         if mismatch
             && jn.acceptor.saturating_sub(jn.donor) > long_intron
@@ -747,7 +747,7 @@ pub fn good_junc_stats(
         }
 
         // good_junc step 6: extremely low splice fraction relative to side support.
-        // C++ uses aggregated values here (C++ reference runs before good_junc).
+        // uses aggregated values here (runs before good_junc).
         if st.mrcount * 10.0 < ERROR_PERC * st.leftsupport
             || st.mrcount * 10.0 < ERROR_PERC * st.rightsupport
         {
@@ -801,8 +801,8 @@ pub fn good_junc_stats(
     }
 }
 
-/// Junctions that will be treated as bad during the C++ per-read pass.
-/// Besides explicit strand=0 kills, the reference assembler also splits reads on junctions
+/// Junctions that will be treated as bad during the per-read pass.
+/// Besides explicit strand=0 kills, the original algorithm also splits reads on junctions
 /// demoted on either side (`nreads<0` / `nreads_good<0`) and on `mm<0`.
 pub fn compute_killed_junction_pairs(cjunctions: &[CJunction]) -> HashSet<Junction> {
     cjunctions
@@ -821,14 +821,14 @@ fn cjunc_strand_index(strand: i8) -> Option<usize> {
     }
 }
 
-/// Aggregate splice-site support using CJunction transport (C++ reference pre-good_junc pass).
+/// Aggregate splice-site support using CJunction transport (pre-good_junc pass).
 pub fn aggregate_splice_site_support(cjunctions: &mut Vec<CJunction>) {
     if cjunctions.len() < 2 {
         return;
     }
     let gjd = goodjunc_trace_active();
 
-    // C++ uses the start-sorted junction vector, with a second end-sorted copy.
+    // uses the start-sorted junction vector, with a second end-sorted copy.
     let mut donor_order: Vec<usize> = (0..cjunctions.len()).collect();
     donor_order.sort_by_key(|&i| (cjunctions[i].start, cjunctions[i].end, cjunctions[i].strand));
 
@@ -888,7 +888,7 @@ pub fn aggregate_splice_site_support(cjunctions: &mut Vec<CJunction>) {
             leftsupport[si] += cjunctions[idx].leftsupport;
         }
     }
-    // C++ quirk: final donor group is not propagated.
+    // quirk: final donor group is not propagated.
 
     let mut acceptor_order: Vec<usize> = (0..cjunctions.len()).collect();
     acceptor_order.sort_by_key(|&i| (cjunctions[i].end, cjunctions[i].start, cjunctions[i].strand));
@@ -925,7 +925,7 @@ pub fn aggregate_splice_site_support(cjunctions: &mut Vec<CJunction>) {
             rightsupport[si] += cjunctions[idx].rightsupport;
         }
     }
-    // C++ quirk: final acceptor group is not propagated.
+    // quirk: final acceptor group is not propagated.
 }
 
 /// good_junc/good_merge_junc gate using CJunction transport.
@@ -982,7 +982,7 @@ pub fn good_junc(
             continue;
         }
 
-        // C++ parity: `higherr` stores negative "demotion pointers" in `nreads` / `nreads_good`.
+        // `higherr` stores negative "demotion pointers" in `nreads` / `nreads_good`.
         // Those are not counts and must not participate in support-based killing here.
         // Such junctions are later treated as "bad" during read splitting and graph building.
         if cj.nreads < 0.0 || cj.nreads_good < 0.0 {
@@ -1005,8 +1005,8 @@ pub fn good_junc(
 
         let all_bad = cj.nm > 0.0 && cj.nm + 1e-9 >= cj.nreads;
         if all_bad && cj.nreads_good < 1.25 * junction_thr {
-            // C++ parity: don't kill here; mark for BAD_MM_NEG instead.
-            // In C++ higherr block, these junctions are marked with mm=-1, not killed.
+            // don't kill here; mark for BAD_MM_NEG instead.
+            // In higherr block, these junctions are marked with mm=-1, not killed.
             cj.mm = -1.0;
             if gjd {
                 eprintln!(
@@ -1112,7 +1112,7 @@ pub fn good_junc(
         if cj.nreads * 10.0 < ERROR_PERC * cj.leftsupport
             || cj.nreads * 10.0 < ERROR_PERC * cj.rightsupport
         {
-            // C++ parity: if all_bad, don't kill here; mark for BAD_MM_NEG instead.
+            // if all_bad, don't kill here; mark for BAD_MM_NEG instead.
             if all_bad {
                 cj.mm = -1.0;
                 if gjd {
@@ -1155,7 +1155,7 @@ pub fn good_junc(
         let mut donor_sum: HashMap<u64, f64> = Default::default();
         for cj in cjunctions.iter() {
             // Exclude demotion pointers and mm<0 markers from the donor sum, matching the
-            // C++ behavior of using valid support counts only.
+            // behavior of using valid support counts only.
             if cj.strand != 0 && cj.nreads_good >= 0.0 && cj.mm >= 0.0 {
                 *donor_sum.entry(cj.start).or_insert(0.0) += cj.nreads_good;
             }
@@ -1173,7 +1173,7 @@ pub fn good_junc(
     }
 }
 
-/// the reference assembler `higherr` parity: donor/acceptor demotion pointers on all-bad junctions.
+/// the original algorithm `higherr`: donor/acceptor demotion pointers on all-bad junctions.
 pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junction_thr: f64) {
     if cjunctions.len() < 2 {
         return;
@@ -1191,7 +1191,7 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
         if !cj_higherr_candidate(&cur) {
             continue;
         }
-        // Sensitivity-first: only demote very weak all-bad junctions (C++ reference uses `junctionthr`
+        // Sensitivity-first: only demote very weak all-bad junctions (uses `junctionthr`
         // to decide which bad junctions are worth chasing). This prevents collapsing distinct
         // isoforms that happen to be within `sserror` bp on one splice site.
         if cur.nreads_good >= 0.0 && cur.nreads_good >= 1.25 * junction_thr {

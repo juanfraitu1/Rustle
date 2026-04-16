@@ -1,4 +1,4 @@
-//! Max-flow for long and short reads: Edmonds-Karp on path capacity network (C++ reference long_max_flow).
+//! Max-flow for long and short reads: Edmonds-Karp on path capacity network (long_max_flow).
 
 use std::collections::VecDeque;
 
@@ -11,15 +11,15 @@ use crate::graph::{Graph, GraphTransfrag};
 const EPSILON: f64 = crate::constants::FLOW_EPSILON;
 const DBL_ERROR: f64 = 0.01;
 // Max unmatched path span (bp) tolerated between consecutive transfrag nodes when deciding
-// whether to keep a transfrag on a path (the reference assembler `long_max_flow` keeptr gap test).
+// whether to keep a transfrag on a path (the original algorithm `long_max_flow` keeptr gap test).
 //
 // Empirically, `100` was too strict for the current graph segmentation and caused many
 // valid long-read transfrags to be dropped from the capacity network, producing
 // `zero_flux` even when a connected solution exists (e.g. STRG.319 panel locus).
 /// Maximum gap in path (bp) that a transfrag can skip while still contributing to flow
-/// capacity. C++ reference uses CHI_WIN=100 (rlink.h). A larger value lets transfrags
+/// capacity. uses CHI_WIN=100. A larger value lets transfrags
 /// with internal gaps add capacity to edges they don't truly support, inflating flow
-/// and creating spurious predictions. Previously 2000 — changed to 100 for parity.
+/// and creating spurious predictions. Previously 2000 — changed to 100.
 const CHI_WIN: u64 = 2000;
 
 fn trace_seed_idx() -> Option<usize> {
@@ -100,7 +100,7 @@ fn bfs_augmenting_path(
     pred[0] = -1;
     while let Some(u) = queue.pop_front() {
         color[u] = 2;
-        // C++ reference parity: iterate adjacency in reverse order in BFS.
+        // iterate adjacency in reverse order in BFS.
         for &v in link[u].iter().rev() {
             if color[v] == 0 {
                 let residual = capacity[u][v] - flow[u][v];
@@ -134,7 +134,7 @@ fn build_pathpat(path: &[usize], graph: &Graph) -> GBitVec {
     pathpat
 }
 
-/// C++ long_max_flow keeptr gap test:
+/// long_max_flow keeptr gap test:
 /// when starting from path index `pi`, allow unmatched path span up to CHI_WIN before
 /// reaching the next transfrag node on path.
 fn keeptr_gap_ok(tf: &GraphTransfrag, path: &[usize], pi: usize, graph: &Graph) -> bool {
@@ -149,10 +149,10 @@ fn keeptr_gap_ok(tf: &GraphTransfrag, path: &[usize], pi: usize, graph: &Graph) 
     let mut lenp: u64 = 0;
     while ti < tf.node_ids.len() {
         if pj >= path.len() {
-            // C++ has no bounds check here and reads past end of path array (UB).
+            // has no bounds check here and reads past end of path array (UB).
             // The OOB values are typically 0 (source node) with length 0,
             // so lenp doesn't accumulate and keeptr stays true.
-            // Match C++ behavior: treat running off the path end as OK.
+            // Match behavior: treat running off the path end as OK.
             return true;
         }
         if path[pj] != tf.node_ids[ti] {
@@ -196,7 +196,7 @@ fn incoming_capacity_sum(capacity: &[Vec<f64>], i: usize) -> f64 {
 /// Micro-exon targeted fallback: synthesize a minimal "start-at-node" capacity edge only for
 /// very short internal nodes that have incoming capacity but no outgoing capacity.
 ///
-/// This is a closer match to the the reference assembler assumption ("some read starts here") without letting
+/// This is a closer match to the the original algorithm assumption ("some read starts here") without letting
 /// large internal nodes create high-capacity synthetic routes that can distort isoform selection.
 fn add_microexon_start_edges_if_disconnected(
     capacity: &mut [Vec<f64>],
@@ -335,7 +335,7 @@ fn effective_path_abundance(
     selected_branch.map(|(_, prop)| base * prop).unwrap_or(0.0)
 }
 
-/// C++ update_capacity(start=0, t, val, nodecapacity, node2path):
+/// update_capacity(start=0, t, val, nodecapacity, node2path):
 /// subtract val from transfrag abundance and add val to all path nodes in transfrag except last.
 fn update_transfrag_capacity(
     tf: &mut GraphTransfrag,
@@ -356,7 +356,7 @@ fn update_transfrag_capacity(
     }
 }
 
-/// C++ reference update_capacity: subtract flux from one capacity edge (float-quantized).
+/// update_capacity: subtract flux from one capacity edge (float-quantized).
 pub fn update_capacity(capacity: &mut [Vec<f64>], from: usize, to: usize, flux: f64) {
     if from >= capacity.len() || to >= capacity[from].len() {
         return;
@@ -364,9 +364,9 @@ pub fn update_capacity(capacity: &mut [Vec<f64>], from: usize, to: usize, flux: 
     capacity[from][to] = (capacity[from][to] - flux).max(0.0);
 }
 
-/// C++ reference get_rate: capacity redistribution along path.
+/// get_rate: capacity redistribution along path.
 /// NOTE: In this port, rate application happens inside edmonds_karp; keep this as a no-op
-/// to satisfy C++ ref_map wrappers and preserve current behavior.
+/// to satisfy ref_map wrappers and preserve current behavior.
 pub fn get_rate(
     _path: &[usize],
     _graph: &Graph,
@@ -375,7 +375,7 @@ pub fn get_rate(
 ) {
 }
 
-/// Direct port of C++ reference push_max_flow (ratio flow on path, short/mixed mode).
+/// Direct port of push_max_flow (ratio flow on path, short/mixed mode).
 /// Returns (flux=nodeflux[1], real-node nodeflux fractions).
 pub fn push_max_flow_seeded_full(
     path: &[usize],
@@ -674,7 +674,7 @@ pub fn push_max_flow_seeded(
     (flux, nodeflux)
 }
 
-/// Guide-only one-step flow estimate (C++ reference push_guide_maxflow).
+/// Guide-only one-step flow estimate (push_guide_maxflow).
 /// Does not subtract abundances; returns guide-weighted abundance flow.
 pub fn push_guide_max_flow(
     path: &[usize],
@@ -774,7 +774,7 @@ pub fn push_guide_max_flow(
     guideabundance
 }
 
-/// Guide proportional push-flow (C++ reference guidepushflow).
+/// Guide proportional push-flow (guidepushflow).
 /// `guide_abundance` is current guide support, `previous_guides` are earlier guide (pattern, abundance)
 /// pairs used for proportional allocation of shared transfrags.
 pub fn guide_push_flow(
@@ -816,7 +816,7 @@ pub fn guide_push_flow(
             let tf = &transfrags[t];
             if istranscript.contains(t) || guide_pattern.contains_pattern(&tf.pattern) {
                 istranscript.insert_grow(t);
-                // C++ reference: guidepushflow proportional allocation.
+                // guidepushflow proportional allocation.
                 // totalcov = current_guide.trf->abundance + sum(prev_guides with compat pattern).
                 // prop = current / totalcov if totalcov > current, else 1.
                 let current_mass = guide_abundance.max(0.0);
@@ -978,10 +978,10 @@ pub fn guide_push_flow(
     (nodeflux[1], real_nodeflux)
 }
 
-/// Direct port of the reference assembler `long_max_flow` for long-read seed depletion.
+/// Direct port of the original algorithm `long_max_flow` for long-read seed depletion.
 ///
 /// This intentionally does not reuse the generic `edmonds_karp` capacity builder because the
-/// C++ long-read path has slightly different keeptr, max_fl, and depletion semantics that affect
+/// long-read path has slightly different keeptr, max_fl, and depletion semantics that affect
 /// whether source/sink helper transfrags survive for later seeds.
 fn long_max_flow_direct(
     path: &[usize],
@@ -1147,7 +1147,7 @@ fn long_max_flow_direct(
         eprintln!();
     }
 
-    if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() || debug_ek {
+    if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() || debug_ek {
         let n_ist = istranscript.ones().count();
         let n_edges = {
             let mut cnt = 0usize;
@@ -1157,14 +1157,14 @@ fn long_max_flow_direct(
         let cap_01 = if n >= 2 { capacity[0][1] } else { 0.0 };
         let cap_last = if n >= 2 { capacity[n-2][n-1] } else { 0.0 };
         eprintln!(
-            "PARITY_CAP_SUMMARY seed={:?} n_istranscript={} n_edges={} cap_source_first={:.4} cap_last_sink={:.4} max_fl={:.4} path_len={}",
+            "DEBUG_CAP_SUMMARY seed={:?} n_istranscript={} n_edges={} cap_source_first={:.4} cap_last_sink={:.4} max_fl={:.4} path_len={}",
             seed_tf, n_ist, n_edges, cap_01, cap_last, max_fl, n
         );
     }
 
     let mut flux = 0.0f64;
     let mut bfs_iters = 0usize;
-    let parity_flow = std::env::var_os("RUSTLE_PARITY_FLOW").is_some();
+    let debug_flow = std::env::var_os("RUSTLE_DEBUG_FLOW").is_some();
     while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, false) {
         bfs_iters += 1;
         let mut increment = max_fl;
@@ -1186,7 +1186,7 @@ fn long_max_flow_direct(
                         rate[r - 1]
                     };
                 } else {
-                    // C++ parity (C++ reference): the reference assembler divides unconditionally
+                    // the original algorithm divides unconditionally
                     // by noderate[pred[u]] without epsilon guard.  Matching this
                     // produces identical rate scaling and flow decomposition paths.
                     let nr = noderate[pu];
@@ -1214,7 +1214,7 @@ fn long_max_flow_direct(
                 tu = pred[tu] as usize;
             }
             eprintln!(
-                "PARITY_FLOW_PATH seed={:?} iter={} increment={:.6} rate[0]={:.6} {}",
+                "DEBUG_FLOW_PATH seed={:?} iter={} increment={:.6} rate[0]={:.6} {}",
                 seed_tf, bfs_iters, increment, rate[0], path_str
             );
         }
@@ -1231,10 +1231,10 @@ fn long_max_flow_direct(
         }
         flux += increment;
     }
-    if parity_flow {
+    if debug_flow {
         let ratio = if max_fl > EPSILON { flux / max_fl } else { 0.0 };
         eprintln!(
-            "PARITY_FLOW_RESULT seed={:?} bfs_iters={} final_flux={:.2} max_fl={:.2} ratio={:.3}",
+            "DEBUG_FLOW_RESULT seed={:?} bfs_iters={} final_flux={:.2} max_fl={:.2} ratio={:.3}",
             seed_tf, bfs_iters, flux, max_fl, ratio
         );
     }
@@ -1600,7 +1600,7 @@ fn long_max_flow_direct(
     (flux, real_nodecap, istranscript)
 }
 
-/// Prior guide support used by guide_push_flow to emulate C++ CNodeGuide node-level guide competition.
+/// Prior guide support used by guide_push_flow to emulate CNodeGuide node-level guide competition.
 pub struct GuideFlowPriorRef<'a> {
     pub pattern: &'a GBitVec,
     pub abundance: f64,
@@ -1698,13 +1698,13 @@ fn build_capacity_network(
             }
             if pi > 1 && pi < n.saturating_sub(2) && tf.longread {
                 if tf_first_nid == Some(nid) {
-                    sumright_local += tf.abundance; // C++ accumulates in double (C++ reference)
+                    sumright_local += tf.abundance; // accumulates in double
                 }
                 if tf_last_nid == Some(nid) {
-                    sumleft_local += tf.abundance; // C++ accumulates in double (C++ reference)
+                    sumleft_local += tf.abundance; // accumulates in double
                 }
             }
-            // C++ long_max_flow: if seed tf is guide, ignore other guide transfrags
+            // long_max_flow: if seed tf is guide, ignore other guide transfrags
             // only for capacity inclusion (not for noderate accumulation above).
             if long_only && seed_is_guide {
                 if let Some(seed) = seed_tf {
@@ -1750,7 +1750,7 @@ fn build_capacity_network(
             if long_only && pi == 0 {
                 max_fl = eff_ab;
             }
-            // C++ keeptr condition in long_max_flow:
+            // keeptr condition in long_max_flow:
             // istranscript[t] || (pathpat contains tf.pattern and (tf starts off-source or
             // source-start transcript has second node on path[1])).
             let source_start_ok = tf_first_nid != Some(source_id)
@@ -1786,7 +1786,7 @@ fn build_capacity_network(
             let end_idx = match end_idx_opt {
                 Some(i) => i,
                 None => {
-                    // the reference assembler long_max_flow uses exact node2path lookups.
+                    // the original algorithm long_max_flow uses exact node2path lookups.
                     // If a transfrag endpoint is not on the concrete path, it must
                     // not contribute an edge to the capacity graph.
                     continue;
@@ -1828,7 +1828,7 @@ fn build_capacity_network(
     }
 
     // Bridge edges removed: they were a bandaid for sub-node gaps in the capacity
-    // network. The proper fix is matching C++ graph node structure (dynamic junction
+    // network. The proper fix is matching graph node structure (dynamic junction
     // processing in create_graph, short-tail skip, etc.).
 
     for i in 0..n {
@@ -1840,7 +1840,7 @@ fn build_capacity_network(
         link[i].sort_unstable();
     }
 
-    if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() {
+    if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() {
         let mut n_edges = 0;
         for i in 0..n {
             for j in (i + 1)..n {
@@ -1852,7 +1852,7 @@ fn build_capacity_network(
         let cap_01 = if n >= 2 { capacity[0][1] } else { 0.0 };
         let cap_last = if n >= 2 { capacity[n - 2][n - 1] } else { 0.0 };
         eprintln!(
-            "PARITY_CAP n_istranscript={} n_edges={} cap_source_first={:.4} cap_last_sink={:.4} max_fl={:.4} path_len={}",
+            "DEBUG_CAP n_istranscript={} n_edges={} cap_source_first={:.4} cap_last_sink={:.4} max_fl={:.4} path_len={}",
             istranscript.count_ones(),
             n_edges,
             cap_01,
@@ -1874,7 +1874,7 @@ fn build_capacity_network(
 
 /// Edmonds-Karp max flow on path capacity network. Returns (flux, node_capacity for real nodes only).
 /// If no_subtract is false, subtracts flow from transfrag abundances.
-/// max_fl_override: if Some(v), caps the initial max_fl to v (C++ parse_trflong: max_fl = nodecov[path[0]]).
+/// max_fl_override: if Some(v), caps the initial max_fl to v (parse_trflong: max_fl = nodecov[path[0]]).
 pub fn edmonds_karp(
     path: &[usize],
     transfrags: &mut [GraphTransfrag],
@@ -1888,9 +1888,9 @@ pub fn edmonds_karp(
 ) -> (f64, Vec<f64>, NodeSet) {
     let n = path.len();
     if n < 3 {
-        if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() {
+        if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() {
             eprintln!(
-                "PARITY_CAP n_istranscript=0 n_edges=0 cap_source_first=0.0000 cap_last_sink=0.0000 max_fl=0.0000 path_len={}",
+                "DEBUG_CAP n_istranscript=0 n_edges=0 cap_source_first=0.0000 cap_last_sink=0.0000 max_fl=0.0000 path_len={}",
                 n
             );
         }
@@ -1905,9 +1905,9 @@ pub fn edmonds_karp(
         .collect();
     let n_real = real_path.len();
     if n_real == 0 {
-        if std::env::var_os("RUSTLE_PARITY_DEBUG").is_some() {
+        if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() {
             eprintln!(
-                "PARITY_CAP n_istranscript=0 n_edges=0 cap_source_first=0.0000 cap_last_sink=0.0000 max_fl=0.0000 path_len={}",
+                "DEBUG_CAP n_istranscript=0 n_edges=0 cap_source_first=0.0000 cap_last_sink=0.0000 max_fl=0.0000 path_len={}",
                 n
             );
         }
@@ -2016,7 +2016,7 @@ pub fn edmonds_karp(
         u = n - 1;
         while pred[u] >= 0 {
             let pu = pred[u] as usize;
-            // C++ reference: increment / rate, stored in flow matrix
+            // increment / rate, stored in flow matrix
             let pushed = increment / rate_arr[r];
             flow_mat[pu][u] += pushed;
             flow_mat[u][pu] -= pushed;
@@ -2235,7 +2235,7 @@ pub fn long_max_flow(
     long_max_flow_seeded(path, transfrags, graph, no_subtract, None)
 }
 
-/// Long-read max flow with optional seed transcript index (C++ istranscript[t]=1 parity).
+/// Long-read max flow with optional seed transcript index (istranscript[t]=1 convention).
 pub fn long_max_flow_seeded(
     path: &[usize],
     transfrags: &mut [GraphTransfrag],
@@ -2248,7 +2248,7 @@ pub fn long_max_flow_seeded(
     (flux, nodecap)
 }
 
-/// Long-read max flow with seed and transfrag-membership used set (C++ istranscript).
+/// Long-read max flow with seed and transfrag-membership used set (istranscript).
 pub fn long_max_flow_seeded_with_used(
     path: &[usize],
     transfrags: &mut [GraphTransfrag],
@@ -2260,7 +2260,7 @@ pub fn long_max_flow_seeded_with_used(
 }
 
 /// Long-read max flow with an explicit parse_trflong pathpat override.
-/// This mirrors C++ reference, where parse_trflong passes its accumulated pathpat directly into
+/// This mirrors  where parse_trflong passes its accumulated pathpat directly into
 /// long_max_flow instead of rebuilding it from the concrete path vector.
 pub fn long_max_flow_seeded_with_used_pathpat(
     path: &[usize],
@@ -2281,7 +2281,7 @@ pub fn long_max_flow_seeded_with_used_pathpat(
     )
 }
 
-/// Long-read max flow with nodecov-limited max_fl (C++ parse_trflong: max_fl = nodecov[path[0]]).
+/// Long-read max flow with nodecov-limited max_fl (parse_trflong: max_fl = nodecov[path[0]]).
 /// Transfrag abundances are depleted normally (no_subtract=false).
 pub fn long_max_flow_seeded_with_nodecov_limit(
     path: &[usize],

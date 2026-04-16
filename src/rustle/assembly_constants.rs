@@ -1,6 +1,6 @@
-//! C++ header / C++ reference constants — single source of truth for exon extension, trimming, and tolerance.
+//! Assembly constants — single source of truth for exon extension, trimming, and tolerance.
 //!
-//! ## Constants (C++ header)
+//! ## Constants
 //!
 //! | Constant           | Value | Meaning |
 //! |--------------------|-------|---------|
@@ -10,7 +10,7 @@
 //! | `CHI_WIN`          | 100   | Sliding window size (bp). |
 //! | `CHI_THR`          | 50    | Threshold window / min trim spacing (bp). |
 //!
-//! ## longintronanchor = 25 — three contexts (C++ reference)
+//! ## longintronanchor = 25 — three contexts
 //!
 //! 1. **find_trims() / find_all_trims()** (lines 1872, 2135): the coverage scan loop skips the first
 //!    and last 25 bp of every exon: `for i in start+longintronanchor .. end-longintronanchor`.
@@ -38,20 +38,20 @@
 //! - Short-read: `2 * longintronanchor` = 50 bp.
 //! - Long-read: `CHI_WIN` = 100 bp (more aggressive inclusion rules).
 
-/// C++ header: longintronanchor = 25 — "window around erroneous splice sites".
+/// longintronanchor = 25 — "window around erroneous splice sites".
 /// Used in: (1) find_trims/find_all_trims loop guard, (2) longtrim boundary guard, (3) included_pred bpcov ±25 bp.
 pub const LONGINTRONANCHOR: u64 = 25;
 
-/// C++ header: DROP = 0.5 — coverage drop ratio threshold.
+/// DROP = 0.5 — coverage drop ratio threshold.
 pub const DROP: f64 = 0.5;
 
-/// C++ header: ERROR_PERC = 0.1 — 10% noise tolerance.
+/// ERROR_PERC = 0.1 — 10% noise tolerance.
 pub const ERROR_PERC: f64 = 0.1;
 
-/// C++ header: CHI_WIN = 100 — sliding window size (bp).
+/// CHI_WIN = 100 — sliding window size (bp).
 pub const CHI_WIN: u64 = 100;
 
-/// C++ header: CHI_THR = 50 — threshold window / min trim spacing (bp).
+/// CHI_THR = 50 — threshold window / min trim spacing (bp).
 pub const CHI_THR: u64 = 50;
 
 /// trthr — minimum abundance for synthetic trim transfrags.

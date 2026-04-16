@@ -1,4 +1,4 @@
-//! Rustle — Long-read transcript assembler (Rust port of the reference assembler C++ reference pipeline)
+//! Rustle — Long-read transcript assembler (Rust port of the original algorithm pipeline)
 //!
 //! ## Pipeline stages (in execution order)
 //!
@@ -28,7 +28,7 @@ pub mod reference_gtf; // reference annotation loading for guided assembly
 // ── Stage 2: Bundle detection ─────────────────────────────────────────────────
 pub mod bpcov; // base-pair coverage prefix sums
 mod bundle; // Internal bundle implementation (legacy)
-pub mod bundle_cpp_port; // C++-faithful bundle building (public API)
+pub mod bundle_builder; // Sub-bundle building (public API)
 pub mod hard_boundaries;
 pub mod junction_correction; // sserror-based junction position correction
 pub mod junctions; // splice junction data structures
@@ -68,7 +68,7 @@ pub mod report_losses; // diagnostic loss reporting
 pub mod assembly_mode; // assembly mode dispatch
 pub mod merge_mode; // merge mode (multi-sample)
 pub mod mixed_mode;
-pub mod parity_stage;
+pub mod debug_stage;
 pub mod pipeline; // main long-read assembly pipeline
 pub mod shortread_pipeline; // short-read assembly pipeline // mixed short+long read mode
 
@@ -84,7 +84,7 @@ pub mod snapshot; // per-bundle JSONL snapshots for 1:1 comparisons
 
 // ── Tracing / diagnostics ─────────────────────────────────────────────────────
 pub mod futuretr;
-pub mod trace_events; // C++-shaped parity trace helpers
+pub mod trace_events; // debug trace helpers
 pub mod trace_reference; // per-reference transcript fate tracing // future transcript placeholders (diagnostic)
 
 // ── Public re-exports ─────────────────────────────────────────────────────────

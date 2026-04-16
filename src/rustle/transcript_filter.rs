@@ -1,10 +1,10 @@
 //! Post-extraction transcript filters (containment, min exon length, isofrac, TPM, merge micro exons).
 //!
-//! Advanced filters below mirror C++ reference `filter_predictions` and related logic:
-//! - Pairwise / included: C++ reference ~18855-18952 (included_pred, single-exon containment, intronic).
-//! - Retained intron: C++ reference 7558-7568 `has_retained_intron`, 7742-7743.
-//! - Polymerase runoff: C++ reference 19247-19276 (single-exon between multi-exon, cov < exoncov+singlethr).
-//! - Short terminal exon: C++ header SMALL_EXON 35 (C++ reference 10090, 14846).
+//! Advanced filters below mirror `filter_predictions` and related logic:
+//! - Pairwise / included: ~18855-18952 (included_pred, single-exon containment, intronic).
+//! - Retained intron: 7558-7568 `has_retained_intron`, 7742-7743.
+//! - Polymerase runoff: 19247-19276 (single-exon between multi-exon, cov < exoncov+singlethr).
+//! - Short terminal exon: header SMALL_EXON 35 (10090, 14846).
 
 use crate::assembly_mode::LONGINTRONANCHOR;
 use crate::bitset::SmallBitset;
@@ -32,14 +32,14 @@ fn relax_pairwise_guide_equiv() -> bool {
     std::env::var_os("RUSTLE_RELAX_PAIRWISE_GUIDE_EQUIV").is_some()
 }
 
-/// C++ reference `print_predcluster` readthr uses `pred[n]->cov` only (e.g. rawreads ~20090; long-read
+/// `print_predcluster` readthr uses `pred[n]->cov` only (e.g. rawreads ~20090; long-read
 /// longunder uses the same field at ~18991–18999). Set `RUSTLE_READTHR_LONGCOV_FALLBACK` to also
 /// accept `longcov >= threshold` when `coverage` is low (legacy Rustle heuristic).
 fn readthr_allow_longcov_fallback() -> bool {
     std::env::var_os("RUSTLE_READTHR_LONGCOV_FALLBACK").is_some()
 }
 
-/// Machine-readable per-transcript coverage dump for diffing against C++ reference / the reference assembler reasoning.
+/// Machine-readable per-transcript coverage dump for diffing against / the original algorithm reasoning.
 /// Enable with `RUSTLE_BUNDLE_COV_DUMP=1` and scope with `RUSTLE_TRACE_LOCUS=start-end` (same locus
 /// filter as `[BUNDLE_TRACE]`).
 fn bundle_cov_dump_enabled() -> bool {
@@ -366,7 +366,7 @@ fn predcluster_trace_dump(stage: &str, ref_tx: &RefTranscript, txs: &[Transcript
     }
 }
 
-/// Add single-exon prediction y to prediction x (C++ reference add_pred): extend first or last exon of x and merge coverage.
+/// Add single-exon prediction y to prediction x (add_pred): extend first or last exon of x and merge coverage.
 pub fn add_pred(x: &mut Transcript, y: &Transcript, cov: f64) {
     if y.exons.len() != 1 || x.exons.is_empty() {
         return;
@@ -507,12 +507,12 @@ pub fn filter_min_exon_length(
 /// Isofrac filter: remove transcripts whose coverage is < isofrac fraction of max coverage
 /// in the same locus (overlapping, same chrom/strand). Keep if coverage >= keep_min_reads.
 ///
-/// Dynamic scaling for long-read mode (C++ reference printResults 19041-19049):
+/// Dynamic scaling for long-read mode (printResults 19041-19049):
 /// - cov > 100 (CHI_WIN): isofrac *= ERROR_PERC * DROP = 0.05  (200x more permissive)
 /// - cov > 50  (CHI_THR): isofrac *= DROP             = 0.5    (2x more permissive)
 /// - cov <= 50:           isofrac unchanged
 ///
-/// Also for multi-exon: only filter if cov < 5.0 (DROP/ERROR_PERC absolute minimum; C++ reference 19043).
+/// Also for multi-exon: only filter if cov < 5.0 (DROP/ERROR_PERC absolute minimum; 19043).
 const CHI_WIN: f64 = 100.0;
 const CHI_THR: f64 = 50.0;
 const ISOFRAC_DROP: f64 = 0.5;
@@ -572,7 +572,7 @@ pub fn isofrac_filter(
             for tx in locus {
                 let is_single = tx.exons.len() == 1;
 
-                // Dynamic isofrac scaling (C++ reference 19041-19049): relax for high-coverage transcripts
+                // Dynamic isofrac scaling (19041-19049): relax for high-coverage transcripts
                 let base_frac = if is_single { single_exon_frac } else { isofrac };
                 let effective_frac = if tx.coverage > CHI_WIN {
                     base_frac * ISOFRAC_ERROR_PERC * ISOFRAC_DROP
@@ -583,12 +583,12 @@ pub fn isofrac_filter(
                 };
 
                 if is_single {
-                    // Single-exon: filter if cov < effective_frac * locus_max (C++ reference 19050)
+                    // Single-exon: filter if cov < effective_frac * locus_max (19050)
                     if tx.coverage >= effective_frac * max_cov {
                         out.push(tx);
                     }
                 } else {
-                    // Multi-exon long-read isofrac (C++ reference 19043-19047):
+                    // Multi-exon long-read isofrac (19043-19047):
                     // Filter if: (multicov==0 AND cov < frac*usedcov AND cov < ABS_MIN)
                     //         OR (multicov>0  AND cov < frac*multicov)
                     let longunder = if multi_max_cov <= 0.0 {
@@ -748,9 +748,9 @@ pub fn filter_contained_transcripts(
 }
 
 // =============================================================================
-// Advanced filters (post-assembly; C++ reference filter_predictions + reference script)
+// Advanced filters (post-assembly; filter_predictions + reference script)
 // =============================================================================
-// C++ header: DROP=0.5, ERROR_PERC=0.1, SMALL_EXON=35
+// header: DROP=0.5, ERROR_PERC=0.1, SMALL_EXON=35
 
 type Junction = (u64, u64);
 
@@ -771,13 +771,13 @@ fn tx_span(tx: &Transcript) -> Option<(u64, u64)> {
 }
 
 fn tx_score(tx: &Transcript) -> f64 {
-    // C++ reference: sort key for isofrac filter is abs(tlen)*cov (predordCmp), not bare cov.
+    // sort key for isofrac filter is abs(tlen)*cov (predordCmp), not bare cov.
     // Line 18464 uses bare cov only for CMaxIntv seeding (separate from filter sort).
     (tx_exonic_len(tx).max(1) as f64) * tx.coverage
 }
 
 fn guide_equiv_id(tx: &Transcript) -> Option<&str> {
-    // C++ parity: guide-ness follows pred->t_eq, not only a textual source tag.
+    // guide-ness follows pred->t_eq, not only a textual source tag.
     tx.ref_transcript_id
         .as_deref()
         .or_else(|| tx.source.as_deref().and_then(|s| s.strip_prefix("guide:")))
@@ -805,7 +805,7 @@ fn guide_chain_equivalent_pair(a: &Transcript, b: &Transcript) -> bool {
     same_intron_chain(a, b)
 }
 
-/// C++ reference included_pred parity (coverage-free variant):
+/// included_pred (coverage-free variant):
 /// checks whether the smaller transcript is structurally included in the larger one.
 fn included_pred(
     txs: &[Transcript],
@@ -900,7 +900,7 @@ fn included_pred(
 
     let mut bex = 0usize;
     while bex < b.exons.len() {
-        // C++ reference uses inclusive exon ends here:
+        // uses inclusive exon ends here:
         //   small.start > big.end  <=>  small.start >= big.end_exclusive
         //   small.end   < big.start <=> small.end_exclusive <= big.start
         // Rust stores half-open exons, so abutting intervals must not be treated as overlap.
@@ -916,7 +916,7 @@ fn included_pred(
         while sex < s.exons.len() && bex < b.exons.len() {
             if sex + 1 == s.exons.len() {
                 if bex + 1 == b.exons.len() {
-                    // C++ parity: If small starts before big and they share the same 3' end,
+                    // If small starts before big and they share the same 3' end,
                     // small is a 5' extension, not an inclusion
                     if s.exons[0].0 < b.exons[0].0 && s.exons[sex].1 == b.exons[bex].1 {
                         trace_pair("5prime_extension_same_3prime", b, s);
@@ -925,7 +925,7 @@ fn included_pred(
                     trace_pair("success_same_tail", b, s);
                     return true;
                 }
-                // C++ parity: Single-exon transcript that starts before big's first exon
+                // Single-exon transcript that starts before big's first exon
                 // is a 5' extension, not an inclusion, even if it overlaps an internal exon
                 if s.exons.len() == 1 && b.exons.len() > 1 && s.exons[0].0 < b.exons[0].0 {
                     trace_pair("single_exon_5prime_extension", b, s);
@@ -971,7 +971,7 @@ fn included_pred(
                 trace_pair("small_past_big", b, s);
                 return false;
             }
-            // C++ parity: Special case for single-exon transcripts that could be 5' terminal exons
+            // Special case for single-exon transcripts that could be 5' terminal exons
             // If small is single-exon and starts before big, and big has multiple exons,
             // the small transcript represents a 5' extension, not an inclusion
             if s.exons.len() == 1 && b.exons.len() > 1 && s.exons[0].0 < b.exons[0].0 {
@@ -1156,7 +1156,7 @@ fn cpred_score(pred: &CPrediction) -> f64 {
     (tlen as f64) * pred.cov
 }
 
-/// C++-style significance check for overlapping exon pair (`update_overlap` boundary logic).
+/// Original-style significance check for overlapping exon pair (`update_overlap` boundary logic).
 fn significant_overlap_pair_cpred(
     p: &CPrediction,
     e: usize,
@@ -1204,7 +1204,7 @@ fn significant_overlap_pair_cpred(
     sig
 }
 
-/// Build C++-style interval partition over prediction exons (`CMaxIntv` nodes).
+/// Build Original-style interval partition over prediction exons (`CMaxIntv` nodes).
 fn build_cmaxintv_segments(preds: &[CPrediction]) -> Vec<CMaxIntv> {
     let mut breakpoints: Vec<u64> = Vec::new();
     for pred in preds {
@@ -1336,7 +1336,7 @@ fn recompute_cpred_cov_from_cmaxintv(preds: &mut [CPrediction], bpcov: Option<&B
     changed
 }
 
-/// Build significant-overlap matrix using C++-style `CMaxIntv` interval nodes.
+/// Build significant-overlap matrix using Original-style `CMaxIntv` interval nodes.
 fn build_significant_overlap_adj_cpred(preds: &[CPrediction], error_perc: f64) -> Vec<Vec<usize>> {
     let n = preds.len();
     let mut adj = vec![Vec::<usize>::new(); n];
@@ -1416,8 +1416,8 @@ fn build_lowintron_flags(
                 continue;
             }
             let introncov = cov_avg_all(bpcov, intr_s, intr_e);
-            // C++ parity: if(introncov) { ... } — zero intron coverage means
-            // no reads in intron, so don't flag as "low intron" (C++ reference).
+            // if(introncov) { ... } — zero intron coverage means
+            // no reads in intron, so don't flag as "low intron"
             if introncov == 0.0 {
                 continue;
             }
@@ -1425,7 +1425,7 @@ fn build_lowintron_flags(
                 flags[j - 1] = true;
                 continue;
             }
-            // C++ parity: length-weighted average (C++ reference)
+            // length-weighted average
             let left_len = len_half_open(left.0, left.1).max(1) as f64;
             let right_len = len_half_open(right.0, right.1).max(1) as f64;
             let left_sum = cov_sum_all(bpcov, left.0, left.1);
@@ -1491,7 +1491,7 @@ fn retainedintron_like(
         {
             return true;
         }
-        // C++ reference uses inclusive exon ends:
+        // uses inclusive exon ends:
         //   b.end < a.next.start  <=>  b.end_exclusive <= a.next.start
         //   b.start <= a.prev.end <=>  b.start < a.prev.end_exclusive
         while j < b.exons.len() && b.exons[j].1 <= a.exons[i].0 {
@@ -1512,7 +1512,7 @@ fn retainedintron_like(
     false
 }
 
-/// Approximate C++ reference update_overlap() significance for one overlapping exon pair.
+/// Approximate update_overlap() significance for one overlapping exon pair.
 fn significant_overlap_pair(
     p: &Transcript,
     e: usize,
@@ -1558,7 +1558,7 @@ fn significant_overlap_pair(
     sig
 }
 
-/// Build significant-overlap matrix via active-interval sweep (C++ OvlTracker-like).
+/// Build significant-overlap matrix via active-interval sweep (OvlTracker-like).
 fn build_significant_overlap_matrix(
     txs: &[Transcript],
     error_perc: f64,
@@ -1632,7 +1632,7 @@ fn build_significant_overlap_matrix(
     ov
 }
 
-/// C++ reference intronic(m, M): m is mostly intronic to M with only small boundary overlap.
+/// intronic(m, M): m is mostly intronic to M with only small boundary overlap.
 fn intronic_soft(m: &Transcript, m_big: &Transcript, error_perc: f64) -> bool {
     if m.exons.is_empty() || m_big.exons.len() < 2 {
         return false;
@@ -1671,7 +1671,7 @@ fn intronic_soft(m: &Transcript, m_big: &Transcript, error_perc: f64) -> bool {
     true
 }
 
-/// C++ reference transcript_overlap parity:
+/// transcript_overlap:
 /// must overlap genomically, and overlap cannot be only first-vs-last terminal exon crossing.
 fn transcript_overlap_sig(a: &Transcript, b: &Transcript) -> bool {
     if a.exons.is_empty() || b.exons.is_empty() {
@@ -1704,11 +1704,11 @@ fn junction_chain_is_subset(a: &[Junction], b: &[Junction]) -> bool {
     i == a.len()
 }
 
-/// Long-read isofrac filter matching C++ reference print_predcluster() lines 18961-19017.
+/// Long-read isofrac filter matching print_predcluster() lines 18961-19017.
 /// For each maximal overlap interval, sorts transcripts by abs(tlen)*cov (descending),
 /// then filters secondary transcripts whose coverage is below a dynamic isofrac threshold
 /// relative to the accumulated coverage of higher-ranking transcripts.
-/// With flow enabled, tx.coverage is flow-distributed (like C++ pred->cov).
+/// With flow enabled, tx.coverage is flow-distributed (like pred->cov).
 fn isofrac(
     transcripts: Vec<Transcript>,
     isofrac: f64,
@@ -1782,7 +1782,7 @@ fn isofrac_with_summary(
         if next <= pos {
             continue;
         }
-        // C++ parity: skip intervals beyond bpcov bounds (C++ reference)
+        // skip intervals beyond bpcov bounds
         if let Some(bpc) = _bpcov {
             if pos < bpc.bundle_start || (pos - bpc.bundle_start) as usize >= bpc.cov.len() {
                 continue;
@@ -1794,7 +1794,7 @@ fn isofrac_with_summary(
             continue;
         }
 
-        // C++: sort by abs(tlen)*cov descending (predordCmp)
+        // sort by abs(tlen)*cov descending (predordCmp)
         uniq.sort_unstable_by(|&a, &b| {
             tx_score(&txs[b])
                 .partial_cmp(&tx_score(&txs[a]))
@@ -1821,7 +1821,7 @@ fn isofrac_with_summary(
             let sidx = if txs[k].strand == '+' { 1usize } else { 0usize };
             let cov = txs[k].coverage;
 
-            // C++: skip isofrac check for guide-matched transcripts (pred->t_eq)
+            // skip isofrac check for guide-matched transcripts (pred->t_eq)
             if is_guide_pair(&txs[k]) || is_rescue_protected(&txs[k]) {
                 usedcov[sidx] += cov;
                 if txs[k].exons.len() > 1 {
@@ -1830,7 +1830,7 @@ fn isofrac_with_summary(
                 continue;
             }
 
-            // C++ parity: CHI_WIN / CHI_THR scaling uses `pred[n]->cov` only (C++ reference).
+            // CHI_WIN / CHI_THR scaling uses `pred[n]->cov` only
             // That is flow-derived `coverage` here, not `longcov` (pre-flow abundance).
             // `raw_cov` below is only for `--transcript-isofrac-keep-min` (abundance floor).
             let raw_cov = txs[k].longcov.max(cov);
@@ -1841,7 +1841,7 @@ fn isofrac_with_summary(
                 isofraclong = isofrac * drop;
             }
 
-            // C++: multi-exon vs single-exon threshold check (use effective_cov for comparison)
+            // multi-exon vs single-exon threshold check (use effective_cov for comparison)
             let mut longunder = if txs[k].exons.len() > 1 {
                 (multicov[sidx] <= 0.0
                     && cov < isofraclong * usedcov[sidx]
@@ -1857,7 +1857,7 @@ fn isofrac_with_summary(
             }
 
             if std::env::var("RUSTLE_FILTER_DEBUG").is_ok()
-                || std::env::var("RUSTLE_PARITY_DEBUG").is_ok()
+                || std::env::var("RUSTLE_DEBUG_DETAIL").is_ok()
             {
                 if trace_locus_range().is_some() && !tx_in_trace_locus(&txs[k]) {
                     continue;
@@ -1865,7 +1865,7 @@ fn isofrac_with_summary(
                 let first_exon_start = txs[k].exons.first().map(|(s, _)| *s).unwrap_or(0);
                 let tlen = tx_exonic_len(&txs[k]);
                 let cov_per_base = cov / tlen.max(1) as f64;
-                eprintln!("PARITY_LONGUNDER win={}-{} firstcov={:.4} start={} exons={} cov={:.4} cov_per_base={:.4} tlen={} usedcov={:.4} multicov={:.4} isofraclong={:.6} killed={}",
+                eprintln!("DEBUG_LONGUNDER win={}-{} firstcov={:.4} start={} exons={} cov={:.4} cov_per_base={:.4} tlen={} usedcov={:.4} multicov={:.4} isofraclong={:.6} killed={}",
                     pos, next, first_cov,
                     first_exon_start, txs[k].exons.len(), cov, cov_per_base, tlen,
                     usedcov[sidx], multicov[sidx], isofraclong, longunder);
@@ -1978,7 +1978,7 @@ fn eliminate_incomplete_vs_guides(transcripts: Vec<Transcript>, verbose: bool) -
 
 /// Remove multi-exon transcripts whose first or last exon is shorter than min_terminal_exon_len (bp).
 /// Single-exon transcripts are kept.
-/// Corresponds to C++ header SMALL_EXON 35; reference script filter_short_terminal_exons.
+/// Corresponds to header SMALL_EXON 35; reference script filter_short_terminal_exons.
 pub fn filter_short_terminal_exons(
     transcripts: Vec<Transcript>,
     min_terminal_exon_len: u64,
@@ -2015,8 +2015,8 @@ pub fn filter_short_terminal_exons(
 
 /// Pairwise overlap filter: junction inclusion (n2 junctions subset of n1) + coverage ratio,
 /// single-exon containment, and intronic containment. Runs on transcripts already in same bundle.
-/// Mirrors C++ reference filter_predictions: included_pred (17552), single-exon elimination (18908-18919),
-/// intronic elimination (18936-18938). Uses isofrac, lowisofrac (C++ header), error_perc (ERROR_PERC 0.1), drop (DROP 0.5).
+/// Mirrors filter_predictions: included_pred (17552), single-exon elimination (18908-18919),
+/// intronic elimination (18936-18938). Uses isofrac, lowisofrac (header), error_perc (ERROR_PERC 0.1), drop (DROP 0.5).
 pub fn pairwise_overlap_filter(
     transcripts: Vec<Transcript>,
     isofrac: f64,
@@ -2069,11 +2069,11 @@ pub fn pairwise_overlap_filter_with_summary(
         .map(|(i, t)| t.to_cprediction(i as i32))
         .collect();
     let mut cov_updates = 0usize;
-    // C++ parity: long-read path does not run CMaxIntv coverage redistribution.
+    // long-read path does not run CMaxIntv coverage redistribution.
     // Keep CMaxIntv overlap/coverage recompute strictly for non-long-read paths.
     let use_cmaxintv = cpreds.len() > 1 && !longreads;
     if use_cmaxintv {
-        // C++ parity: run interval recomputation in CMaxIntv space before overlap elimination.
+        // run interval recomputation in CMaxIntv space before overlap elimination.
         // Default to convergence (with a safety cap); env var can tighten/expand the cap.
         let cmax_iters = std::env::var("RUSTLE_CMAXINTV_ITERS")
             .ok()
@@ -2139,8 +2139,8 @@ pub fn pairwise_overlap_filter_with_summary(
     let mut bettercov: Vec<Vec<usize>> = vec![Vec::new(); n];
     let lowintron =
         bpcov.map(|bp| build_lowintron_flags(&txs, bp, longreads, singlethr, error_perc, drop));
-    let parity_debug = std::env::var("RUSTLE_PARITY_DEBUG").is_ok();
-    let predcluster_trace = std::env::var_os("RUSTLE_PARITY_PRED_FINAL").is_some() || parity_debug;
+    let debug_detail = std::env::var("RUSTLE_DEBUG_DETAIL").is_ok();
+    let predcluster_trace = std::env::var_os("RUSTLE_DEBUG_PRED_FINAL").is_some() || debug_detail;
 
     for oi in 0..ord.len().saturating_sub(1) {
         let n1 = ord[oi];
@@ -2184,7 +2184,7 @@ pub fn pairwise_overlap_filter_with_summary(
                 continue;
             }
 
-            // Macro-like closure to record kill reason for parity debug
+            // Macro-like closure to record kill reason debug
             macro_rules! kill {
                 ($idx:expr, $killer:expr, $reason:expr) => {
                     dead.insert_grow($idx);
@@ -2229,7 +2229,7 @@ pub fn pairwise_overlap_filter_with_summary(
                             );
                         }
                     }
-                    if parity_debug {
+                    if debug_detail {
                         kill_reason[$idx] = $reason;
                         kill_by[$idx] = $killer;
                     }
@@ -2259,7 +2259,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     }
                 }
 
-                // C++ reference — relax anchor from 25 to 10 for long-read predictions with cov > readthr
+                // — relax anchor from 25 to 10 for long-read predictions with cov > readthr
                 let anchor = if t2.is_longread && t2.coverage > 1.0 {
                     10u64
                 } else {
@@ -2296,7 +2296,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     continue;
                 }
                 if t1.strand != t2.strand {
-                    // C++ reference — single-exon OR long-read n1 kills low-cov short-read n2
+                    // — single-exon OR long-read n1 kills low-cov short-read n2
                     if t2.exons.len() == 1
                         || (t1.is_longread && !t2.is_longread && t2.coverage < 1.0 / error_perc)
                     {
@@ -2341,7 +2341,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     }
                     ok
                 } {
-                    // the reference assembler/C++ reference tends to keep many internal-start / internal-end models in long-read mode,
+                    // the original algorithm/tends to keep many internal-start / internal-end models in long-read mode,
                     // but we need to cull them if they are truly redundant and low-coverage to improve precision.
                     // Protection for high-confidence / rescued transcripts.
                 if is_rescue_protected(t2) {
@@ -2393,31 +2393,31 @@ pub fn pairwise_overlap_filter_with_summary(
                 break;
             } else if t2.is_longread
                 && !n2g
-                // C++ reference — pred[n2]->cov < DROP (per-base cov vs 0.5)
+                // — pred[n2]->cov < DROP (per-base cov vs 0.5)
                 && t2.coverage < drop
                 && t2.exons.len() <= t1.exons.len()
                 && included_pred(&txs, n1, n2, longreads, bpcov, singlethr, error_perc, false)
             {
-                // C++ reference — eliminate low-coverage long-read predictions
+                // — eliminate low-coverage long-read predictions
                 // included in a higher-scoring prediction (reference=false skips guide protection)
                 kill!(n2, n1, "lr_lowcov_included");
             } else if !n2g
                 && t2.exons.len() == 1
-                // C++ reference — short-read: cov<n1.cov; long-read: only cov<isofrac*n1.cov
+                // — short-read: cov<n1.cov; long-read: only cov<isofrac*n1.cov
                 && ((!t2.is_longread && t2.coverage < t1.coverage) || t2.coverage < isofrac * t1.coverage)
                 && s1 <= s2
                 && e2 <= e1
             {
                 kill!(n2, n1, "se_contained");
             } else if t1.is_longread {
-                // C++ reference — n1 is long-read
+                // — n1 is long-read
                 if !n1g && t1.exons.len() == 1 && t1.coverage < t2.coverage && s2 <= s1 && e1 <= e2
                 {
-                    // C++ reference — single-exon LR n1 contained in n2
+                    // — single-exon LR n1 contained in n2
                     kill!(n1, n2, "lr_se_contained_reverse");
                     break;
                 } else if t2.is_longread && !n2g {
-                    // C++ reference — both long-read
+                    // — both long-read
                     if transcript_overlap_sig(t1, t2) {
                         let mut conflict = false;
                         for &k in &bettercov[n2] {
@@ -2440,13 +2440,13 @@ pub fn pairwise_overlap_filter_with_summary(
                             bettercov[n2].push(n1);
                         }
                     } else if mixed_mode && t2.strand != t1.strand && t2.coverage < singlethr {
-                        // C++ reference — mixed mode antisense
+                        // — mixed mode antisense
                         if s1 <= e2 && s2 <= e1 {
                             kill!(n2, n1, "lr_mixed_antisense");
                         }
                     }
                 } else if !t2.is_longread && !n2g {
-                    // C++ referencelike — LR n1 kills low-cov SR n2
+                    // like — LR n1 kills low-cov SR n2
                     if s1 <= e2 && s2 <= e1 {
                         if t2.coverage < 1.0 / error_perc
                             || (t2.strand == t1.strand && t2.coverage < error_perc * t1.coverage)
@@ -2462,7 +2462,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     kill!(n1, n2, "sr_se_contained_reverse");
                     break;
                 } else if !t2.is_longread {
-                    // C++ referencelike — both short-read bettercov
+                    // like — both short-read bettercov
                     if transcript_overlap_sig(t1, t2) {
                         let mut conflict = false;
                         for &k in &bettercov[n2] {
@@ -2484,7 +2484,7 @@ pub fn pairwise_overlap_filter_with_summary(
                         }
                     }
                 } else if !n2g {
-                    // C++ reference — SR n1, LR n2, low cov
+                    // — SR n1, LR n2, low cov
                     if s1 <= e2 && s2 <= e1 {
                         if t2.coverage < 1.0 / error_perc
                             || (t2.strand == t1.strand && t2.coverage < error_perc * t1.coverage)
@@ -2504,7 +2504,7 @@ pub fn pairwise_overlap_filter_with_summary(
             cov_updates
         );
     }
-    if parity_debug {
+    if debug_detail {
         for (i, tx) in txs.iter().enumerate() {
             if dead.contains(i) {
                 let start = tx.exons.first().map(|(s, _)| *s).unwrap_or(0);
@@ -2520,7 +2520,7 @@ pub fn pairwise_overlap_filter_with_summary(
                 } else {
                     0.0
                 };
-                eprintln!("PARITY_OVERLAP start={} exons={} cov={:.4} tlen={} killer_start={} killer_exons={} killer_cov={:.4} reason={}",
+                eprintln!("DEBUG_OVERLAP start={} exons={} cov={:.4} tlen={} killer_start={} killer_exons={} killer_cov={:.4} reason={}",
                     start, tx.exons.len(), tx.coverage, tlen,
                     killer_start,
                     if killer < txs.len() { txs[killer].exons.len() } else { 0 },
@@ -2531,7 +2531,7 @@ pub fn pairwise_overlap_filter_with_summary(
     }
     if verbose && total_removed > 0 {
         eprintln!(
-            "    Pairwise overlap filter: removed {} transcripts (C++ reference pairwise parity)",
+            "    Pairwise overlap filter: removed {} transcripts (pairwise)",
             total_removed
         );
     }
@@ -2548,7 +2548,7 @@ pub fn pairwise_overlap_filter_with_summary(
 
 /// Remove transcripts that appear to be retained introns of higher-coverage transcripts.
 /// n2 is removed if n2_cov < error_perc * n1_cov and any n2 exon fully spans an n1 intron.
-/// Corresponds to C++ reference has_retained_intron (7558-7568), used in merge_transfrags (7742-7743).
+/// Corresponds to has_retained_intron (7558-7568), used in merge_transfrags (7742-7743).
 pub fn retained_intron_filter(
     transcripts: Vec<Transcript>,
     error_perc: f64,
@@ -2692,9 +2692,9 @@ pub fn retained_intron_filter(
 
 /// Remove single-exon fragments that are isolated and lie near multi-exon transcript ends
 /// (polymerase run-off). Isolated = no overlap with any other transcript. Near = within runoff_dist.
-/// C++ reference 19247-19276: pred[i] single-exon, alone between p and c; if prev multi-exon and
+/// 19247-19276: pred[i] single-exon, alone between p and c; if prev multi-exon and
 /// pred[p]->end+runoff>=pred[i]->start and pred[i]->cov < exoncov+singlethr then eliminate; same for next.
-/// We use transcript coverage (like reference script); C++ reference uses get_cov on the adjacent exon.
+/// We use transcript coverage (like reference script); uses get_cov on the adjacent exon.
 pub fn polymerase_runoff_filter(
     transcripts: Vec<Transcript>,
     runoff_dist: u64,
@@ -2748,7 +2748,7 @@ pub fn polymerase_runoff_filter(
             let prev = &sorted[p as usize];
             let prev_end = prev.exons[prev.exons.len() - 1].1;
             if prev_end.saturating_add(runoff_dist) >= tx_start {
-                // C++ reference: use bpcov per-base avg of prev's last exon
+                // use bpcov per-base avg of prev's last exon
                 let prev_cov = if strict_longrec_port {
                     if let Some(bp) = bpcov {
                         let (es, ee) = prev.exons[prev.exons.len() - 1];
@@ -2771,7 +2771,7 @@ pub fn polymerase_runoff_filter(
             let next = &sorted[c];
             let next_start = next.exons[0].0;
             if tx_end.saturating_add(runoff_dist) >= next_start {
-                // C++ reference: use bpcov per-base avg of next's first exon
+                // use bpcov per-base avg of next's first exon
                 let next_cov = if strict_longrec_port {
                     if let Some(bp) = bpcov {
                         let (es, ee) = next.exons[0];
@@ -2805,7 +2805,7 @@ pub fn polymerase_runoff_filter(
 }
 
 /// Polymerase run-on filter: identifies transcripts that bridge two distinct loci (read-throughs).
-/// the reference assembler (RareClass::polyRunOn) detects these by looking for a sharp coverage drop in an internal exon.
+/// the original algorithm (RareClass::polyRunOn) detects these by looking for a sharp coverage drop in an internal exon.
 /// If a large internal exon has a per-base coverage 'dip' significantly lower than the transcript's 
 /// overall coverage, it may be split into two.
 pub fn polymerase_runon_filter(
@@ -2833,7 +2833,7 @@ pub fn polymerase_runon_filter(
         let mut split_exon_idx: Option<usize> = None;
         let mut split_pos: Option<u64> = None;
 
-        // the reference assembler RareClass logic: internal exon must be > 500bp and have a clear dip.
+        // the original algorithm RareClass logic: internal exon must be > 500bp and have a clear dip.
         // For now, we use a simpler heuristic: find an internal exon with a region of very low coverage.
         for i in 1..tx.exons.len() - 1 {
             let (es, ee) = tx.exons[i];
@@ -2939,7 +2939,7 @@ pub fn dedup_equal_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
         .collect()
 }
 
-/// Overlap consistency filter (print_predcluster bettercov logic around C++ reference 18871-18882):
+/// Overlap consistency filter (print_predcluster bettercov logic around 18871-18882):
 /// if a lower-coverage transcript overlaps multiple higher-coverage transcripts that do not
 /// overlap each other, the lower-coverage one is dropped.
 pub fn overlap_consistency_filter(transcripts: Vec<Transcript>, verbose: bool) -> Vec<Transcript> {
@@ -3018,7 +3018,7 @@ fn tx_len(tx: &Transcript) -> u64 {
     tx.exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum()
 }
 
-/// C++ reference equal_pred parity check:
+/// equal_pred check:
 /// - same strand
 /// - genomic overlap
 /// - same exon count
@@ -3049,7 +3049,7 @@ fn equal_pred(a: &Transcript, b: &Transcript) -> bool {
     true
 }
 
-/// Collapse equal predictions following C++ ref's equal_pred block in printResults (~20579+).
+/// Collapse equal predictions following ref's equal_pred block in printResults (~20579+).
 /// Distinct from intron-chain dedup: this keeps reference-style terminal coordinate reconciliation.
 pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -> Vec<Transcript> {
     if transcripts.len() < 2 {
@@ -3127,9 +3127,9 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
                 }
                 txs[midx] = keep;
             } else {
-                // C++ reference — multi-exon equal_pred merge with per-exon
+                // — multi-exon equal_pred merge with per-exon
                 // coverage reconciliation.
-                // C++: save pre-transfer first/last exon lengths from pred[m],
+                // save pre-transfer first/last exon lengths from pred[m],
                 // optionally transfer coordinates from higher-cov/guide to m,
                 // then add killed pred[n]'s exoncov to m with length scaling.
                 let nex = txs[midx].exons.len();
@@ -3148,10 +3148,10 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
                 if keep.source.is_none() {
                     keep.source = winner.source.clone();
                 }
-                // The killed prediction (nidx) is always the exoncov source (C++: pred[n]).
+                // The killed prediction (nidx) is always the exoncov source .
                 let killed = &txs[nidx];
                 let killed_nex = killed.exons.len();
-                // Per-exon coverage reconciliation (C++ ref:20679-20700).
+                // Per-exon coverage reconciliation (ref:20679-20700).
                 let mut addcov = 0.0f64;
                 if killed_nex == nex && !keep.exon_cov.is_empty() {
                     // First exon
@@ -3218,7 +3218,7 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
     out
 }
 
-/// Port of high-impact single-exon handling from C++ reference print_predcluster:
+/// Port of high-impact single-exon handling from print_predcluster:
 /// - stitch nearby single-exon predictions with similar coverage (guide-aware)
 /// - drop low-coverage single-exon non-guide predictions (< singlethr)
 pub fn collapse_single_exon_runoff(
@@ -3227,7 +3227,7 @@ pub fn collapse_single_exon_runoff(
     runoff_dist: u64,
     verbose: bool,
 ) -> Vec<Transcript> {
-    // C++ parity: don't early return - single-exon filtering applies even to single transcripts
+    // don't early return - single-exon filtering applies even to single transcripts
     // The len < 2 check was causing single-exon transcripts to bypass filtering
     if transcripts.is_empty() {
         return transcripts;
@@ -3282,7 +3282,7 @@ pub fn collapse_single_exon_runoff(
             }
         }
 
-        // C++ parity: coverage comparison uses per-base coverage
+        // coverage comparison uses per-base coverage
         let tx_len = txs[i].exons.iter().map(|(s, e)| e - s).sum::<u64>().max(1) as f64;
         let cov_per_base = txs[i].coverage / tx_len;
         if !did_stitch && !is_guide_tx(&txs[i]) && cov_per_base < singlethr {
@@ -3505,7 +3505,7 @@ pub fn collapse_near_equal_intron_chains(
                 continue;
             }
             let b_j = exons_to_junction_chain(&bj.exons);
-            // C++ parity: collapse transcripts with near-identical intron chains.
+            // collapse transcripts with near-identical intron chains.
             // LR alignment noise creates shifted splice site calls (±10bp), producing
             // transcripts that differ only by small junction offsets.  Match intron
             // chains with the same tolerance used for junction coalescing.
@@ -3572,7 +3572,7 @@ pub fn collapse_near_equal_intron_chains(
 /// only collapses when terminal exon positions differ by ≤ junction_correction_window; our flow
 /// duplicates may differ by hundreds of bp in terminal position.
 ///
-/// the reference assembler never emits two transcripts from the same locus with the same intron chain —
+/// the original algorithm never emits two transcripts from the same locus with the same intron chain —
 /// the flow extraction is deterministic and produces exactly one path per splice-graph route.
 /// This function enforces the same invariant.
 pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) -> Vec<Transcript> {
@@ -3702,9 +3702,9 @@ pub fn build_read_intron_pairs(reads: &[crate::types::BundleRead]) -> std::colle
     pairs
 }
 
-/// Apply the same prediction filters as the pipeline (C++ reference print_predcluster).
+/// Apply the same prediction filters as the pipeline (print_predcluster).
 /// Order: pairwise overlap/inclusion filtering → long-read isofrac → runoff/readthr gates.
-/// C++ parity: the pairwise block runs for long-read predictions too; only the CMaxIntv
+/// the pairwise block runs for long-read predictions too; only the CMaxIntv
 /// coverage redistribution inside `pairwise_overlap_filter` stays disabled for long reads.
 pub fn print_predcluster(
     transcripts: Vec<Transcript>,
@@ -3805,15 +3805,15 @@ pub fn print_predcluster_with_summary(
         emit_fate("split_strand_conflict_endpoints", &before, &txs);
         trace_stage("predcluster.split_strand_conflict_endpoints", &txs);
     }
-    // C++ parity (C++ reference): eliminate incomplete transcripts with only guide introns.
-    // This filter is always enabled in C++ long-read mode (checkincomplete=true).
+    // eliminate incomplete transcripts with only guide introns.
+    // This filter is always enabled in long-read mode (checkincomplete=true).
     if config.long_reads {
         let before = if fate_trace { txs.clone() } else { Vec::new() };
         txs = eliminate_incomplete_vs_guides(txs, config.verbose);
         emit_fate("eliminate_incomplete_vs_guides", &before, &txs);
         trace_stage("predcluster.eliminate_incomplete_vs_guides", &txs);
     }
-    // C++ parity: retained_intron filter (C++ reference, merge_transfrags).
+    // retained_intron filter ( merge_transfrags).
     // Removes transcripts that have retained introns relative to higher-coverage transcripts.
     if config.long_reads {
         let before = if fate_trace { txs.clone() } else { Vec::new() };
@@ -3829,7 +3829,7 @@ pub fn print_predcluster_with_summary(
     }
     if !config.max_sensitivity {
         let before_pairwise = if fate_trace { txs.clone() } else { Vec::new() };
-        // C++ parity: the readthrough elimination block (C++ reference) is commented out,
+        // the readthrough elimination block is commented out,
         // but the main pairwise overlap block still runs for long-read predictions. The
         // long-read-specific skip is only for CMaxIntv coverage redistribution inside
         // `pairwise_overlap_filter`, not for the filter block itself.
@@ -3862,13 +3862,13 @@ pub fn print_predcluster_with_summary(
             trace_tx_detail("AFTER_PAIRWISE", t, None);
         }
     }
-    // C++ parity: longunder isofrac filter (C++ reference, longreads branch).
+    // longunder isofrac filter ( longreads branch).
     // Eliminates low-coverage transcripts relative to the dominant transcript in each interval.
     if config.long_reads {
         let before_isofrac = if fate_trace { txs.clone() } else { Vec::new() };
         let (txs_after_isofrac, isofrac_summary) = isofrac_with_summary(
             txs,
-            // the reference assembler -f controls the longunder isofrac threshold as well.
+            // the original algorithm -f controls the longunder isofrac threshold as well.
             // Keep pairwise overlap filter separately configurable, but longunder should follow
             // the transcript-level isofrac knob.
             config.transcript_isofrac,
@@ -3903,7 +3903,7 @@ pub fn print_predcluster_with_summary(
         emit_fate("collapse_near_equal_intron_chains", &before_collapse, &txs);
         trace_stage("predcluster.collapse_near_equal_intron_chains", &txs);
         // Deduplicate transcripts that have identical intron chains (same splice sites)
-        // but different terminal exon positions. the reference assembler never emits two transcripts
+        // but different terminal exon positions. the original algorithm never emits two transcripts
         // from the same locus with the same intron chain; collapse to the best-coverage copy.
         let before_exact = if fate_trace { txs.clone() } else { Vec::new() };
         txs = dedup_exact_intron_chains(txs, config.verbose);
@@ -3935,7 +3935,7 @@ pub fn print_predcluster_with_summary(
     if config.bundle_merge_dist > runoff_dist {
         runoff_dist = config.bundle_merge_dist;
     }
-    // C++ parity: singlethr filter applies to all modes (C++ reference)
+    // singlethr filter applies to all modes
     let effective_singlethr = config.singlethr;
     txs = collapse_single_exon_runoff(txs, effective_singlethr, runoff_dist, config.verbose);
     summary.after_runoff = txs.len();
@@ -3979,12 +3979,12 @@ pub fn print_predcluster_with_summary(
 
     let before_readthr = if fate_trace { txs.clone() } else { Vec::new() };
     let before = txs.len();
-    // C++ parity: readthr gate applies to ALL predictions (C++ reference).
+    // readthr gate applies to ALL predictions
     // Long-read transcripts are NOT exempt — low-coverage paths must be filtered.
     let readthr_debug = std::env::var_os("RUSTLE_READTHR_DEBUG").is_some();
     if readthr_debug {
         for t in &txs {
-            // C++ parity: long-read uses longcov, short-read uses coverage for readthr check
+            // long-read uses longcov, short-read uses coverage for readthr check
             let check_cov = if t.is_longread { t.longcov } else { t.coverage };
             if !is_guide_pair(t) && check_cov < config.readthr {
                 let start = t.exons.first().map(|e| e.0).unwrap_or(0);
@@ -4006,7 +4006,7 @@ pub fn print_predcluster_with_summary(
             }
         }
     }
-    // C++ parity (C++ reference, 20322): readthr/singlethr gate.
+    // ( 20322): readthr/singlethr gate.
     // - All transcripts: cov >= 1.0 (readthr)
     // - Single-exon transcripts: additional cov >= 4.75 (singlethr)
     // - Mixed mode with guides: use singlethr (4.75) for all
@@ -4021,8 +4021,8 @@ pub fn print_predcluster_with_summary(
         if is_guide_pair(t) {
             return true;
         }
-        // Special parity: rescued transcripts with at least one high-confidence boundary
-        // are kept even if below readthr, emulating the reference assembler's selective promotion.
+        // Special: rescued transcripts with at least one high-confidence boundary
+        // are kept even if below readthr, emulating the original algorithm's selective promotion.
         if is_rescue_protected(t) && (t.hardstart || t.hardend) {
             return true;
         }
@@ -4036,7 +4036,7 @@ pub fn print_predcluster_with_summary(
             base_threshold
         };
 
-        // Determine threshold: single-exon uses singlethr (C++ reference)
+        // Determine threshold: single-exon uses singlethr
         let threshold = if t.exons.len() == 1 {
             config.singlethr // 4.75 for single-exon
         } else {
@@ -4051,7 +4051,7 @@ pub fn print_predcluster_with_summary(
         // longcov (pre-depletion read_count) as a secondary acceptance gate: if the path
         // has ≥2 actual reads supporting it, keep it unless flow coverage is too low.
         // Still require a minimum flow coverage floor (0.6) to prevent ultra-thin flow
-        // paths from sneaking through — StringTie never outputs cov < 1.0.
+        // paths from sneaking through — the original implementation never outputs cov < 1.0.
         if t.is_longread && t.longcov >= 2.0 && t.coverage >= 0.6 {
             return true;
         }
@@ -4092,8 +4092,8 @@ pub fn print_predcluster_with_summary(
             trace_tx_detail("FINAL_OUTPUT", t, None);
         }
     }
-    if std::env::var_os("RUSTLE_PARITY_PRED_FINAL").is_some()
-        || std::env::var_os("RUSTLE_PARITY_DEBUG").is_some()
+    if std::env::var_os("RUSTLE_DEBUG_PRED_FINAL").is_some()
+        || std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some()
     {
         for (i, tx) in txs.iter().enumerate() {
             let start = tx.exons.first().map(|(s, _)| *s).unwrap_or(0);
@@ -4182,7 +4182,7 @@ pub fn find_print_predcluster_killing_stage(
             if !ref_chain_match(&txs) {
                 return "isofrac";
             }
-            // intronic_prediction_filter removed — no C++ equivalent
+            // intronic_prediction_filter removed — no equivalent
         }
     }
     if config.long_reads {
@@ -4211,7 +4211,7 @@ pub fn find_print_predcluster_killing_stage(
     if config.bundle_merge_dist > runoff_dist {
         runoff_dist = config.bundle_merge_dist;
     }
-    // C++ parity: singlethr filter applies to all modes (C++ reference)
+    // singlethr filter applies to all modes
     let effective_singlethr = config.singlethr;
     txs = collapse_single_exon_runoff(txs, effective_singlethr, runoff_dist, false);
     if !ref_chain_match(&txs) {
@@ -4221,7 +4221,7 @@ pub fn find_print_predcluster_killing_stage(
     if !ref_chain_match(&txs) {
         return "polymerase_runoff_filter";
     }
-    // C++ parity (C++ reference, 20322): readthr/singlethr gate.
+    // ( 20322): readthr/singlethr gate.
     // - All transcripts: cov >= 1.0 (readthr)
     // - Single-exon transcripts: additional cov >= 4.75 (singlethr)
     // - Mixed mode with guides: use singlethr (4.75) for all
@@ -4268,7 +4268,7 @@ pub fn find_print_predcluster_killing_stage(
 
 /// Remove transcripts that contain any junction (intron boundary) not observed in BAM data.
 ///
-/// C++ parity: C++ reference only assembles paths through junctions present in the split-read index
+/// only assembles paths through junctions present in the split-read index
 /// (built during BAM ingestion). Rust's path extension can follow synthetic/future-link graph
 /// edges that don't correspond to any observed split read, producing transcripts with novel
 /// (zero-read-support) introns. This filter eliminates those false positives.
@@ -4337,7 +4337,7 @@ pub fn filter_unsupported_junctions(
                 if junction_correction_window == 0 {
                     return false;
                 }
-                // the reference assembler -E parity: for long reads, allow corrected junctions within window.
+                // the original algorithm -E: for long reads, allow corrected junctions within window.
                 junctions_vec.iter().any(|(d2, a2)| {
                     d2.abs_diff(donor) <= junction_correction_window
                         && a2.abs_diff(acceptor) <= junction_correction_window
@@ -4358,9 +4358,9 @@ pub fn filter_unsupported_junctions(
     result
 }
 
-/// Global cross-strand filter (C++ parity: C++ reference `print_predcluster` cross-strand block).
+/// Global cross-strand filter ( `print_predcluster` cross-strand block).
 ///
-/// In C++ ref, `print_predcluster` processes both strands of a genomic cluster together.
+/// In ref, `print_predcluster` processes both strands of a genomic cluster together.
 /// When two transcripts on different strands overlap, a single-exon lower-scored transcript
 /// is eliminated by a higher-scored transcript on the opposite strand (18787: exons.Count()==1).
 ///
@@ -4368,7 +4368,7 @@ pub fn filter_unsupported_junctions(
 /// cross-strand branch never fires. This function provides an equivalent global pass over ALL
 /// assembled transcripts (from all strands/bundles) after per-bundle filtering is complete.
 ///
-/// Rule implemented (C++ reference first condition):
+/// Rule implemented (first condition):
 ///   If n1 (higher score) and n2 (lower score) overlap on opposite strands AND n2 has 1 exon
 ///   AND n2 is not guide-anchored → eliminate n2.
 pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> Vec<Transcript> {
@@ -4417,12 +4417,12 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
             if t1_end <= t2_start || t2_end <= t1_start {
                 continue;
             }
-            // C++ reference first condition: eliminate single-exon lower-scored transcript
+            // first condition: eliminate single-exon lower-scored transcript
             if txs[n2].exons.len() == 1 && !is_guide_pair(&txs[n2]) {
                 dead.insert_grow(n2);
             }
 
-            // C++ reference second condition:
+            // second condition:
             // if n1 is single-exon on reverse strand (tlen<0) and n2 is forward strand (tlen>0)
             // with low coverage (cov < 1/ERROR_PERC = 10), eliminate n1
             let n1_is_rev_long = txs[n1].is_longread && txs[n1].strand == '-';
@@ -4431,7 +4431,7 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                 dead.insert_grow(n1);
             }
 
-            // C++ reference: low-coverage antisense elimination
+            // low-coverage antisense elimination
             // If n2 has low coverage across its single exon relative to total coverage, eliminate n2
             // Note: Without bpcov in global pass, we use a simpler heuristic:
             // if n2 single-exon with very low coverage (< singlethr=4.75), eliminate

@@ -1,6 +1,6 @@
-//! Deferred synthetic transfrag links (C++ `futuretr`-style lifecycle).
+//! Deferred synthetic transfrag links (`futuretr`-style lifecycle).
 //!
-//! C++ stores deferred triples `(n1, n2, abundance)` during graph construction,
+//! stores deferred triples `(n1, n2, abundance)` during graph construction,
 //! updates/deletes them as graph evolves, then materializes transfrags later.
 //! This module provides the same deferred data flow for Rust pipeline stages.
 
@@ -17,7 +17,7 @@ pub struct FutureLink {
     pub to: usize,
     pub abundance: f64,
     pub longread: bool,
-    /// Apply C++ futuretr sink suppression heuristic (C++ reference)
+    /// Apply futuretr sink suppression heuristic
     /// for node->sink synthetic links.
     pub suppress_sink_heuristic: bool,
 }
@@ -117,7 +117,7 @@ pub fn normalize_links(graph: &Graph, links: &mut Vec<FutureLink>) {
     }
 }
 
-/// Apply prune-time node redirects to deferred links (C++ `futuretr` update/delete intent).
+/// Apply prune-time node redirects to deferred links (`futuretr` update/delete intent).
 pub fn apply_prune_redirects(
     links: &mut [FutureLink],
     redirects: &HashMap<usize, PruneRedirect>,
@@ -134,10 +134,10 @@ pub fn apply_prune_redirects(
     }
 }
 
-/// C++ reference suppression:
+/// suppression:
 /// if immediate downstream contiguous chain (within `sink_anchor`) already contains
 /// a node with direct sink child, skip adding this extra future node->sink link.
-fn suppress_sink_future_link_cpp(graph: &Graph, from: usize, sink_anchor: u64) -> bool {
+fn suppress_sink_future_link(graph: &Graph, from: usize, sink_anchor: u64) -> bool {
     let sink = graph.sink_id;
     if from + 1 >= sink || sink >= graph.n_nodes {
         return false;
@@ -192,14 +192,14 @@ pub fn materialize_links(
         }
         if l.to == graph.sink_id
             && l.suppress_sink_heuristic
-            && suppress_sink_future_link_cpp(graph, l.from, _sink_anchor)
+            && suppress_sink_future_link(graph, l.from, _sink_anchor)
         {
             continue;
         }
         graph.add_edge(l.from, l.to);
         let mut tf = GraphTransfrag::new(vec![l.from, l.to], graph.pattern_size());
         graph.set_pattern_edges_for_path(&mut tf.pattern, &tf.node_ids);
-        // C++ parity (C++ reference): futuretr abundance is used directly,
+        // futuretr abundance is used directly,
         // not clamped to trthr. The abundance comes from coverage-drop calculation.
         tf.abundance = l.abundance.max(0.0);
         tf.read_count = tf.abundance;

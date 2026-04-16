@@ -1,4 +1,4 @@
-//! Coverage-based node splitting (C++ reference find_trims_wsign + trimnode_all).
+//! Coverage-based node splitting (find_trims_wsign + trimnode_all).
 //! Splits graph nodes at positions where coverage drops significantly and adds
 //! interior source/sink edges plus synthetic transfrags.
 
@@ -7,7 +7,7 @@ use crate::graph::{Graph, GraphTransfrag};
 use crate::types::ReadBoundary;
 use std::collections::VecDeque;
 
-// C++ header
+// header
 const CHI_WIN: u64 = 100;
 const CHI_THR: u64 = 50;
 const DROP: f64 = 0.5;
@@ -15,7 +15,7 @@ const ERROR_PERC: f64 = 0.1;
 const LONGINTRONANCHOR: u64 = 25;
 const TRTHR: f64 = 1.0;
 
-// C++ reference parity helpers (C++ reference)
+// helpers
 #[allow(dead_code)]
 fn compute_chi(winleft: &[f64], winright: &[f64], sumleft: f64, sumright: f64) -> f64 {
     let n = winleft.len().min(winright.len());
@@ -361,7 +361,7 @@ fn multi_trim_discovery(
         }
     }
 
-    // Inject feature trim points (C++ reference tstartend behavior) and protect them from global elimination.
+    // Inject feature trim points (tstartend behavior) and protect them from global elimination.
     for &(pos, is_start, cov) in feature_points {
         if pos <= start || pos >= end {
             continue;
@@ -375,7 +375,7 @@ fn multi_trim_discovery(
     }
     trimpoints.sort_unstable_by_key(|t| t.pos);
 
-    // C++ parity: global threshold gate with backward invalidation of earlier points
+    // global threshold gate with backward invalidation of earlier points
     // when a downstream point fails.
     let localdrop_global = ERROR_PERC / DROP;
     let mut keep: Vec<bool> = vec![true; trimpoints.len()];
@@ -505,7 +505,7 @@ fn find_all_trims(
     multi_trim_discovery(bpcov, start, end, mixed_mode, feature_points)
 }
 
-/// Public wrapper for C++ ref_map: (sourcestart, sinkend, source_abundance, sink_abundance).
+/// Public wrapper for ref_map: (sourcestart, sinkend, source_abundance, sink_abundance).
 pub fn find_trims_wsign_export(
     bpcov: &Bpcov,
     start: u64,
@@ -531,10 +531,10 @@ pub fn find_trims_wsign_export(
     (ss, se, sa, ska)
 }
 
-/// trimnode_all (C++ reference trimnode_all + reference assembler apply_trimnode_all): for each node (length >= CHI_THR),
+/// trimnode_all (trimnode_all + original algorithm apply_trimnode_all): for each node (length >= CHI_THR),
 /// run find_trims_wsign; if source and/or sink trim, split node, add edges and synthetic transfrags.
 /// Returns synthetic transfrags to be appended to the main transfrag list.
-/// Does NOT set hardstart/hardend on coverage-trimmed nodes (C++ reference interior edges only; reference assembler V68).
+/// Does NOT set hardstart/hardend on coverage-trimmed nodes (interior edges only; original algorithm V68).
 pub fn apply_coverage_trim(
     graph: &mut Graph,
     bpcov: &Bpcov,
@@ -550,7 +550,7 @@ pub fn apply_coverage_trim(
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
     let original_n = graph.n_nodes;
-    // C++ reference trimnode_all parity: newly split nodes can expose additional split points.
+    // trimnode_all: newly split nodes can expose additional split points.
     // Process a dynamic queue so one original node may be split multiple times in one pass.
     let mut nodes_to_process: VecDeque<usize> = (1..original_n)
         .filter(|&i| i != source_id && i != sink_id)
@@ -635,7 +635,7 @@ pub fn apply_coverage_trim(
                 for c in children.iter().copied() {
                     graph.add_edge(new_id, c);
                 }
-                // C++ futuretr parity: avoid redundant near-sink link creation.
+                // futuretr: avoid redundant near-sink link creation.
                 if !graph.has_sink_within_anchor_downstream(new_id, LONGINTRONANCHOR) {
                     graph.add_edge(current, sink_id);
                     let mut stf = GraphTransfrag::new(vec![current, sink_id], graph.pattern_size());

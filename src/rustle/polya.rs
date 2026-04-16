@@ -1,9 +1,9 @@
 //! PolyA/T tail detection (reference-style).
 //! Used for strand and boundary evidence.
-//! shorten_terminal_exon: C++ reference shortenFirstExon/shortenLastExon (trim first/last exon by max_trim bp).
+//! shorten_terminal_exon: shortenFirstExon/shortenLastExon (trim first/last exon by max_trim bp).
 
 /// Check if a sequence window is mostly A or mostly T (min_frac of length).
-/// This helper is intentionally generic; BAM parity uses the base-specific
+/// This helper is intentionally generic; BAM processing uses the base-specific
 /// boundary-anchored checks below.
 pub fn check_polya_window(seq: &[u8], min_frac: f64) -> bool {
     if seq.is_empty() {
@@ -23,7 +23,7 @@ fn is_poly_base(c: u8, good: u8) -> bool {
     c == good || c == good.to_ascii_lowercase()
 }
 
-// C++ reference poly_window_meets(): progressive threshold over prefixes/suffixes,
+// poly_window_meets(): progressive threshold over prefixes/suffixes,
 // with early success/failure relative to the boundary being tested.
 fn poly_window_meets(
     seq: &[u8],
@@ -178,7 +178,7 @@ pub fn detect_polya_tail(
 }
 
 /// Separate aligned (in-alignment body) vs unaligned (soft-clip tail) polyA/T detection.
-/// C++ ref: aligned_polyA / unaligned_polyA / aligned_polyT / unaligned_polyT.
+/// ref: aligned_polyA / unaligned_polyA / aligned_polyT / unaligned_polyT.
 ///
 /// Returns `(has_aligned_start, has_unaligned_start, has_aligned_end, has_unaligned_end)`.
 ///
@@ -245,7 +245,7 @@ pub fn detect_polya_aligned_unaligned(
     )
 }
 
-/// Shorten first or last exon by up to max_trim bp (C++ reference shortenFirstExon/shortenLastExon).
+/// Shorten first or last exon by up to max_trim bp (shortenFirstExon/shortenLastExon).
 /// Keeps at least 1 bp per exon. Exons are (start, end); first = trim from start, last = trim from end.
 pub fn shorten_terminal_exon(read: &mut crate::types::BundleRead, first: bool, max_trim: u64) {
     if read.exons.is_empty() || max_trim == 0 {

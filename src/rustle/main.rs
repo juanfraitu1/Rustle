@@ -15,7 +15,7 @@ compatible options: -G (guide), -l (label), -o (output), -p (threads), -L (long 
 -v (verbose), -t (no coverage trim), -x (exclude seqs), -E (splice window), --nasc, --conservative.\n\
 \n\
 Benchmarking / gffcompare: compare de novo output to a reference GTF (run rustle without -G; pass the reference only to gffcompare -r).\n\
-Use -G/--guide only for debugging or guided-mode parity, not for headline sensitivity/precision vs truth."
+Use -G/--guide only for debugging or guided-mode compatibility, not for headline sensitivity/precision vs truth."
 )]
 struct Args {
     /// Input BAM file
@@ -42,7 +42,7 @@ struct Args {
     chrom: Option<String>,
 
     /// Reference annotation to guide assembly -G). GTF/GFF.
-    /// For benchmarking against truth, omit this (de novo). Use only for debug or explicit guided/e-only parity.
+    /// For benchmarking against truth, omit this (de novo). Use only for debug or explicit guided/e-only compatibility.
     #[arg(short = 'G', long = "guide")]
     guide: Option<String>,
 
@@ -110,7 +110,7 @@ struct Args {
     #[arg(long, default_value = "200")]
     bundle_runoff_dist: u64,
 
-    /// Minimum isoform fraction -f); used for transcript filter and pairwise (C++ reference isofrac) [default: 0.01]
+    /// Minimum isoform fraction -f); used for transcript filter and pairwise (isofrac) [default: 0.01]
     #[arg(short = 'f', long, default_value = "0.01")]
     transcript_isofrac: f64,
 
@@ -147,7 +147,7 @@ struct Args {
     #[arg(short = 'b', long)]
     ballgown: Option<String>,
 
-    /// Compare bundle regions to the reference assembler -v log (e.g. GGO_19.log); print match/only_rust/only_log counts
+    /// Compare bundle regions to the original algorithm -v log (e.g. GGO_19.log); print match/only_rust/only_log counts
     #[arg(long)]
     bundles: Option<String>,
 
@@ -179,7 +179,7 @@ struct Args {
     #[arg(long, default_value = "1")]
     transcript_isofrac_keep_min: f64,
 
-    /// Low isofrac: keep in pairwise filter if cov >= this * container (C++ reference lowisofrac; lower = more permissive) [default: 0.02]
+    /// Low isofrac: keep in pairwise filter if cov >= this * container (lowisofrac; lower = more permissive) [default: 0.02]
     #[arg(long, default_value = "0.02")]
     lowisofrac: f64,
 
@@ -191,13 +191,13 @@ struct Args {
     #[arg(long)]
     output_tpm: bool,
 
-    /// Rawreads mode (C++ reference rawreads branch): emit models directly from active transfrags.
+    /// Rawreads mode (rawreads branch): emit models directly from active transfrags.
     #[arg(long)]
     rawreads: bool,
 
-    /// Merge-mode BAM parity scaffold flag; currently warning-only.
+    /// Merge-mode BAM compatibility scaffold flag; currently warning-only.
     #[arg(long)]
-    merge_bam_parity: bool,
+    merge_bam_compat: bool,
 
     /// Emit gene feature lines in GTF (one per transcript)
     #[arg(long)]
@@ -220,7 +220,7 @@ struct Args {
     #[arg(long, action = ArgAction::Set, default_value_t = true)]
     pairwise_overlap_filter: bool,
 
-    /// Pairwise filter: isofrac override; if 0, -f (transcript_isofrac) is used (C++ reference parity) [default: 0.01]
+    /// Pairwise filter: isofrac override; if 0, -f (transcript_isofrac) is used [default: 0.01]
     #[arg(long, default_value = "0.01")]
     pairwise_isofrac: f64,
 
@@ -261,7 +261,7 @@ struct Args {
     dedup_intron_chain_subsets: bool,
 
     /// Enable graph-build longtrim-like node splitting at read-boundary peaks (lstart/lend).
-    /// Disabled by default until this path matches the reference assembler more closely for long-read parity.
+    /// Disabled by default until this path matches the original algorithm more closely for long-read mode.
     #[arg(long)]
     enable_longtrim: bool,
 
@@ -281,11 +281,11 @@ struct Args {
     #[arg(long, default_value = "1000000")]
     allowed_graph_nodes: usize,
 
-    /// Prune by removing junction edges (C++ reference style) instead of removing nodes.
+    /// Prune by removing junction edges (style) instead of removing nodes.
     #[arg(long)]
     use_prune_by_junction: bool,
 
-    /// Estimate-only mode: only output transcripts matching guide annotations (C++ reference -e flag).
+    /// Estimate-only mode: only output transcripts matching guide annotations (-e flag).
     #[arg(short = 'e', long)]
     eonly: bool,
 
@@ -314,7 +314,7 @@ struct Args {
     #[arg(long)]
     emit_contained_isoforms: bool,
 
-    /// Emit additional transcripts by enumerating splice graph paths (max sensitivity; not C++ reference default).
+    /// Emit additional transcripts by enumerating splice graph paths (max sensitivity; not default).
     #[arg(long, action = ArgAction::Set, default_value_t = true)]
     emit_junction_paths: bool,
 
@@ -335,13 +335,13 @@ struct Args {
     /// **On by default with `-L`**; pass this on short-read runs to use the same preset.
     /// Skipped when `--max-sensitivity` is set.
     #[arg(long, action = ArgAction::SetTrue)]
-    parity_preset: bool,
+    compat_preset: bool,
 
     /// Trace reference transcripts: report why each reference is missing (NotExtracted vs filter).
     #[arg(long)]
     trace_reference: Option<String>,
 
-    /// Emit reference isoforms from junction support when graph/guide path extraction fails (parity assist).
+    /// Emit reference isoforms from junction support when graph/guide path extraction fails (compatibility).
     /// Also on when `--trace-reference` is set; disable with `RUSTLE_REF_JUNCTION_WITNESS=0`.
     #[arg(long, action = ArgAction::SetTrue)]
     ref_junction_witness: bool,
@@ -352,9 +352,9 @@ struct Args {
 
     /// Output TSV path for per-bundle stage summaries (bundles, reads, junctions, seeds, longrec).
     /// If omitted, needy-locus runs still write `{output}.needy_bundle_summary.tsv` when tracing
-    /// (see `RUSTLE_DISABLE_AUTO_BUNDLE_SUMMARY`, `RUSTLE_PARITY_STAGE_TSV`).
+    /// (see `RUSTLE_DISABLE_AUTO_BUNDLE_SUMMARY`, `RUSTLE_DEBUG_STAGE_TSV`).
     #[arg(long)]
-    parity_stage_tsv: Option<String>,
+    debug_stage_tsv: Option<String>,
 
     /// Output TSV path for keeptrf/usepath export from process_transfrags.
     #[arg(long)]
@@ -445,7 +445,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         (args.readthr, args.transcript_isofrac, args.no_coverage_trim)
     };
 
-    // C++ reference: -f (minimum isoform fraction) must be < 1
+    // -f (minimum isoform fraction) must be < 1
     if transcript_isofrac >= 1.0 {
         eprintln!(
             "Error: minimum isoform fraction (-f) must be less than 1, got {}",
@@ -477,7 +477,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         None
     };
 
-    // the reference assembler -a is "minimum anchor length" for junction support around splice sites.
+    // the original algorithm -a is "minimum anchor length" for junction support around splice sites.
     // In this codebase, `junction_support` has historically been used as the anchor threshold
     // (including `mismatch_anchor` and the left/right anchor witnesses), while `min_anchor_length`
     // was added later but not wired through. Keep both CLI knobs for now, but treat them as
@@ -498,8 +498,8 @@ pub fn run_cli() -> anyhow::Result<()> {
         min_intron_length: args.min_intron_length,
         per_splice_site_isofrac: args.per_splice_site_isofrac,
         bundle_merge_dist: args.bundle_merge_dist,
-        // C++ reference assembler.cpp: runoffdist=200 (not overridden for long reads)
-        // C++ reference print_predcluster: runoffdist=0 only for prediction clustering
+        // assembler.cpp: runoffdist=200 (not overridden for long reads)
+        // print_predcluster: runoffdist=0 only for prediction clustering
         bundle_runoff_dist: args.bundle_runoff_dist,
         cgroup_junction_support: args.cgroup_junction_support,
         min_exon_length: args.min_exon_length,
@@ -557,12 +557,12 @@ pub fn run_cli() -> anyhow::Result<()> {
         lowcov: rustle::constants::LOWCOV,
         sserror: rustle::constants::SSERROR,
         genome_fasta: args.genome_fasta.clone().or(args.cram_ref.clone()),
-        merge_bam_parity: args.merge_bam_parity,
+        merge_bam_compat: args.merge_bam_compat,
         use_graph_merge: !args.no_graph_merge,
         no_coverage_trim,
         exclude_seqids,
         max_sensitivity: args.max_sensitivity,
-        parity_stage_tsv: args.parity_stage_tsv.clone(),
+        debug_stage_tsv: args.debug_stage_tsv.clone(),
         keeptrf_usepath_tsv: args.keeptrf_usepath_tsv.clone(),
         snapshot_jsonl: args.snapshot_jsonl.clone(),
         trace_reference: args.trace_reference.is_some(),
@@ -578,17 +578,17 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_min_novel_reads: args.vg_min_novel_reads,
     };
 
-    if !args.max_sensitivity && (args.parity_preset || config.long_reads) {
-        config.apply_parity_preset();
+    if !args.max_sensitivity && (args.compat_preset || config.long_reads) {
+        config.apply_compat_preset();
     }
     if config.max_sensitivity {
         config.apply_max_sensitivity();
     }
 
     if args.merge {
-        if args.merge_bam_parity {
+        if args.merge_bam_compat {
             eprintln!(
-                "rustle: --merge-bam-parity is scaffold-only; using existing structural merge mode."
+                "rustle: --merge-bam-compat is scaffold-only; using existing structural merge mode."
             );
         }
         let mut merge_inputs = args.merge_inputs.clone();

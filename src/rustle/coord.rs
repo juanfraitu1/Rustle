@@ -1,7 +1,7 @@
-//! Coordinate helpers for C++ parity.
+//! Coordinate helpers for
 //!
 //! Rustle stores genomic intervals as 0-based half-open: `[start, end)`.
-//! the reference assembler C++ commonly reasons in inclusive end coordinates in local logic.
+//! the original algorithm commonly reasons in inclusive end coordinates in local logic.
 //! These helpers make conversions explicit and keep boundary math consistent.
 
 /// Half-open interval length for `[start, end)`.
@@ -31,7 +31,7 @@ pub fn contiguous_half_open(left_end: u64, right_start: u64) -> bool {
     left_end == right_start
 }
 
-/// Convert C++ inclusive interval `[start, end_inclusive]` to Rust half-open `[start, end_exclusive)`.
+/// Convert inclusive interval `[start, end_inclusive]` to Rust half-open `[start, end_exclusive)`.
 #[inline]
 pub fn inclusive_to_half_open(start: u64, end_inclusive: u64) -> (u64, u64) {
     if end_inclusive < start {
@@ -40,7 +40,7 @@ pub fn inclusive_to_half_open(start: u64, end_inclusive: u64) -> (u64, u64) {
     (start, end_inclusive.saturating_add(1))
 }
 
-/// Convert Rust half-open `[start, end_exclusive)` to C++ inclusive `[start, end_inclusive]`.
+/// Convert Rust half-open `[start, end_exclusive)` to inclusive `[start, end_inclusive]`.
 #[inline]
 pub fn half_open_to_inclusive(start: u64, end_exclusive: u64) -> Option<(u64, u64)> {
     if end_exclusive <= start {
@@ -49,7 +49,7 @@ pub fn half_open_to_inclusive(start: u64, end_exclusive: u64) -> Option<(u64, u6
     Some((start, end_exclusive - 1))
 }
 
-/// C++ inclusive interval length for `[start, end_inclusive]`.
+/// inclusive interval length for `[start, end_inclusive]`.
 #[inline]
 pub fn len_inclusive(start: u64, end_inclusive: u64) -> u64 {
     if end_inclusive < start {
@@ -58,7 +58,7 @@ pub fn len_inclusive(start: u64, end_inclusive: u64) -> u64 {
     end_inclusive.saturating_sub(start).saturating_add(1)
 }
 
-/// Inclusive overlap length between `[a0,a1]` and `[b0,b1]` (C++ convention).
+/// Inclusive overlap length between `[a0,a1]` and `[b0,b1]` (convention).
 #[inline]
 pub fn overlap_len_inclusive(a0: u64, a1: u64, b0: u64, b1: u64) -> u64 {
     let s = a0.max(b0);
@@ -71,7 +71,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn inclusive_half_open_length_parity() {
+    fn inclusive_half_open_length_compat() {
         let cases = [(0, 0), (10, 10), (10, 11), (10, 100), (1000, 1005)];
         for (s, einc) in cases {
             let (hs, he) = inclusive_to_half_open(s, einc);
@@ -80,7 +80,7 @@ mod tests {
     }
 
     #[test]
-    fn inclusive_half_open_overlap_parity() {
+    fn inclusive_half_open_overlap_compat() {
         // `[1,3]` and `[3,5]` overlap at base 3 in inclusive coordinates.
         let inc_ov = overlap_len_inclusive(1, 3, 3, 5);
         let a = inclusive_to_half_open(1, 3);

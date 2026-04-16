@@ -1,6 +1,6 @@
 //! Short-read pipeline: dedicated processing for short-read RNA-seq assembly.
 //!
-//! C++ reference differences for short-read mode:
+//! differences for short-read mode:
 //! - trimnode_all: coverage-based node splitting (always on for short-read)
 //! - srabund: short-read abundance tracking
 //! - pair-aware: paired-end fragment bridging
@@ -8,15 +8,15 @@
 
 use crate::types::{BundleRead, RunConfig};
 
-/// Short-read specific constants (C++ header / reference assembler.cpp)
+/// Short-read specific constants (header / original algorithm.cpp)
 pub mod constants {
-    /// Default bundle merge distance for short-read (reference assembler bundledist=50)
+    /// Default bundle merge distance for short-read (original algorithm bundledist=50)
     pub const BUNDLE_MERGE_DIST_SHORTREAD: u64 = 50;
 
     /// localdist for short-read: bundledist + longintronanchor = 50 + 25 = 75
     pub const LOCALDIST_SHORTREAD: u64 = 75;
 
-    /// Coverage drop threshold for trimnode_all (C++ reference DROP = 0.5)
+    /// Coverage drop threshold for trimnode_all (DROP = 0.5)
     pub const COVERAGE_DROP_THRESHOLD: f64 = 0.5;
 
     /// Minimum coverage for node to be kept in trimnode_all
@@ -35,7 +35,7 @@ impl ReadClassifier {
     }
 
     /// Classify a read as long or short based on query length
-    /// C++: mixedMode classifies reads with query_length >= long_read_min_len as long
+    /// mixedMode classifies reads with query_length >= long_read_min_len as long
     pub fn classify(&self, read: &BundleRead) -> ReadType {
         match read.query_length {
             Some(len) if len >= self.long_read_min_len => ReadType::Long,
@@ -63,7 +63,7 @@ impl ShortReadGraphBuilder {
     }
 
     /// Build graph for short-read mode
-    /// C++: create_graph with trimnode_all, no longtrim
+    /// create_graph with trimnode_all, no longtrim
     pub fn build_graph(&self, reads: &[BundleRead]) -> anyhow::Result<crate::graph::Graph> {
         // TODO: Implement short-read specific graph building
         // - Use bundledist = 50 for grouping
@@ -77,7 +77,7 @@ impl ShortReadGraphBuilder {
     }
 }
 
-/// Short-read coverage trimmer (C++ reference trimnode_all)
+/// Short-read coverage trimmer (trimnode_all)
 pub struct CoverageTrimmer {
     _drop_threshold: f64,
 }
@@ -90,7 +90,7 @@ impl CoverageTrimmer {
     }
 
     /// Trim nodes based on coverage drops
-    /// C++ ref: trimnode_all - split nodes at significant coverage drops
+    /// ref: trimnode_all - split nodes at significant coverage drops
     pub fn trim_nodes(
         &self,
         graph: &mut crate::graph::Graph,
@@ -158,7 +158,7 @@ pub fn preprocess_short_reads(mut reads: Vec<BundleRead>) -> Vec<BundleRead> {
 }
 
 /// Build bundles from short reads
-/// C++: bundledist=50, localdist=75 for short-read
+/// bundledist=50, localdist=75 for short-read
 pub fn build_shortread_bundles(reads: &[BundleRead], bundledist: u64) -> Vec<crate::types::Bundle> {
     // TODO: Implement short-read bundle building
     // - Group reads within bundledist

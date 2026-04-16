@@ -1,5 +1,5 @@
 //! GTF merge mode: combine transcript annotations from one or more GTF files.
-//! This is a structural merge (no abundance estimation), intended to mirror the reference assembler-style
+//! This is a structural merge (no abundance estimation), intended to mirror the original algorithm-style
 //! merge workflows where transcript models are consolidated into a non-redundant set.
 
 use crate::types::DetHashMap as HashMap;
@@ -310,7 +310,7 @@ pub fn run_merge<P: AsRef<Path>>(
 
     all = dedup_exact_structure(all);
     all = dedup_equal_intron_chains(all, config.verbose);
-    // C++ reference parity: bundledist = 250 in merge mode (reference assembler.cpp bundledist default for merge)
+    // bundledist = 250 in merge mode (default for merge mode)
     all = collapse_near_equal_intron_chains(all, 250);
     all = merge_contained_transcripts(all);
     all = filter_min_transcript_length(all, config.min_transcript_length, config.verbose);
@@ -337,7 +337,7 @@ pub fn run_merge<P: AsRef<Path>>(
 
     if config.verbose {
         eprintln!(
-            "reference assembler: merge mode wrote {} merged transcripts from {} input GTF(s)",
+            "original algorithm: merge mode wrote {} merged transcripts from {} input GTF(s)",
             all.len(),
             input_gtfs.len()
         );

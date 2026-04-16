@@ -1,6 +1,6 @@
 //! Per-bundle JSONL snapshots for fast, 1:1 comparisons between:
 //! - rustle pipeline internals (bundle -> graph -> transfrags -> transcripts)
-//! - the reference assembler trace-derived “backward” packages (normalized with scripts)
+//! - the original algorithm trace-derived “backward” packages (normalized with scripts)
 //!
 //! The intent is deterministic, compact-ish structure, not human readability.
 

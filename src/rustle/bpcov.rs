@@ -1,7 +1,7 @@
-//! Per-base coverage from bundle reads (C++ reference bpcov / get_cov_sign).
+//! Per-base coverage from bundle reads (bpcov / get_cov_sign).
 //! Used for coverage-based node splitting (find_trims_wsign, trimnode_all).
 //!
-//! **Strand indexing (C++ reference, 16925):** sno = (int)strand+1 → bpcov[0]=minus, bpcov[1]=unstranded/all, bpcov[2]=plus.
+//! **Strand indexing ( 16925):** sno = (int)strand+1 → bpcov[0]=minus, bpcov[1]=unstranded/all, bpcov[2]=plus.
 //! get_cov_sign(sno, ...) uses bpcov[sno]. We build plus and minus separately; index 1 (all) = plus + minus when needed.
 
 use crate::coord::len_half_open;
@@ -42,7 +42,7 @@ impl Bpcov {
         let mut cov = vec![0.0; len];
 
         for r in reads {
-            // C++ reference get_cov_sign(sno,...) expects strand-specific coverage:
+            // get_cov_sign(sno,...) expects strand-specific coverage:
             // - plus bundles use only '+' reads
             // - minus bundles use only '-' reads
             // Neutralized '.' reads should not be counted as minus (asymmetric) because that can
@@ -137,7 +137,7 @@ impl Bpcov {
         pos.saturating_sub(self.bundle_start) as usize
     }
 
-    /// Add coverage v to [start, end) (C++ reference cov_edge_add for one strand).
+    /// Add coverage v to [start, end) (cov_edge_add for one strand).
     pub fn add_coverage(&mut self, start: u64, end: u64, v: f64) {
         let i0 = self.idx(start).min(self.cov.len());
         let i1 = self.idx(end).min(self.cov.len());
@@ -156,17 +156,17 @@ impl Bpcov {
     }
 }
 
-/// Strand index for bpcov (C++ ref: sno = strand+1). 0 = minus, 1 = unstranded/all, 2 = plus.
+/// Strand index for bpcov (ref: sno = strand+1). 0 = minus, 1 = unstranded/all, 2 = plus.
 pub const BPCOV_STRAND_MINUS: usize = 0;
 pub const BPCOV_STRAND_ALL: usize = 1;
 pub const BPCOV_STRAND_PLUS: usize = 2;
 
-/// Per-base coverage for both strands and optional "all" (C++ reference bpcov[0], bpcov[1], bpcov[2]).
+/// Per-base coverage for both strands and optional "all" (bpcov[0], bpcov[1], bpcov[2]).
 #[derive(Debug, Clone)]
 pub struct BpcovStranded {
     pub minus: Bpcov,
     pub plus: Bpcov,
-    /// All/unstranded = minus + plus (C++ reference bpcov[1] when neutral reads added to both).
+    /// All/unstranded = minus + plus (bpcov[1] when neutral reads added to both).
     pub all: Option<Vec<f64>>,
 }
 
@@ -280,7 +280,7 @@ impl BpcovStranded {
         }
     }
 
-    /// Add coverage v to strand strand_idx over [start, end); when strand_idx != BPCOV_STRAND_ALL also add to all (C++ reference cov_edge_add).
+    /// Add coverage v to strand strand_idx over [start, end); when strand_idx != BPCOV_STRAND_ALL also add to all (cov_edge_add).
     pub fn add_coverage(&mut self, strand_idx: usize, start: u64, end: u64, v: f64) {
         match strand_idx {
             BPCOV_STRAND_MINUS => {

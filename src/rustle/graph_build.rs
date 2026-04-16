@@ -1,4 +1,4 @@
-//! Build splice graph from junctions and bundlenodes (C++ reference create_graph).
+//! Build splice graph from junctions and bundlenodes (create_graph).
 
 use crate::bitset::NodeSet;
 use crate::bpcov::{Bpcov, BpcovStranded, BPCOV_STRAND_ALL, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
@@ -16,7 +16,7 @@ use crate::types::{
     JunctionStats, ReadBoundary,
 };
 
-/// Constants for coverage-based source/sink edge addition (C++ header).
+/// Constants for coverage-based source/sink edge addition (header).
 const ERROR_PERC: f64 = 0.1;
 const DROP: f64 = 0.5;
 
@@ -56,13 +56,13 @@ pub struct PruneRedirect {
     pub downstream: Option<usize>,
 }
 
-/// Add source/sink edges where coverage drops sharply (C++ reference 4145-4209).
+/// Add source/sink edges where coverage drops sharply (4145-4209).
 ///
 /// For each real node: if total parent coverage << node coverage, add source→node edge.
 /// If total child coverage << node coverage, add node→sink edge.
 /// Uses strand-specific per-base coverage (`get_cov` equivalent via `BpcovStranded`).
 ///
-/// Returns coverage-proportional transfrags matching C++ futuretr behavior:
+/// Returns coverage-proportional transfrags matching futuretr behavior:
 /// source edges get abundance `(icov - parcov) / DROP`,
 /// sink edges get abundance `(icov - chcov) / DROP`.
 pub fn add_coverage_source_sink_edges(
@@ -77,7 +77,7 @@ pub fn add_coverage_source_sink_edges(
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
     let n_nodes = graph.n_nodes;
-    let threshold_frac = ERROR_PERC * DROP; // 0.05 (C++ reference parity)
+    let threshold_frac = ERROR_PERC * DROP; // 0.05
 
     // Precompute per-node average coverage
     let mut node_avg_cov: Vec<f64> = Vec::with_capacity(n_nodes);
@@ -106,7 +106,7 @@ pub fn add_coverage_source_sink_edges(
         if i == source_id || i == sink_id {
             continue;
         }
-        // C++ reference: source coverage-drop check starts at i>1 (skips node 1,
+        // source coverage-drop check starts at i>1 (skips node 1,
         // which is the first real node after source). This prevents spurious source
         // edges to nodes immediately after the source.
         let skip_source_check = i <= 1;
@@ -115,7 +115,7 @@ pub fn add_coverage_source_sink_edges(
             continue;
         }
 
-        // Check if node needs source edge (C++ reference 4147-4172)
+        // Check if node needs source edge (4147-4172)
         let parents: Vec<usize> = graph.nodes[i].parents.ones().collect();
         if !skip_source_check && !parents.is_empty() && !parents.contains(&source_id) {
             let mut parcov = 0.0;
@@ -127,13 +127,13 @@ pub fn add_coverage_source_sink_edges(
                 parcov += node_avg_cov.get(p).copied().unwrap_or(0.0);
             }
             if parcov < icov * threshold_frac {
-                // C++ ref:4168: abundance = (icov - parcov) / DROP
+                // ref:4168: abundance = (icov - parcov) / DROP
                 let abundance = (icov - parcov) / DROP;
                 add_source_edges.push((i, abundance));
             }
         }
 
-        // Check if node needs sink edge (C++ reference 4175-4206)
+        // Check if node needs sink edge (4175-4206)
         let children: Vec<usize> = graph.nodes[i].children.ones().collect();
         if !children.is_empty() && !children.contains(&sink_id) {
             let mut chcov = 0.0;
@@ -145,7 +145,7 @@ pub fn add_coverage_source_sink_edges(
                 chcov += node_avg_cov.get(c).copied().unwrap_or(0.0);
             }
             if chcov < icov * threshold_frac {
-                // C++ ref:4200: abundance = (icov - chcov) / DROP
+                // ref:4200: abundance = (icov - chcov) / DROP
                 let abundance = (icov - chcov) / DROP;
                 add_sink_edges.push((i, abundance));
             }
@@ -353,7 +353,7 @@ fn build_longtrim_bundle_schedules(
     schedules
 }
 
-/// Build bundle2graph mapping (C++ reference CGraphinfo / bundle2graph).
+/// Build bundle2graph mapping (CGraphinfo / bundle2graph).
 /// For each bundlenode (bid), record graph node ids that were created from it.
 pub fn build_bundle2graph(graph: &Graph, bundlenodes: Option<&CBundlenode>) -> Bundle2Graph {
     let mut bids: Vec<usize> = Vec::new();
@@ -386,13 +386,13 @@ pub fn build_bundle2graph(graph: &Graph, bundlenodes: Option<&CBundlenode>) -> B
 }
 
 /// Build graph from junctions and bundlenodes. Source=0, sink=last.
-/// CRITICAL: Filters junctions by strand, matching C++ reference behavior.
-/// C++ uses formula `(junction.strand+1) == 2*s` where s is bundle strand (0,1,2).
+/// CRITICAL: Filters junctions by strand, matching behavior.
+/// uses formula `(junction.strand+1) == 2*s` where s is bundle strand (0,1,2).
 /// Only junctions matching the bundle strand are used for graph edges.
 ///
-/// Uses C++-style dynamic junction processing (C++ reference):
+/// Uses Original-style dynamic junction processing
 /// processes junction start/end events in coordinate order, splitting the
-/// current graphnode at each event. This matches C++ node structure including
+/// current graphnode at each event. This matches node structure including
 /// the short-tail skip optimization.
 pub fn create_graph(
     junctions: &[Junction],
@@ -438,7 +438,7 @@ fn create_graph_inner(
         for (bid, s, e, _cov) in segs {
             let node = graph.add_node(s, e);
             node.source_bnode = Some(bid);
-            // C++ `CGraphnode::cov` starts at zero and is accumulated later from mapped reads.
+            // `CGraphnode::cov` starts at zero and is accumulated later from mapped reads.
             // Do not seed it from bundlenode coverage.
             node.coverage = 0.0;
             create_graph_new_node(trace_s, trace_g, node.node_id, s, e, "initial bundlenode");
@@ -466,8 +466,8 @@ fn create_graph_inner(
     // Filter junctions by strand and killed status (once, reuse for all bundlenodes).
     let filtered_juncs = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
 
-    // C++ ends[] hashmap: tracks junction endpoints for cross-junction linking.
-    // Persists across bundlenodes (C++ reference, 4080-4088).
+    // ends[] hashmap: tracks junction endpoints for cross-junction linking.
+    // Persists across bundlenodes ( 4080-4088).
     let mut ends: HashMap<u64, Vec<usize>> = Default::default();
 
     let mut sink_parents: Vec<usize> = Vec::new();
@@ -477,7 +477,7 @@ fn create_graph_inner(
         let endbundle = bn.end;
         let source_bid = bn.bid;
 
-        // Check if any previously-recorded junction ends at currentstart (C++ reference).
+        // Check if any previously-recorded junction ends at currentstart
         let has_end_at_start = ends.contains_key(&currentstart);
 
         // Collect junction events within this bundlenode.
@@ -486,7 +486,7 @@ fn create_graph_inner(
         let events =
             collect_bundlenode_events(&filtered_juncs, currentstart, endbundle, bundle_end);
 
-        // Create initial graphnode [currentstart, endbundle) (C++ reference).
+        // Create initial graphnode [currentstart, endbundle)
         let node = graph.add_node(currentstart, endbundle);
         node.source_bnode = Some(source_bid);
         node.coverage = 0.0;
@@ -500,7 +500,7 @@ fn create_graph_inner(
             "initial bundlenode",
         );
 
-        // Link initial node: either from ends[] or from source (C++ reference).
+        // Link initial node: either from ends[] or from source
         let mut linked_initial = false;
         if has_end_at_start {
             if let Some(parent_ids) = ends.get(&currentstart) {
@@ -515,14 +515,14 @@ fn create_graph_inner(
         }
 
         let mut completed = false;
-        // C++ parity (rlink.cpp:3757-3880): compute longtrim boundaries PER
-        // BUNDLENODE using the coverage derivative sliding window. StringTie
+        // (-3880): compute longtrim boundaries PER
+        // BUNDLENODE using the coverage derivative sliding window. the original implementation
         // runs this detection inside the create_graph per-bundlenode loop,
         // not externally per-bundle. When external lstart/lend are empty but
         // bpcov is available, generate per-bundlenode boundaries here.
         let bnode_lstart_owned;
         let bnode_lend_owned;
-        // C++ parity: compute boundaries per-bundlenode when longtrim is active
+        // compute boundaries per-bundlenode when longtrim is active
         // and no external boundaries were provided. External boundaries come from
         // CPAS/poly-A evidence; when absent, use coverage-derivative detection.
         let bnode_span = endbundle.saturating_sub(currentstart);
@@ -577,12 +577,12 @@ fn create_graph_inner(
         while nls < effective_lstart.len() && effective_lstart[nls].pos < currentstart { nls += 1; }
         while nle < effective_lend.len() && effective_lend[nle].pos < currentstart { nle += 1; }
 
-        // Process events in coordinate order (C++ reference do-while loop).
+        // Process events in coordinate order (do-while loop).
         let mut ei = 0;
         while ei < events.len() && !completed {
             let (pos, ev_type) = events[ei];
 
-            // C++ parity: call longtrim BEFORE each junction event to process
+            // call longtrim BEFORE each junction event to process
             // any lstart/lend events between the current node and this junction.
             if has_longtrim {
                 if let Some(bpc) = bpcov {
@@ -602,7 +602,7 @@ fn create_graph_inner(
 
             match ev_type {
                 JunctionEventType::Start => {
-                    // Junction start at donor position (C++ reference).
+                    // Junction start at donor position
                     // Set current graphnode end to donor.
                     let old_end = graph.nodes[graphnode_id].end;
                     graph.nodes[graphnode_id].end = pos;
@@ -616,7 +616,7 @@ fn create_graph_inner(
                         pos,
                     );
 
-                    // Record all junctions starting at this position in ends[] (C++ reference).
+                    // Record all junctions starting at this position in ends[]
                     for j in &filtered_juncs {
                         if j.donor == pos {
                             ends.entry(j.acceptor).or_default().push(graphnode_id);
@@ -632,7 +632,7 @@ fn create_graph_inner(
                     }
 
                     if pos < endbundle {
-                        // Short-tail skip (C++ reference):
+                        // Short-tail skip
                         // If remaining bundlenode is shorter than junction_support and
                         // no more junctions exist in this bundlenode, check coverage.
                         if endbundle - pos < junction_support {
@@ -665,7 +665,7 @@ fn create_graph_inner(
                         }
 
                         if !completed {
-                            // Create next node [donor, endbundle) (C++ reference).
+                            // Create next node [donor, endbundle)
                             let next = graph.add_node(pos, endbundle);
                             next.source_bnode = Some(source_bid);
                             next.coverage = 0.0;
@@ -686,10 +686,10 @@ fn create_graph_inner(
                     }
                 }
                 JunctionEventType::End => {
-                    // Junction end at acceptor position (C++ reference).
+                    // Junction end at acceptor position
                     let acceptor = pos;
 
-                    // Advance past all END events at this position (C++ reference).
+                    // Advance past all END events at this position
                     while ei < events.len()
                         && events[ei].0 == acceptor
                         && events[ei].1 == JunctionEventType::End
@@ -697,7 +697,7 @@ fn create_graph_inner(
                         ei += 1;
                     }
 
-                    // Split current node if it started before this acceptor (C++ reference).
+                    // Split current node if it started before this acceptor
                     if graph.nodes[graphnode_id].start < acceptor {
                         let old_end = graph.nodes[graphnode_id].end;
                         graph.nodes[graphnode_id].end = acceptor;
@@ -710,7 +710,7 @@ fn create_graph_inner(
                             acceptor,
                             acceptor,
                         );
-                        // Create next node [acceptor, endbundle) (C++ reference).
+                        // Create next node [acceptor, endbundle)
                         let next = graph.add_node(acceptor, endbundle);
                         next.source_bnode = Some(source_bid);
                         next.coverage = 0.0;
@@ -727,7 +727,7 @@ fn create_graph_inner(
                         graphnode_id = next_id;
                     }
 
-                    // Link nodes from ends[] to current graphnode (C++ reference).
+                    // Link nodes from ends[] to current graphnode
                     if let Some(parent_ids) = ends.get(&acceptor).cloned() {
                         for pid in parent_ids {
                             graph.add_edge(pid, graphnode_id);
@@ -737,7 +737,7 @@ fn create_graph_inner(
             }
         }
 
-        // C++ parity: call longtrim for remaining events up to endbundle.
+        // call longtrim for remaining events up to endbundle.
         if has_longtrim && !completed {
             if let Some(bpc) = bpcov {
                 longtrim_inline(
@@ -751,7 +751,7 @@ fn create_graph_inner(
         }
 
         if !completed {
-            // Set final graphnode end to endbundle (C++ reference).
+            // Set final graphnode end to endbundle
             graph.nodes[graphnode_id].end = endbundle;
             create_graph_node_final_end(
                 trace_s,
@@ -771,7 +771,7 @@ fn create_graph_inner(
     graph.sink_id = graph.n_nodes - 1;
     let sink_id = graph.sink_id;
 
-    // C++ parity: sink links are attached to the tail graphnode of each non-completed
+    // sink links are attached to the tail graphnode of each non-completed
     // bundlenode segment during construction.
     for nid in sink_parents {
         graph.add_edge(nid, sink_id);
@@ -789,9 +789,9 @@ pub struct CreateGraphLongtrimStats {
     pub longtrim: LongtrimStats,
 }
 
-/// Validate longtrim boundary events using C++ reference bpcov contrast logic.
+/// Validate longtrim boundary events using bpcov contrast logic.
 ///
-/// StringTie only splits at a read start/end position when the coverage contrast
+/// the original implementation only splits at a read start/end position when the coverage contrast
 /// across a CHI_THR (50bp) window is positive:
 /// - For starts: coverage to the RIGHT > coverage to the LEFT (reads begin here)
 /// - For ends: coverage to the LEFT > coverage to the RIGHT (reads end here)
@@ -869,7 +869,7 @@ fn validate_longtrim_boundaries(
     (valid_starts, valid_ends)
 }
 
-/// Iterative node-split pass matching C++ reference longtrim().
+/// Iterative node-split pass matching longtrim().
 ///
 /// For each existing graph node, processes sorted lstart/lend events that fall
 /// within the node's range. At each event position, computes bpcov contrast in
@@ -1061,7 +1061,7 @@ fn apply_iterative_longtrim_splits(
 }
 
 /// Inline longtrim: process lstart/lend events within the current graphnode
-/// up to `nodeend`. Matches C++ reference longtrim() (rlink.cpp:2647-2740).
+/// up to `nodeend`. Matches longtrim() (-2740).
 ///
 /// Splits the current graphnode at validated read boundary positions.
 /// - lstart events: split at pos, new node gets source edge + hardstart.
@@ -1094,8 +1094,8 @@ fn longtrim_inline(
     let bpcov_len = bpcov.cov.len();
     let source_id = graph.source_id;
 
-    // C++ parity (rlink.cpp:2664): use strand-specific coverage for longtrim.
-    // StringTie uses get_cov_sign(2*s, ...) which computes total - opposite_strand,
+    // : use strand-specific coverage for longtrim.
+    // the original implementation uses get_cov_sign(2*s, ...) which computes total - opposite_strand,
     // giving the coverage on the current strand only. This prevents false splits
     // where total coverage is constant but strand-specific coverage drops.
     let get_cov = |s: i64, e: i64| -> f64 {
@@ -1136,7 +1136,7 @@ fn longtrim_inline(
         // Positions with only 1-2 reads are alignment jitter, not real TSS/TES.
         const MIN_BOUNDARY_READS: f64 = 3.0;
         // Minimum tmpcov (window coverage contrast) to accept a split.
-        // StringTie's observed minimum is 16.2; use 10 as a conservative filter
+        // the original observed minimum is 16.2; use 10 as a conservative filter
         // that removes weak splits without losing real boundaries.
         const MIN_TMPCOV: f64 = 25.0;
 
@@ -1151,7 +1151,7 @@ fn longtrim_inline(
                 continue;
             }
 
-            // Proximity check (C++ reference: startcov/endcov + longintronanchor).
+            // Proximity check ( startcov/endcov + longintronanchor).
             let start_ok = startcov || pos > cur_start + LONGINTRONANCHOR;
             let end_ok = endcov || pos < nodeend + LONGINTRONANCHOR;
 
@@ -1277,7 +1277,7 @@ pub fn create_graph_with_longtrim(
         (&oracle_starts_owned, &oracle_ends_owned)
     } else if enable_longtrim && std::env::var_os("RUSTLE_DISABLE_LONGTRIM").is_none() {
         // Pass empty externals so per-bundlenode coverage-derivative detection
-        // runs inside create_graph_inner (C++ parity: StringTie generates
+        // runs inside create_graph_inner ( the original implementation generates
         // boundaries per-bundlenode, not externally per-bundle).
         (&[] as &[ReadBoundary], &[] as &[ReadBoundary])
     } else {
@@ -1306,16 +1306,16 @@ pub fn create_graph_with_longtrim(
     let mut synthetic: Vec<GraphTransfrag> = Vec::new();
 
     if enable_longtrim {
-        // the reference assembler's longtrim uses only chi-square coverage-based boundary detection
-        // (the sliding diffval window in C++ reference create_graph).  It does NOT inject
+        // the original algorithm's longtrim uses only chi-square coverage-based boundary detection
+        // (the sliding diffval window in create_graph).  It does NOT inject
         // raw read start/end positions as feature points.  Passing lstart/lend here
-        // was adding hundreds of candidate splits per locus (vs ~5-10 in the reference assembler),
-        // C++ reference creates node boundaries at read start/end positions
+        // was adding hundreds of candidate splits per locus (vs ~5-10 in the original algorithm),
+        // creates node boundaries at read start/end positions
         // (lstart/lend) when coverage evidence supports a split (bpcov contrast
         // window test). Rustle's boundary collection passes ALL read boundaries
         // without the inline contrast check, causing 4-5x over-segmentation
-        // (43K new nodes vs ~200 in C++). Pass empty arrays until the exact
-        // C++ contrast logic is reimplemented in apply_longtrim_direct.
+        // . Pass empty arrays until the exact
+        // contrast logic is reimplemented in apply_longtrim_direct.
         // NOTE: Iterative longtrim splits (apply_iterative_longtrim_splits) must
         // happen INSIDE create_graph, before transfrags are built. Post-creation
         // splits break transfrag patterns and edge consistency.
@@ -1358,14 +1358,14 @@ pub fn create_graph_with_longtrim(
 }
 
 /// Rebuild all transfrag patterns after graph modification (pruning, trimming).
-/// C++ parity: transfrag patterns must reflect current graph topology for capacity network.
+/// transfrag patterns must reflect current graph topology for capacity network.
 pub fn rebuild_transfrag_patterns(graph: &Graph, transfrags: &mut [GraphTransfrag]) {
     for tf in transfrags.iter_mut() {
         tf.rebuild_pattern(graph);
     }
 }
 
-/// C++-style graph complexity reduction pass (C++ reference prune_graph_nodes intent):
+/// Original-style graph complexity reduction pass (prune_graph_nodes intent):
 /// iteratively remove lowest-coverage internal nodes and reconnect parents->children
 /// until active internal node count <= allowed_nodes.
 /// Also rebuilds transfrag patterns to match new graph topology.
@@ -1402,12 +1402,12 @@ pub fn prune_graph_nodes_with_transfrags(
     removed
 }
 
-/// C++-style graph complexity reduction pass (C++ reference prune_graph_nodes intent):
+/// Original-style graph complexity reduction pass (prune_graph_nodes intent):
 /// Iteratively remove lowest-coverage internal nodes and reconnect parents->children
 /// until active internal node count <= allowed_nodes.
 ///
-/// C++ parity: After disconnecting nodes, physically remove them from the vector
-/// and remap all indices to match C++ behavior (C++ reference ~3929).
+/// After disconnecting nodes, physically remove them from the vector
+/// and remap all indices to match behavior (~3929).
 ///
 /// Returns (removed_count, old_to_new_mapping) where mapping can be used to update
 /// external data structures that reference node indices (e.g., transfrags).
@@ -1466,7 +1466,7 @@ pub fn prune_graph_nodes(graph: &mut Graph, allowed_nodes: usize, verbose: bool)
             graph.add_edge(source_id, id);
         }
     }
-    // C++ parity: only sink-link nodes reachable from source traversal.
+    // only sink-link nodes reachable from source traversal.
     let source_reach = reachable_from_source(graph);
     for id in 1..sink_id {
         if source_reach.contains(id) && graph.nodes[id].children.is_empty() {
@@ -1474,9 +1474,9 @@ pub fn prune_graph_nodes(graph: &mut Graph, allowed_nodes: usize, verbose: bool)
         }
     }
 
-    // C++ parity: Remove disconnected nodes and remap indices (C++ reference ~3929)
+    // Remove disconnected nodes and remap indices (~3929)
     // After pruning, some nodes may have no parents and no children (disconnected).
-    // C++ physically deletes these nodes from the vector; we must do the same.
+    // physically deletes these nodes from the vector; we must do the same.
     // Always run remapping to ensure gno matches connected node count.
     let n_nodes_before = graph.n_nodes;
     let old_to_new = remap_graph_nodes_with_mapping(graph, verbose);
@@ -1691,7 +1691,7 @@ pub fn prune_graph_nodes_with_redirects(
             graph.add_edge(source_id, id);
         }
     }
-    // C++ parity: only sink-link nodes reachable from source traversal.
+    // only sink-link nodes reachable from source traversal.
     let source_reach = reachable_from_source(graph);
     for id in 1..sink_id {
         if source_reach.contains(id) && graph.nodes[id].children.is_empty() {
@@ -1699,7 +1699,7 @@ pub fn prune_graph_nodes_with_redirects(
         }
     }
 
-    // C++ parity: Remove disconnected nodes and remap indices (C++ reference ~3929)
+    // Remove disconnected nodes and remap indices (~3929)
     // Update redirects to use new indices after remapping.
     let n_nodes_before = graph.n_nodes;
     let old_to_new = remap_graph_nodes_with_mapping(graph, verbose);

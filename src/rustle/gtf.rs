@@ -10,7 +10,7 @@ fn tx_bounds(tx: &Transcript) -> Option<(u64, u64)> {
 }
 
 /// Returns true if any exon of `a` overlaps (shares ≥1 base with) any exon of `b`.
-/// Mirrors C++ `overlaps.get(i,j)` / `update_overlap()` in print_predcluster.
+/// Mirrors `overlaps.get(i,j)` / `update_overlap()` in print_predcluster.
 fn exons_overlap(a: &[(u64, u64)], b: &[(u64, u64)]) -> bool {
     for &(as_, ae) in a {
         for &(bs, be) in b {
@@ -31,9 +31,9 @@ fn uf_find(parent: &mut Vec<usize>, x: usize) -> usize {
     x
 }
 
-/// Assign C++-like gene/transcript numbering using Union-Find on exon overlap.
+/// Assign sequential gene/transcript numbering using Union-Find on exon overlap.
 /// Two transcripts belong to the same gene iff their exons share at least one base —
-/// matching C++ print_predcluster (C++ reference ~line 19230) which uses overlaps.get(i,j).
+/// matching print_predcluster (~line 19230) which uses overlaps.get(i,j).
 /// Returns (gene_no, transcript_no_within_gene) per input transcript index.
 fn assign_gene_tx_numbers(transcripts: &[Transcript]) -> Vec<(usize, usize)> {
     let n = transcripts.len();
@@ -86,7 +86,7 @@ fn assign_gene_tx_numbers(transcripts: &[Transcript]) -> Vec<(usize, usize)> {
             if tj.chrom != ti.chrom || tj.strand != ti.strand {
                 break; // different chrom/strand block — stop
             }
-            // Check actual exon-level overlap (C++ overlaps.get).
+            // Check actual exon-level overlap (overlaps.get).
             if exons_overlap(&ti.exons, &tj.exons) {
                 let ri = uf_find(&mut parent, i);
                 let rj = uf_find(&mut parent, j);
@@ -148,7 +148,7 @@ pub fn write_gtf<W: Write>(
         let t_start = tx.exons.first().map(|(s, _)| s + 1).unwrap_or(0);
         let t_end = tx.exons.last().map(|(_, e)| *e).unwrap_or(0);
         let source_col = label;
-        // Transcript line (C++ the reference assembler format)
+        // Transcript line (the original algorithm format)
         let mut tx_attrs = format!(
             "gene_id \"{}\"; transcript_id \"{}\"; cov \"{:.6}\"; FPKM \"{:.6}\"; TPM \"{:.6}\";",
             gid, tid, tx.coverage, tx.fpkm, tx.tpm
@@ -181,7 +181,7 @@ pub fn write_gtf<W: Write>(
             tx.chrom, source_col, t_start, t_end, tx.strand, tx_attrs
         )?;
         for (j, (start, end)) in tx.exons.iter().enumerate() {
-            // Match the reference assembler formatting: report per-exon coverage as stored in `exon_cov` (or fall back to tx.coverage).
+            // Match the original algorithm formatting: report per-exon coverage as stored in `exon_cov` (or fall back to tx.coverage).
             let ecov = tx
                 .exon_cov
                 .get(j)

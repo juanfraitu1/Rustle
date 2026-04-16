@@ -11,11 +11,11 @@ pub struct GraphNode {
     pub node_id: usize,
     pub start: u64,
     pub end: u64,
-    /// The bundlenode that created this graph node (C++ reference create_graphnode -> bundle2graph).
+    /// The bundlenode that created this graph node (create_graphnode -> bundle2graph).
     pub source_bnode: Option<usize>,
     /// Total base-coverage mass on this node.
     ///
-    /// This is the Rust/C++ `CGraphnode::cov` quantity used by `update_abundance`,
+    /// This is the Rust/`CGraphnode::cov` quantity used by `update_abundance`,
     /// `process_transfrags`, and `noderate = coverage / nodecov`. It lives in
     /// bp-weight units: sum(read_weight * overlapped_bp) across mapped reads, or the
     /// equivalent sum rematerialized from `bpcov`.
@@ -26,23 +26,23 @@ pub struct GraphNode {
     pub parents: crate::bitset::SmallBitset,
     pub hardstart: bool,
     pub hardend: bool,
-    /// Sum of poly_start_unaligned over transfrags that start at this node (C++ reference annotate).
+    /// Sum of poly_start_unaligned over transfrags that start at this node (annotate).
     pub poly_start_unaligned_total: u32,
-    /// Sum of poly_start_aligned over transfrags that start at this node (C++ CGraphnode parity).
+    /// Sum of poly_start_aligned over transfrags that start at this node .
     pub poly_start_aligned_total: u32,
-    /// Sum of poly_end_unaligned over transfrags that end at this node (C++ reference annotate).
+    /// Sum of poly_end_unaligned over transfrags that end at this node (annotate).
     pub poly_end_unaligned_total: u32,
-    /// Sum of poly_end_aligned over transfrags that end at this node (C++ CGraphnode parity).
+    /// Sum of poly_end_aligned over transfrags that end at this node .
     pub poly_end_aligned_total: u32,
-    /// C++ reference compute_nodecov: incoming abundance through this node.
+    /// compute_nodecov: incoming abundance through this node.
     pub abundin: f64,
-    /// C++ reference compute_nodecov: outgoing abundance through this node.
+    /// compute_nodecov: outgoing abundance through this node.
     pub abundout: f64,
-    /// C++ reference `nodecov = max(abundin, abundout)` in abundance units.
+    /// `nodecov = max(abundin, abundout)` in abundance units.
     pub nodecov: f64,
     /// Sum of long-read transfrag abundance through this node.
     pub longcov: f64,
-    /// C++ reference `noderate = coverage / nodecov` (bp-weight / abundance).
+    /// `noderate = coverage / nodecov` (bp-weight / abundance).
     pub noderate: f64,
     pub trf_ids: Vec<usize>,
     pub childpat: Option<crate::bitset::SmallBitset>,
@@ -89,13 +89,13 @@ pub struct FlowBranch {
     pub abundance: f64,
 }
 
-/// the reference assembler naming parity (`CPath` in C++ header).
+/// the original algorithm naming convention (`CPath` in header).
 pub type CPath = FlowBranch;
 
 #[derive(Debug, Clone)]
 pub struct GraphTransfrag {
     pub node_ids: Vec<usize>,
-    /// Bitset representation of node_ids for fast membership testing (C++ parity).
+    /// Bitset representation of node_ids for fast membership testing (
     pub node_id_set: NodeSet,
     pub pattern: GBitVec,
     /// Long-read / mixed-mode flow mass for this transfrag.
@@ -108,41 +108,41 @@ pub struct GraphTransfrag {
     pub longstart: u64,
     pub longend: u64,
     pub longread: bool,
-    /// C++ `shortread` flag: at least one short-read contributes to this transfrag.
+    /// `shortread` flag: at least one short-read contributes to this transfrag.
     pub shortread: bool,
-    /// Short-read abundance (C++ reference `srabund`); used for short-read / mixed flow.
+    /// Short-read abundance (`srabund`); used for short-read / mixed flow.
     pub srabund: f64,
     /// Count of reads with aligned polyA/T at 5' end.
     pub poly_start_aligned: u16,
     /// Count of reads with aligned polyA/T at 3' end.
     pub poly_end_aligned: u16,
-    /// Count of reads with polyA/T at 5' (C++ reference poly_start_unaligned)
+    /// Count of reads with polyA/T at 5' (poly_start_unaligned)
     pub poly_start_unaligned: u16,
-    /// Count of reads with polyA/T at 3' (C++ reference poly_end_unaligned)
+    /// Count of reads with polyA/T at 3' (poly_end_unaligned)
     pub poly_end_unaligned: u16,
     /// True if this transfrag came from a read split at a killed junction (V99 killed_junction_orphan).
     pub killed_junction_orphan: bool,
-    /// True if transfrag has a weak link (coverage drop between consecutive contiguous nodes; C++ reference compute_weak).
+    /// True if transfrag has a weak link (coverage drop between consecutive contiguous nodes; compute_weak).
     pub coverage_weak: bool,
-    /// 1 if absorbed into another (merged into representative); 0 otherwise (C++ reference tf.weak, reference line 11014).
+    /// 1 if absorbed into another (merged into representative); 0 otherwise (tf.weak, reference line 11014).
     pub weak: u8,
-    /// C++ `real` flag: true when transfrag is considered complete/solid after incomplete handling.
+    /// `real` flag: true when transfrag is considered complete/solid after incomplete handling.
     pub real: bool,
-    /// Indices of transfrags absorbed into this one (representative only; C++ reference group, reference line 2978).
+    /// Indices of transfrags absorbed into this one (representative only; group, reference line 2978).
     pub group: Vec<usize>,
-    /// True if from reference/guide (C++ reference guide); blocks absorption when kept is guide (ret=1), allows rep replacement (ret=3).
+    /// True if from reference/guide (guide); blocks absorption when kept is guide (ret=1), allows rep replacement (ret=3).
     pub guide: bool,
-    /// Guide transcript id when this transfrag is guide-derived (C++ reference t_eq equivalent anchor).
+    /// Guide transcript id when this transfrag is guide-derived (t_eq equivalent anchor).
     pub guide_tid: Option<String>,
-    /// True when selected as a long-read extraction seed (C++ reference trflong behavior).
+    /// True when selected as a long-read extraction seed (trflong behavior).
     pub trflong_seed: bool,
-    /// Mixed-mode parse order marker (C++ reference usepath=-2-ntrf convention; -1 means unset).
+    /// Mixed-mode parse order marker (usepath=-2-ntrf convention; -1 means unset).
     pub usepath: i32,
-    /// C++ transfrag.path equivalent for unresolved/incomplete transfrags.
+    /// transfrag.path equivalent for unresolved/incomplete transfrags.
     pub flow_paths: Vec<FlowBranch>,
-    /// Selected branch index for current path-based flow step (C++ usepath for path branches).
+    /// Selected branch index for current path-based flow step (usepath for path branches).
     pub flow_path_idx: i32,
-    /// Nascent marker (C++ reference nascent handling scaffold).
+    /// Nascent marker (nascent handling scaffold).
     pub nascent: bool,
 }
 
@@ -187,7 +187,7 @@ impl GraphTransfrag {
     }
 
     /// Rebuild pattern after graph modifications (pruning, trimming) to fix stale edge bits.
-    /// C++ parity: transfrag patterns must reflect current graph topology for capacity network.
+    /// transfrag patterns must reflect current graph topology for capacity network.
     pub fn rebuild_pattern(&mut self, graph: &Graph) {
         // Grow pattern if graph has expanded
         let psize = graph.pattern_size();
@@ -203,11 +203,11 @@ impl GraphTransfrag {
     }
 }
 
-/// the reference assembler naming parity (`CGraphnode` in C++ header).
+/// the original algorithm naming convention (`CGraphnode` in header).
 pub type CGraphnode = GraphNode;
-/// the reference assembler naming parity (`CTransfrag` in C++ header).
+/// the original algorithm naming convention (`CTransfrag` in header).
 pub type CTransfrag = GraphTransfrag;
-/// the reference assembler naming parity (`CMTransfrag` in C++ header merge mode scaffold).
+/// the original algorithm naming convention (`CMTransfrag` in header merge mode scaffold).
 pub type CMTransfrag = GraphTransfrag;
 
 /// Splice graph: source(0), real nodes 1..n-1, sink(n-1).
@@ -367,7 +367,7 @@ impl Graph {
         (sub, new_to_old, old_to_new)
     }
 
-    /// Remove edge from_id -> to_id (C++ reference delete_connection).
+    /// Remove edge from_id -> to_id (delete_connection).
     pub fn remove_edge(&mut self, from_id: usize, to_id: usize) {
         if from_id >= self.nodes.len() || to_id >= self.nodes.len() {
             return;
@@ -536,7 +536,7 @@ impl Graph {
             .unwrap_or(false)
     }
 
-    /// Set pattern edge bits for consecutive nodes in path (C++ reference pattern edges).
+    /// Set pattern edge bits for consecutive nodes in path (pattern edges).
     pub fn set_pattern_edges_for_path(&self, pattern: &mut GBitVec, path: &[usize]) {
         for i in 0..path.len().saturating_sub(1) {
             let (a, b) = (path[i], path[i + 1]);
@@ -548,7 +548,7 @@ impl Graph {
     }
 
     /// Rebuild edge-bit IDs densely above node-id range.
-    /// This mirrors C++ `lastgpos` growth semantics where edge bits are assigned
+    /// This mirrors `lastgpos` growth semantics where edge bits are assigned
     /// after graph shape stabilizes and remain disjoint from node bits.
     pub fn reindex_edge_bits_dense(&mut self) {
         let mut keys: Vec<(usize, usize)> = self.gpos.keys().copied().collect();
@@ -565,7 +565,7 @@ impl Graph {
         self.next_edge_id = next;
     }
 
-    /// C++ futuretr sink-proximity suppression analogue:
+    /// futuretr sink-proximity suppression analogue:
     /// return true if a downstream path from `from` reaches sink within `anchor` genomic distance.
     pub fn has_sink_within_anchor_downstream(&self, from: usize, anchor: u64) -> bool {
         let sink = self.sink_id;
@@ -602,10 +602,10 @@ impl Graph {
         false
     }
 
-    /// traverse_dfs parity helper:
+    /// traverse_dfs helper:
     /// collect deferred source->node and node->sink transfrags without mutating the graph.
     ///
-    /// the reference assembler adds these terminal transfrags during later traversal, after read->transfrag
+    /// the original algorithm adds these terminal transfrags during later traversal, after read->transfrag
     /// mapping has already happened. If Rust materializes the source/sink edges here, long-read
     /// mapping sees synthetic source parents too early and can trim starts against them.
     pub fn synthesize_terminal_transfrags(
@@ -616,7 +616,7 @@ impl Graph {
         let mut synth = Vec::new();
         let source_id = self.source_id;
         let sink_id = self.sink_id;
-        // C++ traverse_dfs parity: only source-reachable nodes are traversed and get
+        // traverse_dfs: only source-reachable nodes are traversed and get
         // source/sink terminal links.
         let reachable = self.source_reachable_mask();
 
@@ -650,7 +650,7 @@ impl Graph {
 
             let tail_needs_sink_tf = {
                 let children = &self.nodes[nid].children;
-                // C++ futuretr parity:
+                // futuretr:
                 // a node->sink synthetic transfrag can exist even when the node is already
                 // terminally connected to sink. The later futuretr materialization stage
                 // decides whether to suppress that link based on downstream sink proximity.

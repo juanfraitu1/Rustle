@@ -1,4 +1,4 @@
-//! Nascent RNA transcript detection from intronic coverage (C++ reference).
+//! Nascent RNA transcript detection from intronic coverage
 //!
 //! When `--nasc` is enabled, identifies partially-transcribed (nascent) RNA by looking
 //! for coverage drops at intron boundaries. Creates nascent predictions linked to
@@ -24,7 +24,7 @@ pub struct NascentTf {
 
 /// Identify nascent transcript candidates from coverage gaps in extracted path.
 ///
-/// C++ create_nascent (C++ reference): for each intron gap in the path,
+/// create_nascent for each intron gap in the path,
 /// checks if coverage drops at the boundary. If so, creates a nascent transfrag
 /// extending into the intron.
 ///
@@ -39,7 +39,7 @@ pub fn create_nascent(
     let mut nascents = Vec::new();
     let sno = if strand == '-' { 0 } else { 1 };
 
-    // C++ iterates from i=2 to path.len()-1 looking for gaps (path[i] > path[i-1]+1)
+    // iterates from i=2 to path.len()-1 looking for gaps (path[i] > path[i-1]+1)
     for i in 2..path.len().saturating_sub(1) {
         if path[i] <= path[i - 1] + 1 {
             continue;
@@ -115,11 +115,11 @@ pub fn create_nascent(
                 longstart: path[i - 1],
                 longend: path[i],
             });
-            if std::env::var_os("RUSTLE_PARITY_NASCENT").is_some() {
+            if std::env::var_os("RUSTLE_DEBUG_NASCENT").is_some() {
                 let n = nascents.last().unwrap();
                 let gap_start = graph.nodes.get(n.longstart).map(|n| n.start).unwrap_or(0);
                 let gap_end = graph.nodes.get(n.longend).map(|n| n.end).unwrap_or(0);
-                eprintln!("PARITY_NASCENT_CANDIDATE gap_start={} gap_end={} nodes={} longstart={} longend={}",
+                eprintln!("DEBUG_NASCENT_CANDIDATE gap_start={} gap_end={} nodes={} longstart={} longend={}",
                     gap_start, gap_end, n.node_ids.len(), n.longstart, n.longend);
             }
         } else {
@@ -200,11 +200,11 @@ pub fn create_nascent(
                 longstart: path[i - 1],
                 longend: path[i],
             });
-            if std::env::var_os("RUSTLE_PARITY_NASCENT").is_some() {
+            if std::env::var_os("RUSTLE_DEBUG_NASCENT").is_some() {
                 let n = nascents.last().unwrap();
                 let gap_start = graph.nodes.get(n.longstart).map(|n| n.start).unwrap_or(0);
                 let gap_end = graph.nodes.get(n.longend).map(|n| n.end).unwrap_or(0);
-                eprintln!("PARITY_NASCENT_CANDIDATE gap_start={} gap_end={} nodes={} longstart={} longend={}",
+                eprintln!("DEBUG_NASCENT_CANDIDATE gap_start={} gap_end={} nodes={} longstart={} longend={}",
                     gap_start, gap_end, n.node_ids.len(), n.longstart, n.longend);
             }
         }
@@ -215,7 +215,7 @@ pub fn create_nascent(
 
 /// Compute max-flow for a nascent transfrag through the graph.
 ///
-/// C++ nascent2max_flow (C++ reference). Simplified version:
+/// nascent2max_flow Simplified version:
 /// computes forward/backward flow through nascent path using capacity ratios.
 ///
 /// Returns (flow, nodeflux) where nodeflux[i] is the fraction of node coverage
@@ -321,8 +321,8 @@ pub fn nascent_max_flow(
         }
     }
 
-    if std::env::var_os("RUSTLE_PARITY_NASCENT").is_some() {
-        eprintln!("PARITY_NASCENT_FLOW nodes={} flow={:.4}", n, nodeflux[min_idx]);
+    if std::env::var_os("RUSTLE_DEBUG_NASCENT").is_some() {
+        eprintln!("DEBUG_NASCENT_FLOW nodes={} flow={:.4}", n, nodeflux[min_idx]);
     }
 
     (nodeflux[min_idx], nodeflux)
@@ -330,7 +330,7 @@ pub fn nascent_max_flow(
 
 /// Store a nascent transcript prediction from flow results.
 ///
-/// C++ store_nascenttranscript (C++ reference).
+/// store_nascenttranscript
 /// Creates a Transcript from the nascent transfrag's nodes and flow.
 pub fn store_nascent_transcript(
     nascent: &NascentTf,
@@ -403,12 +403,12 @@ pub fn store_nascent_transcript(
         return None;
     }
 
-    if std::env::var_os("RUSTLE_PARITY_NASCENT").is_some() {
+    if std::env::var_os("RUSTLE_DEBUG_NASCENT").is_some() {
         let introns: String = exons.windows(2)
             .map(|w| format!("{}-{}", w[0].1 + 1, w[1].0 - 1))
             .collect::<Vec<_>>()
             .join(",");
-        eprintln!("PARITY_NASCENT_STORED nexons={} cov={:.4} introns={}", exons.len(), cov, introns);
+        eprintln!("DEBUG_NASCENT_STORED nexons={} cov={:.4} introns={}", exons.len(), cov, introns);
     }
 Some(Transcript {
     chrom: chrom.to_string(),
@@ -436,7 +436,7 @@ Some(Transcript {
 
 /// Process nascent transcription for all extracted transcripts.
 ///
-/// C++ remove_nascent_transcription (C++ reference).
+/// remove_nascent_transcription
 /// For each nascent candidate, computes flow and stores as nascent prediction.
 pub fn remove_nascent_transcription(
     nascents: &[NascentTf],
@@ -460,7 +460,7 @@ pub fn remove_nascent_transcription(
 
 /// Check if prediction `p` is a nascent (partial) of prediction `n`.
 ///
-/// C++ mark_if_nascent (C++ reference).
+/// mark_if_nascent
 /// Returns true if p's intron chain is a subset of n's intron chain (strand-aware).
 pub fn mark_if_nascent(parent: &Transcript, candidate: &mut Transcript) -> bool {
     if parent.strand != candidate.strand {
@@ -535,7 +535,7 @@ pub fn mark_if_nascent(parent: &Transcript, candidate: &mut Transcript) -> bool 
 
 /// Find and link nascent predictions to their parent transcripts.
 ///
-/// C++ find_nascent_link (C++ reference).
+/// find_nascent_link
 /// For each prediction with fewer exons and lower coverage, checks if it's
 /// a nascent of a higher-coverage prediction with more exons.
 pub fn find_nascent_links(predictions: &mut [Transcript], start_idx: usize) {
@@ -571,8 +571,8 @@ pub fn find_nascent_links(predictions: &mut [Transcript], start_idx: usize) {
             let parent_clone = predictions[n_idx].clone();
             if mark_if_nascent(&parent_clone, &mut predictions[p]) {
                 predictions[p].mergename = Some('n');
-                if std::env::var_os("RUSTLE_PARITY_NASCENT").is_some() {
-                    eprintln!("PARITY_NASCENT_LINK parent={} child={} parent_nexons={} child_nexons={}",
+                if std::env::var_os("RUSTLE_DEBUG_NASCENT").is_some() {
+                    eprintln!("DEBUG_NASCENT_LINK parent={} child={} parent_nexons={} child_nexons={}",
                         n_idx, p, predictions[n_idx].exons.len(), predictions[p].exons.len());
                 }
                 // Move p's nascent chain into n's chain
@@ -588,7 +588,7 @@ pub fn find_nascent_links(predictions: &mut [Transcript], start_idx: usize) {
 
 /// Reconcile nascent chains when two predictions are merged.
 ///
-/// C++ reconcile_nascents (C++ reference).
+/// reconcile_nascents
 /// Adjusts endpoints of winner's nascents and merges loser's nascent chain.
 pub fn reconcile_nascents(winner: &mut Transcript, loser: &Transcript) {
     // Adjust winner's existing nascents to match loser's endpoints if extended

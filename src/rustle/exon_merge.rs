@@ -1,9 +1,9 @@
-//! Exon interval merging (C++ reference merge_exons(CGene&, GVec<GSeg>&)).
+//! Exon interval merging (merge_exons(CGene&, GVec<GSeg>&)).
 //!
 //! Merges a sorted list of (start, end) exons into an existing sorted list,
 //! extending overlapping intervals and collapsing any that become redundant.
 
-/// Merge new_exons into gene_exons in place (C++ reference merge_exons(CGene&, GVec<GSeg>&)).
+/// Merge new_exons into gene_exons in place (merge_exons(CGene&, GVec<GSeg>&)).
 /// Both slices must be sorted by start. Overlapping or adjacent intervals in gene_exons
 /// are extended to include new_exons and then merged so the result remains disjoint.
 pub fn merge_exons_into(gene_exons: &mut Vec<(u64, u64)>, new_exons: &[(u64, u64)]) {

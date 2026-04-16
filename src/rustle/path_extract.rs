@@ -24,7 +24,7 @@ fn node_end_or_zero(graph: &Graph, node_id: usize) -> u64 {
     graph.nodes.get(node_id).map(|n| n.end).unwrap_or(0)
 }
 
-/// C++ `get_trf_long` / checktrf entry (C++ reference ~11133): guide OR abundance ≥ readthr.
+/// `get_trf_long` / checktrf entry (~11133): guide OR abundance ≥ readthr.
 /// After max-flow, `abundance` can drop below `readthr` while `read_count` still reflects evidence.
 /// Use that only for **partially depleted** seeds (abundance above noise but below threshold) so we
 /// do not open checktrf on zero-flux junk or destabilize pairwise competition (see STRG.251 panel).
@@ -574,17 +574,17 @@ pub struct Transcript {
     /// FPKM (fragments per kilobase million); set by compute_tpm.
     pub fpkm: f64,
 /// Source tag for GTF and variant logic: `guide:*`, `flow` (long-read max-flow), `short_flow`,
-    /// `checktrf_rescue`, `junction_path`, `ref_chain*`, rescues, or merge names from C++ parity.
+    /// `checktrf_rescue`, `junction_path`, `ref_chain*`, rescues, or merge names from
     pub source: Option<String>,
-    /// C++ tlen<0 sentinel: true when prediction originates from long-read extraction.
+    /// tlen<0 sentinel: true when prediction originates from long-read extraction.
     pub is_longread: bool,
-    /// C++ `p->longcov`: original transfrag abundance before flow depletion.
+    /// `p->longcov`: original transfrag abundance before flow depletion.
     pub longcov: f64,
-    /// Strand-weighted bpcov sum over transcript exons (C++ reference gene_abundance bpcov contribution).
-    /// Set to 0.0 when bpcov is unavailable. Used in write_gene_abundance to approximate C++ per-base coverage.
+    /// Strand-weighted bpcov sum over transcript exons (gene_abundance bpcov contribution).
+    /// Set to 0.0 when bpcov is unavailable. Used in write_gene_abundance to approximate per-base coverage.
     pub bpcov_cov: f64,
     /// Forced transcript_id for GTF output. When set (eonly zero-cov guides), bypasses STRG.X.Y
-    /// auto-numbering and uses the original guide transcript ID (C++ guides[i]->getID()).
+    /// auto-numbering and uses the original guide transcript ID (guides[i]->getID()).
     pub transcript_id: Option<String>,
     /// Forced gene_id for GTF output. Used with transcript_id for eonly zero-cov guides.
     pub gene_id: Option<String>,
@@ -630,7 +630,7 @@ fn gtf_source_short_flow(guide_tid: &Option<String>) -> Option<String> {
 }
 
 impl Transcript {
-    /// Convert to C++-shaped `CPrediction` parity object.
+    /// Convert to `CPrediction` prediction object.
     pub fn to_cprediction(&self, geneno: i32) -> CPrediction {
         let start = self.exons.first().map(|e| e.0).unwrap_or(0);
         let end = self.exons.last().map(|e| e.1).unwrap_or(start);
@@ -670,7 +670,7 @@ impl Transcript {
         }
     }
 
-    /// Build a transcript from C++-shaped `CPrediction`.
+    /// Build a transcript-shaped `CPrediction`.
     pub fn from_cprediction(chrom: String, pred: &CPrediction) -> Self {
         let exons = if pred.exons.is_empty() {
             vec![(pred.start, pred.end)]
@@ -705,7 +705,7 @@ impl Transcript {
     }
 }
 
-/// Convert assembled transcripts to C++ parity prediction objects.
+/// Convert assembled transcripts to prediction objects.
 pub fn transcripts_to_cpredictions(
     transcripts: &[Transcript],
     start_geneno: i32,
@@ -717,7 +717,7 @@ pub fn transcripts_to_cpredictions(
         .collect()
 }
 
-/// Convert C++ parity prediction objects back to transcripts for Rust pipeline stages.
+/// Convert prediction objects back to transcripts for Rust pipeline stages.
 pub fn cpredictions_to_transcripts(chrom: &str, preds: &[CPrediction]) -> Vec<Transcript> {
     preds
         .iter()
@@ -799,7 +799,7 @@ fn intron_chain_contains_all_tol(
         .all(|needle| sup.iter().copied().any(|h| intron_eq_tol(h, needle, tol)))
 }
 
-/// Approximate C++ strict assignment pre-EM step:
+/// Approximate strict assignment pre-EM step:
 /// gather node-level prior mass from transfrags compatible with current guide pattern
 /// and not claimed by previously processed guide patterns.
 fn build_strict_guide_node_prior(
@@ -843,7 +843,7 @@ fn build_strict_guide_node_prior(
     out
 }
 
-/// C++ guides_pushmaxflow pre-EM inspired node competition accounting for current guide.
+/// guides_pushmaxflow pre-EM inspired node competition accounting for current guide.
 /// Builds node priors from strict (unique-compatible) and loose (shared-compatible) transfrag counts.
 fn build_cnodeguide_node_prior(
     path: &[usize],
@@ -1029,7 +1029,7 @@ fn cnodeguide_em_prior(
             if tf.abundance <= EPS || tf.node_ids.is_empty() {
                 continue;
             }
-            // Guide/transfrag compatibility used in C++ reference CNodeGuide block.
+            // Guide/transfrag compatibility used in CNodeGuide block.
             if !current_pattern.contains_pattern(&tf.pattern) {
                 continue;
             }
@@ -1117,7 +1117,7 @@ fn cnodeguide_em_prior(
 }
 
 /// Rawreads-mode extraction: emit transcript models directly from active transfrags
-/// without max-flow subtraction (C++ reference rawreads branch intent).
+/// without max-flow subtraction (rawreads branch intent).
 pub fn extract_rawreads_transcripts(
     graph: &Graph,
     transfrags: &[GraphTransfrag],
@@ -1182,7 +1182,7 @@ pub fn extract_rawreads_transcripts(
     out
 }
 
-/// Eonly (guide-only) transcript extraction (C++ reference guides_pushmaxflow path).
+/// Eonly (guide-only) transcript extraction (guides_pushmaxflow path).
 /// Called when `config.eonly && !guides.is_empty()`. Delegates to `extract_transcripts`
 /// with the graph/transfrags containing only guide transfrags.
 pub fn extract_eonly_transcripts(
@@ -1208,7 +1208,7 @@ pub fn extract_eonly_transcripts(
     )
 }
 
-/// Short-read path extraction (C++ reference parse_trf port): consume transfrags by short-read abundance order.
+/// Short-read path extraction (parse_trf port): consume transfrags by short-read abundance order.
 /// Called instead of extract_transcripts when running in short-read mode (!config.long_reads).
 pub fn extract_shortread_transcripts(
     graph: &Graph,
@@ -1317,12 +1317,12 @@ pub fn extract_shortread_transcripts(
     out
 }
 
-// --- Constants from C++ header / C++ reference ---
-/// Min unaligned-tail reads to mark hardstart/hardend (C++ reference POLY_TAIL_STOP_COUNT).
+// --- Constants header / ---
+/// Min unaligned-tail reads to mark hardstart/hardend (POLY_TAIL_STOP_COUNT).
 const POLY_TAIL_STOP_COUNT: u16 = 8;
-/// C++ reference CHI_THR: maximum tolerated unmatched internal distance for best_trf_match.
+/// CHI_THR: maximum tolerated unmatched internal distance for best_trf_match.
 const CHI_THR_BP: i64 = 50;
-/// C++ reference parity constants used by direct long-recursion port.
+/// Constants used by direct long-recursion port.
 const DROP_FACTOR: f64 = 0.5;
 const ERROR_PERC: f64 = 0.1;
 const EPS: f64 = crate::constants::FLOW_EPSILON;
@@ -1334,7 +1334,7 @@ const EPS: f64 = crate::constants::FLOW_EPSILON;
 const CHECKTRF_REDISTRIBUTE_INTRON_TOL: u64 = 5;
 
 /// Build exons from a path of node IDs: merge overlapping/contiguous nodes (half-open).
-/// optionally trim first/last exon by longstart/longend (C++ reference collect_path; trim only, no extend).
+/// optionally trim first/last exon by longstart/longend (collect_path; trim only, no extend).
 pub fn collect_path(
     path: &[usize],
     graph: &Graph,
@@ -1605,7 +1605,7 @@ fn extend_path_left_rec(
                 }
             }
         }
-        // C++ reference — weak-aware fork comparison
+        // — weak-aware fork comparison
         if let Some(tp) = tpar {
             if sumabund > maxabund {
                 let tp_weak = tf_weak(&transfrags[tp], graph, nodecov);
@@ -1743,7 +1743,7 @@ fn extend_path_right_rec(
                 }
             }
         }
-        // C++ reference — weak-aware fork comparison
+        // — weak-aware fork comparison
         if let Some(tc) = tchild {
             if sumabund > maxabund {
                 let tc_weak = tf_weak(&transfrags[tc], graph, nodecov);
@@ -1835,7 +1835,7 @@ fn extend_path_right_rec(
     rightpath.extend(fuzzy);
 }
 
-/// Add transfrag to path: OR pattern into pathpat, cov += abundance*len, update min/max node indices (C++ reference add_transfrag_to_path).
+/// Add transfrag to path: OR pattern into pathpat, cov += abundance*len, update min/max node indices (add_transfrag_to_path).
 /// Zeros tf.abundance. alltr receives the transfrag index for bookkeeping. Only adds if tf is on path (nodes ⊆ path).
 pub fn add_transfrag_to_path(
     tf_idx: usize,
@@ -1876,7 +1876,7 @@ pub fn add_transfrag_to_path(
     tf.abundance = 0.0;
 }
 
-/// Update path node coverage backward from transcript end (C++ reference update_transcript_to_path_back).
+/// Update path node coverage backward from transcript end (update_transcript_to_path_back).
 /// path_incov[i] = inflow at node i, path_outcov[i] = outflow. Same length as path.
 pub fn update_transcript_to_path_back(
     abundance: f64,
@@ -1908,7 +1908,7 @@ pub fn update_transcript_to_path_back(
     }
 }
 
-/// Update path node coverage forward from transcript start (C++ reference update_transcript_to_path_fwd).
+/// Update path node coverage forward from transcript start (update_transcript_to_path_fwd).
 pub fn update_transcript_to_path_fwd(
     abundance: f64,
     trnode: &[usize],
@@ -1934,7 +1934,7 @@ pub fn update_transcript_to_path_fwd(
     }
 }
 
-/// Update guide prediction exon coverage from path node coverage (C++ reference update_guide_pred).
+/// Update guide prediction exon coverage from path node coverage (update_guide_pred).
 /// For each node in path, add nodeflux[i]*nodecov[node] to overlapping exons (by overlap length).
 /// If nodeflux is None, uses 1.0 per node.
 pub fn update_guide_pred(
@@ -2017,7 +2017,7 @@ fn accumulate_exon_cov_from_path_usage(
         let addcov = if nodeflux_is_proportion {
             nodeflux[k] * nodecov_before.get(nid).copied().unwrap_or(0.0)
         } else {
-            // C++ reference: ecov = nodeflux[j] * noderate[path[j]]
+            // ecov = nodeflux[j] * noderate[path[j]]
             let rate = node_rates
                 .and_then(|r| r.get(nid).copied())
                 .filter(|v| *v > 0.0)
@@ -2044,11 +2044,11 @@ fn accumulate_exon_cov_from_path_usage(
 }
 
 // =============================================================================
-// Path extraction helpers (C++ reference parse_trflong)
+// Path extraction helpers (parse_trflong)
 // =============================================================================
 
 /// Check if two consecutive graph nodes have a splice between them (gap > 0bp).
-/// C++ reference is_splice_between: a->end + 1 < b->start (1-based); 0-based: a->end < b->start.
+/// is_splice_between: a->end + 1 < b->start (1-based); 0-based: a->end < b->start.
 #[inline]
 fn is_splice_between(graph: &Graph, a: usize, b: usize) -> bool {
     if let (Some(na), Some(nb)) = (graph.nodes.get(a), graph.nodes.get(b)) {
@@ -2206,8 +2206,8 @@ fn materialize_longread_seed_nodes(
 
 /// Check if any long-read transfrag contains the splice edge (la->ra) as a consecutive node pair.
 ///
-/// C++ parity (C++ reference): check if any transfrag contains BOTH splice edges in order.
-/// This matches the reference assembler's `has_lr_witness_two_splices(la, ra, lb, rb, transfrag)`.
+/// check if any transfrag contains BOTH splice edges in order.
+/// This matches the original algorithm's `has_lr_witness_two_splices(la, ra, lb, rb, transfrag)`.
 fn has_lr_witness_two_splices(
     transfrags: &[GraphTransfrag],
     la: usize,
@@ -2216,7 +2216,7 @@ fn has_lr_witness_two_splices(
     rb: usize,
 ) -> bool {
     for tf in transfrags {
-        // C++ checks all transfrags (commented out longread filter)
+        // checks all transfrags (commented out longread filter)
         let nodes = &tf.node_ids;
         let mut found_first = false;
         for w in nodes.windows(2) {
@@ -2516,7 +2516,7 @@ fn extend_path_left_unambiguous_splice(
     }
 }
 
-/// Port of C++ reference best_trf_match for checktrf rescue.
+/// Port of best_trf_match for checktrf rescue.
 /// Returns indices into keep_paths plus abundance sum of selected ties.
 fn best_trf_match(
     tf_nodes: &[usize],
@@ -2733,7 +2733,7 @@ fn best_trf_match(
     (tmatch, abundancesum)
 }
 
-/// Redistribute transfrag abundance into matched kept predictions, mirroring C++ reference checktrf/second-pass update:
+/// Redistribute transfrag abundance into matched kept predictions, mirroring checktrf/second-pass update:
 /// add per-node support to overlapping exons only when the node is present in kept path.
 /// Rust stores per-base coverage, so bp-weighted additions are normalized by exon/tx lengths.
 fn redistribute_transfrag_to_matches(
@@ -2937,7 +2937,7 @@ fn rebuild_flow_pathpat(path: &[usize], seed_pattern: &GBitVec, graph: &Graph) -
 }
 
 fn tf_weak(tf: &GraphTransfrag, graph: &Graph, nodecov: &[f64]) -> bool {
-    // C++ reuses `transfrag->weak` both for absorbed/grouped members set during
+    // reuses `transfrag->weak` both for absorbed/grouped members set during
     // process_transfrags and for lazily computed coverage-weakness in
     // replace_transfrag/compute_weak. Rust stores the grouping marker eagerly in
     // `tf.weak`, so helper selection must honor it before the coverage-based test.
@@ -2970,7 +2970,7 @@ fn tf_weak(tf: &GraphTransfrag, graph: &Graph, nodecov: &[f64]) -> bool {
 }
 
 /// Cached version of tf_weak: computes on first call, returns cached value thereafter.
-/// Matches C++ lazy-cache behavior where `transfrag[t]->weak` is computed once and reused.
+/// Matches lazy-cache behavior where `transfrag[t]->weak` is computed once and reused.
 fn tf_weak_cached(
     tidx: usize,
     transfrags: &[GraphTransfrag],
@@ -3092,7 +3092,7 @@ fn onpath_long(
     if trnode.is_empty() {
         return false;
     }
-    // C++ parity: compare based on genomic coordinates, not node IDs
+    // compare based on genomic coordinates, not node IDs
     let minp_start = graph.nodes.get(minp).map(|n| n.start).unwrap_or(0);
     let maxp_start = graph.nodes.get(maxp).map(|n| n.start).unwrap_or(0);
     if minp_start > maxp_start {
@@ -3108,7 +3108,7 @@ fn onpath_long(
                 return false;
             }
         } else {
-            // C++ parity: compare based on genomic coordinates, not node IDs
+            // compare based on genomic coordinates, not node IDs
             let trnode_0_start = graph.nodes.get(trnode[0]).map(|n| n.start).unwrap_or(0);
             let minp_start = graph.nodes.get(minp).map(|n| n.start).unwrap_or(0);
             if trnode_0_start < minp_start && !node_can_reach(graph, trnode[0], minp) {
@@ -3122,7 +3122,7 @@ fn onpath_long(
                 return false;
             }
         } else {
-            // C++ parity: compare based on genomic coordinates, not node IDs
+            // compare based on genomic coordinates, not node IDs
             let trnode_last = *trnode.last().unwrap();
             let trnode_last_start = graph.nodes.get(trnode_last).map(|n| n.start).unwrap_or(0);
             let maxp_start = graph.nodes.get(maxp).map(|n| n.start).unwrap_or(0);
@@ -3166,7 +3166,7 @@ fn onpath_long(
             {
                 return false;
             }
-            // C++ parity: Allow transfrag edges that aren't on path if:
+            // Allow transfrag edges that aren't on path if:
             // 1. The path has a gap between these nodes (childpat reachability), OR
             // 2. The transfrag edge fills a gap in the path
             // This is needed for 5' terminal exon recovery where path has gaps
@@ -3220,7 +3220,7 @@ fn onpath_long_reason(
     if trnode.is_empty() {
         return "fail:empty_trnode";
     }
-    // C++ parity: compare based on genomic coordinates, not node IDs
+    // compare based on genomic coordinates, not node IDs
     let minp_start = node_start_or_zero(graph, minp);
     let maxp_start = node_start_or_zero(graph, maxp);
     if minp_start > maxp_start {
@@ -3237,7 +3237,7 @@ fn onpath_long_reason(
                 return "fail:source_edge_wrong_second";
             }
         } else {
-            // C++ parity: compare based on genomic coordinates, not node IDs
+            // compare based on genomic coordinates, not node IDs
             let trnode_0_start = node_start_or_zero(graph, trnode[0]);
             let minp_start = node_start_or_zero(graph, minp);
             if trnode_0_start < minp_start && !node_can_reach(graph, trnode[0], minp) {
@@ -3273,7 +3273,7 @@ fn onpath_long_reason(
                 return "fail:sink_edge_wrong_penultimate";
             }
         } else {
-            // C++ parity: compare based on genomic coordinates, not node IDs
+            // compare based on genomic coordinates, not node IDs
             let trnode_last = *trnode.last().unwrap();
             let trnode_last_start = node_start_or_zero(graph, trnode_last);
             let maxp_start = node_start_or_zero(graph, maxp);
@@ -3398,7 +3398,7 @@ fn onpath_long_reason(
                 }
                 return "fail:right_gap_unreachable";
             }
-            // C++ parity: Allow transfrag edges that aren't on path if path has reachability
+            // Allow transfrag edges that aren't on path if path has reachability
             // This is needed for 5' terminal exon recovery where path has gaps
             if j > 0 && edge_bit(trpattern, graph, trnode[j - 1], trnode[j]) &&
                 !edge_bit(pathpattern, graph, trnode[j - 1], trnode[j]) {
@@ -3438,7 +3438,7 @@ fn onpath_short(
     if trnode.is_empty() {
         return false;
     }
-    // C++ parity: compare based on genomic coordinates, not node IDs
+    // compare based on genomic coordinates, not node IDs
     let minp_start = graph.nodes.get(minp).map(|n| n.start).unwrap_or(0);
     let maxp_start = graph.nodes.get(maxp).map(|n| n.start).unwrap_or(0);
     if minp_start > maxp_start {
@@ -3483,7 +3483,7 @@ fn onpath_short(
             {
                 return false;
             }
-            // C++ parity: Allow transfrag edges that aren't on path if path has reachability
+            // Allow transfrag edges that aren't on path if path has reachability
             if j > 0 && edge_bit(trpattern, graph, trnode[j - 1], trnode[j]) &&
                 !edge_bit(pathpattern, graph, trnode[j - 1], trnode[j]) {
                 let path_can_reach = graph
@@ -3564,7 +3564,7 @@ fn fwd_to_sink_fast_long(
             );
         }
     }
-    // C++ parity: Use genomic coordinates, not node IDs, for maxpath reachability check
+    // Use genomic coordinates, not node IDs, for maxpath reachability check
     // Node IDs may not be ordered by coordinate (e.g., node 22 at 97417917 < node 9 at 97418573)
     let i_start = inode.start;
     let maxpath_start = node_start_or_zero(graph, *maxpath);
@@ -3610,7 +3610,7 @@ fn fwd_to_sink_fast_long(
     let mut tmax: Option<usize> = None;
     let mut exclude = false;
     let mut nextnode: Option<usize> = None;
-    // C++ parity: Use genomic coordinates for reachability check, not node IDs
+    // Use genomic coordinates for reachability check, not node IDs
     let maxpath_coord = node_start_or_zero(graph, *maxpath);
     let i_coord = graph.nodes.get(i).map(|n| n.start).unwrap_or(0);
     let mut reach = maxpath_coord <= i_coord;
@@ -3642,7 +3642,7 @@ fn fwd_to_sink_fast_long(
                 break;
             }
 
-            // C++ parity: Use genomic coordinates for reachability check
+            // Use genomic coordinates for reachability check
             if maxpath_coord > i_coord {
                 if nextnode.is_none() {
                     nextnode = ((i + 2)..=*maxpath).find(|&j| pathpat.get_bit(j));
@@ -3662,7 +3662,7 @@ fn fwd_to_sink_fast_long(
                 reach = true;
             }
 
-            // C++ parity: delete depleted transfrags from node's trf list (C++ reference)
+            // delete depleted transfrags from node's trf list
             if let Some(node) = graph.nodes.get_mut(c) {
                 node.trf_ids.retain(|&t| {
                     transfrags
@@ -3676,8 +3676,8 @@ fn fwd_to_sink_fast_long(
             let mut childcov = 0.0;
             let mut tchild: Option<usize> = None;
             let endpath = coord_max_node(graph, *maxpath, c);
-            // C++ parity (rlink.cpp:8287): use minpath..endpath for onpath_long
-            // compatibility, matching StringTie's full-path-span check.
+            // : use minpath..endpath for onpath_long
+            // compatibility, matching the original full-path-span check.
             // This prevents transfrags that are edge-compatible but path-incompatible
             // from inflating coverage, which causes over-extension.
             let compat_min = *minpath;
@@ -3719,7 +3719,7 @@ fn fwd_to_sink_fast_long(
                         }
                         continue;
                     }
-                    // C++ parity: skip transfrags that start at source (C++ reference)
+                    // skip transfrags that start at source
                     let source = graph.source_id;
                     if require_longread && tf.node_ids.first() == Some(&source) {
                         if trace_fwd && c == sink {
@@ -3731,7 +3731,7 @@ fn fwd_to_sink_fast_long(
                         continue;
                     };
                     if c == sink {
-                        // C++ parity (rlink.cpp:8280): For sink connections, accept only
+                        // : For sink connections, accept only
                         // transfrags that start EXACTLY at current node and the path hasn't
                         // already extended forward. This prevents transfrags from earlier
                         // in the graph from inflating sink coverage, which causes
@@ -4034,8 +4034,8 @@ fn fwd_to_sink_fast_long(
     edge_set(pathpat, graph, i, c, true);
     if let Some(t) = tmax {
         pathpat.or_assign(&transfrags[t].pattern);
-        // C++ parity: C++ node IDs are coordinate-ordered; in Rust, explicitly
-        // maintain min/max path endpoints by coordinate to match C++ semantics.
+        // node IDs are coordinate-ordered; in Rust, explicitly
+        // maintain min/max path endpoints by coordinate to match semantics.
         if let Some(&first) = transfrags[t].node_ids.first() {
             if node_start_or_zero(graph, first) < node_start_or_zero(graph, *minpath) {
                 *minpath = first;
@@ -4169,7 +4169,7 @@ fn back_to_source_fast_long(
     } else {
         for &p in &parents {
             // In max-sensitivity mode we often want to stitch partial long-read seeds upstream.
-            // The C++ code effectively gates source edges (keepsource/keepsink); our port can
+            // The code effectively gates source edges (keepsource/keepsink); our port can
             // otherwise over-prefer `source` due to large aggregated parentcov. Prefer real
             // (non-source) parents when they exist, and only fall back to source if needed.
             if prefer_non_source && has_non_source_parent && p == source {
@@ -4195,7 +4195,7 @@ fn back_to_source_fast_long(
 
             if *minpath < i {
                 if nextnode.is_none() && i >= 2 {
-                    // the reference assembler's effective behavior here is to look for the closest
+                    // the original algorithm's effective behavior here is to look for the closest
                     // already-on-path node *before* i, not to scan forward into the
                     // current node / downstream path. The forward scan blocks valid
                     // parent choices at loci like 23035526-23062635 by choosing the
@@ -4230,7 +4230,7 @@ fn back_to_source_fast_long(
             };
             let mut parentcov = 0.0;
             let mut tpar: Option<usize> = None;
-            // Match the reference assembler: compatibility is evaluated against the full current path span,
+            // Match the original algorithm: compatibility is evaluated against the full current path span,
             // from the earliest node seen so far (minpath or parent) to the current global maxpath.
             let startpath = coord_min_node(graph, *minpath, p);
             let endpath = coord_max_node(graph, *maxpath, i);
@@ -4646,7 +4646,7 @@ fn back_to_source_fast_long(
             );
         }
         pathpat.or_assign(&transfrags[t].pattern);
-        // Keep min/max endpoints in coordinate space to match C++ node-id ordering.
+        // Keep min/max endpoints in coordinate space to match node-id ordering.
         if let Some(&first) = transfrags[t].node_ids.first() {
             if node_start_or_zero(graph, first) < node_start_or_zero(graph, *minpath) {
                 *minpath = first;
@@ -4658,7 +4658,7 @@ fn back_to_source_fast_long(
             }
         }
     }
-    let _ = gno; // parity mirror; used in C++ edge id operations.
+    let _ = gno; // mirror; used in edge id operations.
     back_to_source_fast_long(
         seed_idx,
         p,
@@ -4677,14 +4677,14 @@ fn back_to_source_fast_long(
     )
 }
 
-/// Extract transcripts from transfrags with path extension (C++ reference parse_trflong).
+/// Extract transcripts from transfrags with path extension (parse_trflong).
 ///
-/// Process transfrags in abundance-descending order (C++ reference longtrCmp):
+/// Process transfrags in abundance-descending order (longtrCmp):
 /// 1. Build initial path from transfrag nodes
 /// 2. Extend left/right through splice junctions using compatible transfrags
 /// 3. Also extend contiguously at terminal exons
 /// 4. Apply poly-tail trimming (strand-specific)
-/// C++ reference parse_trflong: seed ordering for long-read transcript extraction.
+/// parse_trflong: seed ordering for long-read transcript extraction.
 fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
     let mut seeded: Vec<usize> = transfrags
         .iter()
@@ -4694,13 +4694,13 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
         })
         .map(|(i, _)| i)
         .collect();
-    // C++ ref: trflong order is determined by keeptrf insertion plus reverse iteration.
-    // usepath encodes the vector order, so ascending usepath reproduces C++ consumption.
+    // ref: trflong order is determined by keeptrf insertion plus reverse iteration.
+    // usepath encodes the vector order, so ascending usepath reproduces consumption.
     seeded.sort_unstable_by_key(|&i| transfrags[i].usepath);
     seeded
 }
 
-/// C++ reference parse_trf: short-read ordering for transcript extraction (mixed mode).
+/// parse_trf: short-read ordering for transcript extraction (mixed mode).
 fn parse_trf(_graph: &Graph, transfrags: &[GraphTransfrag]) -> Vec<usize> {
     let mut indices: Vec<usize> = transfrags
         .iter()
@@ -4795,7 +4795,7 @@ pub fn extract_transcripts(
     let mut kept_paths: Vec<(Vec<usize>, f64, bool, usize)> = Vec::new(); // (inner nodes, support, guide, out_idx)
     let mut previous_guides: Vec<GuideFlowState> = Vec::new();
     let mut checktrf: Vec<usize> = Vec::new();
-    // Default to strict C++ behavior: failed direct long-rec seeds are deferred to checktrf.
+    // Default to strict behavior: failed direct long-rec seeds are deferred to checktrf.
     // Allow explicit opt-out only for diagnostics.
     let strict_longrec_checktrf_deferral =
         std::env::var_os("RUSTLE_DISABLE_STRICT_LONGREC_CHECKTRF_DEFERRAL").is_none();
@@ -4837,7 +4837,7 @@ pub fn extract_transcripts(
 
     let mut order: Vec<usize> = Vec::new();
     if mixed_mode {
-        // Mixed parity: long-pass by usepath/trflong, then short-pass by parse_trf ordering.
+        // Mixed mode: long-pass by usepath/trflong, then short-pass by parse_trf ordering.
         let mut long_order: Vec<usize> = (0..transfrags.len()).collect();
         long_order.sort_unstable_by_key(|&a| transfrags[a].usepath);
         let mut seen: HashSet<usize> = Default::default();
@@ -4900,7 +4900,7 @@ pub fn extract_transcripts(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
-    // Shared state across all paths in the bundle (C++ nodecov, capacity from transfrag abundances).
+    // Shared state across all paths in the bundle (nodecov, capacity from transfrag abundances).
     // Each path depletes local_nodecov and (via flow) transfrag abundances; no restore between paths.
     let mut local_nodecov: Vec<f64> = graph.nodes.iter().map(|n| n.nodecov.max(0.0)).collect();
     let local_noderate: Vec<f64> = graph
@@ -4917,16 +4917,16 @@ pub fn extract_transcripts(
         }
     }
 
-    // C++ parity: seed ordering is fully determined by usepath (set in process_transfrags).
-    // C++ reference simply iterates trflong backwards — no second reordering.
+    // seed ordering is fully determined by usepath (set in process_transfrags).
+    // simply iterates trflong backwards — no second reordering.
     // usepath encodes: completes first (lowest usepath), incompletes second, within each group
     // highest-abundance first. parse_trflong's sort_by(usepath ascending) already matches this.
 
-    let parity_debug = std::env::var_os("RUSTLE_PARITY_DEBUG").is_some();
+    let debug_detail = std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some();
     let pathpat_trace = pathpat_trace_active();
-    if parity_debug {
+    if debug_detail {
         eprintln!(
-            "PARITY_GRAPH gno={} source={} sink={} bundle={}",
+            "DEBUG_GRAPH gno={} source={} sink={} bundle={}",
             graph.nodes.len(),
             source_id,
             sink_id,
@@ -4934,7 +4934,7 @@ pub fn extract_transcripts(
         );
         for (t, tf) in transfrags.iter().enumerate() {
             if tf.longread && tf.abundance > 0.0 {
-                eprint!("PARITY_TF t={} abund={:.4} longstart={} longend={} seed={} usepath={} nodes={}:",
+                eprint!("DEBUG_TF t={} abund={:.4} longstart={} longend={} seed={} usepath={} nodes={}:",
                     t, tf.abundance, tf.longstart, tf.longend, tf.trflong_seed, tf.usepath, tf.node_ids.len());
                 for &nid in &tf.node_ids {
                     if let Some(n) = graph.nodes.get(nid) {
@@ -4947,22 +4947,22 @@ pub fn extract_transcripts(
             }
         }
         eprintln!(
-            "PARITY_ORDER len={} first_5={:?}",
+            "DEBUG_ORDER len={} first_5={:?}",
             order.len(),
             &order[..order.len().min(5)]
         );
     }
 
-    // C++ parity: cache tf_weak per-transfrag. C++ computes transfrag[t]->weak lazily on
+    // cache tf_weak per-transfrag. computes transfrag[t]->weak lazily on
     // first access and caches the result. Subsequent checks use the cached value, reflecting
     // nodecov at the time of first evaluation (not current depleted nodecov).
     let mut weak_cache: Vec<Option<bool>> = vec![None; transfrags.len()];
 
-    // Macro to emit PARITY_SEED_PROC line at each seed exit point
-    macro_rules! emit_parity_seed_proc {
+    // Macro to emit DEBUG_SEED_PROC line at each seed exit point
+    macro_rules! emit_debug_seed_proc {
         ($idx:expr, $graph:expr, $transfrags:expr, $real_nodes:expr,
          $back_ok:expr, $fwd_ok:expr, $flux:expr, $path_coords:expr, $outcome:expr) => {
-            if parity_debug {
+            if debug_detail {
                 let span_start = $real_nodes.first()
                     .and_then(|&n| $graph.nodes.get(n))
                     .map(|n| n.start).unwrap_or(0);
@@ -4970,7 +4970,7 @@ pub fn extract_transcripts(
                     .and_then(|&n| $graph.nodes.get(n))
                     .map(|n| n.end).unwrap_or(0);
                 let path_str = $path_coords.as_deref().unwrap_or("");
-                eprintln!("PARITY_SEED_PROC idx={} span={}-{} abund={:.4} nodes={} back={} fwd={} flux={:.4} path=[{}] outcome={}",
+                eprintln!("DEBUG_SEED_PROC idx={} span={}-{} abund={:.4} nodes={} back={} fwd={} flux={:.4} path=[{}] outcome={}",
                     $idx, span_start, span_end, $transfrags[$idx].abundance,
                     $real_nodes.len(),
                     if $back_ok { "ok" } else { "fail" },
@@ -4980,35 +4980,35 @@ pub fn extract_transcripts(
         };
     }
 
-    // Macro to emit PARITY_SEED_DECISION trace (matches C++ format)
-    macro_rules! emit_parity_seed_decision {
+    // Macro to emit DEBUG_SEED_DECISION trace (matches format)
+    macro_rules! emit_debug_seed_decision {
         // Pattern with just idx, used_direct, branch (e.g., eonly_skip, HARD_BOUNDARY, UNWITNESSED)
         ($idx:expr, $used_direct:expr, $branch:expr) => {
-            if parity_debug {
-                eprintln!("PARITY_SEED_DECISION t={} used_direct={} branch={}",
+            if debug_detail {
+                eprintln!("DEBUG_SEED_DECISION t={} used_direct={} branch={}",
                     $idx, $used_direct, $branch);
             }
         };
         // Pattern with flux, cov, nexons (e.g., STORED, DIRECT_LOW_COV)
         ($idx:expr, $used_direct:expr, $branch:expr, $flux:expr, $cov:expr, $nexons:expr) => {
-            if parity_debug {
-                eprintln!("PARITY_SEED_DECISION t={} used_direct={} branch={} flux={:.4} cov={:.4} nexons={}",
+            if debug_detail {
+                eprintln!("DEBUG_SEED_DECISION t={} used_direct={} branch={} flux={:.4} cov={:.4} nexons={}",
                     $idx, $used_direct, $branch, $flux, $cov, $nexons);
             }
         };
     }
 
-    // Macro to emit PARITY_CHK trace for checktrf outcomes (matches C++ format)
-    macro_rules! emit_parity_chk {
+    // Macro to emit DEBUG_CHK trace for checktrf outcomes (matches format)
+    macro_rules! emit_debug_chk {
         ($t:expr, $abund:expr, $outcome:expr, $matched:expr, $abundsum:expr) => {
-            if parity_debug {
-                eprintln!("PARITY_CHK t={} abund={:.4} outcome={} matched={} abundsum={:.4}",
+            if debug_detail {
+                eprintln!("DEBUG_CHK t={} abund={:.4} outcome={} matched={} abundsum={:.4}",
                     $t, $abund, $outcome, $matched, $abundsum);
             }
         };
         ($t:expr, $abund:expr, $outcome:expr) => {
-            if parity_debug {
-                eprintln!("PARITY_CHK t={} abund={:.4} outcome={}",
+            if debug_detail {
+                eprintln!("DEBUG_CHK t={} abund={:.4} outcome={}",
                     $t, $abund, $outcome);
             }
         };
@@ -5024,11 +5024,11 @@ pub fn extract_transcripts(
             );
         }
         // Parity seed processing state — collected through the loop, emitted at exit points
-        let mut parity_back_ok = false;
-        let mut parity_fwd_ok = false;
-        let mut parity_flux: f64 = 0.0;
+        let mut debug_back_ok = false;
+        let mut debug_fwd_ok = false;
+        let mut debug_flux: f64 = 0.0;
         // Will be set once we have use_path
-        let mut parity_path_coords: Option<String> = None;
+        let mut debug_path_coords: Option<String> = None;
 
         // Trace intron: report every seed that contains the target intron
         if let Some(ti) = trace_intron {
@@ -5104,7 +5104,7 @@ pub fn extract_transcripts(
             record_outcome!(idx, SeedOutcome::Skipped("not_seed"));
             continue;
         }
-        // C++ reference: nascent second pass processes only non-guide transfrags.
+        // nascent second pass processes only non-guide transfrags.
         if nascent && transfrags[idx].guide {
             record_outcome!(idx, SeedOutcome::Skipped("nascent_guide"));
             continue;
@@ -5125,7 +5125,7 @@ pub fn extract_transcripts(
         } else {
             transfrags[idx].abundance
         };
-        // C++ parse_trflong does not apply readthr/singlethr as an early gate in long/mixed
+        // parse_trflong does not apply readthr/singlethr as an early gate in long/mixed
         // long-read parsing; it defers low-support handling to flux/checktrf stages.
         if !long_read_mode && effective_support < thresh {
             record_outcome!(idx, SeedOutcome::Skipped("low_support"));
@@ -5156,8 +5156,8 @@ pub fn extract_transcripts(
             record_outcome!(idx, SeedOutcome::Skipped("materialized_empty"));
             continue;
         }
-        // C++ parity: single-node non-guide transfrags in long-read mode are never
-        // stored as predictions. StringTie zeroes their abundance and the cov computation
+        // single-node non-guide transfrags in long-read mode are never
+        // stored as predictions. the original implementation zeroes their abundance and the cov computation
         // yields 0 for non-guides, so they always fail the store gate.
         // Skip them BEFORE path extension and flow extraction to prevent flow budget
         // depletion — this is the #1 precision/sensitivity fix, recovering ~500 TPs.
@@ -5167,7 +5167,7 @@ pub fn extract_transcripts(
             continue;
         }
 
-        let parity_nodes: &[usize] = if transfrags[idx].longread {
+        let debug_nodes: &[usize] = if transfrags[idx].longread {
             &base_real_nodes
         } else {
             &real_nodes
@@ -5221,7 +5221,7 @@ pub fn extract_transcripts(
         let abundance = transfrags[idx].abundance;
         // read_count is the pre-depletion read mass (never modified after initialization).
         // Use this for longcov so it's stable regardless of how many competing transfrags
-        // split the flow — this makes longcov comparable to the reference assembler's values.
+        // split the flow — this makes longcov comparable to the original algorithm's values.
         let read_count_snapshot = transfrags[idx].read_count;
         if depletion_diag && abundance <= 0.0 {
             eprintln!(
@@ -5245,8 +5245,8 @@ pub fn extract_transcripts(
             longrec_attempted += 1;
             let mut diag = LongRecDiag::default();
             let mut pathpat = seed_pattern.clone();
-            let seed_nodes = parity_nodes;
-            // C++ parity: node IDs are coordinate-ordered; derive min/max endpoints by
+            let seed_nodes = debug_nodes;
+            // node IDs are coordinate-ordered; derive min/max endpoints by
             // coordinate explicitly since Rust node IDs are not guaranteed ordered.
             let mut minp = seed_nodes[0];
             let mut maxp = seed_nodes[0];
@@ -5257,13 +5257,13 @@ pub fn extract_transcripts(
             let seed_minp = minp;
             let seed_maxp = maxp;
             trace_outgoing_edge_state("seed.raw", idx, maxp, &pathpat, graph);
-            // Match C++ reference helper traversal uses the stored transfrag nodes/pattern, not
+            // Match helper traversal uses the stored transfrag nodes/pattern, not
             // the later materialized terminal-contiguous node expansion.
             for &nid in seed_nodes {
                 pathpat.set_bit(nid);
             }
             trace_outgoing_edge_state("seed.after_nodes", idx, maxp, &pathpat, graph);
-            // C++ parity (C++ reference): seed helper traversal sets source→minp and
+            // seed helper traversal sets source→minp and
             // maxp→sink edge bits so back_to_source / fwd_to_sink can take fast-path decisions.
             //
             // However, for partial long-read seeds this can prematurely "seal" the 5'/3' ends:
@@ -5384,7 +5384,7 @@ pub fn extract_transcripts(
                 graph,
                 &local_nodecov,
                 true,
-                // Keep strict the reference assembler-style selection; we only apply a narrow internal override
+                // Keep strict the original algorithm-style selection; we only apply a narrow internal override
                 // when a contiguous exon-extension parent exists (see back_to_source_fast_long).
                 // Never prefer non-source parents. Always let back_to_source stop
                 // at source when available. This prevents over-extension that
@@ -5458,7 +5458,7 @@ pub fn extract_transcripts(
                     trace_node_trf_watch(idx, "maxp_after_fwd_fail", maxp, graph, &watched_tfs);
                 }
                 if fwd_ok {
-                    // C++ reference parity: parse_trflong only checks back/fwd success.
+                    // parse_trflong only checks back/fwd success.
                     // It does not enforce an extra source/sink endpoint validity gate here.
                     used_direct = true;
                 }
@@ -5466,8 +5466,8 @@ pub fn extract_transcripts(
                 // The fallback creates paths that produce wrong transcripts competing
                 // with good ones. Checktrf rescue is a better outcome for most failed seeds.
             }
-            parity_back_ok = back_ok;
-            parity_fwd_ok = fwd_ok;
+            debug_back_ok = back_ok;
+            debug_fwd_ok = fwd_ok;
             if used_direct {
                 longrec_succeeded += 1;
                 flow_pathpat = Some(pathpat.clone());
@@ -5607,7 +5607,7 @@ pub fn extract_transcripts(
             if !long_read_mode {
                 let mut diag = LongRecDiag::default();
                 let mut pathpat = seed_pattern.clone();
-                // C++ parity: find minp/maxp by genomic coordinate
+                // find minp/maxp by genomic coordinate
                 let (minp_idx, maxp_idx) = real_nodes.iter().enumerate()
                     .map(|(i, &n)| (i, graph.nodes.get(n).map(|node| node.start).unwrap_or(0)))
                     .fold((0, 0), |(min_i, max_i), (i, start)| {
@@ -5619,14 +5619,14 @@ pub fn extract_transcripts(
                     });
                 let mut minp = real_nodes[minp_idx];
                 let mut maxp = real_nodes[maxp_idx];
-                // C++ parity: add edge bits for seed's consecutive node pairs.
+                // add edge bits for seed's consecutive node pairs.
                 for &nid in &real_nodes {
                     pathpat.set_bit(nid);
                 }
                 for w in real_nodes.windows(2) {
                     edge_set(&mut pathpat, graph, w[0], w[1], true);
                 }
-                // C++ parity (C++ reference): source→minp and maxp→sink edge bits.
+                // source→minp and maxp→sink edge bits.
                 edge_set(&mut pathpat, graph, source_id, minp, true);
                 edge_set(&mut pathpat, graph, maxp, sink_id, true);
                 let maxi = minp;
@@ -5650,7 +5650,7 @@ pub fn extract_transcripts(
                     &mut visited_back,
                     &mut weak_cache,
                 ) {
-                    parity_back_ok = true;
+                    debug_back_ok = true;
                     path.push(source_id);
                     path.reverse();
                     if fwd_to_sink_fast_long(
@@ -5668,7 +5668,7 @@ pub fn extract_transcripts(
                         &mut visited_fwd,
                         &mut weak_cache,
                     ) {
-                        parity_fwd_ok = true;
+                        debug_fwd_ok = true;
                         used_direct = true;
                     }
                 }
@@ -5684,7 +5684,7 @@ pub fn extract_transcripts(
                 && try_direct_longrec
                 && strict_longrec_checktrf_deferral
             {
-                // C++ parity (C++ reference): when back/fwd fails in parse_trflong, defer
+                // when back/fwd fails in parse_trflong, defer
                 // this seed to checktrf rescue and do not build a raw-node fallback path.
                 if let Some((lo, hi)) = trace_locus {
                     if real_nodes.iter().any(|&nid| {
@@ -5699,12 +5699,12 @@ pub fn extract_transcripts(
                             abundance,
                             graph
                                 .nodes
-                                .get(parity_nodes[0])
+                                .get(debug_nodes[0])
                                 .map(|n| n.start)
                                 .unwrap_or(0),
                             graph
                                 .nodes
-                                .get(*parity_nodes.last().unwrap())
+                                .get(*debug_nodes.last().unwrap())
                                 .map(|n| n.end)
                                 .unwrap_or(0)
                         );
@@ -5715,28 +5715,28 @@ pub fn extract_transcripts(
                     "longrec_fail",
                     abundance,
                     &transfrags[idx],
-                    parity_nodes,
+                    debug_nodes,
                     graph,
                     None,
-                    Some(parity_back_ok),
-                    Some(parity_fwd_ok),
+                    Some(debug_back_ok),
+                    Some(debug_fwd_ok),
                     None,
                     None,
                     None,
                 );
                 checktrf.push(idx);
-                emit_parity_seed_proc!(
+                emit_debug_seed_proc!(
                     idx,
                     graph,
                     transfrags,
-                    parity_nodes,
-                    parity_back_ok,
-                    parity_fwd_ok,
-                    parity_flux,
-                    parity_path_coords,
+                    debug_nodes,
+                    debug_back_ok,
+                    debug_fwd_ok,
+                    debug_flux,
+                    debug_path_coords,
                     "longrec_fail_checktrf"
                 );
-                if !parity_back_ok {
+                if !debug_back_ok {
                     record_outcome!(idx, SeedOutcome::BackToSourceFail);
                 } else {
                     record_outcome!(idx, SeedOutcome::FwdToSinkFail);
@@ -5770,7 +5770,7 @@ pub fn extract_transcripts(
             continue;
         }
 
-        // C++ parity (C++ reference parse_trflong): poly-tail trimming rewrites the concrete path,
+        // (parse_trflong): poly-tail trimming rewrites the concrete path,
         // not just [start,last] indices.
         let mut use_path = path;
         let mut use_start = 1usize;
@@ -5825,7 +5825,7 @@ pub fn extract_transcripts(
             }
         }
 
-        // Hardstart/hardend enforcement (C++ reference 10277-10320):
+        // Hardstart/hardend enforcement (10277-10320):
         // If tf has both hard boundaries but extended path doesn't match, use tf's nodes directly
         let tf_first_node = real_nodes[0];
         let tf_last_node = *real_nodes.last().unwrap();
@@ -5846,7 +5846,7 @@ pub fn extract_transcripts(
             && (!same_node_coords(graph, use_path[use_start], tf_first_node)
                 || !same_node_coords(graph, use_path[use_last], tf_last_node))
         {
-            // C++ parity (C++ reference): if hard-boundary seed's path doesn't match
+            // if hard-boundary seed's path doesn't match
             // the extended path, only reconstruct from seed if abundance > CHI_WIN (100).
             // Low-abundance mismatches go to checktrf.
             if abundance > 100.0 {
@@ -5869,25 +5869,25 @@ pub fn extract_transcripts(
                     "hard_boundary_low_abund",
                     abundance,
                     &transfrags[idx],
-                    parity_nodes,
+                    debug_nodes,
                     graph,
                     Some(&use_path[use_start..=use_last]),
-                    Some(parity_back_ok),
-                    Some(parity_fwd_ok),
+                    Some(debug_back_ok),
+                    Some(debug_fwd_ok),
                     None,
                     None,
                     None,
                 );
                 checktrf.push(idx);
-                emit_parity_seed_proc!(
+                emit_debug_seed_proc!(
                     idx,
                     graph,
                     transfrags,
-                    parity_nodes,
-                    parity_back_ok,
-                    parity_fwd_ok,
-                    parity_flux,
-                    parity_path_coords,
+                    debug_nodes,
+                    debug_back_ok,
+                    debug_fwd_ok,
+                    debug_flux,
+                    debug_path_coords,
                     "hard_boundary"
                 );
                 record_outcome!(idx, SeedOutcome::Skipped("hard_boundary_low_abund"));
@@ -5895,8 +5895,8 @@ pub fn extract_transcripts(
             }
         }
 
-        // Long-read parity: require LR witness across every consecutive PAIR of splice edges.
-        // the reference assembler (C++ reference): for each pair of consecutive splice edges in the
+        // Long-read: require LR witness across every consecutive PAIR of splice edges.
+        // the original algorithm for each pair of consecutive splice edges in the
         // path, require at least one transfrag whose node list contains BOTH edges in order.
         // This prevents stitching novel junction combinations from separate reads.
         if checkpath && long_read_mode && use_last >= use_start && std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some() {
@@ -5912,7 +5912,7 @@ pub fn extract_transcripts(
                 }
             }
             let mut unwitnessed = false;
-            // C++ parity: check consecutive PAIRS of splice edges, not individual edges.
+            // check consecutive PAIRS of splice edges, not individual edges.
             // For each pair (splice_k, splice_k+1), require one transfrag witnessing both.
             if splice_pos.len() >= 2 {
                 for pair in splice_pos.windows(2) {
@@ -5942,7 +5942,7 @@ pub fn extract_transcripts(
                 }
             }
             if unwitnessed {
-                // For hard-boundary seeds, keep parity with C++: defer to checktrf.
+                // For hard-boundary seeds, keep compatible with defer to checktrf.
                 // In max-sensitivity mode, also defer unwitnessed seeds so they can be
                 // rediscovered by late passes without perturbing the greedy path extraction.
                 if (thardstart && thardend) || config.max_sensitivity {
@@ -5951,28 +5951,28 @@ pub fn extract_transcripts(
                         "unwitnessed",
                         abundance,
                         &transfrags[idx],
-                        parity_nodes,
+                        debug_nodes,
                         graph,
                         Some(&use_path[use_start..=use_last]),
-                        Some(parity_back_ok),
-                        Some(parity_fwd_ok),
+                        Some(debug_back_ok),
+                        Some(debug_fwd_ok),
                         None,
                         None,
                         None,
                     );
                     checktrf.push(idx);
                 }
-                // C++ PARITY: emit SEED_DECISION for unwitnessed branch
-                emit_parity_seed_decision!(idx, 0, "UNWITNESSED");
-                emit_parity_seed_proc!(
+                // DEBUG: emit SEED_DECISION for unwitnessed branch
+                emit_debug_seed_decision!(idx, 0, "UNWITNESSED");
+                emit_debug_seed_proc!(
                     idx,
                     graph,
                     transfrags,
-                    parity_nodes,
-                    parity_back_ok,
-                    parity_fwd_ok,
-                    parity_flux,
-                    parity_path_coords,
+                    debug_nodes,
+                    debug_back_ok,
+                    debug_fwd_ok,
+                    debug_flux,
+                    debug_path_coords,
                     "unwitnessed"
                 );
                 record_outcome!(idx, SeedOutcome::UnwitnessedSplice);
@@ -5980,8 +5980,8 @@ pub fn extract_transcripts(
             }
         }
 
-        // Capture path coordinates for parity debug
-        if parity_debug {
+        // Capture path coordinates debug
+        if debug_detail {
             let coords: Vec<String> = use_path[use_start..=use_last]
                 .iter()
                 .filter_map(|&n| {
@@ -5991,7 +5991,7 @@ pub fn extract_transcripts(
                         .map(|nd| format!("{}-{}", nd.start, nd.end))
                 })
                 .collect();
-            parity_path_coords = Some(coords.join(","));
+            debug_path_coords = Some(coords.join(","));
         }
         if (long_read_mode || mixed_mode)
             && flow_pathpat.is_none()
@@ -6040,23 +6040,23 @@ pub fn extract_transcripts(
         }
 
         if exons.is_empty() {
-            emit_parity_seed_proc!(
+            emit_debug_seed_proc!(
                 idx,
                 graph,
                 transfrags,
-                parity_nodes,
-                parity_back_ok,
-                parity_fwd_ok,
-                parity_flux,
-                parity_path_coords,
+                debug_nodes,
+                debug_back_ok,
+                debug_fwd_ok,
+                debug_flux,
+                debug_path_coords,
                 "too_short"
             );
             record_outcome!(idx, SeedOutcome::TooShort);
             continue;
         }
 
-        // C++ parity: single-exon paths from multi-exon graphs are rejected
-        // BEFORE flow extraction. StringTie rejects all 2046 single-node paths
+        // single-exon paths from multi-exon graphs are rejected
+        // BEFORE flow extraction. the original implementation rejects all 2046 single-node paths
         // as "low_coverage" — they consume flow budget without producing valid
         // multi-exon predictions, starving downstream multi-exon path extraction.
         if long_read_mode && exons.len() == 1 && real_nodes.len() > 1 {
@@ -6065,7 +6065,7 @@ pub fn extract_transcripts(
             continue;
         }
         if long_read_mode && exons.len() == 1 && !transfrags[idx].guide {
-            // Single-exon non-guide prediction: skip in LR mode (like C++ reference).
+            // Single-exon non-guide prediction: skip in LR mode (like 
             // These deplete flow budget without contributing to multi-exon assembly.
             transfrags[idx].abundance = 0.0;
             record_outcome!(idx, SeedOutcome::Skipped("single_exon_lr"));
@@ -6098,15 +6098,15 @@ pub fn extract_transcripts(
 
         let length: u64 = exons.iter().map(|(s, e)| e - s).sum();
         if length < config.min_transcript_length {
-            emit_parity_seed_proc!(
+            emit_debug_seed_proc!(
                 idx,
                 graph,
                 transfrags,
-                parity_nodes,
-                parity_back_ok,
-                parity_fwd_ok,
-                parity_flux,
-                parity_path_coords,
+                debug_nodes,
+                debug_back_ok,
+                debug_fwd_ok,
+                debug_flux,
+                debug_path_coords,
                 "too_short"
             );
             record_outcome!(idx, SeedOutcome::TooShort);
@@ -6139,7 +6139,7 @@ pub fn extract_transcripts(
         // so overlapping paths compete for shared evidence.
         let mut out_exoncov: Vec<f64> = vec![0.0; exons.len()];
         let flow_flux;
-        // True when C++ parity (restore + nodecov-limited max_fl) is used for this path.
+        // True when (restore + nodecov-limited max_fl) is used for this path.
         // When true, nodecov depletion loop does NOT cap nflux to remaining nodecov.
         let long_read_nodecov_mode = false;
 
@@ -6178,7 +6178,7 @@ pub fn extract_transcripts(
                     }
                     (0.0, Vec::new())
                 } else {
-                    // C++ guides_pushmaxflow-style EM loop (nEM=10) with CNodeGuide-like trcount/gcount priors.
+                    // guides_pushmaxflow-style EM loop (nEM=10) with CNodeGuide-like trcount/gcount priors.
                     let mut cur_node_prior: HashMap<usize, f64> = Default::default();
                     let prev_refs_base: Vec<GuideFlowPriorRef<'_>> = previous_guides
                         .iter()
@@ -6290,9 +6290,9 @@ pub fn extract_transcripts(
                     (sf, sfpath)
                 }
             } else if long_read_mode {
-                // Strict C++ reference parity: one long_max_flow call per seed path.
+                // Strict: one long_max_flow call per seed path.
                 // No Rust-specific retry/capping branch.
-                // C++ long_max_flow parity: pass no_subtract=false so transfrag abundances
+                // long_max_flow: pass no_subtract=false so transfrag abundances
                 // are depleted by used flow while nodecov is also depleted downstream.
                 let (lf, lfpath, lused) = long_max_flow_seeded_with_used_pathpat(
                     &use_path,
@@ -6315,7 +6315,7 @@ pub fn extract_transcripts(
                 (sf, sfpath)
             };
             flow_flux = flux;
-            parity_flux = flux;
+            debug_flux = flux;
 
             if depletion_diag {
                 let ab_after = transfrags[idx].abundance;
@@ -6360,7 +6360,7 @@ pub fn extract_transcripts(
                 );
             }
 
-            // C++ mixedMode parse_trflong start/end refinement using istranscript + longstart/longend.
+            // mixedMode parse_trflong start/end refinement using istranscript + longstart/longend.
             if mixed_mode && transfrags[idx].longread && use_start <= use_last && !exons.is_empty()
             {
                 let start_nid = use_path[use_start];
@@ -6455,7 +6455,7 @@ pub fn extract_transcripts(
                     out_exoncov = ecov;
                 }
                 if nodeflux_is_proportion {
-                    // C++ store_transcript short-flow parity: nodecov *= (1-nodeflux).
+                    // store_transcript short-flow: nodecov *= (1-nodeflux).
                     let mut k = 0usize;
                     for p in use_start..=use_last {
                         let nid = use_path[p];
@@ -6477,7 +6477,7 @@ pub fn extract_transcripts(
                         abundance.max(transfrags[idx].srabund)
                     }
                 } else if long_read_mode {
-                    // C++ parse_trflong coverage formula (C++ reference):
+                    // parse_trflong coverage formula
                     //   ecov = nodeflux_abs[j] * noderate[path[j]]
                     //   nodecov[path[j]] -= nodeflux_abs[j]
                     // long_max_flow_seeded returns ABSOLUTE nodecapacity values (same units as nodecov).
@@ -6494,10 +6494,10 @@ pub fn extract_transcripts(
                             break;
                         }
                         let nc_before = local_nodecov[nid].max(0.0);
-                        // C++ update_capacity skips the last node, so nodeflux[last]=0.
-                        // Match C++ exactly: use nodeflux[k] directly (0 for last node).
+                        // update_capacity skips the last node, so nodeflux[last]=0.
+                        // Match exactly: use nodeflux[k] directly (0 for last node).
                         let raw_nflux = nodeflux[k];
-                        // C++ parse_trflong (C++ reference 10381, 10393): cap nodeflux by nodecov, then subtract.
+                        // parse_trflong (10381, 10393): cap nodeflux by nodecov, then subtract.
                         let nflux = raw_nflux.min(local_nodecov[nid].max(0.0));
                         local_nodecov[nid] = (local_nodecov[nid] - nflux).max(0.0);
                         if local_nodecov[nid] < EPS {
@@ -6511,8 +6511,8 @@ pub fn extract_transcripts(
                                 nc_before, nodeflux[k], nflux, local_noderate[nid], bpcov, ecov);
                         }
                         cov_total += ecov;
-                        // Distribute per-node ecov to overlapping exons (C++ reference)
-                        // C++ accumulates raw ecov per exon, then divides by exon_len at line 10956.
+                        // Distribute per-node ecov to overlapping exons
+                        // accumulates raw ecov per exon, then divides by exon_len at line 10956.
                         if let Some(node) = graph.nodes.get(nid) {
                             for (ei, &(es, ee)) in exons.iter().enumerate() {
                                 if overlaps_half_open(es, ee, node.start, node.end) {
@@ -6522,7 +6522,7 @@ pub fn extract_transcripts(
                         }
                         k += 1;
                     }
-                    // C++ reference: exoncov[i] /= exons[i].len()
+                    // exoncov[i] /= exons[i].len()
                     for (ei, &(es, ee)) in exons.iter().enumerate() {
                         let elen = len_half_open(es, ee) as f64;
                         if elen > 0.0 {
@@ -6542,7 +6542,7 @@ pub fn extract_transcripts(
                             cov_total, length, computed, long_read_nodecov_mode);
                     }
                     let mut computed_cov = if cov_total > 0.0 && length > 0 {
-                        cov_total / length as f64 // per-base: C++ pred->cov /= abs(tlen) at C++ reference
+                        cov_total / length as f64 // per-base: pred->cov /= abs(tlen) at 
                     } else if flux > 0.0 {
                         flux
                     } else {
@@ -6596,7 +6596,7 @@ pub fn extract_transcripts(
         }
 
         if long_read_mode && !mixed_mode && !transfrags[idx].guide && flow_flux <= 0.0 {
-            // C++ parse_trflong parity: zero-flux candidates are deferred to checktrf
+            // parse_trflong: zero-flux candidates are deferred to checktrf
             // without consuming their seed abundance.
             transfrags[idx].abundance = abundance;
             if tocheck {
@@ -6605,11 +6605,11 @@ pub fn extract_transcripts(
                     "zero_flux",
                     abundance,
                     &transfrags[idx],
-                    parity_nodes,
+                    debug_nodes,
                     graph,
                     Some(&use_path[use_start..=use_last]),
-                    Some(parity_back_ok),
-                    Some(parity_fwd_ok),
+                    Some(debug_back_ok),
+                    Some(debug_fwd_ok),
                     Some(flow_flux),
                     None,
                     Some(tocheck),
@@ -6640,21 +6640,21 @@ pub fn extract_transcripts(
                     );
                 }
             }
-            emit_parity_seed_proc!(
+            emit_debug_seed_proc!(
                 idx,
                 graph,
                 transfrags,
-                parity_nodes,
-                parity_back_ok,
-                parity_fwd_ok,
-                parity_flux,
-                parity_path_coords,
+                debug_nodes,
+                debug_back_ok,
+                debug_fwd_ok,
+                debug_flux,
+                debug_path_coords,
                 "zero_flux"
             );
             record_outcome!(idx, SeedOutcome::ZeroFlux);
             continue;
         }
-        // C++ reference parse_trflong parity (C++ line 10437):
+        // parse_trflong (line 10437):
         // Single-node transfrags are zeroed BEFORE the store check so that a single-node
         // transfrag that fails the coverage/length gate is still excluded from checktrf/post-pass.
         // Multi-node long-read transfrags are NOT zeroed here — their abundance is kept for
@@ -6666,13 +6666,13 @@ pub fn extract_transcripts(
             }
         }
 
-        // C++ parse_trflong stores predictions with cov>epsilon (plus len checks).
+        // parse_trflong stores predictions with cov>epsilon (plus len checks).
         // The coverage gate uses epsilon for BOTH long-read and short-read modes.
-        // C++ reference: guide predictions always stored: if(t || (cov && len>=mintranscriptlen))
-        // C++ reference: store if: g || (!eonly && len>=mintranscriptlen && cov>epsilon)
+        // guide predictions always stored: if(t || (cov && len>=mintranscriptlen))
+        // store if: g || (!eonly && len>=mintranscriptlen && cov>epsilon)
         let is_guide_pred = transfrags[idx].guide || transfrags[idx].guide_tid.is_some();
-        // C++ uses epsilon (1e-6) for the coverage store gate. However, in bundle
-        // graph mode, the unified graphs produce more thin flow paths than the reference assembler's
+        // uses epsilon (1e-6) for the coverage store gate. However, in bundle
+        // graph mode, the unified graphs produce more thin flow paths than the original algorithm's
         // equivalent bundles (335 vs 64 seeds with flux < 1.0). Raise the gate to
         // filter ultra-low-coverage predictions that are mostly FPs.
         let min_cov_gate = if std::env::var_os("RUSTLE_BUNDLE_GRAPH").is_some() {
@@ -6719,11 +6719,11 @@ pub fn extract_transcripts(
                         "low_coverage",
                         abundance,
                         &transfrags[idx],
-                        parity_nodes,
+                        debug_nodes,
                         graph,
                         Some(&use_path[use_start..=use_last]),
-                        Some(parity_back_ok),
-                        Some(parity_fwd_ok),
+                        Some(debug_back_ok),
+                        Some(debug_fwd_ok),
                         Some(flow_flux),
                         Some(coverage),
                         Some(tocheck),
@@ -6731,48 +6731,48 @@ pub fn extract_transcripts(
                     checktrf.push(idx);
                 }
             }
-            // C++ PARITY: emit SEED_DECISION for low_coverage branch
-            emit_parity_seed_decision!(idx, 1, "DIRECT_LOW_COV", parity_flux, coverage, parity_nodes.len());
-            // C++ PARITY: emit SEED_DECISION for low_coverage branch
-            emit_parity_seed_decision!(idx, 1, "DIRECT_LOW_COV", parity_flux, coverage, 0);
-            emit_parity_seed_proc!(
+            // DEBUG: emit SEED_DECISION for low_coverage branch
+            emit_debug_seed_decision!(idx, 1, "DIRECT_LOW_COV", debug_flux, coverage, debug_nodes.len());
+            // DEBUG: emit SEED_DECISION for low_coverage branch
+            emit_debug_seed_decision!(idx, 1, "DIRECT_LOW_COV", debug_flux, coverage, 0);
+            emit_debug_seed_proc!(
                 idx,
                 graph,
                 transfrags,
-                parity_nodes,
-                parity_back_ok,
-                parity_fwd_ok,
-                parity_flux,
-                parity_path_coords,
+                debug_nodes,
+                debug_back_ok,
+                debug_fwd_ok,
+                debug_flux,
+                debug_path_coords,
                 "low_coverage"
             );
-            // C++ PARITY: emit SEED_DECISION for low_coverage branch
-            emit_parity_seed_decision!(idx, 1, "DIRECT_LOW_COV", parity_flux, coverage, 0);
+            // DEBUG: emit SEED_DECISION for low_coverage branch
+            emit_debug_seed_decision!(idx, 1, "DIRECT_LOW_COV", debug_flux, coverage, 0);
             record_outcome!(idx, SeedOutcome::LowCoverage(coverage));
             continue;
         }
 
-        // C++ reference: eonly stores only guide-matched predictions.
+        // eonly stores only guide-matched predictions.
         // if(g || (!eonly && len>=mintranscriptlen && cov>epsilon)) — where g = guide flag.
         if config.eonly && !is_guide_pred {
-            emit_parity_seed_decision!(idx, 1, "eonly_skip");
-            emit_parity_seed_proc!(
+            emit_debug_seed_decision!(idx, 1, "eonly_skip");
+            emit_debug_seed_proc!(
                 idx,
                 graph,
                 transfrags,
-                parity_nodes,
-                parity_back_ok,
-                parity_fwd_ok,
-                parity_flux,
-                parity_path_coords,
+                debug_nodes,
+                debug_back_ok,
+                debug_fwd_ok,
+                debug_flux,
+                debug_path_coords,
                 "eonly_skip"
             );
             record_outcome!(idx, SeedOutcome::EonlyNonGuide);
             continue;
         }
 
-        // Emit PARITY_SEED_DECISION for stored transcripts
-        emit_parity_seed_decision!(idx, 1, "STORED", parity_flux, coverage, exons.len());
+        // Emit DEBUG_SEED_DECISION for stored transcripts
+        emit_debug_seed_decision!(idx, 1, "STORED", debug_flux, coverage, exons.len());
 
         if trace_this {
             let first_exon = exons.first().copied().unwrap_or((0, 0));
@@ -6820,8 +6820,8 @@ pub fn extract_transcripts(
                 idx, out.len(), coverage, exons.len(), first_start, last_end, abundance
             );
         }
-        // C++ PARITY: emit SEED_DECISION for stored transcripts
-        emit_parity_seed_decision!(idx, 1, "STORED", flow_flux, coverage, exons.len());
+        // DEBUG: emit SEED_DECISION for stored transcripts
+        emit_debug_seed_decision!(idx, 1, "STORED", flow_flux, coverage, exons.len());
         out.push(Transcript {
             chrom: bundle_chrom.to_string(),
             strand: bundle_strand,
@@ -6836,7 +6836,7 @@ pub fn extract_transcripts(
             fpkm: 0.0,
             source: gtf_source_long_flow(&transfrags[idx].guide_tid),
             is_longread: long_read_mode,
-            longcov: read_count_snapshot, // pre-depletion read mass: stable, comparable to the reference assembler's longcov
+            longcov: read_count_snapshot, // pre-depletion read mass: stable, comparable to the original algorithm's longcov
             bpcov_cov: 0.0,
             transcript_id: None,
             gene_id: None,
@@ -6897,20 +6897,20 @@ pub fn extract_transcripts(
                 );
             }
         }
-        if parity_debug {
-            emit_parity_seed_proc!(
+        if debug_detail {
+            emit_debug_seed_proc!(
                 idx,
                 graph,
                 transfrags,
-                parity_nodes,
-                parity_back_ok,
-                parity_fwd_ok,
-                parity_flux,
-                parity_path_coords,
+                debug_nodes,
+                debug_back_ok,
+                debug_fwd_ok,
+                debug_flux,
+                debug_path_coords,
                 "stored"
             );
             eprint!(
-                "PARITY_PRED idx={} cov={:.4} nexons={} exons=",
+                "DEBUG_PRED idx={} cov={:.4} nexons={} exons=",
                 idx,
                 coverage,
                 exons.len()
@@ -6926,7 +6926,7 @@ pub fn extract_transcripts(
         kept_paths.push((kept_inner, coverage, transfrags[idx].guide, out_idx));
     }
 
-    // checktrf rescue pass (C++ reference parse_trflong follow-up):
+    // checktrf rescue pass (parse_trflong follow-up):
     // 1) try to reassign skipped transfrag support to best kept paths
     // 2) if unmatched, store direct complete transfrag as an independent transcript
     let checktrf_enabled = std::env::var_os("RUSTLE_DISABLE_CHECKTRF").is_none();
@@ -6962,7 +6962,7 @@ pub fn extract_transcripts(
                 record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
                 continue;
             }
-            // C++ reference parity: process checktrf only when guide OR abundance>=readthr.
+            // process checktrf only when guide OR abundance>=readthr.
             // The `(!eonly || guide)` logic is applied later for independent rescue.
             if !checktrf_passes_abundance_gate(&transfrags[t], config.readthr) {
                 if zero_flux_set.contains(&t) {
@@ -7010,9 +7010,9 @@ pub fn extract_transcripts(
             }
             trace_checktrf_seed_snapshot(t, &transfrags[t], &tf_nodes, &kept_paths, graph, &out);
 
-            // C++ reference checktrf parity (C++ get_trf_long:11133-11297):
+            // checktrf (get_trf_long:11133-11297):
             // For multi-node longread: first try to redistribute to best-matched kept paths.
-            // If no match found: fall through to independent rescue (C++ get_trf_long:11180
+            // If no match found: fall through to independent rescue (get_trf_long:11180
             //   `else if(!eonly || guide)` — in non-eonly mode always rescues complete TFs).
             // Shortread / <=1-node: also attempt independent rescue (no prior redistribution).
             let is_shortread_tf = !transfrags[t].longread;
@@ -7036,7 +7036,7 @@ pub fn extract_transcripts(
                     // The secondary intron_chains_equal_tol filter was redundant and blocked
                     // valid redistributions (required same intron count, so different-length
                     // transfrag chains always cleared tmatch → independent rescue).
-                    // the reference assembler redistributes based on best_trf_match result alone.
+                    // the original algorithm redistributes based on best_trf_match result alone.
                     if tmatch.is_empty() {
                         // Treat as "no match" and fall through to independent rescue below.
                     } else {
@@ -7064,8 +7064,8 @@ pub fn extract_transcripts(
                             );
                             }
                         }
-                        if parity_debug {
-                            eprintln!("PARITY_CHK t={} abund={:.4} outcome=matched matched={:?} abundsum={:.4}",
+                        if debug_detail {
+                            eprintln!("DEBUG_CHK t={} abund={:.4} outcome=matched matched={:?} abundsum={:.4}",
                             t, transfrags[t].abundance, &tmatch, abundancesum);
                         }
                         trace_checktrf_match_snapshot(
@@ -7087,8 +7087,8 @@ pub fn extract_transcripts(
                         if updated {
                             transfrags[t].abundance = 0.0;
                         }
-                        // C++ PARITY: emit PARITY_CHK for matched outcome
-                        emit_parity_chk!(t, transfrags[t].abundance, "matched", tmatch.len(), abundancesum);
+                        // DEBUG: emit DEBUG_CHK for matched outcome
+                        emit_debug_chk!(t, transfrags[t].abundance, "matched", tmatch.len(), abundancesum);
                         record_outcome!(t, SeedOutcome::ChecktrfRedistributed);
                         continue; // matched: done
                     }
@@ -7110,10 +7110,10 @@ pub fn extract_transcripts(
             {
                 // Independent rescue: store complete transfrag as its own prediction.
                 // Applies to: shortread/<=1-node, AND multi-node longread with no kept-path match.
-                // C++ reference: `else if(!eonly || guide)` — in non-eonly mode always rescues.
+                // `else if(!eonly || guide)` — in non-eonly mode always rescues.
                 // Non-contiguous jumps must have explicit transfrag edge pattern support.
 
-                // C++ parity: in eonly mode, only guide transfrags are independently rescued.
+                // in eonly mode, only guide transfrags are independently rescued.
                 if config.eonly && !transfrags[t].guide {
                     record_outcome!(t, SeedOutcome::ChecktrfEonlySkip);
                     continue;
@@ -7143,7 +7143,7 @@ pub fn extract_transcripts(
                     }
                 }
                 if !complete {
-                    // C++ parity (C++ reference): else-branch candidates are consumed
+                    // else-branch candidates are consumed
                     // regardless of rescue success.
                     transfrags[t].abundance = 0.0;
                     record_outcome!(t, SeedOutcome::ChecktrfIncomplete);
@@ -7243,14 +7243,14 @@ pub fn extract_transcripts(
                         }
                     }
                 }
-                // C++ parity (C++ reference get_trf_long checktrf rescue): independently rescued
+                // (get_trf_long checktrf rescue): independently rescued
                 // long-read checktrf transcripts are stored on the rescued node span itself.
                 // They are not clipped back to longstart/longend before coverage is divided by
                 // transcript length, so keep the full rescued exon coordinates here.
                 let length: u64 = exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
                 // Coverage gate for independent checktrf rescue: skip if the rescued
                 // transcript has very low coverage relative to already-kept transcripts.
-                // the reference assembler's print_predcluster later filters these via intron validation
+                // the original algorithm's print_predcluster later filters these via intron validation
                 // and isofrac; rustle applies the gate here to reduce the 66% FP rate of
                 // independently rescued transcripts.
                 let kept_max_cov = kept_paths.iter()
@@ -7336,7 +7336,7 @@ pub fn extract_transcripts(
                     fpkm: 0.0,
                     source: gtf_source_checktrf_rescue(&transfrags[t].guide_tid),
                     is_longread: long_read_mode,
-                    longcov: transfrags[t].abundance, // C++ reference
+                    longcov: transfrags[t].abundance, // 
                     bpcov_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
@@ -7348,9 +7348,9 @@ pub fn extract_transcripts(
                 });
                 let out_idx = out.len() - 1;
                 record_outcome!(t, SeedOutcome::ChecktrfRescued);
-                if parity_debug {
+                if debug_detail {
                     eprint!(
-                        "PARITY_CHK t={} abund={:.4} outcome=rescued cov={:.4} nexons={} exons=",
+                        "DEBUG_CHK t={} abund={:.4} outcome=rescued cov={:.4} nexons={} exons=",
                         t,
                         transfrags[t].abundance,
                         coverage,
@@ -7364,7 +7364,7 @@ pub fn extract_transcripts(
                     }
                     eprintln!();
                 }
-                // C++ parity (C++ reference): an independently rescued checktrf transcript
+                // an independently rescued checktrf transcript
                 // becomes a new keeptrf entry immediately, so later checktrf items and the post-pass
                 // can match against it.
                 if let Some(ti) = trace_intron {
@@ -7380,7 +7380,7 @@ pub fn extract_transcripts(
             }
         }
     }
-    // C++ reference parse_trflong post-pass: for remaining long-read transfrags with internal paths,
+    // parse_trflong post-pass: for remaining long-read transfrags with internal paths,
     // redistribute support to best kept predictions (no independent transcript creation here).
     if long_read_mode && !out.is_empty() && !kept_paths.is_empty() {
         let has_guide_kept = kept_paths.iter().any(|(_, _, g, _)| *g);
@@ -7444,7 +7444,7 @@ pub fn extract_transcripts(
             }
         }
     }
-    // C++ parity (C++ reference): zero ALL longread transfrag abundances after attribution
+    // zero ALL longread transfrag abundances after attribution
     if long_read_mode {
         for tf in transfrags.iter_mut() {
             if tf.longread {
@@ -7453,11 +7453,11 @@ pub fn extract_transcripts(
         }
     }
 
-    // C++ keeptrf second pass (C++ reference): re-estimate coverage using push_max_flow
+    // keeptrf second pass re-estimate coverage using push_max_flow
     // on short-read transfrags. If new coverage > original, update the prediction.
     // DISABLED for long-read mode: causes coverage inflation due to incorrect formula
     if false && long_read_mode && !kept_paths.is_empty() {
-        // Sort kept_paths indices by C++ longtrCmp: guides first, then abundance desc, then node count desc
+        // Sort kept_paths indices by longtrCmp: guides first, then abundance desc, then node count desc
         let mut keeptrf_order: Vec<usize> = (0..kept_paths.len()).collect();
         keeptrf_order.sort_unstable_by(|&a, &b| {
             let (ref nodes_a, cov_a, guide_a, oidx_a) = kept_paths[a];
@@ -7516,7 +7516,7 @@ pub fn extract_transcripts(
                 continue;
             }
 
-            // Compute coverage from nodeflux and local_nodecov (C++ store_transcript)
+            // Compute coverage from nodeflux and local_nodecov (store_transcript)
             let mut cov_total = 0.0f64;
             let mut len_total = 0u64;
             for (pi, &nid) in full_path.iter().enumerate() {
@@ -7526,7 +7526,7 @@ pub fn extract_transcripts(
                 let Some(node) = graph.nodes.get(nid) else {
                     continue;
                 };
-                let node_len = node.end.saturating_sub(node.start) as f64; // C++ uses end-start+1 (1-based)
+                let node_len = node.end.saturating_sub(node.start) as f64; // uses end-start+1 (1-based)
                 let nflux = if pi < nodeflux.len() {
                     nodeflux[pi]
                 } else {
@@ -7544,13 +7544,13 @@ pub fn extract_transcripts(
             }
             let new_cov = cov_total / len_total as f64;
 
-            // C++ reference: if new coverage > original, update prediction
+            // if new coverage > original, update prediction
             let orig_cov = out[out_idx].coverage;
             if new_cov > orig_cov {
                 let orig_len = out[out_idx].exons.iter().map(|(s, e)| e - s).sum::<u64>();
                 let new_len = len_total;
                 if new_len < orig_len && orig_len > 0 {
-                    // C++ reference: scale by length ratio
+                    // scale by length ratio
                     out[out_idx].coverage = new_cov * new_len as f64 / orig_len as f64;
                 } else {
                     out[out_idx].coverage = new_cov;
@@ -7615,7 +7615,7 @@ pub fn extract_transcripts(
         };
     }
 
-    // C++ reference parity: EM post-processing for guide abundance distribution.
+    // EM post-processing for guide abundance distribution.
     // guides_pushmaxflow runs when: eonly mode, OR (non-eonly AND non-mixedMode with guides).
     if config.eonly || (!config.eonly && !mixed_mode && guided_mode) {
         // Build guide_entries from guide transcripts in output
