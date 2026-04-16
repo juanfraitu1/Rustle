@@ -3615,6 +3615,15 @@ fn fwd_to_sink_fast_long(
     let i_coord = graph.nodes.get(i).map(|n| n.start).unwrap_or(0);
     let mut reach = maxpath_coord <= i_coord;
 
+    // Significantly past the seed's maxpath: only follow children already on the
+    // seed's pattern. This prevents chimeric extension through bridging nodes into
+    // adjacent genes while still allowing 1-2 exon terminal extensions.
+    // A seed at maxpath_coord is allowed to extend through children up to a
+    // reasonable distance (50kb = one intron gap). Beyond that, new exploration
+    // is blocked — only pathpat children are accepted.
+    const FWD_EXTENSION_LIMIT: u64 = 10_000;
+    let past_seed = i_coord > maxpath_coord.saturating_add(FWD_EXTENSION_LIMIT);
+
     // Fast-path, but only if `i+1` is an actual child edge. Node IDs are not guaranteed
     // coordinate-ordered, so we must not select `i+1` unless it is explicitly present in children.
     let next_id = i + 1;
@@ -3683,10 +3692,15 @@ fn fwd_to_sink_fast_long(
             let compat_min = *minpath;
             let compat_max = endpath;
             // Coverage drop exclusion: if the child is coordinate-adjacent (touching)
+            // Past the seed boundary: don't explore new children through transfrag
+            // support. Only on-pathpat children (edge_bit check above) are allowed.
+            // This prevents chimeric paths that merge adjacent genes.
+            if past_seed && c != sink {
+                continue;
+            }
+            // Coverage drop exclusion: if the child is coordinate-adjacent (touching)
             // and coverage drops significantly, skip it to avoid extending through
-            // intergenic bridging nodes. StringTie uses `c == i+1` which works because
-            // its node IDs are coordinate-ordered. After longtrim, Rustle's node IDs
-            // are NOT coordinate-ordered, so we check coordinate adjacency directly.
+            // intergenic bridging nodes.
             if inode_end == cnode.start
                 && i < gno.saturating_sub(2)
                 && c != sink
