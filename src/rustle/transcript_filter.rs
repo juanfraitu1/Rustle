@@ -2279,11 +2279,11 @@ pub fn pairwise_overlap_filter_with_summary(
                     kill!(n2, n1, "short_terminal_exon");
                     continue;
                 }
-                // Retained-intron filter is primarily a short-read artifact guard.
-                // In long-read mode it can incorrectly eliminate real long-read isoforms (e.g. STRG.320.*),
-                // so skip it when both transcripts are long-read.
+                // Retained-intron: check if n2 appears to be a retained-intron
+                // artifact of n1 (n2 exon spans a low-coverage intron of n1).
+                // Active for all read types; the lowintron bpcov check prevents
+                // false kills on real alternative isoforms.
                 if lowintron.is_some()
-                    && !(t1.is_longread && t2.is_longread)
                     && retainedintron_like(
                         &txs,
                         n1,
@@ -2626,39 +2626,32 @@ pub fn retained_intron_filter(
                 continue;
             }
             let n1_cov = sorted[i].coverage;
-            // Require clearly lower abundance than the dominant model (not just <10%): the
-            // reference-style error_perc gate is too loose for long-read bundles with real minor
-            // isoforms ~5–15% of the major transcript.
-            let retained_cov_ratio = error_perc * 0.35;
+            // The original algorithm uses frac = ERROR_PERC (0.1 = 10%) as the
+            // abundance gate for retained intron detection. For long-read mode,
+            // use both longcov and coverage ratios to catch artifacts regardless
+            // of flow normalization distortions.
+            let frac = error_perc * 0.35; // 0.05 = 5%
 
-            // For long-read transcripts, EK-flow coverage is normalized by noderate and
-            // doesn't accurately reflect read-count differences.  A dominant transcript
-            // with 338 supporting reads can have coverage≈1.44x while a single-read
-            // retained-intron artifact has coverage≈1.3x — the ratio ≈0.9 far exceeds
-            // the 0.035 threshold, so coverage-based filtering never fires.
-            // Use longcov (pre-depletion read mass) instead when both transcripts are
-            // long-read: 1/338 ≈ 0.003 << 0.035, so the filter correctly fires for
-            // multi-read artifacts as well as single-read ones.
-            //
-            // For single-read (longcov < 2) artifacts in LOW-COVERAGE loci (dominant
-            // longcov < 29), the longcov ratio check can fail (e.g., 1/9 = 0.11 >> 0.035).
-            // But these artifacts often have very low EK-flow coverage relative to the
-            // dominant (e.g., 15/266 = 5.6% < 10%).  Use an OR of the two gates:
-            // either low longcov ratio OR low coverage ratio (at original error_perc=0.1)
-            // catches the artifact.
             let passes_abundance_gate = if n2.is_longread && sorted[i].is_longread && sorted[i].longcov > 0.0 {
-                // Primary gate: longcov ratio (reliable pre-flow read count), works for all LR.
-                // Fallback: coverage ratio for single-read artifacts in low-coverage loci.
-                n2.longcov < retained_cov_ratio * sorted[i].longcov
-                    || (n2.longcov < 2.0 && n2_cov < error_perc * n1_cov)
+                // For long-read: use longcov ratio (reliable pre-flow read count)
+                // OR coverage ratio as fallback for low-coverage loci.
+                n2.longcov < frac * sorted[i].longcov
+                    || n2_cov < frac * n1_cov
             } else {
-                n2_cov < retained_cov_ratio * n1_cov
+                n2_cov < frac * n1_cov
             };
 
             if passes_abundance_gate {
+                // Check if any n2 exon spans an n1 intron. The original algorithm
+                // uses overlap-based check (exon.start <= prev_exon.end) rather
+                // than requiring full containment. A middle-exon span is an
+                // unconditional kill (result=2); terminal exon spans require the
+                // coverage gate (result=1), which we already checked above.
                 for &(exon_start, exon_end) in n2_exons {
-                    for &(intron_start, intron_end) in n1_introns.iter() {
-                        if exon_start <= intron_start && exon_end >= intron_end {
+                    for &(intron_donor, intron_acceptor) in n1_introns.iter() {
+                        // Full containment: n2 exon completely spans n1's intron.
+                        // intron_donor = prev_exon.end, intron_acceptor = next_exon.start
+                        if exon_start <= intron_donor && exon_end >= intron_acceptor {
                             remove_set.insert(j);
                             break;
                         }
@@ -2677,8 +2670,8 @@ pub fn retained_intron_filter(
     let total_removed = remove_set.len();
     if verbose && total_removed > 0 {
         eprintln!(
-            "    Retained intron filter (cov_ratio={:.4}): removed {} transcripts",
-            error_perc * 0.35,
+            "    Retained intron filter (frac={:.4}): removed {} transcripts",
+            error_perc,
             total_removed
         );
     }
