@@ -1198,22 +1198,35 @@ fn apply_bad_mm_neg_stage(
             st.mm = -1.0;
             continue;
         }
+        // Use strand-specific bpcov matching the original algorithm's get_cov_sign:
+        // total - opposite_strand = this_strand + neutral.
+        let strand_code = st.strand.unwrap_or(0);
+        let opp = match strand_code {
+            -1 => BPCOV_STRAND_PLUS,  // neg strand: subtract pos
+            1 => BPCOV_STRAND_MINUS, // pos strand: subtract neg
+            _ => BPCOV_STRAND_ALL,   // unknown: use total
+        };
         let point = j.donor.saturating_sub(refstart) as usize;
-        let leftcov = bpcov.get_cov_range(BPCOV_STRAND_ALL, point, point.saturating_add(1));
-        let rightcov = bpcov.get_cov_range(
-            BPCOV_STRAND_ALL,
-            point.saturating_add(1),
-            point.saturating_add(2),
-        );
+        let total_left = bpcov.get_cov_range(BPCOV_STRAND_ALL, point, point.saturating_add(1));
+        let opp_left = if opp != BPCOV_STRAND_ALL {
+            bpcov.get_cov_range(opp, point, point.saturating_add(1))
+        } else { 0.0 };
+        let leftcov = (total_left - opp_left).max(0.0);
+        let total_right = bpcov.get_cov_range(BPCOV_STRAND_ALL, point.saturating_add(1), point.saturating_add(2));
+        let opp_right = if opp != BPCOV_STRAND_ALL {
+            bpcov.get_cov_range(opp, point.saturating_add(1), point.saturating_add(2))
+        } else { 0.0 };
+        let rightcov = (total_right - opp_right).max(0.0);
         if trace_target {
             eprintln!(
-                "TRACE_BAD_MM_NEG stage=donor junc={}-{} point={} leftcov={:.1} rightcov={:.1} tol={:.3} action={}",
+                "TRACE_BAD_MM_NEG stage=donor junc={}-{} point={} leftcov={:.1} rightcov={:.1} tol={:.3} strand={} action={}",
                 j.donor,
                 j.acceptor.saturating_add(1),
                 point,
                 leftcov,
                 rightcov,
                 tolerance,
+                strand_code,
                 if rightcov > tolerance * leftcov {
                     "delete"
                 } else {
@@ -1290,22 +1303,29 @@ fn apply_bad_mm_neg_stage(
             st.mm = -1.0;
             continue;
         }
+        let strand_code = st.strand.unwrap_or(0);
+        let opp = match strand_code {
+            -1 => BPCOV_STRAND_PLUS,
+            1 => BPCOV_STRAND_MINUS,
+            _ => BPCOV_STRAND_ALL,
+        };
         let point = j.acceptor.saturating_sub(refstart).saturating_sub(1) as usize;
-        let leftcov = bpcov.get_cov_range(BPCOV_STRAND_ALL, point, point.saturating_add(1));
-        let rightcov = bpcov.get_cov_range(
-            BPCOV_STRAND_ALL,
-            point.saturating_add(1),
-            point.saturating_add(2),
-        );
+        let total_left = bpcov.get_cov_range(BPCOV_STRAND_ALL, point, point.saturating_add(1));
+        let opp_left = if opp != BPCOV_STRAND_ALL { bpcov.get_cov_range(opp, point, point.saturating_add(1)) } else { 0.0 };
+        let leftcov = (total_left - opp_left).max(0.0);
+        let total_right = bpcov.get_cov_range(BPCOV_STRAND_ALL, point.saturating_add(1), point.saturating_add(2));
+        let opp_right = if opp != BPCOV_STRAND_ALL { bpcov.get_cov_range(opp, point.saturating_add(1), point.saturating_add(2)) } else { 0.0 };
+        let rightcov = (total_right - opp_right).max(0.0);
         if trace_target {
             eprintln!(
-                "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} point={} leftcov={:.1} rightcov={:.1} tol={:.3} action={}",
+                "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} point={} leftcov={:.1} rightcov={:.1} tol={:.3} strand={} action={}",
                 j.donor,
                 j.acceptor.saturating_add(1),
                 point,
                 leftcov,
                 rightcov,
                 tolerance,
+                strand_code,
                 if leftcov > tolerance * rightcov {
                     "delete"
                 } else {
