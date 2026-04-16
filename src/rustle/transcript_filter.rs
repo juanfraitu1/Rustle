@@ -2341,22 +2341,9 @@ pub fn pairwise_overlap_filter_with_summary(
                     }
                     ok
                 } {
-                    // the original algorithm/tends to keep many internal-start / internal-end models in long-read mode,
-                    // but we need to cull them if they are truly redundant and low-coverage to improve precision.
-                    // Protection for high-confidence / rescued transcripts.
-                if is_rescue_protected(t2) {
-                    continue;
-                }
-
-                if t1.is_longread && t2.is_longread && t2.exons.len() > 1 && t2.coverage > 5.0 * t1.coverage {
-                        // If t2 has significantly higher coverage, t1 is likely a noise fragment.
-                        kill!(n1, n2, "included_drop_redundant");
-                    } else if t1.is_longread && t2.is_longread && t2.exons.len() > 1 {
-                        // Otherwise, keep the variant for sensitivity.
-                        continue;
-                    } else {
-                        kill!(n2, n1, "included_drop");
-                    }
+                    // StringTie kills included predictions unconditionally
+                    // (rlink.cpp:19475-19480) — no long-read exception, no rescue protection.
+                    kill!(n2, n1, "included_drop");
                 } else if !n1g
                     && n1 != 0
                     && (((!t1.is_longread
@@ -3615,6 +3602,117 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
         .collect()
 }
 
+/// Collapse transcripts that share a high fraction of junctions with a higher-coverage
+/// transcript from the same locus.  Targets flow decomposition artifacts where the same
+/// gene produces multiple near-identical paths differing by 1–2 terminal exon boundaries
+/// (e.g. 44672553 vs 44672587 at one exon end).  StringTie's `print_predcluster` kills
+/// these via cascading pairwise/readthr gates; this function reproduces the effect.
+///
+/// A transcript B is killed if:
+///   - There exists a transcript A with coverage ≥ `cov_ratio` × B.coverage
+///   - A and B share the same strand and overlapping span
+///   - At least `min_shared_frac` of B's junctions appear in A (exact coordinate match)
+///   - B.coverage < A.coverage (weaker variant)
+pub fn collapse_high_overlap_variants(
+    transcripts: Vec<Transcript>,
+    min_shared_frac: f64,
+    cov_ratio: f64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if transcripts.len() < 2 {
+        return transcripts;
+    }
+    let n = transcripts.len();
+    let mut dead = SmallBitset::with_capacity(n.min(64));
+
+    // Build junction set per transcript (using local Junction = (u64, u64))
+    let junc_sets: Vec<std::collections::HashSet<(u64, u64)>> = transcripts
+        .iter()
+        .map(|tx| {
+            let mut s = std::collections::HashSet::new();
+            for w in tx.exons.windows(2) {
+                s.insert((w[0].1, w[1].0));
+            }
+            s
+        })
+        .collect();
+
+    // Sort indices by coverage descending — process dominant first
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_unstable_by(|&a, &b| {
+        transcripts[b]
+            .coverage
+            .partial_cmp(&transcripts[a].coverage)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut killed = 0usize;
+    for &i in &order {
+        if dead.contains(i) {
+            continue;
+        }
+        let ti = &transcripts[i];
+        if junc_sets[i].is_empty() {
+            continue;
+        }
+        for &j in &order {
+            if i == j || dead.contains(j) {
+                continue;
+            }
+            let tj = &transcripts[j];
+            if ti.chrom != tj.chrom || ti.strand != tj.strand {
+                continue;
+            }
+            if junc_sets[j].is_empty() {
+                continue;
+            }
+            // Only kill j if i has higher coverage
+            if ti.coverage <= tj.coverage {
+                continue;
+            }
+            // Check coverage ratio: i must be significantly stronger
+            if ti.coverage < tj.coverage * cov_ratio {
+                continue;
+            }
+            // Check span overlap
+            let i_start = ti.exons.first().map(|e| e.0).unwrap_or(0);
+            let i_end = ti.exons.last().map(|e| e.1).unwrap_or(0);
+            let j_start = tj.exons.first().map(|e| e.0).unwrap_or(0);
+            let j_end = tj.exons.last().map(|e| e.1).unwrap_or(0);
+            if j_start >= i_end || i_start >= j_end {
+                continue;
+            }
+            // Count shared junctions
+            let shared = junc_sets[j]
+                .iter()
+                .filter(|jn| junc_sets[i].contains(jn))
+                .count();
+            let j_total = junc_sets[j].len();
+            if j_total == 0 {
+                continue;
+            }
+            let frac = shared as f64 / j_total as f64;
+            if frac >= min_shared_frac {
+                dead.insert_grow(j);
+                killed += 1;
+            }
+        }
+    }
+
+    if verbose && killed > 0 {
+        eprintln!(
+            "    High-overlap variant collapse: removed {} transcript(s) (shared_frac≥{:.0}%, cov_ratio≥{:.1}x)",
+            killed, min_shared_frac * 100.0, cov_ratio
+        );
+    }
+    transcripts
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !dead.contains(*i))
+        .map(|(_, t)| t)
+        .collect()
+}
+
 /// Filter transcripts whose intron chains are not witnessed by any read.
 ///
 /// For each predicted transcript with ≥2 introns, check that every pair of consecutive
@@ -3903,6 +4001,16 @@ pub fn print_predcluster_with_summary(
         summary.after_exact_chain_dedup = txs.len();
         emit_fate("dedup_exact_intron_chains", &before_exact, &txs);
         trace_stage("predcluster.dedup_exact_intron_chains", &txs);
+        // High-overlap variant collapse: kill transcripts sharing ≥80% of junctions
+        // with a higher-coverage transcript (matching StringTie's cascading pairwise kills).
+        let before_hov = if fate_trace { txs.clone() } else { Vec::new() };
+        // Note: collapse_high_overlap_variants exists but is not used here.
+        // Junction-overlap and boundary-tolerance approaches were tested and found
+        // net negative — they kill real alternative isoforms that share most junctions.
+        // The remaining excess comes from graph node granularity differences between
+        // Rustle and StringTie that create more path variants.
+        emit_fate("collapse_high_overlap_variants", &before_hov, &txs);
+        trace_stage("predcluster.collapse_high_overlap_variants", &txs);
     } else {
         summary.after_near_equal_chain_collapse = txs.len();
         summary.after_exact_chain_dedup = txs.len();
@@ -4403,6 +4511,32 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
             // if n2 single-exon with very low coverage (< singlethr=4.75), eliminate
             if txs[n2].exons.len() == 1 && txs[n2].coverage < 4.75 && !is_guide_pair(&txs[n2]) {
                 dead.insert_grow(n2);
+            }
+
+            // Cross-strand retained intron filter (StringTie parity):
+            // StringTie's pairwise filter calls retainedintron() for ALL overlapping pairs
+            // regardless of strand. When the dominant has a low-coverage intron, and the
+            // weaker transcript's exon spans that intron, it's killed as "retained intron".
+            //
+            // In Rustle, per-subbundle print_predcluster never sees cross-strand pairs.
+            // We replicate here: n2 is killed if any of its exons spans an intron of n1,
+            // AND n2->cov < ERROR_PERC * n1->cov (matching StringTie's frac threshold).
+            if !is_guide_pair(&txs[n2])
+                && txs[n2].exons.len() > 1
+                && txs[n1].exons.len() > 1
+                && txs[n2].coverage < 0.05 * txs[n1].coverage
+            {
+                // Check if any n2 exon spans an intron of n1 (exon covers both sides of a gap)
+                let spans_intron = txs[n1].exons.windows(2).any(|w| {
+                    let intron_start = w[0].1; // donor
+                    let intron_end = w[1].0;   // acceptor
+                    txs[n2].exons.iter().any(|&(s2, e2)| {
+                        s2 < intron_start && e2 > intron_end // n2 exon spans the entire intron
+                    })
+                });
+                if spans_intron {
+                    dead.insert_grow(n2);
+                }
             }
         }
     }

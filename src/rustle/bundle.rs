@@ -1037,6 +1037,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
         &cfg,
         good_junctions,
         killed_junctions,
+        None, None, 0,
     ) {
         Ok(v) => v,
         Err(e) => {

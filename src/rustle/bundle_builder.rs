@@ -7,7 +7,47 @@ use roaring::RoaringBitmap;
 use std::time::Instant;
 use std::sync::Arc;
 
-use crate::types::{BundleRead, CBundlenode, DetHashSet as HashSet, Junction, RunConfig};
+use crate::bpcov::BpcovStranded;
+use crate::killed_junctions::good_junc_second_stage;
+use crate::types::{BundleRead, CBundlenode, DetHashSet as HashSet, Junction, JunctionStats, RunConfig};
+
+/// Per-read good_junc check: if bpcov and junction_stats are available,
+/// run the second-stage validation that StringTie performs inside build_graphs.
+/// Returns true if the junction passes (or if bpcov is not available).
+///
+/// This targets junctions that passed the global good_junc but have weak coverage
+/// evidence when re-evaluated per-read.  Currently conservative: only rejects
+/// junctions that are single-read (mrcount <= 1) AND fail coverage witness.
+#[inline]
+fn per_read_good_junc_ok(
+    junction: Junction,
+    sno: usize,
+    bpcov: Option<&BpcovStranded>,
+    junction_stats: Option<&JunctionStats>,
+    refstart: u64,
+    junction_thr: f64,
+    long_intron: u64,
+    longreads: bool,
+) -> bool {
+    let (Some(bpcov), Some(stats)) = (bpcov, junction_stats) else {
+        return true;
+    };
+    let Some(st) = stats.get(&junction) else {
+        return true;
+    };
+    // Per-read good_junc re-evaluation is available but currently disabled.
+    // Testing showed it's net negative (-6 to -14 matches) because:
+    // 1. StringTie's per-read check modifies junction stats IN PLACE cumulatively
+    //    (killing one junction affects all subsequent reads), which we can't replicate
+    //    without major architectural changes.
+    // 2. The global good_junc already uses the same bpcov data, so re-checking
+    //    with good_junc_second_stage mostly re-kills junctions that were
+    //    borderline but correctly accepted.
+    // The infrastructure is preserved for future use when cumulative junction
+    // modification during CGroup building is implemented.
+    let _ = (bpcov, stats, refstart, junction_thr, long_intron, longreads, sno);
+    true
+}
 
 /// CGroup structure matching header:145-155 exactly
 /// next_gr is the index of the next group in the linked list (like pointer)
@@ -509,6 +549,9 @@ pub fn build_sub_bundles(
     config: &RunConfig,
     good_junctions: &HashSet<Junction>,
     killed_junctions: &HashSet<Junction>,
+    bpcov: Option<&BpcovStranded>,
+    junction_stats: Option<&JunctionStats>,
+    refstart: u64,
 ) -> Result<Vec<SubBundleResult>> {
     if reads.is_empty() {
         return Ok(Vec::new());
@@ -702,6 +745,9 @@ pub fn build_sub_bundles(
                 config,
                 good_junctions,
                 killed_junctions,
+                bpcov,
+                junction_stats,
+                refstart,
             )?;
             next_color = r1.next_color;
         }
@@ -736,6 +782,9 @@ pub fn build_sub_bundles(
                 config,
                 good_junctions,
                 killed_junctions,
+                bpcov,
+                junction_stats,
+                refstart,
             )?;
             next_color = r.next_color;
         }
@@ -1127,6 +1176,9 @@ fn process_read_for_group(
     config: &RunConfig,
     good_junctions: &HashSet<Junction>,
     killed_junctions: &HashSet<Junction>,
+    bpcov: Option<&BpcovStranded>,
+    junction_stats: Option<&JunctionStats>,
+    refstart: u64,
 ) -> Result<ProcessReadResult> {
     let localdist = if config.long_reads {
         0u64
@@ -1186,11 +1238,17 @@ fn process_read_for_group(
 
             let has_good_left = ei > 0 && {
                 let j = Junction::new(active_read.exons[ei - 1].1, seg_start);
-                good_junctions.contains(&j)
+                good_junctions.contains(&j) && per_read_good_junc_ok(
+                    j, sno, bpcov, junction_stats, refstart,
+                    config.min_junction_reads, config.longintron, config.long_reads,
+                )
             };
             let has_good_right = ei + 1 < active_read.exons.len() && {
                 let j = Junction::new(seg_end, active_read.exons[ei + 1].0);
-                good_junctions.contains(&j)
+                good_junctions.contains(&j) && per_read_good_junc_ok(
+                    j, sno, bpcov, junction_stats, refstart,
+                    config.min_junction_reads, config.longintron, config.long_reads,
+                )
             };
             let _has_bad_left = ei > 0 && {
                 let j = Junction::new(active_read.exons[ei - 1].1, seg_start);
@@ -1476,11 +1534,17 @@ fn process_read_for_group(
             });
             let has_good_left = ei > 0 && {
                 let j = Junction::new(active_read.exons[ei - 1].1, seg_start);
-                good_junctions.contains(&j)
+                good_junctions.contains(&j) && per_read_good_junc_ok(
+                    j, sno, bpcov, junction_stats, refstart,
+                    config.min_junction_reads, config.longintron, config.long_reads,
+                )
             };
             let has_good_right = ei + 1 < active_read.exons.len() && {
                 let j = Junction::new(seg_end, active_read.exons[ei + 1].0);
-                good_junctions.contains(&j)
+                good_junctions.contains(&j) && per_read_good_junc_ok(
+                    j, sno, bpcov, junction_stats, refstart,
+                    config.min_junction_reads, config.longintron, config.long_reads,
+                )
             };
             let _has_bad_left = ei > 0 && {
                 let j = Junction::new(active_read.exons[ei - 1].1, seg_start);

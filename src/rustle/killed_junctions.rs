@@ -141,15 +141,13 @@ pub fn good_junc_second_stage(
         }
     }
     
-    // Step 6 don't keep if splice fraction is extremely low
-    // if nreads*10 < ERROR_PERC*leftsupport || nreads*10 < ERROR_PERC*rightsupport
-    // (simplified: check if junction represents < 1% of coverage on either side)
+    // Step 6: don't keep if splice fraction is extremely low
     if st.mrcount * 10.0 < ERROR_PERC * st.leftsupport
         || st.mrcount * 10.0 < ERROR_PERC * st.rightsupport
     {
         return false;
     }
-    
+
     true
 }
 

@@ -6919,6 +6919,9 @@ pub fn run<P: AsRef<Path>>(
         let mut good_junctions_set: HashSet<crate::types::Junction> =
             junctions.iter().copied().collect();
         // Add mm<0 junctions with non-zero strand to good_junctions (read-redirect compatibility).
+        // StringTie's read loop sets strand=0 for mm<0 junctions, then creates replacement
+        // junctions with the read's strand.  We approximate this by keeping the originals
+        // in good_junctions (since replacement junctions are also added per-region later).
         for (j, s) in &junction_stats_corr_final {
             if s.mm < 0.0 && s.strand != Some(0) && s.nreads_good >= config.min_junction_reads {
                 good_junctions_set.insert(*j);
@@ -6928,8 +6931,6 @@ pub fn run<P: AsRef<Path>>(
             .iter()
             .filter(|(_, s)| {
                 // strand==0: junction genuinely has no strand support → killed.
-                // mm<0 with strand!=0: higherr demotion, but the read-redirect
-                // creates a replacement with non-zero strand → NOT killed for color purposes.
                 s.strand == Some(0)
             })
             .map(|(j, _)| *j)
@@ -8159,7 +8160,11 @@ pub fn run<P: AsRef<Path>>(
                 color_killed.remove(rj);
             }
             let raw_subbundles =
-                build_sub_bundles(&effective_reads, &config, &color_good, &color_killed)?;
+                build_sub_bundles(
+                    &effective_reads, &config, &color_good, &color_killed,
+                    Some(&bpcov_stranded), Some(&junction_stats_corr_final),
+                    bundle.start,
+                )?;
 
             total_subbundles.fetch_add(raw_subbundles.len(), std::sync::atomic::Ordering::Relaxed);
             if config.verbose {
