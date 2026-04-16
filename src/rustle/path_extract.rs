@@ -3682,13 +3682,18 @@ fn fwd_to_sink_fast_long(
             // from inflating coverage, which causes over-extension.
             let compat_min = *minpath;
             let compat_max = endpath;
-            if c == i + 1
+            // Coverage drop exclusion: if the child is coordinate-adjacent (touching)
+            // and coverage drops significantly, skip it to avoid extending through
+            // intergenic bridging nodes. StringTie uses `c == i+1` which works because
+            // its node IDs are coordinate-ordered. After longtrim, Rustle's node IDs
+            // are NOT coordinate-ordered, so we check coordinate adjacency directly.
+            if inode_end == cnode.start
                 && i < gno.saturating_sub(2)
-                && inode_end == cnode.start
+                && c != sink
                 && cnode.length() > 0
-                && (nodecov.get(i + 1).copied().unwrap_or(0.0) / cnode.length() as f64) < 1000.0
+                && (nodecov.get(c).copied().unwrap_or(0.0) / cnode.length() as f64) < 1000.0
                 && nodecov.get(i).copied().unwrap_or(0.0) * (DROP_FACTOR + ERROR_PERC)
-                    > nodecov.get(i + 1).copied().unwrap_or(0.0)
+                    > nodecov.get(c).copied().unwrap_or(0.0)
             {
                 exclude = true;
             } else {
@@ -4234,13 +4239,15 @@ fn back_to_source_fast_long(
             // from the earliest node seen so far (minpath or parent) to the current global maxpath.
             let startpath = coord_min_node(graph, *minpath, p);
             let endpath = coord_max_node(graph, *maxpath, i);
-            if p == i.saturating_sub(1)
+            // Coverage drop exclusion for back_to_source: same coordinate-based fix
+            // as fwd_to_sink. Check adjacency by coordinate, not by node ID.
+            if inode_start == pnode.end
                 && i > 1
-                && inode_start == pnode.end
+                && p != source
                 && pnode.length() > 0
-                && (nodecov.get(i - 1).copied().unwrap_or(0.0) / pnode.length() as f64) < 1000.0
+                && (nodecov.get(p).copied().unwrap_or(0.0) / pnode.length() as f64) < 1000.0
                 && nodecov.get(i).copied().unwrap_or(0.0) * (DROP_FACTOR + ERROR_PERC)
-                    > nodecov.get(i - 1).copied().unwrap_or(0.0)
+                    > nodecov.get(p).copied().unwrap_or(0.0)
             {
                 exclude = true;
             } else {
