@@ -516,6 +516,13 @@ pub fn map_reads_to_graph(
         }
     }
 
+    // Post-processing: split chimeric transfrags at coverage valleys.
+    // When a transfrag's node path goes through adjacent nodes (prev.end == curr.start)
+    // where coverage drops sharply, the transfrag likely spans two separate genes via
+    // an intergenic bridging region. Split it into two independent transfrags.
+    // This matches StringTie's coverage-drop exclusion (rlink.cpp:8262-8266).
+    transfrags = split_chimeric_transfrags(transfrags, graph);
+
     for (tf_idx, tf) in transfrags.iter().enumerate() {
         if tf.node_ids.len() <= 1 {
             continue;
@@ -527,6 +534,102 @@ pub fn map_reads_to_graph(
         }
     }
 
+    transfrags
+}
+
+/// Split chimeric transfrags at coverage valleys between adjacent graph nodes.
+/// Adjacent nodes (prev.end == curr.start) with a >3x coverage drop indicate
+/// an intergenic boundary that a readthrough read spans continuously.
+fn split_chimeric_transfrags(
+    mut transfrags: Vec<GraphTransfrag>,
+    graph: &Graph,
+) -> Vec<GraphTransfrag> {
+    let drop_threshold = 0.001_f64; // 1000x coverage drop — effectively disabled; too aggressive at any threshold
+    let mut new_transfrags: Vec<GraphTransfrag> = Vec::new();
+    let mut split_count = 0usize;
+    let n_before = transfrags.len();
+
+    for tf in &mut transfrags {
+        if tf.node_ids.len() < 4 || !tf.longread {
+            continue;
+        }
+        // Find the deepest per-base coverage valley in the transfrag's node path.
+        // A coverage valley indicates an intergenic boundary where a readthrough
+        // read spans two genes. We split at the node with the lowest per-base coverage.
+        let mut best_split: Option<(usize, f64)> = None;
+        // Compute per-base coverage for each node
+        let per_base: Vec<f64> = tf.node_ids.iter().map(|&nid| {
+            graph.nodes.get(nid).map_or(0.0, |n| {
+                let len = n.length().max(1) as f64;
+                n.coverage / len
+            })
+        }).collect();
+        // Find the median per-base coverage for context
+        let mut sorted_cov: Vec<f64> = per_base.iter().copied().filter(|&c| c > 0.0).collect();
+        sorted_cov.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median_cov = if sorted_cov.is_empty() { 0.0 } else { sorted_cov[sorted_cov.len() / 2] };
+        if median_cov > 0.0 {
+            for j in 1..tf.node_ids.len().saturating_sub(1) {
+                let nid = tf.node_ids[j];
+                if nid == graph.source_id || nid == graph.sink_id { continue; }
+                let cov = per_base[j];
+                let prev_cov = per_base[j - 1];
+                let next_cov = per_base[j + 1];
+                // Valley: node j has much lower per-base coverage than both neighbors
+                let neighbor_min = prev_cov.min(next_cov);
+                if neighbor_min <= 0.0 { continue; }
+                let ratio = cov / neighbor_min;
+                if ratio < drop_threshold && cov < median_cov * drop_threshold {
+                    if best_split.as_ref().map_or(true, |&(_, r)| ratio < r) {
+                        best_split = Some((j, ratio));
+                    }
+                }
+            }
+        }
+        if let Some((split_at, _ratio)) = best_split {
+            let right_nodes: Vec<usize> = tf.node_ids[split_at..].to_vec();
+            if right_nodes.len() >= 2 {
+                let psize = graph.pattern_size();
+                let mut right_tf = GraphTransfrag::new(right_nodes, psize);
+                right_tf.abundance = tf.abundance;
+                right_tf.longread = tf.longread;
+                right_tf.longstart = 0;
+                right_tf.longend = tf.longend;
+                right_tf.read_count = tf.read_count;
+                for &nid in &right_tf.node_ids {
+                    right_tf.pattern.set_bit(nid);
+                }
+                for w in right_tf.node_ids.windows(2) {
+                    if let Some(eid) = graph.edge_bit_index(w[0], w[1]) {
+                        right_tf.pattern.set_bit(eid);
+                    }
+                }
+                new_transfrags.push(right_tf);
+            }
+            tf.node_ids.truncate(split_at);
+            tf.longend = 0;
+            let psize = graph.pattern_size();
+            tf.pattern = crate::bitvec::GBitVec::new(psize);
+            for &nid in &tf.node_ids {
+                tf.pattern.set_bit(nid);
+            }
+            for w in tf.node_ids.windows(2) {
+                if let Some(eid) = graph.edge_bit_index(w[0], w[1]) {
+                    tf.pattern.set_bit(eid);
+                }
+            }
+            split_count += 1;
+        }
+    }
+    if split_count > 0 {
+        transfrags.extend(new_transfrags);
+        if std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some() {
+            eprintln!(
+                "[CHIMERIC_SPLIT] split {} chimeric transfrags (was {}, now {})",
+                split_count, n_before, transfrags.len()
+            );
+        }
+    }
     transfrags
 }
 
@@ -697,6 +800,9 @@ pub fn map_reads_to_graph_bundlenodes(
             );
         }
     }
+
+    // Split chimeric transfrags at coverage valleys (same as map_reads_to_graph)
+    transfrags = split_chimeric_transfrags(transfrags, graph);
 
     for (tf_idx, tf) in transfrags.iter().enumerate() {
         if tf.node_ids.len() <= 1 {

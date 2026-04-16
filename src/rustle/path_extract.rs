@@ -3621,8 +3621,11 @@ fn fwd_to_sink_fast_long(
     // A seed at maxpath_coord is allowed to extend through children up to a
     // reasonable distance (50kb = one intron gap). Beyond that, new exploration
     // is blocked — only pathpat children are accepted.
-    const FWD_EXTENSION_LIMIT: u64 = 10_000;
-    let past_seed = i_coord > maxpath_coord.saturating_add(FWD_EXTENSION_LIMIT);
+    // When we've reached or passed the seed's maxpath, restrict exploration to
+    // only children already on the seed's pathpat. This prevents fwd_to_sink from
+    // extending the path into adjacent genes through bridging nodes.
+    // Allow one node of slack (maxpath itself may need to connect to sink).
+    let past_seed = i_coord > maxpath_coord;
 
     // Fast-path, but only if `i+1` is an actual child edge. Node IDs are not guaranteed
     // coordinate-ordered, so we must not select `i+1` unless it is explicitly present in children.
