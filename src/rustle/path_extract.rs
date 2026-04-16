@@ -7243,24 +7243,48 @@ pub fn extract_transcripts(
                         }
                     }
                 }
-                // (get_trf_long checktrf rescue): independently rescued
-                // long-read checktrf transcripts are stored on the rescued node span itself.
-                // They are not clipped back to longstart/longend before coverage is divided by
-                // transcript length, so keep the full rescued exon coordinates here.
-                let length: u64 = exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
-                // Coverage gate for independent checktrf rescue: skip if the rescued
-                // transcript has very low coverage relative to already-kept transcripts.
-                // the original algorithm's print_predcluster later filters these via intron validation
-                // and isofrac; rustle applies the gate here to reduce the 66% FP rate of
-                // independently rescued transcripts.
+                // Compute coverage and apply gates on the full node span first.
+                let full_length: u64 = exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
+
+                // Minimum transcript length gate (default 200bp).
+                if !transfrags[t].guide && full_length < config.min_transcript_length {
+                    transfrags[t].abundance = 0.0;
+                    record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
+                    continue;
+                }
+
+                // Coverage gate on the full (unclipped) span: reject rescued
+                // transcripts with negligible coverage vs already-kept paths.
+                let full_cov = if full_length > 0 { cov_bp_total / (full_length as f64) } else { 0.0 };
                 let kept_max_cov = kept_paths.iter()
                     .map(|(_, cov, _, _)| *cov)
                     .fold(0.0f64, |a, b| a.max(b));
-                let rescue_cov = if length > 0 { cov_bp_total / (length as f64) } else { 0.0 };
-                if kept_max_cov > 0.0 && rescue_cov < 0.03 * kept_max_cov && !transfrags[t].guide {
-                    // Skip: rescued transcript has < 2% of the dominant's coverage
+                if kept_max_cov > 0.0 && full_cov < 0.03 * kept_max_cov && !transfrags[t].guide {
+                    transfrags[t].abundance = 0.0;
+                    record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
                     continue;
                 }
+
+                // Clip terminal exons to longstart/longend (read boundaries)
+                // AFTER gates have been applied on the full span.
+                {
+                    let longstart = transfrags[t].longstart;
+                    let longend = transfrags[t].longend;
+                    if longstart > 0 && !exons.is_empty() {
+                        if longstart > exons[0].0 && longstart <= exons[0].1 {
+                            exons[0].0 = longstart;
+                        }
+                    }
+                    if longend > 0 && !exons.is_empty() {
+                        let li = exons.len() - 1;
+                        if longend >= exons[li].0 && longend < exons[li].1 {
+                            exons[li].1 = longend;
+                        }
+                    }
+                }
+
+                // Final length after clipping for per-bp coverage.
+                let length: u64 = exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
                 let coverage = if length > 0 {
                     cov_bp_total / (length as f64)
                 } else {
