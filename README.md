@@ -6,6 +6,28 @@ A long-read transcript assembler written in Rust, with a **variation graph (VG) 
 
 Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) using a splice-graph and max-flow decomposition pipeline. It includes a variation graph (VG) mode that links gene family copies via multi-mapping reads and jointly resolves read assignments across paralogs.
 
+### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
+
+| Metric | Rustle | StringTie | Notes |
+|--------|--------|-----------|-------|
+| Transcripts assembled | 1,876 | 1,839 | |
+| Matching transcripts | 1,434 / 1,839 | — | Rustle vs StringTie output |
+| Transcript sensitivity | 78.0% | — | (gffcompare `=` class) |
+| Transcript precision | 76.4% | — | |
+| Intron-level sensitivity | 96.2% | — | |
+| Intron-level precision | 93.8% | — | |
+| Locus-level sensitivity | 94.9% | — | |
+| Locus-level precision | 95.2% | — | |
+| Wall-clock time | **8.0 s** | 13.7 s | **1.7x faster** |
+| Language | Rust | C++ | |
+
+> Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci).
+> Rustle's base algorithm is a faithful port of StringTie's splice-graph + max-flow pipeline;
+> the remaining transcript-level gap comes from minor differences in graph node granularity
+> and pairwise filtering heuristics that are under active development.
+> VG mode features (multi-mapping resolution, novel copy discovery) are not reflected in this
+> single-chromosome benchmark — they apply when assembling multi-copy gene families genome-wide.
+
 ## Features
 
 - **Transcript assembly**: splice graph construction, Edmonds-Karp max-flow, seeded path extraction
