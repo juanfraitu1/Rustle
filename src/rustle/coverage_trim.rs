@@ -373,7 +373,7 @@ fn multi_trim_discovery(
             feature: true,
         });
     }
-    trimpoints.sort_by_key(|t| t.pos);
+    trimpoints.sort_unstable_by_key(|t| t.pos);
 
     // C++ parity: global threshold gate with backward invalidation of earlier points
     // when a downstream point fails.

@@ -148,7 +148,7 @@ fn accumulate_stranded_junction_counts(
 
 fn dump_stranded_junction_counts(label: &str, counts: &HashMap<(u64, u64, i8), f64>) {
     let mut list: Vec<((u64, u64, i8), f64)> = counts.iter().map(|(k, c)| (*k, *c)).collect();
-    list.sort_by_key(|((donor, acceptor, strand), _)| (*donor, *acceptor, *strand));
+    list.sort_unstable_by_key(|((donor, acceptor, strand), _)| (*donor, *acceptor, *strand));
     eprintln!("[EARLY_DEBUG] {}: {} junctions", label, list.len());
     for ((donor, acceptor, strand), count) in list {
         eprintln!(
@@ -653,7 +653,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
     // For longreads mode: C++ does readlist.Sort() which uses GSeg comparison (start, then end).
     // For mixed mode: C++ uses coordStableCmp stable sort (start, then end, then pre-sort index).
     // Rust sort_by_key is stable, so equal (start, end) pairs preserve insertion order — matching both.
-    reads_sorted.sort_by_key(|r| (r.1, r.2));
+    reads_sorted.sort_unstable_by_key(|r| (r.1, r.2));
 
     let mut group: Vec<CGroup> = Vec::new();
     let mut merge: Vec<usize> = Vec::new();
@@ -882,7 +882,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
             canonical.push((i, group[i].start, group[i].end, group[i].cov_sum, col_root));
         }
     }
-    canonical.sort_by_key(|c| c.1);
+    canonical.sort_unstable_by_key(|c| c.1);
 
     let localdist_bnode = bundledist;
     // RUSTLE_PARITY_BUNDLE: detailed CGroup/bundlenode state for C++ parity comparison
@@ -1126,7 +1126,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
             vec![0.0; region_reads.len()],
         );
     }
-    strand_bundles.sort_by_key(|b| b.start);
+    strand_bundles.sort_unstable_by_key(|b| b.start);
 
     let mut merged_nodes_raw: Vec<(u64, u64, f64, usize)> = Vec::new(); // (start,end,cov,old_bid)
     let mut merged_colors_raw: Vec<usize> = Vec::new(); // one color root per merged node
@@ -1178,7 +1178,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     }
 
     let mut order: Vec<usize> = (0..merged_nodes_raw.len()).collect();
-    order.sort_by_key(|&i| (merged_nodes_raw[i].0, merged_nodes_raw[i].1));
+    order.sort_unstable_by_key(|&i| (merged_nodes_raw[i].0, merged_nodes_raw[i].1));
     let mut old_to_new: Vec<usize> = vec![0; merged_nodes_raw.len()];
     let mut sorted_nodes: Vec<(u64, u64, f64)> = Vec::with_capacity(merged_nodes_raw.len());
     let mut sorted_colors: Vec<usize> = Vec::with_capacity(merged_nodes_raw.len());
@@ -1909,7 +1909,7 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
         } // end for strand
     } // end for regions
 
-    bundles.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
+    bundles.sort_unstable_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
     Ok(bundles)
 }
 

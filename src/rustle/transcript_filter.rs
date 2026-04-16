@@ -544,7 +544,7 @@ pub fn isofrac_filter(
     let total_in: usize = by_strand.values().map(|v| v.len()).sum();
     let mut out = Vec::new();
     for (_, mut strand_txs) in by_strand {
-        strand_txs.sort_by_key(|tx| tx.exons.first().map(|e| e.0).unwrap_or(0));
+        strand_txs.sort_unstable_by_key(|tx| tx.exons.first().map(|e| e.0).unwrap_or(0));
         let mut loci: Vec<Vec<Transcript>> = Vec::new();
         if let Some(first) = strand_txs.first().cloned() {
             let mut current_end = first.exons.last().map(|e| e.1).unwrap_or(0);
@@ -630,7 +630,7 @@ pub fn merge_micro_intron_exons(
                 return tx;
             }
             let mut sorted: Vec<(u64, u64)> = tx.exons;
-            sorted.sort_by_key(|e| e.0);
+            sorted.sort_unstable_by_key(|e| e.0);
             let mut new_exons = Vec::new();
             let mut i = 0;
             while i < sorted.len() {
@@ -1603,7 +1603,7 @@ fn build_significant_overlap_matrix(
             idx,
         });
     }
-    evs.sort_by(|a, b| {
+    evs.sort_unstable_by(|a, b| {
         a.pos
             .cmp(&b.pos)
             // End events before start events at same coordinate to preserve half-open interval semantics.
@@ -1795,7 +1795,7 @@ fn isofrac_with_summary(
         }
 
         // C++: sort by abs(tlen)*cov descending (predordCmp)
-        uniq.sort_by(|&a, &b| {
+        uniq.sort_unstable_by(|&a, &b| {
             tx_score(&txs[b])
                 .partial_cmp(&tx_score(&txs[a]))
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -2097,13 +2097,13 @@ pub fn pairwise_overlap_filter_with_summary(
     let cpred_scores: Vec<f64> = cpreds.iter().map(cpred_score).collect();
     let mut ord: Vec<usize> = (0..txs.len()).collect();
     if use_cmaxintv {
-        ord.sort_by(|&a, &b| {
+        ord.sort_unstable_by(|&a, &b| {
             cpred_scores[b]
                 .partial_cmp(&cpred_scores[a])
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     } else {
-        ord.sort_by(|&a, &b| {
+        ord.sort_unstable_by(|&a, &b| {
             tx_score(&txs[b])
                 .partial_cmp(&tx_score(&txs[a]))
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -2130,7 +2130,7 @@ pub fn pairwise_overlap_filter_with_summary(
             continue;
         }
         let mut nb = overlaps_adj[i].clone();
-        nb.sort_by_key(|&j| ord_pos[j]);
+        nb.sort_unstable_by_key(|&j| ord_pos[j]);
         ord_neighbors[i] = nb;
     }
     let mut dead = SmallBitset::with_capacity(n.min(64));
@@ -2566,13 +2566,13 @@ pub fn retained_intron_filter(
     // noise is correctly identified as lower-priority.
     let all_longread = sorted.iter().all(|t| t.is_longread);
     if all_longread {
-        sorted.sort_by(|a, b| {
+        sorted.sort_unstable_by(|a, b| {
             b.longcov
                 .partial_cmp(&a.longcov)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
     } else {
-        sorted.sort_by(|a, b| {
+        sorted.sort_unstable_by(|a, b| {
             b.coverage
                 .partial_cmp(&a.coverage)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -2707,7 +2707,7 @@ pub fn polymerase_runoff_filter(
         return transcripts;
     }
     let mut sorted = transcripts;
-    sorted.sort_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
+    sorted.sort_unstable_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
 
     let n = sorted.len();
     let mut dead = SmallBitset::with_capacity(n.min(64));
@@ -2947,7 +2947,7 @@ pub fn overlap_consistency_filter(transcripts: Vec<Transcript>, verbose: bool) -
         return transcripts;
     }
     let mut sorted = transcripts;
-    sorted.sort_by(|a, b| {
+    sorted.sort_unstable_by(|a, b| {
         b.coverage
             .partial_cmp(&a.coverage)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -3056,7 +3056,7 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
         return transcripts;
     }
     let mut txs = transcripts;
-    txs.sort_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
+    txs.sort_unstable_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
     let n = txs.len();
     let mut dead = SmallBitset::with_capacity(n.min(64));
     let mut merged = 0usize;
@@ -3233,7 +3233,7 @@ pub fn collapse_single_exon_runoff(
         return transcripts;
     }
     let mut txs = transcripts;
-    txs.sort_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
+    txs.sort_unstable_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
     let n = txs.len();
     let mut dead = SmallBitset::with_capacity(n.min(64));
     let mut stitched = 0usize;
@@ -3475,7 +3475,7 @@ pub fn collapse_near_equal_intron_chains(
         return transcripts;
     }
     let mut txs = transcripts;
-    txs.sort_by(|a, b| {
+    txs.sort_unstable_by(|a, b| {
         let a0 = a.exons.first().map(|e| e.0).unwrap_or(0);
         let b0 = b.exons.first().map(|e| e.0).unwrap_or(0);
         (a.chrom.as_str(), a.strand, a0).cmp(&(b.chrom.as_str(), b.strand, b0))
@@ -4380,7 +4380,7 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
     // Sort by chromosome and then score descending so we can iterate higher-scored first.
     // We work on index arrays to avoid moving out of txs.
     let mut order: Vec<usize> = (0..n).collect();
-    order.sort_by(|&a, &b| {
+    order.sort_unstable_by(|&a, &b| {
         txs[a].chrom.cmp(&txs[b].chrom).then_with(|| {
             tx_score(&txs[b])
                 .partial_cmp(&tx_score(&txs[a]))

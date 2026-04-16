@@ -1334,7 +1334,7 @@ fn long_max_flow_direct(
                     top.push((j, cap));
                 }
             }
-            top.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            top.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             let top_str = top
                 .iter()
                 .take(3)

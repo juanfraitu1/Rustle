@@ -220,6 +220,8 @@ pub struct Graph {
     /// (min(from,to), max(from,to)) -> edge_id for pattern bits
     pub gpos: HashMap<(usize, usize), usize>,
     pub edgeno: usize,
+    /// Track the next available edge ID to avoid O(|E|) scans.
+    next_edge_id: usize,
 }
 
 impl Graph {
@@ -231,6 +233,7 @@ impl Graph {
             n_nodes: 0,
             gpos: Default::default(),
             edgeno: 0,
+            next_edge_id: 0,
         }
     }
 
@@ -239,7 +242,8 @@ impl Graph {
         self.nodes.push(GraphNode::new(node_id, start, end));
         self.n_nodes = self.nodes.len();
         // Keep edge-bit namespace strictly above node-id namespace.
-        if self.gpos.values().any(|&eid| eid < self.n_nodes) {
+        // Use tracked next_edge_id instead of O(|E|) scan.
+        if self.next_edge_id < self.n_nodes && !self.gpos.is_empty() {
             self.reindex_edge_bits_dense();
         }
         self.nodes.last_mut().unwrap()
@@ -257,11 +261,9 @@ impl Graph {
         }
         let key = (from_id.min(to_id), from_id.max(to_id));
         if !self.gpos.contains_key(&key) {
-            let mut eid = self.n_nodes;
-            if let Some(max_id) = self.gpos.values().max().copied() {
-                eid = eid.max(max_id.saturating_add(1));
-            }
+            let eid = self.next_edge_id.max(self.n_nodes);
             self.gpos.insert(key, eid);
+            self.next_edge_id = eid.saturating_add(1);
             self.edgeno += 1;
         }
     }
@@ -560,6 +562,7 @@ impl Graph {
         }
         self.gpos = new_map;
         self.edgeno = self.gpos.len();
+        self.next_edge_id = next;
     }
 
     /// C++ futuretr sink-proximity suppression analogue:

@@ -122,7 +122,7 @@ fn merge_overlapping_subbundles(
         .enumerate()
         .map(|(i, s)| (i, s.strand, s.start, s.end))
         .collect();
-    indexed.sort_by_key(|&(_, strand, start, _)| (strand, start));
+    indexed.sort_unstable_by_key(|&(_, strand, start, _)| (strand, start));
 
     // Sweep-merge overlapping same-strand subbundles
     let mut groups: Vec<Vec<usize>> = Vec::new();
@@ -201,7 +201,7 @@ fn merge_overlapping_subbundles(
                 cur = bn.next.as_deref();
             }
         }
-        all_bnodes.sort_by_key(|&(s, _, _, _)| s);
+        all_bnodes.sort_unstable_by_key(|&(s, _, _, _)| s);
         all_bnodes.dedup_by_key(|bn| bn.3); // dedup by bid
 
         // Build linked list from sorted bnodes
@@ -489,7 +489,7 @@ fn trace_ref_seed_outcomes(
         });
     }
 
-    rows.sort_by(|a, b| {
+    rows.sort_unstable_by(|a, b| {
         b.overlap
             .cmp(&a.overlap)
             .then_with(|| b.seed_introns.cmp(&a.seed_introns))
@@ -892,7 +892,7 @@ fn merge_region_outer_bundles(
         return bundles;
     }
     let debug_target = parse_debug_bundle_target(config);
-    bundles.sort_by(|a, b| {
+    bundles.sort_unstable_by(|a, b| {
         (a.chrom.as_str(), a.start, a.end, a.strand).cmp(&(
             b.chrom.as_str(),
             b.start,
@@ -916,7 +916,7 @@ fn merge_region_outer_bundles(
             reads.extend(std::mem::take(&mut bundles[i].reads));
             i += 1;
         }
-        reads.sort_by_key(|r| (r.ref_start, r.ref_end, r.read_uid));
+        reads.sort_unstable_by_key(|r| (r.ref_start, r.ref_end, r.read_uid));
         let junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
         if debug_bundle_overlaps(debug_target.as_ref(), &chrom, start, end) {
             let contributing = bundles
@@ -1131,7 +1131,7 @@ fn apply_bad_mm_neg_stage(
 ) {
     let tolerance = 1.0 - 0.1f64;
     let mut donor_sorted: Vec<Junction> = junction_stats.keys().copied().collect();
-    donor_sorted.sort_by_key(|j| (j.donor, j.acceptor));
+    donor_sorted.sort_unstable_by_key(|j| (j.donor, j.acceptor));
     for j in donor_sorted {
         let trace_target = trace_bad_mm_neg_match(j);
         let Some(st) = junction_stats.get_mut(&j) else {
@@ -1220,7 +1220,7 @@ fn apply_bad_mm_neg_stage(
     }
 
     let mut acceptor_sorted: Vec<Junction> = junction_stats.keys().copied().collect();
-    acceptor_sorted.sort_by_key(|j| (j.acceptor, j.donor));
+    acceptor_sorted.sort_unstable_by_key(|j| (j.acceptor, j.donor));
     for j in acceptor_sorted {
         let trace_target = trace_bad_mm_neg_match(j);
         let Some(st) = junction_stats.get_mut(&j) else {
@@ -1320,7 +1320,7 @@ fn emit_trace_junction_actions(
 
     let strand = trace_bundle_strand_i8(bundle_strand);
     let mut donor_sorted: Vec<Junction> = junction_stats.keys().copied().collect();
-    donor_sorted.sort_by_key(|j| (j.donor, j.acceptor));
+    donor_sorted.sort_unstable_by_key(|j| (j.donor, j.acceptor));
     let donor_index: HashMap<Junction, usize> = donor_sorted
         .iter()
         .enumerate()
@@ -1379,7 +1379,7 @@ fn emit_trace_junction_actions(
     }
 
     let mut acceptor_sorted: Vec<Junction> = junction_stats.keys().copied().collect();
-    acceptor_sorted.sort_by_key(|j| (j.acceptor, j.donor));
+    acceptor_sorted.sort_unstable_by_key(|j| (j.acceptor, j.donor));
     for (idx, j) in acceptor_sorted.iter().enumerate() {
         let Some(st) = junction_stats.get(j) else {
             continue;
@@ -1404,7 +1404,7 @@ fn emit_trace_junction_decision_table(junction_stats: &JunctionStats, junction_t
     }
 
     let mut keys: Vec<Junction> = junction_stats.keys().copied().collect();
-    keys.sort_by_key(|j| (j.donor, j.acceptor));
+    keys.sort_unstable_by_key(|j| (j.donor, j.acceptor));
     eprintln!(
         "--- build_graphs: JUNC_DECISION_TABLE count={}",
         keys.len().saturating_add(1)
@@ -1615,7 +1615,7 @@ struct ShadowStrictBundleDiag {
 fn dump_junction_stats(label: &str, stats: &crate::types::JunctionStats) {
     let mut list: Vec<(crate::types::Junction, crate::types::JunctionStat)> =
         stats.iter().map(|(j, s)| (*j, s.clone())).collect();
-    list.sort_by_key(|(j, _)| (j.donor, j.acceptor));
+    list.sort_unstable_by_key(|(j, _)| (j.donor, j.acceptor));
     let killed = list.iter().filter(|(_, s)| s.strand == Some(0)).count();
     eprintln!(
         "[DEBUG_JUNCTIONS] {}: {} junctions (killed={})",
@@ -1644,7 +1644,7 @@ fn dump_junction_stats(label: &str, stats: &crate::types::JunctionStats) {
 fn dump_junction_counts(label: &str, counts: &HashMap<crate::types::Junction, f64>) {
     let mut list: Vec<(crate::types::Junction, f64)> =
         counts.iter().map(|(j, c)| (*j, *c)).collect();
-    list.sort_by_key(|(j, _)| (j.donor, j.acceptor));
+    list.sort_unstable_by_key(|(j, _)| (j.donor, j.acceptor));
     eprintln!("[DEBUG_JUNCTIONS] {}: {} junctions", label, list.len());
     for (j, c) in list {
         eprintln!("  {}-{} count={:.2}", j.donor, j.acceptor, c);
@@ -1657,7 +1657,7 @@ fn dump_junction_redirects(
 ) {
     let mut list: Vec<(crate::types::Junction, crate::types::Junction)> =
         redirects.iter().map(|(from, to)| (*from, *to)).collect();
-    list.sort_by_key(|(from, to)| (from.donor, from.acceptor, to.donor, to.acceptor));
+    list.sort_unstable_by_key(|(from, to)| (from.donor, from.acceptor, to.donor, to.acceptor));
     eprintln!("[DEBUG_JUNCTIONS] {}: {} redirects", label, list.len());
     for (from, to) in list {
         eprintln!(
@@ -2953,9 +2953,9 @@ fn bundlenode_components_by_junctions(
     }
     let mut out: Vec<Vec<(usize, u64, u64, f64)>> = groups.into_values().collect();
     for g in &mut out {
-        g.sort_by_key(|v| v.1);
+        g.sort_unstable_by_key(|v| v.1);
     }
-    out.sort_by_key(|g| g.first().map(|v| v.1).unwrap_or(0));
+    out.sort_unstable_by_key(|g| g.first().map(|v| v.1).unwrap_or(0));
 
     if parity_debug {
         eprintln!("PARITY_JUNC_SPLIT result: {} components", out.len());
@@ -3008,9 +3008,9 @@ fn bundlenode_components_by_color(
 
     let mut out: Vec<Vec<(usize, u64, u64, f64)>> = groups.into_values().collect();
     for g in &mut out {
-        g.sort_by_key(|v| v.1);
+        g.sort_unstable_by_key(|v| v.1);
     }
-    out.sort_by_key(|g| g.first().map(|v| v.1).unwrap_or(0));
+    out.sort_unstable_by_key(|g| g.first().map(|v| v.1).unwrap_or(0));
 
     if parity_debug {
         eprintln!("COLOR_SPLIT components={}", out.len());
@@ -5056,7 +5056,7 @@ fn adjust_overlap_endpoints_opposite_strand(
         return transcripts;
     }
     let mut txs = transcripts;
-    txs.sort_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
+    txs.sort_unstable_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
     let n = txs.len();
     let mut adjusted = 0usize;
     let min_len = config.min_transcript_length;
@@ -5157,7 +5157,7 @@ fn adjust_overlap_endpoints_opposite_strand(
         }
     }
 
-    txs.sort_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
+    txs.sort_unstable_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
     if verbose && adjusted > 0 {
         eprintln!(
             "    overlap_endpoint_adjust: adjusted {} transcript terminal boundary(ies)",
@@ -5179,7 +5179,7 @@ fn correct_two_exon_split_errors(
         return transcripts;
     }
     let mut txs = transcripts;
-    txs.sort_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
+    txs.sort_unstable_by_key(|t| t.exons.first().map(|e| e.0).unwrap_or(0));
     let n = txs.len();
     let mut alive = vec![true; n];
     const ERROR_PERC: f64 = 0.1;
@@ -5552,7 +5552,7 @@ fn apply_guide_reflink_absorption(
         .collect();
 
     let mut order: Vec<usize> = (0..txs.len()).collect();
-    order.sort_by_key(|&i| tx_bounds(&txs[i]).0);
+    order.sort_unstable_by_key(|&i| tx_bounds(&txs[i]).0);
 
     let n = txs.len();
     let mut alive = vec![true; n];
@@ -5902,6 +5902,12 @@ pub fn run<P: AsRef<Path>>(
     trace_output: Option<&str>,
 ) -> Result<()> {
     let _t0 = std::time::Instant::now();
+    let show_timing = std::env::var_os("RUSTLE_TIMING").is_some();
+    macro_rules! phase_timer {
+        ($label:expr) => {
+            if show_timing { eprintln!("[TIMING] {} {:.3}s", $label, _t0.elapsed().as_secs_f64()); }
+        };
+    }
     init_rayon_pool(config.threads);
     let parity_tsv_resolved = resolve_parity_stage_tsv_path(&config, output_gtf.as_ref(), trace_reference);
     if let Some(ref p) = parity_tsv_resolved {
@@ -5920,6 +5926,7 @@ pub fn run<P: AsRef<Path>>(
     let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
         LruCache::new(consensus_cache_capacity());
     let mut bundles = detect_bundles_from_bam(bam_path.as_ref(), &config, chrom_filter)?;
+    phase_timer!("bam_ingest");
     let debug_target = parse_debug_bundle_target(&config);
     if config.only_debug_bundle {
         bundles.retain(|bundle| {
@@ -6547,6 +6554,7 @@ pub fn run<P: AsRef<Path>>(
         }
     }
     t!("groupflow_build");
+    phase_timer!("pre_assembly");
 
     // Track total sub-bundles created across all regions
     let total_subbundles = std::sync::atomic::AtomicUsize::new(0);
@@ -8304,8 +8312,9 @@ pub fn run<P: AsRef<Path>>(
                     continue;
                 }
 
-                let mut sub_reads: Vec<BundleRead> = Vec::new();
-                let mut sub_read_bnodes: Vec<Vec<usize>> = Vec::new();
+                let sub_cap = cpp_bundle.read_scale.len();
+                let mut sub_reads: Vec<BundleRead> = Vec::with_capacity(sub_cap);
+                let mut sub_read_bnodes: Vec<Vec<usize>> = Vec::with_capacity(sub_cap);
                 for (ri, read) in effective_reads.iter().enumerate() {
                     let scale = cpp_bundle.read_scale.get(ri).copied().unwrap_or(0.0);
                     let mapped = cpp_bundle
@@ -8379,7 +8388,7 @@ pub fn run<P: AsRef<Path>>(
                 let (iter_bnode_head, iter_start, iter_end): (Option<CBundlenode>, u64, u64) = if let Some(group) = color_group {
                     // Build a bundlenode chain from this color group
                     let mut sorted = group.clone();
-                    sorted.sort_by_key(|&(s, _, _, _)| s);
+                    sorted.sort_unstable_by_key(|&(s, _, _, _)| s);
                     if sorted.is_empty() {
                         (None, 0, 0)
                     } else {
@@ -8705,7 +8714,7 @@ pub fn run<P: AsRef<Path>>(
                             (j.donor, j.acceptor, mr, ng)
                         })
                         .collect();
-                    jlist.sort_by_key(|&(d, a, _, _)| (d, a));
+                    jlist.sort_unstable_by_key(|&(d, a, _, _)| (d, a));
                     eprintln!(
                         "PARITY_JUNCTIONS sno={} b={} count={} range={}-{}",
                         sno, cpp_bundle_idx, jlist.len(),
@@ -9153,6 +9162,7 @@ pub fn run<P: AsRef<Path>>(
         Ok(())
     })?;
 
+    phase_timer!("assembly_done");
     let mut all_transcripts = all_transcripts_mutex.into_inner().unwrap();
     let single_exon_predictions = single_exon_predictions_mutex.into_inner().unwrap();
     let mut shadow_bundle_diags = shadow_bundle_diags_mutex.into_inner().unwrap();
@@ -9167,7 +9177,7 @@ pub fn run<P: AsRef<Path>>(
     }
 
     if shadow_strict_3strand && !shadow_bundle_diags.is_empty() {
-        shadow_bundle_diags.sort_by(|a, b| {
+        shadow_bundle_diags.sort_unstable_by(|a, b| {
             b.score
                 .cmp(&a.score)
                 .then(a.chrom.cmp(&b.chrom))
@@ -9455,7 +9465,7 @@ pub fn run<P: AsRef<Path>>(
             *by_source.entry(key).or_insert(0) += 1;
         }
         let mut rows: Vec<(String, usize)> = by_source.into_iter().collect();
-        rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        rows.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         eprintln!(
             "RUSTLE_SOURCE_HISTOGRAM: {} transcripts by GTF source attribute (see path_extract/pipeline tags)",
             all_transcripts.len()
@@ -9579,6 +9589,7 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    phase_timer!("total");
     if config.verbose {
         eprintln!(
             "rustle: {} bundles, {} transcripts",

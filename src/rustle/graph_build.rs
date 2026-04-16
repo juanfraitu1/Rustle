@@ -915,7 +915,7 @@ fn apply_iterative_longtrim_splits(
     let mut node_ids: Vec<usize> = (0..graph.nodes.len())
         .filter(|&i| i != source_id && i != sink_id && graph.nodes[i].end > graph.nodes[i].start)
         .collect();
-    node_ids.sort_by_key(|&i| graph.nodes[i].start);
+    node_ids.sort_unstable_by_key(|&i| graph.nodes[i].start);
 
     let mut nls: usize = 0; // Pointer into lstart (never backtracks)
     let mut nle: usize = 0; // Pointer into lend
@@ -1270,8 +1270,8 @@ pub fn create_graph_with_longtrim(
                 }
             }
         }
-        starts.sort_by_key(|b| b.pos);
-        ends.sort_by_key(|b| b.pos);
+        starts.sort_unstable_by_key(|b| b.pos);
+        ends.sort_unstable_by_key(|b| b.pos);
         oracle_starts_owned = starts;
         oracle_ends_owned = ends;
         (&oracle_starts_owned, &oracle_ends_owned)

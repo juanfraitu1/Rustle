@@ -561,7 +561,7 @@ pub fn build_bundles_cpp_style(
 
     // Sort reads by (start, end) like C++
     let mut read_order: Vec<usize> = (0..reads.len()).collect();
-    read_order.sort_by_key(|&i| {
+    read_order.sort_unstable_by_key(|&i| {
         let r = &reads[i];
         (r.ref_start, r.ref_end)
     });
@@ -1030,7 +1030,7 @@ pub fn build_bundles_cpp_style(
             }
         }
         eprintln!("PARITY_BG_DISTINCT_COLORS total={}", color_set.len());
-        rows.sort_by_key(|r| (r.0, r.2, r.3, r.1));
+        rows.sort_unstable_by_key(|r| (r.0, r.2, r.3, r.1));
         for (sno, grid, start, end, color, cov) in rows {
             eprintln!(
                 "PARITY_BG_GRP sno={} grid={} start={} end={} color={} cov={:.1}",
@@ -2073,6 +2073,6 @@ fn create_bundles_cpp_global(
             });
         }
     }
-    results.sort_by_key(|r| r.start);
+    results.sort_unstable_by_key(|r| r.start);
     Ok(results)
 }

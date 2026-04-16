@@ -1228,7 +1228,7 @@ pub fn extract_shortread_transcripts(
         .filter(|(_, tf)| tf.srabund > EPS || !tf.longread)
         .map(|(i, _)| i)
         .collect();
-    indices.sort_by(|&i, &j| {
+    indices.sort_unstable_by(|&i, &j| {
         let a = &transfrags[i];
         let b = &transfrags[j];
         let eff_a = a.srabund + a.abundance;
@@ -4696,7 +4696,7 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
         .collect();
     // C++ ref: trflong order is determined by keeptrf insertion plus reverse iteration.
     // usepath encodes the vector order, so ascending usepath reproduces C++ consumption.
-    seeded.sort_by_key(|&i| transfrags[i].usepath);
+    seeded.sort_unstable_by_key(|&i| transfrags[i].usepath);
     seeded
 }
 
@@ -4708,7 +4708,7 @@ fn parse_trf(_graph: &Graph, transfrags: &[GraphTransfrag]) -> Vec<usize> {
         .filter(|(_, tf)| tf.srabund > crate::constants::FLOW_EPSILON || !tf.longread)
         .map(|(i, _)| i)
         .collect();
-    indices.sort_by(|&i, &j| {
+    indices.sort_unstable_by(|&i, &j| {
         let a = &transfrags[i];
         let b = &transfrags[j];
         let eff_a = a.srabund + a.abundance;
@@ -4839,7 +4839,7 @@ pub fn extract_transcripts(
     if mixed_mode {
         // Mixed parity: long-pass by usepath/trflong, then short-pass by parse_trf ordering.
         let mut long_order: Vec<usize> = (0..transfrags.len()).collect();
-        long_order.sort_by_key(|&a| transfrags[a].usepath);
+        long_order.sort_unstable_by_key(|&a| transfrags[a].usepath);
         let mut seen: HashSet<usize> = Default::default();
         for i in long_order {
             if transfrags[i].usepath < -1 {
@@ -4877,7 +4877,7 @@ pub fn extract_transcripts(
                             || (tf.real && !tf.killed_junction_orphan && !tf.coverage_weak))
                 })
                 .collect();
-            extra.sort_by(|&a, &b| {
+            extra.sort_unstable_by(|&a, &b| {
                 let ta = &transfrags[a];
                 let tb = &transfrags[b];
                 let ab = tb
@@ -4893,7 +4893,7 @@ pub fn extract_transcripts(
         }
     } else {
         order = (0..transfrags.len()).collect();
-        order.sort_by(|&a, &b| {
+        order.sort_unstable_by(|&a, &b| {
             transfrags[b]
                 .abundance
                 .partial_cmp(&transfrags[a].abundance)
@@ -7459,7 +7459,7 @@ pub fn extract_transcripts(
     if false && long_read_mode && !kept_paths.is_empty() {
         // Sort kept_paths indices by C++ longtrCmp: guides first, then abundance desc, then node count desc
         let mut keeptrf_order: Vec<usize> = (0..kept_paths.len()).collect();
-        keeptrf_order.sort_by(|&a, &b| {
+        keeptrf_order.sort_unstable_by(|&a, &b| {
             let (ref nodes_a, cov_a, guide_a, oidx_a) = kept_paths[a];
             let (ref nodes_b, cov_b, guide_b, oidx_b) = kept_paths[b];
             // guides first

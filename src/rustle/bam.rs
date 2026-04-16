@@ -404,41 +404,18 @@ const POLYA_MIN_CONSEC: u32 = 5;
 const POLYA_WINDOW: usize = 20;
 const POLYA_MIN_FRAC: f64 = 0.8;
 
-/// Detect polyA/T from record: returns (aligned_start, unaligned_start, aligned_end, unaligned_end).
-/// aligned_polyT/aligned_polyA = in-alignment body; unaligned_* = soft-clip tail.
-fn detect_polya_from_record(
-    record: &RecordBuf,
-    clip_left: u32,
-    clip_right: u32,
-) -> (bool, bool, bool, bool) {
-    let seq_bytes = seq_bytes_from_record(record);
-    if seq_bytes.is_empty() {
-        return (false, false, false, false);
-    }
-    polya::detect_polya_aligned_unaligned(
-        &seq_bytes,
-        clip_left,
-        clip_right,
-        POLYA_MIN_CONSEC,
-        POLYA_WINDOW,
-        POLYA_MIN_FRAC,
-    )
-}
+// detect_polya_from_record removed — inlined at call site to share seq_bytes buffer.
 
 /// C++ reference check_last_exon_polyA/check_first_exon_polyT parity:
 /// ratio of A on last exon, ratio of T on first exon (>=0.8 triggers trim candidate).
 /// Exons are 0-based half-open, so exon length is end-start.
-fn detect_terminal_exon_poly_flags(
-    record: &RecordBuf,
+fn detect_terminal_exon_poly_flags_with_seq(
+    seq: &[u8],
     exons: &[(u64, u64)],
     clip_left: u32,
     clip_right: u32,
 ) -> (bool, bool) {
-    if exons.is_empty() {
-        return (false, false);
-    }
-    let seq = seq_bytes_from_record(record);
-    if seq.is_empty() {
+    if exons.is_empty() || seq.is_empty() {
         return (false, false);
     }
 
@@ -530,7 +507,9 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     }
     let ref_end = exons.last().map(|e| e.1).unwrap_or(ref_start);
     let nh = get_nh(record);
-    let md = get_md(record);
+    // MD tag: defer String allocation — only needed downstream for --vg-snp.
+    // Store None here; vg.rs re-extracts from BAM when needed.
+    let md: Option<String> = None;
     let yc = get_yc(record);
     let yk = get_yk(record);
     // rdcount = YC; if(YK) rdcount=YK; if(isunitig) unitig=true
@@ -545,14 +524,23 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     let query_length = Some(record.sequence().len() as u64);
     let clip_left = parsed.clip_left;
     let clip_right = parsed.clip_right;
+    // Extract sequence bytes once and reuse for both poly-A checks.
+    let seq_bytes = seq_bytes_from_record(record);
     let (
         has_poly_start_aligned,
         has_poly_start_unaligned,
         has_poly_end_aligned,
         has_poly_end_unaligned,
-    ) = detect_polya_from_record(record, clip_left, clip_right);
+    ) = if seq_bytes.is_empty() {
+        (false, false, false, false)
+    } else {
+        polya::detect_polya_aligned_unaligned(
+            &seq_bytes, clip_left, clip_right,
+            POLYA_MIN_CONSEC, POLYA_WINDOW, POLYA_MIN_FRAC,
+        )
+    };
     let (has_last_exon_polya, has_first_exon_polyt) =
-        detect_terminal_exon_poly_flags(record, &exons, clip_left, clip_right);
+        detect_terminal_exon_poly_flags_with_seq(&seq_bytes, &exons, clip_left, clip_right);
     // the reference assembler CReadAln stores integer unaligned poly tail evidence counters.
     // One BAM alignment contributes one unit of support when tail evidence is present.
     let unaligned_poly_t: u16 = if has_poly_start_unaligned { 1 } else { 0 };
@@ -611,9 +599,9 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     let hp_tag = get_tag_int(record, "HP").and_then(|v| if v > 0 { Some(v as u8) } else { None });
     let ps_tag = get_tag_int(record, "PS").and_then(|v| if v > 0 { Some(v as u32) } else { None });
 
-    // VG SNP: extract per-base mismatches from MD tag.
-    // Only populated here — downstream code (vg.rs) uses it when --vg-snp is active.
-    let mismatches = parse_md_mismatches(md.as_deref(), ref_start, record);
+    // VG SNP: mismatch extraction deferred — parse_md_mismatches is only called
+    // downstream in vg.rs when --vg-snp is active.  Avoid the cost here.
+    let mismatches = Vec::new();
 
     Some(BundleRead {
         read_uid: NEXT_READ_UID.fetch_add(1, Ordering::Relaxed),
@@ -672,7 +660,7 @@ pub fn open_bam<P: AsRef<Path>>(
 ) -> Result<BamReader<noodles_bgzf::MultithreadedReader<io::BufReader<std::fs::File>>>> {
     let path = path.as_ref();
     let file = std::fs::File::open(path)?;
-    let buf = io::BufReader::new(file);
+    let buf = io::BufReader::with_capacity(1 << 20, file); // 1MB buffer for BAM I/O
     let worker_count = std::num::NonZeroUsize::new(num_threads).unwrap_or(std::num::NonZeroUsize::MIN);
     let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker_count, buf);
     let reader = BamReader::from(bgzf);

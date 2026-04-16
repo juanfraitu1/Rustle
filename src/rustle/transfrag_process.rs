@@ -221,7 +221,7 @@ fn write_keeptrf_usepath_tsv(
         })
         .map(|(idx, _)| idx)
         .collect();
-    parse_order.sort_by_key(|&idx| transfrags[idx].usepath);
+    parse_order.sort_unstable_by_key(|&idx| transfrags[idx].usepath);
     let parse_rank: HashMap<usize, usize> = parse_order
         .into_iter()
         .enumerate()
@@ -529,7 +529,7 @@ fn promote_terminal_tail_variants(
 
     let mut added: Vec<GraphTransfrag> = Vec::new();
     let mut pick_list: Vec<((usize, usize, usize), usize)> = picked.into_iter().collect();
-    pick_list.sort_by_key(|(_, idx)| *idx);
+    pick_list.sort_unstable_by_key(|(_, idx)| *idx);
     for ((_, _, child), idx) in pick_list {
         let tf = &transfrags[idx];
         let Some(&last) = tf.node_ids.last() else {
@@ -1216,7 +1216,7 @@ pub fn process_srfrag(
     }
     seltrfrag.sort_unstable();
     seltrfrag.dedup();
-    seltrfrag.sort_by(|&a, &b| {
+    seltrfrag.sort_unstable_by(|&a, &b| {
         transfrags[b]
             .abundance
             .partial_cmp(&transfrags[a].abundance)
@@ -1594,7 +1594,7 @@ pub fn process_transfrags(
 
     if long_mode && transfrags.len() > 1 {
         let mut order: Vec<usize> = (0..transfrags.len()).collect();
-        order.sort_by(|&a, &b| {
+        order.sort_unstable_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
             tb.guide
@@ -1632,7 +1632,7 @@ pub fn process_transfrags(
     // - longreads: longtrCmp (guide first, then abundance, then structure)
     // - non-longreads: trCmp-like (larger node count first, then abundance)
     if long_mode {
-        active_indices.sort_by(|&a, &b| {
+        active_indices.sort_unstable_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
             tb.guide
@@ -1648,7 +1648,7 @@ pub fn process_transfrags(
     } else {
         // C++ reference trCmp: reach first (last node - first node), then node count,
         // then pattern completeness, then abundance. C++ reference.
-        active_indices.sort_by(|&a, &b| {
+        active_indices.sort_unstable_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
             let reach = |t: &GraphTransfrag| -> usize {
@@ -1674,7 +1674,7 @@ pub fn process_transfrags(
     // iterating transfrags in longtrCmp order (including source/sink transfrags).
     if long_mode {
         let mut all_order: Vec<usize> = (0..transfrags.len()).collect();
-        all_order.sort_by(|&a, &b| {
+        all_order.sort_unstable_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
             tb.guide

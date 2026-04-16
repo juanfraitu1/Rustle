@@ -46,7 +46,7 @@ pub fn merge_exon_intervals(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
         return Vec::new();
     }
     let mut sorted: Vec<(u64, u64)> = exons.to_vec();
-    sorted.sort_by_key(|e| e.0);
+    sorted.sort_unstable_by_key(|e| e.0);
     let mut out = vec![sorted[0]];
     for &(s, e) in sorted.iter().skip(1) {
         let last = out.last_mut().unwrap();
