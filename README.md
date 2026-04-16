@@ -18,7 +18,7 @@ Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) usi
 | Intron-level precision | 93.9% | — | |
 | Locus-level sensitivity | 94.9% | — | |
 | Locus-level precision | 95.2% | — | |
-| Wall-clock time | **8.0 s** | 13.7 s | **1.7x faster** |
+| Wall-clock time | **5.4 s** | 13.7 s | **2.5x faster** |
 | Language | Rust | C++ | |
 
 > Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci).
