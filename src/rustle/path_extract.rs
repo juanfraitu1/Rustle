@@ -3609,6 +3609,7 @@ fn fwd_to_sink_fast_long(
     let mut maxcov = 0.0;
     let mut tmax: Option<usize> = None;
     let mut exclude = false;
+    let mut excluded_child: Option<usize> = None;
     let mut nextnode: Option<usize> = None;
     // Use genomic coordinates for reachability check, not node IDs
     let maxpath_coord = node_start_or_zero(graph, *maxpath);
@@ -3713,6 +3714,7 @@ fn fwd_to_sink_fast_long(
                     > nodecov.get(c).copied().unwrap_or(0.0)
             {
                 exclude = true;
+                excluded_child = Some(c);
             } else {
                 pathpat.set_bit(c);
                 edge_set(pathpat, graph, i, c, true);
@@ -3976,15 +3978,19 @@ fn fwd_to_sink_fast_long(
         return false;
     }
     if maxc.is_none() {
-        if exclude && i + 1 < gno && nodecov.get(i + 1).copied().unwrap_or(0.0) > 0.0 {
-            let Some(cnode) = graph.nodes.get(i + 1) else {
+        // Exclude fallback: when the adjacent child was excluded by the coverage-drop check,
+        // re-evaluate it with full transfrag support to see if it has enough evidence.
+        // Use the actual excluded child node (not i+1) since longtrim breaks ID ordering.
+        let ec = excluded_child.unwrap_or(i + 1); // fallback to i+1 if no exclude recorded
+        if exclude && ec < gno && nodecov.get(ec).copied().unwrap_or(0.0) > 0.0 {
+            let Some(cnode) = graph.nodes.get(ec) else {
                 return false;
             };
             let mut childcov = 0.0;
             let mut tlocal: Option<usize> = None;
-            let endpath = (*maxpath).max(i + 1);
-            pathpat.set_bit(i + 1);
-            edge_set(pathpat, graph, i, i + 1, true);
+            let endpath = (*maxpath).max(ec);
+            pathpat.set_bit(ec);
+            edge_set(pathpat, graph, i, ec, true);
             for &t in &cnode.trf_ids {
                 let Some(tf) = transfrags.get(t) else {
                     continue;
@@ -3999,7 +4005,7 @@ fn fwd_to_sink_fast_long(
                     continue;
                 };
                 if first <= i
-                    && last >= i + 1
+                    && last >= ec
                     && if require_longread {
                         onpath_long(
                             &tf.pattern,
@@ -4024,10 +4030,10 @@ fn fwd_to_sink_fast_long(
                     replace_tmax(t, &mut tlocal, transfrags, graph, nodecov);
                 }
             }
-            edge_set(pathpat, graph, i, i + 1, false);
-            pathpat.clear_bit(i + 1);
+            edge_set(pathpat, graph, i, ec, false);
+            pathpat.clear_bit(ec);
             if childcov > 0.0 {
-                maxc = Some(i + 1);
+                maxc = Some(ec);
                 tmax = tlocal;
             } else {
                 diag.fwd_exclude_no_support += 1;
@@ -4176,6 +4182,7 @@ fn back_to_source_fast_long(
     let mut maxcov = 0.0;
     let mut tmax: Option<usize> = None;
     let mut exclude = false;
+    let mut excluded_parent: Option<usize> = None;
     let mut nextnode: Option<usize> = None;
     let mut reach = *minpath >= i;
 
@@ -4267,6 +4274,7 @@ fn back_to_source_fast_long(
                     > nodecov.get(p).copied().unwrap_or(0.0)
             {
                 exclude = true;
+                excluded_parent = Some(p);
             } else {
                 pathpat.set_bit(p);
                 edge_set(pathpat, graph, p, i, true);
@@ -4564,15 +4572,18 @@ fn back_to_source_fast_long(
                 diag.back_transfrags_skipped_depleted, diag.back_transfrags_skipped_notlong,
                 diag.back_transfrags_skipped_ends_at_sink, diag.back_transfrags_skipped_onpath);
         }
-        if exclude && i > 0 && nodecov.get(i - 1).copied().unwrap_or(0.0) > 0.0 {
-            let Some(pnode) = graph.nodes.get(i - 1) else {
+        // Exclude fallback: re-evaluate the excluded parent with full transfrag support.
+        // Use actual excluded parent node (not i-1) since longtrim breaks ID ordering.
+        let ep = excluded_parent.unwrap_or(i.saturating_sub(1));
+        if exclude && ep < gno && nodecov.get(ep).copied().unwrap_or(0.0) > 0.0 {
+            let Some(pnode) = graph.nodes.get(ep) else {
                 return false;
             };
             let mut parentcov = 0.0;
             let mut tlocal: Option<usize> = None;
-            let startpath = (*minpath).min(i - 1);
-            pathpat.set_bit(i - 1);
-            edge_set(pathpat, graph, i - 1, i, true);
+            let startpath = (*minpath).min(ep);
+            pathpat.set_bit(ep);
+            edge_set(pathpat, graph, ep, i, true);
             for &t in &pnode.trf_ids {
                 let Some(tf) = transfrags.get(t) else {
                     continue;
@@ -4586,7 +4597,7 @@ fn back_to_source_fast_long(
                 let Some((first, last)) = first_last_raw(tf) else {
                     continue;
                 };
-                if first <= i - 1
+                if first <= ep
                     && last >= i
                     && if require_longread {
                         onpath_long(
@@ -4612,10 +4623,10 @@ fn back_to_source_fast_long(
                     replace_tmax(t, &mut tlocal, transfrags, graph, nodecov);
                 }
             }
-            edge_set(pathpat, graph, i - 1, i, false);
-            pathpat.clear_bit(i - 1);
+            edge_set(pathpat, graph, ep, i, false);
+            pathpat.clear_bit(ep);
             if parentcov > 0.0 {
-                maxp = Some(i - 1);
+                maxp = Some(ep);
                 tmax = tlocal;
             } else {
                 diag.back_exclude_no_support += 1;
