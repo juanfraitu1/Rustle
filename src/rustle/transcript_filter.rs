@@ -4014,41 +4014,14 @@ pub fn print_predcluster_with_summary(
         if is_guide_pair(t) {
             return true;
         }
-        // Special: rescued transcripts with at least one high-confidence boundary
-        // are kept even if below readthr, emulating the original algorithm's selective promotion.
-        if is_rescue_protected(t) && (t.hardstart || t.hardend) {
-            return true;
-        }
-        
-        let is_unanchored = !t.hardstart && !t.hardend;
-        // Unanchored boost targets short spurious models; long multi-exon isoforms often lack
-        // hardstart/hardend flags but still have strong junction support (e.g. STRG.151.7).
-        let effective_base_thr = if is_unanchored && t.exons.len() <= 3 {
-            base_threshold * 1.5
-        } else {
-            base_threshold
-        };
-
-        // Determine threshold: single-exon uses singlethr
+        // Simple readthr gate matching the original algorithm (line 19910):
+        // cov < readthr → kill. No exceptions for rescue or longcov.
         let threshold = if t.exons.len() == 1 {
             config.singlethr // 4.75 for single-exon
         } else {
-            effective_base_thr 
+            base_threshold // readthr (1.0)
         };
-        if t.coverage >= threshold {
-            return true;
-        }
-        // For long-read transcripts, EK flow coverage is not per-base read depth: it is
-        // derived from the max-flow decomposition (nodeflux_abs * noderate) and can be
-        // below 1.0 for real minor isoforms supported by multiple reads.  Fall back to
-        // longcov (pre-depletion read_count) as a secondary acceptance gate: if the path
-        // has ≥2 actual reads supporting it, keep it unless flow coverage is too low.
-        // Still require a minimum flow coverage floor (0.6) to prevent ultra-thin flow
-        // paths from sneaking through — the original implementation never outputs cov < 1.0.
-        if t.is_longread && t.longcov >= 2.0 && t.coverage >= 0.6 {
-            return true;
-        }
-        readthr_allow_longcov_fallback() && t.is_longread && t.longcov >= threshold
+        t.coverage >= threshold
     });
     summary.after_readthr = txs.len();
     if config.verbose && txs.len() < before {

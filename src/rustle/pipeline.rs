@@ -9486,7 +9486,7 @@ pub fn run<P: AsRef<Path>>(
     // 44 FPs while losing only 4 marginal TPs (cov 0.56-0.79), giving +0.7% F1.
     // Guide-matched transcripts (eonly zero-cov guides) are exempt.
     {
-        const FINAL_COV_FLOOR: f64 = 0.8;
+        const FINAL_COV_FLOOR: f64 = 1.0;
         let before = all_transcripts.len();
         all_transcripts.retain(|t| {
             t.coverage >= FINAL_COV_FLOOR
