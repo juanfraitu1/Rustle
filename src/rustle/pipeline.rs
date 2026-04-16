@@ -6926,11 +6926,27 @@ pub fn run<P: AsRef<Path>>(
         }
         let mut killed_juncs: HashSet<crate::types::Junction> = junction_stats_corr_final
             .iter()
-            .filter(|(_, s)| {
+            .filter(|(j, s)| {
                 // strand==0: junction genuinely has no strand support → killed.
-                // mm<0 with strand!=0: higherr demotion, but the read-redirect
-                // creates a replacement with non-zero strand → NOT killed for color purposes.
-                s.strand == Some(0)
+                if s.strand == Some(0) { return true; }
+                // mm<0 from apply_bad_mm_neg_stage: junction failed the per-junction
+                // quality check. Include non-redirected ones for color breaks.
+                if s.mm < 0.0 && s.mrcount >= 0.0 && s.nreads_good >= 0.0 {
+                    return true;
+                }
+                // Single-read long-intron junctions: these likely represent
+                // spurious connections from noisy reads spanning unrelated loci.
+                // The original algorithm's per-read good_junc kills these
+                // because mm gets set to -1 during the per-read chi-squared check
+                // when nm==nreads (all reads have mismatches). For color propagation,
+                // treat as killed to prevent over-merging of unrelated bnodes.
+                let intron_len = j.acceptor.saturating_sub(j.donor);
+                if s.nreads_good <= 1.5 && intron_len > 10000 && !s.guide_match
+                    && s.mrcount >= 0.0 && s.nreads_good >= 0.0
+                {
+                    return true;
+                }
+                false
             })
             .map(|(j, _)| *j)
             .collect();
