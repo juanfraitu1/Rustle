@@ -1123,217 +1123,100 @@ fn trace_junction_reason(st: &JunctionStat, _junction_thr: f64) -> &'static str 
     }
 }
 
+/// Per-junction quality check matching the original algorithm's good_junc
+/// (line 14374-14476). Runs on each junction using strand-specific bpcov.
+/// Kills junctions (mm=-1) that fail:
+///   - coverage drop check at donor (bw=5 window, strand-specific)
+///   - coverage drop check at acceptor
+///   - isofrac: nreads*10 < ERROR_PERC*leftsupport
+/// Per-junction quality check matching the original algorithm's good_junc
+/// (rlink.cpp line 14374-14476). Uses strand-specific bpcov with bw=5 window
+/// and checks: coverage signal at donor, coverage signal at acceptor,
+/// and isofrac relative to splice site support.
 fn apply_bad_mm_neg_stage(
     junction_stats: &mut JunctionStats,
     bpcov: &BpcovStranded,
     refstart: u64,
     junction_thr: f64,
 ) {
-    let tolerance = 1.0 - 0.1f64;
-    let mut donor_sorted: Vec<Junction> = junction_stats.keys().copied().collect();
-    donor_sorted.sort_unstable_by_key(|j| (j.donor, j.acceptor));
-    for j in donor_sorted {
-        let trace_target = trace_bad_mm_neg_match(j);
-        let Some(st) = junction_stats.get_mut(&j) else {
-            continue;
+    const ERROR_PERC: f64 = 0.1;
+    const BW: usize = 5;
+    // For long reads: mult = 1/(ERROR_PERC^2) = 100
+    let mult: f64 = 1.0 / (ERROR_PERC * ERROR_PERC);
+
+    /// Strand-specific coverage over a range: total - opposite_strand.
+    fn strand_cov(bpcov: &BpcovStranded, opp: usize, start: usize, end: usize) -> f64 {
+        let total = bpcov.get_cov_range(BPCOV_STRAND_ALL, start, end);
+        let opposite = if opp != BPCOV_STRAND_ALL {
+            bpcov.get_cov_range(opp, start, end)
+        } else {
+            0.0
         };
-        let strand = st.strand.unwrap_or(0);
-        if trace_target {
-            eprintln!(
-                "TRACE_BAD_MM_NEG stage=donor junc={}-{} strand={} nm={:.1} mm={:.1} nreads={:.1} nreads_good={:.1} guide={}",
-                j.donor,
-                j.acceptor.saturating_add(1),
-                strand,
-                st.nm,
-                st.mm,
-                st.mrcount,
-                st.nreads_good,
-                if st.guide_match { 1 } else { 0 }
-            );
-        }
-        if strand == 0 || st.guide_match || st.nm <= 0.0 || st.nm + 1e-9 < st.mrcount {
-            if trace_target {
-                eprintln!(
-                    "TRACE_BAD_MM_NEG stage=donor junc={}-{} action=skip precondition strand={} guide={} nm={:.1} nreads={:.1}",
-                    j.donor,
-                    j.acceptor.saturating_add(1),
-                    strand,
-                    if st.guide_match { 1 } else { 0 },
-                    st.nm,
-                    st.mrcount
-                );
-            }
-            continue;
-        }
-        // Protect well-supported junctions from bpcov-based coverage drop kill.
-        // For long reads, nm >= mrcount is always true (CCS reads have mismatches),
-        // so every junction reaches the bpcov check. Junctions with strong read
-        // support should survive regardless of the local coverage signal.
-        if st.nreads_good >= 5.0 * junction_thr {
-            continue;
-        }
-        if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
-            if trace_target {
-                eprintln!(
-                    "TRACE_BAD_MM_NEG stage=donor junc={}-{} action=skip redirected mrcount={:.1} nreads_good={:.1} mm={:.1}",
-                    j.donor,
-                    j.acceptor.saturating_add(1),
-                    st.mrcount,
-                    st.nreads_good,
-                    st.mm
-                );
-            }
-            continue;
-        }
-        if st.nreads_good < junction_thr {
-            if trace_target {
-                eprintln!(
-                    "TRACE_BAD_MM_NEG stage=donor junc={}-{} action=delete low_support thr={:.2} good={:.1}",
-                    j.donor,
-                    j.acceptor.saturating_add(1),
-                    junction_thr,
-                    st.nreads_good
-                );
-            }
-            st.mm = -1.0;
-            continue;
-        }
-        // Use strand-specific bpcov matching the original algorithm's get_cov_sign:
-        // total - opposite_strand = this_strand + neutral.
-        let strand_code = st.strand.unwrap_or(0);
-        let opp = match strand_code {
-            -1 => BPCOV_STRAND_PLUS,  // neg strand: subtract pos
-            1 => BPCOV_STRAND_MINUS, // pos strand: subtract neg
-            _ => BPCOV_STRAND_ALL,   // unknown: use total
-        };
-        let point = j.donor.saturating_sub(refstart) as usize;
-        let total_left = bpcov.get_cov_range(BPCOV_STRAND_ALL, point, point.saturating_add(1));
-        let opp_left = if opp != BPCOV_STRAND_ALL {
-            bpcov.get_cov_range(opp, point, point.saturating_add(1))
-        } else { 0.0 };
-        let leftcov = (total_left - opp_left).max(0.0);
-        let total_right = bpcov.get_cov_range(BPCOV_STRAND_ALL, point.saturating_add(1), point.saturating_add(2));
-        let opp_right = if opp != BPCOV_STRAND_ALL {
-            bpcov.get_cov_range(opp, point.saturating_add(1), point.saturating_add(2))
-        } else { 0.0 };
-        let rightcov = (total_right - opp_right).max(0.0);
-        if trace_target {
-            eprintln!(
-                "TRACE_BAD_MM_NEG stage=donor junc={}-{} point={} leftcov={:.1} rightcov={:.1} tol={:.3} strand={} action={}",
-                j.donor,
-                j.acceptor.saturating_add(1),
-                point,
-                leftcov,
-                rightcov,
-                tolerance,
-                strand_code,
-                if rightcov > tolerance * leftcov {
-                    "delete"
-                } else {
-                    "keep"
-                }
-            );
-        }
-        if rightcov > tolerance * leftcov {
-            st.mm = -1.0;
-        }
+        (total - opposite).max(0.0)
     }
 
-    let mut acceptor_sorted: Vec<Junction> = junction_stats.keys().copied().collect();
-    acceptor_sorted.sort_unstable_by_key(|j| (j.acceptor, j.donor));
-    for j in acceptor_sorted {
-        let trace_target = trace_bad_mm_neg_match(j);
-        let Some(st) = junction_stats.get_mut(&j) else {
-            continue;
-        };
+    let keys: Vec<Junction> = junction_stats.keys().copied().collect();
+    for j in keys {
+        let Some(st) = junction_stats.get_mut(&j) else { continue };
         let strand = st.strand.unwrap_or(0);
-        if trace_target {
-            eprintln!(
-                "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} strand={} nm={:.1} mm={:.1} nreads={:.1} nreads_good={:.1} guide={}",
-                j.donor,
-                j.acceptor.saturating_add(1),
-                strand,
-                st.nm,
-                st.mm,
-                st.mrcount,
-                st.nreads_good,
-                if st.guide_match { 1 } else { 0 }
-            );
-        }
+
+        // Skip: already killed, guide, no mismatches, or nm < mrcount
         if strand == 0 || st.guide_match || st.nm <= 0.0 || st.nm + 1e-9 < st.mrcount {
-            if trace_target {
-                eprintln!(
-                    "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} action=skip precondition strand={} guide={} nm={:.1} nreads={:.1}",
-                    j.donor,
-                    j.acceptor.saturating_add(1),
-                    strand,
-                    if st.guide_match { 1 } else { 0 },
-                    st.nm,
-                    st.mrcount
-                );
-            }
             continue;
         }
-        if st.nreads_good >= 5.0 * junction_thr {
-            continue;
-        }
+        // Skip: already redirected
         if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
-            if trace_target {
-                eprintln!(
-                    "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} action=skip redirected mrcount={:.1} nreads_good={:.1} mm={:.1}",
-                    j.donor,
-                    j.acceptor.saturating_add(1),
-                    st.mrcount,
-                    st.nreads_good,
-                    st.mm
-                );
-            }
             continue;
         }
+        // Kill: below junction threshold
         if st.nreads_good < junction_thr {
-            if trace_target {
-                eprintln!(
-                    "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} action=delete low_support thr={:.2} good={:.1}",
-                    j.donor,
-                    j.acceptor.saturating_add(1),
-                    junction_thr,
-                    st.nreads_good
-                );
-            }
             st.mm = -1.0;
             continue;
         }
-        let strand_code = st.strand.unwrap_or(0);
-        let opp = match strand_code {
+        // Protect well-supported junctions (matching splice site fix)
+        if st.nreads_good >= 5.0 * junction_thr {
+            continue;
+        }
+
+        let mismatch = st.nm > 0.0 && (st.nm - st.mrcount).abs() < 0.5;
+        let opp = match strand {
             -1 => BPCOV_STRAND_PLUS,
             1 => BPCOV_STRAND_MINUS,
             _ => BPCOV_STRAND_ALL,
         };
-        let point = j.acceptor.saturating_sub(refstart).saturating_sub(1) as usize;
-        let total_left = bpcov.get_cov_range(BPCOV_STRAND_ALL, point, point.saturating_add(1));
-        let opp_left = if opp != BPCOV_STRAND_ALL { bpcov.get_cov_range(opp, point, point.saturating_add(1)) } else { 0.0 };
-        let leftcov = (total_left - opp_left).max(0.0);
-        let total_right = bpcov.get_cov_range(BPCOV_STRAND_ALL, point.saturating_add(1), point.saturating_add(2));
-        let opp_right = if opp != BPCOV_STRAND_ALL { bpcov.get_cov_range(opp, point.saturating_add(1), point.saturating_add(2)) } else { 0.0 };
-        let rightcov = (total_right - opp_right).max(0.0);
-        if trace_target {
-            eprintln!(
-                "TRACE_BAD_MM_NEG stage=acceptor junc={}-{} point={} leftcov={:.1} rightcov={:.1} tol={:.3} strand={} action={}",
-                j.donor,
-                j.acceptor.saturating_add(1),
-                point,
-                leftcov,
-                rightcov,
-                tolerance,
-                strand_code,
-                if leftcov > tolerance * rightcov {
-                    "delete"
-                } else {
-                    "keep"
-                }
-            );
+
+        // === Donor check (bw=5 window) ===
+        let dp = j.donor.saturating_sub(refstart) as usize;
+        if dp >= BW && dp + BW + 1 < bpcov.minus.cov.len() {
+            let lleftcov = strand_cov(bpcov, opp, dp.saturating_sub(BW) + 1, dp + 1);
+            let lrightcov = strand_cov(bpcov, opp, dp + 1, dp + BW + 1);
+            if lleftcov > 1.0 / ERROR_PERC
+                && st.leftsupport * mult < ERROR_PERC * lleftcov
+                && (mismatch || lrightcov > lleftcov * (1.0 - ERROR_PERC))
+            {
+                st.mm = -1.0;
+                continue;
+            }
         }
-        if leftcov > tolerance * rightcov {
+
+        // === Acceptor check (bw=5 window) ===
+        let ap = j.acceptor.saturating_sub(refstart).saturating_sub(1) as usize;
+        if ap >= BW && ap + BW + 1 < bpcov.minus.cov.len() {
+            let rleftcov = strand_cov(bpcov, opp, ap.saturating_sub(BW) + 1, ap + 1);
+            let rrightcov = strand_cov(bpcov, opp, ap + 1, ap + BW + 1);
+            if rrightcov > 1.0 / ERROR_PERC
+                && st.rightsupport * mult < rrightcov * ERROR_PERC
+                && (mismatch || rleftcov > rrightcov * (1.0 - ERROR_PERC))
+            {
+                st.mm = -1.0;
+                continue;
+            }
+        }
+
+        // === Isofrac: junction reads as fraction of splice site support ===
+        if st.mrcount * 10.0 < ERROR_PERC * st.leftsupport
+            || st.mrcount * 10.0 < ERROR_PERC * st.rightsupport
+        {
             st.mm = -1.0;
         }
     }
