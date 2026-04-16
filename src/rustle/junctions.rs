@@ -140,13 +140,20 @@ pub fn canonicalize_junctions(
         visited.insert(ji);
 
         for j in (i + 1)..n {
-            let (jj, _) = junction_list[j];
+            let (jj, sj) = &junction_list[j];
             if jj.donor.saturating_sub(ji.donor) > tolerance {
                 break;
             }
             if ji.acceptor.abs_diff(jj.acceptor) <= tolerance {
+                // Don't merge two well-supported junctions (alternative splice sites).
+                let si = &cluster[0].1;
+                let stronger = si.mrcount.max(sj.mrcount);
+                let weaker = si.mrcount.min(sj.mrcount);
+                if stronger > 0.0 && weaker > 0.4 * stronger {
+                    continue;
+                }
                 cluster.push(junction_list[j].clone());
-                visited.insert(jj);
+                visited.insert(*jj);
             }
         }
 
@@ -237,6 +244,15 @@ pub fn coalesce_junctions(
                 break;
             }
             if ji.acceptor.abs_diff(jj.acceptor) <= tolerance {
+                // Don't merge two well-supported junctions: both represent
+                // real alternative splice sites. Only merge when the weaker
+                // one has <20% of the stronger's read support (likely noise).
+                let (_, sj) = &junction_list[j];
+                let stronger = si.mrcount.max(sj.mrcount);
+                let weaker = si.mrcount.min(sj.mrcount);
+                if stronger > 0.0 && weaker > 0.4 * stronger {
+                    continue; // both strong → keep separate
+                }
                 cluster_indices.push(j);
                 visited.insert(j);
             }

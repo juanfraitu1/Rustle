@@ -1165,6 +1165,13 @@ fn apply_bad_mm_neg_stage(
             }
             continue;
         }
+        // Protect well-supported junctions from bpcov-based coverage drop kill.
+        // For long reads, nm >= mrcount is always true (CCS reads have mismatches),
+        // so every junction reaches the bpcov check. Junctions with strong read
+        // support should survive regardless of the local coverage signal.
+        if st.nreads_good >= 5.0 * junction_thr {
+            continue;
+        }
         if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
             if trace_target {
                 eprintln!(
@@ -1252,6 +1259,9 @@ fn apply_bad_mm_neg_stage(
                     st.mrcount
                 );
             }
+            continue;
+        }
+        if st.nreads_good >= 5.0 * junction_thr {
             continue;
         }
         if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
