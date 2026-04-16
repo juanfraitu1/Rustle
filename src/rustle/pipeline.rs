@@ -550,26 +550,6 @@ fn vec_to_bundlenodes(items: &[(usize, u64, u64, f64)]) -> Option<crate::types::
     Some(head)
 }
 
-fn process_mixed_srfrag(transfrags: &mut [GraphTransfrag], graph: &Graph) -> usize {
-    const DROP: f64 = 0.5;
-    const ERROR_PERC: f64 = 0.1;
-    let mut touched = 0usize;
-    for i in 0..transfrags.len() {
-        if transfrags[i].srabund > crate::constants::FLOW_EPSILON {
-            crate::transfrag_process::process_srfrag(
-                transfrags,
-                i,
-                graph,
-                DROP,
-                ERROR_PERC,
-                crate::constants::FLOW_EPSILON,
-            );
-            touched += 1;
-        }
-    }
-    touched
-}
-
 #[inline]
 fn trace_log_style_active() -> bool {
     std::env::var_os("RUSTLE_TRACE_LOG_STYLE").is_some()
@@ -7252,7 +7232,6 @@ pub fn run<P: AsRef<Path>>(
                 let mut guide_boundary_synth: Vec<GraphTransfrag> = Vec::new();
 
                 if !guide_transcripts.is_empty()
-                    && (mode.is_long_read() || mode.is_mixed())
                     && std::env::var_os("RUSTLE_ENABLE_GUIDE_BOUNDARY_SPLITS").is_some()
                 {
                     let (gb_synth, gb_stats) =
@@ -7513,30 +7492,11 @@ pub fn run<P: AsRef<Path>>(
                 normalize_links(&graph_mut, &mut future_links);
                 let mut realized =
                     materialize_links(&mut graph_mut, &future_links, 1.0, LONGINTRONANCHOR as u64);
-                if mode.is_mixed() {
-                    for tf in &mut realized {
-                        if !tf.longread {
-                            tf.srabund = tf.abundance;
-                        }
-                    }
-                } else if mode.is_short_read() {
-                    for tf in &mut realized {
-                        tf.srabund = tf.abundance;
-                    }
-                }
+                // long-read only: realized transfrags keep abundance as-is
                 transfrags.extend(realized);
                 register_transfrag_range_on_nodes(&mut graph_mut, &transfrags, start_add);
                 annotate_hard_boundaries(&mut graph_mut, &transfrags, graph_bundle.strand);
-                if mode.is_mixed() {
-                    // Mixed mode: redistribute short-read support to compatible long transfrags.
-                    let sr_touched = process_mixed_srfrag(&mut transfrags, &graph_mut);
-                    if config.verbose {
-                        eprintln!(
-                            "    mixed_mode: process_srfrag touched {} srabund transfrags",
-                            sr_touched
-                        );
-                    }
-                }
+                // long-read only: no mixed-mode srfrag redistribution
                 // compute reachability BEFORE process_transfrags so
                 // that compatible_long/conflict can use childpat/parentpat.
                 // The algorithm computes reachability during create_graph (traverse_dfs)
@@ -7550,7 +7510,7 @@ pub fn run<P: AsRef<Path>>(
                     config.singlethr,
                     !guide_transcripts.is_empty(),
                     config.long_reads,
-                    mode.is_mixed(),
+                    false, // mixed_mode: always false (long-read only)
                     config.verbose,
                     config.eonly,
                     config.keeptrf_usepath_tsv.as_deref(),
@@ -7590,13 +7550,7 @@ pub fn run<P: AsRef<Path>>(
                         trflong
                     );
                 }
-                if mode.is_short_read() {
-                    refresh_graph_node_bp_coverage_from_bpcov(
-                        &mut graph_mut,
-                        &graph_bpcov_stranded,
-                    );
-                    trace_graph_numeric_state("graph:after_bpcov_refresh", &graph_mut, &transfrags);
-                }
+                // bpcov refresh only for short-read mode (removed)
                 let _nodecov = compute_nodecov(&mut graph_mut, &transfrags, config.verbose);
                 trace_graph_numeric_state("graph:after_compute_nodecov", &graph_mut, &transfrags);
 

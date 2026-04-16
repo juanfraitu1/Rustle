@@ -11,7 +11,7 @@ use rustle::RunConfig;
     about = "Transcript assembler",
     long_about = "Assemble RNA-Seq alignments into potential transcripts.\n\
 compatible options: -G (guide), -l (label), -o (output), -p (threads), -L (long reads), -e (eonly),\n\
---mix (short+long), -f/-c/-s/-m/-j/-g (coverage/length/junction/gap), -A (gene abundance), -B/-b (Ballgown),\n\
+-f/-c/-s/-m/-j/-g (coverage/length/junction/gap), -A (gene abundance), -B/-b (Ballgown),\n\
 -v (verbose), -t (no coverage trim), -x (exclude seqs), -E (splice window), --nasc, --conservative.\n\
 \n\
 Benchmarking / gffcompare: compare de novo output to a reference GTF (run rustle without -G; pass the reference only to gffcompare -r).\n\
@@ -28,14 +28,6 @@ struct Args {
     /// Long-read mode (default). -L is accepted for compatibility but always on.
     #[arg(short = 'L', long, default_value_t = true)]
     long_reads: bool,
-
-    /// Mixed mode: both short and long reads --mix). Sets -L and long-read min length.
-    #[arg(long)]
-    mix: bool,
-
-    /// With -L: mixed mode; reads with length >= BP are long, others short [default: 0 = all long]
-    #[arg(long, default_value = "0")]
-    long_read_min_len: u64,
 
     /// Process only this chromosome
     #[arg(long)]
@@ -332,8 +324,7 @@ struct Args {
     max_sensitivity: bool,
 
     /// Apply standard density rules (`-f` / pairwise floors, junction-path cap, containment).
-    /// **On by default with `-L`**; pass this on short-read runs to use the same preset.
-    /// Skipped when `--max-sensitivity` is set.
+    /// **On by default**. Skipped when `--max-sensitivity` is set.
     #[arg(long, action = ArgAction::SetTrue)]
     compat_preset: bool,
 
@@ -435,7 +426,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("output path required (e.g. -o out.gtf)"))?;
 
-    // Long-read mode is always on. Mixed mode is deprecated.
+    // Long-read mode is always on.
     let long_reads = true;
     let long_read_min_len = 0u64;
 

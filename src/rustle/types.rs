@@ -1,20 +1,9 @@
 //! Core data structures: Bundle, Junction, Bundlenode, RunConfig.
 //!
 //! ## Transcript extraction mode (find_transcripts)
-//! - **Eonly** (config.eonly, -e): Only guide flow runs (ref: only guides_pushmaxflow). No parse_trf,
-//!   no get_trf_long_mix. Output is only guide-matched transcripts. When eonly && guides present we call
-//!   extract_eonly_transcripts; when eonly && no guides we fall through and other extractors output nothing (store gate).
-//! - **Short-read** (no -L/--long-read-min-len): same extract_transcripts path with abundance order (parse_trf ordering differs; we unify for long/mix/guided/short).
-//! - **Long-read** (long_reads, long_read_min_len=0): extract_transcripts with long order only (get_trf_long).
-//! - **Mixed** (long_reads, long_read_min_len>0): extract_transcripts with mixed order (get_trf_long_mix + parse_trf).
-//!
-//! Assembly modes (/ reference script):
-//! - **Long-read** (-L): long_reads=true, long_read_min_len=0. All reads contribute to abundance;
-//!   graph can use longtrim (read boundaries) when implemented; coverage trim optional.
-//! - **Short-read**: long_reads=false. Coverage trim (trimnode_all); localdist=bundledist+anchor;
-//!   reads contribute to srabund; pair-aware.
-//! - **Mixed** (-L --long-read-min-len BP): long_reads=true, long_read_min_len>0. Reads with
-//!   length >= BP are long (abundance, longread), others short (srabund); process_srfrag for redistribution.
+//! - **Eonly** (config.eonly, -e): Only guide flow runs (ref: only guides_pushmaxflow). No parse_trf.
+//!   Output is only guide-matched transcripts.
+//! - **Long-read** (default): extract_transcripts with long order only (get_trf_long).
 
 use crate::constants::{LONGINTRON, LOWCOV, MISMATCHFRAC, SSERROR};
 use std::cmp::Ordering;
@@ -73,27 +62,19 @@ impl PartialOrd for GEdge {
     }
 }
 
-/// Assembly mode: long-read only, short-read only, or mixed (long + short in same BAM).
-/// Derived from RunConfig (longreads/mixedMode; reference script longreads/long_read_min_len).
+/// Assembly mode: long-read only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssemblyMode {
     /// Long-read assembly (-L). All reads treated as long; abundance only.
     LongRead,
-    /// Short-read assembly (no -L). Coverage trim; srabund; pair-aware.
-    ShortRead,
-    /// Mixed mode (-L --long-read-min-len BP). Classify by read length; long→abundance, short→srabund.
-    Mixed,
 }
 
 impl AssemblyMode {
     pub fn is_long_read(self) -> bool {
-        matches!(self, AssemblyMode::LongRead | AssemblyMode::Mixed)
-    }
-    pub fn is_short_read(self) -> bool {
-        matches!(self, AssemblyMode::ShortRead)
+        true
     }
     pub fn is_mixed(self) -> bool {
-        matches!(self, AssemblyMode::Mixed)
+        false
     }
 }
 
@@ -992,15 +973,9 @@ impl RunConfig {
         // they're available via CLI but not forced by the compatibility preset.
     }
 
-    /// Assembly mode from flags (longreads/mixedMode; original algorithm -L and --long-read-min-len).
+    /// Assembly mode: always long-read.
     pub fn assembly_mode(&self) -> AssemblyMode {
-        if !self.long_reads {
-            AssemblyMode::ShortRead
-        } else if self.long_read_min_len > 0 {
-            AssemblyMode::Mixed
-        } else {
-            AssemblyMode::LongRead
-        }
+        AssemblyMode::LongRead
     }
 }
 

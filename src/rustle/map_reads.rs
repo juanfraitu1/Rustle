@@ -1,9 +1,6 @@
 //! Map bundle reads onto graph -> transfrags (get_fragment_pattern + update_abundance).
 //!
-//! Mode (longreads/mixedMode; original algorithm -L, --long-read-min-len):
-//! - LongRead: all reads → abundance, longread=true.
-//! - ShortRead: all reads → srabund (abundance set from srabund later if needed).
-//! - Mixed: read length >= long_read_min_len → abundance + longread; else → srabund.
+//! Long-read only: all reads → abundance, longread=true.
 //!
 //! V99: When killed_junction_pairs is provided, reads are split at killed junctions and
 //! segments to the right of a killed junction get killed_junction_orphan = true.
@@ -416,11 +413,12 @@ pub fn map_reads_to_graph(
     reads: &[BundleRead],
     graph: &mut Graph,
     mode: AssemblyMode,
-    long_read_min_len: u64,
+    _long_read_min_len: u64,
     junction_correction_window: u64,
     killed_junction_pairs: Option<&HashSet<Junction>>,
     allowed_nodes: Option<&HashSet<usize>>,
 ) -> Vec<GraphTransfrag> {
+    let _ = &mode; // suppress unused warning; passed through to add_or_update_transfrag
     let psize = graph.pattern_size();
     let ordered_nodes = collect_candidate_nodes_sorted(graph, allowed_nodes);
     let mut transfrags: Vec<GraphTransfrag> = Vec::with_capacity(reads.len().saturating_div(2));
@@ -429,11 +427,7 @@ pub fn map_reads_to_graph(
     let mut tr_index = TreePatIndex::new(graph.n_nodes);
 
     for (read_idx, read) in reads.iter().enumerate() {
-        let is_long = match mode {
-            AssemblyMode::LongRead => true,
-            AssemblyMode::ShortRead => false,
-            AssemblyMode::Mixed => is_long_read(read, long_read_min_len),
-        };
+        let is_long = true; // long-read only mode
 
         let (unique_nodes, cov_add) = collect_read_nodes_exact(read, graph, &ordered_nodes, true);
         for (idx, add) in cov_add {
@@ -541,13 +535,14 @@ pub fn map_reads_to_graph_bundlenodes(
     reads: &[BundleRead],
     graph: &mut Graph,
     mode: AssemblyMode,
-    long_read_min_len: u64,
+    _long_read_min_len: u64,
     junction_correction_window: u64,
     killed_junction_pairs: Option<&HashSet<Junction>>,
     bundlenodes: Option<&CBundlenode>,
     bundle2graph: Option<&Bundle2Graph>,
     read_bundles: Option<&[Vec<usize>]>,
 ) -> Vec<GraphTransfrag> {
+    let _ = &mode; // suppress unused warning; passed through to add_or_update_transfrag
     let psize = graph.pattern_size();
     let mut transfrags: Vec<GraphTransfrag> = Vec::with_capacity(reads.len().saturating_div(2));
     let mut pattern_map: HbHashMap<TransfragKey, usize> =
@@ -567,11 +562,7 @@ pub fn map_reads_to_graph_bundlenodes(
     let mut dump_hits = 0usize;
 
     for (read_idx, read) in reads.iter().enumerate() {
-        let is_long = match mode {
-            AssemblyMode::LongRead => true,
-            AssemblyMode::ShortRead => false,
-            AssemblyMode::Mixed => is_long_read(read, long_read_min_len),
-        };
+        let is_long = true; // long-read only mode
 
         let readgroup_owned;
         let readgroup: &[usize] = if let Some(mapped) = read_bundles.and_then(|v| v.get(read_idx)) {
@@ -908,7 +899,7 @@ fn add_or_update_transfrag(
     tr_index: &mut TreePatIndex,
     psize: usize,
     is_long: bool,
-    mode: AssemblyMode,
+    _mode: AssemblyMode,
     junction_correction_window: u64,
     weight: f64,
     ref_start: u64,
@@ -1033,9 +1024,8 @@ fn add_or_update_transfrag(
             tf.longread = true;
         } else {
             tf.srabund += weight;
-            if mode == AssemblyMode::ShortRead {
-                tf.abundance += weight;
-            }
+            // short-read mode removed; srabund is accumulated but
+            // abundance is only added for long reads
         }
         if is_long {
             // longstart/longend are only set when read bounds fall inside
@@ -1091,19 +1081,10 @@ fn add_or_update_transfrag(
         let mut tf = GraphTransfrag::new(sorted_key.clone(), psize);
         tf.pattern = pattern.clone();
         tf.read_count = weight;
-        if is_long {
-            tf.abundance = weight;
-            tf.longread = true;
-        } else {
-            tf.srabund = weight;
-            if mode == AssemblyMode::ShortRead {
-                tf.abundance = weight;
-            }
-        }
-        if is_long {
-            tf.longstart = cand_longstart;
-            tf.longend = cand_longend;
-        }
+        tf.abundance = weight;
+        tf.longread = true;
+        tf.longstart = cand_longstart;
+        tf.longend = cand_longend;
         if has_poly_start {
             tf.poly_start_unaligned = 1;
         }

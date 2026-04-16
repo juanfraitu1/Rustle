@@ -67,10 +67,8 @@ pub mod report_losses; // diagnostic loss reporting
 // ── Stage 9: Orchestration ────────────────────────────────────────────────────
 pub mod assembly_mode; // assembly mode dispatch
 pub mod merge_mode; // merge mode (multi-sample)
-pub mod mixed_mode;
 pub mod debug_stage;
 pub mod pipeline; // main long-read assembly pipeline
-pub mod shortread_pipeline; // short-read assembly pipeline // mixed short+long read mode
 
 // ── Per-bundlenode graph processing ───────────────────────────────────────────
 pub mod per_bnode_graph; // junction-expanded per-bundlenode graphs

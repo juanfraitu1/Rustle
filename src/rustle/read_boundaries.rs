@@ -55,13 +55,6 @@ fn finalize_boundaries(
     (lstart, lend)
 }
 
-#[inline]
-fn is_mixed_long_read(read: &BundleRead, long_read_min_len: u64) -> bool {
-    if long_read_min_len == 0 {
-        return true;
-    }
-    read.query_length.map_or(true, |q| q >= long_read_min_len)
-}
 
 #[inline]
 fn cov_at(bpcov: &Bpcov, pos: u64) -> f64 {
@@ -290,24 +283,20 @@ pub fn collect_read_cpreds(reads: &[BundleRead]) -> (Vec<CPred>, Vec<CPred>) {
 /// - unstranded (`.`) reads contribute both sides when evidence exists.
 pub fn collect_read_boundaries_with_cpas(
     reads: &[BundleRead],
-    mode: AssemblyMode,
-    long_read_min_len: u64,
+    _mode: AssemblyMode,
+    _long_read_min_len: u64,
     bundle_start: u64,
     bundle_end: u64,
 ) -> (Vec<ReadBoundary>, Vec<ReadBoundary>) {
     let (mut start_counts, mut end_counts) = collect_raw_boundaries(reads);
 
-    if !matches!(mode, AssemblyMode::LongRead | AssemblyMode::Mixed) {
-        return finalize_boundaries(start_counts, end_counts);
-    }
+    // Long-read mode only: always collect CPAS boundaries
 
     let mut raw_plus: Vec<(u64, f64)> = Vec::new();
     let mut raw_minus: Vec<(u64, f64)> = Vec::new();
 
     for r in reads {
-        if mode == AssemblyMode::Mixed && !is_mixed_long_read(r, long_read_min_len) {
-            continue;
-        }
+        // long-read only: all reads contribute
         let start = match r.exons.first() {
             Some(e) => e.0,
             None => continue,

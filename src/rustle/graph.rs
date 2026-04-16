@@ -610,7 +610,7 @@ impl Graph {
     /// mapping sees synthetic source parents too early and can trim starts against them.
     pub fn synthesize_terminal_transfrags(
         &mut self,
-        mode: AssemblyMode,
+        _mode: AssemblyMode,
         trthr: f64,
     ) -> Vec<GraphTransfrag> {
         let mut synth = Vec::new();
@@ -632,20 +632,8 @@ impl Graph {
                 let mut tf = GraphTransfrag::new(vec![source_id, nid], self.pattern_size());
                 tf.abundance = trthr;
                 tf.read_count = trthr;
-                if mode.is_mixed() {
-                    tf.srabund = trthr;
-                    synth.push(tf.clone());
-                    let mut long_tf = tf;
-                    long_tf.longread = true;
-                    synth.push(long_tf);
-                } else {
-                    if mode.is_long_read() {
-                        tf.longread = true;
-                    } else {
-                        tf.srabund = trthr;
-                    }
-                    synth.push(tf);
-                }
+                tf.longread = true;
+                synth.push(tf);
             }
 
             let tail_needs_sink_tf = {
@@ -663,20 +651,8 @@ impl Graph {
                 let mut tf = GraphTransfrag::new(vec![nid, sink_id], self.pattern_size());
                 tf.abundance = trthr;
                 tf.read_count = trthr;
-                if mode.is_mixed() {
-                    tf.srabund = trthr;
-                    synth.push(tf.clone());
-                    let mut long_tf = tf;
-                    long_tf.longread = true;
-                    synth.push(long_tf);
-                } else {
-                    if mode.is_long_read() {
-                        tf.longread = true;
-                    } else {
-                        tf.srabund = trthr;
-                    }
-                    synth.push(tf);
-                }
+                tf.longread = true;
+                synth.push(tf);
             }
         }
 
