@@ -44,3 +44,10 @@ __pycache__/
 *.fa.fai
 /gene_family_detector/
 /target/
+
+# Test data (synthetic gene family for VG mode) — must come after *.bam etc.
+!/test_data/
+!/test_data/synthetic_family/
+!/test_data/synthetic_family/**
+# Keep large real data files out
+/test_data/chr1*

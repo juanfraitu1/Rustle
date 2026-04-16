@@ -1,0 +1,14 @@
+chr_test	truth	transcript	1000	4500	.	-	.	gene_id "MYG1_A"; transcript_id "A1"; reference_id "A1_full";
+chr_test	truth	exon	1000	1200	.	-	.	gene_id "MYG1_A"; transcript_id "A1"; exon_number "1";
+chr_test	truth	exon	2000	2300	.	-	.	gene_id "MYG1_A"; transcript_id "A1"; exon_number "2";
+chr_test	truth	exon	3000	3150	.	-	.	gene_id "MYG1_A"; transcript_id "A1"; exon_number "3";
+chr_test	truth	exon	4000	4500	.	-	.	gene_id "MYG1_A"; transcript_id "A1"; exon_number "4";
+chr_test	truth	transcript	1000	4500	.	-	.	gene_id "MYG1_A"; transcript_id "A2"; reference_id "A2_skip";
+chr_test	truth	exon	1000	1200	.	-	.	gene_id "MYG1_A"; transcript_id "A2"; exon_number "1";
+chr_test	truth	exon	2000	2300	.	-	.	gene_id "MYG1_A"; transcript_id "A2"; exon_number "2";
+chr_test	truth	exon	4000	4500	.	-	.	gene_id "MYG1_A"; transcript_id "A2"; exon_number "3";
+chr_test	truth	transcript	10000	13500	.	-	.	gene_id "MYG1_B"; transcript_id "B1"; reference_id "B1_full";
+chr_test	truth	exon	10000	10200	.	-	.	gene_id "MYG1_B"; transcript_id "B1"; exon_number "1";
+chr_test	truth	exon	11000	11300	.	-	.	gene_id "MYG1_B"; transcript_id "B1"; exon_number "2";
+chr_test	truth	exon	12000	12150	.	-	.	gene_id "MYG1_B"; transcript_id "B1"; exon_number "3";
+chr_test	truth	exon	13000	13500	.	-	.	gene_id "MYG1_B"; transcript_id "B1"; exon_number "4";
