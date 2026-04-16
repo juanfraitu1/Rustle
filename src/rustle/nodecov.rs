@@ -93,16 +93,19 @@ pub fn compute_nodecov(
             continue;
         }
 
-        // uses node ID comparison, not genomic coordinates.
-        // `transfrag[t]->nodes[0] < i` for abundin, `transfrag[t]->nodes.Last() > i` for abundout.
-        let first_real = real_nodes[0];
-        let last_real = *real_nodes.last().unwrap();
+        // Use genomic coordinates for entering/exiting transfrag classification.
+        // StringTie uses node IDs (which are coordinate-ordered in C++), but after
+        // longtrim, Rustle's node IDs are NOT coordinate-ordered. Using coordinates
+        // ensures correct nodecov computation regardless of ID ordering.
+        let first_coord = graph.nodes.get(real_nodes[0]).map(|n| n.start).unwrap_or(0);
+        let last_coord = graph.nodes.get(*real_nodes.last().unwrap()).map(|n| n.start).unwrap_or(0);
         let abund = tf.abundance;
         for &nid in &real_nodes {
-            if first_real < nid {
+            let nid_coord = graph.nodes.get(nid).map(|n| n.start).unwrap_or(0);
+            if first_coord < nid_coord {
                 abundin[nid] += abund;
             }
-            if last_real > nid {
+            if last_coord > nid_coord {
                 abundout[nid] += abund;
             }
             if tf.longread {
