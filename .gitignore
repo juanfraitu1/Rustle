@@ -12,6 +12,10 @@
 !/scripts/**
 !/.cargo/
 !/.cargo/**
+!/docs/
+!/docs/**
+!/figures/
+!/figures/**
 
 # Specifically allow our analysis scripts for now if they are useful
 !/analyze_missed_patterns.py

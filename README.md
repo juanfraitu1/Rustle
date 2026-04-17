@@ -2,31 +2,67 @@
 
 A long-read transcript assembler written in Rust, with a **variation graph (VG) mode** for multi-copy gene family assembly.
 
+> **For the theory:** see [docs/ALGORITHMS.md](docs/ALGORITHMS.md) — derivations of max-flow decomposition, EM for multi-mappers, variation graphs for paralogs, k-mer novel-copy rescue, SNP-based copy assignment, and honest failure-mode analysis.
+
 ## Overview
 
-Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) using a splice-graph and max-flow decomposition pipeline. It includes a variation graph (VG) mode that links gene family copies via multi-mapping reads and jointly resolves read assignments across paralogs.
+Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) using a **splice-graph + max-flow decomposition** pipeline. It adds a **variation graph (VG) mode** that links paralogous gene copies via multi-mapping reads and jointly resolves read assignments across the family — including reads that didn't map to any reference copy.
+
+### Why network flow for transcript assembly
+
+A splice graph is a DAG where nodes are exon segments and edges are splice junctions (or contiguous exon boundaries). Every transcript is a path from a source to a sink through this graph. If we treat each read as one unit of mass flowing along its splice pattern, then **the max-flow from source to sink equals the total assembly evidence**, and decomposing that flow into paths recovers individual transcripts with their per-transcript abundance.
+
+This isn't just a computational trick — it's a **mechanistic model of read production**: conservation of flow at every node holds because every read that enters an exon must leave it via exactly one of the outgoing edges (a splice or contiguous choice). The math mirrors the biology.
+
+See [ALGORITHMS §3](docs/ALGORITHMS.md#3-network-flow-formulation-and-why-it-works) for the full formulation.
+
+### Why variation graphs for paralogs
+
+A variation graph represents alternate sequences as parallel paths sharing nodes where they agree and diverging where they differ. Paralogs — gene copies that arose by duplication — share exon sequences where they haven't diverged and differ elsewhere. So **one variation graph can represent the entire gene family**: shared exons are shared nodes, copy-specific exons are parallel paths, copy-specific SNPs within shared exons are bubbles.
+
+This buys us two things that a linear reference can't:
+- A read from a shared region is *naturally attributed to the family* (it traverses the shared node once). Disambiguation to a specific copy happens only at copy-specific nodes, using the full path evidence.
+- A read matching sequence that isn't in *any* reference copy can be *rescued by k-mer similarity* to the family — the aligner missed it, but the VG sees it.
+
+See [ALGORITHMS §5](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) and [§10](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads).
+
+### Why EM for multi-mappers
+
+A read aligning equally well to *N* copies genuinely might come from any of them. Standard assemblers either discard such reads or split them uniformly (`1/NH`). Neither answer is right when copies have different expression levels. **Expectation-Maximization** iteratively refines the fractional assignment using *junction compatibility* as likelihood:
+
+- E-step: compute posterior probability that read *r* came from copy *k*, given current estimates of copy expression θ and junction-match likelihood P(r | k).
+- M-step: update θ from the posterior weights.
+
+Both steps have closed forms. EM provably non-decreases the likelihood each iteration (Jensen's inequality). Convergence in 10-20 iterations on biological data. The honest answer for a read that fits two expressed copies equally is a *probabilistic split* — EM produces it; winner-take-all methods can't.
+
+See [ALGORITHMS §7](docs/ALGORITHMS.md#7-em-solver-derivation-and-convergence) for the derivation.
 
 ### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
 
 | Metric | Rustle | StringTie | Notes |
 |--------|--------|-----------|-------|
-| Transcripts assembled | 1,801 | 1,839 | |
-| Matching transcripts | 1,439 / 1,839 | — | Rustle vs StringTie output |
-| Transcript sensitivity | 78.2% | — | (gffcompare `=` class) |
-| Transcript precision | 79.9% | — | |
-| Intron-level sensitivity | 96.1% | — | |
-| Intron-level precision | 94.9% | — | |
-| Locus-level sensitivity | 95.0% | — | |
-| Locus-level precision | 95.0% | — | |
+| Transcripts assembled | 1,732 | 1,839 | |
+| Matching transcripts | 1,458 / 1,839 | — | gffcompare `=` class |
+| Transcript sensitivity | **79.3%** | — | |
+| Transcript precision | **84.2%** | — | |
+| Intron-chain sensitivity | 80.4% | — | |
+| Intron-level precision | 96.0% | — | |
+| Locus-level sensitivity | 95.4% | — | |
+| Locus-level precision | 95.1% | — | |
 | Wall-clock time | **5.4 s** | 13.7 s | **2.5x faster** |
 | Language | Rust | C++ | |
 
 > Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci).
-> Rustle's base algorithm is a faithful port of StringTie's splice-graph + max-flow pipeline;
-> the remaining transcript-level gap comes from minor differences in graph node granularity
-> and pairwise filtering heuristics that are under active development.
-> VG mode features (multi-mapping resolution, novel copy discovery) are not reflected in this
-> single-chromosome benchmark — they apply when assembling multi-copy gene families genome-wide.
+> Rustle's base algorithm is a faithful port of StringTie's splice-graph + max-flow pipeline,
+> modernized in Rust. Junction filter decisions match StringTie with 99.97% parity on
+> shared junctions (verified via `JFINAL_TRACE` diagnostic). The remaining transcript-level gap
+> is almost entirely in flow-decomposition path enumeration — 99.2% of missed references have
+> all their junctions in Rustle's KEEP set but the paths aren't emitted (see
+> [docs/STRINGTIE_PARITY_SYSTEMATIC.md](docs/STRINGTIE_PARITY_SYSTEMATIC.md) for details).
+>
+> VG mode features (multi-mapping resolution, novel copy discovery) are *not* reflected in
+> this single-chromosome benchmark — they apply when assembling multi-copy gene families
+> genome-wide.
 
 ## Features
 
@@ -120,6 +156,19 @@ flowchart TD
     style OUTPUT fill:#e8f4fd,stroke:#2196F3
 ```
 
+### Pipeline stages in one sentence each
+
+1. **Input:** BAM (required), GTF guide (optional), genome FASTA (optional, for splice-consensus checks).
+2. **Bundle detection:** cluster reads with overlapping alignments into per-locus **bundles**; extract splice junctions; detect poly-A/poly-T cut sites from long reads.
+3. **Splice graph construction:** within a bundle, segment exonic regions into **DAG nodes** bounded by junction donors/acceptors; add source and sink; `longtrim` splits nodes at TSS/TES read-boundary peaks (long-read mode).
+4. **Read→graph mapping:** each read becomes a **transfrag** — a path of node IDs it overlaps. Transfrags are merged when one is a prefix/suffix of another (read "absorption").
+5. **Max-flow:** **Edmonds-Karp** from source to sink on the transfrag-weighted graph. This computes the total flow the graph can carry and is the foundation for path extraction.
+6. **Path extraction:** seed from long-read transfrags, extend left (`back_to_source`) and right (`fwd_to_sink`) along highest-residual-flow edges, subtract the path's flow, repeat. Non-extendable transfrags enter **checktrf** for redistribution-or-rescue.
+7. **Transcript filtering:** drop isoforms below `transcript_isofrac` of their locus max, drop pairwise-contained transcripts, drop intron-chain subsets, drop low-cov runoff.
+8. **Output:** GTF with per-transcript coverage, FPKM, TPM; optional gene abundance table.
+
+Each stage has a "why" to it — the sentence-level summary here is the surface; [ALGORITHMS.md](docs/ALGORITHMS.md) has the derivations.
+
 ### VG Extension: How It Wraps the Core Pipeline
 
 The standard pipeline treats each locus independently. VG mode adds a layer that links related loci (paralogs, tandem duplicates) and resolves multi-mapping reads across them:
@@ -169,7 +218,15 @@ flowchart LR
 
 ## VG Mode: Gene Family Assembly
 
-The `--vg` flag enables variation graph mode for multi-copy gene families:
+The `--vg` flag enables variation graph mode for multi-copy gene families. A gene family is a set of paralogs (duplicated copies of a common ancestor) like olfactory receptors, amylases, or the TBC1D3 family in great apes. Reads from these regions multi-map or fail to map entirely on a linear reference; VG mode jointly resolves them.
+
+**Full algorithmic treatment in [docs/ALGORITHMS.md](docs/ALGORITHMS.md):**
+- [§5 Variation graphs for gene families](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) — why paralogs share a VG
+- [§7 EM solver](docs/ALGORITHMS.md#7-em-solver-derivation-and-convergence) — derivation and convergence
+- [§8 MFLP solver](docs/ALGORITHMS.md#8-mflp-solver-lp-formulation) — LP formulation
+- [§9 Flow solver](docs/ALGORITHMS.md#9-flow-solver-two-pass-redistribution) — two-pass redistribution
+- [§10 Novel copy discovery](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) — k-mer rescue
+- [§11 SNP-based assignment](docs/ALGORITHMS.md#11-snp-based-copy-assignment)
 
 ```bash
 # EM solver (default) — junction-based compatibility scoring
