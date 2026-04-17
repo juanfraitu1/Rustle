@@ -141,7 +141,10 @@ pub fn build_multimap_index_with_supplementary(
             Err(_) => continue,
         };
         let flags = record.flags();
-        if !flags.is_supplementary() || flags.is_unmapped() {
+        // Multi-mappers in PacBio/ONT data typically appear as SECONDARY (flag 256);
+        // chimeric splits appear as SUPPLEMENTARY (flag 2048). Scan both.
+        let is_multi = flags.is_secondary() || flags.is_supplementary();
+        if !is_multi || flags.is_unmapped() {
             continue;
         }
         n_supp += 1;
