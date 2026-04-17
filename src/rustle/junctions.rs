@@ -145,10 +145,19 @@ pub fn canonicalize_junctions(
                 break;
             }
             if ji.acceptor.abs_diff(jj.acceptor) <= tolerance {
-                // Don't merge two well-supported junctions (alternative splice sites).
-                let si = &cluster[0].1;
-                let stronger = si.mrcount.max(sj.mrcount);
-                let weaker = si.mrcount.min(sj.mrcount);
+                // Don't merge well-supported alternative splice sites. Use the
+                // cluster's MAX mrcount as baseline, not cluster[0]. If the
+                // cluster seed (first in coord order) is a 1-read noise variant,
+                // cluster[0] comparison lets strong alternatives be absorbed.
+                // Example: STRG.335.2 (117 reads) and STRG.335.3 (60 reads,
+                // 3 bp alt-acceptor) got collapsed because a 1-read outlier
+                // seeded the cluster. Both should stay separate (60/117 = 51%).
+                let cluster_max_mr = cluster
+                    .iter()
+                    .map(|(_, s)| s.mrcount)
+                    .fold(0.0f64, f64::max);
+                let stronger = cluster_max_mr.max(sj.mrcount);
+                let weaker = cluster_max_mr.min(sj.mrcount);
                 if stronger > 0.0 && weaker > 0.4 * stronger {
                     continue;
                 }
@@ -244,12 +253,16 @@ pub fn coalesce_junctions(
                 break;
             }
             if ji.acceptor.abs_diff(jj.acceptor) <= tolerance {
-                // Don't merge two well-supported junctions: both represent
-                // real alternative splice sites. Only merge when the weaker
-                // one has <20% of the stronger's read support (likely noise).
+                // Use cluster MAX mrcount as baseline (not just cluster seed).
+                // A 1-read noise seed can otherwise absorb strong alt-splice
+                // variants. See canonicalize_junctions for the same pattern.
                 let (_, sj) = &junction_list[j];
-                let stronger = si.mrcount.max(sj.mrcount);
-                let weaker = si.mrcount.min(sj.mrcount);
+                let cluster_max_mr = cluster_indices
+                    .iter()
+                    .map(|&idx| junction_list[idx].1.mrcount)
+                    .fold(0.0f64, f64::max);
+                let stronger = cluster_max_mr.max(sj.mrcount);
+                let weaker = cluster_max_mr.min(sj.mrcount);
                 if stronger > 0.0 && weaker > 0.4 * stronger {
                     continue; // both strong → keep separate
                 }
