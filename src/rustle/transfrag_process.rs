@@ -147,6 +147,66 @@ pub fn chain_subsequence_offset(candidate: &[u32], reference: &[u32], tol: u32) 
     None
 }
 
+/// Tolerant chain alignment — Needleman-Wunsch on intron-length sequences.
+/// Returns the alignment score; higher (closer to 0) means more similar.
+///
+/// Scoring:
+/// - Match: penalty `bp_penalty * |len_diff|` capped at `bp_cap`.
+/// - Gap:   fixed penalty `gap_penalty` per skipped position.
+///
+/// Useful for detecting homology between distant paralogs whose splice graphs
+/// have diverged past exact subsequence matching — the chr15 GOLGA6C cluster
+/// (17-intron copies with per-position drift up to ~100 bp) scores around -5
+/// to -640 pairwise, well above the -500 threshold a strict subseq misses.
+pub fn chain_align_score(a: &[u32], b: &[u32]) -> f64 {
+    let bp_penalty = 0.1f64;
+    let gap_penalty = 500.0f64;
+    let bp_cap = 2000.0f64;
+    let n = a.len();
+    let m = b.len();
+    if n == 0 || m == 0 {
+        return -(n.max(m) as f64 * gap_penalty);
+    }
+    let mut dp = vec![vec![0.0f64; m + 1]; n + 1];
+    for i in 1..=n {
+        dp[i][0] = -(i as f64) * gap_penalty;
+    }
+    for j in 1..=m {
+        dp[0][j] = -(j as f64) * gap_penalty;
+    }
+    for i in 1..=n {
+        for j in 1..=m {
+            let diff = (a[i - 1] as i64 - b[j - 1] as i64).unsigned_abs() as f64;
+            let pen = (diff * bp_penalty).min(bp_cap);
+            let d = dp[i - 1][j - 1] - pen;
+            let u = dp[i - 1][j] - gap_penalty;
+            let l = dp[i][j - 1] - gap_penalty;
+            dp[i][j] = d.max(u.max(l));
+        }
+    }
+    dp[n][m]
+}
+
+/// Return true if candidate's chain aligns to any registered chain with
+/// score ≥ threshold (more negative = looser). Used by the tolerant family
+/// rescue path that catches distant sub-family members which strict
+/// subsequence matching would miss.
+pub fn chain_aligns_to_registry(candidate: &[u32], threshold: f64, min_len: usize) -> bool {
+    if candidate.len() < min_len {
+        return false;
+    }
+    let guard = family_chain_registry().lock().unwrap();
+    for reg in guard.iter() {
+        if reg.len() < min_len {
+            continue;
+        }
+        if chain_align_score(candidate, reg) >= threshold {
+            return true;
+        }
+    }
+    false
+}
+
 const MAX_NODE: i64 = i64::MAX - 1; // unset lens sentinel
 const SSDIST: i64 = 25;
 const EDGEDIST: i64 = 100;
@@ -2106,10 +2166,13 @@ pub fn process_transfrags(
                 }
             }
             // VG-family rescue: allow single-boundary long-read transfrags to become
-            // keeptrf reps ONLY when their intron-length chain matches a registered
-            // family member's chain (within ±5 bp per intron). This keeps the
-            // relaxation tight to multi-copy contexts and avoids the precision
-            // tax on unrelated single-copy genes that the ungated version causes.
+            // keeptrf reps when their intron-length chain matches a registered
+            // family member's chain. Two match modes:
+            //   - default: exact contiguous-subsequence match within ±5 bp/intron
+            //     (catches tight tandem paralogs like GOLGA6L7).
+            //   - RUSTLE_VG_FAMILY_TOLERANT=1: Needleman-Wunsch alignment with
+            //     score ≥ -500 (catches distant sub-family members whose chains
+            //     have diverged past exact matching, e.g. GOLGA6C cluster).
             let vg_family_rescue = long_mode
                 && !tf.guide
                 && (has_source_strict || has_sink)
@@ -2117,7 +2180,11 @@ pub fn process_transfrags(
                 && std::env::var_os("RUSTLE_VG_FAMILY_RESCUE").is_some()
                 && {
                     let chain = tf_intron_length_chain(tf, graph);
-                    chain_matches_registry(&chain, 5)
+                    if std::env::var_os("RUSTLE_VG_FAMILY_TOLERANT").is_some() {
+                        chain_aligns_to_registry(&chain, -500.0, FAMILY_CHAIN_MIN)
+                    } else {
+                        chain_matches_registry(&chain, 5)
+                    }
                 };
             if tf.guide || strict_pass || novel_splice_rescue || vg_family_rescue {
                 if tf_overlaps_trace_graph(tf, graph, trace_locus) {

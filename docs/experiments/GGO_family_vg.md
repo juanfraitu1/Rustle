@@ -346,3 +346,86 @@ have diverged independent exon/intron structures.
   exon position on the target chromosome, extend only if splice sites are
   present. That's a next step, not implemented.
 
+
+---
+
+## Toward a vg-giraffe-like family view
+
+vg giraffe aligns reads to a precomputed variation graph to resolve
+multi-mapping; the graph captures all known sequence variants across related
+genomes. Rustle doesn't embed a full VG aligner, but we can capture the
+**same conceptual picture** at the splice-graph level.
+
+### `tools/family_vg_report.py` — build the family consensus graph
+
+Command:
+```
+python3 tools/family_vg_report.py <GFF> 'golgin subfamily A member 6'
+```
+
+For each gene matching the description pattern, extract its canonical
+intron-length chain (longest isoform). Cluster members by Needleman-Wunsch
+alignment on the chain sequences (score threshold configurable). Emit per
+sub-family the consensus chain + per-intron variability tag
+(CONSERVED / VARIABLE / DIVERGED).
+
+Output on GOLGA6 (threshold -500):
+
+**Sub-family 1 (4 members, 8-intron "L7" architecture)** — now includes
+LOC115930840 on chr15 that strict subsequence missed:
+
+- Conserved introns i02, i05, i08 (length variance ≤ 200 bp)
+- Diverged introns i01, i03, i04, i06, i07 (large drift across the 4 members)
+- Explains why LOC115930840 benefits from homology to chr19 L7 triple even
+  though no exact subsequence match works
+
+**Sub-family 2 (3 members, 17-intron "GOLGA6C" architecture)**:
+
+- **16 out of 17 introns CONSERVED** (within 20 bp across all 3 members)
+- Only i07 is VARIABLE (range 1030–1136)
+- This is a tight sub-family with strongly conserved splice topology —
+  a good candidate for graph-level transfer if we had read coverage
+
+Remaining 7 members are singletons at this threshold: they have sequence
+homology (the `GOLGA6` label) but splice-graph topologies that have diverged
+past what length-chain matching can cluster.
+
+### In-assembler tolerant matcher: `RUSTLE_VG_FAMILY_TOLERANT`
+
+Swap the strict ±5 bp subsequence match for Needleman-Wunsch chain alignment
+(score threshold −500). This is the same mechanism the Python tool uses,
+running inside the rescue gate instead of on annotation.
+
+| Mode | GOLGA6L7 recovery | Full GGO_19 matches | Precision | Novel loci |
+|------|------------------|---------------------|-----------|------------|
+| Strict (default) | 3/3 (=, =, =) | 1460 | 83.6% | 21 |
+| Tolerant (`RUSTLE_VG_FAMILY_TOLERANT=1`) | 2/3 (=, =, x) | 1460 | 82.1% | 26 |
+
+Tolerant catches more candidate transfrags (+31 transcripts emitted) but
+most don't convert to reference matches — they're partial-structure
+extensions that score lower than the reference TSS/TTS. It's a **research
+knob** for finding distant homologs, not a production default.
+
+### End-to-end flow, summarized
+
+1. **Annotation-time analysis** (`family_vg_report.py`): pre-compute the
+   family VG from known genes → shows which sub-families exist, which
+   introns are conserved, where projection is likely to help.
+
+2. **Assembly-time rescue** (`RUSTLE_VG_FAMILY_RESCUE`): at bundle processing,
+   consult a cross-bundle chain registry to promote single-boundary
+   transfrags that match a confirmed family member's chain.
+
+3. **Post-assembly extension** (`extend_family_suffix_matches`): project
+   missing 5'/3' exons from a template onto a paralog using the consistent
+   genomic offset. Converts `c` matches to `=`.
+
+4. **Research extension** (`RUSTLE_VG_FAMILY_TOLERANT`): use Needleman-Wunsch
+   alignment instead of exact subsequence matching — detects distant
+   sub-family members the strict gate misses, at some precision cost.
+
+The user-facing knobs mirror the conceptual layers a tool like vg giraffe
+would expose: "which members are in the family?", "assemble each copy with
+shared evidence", "project missing pieces from the template", "tolerate how
+much structural drift between copies?"
+
