@@ -314,14 +314,14 @@ pub fn compute_weak(
         for i in 0..nodes.len() - 1 {
             let nid_a = nodes[i];
             let nid_b = nodes[i + 1];
-            if nid_b != nid_a + 1 {
-                continue;
-            }
             let (n1, n2) = match (graph.nodes.get(nid_a), graph.nodes.get(nid_b)) {
                 (Some(a), Some(b)) => (a, b),
                 _ => continue,
             };
-            if n1.end.saturating_add(1) != n2.start {
+            // StringTie checks `nodes[n] == nodes[n-1]+1 && end+1 == start`. Node-ID
+            // adjacency is broken after longtrim, so use coordinate adjacency only.
+            // Rustle uses half-open coords: contiguous means `end == start` (not `end+1 == start`).
+            if n1.end != n2.start {
                 continue;
             }
             let cov_a = nodecov.get(nid_a).copied().unwrap_or(0.0);
