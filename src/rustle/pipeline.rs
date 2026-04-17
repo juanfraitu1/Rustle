@@ -5042,6 +5042,31 @@ fn extract_bundle_transcripts_for_graph(
     let junction_support_removed = before_junction_support.saturating_sub(txs.len());
     trace_stage("filter_unsupported_junctions", &txs);
 
+    // Per-junction read-support gate: suppress minor-isoform transcripts whose
+    // weakest junction has fewer than N reads. Catches j-class artifacts where
+    // the flow decomposition assembled a transcript using a barely-supported
+    // alt donor/acceptor. Opt-in via RUSTLE_MIN_JUNC_SUPPORT=N env var;
+    // high-cov transcripts (longcov >= RUSTLE_MIN_JUNC_EXEMPT_COV, default 10)
+    // are exempt because the flow-decomp bar already qualifies them.
+    if let Some(min_reads) = std::env::var("RUSTLE_MIN_JUNC_SUPPORT")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        let exempt_cov = std::env::var("RUSTLE_MIN_JUNC_EXEMPT_COV")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(10.0);
+        txs = crate::transcript_filter::filter_by_min_junction_support(
+            txs,
+            &bundle.junction_stats,
+            min_reads,
+            exempt_cov,
+            config.junction_correction_window,
+            config.verbose,
+        );
+        trace_stage("filter_by_min_junction_support", &txs);
+    }
+
     // IMPORTANT: TPM/FPKM must be computed globally across the whole run.
     // Doing this per-bundle makes TPM sums explode by ~#bundles and breaks any
     // downstream interpretation. We compute once at the end of `run()`.

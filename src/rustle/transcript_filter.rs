@@ -4722,3 +4722,99 @@ pub fn suppress_near_duplicate_chains(
         .filter_map(|(i, t)| if !dead[i] { Some(t) } else { None })
         .collect()
 }
+
+/// Per-junction read-support gate for emitted transcripts.
+///
+/// Filter out multi-exon transcripts whose weakest junction has fewer than
+/// `min_reads` supporting reads (by `nreads_good`). This catches the
+/// STRG.7-style j-class artifacts: a transcript that uses a barely-supported
+/// minor alternative donor/acceptor (e.g. 8 reads in a locus where the
+/// dominant variant has 500+).
+///
+/// Exemptions:
+/// - single-exon transcripts (no junctions)
+/// - guide-anchored transcripts
+/// - high-cov transcripts (`longcov >= cov_exemption_threshold`): the
+///   weakest-junction bar is for minor isoforms only
+///
+/// Gated by `RUSTLE_MIN_JUNC_SUPPORT=N` env var (if unset, filter is a no-op).
+pub fn filter_by_min_junction_support(
+    txs: Vec<Transcript>,
+    junction_stats: &crate::types::JunctionStats,
+    min_reads: f64,
+    cov_exemption_threshold: f64,
+    tolerance: u64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if min_reads <= 0.0 || txs.is_empty() {
+        return txs;
+    }
+    let before = txs.len();
+    let mut exempt_guide = 0usize;
+    let mut exempt_cov = 0usize;
+    let mut filtered = 0usize;
+
+    let result: Vec<Transcript> = txs
+        .into_iter()
+        .filter(|tx| {
+            if tx.exons.len() < 2 {
+                return true;
+            }
+            if is_guide_pair(tx) || is_rescue_protected(tx) {
+                exempt_guide += 1;
+                return true;
+            }
+            if tx.longcov >= cov_exemption_threshold {
+                exempt_cov += 1;
+                return true;
+            }
+            // Find weakest junction support among this tx's introns.
+            let mut min_support = f64::INFINITY;
+            for w in tx.exons.windows(2) {
+                let donor = w[0].1;
+                let acceptor = w[1].0;
+                // Exact key lookup first; fall back to tolerance search.
+                let key = crate::types::Junction::new(donor, acceptor);
+                let support = if let Some(st) = junction_stats.get(&key) {
+                    st.nreads_good
+                } else if tolerance > 0 {
+                    let mut best = 0.0f64;
+                    for (j, st) in junction_stats.iter() {
+                        if j.donor.abs_diff(donor) <= tolerance
+                            && j.acceptor.abs_diff(acceptor) <= tolerance
+                        {
+                            if st.nreads_good > best {
+                                best = st.nreads_good;
+                            }
+                        }
+                    }
+                    best
+                } else {
+                    0.0
+                };
+                if support < min_support {
+                    min_support = support;
+                }
+            }
+            if min_support < min_reads {
+                filtered += 1;
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if verbose && (filtered > 0 || exempt_cov > 0) {
+        eprintln!(
+            "    min_junction_support filter: kept {}/{} (guide_exempt={}, cov_exempt={}, min_reads={}, filtered={})",
+            result.len(),
+            before,
+            exempt_guide,
+            exempt_cov,
+            min_reads,
+            filtered
+        );
+    }
+    result
+}
