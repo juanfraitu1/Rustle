@@ -1268,17 +1268,11 @@ pub fn apply_higherr_demotions(
                     }
                 }
             }
-            continue;
+            // FALL THROUGH to demotion search (StringTie rlink.cpp:15030 onwards
+            // runs demotion for ALL higherr candidates, independently of whether
+            // the continuity check marked mm=-1).
         }
-        // Branch 1 of StringTie 15011-15014: if nreads_good < 1.25*junctionthr,
-        // the junction falls through to the demotion loop below (which may find
-        // a nearby stronger junction to redirect to).
-        // Or if the continuity gate is off, skip to demotion logic for any
-        // nreads_good >= 1.25*junctionthr.
         let _ = tolerance;
-        if cur.nreads_good >= 0.0 && cur.nreads_good >= 1.25 * junction_thr {
-            continue;
-        }
 
         let mut support = 0.0;
         let mut search = true;
@@ -1418,8 +1412,56 @@ pub fn apply_higherr_demotions(
         if !cj_higherr_candidate(&cur) {
             continue;
         }
-        if cur.nreads_good >= 0.0 && cur.nreads_good >= 1.25 * junction_thr {
-            continue;
+        // Port of StringTie rlink.cpp:15112-15120 acceptor-side continuity check.
+        // Check bpcov at last intron base vs first downstream exon base: if coverage
+        // is continuous across the acceptor (leftcov > 0.9 * rightcov), it's a
+        // run-through → mm=-1. Symmetric to donor-side check in start loop above.
+        if cur.nreads_good >= 0.0
+            && cur.mm >= 0.0
+            && cur.nreads_good >= 1.25 * junction_thr
+            && std::env::var_os("RUSTLE_HIGHERR_CONT_OFF").is_none()
+        {
+            if let Some(bp) = bpcov {
+                if cur.end > refstart + 1 {
+                    // cur.end = 0-based first exon base after intron.
+                    // last intron base idx = cur.end - 1 - refstart.
+                    let last_intron_idx = (cur.end - 1 - refstart) as usize;
+                    let len = bp.plus.cov.len();
+                    if last_intron_idx + 2 < len {
+                        let leftcov = bp.get_cov_range(
+                            crate::bpcov::BPCOV_STRAND_ALL,
+                            last_intron_idx,
+                            last_intron_idx + 1,
+                        );
+                        let rightcov = bp.get_cov_range(
+                            crate::bpcov::BPCOV_STRAND_ALL,
+                            last_intron_idx + 1,
+                            last_intron_idx + 2,
+                        );
+                        // Sanity: bpcov must reflect this junction's context.
+                        if rightcov >= cur.nreads / 2.0
+                            && rightcov > 0.0
+                            && leftcov > tolerance * rightcov
+                        {
+                            cjunctions[idx_i].mm = -1.0;
+                            if gjd {
+                                eprintln!(
+                                    "HE_CONT_R_DEMOTE {}-{} nreads={:.1} leftcov={:.0} rightcov={:.0} ratio={:.2}",
+                                    cur.start,
+                                    trace_cjunction_acceptor(&cur),
+                                    cur.nreads,
+                                    leftcov,
+                                    rightcov,
+                                    leftcov / rightcov
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            // FALL THROUGH to demotion search — StringTie rlink.cpp:15123 onwards
+            // runs neighbor demotion for all higherr candidates regardless of
+            // whether the continuity check marked mm=-1.
         }
 
         let mut support = 0.0;
