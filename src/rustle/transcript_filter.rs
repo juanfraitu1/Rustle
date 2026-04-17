@@ -2356,9 +2356,49 @@ pub fn pairwise_overlap_filter_with_summary(
                     }
                     ok
                 } {
-                    // StringTie kills included predictions unconditionally
-                    // (rlink.cpp:19475-19480) — no long-read exception, no rescue protection.
-                    kill!(n2, n1, "included_drop");
+                    // Alt-TSS/TTS protection (long-read only): if the structurally
+                    // included transcript has a hardstart/hardend that's meaningfully
+                    // distinct from the containing transcript's boundary, it's an
+                    // alternative promoter/polyA variant, not a contained fragment.
+                    // Preserve it. Example: STRG.337.1 (7-exon, hardend=true at
+                    // 53339681) vs STRG.337.2 (20-exon extending to 53405713) — the
+                    // 7-exon is a real alt-polyA isoform that flow decomposition
+                    // produces from 356+ supporting reads. Gate behind
+                    // RUSTLE_INCLUDED_DROP_ALT_BOUNDARY=0 to disable.
+                    // Additional gate: only protect when the shorter transcript has
+                    // meaningful abundance relative to the longer one — otherwise
+                    // it's a contained fragment, not a genuine alt-TSS/TTS variant.
+                    // Require t2.longcov >= 0.5 * t1.longcov.
+                    let alt_boundary_protected = longreads
+                        && std::env::var_os("RUSTLE_INCLUDED_DROP_ALT_BOUNDARY_OFF").is_none()
+                        && t2.longcov >= 0.5 * t1.longcov
+                        && {
+                            let t2_last_end = t2.exons.last().map(|e| e.1).unwrap_or(0);
+                            let t1_last_end = t1.exons.last().map(|e| e.1).unwrap_or(0);
+                            let t2_first_start = t2.exons.first().map(|e| e.0).unwrap_or(0);
+                            let t1_first_start = t1.exons.first().map(|e| e.0).unwrap_or(0);
+                            let alt_end_threshold: u64 = std::env::var("RUSTLE_ALT_BOUNDARY_MIN")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(500);
+                            let alt_tts = t2.hardend
+                                && t1_last_end > t2_last_end + alt_end_threshold;
+                            let alt_tss = t2.hardstart
+                                && t2_first_start > t1_first_start + alt_end_threshold;
+                            alt_tts || alt_tss
+                        };
+                    if alt_boundary_protected {
+                        if pairwise_target_trace_enabled() && pairwise_trace_target(t1, t2) {
+                            eprintln!(
+                                "[TRACE_PAIRWISE_TARGET] alt_boundary_protected n1={} n2={}",
+                                n1, n2
+                            );
+                        }
+                    } else {
+                        // StringTie kills included predictions unconditionally
+                        // (rlink.cpp:19475-19480) — no long-read exception, no rescue protection.
+                        kill!(n2, n1, "included_drop");
+                    }
                 } else if !n1g
                     && n1 != 0
                     && (((!t1.is_longread
