@@ -6264,7 +6264,16 @@ pub fn run<P: AsRef<Path>>(
                         j.acceptor,
                         st.strand,
                     );
-                    if !is_cons && st.nreads_good < 5.0 {
+                    // StringTie rlink.cpp:14842 kills junctions with non-canonical
+                    // consensus + low support. Applying the same in Rustle regresses
+                    // matches (1440 → 1401) because StringTie rescues some of these
+                    // through different downstream paths (likely different nreads_good
+                    // accounting or checktrf redistribution). Filter disabled by default;
+                    // enable by setting RUSTLE_CONSENSUS_KILL=1.
+                    if std::env::var_os("RUSTLE_CONSENSUS_KILL").is_some()
+                        && !is_cons
+                        && st.nreads_good < 5.0
+                    {
                         st.strand = Some(0);
                     }
                 }
@@ -6747,7 +6756,14 @@ pub fn run<P: AsRef<Path>>(
                     st.strand,
                 );
                 let good_reads = st.nreads_good;
-                if !is_cons && good_reads < 5.0 {
+                // Consensus-kill disabled by default: regresses matches (1440→1401)
+                // in this dataset. See pipeline.rs:6267 for notes. Enable via
+                // RUSTLE_CONSENSUS_KILL=1 for strict parity with StringTie's
+                // rlink.cpp:14842.
+                if std::env::var_os("RUSTLE_CONSENSUS_KILL").is_some()
+                    && !is_cons
+                    && good_reads < 5.0
+                {
                     st.strand = Some(0);
                     noncons += 1;
                 }
@@ -8568,7 +8584,10 @@ pub fn run<P: AsRef<Path>>(
                             j.acceptor,
                             st.strand,
                         );
-                        if !is_cons && st.nreads_good < 5.0 {
+                        if std::env::var_os("RUSTLE_CONSENSUS_KILL").is_some()
+                            && !is_cons
+                            && st.nreads_good < 5.0
+                        {
                             st.strand = Some(0);
                         }
                     }
