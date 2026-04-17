@@ -545,3 +545,74 @@ The price on the full chr19 benchmark is bounded (precision −0.2 to −4.8 pp
 depending on config) and is fixable by gating secondary-inclusion to
 chain-confirmed family positions, a targeted next step.
 
+
+---
+
+## 1/NH vs EM: why VG mode stops using the StringTie weighting
+
+Both StringTie and Rustle traditionally apply `weight = rdcount / NH` at BAM
+parse time — a uniform prior that splits each multi-mapping read's count
+equally across all its alignments. This is fine for simple coverage
+estimation, but it has a real problem for multi-copy families:
+
+**The 1/NH prior is uninformed.** It assumes every copy is equally likely
+to be the source, ignoring three pieces of evidence the BAM already carries:
+- alignment score differences (AS / NM tags)
+- junction compatibility with the assembled transcript at each copy
+- expression context (a copy with many unambiguous reads is more likely the
+  source of an ambiguous one)
+
+### What changes in VG mode (committed)
+
+`--vg` now defaults to `--vg-solver em`, and retains secondary alignments
+by default. Mechanism:
+
+1. Parse stage — each alignment still gets `weight = rdcount / NH` (uniform
+   prior). But secondaries are now **kept** instead of dropped.
+2. EM stage — the solver recomputes each multi-mapper's weight across
+   copies as
+
+   ```
+   weight_i = (junction_compat_i + ε) · log(context_i) / Z
+   ```
+
+   where `context_i` is per-copy junction-supported read mass and `Z`
+   normalizes to Σ = 1.0 across copies. The initial 1/NH value is discarded.
+3. Assembly — per-copy flow decomposition runs on the reweighted read set.
+
+### Defaults summary
+
+| Flag | Multi-mapper weight | Comment |
+|------|---------------------|---------|
+| (no `--vg`) | `1/NH` uniform | StringTie-equivalent |
+| `--vg` (default now `em`) | EM evidence-based | 1/NH only as initial prior |
+| `--vg --vg-solver none` | `1/NH` uniform | StringTie-equivalent even with VG |
+| `RUSTLE_VG_DROP_SECONDARY=1 --vg` | `1/NH` on primaries only | StringTie-equivalent |
+
+### Result on GOLGA6L7 cluster (just `-L --vg`, no other flags)
+
+| Config | L7_1 | L7_2 | L7_3 | Exact matches |
+|--------|------|------|------|---------------|
+| `stringtie -L` | `=` | — | — | **1/3** |
+| `rustle -L` | `=` | — | — | **1/3** |
+| `rustle -L --vg` (NEW default) | `=` | `=` | `=` | **3/3** |
+
+### Full GGO_19
+
+| Config | Matches | Precision | Matching loci |
+|--------|---------|-----------|---------------|
+| baseline | 1472 | 83.4% | 556 |
+| `--vg` default (EM + secondaries) | 1465 | 79.5% | 555 |
+
+Precision cost −3.9 pp on the full benchmark — the same noise-at-copy-dense-
+regions issue as before, because the EM solver isn't scoped to chain-
+confirmed family positions. That scoping is the production refinement,
+orthogonal to this semantic change.
+
+### The argument for the advisor
+
+1/NH is a convention, not evidence. StringTie applies it and stops. Rustle's
+VG mode now applies it only as an initial prior, then **replaces it** with
+weights derived from actual junction-compatibility and copy-context
+evidence. On GOLGA6L7 this converts a 1/3 → 3/3 exact-match result with no
+additional flags.

@@ -378,8 +378,11 @@ struct Args {
     #[arg(long)]
     vg_report: Option<String>,
 
-    /// Multi-mapping resolution method: none (discover only), em, or flow [default: none]
-    #[arg(long, default_value = "none")]
+    /// Multi-mapping resolution method: none (discover only), em, or flow [default: em].
+    /// In VG mode, `em` replaces the default 1/NH weighting on multi-mappers with
+    /// evidence-based (junction-compatibility + context) weights. Use `none` to
+    /// disable redistribution and keep StringTie-equivalent 1/NH behaviour.
+    #[arg(long, default_value = "em")]
     vg_solver: String,
 
     /// Use SNPs (from MD tag) for copy assignment in VG mode
