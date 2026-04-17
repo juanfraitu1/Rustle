@@ -1901,6 +1901,13 @@ pub fn process_transfrags(
         let mut included_via_group = false;
         let mut pending_guide_replace: Option<(usize, usize)> = None; // (kept_rep_idx, tf_idx)
         let mut mark_weak = false; // defer weak marking to avoid borrow conflict
+        // Track whether tf REPLACED an existing keeptrf rep (ret=1 absorb-kept-into-tf
+        // or ret=3 new_rep path). In those cases the "included=true" flag is
+        // misleading — tf is not absorbed, it's the new representative — so we
+        // must skip the mark_weak fallback that would zero out its trflong_seed
+        // eligibility. This fixes the STRG.1.3/1.5 class of miss where the new
+        // rep was erroneously dropped before parse_trflong ran.
+        let mut tf_is_new_rep = false;
         for (kept_idx, group, kept_cov) in keeptrf.iter_mut() {
             let kept_tf = &transfrags[*kept_idx];
             let trace_pair = tf_overlaps_trace_graph(tf, graph, trace_locus)
@@ -2037,6 +2044,7 @@ pub fn process_transfrags(
                         || (!kept_tf.guide && tf_first_node.hardstart && tf_last_node.hardend);
                     if new_rep {
                         *kept_idx = tf_idx;
+                        tf_is_new_rep = true;
                     }
                     group.push(tf_idx);
                     *kept_cov += tf_weight(tf);
@@ -2076,6 +2084,7 @@ pub fn process_transfrags(
                     && right_dist < SSDIST
                 {
                     *kept_idx = tf_idx;
+                    tf_is_new_rep = true;
                     group.push(tf_idx);
                     *kept_cov += tf_weight(tf);
                     included = true;
@@ -2250,8 +2259,10 @@ pub fn process_transfrags(
             transfrags[rep_idx].abundance = new_ab;
             transfrags[src_idx].abundance = 0.0;
         }
-        // apply deferred weak marking to avoid borrow conflict
-        if mark_weak {
+        // apply deferred weak marking to avoid borrow conflict. Skip when tf
+        // replaced an existing keeptrf entry as the new rep — mark_weak is a
+        // fallback for absorbed transfrags, not for promoted ones.
+        if mark_weak && !tf_is_new_rep {
             transfrags[tf_idx].weak = 1;
         }
     }
