@@ -68,7 +68,7 @@ See [ALGORITHMS §7](docs/ALGORITHMS.md#7-em-solver-derivation-and-convergence) 
 
 - **Transcript assembly**: splice graph construction, Edmonds-Karp max-flow, seeded path extraction
 - **Long-read optimized**: poly-A/T detection, junction correction, hard boundary inference
-- **Variation graph mode** (`--vg`): gene family discovery, EM/MFLP/flow-based multi-mapping resolution
+- **Variation graph mode** (`--vg`): gene family discovery, EM or flow-based multi-mapping resolution
 - **SNP-based copy assignment** (`--vg-snp`): use sequence variants to distinguish gene copies
 - **Novel copy discovery** (`--vg-discover-novel`): find missing paralogs from unmapped reads via k-mer matching
 - **Phased assembly scaffold** (`--vg-phase`): haplotype-aware assembly using HP tags
@@ -183,7 +183,7 @@ flowchart LR
 
     subgraph VG["VG: Link & Resolve"]
         LINK["Discover family\n(shared reads +\nk-mer similarity)"]
-        SOLVE["Resolve multi-maps\n(EM / MFLP / Flow)"]
+        SOLVE["Resolve multi-maps\n(EM / Flow)"]
     end
 
     subgraph PASS2["Pass 2: Reweighted Assembly"]
@@ -223,17 +223,16 @@ The `--vg` flag enables variation graph mode for multi-copy gene families. A gen
 **Full algorithmic treatment in [docs/ALGORITHMS.md](docs/ALGORITHMS.md):**
 - [§5 Variation graphs for gene families](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) — why paralogs share a VG
 - [§7 EM solver](docs/ALGORITHMS.md#7-em-solver-derivation-and-convergence) — derivation and convergence
-- [§8 MFLP solver](docs/ALGORITHMS.md#8-mflp-solver-lp-formulation) — LP formulation
-- [§9 Flow solver](docs/ALGORITHMS.md#9-flow-solver-two-pass-redistribution) — two-pass redistribution
-- [§10 Novel copy discovery](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) — k-mer rescue
-- [§11 SNP-based assignment](docs/ALGORITHMS.md#11-snp-based-copy-assignment)
+- [§8 Flow solver](docs/ALGORITHMS.md#8-flow-solver-two-pass-redistribution) — two-pass redistribution
+- [§9 Novel copy discovery](docs/ALGORITHMS.md#9-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) — k-mer rescue
+- [§10 SNP-based assignment](docs/ALGORITHMS.md#10-snp-based-copy-assignment)
 
 ```bash
 # EM solver (default) — junction-based compatibility scoring
 ./target/release/rustle -L --vg --vg-solver em -o output.gtf input.bam
 
-# MFLP solver — linear programming
-./target/release/rustle -L --vg --vg-solver mflp -o output.gtf input.bam
+# Flow solver — two-pass assembly with coverage-based redistribution
+./target/release/rustle -L --vg --vg-solver flow -o output.gtf input.bam
 
 # With SNP-based copy assignment
 ./target/release/rustle -L --vg --vg-snp --genome-fasta genome.fa -o output.gtf input.bam
@@ -290,9 +289,9 @@ flowchart LR
 
 ---
 
-### Multi-Mapping Resolution: EM vs MFLP vs Flow
+### Multi-Mapping Resolution: EM vs Flow
 
-When a read maps equally well to multiple gene copies (NH > 1), standard assemblers discard it or split it equally (1/NH). VG mode offers three strategies:
+When a read maps equally well to multiple gene copies (NH > 1), standard assemblers discard it or split it equally (1/NH). VG mode offers two strategies:
 
 ```mermaid
 flowchart TD
@@ -313,7 +312,6 @@ flowchart TD
     subgraph METHODS["How Each Method Handles This"]
         direction TB
         ME["EM: naturally splits proportional\nto abundance (handles Scenario 2).\nConverges to ~100% for Scenario 1."]
-        MM["MFLP: picks the single best copy\n(handles Scenario 1 well).\nMay undercount in Scenario 2."]
         MF["Flow: splits proportional to\nassembled coverage (handles Scenario 2).\nTwo-pass catches Scenario 1."]
         MS["SNP mode: uses per-base variants\nto distinguish. Handles Scenario 3."]
     end
@@ -329,8 +327,6 @@ flowchart TD
 
 **EM (Expectation-Maximization):** Iteratively refines fractional weights. A multi-mapper at two expressed copies gets split proportionally (e.g., 0.6/0.4). This is the correct answer when both copies are expressed — the sequencer genuinely cannot distinguish which copy produced the molecule in shared regions.
 
-**MFLP (Minimum Flow Linear Program):** Single-shot LP optimization. Tends toward hard 0/1 assignment (LP optima sit at polytope vertices). Best when each read truly originates from one copy and you want the globally optimal assignment.
-
 **Flow (Two-Pass Redistribution):** Assemble first with uniform 1/NH weights, then redistribute multi-mappers proportional to assembled transcript coverage, then reassemble. Like EM but uses assembled structure as evidence.
 
 #### How many multi-mappers are real?
@@ -344,7 +340,6 @@ A multi-mapper that maps to two expressed copies _does_ belong at both. EM and F
 | Method | Fractional? | Handles "belongs in both" | Best for |
 |--------|-------------|---------------------------|----------|
 | EM | Yes | Yes (proportional split) | General use |
-| MFLP | Tends to 0/1 | No (picks one) | Clear-cut cases |
 | Flow | Yes | Yes (coverage-based) | Complex families |
 | SNP | N/A | Distinguishes copies | Divergent copies |
 
@@ -383,13 +378,13 @@ flowchart TD
 **VG mode prevents both:**
 
 - **Chimeric prevention:** Copies stay as separate bundles linked by family grouping — never merged into one splice graph. Multi-mapper weights are redistributed, not the reads themselves.
-- **Copy recovery:** EM/MFLP/Flow redistribute weights using junction compatibility, preventing winner-takes-all. Even copies differing by a single splice junction (1bp) get their reads back through compatibility scoring.
+- **Copy recovery:** EM or Flow redistribute weights using junction compatibility, preventing winner-takes-all. Even copies differing by a single splice junction (1bp) get their reads back through compatibility scoring.
 - **Novel paralogs:** K-mer scan of unmapped reads against the family variation graph creates new bundles for copies absent from the reference.
 
 | Artifact | Cause | VG Prevention |
 |----------|-------|---------------|
 | Chimeric transcripts | Merging reads from different copies | Separate bundles, linked by family grouping |
-| Copy dropout | Multi-mappers stolen by dominant copy | EM/MFLP/Flow redistribute by junction compatibility |
+| Copy dropout | Multi-mappers stolen by dominant copy | EM/Flow redistribute by junction compatibility |
 | Missing paralogs | Novel copy absent from reference | K-mer scan of unmapped reads against family VG |
 | SNP-identical copies | Copies differ only by point mutations | `--vg-snp`: diagnostic SNP profiles per copy |
 | Haplotype confusion | Two haplotypes create false diversity | `--vg-phase`: split reads by HP tags before assembly |
@@ -409,7 +404,7 @@ flowchart TD
 | `-c <F>` | Minimum coverage per bp | 1.0 |
 | `--genome-fasta <FA>` | Genome for splice consensus | — |
 | `--vg` | Enable variation graph mode | off |
-| `--vg-solver {em,mflp,flow}` | Multi-mapping solver | em |
+| `--vg-solver {em,flow}` | Multi-mapping solver | em |
 | `--vg-snp` | SNP-based copy assignment | off |
 | `--vg-phase` | Phased assembly (HP tags) | off |
 | `--vg-discover-novel` | Find novel gene copies | off |

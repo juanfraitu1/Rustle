@@ -97,7 +97,7 @@ flowchart LR
         direction TB
         A1["Reads with E2-E3a junction\n--> 100% to Copy A"]
         A2["Reads with E2-E3b junction\n--> 100% to Copy B"]
-        A3["Reads with E1-E2 only\n--> split by EM/MFLP/Flow\nproportional to unique evidence"]
+        A3["Reads with E1-E2 only\n--> split by EM/Flow\nproportional to unique evidence"]
     end
 
     COPIES --> READS_J --> ASSIGN
@@ -111,7 +111,7 @@ flowchart LR
 
 **Even a single nucleotide difference** at a splice junction creates a
 unique junction coordinate that unambiguously assigns a read to one copy.
-The compatibility score in EM/MFLP uses these junction differences to
+The compatibility score in EM uses these junction differences to
 weight assignments.
 
 ---
@@ -172,7 +172,7 @@ family's assembled transcripts, bypassing the aligner's reference bias.
                           | different copies into    | bundles; link via family
                           | one splice graph         | grouping, not merging
                           |                          |
-    Copy dropout          | Multi-mappers stolen     | EM/MFLP/Flow redistribute
+    Copy dropout          | Multi-mappers stolen     | EM/Flow redistribute
                           | by dominant copy         | weights using junction
                           | (winner-takes-all)       | compatibility evidence
                           |                          |

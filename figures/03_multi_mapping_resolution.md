@@ -1,4 +1,4 @@
-# Multi-Mapping Resolution: EM, MFLP, and Flow
+# Multi-Mapping Resolution: EM and Flow
 
 ## The Multi-Mapping Problem in Gene Families
 
@@ -49,7 +49,7 @@ from both? Or from one copy only? The answer depends on the _expression context_
 
 ---
 
-## Three Resolution Strategies
+## Two Resolution Strategies
 
 ### Strategy 1: EM (Expectation-Maximization)
 
@@ -94,49 +94,7 @@ several places" scenario by distributing weight proportional to evidence.
 
 ---
 
-### Strategy 2: MFLP (Minimum Flow Linear Program)
-
-Single-shot optimization that assigns each multi-mapper to copies by
-maximizing total compatibility, subject to the constraint that weights
-sum to 1 per read.
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '12px'}}}%%
-flowchart TD
-    subgraph FORMULATION["LP Formulation"]
-        direction TB
-        VAR["<b>Variables:</b>\nw[read][copy] in [0, 1]\nweight of read r at copy k"]
-        CON["<b>Constraints:</b>\nFor each read r:\n  sum_k w[r][k] = 1\n(weights must sum to 1)"]
-        OBJ["<b>Objective:</b>\nMaximize sum_{r,k}\n  w[r][k] * compat(r, k)\n(total compatibility)"]
-    end
-
-    subgraph SOLVE["Solver (MicroLP)"]
-        LP["Linear program:\nSingle-shot optimization\n(no iteration needed)"]
-    end
-
-    subgraph OUTPUT["Result"]
-        direction TB
-        O1["w[Read1][CopyA] = 1.0\nw[Read1][CopyB] = 0.0\n(MFLP chose best match)"]
-        O2["w[Read4][CopyA] = 0.0\nw[Read4][CopyB] = 1.0\n(assigned to other copy)"]
-    end
-
-    FORMULATION --> SOLVE --> OUTPUT
-
-    style FORMULATION fill:#e8f4fd,stroke:#2196F3
-    style SOLVE fill:#fff3e0,stroke:#FF9800,stroke-width:2px
-    style OUTPUT fill:#e8f5e9,stroke:#4CAF50
-```
-
-**Key property:** MFLP tends toward **hard assignment** (0 or 1 weights) because
-the LP optimum sits at vertices of the feasible polytope. This is appropriate when
-you believe each read truly originates from a single copy and want the globally
-optimal assignment. However, when a read genuinely comes from a region shared
-between expressed copies, MFLP will still assign it to one — potentially
-underestimating the weaker copy.
-
----
-
-### Strategy 3: Flow-Based Redistribution
+### Strategy 2: Flow-Based Redistribution
 
 Two-pass approach: assemble first with uniform weights, then use the
 assembled transcripts' coverage to redistribute multi-mapper weights,
@@ -200,7 +158,6 @@ flowchart TD
     subgraph METHODS["How Each Method Handles This"]
         direction TB
         ME["<b>EM:</b> naturally splits proportional\nto abundance (handles Scenario 2).\nConverges to ~100% for Scenario 1."]
-        MM["<b>MFLP:</b> picks the single best copy\n(handles Scenario 1 well).\nMay undercount in Scenario 2."]
         MF["<b>Flow:</b> splits proportional to\nassembled coverage (handles Scenario 2).\nTwo-pass catches Scenario 1."]
         MS["<b>SNP mode (--vg-snp):</b>\nUses per-base variants to distinguish.\nHandles Scenario 3 directly."]
     end
@@ -213,7 +170,6 @@ flowchart TD
     style S2 fill:#bbdefb,stroke:#1565C0
     style S3 fill:#fff9c4,stroke:#F57F17
     style ME fill:#fff3e0,stroke:#FF9800
-    style MM fill:#fff3e0,stroke:#FF9800
     style MF fill:#fff3e0,stroke:#FF9800
     style MS fill:#fff3e0,stroke:#FF9800
 ```
@@ -242,7 +198,6 @@ The question "how many multi-mappers are real?" is controlled by two mechanisms:
     Method    | Fractional? | Handles "belongs in both" | Best for
     ----------|-------------|---------------------------|------------------
     EM        | Yes         | Yes (proportional split)  | General use
-    MFLP      | Tends to 0/1| No (picks one)           | Clear-cut cases
     Flow      | Yes         | Yes (coverage-based)      | Complex families
     SNP       | N/A         | Distinguishes copies      | Divergent copies
 ```

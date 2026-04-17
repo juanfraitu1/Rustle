@@ -6083,10 +6083,6 @@ pub fn run<P: AsRef<Path>>(
                     )
                 }
             }
-            VgSolver::Mflp => {
-                eprintln!("[VG] Using MFLP (linear program) solver for multi-mapping resolution");
-                crate::vg_mflp::run_mflp(&vg_families, &mut bundles)
-            }
             VgSolver::Flow => {
                 // Flow-based redistribution requires two-pass assembly.
                 // First pass: run with uniform weights (handled by normal pipeline below).

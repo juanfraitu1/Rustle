@@ -378,7 +378,7 @@ struct Args {
     #[arg(long)]
     vg_report: Option<String>,
 
-    /// Multi-mapping resolution method: none (discover only), em, mflp, or flow [default: none]
+    /// Multi-mapping resolution method: none (discover only), em, or flow [default: none]
     #[arg(long, default_value = "none")]
     vg_solver: String,
 

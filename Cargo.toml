@@ -37,11 +37,6 @@ lru = "0.12"
 
 # Random sampling for rarefaction analysis
 rand = "0.8"
-# MILP for gene-family read assignment (`--gene-family-milp`). Default: pure-Rust `microlp`.
-# For COIN-OR Cbc (faster / more stable on huge MIPs), install OS `cbc` dev libs so `pkg-config --libs cbc` works, then set:
-#   good_lp = { version = "1.15", default-features = false, features = ["coin_cbc", "singlethread-cbc"] }
-# and use the same `default_solver` call site in `multimap_mflp.rs` (Cbc becomes default when that feature is on).
-good_lp = { version = "1.15", default-features = false, features = ["microlp"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
 

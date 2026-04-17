@@ -85,7 +85,6 @@ flowchart TD
         subgraph SOLVERS["Multi-mapping Resolution"]
             direction LR
             EM["EM\nIterative\nreweighting"]
-            MFLP["MFLP\nLinear\nprogramming"]
             FLOW_S["Flow\nTwo-pass\nredistribution"]
         end
 
@@ -97,7 +96,7 @@ flowchart TD
 
         APP1["<b>1. New Copies</b>\n--vg-discover-novel\nMap unmapped reads to graphs\nto discover paralogs absent\nfrom the reference genome\n(reduces reference bias)"]
 
-        APP2["<b>2. Multi-mapping Resolution</b>\nResolve ambiguous read assignments\nacross gene family copies using:\n  MFLP (LP optimization)\n  EM (expectation-maximization)\n  Flow (coverage redistribution)"]
+        APP2["<b>2. Multi-mapping Resolution</b>\nResolve ambiguous read assignments\nacross gene family copies using:\n  EM (expectation-maximization)\n  Flow (coverage redistribution)"]
 
         APP3["<b>3. SNP-based Assignment</b>\n--vg-snp\nUse sequence variants (MD tag)\nto distinguish gene copies\nby their unique SNP profiles"]
 
@@ -117,7 +116,6 @@ flowchart TD
     style APP3 fill:#e8f5e9,stroke:#4CAF50,text-align:left
     style APP4 fill:#e8f5e9,stroke:#4CAF50,text-align:left
     style EM fill:#fff3e0,stroke:#FF9800
-    style MFLP fill:#fff3e0,stroke:#FF9800
     style FLOW_S fill:#fff3e0,stroke:#FF9800
 ```
 
@@ -133,7 +131,7 @@ flowchart LR
 
     subgraph VG["VG: Link & Resolve"]
         LINK["Discover family\n(shared reads +\nk-mer similarity)"]
-        SOLVE["Resolve multi-maps\n(EM / MFLP / Flow)"]
+        SOLVE["Resolve multi-maps\n(EM / Flow)"]
     end
 
     subgraph PASS2["Pass 2: Reweighted Assembly"]

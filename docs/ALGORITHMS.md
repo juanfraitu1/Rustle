@@ -11,13 +11,12 @@ Sections:
 5. [Variation graphs for gene families](#5-variation-graphs-for-gene-families)
 6. [Multi-mapping: the problem](#6-multi-mapping-the-problem)
 7. [EM solver: derivation and convergence](#7-em-solver-derivation-and-convergence)
-8. [MFLP solver: LP formulation](#8-mflp-solver-lp-formulation)
-9. [Flow solver: two-pass redistribution](#9-flow-solver-two-pass-redistribution)
-10. [Novel copy discovery: k-mer rescue of unmapped reads](#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads)
-11. [SNP-based copy assignment](#11-snp-based-copy-assignment)
-12. [Putting it together: the gene-family workflow](#12-putting-it-together-the-gene-family-workflow)
-13. [Failure modes and honest limitations](#13-failure-modes-and-honest-limitations)
-14. [Further reading](#14-further-reading)
+8. [Flow solver: two-pass redistribution](#8-flow-solver-two-pass-redistribution)
+9. [Novel copy discovery: k-mer rescue of unmapped reads](#9-novel-copy-discovery-k-mer-rescue-of-unmapped-reads)
+10. [SNP-based copy assignment](#10-snp-based-copy-assignment)
+11. [Putting it together: the gene-family workflow](#11-putting-it-together-the-gene-family-workflow)
+12. [Failure modes and honest limitations](#12-failure-modes-and-honest-limitations)
+13. [Further reading](#13-further-reading)
 
 ---
 
@@ -43,7 +42,7 @@ A **multi-copy gene family** is a cluster of paralogous genes (evolutionarily re
 
 Rustle's two contributions:
 
-1. A splice-graph + max-flow assembler that matches StringTie's accuracy on standard loci (faithful port of [Pertea et al. 2015](#14-further-reading), modernized in Rust).
+1. A splice-graph + max-flow assembler that matches StringTie's accuracy on standard loci (faithful port of [Pertea et al. 2015](#13-further-reading), modernized in Rust).
 2. A **variation graph (VG) mode** that links paralogous bundles, resolves multi-mappers probabilistically across the family, and rescues reads whose best copy isn't in the reference at all.
 
 ---
@@ -109,7 +108,7 @@ The twist for transcript assembly: we don't care about the max-flow *value*, we 
 
 ### 3.4 The honest limitation
 
-Max-flow decomposition is not unique. Two different path sets can both realize max-flow, and only one of them may correspond to real biology. Rustle (like StringTie) picks paths by a greedy heuristic — take the highest-abundance seed, extend source→sink, subtract that path's flow, repeat — which tends to favor the *dominant* isoform first. This is a reasonable prior but can miss rare isoforms that share edges with abundant ones. Section 13 spells out when this matters.
+Max-flow decomposition is not unique. Two different path sets can both realize max-flow, and only one of them may correspond to real biology. Rustle (like StringTie) picks paths by a greedy heuristic — take the highest-abundance seed, extend source→sink, subtract that path's flow, repeat — which tends to favor the *dominant* isoform first. This is a reasonable prior but can miss rare isoforms that share edges with abundant ones. Section 12 spells out when this matters.
 
 ---
 
@@ -151,7 +150,7 @@ A linear reference represents each genomic position once. A **variation graph** 
                 └─→ A → G → C ─┘
 ```
 
-The left path has `ATC`, the right has `AGC` — they share the `A` and `C` endpoints (edge-adjacent nodes) but diverge at the middle base (a SNP). Extend this to exon-scale and you get a graph that encodes all known alleles, haplotypes, or paralog variants in one structure. See [Paten et al. 2017](#14-further-reading), [Garrison et al. 2018](#14-further-reading).
+The left path has `ATC`, the right has `AGC` — they share the `A` and `C` endpoints (edge-adjacent nodes) but diverge at the middle base (a SNP). Extend this to exon-scale and you get a graph that encodes all known alleles, haplotypes, or paralog variants in one structure. See [Paten et al. 2017](#13-further-reading), [Garrison et al. 2018](#13-further-reading).
 
 ### 5.2 Why paralogs share a VG
 
@@ -193,7 +192,7 @@ When a read maps to `N` copies, where does it really come from? Three scenarios:
 - **Multiple copies are expressed.** The molecule genuinely came from one of them, but in shared regions we can never know which. The *probability-over-copies* is the honest answer: 60% at A, 40% at B.
 - **Novel copy.** The read matches an allele that isn't in the reference at all. Assigning it to any reference copy is wrong; it needs its own new bundle.
 
-EM and Flow handle scenarios 1 and 2 (fractional assignment). MFLP handles 1 (integer assignment). Novel copy discovery handles 3. These are the three "solver" modes exposed by `--vg-solver`.
+EM and Flow handle scenarios 1 and 2 (fractional assignment). Novel copy discovery handles 3. These are the two `--vg-solver` modes plus the discovery pass.
 
 ---
 
@@ -215,7 +214,7 @@ We don't observe `Z`. EM alternates:
 
 **M-step:** update `θ_k = (Σ_r w_{r,k}) / R`.
 
-Both steps have closed forms. Each iteration monotonically non-decreases the observed-data log-likelihood (Jensen's inequality — see [Dempster et al. 1977](#14-further-reading) or any graduate text). Standard EM convergence: reach a stationary point (local optimum).
+Both steps have closed forms. Each iteration monotonically non-decreases the observed-data log-likelihood (Jensen's inequality — see [Dempster et al. 1977](#13-further-reading) or any graduate text). Standard EM convergence: reach a stationary point (local optimum).
 
 ### 7.2 What `P(r | k)` looks like in Rustle
 
@@ -225,7 +224,7 @@ For each read `r` and candidate copy `k`:
 
 where `disagree(.)` counts splice junctions in `r` that don't appear in the set of junctions assembled at copy `k`, and `α` tunes sharpness. When `α` is large, the read strongly prefers copies whose splicing matches — a read with junctions A-B-C has near-zero probability at a copy with junctions A-B-D.
 
-This is what we earlier called *junction compatibility*: the same notion as read-to-transcript alignment in [RSEM](#14-further-reading) or [Salmon](#14-further-reading), specialized to the junction-set view that splice graphs naturally provide.
+This is what we earlier called *junction compatibility*: the same notion as read-to-transcript alignment in [RSEM](#13-further-reading) or [Salmon](#13-further-reading), specialized to the junction-set view that splice graphs naturally provide.
 
 ### 7.3 Convergence behavior
 
@@ -240,35 +239,7 @@ Key property we exploit: **EM naturally handles "belongs in both."** If copies A
 
 ---
 
-## 8. MFLP solver: LP formulation
-
-"MFLP" = **Minimum Flow Linear Program** — a direct convex optimization instead of iterative refinement.
-
-### 8.1 The LP
-
-    Variables:  w_{r,k} ∈ [0, 1]   for r = 1..R, k ∈ C_r
-
-    Constraint: Σ_{k ∈ C_r} w_{r,k} = 1   for every read r  (each read's mass sums to 1)
-
-    Objective:  maximize Σ_r Σ_k w_{r,k} · compatibility(r, k)
-
-where `compatibility(r, k)` is the same junction-overlap score EM uses. The LP is solved once (via `good_lp` in Rustle, which dispatches to a sparse simplex or interior-point backend).
-
-### 8.2 Why it picks integer-ish weights
-
-LP optima sit at *vertices* of the polytope. When the compatibility matrix has clear winners (one copy dominates for every read), the vertex solution is `w_{r,k} ∈ {0, 1}` — each read is hard-assigned. When ties exist, the LP may split weights, but typically less aggressively than EM.
-
-**Use MFLP when** the biological expectation is that each read came from *exactly one* copy (mosaic expression: one copy dominates per cell, reads aren't mixed across copies).
-
-**Don't use MFLP when** multiple copies truly co-express and you want the proportional split — use EM or Flow instead.
-
-### 8.3 Computational cost
-
-LP over `Σ_r |C_r|` variables with `R` equality constraints. For families with ≤ 50 copies and ≤ 10K multi-mappers, solves in seconds. Rustle only invokes MFLP per-family (not globally), so this scales linearly with family count even on large genomes.
-
----
-
-## 9. Flow solver: two-pass redistribution
+## 8. Flow solver: two-pass redistribution
 
 The Flow solver (`--vg-solver flow`) uses the *assembly* itself as compatibility evidence.
 
@@ -294,7 +265,7 @@ The first pass uses only alignment geometry; the second pass uses assembled stru
 
 ---
 
-## 10. Novel copy discovery: k-mer rescue of unmapped reads
+## 9. Novel copy discovery: k-mer rescue of unmapped reads
 
 ### The problem
 
@@ -324,7 +295,7 @@ K-mer matching gives no coordinate. If a novel copy is in a region that has *no*
 
 ---
 
-## 11. SNP-based copy assignment
+## 10. SNP-based copy assignment
 
 When paralogs share exon sequences but differ by point mutations, alignment alone is ambiguous but **sequence variants** disambiguate.
 
@@ -342,13 +313,13 @@ For each position inside a family bundle, compute allele frequencies using *only
 
 Multi-mapping reads that carry allele `X` at such a position get upweighted at copy A (and downweighted at copy B) — this is a direct likelihood-ratio update on the compatibility score.
 
-### Why this matters for EM/MFLP/Flow
+### Why this matters for EM/Flow
 
 Without SNP information, identical-sequence copies are *indistinguishable to EM*. With SNPs, even a single diagnostic position per copy breaks the symmetry and EM converges to the correct assignment. In practice, biologically distinct paralogs almost always differ at at least a few positions — SNP mode is how we turn those differences into assignments.
 
 ---
 
-## 12. Putting it together: the gene-family workflow
+## 11. Putting it together: the gene-family workflow
 
 End-to-end, VG mode with all features engaged:
 
@@ -362,7 +333,7 @@ End-to-end, VG mode with all features engaged:
  4. for each family:
       a. collect multi-mapping reads
       b. compute compatibility(r, k) from junctions (+ SNPs if --vg-snp)
-      c. solve EM / MFLP / Flow → weights w_{r,k}
+      c. solve EM / Flow → weights w_{r,k}
       d. redistribute read mass across copies
  5. scan unmapped reads for family-kmer matches → novel bundles
  6. run core assembly on each (original + novel) bundle with re-weighted reads
@@ -380,7 +351,7 @@ A novel copy gets `copy_status "novel"`.
 
 ---
 
-## 13. Failure modes and honest limitations
+## 12. Failure modes and honest limitations
 
 ### 13.1 Flow decomposition is non-unique
 
@@ -395,7 +366,7 @@ EM is guaranteed to non-decrease the likelihood each iteration but not to find t
 
 ### 13.3 Novel-copy discovery is anchor-weak
 
-See §10: if a novel copy has zero supplementary alignments anywhere in the reference, k-mer matching gives no genomic coordinate. The transcript still gets emitted but with placeholder coordinates. This is an open issue.
+See §9: if a novel copy has zero supplementary alignments anywhere in the reference, k-mer matching gives no genomic coordinate. The transcript still gets emitted but with placeholder coordinates. This is an open issue.
 
 ### 13.4 SNP mode requires alignment-level reliability
 
@@ -411,7 +382,7 @@ Rustle is within **1% sensitivity and 84% transcript precision** of StringTie on
 
 ---
 
-## 14. Further reading
+## 13. Further reading
 
 ### Splice graphs and transcript assembly
 

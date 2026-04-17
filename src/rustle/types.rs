@@ -657,8 +657,6 @@ pub enum VgSolver {
     None,
     /// Expectation-Maximization with junction-based compatibility.
     Em,
-    /// Minimum Flow Linear Program using good_lp.
-    Mflp,
     /// Flow-based redistribution: two-pass assembly, redistribute proportional to transcript coverage.
     Flow,
 }
@@ -675,9 +673,8 @@ impl std::str::FromStr for VgSolver {
         match s.to_lowercase().as_str() {
             "none" | "off" | "discover" => Ok(Self::None),
             "em" => Ok(Self::Em),
-            "mflp" | "lp" | "milp" => Ok(Self::Mflp),
             "flow" => Ok(Self::Flow),
-            _ => Err(format!("unknown VG solver '{}': expected none, em, mflp, or flow", s)),
+            _ => Err(format!("unknown VG solver '{}': expected none, em, or flow", s)),
         }
     }
 }
@@ -687,7 +684,6 @@ impl std::fmt::Display for VgSolver {
         match self {
             Self::None => write!(f, "none"),
             Self::Em => write!(f, "em"),
-            Self::Mflp => write!(f, "mflp"),
             Self::Flow => write!(f, "flow"),
         }
     }
@@ -853,7 +849,7 @@ pub struct RunConfig {
     pub vg_discover_novel: bool,
     /// Output path for family group report TSV (--vg-report).
     pub vg_report: Option<std::path::PathBuf>,
-    /// Multi-mapping solver: em, mflp, or flow [default: em].
+    /// Multi-mapping solver: em or flow [default: em].
     pub vg_solver: VgSolver,
     /// Use SNPs for copy assignment (--vg-snp).
     pub vg_snp: bool,

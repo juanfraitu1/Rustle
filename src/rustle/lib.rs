@@ -75,7 +75,6 @@ pub mod per_bnode_graph; // junction-expanded per-bundlenode graphs
 
 // ── Variation graph (gene family) mode ───────────────────────────────────────
 pub mod vg; // family group discovery, EM reweighting
-pub mod vg_mflp; // MFLP (minimum flow linear program) solver
 
 // ── JSON snapshots (debug) ────────────────────────────────────────────────────
 pub mod snapshot; // per-bundle JSONL snapshots for 1:1 comparisons
