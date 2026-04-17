@@ -10,14 +10,14 @@ Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) usi
 
 | Metric | Rustle | StringTie | Notes |
 |--------|--------|-----------|-------|
-| Transcripts assembled | 1,887 | 1,839 | |
-| Matching transcripts | 1,440 / 1,839 | — | Rustle vs StringTie output |
-| Transcript sensitivity | 78.3% | — | (gffcompare `=` class) |
-| Transcript precision | 76.3% | — | |
+| Transcripts assembled | 1,801 | 1,839 | |
+| Matching transcripts | 1,439 / 1,839 | — | Rustle vs StringTie output |
+| Transcript sensitivity | 78.2% | — | (gffcompare `=` class) |
+| Transcript precision | 79.9% | — | |
 | Intron-level sensitivity | 96.1% | — | |
-| Intron-level precision | 93.9% | — | |
-| Locus-level sensitivity | 94.9% | — | |
-| Locus-level precision | 95.2% | — | |
+| Intron-level precision | 94.9% | — | |
+| Locus-level sensitivity | 95.0% | — | |
+| Locus-level precision | 95.0% | — | |
 | Wall-clock time | **5.4 s** | 13.7 s | **2.5x faster** |
 | Language | Rust | C++ | |
 

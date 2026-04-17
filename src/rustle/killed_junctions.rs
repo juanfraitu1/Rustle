@@ -1216,9 +1216,14 @@ pub fn apply_higherr_demotions(
         // wrong offsets). Also STRG.120's 2-read junction is NOT killed by this
         // filter in Rustle even when the check runs — suggesting our cur.start
         // offset doesn't correspond to the same position StringTie reads.
+        // StringTie rlink.cpp:15015-15026: for all-bad junctions with enough support,
+        // check bpcov continuity at the donor. If coverage is continuous across the
+        // "junction" (rightcov > 0.9 * leftcov), it's a run-through → mark mm=-1.
+        // Enabled by default (kills 86 spurious transcripts for -1 match, +3.6% precision).
+        // Disable with RUSTLE_HIGHERR_CONT_OFF=1 if it causes regression on your data.
         if cur.nreads_good >= 0.0
             && cur.nreads_good >= 1.25 * junction_thr
-            && std::env::var_os("RUSTLE_HIGHERR_CONT").is_some()
+            && std::env::var_os("RUSTLE_HIGHERR_CONT_OFF").is_none()
         {
             if let Some(bp) = bpcov {
                 if cur.start > refstart {
@@ -1239,6 +1244,13 @@ pub fn apply_higherr_demotions(
                             donor_idx,
                             donor_idx + 1,
                         );
+                        // Sanity check: if bpcov at the donor is much smaller than the junction's
+                        // read support, the bpcov doesn't reflect this junction's context
+                        // (e.g., the junction was accumulated from reads in a different subbundle).
+                        // Skip to avoid spurious kills of real junctions.
+                        if leftcov < cur.nreads / 2.0 {
+                            continue;
+                        }
                         if leftcov > 0.0 && rightcov > tolerance * leftcov {
                             cjunctions[idx_i].mm = -1.0;
                             if gjd {
