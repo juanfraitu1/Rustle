@@ -283,3 +283,66 @@ The three pieces together provide an end-to-end path for multi-copy recovery:
    only partially, converting `c` matches to `=` matches.
 
 All gated by `RUSTLE_VG_FAMILY_RESCUE=1`. Baseline behavior is unchanged.
+
+---
+
+## Does graph similarity extend to distant family members?
+
+**Short answer: it depends on sub-family**. The "GOLGA6" label is a homology
+family (evolutionary name), not a graph-isomorphism group. Empirical analysis
+of all 16 GOLGA6-family members in the GGO annotation:
+
+Chain-homology clustering (contiguous subsequence match, ≥5 introns):
+
+| Tolerance | Multi-member groups | Biggest | Member sets |
+|-----------|---------------------|---------|-------------|
+| ±5 bp | 1 | 3 | chr19 L7 triple only |
+| ±20 bp | 3 | 3 | L7 triple + 3 GOLGA6C copies + GOLGA6L10/L9 pair |
+| ±100 bp | 3 | 4 | same, GOLGA6C cluster expands to 4 |
+| ±1000 bp | 1 | 14 | everything collapses (too loose, likely spurious) |
+
+At biologically meaningful tolerances (±20–100 bp per intron, accommodating
+normal paralog drift), **three distinct sub-families emerge**:
+
+1. **GOLGA6L7 sub-family** (chr19, 8 introns): LOC115931294, LOC134757625,
+   LOC101137218 — our tight tandem case
+2. **GOLGA6C sub-family** (chr15, 17–18 introns): LOC115930772, LOC115930818,
+   LOC115930844, LOC101139171 — a distinct architecture with twice as many
+   introns as the L7 cluster
+3. **GOLGA6L9/L10 pair** (chr15, 8 introns): GOLGA6L10 + LOC115930840
+
+The remaining members (LOC101138059 with 3 introns, LOC115933515 with 5,
+LOC101138066 with 16, etc.) don't cluster by chain with anything else — they
+have diverged independent exon/intron structures.
+
+### What this means for the advisor conversation
+
+- **Tandem paralogs** (our L7 case): same topology, tiny intron-length drift,
+  consistent genomic offset. Chain-homology matching is a clean, cheap
+  first-pass detection AND enables coordinate projection for 5'/3' exon
+  extension. 3/3 recovered on GOLGA6L7.
+
+- **Distant paralogs within a sub-family** (chr15 GOLGA6C cluster): same
+  topology (17–18 introns conserved), larger intron-length divergence
+  (needs ±50–100 bp tolerance), no consistent genomic offset (interspersed
+  across chromosome). Chain homology can still *detect* them, but coordinate
+  projection doesn't transfer — we'd need sequence-level extension instead.
+
+- **Full superfamily** (all 14 GOLGA6 members across chr15 + chr19): intron
+  counts range from 3 to 18. No single graph matches all; homology exists
+  only at the sequence level. Length-chain matching fails here — you'd need
+  a graph-edit-distance matcher (like vg's graph alignment) or annotation
+  synteny.
+
+### Current implementation status
+
+- Chain-homology detection is already **cross-chromosome-safe** (the
+  `RUSTLE_VG_FAMILY_RESCUE` registry keeps chains without coordinate context).
+- Coordinate projection (`extend_family_suffix_matches`) correctly restricts
+  to same-chromosome + ≥5 kb offset, because projecting an L7_1 exon onto a
+  chr15 locus would be biologically wrong.
+- For distant sub-family recovery (like GOLGA6C), a **sequence-projection
+  extension** would be needed — lookup the reference sequence at the implied
+  exon position on the target chromosome, extend only if splice sites are
+  present. That's a next step, not implemented.
+
