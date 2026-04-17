@@ -289,7 +289,8 @@ fn emit_pred_entries(stage: &str, txs: &[Transcript]) {
         if !tx_overlaps_trace_locus(t) {
             continue;
         }
-        eprintln!("  pred[{}]: {}", i, tx_summary(t));
+        let src = t.source.as_deref().unwrap_or("none");
+        eprintln!("  pred[{}]: {} src={}", i, tx_summary(t), src);
     }
 }
 
@@ -3119,6 +3120,15 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
                 if keep.strand == '.' {
                     keep.strand = winner.strand;
                 }
+                // Preserve the winner's long-read provenance (longcov, hardstart/end,
+                // is_longread) so downstream filters like retained_intron_filter sort
+                // the merged transcript by the stronger seed's abundance, not the loser's.
+                // Without this, the winner's longcov is lost when `keep = txs[midx]`
+                // picks up the loser's field.
+                keep.longcov = winner.longcov.max(loser.longcov);
+                keep.is_longread = winner.is_longread || loser.is_longread;
+                keep.hardstart = winner.hardstart || keep.hardstart;
+                keep.hardend = winner.hardend || keep.hardend;
                 txs[midx] = keep;
             } else {
                 // — multi-exon equal_pred merge with per-exon
@@ -3142,6 +3152,15 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
                 if keep.source.is_none() {
                     keep.source = winner.source.clone();
                 }
+                // Preserve the winner's long-read provenance. See explanation above.
+                // This fixes the STRG.120.1 class of miss where a high-longcov seed
+                // transcript was merged into a low-longcov sibling; the merged
+                // transcript inherited the loser's longcov=1 and was then killed by
+                // retained_intron_filter which uses longcov to rank candidates.
+                keep.longcov = winner.longcov.max(loser.longcov);
+                keep.is_longread = winner.is_longread || loser.is_longread;
+                keep.hardstart = winner.hardstart || keep.hardstart;
+                keep.hardend = winner.hardend || keep.hardend;
                 // The killed prediction (nidx) is always the exoncov source .
                 let killed = &txs[nidx];
                 let killed_nex = killed.exons.len();
