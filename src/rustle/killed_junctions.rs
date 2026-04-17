@@ -393,7 +393,7 @@ mod tests {
         ];
 
         // Use a higher junction threshold so this low-support junction is considered demotable.
-        apply_higherr_demotions(&mut cjunctions, 25, 5.0);
+        apply_higherr_demotions(&mut cjunctions, 25, 5.0, None, 0);
 
         assert!(cjunctions[1].nreads_good < 0.0);
         assert_eq!(cjunctions[1].nreads, 2.0);
@@ -434,7 +434,7 @@ mod tests {
             },
         ];
 
-        apply_higherr_demotions(&mut cjunctions, 25, 1.0);
+        apply_higherr_demotions(&mut cjunctions, 25, 1.0, None, 0);
 
         assert!(cjunctions[1].nreads < 0.0);
         assert_eq!(cjunctions[1].nreads_good, 1.0);
@@ -1172,7 +1172,13 @@ pub fn good_junc(
 }
 
 /// the original algorithm `higherr`: donor/acceptor demotion pointers on all-bad junctions.
-pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junction_thr: f64) {
+pub fn apply_higherr_demotions(
+    cjunctions: &mut [CJunction],
+    sserror: u64,
+    junction_thr: f64,
+    bpcov: Option<&BpcovStranded>,
+    refstart: u64,
+) {
     if cjunctions.len() < 2 {
         return;
     }
@@ -1189,10 +1195,15 @@ pub fn apply_higherr_demotions(cjunctions: &mut [CJunction], sserror: u64, junct
         if !cj_higherr_candidate(&cur) {
             continue;
         }
-        // Sensitivity-first: only demote very weak all-bad junctions (uses `junctionthr`
-        // to decide which bad junctions are worth chasing). This prevents collapsing distinct
-        // isoforms that happen to be within `sserror` bp on one splice site.
+        // StringTie rlink.cpp:15015-15026 has an additional continuity check for
+        // all-bad junctions with enough support: mark mm=-1 if bpcov doesn't drop at
+        // the donor-to-intron boundary (suggesting run-through not a real splice).
+        // This check was tested but is TOO AGGRESSIVE for long-read data where
+        // single-base coverage at the donor and first intron base often looks similar
+        // (soft-clipping, small indels). StringTie's intent may rely on different
+        // nm/nreads semantics than what Rustle computes. Left disabled for now.
         if cur.nreads_good >= 0.0 && cur.nreads_good >= 1.25 * junction_thr {
+            let _ = (bpcov, refstart, tolerance);
             continue;
         }
 

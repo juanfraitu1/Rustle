@@ -6215,7 +6215,13 @@ pub fn run<P: AsRef<Path>>(
             aggregate_splice_site_support(&mut cjunctions);
             // apply_higherr_demotions before good_junc
             // The higherr block runs before the good_junc call in build_graphs
-            apply_higherr_demotions(&mut cjunctions, config.sserror, config.min_junction_reads);
+            apply_higherr_demotions(
+                &mut cjunctions,
+                config.sserror,
+                config.min_junction_reads,
+                Some(&bpcov_stranded),
+                bundle.start,
+            );
             good_junc(
                 &mut cjunctions,
                 &bpcov_stranded,
@@ -6650,7 +6656,13 @@ pub fn run<P: AsRef<Path>>(
         }
         aggregate_splice_site_support(&mut cjunctions);
         // apply_higherr_demotions before good_junc
-        apply_higherr_demotions(&mut cjunctions, config.sserror, config.min_junction_reads);
+        apply_higherr_demotions(
+            &mut cjunctions,
+            config.sserror,
+            config.min_junction_reads,
+            Some(&bpcov_stranded),
+            bundle.start,
+        );
         good_junc(
             &mut cjunctions,
             &bpcov_stranded,
@@ -8471,6 +8483,8 @@ pub fn run<P: AsRef<Path>>(
                     &mut sub_cjunctions,
                     config.sserror,
                     config.min_junction_reads,
+                    Some(&sub_bpcov_stranded),
+                    sub_bundle.start,
                 );
                 good_junc(
                     &mut sub_cjunctions,
