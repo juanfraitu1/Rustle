@@ -218,3 +218,68 @@ a **first filter**, and a length-chain subsequence match handles tight
 paralogs like GOLGA6L7 cleanly. For loose families you need a tolerant
 matcher — intron-by-intron alignment with indel penalties, not exact
 subsequence. That's a graph-edit-distance problem, not a bit-subset problem.
+
+---
+
+## Converting `c` to `=`: family-extend post-pass
+
+The gated rescue produced L7_2 and L7_3 as `c` (contained) matches — full 8-intron
+chains but missing the 5' TSS exon that reads couldn't support. Since the three
+copies share topology, we can *project* L7_1's TSS exon onto L7_2 / L7_3 by the
+consistent paralog offset.
+
+### Rule
+
+For each emitted transcript T whose intron-length chain is a contiguous
+subsequence of some longer transcript T' chain (same strand, same chromosome,
+≥5 introns, each intron length within ±5 bp):
+
+1. Let `offset` be the position in T' where T begins.
+2. Let `delta` = `T.exon[0].start - T'.exon[offset].start` (the paralog genomic offset).
+3. Require `|delta| ≥ 5 kb` (ensures T' is a paralog, not a same-locus parent isoform).
+4. Require `offset ≤ 3` and `tail_length ≤ 3` (limit extension to small gaps).
+5. Prepend `T'.exon[0..offset]` shifted by `delta`.
+6. Append `T'.exon[offset+len(T)+1..]` shifted by `delta`.
+
+### Result on GOLGA6L7
+
+All three copies upgrade to `=`:
+
+| Copy | Before extend | After extend |
+|------|---------------|--------------|
+| L7_1 | `=` | `=` |
+| L7_2 | `c` | **`=`** |
+| L7_3 | `c` | **`=`** |
+
+L7_2 TSS exon projected from L7_1's template: `104830518-104830737` vs
+annotated `104830536-104830737` — the intron junction matches exactly, and
+the TSS start coordinate is within 18 bp (TSS definition is typically fuzzy
+anyway for `=` scoring).
+
+### Full GGO_19 benchmark (all pieces stacked)
+
+| Config | Matches | Precision | Matching loci | Missed loci |
+|--------|---------|-----------|---------------|-------------|
+| Baseline | 1472 | 83.4% | 556 | 11 |
+| Gated rescue only | 1462 | 83.7% | 557 | 11 |
+| **Rescue + extend** | **1460** | **83.6%** | **557** | **11** |
+
+Extended 4 transcripts on the full benchmark. Net −12 matches (the keeptrf
+rescue has mild downstream assembly-reordering cost; the extension itself is
+roughly neutral), but +1 matching locus and precision preserved.
+
+### Summary
+
+The three pieces together provide an end-to-end path for multi-copy recovery:
+
+1. **Secondary-alignment scan in VG mode** (`vg.rs`): find cross-bundle links
+   from PacBio/ONT multi-mappers (where primary vs secondary is an arbitrary
+   aligner pick).
+2. **Chain-homology gated rescue** (`transfrag_process.rs`): promote
+   single-boundary transfrags to `keeptrf` reps when their intron-length chain
+   matches a confirmed family member's chain.
+3. **Family-extend post-pass** (`pipeline.rs`): project missing terminal exons
+   from the family template onto paralogs that the assembler reconstructed
+   only partially, converting `c` matches to `=` matches.
+
+All gated by `RUSTLE_VG_FAMILY_RESCUE=1`. Baseline behavior is unchanged.

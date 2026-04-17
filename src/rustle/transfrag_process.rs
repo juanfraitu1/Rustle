@@ -107,6 +107,46 @@ fn tf_intron_length_chain(tf: &GraphTransfrag, graph: &Graph) -> Vec<u32> {
     lens
 }
 
+/// Compute intron-length chain from a list of exon (start,end) tuples.
+pub fn exons_intron_length_chain(exons: &[(u64, u64)]) -> Vec<u32> {
+    let mut sorted = exons.to_vec();
+    sorted.sort();
+    let mut lens = Vec::new();
+    for i in 0..sorted.len().saturating_sub(1) {
+        let a_end = sorted[i].1;
+        let b_start = sorted[i + 1].0;
+        if b_start > a_end + 1 {
+            lens.push((b_start - a_end - 1) as u32);
+        }
+    }
+    lens
+}
+
+/// Find where `candidate` appears as a contiguous subsequence of `reference`
+/// with each intron-length matching within `tol` bp. Returns the start offset
+/// within `reference`, or None if not found.
+pub fn chain_subsequence_offset(candidate: &[u32], reference: &[u32], tol: u32) -> Option<usize> {
+    if candidate.is_empty() || candidate.len() > reference.len() {
+        return None;
+    }
+    for start in 0..=reference.len() - candidate.len() {
+        let mut ok = true;
+        for i in 0..candidate.len() {
+            let a = candidate[i];
+            let b = reference[start + i];
+            let diff = if a > b { a - b } else { b - a };
+            if diff > tol {
+                ok = false;
+                break;
+            }
+        }
+        if ok {
+            return Some(start);
+        }
+    }
+    None
+}
+
 const MAX_NODE: i64 = i64::MAX - 1; // unset lens sentinel
 const SSDIST: i64 = 25;
 const EDGEDIST: i64 = 100;

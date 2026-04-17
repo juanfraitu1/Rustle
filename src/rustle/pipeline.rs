@@ -3037,7 +3037,122 @@ use crate::transcript_filter::{
     add_pred, apply_global_cross_strand_filter, collapse_equal_predictions, compute_tpm_fpkm,
     filter_unsupported_junctions, print_predcluster_with_summary, PredclusterStageSummary,
 };
-use crate::transfrag_process::process_transfrags;
+use crate::transfrag_process::{
+    chain_subsequence_offset, exons_intron_length_chain, process_transfrags,
+};
+
+/// Post-assembly family extension: for transcripts whose intron chain is a
+/// strict contiguous subsequence of a longer transcript's chain, project the
+/// missing TSS- or TTS-side exons from the template onto the target's
+/// coordinates. Works because near-paralogs share intron topology; the only
+/// difference is a consistent genomic offset between copies.
+fn extend_family_suffix_matches(transcripts: &mut Vec<Transcript>, verbose: bool) {
+    let n = transcripts.len();
+    if n < 2 {
+        return;
+    }
+    let chains: Vec<Vec<u32>> = transcripts
+        .iter()
+        .map(|t| exons_intron_length_chain(&t.exons))
+        .collect();
+    let mut extended = 0usize;
+    for i in 0..n {
+        let target_chain = &chains[i];
+        if target_chain.len() < 5 {
+            continue;
+        }
+        // Scan for a longer template with target as contiguous subsequence.
+        let mut best: Option<(usize, usize)> = None;
+        for j in 0..n {
+            if j == i || transcripts[j].strand != transcripts[i].strand {
+                continue;
+            }
+            if transcripts[j].chrom != transcripts[i].chrom {
+                continue;
+            }
+            let tchain = &chains[j];
+            if tchain.len() <= target_chain.len() {
+                continue;
+            }
+            if let Some(off) = chain_subsequence_offset(target_chain, tchain, 5) {
+                // Prefer templates where the target is a strict subsequence
+                // that missing exons on at least one end (off>0 or tail).
+                if off > 0 || off + target_chain.len() < tchain.len() {
+                    best = Some((j, off));
+                    break;
+                }
+            }
+        }
+        let Some((template_idx, offset)) = best else {
+            continue;
+        };
+        let template = &transcripts[template_idx];
+        let target = &transcripts[i];
+        if template.exons.len() < target.exons.len() + offset {
+            continue;
+        }
+        // Template exons are sorted; target's first exon corresponds to
+        // template.exons[offset]. Compute genomic delta, then project the
+        // template's preceding and trailing exons onto target coordinates.
+        let mut target_exons_sorted = target.exons.clone();
+        target_exons_sorted.sort();
+        let mut template_exons_sorted = template.exons.clone();
+        template_exons_sorted.sort();
+        let delta =
+            target_exons_sorted[0].0 as i64 - template_exons_sorted[offset].0 as i64;
+        // Require template to be a genomic paralog, not the same-locus parent:
+        // delta must be at least 5 kb so we don't extend a minor-isoform suffix
+        // with its parent-isoform's unique 5' exons.
+        if delta.abs() < 5_000 {
+            continue;
+        }
+        // Limit extension to at most 3 missing exons per side — larger gaps
+        // are more likely to be assembly errors than real paralog drift.
+        let tail_start_est = offset + target_chain.len() + 1;
+        let tail_len = template_exons_sorted
+            .len()
+            .saturating_sub(tail_start_est);
+        if offset > 3 || tail_len > 3 {
+            continue;
+        }
+        let mut new_exons: Vec<(u64, u64)> = Vec::new();
+        // Prepend missing 5' exons (low-coordinate end).
+        for k in 0..offset {
+            let (s, e) = template_exons_sorted[k];
+            let ps = (s as i64 + delta).max(0) as u64;
+            let pe = (e as i64 + delta).max(0) as u64;
+            new_exons.push((ps, pe));
+        }
+        new_exons.extend(target_exons_sorted.iter().copied());
+        // Append missing 3' exons (high-coordinate end) if any.
+        let tail_start = offset + target_chain.len() + 1; // +1 accounts for the shared final exon
+        if tail_start < template_exons_sorted.len() {
+            for k in tail_start..template_exons_sorted.len() {
+                let (s, e) = template_exons_sorted[k];
+                let ps = (s as i64 + delta).max(0) as u64;
+                let pe = (e as i64 + delta).max(0) as u64;
+                new_exons.push((ps, pe));
+            }
+        }
+        new_exons.sort();
+        // Deduplicate in case of coordinate collisions.
+        new_exons.dedup();
+        if new_exons.len() > target.exons.len() {
+            transcripts[i].exons = new_exons;
+            transcripts[i].source = Some(format!(
+                "{}+family_ext",
+                transcripts[i].source.as_deref().unwrap_or("flow")
+            ));
+            extended += 1;
+        }
+    }
+    if verbose && extended > 0 {
+        eprintln!(
+            "    family-extend: extended {} transcript(s) via cross-bundle chain homology",
+            extended
+        );
+    }
+}
 
 fn count_fragment_metrics_for_bundle(bundle: &crate::types::Bundle) -> (f64, f64) {
     let mut num_fragments = 0.0f64;
@@ -9307,6 +9422,16 @@ pub fn run<P: AsRef<Path>>(
     // transcripts on the minority strand are eliminated by higher-scored opposite-strand
     // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
     all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
+
+    // Family-extension: for each transcript whose intron chain is a strict
+    // contiguous subsequence of a longer transcript's chain (within 5 bp per
+    // intron), project the missing terminal exons from the template onto this
+    // transcript's coordinates. Converts `c` matches to `=` by restoring the
+    // TSS/TTS exon that short reads couldn't support. Gated by the same
+    // RUSTLE_VG_FAMILY_RESCUE env var as the keeptrf rescue.
+    if std::env::var_os("RUSTLE_VG_FAMILY_RESCUE").is_some() {
+        extend_family_suffix_matches(&mut all_transcripts, config.verbose);
+    }
 
     // Add single-exon predictions from unstranded bundles
     // filter by singlethr (per-base coverage threshold)
