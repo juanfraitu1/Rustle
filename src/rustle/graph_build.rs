@@ -1136,9 +1136,13 @@ fn longtrim_inline(
         // Positions with only 1-2 reads are alignment jitter, not real TSS/TES.
         const MIN_BOUNDARY_READS: f64 = 3.0;
         // Minimum tmpcov (window coverage contrast) to accept a split.
-        // the original observed minimum is 16.2; use 10 as a conservative filter
-        // that removes weak splits without losing real boundaries.
-        const MIN_TMPCOV: f64 = 25.0;
+        // StringTie has no threshold (splits on any positive tmpcov); keeping 25
+        // here avoids false splits at ambiguous boundaries. Override via
+        // RUSTLE_LONGTRIM_MIN_TMPCOV.
+        let min_tmpcov: f64 = std::env::var("RUSTLE_LONGTRIM_MIN_TMPCOV")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(25.0);
 
         if use_start {
             let pos = lstart[*nls].pos;
@@ -1166,11 +1170,12 @@ fn longtrim_inline(
             if tmpcov <= 0.0 && lstart[*nls].cov < 0.0 {
                 tmpcov = ERROR_PERC;
             }
-            if tmpcov >= MIN_TMPCOV {
+            if tmpcov > min_tmpcov {
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if pos > graph.nodes[*graphnode_id].start && pos < cur_end {
                     // Split: [cur_start, pos) and [pos, cur_end)
-                    graph.nodes[*graphnode_id].end = pos;
+                    let prev_id = *graphnode_id;
+                    graph.nodes[prev_id].end = pos;
                     let new_node = graph.add_node(pos, cur_end);
                     new_node.source_bnode = Some(source_bid);
                     new_node.hardstart = true;
@@ -1178,7 +1183,17 @@ fn longtrim_inline(
                     // Source → new (hardstart boundary)
                     graph.add_edge(source_id, new_id);
                     // Prev → new (contiguous)
-                    graph.add_edge(*graphnode_id, new_id);
+                    graph.add_edge(prev_id, new_id);
+                    // Prev → sink: when reads start at pos (new TSS), the preceding
+                    // transcript should be able to terminate at pos-1. Without this
+                    // edge, flow must continue through the new hardstart node, which
+                    // produces gene-chimeric paths (see STRG.125 case: TSS at
+                    // 22459860 with ~18 supporting read starts). Disable via
+                    // RUSTLE_NO_LSTART_SINK=1.
+                    if std::env::var_os("RUSTLE_NO_LSTART_SINK").is_none() {
+                        graph.nodes[prev_id].hardend = true;
+                        sink_parents.push(prev_id);
+                    }
                     *graphnode_id = new_id;
                 }
             }
@@ -1207,7 +1222,7 @@ fn longtrim_inline(
             if tmpcov <= 0.0 && lend[*nle].cov < 0.0 {
                 tmpcov = ERROR_PERC;
             }
-            if tmpcov >= MIN_TMPCOV {
+            if tmpcov > min_tmpcov {
                 let split = pos + 1; // half-open boundary
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if split > graph.nodes[*graphnode_id].start && split < cur_end {
