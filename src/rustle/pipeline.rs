@@ -3035,7 +3035,8 @@ fn collect_guide_boundary_sets_for_bundle(
 
 use crate::transcript_filter::{
     add_pred, apply_global_cross_strand_filter, collapse_equal_predictions, compute_tpm_fpkm,
-    filter_unsupported_junctions, print_predcluster_with_summary, PredclusterStageSummary,
+    filter_unsupported_junctions, print_predcluster_with_summary, suppress_near_duplicate_chains,
+    PredclusterStageSummary,
 };
 use crate::transfrag_process::{
     chain_subsequence_offset, exons_intron_length_chain, process_transfrags,
@@ -9422,6 +9423,13 @@ pub fn run<P: AsRef<Path>>(
     // transcripts on the minority strand are eliminated by higher-scored opposite-strand
     // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
     all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
+
+    // Near-duplicate chain suppression (opt-in via RUSTLE_SUPPRESS_NEAR_DUP=1):
+    // drop low-cov multi-exon transcripts whose intron chain differs from a
+    // higher-cov sibling's by <=2 small-shift alt-donor/acceptor introns.
+    // These are typical j-class artifacts that inflate tx count without
+    // recovering real missed isoforms.
+    all_transcripts = suppress_near_duplicate_chains(all_transcripts, config.verbose);
 
     // Family-extension: for each transcript whose intron chain is a strict
     // contiguous subsequence of a longer transcript's chain (within 5 bp per
