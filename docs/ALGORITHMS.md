@@ -8,15 +8,16 @@ Sections:
 2. [Splice graphs](#2-splice-graphs)
 3. [Network flow: formulation and why it works](#3-network-flow-formulation-and-why-it-works)
 4. [Path extraction: from flow to transcripts](#4-path-extraction-from-flow-to-transcripts)
-5. [Variation graphs for gene families](#5-variation-graphs-for-gene-families)
-6. [Multi-mapping: the problem](#6-multi-mapping-the-problem)
-7. [EM solver: derivation and convergence](#7-em-solver-derivation-and-convergence)
-8. [Flow solver: two-pass redistribution](#8-flow-solver-two-pass-redistribution)
-9. [Novel copy discovery: k-mer rescue of unmapped reads](#9-novel-copy-discovery-k-mer-rescue-of-unmapped-reads)
-10. [SNP-based copy assignment](#10-snp-based-copy-assignment)
-11. [Putting it together: the gene-family workflow](#11-putting-it-together-the-gene-family-workflow)
-12. [Failure modes and honest limitations](#12-failure-modes-and-honest-limitations)
-13. [Further reading](#13-further-reading)
+5. [Variation graphs for gene families](#5-variation-graphs-for-gene-families) — SNPs, indels, copy-specific & repeated exons, and the honest scope
+6. [How VG mode wraps the network-flow core](#6-how-vg-mode-wraps-the-network-flow-core) — per-copy flow + family-level read reweighting
+7. [Multi-mapping: the problem](#7-multi-mapping-the-problem)
+8. [EM solver: derivation and convergence](#8-em-solver-derivation-and-convergence)
+9. [Flow solver: two-pass redistribution](#9-flow-solver-two-pass-redistribution)
+10. [Novel copy discovery: k-mer rescue of unmapped reads](#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads)
+11. [SNP-based copy assignment](#11-snp-based-copy-assignment)
+12. [Putting it together: the gene-family workflow](#12-putting-it-together-the-gene-family-workflow)
+13. [Failure modes and honest limitations](#13-failure-modes-and-honest-limitations)
+14. [Further reading](#14-further-reading)
 
 ---
 
@@ -42,7 +43,7 @@ A **multi-copy gene family** is a cluster of paralogous genes (evolutionarily re
 
 Rustle's two contributions:
 
-1. A splice-graph + max-flow assembler that matches StringTie's accuracy on standard loci (faithful port of [Pertea et al. 2015](#13-further-reading), modernized in Rust).
+1. A splice-graph + max-flow assembler that matches StringTie's accuracy on standard loci (faithful port of [Pertea et al. 2015](#14-further-reading), modernized in Rust).
 2. A **variation graph (VG) mode** that links paralogous bundles, resolves multi-mappers probabilistically across the family, and rescues reads whose best copy isn't in the reference at all.
 
 ---
@@ -108,7 +109,7 @@ The twist for transcript assembly: we don't care about the max-flow *value*, we 
 
 ### 3.4 The honest limitation
 
-Max-flow decomposition is not unique. Two different path sets can both realize max-flow, and only one of them may correspond to real biology. Rustle (like StringTie) picks paths by a greedy heuristic — take the highest-abundance seed, extend source→sink, subtract that path's flow, repeat — which tends to favor the *dominant* isoform first. This is a reasonable prior but can miss rare isoforms that share edges with abundant ones. Section 12 spells out when this matters.
+Max-flow decomposition is not unique. Two different path sets can both realize max-flow, and only one of them may correspond to real biology. Rustle (like StringTie) picks paths by a greedy heuristic — take the highest-abundance seed, extend source→sink, subtract that path's flow, repeat — which tends to favor the *dominant* isoform first. This is a reasonable prior but can miss rare isoforms that share edges with abundant ones. Section 13 spells out when this matters.
 
 ---
 
@@ -150,19 +151,49 @@ A linear reference represents each genomic position once. A **variation graph** 
                 └─→ A → G → C ─┘
 ```
 
-The left path has `ATC`, the right has `AGC` — they share the `A` and `C` endpoints (edge-adjacent nodes) but diverge at the middle base (a SNP). Extend this to exon-scale and you get a graph that encodes all known alleles, haplotypes, or paralog variants in one structure. See [Paten et al. 2017](#13-further-reading), [Garrison et al. 2018](#13-further-reading).
+The left path has `ATC`, the right has `AGC` — they share the `A` and `C` endpoints (edge-adjacent nodes) but diverge at the middle base (a SNP). Extend this to exon-scale and you get a graph that encodes all known alleles, haplotypes, or paralog variants in one structure. See [Paten et al. 2017](#14-further-reading), [Garrison et al. 2018](#14-further-reading).
 
-### 5.2 Why paralogs share a VG
+### 5.2 What kinds of variation can a VG encode?
+
+A variation graph is extremely general — any *difference between copies* maps to a *bubble* (a region where the graph has multiple paths) plus shared flanking nodes. The same structure works for many kinds of differences:
+
+| Difference between copies | VG representation |
+|---|---|
+| **SNP** (single-base substitution) | Single-base bubble: one path through base `A`, another through base `G`, both sharing flanking bases |
+| **Indel** (insertion or deletion) | Asymmetric bubble: one side has content (e.g., a 15-bp insertion), the other side is empty — both sides share the flanking anchors |
+| **Copy-specific exon** | Asymmetric bubble at the exon scale: one path contains the exon node, the other skips it |
+| **Exon with copy-specific alternate donor/acceptor** | Bubble at the splice site: two paths enter the same intron at slightly different positions |
+| **Tandem-repeated exon** (e.g., duplicate domain) | A *cycle-equivalent* structure: the repeated exon appears as a single node with multiple passes encoded by repeating the node in the path (equivalently: the graph is a DAG if the repeats are represented as separate nodes, one per copy) |
+| **Whole-copy-specific segments** | Branch off a shared node, run through copy-specific nodes, rejoin a later shared node |
+
+The unifying abstraction: **any structural or sequence difference between two copies becomes a bubble or branch in the VG**, with shared flanks serving as anchors. This makes VG a uniform formalism across all the variant classes we care about for gene-family analysis.
+
+### 5.3 What Rustle's implementation supports today
+
+Rustle implements a practical subset of the general VG formalism. The table below is deliberately honest about scope:
+
+| Variation class | Current status | Where |
+|---|---|---|
+| SNPs between copies | ✅ Supported (diagnostic-SNP detection) | `--vg-snp`; MD-tag parsed per read, per-copy dominant-allele positions drive the compatibility score |
+| Copy-specific exons | ✅ Supported (implicit) | Each copy has its own splice graph; exons unique to a copy simply don't appear in the others — compatibility falls naturally |
+| Copy-specific splice sites (different donor/acceptor) | ✅ Supported (implicit) | Junction compatibility in the EM step; a read whose junctions don't match copy *k* gets near-zero weight at *k* |
+| **Indels between copies** | ⚠️ **Read-level captured, copy-diagnostic not wired yet** | BAM-parsing stores `insertion_sites` per read and uses them during junction correction; the `build_diagnostic_snps` routine does NOT yet cluster insertion/deletion sites into per-copy diagnostic features. See "future work" below |
+| **Tandem-repeated exons** | ⚠️ Detected at bundle-level, not modelled as repeats | K-mer Jaccard similarity catches tandem duplicates and groups them into one family. But Rustle does not currently collapse a repeated-domain exon across copies into one shared node — each copy's exon is its own node. This is fine for assembly but doesn't exploit the repeat structure for read rescue |
+| Whole-copy-specific segments | ✅ Supported (implicit) | By virtue of each copy having its own splice graph |
+
+**"Implicit VG"** — Rustle doesn't build an explicit variation-graph data structure. Instead, each copy retains its own splice graph, and the VG abstraction lives in *how reads are weighted across copies*. See §6 below. This is pragmatic: we get the benefits of VG-style read attribution without needing to manage a second graph data structure.
+
+### 5.4 Why paralogs share a VG (in principle)
 
 Paralogs arose by duplication of a common ancestor. They share exon *sequences* wherever the copies haven't diverged, and differ where they have. A variation graph of a gene family captures this directly:
 
 - **Shared exons** → shared nodes (one node per exon, used by every copy)
-- **Copy-specific exons** → parallel paths through the family-node region
+- **Copy-specific exons or indels** → parallel paths through the family-node region
 - **Copy-specific SNPs within shared exons** → bubble-nodes (alternate bases)
 
-This is useful *because reads from the family are hard to place on a linear reference*: a read covering a shared exon has equal alignment score at every copy. On the VG, that same read traverses the shared node exactly once, and its support is immediately attributable to the family — disambiguation then happens at the copy-specific nodes, where the read may or may not agree with each copy's path.
+On the VG, a read covering a shared exon traverses the shared node exactly once, and its support is immediately attributable to the *family*. Disambiguation to a specific copy happens at the copy-specific nodes (where the read may or may not agree with each copy's path) or at diagnostic SNP/indel positions inside shared exons. This is the behavior Rustle's multi-mapping resolver approximates without materializing the VG structure explicitly.
 
-### 5.3 How Rustle discovers families
+### 5.5 How Rustle discovers families
 
 Rustle doesn't require a pre-built VG. Instead it *detects* families from the evidence:
 
@@ -172,9 +203,98 @@ Rustle doesn't require a pre-built VG. Instead it *detects* families from the ev
 
 The family output (via `--vg-report`) is a TSV: one row per family with member bundles, their coverages, and the estimated copy count.
 
+### 5.6 Future work
+
+The current implementation is a pragmatic subset. Adding the following would make the VG model more complete without large architectural changes:
+
+- **Indel-diagnostic positions:** extend `build_diagnostic_snps` to build per-copy dominant-indel profiles (using `read.insertion_sites` which is already parsed, plus deletion sites from `D` CIGAR ops). Contribution to the compatibility score mirrors the current SNP contribution.
+- **Tandem-repeat aware family detection:** when a bundle's exon k-mers have high *self-similarity* (repeated content within one bundle), treat that bundle's repeated domains as a single node with multiplicity, and cluster other bundles whose repeats match by count.
+- **Explicit VG data structure:** materialize the family VG (with shared + copy-specific nodes) instead of keeping copies separate. Would enable direct max-flow *on the family graph* (§6.3 below) rather than per-copy flow with pre-weighted reads.
+
 ---
 
-## 6. Multi-mapping: the problem
+## 6. How VG mode wraps the network-flow core
+
+This section answers the question *"how does the variation graph interact with the max-flow assembler?"* explicitly, because the answer isn't obvious: the network flow runs **per copy** in standard mode and that doesn't change in VG mode.
+
+### 6.1 The architectural layer diagram
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                     VG LAYER (--vg only)                         │
+│                                                                  │
+│  1. Family detection  (multi-map + k-mer Jaccard)                │
+│                 │                                                │
+│                 ▼                                                │
+│  2. For each family:                                             │
+│     a. Build diagnostic-SNP profile (if --vg-snp)                │
+│     b. Run EM / Flow solver → per-read weights w_{r,k}           │
+│        across copies k in the family                             │
+│                                                                  │
+│  3. Redistribute: each read's mass is now w_{r,k} at copy k      │
+│     instead of 1/NH                                              │
+│                                                                  │
+│  4. (Optional) Scan unmapped reads for family k-mers;            │
+│     if a cluster exists, create a synthetic NOVEL-copy bundle    │
+└──────────────────────────────────────────────────────────────────┘
+                        │
+                        ▼  (re-weighted reads per bundle)
+┌──────────────────────────────────────────────────────────────────┐
+│                  CORE NETWORK-FLOW ASSEMBLER                     │
+│                    (runs per bundle = per copy)                  │
+│                                                                  │
+│  1. Splice graph construction (§2, §3)                           │
+│  2. Max-flow via Edmonds-Karp (§3)                               │
+│  3. Seeded path extraction (§4)                                  │
+│  4. Transcript filtering                                         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Key insight:** the VG layer is **pre-processing** for the core assembler. It doesn't change how max-flow works on each bundle; it changes *what mass each read contributes* as flow capacity. The core flow algorithm is oblivious to VG — it just sees a per-bundle splice graph with per-edge capacities that were computed with VG-aware read weights.
+
+### 6.2 Exactly what the VG layer changes
+
+In standard mode, each read contributes a fixed weight `w = 1` (long reads) or `w = 1/NH` (multi-mappers). That weight becomes flow capacity on the edges the read traverses.
+
+In VG mode, multi-mapping reads get **per-copy weights**:
+
+    w_{r,k} = how much of read r's mass belongs at copy k
+    Σ_k w_{r,k} = 1   (mass conservation per read)
+
+Each copy's splice graph is then built with **only its share of each multi-mapping read**: the capacity on an edge that would have received `1/NH` is now `w_{r,k}`. After that, max-flow runs exactly as in §3 — Edmonds-Karp, shortest augmenting paths, flow decomposition via seeded path extraction. None of the flow code is aware that VG mode is active.
+
+This separation is deliberate:
+
+- **Modularity:** the core assembler stays simple and matches StringTie's proven algorithm verbatim. Adding VG doesn't perturb per-copy assembly behavior on single-copy loci (where `--vg` is a no-op).
+- **Testability:** we can verify flow decomposition per bundle independently; VG weighting correctness is a separate question.
+- **Future-proofing:** swapping EM for Flow (or for a new solver) only changes the weighting pass; no flow code changes.
+
+### 6.3 Why not run max-flow on the family VG directly?
+
+A reader familiar with the VG toolkit literature may ask: why not build an explicit family VG with shared + copy-specific nodes, and run a single max-flow over the *whole family*?
+
+Two answers:
+
+**Short answer.** We could; it would be an elegant rewrite. But the per-copy approach preserves StringTie's algorithm verbatim (valuable for parity and reviewer confidence) and gives the same answer on the loci we've tested, because EM weighting is equivalent to flow conservation on the shared-node subgraph when expressed as a two-level decomposition (outer: family; inner: per-copy). The equivalence has the flavor of a hierarchical max-flow: you can solve it in one big graph or in a parent problem (family) plus child subproblems (copies).
+
+**Long answer.** A joint max-flow on the family VG would encode, for each shared node, a conservation constraint that the total flow (summed across all copies entering/leaving that node) equals the observed coverage. Decomposing this joint flow would give per-copy transcripts directly, with multi-mapping resolution falling out for free as the flow-split on the shared nodes. This is cleaner algorithmically but comes with two practical costs:
+
+1. **Graph construction complexity.** Building the shared-node structure correctly (aligning exons across copies, handling copy-specific introns that span shared exons) is non-trivial, especially in the presence of alignment noise.
+2. **Decomposition ambiguity.** Joint max-flow is even *more* non-unique than per-copy max-flow (§3.4) — the flow mass on a shared node can split across copies in exponentially many ways. Resolving that without a prior (e.g., uniform 1/NH) is not actually easier than solving EM on a per-read basis.
+
+The current architecture uses per-copy max-flow + EM weighting *as* the prior, which makes the ambiguity tractable and testable. See "Future work" in §5.6 for the explicit-family-VG direction.
+
+### 6.4 Putting it very plainly
+
+When someone asks *"how does the network flow use the variation graph?"*:
+
+> The variation graph is used to **re-weight reads across related gene copies** before each copy's splice graph is built. The network flow (Edmonds-Karp max-flow + seeded path decomposition) then runs on each per-copy splice graph as usual — it doesn't know about the VG, it just receives read weights that reflect where each read most likely came from across the family. The VG layer's contribution is in the *input capacities* to the flow problem, not in the flow algorithm itself.
+
+This is the same architectural pattern as Salmon + downstream quantification: the EM happens at the transcript-equivalence-class level and produces read-to-transcript probabilities; downstream analysis consumes those probabilities without knowing the EM happened. Rustle does the analogous thing for transcript *assembly* instead of *quantification*.
+
+---
+
+## 7. Multi-mapping: the problem
 
 In a reference with *N* copies of gene `X`, a read from the shared exon of copy `k` aligns equally well to all *N* copies. Aligners typically report an `NH` tag (number of hits) and flag one as primary. Downstream tools then face a choice:
 
@@ -196,9 +316,9 @@ EM and Flow handle scenarios 1 and 2 (fractional assignment). Novel copy discove
 
 ---
 
-## 7. EM solver: derivation and convergence
+## 8. EM solver: derivation and convergence
 
-### 7.1 Setup
+### 8.1 Setup
 
 Let `r = 1, …, R` index multi-mapping reads, `k = 1, …, K` index copies in the family. Each read `r` has a set of candidate copies `C_r ⊆ {1,…,K}` (from alignment). We want weights `w_{r,k} ∈ [0, 1]` with `Σ_k w_{r,k} = 1` for each `r`, assigning read `r`'s unit of mass across its candidate copies.
 
@@ -214,9 +334,9 @@ We don't observe `Z`. EM alternates:
 
 **M-step:** update `θ_k = (Σ_r w_{r,k}) / R`.
 
-Both steps have closed forms. Each iteration monotonically non-decreases the observed-data log-likelihood (Jensen's inequality — see [Dempster et al. 1977](#13-further-reading) or any graduate text). Standard EM convergence: reach a stationary point (local optimum).
+Both steps have closed forms. Each iteration monotonically non-decreases the observed-data log-likelihood (Jensen's inequality — see [Dempster et al. 1977](#14-further-reading) or any graduate text). Standard EM convergence: reach a stationary point (local optimum).
 
-### 7.2 What `P(r | k)` looks like in Rustle
+### 8.2 What `P(r | k)` looks like in Rustle
 
 For each read `r` and candidate copy `k`:
 
@@ -224,22 +344,22 @@ For each read `r` and candidate copy `k`:
 
 where `disagree(.)` counts splice junctions in `r` that don't appear in the set of junctions assembled at copy `k`, and `α` tunes sharpness. When `α` is large, the read strongly prefers copies whose splicing matches — a read with junctions A-B-C has near-zero probability at a copy with junctions A-B-D.
 
-This is what we earlier called *junction compatibility*: the same notion as read-to-transcript alignment in [RSEM](#13-further-reading) or [Salmon](#13-further-reading), specialized to the junction-set view that splice graphs naturally provide.
+This is what we earlier called *junction compatibility*: the same notion as read-to-transcript alignment in [RSEM](#14-further-reading) or [Salmon](#14-further-reading), specialized to the junction-set view that splice graphs naturally provide.
 
-### 7.3 Convergence behavior
+### 8.3 Convergence behavior
 
 In our tests, EM converges within 10-20 iterations on most families. The `--vg-em-iter N` flag sets the cap (default 20). Families with extreme ambiguity (say, 8 copies with 99% shared sequence) take longer but generally stabilize within 50 iterations. We re-weight reads before reassembly, so EM runs *once per dataset* before the main assembly pass — this is why the overhead is negligible.
 
 Key property we exploit: **EM naturally handles "belongs in both."** If copies A and B are both expressed and a read is equidistant, EM converges to weights `w ≈ θ_A / (θ_A + θ_B), θ_B / (θ_A + θ_B)`. The *honest probabilistic answer*. Winner-take-all methods (primary only, first-match) cannot produce this.
 
-### 7.4 When EM fails
+### 8.4 When EM fails
 
 - **All-ambiguous reads**: if every read in the family is multi-mapping and no copy has *any* uniquely-mapping support, `θ` is unidentifiable — EM will converge to whatever the initialization prefers. In practice this means purely-identical paralogs with no SNPs stay indistinguishable. This is a limitation of the data, not the method; use `--vg-snp` with a genome FASTA to add per-base information, or accept that you can only assay the family in aggregate.
 - **Local optima**: EM finds *a* stationary point, not necessarily the global MLE. We initialize θ from uniform and from the uniquely-mapped fraction; in practice both converge to the same answer for biological data, but adversarial constructions exist.
 
 ---
 
-## 8. Flow solver: two-pass redistribution
+## 9. Flow solver: two-pass redistribution
 
 The Flow solver (`--vg-solver flow`) uses the *assembly* itself as compatibility evidence.
 
@@ -265,7 +385,7 @@ The first pass uses only alignment geometry; the second pass uses assembled stru
 
 ---
 
-## 9. Novel copy discovery: k-mer rescue of unmapped reads
+## 10. Novel copy discovery: k-mer rescue of unmapped reads
 
 ### The problem
 
@@ -295,7 +415,7 @@ K-mer matching gives no coordinate. If a novel copy is in a region that has *no*
 
 ---
 
-## 10. SNP-based copy assignment
+## 11. SNP-based copy assignment
 
 When paralogs share exon sequences but differ by point mutations, alignment alone is ambiguous but **sequence variants** disambiguate.
 
@@ -319,7 +439,7 @@ Without SNP information, identical-sequence copies are *indistinguishable to EM*
 
 ---
 
-## 11. Putting it together: the gene-family workflow
+## 12. Putting it together: the gene-family workflow
 
 End-to-end, VG mode with all features engaged:
 
@@ -351,7 +471,7 @@ A novel copy gets `copy_status "novel"`.
 
 ---
 
-## 12. Failure modes and honest limitations
+## 13. Failure modes and honest limitations
 
 ### 13.1 Flow decomposition is non-unique
 
@@ -366,7 +486,7 @@ EM is guaranteed to non-decrease the likelihood each iteration but not to find t
 
 ### 13.3 Novel-copy discovery is anchor-weak
 
-See §9: if a novel copy has zero supplementary alignments anywhere in the reference, k-mer matching gives no genomic coordinate. The transcript still gets emitted but with placeholder coordinates. This is an open issue.
+See §10: if a novel copy has zero supplementary alignments anywhere in the reference, k-mer matching gives no genomic coordinate. The transcript still gets emitted but with placeholder coordinates. This is an open issue.
 
 ### 13.4 SNP mode requires alignment-level reliability
 
@@ -382,7 +502,7 @@ Rustle is within **1% sensitivity and 84% transcript precision** of StringTie on
 
 ---
 
-## 13. Further reading
+## 14. Further reading
 
 ### Splice graphs and transcript assembly
 

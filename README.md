@@ -18,13 +18,30 @@ See [ALGORITHMS §3](docs/ALGORITHMS.md#3-network-flow-formulation-and-why-it-wo
 
 ### Why variation graphs for paralogs
 
-A variation graph represents alternate sequences as parallel paths sharing nodes where they agree and diverging where they differ. Paralogs — gene copies that arose by duplication — share exon sequences where they haven't diverged and differ elsewhere. So **one variation graph can represent the entire gene family**: shared exons are shared nodes, copy-specific exons are parallel paths, copy-specific SNPs within shared exons are bubbles.
+A variation graph represents alternate sequences as parallel paths sharing nodes where they agree and diverging where they differ. Paralogs — gene copies that arose by duplication — share exon sequences where they haven't diverged and differ elsewhere. So **one variation graph can represent the entire gene family**.
 
-This buys us two things that a linear reference can't:
-- A read from a shared region is *naturally attributed to the family* (it traverses the shared node once). Disambiguation to a specific copy happens only at copy-specific nodes, using the full path evidence.
+Any copy-to-copy difference becomes a *bubble* in the VG with shared flanking nodes:
+
+| Copy-to-copy difference | VG representation | Current Rustle support |
+|---|---|---|
+| SNP | single-base bubble | ✅ `--vg-snp` (diagnostic-allele detection) |
+| Indel (insertion / deletion) | asymmetric bubble | ⚠️ parsed into reads, not yet used as diagnostic feature |
+| Copy-specific exon | exon-scale bubble | ✅ implicit (each copy's splice graph differs) |
+| Copy-specific splice site | bubble at donor/acceptor | ✅ implicit (junction compatibility in EM) |
+| Tandem-repeated exon | repeated node with multiplicity | ⚠️ detected at bundle level, not modelled as repeats |
+| Whole copy-specific segment | branched sub-path | ✅ implicit |
+
+"Implicit" means: Rustle doesn't build a single explicit variation-graph data structure for the whole family. Instead, each copy keeps its own splice graph, and the VG abstraction lives in *how reads are weighted across copies* before each copy is assembled. That's the architectural choice explained in [ALGORITHMS §6](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core).
+
+This buys us two things a linear reference can't:
+- A read from a shared region is *naturally attributed to the family* — it contributes mass to each copy weighted by compatibility (junctions and, with `--vg-snp`, diagnostic SNPs).
 - A read matching sequence that isn't in *any* reference copy can be *rescued by k-mer similarity* to the family — the aligner missed it, but the VG sees it.
 
-See [ALGORITHMS §5](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) and [§10](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads).
+See [ALGORITHMS §5](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) (what a VG encodes + scope table), [§6](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core) (how VG connects to network flow), and [§10](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) (k-mer rescue).
+
+### Network flow × VG in one sentence
+
+**The VG layer re-weights reads across related gene copies; the network flow then runs on each copy's splice graph independently, with those re-weighted reads as input capacities.** See [ALGORITHMS §6](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core) for the full architectural decomposition and why we chose this over a joint family-wide max-flow.
 
 ### Why EM for multi-mappers
 
@@ -35,7 +52,7 @@ A read aligning equally well to *N* copies genuinely might come from any of them
 
 Both steps have closed forms. EM provably non-decreases the likelihood each iteration (Jensen's inequality). Convergence in 10-20 iterations on biological data. The honest answer for a read that fits two expressed copies equally is a *probabilistic split* — EM produces it; winner-take-all methods can't.
 
-See [ALGORITHMS §7](docs/ALGORITHMS.md#7-em-solver-derivation-and-convergence) for the derivation.
+See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) for the derivation.
 
 ### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
 
@@ -221,11 +238,12 @@ flowchart LR
 The `--vg` flag enables variation graph mode for multi-copy gene families. A gene family is a set of paralogs (duplicated copies of a common ancestor) like olfactory receptors, amylases, or the TBC1D3 family in great apes. Reads from these regions multi-map or fail to map entirely on a linear reference; VG mode jointly resolves them.
 
 **Full algorithmic treatment in [docs/ALGORITHMS.md](docs/ALGORITHMS.md):**
-- [§5 Variation graphs for gene families](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) — why paralogs share a VG
-- [§7 EM solver](docs/ALGORITHMS.md#7-em-solver-derivation-and-convergence) — derivation and convergence
-- [§8 Flow solver](docs/ALGORITHMS.md#8-flow-solver-two-pass-redistribution) — two-pass redistribution
-- [§9 Novel copy discovery](docs/ALGORITHMS.md#9-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) — k-mer rescue
-- [§10 SNP-based assignment](docs/ALGORITHMS.md#10-snp-based-copy-assignment)
+- [§5 Variation graphs for gene families](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) — what a VG encodes, scope (SNPs, indels, exon-level diffs, repeats)
+- [§6 How VG wraps network flow](docs/ALGORITHMS.md#6-how-vg-mode-wraps-the-network-flow-core) — per-copy flow with family-level read reweighting
+- [§8 EM solver](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) — derivation and convergence
+- [§9 Flow solver](docs/ALGORITHMS.md#9-flow-solver-two-pass-redistribution) — two-pass redistribution
+- [§10 Novel copy discovery](docs/ALGORITHMS.md#10-novel-copy-discovery-k-mer-rescue-of-unmapped-reads) — k-mer rescue
+- [§11 SNP-based assignment](docs/ALGORITHMS.md#11-snp-based-copy-assignment)
 
 ```bash
 # EM solver (default) — junction-based compatibility scoring
