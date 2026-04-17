@@ -1350,7 +1350,20 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
             let is_secondary_or_supp =
                 record.flags().is_secondary() || record.flags().is_supplementary();
             let this_long = read_is_long_class(&read, config);
-            let drop_sec_supp_for_mode = is_secondary_or_supp && config.long_reads && this_long;
+            // VG flow-based multi-map redirection: in VG family mode, retain
+            // secondary alignments as fractional evidence (read.weight is
+            // already 1/NH from record_to_bundle_read). This lets each copy
+            // of a tandem paralog get the evidence it deserves instead of
+            // all multi-mappers being assigned to the aligner's arbitrary
+            // primary pick. Gated because it changes the assembly-pool
+            // semantics.
+            let vg_include_secondary =
+                std::env::var_os("RUSTLE_VG_INCLUDE_SECONDARY").is_some()
+                    && is_secondary_or_supp
+                    && config.long_reads
+                    && this_long;
+            let drop_sec_supp_for_mode =
+                is_secondary_or_supp && config.long_reads && this_long && !vg_include_secondary;
             if trace_log_style && drop_sec_supp_for_mode {
                 eprintln!(
                     "--- processRead: DROP name={} reason=SECONDARY_SUPPLEMENTARY flags=0x{:x}",
