@@ -2040,8 +2040,18 @@ pub fn process_transfrags(
                     // 6144-6145:
                     // replace kept with current only if current is guide OR
                     // kept is non-guide and current has hardstart+hardend.
+                    //
+                    // Added guard: don't replace kept with a structurally poorer
+                    // (fewer-node) cand. Otherwise a truncated hardstart+hardend
+                    // cand can wipe out the richer kept rep — e.g. STRG.225.5
+                    // retained-intron variant (21 nodes, abund=21) being replaced
+                    // by a truncated 17-node cand ending before the retained
+                    // intron region, dropping the retained-intron seed entirely.
                     let new_rep = tf.guide
-                        || (!kept_tf.guide && tf_first_node.hardstart && tf_last_node.hardend);
+                        || (!kept_tf.guide
+                            && tf_first_node.hardstart
+                            && tf_last_node.hardend
+                            && tf.node_ids.len() >= kept_tf.node_ids.len());
                     if new_rep {
                         *kept_idx = tf_idx;
                         tf_is_new_rep = true;
