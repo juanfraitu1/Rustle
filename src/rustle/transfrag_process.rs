@@ -1981,7 +1981,16 @@ pub fn process_transfrags(
             // guides are added to keeptrf even without proper boundaries.
             let has_source_strict = first_node.hardstart || tf.longstart != 0;
             let has_sink = last_node.hardend || tf.longend != 0;
-            if tf.guide || (has_source_strict && has_sink) || novel_splice_rescue {
+            // VG-family rescue: in VG mode, allow single-boundary transfrags to become
+            // keeptrf representatives. Tandem paralogs often have shorter reads that
+            // reach only one end — e.g. L7_2 transfrags with longend set but longstart=0.
+            // Without this relaxation every L7_2 transfrag is marked weak and the copy
+            // produces 0 transcripts. The VG flag limits blast radius to multi-copy mode.
+            let vg_family_rescue = long_mode
+                && !tf.guide
+                && (has_source_strict || has_sink)
+                && std::env::var_os("RUSTLE_VG_FAMILY_RESCUE").is_some();
+            if tf.guide || (has_source_strict && has_sink) || novel_splice_rescue || vg_family_rescue {
                 if tf_overlaps_trace_graph(tf, graph, trace_locus) {
                     let (tf_s, tf_e) = tf_span_graph(tf, graph);
                     eprintln!(

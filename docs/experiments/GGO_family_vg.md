@@ -111,3 +111,47 @@ informative signal — most multi-mappers have identical compatibility across co
    random across near-identical sequences. Either (a) we split bundles at paralog
    boundaries and use multi-mapping reads to populate each copy, or (b) we assemble
    on the family VG directly and project paths back onto copies.
+
+---
+
+## Recovering L7_2 and L7_3: the RUSTLE_VG_FAMILY_RESCUE experiment
+
+**Root cause identified**: at L7_2 and L7_3 the 2-6 primary reads per copy do not
+reach the transcript's TSS. Every transfrag at those copies has `longstart=0`
+(no read-supported 5' end). Rustle's `keeptrf` gate requires both endpoints
+(`has_source_strict && has_sink`) or a matching guide; single-boundary transfrags
+are marked weak. With `keeptrf` empty, `trflong_insert` is empty, so
+`parse_trflong` produces zero seeds and the copy yields zero transcripts.
+
+**Patch** (`transfrag_process.rs` ~line 1984): add an `RUSTLE_VG_FAMILY_RESCUE`
+gate that allows long-read transfrags with *either* a resolved 5' end *or* a
+resolved 3' end to become `keeptrf` representatives.
+
+**Per-copy result at GOLGA6L7:**
+
+| Copy | Before | After `VG_FAMILY_RESCUE` | Outcome |
+|------|--------|--------------------------|---------|
+| L7_1 | `=` (1/1) | `=` (1/1) | unchanged |
+| L7_2 | 0/1 | `c` (1/1) | **recovered** — full 8-intron chain, missing TSS exon |
+| L7_3 | 0/1 | `c` (1/1) | **recovered** — full 8-intron chain, missing TSS exon |
+
+All three paralogs now produce transcripts whose intron chain matches the
+reference. We went from 1/3 copies assembled to 3/3.
+
+**Full GGO_19 benchmark tradeoff** (relaxation is currently unconditional):
+
+| Metric | Baseline | Rescue | Δ |
+|--------|----------|--------|---|
+| Matches | 1472 | 1440 | −32 |
+| Precision | 83.4% | 75.9% | −7.5 pp |
+| Transcripts emitted | 1764 | 1898 | +134 |
+| Novel loci | 19 | 98 | +79 |
+
+The cost is 79 spurious novel loci — partial reads at unrelated single-copy
+genes that now become keeptrf reps when they wouldn't have before.
+
+**Proper follow-up**: gate the rescue to transfrags whose junction chain is
+shared with another bundle's assembled transcript (i.e. a confirmed family
+member), so the relaxation fires only in multi-copy contexts. That requires
+a post-assembly family-detection pass that feeds back into `keeptrf`
+eligibility. Current code is a proof-of-concept.
