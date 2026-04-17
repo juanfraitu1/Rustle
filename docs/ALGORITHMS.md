@@ -141,6 +141,27 @@ This three-way split handles the noisy residue of flow decomposition — it's wh
 
 ## 5. Variation graphs for gene families
 
+### 5.0 Definitions used throughout this section
+
+Before the theory, three terms we'll use precisely:
+
+**Multi-copy gene family.** A set of *paralogous* genes — genes descended from a common ancestor by a duplication event. The copies live at *different genomic loci* (same chromosome in a tandem array, or dispersed across chromosomes). They are distinct genes, each with its own genomic coordinates, its own pre-mRNA, its own assembled transcripts — but their exon sequences are related because they share ancestry. "Related" varies widely: some copies are 99.9% identical (recent duplicates), some are 60% identical (ancient). For Rustle's purposes, "a family" means *a group of copies whose reads are partly indistinguishable from each other*, which in practice means ≥ some k-mer Jaccard threshold plus ≥ some number of shared multi-mapping reads.
+
+**Splice graph.** A *per-copy* DAG as defined in §2. Each copy at its own locus gets its own splice graph built from the reads that land at that locus. Two copies in a family have *different* splice graphs — different node coordinates (different loci), possibly different junction sets (if the copies have diverged at splice sites), possibly different node counts (if one copy has an exon the other doesn't). They share *structural similarity* (same number of exons, same order, same relative sizes) because they're paralogs, but they are not the same object.
+
+**Family variation graph.** A conceptual *shared* graph for the whole family where:
+- Sequence-identical exons across copies collapse into *one* shared node,
+- Exons that exist only in some copies appear as branches off the shared backbone,
+- Within-shared-exon sequence differences (SNPs, indels) appear as bubbles inside the shared node.
+
+A family VG is one graph; the per-copy splice graphs are *N* graphs. The VG is a strictly more compact representation that loses the per-locus coordinates in exchange for making family-wide evidence explicit. Rustle does **not** build this VG explicitly; it keeps the N per-copy splice graphs and uses read-weighting as a proxy for family-VG-aware assembly (see §6).
+
+### So: do paralogs "have the same variation graph"?
+
+- They each have their own **splice graph** (different loci). Different, but structurally similar.
+- They collectively have *one* **family variation graph** (conceptual). This is the graph that would emerge if you aligned their exon sequences and collapsed identical regions into shared nodes.
+- In Rustle's implementation, the family VG is implicit — we approximate its benefits through the multi-mapping resolver (§6-§8), the SNP-diagnostic detector (§11), and k-mer-based novel-copy rescue (§10). An explicit construction is listed as future work in §5.6.
+
 ### 5.1 What a variation graph is
 
 A linear reference represents each genomic position once. A **variation graph** (VG) represents alternate sequences as parallel paths sharing nodes where they agree and diverging where they differ:
@@ -193,13 +214,22 @@ Paralogs arose by duplication of a common ancestor. They share exon *sequences* 
 
 On the VG, a read covering a shared exon traverses the shared node exactly once, and its support is immediately attributable to the *family*. Disambiguation to a specific copy happens at the copy-specific nodes (where the read may or may not agree with each copy's path) or at diagnostic SNP/indel positions inside shared exons. This is the behavior Rustle's multi-mapping resolver approximates without materializing the VG structure explicitly.
 
-### 5.5 How Rustle discovers families
+### 5.5 How Rustle discovers families (and what we compare)
 
-Rustle doesn't require a pre-built VG. Instead it *detects* families from the evidence:
+Rustle doesn't require a pre-built VG. It also does *not* directly compare splice graphs between bundles — graph isomorphism is expensive and the splice graphs are still being assembled when family detection runs. Instead, Rustle uses **two sequence-level proxies** that are cheap and robust:
 
-1. **Multi-mapping links:** if many reads align equally well to bundles A and B (supplementary alignments), A and B are likely paralogs. Rustle builds a graph over bundles where an edge connects A↔B whenever they share ≥ `--vg-min-shared` multi-mappers. Connected components in this bundle-graph are candidate families.
+1. **Multi-mapping links.** If many reads align equally well to bundles A and B (supplementary alignments), A and B are likely paralogs — their sequences are similar enough that the aligner couldn't choose between them. Rustle builds an auxiliary *bundle-graph* where an edge connects A↔B whenever they share ≥ `--vg-min-shared` multi-mappers. Connected components in this bundle-graph are candidate families.
 
-2. **K-mer similarity:** for each family, Rustle computes the Jaccard index of exonic k-mers (k=25 by default) between bundles. High overlap confirms paralogy; spurious multi-mapping links get filtered out.
+2. **Exonic k-mer Jaccard.** For each candidate family, Rustle extracts k-mers (k=25) from each bundle's exonic regions and computes the Jaccard index `|A ∩ B| / |A ∪ B|` between bundles. High overlap (≥ `--vg-kmer-jaccard`, default 0.3) confirms paralogy; spurious multi-mapping links (e.g., two genes sharing one repeat element) get filtered out.
+
+**Why k-mer Jaccard and not graph comparison?**
+
+- **Timing.** Family detection runs *before* per-copy assembly finishes; the splice graphs aren't finalized yet, so comparing them would either require partial graphs or delay everything.
+- **Robustness.** K-mers are invariant to assembly decisions. Whether copy A's third exon was split into two nodes by longtrim doesn't affect the k-mer content of that exon's sequence.
+- **Computational cost.** Graph comparison is at least quadratic in node count per pairwise comparison and doesn't parallelize cleanly. K-mer Jaccard via hash sets is linear per bundle and trivially parallel.
+- **Empirical adequacy.** K-mer Jaccard is a reliable proxy for splice-graph similarity *at the paralog level*. Two copies with 95% sequence identity have k-mer Jaccard ≈ 0.9; two unrelated genes that happen to share reads have Jaccard ≈ 0.02. The signal is strong.
+
+If splice-graph comparison becomes necessary (for example, to distinguish two closely-related families with different *intron* patterns but identical exon sequences), we could extend the criterion to compare junction sets between bundles. That's a concrete extension that wouldn't change the two-proxy architecture.
 
 The family output (via `--vg-report`) is a TSV: one row per family with member bundles, their coverages, and the estimated copy count.
 
@@ -404,6 +434,31 @@ From all assembled transcripts of the known family, extract k-mers (k=25 default
 - If the fraction exceeds a threshold, mark it as a **family candidate**.
 
 Cluster family candidates by approximate region (based on supplementary-alignment coordinates, or via k-mer overlap with other candidates). Each cluster becomes a **synthetic bundle** fed back into the standard assembly pipeline, tagged `copy_status: novel` in the output.
+
+### K-mer matching vs read-to-graph alignment
+
+A reader familiar with the vg toolkit may ask: **do we align reads to graphs?** The answer is: we *approximate* graph alignment with k-mer matching, but we don't do formal graph alignment.
+
+| | K-mer set match (what Rustle does) | Graph alignment (what `vg giraffe` / `vg map` do) |
+|---|---|---|
+| Input | a read sequence and a set of family k-mers | a read sequence and a full variation graph with node sequences |
+| Output | fraction of read k-mers in the family set | a best path through the graph, with per-base alignment score |
+| Handles insertions | only if the inserted k-mer still matches some family k-mer | explicitly, via indel-aware DP |
+| Handles SNPs | yes (mismatched k-mers just don't match; read still matches if enough others do) | yes, with per-base confidence |
+| Gives position in graph | no (just "matches the family") | yes (node-level path) |
+| Cost | O(read length × hash-lookup) per read | O(read length × graph size) per read, amortized by indexing |
+
+K-mer matching is a *presence/absence membership test* — a cheap sanity filter saying "this read probably came from the family." It does **not** tell you which exon the read came from, which copy, or where it would align base-by-base. To get that, you'd run formal graph alignment.
+
+**Why k-mer is enough for novel-copy discovery specifically:**
+- We don't need to know *which copy* the read matches — by definition, a novel copy doesn't exist yet. The k-mer test just says "the family includes this read, go assemble a new bundle from it."
+- Clustering the rescued reads by coordinate (if they have supplementary alignments) or by mutual k-mer overlap gives us the synthetic bundle; downstream assembly then uses the standard splice-graph + max-flow pipeline on those reads.
+
+**Where graph alignment would help:**
+- *Correct read-to-copy assignment* instead of the k-mer compatibility score. Today, `--vg-snp` parses MD tags from the original (linear) alignment; if the aligner mis-placed the read on a related copy, its MD tag is for the wrong reference. Graph alignment would re-align the read to the family VG and give the true variant pattern.
+- *Handling reads with indels relative to every reference copy* (e.g., a novel exon with a small deletion). K-mer matching silently loses those bases; graph alignment handles them via gap-aware DP.
+
+Formal graph alignment is listed as a natural extension in §5.6.
 
 ### Why it works when the aligner failed
 
