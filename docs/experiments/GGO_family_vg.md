@@ -155,3 +155,66 @@ shared with another bundle's assembled transcript (i.e. a confirmed family
 member), so the relaxation fires only in multi-copy contexts. That requires
 a post-assembly family-detection pass that feeds back into `keeptrf`
 eligibility. Current code is a proof-of-concept.
+
+---
+
+## Gated rescue: cross-bundle family-chain registry
+
+The ungated rescue was too permissive. Replace it with a **chain-homology gate**:
+a single-boundary transfrag is rescued only when its intron-length chain
+(≥5 introns) matches — within ±5 bp per intron — a chain already registered
+by another bundle's transfrag that passed the strict boundary gate.
+
+Mechanism: a process-global `OnceLock<Mutex<Vec<Vec<u32>>>>` accumulates
+"confirmed" chains as bundles are processed in coordinate order. When a later
+bundle sees a single-boundary transfrag, we test if its chain is a contiguous
+subsequence of any registered chain.
+
+### Results with the gate
+
+GOLGA6L7 family (the motivating case):
+
+| Copy | Baseline | Gated rescue | Class |
+|------|----------|--------------|-------|
+| L7_1 | `=` | `=` | exact 9-exon match |
+| L7_2 | — | `c` | full 8-intron chain, TSS exon missing |
+| L7_3 | — | `c` | 7-intron chain, partial |
+
+Full GGO_19 benchmark:
+
+| Metric | Baseline | Ungated | Gated |
+|--------|----------|---------|-------|
+| Matching transcripts | 1472 | 1440 | 1462 |
+| Precision | 83.4% | 75.9% | 83.7% |
+| Novel loci | 19 | 98 | 21 |
+| Matching loci | 556 | 544 | **557** |
+
+The gate pays ~10 transcripts but **gains 1 locus** (a previously unrepresented
+family member), and precision stays within the baseline band (+0.3 pp). The
+gate's chain-homology check correctly blocks the spurious novel loci that the
+ungated version introduced.
+
+## Can we find family members by graph-to-graph comparison?
+
+For close paralogs (GOLGA6L7 tandem triplication), **yes**: the three copies
+share identical 8-intron / 9-exon topology with near-identical intron lengths
+and consistent coordinate offsets. A length-chain subsequence match (the gate
+implemented above) is sufficient to link them.
+
+For diverged families, it's more complex. Two failure modes:
+
+1. **Exon gain/loss between copies**: one paralog has an extra exon (common in
+   GOLGA8 variants) or has lost one. The length chain differs in count, not
+   just per-intron length. Exact subsequence matching fails; would need a
+   sequence-alignment-style graph matching (insertions/deletions allowed).
+
+2. **Independent splice variants per copy**: paralogs that copy-diverged long
+   ago can evolve independent alternative splicing. Then even with identical
+   exon count, the *set of expressed isoforms* differs per copy. A family VG
+   built from copy A's isoforms won't match copy B's.
+
+So the short answer: graph-to-graph (or chain-to-chain) comparison works as
+a **first filter**, and a length-chain subsequence match handles tight
+paralogs like GOLGA6L7 cleanly. For loose families you need a tolerant
+matcher — intron-by-intron alignment with indel penalties, not exact
+subsequence. That's a graph-edit-distance problem, not a bit-subset problem.

@@ -33,6 +33,79 @@ use crate::graph::{FlowBranch, Graph, GraphNode, GraphTransfrag};
 use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
+use std::sync::{Mutex, OnceLock};
+
+/// Cross-bundle family-chain registry: intron-length-chain tuples from
+/// transfrags that passed the strict boundary gate in earlier bundles.
+/// Used by `RUSTLE_VG_FAMILY_RESCUE` to rescue single-boundary transfrags
+/// whose intron chain matches a confirmed family member.
+fn family_chain_registry() -> &'static Mutex<Vec<Vec<u32>>> {
+    static REG: OnceLock<Mutex<Vec<Vec<u32>>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+const FAMILY_CHAIN_MIN: usize = 5; // require >=5 introns to limit false matches
+
+fn chain_register(chain: Vec<u32>) {
+    if chain.len() < FAMILY_CHAIN_MIN {
+        return;
+    }
+    let mut guard = family_chain_registry().lock().unwrap();
+    if !guard.iter().any(|c| c == &chain) {
+        guard.push(chain);
+    }
+}
+
+/// Returns true if `candidate` is a contiguous subsequence of any registered
+/// chain, with each intron length matching within `tol` bp.
+fn chain_matches_registry(candidate: &[u32], tol: u32) -> bool {
+    if candidate.len() < FAMILY_CHAIN_MIN {
+        return false;
+    }
+    let guard = family_chain_registry().lock().unwrap();
+    for reg in guard.iter() {
+        if reg.len() < candidate.len() {
+            continue;
+        }
+        for start in 0..=reg.len() - candidate.len() {
+            let mut ok = true;
+            for i in 0..candidate.len() {
+                let a = candidate[i];
+                let b = reg[start + i];
+                let diff = if a > b { a - b } else { b - a };
+                if diff > tol {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn tf_intron_length_chain(tf: &GraphTransfrag, graph: &Graph) -> Vec<u32> {
+    let mut lens: Vec<u32> = Vec::new();
+    if tf.node_ids.len() < 2 {
+        return lens;
+    }
+    for i in 0..tf.node_ids.len() - 1 {
+        let Some(a) = graph.nodes.get(tf.node_ids[i]) else {
+            continue;
+        };
+        let Some(b) = graph.nodes.get(tf.node_ids[i + 1]) else {
+            continue;
+        };
+        // Only count true introns — gap between exons (b.start > a.end + 1).
+        if b.start > a.end.saturating_add(1) {
+            let ilen = (b.start - a.end - 1) as u32;
+            lens.push(ilen);
+        }
+    }
+    lens
+}
 
 const MAX_NODE: i64 = i64::MAX - 1; // unset lens sentinel
 const SSDIST: i64 = 25;
@@ -1981,16 +2054,32 @@ pub fn process_transfrags(
             // guides are added to keeptrf even without proper boundaries.
             let has_source_strict = first_node.hardstart || tf.longstart != 0;
             let has_sink = last_node.hardend || tf.longend != 0;
-            // VG-family rescue: in VG mode, allow single-boundary transfrags to become
-            // keeptrf representatives. Tandem paralogs often have shorter reads that
-            // reach only one end — e.g. L7_2 transfrags with longend set but longstart=0.
-            // Without this relaxation every L7_2 transfrag is marked weak and the copy
-            // produces 0 transcripts. The VG flag limits blast radius to multi-copy mode.
+            let strict_pass = tf.guide || (has_source_strict && has_sink);
+            // Register chain for family-rescue lookup when a transfrag passes the
+            // strict boundary gate. Later bundles' single-boundary transfrags that
+            // match this chain (a confirmed family member) become eligible for
+            // rescue under `RUSTLE_VG_FAMILY_RESCUE`.
+            if strict_pass && long_mode && !tf.guide {
+                let chain = tf_intron_length_chain(tf, graph);
+                if chain.len() >= 3 {
+                    chain_register(chain);
+                }
+            }
+            // VG-family rescue: allow single-boundary long-read transfrags to become
+            // keeptrf reps ONLY when their intron-length chain matches a registered
+            // family member's chain (within ±5 bp per intron). This keeps the
+            // relaxation tight to multi-copy contexts and avoids the precision
+            // tax on unrelated single-copy genes that the ungated version causes.
             let vg_family_rescue = long_mode
                 && !tf.guide
                 && (has_source_strict || has_sink)
-                && std::env::var_os("RUSTLE_VG_FAMILY_RESCUE").is_some();
-            if tf.guide || (has_source_strict && has_sink) || novel_splice_rescue || vg_family_rescue {
+                && !strict_pass
+                && std::env::var_os("RUSTLE_VG_FAMILY_RESCUE").is_some()
+                && {
+                    let chain = tf_intron_length_chain(tf, graph);
+                    chain_matches_registry(&chain, 5)
+                };
+            if tf.guide || strict_pass || novel_splice_rescue || vg_family_rescue {
                 if tf_overlaps_trace_graph(tf, graph, trace_locus) {
                     let (tf_s, tf_e) = tf_span_graph(tf, graph);
                     eprintln!(
