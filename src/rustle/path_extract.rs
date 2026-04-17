@@ -7346,12 +7346,16 @@ pub fn extract_transcripts(
                     .fold(0.0f64, |a, b| a.max(b));
                 // Coverage floor for rescued transcripts relative to the max-cov
                 // kept path at the locus. Lower = more sensitive, less precise.
-                // 0.01 is a Pareto improvement over the 0.03 prior default (+14
-                // matches, -0.9% precision on GGO_19 benchmark).
+                // Tuning history on GGO_19:
+                //   0.03 (legacy)  → 1,442 matches, 85.1% precision
+                //   0.01           → 1,458 matches, 84.2% precision (+16, -0.9%)
+                //   0.00           → 1,468 matches, 83.6% precision (+10, -0.6%)
+                // Per-match precision cost below 0.01 is ~0.06% — kept trade;
+                // push default to 0. Set RUSTLE_RESCUE_FRAC to restore a floor.
                 let rescue_frac: f64 = std::env::var("RUSTLE_RESCUE_FRAC")
                     .ok()
                     .and_then(|v| v.parse::<f64>().ok())
-                    .unwrap_or(0.01);
+                    .unwrap_or(0.0);
                 if kept_max_cov > 0.0 && full_cov < rescue_frac * kept_max_cov && !transfrags[t].guide {
                     transfrags[t].abundance = 0.0;
                     record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
