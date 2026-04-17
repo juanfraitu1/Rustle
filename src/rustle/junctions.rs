@@ -360,8 +360,15 @@ pub fn apply_junction_filters(
         );
     }
     filter_weak_junctions(&mut stats, min_junction_reads, verbose);
-    let to_remove =
-        filter_nearby_weak_junctions(&stats, NEARBY_WEAK_WINDOW, NEARBY_WEAK_RATIO, verbose);
+    let ratio = std::env::var("RUSTLE_NEARBY_WEAK_RATIO")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(NEARBY_WEAK_RATIO);
+    let window = std::env::var("RUSTLE_NEARBY_WEAK_WINDOW")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(NEARBY_WEAK_WINDOW);
+    let to_remove = filter_nearby_weak_junctions(&stats, window, ratio, verbose);
     for j in to_remove {
         stats.remove(&j);
     }

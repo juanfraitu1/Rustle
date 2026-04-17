@@ -1087,6 +1087,27 @@ fn long_max_flow_direct(
                 continue;
             }
 
+            // Seed-chord protection: skip capacity contribution from a transfrag
+            // that is itself a future long-read seed whose pattern is a strict
+            // subset of the current path. Without this, the minor-isoform seed's
+            // chord becomes the cheapest source→sink channel during a major-isoform
+            // seed's BFS and gets fully depleted, so it arrives at its own run
+            // with abundance=0 and produces flux=0.
+            //
+            // StringTie avoids this organically because its graph-node segmentation
+            // tends to give minor-isoform transfrags at least one node outside the
+            // major-isoform pathpat (so `pathpat.contains_pattern` fails). Rustle's
+            // segmentation collapses those distinguishing nodes, so we need an
+            // explicit protection. Disable with RUSTLE_NO_SEED_CHORD_PROTECT=1.
+            if i > 0
+                && tf.trflong_seed
+                && !istranscript.contains(t_idx)
+                && Some(t_idx) != seed_tf
+                && std::env::var_os("RUSTLE_NO_SEED_CHORD_PROTECT").is_none()
+            {
+                continue;
+            }
+
             istranscript.insert_grow(t_idx);
             let Some(&end_idx) = tf.node_ids.last().and_then(|nid| node2path.get(nid)) else {
                 continue;
