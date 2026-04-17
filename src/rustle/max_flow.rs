@@ -1482,15 +1482,24 @@ fn long_max_flow_direct(
                     else {
                         continue;
                     };
-                    // Alt-splice protection: if this transfrag diverges from the
-                    // path at an alt-splice node, DON'T deplete it. Check if the
-                    // transfrag's second node matches the path's next node.
-                    // If they diverge, this is a minor isoform that should survive.
-                    if transfrags[t_idx].node_ids.len() >= 2 && i + 1 < path.len() {
+                    // Alt-splice protection (Rustle-only): if a transfrag
+                    // passes the pathpat-subset check but its second node
+                    // skips past path[i+1], preserve its abundance instead
+                    // of depleting. StringTie depletes based only on
+                    // flow_mat[i][end_i] > 0. Empirically on GGO_19 the
+                    // protection wins +4 matches — it keeps minor-isoform
+                    // seeds alive for later extraction. Disable with
+                    // RUSTLE_NO_ALTSPLICE_PROTECT=1 for strict parity.
+                    if std::env::var_os("RUSTLE_NO_ALTSPLICE_PROTECT").is_none()
+                        && transfrags[t_idx].node_ids.len() >= 2
+                        && i + 1 < path.len()
+                    {
                         let tf_next = transfrags[t_idx].node_ids[1];
                         let path_next = path[i + 1];
-                        if tf_next != path_next && tf_next != graph.sink_id && path_next != graph.sink_id {
-                            // Transfrag goes to a different child — preserve it
+                        if tf_next != path_next
+                            && tf_next != graph.sink_id
+                            && path_next != graph.sink_id
+                        {
                             continue;
                         }
                     }
