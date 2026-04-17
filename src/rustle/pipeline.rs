@@ -7300,13 +7300,17 @@ pub fn run<P: AsRef<Path>>(
                     graph_bundle.end,
                 );
                 if std::env::var_os("RUSTLE_BOUNDARY_TRACE").is_some() {
-                    for b in lstart.iter().filter(|b| b.cov >= 5.0) {
+                    let cov_floor: f64 = std::env::var("RUSTLE_BOUNDARY_TRACE_MIN")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(5.0);
+                    for b in lstart.iter().filter(|b| b.cov >= cov_floor) {
                         eprintln!(
                             "LSTART {} cov={:.1} bundle={}-{}",
                             b.pos, b.cov, graph_bundle.start, graph_bundle.end
                         );
                     }
-                    for b in lend.iter().filter(|b| b.cov >= 5.0) {
+                    for b in lend.iter().filter(|b| b.cov >= cov_floor) {
                         eprintln!(
                             "LEND {} cov={:.1} bundle={}-{}",
                             b.pos, b.cov, graph_bundle.start, graph_bundle.end

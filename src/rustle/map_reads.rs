@@ -544,7 +544,14 @@ fn split_chimeric_transfrags(
     mut transfrags: Vec<GraphTransfrag>,
     graph: &Graph,
 ) -> Vec<GraphTransfrag> {
-    let drop_threshold = 0.001_f64; // 1000x coverage drop — effectively disabled; too aggressive at any threshold
+    // Coverage drop threshold for chimeric-split. 0.01 catches a handful of
+    // intergenic coverage valleys (+2 matches on GGO_19); higher values
+    // (0.05+) lose matches by over-splitting legitimate low-cov internal
+    // exons. Override via RUSTLE_CHIMERIC_DROP.
+    let drop_threshold: f64 = std::env::var("RUSTLE_CHIMERIC_DROP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
     let mut new_transfrags: Vec<GraphTransfrag> = Vec::new();
     let mut split_count = 0usize;
     let n_before = transfrags.len();
@@ -586,6 +593,7 @@ fn split_chimeric_transfrags(
                 }
             }
         }
+
         if let Some((split_at, _ratio)) = best_split {
             let right_nodes: Vec<usize> = tf.node_ids[split_at..].to_vec();
             if right_nodes.len() >= 2 {
