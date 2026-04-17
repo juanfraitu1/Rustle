@@ -1186,6 +1186,17 @@ pub fn apply_higherr_demotions(
     let gjd = goodjunc_trace_active();
     let tolerance = 1.0 - ERROR_PERC;
 
+    // Run-through junction detection (StringTie rlink.cpp:15015-15026 analog) was
+    // tested but disabled. The STRG.120 case (2-read junction outcompeted by 70+
+    // run-through reads) has a real coverage drop at the donor position
+    // (leftcov=32, rightcov=20, ratio 0.62) — it IS a weak splice site, not a
+    // run-through. Discriminating the two via bpcov alone produces false kills.
+    //
+    // StringTie likely uses per-read cumulative `good_junc` in build_graphs
+    // (line 15276) to kill these via incremental state mutation — a mechanism
+    // we couldn't cleanly port (see project_color_break_root_cause memory).
+    let _ = (bpcov, refstart);
+
     let mut donor_order: Vec<usize> = (0..cjunctions.len()).collect();
     donor_order.sort_by_key(|&i| (cjunctions[i].start, cjunctions[i].end, cjunctions[i].strand));
 
@@ -1195,15 +1206,61 @@ pub fn apply_higherr_demotions(
         if !cj_higherr_candidate(&cur) {
             continue;
         }
-        // StringTie rlink.cpp:15015-15026 has an additional continuity check for
-        // all-bad junctions with enough support: mark mm=-1 if bpcov doesn't drop at
-        // the donor-to-intron boundary (suggesting run-through not a real splice).
-        // This check was tested but is TOO AGGRESSIVE for long-read data where
-        // single-base coverage at the donor and first intron base often looks similar
-        // (soft-clipping, small indels). StringTie's intent may rely on different
-        // nm/nreads semantics than what Rustle computes. Left disabled for now.
+        // StringTie rlink.cpp:15015-15026: continuity check for run-through junctions.
+        // We apply it with tighter constraints than StringTie to avoid over-killing in
+        // long-read data:
+        //   1. Junction must be weak (nreads < 5) — high-support junctions are likely real
+        //   2. Intron must be short (< 1000bp) — run-through only plausible for short gaps
+        //   3. Coverage must be STRONGLY continuous (rightcov > 1.1 * leftcov, meaning
+        //      the "intron" has MORE coverage than the donor exon edge)
+        //   4. A moderate window (5bp) smooths alignment artifacts
+        // This targets the STRG.120 pattern: 2-read junction at a position where 70+
+        // reads run through continuously.
         if cur.nreads_good >= 0.0 && cur.nreads_good >= 1.25 * junction_thr {
-            let _ = (bpcov, refstart, tolerance);
+            if let Some(bp) = bpcov {
+                let intron_len = cur.end.saturating_sub(cur.start);
+                if cur.nreads < 5.0
+                    && intron_len < 1000
+                    && cur.start > refstart
+                {
+                    let bw = 5u64;
+                    let donor_pos = cur.start.saturating_sub(refstart);
+                    let len = bp.plus.cov.len() as u64;
+                    if donor_pos >= bw && donor_pos + bw + 1 < len {
+                        // 5bp window just before donor (last 5 exon bases)
+                        let left_s = (donor_pos - bw + 1) as usize;
+                        let left_e = (donor_pos + 1) as usize;
+                        // 5bp window just after donor (first 5 intron bases)
+                        let right_s = (donor_pos + 1) as usize;
+                        let right_e = (donor_pos + bw + 1) as usize;
+                        let leftcov = bp.get_cov_range(
+                            crate::bpcov::BPCOV_STRAND_ALL, left_s, left_e,
+                        );
+                        let rightcov = bp.get_cov_range(
+                            crate::bpcov::BPCOV_STRAND_ALL, right_s, right_e,
+                        );
+                        // Strong continuity: intron side must have MORE coverage than
+                        // the donor exon edge — implies a dominant run-through competing
+                        // with the weak junction.
+                        if leftcov > 0.0 && rightcov > 1.1 * leftcov {
+                            cjunctions[idx_i].mm = -1.0;
+                            if gjd {
+                                eprintln!(
+                                    "HE_CONT_DEMOTE {}-{} nreads={:.1} intron={}bp leftcov={:.0} rightcov={:.0} ratio={:.2}",
+                                    cur.start,
+                                    trace_cjunction_acceptor(&cur),
+                                    cur.nreads,
+                                    intron_len,
+                                    leftcov,
+                                    rightcov,
+                                    rightcov / leftcov
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            let _ = tolerance;
             continue;
         }
 
