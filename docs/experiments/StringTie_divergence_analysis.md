@@ -84,3 +84,88 @@ Current baseline (1472 matches, 80.0% sensitivity) is already close to the
 architectural ceiling imposed by the flow-decomposition paradigm shared with
 StringTie. The remaining 295 is a long-tail problem — most individual paths
 have cov=1–3 and require per-locus targeted fixes rather than a single lever.
+
+---
+
+## Updated divergence after the new-rep weak fix
+
+After `a72a352` (preserve trflong_seed eligibility when tf replaces a keeptrf rep):
+
+| Metric | Baseline | After fix |
+|--------|----------|-----------|
+| Matching transcripts | 1472 | **1556** (+84) |
+| Sensitivity | 80.0% | 84.6% |
+| Missed StringTie tx | 295 | 231 |
+| Missed loci (full) | 11 | 11 |
+
+### Re-categorization of the remaining 231 missed transcripts
+
+| Category | Before fix | After fix | Δ |
+|----------|-----------|-----------|---|
+| Alt-splice middle | 118 | 113 | −5 |
+| Alt-TTS | 52 | 42 | −10 |
+| Alt-TSS | 36 | 25 | −11 |
+| Not overlapping any matched sibling | 66 | 28 | −38 |
+| Single-exon | 23 | 23 | 0 |
+
+The biggest absolute drop is in "not overlapping" (66→28, −38): these are loci
+where our earlier assembly produced nothing at all, and the new-rep fix
+preserved representatives that got the locus at least partially assembled.
+
+## Second-pass analysis on remaining misses — different patterns
+
+Continuing the same diagnostic (pick miss → mini-BAM → trace → find
+divergence point) on several remaining misses:
+
+### STRG.271.4 (altMid, cov=1, 9 exons)
+
+Rustle recovers 4 of 5 STRG.271 isoforms as `=` match (was 3 of 5
+pre-fix — the fix helped here). The remaining miss (STRG.271.4) is an
+exon-skipping isoform; its specific exon-skip pattern is carried by only a
+handful of reads and its internal junctions don't form a distinct
+keeptrf seed — they get absorbed by the parent isoform's chain.
+
+This is a **genuine long-tail case**: the flow decomposition can't
+enumerate every exon-combination for cov=1 seeds without producing many
+false positives.
+
+### STRG.15.1 vs STRG.15.2 (altTSS, cov=2 each, differ only in first exon end)
+
+- STRG.15.1: first exon 16598646–16599149 (length 503)
+- STRG.15.2: first exon 16598646–16599242 (length 596)
+
+Same TSS, different first-intron DONOR (96 bp apart). Rustle collapses
+these alternative donor sites in its graph — node segmentation treats
+16599149 and 16599242 as one splice donor, so only one isoform emerges.
+
+This is a **graph-structure (node granularity)** issue, not a flow issue.
+Fixable by enabling finer splice-site discrimination at graph construction
+time; orthogonal to the seed-eligibility bug just fixed.
+
+### STRG.110.1 (cov=28, 6 exons, fully missed — no sibling matched either)
+
+Reads spanning both the upstream gene (22150424–22152352) AND STRG.110
+(22152353–22155355) cause Rustle's bundle builder to merge them into a
+single 22149137–22155355 bundle. Pre-filter extraction produces 7
+candidate transcripts spanning the full region; the **read-chain witness
+filter** then kills 2 whose consecutive intron pairs aren't supported
+by any single read, and pairwise/junction filters kill the rest. Final
+output retains only transcripts at the upstream gene (22150424–22152352).
+
+This is a **bundle-splitting** issue: when two adjacent genes have a
+~1 bp gap between them and read-through transcription produces
+bridging reads, Rustle merges them. StringTie's bundle-splitting
+heuristics are more aggressive here.
+
+## Summary of remaining divergence classes
+
+| Pattern | Count (est.) | Fix type |
+|---------|--------------|----------|
+| Systemic new-rep weak bug | fixed: −84 | done |
+| Graph-node segmentation (alt donor/acceptor <100 bp apart) | ~30–50 | graph construction tuning |
+| Bundle merging across adjacent genes | ~10–20 | bundle splitter refinement |
+| Long-tail minor isoforms (cov=1-2, exon-skip combinations) | ~130–180 | per-seed cost models, not a single lever |
+
+The one systemic bug in the remaining list is the graph-node segmentation
+for close alternative splice sites. The bundle-splitting one is
+locus-specific. The long tail is inherent to flow decomposition.
