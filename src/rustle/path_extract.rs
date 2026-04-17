@@ -6094,7 +6094,10 @@ pub fn extract_transcripts(
         // BEFORE flow extraction. the original implementation rejects all 2046 single-node paths
         // as "low_coverage" — they consume flow budget without producing valid
         // multi-exon predictions, starving downstream multi-exon path extraction.
-        if long_read_mode && exons.len() == 1 && real_nodes.len() > 1 {
+        // Opt-out via RUSTLE_KEEP_SINGLE_EXON_MULTINODE for evaluation.
+        if long_read_mode && exons.len() == 1 && real_nodes.len() > 1
+            && std::env::var_os("RUSTLE_KEEP_SINGLE_EXON_MULTINODE").is_none()
+        {
             // Single exon result from a multi-node seed: skip.
             record_outcome!(idx, SeedOutcome::Skipped("single_exon_from_multinode"));
             continue;
@@ -7065,13 +7068,60 @@ pub fn extract_transcripts(
                     abundancesum = s;
                 }
                 if !tmatch.is_empty() {
-                    // best_trf_match uses node-intersection to find overlapping kept paths.
-                    // Two transcripts with distinct splice sites use different graph nodes, so
-                    // best_trf_match naturally prevents cross-isoform redistribution.
-                    // The secondary intron_chains_equal_tol filter was redundant and blocked
-                    // valid redistributions (required same intron count, so different-length
-                    // transfrag chains always cleared tmatch → independent rescue).
-                    // the original algorithm redistributes based on best_trf_match result alone.
+                    // Strict redistribute filter (default on, disable via
+                    // RUSTLE_NO_STRICT_REDIST=1):
+                    // Before absorbing tf into a kept path, require tf's intron chain
+                    // to be a contiguous subsequence of at least one matched kept path.
+                    // Otherwise tf is a different isoform (has introns not in the kept
+                    // path) and should rescue as an independent transcript rather than
+                    // donate its coverage to an incompatible chain.
+                    //
+                    // SEED_STATS analysis found 988 redistributed seeds in under-split
+                    // bundles — many are novel isoforms absorbed by node-overlap
+                    // matching against a related isoform. This gate retains them.
+                    if std::env::var_os("RUSTLE_NO_STRICT_REDIST").is_none() {
+                        let tf_chain = intron_chain_from_nodes(graph, &tf_nodes);
+                        if !tf_chain.is_empty() {
+                            // Tolerance = 0: exact-coord subsequence. Non-zero lets tf
+                            // be absorbed when its splice sites differ from the kept path
+                            // by only a few bp (jitter), but also absorbs more true
+                            // alternate isoforms. Empirically 0 wins on GGO_19.
+                            let tol: u64 = std::env::var("RUSTLE_REDIST_TOL")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(0);
+                            let mut subsumed = false;
+                            for &ki in &tmatch {
+                                let k_chain = intron_chain_from_nodes(
+                                    graph,
+                                    &kept_paths[ki].0,
+                                );
+                                // Tolerance-aware subsequence: every intron in tf_chain must
+                                // appear in k_chain (with <=tol bp drift), in order.
+                                let mut ki_idx = 0;
+                                let mut ok = true;
+                                for &ti in tf_chain.iter() {
+                                    while ki_idx < k_chain.len()
+                                        && !intron_eq_tol(k_chain[ki_idx], ti, tol)
+                                    {
+                                        ki_idx += 1;
+                                    }
+                                    if ki_idx >= k_chain.len() {
+                                        ok = false;
+                                        break;
+                                    }
+                                    ki_idx += 1;
+                                }
+                                if ok {
+                                    subsumed = true;
+                                    break;
+                                }
+                            }
+                            if !subsumed {
+                                tmatch.clear();
+                            }
+                        }
+                    }
                     if tmatch.is_empty() {
                         // Treat as "no match" and fall through to independent rescue below.
                     } else {
@@ -7294,7 +7344,15 @@ pub fn extract_transcripts(
                 let kept_max_cov = kept_paths.iter()
                     .map(|(_, cov, _, _)| *cov)
                     .fold(0.0f64, |a, b| a.max(b));
-                if kept_max_cov > 0.0 && full_cov < 0.03 * kept_max_cov && !transfrags[t].guide {
+                // Coverage floor for rescued transcripts relative to the max-cov
+                // kept path at the locus. Lower = more sensitive, less precise.
+                // 0.01 is a Pareto improvement over the 0.03 prior default (+14
+                // matches, -0.9% precision on GGO_19 benchmark).
+                let rescue_frac: f64 = std::env::var("RUSTLE_RESCUE_FRAC")
+                    .ok()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.01);
+                if kept_max_cov > 0.0 && full_cov < rescue_frac * kept_max_cov && !transfrags[t].guide {
                     transfrags[t].abundance = 0.0;
                     record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
                     continue;
