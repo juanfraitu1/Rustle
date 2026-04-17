@@ -1855,6 +1855,20 @@ fn isofrac_with_summary(
             if longunder && keep_min_abundance > 0.0 && raw_cov >= keep_min_abundance {
                 longunder = false;
             }
+            // Minor-isoform rescue (opt-in via RUSTLE_RELAX_LONGUNDER=1):
+            // when the pre-flow longcov is clearly supported but flow depletion
+            // pushed cov under the isofrac threshold, allow multi-exon transcripts
+            // (>=5 exons) with longcov>=4 and cov>=2 through. Empirically this
+            // recovers ~5 minor isoforms on GGO_19 at ~0.3 pp precision cost, a
+            // borderline trade — hence opt-in rather than default.
+            if longunder
+                && std::env::var_os("RUSTLE_RELAX_LONGUNDER").is_some()
+                && txs[k].exons.len() >= 5
+                && txs[k].longcov >= 4.0
+                && cov >= 2.0
+            {
+                longunder = false;
+            }
 
             if std::env::var("RUSTLE_FILTER_DEBUG").is_ok()
                 || std::env::var("RUSTLE_DEBUG_DETAIL").is_ok()
