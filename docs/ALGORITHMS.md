@@ -458,7 +458,41 @@ K-mer matching is a *presence/absence membership test* — a cheap sanity filter
 - *Correct read-to-copy assignment* instead of the k-mer compatibility score. Today, `--vg-snp` parses MD tags from the original (linear) alignment; if the aligner mis-placed the read on a related copy, its MD tag is for the wrong reference. Graph alignment would re-align the read to the family VG and give the true variant pattern.
 - *Handling reads with indels relative to every reference copy* (e.g., a novel exon with a small deletion). K-mer matching silently loses those bases; graph alignment handles them via gap-aware DP.
 
-Formal graph alignment is listed as a natural extension in §5.6.
+### Should we switch to graph alignment (e.g., vg giraffe)?
+
+This is a real design choice, not a formality. Short answer: **data-driven — swap it in when the current k-mer heuristic demonstrably limits us, not before.**
+
+Longer answer with the trade-offs spelled out:
+
+| | K-mer matching (today) | `vg giraffe` (short-read graph aligner) | `vg map` / `GraphAligner` (long-read graph aligner) |
+|---|---|---|---|
+| Target read type | any | short reads | long reads (PacBio/ONT) |
+| Indel-aware | no | yes | yes |
+| Per-base alignment to graph | no | yes | yes |
+| Positions result in the graph | no (binary "in family") | yes (node-level path) | yes (node-level path) |
+| Build time (one per family) | 0 (read k-mers on the fly) | graph + GBWT index | graph + minimizer index |
+| Run time per read | O(L) hash lookups | O(L × cluster size) | O(L × graph locality) |
+| Extra dependency | none | `vg` binary + GBWT | `vg` binary / `GraphAligner` |
+| Indel recovery in novel copies | poor | good | good |
+| SNP-aware read-to-copy assignment | via MD-tag parsing | via graph path | via graph path |
+
+**Why not just switch now:**
+
+1. **Giraffe is optimized for short reads.** For PacBio / ONT long reads (the primary Rustle use case), giraffe's minimizer-based chaining is tuned for short, high-quality fragments. Long reads want a long-read graph aligner (`vg map -L`, or minimap2-graph variants, or `GraphAligner`).
+2. **It's an external binary + index step.** Adding a graph-aligner pass means users must build and index a per-family VG before assembly, or Rustle must orchestrate that build transparently. Both are real engineering cost.
+3. **The current k-mer step is adequate for the one job it does.** Novel-copy discovery only needs "is this read family-related?" — a presence test. K-mer matching answers that correctly for the reads it catches. The question is how many it *misses* (indel-heavy reads against novel copies; reads that share few k-mers because the novel copy is highly diverged).
+4. **The data hasn't forced the issue yet.** On GGO chr19, we don't have a known ground-truth novel copy to measure recall against. Until we run on a dataset with a known novel paralog (e.g., an ape species where the reference is known to miss a copy), we can't say whether the k-mer heuristic leaves reads on the table.
+
+**How to decide:**
+
+- Define a benchmark: a species + region where literature documents a paralog absent from the reference genome.
+- Run Rustle with the current k-mer novel-copy discovery; count recovered reads and whether an assembled novel transcript makes biological sense.
+- Swap in graph alignment (build a family VG from known copies, align unmapped reads to it with `GraphAligner` or `vg map -L` for PacBio), repeat.
+- Compare recovered-read counts and transcript structures. If graph alignment recovers substantially more valid reads, the engineering cost is justified; if not, the k-mer heuristic was adequate for this task.
+
+This is a one-week evaluation, not a multi-month rewrite. The answer probably depends on how divergent the novel copy is: for close paralogs (>95% sequence identity) k-mer matching catches nearly everything; for deep paralogs with several indels, graph alignment wins.
+
+Formal graph alignment is listed as a natural extension in §5.6 and marked as "swap when justified" rather than "replace unconditionally."
 
 ### Why it works when the aligner failed
 

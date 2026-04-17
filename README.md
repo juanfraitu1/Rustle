@@ -56,18 +56,22 @@ See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) 
 
 ### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
 
-| Metric | Rustle | StringTie | Notes |
-|--------|--------|-----------|-------|
+Rustle is benchmarked **against StringTie's output as the reference** (gffcompare with StringTie GTF as `-r`). By that definition StringTie has 100% sensitivity/precision against itself — so the comparison is asymmetric on purpose: we're measuring how close Rustle gets to StringTie's output on the shared single-copy-assembly task while being faster and exposing the internal graphs.
+
+| Metric | Rustle | StringTie (reference) | Notes |
+|--------|--------|-----------------------|-------|
 | Transcripts assembled | 1,732 | 1,839 | |
-| Matching transcripts | 1,458 / 1,839 | — | gffcompare `=` class |
-| Transcript sensitivity | **79.3%** | — | |
-| Transcript precision | **84.2%** | — | |
-| Intron-chain sensitivity | 80.4% | — | |
-| Intron-level precision | 96.0% | — | |
-| Locus-level sensitivity | 95.4% | — | |
-| Locus-level precision | 95.1% | — | |
+| Matching transcripts (gffcompare `=`) | 1,458 / 1,839 | 1,839 / 1,839 | |
+| Transcript sensitivity | **79.3%** | 100% (by definition) | |
+| Transcript precision | **84.2%** | 100% (by definition) | |
+| Intron-chain sensitivity | 80.4% | 100% | |
+| Intron-level precision | 96.0% | 100% | |
+| Locus-level sensitivity | 95.4% | 100% | |
+| Locus-level precision | 95.1% | 100% | |
 | Wall-clock time | **5.4 s** | 13.7 s | **2.5x faster** |
+| Junction-filter parity on shared junctions | 99.97% | — | via `JFINAL_TRACE` |
 | Language | Rust | C++ | |
+| Exposes graph-level internals | **yes** | no | see "Why not just use StringTie?" below |
 
 > Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci).
 > Rustle's base algorithm is a faithful port of StringTie's splice-graph + max-flow pipeline,
@@ -80,6 +84,32 @@ See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) 
 > VG mode features (multi-mapping resolution, novel copy discovery) are *not* reflected in
 > this single-chromosome benchmark — they apply when assembling multi-copy gene families
 > genome-wide.
+
+### Why not just use StringTie?
+
+StringTie is an excellent single-locus transcript assembler and Rustle's core follows its algorithm faithfully. But StringTie treats its internal data structures as private: from outside, you get reads in, transcripts out, and with `-v` some bundle-level log messages. Everything between — the splice graphs, the transfrag set, the flow decomposition, the redistribution choices in `checktrf`, the per-node coverage attribution — lives in C++ globals that aren't accessible without patching source and recompiling.
+
+That opacity is fine for single-locus assembly. It becomes a blocker the moment you want to do anything *across* loci:
+
+| What VG-mode assembly needs | What StringTie exposes | Rustle exposes |
+|---|---|---|
+| Per-locus splice graph (nodes, junctions, coverage) | internal globals | `GNODE_TRACE`, in-memory `Graph` struct |
+| Per-junction decision state (KEEP/KILL + reason) | internal debug `fprintf` | `JFINAL_TRACE` with canonical format |
+| Per-seed path extraction outcome (stored / redistributed / rescued / rescue-failed / readthr / etc.) | none | `RUSTLE_SEED_STATS` |
+| Multi-mapping read linkages across bundles | none (reads are processed per-bundle) | `build_multimap_index_with_supplementary` |
+| Per-read MD-tag mismatches for SNP analysis | parsed but discarded | stored on `BundleRead.mismatches` |
+| Read weights after cross-locus rebalancing | not applicable | writeable by `run_em_reweighting` before assembly |
+| Novel-copy bundle creation from unmapped reads | not applicable | `discover_novel_copies` → synthetic `Bundle` fed back into pipeline |
+| Clean integration point to add a third solver | would require C++ edits | add a variant to `VgSolver` enum |
+
+The gap isn't StringTie's fault — it was built for a different task. Porting its algorithm to Rust gives us a platform where every intermediate is inspectable, modifiable, and composable with a family-level layer. That's the practical reason to have Rustle and not just a StringTie wrapper:
+
+1. **Multi-mapping resolution across loci** (EM, Flow) needs to read per-bundle junction sets, rewrite per-read weights, and re-run per-bundle assembly with the new weights. StringTie doesn't have a hook for any of those three.
+2. **Novel-copy discovery** needs to manufacture a synthetic bundle from unmapped reads and inject it into the assembly loop as a first-class citizen. StringTie has no synthetic-bundle concept.
+3. **Diagnostic parity work** (the work that brought Rustle to 99.97% junction-decision parity) required emitting per-junction KEEP/KILL traces from both tools and diffing them. StringTie's `fprintf` output exists but has no stable format; Rustle's `JFINAL_TRACE` is a tool-level contract we can diff against.
+4. **Future algorithmic swaps** (e.g., graph alignment for read-to-copy assignment, hierarchical family-wide max-flow, a fourth solver) are feature flags here, source forks there.
+
+In short: StringTie is a transcript assembler. Rustle is a *programmable* transcript assembler plus a gene-family layer built on that programmability.
 
 ## Features
 
