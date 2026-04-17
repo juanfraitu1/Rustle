@@ -582,6 +582,77 @@ fn trace_bad_mm_neg_match(j: Junction) -> bool {
     j.donor == donor && (j.acceptor == acceptor || j.acceptor.saturating_add(1) == acceptor)
 }
 
+/// Collapse zero-length internal graph nodes.
+///
+/// When the event-driven builder processes End→Start at the same genomic
+/// position, it produces a zero-length placeholder node between the ending
+/// and continuing exons. StringTie's equivalent code produces direct edges
+/// instead. This pass bridges parent→child edges and orphans the placeholder
+/// so downstream transfrag creation and flow decomposition see a tighter
+/// graph.
+fn collapse_zero_length_nodes(graph: &mut Graph) {
+    let n = graph.nodes.len();
+    let src = graph.source_id;
+    let snk = graph.sink_id;
+    for i in 0..n {
+        if i == src || i == snk {
+            continue;
+        }
+        let node = &graph.nodes[i];
+        if node.start != node.end {
+            continue;
+        }
+        let parents: Vec<usize> = node.parents.ones().collect();
+        let children: Vec<usize> = node.children.ones().collect();
+        // Bridge each parent directly to each child.
+        for &p in &parents {
+            for &c in &children {
+                if p == c {
+                    continue;
+                }
+                graph.add_edge(p, c);
+            }
+        }
+        // Disconnect the zero-length node from neighbors.
+        for &p in &parents {
+            graph.nodes[p].children.remove(i);
+        }
+        for &c in &children {
+            graph.nodes[c].parents.remove(i);
+        }
+        graph.nodes[i].parents.clear();
+        graph.nodes[i].children.clear();
+    }
+}
+
+/// Emit JFINAL trace: final junction decision state for each cjunction.
+/// Format matches stringtie_debug/rlink.cpp JFINAL block so logs can be diffed.
+/// Key = "<donor>-<acceptor+1>:<strand>" (+1 to match StringTie's 1-based end convention).
+/// Decision: KEEP iff strand != 0 && mm >= 0 && nreads >= 0 && nreads_good >= 0.
+fn emit_jfinal_trace(cjunctions: &[crate::types::CJunction], tag: &str) {
+    if std::env::var_os("JFINAL_TRACE").is_none() {
+        return;
+    }
+    for cj in cjunctions {
+        let keep = cj.strand != 0 && cj.mm >= 0.0 && cj.nreads >= 0.0 && cj.nreads_good >= 0.0;
+        eprintln!(
+            "JFINAL[{}] {}-{}:{} nreads={:.1} nreads_good={:.1} mm={:.1} nm={:.1} guide={} left={:.1} right={:.1} decision={}",
+            tag,
+            cj.start,
+            cj.end.saturating_add(1),
+            cj.strand,
+            cj.nreads,
+            cj.nreads_good,
+            cj.mm,
+            cj.nm,
+            if cj.guide_match { 1 } else { 0 },
+            cj.leftsupport,
+            cj.rightsupport,
+            if keep { "KEEP" } else { "KILL" }
+        );
+    }
+}
+
 fn zero_graph_node_bp_coverage(graph: &mut Graph) {
     for node in graph.nodes.iter_mut() {
         node.coverage = 0.0;
@@ -4571,7 +4642,7 @@ fn extract_bundle_transcripts_for_graph(
             &format!("{}:{}-{}", bundle.chrom, bundle.start, bundle.end),
             config,
             false,
-            if trace_mode {
+            if trace_mode || std::env::var_os("RUSTLE_SEED_STATS").is_some() {
                 Some(&mut seed_outcomes_buf)
             } else {
                 None
@@ -4579,6 +4650,41 @@ fn extract_bundle_transcripts_for_graph(
             Some(&mut longrec_summary),
         )
     };
+    if std::env::var_os("RUSTLE_SEED_STATS").is_some() {
+        let mut counts: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for (_, outcome) in &seed_outcomes_buf {
+            let key = match outcome {
+                crate::path_extract::SeedOutcome::Skipped(r) => format!("skipped_{}", r),
+                crate::path_extract::SeedOutcome::BackToSourceFail => "back_fail".into(),
+                crate::path_extract::SeedOutcome::FwdToSinkFail => "fwd_fail".into(),
+                crate::path_extract::SeedOutcome::UnwitnessedSplice => "unwitnessed".into(),
+                crate::path_extract::SeedOutcome::HardBoundaryMismatch => "hard_boundary".into(),
+                crate::path_extract::SeedOutcome::ZeroFlux => "zero_flux".into(),
+                crate::path_extract::SeedOutcome::LowCoverage(_) => "low_coverage".into(),
+                crate::path_extract::SeedOutcome::EonlyNonGuide => "eonly_nonguide".into(),
+                crate::path_extract::SeedOutcome::TooShort => "too_short".into(),
+                crate::path_extract::SeedOutcome::ChecktrfReadthr => "checktrf_readthr".into(),
+                crate::path_extract::SeedOutcome::ChecktrfEonlySkip => "checktrf_eonly".into(),
+                crate::path_extract::SeedOutcome::ChecktrfRedistributed => "checktrf_redist".into(),
+                crate::path_extract::SeedOutcome::ChecktrfRescued => "checktrf_rescued".into(),
+                crate::path_extract::SeedOutcome::ChecktrfIncomplete => "checktrf_incomplete".into(),
+                crate::path_extract::SeedOutcome::ChecktrfRescueFail => "checktrf_rescue_fail".into(),
+                crate::path_extract::SeedOutcome::Stored(_) => "stored".into(),
+            };
+            *counts.entry(key).or_insert(0) += 1;
+        }
+        let summary: Vec<String> = counts.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+        eprintln!(
+            "SEED_STATS {}:{}-{} strand={} seeds={} {}",
+            bundle.chrom,
+            bundle.start,
+            bundle.end,
+            bundle.strand,
+            seed_outcomes_buf.len(),
+            summary.join(" ")
+        );
+    }
     if config.long_reads && !config.eonly {
         let added = if config.emit_terminal_alt_acceptor {
             terminal_alt_acceptor_rescue(&mut txs, graph_mut, transfrags)
@@ -6232,6 +6338,7 @@ pub fn run<P: AsRef<Path>>(
                 config.long_reads,
                 config.eonly,
             );
+            emit_jfinal_trace(&cjunctions, "bundle-genome");
             junction_stats_corr = crate::types::cjunctions_to_junction_stats(&cjunctions);
             if let Some(g) = &genome {
                 let chrom_arc = intern_chrom_arc(&mut chrom_arc_cache, &bundle.chrom);
@@ -6682,6 +6789,7 @@ pub fn run<P: AsRef<Path>>(
             config.long_reads,
             config.eonly,
         );
+        emit_jfinal_trace(&cjunctions, "bundle");
         // after good_junc sets mm=-1 on bad
         // junctions, the per-read loop creates REPLACEMENT junctions with
         // the read's splice strand (non-zero).  This means mm<0 junctions with
@@ -7191,6 +7299,20 @@ pub fn run<P: AsRef<Path>>(
                     graph_bundle.start,
                     graph_bundle.end,
                 );
+                if std::env::var_os("RUSTLE_BOUNDARY_TRACE").is_some() {
+                    for b in lstart.iter().filter(|b| b.cov >= 5.0) {
+                        eprintln!(
+                            "LSTART {} cov={:.1} bundle={}-{}",
+                            b.pos, b.cov, graph_bundle.start, graph_bundle.end
+                        );
+                    }
+                    for b in lend.iter().filter(|b| b.cov >= 5.0) {
+                        eprintln!(
+                            "LEND {} cov={:.1} bundle={}-{}",
+                            b.pos, b.cov, graph_bundle.start, graph_bundle.end
+                        );
+                    }
+                }
 
                 let (mut graph, longtrim_synth, longtrim_stats) = create_graph_with_longtrim(
                     &junctions,
@@ -7233,6 +7355,44 @@ pub fn run<P: AsRef<Path>>(
                 if config.allowed_graph_nodes > 0 {
                     let _ =
                         prune_graph_nodes(&mut graph, config.allowed_graph_nodes, config.verbose);
+                }
+
+                // Collapse zero-length internal nodes before transfrag creation.
+                // Opt-in via RUSTLE_COLLAPSE_ZEROLEN=1 — current build loses ~5
+                // matches in exchange for +0.7% precision and -1430 graph nodes.
+                // The path-selection side-effects still need investigation before
+                // enabling by default.
+                if std::env::var_os("RUSTLE_COLLAPSE_ZEROLEN").is_some() {
+                    collapse_zero_length_nodes(&mut graph);
+                }
+
+                // GNODE trace: emit per-graph-node state for diffing vs StringTie.
+                // Format matches stringtie_debug/rlink.cpp GNODE block.
+                // s: 0=minus, 1=unstranded, 2=plus (matches StringTie sno).
+                if std::env::var_os("GNODE_TRACE").is_some() {
+                    let s = match graph_bundle.strand {
+                        '-' => 0,
+                        '+' => 2,
+                        _ => 1,
+                    };
+                    for (idx, node) in graph.nodes.iter().enumerate() {
+                        if idx == graph.source_id || idx == graph.sink_id {
+                            continue;
+                        }
+                        let preds: Vec<String> =
+                            node.parents.ones().map(|p| p.to_string()).collect();
+                        let succs: Vec<String> =
+                            node.children.ones().map(|c| c.to_string()).collect();
+                        eprintln!(
+                            "GNODE s={} {}-{} id={} preds={} succs={}",
+                            s,
+                            node.start,
+                            node.end,
+                            node.node_id,
+                            preds.join(","),
+                            succs.join(",")
+                        );
+                    }
                 }
 
                 let mut graph_mut = graph;
@@ -8512,6 +8672,7 @@ pub fn run<P: AsRef<Path>>(
                     config.long_reads,
                     config.eonly,
                 );
+                emit_jfinal_trace(&sub_cjunctions, "subbundle");
                 // mm<0 junctions with non-zero
                 // strand are kept alive (read-redirect creates replacement junctions
                 // in the standard algorithm). Do NOT convert mm<0→strand=0.
