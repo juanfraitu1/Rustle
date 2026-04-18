@@ -200,7 +200,11 @@ pub fn apply_longtrim_direct(
                     .filter(|b| b.pos >= ns && b.pos < ne)
                     .map(|b| b.cov)
                     .fold(0.0f64, f64::max);
-                if max_lend_up >= 10.0 && max_lstart_dn >= 10.0 {
+                let paired_bound_thr: f64 = std::env::var("RUSTLE_PAIRED_BOUND_THR")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10.0);
+                if max_lend_up >= paired_bound_thr && max_lstart_dn >= paired_bound_thr {
                     // Flanking avg cov: 100bp upstream and downstream of the node.
                     let up_s = clamp_i64(
                         (ns.saturating_sub(100)).saturating_sub(bpcov.bundle_start) as i64,
