@@ -237,11 +237,11 @@ pub fn apply_longtrim_direct(
                     if nid >= graph.nodes.len() { continue; }
                     let parents: Vec<usize> = graph.nodes[nid].parents.ones().collect();
                     let children: Vec<usize> = graph.nodes[nid].children.ones().collect();
+                    let ns = graph.nodes[nid].start;
                     let ne = graph.nodes[nid].end;
-                    // Sever all in/out edges of the intergenic node.
+                    let mut removed_skip = 0usize;
                     for &p in &parents { graph.remove_edge(p, nid); }
                     for &c in &children { graph.remove_edge(nid, c); }
-                    // Sever skip edges p->c that bypass the intergenic node.
                     for &p in &parents {
                         if p == source { continue; }
                         let p_kids: Vec<usize> = graph.nodes[p].children.ones().collect();
@@ -249,9 +249,35 @@ pub fn apply_longtrim_direct(
                             if c == nid || c == sink { continue; }
                             if graph.nodes[c].start >= ne {
                                 graph.remove_edge(p, c);
+                                removed_skip += 1;
                             }
                         }
                     }
+                    // Stitch source/sink so both sides become complete assembly subgraphs.
+                    if std::env::var_os("RUSTLE_PAIRED_PRUNE_STITCH").is_some() {
+                        for &p in &parents {
+                            if p != source && p != sink {
+                                graph.add_edge(p, sink);
+                            }
+                        }
+                        for &c in &children {
+                            if c != source && c != sink {
+                                graph.add_edge(source, c);
+                                if let Some(n) = graph.nodes.get_mut(c) {
+                                    n.hardstart = true;
+                                }
+                            }
+                        }
+                        for &p in &parents {
+                            if let Some(n) = graph.nodes.get_mut(p) {
+                                n.hardend = true;
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "PAIRED_PRUNE_FIRE bid={} nid={} node={}..{} parents={} children={} skip_removed={}",
+                        bundle.source_bid, nid, ns, ne, parents.len(), children.len(), removed_skip
+                    );
                 }
             }
         }

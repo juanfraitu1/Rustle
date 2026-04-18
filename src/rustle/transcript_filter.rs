@@ -4622,6 +4622,19 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
             removed
         );
     }
+    if std::env::var_os("RUSTLE_TRACE_XSTRAND").is_some() {
+        for i in 0..txs.len() {
+            if dead.contains(i) {
+                let t = &txs[i];
+                let s = t.exons.first().map(|e| e.0).unwrap_or(0);
+                let e = t.exons.last().map(|e| e.1).unwrap_or(0);
+                eprintln!(
+                    "XSTRAND_KILL {}:{}-{}({}) exons={} cov={:.2}",
+                    t.chrom, s, e, t.strand, t.exons.len(), t.coverage
+                );
+            }
+        }
+    }
 
     // Preserve original order
     txs.into_iter()
