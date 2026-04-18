@@ -976,6 +976,32 @@ fn split_read_segments(
             }
         }
 
+        // StringTie-faithful EXON_SKIP split: if the read's intron spans a covlink-
+        // suppressed zero-cov node (one that has source or sink as neighbor, flagged
+        // by add_coverage_source_sink_edges), split the read there. This is what
+        // StringTie's update_abund does in response to EXON_SKIP (see
+        // stringtie_debug/run_locus_17190254_17521824_tracepos.stderr: read[283]
+        // produces two separate transfrags).
+        // Gate: enable with RUSTLE_EXON_SKIP_SPLIT=1 (default off — current implementation
+        // fires too broadly and regresses matches).
+        // Default-on: disable via RUSTLE_EXON_SKIP_SPLIT_OFF=1.
+        if !split_here
+            && prev_node.end < curr_node.start
+            && std::env::var_os("RUSTLE_EXON_SKIP_SPLIT_OFF").is_none()
+        {
+            // StringTie-style intergenic split signature:
+            // 1. The node BEFORE the gap (prev_node) has sink as a child (covlink-added)
+            // 2. The node AFTER the gap (curr_node) has source as a parent (covlink-added)
+            // This double-boundary pattern is the exact signal
+            // add_coverage_source_sink_edges produces for an intergenic node's flanks.
+            let prev_has_sink = prev_node.children.contains(graph.sink_id);
+            let curr_has_source = curr_node.parents.contains(graph.source_id);
+            if prev_has_sink && curr_has_source {
+                split_here = true;
+                orphan_right = false;
+            }
+        }
+
         if split_here {
             if seg_start < j {
                 segments.push(ReadPathSegment {
