@@ -7258,9 +7258,17 @@ pub fn run<P: AsRef<Path>>(
         // StringTie's read loop sets strand=0 for mm<0 junctions, then creates replacement
         // junctions with the read's strand.  We approximate this by keeping the originals
         // in good_junctions (since replacement junctions are also added per-region later).
-        for (j, s) in &junction_stats_corr_final {
-            if s.mm < 0.0 && s.strand != Some(0) && s.nreads_good >= config.min_junction_reads {
-                good_junctions_set.insert(*j);
+        // Gate: RUSTLE_KEEP_MM_NEG_IN_GOOD (default OFF post-trace-diff).
+        // Re-inserting mm<0 junctions into good_junctions_set prevents color-break
+        // on run-through junctions (e.g., STRG.29/STRG.31 boundary 17451950-17452251
+        // with mm=-1 from HE_CONT_R_DEMOTE). StringTie's behavior: read-level
+        // junction replacement creates separate transfrags rather than bridging
+        // via the mm<0 junction.
+        if std::env::var_os("RUSTLE_KEEP_MM_NEG_IN_GOOD").is_some() {
+            for (j, s) in &junction_stats_corr_final {
+                if s.mm < 0.0 && s.strand != Some(0) && s.nreads_good >= config.min_junction_reads {
+                    good_junctions_set.insert(*j);
+                }
             }
         }
         let mut killed_juncs: HashSet<crate::types::Junction> = junction_stats_corr_final
