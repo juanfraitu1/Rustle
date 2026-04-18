@@ -126,7 +126,33 @@ pub fn add_coverage_source_sink_edges(
                 }
                 parcov += node_avg_cov.get(p).copied().unwrap_or(0.0);
             }
-            if parcov < icov * threshold_frac {
+            // Recurse through zero-cov parent chain to find real ancestor coverage.
+            // Rustle can create phantom single-base zero-cov nodes between exon-end and
+            // intergenic nodes that hide the true parent coverage from this check.
+            // StringTie doesn't create such nodes, so its parcov directly sees the
+            // high-coverage exon node. Recurse if enabled.
+            // Default ON: recurse through zero-cov phantom nodes to find real parent/child cov.
+            // Disable via RUSTLE_COVLINK_RECURSE_ZERO_OFF=1.
+            let recurse_zero = std::env::var_os("RUSTLE_COVLINK_RECURSE_ZERO_OFF").is_none();
+            let mut effective_parcov = parcov;
+            if recurse_zero && effective_parcov < icov * threshold_frac {
+                let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+                let mut stack: Vec<usize> = parents.iter().copied().filter(|&p| node_avg_cov.get(p).copied().unwrap_or(0.0) <= 0.01).collect();
+                while let Some(p) = stack.pop() {
+                    if !seen.insert(p) { continue; }
+                    let grand: Vec<usize> = graph.nodes[p].parents.ones().collect();
+                    for &gp in &grand {
+                        if gp == source_id { continue; }
+                        let c = node_avg_cov.get(gp).copied().unwrap_or(0.0);
+                        if c > 0.01 {
+                            effective_parcov += c;
+                        } else {
+                            stack.push(gp);
+                        }
+                    }
+                }
+            }
+            if effective_parcov < icov * threshold_frac {
                 // ref:4168: abundance = (icov - parcov) / DROP
                 let abundance = (icov - parcov) / DROP;
                 add_source_edges.push((i, abundance));
@@ -144,7 +170,28 @@ pub fn add_coverage_source_sink_edges(
                 }
                 chcov += node_avg_cov.get(c).copied().unwrap_or(0.0);
             }
-            if chcov < icov * threshold_frac {
+            // Default ON: recurse through zero-cov phantom nodes to find real parent/child cov.
+            // Disable via RUSTLE_COVLINK_RECURSE_ZERO_OFF=1.
+            let recurse_zero = std::env::var_os("RUSTLE_COVLINK_RECURSE_ZERO_OFF").is_none();
+            let mut effective_chcov = chcov;
+            if recurse_zero && effective_chcov < icov * threshold_frac {
+                let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+                let mut stack: Vec<usize> = children.iter().copied().filter(|&c| node_avg_cov.get(c).copied().unwrap_or(0.0) <= 0.01).collect();
+                while let Some(c) = stack.pop() {
+                    if !seen.insert(c) { continue; }
+                    let grand: Vec<usize> = graph.nodes[c].children.ones().collect();
+                    for &gc in &grand {
+                        if gc == sink_id { continue; }
+                        let cc = node_avg_cov.get(gc).copied().unwrap_or(0.0);
+                        if cc > 0.01 {
+                            effective_chcov += cc;
+                        } else {
+                            stack.push(gc);
+                        }
+                    }
+                }
+            }
+            if effective_chcov < icov * threshold_frac {
                 // ref:4200: abundance = (icov - chcov) / DROP
                 let abundance = (icov - chcov) / DROP;
                 add_sink_edges.push((i, abundance));
@@ -155,13 +202,22 @@ pub fn add_coverage_source_sink_edges(
     let pattern_size = graph.pattern_size();
     let mut synth_transfrags: Vec<GraphTransfrag> = Vec::new();
 
+    let trace = std::env::var_os("RUSTLE_TRACE_COVLINKS").is_some();
     for (nid, abundance) in add_source_edges {
+        if trace {
+            let n = &graph.nodes[nid];
+            eprintln!("COVLINK_SRC nid={} range={}..{} abund={:.2}", nid, n.start, n.end, abundance);
+        }
         graph.add_edge(source_id, nid);
         let mut tf = GraphTransfrag::new(vec![source_id, nid], pattern_size);
         tf.abundance = abundance;
         synth_transfrags.push(tf);
     }
     for (nid, abundance) in add_sink_edges {
+        if trace {
+            let n = &graph.nodes[nid];
+            eprintln!("COVLINK_SNK nid={} range={}..{} abund={:.2}", nid, n.start, n.end, abundance);
+        }
         graph.add_edge(nid, sink_id);
         let mut tf = GraphTransfrag::new(vec![nid, sink_id], pattern_size);
         tf.abundance = abundance;
