@@ -199,3 +199,165 @@ python3 tools/classify_family_assembly.py GGO_genomic.gff \
 
 Expected: 8 exact (3 GOLGA6 + 5 GOLGA8), 1 wrong-strand total — matching the
 table at the top of this document.
+
+## Broader families: AMY and TBC1D3
+
+Extending the same classifier to two additional multi-copy families in the
+gorilla annotation:
+
+| Family | Loci | ST exact | VG exact | ST partial | VG partial | ST missing | VG missing | ST w-strand | VG w-strand |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| GOLGA6 | 16 | 1 | **3** | 1 | 0 | 7 | 9 | 3 | **1** |
+| GOLGA8 | 17 | 3 | **5** | 0 | 0 | 7 | **5** | 2 | **0** |
+| AMY | 3 | 1 | 0 | 0 | 0 | 1 | 1 | 0 | 0 |
+| TBC1D3 | 16 | 2 | 2 | 3 | **5** | 6 | **5** | 0 | 0 |
+| **Total** | **52** | **7** | **10** | 4 | **5** | **21** | **20** | 5 | **1** |
+
+Net across all 4 families:
+- exact: 7 → 10 (**+3**)
+- wrong-strand: 5 → 1 (**−4**)
+- missing: 21 → 20 (−1, i.e. 1 extra recovered)
+
+### Where VG helps and where it doesn't
+
+**VG wins cleanly on tandem paralogs with distinct genomic positions.**
+The GOLGA6L7 chr19 triple (3×8-intron copies separated by ~40 kb each) and the
+GOLGA8 chr15 sub-families (17-intron copies with substantial sequence
+divergence) are the design target, and VG resolves them correctly.
+
+**VG does NOT win on overlapping paralogs.** AMY2A and AMY2B overlap genomically
+(~4 kb overlap at chr NC_073224:136309083-136313018). Their 5' UTRs include
+remote exons (136312932-136313018 for AMY2A, 136334002-136335838 for AMY2B)
+that sit INSIDE or past each other's gene body. StringTie emits two distinct
+transcripts for the body region. Rustle's EM reweighting collapses reads to one
+representative because the "family" looks like a single overlapping region, and
+the two annotated copies are represented by the same assembled transcript.
+
+Concretely on AMY:
+- `RSTL.1440.1` (136262917-136272362, 10 exons) matches the AMY2A body exons
+  exactly but is missing the two remote 5' exons (136278243-136278262 and
+  136312932-136313018). Result: classified `other`, not `exact`.
+- StringTie produces `STRG.1026.7` spanning 136309081-136335838 with the full
+  AMY2B chain including the 136334002-136335838 exon. Result: `exact`.
+
+This is a **bundle-boundary / remote-exon extension** issue, orthogonal to VG
+reweighting.
+
+## VG enhancements that would close the remaining gap
+
+Six concrete additions, ordered by estimated recovery impact on the 20 still-
+missing + 5 "partial" family members:
+
+### 1. SNP-based copy assignment (`--vg-snp`) — scaffold exists
+
+**Target:** overlapping paralogs (AMY2A/AMY2B) and near-identical tandem
+copies where junction-compatibility alone can't distinguish.
+
+The GOLGA6L7 SNP probe (`tools/golga6l7_snp_probe.py`) already proved the
+three chr19 copies have **255 distinguishing exonic positions with coverage
+≥3 in all three copies**. Same measurement on AMY2A/AMY2B would likely find
+thousands of distinguishing bases. A per-base mismatch profile built during
+BAM parsing (MD tag), combined with copy-diagnostic position scoring, would
+let multi-mappers get assigned by sequence identity rather than just junction
+compatibility.
+
+**Expected impact:** AMY2A/AMY2B recovered (+2 exact), plus 3-5 GOLGA6/8
+near-duplicates currently classified as "other" upgraded to "exact".
+
+### 2. Family-aware bundle splitting at known gene boundaries
+
+**Target:** current "other" class where Rustle's assembled transcript span is
+correct but merges two family members' bodies (e.g. AMY2A body + AMY2B 5' UTR).
+
+StringTie's graph construction uses `LONGTRIM_BOUND` at bnode-internal
+coverage dips. Rustle's boundary detection works correctly (we verified this
+on STRG.29 in a prior session) but the `apply_longtrim_direct` filter
+rejects boundaries aligned with existing junction node edges. Porting the
+boundary-aligned-with-node-edge case — add `hardstart`/`hardend` +
+source/sink edge when the detected boundary sits at the start or end of an
+existing graph node — would let bundle_builder split long merged spans at
+coverage-drop gaps, which are usually gene-to-gene transitions.
+
+**Expected impact:** converts 3-5 "other" → "exact" across all four
+families (AMY2A, several TBC1D3-G-likes, 1-2 GOLGA6 others).
+
+### 3. Novel copy discovery (`--vg-discover-novel`) — scaffold exists
+
+**Target:** the ~14 "missing" GOLGA6/8 loci that are unannotated or very
+weakly annotated.
+
+Current code (`vg.rs:discover_novel_copies`) scans supplementary alignments
+to uncovered regions and matches junctions against family consensus, but the
+synthetic-bundle creation step is unfinished. Completing it — clustering
+candidate reads by approximate region (≤50 kb window), requiring
+≥3 reads per synthetic bundle, emitting GTF with `copy_status "novel"` — would
+produce family-member predictions at positions the annotation missed.
+
+**Expected impact:** 2-3 of the 20 missing loci would be upgraded to
+novel-copy predictions with correct family architecture.
+
+### 4. Per-copy TSS / poly-A priors
+
+**Target:** the AMY-class "remote 5' exon" cases.
+
+Multi-copy families often differ in UTR length per copy. Currently VG's EM
+uses uniform per-copy weights. If each copy carries a prior distribution over
+TSS and poly-A positions (learnable from reads' soft-clip patterns at each
+copy's annotated 5'/3' ends), path extension could preferentially reach
+remote UTR exons at the copy where they belong.
+
+**Expected impact:** AMY2A and AMY2B both upgraded from "other" to "exact"
+(+2). Similar effect on TBC1D3 partials.
+
+### 5. Chain-consistency gate within a splice-graph sub-family
+
+**Target:** "other" class where the assembled chain doesn't match any member
+of the sub-family.
+
+From `FORMAL_FAMILY_GRAPH_DEFINITIONS.md`: GOLGA6 decomposes into 2
+multi-member sub-families plus 6 singletons; GOLGA8 into 2 plus 2. For each
+sub-family, the core family graph captures `conserved / variable / diverged`
+positions. If an assembled transcript within the sub-family's genomic
+footprint has a chain that disagrees with the sub-family's consensus at a
+`CONSERVED` position, it's likely a mis-assembled chimera.
+
+A post-assembly filter: for each transcript whose span overlaps a known
+sub-family locus, require its chain to align (within tolerance) to at least
+one member. Unaligned chains get demoted or suppressed. This is conservative
+— it only fires when we have family context.
+
+**Expected impact:** `other` calls reduced by 2-3; modest precision gain.
+
+### 6. MAPQ-based multi-mapper filter (`--vg-min-mapq`)
+
+**Target:** currently Rustle includes all secondary/supplementary alignments
+uniformly in family-discovery. Low-MAPQ multi-mappers (aligned equally well
+to 10+ positions) add noise to family graph edges.
+
+Proposed: when scanning supplementary/secondary alignments, skip records with
+MAPQ < threshold (default 5). Already listed in the plan file.
+
+**Expected impact:** marginal; mostly precision (reduce spurious "other"
+calls). Probably worth 1-2 precision points overall but unlikely to flip any
+locus from missing to exact.
+
+## Bottom-line recommendation
+
+In recovery-impact order:
+
+1. **Finish SNP-based copy assignment** (scaffold exists; uses already-parsed
+   BAM MD tag). Biggest single lever for remaining exact-match gains on
+   overlapping paralogs.
+2. **Fix boundary-aligned longtrim case in `apply_longtrim_direct`**
+   (diagnosed in prior session; we have the exact filter off-by-one). This
+   also fixes the STRG.29-class bundle merger we've been chasing separately.
+3. **Complete novel-copy discovery pipeline** (scaffold exists; synthetic
+   bundle creation is the missing piece).
+4. **Add per-copy TSS/poly-A priors** (new feature; requires modeling UTR
+   length distribution per copy).
+5. **Chain-consistency sub-family gate** (new feature; post-assembly).
+6. MAPQ filter for VG (small, cheap; covers precision edge cases).
+
+The empirical ceiling with all six added: **~15-18 / 52 exact** vs today's
+10 / 52, plus fewer "other" misassignments. Items 1-3 alone likely get us
+to 13-14 exact.
