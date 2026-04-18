@@ -1003,12 +1003,41 @@ pub fn good_junc(
 
         let all_bad = cj.nm > 0.0 && cj.nm + 1e-9 >= cj.nreads;
         if all_bad && cj.nreads_good < 1.25 * junction_thr {
-            // don't kill here; mark for BAD_MM_NEG instead.
-            // In higherr block, these junctions are marked with mm=-1, not killed.
-            cj.mm = -1.0;
-            if gjd {
+            // Optional rescue: if bpcov is DIS-continuous at the donor (right << left),
+            // this looks like a real splice site despite low mismatch-free support — skip
+            // the mm=-1 demotion. Mirrors StringTie rlink.cpp:14958 good_junc() rescue.
+            let mut rescued = false;
+            if std::env::var_os("RUSTLE_RESCUE_LOWSUPPORT_BAD").is_some() && cj.start > refstart {
+                let donor_idx = (cj.start - refstart) as usize;
+                let len = bpcov.plus.cov.len();
+                if donor_idx > 0 && donor_idx + 1 < len {
+                    let leftcov = bpcov.get_cov_range(
+                        crate::bpcov::BPCOV_STRAND_ALL,
+                        donor_idx.saturating_sub(1),
+                        donor_idx,
+                    );
+                    let rightcov = bpcov.get_cov_range(
+                        crate::bpcov::BPCOV_STRAND_ALL,
+                        donor_idx,
+                        donor_idx + 1,
+                    );
+                    if leftcov > 0.0 && rightcov < 0.9 * leftcov {
+                        rescued = true;
+                    }
+                }
+            }
+            if !rescued {
+                cj.mm = -1.0;
+                if gjd {
+                    eprintln!(
+                        "GJ_DEFER {}-{} reason=higherr_low_support_bad mm=-1.0",
+                        cj.start,
+                        trace_cjunction_acceptor(cj)
+                    );
+                }
+            } else if gjd {
                 eprintln!(
-                    "GJ_DEFER {}-{} reason=higherr_low_support_bad mm=-1.0",
+                    "GJ_RESCUE {}-{} reason=discontinuous_bpcov",
                     cj.start,
                     trace_cjunction_acceptor(cj)
                 );
