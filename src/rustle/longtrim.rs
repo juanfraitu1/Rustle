@@ -133,12 +133,129 @@ pub fn apply_longtrim_direct(
     let source = graph.source_id;
     let sink = graph.sink_id;
     let trace = longtrim_trace_active();
+    let paired_scan = std::env::var_os("RUSTLE_PAIRED_BOUND_SCAN").is_some();
+    let paired_prune = std::env::var_os("RUSTLE_PAIRED_PRUNE").is_some();
 
     for bundle in schedule {
         let Some((bundlenode_lstart, bundlenode_lend)) = boundary_map.get(&bundle.source_bid)
         else {
             continue;
         };
+
+        if paired_scan || paired_prune {
+            if paired_scan {
+                eprintln!(
+                    "PAIRED_SCAN_BUNDLE bid={} calls={} lstart_boundaries={} lend_boundaries={}",
+                    bundle.source_bid,
+                    bundle.calls.len(),
+                    bundlenode_lstart.len(),
+                    bundlenode_lend.len()
+                );
+            }
+            let mut prune_targets: Vec<usize> = Vec::new();
+            for call in &bundle.calls {
+                let nid = call.node_id;
+                if nid == source || nid == sink || nid >= graph.nodes.len() {
+                    continue;
+                }
+                let n = &graph.nodes[nid];
+                let ns = n.start;
+                let ne = n.end;
+                if ne <= ns.saturating_add(50) {
+                    continue;
+                }
+                let len = ne - ns;
+                let s0 = ns.saturating_sub(bpcov.bundle_start) as i64;
+                let max_idx = bpcov.cov.len().saturating_sub(1) as i64;
+                let s1 = clamp_i64((ne.saturating_sub(1)).saturating_sub(bpcov.bundle_start) as i64, 0, max_idx);
+                let total = cov_range(bpcov, clamp_i64(s0, 0, max_idx), s1);
+                let avg = if len > 0 { total / (len as f64) } else { 0.0 };
+                if avg >= 3.0 {
+                    continue;
+                }
+                // Flanking signature: LEND just upstream of this node and LSTART just downstream.
+                // Search a small window (± 100bp) outside the node.
+                let win: u64 = 100;
+                let up_lo = ns.saturating_sub(win);
+                let up_hi = ns; // exclusive upper
+                let dn_lo = ne;
+                let dn_hi = ne.saturating_add(win);
+                let max_lend_up = bundlenode_lend
+                    .iter()
+                    .filter(|b| b.pos >= up_lo && b.pos < up_hi)
+                    .map(|b| b.cov)
+                    .fold(0.0f64, f64::max);
+                let max_lstart_dn = bundlenode_lstart
+                    .iter()
+                    .filter(|b| b.pos >= dn_lo && b.pos < dn_hi)
+                    .map(|b| b.cov)
+                    .fold(0.0f64, f64::max);
+                let max_lend_in = bundlenode_lend
+                    .iter()
+                    .filter(|b| b.pos >= ns && b.pos < ne)
+                    .map(|b| b.cov)
+                    .fold(0.0f64, f64::max);
+                let max_lstart_in = bundlenode_lstart
+                    .iter()
+                    .filter(|b| b.pos >= ns && b.pos < ne)
+                    .map(|b| b.cov)
+                    .fold(0.0f64, f64::max);
+                if max_lend_up >= 10.0 && max_lstart_dn >= 10.0 {
+                    // Flanking avg cov: 100bp upstream and downstream of the node.
+                    let up_s = clamp_i64(
+                        (ns.saturating_sub(100)).saturating_sub(bpcov.bundle_start) as i64,
+                        0, max_idx);
+                    let up_e = clamp_i64(
+                        (ns.saturating_sub(1)).saturating_sub(bpcov.bundle_start) as i64,
+                        0, max_idx);
+                    let dn_s = clamp_i64(
+                        ne.saturating_sub(bpcov.bundle_start) as i64, 0, max_idx);
+                    let dn_e = clamp_i64(
+                        (ne.saturating_add(99)).saturating_sub(bpcov.bundle_start) as i64,
+                        0, max_idx);
+                    let up_cov = cov_range(bpcov, up_s, up_e) / ((up_e - up_s + 1).max(1) as f64);
+                    let dn_cov = cov_range(bpcov, dn_s, dn_e) / ((dn_e - dn_s + 1).max(1) as f64);
+                    let ratio_up = if avg > 0.0 { up_cov / avg } else { up_cov };
+                    let ratio_dn = if avg > 0.0 { dn_cov / avg } else { dn_cov };
+                    let strict = ratio_up >= 10.0 && ratio_dn >= 10.0
+                        && up_cov >= 10.0 && dn_cov >= 10.0;
+                    if paired_scan {
+                        eprintln!(
+                            "PAIRED_BOUND bid={} nid={} node={}..{} len={} avg_cov={:.2} up_lend={:.2} dn_lstart={:.2} up_cov={:.2} dn_cov={:.2} ratio_up={:.1} ratio_dn={:.1} strict={}",
+                            bundle.source_bid, nid, ns, ne, len, avg,
+                            max_lend_up, max_lstart_dn, up_cov, dn_cov, ratio_up, ratio_dn,
+                            if strict { 1 } else { 0 }
+                        );
+                    }
+                    if paired_prune && strict {
+                        prune_targets.push(nid);
+                    }
+                }
+            }
+            if paired_prune {
+                for &nid in &prune_targets {
+                    if nid >= graph.nodes.len() { continue; }
+                    let parents: Vec<usize> = graph.nodes[nid].parents.ones().collect();
+                    let children: Vec<usize> = graph.nodes[nid].children.ones().collect();
+                    let ne = graph.nodes[nid].end;
+                    // Sever all in/out edges of the intergenic node.
+                    for &p in &parents { graph.remove_edge(p, nid); }
+                    for &c in &children { graph.remove_edge(nid, c); }
+                    // Sever skip edges p->c that bypass the intergenic node.
+                    for &p in &parents {
+                        if p == source { continue; }
+                        let p_kids: Vec<usize> = graph.nodes[p].children.ones().collect();
+                        for &c in &p_kids {
+                            if c == nid || c == sink { continue; }
+                            if graph.nodes[c].start >= ne {
+                                graph.remove_edge(p, c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let mut nls = 0usize;
         let mut nle = 0usize;
         let mut startcov = false;

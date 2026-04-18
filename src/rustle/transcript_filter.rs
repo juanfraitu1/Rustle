@@ -2298,7 +2298,8 @@ pub fn pairwise_overlap_filter_with_summary(
                 // artifact of n1 (n2 exon spans a low-coverage intron of n1).
                 // Active for all read types; the lowintron bpcov check prevents
                 // false kills on real alternative isoforms.
-                if lowintron.is_some()
+                if std::env::var_os("RUSTLE_RI_FILTER_OFF").is_none()
+                    && lowintron.is_some()
                     && retainedintron_like(
                         &txs,
                         n1,

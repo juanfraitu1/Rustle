@@ -1510,6 +1510,11 @@ pub fn apply_higherr_demotions(
                     && cur.end.saturating_sub(cand.end) < sserror
                     && cand.rightsupport * tolerance > cur.rightsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
+                    && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE").is_some()
+                        && {
+                            let d_up = cur.end.saturating_sub(cand.end);
+                            d_up >= 4 && d_up < 9 && cur.nreads >= 5.0
+                        })
                 {
                     cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                     support = cand.rightsupport;
@@ -1576,6 +1581,10 @@ pub fn apply_higherr_demotions(
                     && cand.rightsupport * tolerance > cur.rightsupport)
                     || (d < dist && cj_reliable(&cand)))
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
+                    && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE").is_some()
+                        && d >= 4
+                        && d < 9
+                        && cur.nreads >= 5.0)
                 {
                     cjunctions[idx_i].nreads_good = -((j + 1) as f64);
                     support = cand.rightsupport;

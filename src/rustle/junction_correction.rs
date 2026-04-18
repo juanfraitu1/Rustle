@@ -187,7 +187,16 @@ pub fn correct_bundle_junctions_higherr(
         let intron_len = j.acceptor.saturating_sub(j.donor);
         intron_len > longintron && s.nreads_good < chi_win_error
     };
-    let is_reliable = |s: &JunctionStat, j: &Junction| s.mrcount > 0.0 && !is_bad(s, j);
+    let snap_strict = std::env::var_os("RUSTLE_SNAP_STRICT").is_some();
+    let is_reliable = |s: &JunctionStat, j: &Junction| {
+        if !(s.mrcount > 0.0 && !is_bad(s, j)) {
+            return false;
+        }
+        if snap_strict && s.nreads_good <= 0.0 {
+            return false;
+        }
+        true
+    };
 
     let mut donor_redirect: HashMap<Junction, Junction> = Default::default();
     let mut acceptor_redirect: HashMap<Junction, Junction> = Default::default();
