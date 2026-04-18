@@ -627,3 +627,7 @@ pub fn run_cli() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+fn main() -> anyhow::Result<()> {
+    run_cli()
+}
