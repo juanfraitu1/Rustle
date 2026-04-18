@@ -485,6 +485,49 @@ pub fn record_ref_span(record: &RecordBuf) -> Option<(u64, u64)> {
     Some((ref_start_0, ref_end_0_excl))
 }
 
+/// Ref span capped to the portion before any N (intron) op larger than `max_intron`.
+/// Used for bundle-boundary construction to prevent a single read with a huge intron
+/// from bridging two separate loci into one mega-bundle.
+/// Returns (ref_start_0, ref_end_0_excl) where ref_end is truncated to exclude
+/// anything after the first huge intron.
+pub fn record_ref_span_capped(record: &RecordBuf, max_intron: u64) -> Option<(u64, u64)> {
+    use noodles_sam::alignment::record::cigar::op::Kind;
+    if record.flags().is_unmapped() {
+        return None;
+    }
+    let start_1b = record.alignment_start().map(|p| p.get() as u64).unwrap_or(0);
+    if start_1b == 0 {
+        return None;
+    }
+    let ref_start_0 = start_1b.saturating_sub(1);
+    let mut cur = ref_start_0;
+    let cigar = record.cigar();
+    for op in cigar.as_ref().iter() {
+        let len = op.len() as u64;
+        match op.kind() {
+            Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch | Kind::Deletion => {
+                cur = cur.saturating_add(len);
+            }
+            Kind::Skip => {
+                if len > max_intron {
+                    // Truncate here: the remaining portion of the read is treated as
+                    // a separate locus contribution, not merged across the huge gap.
+                    if cur <= ref_start_0 + 9 {
+                        return None;
+                    }
+                    return Some((ref_start_0, cur));
+                }
+                cur = cur.saturating_add(len);
+            }
+            _ => {}
+        }
+    }
+    if cur <= ref_start_0 + 9 {
+        return None;
+    }
+    Some((ref_start_0, cur))
+}
+
 /// Extract per-base mismatches by comparing read sequence to reference FASTA
 /// at each aligned position. Does not require the MD tag. Walks the CIGAR once
 /// and emits `(ref_pos_0based, query_base_upper)` for each position where

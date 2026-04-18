@@ -1304,7 +1304,16 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
             }
         } else if !boundary_primary_only || is_primary {
             // Default mode: preserve historical region construction from full alignment stream.
-            if let Some((ref_start, ref_end_excl)) = record_ref_span(&record) {
+            let huge_intron_cap: Option<u64> = std::env::var("RUSTLE_BOUNDARY_SPLIT_HUGE_INTRON")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|&v| v > 0);
+            let span_opt = if let Some(cap) = huge_intron_cap {
+                crate::bam::record_ref_span_capped(&record, cap)
+            } else {
+                record_ref_span(&record)
+            };
+            if let Some((ref_start, ref_end_excl)) = span_opt {
                 boundary_span = Some((ref_start, ref_end_excl.saturating_sub(1)));
             }
         }
