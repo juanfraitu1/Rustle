@@ -6076,7 +6076,26 @@ pub fn run<P: AsRef<Path>>(
     let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
     let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
         LruCache::new(consensus_cache_capacity());
-    let mut bundles = detect_bundles_from_bam(bam_path.as_ref(), &config, chrom_filter)?;
+    // In VG mode with a FASTA, eagerly load the genome and thread it to
+    // bundle ingest so per-read mismatches vs reference can be extracted
+    // for SNP-based copy scoring. Same genome index is later passed to
+    // family discovery and novel-copy scan.
+    let vg_snp_genome: Option<crate::genome::GenomeIndex> = if config.vg_mode
+        && config.vg_snp
+        && config.genome_fasta.is_some()
+    {
+        let path = config.genome_fasta.as_ref().unwrap();
+        eprintln!("[VG] Loading genome FASTA for SNP copy assignment: {}", path);
+        crate::genome::GenomeIndex::from_fasta(path).ok()
+    } else {
+        None
+    };
+    let mut bundles = crate::bundle::detect_bundles_from_bam_with_snp(
+        bam_path.as_ref(),
+        &config,
+        chrom_filter,
+        vg_snp_genome.as_ref(),
+    )?;
     phase_timer!("bam_ingest");
     let debug_target = parse_debug_bundle_target(&config);
     if config.only_debug_bundle {

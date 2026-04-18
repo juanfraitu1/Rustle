@@ -485,9 +485,98 @@ pub fn record_ref_span(record: &RecordBuf) -> Option<(u64, u64)> {
     Some((ref_start_0, ref_end_0_excl))
 }
 
+/// Extract per-base mismatches by comparing read sequence to reference FASTA
+/// at each aligned position. Does not require the MD tag. Walks the CIGAR once
+/// and emits `(ref_pos_0based, query_base_upper)` for each position where
+/// read_base != ref_base.
+///
+/// Cheap: O(aligned_length). Genome lookups are O(1) on the in-memory FASTA.
+pub fn extract_mismatches_vs_fasta(
+    record: &RecordBuf,
+    ref_start: u64,
+    chrom: &str,
+    genome: &crate::genome::GenomeIndex,
+) -> Vec<(u64, u8)> {
+    use noodles_sam::alignment::record::cigar::op::Kind;
+
+    let seq = record.sequence();
+    if seq.is_empty() {
+        return Vec::new();
+    }
+    let seq_bytes = seq.as_ref();
+    let mut mismatches = Vec::new();
+    let mut ref_pos = ref_start;
+    let mut query_offset = 0usize;
+    let cigar = record.cigar();
+    for result in cigar.iter() {
+        let Ok(op) = result else {
+            continue;
+        };
+        let kind = op.kind();
+        let len = op.len() as u64;
+        match kind {
+            Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch => {
+                for i in 0..len {
+                    let rp = ref_pos + i;
+                    let qo = query_offset + i as usize;
+                    if qo >= seq_bytes.len() {
+                        break;
+                    }
+                    let q = seq_bytes[qo].to_ascii_uppercase();
+                    // `seq_bytes[qo]` is raw from noodles (already 1 base per u8).
+                    // Only record A/C/G/T mismatches; ignore N and non-canonical bases.
+                    if !matches!(q, b'A' | b'C' | b'G' | b'T') {
+                        continue;
+                    }
+                    if let Some(seq_ref) = genome_ref_base(genome, chrom, rp) {
+                        if seq_ref != q {
+                            mismatches.push((rp, q));
+                        }
+                    }
+                }
+                ref_pos += len;
+                query_offset += len as usize;
+            }
+            Kind::Deletion | Kind::Skip => {
+                ref_pos += len;
+            }
+            Kind::Insertion | Kind::SoftClip => {
+                query_offset += len as usize;
+            }
+            Kind::HardClip | Kind::Pad => {}
+        }
+    }
+    mismatches
+}
+
+/// Look up a single reference base at a 0-based position. Uses the public
+/// fetch_sequence with a 1-bp window (cheap on a fully-resident FASTA).
+#[inline]
+fn genome_ref_base(
+    genome: &crate::genome::GenomeIndex,
+    chrom: &str,
+    pos0: u64,
+) -> Option<u8> {
+    genome
+        .fetch_sequence(chrom, pos0, pos0 + 1)
+        .and_then(|v| v.first().copied())
+}
+
 /// Convert one BAM record to BundleRead (exons, weight, poly). 0-based coordinates.
 /// Returns None for unmapped; callers should also skip secondary/supplementary for readlist
 pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
+    record_to_bundle_read_with_snp(record, None, None)
+}
+
+/// Same as [`record_to_bundle_read`] but additionally extracts per-base
+/// mismatches vs the reference FASTA when both `chrom` and `genome` are
+/// provided. Used in VG mode to enable copy-distinguishing SNP scoring
+/// without depending on the MD tag.
+pub fn record_to_bundle_read_with_snp(
+    record: &RecordBuf,
+    chrom: Option<&str>,
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> Option<BundleRead> {
     if record.flags().is_unmapped() {
         return None;
     }
@@ -599,9 +688,13 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     let hp_tag = get_tag_int(record, "HP").and_then(|v| if v > 0 { Some(v as u8) } else { None });
     let ps_tag = get_tag_int(record, "PS").and_then(|v| if v > 0 { Some(v as u32) } else { None });
 
-    // VG SNP: mismatch extraction deferred — parse_md_mismatches is only called
-    // downstream in vg.rs when --vg-snp is active.  Avoid the cost here.
-    let mismatches = Vec::new();
+    // VG SNP: compute per-base mismatches vs FASTA when genome + chrom are
+    // supplied. This replaces the old MD-tag-based path so we can work with
+    // BAMs that lack MD tags. Non-VG runs pass `None` and pay nothing.
+    let mismatches: Vec<(u64, u8)> = match (chrom, genome) {
+        (Some(c), Some(g)) => extract_mismatches_vs_fasta(record, ref_start, c, g),
+        _ => Vec::new(),
+    };
 
     let is_primary_alignment =
         !record.flags().is_secondary() && !record.flags().is_supplementary();

@@ -757,26 +757,89 @@ pub struct DiagnosticSnps {
 
 /// Build diagnostic SNP set for a family group.
 /// Scans all reads at each copy and finds positions where allele frequencies diverge.
+///
+/// At copy-diagnostic positions, ONE copy typically matches the reference (zero
+/// mismatches among its reads) while ANOTHER copy shows a consistent mismatch
+/// (that copy's consensus differs from ref). Counting mismatches alone misses
+/// the ref-matching side, so we also tabulate reads whose exon span COVERS the
+/// position without recording a mismatch there — those reads "voted" for the
+/// reference base. Sentinel `b'='` encodes "matches reference" so we don't
+/// need the FASTA here; the diagnostic rule only needs bases to differ across
+/// copies, not their identity.
 pub fn build_diagnostic_snps(
     family: &FamilyGroup,
     bundles: &[Bundle],
 ) -> DiagnosticSnps {
-    // Per-copy allele counts: ref_pos → copy_idx → base → count
-    let mut counts: HashMap<u64, Vec<HashMap<u8, u32>>> = HashMap::new();
+    use std::collections::HashSet;
+
     let n_copies = family.bundle_indices.len();
 
+    // Per-copy allele counts: ref_pos → copy_idx → base → count
+    let mut counts: HashMap<u64, Vec<HashMap<u8, u32>>> = HashMap::new();
+
+    // Step 1: collect positions with ≥ min_support mismatch reads across the
+    // family. Random sequencing errors hit any given position with 1-2 reads;
+    // a true copy-diagnostic position sees ≥3 consistent mismatches (one
+    // read-group per copy matches ref, the other carries the variant). This
+    // filter keeps the candidate set small enough to scan exhaustively.
+    let min_support: u32 = std::env::var("RUSTLE_VGSNP_MIN_MISMATCH_READS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let mut mism_counts: HashMap<u64, u32> = HashMap::new();
+    for &bi in &family.bundle_indices {
+        for read in &bundles[bi].reads {
+            for &(ref_pos, _) in &read.mismatches {
+                *mism_counts.entry(ref_pos).or_insert(0) += 1;
+            }
+        }
+    }
+    let candidates: HashSet<u64> = mism_counts
+        .iter()
+        .filter(|&(_, &c)| c >= min_support)
+        .map(|(&p, _)| p)
+        .collect();
+
+    // Step 2: for each candidate position, for each copy, tally reads that
+    // cover the position. A read covers `pos` iff `pos` falls inside any of
+    // its exons. If the read has a mismatch recorded at `pos` we use its
+    // query base; otherwise the read matched the reference so we record `=`.
+    let mut total_reads_seen = 0usize;
+    let mut total_mismatches_seen = 0usize;
     for (copy_idx, &bi) in family.bundle_indices.iter().enumerate() {
         let bundle = &bundles[bi];
         for read in &bundle.reads {
-            for &(ref_pos, query_base) in &read.mismatches {
-                let entry = counts.entry(ref_pos).or_insert_with(|| {
+            total_reads_seen += 1;
+            total_mismatches_seen += read.mismatches.len();
+            // Per-read mismatch lookup
+            let mut mism_map: HashMap<u64, u8> = HashMap::new();
+            for &(p, b) in &read.mismatches {
+                mism_map.insert(p, b);
+            }
+            // For each candidate position, decide if the read covers it.
+            for &pos in &candidates {
+                let covers = read
+                    .exons
+                    .iter()
+                    .any(|&(s, e)| pos >= s && pos < e);
+                if !covers {
+                    continue;
+                }
+                let base = mism_map.get(&pos).copied().unwrap_or(b'=');
+                let entry = counts.entry(pos).or_insert_with(|| {
                     vec![HashMap::new(); n_copies]
                 });
                 if copy_idx < entry.len() {
-                    *entry[copy_idx].entry(query_base).or_insert(0) += 1;
+                    *entry[copy_idx].entry(base).or_insert(0) += 1;
                 }
             }
         }
+    }
+    if std::env::var_os("RUSTLE_TRACE_VGSNP").is_some() {
+        eprintln!(
+            "[VG-SNP-DBG] family n_copies={} reads_seen={} mismatches_seen={} unique_positions={}",
+            n_copies, total_reads_seen, total_mismatches_seen, counts.len()
+        );
     }
 
     // Find diagnostic positions: where copies have different dominant alleles.
@@ -817,25 +880,42 @@ pub fn build_diagnostic_snps(
 
 /// Score a read's SNP compatibility with a specific copy.
 /// Returns a bonus factor (1.0 = no info, >1.0 = matches, <1.0 = mismatches).
+///
+/// A copy's diagnostic base may be `b'='` (meaning "this copy's consensus
+/// matches the reference"). In that case, the read matches the copy if the
+/// read's base at that position is ALSO the reference — i.e. the read did
+/// NOT record a mismatch at this position. We test coverage via the read's
+/// exons.
 pub fn snp_compatibility(
     read: &BundleRead,
     copy_idx: usize,
     diagnostic: &DiagnosticSnps,
 ) -> f64 {
-    if diagnostic.positions.is_empty() || read.mismatches.is_empty() {
+    if diagnostic.positions.is_empty() {
         return 1.0; // No info — neutral.
+    }
+    // Build mismatch lookup for this read.
+    let mut mism_map: std::collections::HashMap<u64, u8> = std::collections::HashMap::new();
+    for &(p, b) in &read.mismatches {
+        mism_map.insert(p, b);
     }
     let mut matches = 0usize;
     let mut mismatches = 0usize;
-    for &(ref_pos, query_base) in &read.mismatches {
-        if let Some(copy_info) = diagnostic.positions.get(&ref_pos) {
-            if let Some((_, diag_base, _)) = copy_info.iter().find(|(ci, _, _)| *ci == copy_idx) {
-                if query_base == *diag_base {
-                    matches += 1;
-                } else {
-                    mismatches += 1;
-                }
-            }
+    for (&pos, copy_info) in &diagnostic.positions {
+        let Some((_, diag_base, _)) = copy_info.iter().find(|(ci, _, _)| *ci == copy_idx)
+        else {
+            continue;
+        };
+        // Does the read cover this position?
+        let covers = read.exons.iter().any(|&(s, e)| pos >= s && pos < e);
+        if !covers {
+            continue;
+        }
+        let read_base = mism_map.get(&pos).copied().unwrap_or(b'=');
+        if read_base == *diag_base {
+            matches += 1;
+        } else {
+            mismatches += 1;
         }
     }
     if matches + mismatches == 0 {
@@ -931,15 +1011,46 @@ fn run_pre_assembly_em_inner(
             None
         };
 
+        // Precompute per-entry×copy SNP bonuses ONCE (they don't change across
+        // EM iterations). Without this cache, `snp_compatibility` was called
+        // O(entries × copies × iterations) times, each doing an O(positions ×
+        // read_exons) scan. At family sizes of 2000 reads × 20 iterations with
+        // 3000+ diagnostic positions this hangs the pipeline.
+        let snp_cache: Vec<Vec<f64>> = if let Some(ref diag) = diagnostic {
+            entries
+                .iter()
+                .map(|(_, entry)| {
+                    entry
+                        .locs
+                        .iter()
+                        .map(|&(global_bi, ri)| {
+                            if ri >= bundles[global_bi].reads.len() {
+                                return 1.0;
+                            }
+                            let read = &bundles[global_bi].reads[ri];
+                            let copy_idx = family
+                                .bundle_indices
+                                .iter()
+                                .position(|&bi| bi == global_bi)
+                                .unwrap_or(0);
+                            snp_compatibility(read, copy_idx, diag)
+                        })
+                        .collect()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         let mut result = EmResult::default();
 
         for iter in 0..max_iter {
             let mut max_delta: f64 = 0.0;
 
-            for (_rnh, entry) in &mut entries {
+            for (ei, (_rnh, entry)) in entries.iter_mut().enumerate() {
                 // E-step: compute compatibility scores.
                 let mut scores: Vec<f64> = Vec::with_capacity(entry.locs.len());
-                for &(global_bi, ri) in &entry.locs {
+                for (li, &(global_bi, ri)) in entry.locs.iter().enumerate() {
                     if ri >= bundles[global_bi].reads.len() {
                         // No actual read at this bundle — supplementary link only.
                         // Give a small base score (the read COULD be from here).
@@ -957,12 +1068,9 @@ fn run_pre_assembly_em_inner(
                         .sum::<f64>()
                         .max(1.0);
                     let mut score = (compat + 0.01) * context.ln().max(1.0);
-                    // SNP bonus: if diagnostic SNPs are available, multiply by SNP compatibility.
-                    if let Some(ref diag) = diagnostic {
-                        let copy_idx = family.bundle_indices.iter()
-                            .position(|&bi| bi == global_bi)
-                            .unwrap_or(0);
-                        score *= snp_compatibility(read, copy_idx, diag);
+                    // SNP bonus: precomputed cache (static across iterations).
+                    if !snp_cache.is_empty() {
+                        score *= snp_cache[ei][li];
                     }
                     scores.push(score);
                 }

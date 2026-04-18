@@ -1225,6 +1225,17 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
     config: &RunConfig,
     chrom_filter: Option<&str>,
 ) -> Result<Vec<Bundle>> {
+    detect_bundles_from_bam_with_snp(bam_path, config, chrom_filter, None)
+}
+
+/// Same as [`detect_bundles_from_bam`] but additionally threads an optional
+/// reference FASTA through to read ingest for FASTA-based SNP extraction.
+pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
+    bam_path: P,
+    config: &RunConfig,
+    chrom_filter: Option<&str>,
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> Result<Vec<Bundle>> {
     let min_intron = config.min_intron_length;
     let runoffdist = config.bundle_runoff_dist;
     let trace_log_style = trace_log_style_active();
@@ -1267,7 +1278,11 @@ pub fn detect_bundles_from_bam<P: AsRef<Path>>(
         }
 
         let is_primary = !record.flags().is_secondary() && !record.flags().is_supplementary();
-        let mut parsed_read = record_to_bundle_read(&record);
+        let mut parsed_read = crate::bam::record_to_bundle_read_with_snp(
+            &record,
+            Some(&name),
+            genome,
+        );
 
         let mut boundary_span: Option<(u64, u64)> = None;
         if stream_coupled_boundary {
