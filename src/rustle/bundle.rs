@@ -1707,6 +1707,69 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
         }
     }
 
+    // Optional: post-pass that splits regions at zero-coverage stretches >= min_gap.
+    // Uses exon-level coverage from primary reads (introns don't contribute coverage).
+    // Activated by RUSTLE_BPCOV_REGION_SPLIT=<min_gap_bp> (e.g. 200).
+    if let Some(min_gap) = std::env::var("RUSTLE_BPCOV_REGION_SPLIT")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|&v| v > 0)
+    {
+        let mut new_regions: Vec<(String, u64, u64)> = Vec::with_capacity(regions.len());
+        for (chrom, start, end_incl) in regions.drain(..) {
+            let span = end_incl.saturating_sub(start).saturating_add(1) as usize;
+            if span <= min_gap as usize {
+                new_regions.push((chrom, start, end_incl));
+                continue;
+            }
+            let Some(reads) = reads_by_chrom.get(&chrom) else {
+                new_regions.push((chrom, start, end_incl));
+                continue;
+            };
+            // Exon-level coverage bitmap for this region.
+            let mut covered = vec![false; span];
+            for r in reads {
+                if r.ref_end <= start || r.ref_start > end_incl {
+                    continue;
+                }
+                for (s, e) in &r.exons {
+                    let es = (*s).max(start);
+                    let ee = (*e).min(end_incl);
+                    if es > ee {
+                        continue;
+                    }
+                    let a = (es - start) as usize;
+                    let b = (ee - start) as usize;
+                    for idx in a..=b.min(span - 1) {
+                        covered[idx] = true;
+                    }
+                }
+            }
+            // Scan for zero-cov stretches >= min_gap.
+            let mut cur_start = start;
+            let mut last_cov: Option<u64> = None;
+            let mut in_gap_start: Option<usize> = None;
+            for i in 0..span {
+                if covered[i] {
+                    if let Some(gs) = in_gap_start.take() {
+                        let gap_len = (i - gs) as u64;
+                        if gap_len >= min_gap {
+                            if let Some(lc) = last_cov {
+                                new_regions.push((chrom.clone(), cur_start, lc));
+                                cur_start = start + i as u64;
+                            }
+                        }
+                    }
+                    last_cov = Some(start + i as u64);
+                } else if in_gap_start.is_none() {
+                    in_gap_start = Some(i);
+                }
+            }
+            new_regions.push((chrom, cur_start, end_incl));
+        }
+        regions = new_regions;
+    }
+
     if let Some(target) = debug_target.as_ref() {
         if let Some(reads) = reads_by_chrom.get(&target.chrom) {
             for r in reads.iter().filter(|r| {
