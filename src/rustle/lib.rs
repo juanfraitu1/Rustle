@@ -82,6 +82,7 @@ pub mod snapshot; // per-bundle JSONL snapshots for 1:1 comparisons
 // ── Tracing / diagnostics ─────────────────────────────────────────────────────
 pub mod futuretr;
 pub mod trace_events; // debug trace helpers
+pub mod trace_pipeline; // stage-level TSV dumps for diff-based bisection
 pub mod trace_reference; // per-reference transcript fate tracing // future transcript placeholders (diagnostic)
 
 // ── Public re-exports ─────────────────────────────────────────────────────────

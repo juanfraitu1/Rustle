@@ -6096,6 +6096,13 @@ pub fn run<P: AsRef<Path>>(
         chrom_filter,
         vg_snp_genome.as_ref(),
     )?;
+    if crate::trace_pipeline::active() {
+        for b in &bundles {
+            crate::trace_pipeline::dump_bundle(
+                &b.chrom, b.start, b.end, b.strand, b.reads.len(),
+            );
+        }
+    }
     phase_timer!("bam_ingest");
     let debug_target = parse_debug_bundle_target(&config);
     if config.only_debug_bundle {
@@ -7925,6 +7932,28 @@ pub fn run<P: AsRef<Path>>(
                     &graph_mut,
                     &transfrags,
                 );
+                if crate::trace_pipeline::active() {
+                    let src = graph_mut.source_id;
+                    let snk = graph_mut.sink_id;
+                    for from in 0..graph_mut.nodes.len() {
+                        if from == src || from == snk { continue; }
+                        let fs = graph_mut.nodes[from].start;
+                        let fe = graph_mut.nodes[from].end;
+                        let kids: Vec<usize> = graph_mut.nodes[from].children.ones().collect();
+                        for c in kids {
+                            if c == src || c == snk { continue; }
+                            let ts = graph_mut.nodes[c].start;
+                            let te = graph_mut.nodes[c].end;
+                            crate::trace_pipeline::dump_graph_edge(
+                                &graph_bundle.chrom,
+                                graph_bundle.start,
+                                graph_bundle.end,
+                                graph_bundle.strand,
+                                fs, fe, ts, te,
+                            );
+                        }
+                    }
+                }
                 if loop_trace_active() {
                     let trflong = transfrags.iter().filter(|tf| tf.trflong_seed).count();
                     eprintln!(
