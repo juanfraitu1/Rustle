@@ -194,6 +194,10 @@ pub struct BundleRead {
     pub hp_tag: Option<u8>,
     /// Phase set ID (PS tag) for phased BAMs.
     pub ps_tag: Option<u32>,
+    /// True if this record is the primary alignment (not secondary/supplementary).
+    /// Populated at ingest; used in VG mode to filter secondaries out of
+    /// non-family bundles after family discovery.
+    pub is_primary_alignment: bool,
 }
 
 /// `CPred` transport for longtrim boundary points (predno, cov).

@@ -603,6 +603,9 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
     // downstream in vg.rs when --vg-snp is active.  Avoid the cost here.
     let mismatches = Vec::new();
 
+    let is_primary_alignment =
+        !record.flags().is_secondary() && !record.flags().is_supplementary();
+
     Some(BundleRead {
         read_uid: NEXT_READ_UID.fetch_add(1, Ordering::Relaxed),
         read_name,
@@ -650,6 +653,7 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
         mismatches,
         hp_tag,
         ps_tag,
+        is_primary_alignment,
     })
 }
 

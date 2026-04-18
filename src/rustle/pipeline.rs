@@ -6166,10 +6166,44 @@ pub fn run<P: AsRef<Path>>(
         Vec::new()
     };
     // Build set of bundle indices that belong to a family group (for deferred processing).
-    let _vg_family_bundle_set: std::collections::HashSet<usize> = vg_families
+    let vg_family_bundle_set: std::collections::HashSet<usize> = vg_families
         .iter()
         .flat_map(|f| f.bundle_indices.iter().copied())
         .collect();
+
+    // VG mode keeps secondary/supplementary alignments at ingest so family
+    // discovery can see multi-mapper evidence across bundles. But leaving them
+    // in non-family bundles introduces noise: precision on chr19 fell
+    // 83.8% → 79.9% in earlier runs because every bundle was seeing extra
+    // cross-mapped reads it shouldn't have. After discovery, strip
+    // non-primary alignments from any bundle that did NOT join a family, so
+    // unrelated loci behave exactly like the StringTie baseline.
+    //
+    // Disable with RUSTLE_VG_KEEP_NONFAMILY_SECONDARY=1 for diagnostics.
+    if config.vg_mode
+        && std::env::var_os("RUSTLE_VG_KEEP_NONFAMILY_SECONDARY").is_none()
+    {
+        let mut stripped_reads = 0usize;
+        let mut stripped_bundles = 0usize;
+        for (bi, bundle) in bundles.iter_mut().enumerate() {
+            if vg_family_bundle_set.contains(&bi) {
+                continue;
+            }
+            let before = bundle.reads.len();
+            bundle.reads.retain(|r| r.is_primary_alignment);
+            let dropped = before - bundle.reads.len();
+            if dropped > 0 {
+                stripped_reads += dropped;
+                stripped_bundles += 1;
+            }
+        }
+        if stripped_reads > 0 {
+            eprintln!(
+                "[VG] Stripped {} secondary/supplementary read(s) from {} non-family bundles",
+                stripped_reads, stripped_bundles
+            );
+        }
+    }
     // Pre-save bundle data for VG report and novel discovery (bundles consumed by processing loop).
     let vg_bundle_coords: Vec<(String, u64, u64, char)> = if config.vg_mode {
         bundles
