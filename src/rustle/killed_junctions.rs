@@ -927,6 +927,103 @@ pub fn aggregate_splice_site_support(cjunctions: &mut Vec<CJunction>) {
 }
 
 /// good_junc/good_merge_junc gate using CJunction transport.
+/// Demote "run-through" junctions whose donor coincides with a strong read-END
+/// (LEND) peak AND acceptor coincides with a strong read-START (LSTART) peak.
+/// These are typically chimeric reads bridging the TTS of one gene and TSS of
+/// the next gene — NOT real splice sites. StringTie-faithful bundles (per
+/// GGO_19.log analysis) split STRG.29/STRG.31 across such boundaries; we
+/// replicate by killing the bridging junction before graph construction.
+///
+/// Activated by `RUSTLE_RUNTHROUGH_DEMOTE=<thr>` where `thr` is the minimum
+/// LEND and LSTART count each (default unset = disabled).
+pub fn demote_runthrough_junctions(
+    cjunctions: &mut Vec<crate::types::CJunction>,
+    bpcov: &BpcovStranded,
+    refstart: u64,
+) {
+    // NOTE: Infrastructure kept but DISABLED by default. Coverage-based discrimination
+    // cannot distinguish run-through junctions from real introns (both have low intron cov
+    // and high flanking cov). On GGO_19 the criterion catastrophically regresses matches.
+    // The real STRG.29/STRG.31 divergence lives in path extraction / max_flow, not here.
+    // Gate: RUSTLE_RUNTHROUGH_DEMOTE=<ratio> — kept for future experiments.
+    let ratio_thr: f64 = match std::env::var("RUSTLE_RUNTHROUGH_DEMOTE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        Some(v) if v > 0.0 => v,
+        _ => return,
+    };
+    let min_flank_cov: f64 = std::env::var("RUSTLE_RUNTHROUGH_MIN_FLANK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10.0);
+    let min_intron_bp: u64 = std::env::var("RUSTLE_RUNTHROUGH_MIN_INTRON_BP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100);
+    if cjunctions.is_empty() {
+        return;
+    }
+    let gjd = goodjunc_trace_active();
+    let cov_len = bpcov.plus.cov.len();
+    for cj in cjunctions.iter_mut() {
+        if cj.strand == 0 {
+            continue;
+        }
+        // Intron range in Rustle convention: cj.start = last exon base, cj.end = last intron base
+        // Actually from our trace: cj.start=17451950 cj.end=17452250, corresponding to samtools junction
+        // 17451951-17452250 (intron: first base = 17451951, last base = 17452250).
+        // So cj.start = last exon base; intron = (cj.start+1, cj.end); acceptor = cj.end + 1.
+        let intron_start = cj.start.saturating_add(1);
+        let intron_end = cj.end;
+        if intron_end <= intron_start || intron_end - intron_start < min_intron_bp {
+            continue;
+        }
+        if cj.start < refstart || intron_end < refstart {
+            continue;
+        }
+        let donor_idx = (cj.start - refstart) as usize;
+        let acceptor_idx = (cj.end.saturating_add(1) - refstart) as usize;
+        let intron_len = (intron_end - intron_start + 1) as usize;
+        let mid_idx = ((intron_start as i64 + intron_end as i64) / 2 - refstart as i64) as usize;
+        if mid_idx >= cov_len || donor_idx >= cov_len || acceptor_idx >= cov_len {
+            continue;
+        }
+        // Flanking cov: 50bp windows on exon sides.
+        let win: usize = 50;
+        let donor_lo = donor_idx.saturating_sub(win.saturating_sub(1));
+        let donor_hi = donor_idx;
+        let acceptor_lo = acceptor_idx;
+        let acceptor_hi = (acceptor_idx + win - 1).min(cov_len - 1);
+        let donor_cov = bpcov.get_cov_range(BPCOV_STRAND_ALL, donor_lo, donor_hi + 1)
+            / ((donor_hi - donor_lo + 1) as f64);
+        let acceptor_cov = bpcov.get_cov_range(BPCOV_STRAND_ALL, acceptor_lo, acceptor_hi + 1)
+            / ((acceptor_hi - acceptor_lo + 1) as f64);
+        // Intron middle cov: average over middle 50% of intron.
+        let inner_start = mid_idx.saturating_sub(intron_len / 4);
+        let inner_end = (mid_idx + intron_len / 4).min(cov_len - 1);
+        if inner_end <= inner_start {
+            continue;
+        }
+        let intron_cov = bpcov.get_cov_range(BPCOV_STRAND_ALL, inner_start, inner_end + 1)
+            / ((inner_end - inner_start + 1) as f64);
+        if donor_cov < min_flank_cov || acceptor_cov < min_flank_cov {
+            continue;
+        }
+        let ratio_d = donor_cov / intron_cov.max(0.5);
+        let ratio_a = acceptor_cov / intron_cov.max(0.5);
+        if ratio_d >= ratio_thr && ratio_a >= ratio_thr {
+            if gjd {
+                eprintln!(
+                    "RUNTHROUGH_DEMOTE {}-{} donor_cov={:.1} intron_cov={:.2} acceptor_cov={:.1} ratio_d={:.1} ratio_a={:.1}",
+                    cj.start, cj.end, donor_cov, intron_cov, acceptor_cov, ratio_d, ratio_a
+                );
+            }
+            cj.strand = 0;
+        }
+    }
+}
+
 pub fn good_junc(
     cjunctions: &mut Vec<CJunction>,
     bpcov: &BpcovStranded,

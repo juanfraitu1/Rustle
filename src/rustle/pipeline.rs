@@ -39,6 +39,7 @@ use crate::junctions::{
 };
 use crate::killed_junctions::{
     aggregate_splice_site_support, apply_higherr_demotions, compute_killed_junction_pairs,
+    demote_runthrough_junctions,
     good_junc,
 };
 use crate::map_reads::{map_reads_to_graph, map_reads_to_graph_bundlenodes};
@@ -6525,6 +6526,7 @@ pub fn run<P: AsRef<Path>>(
                 Some(&bpcov_stranded),
                 bundle.start,
             );
+            demote_runthrough_junctions(&mut cjunctions, &bpcov_stranded, bundle.start);
             good_junc(
                 &mut cjunctions,
                 &bpcov_stranded,
@@ -6976,6 +6978,7 @@ pub fn run<P: AsRef<Path>>(
             Some(&bpcov_stranded),
             bundle.start,
         );
+        demote_runthrough_junctions(&mut cjunctions, &bpcov_stranded, bundle.start);
         good_junc(
             &mut cjunctions,
             &bpcov_stranded,
@@ -8885,6 +8888,7 @@ pub fn run<P: AsRef<Path>>(
                     Some(&sub_bpcov_stranded),
                     sub_bundle.start,
                 );
+                demote_runthrough_junctions(&mut sub_cjunctions, &sub_bpcov_stranded, sub_bundle.start);
                 good_junc(
                     &mut sub_cjunctions,
                     &sub_bpcov_stranded,
