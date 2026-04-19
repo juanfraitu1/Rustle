@@ -1365,7 +1365,17 @@ fn process_read_for_group(
                     // prevents color propagation — readcol takes group's color instead of merging.
                     // Equivalent in rustle: junction not in good_junctions (!has_good_left).
                     if ei > 0 && !has_good_left {
-                        readcol = group_color;
+                        // Gate: force fresh color instead of merging with existing group.
+                        // Matches StringTie's JUNC_COLOR_BREAK with strand_now=0 — prevents
+                        // reads crossing bad junctions from unifying two separate gene colors.
+                        if std::env::var_os("RUSTLE_FORCE_FRESH_COLOR_ON_BAD_JUNC").is_some() {
+                            usedcol[sno] = next_color as i64;
+                            readcol = next_color;
+                            eqcol.push(next_color);
+                            next_color += 1;
+                        } else {
+                            readcol = group_color;
+                        }
                     } else if readcol < group_color {
                         eqcol[group_color] = readcol;
                         strand_data.groups[ti].color = readcol;
@@ -1401,6 +1411,12 @@ fn process_read_for_group(
                     readcol = next_color;
                     eqcol.push(next_color);
                     next_color += 1;
+                    if std::env::var_os("RUSTLE_TRACE_COLORBREAK").is_some()
+                        && seg_start >= 17452000 && seg_start <= 17452500
+                    {
+                        eprintln!("COLOR_BREAK_FIRE seg_start={} prev_exon_end={} new_color={}",
+                            seg_start, active_read.exons[ei-1].1, next_color-1);
+                    }
                 }
 
                 let ngroup = strand_data.groups.len();
