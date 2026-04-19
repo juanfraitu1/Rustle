@@ -10569,6 +10569,60 @@ pub fn run<P: AsRef<Path>>(
         all_transcripts = kept;
     }
 
+    // Alternative-terminal emission: for each multi-exon tx, if the first
+    // or last exon has markedly lower per-base cov than inner median,
+    // emit an ALTERNATIVE tx form without it. Targets k-class over-
+    // extension where Rustle's emitted tx contains the ref but extends
+    // one extra exon beyond the ref's terminus.
+    //
+    // Gated opt-in. Both forms are emitted (not replace), so downstream
+    // matching + cov-frac filter decide survival.
+    if std::env::var_os("RUSTLE_ALT_TERMINAL_ON").is_some() {
+        let frac: f64 = std::env::var("RUSTLE_ALT_TERMINAL_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.50);
+        let min_first_cov_ratio: f64 = std::env::var("RUSTLE_ALT_TERMINAL_MIN_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.05);
+        let mut new_tx = Vec::new();
+        for tx in all_transcripts.iter() {
+            if tx.exons.len() < 4 { continue; }
+            if tx.exon_cov.len() != tx.exons.len() { continue; }
+            let percov: Vec<f64> = tx.exons.iter().zip(tx.exon_cov.iter())
+                .map(|(&(s,e), &c)| c / (e.saturating_sub(s).max(1) as f64)).collect();
+            let inner: Vec<f64> = percov[1..percov.len()-1].to_vec();
+            let mut sorted = inner.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let med = sorted[sorted.len()/2];
+            if med < 0.1 { continue; }
+            // First exon weak?
+            let first_ratio = percov[0] / med;
+            if first_ratio > min_first_cov_ratio && first_ratio < frac {
+                let mut alt = tx.clone();
+                alt.exons.remove(0);
+                alt.exon_cov.remove(0);
+                if !alt.intron_low.is_empty() { alt.intron_low.remove(0); }
+                alt.source = Some("alt_terminal_5p".to_string());
+                new_tx.push(alt);
+            }
+            // Last exon weak?
+            let n = percov.len();
+            let last_ratio = percov[n-1] / med;
+            if last_ratio > min_first_cov_ratio && last_ratio < frac {
+                let mut alt = tx.clone();
+                alt.exons.pop();
+                alt.exon_cov.pop();
+                if !alt.intron_low.is_empty() { alt.intron_low.pop(); }
+                alt.source = Some("alt_terminal_3p".to_string());
+                new_tx.push(alt);
+            }
+        }
+        if !new_tx.is_empty() {
+            if config.verbose {
+                eprintln!("rustle: alt_terminal emission: added {} alt-tx", new_tx.len());
+            }
+            all_transcripts.extend(new_tx);
+        }
+    }
+
     // Precision cleanup D (OPT-IN, regresses catastrophically): TRIM
     // (not drop) weakly-supported terminal exons. Hypothesis: converts
     // k-class over-extensions to shorter forms matching ref intron chain.
