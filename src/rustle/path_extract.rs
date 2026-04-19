@@ -7336,7 +7336,34 @@ pub fn extract_transcripts(
                     continue;
                 }
 
-                let rescue_nodes = &tf_nodes;
+                // Truncate rescue_nodes at hardend boundaries: if the
+                // transfrag spans past a node with hardend=true, the tx
+                // shouldn't extend beyond it (natural TTS). Targets
+                // k-class over-extension where transfrags span ref gene
+                // + downstream adjacent territory (e.g., STRG.187's
+                // 23-node rescued tx that should stop at node 14).
+                //
+                // Default off (RUSTLE_CHECKTRF_HARDEND_TRUNCATE=1 enables).
+                let truncate_at_hardend =
+                    std::env::var_os("RUSTLE_CHECKTRF_HARDEND_TRUNCATE").is_some();
+                let truncated_nodes: Vec<usize>;
+                let rescue_nodes: &[usize] = if truncate_at_hardend {
+                    let mut out = Vec::with_capacity(tf_nodes.len());
+                    for (i_pos, &nid) in tf_nodes.iter().enumerate() {
+                        out.push(nid);
+                        // Don't truncate at seed's first node (if hardend there, it'd be empty)
+                        if i_pos == 0 { continue; }
+                        if graph.nodes.get(nid).map(|n| n.hardend).unwrap_or(false) {
+                            break;
+                        }
+                    }
+                    if out.len() < 2 { &tf_nodes } else {
+                        truncated_nodes = out;
+                        &truncated_nodes
+                    }
+                } else {
+                    &tf_nodes
+                };
                 let mut complete = true;
                 for w in rescue_nodes.windows(2) {
                     let a = w[0];
@@ -7628,7 +7655,7 @@ pub fn extract_transcripts(
                         );
                     }
                 }
-                kept_paths.push((rescue_nodes.clone(), coverage, transfrags[t].guide, out_idx));
+                kept_paths.push((rescue_nodes.to_vec(), coverage, transfrags[t].guide, out_idx));
                 transfrags[t].abundance = 0.0;
             }
         }
