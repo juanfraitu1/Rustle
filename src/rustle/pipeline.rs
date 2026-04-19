@@ -5546,16 +5546,132 @@ fn extract_bundle_transcripts_for_graph(
             entry.0 += 1;
         }
 
+        // MAXIMAL-CHAIN filter (default on when direct_read_chain is on):
+        // For each chain C, if another chain C' in the pool has C as a
+        // contiguous subsequence AND C'.support >= C.support, skip C.
+        // Rationale: partial reads produce truncated chains that map to
+        // gffcompare `c` class (contained in ref), flooding precision.
+        // Keeping only MAXIMAL chains emits the longest read-supported
+        // form, which is more likely to be an `=` match.
+        let maximal_only = std::env::var_os("RUSTLE_DIRECT_READ_CHAIN_NO_MAXIMAL").is_none();
+        if maximal_only && !chain_groups.is_empty() {
+            // Build a list of (chain, support) sorted by chain length desc
+            let mut chains: Vec<(Vec<(u64, u64)>, usize)> = chain_groups.iter()
+                .map(|(c, v)| (c.clone(), v.0))
+                .collect();
+            chains.sort_by_key(|(c, _)| std::cmp::Reverse(c.len()));
+            // For each chain, check if any longer chain contains it as a contiguous subsequence
+            let is_subseq = |needle: &[(u64, u64)], hay: &[(u64, u64)]| -> bool {
+                if needle.len() > hay.len() { return false; }
+                for start in 0..=(hay.len() - needle.len()) {
+                    if hay[start..start + needle.len()] == needle[..] { return true; }
+                }
+                false
+            };
+            let mut to_remove: Vec<Vec<(u64, u64)>> = Vec::new();
+            for i in 0..chains.len() {
+                let (ci, si) = &chains[i];
+                // Check against all strictly LONGER chains
+                for j in 0..i {
+                    let (cj, sj) = &chains[j];
+                    if cj.len() <= ci.len() { continue; }
+                    if sj < si { continue; } // subsumes only if support >=
+                    if is_subseq(ci, cj) {
+                        to_remove.push(ci.clone());
+                        break;
+                    }
+                }
+            }
+            for key in to_remove {
+                chain_groups.remove(&key);
+            }
+        }
+
         // Already-emitted chains
         let existing_chains: std::collections::HashSet<Vec<(u64, u64)>> = txs.iter()
             .filter(|t| t.exons.len() >= 2)
             .map(|t| t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect())
             .collect();
 
+        // Replacement mode (default on when direct_read_chain is on):
+        // If chain C is a proper contiguous SUBSEQUENCE of an existing
+        // tx T's chain, AND T's source is checktrf_rescue/flow (not guide),
+        // AND C has more reads supporting it than T: replace T with C.
+        // Targets k-class over-extension (e.g., STRG.187 23-exon → 14-exon).
+        let replace_on = std::env::var_os("RUSTLE_DIRECT_READ_CHAIN_NO_REPLACE").is_none();
+        let mut indices_to_remove: Vec<usize> = Vec::new();
+        if replace_on {
+            let is_subseq = |needle: &[(u64, u64)], hay: &[(u64, u64)]| -> bool {
+                if needle.is_empty() || needle.len() > hay.len() { return false; }
+                for start in 0..=(hay.len() - needle.len()) {
+                    if hay[start..start + needle.len()] == needle[..] { return true; }
+                }
+                false
+            };
+            // Collect (candidate chain → (support, exons)) first
+            let valid_candidates: Vec<(Vec<(u64, u64)>, usize, Vec<(u64, u64)>, char)> =
+                chain_groups.iter()
+                    .filter(|(c, v)| v.0 >= min_reads && !existing_chains.contains(*c))
+                    .map(|(c, v)| (c.clone(), v.0, v.1.clone(), v.2))
+                    .collect();
+            // Replacement gates (conservative):
+            // - outer tx must have low longcov (< max_outer_support)
+            // - candidate must have strictly more support AND >= 2× outer
+            let max_outer_support: f64 = std::env::var("RUSTLE_DIRECT_READ_CHAIN_REPLACE_MAX_OUTER_SUPPORT")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+            let min_support_ratio: f64 = std::env::var("RUSTLE_DIRECT_READ_CHAIN_REPLACE_RATIO")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+            for (ti, tx) in txs.iter().enumerate() {
+                if tx.exons.len() < 2 { continue; }
+                // Only replace tx from checktrf_rescue (the over-extension source)
+                let src_match = tx.source.as_deref().map(|s|
+                    s == "checktrf_rescue"
+                ).unwrap_or(false);
+                if !src_match { continue; }
+                if tx.longcov >= max_outer_support { continue; }
+                let tx_chain: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                let tx_support = tx.longcov;
+                for (ch, csupp, _, _) in &valid_candidates {
+                    if ch.len() >= tx_chain.len() { continue; }
+                    if !is_subseq(ch, &tx_chain) { continue; }
+                    if (*csupp as f64) < tx_support * min_support_ratio { continue; }
+                    indices_to_remove.push(ti);
+                    break;
+                }
+            }
+            indices_to_remove.sort();
+            indices_to_remove.dedup();
+            // Remove in reverse order to preserve indices
+            for &idx in indices_to_remove.iter().rev() {
+                txs.remove(idx);
+            }
+        }
+
+        // Also collect full existing chains (as Vec) for containment check.
+        // This skips candidates that are proper subsequences of an already-
+        // emitted tx (flooding `c` class without gaining `=` matches).
+        let existing_chain_list: Vec<Vec<(u64, u64)>> = txs.iter()
+            .filter(|t| t.exons.len() >= 2)
+            .map(|t| t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect())
+            .collect();
+        let is_subseq = |needle: &[(u64, u64)], hay: &[(u64, u64)]| -> bool {
+            if needle.is_empty() || needle.len() > hay.len() { return false; }
+            for start in 0..=(hay.len() - needle.len()) {
+                if hay[start..start + needle.len()] == needle[..] { return true; }
+            }
+            false
+        };
+        let skip_if_contained =
+            std::env::var_os("RUSTLE_DIRECT_READ_CHAIN_NO_SKIP_CONTAINED").is_none();
+
         let mut added = 0usize;
         for (chain, (support, exons, strand)) in chain_groups {
             if support < min_reads { continue; }
             if existing_chains.contains(&chain) { continue; }
+            if skip_if_contained {
+                let contained = existing_chain_list.iter().any(|e| is_subseq(&chain, e));
+                if contained { continue; }
+            }
             // Emit as candidate
             txs.push(Transcript {
                 chrom: bundle.chrom.clone(),
