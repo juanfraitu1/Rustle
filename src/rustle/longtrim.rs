@@ -543,12 +543,30 @@ pub fn apply_longtrim_direct(
                         // enables adding source edges to adjacent children so STRG.110-class
                         // loci can still emit the downstream transcript. Default off
                         // because current impl regressed -2 matches on GGO_19.
+                        // Trailing-edge handler: node already ends at cut.
+                        // Default ON; disable via RUSTLE_LONGTRIM_TRAILING_EDGE_OFF=1.
+                        // Strictness (tuned on GGO_19 for +3 matches, recovers STRG.110):
+                        //  - tmpcov >= 100 (defaults; contrast signal strong enough)
+                        //  - b.cov >= 80 (many reads ending at boundary)
+                        let te_min_tmpcov: f64 = std::env::var("RUSTLE_LONGTRIM_TRAILING_EDGE_MIN_TMPCOV")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(100.0);
+                        let te_min_bcov: f64 = std::env::var("RUSTLE_LONGTRIM_TRAILING_EDGE_MIN_BCOV")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(80.0);
                         if cut >= prev_end
-                            && std::env::var_os("RUSTLE_LONGTRIM_TRAILING_EDGE").is_some()
+                            && std::env::var_os("RUSTLE_LONGTRIM_TRAILING_EDGE_OFF").is_none()
+                            && tmpcov >= te_min_tmpcov
+                            && b.cov >= te_min_bcov
                         {
+                            if std::env::var_os("RUSTLE_TRACE_LONGTRIM_TE").is_some() {
+                                eprintln!("LONGTRIM_TE_FIRE cur_nid={} pos={} cut={} prev_end={} tmpcov={:.2} bcov={:.1} children={}",
+                                    cur_nid, pos, cut, prev_end, tmpcov, b.cov,
+                                    graph.nodes[cur_nid].children.ones().count());
+                            }
                             graph.nodes[cur_nid].hardend = true;
                             graph.nodes[cur_nid].longtrim_cov = tmpcov;
-                            let children: Vec<usize> = graph.nodes[cur_nid].children.ones().collect();
+                            // Use old_children (pre-remove snapshot) since the loop
+                            // preamble cleared graph.nodes[cur_nid].children.
+                            let children: Vec<usize> = old_children.clone();
                             if !graph.nodes[cur_nid].children.contains(sink) {
                                 graph.add_edge(cur_nid, sink);
                                 let mut tf_sink = GraphTransfrag::new(
