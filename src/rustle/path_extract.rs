@@ -4660,6 +4660,36 @@ fn back_to_source_fast_long(
     }
     pathpat.set_bit(p);
     edge_set(pathpat, graph, p, i, true);
+
+    // StringTie-parity PATHPAT_OR gate (DEFAULT ON): after speculatively
+    // setting the parent node bit + edge bit, check if OR-ing the chosen
+    // transfrag's pattern adds any new bits. If new_bits == 0, the
+    // transfrag brings no additional information beyond what
+    // speculative-set already covers — StringTie rejects extension here
+    // (reason=back_tmax new_bits=0). Ported to match StringTie's
+    // DEEP_PATH_EXTEND gate. Disable via RUSTLE_BACK_PATHPAT_OR_GATE_OFF=1.
+    if std::env::var_os("RUSTLE_BACK_PATHPAT_OR_GATE_OFF").is_none() {
+        if let Some(t) = tmax {
+            let before = pathpat.count_ones();
+            let mut speculative = pathpat.clone();
+            speculative.or_assign(&transfrags[t].pattern);
+            let after = speculative.count_ones();
+            if std::env::var_os("RUSTLE_TRACE_PATHPAT_GATE").is_some() {
+                eprintln!("[PATHPAT_OR_GATE] p={} tmax={} before={} after={} new_bits={}",
+                    p, t, before, after, after - before);
+            }
+            if after == before && before > 0 {
+                // Revert: we set_bit(p) and edge_set(..., true). Undo those
+                // and pop p from path. Extension stops here.
+                edge_set(pathpat, graph, p, i, false);
+                pathpat.clear_bit(p);
+                if p != source && path.last() == Some(&p) {
+                    path.pop();
+                }
+                return true;
+            }
+        }
+    }
     if let Some(t) = tmax {
         if trace_back {
             let tf = &transfrags[t];
