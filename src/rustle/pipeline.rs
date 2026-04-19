@@ -7255,6 +7255,23 @@ pub fn run<P: AsRef<Path>>(
         // valid splice strand, matching per-read junction replacement.
         let mut good_junctions_set: HashSet<crate::types::Junction> =
             junctions.iter().copied().collect();
+        // Remove mm<0 junctions: these are "run-through" demotions from
+        // HE_CONT_R_DEMOTE, NOT real splices. Keeping them in good_junctions_set
+        // lets bundle_builder bridge across gene boundaries (STRG.29/STRG.31 case).
+        // Disable via RUSTLE_ALLOW_MM_NEG_IN_GOOD=1.
+        if std::env::var_os("RUSTLE_ALLOW_MM_NEG_IN_GOOD").is_none() {
+            let to_remove: Vec<crate::types::Junction> = good_junctions_set
+                .iter()
+                .filter_map(|j| {
+                    junction_stats_corr_final.get(j).and_then(|s| {
+                        if s.mm < 0.0 { Some(*j) } else { None }
+                    })
+                })
+                .collect();
+            for j in to_remove {
+                good_junctions_set.remove(&j);
+            }
+        }
         // Add mm<0 junctions with non-zero strand to good_junctions (read-redirect compatibility).
         // StringTie's read loop sets strand=0 for mm<0 junctions, then creates replacement
         // junctions with the read's strand.  We approximate this by keeping the originals
