@@ -10569,6 +10569,54 @@ pub fn run<P: AsRef<Path>>(
         all_transcripts = kept;
     }
 
+    // Focused TSS/TTS trim: only emit alt-form for SHORT first/last exon
+    // with weak cov. Targets k-class over-extension with minimal noise
+    // (short extra exons are more likely real UTR artifacts).
+    if std::env::var_os("RUSTLE_SHORT_TERMINAL_TRIM_ON").is_some() {
+        let max_len: u64 = std::env::var("RUSTLE_SHORT_TERMINAL_MAX_LEN")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(500);
+        let cov_frac: f64 = std::env::var("RUSTLE_SHORT_TERMINAL_COV_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.50);
+        let mut new_tx = Vec::new();
+        for tx in all_transcripts.iter() {
+            if tx.exons.len() < 3 { continue; }
+            if tx.exon_cov.len() != tx.exons.len() { continue; }
+            // exon_cov is already PER-BASE (addcov_bp / exon_len)
+            let percov: Vec<f64> = tx.exon_cov.clone();
+            let n = tx.exons.len();
+            // First exon: short AND weak cov
+            let (e0s, e0e) = tx.exons[0];
+            let e0_len = e0e.saturating_sub(e0s);
+            let e1_cov = percov[1];
+            if e0_len <= max_len && percov[0] < e1_cov * cov_frac && percov[0] > 0.1 {
+                let mut alt = tx.clone();
+                alt.exons.remove(0);
+                alt.exon_cov.remove(0);
+                if !alt.intron_low.is_empty() { alt.intron_low.remove(0); }
+                alt.source = Some("short_terminal_5p".to_string());
+                new_tx.push(alt);
+            }
+            // Last exon: short AND weak
+            let (el_s, el_e) = tx.exons[n-1];
+            let el_len = el_e.saturating_sub(el_s);
+            let el_prev_cov = percov[n-2];
+            if el_len <= max_len && percov[n-1] < el_prev_cov * cov_frac && percov[n-1] > 0.1 {
+                let mut alt = tx.clone();
+                alt.exons.pop();
+                alt.exon_cov.pop();
+                if !alt.intron_low.is_empty() { alt.intron_low.pop(); }
+                alt.source = Some("short_terminal_3p".to_string());
+                new_tx.push(alt);
+            }
+        }
+        if !new_tx.is_empty() {
+            if config.verbose {
+                eprintln!("rustle: short_terminal_trim added {} alt-tx", new_tx.len());
+            }
+            all_transcripts.extend(new_tx);
+        }
+    }
+
     // Alternative-terminal emission: for each multi-exon tx, if the first
     // or last exon has markedly lower per-base cov than inner median,
     // emit an ALTERNATIVE tx form without it. Targets k-class over-
