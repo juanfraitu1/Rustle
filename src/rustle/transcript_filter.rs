@@ -4605,11 +4605,22 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                 // marked low-coverage. Rustle's prior check required full containment
                 // (middle_exon case only); now allow partial overlap but ONLY when
                 // intron_low bit for that n1 intron is set.
-                // Opt-in via RUSTLE_XSTRAND_LOWINTRON=1. Default off because the
-                // 4-condition port kills 27 legit matches (StringTie applies additional
-                // guards like small-exon terminus check before retainedintron that we
-                // don't port yet).
-                let use_lowintron_gate = !txs[n1].intron_low.is_empty()
+                // StringTie's rlink.cpp:19049 gates retainedintron on `overlaps.get(n1,n2)`:
+                // n1 and n2 must have substantial exon-to-exon overlap, not just
+                // coord-range touch. Require MULTIPLE n2 exons to overlap n1's exon
+                // region (not just one terminal exon briefly touching n1's tail).
+                let overlap_bp_total: u64 = txs[n1].exons.iter().map(|&(s1, e1)| {
+                    txs[n2].exons.iter().map(|&(s2, e2)| {
+                        let lo = s1.max(s2);
+                        let hi = e1.min(e2);
+                        if hi > lo { hi - lo } else { 0 }
+                    }).sum::<u64>()
+                }).sum();
+                let min_overlap_bp: u64 = std::env::var("RUSTLE_XSTRAND_MIN_OVERLAP")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+                let substantial_overlap = overlap_bp_total >= min_overlap_bp;
+                let use_lowintron_gate = substantial_overlap
+                    && !txs[n1].intron_low.is_empty()
                     && txs[n1].intron_low.len() == txs[n1].exons.len().saturating_sub(1)
                     && std::env::var_os("RUSTLE_XSTRAND_LOWINTRON").is_some();
                 // Three criterion modes:
@@ -4691,6 +4702,20 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                     })
                 };
                 if killed {
+                    if std::env::var_os("RUSTLE_TRACE_LOWINTRON_KILLS").is_some() {
+                        let n1s = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
+                        let n1e = txs[n1].exons.last().map(|e| e.1).unwrap_or(0);
+                        let n2s = txs[n2].exons.first().map(|e| e.0).unwrap_or(0);
+                        let n2e = txs[n2].exons.last().map(|e| e.1).unwrap_or(0);
+                        eprintln!(
+                            "LOWINTRON_KILL n2={}..{}({}) n1={}..{}({}) n1cov={:.2} n2cov={:.2} n1_exons={} n2_exons={} lowintron_bits={}",
+                            n2s, n2e, txs[n2].strand,
+                            n1s, n1e, txs[n1].strand,
+                            txs[n1].coverage, txs[n2].coverage,
+                            txs[n1].exons.len(), txs[n2].exons.len(),
+                            txs[n1].intron_low.iter().filter(|&&b| b).count(),
+                        );
+                    }
                     dead.insert_grow(n2);
                 }
             }
