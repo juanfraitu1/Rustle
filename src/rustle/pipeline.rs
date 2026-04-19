@@ -5139,6 +5139,231 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
+    // Orphan-junction rescue: for each junction in bundle.junction_stats with
+    // substantial read support that is NOT used by any emitted tx, walk the
+    // graph to synthesize a tx around it. Targets the "gene-inside-intron"
+    // class where a small gene's junction (12 reads) is overshadowed by a
+    // bridging junction (1354 reads) and gets absorbed.
+    //
+    // Default on; RUSTLE_ORPHAN_JUNC_RESCUE_OFF=1 to disable.
+    if std::env::var_os("RUSTLE_ORPHAN_JUNC_RESCUE_OFF").is_none() && !txs.is_empty() {
+        let min_reads: f64 = std::env::var("RUSTLE_ORPHAN_JUNC_MIN_READS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(10.0);
+        let max_walk: usize = std::env::var("RUSTLE_ORPHAN_JUNC_MAX_WALK")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+
+        // Collect junction pairs used in emitted tx.
+        // IMPORTANT: junction convention is (prev_exon.end, next_exon.start-1)
+        // in external coords. Internally our exons store [start, end) half-open
+        // but WRITTEN as GTF (start+1, end). The JunctionStats uses coords
+        // compatible with StringTie: donor = exon_end (GTF inclusive),
+        // acceptor = next_exon_start - 1. So for internal exon [start, end),
+        // exon_end_GTF == end (as written). Next exon start (GTF inclusive) ==
+        // next_exon.start + 1 (internal half-open means internal start is
+        // GTF start - 1). So acceptor = next_exon.start + 1 - 1 = next_exon.start.
+        // Wait: internal next_exon.start is written as start+1 in GTF. So
+        // GTF next_exon_start - 1 = internal_start + 1 - 1 = internal_start.
+        // Thus used_juncs key = (internal_exon.end, internal_next_exon.start).
+        let mut used_juncs: std::collections::HashSet<(u64, u64)> =
+            std::collections::HashSet::new();
+        for tx in txs.iter() {
+            for i in 0..tx.exons.len().saturating_sub(1) {
+                let d = tx.exons[i].1;
+                let a = tx.exons[i + 1].0;
+                used_juncs.insert((d, a));
+            }
+        }
+        if std::env::var_os("RUSTLE_TRACE_ORPHAN_JUNC").is_some() {
+            eprintln!("ORPHAN_JUNC_USED bundle={}:{}-{} used_count={} txs={}",
+                bundle.chrom, bundle.start, bundle.end, used_juncs.len(), txs.len());
+            for tx in txs.iter() {
+                eprintln!("  tx exons={:?} cov={:.2} longcov={:.2} src={:?}",
+                    tx.exons, tx.coverage, tx.longcov, tx.source);
+            }
+        }
+
+        // Build node lookup: donor_end → node, acceptor_start → node
+        let src = graph_mut.source_id;
+        let snk = graph_mut.sink_id;
+        let mut end_to_node: std::collections::HashMap<u64, usize> =
+            std::collections::HashMap::new();
+        let mut start_to_node: std::collections::HashMap<u64, usize> =
+            std::collections::HashMap::new();
+        for (nid, n) in graph_mut.nodes.iter().enumerate() {
+            if nid == src || nid == snk { continue; }
+            if n.end <= n.start { continue; }
+            end_to_node.insert(n.end, nid);
+            start_to_node.insert(n.start, nid);
+        }
+
+        let mut rescued: Vec<Transcript> = Vec::new();
+        let mut emitted_chains: std::collections::HashSet<Vec<(u64, u64)>> =
+            txs.iter().map(|t| t.exons.clone()).collect();
+
+        let trace = std::env::var_os("RUSTLE_TRACE_ORPHAN_JUNC").is_some();
+        // Iterate orphan junctions
+        for (junc, stat) in bundle.junction_stats.iter() {
+            if stat.mrcount < min_reads { continue; }
+            if used_juncs.contains(&(junc.donor, junc.acceptor)) {
+                if trace {
+                    eprintln!("ORPHAN_JUNC SKIP {}:{}-{} reason=used nreads={:.0}",
+                        bundle.chrom, junc.donor, junc.acceptor, stat.mrcount);
+                }
+                continue;
+            }
+            // Filter by strand match with bundle
+            let bundle_strand_i = match bundle.strand {
+                '+' => Some(1i8),
+                '-' => Some(-1),
+                _ => None,
+            };
+            if let (Some(bs), Some(js)) = (bundle_strand_i, stat.strand) {
+                if bs != js && js != 0 { continue; }
+            }
+            // Find graph nodes flanking the junction
+            let n_d = match end_to_node.get(&junc.donor) {
+                Some(&n) => n,
+                None => {
+                    if trace {
+                        eprintln!("ORPHAN_JUNC SKIP {}:{}-{} reason=no_donor_node nreads={:.0}",
+                            bundle.chrom, junc.donor, junc.acceptor, stat.mrcount);
+                    }
+                    continue;
+                }
+            };
+            let n_a = match start_to_node.get(&junc.acceptor) {
+                Some(&n) => n,
+                None => {
+                    if trace {
+                        eprintln!("ORPHAN_JUNC SKIP {}:{}-{} reason=no_acceptor_node nreads={:.0}",
+                            bundle.chrom, junc.donor, junc.acceptor, stat.mrcount);
+                    }
+                    continue;
+                }
+            };
+            if !graph_mut.nodes[n_d].children.contains(n_a) {
+                if trace {
+                    eprintln!("ORPHAN_JUNC SKIP {}:{}-{} reason=no_edge nreads={:.0}",
+                        bundle.chrom, junc.donor, junc.acceptor, stat.mrcount);
+                }
+                continue;
+            }
+
+            // Walk backward from n_d to source via highest-cov parents
+            let mut before: Vec<usize> = vec![n_d];
+            let mut cur = n_d;
+            let mut steps = 0;
+            while cur != src && steps < max_walk {
+                let parents: Vec<usize> = graph_mut.nodes[cur].parents.ones().collect();
+                if parents.is_empty() { break; }
+                // Prefer source if reachable and we have at least 1 real node
+                if parents.contains(&src) { break; }
+                let best = parents.iter()
+                    .filter(|&&p| p != snk && p != src)
+                    .filter(|&&p| graph_mut.nodes[p].end > graph_mut.nodes[p].start)
+                    .max_by(|&&a, &&b| graph_mut.nodes[a].coverage
+                        .partial_cmp(&graph_mut.nodes[b].coverage)
+                        .unwrap_or(std::cmp::Ordering::Equal));
+                match best {
+                    Some(&p) => {
+                        if before.contains(&p) { break; } // cycle guard
+                        before.push(p);
+                        cur = p;
+                    }
+                    None => break,
+                }
+                steps += 1;
+            }
+            before.reverse();
+
+            // Walk forward from n_a to sink via highest-cov children
+            let mut after: Vec<usize> = vec![n_a];
+            cur = n_a;
+            steps = 0;
+            while cur != snk && steps < max_walk {
+                let children: Vec<usize> = graph_mut.nodes[cur].children.ones().collect();
+                if children.is_empty() { break; }
+                if children.contains(&snk) { break; }
+                let best = children.iter()
+                    .filter(|&&c| c != src && c != snk)
+                    .filter(|&&c| graph_mut.nodes[c].end > graph_mut.nodes[c].start)
+                    .max_by(|&&a, &&b| graph_mut.nodes[a].coverage
+                        .partial_cmp(&graph_mut.nodes[b].coverage)
+                        .unwrap_or(std::cmp::Ordering::Equal));
+                match best {
+                    Some(&c) => {
+                        if after.contains(&c) { break; }
+                        after.push(c);
+                        cur = c;
+                    }
+                    None => break,
+                }
+                steps += 1;
+            }
+
+            let mut full_path: Vec<usize> = before;
+            full_path.extend(after.iter().copied());
+
+            // Require at least 2 real (non-degenerate) nodes total
+            let real_nodes: Vec<usize> = full_path.iter()
+                .copied()
+                .filter(|&n| n != src && n != snk)
+                .filter(|&n| graph_mut.nodes[n].end > graph_mut.nodes[n].start)
+                .collect();
+            if real_nodes.len() < 2 { continue; }
+
+            // Convert to exons (merge abutting)
+            let mut exons: Vec<(u64, u64)> = Vec::new();
+            for &nid in &real_nodes {
+                let n = &graph_mut.nodes[nid];
+                if let Some(last) = exons.last_mut() {
+                    if last.1 == n.start { last.1 = n.end; continue; }
+                }
+                exons.push((n.start, n.end));
+            }
+            if exons.len() < 2 { continue; }
+            if emitted_chains.contains(&exons) { continue; }
+            emitted_chains.insert(exons.clone());
+
+            // Coverage: use junction nreads / length as proxy
+            let est_cov = stat.mrcount;
+            rescued.push(Transcript {
+                chrom: bundle.chrom.clone(),
+                strand: bundle.strand,
+                exons,
+                coverage: est_cov,
+                exon_cov: Vec::new(),
+                tpm: 0.0,
+                fpkm: 0.0,
+                source: Some("orphan_junc_rescue".to_string()),
+                is_longread: true,
+                longcov: est_cov,
+                bpcov_cov: 0.0,
+                transcript_id: None,
+                gene_id: None,
+                ref_transcript_id: None,
+                ref_gene_id: None,
+                hardstart: false,
+                hardend: false,
+                vg_family_id: None,
+                vg_copy_id: None,
+                vg_family_size: None,
+                intron_low: Vec::new(),
+            });
+        }
+
+        if !rescued.is_empty() {
+            if std::env::var_os("RUSTLE_TRACE_ORPHAN_JUNC").is_some() {
+                eprintln!("ORPHAN_JUNC_RESCUE bundle={}:{}-{} rescued={}",
+                    bundle.chrom, bundle.start, bundle.end, rescued.len());
+                for t in &rescued {
+                    eprintln!("  tx exons={:?} cov={:.2}", t.exons, t.coverage);
+                }
+            }
+            txs.extend(rescued);
+        }
+    }
+
     // Intra-intron rescue: for each emitted tx, scan large introns
     // (>= min_intron bp) for graph nodes entirely contained within the
     // intron region. Connect them into sub-paths (via graph edges) and
@@ -10426,16 +10651,21 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // Precision cleanup: for each cluster of overlapping same-strand tx,
-    // compute max coverage and drop tx whose cov < alpha × max. Targets the
-    // 98% of gffcompare `j`-class noise (novel-isoform over-emission of a
-    // gene where a sibling already matched).
+    // Precision cleanup: group tx by Rustle's own gene-assignment (exon-
+    // overlap union-find, same algorithm as GTF gene numbering). Within
+    // each gene, drop tx with cov < alpha × max-sibling-cov. Targets
+    // gffcompare j-class noise (novel-isoform over-emission) while
+    // correctly sparing nested genes that sit inside an intron of a
+    // larger transcript (zero exon overlap → separate gene group).
     if std::env::var_os("RUSTLE_INTRA_GENE_COV_FRAC_OFF").is_none() {
         let alpha: f64 = std::env::var("RUSTLE_INTRA_GENE_COV_FRAC")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.010);
-        if alpha > 0.0 {
-            // Sort by chrom+strand+start; cluster overlapping tx.
-            let mut idx: Vec<usize> = (0..all_transcripts.len()).collect();
+        if alpha > 0.0 && !all_transcripts.is_empty() {
+            let n = all_transcripts.len();
+            let mut keep = vec![true; n];
+
+            // Sort indices by chrom/strand/start to limit pairwise scan
+            let mut idx: Vec<usize> = (0..n).collect();
             idx.sort_by(|&a, &b| {
                 let ta = &all_transcripts[a];
                 let tb = &all_transcripts[b];
@@ -10444,14 +10674,35 @@ pub fn run<P: AsRef<Path>>(
                     .then(ta.exons.first().map(|e| e.0).unwrap_or(0)
                         .cmp(&tb.exons.first().map(|e| e.0).unwrap_or(0)))
             });
-            let mut keep = vec![true; all_transcripts.len()];
+
+            // Test if tx `b` sits entirely inside an intron of tx `a`.
+            // Returns true if b.span is within [a.exon[i].end, a.exon[i+1].start]
+            // for some i. This is the "nested gene" case — should be exempt
+            // from cov-frac filtering because b is biologically independent.
+            let b_in_a_intron = |a: &Transcript, b: &Transcript| -> bool {
+                if a.exons.len() < 2 { return false; }
+                let bs = b.exons.first().map(|e| e.0).unwrap_or(0);
+                let be = b.exons.last().map(|e| e.1).unwrap_or(0);
+                for i in 0..a.exons.len() - 1 {
+                    let intron_start = a.exons[i].1;
+                    let intron_end = a.exons[i + 1].0;
+                    if bs >= intron_start && be <= intron_end {
+                        return true;
+                    }
+                }
+                false
+            };
+
+            // Sliding window over span-overlapping tx on same chrom/strand.
+            // For each cluster, compute max cov; drop each tx with
+            // cov < alpha × max UNLESS it sits entirely inside an intron of
+            // the max-cov sibling (nested-gene exemption).
             let mut i = 0;
             while i < idx.len() {
                 let a = idx[i];
                 let ta = &all_transcripts[a];
-                let t_end = ta.exons.last().map(|e| e.1).unwrap_or(0);
                 let mut cluster = vec![a];
-                let mut max_end = t_end;
+                let mut max_end = ta.exons.last().map(|e| e.1).unwrap_or(0);
                 let mut j = i + 1;
                 while j < idx.len() {
                     let b = idx[j];
@@ -10469,8 +10720,20 @@ pub fn run<P: AsRef<Path>>(
                         .map(|&k| all_transcripts[k].coverage)
                         .fold(0.0f64, f64::max);
                     let thr = max_cov * alpha;
+                    // Find the max-cov members (there may be more than one
+                    // tied on cov); we'll exempt `k` if it's nested inside
+                    // any higher-cov cluster member.
                     for &k in &cluster {
-                        if all_transcripts[k].coverage < thr {
+                        let tk = &all_transcripts[k];
+                        if tk.coverage >= thr { continue; }
+                        // Check exemption: is tk entirely inside an intron
+                        // of some higher-cov cluster member?
+                        let exempt = cluster.iter().any(|&m| {
+                            m != k
+                                && all_transcripts[m].coverage > tk.coverage
+                                && b_in_a_intron(&all_transcripts[m], tk)
+                        });
+                        if !exempt {
                             keep[k] = false;
                         }
                     }

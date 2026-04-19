@@ -35,7 +35,7 @@ fn uf_find(parent: &mut Vec<usize>, x: usize) -> usize {
 /// Two transcripts belong to the same gene iff their exons share at least one base —
 /// matching print_predcluster (~line 19230) which uses overlaps.get(i,j).
 /// Returns (gene_no, transcript_no_within_gene) per input transcript index.
-fn assign_gene_tx_numbers(transcripts: &[Transcript]) -> Vec<(usize, usize)> {
+pub fn assign_gene_tx_numbers(transcripts: &[Transcript]) -> Vec<(usize, usize)> {
     let n = transcripts.len();
     let mut out = vec![(0usize, 0usize); n];
     if n == 0 {
