@@ -4616,13 +4616,28 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                         if hi > lo { hi - lo } else { 0 }
                     }).sum::<u64>()
                 }).sum();
+                // Count n2 exons with any overlap to n1's span
+                let n1_span_start = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
+                let n1_span_end = txs[n1].exons.last().map(|e| e.1).unwrap_or(0);
+                let n2_exons_in_n1: usize = txs[n2].exons.iter()
+                    .filter(|&&(s2, e2)| s2 < n1_span_end && e2 > n1_span_start)
+                    .count();
+                // Defaults tuned via trace diff: min_overlap=100, min_n2_exons=2.
+                // At these thresholds the gate is net-positive (removes 1 bogus + strand
+                // STRG.29-merged tx) without killing any legit StringTie matches.
+                // For tighter filtering: lower min_n2_exons to 1 (kills 44669742 extras
+                // but costs 7 matches globally).
                 let min_overlap_bp: u64 = std::env::var("RUSTLE_XSTRAND_MIN_OVERLAP")
-                    .ok().and_then(|v| v.parse().ok()).unwrap_or(200);
-                let substantial_overlap = overlap_bp_total >= min_overlap_bp;
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+                let min_n2_exons: usize = std::env::var("RUSTLE_XSTRAND_MIN_N2_EXONS")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+                let substantial_overlap = overlap_bp_total >= min_overlap_bp
+                    && n2_exons_in_n1 >= min_n2_exons;
+                // Default ON; disable via RUSTLE_XSTRAND_LOWINTRON_OFF=1.
                 let use_lowintron_gate = substantial_overlap
                     && !txs[n1].intron_low.is_empty()
                     && txs[n1].intron_low.len() == txs[n1].exons.len().saturating_sub(1)
-                    && std::env::var_os("RUSTLE_XSTRAND_LOWINTRON").is_some();
+                    && std::env::var_os("RUSTLE_XSTRAND_LOWINTRON_OFF").is_none();
                 // Three criterion modes:
                 // - RUSTLE_XSTRAND_C4_PARTIAL=1: ANY overlap + lowintron gate (broad; tends to regress)
                 // - default (with lowintron): full-containment + lowintron gate
