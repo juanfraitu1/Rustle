@@ -751,13 +751,45 @@ pub fn apply_longtrim_direct(
                 let right_sum = bpcov.get_cov_range(bpcov.idx(curr.start), bpcov.idx(hi_end));
                 let left_avg = left_sum / (node.end - lo_start).max(1) as f64;
                 let right_avg = right_sum / (hi_end - curr.start).max(1) as f64;
-                if left_avg <= min_low && right_avg >= min_high
-                    && right_avg >= left_avg * ratio_thr
-                {
+                // Coherent-downstream gate: the "high" side must be a coherent
+                // locus (sustained cov, no further jumps over K adjacent nodes).
+                // Prevents fragmenting a downstream gene whose graph has many
+                // short junction-split nodes.
+                let coh_k: usize = std::env::var("RUSTLE_BPCOV_JUMP_COHERENT_K")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                let coh_min_frac: f64 = std::env::var("RUSTLE_BPCOV_JUMP_COHERENT_MIN_FRAC")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(0.25);
+                let is_up_cand = left_avg <= min_low && right_avg >= min_high
+                    && right_avg >= left_avg * ratio_thr;
+                let is_down_cand = right_avg <= min_low && left_avg >= min_high
+                    && left_avg >= right_avg * ratio_thr;
+                if !is_up_cand && !is_down_cand { continue; }
+                // Walk K adjacent same-direction nodes on the HIGH side,
+                // requiring each to maintain avg >= high_avg * coh_min_frac
+                // and not drop below min_high*coh_min_frac anywhere.
+                let (high_start_nid, high_ref_avg) = if is_up_cand { (c, right_avg) } else { (nid, left_avg) };
+                let mut coherent = true;
+                let threshold = (high_ref_avg * coh_min_frac).max(min_high * coh_min_frac);
+                let mut walker = high_start_nid;
+                for _ in 0..coh_k {
+                    let wn = &graph.nodes[walker];
+                    if wn.end <= wn.start { coherent = false; break; }
+                    let wlen = wn.end - wn.start;
+                    let wsum = bpcov.get_cov_range(bpcov.idx(wn.start), bpcov.idx(wn.end));
+                    let wavg = wsum / wlen as f64;
+                    if wavg < threshold { coherent = false; break; }
+                    // pick next adjacent child (same strand continuation)
+                    let next: Option<usize> = if is_up_cand {
+                        wn.children.ones().find(|&ch| ch != sink && graph.nodes[ch].start == wn.end)
+                    } else {
+                        wn.parents.ones().find(|&pp| pp != source && graph.nodes[pp].end == wn.start)
+                    };
+                    match next { Some(x) => walker = x, None => break }
+                }
+                if !coherent { continue; }
+                if is_up_cand {
                     boundary_jumps.push((nid, c, (right_avg - left_avg).abs(), true));
-                } else if right_avg <= min_low && left_avg >= min_high
-                    && left_avg >= right_avg * ratio_thr
-                {
+                } else {
                     boundary_jumps.push((nid, c, (left_avg - right_avg).abs(), false));
                 }
             }
