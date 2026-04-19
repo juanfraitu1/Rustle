@@ -5069,6 +5069,27 @@ fn extract_bundle_transcripts_for_graph(
         trace_stage("filter_by_min_junction_support", &txs);
     }
 
+    // Hybrid-path re-exploration (opt-in, AFTER all per-bundle filters so
+    // hybrids don't cause collateral kills via pairwise/isofrac/retainedintron).
+    if std::env::var_os("RUSTLE_HYBRID_PATH_REEXPLORE").is_some() && !txs.is_empty() {
+        let hybrids = crate::path_extract::hybrid_path_reexplore(
+            graph_mut,
+            &txs,
+            &bundle.chrom,
+            bundle.strand,
+            good_junctions,
+        );
+        if !hybrids.is_empty() {
+            if std::env::var_os("RUSTLE_TRACE_HYBRID").is_some() {
+                eprintln!(
+                    "HYBRID_REEXPLORE bundle={}:{}-{} existing={} hybrids={}",
+                    bundle.chrom, bundle.start, bundle.end, txs.len(), hybrids.len()
+                );
+            }
+            txs.extend(hybrids);
+        }
+    }
+
     // IMPORTANT: TPM/FPKM must be computed globally across the whole run.
     // Doing this per-bundle makes TPM sums explode by ~#bundles and breaks any
     // downstream interpretation. We compute once at the end of `run()`.

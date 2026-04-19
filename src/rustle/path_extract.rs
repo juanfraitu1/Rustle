@@ -7786,20 +7786,6 @@ pub fn extract_transcripts(
         }
     }
 
-    // Hybrid-path re-exploration: for each extracted tx, walk its node path,
-    // and at each internal node explore alternative children/parents that
-    // weren't taken, greedily completing to sink/source by best-coverage.
-    // Emits candidate hybrid paths as new Transcripts. Gated opt-in.
-    if std::env::var_os("RUSTLE_HYBRID_PATH_REEXPLORE").is_some() {
-        let hybrids = hybrid_path_reexplore(graph, &out, bundle_chrom, bundle_strand);
-        if !hybrids.is_empty() {
-            if std::env::var_os("RUSTLE_TRACE_HYBRID").is_some() {
-                eprintln!("HYBRID_REEXPLORE bundle={} added {} hybrid paths", bundle_id, hybrids.len());
-            }
-            out.extend(hybrids);
-        }
-    }
-
     out
 }
 
@@ -7854,9 +7840,10 @@ fn node_path_to_exons(graph: &Graph, path: &[usize]) -> Vec<(u64, u64)> {
     exons
 }
 
-/// Greedy completion: from start_node, walk to sink picking highest-coverage
-/// child at each step. Excludes source/sink from intermediate nodes.
-fn greedy_to_sink(graph: &Graph, start: usize, max_len: usize) -> Option<Vec<usize>> {
+/// Least-visited completion: from start_node, walk to sink picking the child
+/// with LOWEST usage (tie-break by highest coverage). This explores hybrid
+/// regions rather than reconstructing the dominant already-extracted path.
+fn greedy_to_sink(graph: &Graph, start: usize, max_len: usize, usage: &[u32]) -> Option<Vec<usize>> {
     let mut path = vec![start];
     let mut cur = start;
     let mut steps = 0;
@@ -7869,19 +7856,20 @@ fn greedy_to_sink(graph: &Graph, start: usize, max_len: usize) -> Option<Vec<usi
         if children.contains(&graph.sink_id) && path.len() > 1 {
             return Some(path);
         }
-        // Pick non-sink child with max coverage
-        let mut best: Option<(usize, f64)> = None;
+        // Pick child with min usage, tie-break by max coverage
+        let mut best: Option<(usize, u32, f64)> = None;
         for &c in &children {
             if c == graph.sink_id {
                 continue;
             }
+            let u = usage.get(c).copied().unwrap_or(0);
             let cov = graph.nodes[c].coverage;
-            if best.map_or(true, |(_, bc)| cov > bc) {
-                best = Some((c, cov));
+            if best.map_or(true, |(_, bu, bc)| u < bu || (u == bu && cov > bc)) {
+                best = Some((c, u, cov));
             }
         }
         match best {
-            Some((nxt, _)) => {
+            Some((nxt, _, _)) => {
                 path.push(nxt);
                 cur = nxt;
             }
@@ -7892,8 +7880,8 @@ fn greedy_to_sink(graph: &Graph, start: usize, max_len: usize) -> Option<Vec<usi
     Some(path)
 }
 
-/// Greedy completion backward: from end_node, walk to source by parents.
-fn greedy_to_source(graph: &Graph, end: usize, max_len: usize) -> Option<Vec<usize>> {
+/// Least-visited completion backward: from end_node, walk to source by parents.
+fn greedy_to_source(graph: &Graph, end: usize, max_len: usize, usage: &[u32]) -> Option<Vec<usize>> {
     let mut path = vec![end];
     let mut cur = end;
     let mut steps = 0;
@@ -7906,18 +7894,19 @@ fn greedy_to_source(graph: &Graph, end: usize, max_len: usize) -> Option<Vec<usi
             path.reverse();
             return Some(path);
         }
-        let mut best: Option<(usize, f64)> = None;
+        let mut best: Option<(usize, u32, f64)> = None;
         for &p in &parents {
             if p == graph.source_id {
                 continue;
             }
+            let u = usage.get(p).copied().unwrap_or(0);
             let cov = graph.nodes[p].coverage;
-            if best.map_or(true, |(_, bc)| cov > bc) {
-                best = Some((p, cov));
+            if best.map_or(true, |(_, bu, bc)| u < bu || (u == bu && cov > bc)) {
+                best = Some((p, u, cov));
             }
         }
         match best {
-            Some((prv, _)) => {
+            Some((prv, _, _)) => {
                 path.push(prv);
                 cur = prv;
             }
@@ -7933,11 +7922,12 @@ fn greedy_to_source(graph: &Graph, end: usize, max_len: usize) -> Option<Vec<usi
 }
 
 /// Build hybrid candidates from existing transcripts.
-fn hybrid_path_reexplore(
+pub fn hybrid_path_reexplore(
     graph: &Graph,
     existing: &[Transcript],
     chrom: &str,
     strand: char,
+    good_junctions: &crate::types::DetHashSet<(u64, u64)>,
 ) -> Vec<Transcript> {
     let min_cov: f64 = std::env::var("RUSTLE_HYBRID_MIN_COV")
         .ok()
@@ -7947,50 +7937,95 @@ fn hybrid_path_reexplore(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(4);
+    let max_per_bundle: usize = std::env::var("RUSTLE_HYBRID_MAX_PER_BUNDLE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
     let max_len = graph.nodes.len().saturating_add(2);
 
     // Dedup keys from existing tx (intron chain = all exon boundaries)
     let mut seen: std::collections::HashSet<Vec<(u64, u64)>> =
         existing.iter().map(|t| t.exons.clone()).collect();
 
+    // Precompute node paths for all existing txs once.
+    let existing_paths: Vec<Vec<usize>> = existing.iter().map(|t| tx_to_node_path(graph, t)).collect();
+
+    // Per-node usage count across existing txs.
+    let mut usage: Vec<u32> = vec![0; graph.nodes.len()];
+    for p in &existing_paths {
+        for &n in p {
+            if n < usage.len() {
+                usage[n] = usage[n].saturating_add(1);
+            }
+        }
+    }
+
+    // For each node, index existing tx paths that pass through it with
+    // the (tx_index, position_in_path) pairs. Used to find real suffixes/prefixes.
+    let mut node_to_txpos: Vec<Vec<(usize, usize)>> = vec![Vec::new(); graph.nodes.len()];
+    for (ti, p) in existing_paths.iter().enumerate() {
+        for (pos, &nid) in p.iter().enumerate() {
+            if nid < node_to_txpos.len() {
+                node_to_txpos[nid].push((ti, pos));
+            }
+        }
+    }
+
     let mut hybrids: Vec<Transcript> = Vec::new();
 
-    for tx in existing {
+    for (ti_cur, tx) in existing.iter().enumerate() {
+        if hybrids.len() >= max_per_bundle {
+            break;
+        }
         if tx.exons.len() < 2 {
             continue;
         }
-        let path = tx_to_node_path(graph, tx);
+        let path = &existing_paths[ti_cur];
         if path.len() < 2 {
             continue;
         }
         let mut emitted_for_tx = 0usize;
 
-        // Forward: for each internal position, try alternative children
+        // Forward: at each position, check if another existing tx's path
+        // branches here (same cur, different next). Recombine: prefix from
+        // this tx + suffix from the other tx.
         for i in 0..path.len().saturating_sub(1) {
             if emitted_for_tx >= max_per_tx {
                 break;
             }
             let cur = path[i];
             let taken = path[i + 1];
-            let children: Vec<usize> = graph.nodes[cur].children.ones().collect();
-            for c in children {
-                if c == taken || c == graph.sink_id || c == graph.source_id {
+            // Find other txs passing through `cur` whose next node differs.
+            for &(other_ti, other_pos) in &node_to_txpos[cur] {
+                if other_ti == ti_cur {
                     continue;
                 }
-                if graph.nodes[c].coverage < min_cov {
+                let other_path = &existing_paths[other_ti];
+                if other_pos + 1 >= other_path.len() {
                     continue;
                 }
-                let suffix = match greedy_to_sink(graph, c, max_len) {
-                    Some(p) if p.len() >= 1 => p,
-                    _ => continue,
-                };
+                let other_next = other_path[other_pos + 1];
+                if other_next == taken || other_next == graph.sink_id || other_next == graph.source_id {
+                    continue;
+                }
+                if graph.nodes[other_next].coverage < min_cov {
+                    continue;
+                }
+                let suffix = &other_path[other_pos + 1..];
                 let mut new_path: Vec<usize> = path[..=i].to_vec();
-                new_path.extend(suffix);
+                new_path.extend_from_slice(suffix);
                 let exons = node_path_to_exons(graph, &new_path);
                 if exons.len() < 2 {
                     continue;
                 }
                 if seen.contains(&exons) {
+                    continue;
+                }
+                // All junctions must be in good_junctions (read-supported introns).
+                let all_good = (0..exons.len() - 1).all(|k| {
+                    good_junctions.contains(&(exons[k].1, exons[k + 1].0))
+                });
+                if !all_good {
                     continue;
                 }
                 seen.insert(exons.clone());
@@ -8032,32 +8067,40 @@ fn hybrid_path_reexplore(
             }
         }
 
-        // Backward: for each internal position, try alternative parents
+        // Backward: borrow prefix from another tx that reaches `cur` via a
+        // different parent than `taken`.
         for i in (1..path.len()).rev() {
             if emitted_for_tx >= max_per_tx {
                 break;
             }
             let cur = path[i];
             let taken = path[i - 1];
-            let parents: Vec<usize> = graph.nodes[cur].parents.ones().collect();
-            for p in parents {
-                if p == taken || p == graph.source_id || p == graph.sink_id {
+            for &(other_ti, other_pos) in &node_to_txpos[cur] {
+                if other_ti == ti_cur || other_pos == 0 {
                     continue;
                 }
-                if graph.nodes[p].coverage < min_cov {
+                let other_path = &existing_paths[other_ti];
+                let other_prev = other_path[other_pos - 1];
+                if other_prev == taken || other_prev == graph.source_id || other_prev == graph.sink_id {
                     continue;
                 }
-                let prefix = match greedy_to_source(graph, p, max_len) {
-                    Some(q) if q.len() >= 1 => q,
-                    _ => continue,
-                };
-                let mut new_path: Vec<usize> = prefix;
-                new_path.extend(path[i..].iter().copied());
+                if graph.nodes[other_prev].coverage < min_cov {
+                    continue;
+                }
+                let mut new_path: Vec<usize> = other_path[..other_pos].to_vec();
+                new_path.extend_from_slice(&path[i..]);
                 let exons = node_path_to_exons(graph, &new_path);
                 if exons.len() < 2 {
                     continue;
                 }
                 if seen.contains(&exons) {
+                    continue;
+                }
+                // All junctions must be in good_junctions (read-supported introns).
+                let all_good = (0..exons.len() - 1).all(|k| {
+                    good_junctions.contains(&(exons[k].1, exons[k + 1].0))
+                });
+                if !all_good {
                     continue;
                 }
                 seen.insert(exons.clone());
