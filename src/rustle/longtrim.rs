@@ -337,7 +337,7 @@ pub fn apply_longtrim_direct(
                     b.cov < 0.0
                         || (b.cov >= min_boundary_cov
                             && b.pos >= node_start0
-                            && b.pos < node_end0.saturating_sub(1))
+                            && b.pos < node_end0)
                 })
                 .collect();
 
