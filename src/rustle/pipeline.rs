@@ -5069,6 +5069,76 @@ fn extract_bundle_transcripts_for_graph(
         trace_stage("filter_by_min_junction_support", &txs);
     }
 
+    // StringTie-like TSS/TTS anchor filter (opt-in).
+    //
+    // Collect per-strand read endpoints (starts and ends) from bundle.reads.
+    // For each multi-exon tx: a boundary is "anchored" if at least N reads
+    // have their endpoint (start for 5', end for 3') within W bp of the
+    // tx's terminal exon edge. If NEITHER end is anchored AND the tx has
+    // low coverage, drop — targets unanchored run-through extensions
+    // (k-class). Conservative defaults.
+    //
+    // OPT-IN (regresses): read-endpoint signal doesn't cleanly separate
+    // k-class over-extensions from legit tx with sparse terminal reads
+    // (soft-clipping common in long reads). Kept scaffolded for future
+    // refinement.
+    if std::env::var_os("RUSTLE_ANCHOR_TRIM_ON").is_some() && !txs.is_empty() {
+        let min_endpoints: usize = std::env::var("RUSTLE_ANCHOR_TRIM_MIN_ENDPOINTS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+        let window: u64 = std::env::var("RUSTLE_ANCHOR_TRIM_WINDOW")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+        let max_cov: f64 = std::env::var("RUSTLE_ANCHOR_TRIM_MAX_COV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+
+        // Collect read endpoints stratified by strand
+        let mut starts_plus: Vec<u64> = Vec::new();
+        let mut starts_minus: Vec<u64> = Vec::new();
+        let mut ends_plus: Vec<u64> = Vec::new();
+        let mut ends_minus: Vec<u64> = Vec::new();
+        for r in &bundle.reads {
+            match r.strand {
+                '+' => { starts_plus.push(r.ref_start); ends_plus.push(r.ref_end); }
+                '-' => { starts_minus.push(r.ref_start); ends_minus.push(r.ref_end); }
+                _ => {
+                    starts_plus.push(r.ref_start); ends_plus.push(r.ref_end);
+                    starts_minus.push(r.ref_start); ends_minus.push(r.ref_end);
+                }
+            }
+        }
+        starts_plus.sort(); ends_plus.sort();
+        starts_minus.sort(); ends_minus.sort();
+
+        let count_in_window = |sorted: &[u64], center: u64, w: u64| -> usize {
+            let lo = center.saturating_sub(w);
+            let hi = center + w;
+            // Binary search for lo, count until hi
+            let i = sorted.partition_point(|&x| x < lo);
+            let j = sorted.partition_point(|&x| x <= hi);
+            j - i
+        };
+
+        // Adaptive: require endpoint-anchor count proportional to tx read support.
+        // min_anchor = max(min_endpoints, round(min_frac * longcov)).
+        let min_frac: f64 = std::env::var("RUSTLE_ANCHOR_TRIM_MIN_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.20);
+        let before = txs.len();
+        txs.retain(|t| {
+            if t.exons.len() < 2 { return true; }
+            if t.coverage >= max_cov { return true; }
+            let starts_ref = if t.strand == '+' { &starts_plus } else { &starts_minus };
+            let ends_ref = if t.strand == '+' { &ends_plus } else { &ends_minus };
+            let t_start = t.exons.first().map(|e| e.0).unwrap_or(0);
+            let t_end = t.exons.last().map(|e| e.1).unwrap_or(0);
+            let n5 = count_in_window(starts_ref, t_start, window);
+            let n3 = count_in_window(ends_ref, t_end, window);
+            let need = min_endpoints.max((min_frac * t.longcov).round() as usize);
+            n5 >= need || n3 >= need
+        });
+        if config.verbose && txs.len() < before {
+            eprintln!("rustle: anchor_trim removed {} unanchored low-cov tx", before - txs.len());
+        }
+    }
+
     // Hybrid-path re-exploration (opt-in, AFTER all per-bundle filters so
     // hybrids don't cause collateral kills via pairwise/isofrac/retainedintron).
     if std::env::var_os("RUSTLE_HYBRID_PATH_REEXPLORE").is_some() && !txs.is_empty() {
@@ -10139,6 +10209,67 @@ pub fn run<P: AsRef<Path>>(
             eprintln!("rustle: contained_sibling filter (beta={}) removed {} tx", beta, before - kept.len());
         }
         all_transcripts = kept;
+    }
+
+    // Precision cleanup D (OPT-IN, regresses catastrophically): TRIM
+    // (not drop) weakly-supported terminal exons. Hypothesis: converts
+    // k-class over-extensions to shorter forms matching ref intron chain.
+    // In practice destroys legitimate = matches with low-cov 5'UTR/3'UTR
+    // terminal exons. e.g., frac=0.10 → 786 matches vs 1582 baseline.
+    //
+    // Root cause of failure: low-cov terminal exons are common in real
+    // transcripts (UTRs have lower cov than CDS), so "trim if < K × inner
+    // median" is too blunt. Proper StringTie TSS/TTS trim is read-endpoint-
+    // anchored, not cov-ratio-based. Kept scaffolded.
+    if std::env::var_os("RUSTLE_TERMINAL_TRIM_ON").is_some() {
+        let frac: f64 = std::env::var("RUSTLE_TERMINAL_TRIM_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.10);
+        let min_inner: usize = std::env::var("RUSTLE_TERMINAL_TRIM_MIN_INNER_EXONS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+        let mut trimmed_first = 0usize;
+        let mut trimmed_last = 0usize;
+        for tx in all_transcripts.iter_mut() {
+            if tx.exons.len() < 4 { continue; }
+            if tx.exon_cov.len() != tx.exons.len() { continue; }
+            // Use normalized per-exon cov (exon_cov is total bp-weight; divide by len)
+            let percov: Vec<f64> = tx.exons.iter().zip(tx.exon_cov.iter())
+                .map(|(&(s,e), &c)| {
+                    let l = e.saturating_sub(s).max(1) as f64;
+                    c / l
+                }).collect();
+            let inner: Vec<f64> = percov[1..percov.len()-1].to_vec();
+            if inner.len() < min_inner { continue; }
+            let mut sorted = inner.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let med = sorted[sorted.len()/2];
+            if med < 0.01 { continue; }
+            // Trim first exon if very weak
+            if percov[0] < frac * med {
+                tx.exons.remove(0);
+                tx.exon_cov.remove(0);
+                if !tx.intron_low.is_empty() { tx.intron_low.remove(0); }
+                trimmed_first += 1;
+            }
+            // Trim last exon if very weak
+            let n = tx.exons.len();
+            if n >= 4 && tx.exon_cov.len() == n {
+                let last_percov = {
+                    let (s, e) = tx.exons[n-1];
+                    let l = e.saturating_sub(s).max(1) as f64;
+                    tx.exon_cov[n-1] / l
+                };
+                if last_percov < frac * med {
+                    tx.exons.pop();
+                    tx.exon_cov.pop();
+                    if !tx.intron_low.is_empty() { tx.intron_low.pop(); }
+                    trimmed_last += 1;
+                }
+            }
+        }
+        if config.verbose && (trimmed_first + trimmed_last) > 0 {
+            eprintln!("rustle: terminal_trim removed {} first exons, {} last exons",
+                trimmed_first, trimmed_last);
+        }
     }
 
     // Precision cleanup C (OPT-IN, regresses): drop multi-exon tx lacking
