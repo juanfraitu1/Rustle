@@ -8856,16 +8856,31 @@ pub fn run<P: AsRef<Path>>(
                     sub_bundle.end,
                     &config,
                 );
-                // Inherit mm<0 from bundle-level junction_stats so sub-bundle's
-                // compute_killed_junction_pairs treats HE_CONT-demoted junctions as killed.
-                // Without this, junctions that were demoted at bundle level (e.g., STRG.29
-                // bridging junction 17451950-17452250) don't re-fire HE_CONT at sub-bundle
-                // level, so read-split doesn't detect them as killed.
+                // Inherit bundle-level "killed" flags (mm<0, strand=Some(0),
+                // nreads_good<0, mrcount<0) to sub-bundle stats. This ensures
+                // sub-bundle's compute_killed_junction_pairs treats bundle-demoted
+                // junctions as killed even when sub-bundle's fresh HE_CONT /
+                // good_junc doesn't re-fire on them (different bpcov context).
+                // Fixed STRG.29 (mm<0 inheritance). Other flags extend the same
+                // principle.
+                // Disable via RUSTLE_INHERIT_MM_NEG_OFF=1.
                 if std::env::var_os("RUSTLE_INHERIT_MM_NEG_OFF").is_none() {
+                    let inherit_strand = std::env::var_os("RUSTLE_INHERIT_STRAND0").is_some();
+                    let inherit_nreads_good = std::env::var_os("RUSTLE_INHERIT_NREADS_GOOD_NEG").is_some();
+                    let inherit_mrcount = std::env::var_os("RUSTLE_INHERIT_MRCOUNT_NEG").is_some();
                     for (j, bundle_stat) in &junction_stats_corr_final {
-                        if bundle_stat.mm < 0.0 {
-                            if let Some(sub_stat) = sub_junction_stats_corr.get_mut(j) {
+                        if let Some(sub_stat) = sub_junction_stats_corr.get_mut(j) {
+                            if bundle_stat.mm < 0.0 && sub_stat.mm >= 0.0 {
                                 sub_stat.mm = bundle_stat.mm;
+                            }
+                            if inherit_strand && bundle_stat.strand == Some(0) && sub_stat.strand != Some(0) {
+                                sub_stat.strand = Some(0);
+                            }
+                            if inherit_nreads_good && bundle_stat.nreads_good < 0.0 && sub_stat.nreads_good >= 0.0 {
+                                sub_stat.nreads_good = bundle_stat.nreads_good;
+                            }
+                            if inherit_mrcount && bundle_stat.mrcount < 0.0 && sub_stat.mrcount >= 0.0 {
+                                sub_stat.mrcount = bundle_stat.mrcount;
                             }
                         }
                     }
