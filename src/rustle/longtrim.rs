@@ -482,7 +482,7 @@ pub fn apply_longtrim_direct(
                     if !(b.cov < 0.0
                         || (b.cov >= min_boundary_cov
                             && pos >= node_start0
-                            && pos < node_end0.saturating_sub(1)))
+                            && pos < node_end0))
                     {
                         continue;
                     }
@@ -539,6 +539,47 @@ pub fn apply_longtrim_direct(
                     let prev_end = graph.nodes[cur_nid].end;
                     let cut = pos.saturating_add(1);
                     if cut <= graph.nodes[cur_nid].start || cut >= prev_end {
+                        // Boundary at/past trailing edge. RUSTLE_LONGTRIM_TRAILING_EDGE=1
+                        // enables adding source edges to adjacent children so STRG.110-class
+                        // loci can still emit the downstream transcript. Default off
+                        // because current impl regressed -2 matches on GGO_19.
+                        if cut >= prev_end
+                            && std::env::var_os("RUSTLE_LONGTRIM_TRAILING_EDGE").is_some()
+                        {
+                            graph.nodes[cur_nid].hardend = true;
+                            graph.nodes[cur_nid].longtrim_cov = tmpcov;
+                            let children: Vec<usize> = graph.nodes[cur_nid].children.ones().collect();
+                            if !graph.nodes[cur_nid].children.contains(sink) {
+                                graph.add_edge(cur_nid, sink);
+                                let mut tf_sink = GraphTransfrag::new(
+                                    vec![cur_nid, sink], graph.pattern_size());
+                                tf_sink.abundance = tmpcov;
+                                tf_sink.longread = true;
+                                tf_sink.longstart = graph.nodes[cur_nid].start;
+                                tf_sink.longend = cut;
+                                synthetic.push(tf_sink);
+                                stats.sink_edges_added += 1;
+                                stats.synthetic_transfrags += 1;
+                            }
+                            for &c in &children {
+                                if c == sink { continue; }
+                                if graph.nodes[c].start == cut
+                                    && !graph.nodes[c].parents.contains(source)
+                                {
+                                    graph.nodes[c].hardstart = true;
+                                    graph.nodes[c].longtrim_cov = tmpcov;
+                                    graph.add_edge(source, c);
+                                    let mut tf_src = GraphTransfrag::new(
+                                        vec![source, c], graph.pattern_size());
+                                    tf_src.abundance = TRTHR;
+                                    tf_src.longread = true;
+                                    synthetic.push(tf_src);
+                                    stats.source_edges_added += 1;
+                                    stats.synthetic_transfrags += 1;
+                                }
+                            }
+                            did_split_node = true;
+                        }
                         continue;
                     }
                     graph.nodes[cur_nid].end = cut;
