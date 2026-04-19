@@ -7109,6 +7109,20 @@ pub fn extract_transcripts(
                 uniq_check.push(t);
             }
         }
+        // StringTie-parity: process checktrf seeds in DESCENDING abundance
+        // order (StringTie's trace shows highest-abund seed rescued first,
+        // subsequent lower-abund seeds get `matched` outcome against the
+        // rescued path). Rustle's insertion order may rescue a chimeric
+        // long-read first, over-extending past gene boundaries (STRG.187
+        // case). Fix: sort descending by abundance.
+        // Opt-out: RUSTLE_CHECKTRF_SORT_ABUND_OFF=1.
+        if std::env::var_os("RUSTLE_CHECKTRF_SORT_ABUND_OFF").is_none() {
+            uniq_check.sort_by(|&a, &b| {
+                let aa = transfrags.get(a).map(|tf| tf.abundance).unwrap_or(0.0);
+                let bb = transfrags.get(b).map(|tf| tf.abundance).unwrap_or(0.0);
+                bb.partial_cmp(&aa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
         let has_guide_kept = kept_paths.iter().any(|(_, _, g, _)| *g);
         if debug_ek {
             eprintln!(
