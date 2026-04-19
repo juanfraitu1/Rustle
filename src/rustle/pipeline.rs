@@ -5078,6 +5078,7 @@ fn extract_bundle_transcripts_for_graph(
             &bundle.chrom,
             bundle.strand,
             good_junctions,
+            &bundle.reads,
         );
         if !hybrids.is_empty() {
             if std::env::var_os("RUSTLE_TRACE_HYBRID").is_some() {

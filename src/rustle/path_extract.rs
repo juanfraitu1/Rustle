@@ -7928,6 +7928,7 @@ pub fn hybrid_path_reexplore(
     chrom: &str,
     strand: char,
     good_junctions: &crate::types::DetHashSet<(u64, u64)>,
+    reads: &[crate::types::BundleRead],
 ) -> Vec<Transcript> {
     let min_cov: f64 = std::env::var("RUSTLE_HYBRID_MIN_COV")
         .ok()
@@ -7970,6 +7971,64 @@ pub fn hybrid_path_reexplore(
             }
         }
     }
+
+    // Read evidence index: for each junction (donor, acceptor), list reads
+    // containing it. Skip when read-evidence is disabled.
+    let evidence_off = std::env::var_os("RUSTLE_HYBRID_EVIDENCE_OFF").is_some();
+    let mut junc_to_reads: std::collections::HashMap<(u64, u64), Vec<usize>> =
+        std::collections::HashMap::new();
+    if !evidence_off {
+        for (ri, r) in reads.iter().enumerate() {
+            for j in &r.junctions {
+                junc_to_reads.entry((j.donor, j.acceptor)).or_default().push(ri);
+            }
+        }
+    }
+
+    // For a hybrid with switch junction s=(donor, acceptor) and a list of
+    // non-switch hybrid junctions, check if any read contains s AND at least
+    // one non-switch junction (direct evidence that the recombination is
+    // used together).
+    // Strong evidence: require a read whose ENTIRE junction set is a
+    // subset of the hybrid's chain AND that contains the switch junction
+    // AND at least one additional chain junction (spans the recombination).
+    // This enforces that the read is compatible with the hybrid intron
+    // chain and actually uses the switch.
+    let has_read_evidence =
+        |switch: (u64, u64), chain: &[(u64, u64)]| -> bool {
+            if evidence_off {
+                return true;
+            }
+            let chain_set: std::collections::HashSet<(u64, u64)> = chain.iter().copied().collect();
+            let ridx = match junc_to_reads.get(&switch) {
+                Some(v) => v,
+                None => return false,
+            };
+            let min_other: usize = std::env::var("RUSTLE_HYBRID_EVIDENCE_MIN_OTHER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+            for &ri in ridx {
+                let r = &reads[ri];
+                if r.junctions.len() < 2 {
+                    continue;
+                }
+                let mut all_in_chain = true;
+                let mut other_count = 0usize;
+                for j in &r.junctions {
+                    let jp = (j.donor, j.acceptor);
+                    if !chain_set.contains(&jp) {
+                        all_in_chain = false;
+                        break;
+                    }
+                    if jp != switch {
+                        other_count += 1;
+                    }
+                }
+                if all_in_chain && other_count >= min_other {
+                    return true;
+                }
+            }
+            false
+        };
 
     let mut hybrids: Vec<Transcript> = Vec::new();
 
@@ -8022,11 +8081,38 @@ pub fn hybrid_path_reexplore(
                     continue;
                 }
                 // All junctions must be in good_junctions (read-supported introns).
-                let all_good = (0..exons.len() - 1).all(|k| {
-                    good_junctions.contains(&(exons[k].1, exons[k + 1].0))
-                });
-                if !all_good {
+                let chain: Vec<(u64, u64)> = (0..exons.len() - 1)
+                    .map(|k| (exons[k].1, exons[k + 1].0))
+                    .collect();
+                if !chain.iter().all(|jp| good_junctions.contains(jp)) {
                     continue;
+                }
+                // Read-evidence: the switch junction in this recombination is
+                // the first junction AFTER the common prefix. Find it.
+                let switch_j = {
+                    // For forward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
+                    // For backward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
+                    // In both cases it's the junction at the recombination point, but we don't
+                    // know which position in `chain` it is without tracking. Pick the one whose
+                    // donor == cur.end (forward) or acceptor == cur.start (backward).
+                    // Simpler: use chain junctions adjacent to `cur` node end/start.
+                    let cur_end = graph.nodes[cur].end;
+                    let cur_start = graph.nodes[cur].start;
+                    chain.iter().copied().find(|&(d, a)| d == cur_end || a == cur_start)
+                };
+                match switch_j {
+                    Some(sj) => {
+                        if !has_read_evidence(sj, &chain) {
+                            continue;
+                        }
+                    }
+                    None => {
+                        // Can't locate the recombination junction; reject
+                        // conservatively unless evidence is disabled.
+                        if !evidence_off {
+                            continue;
+                        }
+                    }
                 }
                 seen.insert(exons.clone());
                 let est_cov = new_path
@@ -8097,11 +8183,38 @@ pub fn hybrid_path_reexplore(
                     continue;
                 }
                 // All junctions must be in good_junctions (read-supported introns).
-                let all_good = (0..exons.len() - 1).all(|k| {
-                    good_junctions.contains(&(exons[k].1, exons[k + 1].0))
-                });
-                if !all_good {
+                let chain: Vec<(u64, u64)> = (0..exons.len() - 1)
+                    .map(|k| (exons[k].1, exons[k + 1].0))
+                    .collect();
+                if !chain.iter().all(|jp| good_junctions.contains(jp)) {
                     continue;
+                }
+                // Read-evidence: the switch junction in this recombination is
+                // the first junction AFTER the common prefix. Find it.
+                let switch_j = {
+                    // For forward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
+                    // For backward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
+                    // In both cases it's the junction at the recombination point, but we don't
+                    // know which position in `chain` it is without tracking. Pick the one whose
+                    // donor == cur.end (forward) or acceptor == cur.start (backward).
+                    // Simpler: use chain junctions adjacent to `cur` node end/start.
+                    let cur_end = graph.nodes[cur].end;
+                    let cur_start = graph.nodes[cur].start;
+                    chain.iter().copied().find(|&(d, a)| d == cur_end || a == cur_start)
+                };
+                match switch_j {
+                    Some(sj) => {
+                        if !has_read_evidence(sj, &chain) {
+                            continue;
+                        }
+                    }
+                    None => {
+                        // Can't locate the recombination junction; reject
+                        // conservatively unless evidence is disabled.
+                        if !evidence_off {
+                            continue;
+                        }
+                    }
                 }
                 seen.insert(exons.clone());
                 let est_cov = new_path
