@@ -3982,7 +3982,14 @@ pub fn print_predcluster_with_summary(
     // Removes transcripts that have retained introns relative to higher-coverage transcripts.
     if config.long_reads {
         let before = if fate_trace { txs.clone() } else { Vec::new() };
-        txs = retained_intron_filter(txs, config.pairwise_error_perc, config.verbose);
+        // Use retained_intron_error_perc if set != default, else fall back to
+        // pairwise_error_perc. Higher value = looser filter = kills MORE tx.
+        let ri_frac = if (config.retained_intron_error_perc - 0.1).abs() > 1e-6 {
+            config.retained_intron_error_perc
+        } else {
+            config.pairwise_error_perc
+        };
+        txs = retained_intron_filter(txs, ri_frac, config.verbose);
         emit_fate("retained_intron_filter", &before, &txs);
         trace_stage("predcluster.retained_intron_filter", &txs);
     }
