@@ -5139,6 +5139,139 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
+    // Intra-intron rescue: for each emitted tx, scan large introns
+    // (>= min_intron bp) for graph nodes entirely contained within the
+    // intron region. Connect them into sub-paths (via graph edges) and
+    // emit as separate transcripts. Targets the "gene-inside-intron"
+    // class where a small StringTie gene sits inside a long Rustle tx's
+    // intron but its reads exist in the bundle.
+    //
+    // OPT-IN. Measured on GGO_19: rescue fires 74 times at various loci
+    // but produces mostly j/c class tx (partial intron chain matches),
+    // zero net = match gain. Target loci (gene-inside-intron like
+    // STRG.320) are not reached because their exon nodes aren't present
+    // in the enclosing bundle's graph — needs bundle-builder level fix.
+    if std::env::var_os("RUSTLE_INTRA_INTRON_RESCUE_ON").is_some() && !txs.is_empty() {
+        let min_intron: u64 = std::env::var("RUSTLE_INTRA_INTRON_MIN_INTRON")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5000);
+        let min_node_cov: f64 = std::env::var("RUSTLE_INTRA_INTRON_MIN_NODE_COV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+        let min_exons: usize = std::env::var("RUSTLE_INTRA_INTRON_MIN_EXONS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+
+        let src = graph_mut.source_id;
+        let snk = graph_mut.sink_id;
+        let mut seen: std::collections::HashSet<Vec<(u64, u64)>> =
+            txs.iter().map(|t| t.exons.clone()).collect();
+        let mut rescued: Vec<Transcript> = Vec::new();
+
+        // Collect candidate intron regions from emitted tx
+        let mut intron_regions: Vec<(u64, u64)> = Vec::new();
+        for tx in txs.iter() {
+            for i in 0..tx.exons.len().saturating_sub(1) {
+                let (_, istart) = tx.exons[i];
+                let (iend, _) = tx.exons[i + 1];
+                if iend > istart && iend - istart >= min_intron {
+                    intron_regions.push((istart, iend));
+                }
+            }
+        }
+        // Dedup intron regions
+        intron_regions.sort();
+        intron_regions.dedup();
+
+        for (intron_start, intron_end) in intron_regions {
+            // Find graph nodes entirely within this intron region
+            let mut inner: Vec<usize> = (0..graph_mut.nodes.len())
+                .filter(|&n| n != src && n != snk)
+                .filter(|&n| {
+                    let node = &graph_mut.nodes[n];
+                    node.start >= intron_start && node.end <= intron_end
+                })
+                .filter(|&n| graph_mut.nodes[n].coverage >= min_node_cov)
+                .collect();
+            if inner.len() < min_exons { continue; }
+            inner.sort_by_key(|&n| graph_mut.nodes[n].start);
+
+            // Greedy chain: walk from each node following child edges to others in `inner`
+            let inner_set: std::collections::HashSet<usize> = inner.iter().copied().collect();
+            let mut visited: std::collections::HashSet<usize> = std::collections::HashSet::new();
+            for &seed in &inner {
+                if visited.contains(&seed) { continue; }
+                let mut path = vec![seed];
+                visited.insert(seed);
+                // Greedy forward: pick highest-cov child that's in inner_set
+                loop {
+                    let cur = *path.last().unwrap();
+                    let next = graph_mut.nodes[cur].children.ones()
+                        .filter(|c| inner_set.contains(c) && !visited.contains(c))
+                        .max_by(|&a, &b| graph_mut.nodes[a].coverage
+                            .partial_cmp(&graph_mut.nodes[b].coverage)
+                            .unwrap_or(std::cmp::Ordering::Equal));
+                    match next {
+                        Some(n) => { path.push(n); visited.insert(n); }
+                        None => break,
+                    }
+                }
+                if path.len() < min_exons { continue; }
+
+                // Convert path to exons (merge abutting)
+                let mut exons: Vec<(u64, u64)> = Vec::new();
+                for &nid in &path {
+                    let n = &graph_mut.nodes[nid];
+                    if let Some(last) = exons.last_mut() {
+                        if last.1 == n.start { last.1 = n.end; continue; }
+                    }
+                    exons.push((n.start, n.end));
+                }
+                if exons.len() < min_exons { continue; }
+                if seen.contains(&exons) { continue; }
+                seen.insert(exons.clone());
+
+                // Coverage = min along path (bottleneck) - in per-base terms
+                let est_cov = path.iter()
+                    .map(|&n| {
+                        let nn = &graph_mut.nodes[n];
+                        let l = nn.end.saturating_sub(nn.start).max(1) as f64;
+                        nn.coverage / l
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                if !est_cov.is_finite() || est_cov < min_node_cov { continue; }
+
+                rescued.push(Transcript {
+                    chrom: bundle.chrom.clone(),
+                    strand: bundle.strand,
+                    exons,
+                    coverage: est_cov,
+                    exon_cov: Vec::new(),
+                    tpm: 0.0,
+                    fpkm: 0.0,
+                    source: Some("intra_intron_rescue".to_string()),
+                    is_longread: true,
+                    longcov: est_cov,
+                    bpcov_cov: 0.0,
+                    transcript_id: None,
+                    gene_id: None,
+                    ref_transcript_id: None,
+                    ref_gene_id: None,
+                    hardstart: false,
+                    hardend: false,
+                    vg_family_id: None,
+                    vg_copy_id: None,
+                    vg_family_size: None,
+                    intron_low: Vec::new(),
+                });
+            }
+        }
+        if !rescued.is_empty() {
+            if std::env::var_os("RUSTLE_TRACE_INTRA_INTRON").is_some() {
+                eprintln!("INTRA_INTRON_RESCUE bundle={}:{}-{} rescued={}",
+                    bundle.chrom, bundle.start, bundle.end, rescued.len());
+            }
+            txs.extend(rescued);
+        }
+    }
+
     // Hybrid-path re-exploration (opt-in, AFTER all per-bundle filters so
     // hybrids don't cause collateral kills via pairwise/isofrac/retainedintron).
     if std::env::var_os("RUSTLE_HYBRID_PATH_REEXPLORE").is_some() && !txs.is_empty() {
