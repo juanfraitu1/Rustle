@@ -10061,6 +10061,69 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // Precision cleanup: for each cluster of overlapping same-strand tx,
+    // compute max coverage and drop tx whose cov < alpha × max. Targets the
+    // 98% of gffcompare `j`-class noise (novel-isoform over-emission of a
+    // gene where a sibling already matched).
+    if std::env::var_os("RUSTLE_INTRA_GENE_COV_FRAC_OFF").is_none() {
+        let alpha: f64 = std::env::var("RUSTLE_INTRA_GENE_COV_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.010);
+        if alpha > 0.0 {
+            // Sort by chrom+strand+start; cluster overlapping tx.
+            let mut idx: Vec<usize> = (0..all_transcripts.len()).collect();
+            idx.sort_by(|&a, &b| {
+                let ta = &all_transcripts[a];
+                let tb = &all_transcripts[b];
+                ta.chrom.cmp(&tb.chrom)
+                    .then(ta.strand.cmp(&tb.strand))
+                    .then(ta.exons.first().map(|e| e.0).unwrap_or(0)
+                        .cmp(&tb.exons.first().map(|e| e.0).unwrap_or(0)))
+            });
+            let mut keep = vec![true; all_transcripts.len()];
+            let mut i = 0;
+            while i < idx.len() {
+                let a = idx[i];
+                let ta = &all_transcripts[a];
+                let t_end = ta.exons.last().map(|e| e.1).unwrap_or(0);
+                let mut cluster = vec![a];
+                let mut max_end = t_end;
+                let mut j = i + 1;
+                while j < idx.len() {
+                    let b = idx[j];
+                    let tb = &all_transcripts[b];
+                    if tb.chrom != ta.chrom || tb.strand != ta.strand { break; }
+                    let b_start = tb.exons.first().map(|e| e.0).unwrap_or(0);
+                    if b_start >= max_end { break; }
+                    cluster.push(b);
+                    let b_end = tb.exons.last().map(|e| e.1).unwrap_or(0);
+                    if b_end > max_end { max_end = b_end; }
+                    j += 1;
+                }
+                if cluster.len() > 1 {
+                    let max_cov = cluster.iter()
+                        .map(|&k| all_transcripts[k].coverage)
+                        .fold(0.0f64, f64::max);
+                    let thr = max_cov * alpha;
+                    for &k in &cluster {
+                        if all_transcripts[k].coverage < thr {
+                            keep[k] = false;
+                        }
+                    }
+                }
+                i = j;
+            }
+            let before = all_transcripts.len();
+            let mut kept: Vec<Transcript> = Vec::with_capacity(before);
+            for (k, t) in all_transcripts.into_iter().enumerate() {
+                if keep[k] { kept.push(t); }
+            }
+            if config.verbose && kept.len() < before {
+                eprintln!("rustle: intra_gene_cov_frac (alpha={}) removed {} tx", alpha, before - kept.len());
+            }
+            all_transcripts = kept;
+        }
+    }
+
     // Compute TPM/FPKM globally across the whole run (standard).
     compute_tpm_fpkm(&mut all_transcripts, global_num_frag, global_frag_len_sum);
 
