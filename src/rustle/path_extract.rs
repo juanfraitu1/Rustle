@@ -7978,6 +7978,38 @@ pub fn hybrid_path_reexplore(
     // Precompute node paths for all existing txs once.
     let existing_paths: Vec<Vec<usize>> = existing.iter().map(|t| tx_to_node_path(graph, t)).collect();
 
+    // Residual node coverage: node.coverage minus the sum of existing tx
+    // coverages passing through it. Captures what max_flow has NOT consumed
+    // — real flow still available to a hybrid candidate. This is the
+    // max_flow integration layer: hybrids must claim genuine residual flow.
+    // Unit: graph.nodes[i].coverage is in bp-weight (total read_weight*bp sum).
+    // Transcript.coverage is normalized per-base average. Converting
+    // consumed-per-node = tx.coverage × node.length accumulates in bp-weight
+    // to match node.coverage's unit.
+    let mut consumed: Vec<f64> = vec![0.0; graph.nodes.len()];
+    for (ti, p) in existing_paths.iter().enumerate() {
+        let tx_cov = existing[ti].coverage.max(0.0);
+        for &n in p {
+            if n < consumed.len() {
+                let nlen = graph.nodes[n].end.saturating_sub(graph.nodes[n].start) as f64;
+                consumed[n] += tx_cov * nlen;
+            }
+        }
+    }
+    // Residual per-base avg = (node bp-weight − consumed bp-weight) / node length
+    let residual: Vec<f64> = (0..graph.nodes.len())
+        .map(|i| {
+            let nlen = graph.nodes[i].end.saturating_sub(graph.nodes[i].start) as f64;
+            if nlen <= 0.0 {
+                0.0
+            } else {
+                ((graph.nodes[i].coverage - consumed[i]) / nlen).max(0.0)
+            }
+        })
+        .collect();
+    let min_residual: f64 = std::env::var("RUSTLE_HYBRID_MIN_RESIDUAL")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+
     // Per-node usage count across existing txs.
     let mut usage: Vec<u32> = vec![0; graph.nodes.len()];
     for p in &existing_paths {
@@ -8128,12 +8160,25 @@ pub fn hybrid_path_reexplore(
                 if !chain.iter().all(|jp| good_junctions.contains(jp)) {
                     continue;
                 }
+                // max_flow-residual scoring: for nodes in new_path that are
+                // NOT shared with the current parent tx, require residual
+                // flow. Shared nodes (alt-splicing passes through common
+                // exons) can be double-booked — flow naturally shares.
+                let parent_nodes: std::collections::HashSet<usize> =
+                    path.iter().copied().collect();
                 let est_cov = new_path
                     .iter()
                     .filter(|&&n| n != graph.source_id && n != graph.sink_id)
-                    .map(|&n| graph.nodes[n].coverage)
+                    .filter(|&&n| !parent_nodes.contains(&n))
+                    .map(|&n| residual.get(n).copied().unwrap_or(0.0))
                     .fold(f64::INFINITY, f64::min);
-                if !est_cov.is_finite() || est_cov < min_cov {
+                let est_cov = if est_cov.is_finite() {
+                    est_cov
+                } else {
+                    // All nodes shared with parent; fall back to coverage floor
+                    0.0
+                };
+                if est_cov < min_cov.max(min_residual) {
                     continue;
                 }
                 let pair_weight = existing[ti_cur].coverage.min(existing[other_ti].coverage).max(0.0);
@@ -8201,12 +8246,25 @@ pub fn hybrid_path_reexplore(
                 if !chain.iter().all(|jp| good_junctions.contains(jp)) {
                     continue;
                 }
+                // max_flow-residual scoring: for nodes in new_path that are
+                // NOT shared with the current parent tx, require residual
+                // flow. Shared nodes (alt-splicing passes through common
+                // exons) can be double-booked — flow naturally shares.
+                let parent_nodes: std::collections::HashSet<usize> =
+                    path.iter().copied().collect();
                 let est_cov = new_path
                     .iter()
                     .filter(|&&n| n != graph.source_id && n != graph.sink_id)
-                    .map(|&n| graph.nodes[n].coverage)
+                    .filter(|&&n| !parent_nodes.contains(&n))
+                    .map(|&n| residual.get(n).copied().unwrap_or(0.0))
                     .fold(f64::INFINITY, f64::min);
-                if !est_cov.is_finite() || est_cov < min_cov {
+                let est_cov = if est_cov.is_finite() {
+                    est_cov
+                } else {
+                    // All nodes shared with parent; fall back to coverage floor
+                    0.0
+                };
+                if est_cov < min_cov.max(min_residual) {
                     continue;
                 }
                 let pair_weight = existing[ti_cur].coverage.min(existing[other_ti].coverage).max(0.0);
