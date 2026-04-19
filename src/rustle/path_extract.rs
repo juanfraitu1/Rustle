@@ -7786,5 +7786,319 @@ pub fn extract_transcripts(
         }
     }
 
+    // Hybrid-path re-exploration: for each extracted tx, walk its node path,
+    // and at each internal node explore alternative children/parents that
+    // weren't taken, greedily completing to sink/source by best-coverage.
+    // Emits candidate hybrid paths as new Transcripts. Gated opt-in.
+    if std::env::var_os("RUSTLE_HYBRID_PATH_REEXPLORE").is_some() {
+        let hybrids = hybrid_path_reexplore(graph, &out, bundle_chrom, bundle_strand);
+        if !hybrids.is_empty() {
+            if std::env::var_os("RUSTLE_TRACE_HYBRID").is_some() {
+                eprintln!("HYBRID_REEXPLORE bundle={} added {} hybrid paths", bundle_id, hybrids.len());
+            }
+            out.extend(hybrids);
+        }
+    }
+
     out
+}
+
+/// Map a genomic position (within exons) to a graph node_id.
+fn pos_to_node_id(graph: &Graph, pos: u64) -> Option<usize> {
+    for (i, n) in graph.nodes.iter().enumerate() {
+        if i == graph.source_id || i == graph.sink_id {
+            continue;
+        }
+        if pos >= n.start && pos < n.end {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Reconstruct a node path from a transcript's exons: for each exon, find all
+/// graph nodes overlapping it (in order). Returns empty if any exon can't be
+/// mapped.
+fn tx_to_node_path(graph: &Graph, tx: &Transcript) -> Vec<usize> {
+    let mut path = Vec::new();
+    for &(s, e) in &tx.exons {
+        let mut pos = s;
+        while pos < e {
+            if let Some(nid) = pos_to_node_id(graph, pos) {
+                if path.last() != Some(&nid) {
+                    path.push(nid);
+                }
+                pos = graph.nodes[nid].end;
+            } else {
+                pos += 1;
+            }
+        }
+    }
+    path
+}
+
+/// Convert a node path back to merged exon (start,end) intervals.
+/// Adjacent nodes sharing an edge with no intron gap become one exon.
+fn node_path_to_exons(graph: &Graph, path: &[usize]) -> Vec<(u64, u64)> {
+    let mut exons: Vec<(u64, u64)> = Vec::new();
+    for &nid in path {
+        let n = &graph.nodes[nid];
+        if let Some(last) = exons.last_mut() {
+            if last.1 == n.start {
+                last.1 = n.end;
+                continue;
+            }
+        }
+        exons.push((n.start, n.end));
+    }
+    exons
+}
+
+/// Greedy completion: from start_node, walk to sink picking highest-coverage
+/// child at each step. Excludes source/sink from intermediate nodes.
+fn greedy_to_sink(graph: &Graph, start: usize, max_len: usize) -> Option<Vec<usize>> {
+    let mut path = vec![start];
+    let mut cur = start;
+    let mut steps = 0;
+    while cur != graph.sink_id && steps < max_len {
+        let children: Vec<usize> = graph.nodes[cur].children.ones().collect();
+        if children.is_empty() {
+            return None;
+        }
+        // Prefer sink if directly reachable and we've covered real nodes
+        if children.contains(&graph.sink_id) && path.len() > 1 {
+            return Some(path);
+        }
+        // Pick non-sink child with max coverage
+        let mut best: Option<(usize, f64)> = None;
+        for &c in &children {
+            if c == graph.sink_id {
+                continue;
+            }
+            let cov = graph.nodes[c].coverage;
+            if best.map_or(true, |(_, bc)| cov > bc) {
+                best = Some((c, cov));
+            }
+        }
+        match best {
+            Some((nxt, _)) => {
+                path.push(nxt);
+                cur = nxt;
+            }
+            None => return Some(path),
+        }
+        steps += 1;
+    }
+    Some(path)
+}
+
+/// Greedy completion backward: from end_node, walk to source by parents.
+fn greedy_to_source(graph: &Graph, end: usize, max_len: usize) -> Option<Vec<usize>> {
+    let mut path = vec![end];
+    let mut cur = end;
+    let mut steps = 0;
+    while cur != graph.source_id && steps < max_len {
+        let parents: Vec<usize> = graph.nodes[cur].parents.ones().collect();
+        if parents.is_empty() {
+            return None;
+        }
+        if parents.contains(&graph.source_id) && path.len() > 1 {
+            path.reverse();
+            return Some(path);
+        }
+        let mut best: Option<(usize, f64)> = None;
+        for &p in &parents {
+            if p == graph.source_id {
+                continue;
+            }
+            let cov = graph.nodes[p].coverage;
+            if best.map_or(true, |(_, bc)| cov > bc) {
+                best = Some((p, cov));
+            }
+        }
+        match best {
+            Some((prv, _)) => {
+                path.push(prv);
+                cur = prv;
+            }
+            None => {
+                path.reverse();
+                return Some(path);
+            }
+        }
+        steps += 1;
+    }
+    path.reverse();
+    Some(path)
+}
+
+/// Build hybrid candidates from existing transcripts.
+fn hybrid_path_reexplore(
+    graph: &Graph,
+    existing: &[Transcript],
+    chrom: &str,
+    strand: char,
+) -> Vec<Transcript> {
+    let min_cov: f64 = std::env::var("RUSTLE_HYBRID_MIN_COV")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
+    let max_per_tx: usize = std::env::var("RUSTLE_HYBRID_MAX_PER_TX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let max_len = graph.nodes.len().saturating_add(2);
+
+    // Dedup keys from existing tx (intron chain = all exon boundaries)
+    let mut seen: std::collections::HashSet<Vec<(u64, u64)>> =
+        existing.iter().map(|t| t.exons.clone()).collect();
+
+    let mut hybrids: Vec<Transcript> = Vec::new();
+
+    for tx in existing {
+        if tx.exons.len() < 2 {
+            continue;
+        }
+        let path = tx_to_node_path(graph, tx);
+        if path.len() < 2 {
+            continue;
+        }
+        let mut emitted_for_tx = 0usize;
+
+        // Forward: for each internal position, try alternative children
+        for i in 0..path.len().saturating_sub(1) {
+            if emitted_for_tx >= max_per_tx {
+                break;
+            }
+            let cur = path[i];
+            let taken = path[i + 1];
+            let children: Vec<usize> = graph.nodes[cur].children.ones().collect();
+            for c in children {
+                if c == taken || c == graph.sink_id || c == graph.source_id {
+                    continue;
+                }
+                if graph.nodes[c].coverage < min_cov {
+                    continue;
+                }
+                let suffix = match greedy_to_sink(graph, c, max_len) {
+                    Some(p) if p.len() >= 1 => p,
+                    _ => continue,
+                };
+                let mut new_path: Vec<usize> = path[..=i].to_vec();
+                new_path.extend(suffix);
+                let exons = node_path_to_exons(graph, &new_path);
+                if exons.len() < 2 {
+                    continue;
+                }
+                if seen.contains(&exons) {
+                    continue;
+                }
+                seen.insert(exons.clone());
+                let est_cov = new_path
+                    .iter()
+                    .filter(|&&n| n != graph.source_id && n != graph.sink_id)
+                    .map(|&n| graph.nodes[n].coverage)
+                    .fold(f64::INFINITY, f64::min);
+                if !est_cov.is_finite() || est_cov < min_cov {
+                    continue;
+                }
+                hybrids.push(Transcript {
+                    chrom: chrom.to_string(),
+                    strand,
+                    exons,
+                    coverage: est_cov,
+                    exon_cov: Vec::new(),
+                    tpm: 0.0,
+                    fpkm: 0.0,
+                    source: Some("hybrid_reexplore".to_string()),
+                    is_longread: true,
+                    longcov: est_cov,
+                    bpcov_cov: 0.0,
+                    transcript_id: None,
+                    gene_id: None,
+                    ref_transcript_id: None,
+                    ref_gene_id: None,
+                    hardstart: false,
+                    hardend: false,
+                    vg_family_id: None,
+                    vg_copy_id: None,
+                    vg_family_size: None,
+                    intron_low: Vec::new(),
+                });
+                emitted_for_tx += 1;
+                if emitted_for_tx >= max_per_tx {
+                    break;
+                }
+            }
+        }
+
+        // Backward: for each internal position, try alternative parents
+        for i in (1..path.len()).rev() {
+            if emitted_for_tx >= max_per_tx {
+                break;
+            }
+            let cur = path[i];
+            let taken = path[i - 1];
+            let parents: Vec<usize> = graph.nodes[cur].parents.ones().collect();
+            for p in parents {
+                if p == taken || p == graph.source_id || p == graph.sink_id {
+                    continue;
+                }
+                if graph.nodes[p].coverage < min_cov {
+                    continue;
+                }
+                let prefix = match greedy_to_source(graph, p, max_len) {
+                    Some(q) if q.len() >= 1 => q,
+                    _ => continue,
+                };
+                let mut new_path: Vec<usize> = prefix;
+                new_path.extend(path[i..].iter().copied());
+                let exons = node_path_to_exons(graph, &new_path);
+                if exons.len() < 2 {
+                    continue;
+                }
+                if seen.contains(&exons) {
+                    continue;
+                }
+                seen.insert(exons.clone());
+                let est_cov = new_path
+                    .iter()
+                    .filter(|&&n| n != graph.source_id && n != graph.sink_id)
+                    .map(|&n| graph.nodes[n].coverage)
+                    .fold(f64::INFINITY, f64::min);
+                if !est_cov.is_finite() || est_cov < min_cov {
+                    continue;
+                }
+                hybrids.push(Transcript {
+                    chrom: chrom.to_string(),
+                    strand,
+                    exons,
+                    coverage: est_cov,
+                    exon_cov: Vec::new(),
+                    tpm: 0.0,
+                    fpkm: 0.0,
+                    source: Some("hybrid_reexplore".to_string()),
+                    is_longread: true,
+                    longcov: est_cov,
+                    bpcov_cov: 0.0,
+                    transcript_id: None,
+                    gene_id: None,
+                    ref_transcript_id: None,
+                    ref_gene_id: None,
+                    hardstart: false,
+                    hardend: false,
+                    vg_family_id: None,
+                    vg_copy_id: None,
+                    vg_family_size: None,
+                    intron_low: Vec::new(),
+                });
+                emitted_for_tx += 1;
+                if emitted_for_tx >= max_per_tx {
+                    break;
+                }
+            }
+        }
+    }
+
+    hybrids
 }
