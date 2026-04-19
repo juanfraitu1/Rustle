@@ -2669,11 +2669,14 @@ pub fn retained_intron_filter(
                 continue;
             }
             let n1_cov = sorted[i].coverage;
-            // The original algorithm uses frac = ERROR_PERC (0.1 = 10%) as the
-            // abundance gate for retained intron detection. For long-read mode,
-            // use both longcov and coverage ratios to catch artifacts regardless
-            // of flow normalization distortions.
-            let frac = error_perc * 0.35; // 0.05 = 5%
+            // StringTie trace confirms frac = ERROR_PERC (0.1) directly. But
+            // matching parity alone regresses −26 matches on GGO_19 because
+            // other Rustle gates depend on the tighter threshold. Keep
+            // Rustle's 0.35× multiplier as a Rustle-specific tuning. Override
+            // via RUSTLE_RI_FRAC_MULTIPLIER for experimentation.
+            let mult: f64 = std::env::var("RUSTLE_RI_FRAC_MULTIPLIER")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.35);
+            let frac = error_perc * mult;
 
             let passes_abundance_gate = if n2.is_longread && sorted[i].is_longread && sorted[i].longcov > 0.0 {
                 // For long-read: use longcov ratio (reliable pre-flow read count)
