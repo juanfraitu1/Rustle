@@ -1903,7 +1903,7 @@ fn add_contained_isoforms(
                     ref_gene_id: None,
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 });
                 added += 1;
             }
@@ -2091,7 +2091,7 @@ fn emit_junction_paths(
             ref_gene_id: None,
             hardstart,
             hardend,
-            vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+            vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -2374,7 +2374,7 @@ fn emit_chain_from_graph(
         ref_gene_id: None,
         hardstart: true,
         hardend: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
     })
 }
 
@@ -2503,7 +2503,7 @@ fn emit_reference_chains(
                     ref_gene_id: None,
                     hardstart: true,
                     hardend: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -2635,7 +2635,7 @@ fn emit_reference_chains(
                         ref_gene_id: None,
                         hardstart: true,
                         hardend: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -2727,7 +2727,7 @@ fn emit_reference_chains(
             ref_gene_id: None,
             hardstart: true,
             hardend: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
         added += 1;
         emitted_cnt += 1;
@@ -4965,6 +4965,7 @@ fn extract_bundle_transcripts_for_graph(
     // Compute strand-weighted bpcov_cov for each transcript (gene_abundance bpcov calculation).
     for tx in txs.iter_mut() {
         tx.bpcov_cov = compute_transcript_bpcov(tx, bpcov_stranded);
+        tx.intron_low = crate::gene_abundance::compute_transcript_intron_low(tx, bpcov_stranded);
         // IMPORTANT: do not overwrite `tx.coverage` (flow-derived) by default.
         // the pred->cov flow value is flow-derived; using raw bpcov makes cov wildly larger on deep loci
         // (e.g. STRG.27.3: ~31 vs the expected ~6) and breaks isofrac/pairwise decisions.
@@ -5942,7 +5943,7 @@ fn create_single_exon_predictions_from_bundle(
                         ref_gene_id: None,
                         hardstart: false,
                         hardend: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                     };
                     predictions.push(tx);
                 }
@@ -5981,7 +5982,7 @@ fn create_single_exon_predictions_from_bundle(
                     ref_gene_id: None,
                     hardstart: false,
                     hardend: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 };
                 predictions.push(tx);
             }
@@ -9748,7 +9749,7 @@ pub fn run<P: AsRef<Path>>(
                 ref_gene_id: None,
                 hardstart: true,
                 hardend: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {

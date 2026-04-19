@@ -65,6 +65,75 @@ pub fn compute_transcript_bpcov(tx: &Transcript, bpcov: &BpcovStranded) -> f64 {
     sum
 }
 
+/// Per-intron low-coverage classifier. Returns a Vec<bool> of length
+/// `exons.len() - 1` where `true` indicates the intron at that index has
+/// average bpcov (all-strand) below `ERROR_PERC * flanking_exon_avg` — the
+/// signal StringTie's retainedintron() uses via `lowintron[n1][i-1]`.
+/// Returns empty when fewer than 2 exons.
+pub fn compute_transcript_intron_low(tx: &Transcript, bpcov: &BpcovStranded) -> Vec<bool> {
+    if tx.exons.len() < 2 {
+        return Vec::new();
+    }
+    // StringTie rlink.cpp:18780-18793: compares LOCAL 25bp (longintronanchor) windows
+    // at the donor-side — last 25bp of upstream exon vs first 25bp of intron.
+    // If that fails (introncov >= exoncov * intronfrac), also tries acceptor-side
+    // right-drop: last 25bp of intron vs first 25bp of next exon.
+    // intronfrac = ERROR_PERC = 0.1 for long reads.
+    const LONGINTRONANCHOR: u64 = 25;
+    let intronfrac: f64 = std::env::var("RUSTLE_INTRON_LOW_RATIO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.1);
+    let mut out = Vec::with_capacity(tx.exons.len() - 1);
+    let avg_cov = |lo: usize, hi: usize| -> f64 {
+        if hi <= lo {
+            return 0.0;
+        }
+        let mut sum = 0.0f64;
+        let hi = hi.min(bpcov.plus.cov.len());
+        if hi <= lo {
+            return 0.0;
+        }
+        for i in lo..hi {
+            let fwd = bpcov.plus.cov[i];
+            let rev = bpcov.minus.cov.get(i).copied().unwrap_or(0.0);
+            sum += fwd + rev;
+        }
+        sum / (hi - lo) as f64
+    };
+    for i in 1..tx.exons.len() {
+        let prev = tx.exons[i - 1];
+        let curr = tx.exons[i];
+        let intron_start = prev.1; // last exon base + 1 (exclusive)... Rustle uses half-open
+        let intron_end = curr.0;   // first exon base (exclusive end of intron)
+        if intron_end <= intron_start {
+            out.push(false);
+            continue;
+        }
+        // Left-drop check: exon = last LONGINTRONANCHOR bp of prev, intron = first LONGINTRONANCHOR bp.
+        let anchor = LONGINTRONANCHOR.min(intron_end - intron_start);
+        let exon_left_start = prev.1.saturating_sub(LONGINTRONANCHOR).max(prev.0);
+        let exon_left_end = prev.1;
+        let intron_left_start = intron_start;
+        let intron_left_end = intron_start + anchor;
+        let exon_l = avg_cov(bpcov.plus.idx(exon_left_start), bpcov.plus.idx(exon_left_end));
+        let intron_l = avg_cov(bpcov.plus.idx(intron_left_start), bpcov.plus.idx(intron_left_end));
+        if intron_l < exon_l * intronfrac {
+            out.push(true);
+            continue;
+        }
+        // Right-drop check: intron = last LONGINTRONANCHOR bp of intron, exon = first LONGINTRONANCHOR bp of curr.
+        let intron_right_end = intron_end;
+        let intron_right_start = intron_end.saturating_sub(anchor);
+        let exon_right_start = curr.0;
+        let exon_right_end = curr.0 + LONGINTRONANCHOR.min(curr.1.saturating_sub(curr.0));
+        let intron_r = avg_cov(bpcov.plus.idx(intron_right_start), bpcov.plus.idx(intron_right_end));
+        let exon_r = avg_cov(bpcov.plus.idx(exon_right_start), bpcov.plus.idx(exon_right_end));
+        out.push(intron_r < exon_r * intronfrac);
+    }
+    out
+}
+
 #[derive(Debug, Clone)]
 struct GeneAgg {
     chrom: String,

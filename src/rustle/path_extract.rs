@@ -603,6 +603,11 @@ pub struct Transcript {
     pub vg_copy_id: Option<usize>,
     /// Number of copies in the family group.
     pub vg_family_size: Option<usize>,
+    /// Per-intron low-coverage flag (`lowintron` in StringTie).
+    /// len = `exons.len() - 1`; true when bpcov in this intron is below the
+    /// threshold used by retainedintron() in StringTie (ERROR_PERC * exon_avg_cov).
+    /// Empty if bpcov was unavailable at construction time.
+    pub intron_low: Vec<bool>,
 }
 
 #[inline]
@@ -700,7 +705,7 @@ impl Transcript {
             ref_gene_id: None,
             hardstart: pred.hardstart,
             hardend: pred.hardend,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         }
     }
 }
@@ -1176,7 +1181,7 @@ pub fn extract_rawreads_transcripts(
             ref_gene_id: None,
             hardstart: false,
             hardend: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
     }
     out
@@ -1310,7 +1315,7 @@ pub fn extract_shortread_transcripts(
             ref_gene_id: None,
             hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
     }
 
@@ -6882,7 +6887,7 @@ pub fn extract_transcripts(
             ref_gene_id: None,
             hardstart: thardstart,
             hardend: thardend,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
         if debug_flow {
             let exons_str = exons
@@ -7465,7 +7470,7 @@ pub fn extract_transcripts(
                     ref_gene_id: None,
                     hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
                     hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 });
                 let out_idx = out.len() - 1;
                 record_outcome!(t, SeedOutcome::ChecktrfRescued);

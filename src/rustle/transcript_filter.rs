@@ -4600,15 +4600,89 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                 && txs[n1].exons.len() > 1
                 && txs[n2].coverage < 0.05 * txs[n1].coverage
             {
-                // Check if any n2 exon spans an intron of n1 (exon covers both sides of a gap)
-                let spans_intron = txs[n1].exons.windows(2).any(|w| {
-                    let intron_start = w[0].1; // donor
-                    let intron_end = w[1].0;   // acceptor
-                    txs[n2].exons.iter().any(|&(s2, e2)| {
-                        s2 < intron_start && e2 > intron_end // n2 exon spans the entire intron
+                // StringTie retainedintron (rlink.cpp:17742) gated on lowintron[n1][i-1]:
+                // kills n2 when any n2 exon overlaps (even partially) an n1 intron that is
+                // marked low-coverage. Rustle's prior check required full containment
+                // (middle_exon case only); now allow partial overlap but ONLY when
+                // intron_low bit for that n1 intron is set.
+                // Opt-in via RUSTLE_XSTRAND_LOWINTRON=1. Default off because the
+                // 4-condition port kills 27 legit matches (StringTie applies additional
+                // guards like small-exon terminus check before retainedintron that we
+                // don't port yet).
+                let use_lowintron_gate = !txs[n1].intron_low.is_empty()
+                    && txs[n1].intron_low.len() == txs[n1].exons.len().saturating_sub(1)
+                    && std::env::var_os("RUSTLE_XSTRAND_LOWINTRON").is_some();
+                // Three criterion modes:
+                // - RUSTLE_XSTRAND_C4_PARTIAL=1: ANY overlap + lowintron gate (broad; tends to regress)
+                // - default (with lowintron): full-containment + lowintron gate
+                // - fallback (no lowintron): full-containment (legacy)
+                let partial_mode = std::env::var_os("RUSTLE_XSTRAND_C4_PARTIAL").is_some();
+                // StringTie retainedintron() port (rlink.cpp:17742) with 4 cases:
+                //   last_exon / first_exon / middle_exon / exon_overlap
+                // All gated on n1.intron_low[i-1]. Walks n1 introns in order, advancing j
+                // through n2 exons.
+                let killed = if use_lowintron_gate {
+                    let frac = 0.1f64; // ERROR_PERC
+                    let cov_ok = txs[n2].coverage < frac * txs[n1].coverage;
+                    let mut j = 0usize;
+                    let n2_last = txs[n2].exons.len().saturating_sub(1);
+                    let mut fired = false;
+                    for i in 1..txs[n1].exons.len() {
+                        if j >= txs[n2].exons.len() { break; }
+                        if !txs[n1].intron_low.get(i - 1).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        // n1 intron i-1 = (n1.exons[i-1].end .. n1.exons[i].start)
+                        let n1_intron_donor = txs[n1].exons[i - 1].1;   // end of prev exon (inclusive-ish)
+                        let n1_intron_acceptor_start = txs[n1].exons[i].0;
+                        // Case: last_exon — n2's last exon starts at/before donor AND cov<frac
+                        if j == n2_last && cov_ok && txs[n2].exons[j].0 <= n1_intron_donor {
+                            fired = true;
+                            break;
+                        }
+                        // Advance j: while n2.exons[j].end < n1.exons[i].start, j++
+                        while j < txs[n2].exons.len()
+                            && txs[n2].exons[j].1 < n1_intron_acceptor_start
+                        {
+                            j += 1;
+                        }
+                        // Case: first_exon — j==0 AND cov<frac
+                        if j == 0 && cov_ok {
+                            fired = true;
+                            break;
+                        }
+                        // If j advanced past everything, stop.
+                        if j >= txs[n2].exons.len() {
+                            break;
+                        }
+                        // Check if n2.exons[j].start <= n1.exons[i-1].end (overlap with intron region)
+                        if txs[n2].exons[j].0 <= n1_intron_donor {
+                            if j > 0 && j < n2_last {
+                                // Case: middle_exon (no cov check per StringTie line 17777)
+                                // (but we keep cov check since we're in cross-strand context)
+                                if partial_mode || cov_ok {
+                                    fired = true;
+                                    break;
+                                }
+                            } else if cov_ok {
+                                // Case: exon_overlap
+                                fired = true;
+                                break;
+                            }
+                        }
+                    }
+                    fired
+                } else {
+                    // Legacy full-containment fallback (bpcov unavailable / gate disabled).
+                    txs[n1].exons.windows(2).any(|w| {
+                        let intron_start = w[0].1;
+                        let intron_end = w[1].0;
+                        txs[n2].exons.iter().any(|&(s2, e2)| {
+                            s2 < intron_start && e2 > intron_end
+                        })
                     })
-                });
-                if spans_intron {
+                };
+                if killed {
                     dead.insert_grow(n2);
                 }
             }
