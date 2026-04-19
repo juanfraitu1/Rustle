@@ -7942,6 +7942,11 @@ pub fn hybrid_path_reexplore(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(usize::MAX);
+    // Alternative-branch coverage ratio: only emit when the alternative next
+    // node has cov >= ratio × taken-branch cov. Default 0.5 (alt must be at
+    // least half as supported as the dominant branch).
+    let alt_cov_ratio: f64 = std::env::var("RUSTLE_HYBRID_ALT_COV_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
     let max_len = graph.nodes.len().saturating_add(2);
 
     // Dedup keys from existing tx (intron chain = all exon boundaries)
@@ -8079,6 +8084,12 @@ pub fn hybrid_path_reexplore(
                 if graph.nodes[other_next].coverage < min_cov {
                     continue;
                 }
+                // Generation gate: alternative branch must be well-supported
+                // relative to the taken branch.
+                let taken_cov = graph.nodes[taken].coverage.max(1.0);
+                if graph.nodes[other_next].coverage < taken_cov * alt_cov_ratio {
+                    continue;
+                }
                 let suffix = &other_path[other_pos + 1..];
                 let mut new_path: Vec<usize> = path[..=i].to_vec();
                 new_path.extend_from_slice(suffix);
@@ -8180,6 +8191,10 @@ pub fn hybrid_path_reexplore(
                     continue;
                 }
                 if graph.nodes[other_prev].coverage < min_cov {
+                    continue;
+                }
+                let taken_cov = graph.nodes[taken].coverage.max(1.0);
+                if graph.nodes[other_prev].coverage < taken_cov * alt_cov_ratio {
                     continue;
                 }
                 let mut new_path: Vec<usize> = other_path[..other_pos].to_vec();
