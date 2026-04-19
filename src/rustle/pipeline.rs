@@ -10061,6 +10061,86 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // Precision cleanup B (EXPERIMENTAL, OPT-IN, regresses −260 matches):
+    // Drop tx whose exons strictly contain a smaller sibling's exons. The
+    // hypothesis was that the outer tx is an over-extended duplicate, but
+    // in practice the LONGER tx is usually the correct one — the shorter
+    // sibling is often a Rustle truncation artifact. Kept gated; needs
+    // redesign (boundary-evidence-based trimming, not whole-tx drop).
+    if std::env::var_os("RUSTLE_CONTAINED_SIBLING_ON").is_some() {
+        let beta: f64 = std::env::var("RUSTLE_CONTAINED_SIBLING_COV_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+        let mut idx: Vec<usize> = (0..all_transcripts.len()).collect();
+        idx.sort_by(|&a, &b| {
+            let ta = &all_transcripts[a];
+            let tb = &all_transcripts[b];
+            ta.chrom.cmp(&tb.chrom).then(ta.strand.cmp(&tb.strand))
+                .then(ta.exons.first().map(|e| e.0).unwrap_or(0)
+                    .cmp(&tb.exons.first().map(|e| e.0).unwrap_or(0)))
+        });
+        // Cluster by overlap to limit pairwise scan
+        let mut keep = vec![true; all_transcripts.len()];
+        let mut i = 0;
+        while i < idx.len() {
+            let a = idx[i];
+            let ta = &all_transcripts[a];
+            let mut cluster = vec![a];
+            let mut max_end = ta.exons.last().map(|e| e.1).unwrap_or(0);
+            let mut j = i + 1;
+            while j < idx.len() {
+                let b = idx[j];
+                let tb = &all_transcripts[b];
+                if tb.chrom != ta.chrom || tb.strand != ta.strand { break; }
+                let b_start = tb.exons.first().map(|e| e.0).unwrap_or(0);
+                if b_start >= max_end { break; }
+                cluster.push(b);
+                let b_end = tb.exons.last().map(|e| e.1).unwrap_or(0);
+                if b_end > max_end { max_end = b_end; }
+                j += 1;
+            }
+            // Pairwise containment check within cluster
+            for &p in &cluster {
+                if !keep[p] { continue; }
+                let tp = &all_transcripts[p];
+                for &q in &cluster {
+                    if p == q || !keep[q] { continue; }
+                    let tq = &all_transcripts[q];
+                    // Does p strictly contain q?
+                    if tq.exons.len() > tp.exons.len() { continue; }
+                    let p_start = tp.exons.first().map(|e| e.0).unwrap_or(0);
+                    let p_end = tp.exons.last().map(|e| e.1).unwrap_or(0);
+                    let q_start = tq.exons.first().map(|e| e.0).unwrap_or(0);
+                    let q_end = tq.exons.last().map(|e| e.1).unwrap_or(0);
+                    if q_start < p_start || q_end > p_end { continue; }
+                    // Must be strictly SHORTER (either by exon count or total span)
+                    if tq.exons.len() == tp.exons.len() && q_start == p_start && q_end == p_end {
+                        continue;
+                    }
+                    // Every q exon must fit within some p exon
+                    let all_contained = tq.exons.iter().all(|&(qs, qe)| {
+                        tp.exons.iter().any(|&(ps, pe)| ps <= qs && qe <= pe)
+                    });
+                    if !all_contained { continue; }
+                    // Sibling must have comparable cov (not a noise contained variant)
+                    if tq.coverage >= tp.coverage * beta {
+                        keep[p] = false;
+                        break;
+                    }
+                }
+            }
+            i = j;
+        }
+        let before = all_transcripts.len();
+        let mut kept: Vec<Transcript> = Vec::with_capacity(before);
+        for (k, t) in all_transcripts.into_iter().enumerate() {
+            if keep[k] { kept.push(t); }
+        }
+        if config.verbose && kept.len() < before {
+            eprintln!("rustle: contained_sibling filter (beta={}) removed {} tx", beta, before - kept.len());
+        }
+        all_transcripts = kept;
+    }
+
     // Precision cleanup: for each cluster of overlapping same-strand tx,
     // compute max coverage and drop tx whose cov < alpha × max. Targets the
     // 98% of gffcompare `j`-class noise (novel-isoform over-emission of a
