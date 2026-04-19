@@ -7949,9 +7949,24 @@ pub fn hybrid_path_reexplore(
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
     let max_len = graph.nodes.len().saturating_add(2);
 
-    // Dedup keys from existing tx (intron chain = all exon boundaries)
-    let mut seen: std::collections::HashSet<Vec<(u64, u64)>> =
+    // Dedup against existing tx chains (hybrid must be novel)
+    let existing_set: std::collections::HashSet<Vec<(u64, u64)>> =
         existing.iter().map(|t| t.exons.clone()).collect();
+
+    // Consensus counting: for each candidate hybrid chain, track the set of
+    // distinct (prefix_tx, suffix_tx) pairs that produced it. Emit only if
+    // consensus >= min_consensus (generation-level filter).
+    let min_consensus: usize = std::env::var("RUSTLE_HYBRID_MIN_CONSENSUS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    struct HybridCand {
+        exons: Vec<(u64, u64)>,
+        chain: Vec<(u64, u64)>,
+        tx_pairs: std::collections::HashSet<(usize, usize)>,
+        est_cov: f64,
+        switch_cur: usize,
+    }
+    let mut candidates: std::collections::HashMap<Vec<(u64, u64)>, HybridCand> =
+        std::collections::HashMap::new();
 
     // Precompute node paths for all existing txs once.
     let existing_paths: Vec<Vec<usize>> = existing.iter().map(|t| tx_to_node_path(graph, t)).collect();
@@ -8097,44 +8112,15 @@ pub fn hybrid_path_reexplore(
                 if exons.len() < 2 {
                     continue;
                 }
-                if seen.contains(&exons) {
+                if existing_set.contains(&exons) {
                     continue;
                 }
-                // All junctions must be in good_junctions (read-supported introns).
                 let chain: Vec<(u64, u64)> = (0..exons.len() - 1)
                     .map(|k| (exons[k].1, exons[k + 1].0))
                     .collect();
                 if !chain.iter().all(|jp| good_junctions.contains(jp)) {
                     continue;
                 }
-                // Read-evidence: the switch junction in this recombination is
-                // the first junction AFTER the common prefix. Find it.
-                let switch_j = {
-                    // For forward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
-                    // For backward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
-                    // In both cases it's the junction at the recombination point, but we don't
-                    // know which position in `chain` it is without tracking. Pick the one whose
-                    // donor == cur.end (forward) or acceptor == cur.start (backward).
-                    // Simpler: use chain junctions adjacent to `cur` node end/start.
-                    let cur_end = graph.nodes[cur].end;
-                    let cur_start = graph.nodes[cur].start;
-                    chain.iter().copied().find(|&(d, a)| d == cur_end || a == cur_start)
-                };
-                match switch_j {
-                    Some(sj) => {
-                        if !has_read_evidence(sj, &chain) {
-                            continue;
-                        }
-                    }
-                    None => {
-                        // Can't locate the recombination junction; reject
-                        // conservatively unless evidence is disabled.
-                        if !evidence_off {
-                            continue;
-                        }
-                    }
-                }
-                seen.insert(exons.clone());
                 let est_cov = new_path
                     .iter()
                     .filter(|&&n| n != graph.source_id && n != graph.sink_id)
@@ -8143,29 +8129,19 @@ pub fn hybrid_path_reexplore(
                 if !est_cov.is_finite() || est_cov < min_cov {
                     continue;
                 }
-                hybrids.push(Transcript {
-                    chrom: chrom.to_string(),
-                    strand,
-                    exons,
-                    coverage: est_cov,
-                    exon_cov: Vec::new(),
-                    tpm: 0.0,
-                    fpkm: 0.0,
-                    source: Some("hybrid_reexplore".to_string()),
-                    is_longread: true,
-                    longcov: est_cov,
-                    bpcov_cov: 0.0,
-                    transcript_id: None,
-                    gene_id: None,
-                    ref_transcript_id: None,
-                    ref_gene_id: None,
-                    hardstart: false,
-                    hardend: false,
-                    vg_family_id: None,
-                    vg_copy_id: None,
-                    vg_family_size: None,
-                    intron_low: Vec::new(),
-                });
+                let entry = candidates
+                    .entry(exons.clone())
+                    .or_insert_with(|| HybridCand {
+                        exons: exons.clone(),
+                        chain: chain.clone(),
+                        tx_pairs: std::collections::HashSet::new(),
+                        est_cov: 0.0,
+                        switch_cur: cur,
+                    });
+                entry.tx_pairs.insert((ti_cur, other_ti));
+                if est_cov > entry.est_cov {
+                    entry.est_cov = est_cov;
+                }
                 emitted_for_tx += 1;
                 if emitted_for_tx >= max_per_tx {
                     break;
@@ -8203,44 +8179,15 @@ pub fn hybrid_path_reexplore(
                 if exons.len() < 2 {
                     continue;
                 }
-                if seen.contains(&exons) {
+                if existing_set.contains(&exons) {
                     continue;
                 }
-                // All junctions must be in good_junctions (read-supported introns).
                 let chain: Vec<(u64, u64)> = (0..exons.len() - 1)
                     .map(|k| (exons[k].1, exons[k + 1].0))
                     .collect();
                 if !chain.iter().all(|jp| good_junctions.contains(jp)) {
                     continue;
                 }
-                // Read-evidence: the switch junction in this recombination is
-                // the first junction AFTER the common prefix. Find it.
-                let switch_j = {
-                    // For forward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
-                    // For backward case: switch is (last_node_of_prefix.end, first_node_of_suffix.start)
-                    // In both cases it's the junction at the recombination point, but we don't
-                    // know which position in `chain` it is without tracking. Pick the one whose
-                    // donor == cur.end (forward) or acceptor == cur.start (backward).
-                    // Simpler: use chain junctions adjacent to `cur` node end/start.
-                    let cur_end = graph.nodes[cur].end;
-                    let cur_start = graph.nodes[cur].start;
-                    chain.iter().copied().find(|&(d, a)| d == cur_end || a == cur_start)
-                };
-                match switch_j {
-                    Some(sj) => {
-                        if !has_read_evidence(sj, &chain) {
-                            continue;
-                        }
-                    }
-                    None => {
-                        // Can't locate the recombination junction; reject
-                        // conservatively unless evidence is disabled.
-                        if !evidence_off {
-                            continue;
-                        }
-                    }
-                }
-                seen.insert(exons.clone());
                 let est_cov = new_path
                     .iter()
                     .filter(|&&n| n != graph.source_id && n != graph.sink_id)
@@ -8249,35 +8196,79 @@ pub fn hybrid_path_reexplore(
                 if !est_cov.is_finite() || est_cov < min_cov {
                     continue;
                 }
-                hybrids.push(Transcript {
-                    chrom: chrom.to_string(),
-                    strand,
-                    exons,
-                    coverage: est_cov,
-                    exon_cov: Vec::new(),
-                    tpm: 0.0,
-                    fpkm: 0.0,
-                    source: Some("hybrid_reexplore".to_string()),
-                    is_longread: true,
-                    longcov: est_cov,
-                    bpcov_cov: 0.0,
-                    transcript_id: None,
-                    gene_id: None,
-                    ref_transcript_id: None,
-                    ref_gene_id: None,
-                    hardstart: false,
-                    hardend: false,
-                    vg_family_id: None,
-                    vg_copy_id: None,
-                    vg_family_size: None,
-                    intron_low: Vec::new(),
-                });
+                let entry = candidates
+                    .entry(exons.clone())
+                    .or_insert_with(|| HybridCand {
+                        exons: exons.clone(),
+                        chain: chain.clone(),
+                        tx_pairs: std::collections::HashSet::new(),
+                        est_cov: 0.0,
+                        switch_cur: cur,
+                    });
+                entry.tx_pairs.insert((ti_cur, other_ti));
+                if est_cov > entry.est_cov {
+                    entry.est_cov = est_cov;
+                }
                 emitted_for_tx += 1;
                 if emitted_for_tx >= max_per_tx {
                     break;
                 }
             }
         }
+    }
+
+    // Consensus + read-evidence filters, then emit.
+    for (_, cand) in candidates {
+        if cand.tx_pairs.len() < min_consensus {
+            continue;
+        }
+        if hybrids.len() >= max_per_bundle {
+            break;
+        }
+        // Apply read-evidence at emission time (consensus-passed candidates only).
+        let switch_cur = cand.switch_cur;
+        let cur_end = graph.nodes[switch_cur].end;
+        let cur_start = graph.nodes[switch_cur].start;
+        let switch_j = cand
+            .chain
+            .iter()
+            .copied()
+            .find(|&(d, a)| d == cur_end || a == cur_start);
+        match switch_j {
+            Some(sj) => {
+                if !has_read_evidence(sj, &cand.chain) {
+                    continue;
+                }
+            }
+            None => {
+                if !evidence_off {
+                    continue;
+                }
+            }
+        }
+        hybrids.push(Transcript {
+            chrom: chrom.to_string(),
+            strand,
+            exons: cand.exons,
+            coverage: cand.est_cov,
+            exon_cov: Vec::new(),
+            tpm: 0.0,
+            fpkm: 0.0,
+            source: Some("hybrid_reexplore".to_string()),
+            is_longread: true,
+            longcov: cand.est_cov,
+            bpcov_cov: 0.0,
+            transcript_id: None,
+            gene_id: None,
+            ref_transcript_id: None,
+            ref_gene_id: None,
+            hardstart: false,
+            hardend: false,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
+        });
     }
 
     hybrids
