@@ -10141,6 +10141,27 @@ pub fn run<P: AsRef<Path>>(
         all_transcripts = kept;
     }
 
+    // Precision cleanup C (OPT-IN, regresses): drop multi-exon tx lacking
+    // both hardstart AND hardend when cov is modest. Hypothesis was that
+    // k-class over-extensions would lack both anchors. In practice the
+    // hardstart/hardend flags are FALSE for most tx including legit
+    // matches, so filter indiscriminately kills hundreds. Kept gated for
+    // future work if flag population becomes more consistent.
+    if std::env::var_os("RUSTLE_WEAK_BOUNDARY_TRIM").is_some() {
+        let max_cov: f64 = std::env::var("RUSTLE_WEAK_BOUNDARY_MAX_COV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+        let before = all_transcripts.len();
+        all_transcripts.retain(|t| {
+            if t.exons.len() < 2 { return true; }
+            if t.hardstart || t.hardend { return true; }
+            if t.coverage >= max_cov { return true; }
+            false
+        });
+        if config.verbose && all_transcripts.len() < before {
+            eprintln!("rustle: weak_boundary_trim removed {} tx", before - all_transcripts.len());
+        }
+    }
+
     // Precision cleanup: for each cluster of overlapping same-strand tx,
     // compute max coverage and drop tx whose cov < alpha × max. Targets the
     // 98% of gffcompare `j`-class noise (novel-isoform over-emission of a
