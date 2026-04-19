@@ -4789,6 +4789,58 @@ pub fn extract_transcripts(
     let audit_zero_flux = std::env::var_os("RUSTLE_AUDIT_ZERO_FLUX").is_some();
     let depletion_diag = std::env::var_os("RUSTLE_DEPLETION_DIAG").is_some();
     let plumb_debug = std::env::var_os("RUSTLE_PLUMB_DEBUG").is_some();
+
+    // Incomplete-seed source/sink rescue (opt-in): for each trflong_seed
+    // with abundance >= threshold whose first/last real node lacks a
+    // source/sink edge, ADD the missing edge. This rescues patterns like
+    // STRG.136 (10 seeds all incomplete because longtrim didn't fire at
+    // low-cov boundaries) without waiting for a full longtrim refactor.
+    if std::env::var_os("RUSTLE_INCOMPLETE_SEED_RESCUE_ON").is_some() {
+        let min_abundance: f64 = std::env::var("RUSTLE_INCOMPLETE_SEED_MIN_ABUND")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+        let src = graph.source_id;
+        let snk = graph.sink_id;
+        let mut added_src = 0usize;
+        let mut added_snk = 0usize;
+        // Collect endpoint nodes from substantial seeds first
+        let mut src_targets: Vec<usize> = Vec::new();
+        let mut snk_targets: Vec<usize> = Vec::new();
+        for tf in transfrags.iter() {
+            if !tf.trflong_seed || tf.abundance < min_abundance { continue; }
+            // First real node (not source)
+            let first = tf.node_ids.iter().copied().find(|&n| n != src && n != snk);
+            let last = tf.node_ids.iter().rev().copied().find(|&n| n != src && n != snk);
+            if let Some(f) = first {
+                if !graph.nodes[src].children.contains(f) {
+                    src_targets.push(f);
+                }
+            }
+            if let Some(l) = last {
+                if !graph.nodes[l].children.contains(snk) {
+                    snk_targets.push(l);
+                }
+            }
+        }
+        src_targets.sort(); src_targets.dedup();
+        snk_targets.sort(); snk_targets.dedup();
+        for f in src_targets {
+            if !graph.nodes[src].children.contains(f) {
+                graph.add_edge(src, f);
+                graph.nodes[f].hardstart = true;
+                added_src += 1;
+            }
+        }
+        for l in snk_targets {
+            if !graph.nodes[l].children.contains(snk) {
+                graph.add_edge(l, snk);
+                graph.nodes[l].hardend = true;
+                added_snk += 1;
+            }
+        }
+        if std::env::var_os("RUSTLE_TRACE_INCOMPLETE_SEED").is_some() && (added_src + added_snk > 0) {
+            eprintln!("INCOMPLETE_SEED_RESCUE added src={} snk={}", added_src, added_snk);
+        }
+    }
     if std::env::var("RUSTLE_DEBUG_EK").is_ok() {
         let first_real = graph
             .nodes
