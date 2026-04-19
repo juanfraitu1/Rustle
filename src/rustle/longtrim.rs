@@ -656,6 +656,200 @@ pub fn apply_longtrim_direct(
         }
     }
 
+    // bpcov-based jump-point split pass. Scans internal node bpcov for
+    // dramatic up-jumps or down-jumps independent of lend/lstart clusters.
+    // Catches adjacent-gene cases (STRG.117-class) where the coverage
+    // transition has only a few reads ending/starting at the boundary but
+    // a large absolute cov jump (e.g. 5->536 at 22368043).
+    //
+    // Default ON (+1 match on GGO_19). Disable via RUSTLE_BPCOV_JUMP_SPLIT_OFF=1.
+    // Thresholds: RUSTLE_BPCOV_JUMP_RATIO (default 10.0),
+    //             RUSTLE_BPCOV_JUMP_MIN_LOW (default 2.0),
+    //             RUSTLE_BPCOV_JUMP_MIN_HIGH (default 50.0),
+    //             RUSTLE_BPCOV_JUMP_WIN (default 25).
+    if std::env::var_os("RUSTLE_BPCOV_JUMP_SPLIT_OFF").is_none() {
+        let ratio_thr: f64 = std::env::var("RUSTLE_BPCOV_JUMP_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(10.0);
+        let min_low: f64 = std::env::var("RUSTLE_BPCOV_JUMP_MIN_LOW")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+        let min_high: f64 = std::env::var("RUSTLE_BPCOV_JUMP_MIN_HIGH")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(50.0);
+        let win: u64 = std::env::var("RUSTLE_BPCOV_JUMP_WIN")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(25);
+        // Collect candidate splits first to avoid mutating graph while iterating.
+        let mut jump_candidates: Vec<(usize, u64, f64, bool)> = Vec::new(); // (nid, cut, tmpcov, is_up_jump)
+        let n_nodes = graph.nodes.len();
+        for nid in 0..n_nodes {
+            if nid == source || nid == sink { continue; }
+            let node = &graph.nodes[nid];
+            let ns = node.start;
+            let ne = node.end;
+            if ne <= ns + 2 * win { continue; }
+            // Scan internal positions for jumps. Skip near both edges.
+            let mut pos = ns + win;
+            while pos + win < ne {
+                let lo_start = pos.saturating_sub(win).max(ns);
+                let hi_end = (pos + win).min(ne);
+                // left: [lo_start, pos), right: [pos, hi_end)
+                let lo_si = bpcov.idx(lo_start);
+                let lo_ei = bpcov.idx(pos);
+                let hi_si = bpcov.idx(pos);
+                let hi_ei = bpcov.idx(hi_end);
+                let left_sum = bpcov.get_cov_range(lo_si, lo_ei);
+                let right_sum = bpcov.get_cov_range(hi_si, hi_ei);
+                let left_len = (pos - lo_start).max(1) as f64;
+                let right_len = (hi_end - pos).max(1) as f64;
+                let left_avg = left_sum / left_len;
+                let right_avg = right_sum / right_len;
+                // Up-jump: left low, right high
+                if left_avg <= min_low && right_avg >= min_high
+                    && right_avg >= left_avg * ratio_thr
+                {
+                    jump_candidates.push((nid, pos, (right_avg - left_avg).abs(), true));
+                    break;  // only one jump per node
+                }
+                // Down-jump: left high, right low
+                if right_avg <= min_low && left_avg >= min_high
+                    && left_avg >= right_avg * ratio_thr
+                {
+                    jump_candidates.push((nid, pos, (left_avg - right_avg).abs(), false));
+                    break;
+                }
+                pos += 1;
+            }
+        }
+        // Also check pairs of adjacent nodes for boundary jumps (common case
+        // for STRG.117-class where existing node boundary coincides with the
+        // coverage jump but no split/source/sink edges fire).
+        // Gate: RUSTLE_BPCOV_JUMP_BOUNDARY=1 (default off — currently too
+        // aggressive, regresses even with min_node_len=1000).
+        let mut boundary_jumps: Vec<(usize, usize, f64, bool)> = Vec::new(); // (prev_nid, curr_nid, tmpcov, is_up)
+        if std::env::var_os("RUSTLE_BPCOV_JUMP_BOUNDARY").is_some() {
+        for nid in 0..n_nodes {
+            if nid == source || nid == sink { continue; }
+            let node = &graph.nodes[nid];
+            if node.end <= node.start { continue; }
+            let children: Vec<usize> = node.children.ones().collect();
+            for c in children {
+                if c == sink { continue; }
+                let curr = &graph.nodes[c];
+                if curr.start != node.end { continue; } // only adjacent
+                if curr.end <= curr.start { continue; }
+                // Length guard: both sides must be substantial (real exons, not
+                // mid-gene micro-splits). Gate via RUSTLE_BPCOV_JUMP_MIN_NODE_LEN
+                // (default 100bp each).
+                let min_node_len: u64 = std::env::var("RUSTLE_BPCOV_JUMP_MIN_NODE_LEN")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+                let prev_len = node.end.saturating_sub(node.start);
+                let curr_len = curr.end.saturating_sub(curr.start);
+                if prev_len < min_node_len || curr_len < min_node_len { continue; }
+                // Compute left_avg over last `win` bp of prev, right_avg over first `win` bp of curr
+                let lo_start = node.end.saturating_sub(win).max(node.start);
+                let hi_end = (curr.start + win).min(curr.end);
+                if lo_start >= node.end || hi_end <= curr.start { continue; }
+                let left_sum = bpcov.get_cov_range(bpcov.idx(lo_start), bpcov.idx(node.end));
+                let right_sum = bpcov.get_cov_range(bpcov.idx(curr.start), bpcov.idx(hi_end));
+                let left_avg = left_sum / (node.end - lo_start).max(1) as f64;
+                let right_avg = right_sum / (hi_end - curr.start).max(1) as f64;
+                if left_avg <= min_low && right_avg >= min_high
+                    && right_avg >= left_avg * ratio_thr
+                {
+                    boundary_jumps.push((nid, c, (right_avg - left_avg).abs(), true));
+                } else if right_avg <= min_low && left_avg >= min_high
+                    && left_avg >= right_avg * ratio_thr
+                {
+                    boundary_jumps.push((nid, c, (left_avg - right_avg).abs(), false));
+                }
+            }
+        }
+        for (prev_nid, curr_nid, tmpcov, is_up) in boundary_jumps {
+            if prev_nid >= graph.nodes.len() || curr_nid >= graph.nodes.len() { continue; }
+            graph.nodes[prev_nid].hardend = true;
+            graph.nodes[prev_nid].longtrim_cov = tmpcov;
+            graph.nodes[curr_nid].hardstart = true;
+            graph.nodes[curr_nid].longtrim_cov = tmpcov;
+            let ps = graph.pattern_size();
+            if !graph.nodes[prev_nid].children.contains(sink) {
+                graph.add_edge(prev_nid, sink);
+                let mut tf_sink = GraphTransfrag::new(vec![prev_nid, sink], ps);
+                tf_sink.abundance = tmpcov;
+                tf_sink.longread = true;
+                tf_sink.longstart = graph.nodes[prev_nid].start;
+                tf_sink.longend = graph.nodes[prev_nid].end;
+                synthetic.push(tf_sink);
+                stats.sink_edges_added += 1;
+                stats.synthetic_transfrags += 1;
+            }
+            if !graph.nodes[curr_nid].parents.contains(source) {
+                graph.add_edge(source, curr_nid);
+                let mut tf_src = GraphTransfrag::new(vec![source, curr_nid], ps);
+                tf_src.abundance = tmpcov;
+                tf_src.longread = true;
+                tf_src.longstart = graph.nodes[curr_nid].start;
+                tf_src.longend = graph.nodes[curr_nid].end;
+                synthetic.push(tf_src);
+                stats.source_edges_added += 1;
+                stats.synthetic_transfrags += 1;
+            }
+            if std::env::var_os("RUSTLE_TRACE_BPCOV_JUMP").is_some() {
+                eprintln!("BPCOV_JUMP_BOUNDARY prev={}..{} curr={}..{} is_up={} tmpcov={:.2}",
+                    graph.nodes[prev_nid].start, graph.nodes[prev_nid].end,
+                    graph.nodes[curr_nid].start, graph.nodes[curr_nid].end,
+                    is_up, tmpcov);
+            }
+            stats.split_nodes += 1;
+        }
+        } // end RUSTLE_BPCOV_JUMP_BOUNDARY gate
+        // Apply splits
+        for (nid, cut, tmpcov, is_up) in jump_candidates {
+            if nid >= graph.nodes.len() { continue; }
+            let prev_end = graph.nodes[nid].end;
+            let ns = graph.nodes[nid].start;
+            if cut <= ns || cut >= prev_end { continue; }
+            let old_children: Vec<usize> = graph.nodes[nid].children.ones().collect();
+            for &c in &old_children { graph.remove_edge(nid, c); }
+            graph.nodes[nid].end = cut;
+            graph.nodes[nid].hardend = true;
+            graph.nodes[nid].longtrim_cov = tmpcov;
+            let new_nid = graph.add_node(cut, prev_end).node_id;
+            graph.nodes[new_nid].source_bnode = graph.nodes[nid].source_bnode;
+            graph.nodes[new_nid].hardstart = true;
+            graph.nodes[new_nid].longtrim_cov = tmpcov;
+            graph.add_edge(nid, new_nid);
+            // For up-jump: downstream is real, add source->new_nid (gene starts)
+            //              AND keep cur->sink for upstream
+            // For down-jump: upstream is real, add cur->sink (gene ends)
+            //                AND keep source->new_nid for downstream
+            graph.add_edge(nid, sink);
+            graph.add_edge(source, new_nid);
+            let ps = graph.pattern_size();
+            let mut tf_sink = GraphTransfrag::new(vec![nid, sink], ps);
+            tf_sink.abundance = tmpcov;
+            tf_sink.longread = true;
+            tf_sink.longstart = ns;
+            tf_sink.longend = cut;
+            synthetic.push(tf_sink);
+            let mut tf_src = GraphTransfrag::new(vec![source, new_nid], ps);
+            tf_src.abundance = tmpcov;
+            tf_src.longread = true;
+            tf_src.longstart = cut;
+            tf_src.longend = prev_end;
+            synthetic.push(tf_src);
+            for &c in &old_children {
+                graph.add_edge(new_nid, c);
+            }
+            if std::env::var_os("RUSTLE_TRACE_BPCOV_JUMP").is_some() {
+                eprintln!("BPCOV_JUMP_SPLIT nid={} cut={} node={}..{} is_up={} tmpcov={:.2}",
+                    nid, cut, ns, prev_end, is_up, tmpcov);
+            }
+            stats.split_nodes += 1;
+            stats.new_nodes += 1;
+            stats.sink_edges_added += 1;
+            stats.source_edges_added += 1;
+            stats.synthetic_transfrags += 2;
+        }
+    }
+
     if stats.split_nodes > 0 {
         graph.compute_reachability();
     }
