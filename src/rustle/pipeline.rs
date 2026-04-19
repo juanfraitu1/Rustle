@@ -5871,6 +5871,136 @@ fn apply_guide_reflink_absorption(
     out
 }
 
+/// Emit single-exon predictions from STRANDED bundles where dense clusters of
+/// mono-exon reads represent nested minor isoforms (alternative TSS/polyA
+/// within a larger exon). Targets the STRG.521.3 pattern.
+///
+/// Default on; disable with RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
+/// Knobs: RUSTLE_STRANDED_SE_MIN_READS (4), RUSTLE_STRANDED_SE_ENDPOINT_TOL (200),
+///        RUSTLE_STRANDED_SE_COV_RATIO (2.0).
+fn emit_stranded_single_exon_candidates(
+    bundle: &crate::types::Bundle,
+    bundle_txs: &[Transcript],
+    min_transcript_length: u64,
+    singlethr: f64,
+) -> Vec<Transcript> {
+    // Default OFF: emitted tx boundaries (raw read endpoints) don't align with
+    // StringTie's bpcov-based boundaries → gffcompare `c` not `=`. Needs a
+    // bpcov-walk boundary refinement to become a net win.
+    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_ON").is_none() {
+        return Vec::new();
+    }
+    if std::env::var_os("RUSTLE_TRACE_STRANDED_SE").is_some() {
+        eprintln!(
+            "STRANDED_SE_ENTRY bundle={}:{}-{}({}) reads={}",
+            bundle.chrom, bundle.start, bundle.end, bundle.strand, bundle.reads.len()
+        );
+    }
+    if bundle.strand != '+' && bundle.strand != '-' {
+        return Vec::new();
+    }
+    let min_reads: usize = std::env::var("RUSTLE_STRANDED_SE_MIN_READS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+    let endpoint_tol: u64 = std::env::var("RUSTLE_STRANDED_SE_ENDPOINT_TOL")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1500);
+    let cov_ratio: f64 = std::env::var("RUSTLE_STRANDED_SE_COV_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+
+    let mut mono: Vec<(u64, u64)> = bundle
+        .reads
+        .iter()
+        .filter(|r| r.exons.len() == 1)
+        .map(|r| (r.ref_start, r.ref_end))
+        .collect();
+    if std::env::var_os("RUSTLE_TRACE_STRANDED_SE").is_some() {
+        eprintln!(
+            "STRANDED_SE bundle={}:{}-{}({}) total_reads={} mono={} mono_list={:?}",
+            bundle.chrom, bundle.start, bundle.end, bundle.strand,
+            bundle.reads.len(), mono.len(),
+            mono.iter().take(10).collect::<Vec<_>>()
+        );
+    }
+    if mono.len() < min_reads {
+        return Vec::new();
+    }
+    mono.sort_by_key(|&(s, _)| s);
+
+    let mut clusters: Vec<Vec<(u64, u64)>> = Vec::new();
+    for (s, e) in mono {
+        let mut placed = false;
+        if let Some(last) = clusters.last_mut() {
+            let (ls, le) = last[0];
+            let ds = if s >= ls { s - ls } else { ls - s };
+            let de = if e >= le { e - le } else { le - e };
+            if ds <= endpoint_tol && de <= endpoint_tol {
+                last.push((s, e));
+                placed = true;
+            }
+        }
+        if !placed {
+            clusters.push(vec![(s, e)]);
+        }
+    }
+
+    let mut out = Vec::new();
+    for cluster in clusters {
+        if cluster.len() < min_reads {
+            continue;
+        }
+        let n = cluster.len();
+        let (starts, ends): (Vec<u64>, Vec<u64>) = cluster.iter().copied().unzip();
+        let med_start = *starts.iter().min().unwrap();
+        let med_end = *ends.iter().max().unwrap();
+        if med_end <= med_start {
+            continue;
+        }
+        let tlen = med_end - med_start + 1;
+        if tlen < min_transcript_length {
+            continue;
+        }
+        let avg_cov = n as f64;
+        if avg_cov < singlethr {
+            continue;
+        }
+        // Skip if fully contained in an existing tx exon with comparable cov
+        let duplicate = bundle_txs.iter().any(|t| {
+            t.strand == bundle.strand
+                && t.exons.iter().any(|&(es, ee)| {
+                    es <= med_start + endpoint_tol && ee + endpoint_tol >= med_end
+                })
+                && avg_cov < t.longcov * cov_ratio
+        });
+        if duplicate {
+            continue;
+        }
+
+        out.push(Transcript {
+            chrom: bundle.chrom.clone(),
+            strand: bundle.strand,
+            exons: vec![(med_start, med_end)],
+            coverage: avg_cov * tlen as f64,
+            exon_cov: vec![avg_cov * tlen as f64],
+            tpm: 0.0,
+            fpkm: 0.0,
+            source: Some("stranded_single_exon".to_string()),
+            is_longread: true,
+            longcov: avg_cov,
+            bpcov_cov: avg_cov,
+            transcript_id: None,
+            gene_id: None,
+            ref_transcript_id: None,
+            ref_gene_id: None,
+            hardstart: false,
+            hardend: false,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
+        });
+    }
+    out
+}
+
 /// Create single-exon predictions from bundle coverage for unstranded bundles
 /// with no multi-exon reads .
 fn create_single_exon_predictions_from_bundle(
@@ -9144,6 +9274,15 @@ pub fn run<P: AsRef<Path>>(
                     let trace_txs = pre_filter.unwrap_or_else(|| txs.clone());
                     raw_for_trace_mutex.lock().unwrap().push((sub_bundle.clone(), trace_txs, junc_tuples, seed_outcomes));
                 }
+                let stranded_se = emit_stranded_single_exon_candidates(
+                    &sub_bundle,
+                    &txs,
+                    config.min_transcript_length,
+                    config.singlethr,
+                );
+                if !stranded_se.is_empty() {
+                    single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
+                }
                 bundle_txs.extend(txs);
             } // end for color_group
             } // end for sbr_idx
@@ -9190,6 +9329,15 @@ pub fn run<P: AsRef<Path>>(
                     trace_bundle_end(bundle.end),
                     bundle_txs.len()
                 );
+            }
+            let stranded_se = emit_stranded_single_exon_candidates(
+                &bundle,
+                &bundle_txs,
+                config.min_transcript_length,
+                config.singlethr,
+            );
+            if !stranded_se.is_empty() {
+                single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
             }
             all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
             return Ok(());
@@ -9545,6 +9693,15 @@ pub fn run<P: AsRef<Path>>(
                 trace_bundle_end(bundle.end),
                 bundle_txs.len()
             );
+        }
+        let stranded_se = emit_stranded_single_exon_candidates(
+            &bundle,
+            &bundle_txs,
+            config.min_transcript_length,
+            config.singlethr,
+        );
+        if !stranded_se.is_empty() {
+            single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
         }
         all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
         Ok(())
