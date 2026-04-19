@@ -4809,9 +4809,24 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
         })
         .map(|(i, _)| i)
         .collect();
-    // ref: trflong order is determined by keeptrf insertion plus reverse iteration.
-    // usepath encodes the vector order, so ascending usepath reproduces consumption.
-    seeded.sort_unstable_by_key(|&i| transfrags[i].usepath);
+    // StringTie-parity sort: DESC by abundance, then DESC by node count.
+    // Matches StringTie's PARITY_TF ordering (t=0 is highest-abund longest,
+    // etc.). When enabled, this changes SEED PRIORITY — the first seed
+    // dominates flow depletion and downstream matched/rescue status.
+    // Opt-in via RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT=1.
+    if std::env::var_os("RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT").is_some() {
+        seeded.sort_by(|&a, &b| {
+            let ta = &transfrags[a];
+            let tb = &transfrags[b];
+            match tb.abundance.partial_cmp(&ta.abundance).unwrap_or(std::cmp::Ordering::Equal) {
+                std::cmp::Ordering::Equal => tb.node_ids.len().cmp(&ta.node_ids.len()),
+                other => other,
+            }
+        });
+    } else {
+        // Default (Rustle historical): sort by usepath (insertion order).
+        seeded.sort_unstable_by_key(|&i| transfrags[i].usepath);
+    }
     seeded
 }
 
@@ -7120,7 +7135,18 @@ pub fn extract_transcripts(
             uniq_check.sort_by(|&a, &b| {
                 let aa = transfrags.get(a).map(|tf| tf.abundance).unwrap_or(0.0);
                 let bb = transfrags.get(b).map(|tf| tf.abundance).unwrap_or(0.0);
-                bb.partial_cmp(&aa).unwrap_or(std::cmp::Ordering::Equal)
+                // Primary: abundance DESC
+                match bb.partial_cmp(&aa).unwrap_or(std::cmp::Ordering::Equal) {
+                    std::cmp::Ordering::Equal => {
+                        // Tiebreak: node count DESC (StringTie prefers longer
+                        // transfrag first among tied abundances; shorter ones
+                        // will then match/skip instead of generating duplicates).
+                        let an = transfrags.get(a).map(|tf| tf.node_ids.len()).unwrap_or(0);
+                        let bn = transfrags.get(b).map(|tf| tf.node_ids.len()).unwrap_or(0);
+                        bn.cmp(&an)
+                    }
+                    other => other,
+                }
             });
         }
         let has_guide_kept = kept_paths.iter().any(|(_, _, g, _)| *g);
