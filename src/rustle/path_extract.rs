@@ -4062,6 +4062,51 @@ fn fwd_to_sink_fast_long(
             c, ccoord.0, ccoord.1, maxcov, tmax
         );
     }
+    // StringTie-parity PATHPAT_OR gate (forward) — OPT-IN, regresses.
+    // Ported from trace: `PATHPAT_OR t=N bits_before=X bits_after=X new_bits=0 reason=fwd_tmax`
+    // Both return-true (1595→604) and return-false (1595→1583) regress.
+    // Forward gate semantics interact with sink-reaching path completion
+    // in ways not captured by `has_sink_child` or simple return values.
+    // Kept scaffolded for future investigation. RUSTLE_FWD_PATHPAT_OR_GATE=1 enables.
+    if std::env::var_os("RUSTLE_FWD_PATHPAT_OR_GATE").is_some() {
+        if let Some(t) = tmax {
+            let mut pp = pathpat.clone();
+            pp.set_bit(c);
+            edge_set(&mut pp, graph, i, c, true);
+            let before = pp.count_ones();
+            let mut spec = pp.clone();
+            spec.or_assign(&transfrags[t].pattern);
+            let after = spec.count_ones();
+            if after == before && before > 0 {
+                let ret_false = std::env::var_os("RUSTLE_FWD_GATE_RETURN_FALSE").is_some();
+                return !ret_false;
+            }
+        }
+    }
+    // Longcov-drop stop gate (opt-in): stop fwd extension if the next
+    // child node has longcov significantly below the current node's.
+    // Targets k-class over-extension where Rustle extends past the real
+    // TTS into downstream bnodes with low cov. Gated
+    // RUSTLE_FWD_LONGCOV_DROP_RATIO (default off via 0.0).
+    if std::env::var_os("RUSTLE_FWD_LONGCOV_DROP_OFF").is_none() && has_sink_child {
+        let ratio: f64 = std::env::var("RUSTLE_FWD_LONGCOV_DROP_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        if ratio > 0.0 {
+            let cur_node = graph.nodes.get(i).map(|n| n.coverage).unwrap_or(0.0);
+            let nxt_node = graph.nodes.get(c).map(|n| n.coverage).unwrap_or(0.0);
+            let cur_len = graph.nodes.get(i).map(|n| n.end.saturating_sub(n.start).max(1) as f64).unwrap_or(1.0);
+            let nxt_len = graph.nodes.get(c).map(|n| n.end.saturating_sub(n.start).max(1) as f64).unwrap_or(1.0);
+            let cur_pb = cur_node / cur_len;
+            let nxt_pb = nxt_node / nxt_len;
+            if cur_pb > 0.0 && nxt_pb < cur_pb * ratio {
+                if std::env::var_os("RUSTLE_TRACE_LONGCOV_DROP").is_some() {
+                    eprintln!("[LONGCOV_DROP] reject i={} c={} cur_pb={:.1} nxt_pb={:.1} ratio={:.3}",
+                        i, c, cur_pb, nxt_pb, nxt_pb / cur_pb);
+                }
+                return true;
+            }
+        }
+    }
     path.push(c);
     pathpat.set_bit(c);
     edge_set(pathpat, graph, i, c, true);
