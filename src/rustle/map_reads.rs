@@ -1001,6 +1001,23 @@ fn split_read_segments(
                 orphan_right = false;
             }
         }
+        // Longtrim split-at-hardend: when two adjacent graph nodes exist with a
+        // hardend/hardstart pair between them (from apply_longtrim_direct), force
+        // a read split. This fixes over-extension (57118036 + strand: 16 tx
+        // ending at 57133741 -> 3 tx ending at 57129805) but regresses -39 matches
+        // elsewhere because many adjacent hardend/hardstart pairs are legit
+        // continuation points that shouldn't split reads. Needs stronger guard
+        // (e.g. coverage drop ratio) to fire only on true gene-end boundaries.
+        // Gate: RUSTLE_LONGTRIM_READ_SPLIT=1 to enable. Default off.
+        if !split_here
+            && prev_node.end == curr_node.start
+            && prev_node.hardend
+            && curr_node.hardstart
+            && std::env::var_os("RUSTLE_LONGTRIM_READ_SPLIT").is_some()
+        {
+            split_here = true;
+            orphan_right = false;
+        }
 
         if split_here {
             if seg_start < j {
