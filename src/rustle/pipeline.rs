@@ -5881,6 +5881,7 @@ fn apply_guide_reflink_absorption(
 fn emit_stranded_single_exon_candidates(
     bundle: &crate::types::Bundle,
     bundle_txs: &[Transcript],
+    bpcov_stranded: Option<&BpcovStranded>,
     min_transcript_length: u64,
     singlethr: f64,
 ) -> Vec<Transcript> {
@@ -5949,8 +5950,30 @@ fn emit_stranded_single_exon_candidates(
         }
         let n = cluster.len();
         let (starts, ends): (Vec<u64>, Vec<u64>) = cluster.iter().copied().unzip();
-        let med_start = *starts.iter().min().unwrap();
-        let med_end = *ends.iter().max().unwrap();
+        let mut med_start = *starts.iter().min().unwrap();
+        let mut med_end = *ends.iter().max().unwrap();
+        // bpcov-walk: extend boundaries outward while strand-specific cov
+        // stays above singlethr (captures TSS/TTS past individual read endpoints).
+        if let Some(bps) = bpcov_stranded {
+            let cov_vec = if bundle.strand == '+' { &bps.plus.cov } else { &bps.minus.cov };
+            let bs = bps.plus.bundle_start.min(bps.minus.bundle_start);
+            let be = bps.plus.bundle_end.max(bps.minus.bundle_end);
+            let walk_thr = (singlethr * 0.5).max(1.0);
+            // Walk start backward
+            while med_start > bs {
+                let idx = (med_start - 1 - bs) as usize;
+                if idx >= cov_vec.len() { break; }
+                if cov_vec[idx] < walk_thr { break; }
+                med_start -= 1;
+            }
+            // Walk end forward
+            while med_end + 1 <= be {
+                let idx = (med_end + 1 - bs) as usize;
+                if idx >= cov_vec.len() { break; }
+                if cov_vec[idx] < walk_thr { break; }
+                med_end += 1;
+            }
+        }
         if med_end <= med_start {
             continue;
         }
@@ -9277,6 +9300,7 @@ pub fn run<P: AsRef<Path>>(
                 let stranded_se = emit_stranded_single_exon_candidates(
                     &sub_bundle,
                     &txs,
+                    Some(&sub_bpcov_stranded),
                     config.min_transcript_length,
                     config.singlethr,
                 );
@@ -9333,6 +9357,7 @@ pub fn run<P: AsRef<Path>>(
             let stranded_se = emit_stranded_single_exon_candidates(
                 &bundle,
                 &bundle_txs,
+                Some(&bpcov_stranded),
                 config.min_transcript_length,
                 config.singlethr,
             );
@@ -9697,6 +9722,7 @@ pub fn run<P: AsRef<Path>>(
         let stranded_se = emit_stranded_single_exon_candidates(
             &bundle,
             &bundle_txs,
+            Some(&bpcov_stranded),
             config.min_transcript_length,
             config.singlethr,
         );
