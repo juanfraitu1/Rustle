@@ -366,10 +366,21 @@ fn get_ts_strand(record: &RecordBuf) -> Option<bool> {
         _ => return None,
     };
     let is_rev = record.flags().is_reverse_complemented();
-    match ts {
-        '+' => Some(!is_rev),
-        '-' => Some(is_rev),
-        _ => None,
+    // Gate: RUSTLE_TS_DIRECT=1 treats ts tag as direct transcript strand
+    // (minimap2's ts is already relative to reference; no XOR needed).
+    // Default: match StringTie's GSam.cpp:spliceStrand() XOR with reverse flag.
+    if std::env::var_os("RUSTLE_TS_DIRECT").is_some() {
+        match ts {
+            '+' => Some(true),
+            '-' => Some(false),
+            _ => None,
+        }
+    } else {
+        match ts {
+            '+' => Some(!is_rev),
+            '-' => Some(is_rev),
+            _ => None,
+        }
     }
 }
 
