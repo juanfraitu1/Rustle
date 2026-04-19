@@ -9110,12 +9110,27 @@ pub fn run<P: AsRef<Path>>(
                 };
                 let mapping_bnodes = sbr.bnode_head.clone();
 
+                // Use parent bundle reads (restricted to sub_bundle range) for bpcov/boundary
+                // computation so longtrim detects boundaries uniformly. Previously only
+                // sub_bundle.reads were used, which missed end-boundaries like 22152351
+                // (STRG.109/110) because sub_bundle's reads are a narrow subset.
+                // Disable via RUSTLE_COVREADS_PARENT_OFF=1.
+                let parent_cov_reads: Vec<BundleRead>;
+                let cov_reads_ref: &[BundleRead] = if std::env::var_os("RUSTLE_COVREADS_PARENT_OFF").is_none() {
+                    parent_cov_reads = bundle.reads.iter()
+                        .filter(|r| r.ref_start < sub_bundle.end && r.ref_end > sub_bundle.start)
+                        .cloned()
+                        .collect();
+                    &parent_cov_reads
+                } else {
+                    &sub_bundle.reads
+                };
                 let (txs, pre_filter, seed_outcomes) = process_graph(
                     &sub_bundle,
                     sub_junctions.clone(),
                     mapping_bnodes,
                     &sub_bundle.reads,
-                    &sub_bundle.reads,
+                    cov_reads_ref,
                     Some(&sub_read_bnodes),
                     &sub_good_junctions,
                     &sub_killed_junction_pairs,
