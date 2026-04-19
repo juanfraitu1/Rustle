@@ -5499,6 +5499,82 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
+    // Direct read-chain emission: for each unique junction chain seen in
+    // the bundle reads with >= min_reads supporting reads, emit as a
+    // candidate tx if not already present. Rationale: walkability
+    // analysis shows 218 missing ref tx form valid paths in the graph;
+    // their chains are present in reads but path extraction picks a
+    // different (longer) path. This rescue emits each distinct chain
+    // directly, letting downstream filters (pairwise, cov-frac) decide
+    // survival.
+    //
+    // Default off; RUSTLE_DIRECT_READ_CHAIN=1 enables.
+    if std::env::var_os("RUSTLE_DIRECT_READ_CHAIN").is_some() && !bundle.reads.is_empty() {
+        let min_reads: usize = std::env::var("RUSTLE_DIRECT_READ_CHAIN_MIN_READS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+        let min_chain_len: usize = std::env::var("RUSTLE_DIRECT_READ_CHAIN_MIN_JUNCS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+
+        // Collect (junction_chain → (support_count, exons_list))
+        use std::collections::HashMap;
+        let mut chain_groups: HashMap<Vec<(u64, u64)>, (usize, Vec<(u64, u64)>, char)> =
+            HashMap::new();
+        for r in &bundle.reads {
+            if r.exons.len() < min_chain_len + 1 { continue; }
+            let chain: Vec<(u64, u64)> = r.exons.windows(2)
+                .map(|w| (w[0].1, w[1].0))
+                .collect();
+            // Only consider junctions in good_junctions
+            let all_good = chain.iter().all(|jp| good_junctions.contains(jp));
+            if !all_good { continue; }
+            let strand = if r.strand == '+' || r.strand == '-' { r.strand } else { bundle.strand };
+            if strand == '.' { continue; }
+            let entry = chain_groups.entry(chain.clone()).or_insert_with(|| (0, r.exons.clone(), strand));
+            entry.0 += 1;
+        }
+
+        // Already-emitted chains
+        let existing_chains: std::collections::HashSet<Vec<(u64, u64)>> = txs.iter()
+            .filter(|t| t.exons.len() >= 2)
+            .map(|t| t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect())
+            .collect();
+
+        let mut added = 0usize;
+        for (chain, (support, exons, strand)) in chain_groups {
+            if support < min_reads { continue; }
+            if existing_chains.contains(&chain) { continue; }
+            // Emit as candidate
+            txs.push(Transcript {
+                chrom: bundle.chrom.clone(),
+                strand,
+                exons,
+                coverage: support as f64,
+                exon_cov: Vec::new(),
+                tpm: 0.0,
+                fpkm: 0.0,
+                source: Some("direct_read_chain".to_string()),
+                is_longread: true,
+                longcov: support as f64,
+                bpcov_cov: 0.0,
+                transcript_id: None,
+                gene_id: None,
+                ref_transcript_id: None,
+                ref_gene_id: None,
+                hardstart: false,
+                hardend: false,
+                vg_family_id: None,
+                vg_copy_id: None,
+                vg_family_size: None,
+                intron_low: Vec::new(),
+            });
+            added += 1;
+        }
+        if added > 0 && config.verbose {
+            eprintln!("rustle: direct_read_chain emitted {} tx for bundle {}:{}-{}",
+                added, bundle.chrom, bundle.start, bundle.end);
+        }
+    }
+
     // Intra-intron rescue: for each emitted tx, scan large introns
     // (>= min_intron bp) for graph nodes entirely contained within the
     // intron region. Connect them into sub-paths (via graph edges) and
