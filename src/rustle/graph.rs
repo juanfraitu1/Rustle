@@ -47,6 +47,13 @@ pub struct GraphNode {
     pub trf_ids: Vec<usize>,
     pub childpat: Option<crate::bitset::SmallBitset>,
     pub parentpat: Option<crate::bitset::SmallBitset>,
+    /// Coverage-drop contrast at a longtrim split point.
+    /// Set on both sides of a longtrim split (the hardend upstream node carries
+    /// this value on its .longtrim_cov, and the hardstart downstream node does too).
+    /// Used by map_reads read-split gate to distinguish strong gene-end boundaries
+    /// from weak alt-TTS/alt-TSS boundaries.
+    /// 0.0 when no longtrim split applies to this node.
+    pub longtrim_cov: f64,
 }
 
 impl GraphNode {
@@ -73,6 +80,7 @@ impl GraphNode {
             trf_ids: Vec::new(),
             childpat: None,
             parentpat: None,
+            longtrim_cov: 0.0,
         }
     }
 

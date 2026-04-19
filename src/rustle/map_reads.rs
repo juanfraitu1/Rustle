@@ -1026,10 +1026,13 @@ fn split_read_segments(
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(1000);
             let min_ratio: f64 = std::env::var("RUSTLE_LONGTRIM_READ_SPLIT_MIN_RATIO")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+            let min_tmpcov: f64 = std::env::var("RUSTLE_LONGTRIM_READ_SPLIT_MIN_TMPCOV")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(50.0);
             let prev_len = prev_node.end.saturating_sub(prev_node.start).max(1);
             let curr_len = curr_node.end.saturating_sub(curr_node.start);
             let ratio = (curr_len as f64) / (prev_len as f64);
-            if curr_len >= min_curr && ratio >= min_ratio {
+            let tmpcov = prev_node.longtrim_cov.max(curr_node.longtrim_cov);
+            if curr_len >= min_curr && ratio >= min_ratio && tmpcov >= min_tmpcov {
                 split_here = true;
                 orphan_right = false;
             }
