@@ -7958,10 +7958,17 @@ pub fn hybrid_path_reexplore(
     // consensus >= min_consensus (generation-level filter).
     let min_consensus: usize = std::env::var("RUSTLE_HYBRID_MIN_CONSENSUS")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    // Weighted consensus: each (prefix_tx, suffix_tx) pair contributes
+    // weight = min(prefix_tx.cov, suffix_tx.cov). Real isoforms should
+    // be reachable via recombinations of high-coverage parents.
+    let min_weight: f64 = std::env::var("RUSTLE_HYBRID_MIN_WEIGHT")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     struct HybridCand {
         exons: Vec<(u64, u64)>,
         chain: Vec<(u64, u64)>,
         tx_pairs: std::collections::HashSet<(usize, usize)>,
+        weight_sum: f64,
+        switch_points: std::collections::HashSet<usize>,
         est_cov: f64,
         switch_cur: usize,
     }
@@ -8129,16 +8136,22 @@ pub fn hybrid_path_reexplore(
                 if !est_cov.is_finite() || est_cov < min_cov {
                     continue;
                 }
+                let pair_weight = existing[ti_cur].coverage.min(existing[other_ti].coverage).max(0.0);
                 let entry = candidates
                     .entry(exons.clone())
                     .or_insert_with(|| HybridCand {
                         exons: exons.clone(),
                         chain: chain.clone(),
                         tx_pairs: std::collections::HashSet::new(),
+                        weight_sum: 0.0,
+                        switch_points: std::collections::HashSet::new(),
                         est_cov: 0.0,
                         switch_cur: cur,
                     });
-                entry.tx_pairs.insert((ti_cur, other_ti));
+                if entry.tx_pairs.insert((ti_cur, other_ti)) {
+                    entry.weight_sum += pair_weight;
+                }
+                entry.switch_points.insert(cur);
                 if est_cov > entry.est_cov {
                     entry.est_cov = est_cov;
                 }
@@ -8196,16 +8209,22 @@ pub fn hybrid_path_reexplore(
                 if !est_cov.is_finite() || est_cov < min_cov {
                     continue;
                 }
+                let pair_weight = existing[ti_cur].coverage.min(existing[other_ti].coverage).max(0.0);
                 let entry = candidates
                     .entry(exons.clone())
                     .or_insert_with(|| HybridCand {
                         exons: exons.clone(),
                         chain: chain.clone(),
                         tx_pairs: std::collections::HashSet::new(),
+                        weight_sum: 0.0,
+                        switch_points: std::collections::HashSet::new(),
                         est_cov: 0.0,
                         switch_cur: cur,
                     });
-                entry.tx_pairs.insert((ti_cur, other_ti));
+                if entry.tx_pairs.insert((ti_cur, other_ti)) {
+                    entry.weight_sum += pair_weight;
+                }
+                entry.switch_points.insert(cur);
                 if est_cov > entry.est_cov {
                     entry.est_cov = est_cov;
                 }
@@ -8217,9 +8236,21 @@ pub fn hybrid_path_reexplore(
         }
     }
 
-    // Consensus + read-evidence filters, then emit.
+    // Per-switch-point consensus: optionally require the hybrid chain to
+    // be supported by pairs recombining at >= N distinct switch points.
+    // Default 1 (single switch point acceptable).
+    let min_switch_points: usize = std::env::var("RUSTLE_HYBRID_MIN_SWITCH_POINTS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+
+    // Consensus + weight + read-evidence filters, then emit.
     for (_, cand) in candidates {
         if cand.tx_pairs.len() < min_consensus {
+            continue;
+        }
+        if cand.weight_sum < min_weight {
+            continue;
+        }
+        if cand.switch_points.len() < min_switch_points {
             continue;
         }
         if hybrids.len() >= max_per_bundle {
