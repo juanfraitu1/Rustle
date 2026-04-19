@@ -4669,6 +4669,132 @@ fn register_transfrag_range_on_nodes(
 ///   predcluster_stage_summary,
 ///   unsupported_junction_removed,
 /// ).
+/// Dump Rustle's graph for a bundle as a DOT file + check walkability
+/// of every reference transcript's intron chain through the graph.
+/// Triggered by env RUSTLE_GRAPH_DOT_DIR.
+fn dump_graph_and_walkability(
+    graph: &Graph,
+    bundle: &crate::types::Bundle,
+    ref_transcripts: &[RefTranscript],
+    dir: &str,
+    chrom: &str,
+) {
+    use std::io::Write;
+    let _ = std::fs::create_dir_all(dir);
+    let tag = format!("{}_{}_{}_{}",
+        chrom.replace('.', "_"), bundle.start, bundle.end,
+        match bundle.strand { '+' => "p", '-' => "m", _ => "u" });
+
+    // --- DOT export ---
+    let dot_path = format!("{}/{}.dot", dir, tag);
+    let mut dot = match std::fs::File::create(&dot_path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let _ = writeln!(dot, "digraph bundle_{} {{", tag);
+    let _ = writeln!(dot, "  rankdir=LR;");
+    let _ = writeln!(dot, "  node [shape=box,fontsize=10];");
+    let src = graph.source_id;
+    let snk = graph.sink_id;
+    for (nid, n) in graph.nodes.iter().enumerate() {
+        let label = if nid == src { "source".to_string() }
+            else if nid == snk { "sink".to_string() }
+            else { format!("n{}\\n{}-{}\\ncov={:.1}", nid, n.start, n.end, n.coverage) };
+        let color = if n.hardstart && n.hardend { "lightblue" }
+            else if n.hardstart { "lightgreen" }
+            else if n.hardend { "lightyellow" }
+            else { "white" };
+        let _ = writeln!(dot, "  n{} [label=\"{}\",style=filled,fillcolor={}];", nid, label, color);
+    }
+    for (nid, n) in graph.nodes.iter().enumerate() {
+        for c in n.children.ones() {
+            let _ = writeln!(dot, "  n{} -> n{};", nid, c);
+        }
+    }
+    let _ = writeln!(dot, "}}");
+
+    // --- Walkability check ---
+    // For each ref tx overlapping the bundle, test if its intron chain
+    // forms a valid path in the graph.
+    let walk_path = format!("{}/{}.walkable.tsv", dir, tag);
+    let mut wf = match std::fs::File::create(&walk_path) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let _ = writeln!(wf, "tx_id\tstrand\tspan\tn_exons\twalkable\tnode_path\tmissing_edges");
+
+    // Build (chrom+strand-aware) position → node lookup
+    let mut start_map: std::collections::HashMap<u64, usize> =
+        std::collections::HashMap::new();
+    let mut end_map: std::collections::HashMap<u64, usize> =
+        std::collections::HashMap::new();
+    for (nid, n) in graph.nodes.iter().enumerate() {
+        if nid == src || nid == snk { continue; }
+        if n.end <= n.start { continue; }
+        start_map.insert(n.start, nid);
+        end_map.insert(n.end, nid);
+    }
+
+    for rt in ref_transcripts {
+        if rt.chrom != chrom { continue; }
+        if rt.strand != bundle.strand && bundle.strand != '.' { continue; }
+        let rt_start = rt.exons.first().map(|e| e.0).unwrap_or(0);
+        let rt_end = rt.exons.last().map(|e| e.1).unwrap_or(0);
+        // Overlap with bundle
+        if rt_end < bundle.start || rt_start > bundle.end { continue; }
+
+        // rt.exons is already stored as (start_0based, end_inclusive) which
+        // equals (start_halfopen, end_halfopen). Use directly.
+        let internal_exons: Vec<(u64, u64)> = rt.exons.clone();
+        let mut node_path: Vec<i64> = Vec::new();
+        let mut missing: Vec<String> = Vec::new();
+        let mut walkable = true;
+        for i in 0..internal_exons.len().saturating_sub(1) {
+            let donor = internal_exons[i].1;   // exon end (internal half-open = GTF inclusive end)
+            let acceptor = internal_exons[i + 1].0;
+            let d_node = end_map.get(&donor).copied();
+            let a_node = start_map.get(&acceptor).copied();
+            match (d_node, a_node) {
+                (Some(d), Some(a)) => {
+                    if i == 0 { node_path.push(d as i64); }
+                    if graph.nodes[d].children.contains(a) {
+                        node_path.push(a as i64);
+                    } else {
+                        walkable = false;
+                        missing.push(format!("edge_missing:{}->{}", d, a));
+                        node_path.push(-1);
+                    }
+                }
+                _ => {
+                    walkable = false;
+                    if d_node.is_none() {
+                        missing.push(format!("donor_node_missing:{}", donor));
+                    }
+                    if a_node.is_none() {
+                        missing.push(format!("acceptor_node_missing:{}", acceptor));
+                    }
+                    node_path.push(-1);
+                }
+            }
+        }
+        if internal_exons.len() == 1 && node_path.is_empty() {
+            // single-exon tx: check if any node fully contains its span
+            let (s, e) = internal_exons[0];
+            let contained = graph.nodes.iter().enumerate().any(|(nid, n)| {
+                nid != src && nid != snk && n.start <= s && n.end >= e
+            });
+            if !contained { walkable = false; missing.push("single_exon_not_in_any_node".into()); }
+        }
+        let _ = writeln!(wf,
+            "{}\t{}\t{}-{}\t{}\t{}\t{}\t{}",
+            rt.id, rt.strand, rt_start, rt_end, rt.exons.len(),
+            walkable,
+            node_path.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(","),
+            if missing.is_empty() { "-".to_string() } else { missing.join(";") }
+        );
+    }
+}
+
 /// The trace-related elements are only populated when `trace_mode` is true.
 fn extract_bundle_transcripts_for_graph(
     graph_mut: &mut Graph,
@@ -4695,6 +4821,15 @@ fn extract_bundle_transcripts_for_graph(
     let trace_stage = |stage: &str, txs: &[Transcript]| {
         debug_target_ref_stage(stage, bundle, ref_transcripts, txs);
     };
+
+    // Graph DOT dump: set RUSTLE_GRAPH_DOT_DIR=/path to write graph.dot
+    // per bundle, plus a .walkable TSV checking whether each ref tx
+    // intron chain forms a walkable path in the graph.
+    if let Ok(dir) = std::env::var("RUSTLE_GRAPH_DOT_DIR") {
+        dump_graph_and_walkability(
+            graph_mut, bundle, ref_transcripts, &dir, &bundle.chrom
+        );
+    }
 
     // Rebuild node->transfrag membership to match current transfrag list.
     for node in graph_mut.nodes.iter_mut() {
