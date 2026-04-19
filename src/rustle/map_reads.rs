@@ -938,6 +938,19 @@ fn split_read_segments(
                     // keeping the path intact.  Only split when the junction is killed
                     // AND there's no nearby good junction to redirect to — this
                     // indicates a genuinely bad alignment that can't be repaired.
+                    if std::env::var_os("RUSTLE_TRACE_STRG29_SPLIT").is_some()
+                        && prev_node.end >= 17451900 && curr_node.start <= 17452400
+                    {
+                        let killed_count = killed_junction_pairs.map(|s| s.len()).unwrap_or(0);
+                        let has_our_junc = killed_junction_pairs.map(|s| s.contains(&junc)).unwrap_or(false);
+                        let has_corrected = killed_junction_pairs.map(|s| s.contains(&corrected)).unwrap_or(false);
+                        eprintln!(
+                            "STRG29_SPLIT prev={}..{} curr={}..{} junc={}-{} corrected={}-{} within_win={} killed={} valid={} killed_set_size={} has_our_junc={} has_corrected={}",
+                            prev_node.start, prev_node.end, curr_node.start, curr_node.end,
+                            junc.donor, junc.acceptor, corrected.donor, corrected.acceptor,
+                            within_window, killed, valid, killed_count, has_our_junc, has_corrected
+                        );
+                    }
                     if !valid {
                         // Check if a nearby good junction exists that could bridge this gap
                         let has_nearby_good = killed_junction_pairs

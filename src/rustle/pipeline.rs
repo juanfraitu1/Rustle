@@ -7297,6 +7297,17 @@ pub fn run<P: AsRef<Path>>(
             })
             .map(|(j, _)| *j)
             .collect();
+        // Also treat mm<0 junctions as killed for read-split purposes (bridging
+        // run-through junctions that lead to cross-gene reads). Matches StringTie
+        // behavior: mm<0 junctions get strand=0 in the per-read loop.
+        // Disable via RUSTLE_ALLOW_MM_NEG_IN_KILLED=1.
+        if std::env::var_os("RUSTLE_ALLOW_MM_NEG_IN_KILLED").is_none() {
+            for (j, s) in &junction_stats_corr_final {
+                if s.mm < 0.0 && s.strand != Some(0) {
+                    killed_juncs.insert(*j);
+                }
+            }
+        }
         if std::env::var_os("RUSTLE_PROPAGATE_KILLED_CORRECTED").is_some() {
             for (orig, dest) in &junction_redirect_map {
                 if killed_juncs.contains(orig) {
@@ -8845,6 +8856,20 @@ pub fn run<P: AsRef<Path>>(
                     sub_bundle.end,
                     &config,
                 );
+                // Inherit mm<0 from bundle-level junction_stats so sub-bundle's
+                // compute_killed_junction_pairs treats HE_CONT-demoted junctions as killed.
+                // Without this, junctions that were demoted at bundle level (e.g., STRG.29
+                // bridging junction 17451950-17452250) don't re-fire HE_CONT at sub-bundle
+                // level, so read-split doesn't detect them as killed.
+                if std::env::var_os("RUSTLE_INHERIT_MM_NEG_OFF").is_none() {
+                    for (j, bundle_stat) in &junction_stats_corr_final {
+                        if bundle_stat.mm < 0.0 {
+                            if let Some(sub_stat) = sub_junction_stats_corr.get_mut(j) {
+                                sub_stat.mm = bundle_stat.mm;
+                            }
+                        }
+                    }
+                }
                 let mut sub_junction_redirect_map: HashMap<Junction, Junction> = Default::default();
                 count_good_junctions(
                     &mut sub_bundle.reads,
