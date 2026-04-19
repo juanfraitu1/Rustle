@@ -4617,11 +4617,19 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                 // - default (with lowintron): full-containment + lowintron gate
                 // - fallback (no lowintron): full-containment (legacy)
                 let partial_mode = std::env::var_os("RUSTLE_XSTRAND_C4_PARTIAL").is_some();
+                // StringTie's pre-retainedintron guard (rlink.cpp:19058-19063):
+                // skip retainedintron kill when n2's first OR last exon is < anchor (25bp).
+                // These tiny terminal exons get killed by a DIFFERENT code path in StringTie
+                // (line 19062); porting only retainedintron without this guard over-kills.
+                const LONGINTRONANCHOR: u64 = 25;
+                let n2_first_len = txs[n2].exons.first().map(|&(s,e)| e.saturating_sub(s)).unwrap_or(0);
+                let n2_last_len = txs[n2].exons.last().map(|&(s,e)| e.saturating_sub(s)).unwrap_or(0);
+                let small_terminal = n2_first_len < LONGINTRONANCHOR || n2_last_len < LONGINTRONANCHOR;
                 // StringTie retainedintron() port (rlink.cpp:17742) with 4 cases:
                 //   last_exon / first_exon / middle_exon / exon_overlap
                 // All gated on n1.intron_low[i-1]. Walks n1 introns in order, advancing j
                 // through n2 exons.
-                let killed = if use_lowintron_gate {
+                let killed = if use_lowintron_gate && !small_terminal {
                     let frac = 0.1f64; // ERROR_PERC
                     let cov_ok = txs[n2].coverage < frac * txs[n1].coverage;
                     let mut j = 0usize;
