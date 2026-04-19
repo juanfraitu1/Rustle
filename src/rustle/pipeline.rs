@@ -5514,6 +5514,11 @@ fn extract_bundle_transcripts_for_graph(
             .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
         let min_chain_len: usize = std::env::var("RUSTLE_DIRECT_READ_CHAIN_MIN_JUNCS")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+        // Per-junction minimum read support: every junction in the chain
+        // must have >= min_junc_reads in bundle.junction_stats. Rejects
+        // chains containing weak junctions (likely sequencing artifacts).
+        let min_junc_reads: f64 = std::env::var("RUSTLE_DIRECT_READ_CHAIN_MIN_JUNC_READS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(3.0);
 
         // Collect (junction_chain → (support_count, exons_list))
         use std::collections::HashMap;
@@ -5527,6 +5532,14 @@ fn extract_bundle_transcripts_for_graph(
             // Only consider junctions in good_junctions
             let all_good = chain.iter().all(|jp| good_junctions.contains(jp));
             if !all_good { continue; }
+            // Per-junction support from junction_stats
+            let all_well_supported = chain.iter().all(|&(d, a)| {
+                let j = crate::types::Junction::new(d, a);
+                bundle.junction_stats.get(&j)
+                    .map(|s| s.mrcount >= min_junc_reads)
+                    .unwrap_or(false)
+            });
+            if !all_well_supported { continue; }
             let strand = if r.strand == '+' || r.strand == '-' { r.strand } else { bundle.strand };
             if strand == '.' { continue; }
             let entry = chain_groups.entry(chain.clone()).or_insert_with(|| (0, r.exons.clone(), strand));
