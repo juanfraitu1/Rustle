@@ -545,6 +545,9 @@ pub fn apply_longtrim_direct(
                     graph.nodes[cur_nid].hardend = true;
                     let new_nid = graph.add_node(cut, prev_end).node_id;
                     graph.nodes[new_nid].source_bnode = graph.nodes[cur_nid].source_bnode;
+                    // Mark the new node as hardstart so the RUSTLE_LONGTRIM_READ_SPLIT
+                    // gate in map_reads.rs can identify this as a split boundary.
+                    graph.nodes[new_nid].hardstart = true;
                     // Restore original longtrim behavior: link cur->new AND cur->sink.
                     // Reads that span the cut still emit a spanning transfrag; the
                     // RUSTLE_LONGTRIM_READ_SPLIT gate in map_reads.rs is what actually

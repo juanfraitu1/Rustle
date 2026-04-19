@@ -1009,14 +1009,30 @@ fn split_read_segments(
         // continuation points that shouldn't split reads. Needs stronger guard
         // (e.g. coverage drop ratio) to fire only on true gene-end boundaries.
         // Gate: RUSTLE_LONGTRIM_READ_SPLIT=1 to enable. Default off.
+        // Strictness controls to target true gene-end splits:
+        //   RUSTLE_LONGTRIM_READ_SPLIT_MIN_CURR_LEN (default 1000): curr_node
+        //     must be at least this long. Small curr_node typically means
+        //     alt-terminal exon within the same gene; large typically means
+        //     a new gene.
+        //   RUSTLE_LONGTRIM_READ_SPLIT_MIN_RATIO (default 2.0): curr_node
+        //     length / prev_node length. Asymmetric = probable gene boundary.
         if !split_here
             && prev_node.end == curr_node.start
             && prev_node.hardend
             && curr_node.hardstart
             && std::env::var_os("RUSTLE_LONGTRIM_READ_SPLIT").is_some()
         {
-            split_here = true;
-            orphan_right = false;
+            let min_curr: u64 = std::env::var("RUSTLE_LONGTRIM_READ_SPLIT_MIN_CURR_LEN")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(1000);
+            let min_ratio: f64 = std::env::var("RUSTLE_LONGTRIM_READ_SPLIT_MIN_RATIO")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+            let prev_len = prev_node.end.saturating_sub(prev_node.start).max(1);
+            let curr_len = curr_node.end.saturating_sub(curr_node.start);
+            let ratio = (curr_len as f64) / (prev_len as f64);
+            if curr_len >= min_curr && ratio >= min_ratio {
+                split_here = true;
+                orphan_right = false;
+            }
         }
 
         if split_here {
