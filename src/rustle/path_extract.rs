@@ -7999,7 +7999,8 @@ pub fn hybrid_path_reexplore(
             if evidence_off {
                 return true;
             }
-            let chain_set: std::collections::HashSet<(u64, u64)> = chain.iter().copied().collect();
+            let chain_idx: std::collections::HashMap<(u64, u64), usize> =
+                chain.iter().enumerate().map(|(i, &jp)| (jp, i)).collect();
             let ridx = match junc_to_reads.get(&switch) {
                 Some(v) => v,
                 None => return false,
@@ -8011,19 +8012,27 @@ pub fn hybrid_path_reexplore(
                 if r.junctions.len() < 2 {
                     continue;
                 }
-                let mut all_in_chain = true;
+                // Each read junction must be in chain AND appear in strictly
+                // ascending chain index (ORDERED subsequence, not set).
+                let mut ok = true;
+                let mut last_ci: i64 = -1;
                 let mut other_count = 0usize;
                 for j in &r.junctions {
                     let jp = (j.donor, j.acceptor);
-                    if !chain_set.contains(&jp) {
-                        all_in_chain = false;
+                    let ci = match chain_idx.get(&jp) {
+                        Some(&c) => c as i64,
+                        None => { ok = false; break; }
+                    };
+                    if ci <= last_ci {
+                        ok = false;
                         break;
                     }
+                    last_ci = ci;
                     if jp != switch {
                         other_count += 1;
                     }
                 }
-                if all_in_chain && other_count >= min_other {
+                if ok && other_count >= min_other {
                     return true;
                 }
             }
