@@ -6818,6 +6818,135 @@ fn emit_stranded_single_exon_candidates(
     out
 }
 
+/// Emit single-exon candidates from CLUSTERS OF TERMINAL EXONS of multi-exon
+/// reads. Targets StringTie's nested-SE gene calls (e.g. STRG.276 at
+/// 40126487-40126701 supported by 21 multi-exon reads whose LAST exon falls
+/// in the region, vs only mono-exon reads picked up by the stranded path).
+///
+/// Opt-in via RUSTLE_TERMINAL_SE_ON=1. Knobs:
+///   RUSTLE_TERMINAL_SE_MIN_READS (7), RUSTLE_TERMINAL_SE_CLUSTER_TOL (500).
+fn emit_terminal_exon_se_candidates(
+    bundle: &crate::types::Bundle,
+    bundle_txs: &[Transcript],
+    min_transcript_length: u64,
+    singlethr: f64,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_TERMINAL_SE_ON").is_none() {
+        return Vec::new();
+    }
+    if bundle.strand != '+' && bundle.strand != '-' {
+        return Vec::new();
+    }
+    let min_reads: usize = std::env::var("RUSTLE_TERMINAL_SE_MIN_READS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(7);
+    let cluster_tol: u64 = std::env::var("RUSTLE_TERMINAL_SE_CLUSTER_TOL")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(500);
+
+    // Terminal exons = 3' exon for + strand, 5' exon for - strand.
+    // StringTie's nested-SE calls tend to share the 3' endpoint with the
+    // host's terminal exon, so we cluster by 3' position (end for +, start
+    // for -) using the read's strand-oriented terminal exon.
+    let mut terms: Vec<(u64, u64)> = bundle
+        .reads
+        .iter()
+        .filter(|r| r.exons.len() >= 2)
+        .map(|r| {
+            if bundle.strand == '+' {
+                *r.exons.last().unwrap()
+            } else {
+                r.exons[0]
+            }
+        })
+        .collect();
+    if terms.len() < min_reads {
+        return Vec::new();
+    }
+    // Sort by polyA side of the terminal exon: for + strand that's the exon
+    // END (e), for - strand that's the exon START (s). Clustering on the
+    // polyA side concentrates read-endpoint density where TTS is called.
+    terms.sort_by_key(|&(s, e)| if bundle.strand == '+' { e } else { s });
+
+    let mut clusters: Vec<Vec<(u64, u64)>> = Vec::new();
+    for (s, e) in terms {
+        let key = if bundle.strand == '+' { e } else { s };
+        let mut placed = false;
+        if let Some(last) = clusters.last_mut() {
+            let (ls, le) = last[0];
+            let lkey = if bundle.strand == '+' { le } else { ls };
+            if key.abs_diff(lkey) <= cluster_tol {
+                last.push((s, e));
+                placed = true;
+            }
+        }
+        if !placed {
+            clusters.push(vec![(s, e)]);
+        }
+    }
+
+    let mut out = Vec::new();
+    for cluster in clusters {
+        if cluster.len() < min_reads {
+            continue;
+        }
+        let n = cluster.len();
+        let med_start = cluster.iter().map(|&(s, _)| s).min().unwrap();
+        let med_end = cluster.iter().map(|&(_, e)| e).max().unwrap();
+        if med_end <= med_start {
+            continue;
+        }
+        let tlen = med_end - med_start + 1;
+        if tlen < min_transcript_length {
+            continue;
+        }
+        let avg_cov = n as f64;
+        if avg_cov < singlethr {
+            continue;
+        }
+        // Skip near-duplicate of a multi-exon tx's terminal exon (within 100bp).
+        // The distinct signal is that StringTie's nested SE has SHORTER span
+        // than its host's terminal exon.
+        let near_dup_terminal = bundle_txs.iter().any(|t| {
+            if t.strand != bundle.strand || t.exons.len() < 2 {
+                return false;
+            }
+            let (ts, te) = if bundle.strand == '+' {
+                *t.exons.last().unwrap()
+            } else {
+                t.exons[0]
+            };
+            ts.abs_diff(med_start) <= 100 && te.abs_diff(med_end) <= 100
+        });
+        if near_dup_terminal {
+            continue;
+        }
+
+        out.push(Transcript {
+            chrom: bundle.chrom.clone(),
+            strand: bundle.strand,
+            exons: vec![(med_start, med_end)],
+            coverage: avg_cov,
+            exon_cov: vec![avg_cov],
+            tpm: 0.0,
+            fpkm: 0.0,
+            source: Some("terminal_exon_se".to_string()),
+            is_longread: true,
+            longcov: avg_cov,
+            bpcov_cov: avg_cov,
+            transcript_id: None,
+            gene_id: None,
+            ref_transcript_id: None,
+            ref_gene_id: None,
+            hardstart: false,
+            hardend: false,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
+        });
+    }
+    out
+}
+
 /// Create single-exon predictions from bundle coverage for unstranded bundles
 /// with no multi-exon reads .
 fn create_single_exon_predictions_from_bundle(
@@ -10165,6 +10294,15 @@ pub fn run<P: AsRef<Path>>(
                 if !stranded_se.is_empty() {
                     single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
                 }
+                let term_se = emit_terminal_exon_se_candidates(
+                    &sub_bundle,
+                    &txs,
+                    config.min_transcript_length,
+                    config.singlethr,
+                );
+                if !term_se.is_empty() {
+                    single_exon_predictions_mutex.lock().unwrap().extend(term_se);
+                }
                 bundle_txs.extend(txs);
             } // end for color_group
             } // end for sbr_idx
@@ -10221,6 +10359,15 @@ pub fn run<P: AsRef<Path>>(
             );
             if !stranded_se.is_empty() {
                 single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
+            }
+            let term_se = emit_terminal_exon_se_candidates(
+                &bundle,
+                &bundle_txs,
+                config.min_transcript_length,
+                config.singlethr,
+            );
+            if !term_se.is_empty() {
+                single_exon_predictions_mutex.lock().unwrap().extend(term_se);
             }
             all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
             return Ok(());
@@ -10587,6 +10734,15 @@ pub fn run<P: AsRef<Path>>(
         if !stranded_se.is_empty() {
             single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
         }
+        let term_se = emit_terminal_exon_se_candidates(
+            &bundle,
+            &bundle_txs,
+            config.min_transcript_length,
+            config.singlethr,
+        );
+        if !term_se.is_empty() {
+            single_exon_predictions_mutex.lock().unwrap().extend(term_se);
+        }
         all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
         Ok(())
     })?;
@@ -10697,6 +10853,15 @@ pub fn run<P: AsRef<Path>>(
             .into_iter()
             .filter(|tx| {
                 if tx.coverage < singlethr { return false; }
+                // Terminal-exon SE emission DELIBERATELY targets nested SE
+                // genes that sit in host introns or share terminal exons with
+                // the host (e.g. STRG.213 in intron of STRG.212; STRG.276
+                // sharing 3' end of STRG.275). Exempt this source from the
+                // intron-containment / exon-containment kills; still apply
+                // antisense kill as a precision safeguard.
+                let is_terminal_src = matches!(
+                    tx.source.as_deref(), Some("terminal_exon_se")
+                );
                 let se_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
                 let se_end = tx.exons.last().map(|e| e.1).unwrap_or(0);
                 for (chrom, strand, exons) in &multi_spans {
@@ -10705,11 +10870,11 @@ pub fn run<P: AsRef<Path>>(
                     let me_end = exons.last().map(|e| e.1).unwrap_or(0);
                     if se_end < me_start { continue; }
                     if se_start > me_end { continue; }
-                    // Antisense overlap kill (x/e-class).
+                    // Antisense overlap kill (x/e-class) — applies to all SE.
                     if *strand != tx.strand && *strand != '.' && tx.strand != '.' {
                         return false;
                     }
-                    if *strand == tx.strand {
+                    if *strand == tx.strand && !is_terminal_src {
                         // Kill if inside an intron (i/n/m-class).
                         if exons.len() >= 2 {
                             for w in exons.windows(2) {
@@ -11274,13 +11439,31 @@ pub fn run<P: AsRef<Path>>(
                     j += 1;
                 }
                 if cluster.len() > 1 {
+                    // SE tx have coverage = read-count per-base, which for
+                    // terminal-exon SE can be 20-200+ — if used as cluster
+                    // max_cov, threshold climbs high enough to kill marginal
+                    // multi-exon siblings. Exclude single-exon sources from
+                    // max_cov computation so multi-exon tx set the scale.
+                    let is_se_source = |k: usize| {
+                        let t = &all_transcripts[k];
+                        t.exons.len() == 1 && matches!(
+                            t.source.as_deref(),
+                            Some("stranded_single_exon") | Some("terminal_exon_se")
+                        )
+                    };
                     let max_cov = cluster.iter()
+                        .filter(|&&k| !is_se_source(k))
                         .map(|&k| all_transcripts[k].coverage)
                         .fold(0.0f64, f64::max);
+                    // Fallback: if cluster is only SE, use any cov as max.
+                    let max_cov = if max_cov > 0.0 {
+                        max_cov
+                    } else {
+                        cluster.iter()
+                            .map(|&k| all_transcripts[k].coverage)
+                            .fold(0.0f64, f64::max)
+                    };
                     let thr = max_cov * alpha;
-                    // Find the max-cov members (there may be more than one
-                    // tied on cov); we'll exempt `k` if it's nested inside
-                    // any higher-cov cluster member.
                     for &k in &cluster {
                         let tk = &all_transcripts[k];
                         if tk.coverage >= thr { continue; }
