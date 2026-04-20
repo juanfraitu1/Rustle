@@ -47,29 +47,53 @@ impl Default for NodeRole {
 }
 
 impl NodeRole {
-    /// Whether read-to-node mapping considers this node as a candidate.
+    /// Whether STANDARD read-to-node mapping (via bundle2graph in
+    /// coord-sorted order) considers this node. Returns true only for
+    /// `Primary` because overlap nodes would coord-intersect the same
+    /// bp as Primary siblings; including both would route each read to
+    /// multiple nodes and break exon-to-node exclusivity.
+    ///
+    /// In pure-overlap mode (no Primary siblings), use
+    /// [`NodeRole::accepts_reads_pure_overlap`] instead.
     #[inline]
     pub fn accepts_reads(self) -> bool {
-        // Currently: primary only. Overlap-alongside mode routes reads
-        // via post-pass (substitute_alias_for_spanning_run) rather than
-        // via bundle2graph. A future pure-overlap mode will flip this
-        // to true for OverlapAnchor/JunctionEntry.
         matches!(self, NodeRole::Primary)
     }
 
+    /// Pure-overlap-mode read routing: overlap nodes DO accept reads
+    /// because they're the only nodes covering their bp range in this
+    /// mode. Used by a separate pure-overlap bundle2graph variant.
+    #[inline]
+    pub fn accepts_reads_pure_overlap(self) -> bool {
+        true
+    }
+
     /// Whether per-base coverage aggregation sums onto this node.
+    ///
+    /// - `Primary`: yes
+    /// - `OverlapAnchor`: no — its genomic range is covered by Primary
+    ///   splits (overlap-alongside) or by JunctionEntry children
+    ///   (pure-overlap). Aggregating would double-count.
+    /// - `JunctionEntry`: no — same reasoning: its range overlaps the
+    ///   OverlapAnchor's, which aggregates (or in overlap-alongside
+    ///   mode the Primary splits do).
     #[inline]
     pub fn accrues_coverage(self) -> bool {
         matches!(self, NodeRole::Primary)
     }
 
     /// Whether prune source/sink auto-attach considers this node.
+    /// Overlap nodes receive edges programmatically (at bundlenode
+    /// creation time); auto-attach would create spurious single-node
+    /// paths.
     #[inline]
     pub fn prune_autoattach(self) -> bool {
         matches!(self, NodeRole::Primary)
     }
 
     /// Whether longtrim bundle scheduling iterates this node.
+    /// Longtrim runs per Primary split; overlap nodes share their
+    /// bundlenode with a Primary and don't need their own schedule.
     #[inline]
     pub fn longtrim_schedule(self) -> bool {
         matches!(self, NodeRole::Primary)

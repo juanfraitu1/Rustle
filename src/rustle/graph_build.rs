@@ -430,12 +430,20 @@ pub fn build_bundle2graph(graph: &Graph, bundlenodes: Option<&CBundlenode>) -> B
     }
     let max_bid = bids.into_iter().max().unwrap_or(0);
     let mut map: Bundle2Graph = vec![Vec::new(); max_bid + 1];
+    // In pure-overlap mode, Primary disjoint splits don't exist and
+    // read routing must include overlap nodes (OverlapAnchor,
+    // JunctionEntry). Gated behind RUSTLE_PURE_OVERLAP=1.
+    let pure_overlap = std::env::var_os("RUSTLE_PURE_OVERLAP").is_some();
     for (nid, node) in graph.nodes.iter().enumerate() {
         if nid == graph.source_id || nid == graph.sink_id {
             continue;
         }
-        // Skip nodes whose role opts out of read routing.
-        if !node.role.accepts_reads() {
+        let accept = if pure_overlap {
+            node.role.accepts_reads_pure_overlap()
+        } else {
+            node.role.accepts_reads()
+        };
+        if !accept {
             continue;
         }
         if let Some(bid) = node.source_bnode {
@@ -766,6 +774,51 @@ fn create_graph_inner(
                         && events[ei].1 == JunctionEventType::End
                     {
                         ei += 1;
+                    }
+
+                    // PURE OVERLAP mode (RUSTLE_PURE_OVERLAP=1):
+                    // Don't shrink the current node; create a JunctionEntry
+                    // parallel spanning [acceptor, endbundle) and link
+                    // ends[acceptor] to it. Initial bundlenode node becomes
+                    // an OverlapAnchor (set on first acceptor only).
+                    if std::env::var_os("RUSTLE_PURE_OVERLAP").is_some()
+                        && graph.nodes[graphnode_id].start < acceptor
+                        && acceptor < endbundle
+                    {
+                        // Promote the initial bundlenode node (still Primary)
+                        // to OverlapAnchor the first time we fork.
+                        if graph.nodes[graphnode_id].role == NodeRole::Primary
+                            && !bundlenode_aliases.contains(&graphnode_id)
+                        {
+                            graph.nodes[graphnode_id].role = NodeRole::OverlapAnchor;
+                            bundlenode_aliases.push(graphnode_id);
+                        }
+                        // Create JunctionEntry [acceptor, endbundle)
+                        let entry = graph.add_node(acceptor, endbundle);
+                        entry.source_bnode = Some(source_bid);
+                        entry.coverage = 0.0;
+                        entry.role = NodeRole::JunctionEntry;
+                        let entry_id = entry.node_id;
+                        create_graph_new_node(
+                            trace_s,
+                            trace_g,
+                            entry_id,
+                            acceptor,
+                            endbundle,
+                            "junction_entry(pure_overlap)",
+                        );
+                        // Link junction parents → entry
+                        if let Some(parent_ids) = ends.get(&acceptor).cloned() {
+                            for pid in parent_ids {
+                                graph.add_edge(pid, entry_id);
+                            }
+                        }
+                        // Track entry for end-of-bundlenode children patch
+                        bundlenode_aliases.push(entry_id);
+                        // Advance graphnode_id to new entry so subsequent donor
+                        // events attach here (acceptors fork further from entry).
+                        graphnode_id = entry_id;
+                        continue;
                     }
 
                     // Split current node if it started before this acceptor
