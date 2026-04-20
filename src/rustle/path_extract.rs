@@ -3631,11 +3631,38 @@ fn fwd_to_sink_fast_long(
                 i, inode.start, inode.end, seed_idx, seed_longend
             );
         }
+        // Tolerance for longend ↔ inode.end match. 0 = exact, small
+        // positive values allow soft-clip / 1-2bp drift. Default 0.
+        // Tighter match avoids firing on dominant-isoform seeds whose
+        // read truncated inside a hardend node without the read actually
+        // ending at the alt-TTS coord.
+        let he_tol: u64 = std::env::var("RUSTLE_FWD_HARDEND_TOL")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let longend_near_end = seed_longend > 0
+            && seed_longend <= inode.end
+            && inode.end.saturating_sub(seed_longend) <= he_tol;
+        // Abundance gate (optional): skip HE termination if seed is
+        // dominant path through this node. RUSTLE_FWD_HARDEND_MAX_COV_FRAC
+        // caps seed.abundance/node.coverage. Default 0 = disabled.
+        let he_max_frac: f64 = std::env::var("RUSTLE_FWD_HARDEND_MAX_COV_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let seed_abund = transfrags.get(seed_idx).map(|t| t.abundance).unwrap_or(0.0);
+        let inode_cov = inode.coverage;
+        let abund_ok = if he_max_frac > 0.0 && inode_cov > 0.0 {
+            seed_abund / inode_cov <= he_max_frac
+        } else {
+            true
+        };
+        // Ambition gate: only fire if the seed's maxpath IS the current
+        // node — i.e., the seed has no ambition to extend past here.
+        // Any seed whose pattern contains a node downstream of `i`
+        // keeps extending normally. Stricter than coord-based range.
+        let ambition_ok = *maxpath == i;
         if inode.hardend
             && has_sink_child
-            && seed_longend > 0
-            && inode.start <= seed_longend
-            && seed_longend <= inode.end
+            && longend_near_end
+            && abund_ok
+            && ambition_ok
         {
             // Push sink and set the sink-edge bit so the caller sees
             // a complete [...i, sink] termination just like the normal
@@ -3652,8 +3679,9 @@ fn fwd_to_sink_fast_long(
                     }
                 }).collect();
                 eprintln!(
-                    "[HE_DIAG] HARDEND_TERMINATE_FIRE i={} coord={}-{} seed={} seed_longend={} path_len={} path_tail={}",
+                    "[HE_DIAG] HARDEND_TERMINATE_FIRE i={} coord={}-{} seed={} seed_longend={} seed_abund={:.2} inode_cov={:.1} path_len={} path_tail={}",
                     i, inode.start, inode.end, seed_idx, seed_longend,
+                    seed_abund, inode_cov,
                     path.len(),
                     path_coords.iter().rev().take(6).cloned().collect::<Vec<_>>().join(",")
                 );
