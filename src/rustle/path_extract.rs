@@ -4731,6 +4731,16 @@ fn back_to_source_fast_long(
                 if p != source && path.last() == Some(&p) {
                     path.pop();
                 }
+                // Default: return true (Rustle historical behavior; path is
+                // valid at current length, stop extending further back).
+                // Opt-in RUSTLE_BACK_PATHPAT_OR_GATE_RETURN_FAIL=1 to return
+                // false when path.len() <= 1 (StringTie-parity seed→checktrf
+                // semantic). Net regressed on GGO_19 (-59 matches); kept as
+                // scaffold for per-locus tuning.
+                let return_fail = std::env::var_os("RUSTLE_BACK_PATHPAT_OR_GATE_RETURN_FAIL").is_some();
+                if return_fail && path.len() <= 1 {
+                    return false;
+                }
                 return true;
             }
         }
