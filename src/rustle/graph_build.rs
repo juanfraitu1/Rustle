@@ -418,6 +418,155 @@ pub fn add_alt_tts_sink_edges(
     out
 }
 
+/// Discover hardend nodes from READ-SIGNAL: terminal-read cluster ending
+/// within an exon whose high-coord boundary is a canonical junction donor.
+///
+/// Biology: alt-TTS isoforms terminate at the same canonical exon boundary
+/// that longer siblings use as a splice donor. Reads supporting the shorter
+/// variant align within the exon (with jitter, not exactly at the donor),
+/// so no raw read-end clusters at the donor coord. But the CLUSTER of read
+/// ends WITHIN the exon indicates biological termination at that exon.
+///
+/// For each primary node n whose end coord matches a junction donor on the
+/// bundle strand, count reads whose last exon ends within [n.start, n.end].
+/// If >= min_reads, mark n.hardend = true and add sink edge if missing.
+///
+/// Opt-in via RUSTLE_TERMINAL_DONOR_HARDEND=1. Threshold tunable via
+/// RUSTLE_TERMINAL_DONOR_MIN (default 3).
+pub fn discover_terminal_donor_hardends(
+    graph: &mut Graph,
+    reads: &[BundleRead],
+    junctions: &[Junction],
+    bundle_strand: char,
+    junction_stats: Option<&JunctionStats>,
+) -> Vec<GraphTransfrag> {
+    let mut out: Vec<GraphTransfrag> = Vec::new();
+    if std::env::var_os("RUSTLE_TERMINAL_DONOR_HARDEND").is_none() {
+        return out;
+    }
+    let min_reads: usize = std::env::var("RUSTLE_TERMINAL_DONOR_MIN")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let pattern_size = graph.pattern_size();
+
+    // Build donor set from canonical bundle-strand junctions.
+    let filtered = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
+    let donor_set: HashSet<u64> = filtered.iter().map(|j| j.donor).collect();
+    if donor_set.is_empty() {
+        return out;
+    }
+
+    // For each primary node whose end is a donor coord, count reads whose
+    // LAST exon ends within [node.start, node.end]. (Reads with more exons
+    // past this coord have their last exon elsewhere, not counted.)
+    let n_nodes = graph.n_nodes;
+    let mut additions: Vec<usize> = Vec::new();
+    let mut hardend_only: Vec<usize> = Vec::new();
+    let diag = std::env::var_os("RUSTLE_TERMINAL_DONOR_DEBUG").is_some();
+
+    // Ratio gate: terminate-here / continue-past the donor. Alt-TTS
+    // biology produces a visible split: some reads end in the exon,
+    // some continue past via splice. Require terminate >= ratio * continue
+    // to distinguish real alt-TTS from noise truncation.
+    let min_ratio: f64 = std::env::var("RUSTLE_TERMINAL_DONOR_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    for i in 0..n_nodes {
+        if i == source_id || i == sink_id {
+            continue;
+        }
+        let node = &graph.nodes[i];
+        if node.role != NodeRole::Primary {
+            continue;
+        }
+        if node.end <= node.start {
+            continue;
+        }
+        if !donor_set.contains(&node.end) {
+            continue;
+        }
+        let (ns, ne) = (node.start, node.end);
+
+        let mut count = 0usize;       // reads ending in this exon
+        let mut continue_count = 0usize; // reads with splice past this donor
+        for r in reads {
+            let Some(last) = r.exons.last() else { continue };
+            if last.1 >= ns && last.1 <= ne {
+                count += 1;
+                continue;
+            }
+            // Does any exon of this read end at or near this donor AND have a
+            // subsequent exon? That indicates read continues past via splice.
+            for (ei, ex) in r.exons.iter().enumerate() {
+                if ei + 1 >= r.exons.len() { break; }
+                if ex.1 == ne {
+                    continue_count += 1;
+                    break;
+                }
+            }
+        }
+        if count < min_reads {
+            continue;
+        }
+        if min_ratio > 0.0 && continue_count > 0 {
+            let r = count as f64 / continue_count as f64;
+            if r < min_ratio {
+                if diag {
+                    eprintln!(
+                        "TERMINAL_DONOR reject-ratio node_id={} coord={}-{} term={} cont={} ratio={:.2} min={}",
+                        i, ns, ne, count, continue_count, r, min_ratio
+                    );
+                }
+                continue;
+            }
+        }
+        if diag {
+            eprintln!(
+                "TERMINAL_DONOR candidate node_id={} coord={}-{} term={} cont={} has_sink_child={}",
+                i, ns, ne, count, continue_count, node.children.contains(sink_id)
+            );
+        }
+        if node.children.contains(sink_id) {
+            hardend_only.push(i);
+        } else {
+            additions.push(i);
+        }
+    }
+
+    // Whether to also ADD sink edge (not just mark hardend). Off by default —
+    // adding sink edges + synthetic transfrags disturbs flow decomposition
+    // across many nodes that happen to be junction donors with some read
+    // termination nearby.
+    let add_edges = std::env::var_os("RUSTLE_TERMINAL_DONOR_ADD_SINK").is_some();
+    for &nid in &additions {
+        graph.nodes[nid].hardend = true;
+        if add_edges {
+            graph.add_edge(nid, sink_id);
+            let mut tf = GraphTransfrag::new(vec![nid, sink_id], pattern_size);
+            tf.abundance = 1.0;
+            tf.longread = true;
+            out.push(tf);
+        }
+        if diag {
+            eprintln!(
+                "TERMINAL_DONOR hardend SET (add_edge={}): node_id={} coord={}-{}",
+                add_edges, nid, graph.nodes[nid].start, graph.nodes[nid].end
+            );
+        }
+    }
+    let _ = pattern_size; // suppress unused warning when add_edges=false
+    for &nid in &hardend_only {
+        graph.nodes[nid].hardend = true;
+        if diag {
+            eprintln!(
+                "TERMINAL_DONOR hardend SET (existing sink): node_id={} coord={}-{}",
+                nid, graph.nodes[nid].start, graph.nodes[nid].end
+            );
+        }
+    }
+    out
+}
+
 fn collect_bundlenodes(bn: Option<&CBundlenode>) -> Vec<(usize, u64, u64, f64)> {
     let mut out = Vec::new();
     let mut cur = bn;

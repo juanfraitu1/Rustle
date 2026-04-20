@@ -8803,6 +8803,16 @@ pub fn run<P: AsRef<Path>>(
                     graph_bundle.strand,
                     Some(&graph_bundle.junction_stats),
                 );
+                // Terminal-read cluster → junction-donor hardend (opt-in
+                // read-signal-based alt-TTS detection). Replaces the need
+                // for RUSTLE_ALT_TTS_ORACLE when enabled.
+                let terminal_donor_synth = crate::graph_build::discover_terminal_donor_hardends(
+                    &mut graph_mut,
+                    reads,
+                    junctions.as_ref(),
+                    graph_bundle.strand,
+                    Some(&graph_bundle.junction_stats),
+                );
 
                 // Coverage-based node splitting: short-read always (trimnode_all); long/mixed when longtrim not yet implemented
                 let synthetic = if use_coverage_trim(mode) {
@@ -8845,6 +8855,9 @@ pub fn run<P: AsRef<Path>>(
                 // through the same post-prune remap + flow seeding paths.
                 if !alt_tts_synth.is_empty() {
                     coverage_synth.extend(alt_tts_synth);
+                }
+                if !terminal_donor_synth.is_empty() {
+                    coverage_synth.extend(terminal_donor_synth);
                 }
                 if mode.is_long_read() {
                     for tf in &mut coverage_synth {
