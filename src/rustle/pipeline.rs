@@ -10015,8 +10015,64 @@ pub fn run<P: AsRef<Path>>(
                     config.per_splice_site_isofrac,
                     config.verbose,
                 );
-                let sub_junctions =
+                let mut sub_junctions =
                     filter_junctions(&sub_junction_stats, config.min_junction_reads);
+                // Alt-acceptor sub-bundle rescue (opt-in, scaffold).
+                // Sub-bundle recomputes junction stats from its narrower read
+                // pool, dropping alt-acceptors that are alive in outer bundle
+                // (e.g., STRG.275's 40068714 acceptor: outer mrcount=468
+                // strand=-1, sub-bundle mrcount=4 strand=0 → killed).
+                //
+                // Re-inject outer-alive alt-siblings that are:
+                // - Missing from sub_junctions
+                // - Within a TIGHT acceptor/donor window of a kept junction
+                //   (alt-splice signature, e.g., 4bp apart)
+                // - Outer has STRONG support (>= N reads) — we're preserving
+                //   confident alt-splice sites, not weak variants
+                //
+                // Default OFF — sweep showed all parameter choices regress F1
+                // by -5 to -9 matches due to collateral flow-graph disturbance
+                // on other bundles. Kept as scaffold for future work where
+                // flow attribution can be adjusted proportionally.
+                //
+                // Enable via RUSTLE_ALT_ACCEPTOR_RESCUE=1.
+                let mut sub_junction_stats = sub_junction_stats;
+                if std::env::var_os("RUSTLE_ALT_ACCEPTOR_RESCUE").is_some() {
+                    let rescue_min_reads: f64 = std::env::var(
+                        "RUSTLE_ALT_ACCEPTOR_RESCUE_MIN_READS")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(20.0);
+                    let rescue_window: u64 = std::env::var(
+                        "RUSTLE_ALT_ACCEPTOR_RESCUE_WINDOW")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(8);
+                    let sub_set: HashSet<Junction> = sub_junctions.iter().copied().collect();
+                    let mut rescued = 0usize;
+                    for (j, outer_stat) in &junction_stats_corr_final {
+                        if sub_set.contains(j) { continue; }
+                        if !matches!(outer_stat.strand, Some(-1) | Some(1)) { continue; }
+                        if outer_stat.nreads_good < rescue_min_reads { continue; }
+                        if j.donor < sub_bundle.start || j.acceptor > sub_bundle.end {
+                            continue;
+                        }
+                        let is_alt_sibling = sub_junctions.iter().any(|kept| {
+                            (kept.donor == j.donor
+                                && kept.acceptor != j.acceptor
+                                && kept.acceptor.abs_diff(j.acceptor) <= rescue_window)
+                                || (kept.acceptor == j.acceptor
+                                    && kept.donor != j.donor
+                                    && kept.donor.abs_diff(j.donor) <= rescue_window)
+                        });
+                        if !is_alt_sibling { continue; }
+                        sub_junctions.push(*j);
+                        sub_junction_stats.insert(*j, outer_stat.clone());
+                        rescued += 1;
+                    }
+                    if rescued > 0 && config.verbose {
+                        eprintln!(
+                            "    sub-bundle alt-acceptor rescue: re-injected {} junction(s)",
+                            rescued
+                        );
+                    }
+                }
                 let sub_good_junctions: HashSet<(u64, u64)> = sub_junctions
                     .iter()
                     .map(|j| (j.donor, j.acceptor))
