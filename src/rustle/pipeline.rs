@@ -210,7 +210,9 @@ fn append_missed_oracle_direct_emit(
             cur_strand = strand;
             cur_exons.clear();
         }
-        cur_exons.push((es, ee));
+        // GTF 1-based inclusive → Rustle internal 0-based (start - 1).
+        // End coord stays as-is (GTF end == 0-based exclusive end == 1-based inclusive).
+        cur_exons.push((es.saturating_sub(1), ee));
     }
     flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons, txs);
 }
@@ -4515,6 +4517,11 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
         if !tx.is_longread || is_guide_tx(tx) {
             continue;
         }
+        // Oracle_direct tx from RUSTLE_MISSED_ORACLE_DIRECT preserve their
+        // GTF-exact coords through this extension pass.
+        if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+            continue;
+        }
         if tx.exons.is_empty() {
             continue;
         }
@@ -4936,6 +4943,20 @@ fn extract_bundle_transcripts_for_graph(
     let traced_ref = find_traced_ref_in_bundle(bundle, ref_transcripts);
     let trace_stage = |stage: &str, txs: &[Transcript]| {
         debug_target_ref_stage(stage, bundle, ref_transcripts, txs);
+        if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
+            for t in txs.iter() {
+                if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                    eprintln!(
+                        "ORACLE_STAGE stage={} src={} {}-{} exons={}",
+                        stage,
+                        t.source.as_deref().unwrap_or(""),
+                        t.exons.first().map(|e| e.0).unwrap_or(0),
+                        t.exons.last().map(|e| e.1).unwrap_or(0),
+                        t.exons.len()
+                    );
+                }
+            }
+        }
     };
 
     // Graph DOT dump: set RUSTLE_GRAPH_DOT_DIR=/path to write graph.dot
@@ -5998,6 +6019,20 @@ fn extract_bundle_transcripts_for_graph(
     // Doing this per-bundle makes TPM sums explode by ~#bundles and breaks any
     // downstream interpretation. We compute once at the end of `run()`.
 
+    if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
+        for t in txs.iter() {
+            if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                eprintln!(
+                    "ORACLE_STAGE stage=extract_bundle_return src={} {}-{} exons={}",
+                    t.source.as_deref().unwrap_or(""),
+                    t.exons.first().map(|e| e.0).unwrap_or(0),
+                    t.exons.last().map(|e| e.1).unwrap_or(0),
+                    t.exons.len()
+                );
+            }
+        }
+    }
+
     (
         txs,
         pre_filter,
@@ -6212,7 +6247,9 @@ fn adjust_overlap_endpoints_opposite_strand(
                 continue;
             }
 
-            if !is_guide_tx(&txs[lidx]) && l_old_end > startval {
+            let lidx_oracle = txs[lidx].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:"));
+            let fidx_oracle = txs[fidx].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:"));
+            if !is_guide_tx(&txs[lidx]) && !lidx_oracle && l_old_end > startval {
                 let last = txs[lidx].exons.len() - 1;
                 txs[lidx].exons[last].1 = startval;
                 if txs[lidx].exons[last].1 > txs[lidx].exons[last].0 {
@@ -6222,7 +6259,7 @@ fn adjust_overlap_endpoints_opposite_strand(
                     txs[lidx].exons[last].1 = l_old_end;
                 }
             }
-            if !is_guide_tx(&txs[fidx]) && f_old_start < endval {
+            if !is_guide_tx(&txs[fidx]) && !fidx_oracle && f_old_start < endval {
                 txs[fidx].exons[0].0 = endval;
                 if txs[fidx].exons[0].1 > txs[fidx].exons[0].0 {
                     txs[fidx].coverage = tx_cov_from_bpcov(&txs[fidx], bpcov);
@@ -9342,14 +9379,28 @@ pub fn run<P: AsRef<Path>>(
                     let read_pairs = crate::transcript_filter::build_read_intron_pairs(reads);
                     let read_singles = crate::transcript_filter::build_read_junction_singletons(reads);
                     let read_junc_counts = crate::transcript_filter::build_read_junction_counts(reads);
-                    crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
+                    let filtered = crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
                         txs,
                         &read_pairs,
                         Some(&read_singles),
                         Some(&read_junc_counts),
                         config.junction_correction_window,
                         config.verbose,
-                    )
+                    );
+                    if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
+                        for t in filtered.iter() {
+                            if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                                eprintln!(
+                                    "ORACLE_STAGE stage=post_filter_unwitnessed src={} {}-{} exons={}",
+                                    t.source.as_deref().unwrap_or(""),
+                                    t.exons.first().map(|e| e.0).unwrap_or(0),
+                                    t.exons.last().map(|e| e.1).unwrap_or(0),
+                                    t.exons.len()
+                                );
+                            }
+                        }
+                    }
+                    filtered
                 } else {
                     txs
                 };
@@ -11646,6 +11697,10 @@ pub fn run<P: AsRef<Path>>(
                     for &k in &cluster {
                         let tk = &all_transcripts[k];
                         if tk.coverage >= thr { continue; }
+                        // oracle_direct diagnostic tx are never killed here.
+                        if tk.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                            continue;
+                        }
                         // Check exemption: is tk entirely inside an intron
                         // of some higher-cov cluster member?
                         let exempt = cluster.iter().any(|&m| {

@@ -231,6 +231,10 @@ fn is_rescue_protected(t: &Transcript) -> bool {
     if t.source.as_deref().map_or(false, |s| s.starts_with("guide:")) {
         return true;
     }
+    // Diagnostic oracle-direct tx are protected (match against ref GTF).
+    if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+        return true;
+    }
     // High-confidence rescued variants are protected.
     if matches!(
         t.source.as_deref(),
@@ -3884,6 +3888,10 @@ pub fn filter_unwitnessed_chains_with_singletons_and_counts(
             if tx.source.as_deref().map_or(false, |s| s.starts_with("guide:")) {
                 return true;
             }
+            // Diagnostic oracle-direct transcripts are always kept.
+            if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                return true;
+            }
             let introns = exons_to_junction_chain(&tx.exons);
             if introns.len() < 2 {
                 return true; // Single-intron transcripts always pass.
@@ -4651,6 +4659,10 @@ pub fn filter_unsupported_junctions(
                 exempted_guide += 1;
                 return true; // guide-anchored: exempt
             }
+            if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                exempted_guide += 1;
+                return true;
+            }
             // High-coverage transcripts are exempt from junction filtering.
             // These transcripts were successfully extracted by the graph algorithm
             // and have sufficient evidence, even if some junctions were marked as
@@ -4739,12 +4751,20 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
         if dead.contains(n1) {
             continue;
         }
+        // Never kill oracle_direct tx via any downstream cross-strand rule.
+        if txs[n1].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+            continue;
+        }
         let t1_start = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
         let t1_end = txs[n1].exons.last().map(|e| e.1).unwrap_or(0);
 
         for oj in (oi + 1)..order.len() {
             let n2 = order[oj];
             if dead.contains(n2) {
+                continue;
+            }
+            // Never kill oracle_direct tx.
+            if txs[n2].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
                 continue;
             }
             // Only cross-strand comparisons
