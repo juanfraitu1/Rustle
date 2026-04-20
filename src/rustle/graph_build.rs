@@ -1392,12 +1392,45 @@ pub fn create_graph_with_longtrim(
         // splits break transfrag patterns and edge consistency.
         // TODO: Integrate longtrim splitting into create_graph's node iteration loop.
         //
-        // For now, pass empty arrays to the standard boundary map.
+        // Pass the caller's per-bundle lstart/lend, optionally clustered
+        // to avoid 4-5x over-segmentation vs the original algorithm's
+        // inline-contrast check. Raw read-ends produce a split candidate per
+        // unique position; clustering collapses nearby ones into one peak
+        // keeping the MAX cov seen. Gate behind RUSTLE_LONGTRIM_APPLY_ON
+        // so the default remains the historical empty-map (baseline safe).
+        let apply_on = std::env::var_os("RUSTLE_LONGTRIM_APPLY_ON").is_some();
+        let cluster_win: u64 = std::env::var("RUSTLE_LONGTRIM_APPLY_CLUSTER_WIN")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+        let min_cluster_cov: f64 = std::env::var("RUSTLE_LONGTRIM_APPLY_MIN_COV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(longtrim_min_boundary_cov.max(5.0));
+        let cluster_max = |src: &[ReadBoundary]| -> Vec<ReadBoundary> {
+            let mut out: Vec<ReadBoundary> = Vec::new();
+            for b in src {
+                let keep_feat = b.cov < 0.0;
+                if !keep_feat && b.cov < min_cluster_cov { continue; }
+                if let Some(last) = out.last_mut() {
+                    if b.pos.abs_diff(last.pos) <= cluster_win {
+                        if b.cov > last.cov {
+                            last.pos = b.pos;
+                            last.cov = b.cov;
+                        }
+                        continue;
+                    }
+                }
+                out.push(*b);
+            }
+            out
+        };
+        let (lt_lstart, lt_lend): (Vec<ReadBoundary>, Vec<ReadBoundary>) = if apply_on {
+            (cluster_max(lstart), cluster_max(lend))
+        } else {
+            (Vec::new(), Vec::new())
+        };
         let boundary_map = collect_longtrim_boundary_map(
             bpcov,
             bundlenodes,
-            &[],
-            &[],
+            &lt_lstart,
+            &lt_lend,
             longtrim_min_boundary_cov,
         );
         let schedule = build_longtrim_bundle_schedules(
