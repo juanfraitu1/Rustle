@@ -3496,8 +3496,27 @@ pub fn dedup_subset_intron_chains(transcripts: Vec<Transcript>, verbose: bool) -
             let score_i = (if t1.hardstart { 1 } else { 0 }) + (if t1.hardend { 1 } else { 0 });
             let score_j = (if t2.hardstart { 1 } else { 0 }) + (if t2.hardend { 1 } else { 0 });
 
-            let prefer_j = cov_j > cov_i
-                || (cov_j >= cov_i * 0.5 && score_j > score_i);
+            // StringTie-parity default: subset intron chains represent
+            // distinct biological isoforms (minor isoforms, RI variants,
+            // alt-5' splits). Do not drop a subset solely because
+            // cov_j > cov_i. Trace-diff on STRG.113 showed that legitimate
+            // sibling isoforms (STRG.113.2 RI-only, STRG.113.4 first-split+RI)
+            // were being collapsed into their nearest superchain because
+            // their cov ratios were only ~1.2-1.3x.
+            //
+            // Cov-ratio drop is opt-in via RUSTLE_DEDUP_SUBSET_COV_RATIO=<f>.
+            // Boundary-score drop (cov_j >= 0.5*cov_i AND j has better
+            // hardstart/hardend) remains active; disable with
+            // RUSTLE_DEDUP_SUBSET_BOUNDARY_OFF=1.
+            let cov_ratio: Option<f64> = std::env::var("RUSTLE_DEDUP_SUBSET_COV_RATIO")
+                .ok().and_then(|v| v.parse().ok());
+            let boundary_off =
+                std::env::var_os("RUSTLE_DEDUP_SUBSET_BOUNDARY_OFF").is_some();
+            let cov_drop = cov_ratio.map_or(false, |r| cov_j > cov_i * r);
+            let boundary_drop = !boundary_off
+                && cov_j >= cov_i * 0.5
+                && score_j > score_i;
+            let prefer_j = cov_drop || boundary_drop;
                 
             if prefer_j {
                 drop.insert_grow(i);
