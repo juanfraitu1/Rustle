@@ -2382,7 +2382,7 @@ pub fn pairwise_overlap_filter_with_summary(
                                 .ok()
                                 .and_then(|v| v.parse().ok())
                                 .unwrap_or(500);
-                            let alt_tts = t2.hardend
+                            let alt_tts = (t2.hardend || t2.alt_tts_end)
                                 && t1_last_end > t2_last_end + alt_end_threshold;
                             let alt_tss = t2.hardstart
                                 && t2_first_start > t1_first_start + alt_end_threshold;
@@ -3173,6 +3173,7 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
                 keep.is_longread = winner.is_longread || loser.is_longread;
                 keep.hardstart = winner.hardstart || keep.hardstart;
                 keep.hardend = winner.hardend || keep.hardend;
+                keep.alt_tts_end = winner.alt_tts_end || keep.alt_tts_end;
                 txs[midx] = keep;
             } else {
                 // — multi-exon equal_pred merge with per-exon
@@ -3205,6 +3206,7 @@ pub fn collapse_equal_predictions(transcripts: Vec<Transcript>, verbose: bool) -
                 keep.is_longread = winner.is_longread || loser.is_longread;
                 keep.hardstart = winner.hardstart || keep.hardstart;
                 keep.hardend = winner.hardend || keep.hardend;
+                keep.alt_tts_end = winner.alt_tts_end || keep.alt_tts_end;
                 // The killed prediction (nidx) is always the exoncov source .
                 let killed = &txs[nidx];
                 let killed_nex = killed.exons.len();

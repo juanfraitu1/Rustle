@@ -127,6 +127,11 @@ pub struct GraphNode {
     pub parents: crate::bitset::SmallBitset,
     pub hardstart: bool,
     pub hardend: bool,
+    /// Read-signal alt-TTS signal (terminal-read cluster at junction-donor
+    /// coord). Consumed ONLY by path_extract's HARDEND_TERMINATE gate to
+    /// avoid disturbing hardend-reading filters (pairwise, RI, map_reads
+    /// split decisions). Set by discover_terminal_donor_hardends.
+    pub alt_tts_end: bool,
     /// Sum of poly_start_unaligned over transfrags that start at this node (annotate).
     pub poly_start_unaligned_total: u32,
     /// Sum of poly_start_aligned over transfrags that start at this node .
@@ -174,6 +179,7 @@ impl GraphNode {
             parents: crate::bitset::SmallBitset::empty(),
             hardstart: false,
             hardend: false,
+            alt_tts_end: false,
             poly_start_unaligned_total: 0,
             poly_start_aligned_total: 0,
             poly_end_unaligned_total: 0,

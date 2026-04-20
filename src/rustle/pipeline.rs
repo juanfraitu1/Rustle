@@ -1903,6 +1903,7 @@ fn add_contained_isoforms(
                     ref_gene_id: None,
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 });
                 added += 1;
@@ -2072,6 +2073,7 @@ fn emit_junction_paths(
         let last_node = *exon_nodes.last().unwrap_or(&first_node);
         let hardstart = graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false);
         let hardend = graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false);
+        let alt_tts_end = graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false);
 
         out.push(Transcript {
             chrom: bundle.chrom.clone(),
@@ -2091,6 +2093,7 @@ fn emit_junction_paths(
             ref_gene_id: None,
             hardstart,
             hardend,
+            alt_tts_end,
             vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
 
@@ -2374,6 +2377,7 @@ fn emit_chain_from_graph(
         ref_gene_id: None,
         hardstart: true,
         hardend: true,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
     })
 }
@@ -2503,6 +2507,7 @@ fn emit_reference_chains(
                     ref_gene_id: None,
                     hardstart: true,
                     hardend: true,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 });
                 added += 1;
@@ -2635,6 +2640,7 @@ fn emit_reference_chains(
                         ref_gene_id: None,
                         hardstart: true,
                         hardend: true,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                     });
                     added += 1;
@@ -2727,6 +2733,7 @@ fn emit_reference_chains(
             ref_gene_id: None,
             hardstart: true,
             hardend: true,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
         added += 1;
@@ -5480,6 +5487,7 @@ fn extract_bundle_transcripts_for_graph(
                 ref_gene_id: None,
                 hardstart: false,
                 hardend: false,
+                alt_tts_end: false,
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
@@ -5691,6 +5699,7 @@ fn extract_bundle_transcripts_for_graph(
                 ref_gene_id: None,
                 hardstart: false,
                 hardend: false,
+                alt_tts_end: false,
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
@@ -5821,6 +5830,7 @@ fn extract_bundle_transcripts_for_graph(
                     ref_gene_id: None,
                     hardstart: false,
                     hardend: false,
+                    alt_tts_end: false,
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
@@ -6809,6 +6819,7 @@ fn emit_stranded_single_exon_candidates(
             ref_gene_id: None,
             hardstart: false,
             hardend: false,
+            alt_tts_end: false,
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
@@ -6938,6 +6949,7 @@ fn emit_terminal_exon_se_candidates(
             ref_gene_id: None,
             hardstart: false,
             hardend: false,
+            alt_tts_end: false,
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
@@ -7019,6 +7031,7 @@ fn create_single_exon_predictions_from_bundle(
                         ref_gene_id: None,
                         hardstart: false,
                         hardend: false,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                     };
                     predictions.push(tx);
@@ -7058,6 +7071,7 @@ fn create_single_exon_predictions_from_bundle(
                     ref_gene_id: None,
                     hardstart: false,
                     hardend: false,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 };
                 predictions.push(tx);
@@ -11103,6 +11117,7 @@ pub fn run<P: AsRef<Path>>(
                 ref_gene_id: None,
                 hardstart: true,
                 hardend: true,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
             });
         }

@@ -441,7 +441,8 @@ pub fn discover_terminal_donor_hardends(
     junction_stats: Option<&JunctionStats>,
 ) -> Vec<GraphTransfrag> {
     let mut out: Vec<GraphTransfrag> = Vec::new();
-    if std::env::var_os("RUSTLE_TERMINAL_DONOR_HARDEND").is_none() {
+    // Default ON. Opt-out via RUSTLE_TERMINAL_DONOR_OFF=1.
+    if std::env::var_os("RUSTLE_TERMINAL_DONOR_OFF").is_some() {
         return out;
     }
     let min_reads: usize = std::env::var("RUSTLE_TERMINAL_DONOR_MIN")
@@ -470,7 +471,7 @@ pub fn discover_terminal_donor_hardends(
     // some continue past via splice. Require terminate >= ratio * continue
     // to distinguish real alt-TTS from noise truncation.
     let min_ratio: f64 = std::env::var("RUSTLE_TERMINAL_DONOR_RATIO")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
     for i in 0..n_nodes {
         if i == source_id || i == sink_id {
             continue;
@@ -537,9 +538,18 @@ pub fn discover_terminal_donor_hardends(
     // adding sink edges + synthetic transfrags disturbs flow decomposition
     // across many nodes that happen to be junction donors with some read
     // termination nearby.
+    // By default, set ONLY alt_tts_end (path_extract HE-gate reads this).
+    // Other filters (pairwise, RI, map_reads) continue reading `hardend`
+    // unchanged — this decoupling is the whole point of the flag.
+    // RUSTLE_TERMINAL_DONOR_SET_HARDEND=1 opts into setting hardend too
+    // (the old behavior, kept for comparison / debugging).
+    let set_hardend_too = std::env::var_os("RUSTLE_TERMINAL_DONOR_SET_HARDEND").is_some();
     let add_edges = std::env::var_os("RUSTLE_TERMINAL_DONOR_ADD_SINK").is_some();
     for &nid in &additions {
-        graph.nodes[nid].hardend = true;
+        graph.nodes[nid].alt_tts_end = true;
+        if set_hardend_too {
+            graph.nodes[nid].hardend = true;
+        }
         if add_edges {
             graph.add_edge(nid, sink_id);
             let mut tf = GraphTransfrag::new(vec![nid, sink_id], pattern_size);
@@ -549,18 +559,22 @@ pub fn discover_terminal_donor_hardends(
         }
         if diag {
             eprintln!(
-                "TERMINAL_DONOR hardend SET (add_edge={}): node_id={} coord={}-{}",
-                add_edges, nid, graph.nodes[nid].start, graph.nodes[nid].end
+                "TERMINAL_DONOR alt_tts_end SET (hardend={} add_edge={}): node_id={} coord={}-{}",
+                set_hardend_too, add_edges,
+                nid, graph.nodes[nid].start, graph.nodes[nid].end
             );
         }
     }
-    let _ = pattern_size; // suppress unused warning when add_edges=false
+    let _ = pattern_size;
     for &nid in &hardend_only {
-        graph.nodes[nid].hardend = true;
+        graph.nodes[nid].alt_tts_end = true;
+        if set_hardend_too {
+            graph.nodes[nid].hardend = true;
+        }
         if diag {
             eprintln!(
-                "TERMINAL_DONOR hardend SET (existing sink): node_id={} coord={}-{}",
-                nid, graph.nodes[nid].start, graph.nodes[nid].end
+                "TERMINAL_DONOR alt_tts_end SET (existing sink, hardend={}): node_id={} coord={}-{}",
+                set_hardend_too, nid, graph.nodes[nid].start, graph.nodes[nid].end
             );
         }
     }

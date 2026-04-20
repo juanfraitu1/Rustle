@@ -596,6 +596,11 @@ pub struct Transcript {
     pub hardstart: bool,
     /// Parity: transcript terminates at a verified hard end node.
     pub hardend: bool,
+    /// Read-signal alt-TTS end (separate from hardend; see GraphNode.alt_tts_end).
+    /// Consulted alongside hardend by pairwise_overlap_filter alt-boundary
+    /// protection so shorter alt-TTS siblings survive against dominant longer
+    /// variants, WITHOUT disrupting other hardend-reading code paths.
+    pub alt_tts_end: bool,
     // ── Variation graph fields (populated in --vg mode) ──────────────────────
     /// Family group ID (None = singleton, not part of a gene family).
     pub vg_family_id: Option<usize>,
@@ -705,6 +710,7 @@ impl Transcript {
             ref_gene_id: None,
             hardstart: pred.hardstart,
             hardend: pred.hardend,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         }
     }
@@ -1181,6 +1187,7 @@ pub fn extract_rawreads_transcripts(
             ref_gene_id: None,
             hardstart: false,
             hardend: false,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
     }
@@ -1315,6 +1322,7 @@ pub fn extract_shortread_transcripts(
             ref_gene_id: None,
             hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
+            alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
     }
@@ -3658,7 +3666,8 @@ fn fwd_to_sink_fast_long(
         // Any seed whose pattern contains a node downstream of `i`
         // keeps extending normally. Stricter than coord-based range.
         let ambition_ok = *maxpath == i;
-        if inode.hardend
+        let he_signal = inode.hardend || inode.alt_tts_end;
+        if he_signal
             && has_sink_child
             && longend_near_end
             && abund_ok
@@ -5575,7 +5584,7 @@ pub fn extract_transcripts(
             let maxp_hardend = graph
                 .nodes
                 .get(maxp)
-                .map(|n| n.hardend)
+                .map(|n| n.hardend || n.alt_tts_end)
                 .unwrap_or(false);
             let minp_has_non_source_parent = graph
                 .nodes
@@ -6131,7 +6140,7 @@ pub fn extract_transcripts(
         let thardend = graph
             .nodes
             .get(tf_last_node)
-            .map(|n| n.hardend)
+            .map(|n| n.hardend || n.alt_tts_end)
             .unwrap_or(false);
 
         let mut checkpath = true;
@@ -7183,6 +7192,7 @@ pub fn extract_transcripts(
             ref_gene_id: None,
             hardstart: thardstart,
             hardend: thardend,
+                    alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
         });
         if debug_flow {
@@ -7818,6 +7828,7 @@ pub fn extract_transcripts(
                     ref_gene_id: None,
                     hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
                     hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
+                    alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
                 });
                 let out_idx = out.len() - 1;
@@ -8701,6 +8712,7 @@ pub fn hybrid_path_reexplore(
             ref_gene_id: None,
             hardstart: false,
             hardend: false,
+            alt_tts_end: false,
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
