@@ -3805,9 +3805,50 @@ pub fn filter_unwitnessed_chains(
     tolerance: u64,
     verbose: bool,
 ) -> Vec<Transcript> {
+    filter_unwitnessed_chains_with_singletons(transcripts, read_intron_pairs, None, tolerance, verbose)
+}
+
+/// Filter unwitnessed chains with optional single-junction witness set.
+/// When `read_singletons` is provided, a flow-sourced transcript whose
+/// consecutive pair lacks a full-pair witness may still pass if BOTH
+/// individual junctions are individually witnessed. This handles the
+/// StringTie-parity case where the junction variant is constructed by
+/// stitching together reads whose chains don't individually span both
+/// junctions (e.g., STRG.112.1: 2 junction-partial reads + 3 RI-partial
+/// reads assemble a 3-exon junction variant that no single read covers).
+pub fn filter_unwitnessed_chains_with_singletons(
+    transcripts: Vec<Transcript>,
+    read_intron_pairs: &std::collections::HashSet<(u64, u64, u64, u64)>,
+    read_singletons: Option<&std::collections::HashSet<(u64, u64)>>,
+    tolerance: u64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    filter_unwitnessed_chains_with_singletons_and_counts(
+        transcripts, read_intron_pairs, read_singletons, None, tolerance, verbose,
+    )
+}
+
+pub fn filter_unwitnessed_chains_with_singletons_and_counts(
+    transcripts: Vec<Transcript>,
+    read_intron_pairs: &std::collections::HashSet<(u64, u64, u64, u64)>,
+    read_singletons: Option<&std::collections::HashSet<(u64, u64)>>,
+    read_junction_counts: Option<&std::collections::HashMap<(u64, u64), usize>>,
+    tolerance: u64,
+    verbose: bool,
+) -> Vec<Transcript> {
     if read_intron_pairs.is_empty() || transcripts.is_empty() {
         return transcripts;
     }
+    // Opt-in: default OFF. Even with a per-junction min_reads gate, the
+    // singleton relaxation adds net-negative over the full dataset (at
+    // every min_reads threshold from 2 to 10, F1 regresses from 86.05 to
+    // 85.48-85.73). Individual loci like STRG.112 benefit but the
+    // relaxation is too permissive broadly. Enable via
+    // RUSTLE_WITNESS_SINGLETON_RELAX=1.
+    let singletons_relax_on =
+        std::env::var_os("RUSTLE_WITNESS_SINGLETON_RELAX").is_some();
+    let min_junc_reads: usize = std::env::var("RUSTLE_WITNESS_SINGLETON_MIN_READS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     let before = transcripts.len();
     let out: Vec<Transcript> = transcripts
         .into_iter()
@@ -3820,15 +3861,14 @@ pub fn filter_unwitnessed_chains(
             if introns.len() < 2 {
                 return true; // Single-intron transcripts always pass.
             }
+            // Flow-sourced transcripts are eligible for singleton relaxation.
+            let flow_sourced = matches!(tx.source.as_deref(), Some("flow"));
             // Check every consecutive pair of introns.
-            // Note: local Junction type alias is (u64, u64), not types::Junction.
             for w in introns.windows(2) {
                 let key = (w[0].0, w[0].1, w[1].0, w[1].1);
-                // Exact match first.
                 if read_intron_pairs.contains(&key) {
                     continue;
                 }
-                // Tolerance match.
                 if tolerance > 0 {
                     let found = read_intron_pairs.iter().any(|&(d1, a1, d2, a2)| {
                         d1.abs_diff(key.0) <= tolerance
@@ -3838,6 +3878,50 @@ pub fn filter_unwitnessed_chains(
                     });
                     if found {
                         continue;
+                    }
+                }
+                // Singleton-witness fallback for flow-sourced transcripts:
+                // accept the pair if each junction is individually observed
+                // in some read's junction list AND each has >= min_junc_reads
+                // supporting reads. Recovers legitimate isoforms built from
+                // reads whose chains don't span both junctions together
+                // (e.g., STRG.112.1). Per-junction min_reads gate prevents
+                // low-support junctions from being stitched into novel chains.
+                if flow_sourced && singletons_relax_on {
+                    if let Some(singles) = read_singletons {
+                        let junc_count = |d: u64, a: u64| -> usize {
+                            if let Some(counts) = read_junction_counts {
+                                if let Some(&c) = counts.get(&(d, a)) {
+                                    return c;
+                                }
+                                if tolerance > 0 {
+                                    return counts.iter()
+                                        .filter(|(&(dd, aa), _)| {
+                                            dd.abs_diff(d) <= tolerance
+                                                && aa.abs_diff(a) <= tolerance
+                                        })
+                                        .map(|(_, &c)| c)
+                                        .max()
+                                        .unwrap_or(0);
+                                }
+                            }
+                            0
+                        };
+                        let j1_in = singles.contains(&(w[0].0, w[0].1))
+                            || (tolerance > 0 && singles.iter().any(|&(d, a)| {
+                                d.abs_diff(w[0].0) <= tolerance
+                                    && a.abs_diff(w[0].1) <= tolerance
+                            }));
+                        let j2_in = singles.contains(&(w[1].0, w[1].1))
+                            || (tolerance > 0 && singles.iter().any(|&(d, a)| {
+                                d.abs_diff(w[1].0) <= tolerance
+                                    && a.abs_diff(w[1].1) <= tolerance
+                            }));
+                        let j1_strong = j1_in && junc_count(w[0].0, w[0].1) >= min_junc_reads;
+                        let j2_strong = j2_in && junc_count(w[1].0, w[1].1) >= min_junc_reads;
+                        if j1_strong && j2_strong {
+                            continue;
+                        }
                     }
                 }
                 return false; // Unwitnessed pair found.
@@ -3868,6 +3952,36 @@ pub fn build_read_intron_pairs(reads: &[crate::types::BundleRead]) -> std::colle
         }
     }
     pairs
+}
+
+/// Build the set of individual junctions observed in any read.
+/// Used by filter_unwitnessed_chains_with_singletons for the flow-sourced
+/// relaxation fallback.
+pub fn build_read_junction_singletons(
+    reads: &[crate::types::BundleRead],
+) -> std::collections::HashSet<(u64, u64)> {
+    let mut singles = std::collections::HashSet::new();
+    for read in reads {
+        for j in &read.junctions {
+            singles.insert((j.donor, j.acceptor));
+        }
+    }
+    singles
+}
+
+/// Build per-junction read counts from bundle reads.
+/// Used by filter_unwitnessed_chains_with_singletons to gate relaxation
+/// on minimum per-junction read support.
+pub fn build_read_junction_counts(
+    reads: &[crate::types::BundleRead],
+) -> std::collections::HashMap<(u64, u64), usize> {
+    let mut counts: std::collections::HashMap<(u64, u64), usize> = std::collections::HashMap::new();
+    for read in reads {
+        for j in &read.junctions {
+            *counts.entry((j.donor, j.acceptor)).or_insert(0) += 1;
+        }
+    }
+    counts
 }
 
 /// Apply the same prediction filters as the pipeline (print_predcluster).

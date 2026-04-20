@@ -9023,11 +9023,19 @@ pub fn run<P: AsRef<Path>>(
                 // Read-chain witness filter: remove transcripts whose intron
                 // chain pairs are not witnessed by any read. This prevents the
                 // flow decomposition from creating novel junction combinations.
+                // Flow-sourced transcripts are given a singleton-witness
+                // fallback (both junctions individually observed → pass), which
+                // recovers StringTie-parity junction variants assembled from
+                // partially-overlapping reads (e.g., STRG.112.1).
                 let txs = if config.long_reads {
                     let read_pairs = crate::transcript_filter::build_read_intron_pairs(reads);
-                    crate::transcript_filter::filter_unwitnessed_chains(
+                    let read_singles = crate::transcript_filter::build_read_junction_singletons(reads);
+                    let read_junc_counts = crate::transcript_filter::build_read_junction_counts(reads);
+                    crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
                         txs,
                         &read_pairs,
+                        Some(&read_singles),
+                        Some(&read_junc_counts),
                         config.junction_correction_window,
                         config.verbose,
                     )
