@@ -348,6 +348,11 @@ pub fn add_alt_tts_sink_edges(
     let pattern_size = graph.pattern_size();
     let n_nodes = graph.n_nodes;
     let mut additions: Vec<usize> = Vec::new();
+    // Nodes matching a candidate end but already having a sink edge —
+    // we still want to mark them hardend so downstream fwd_to_sink
+    // treats them as alt-TTS termini even without a new synthetic tf.
+    let mut hardend_only: Vec<usize> = Vec::new();
+    let diag_v = std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some();
     for i in 0..n_nodes {
         if i == source_id || i == sink_id {
             continue;
@@ -364,7 +369,14 @@ pub fn add_alt_tts_sink_edges(
         if !candidate_ends.contains(&node.end) {
             continue;
         }
+        if diag_v {
+            eprintln!(
+                "ALT_TTS CANDIDATE node_id={} coord={}-{} has_sink_child={}",
+                i, node.start, node.end, node.children.contains(sink_id)
+            );
+        }
         if node.children.contains(sink_id) {
+            hardend_only.push(i);
             continue;
         }
         additions.push(i);
@@ -378,7 +390,23 @@ pub fn add_alt_tts_sink_edges(
         // Mark the node with hardend so downstream filters/extensions
         // treat it as a legitimate terminus.
         graph.nodes[nid].hardend = true;
+        if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
+            eprintln!(
+                "ALT_TTS hardend SET (new sink): node_id={} coord={}-{}",
+                nid, graph.nodes[nid].start, graph.nodes[nid].end
+            );
+        }
         out.push(tf);
+    }
+    for nid in &hardend_only {
+        let nid = *nid;
+        graph.nodes[nid].hardend = true;
+        if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
+            eprintln!(
+                "ALT_TTS hardend SET (existing sink): node_id={} coord={}-{}",
+                nid, graph.nodes[nid].start, graph.nodes[nid].end
+            );
+        }
     }
     if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
         eprintln!(

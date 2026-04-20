@@ -3605,6 +3605,63 @@ fn fwd_to_sink_fast_long(
         return true;
     }
 
+    // Hardend-aware alt-TTS termination (RUSTLE_FWD_HARDEND_TERMINATE=1).
+    // When the current node is marked hardend (StringTie-style real
+    // tx terminus), sink is in its children, AND the seed's longend
+    // falls within this node's range — terminate the forward extension
+    // here via the sink edge rather than continuing through junction
+    // children. Target: STRG.294.3 alt-TTS class where the seed's
+    // last long-read exon ends at a coord that's also a junction donor.
+    // Dominant-isoform seeds whose longend extends past this node still
+    // continue normally.
+    if std::env::var_os("RUSTLE_FWD_HARDEND_TERMINATE").is_some() {
+        let seed_longend = transfrags.get(seed_idx).map(|t| t.longend).unwrap_or(0);
+        let diag_on = std::env::var_os("RUSTLE_FWD_HARDEND_DIAG").is_some();
+        if diag_on && inode.hardend {
+            eprintln!(
+                "[HE_DIAG] node i={} coord={}-{} hardend=1 has_sink_child={} seed={} seed_longend={}",
+                i, inode.start, inode.end, has_sink_child, seed_idx, seed_longend
+            );
+        }
+        if diag_on && !inode.hardend && has_sink_child && seed_longend > 0
+            && inode.start <= seed_longend && seed_longend <= inode.end
+        {
+            eprintln!(
+                "[HE_DIAG] node i={} coord={}-{} hardend=0 has_sink_child=1 seed={} seed_longend={} (within-range)",
+                i, inode.start, inode.end, seed_idx, seed_longend
+            );
+        }
+        if inode.hardend
+            && has_sink_child
+            && seed_longend > 0
+            && inode.start <= seed_longend
+            && seed_longend <= inode.end
+        {
+            // Push sink and set the sink-edge bit so the caller sees
+            // a complete [...i, sink] termination just like the normal
+            // recursive return-true-at-empty-children path.
+            path.push(sink);
+            pathpat.set_bit(sink);
+            edge_set(pathpat, graph, i, sink, true);
+            if trace_fwd || diag_on {
+                let path_coords: Vec<String> = path.iter().map(|&nid| {
+                    if nid == graph.source_id { "SRC".to_string() }
+                    else if nid == graph.sink_id { "SNK".to_string() }
+                    else {
+                        graph.nodes.get(nid).map(|n| format!("{}-{}", n.start, n.end)).unwrap_or_default()
+                    }
+                }).collect();
+                eprintln!(
+                    "[HE_DIAG] HARDEND_TERMINATE_FIRE i={} coord={}-{} seed={} seed_longend={} path_len={} path_tail={}",
+                    i, inode.start, inode.end, seed_idx, seed_longend,
+                    path.len(),
+                    path_coords.iter().rev().take(6).cloned().collect::<Vec<_>>().join(",")
+                );
+            }
+            return true;
+        }
+    }
+
     // Extract fields from inode before dropping the borrow so we can mutate graph.nodes
     // inside the child loop (for depleted-transfrag cleanup).
     let inode_end = inode.end;
@@ -4889,6 +4946,23 @@ pub fn extract_transcripts(
     let audit_zero_flux = std::env::var_os("RUSTLE_AUDIT_ZERO_FLUX").is_some();
     let depletion_diag = std::env::var_os("RUSTLE_DEPLETION_DIAG").is_some();
     let plumb_debug = std::env::var_os("RUSTLE_PLUMB_DEBUG").is_some();
+
+    if std::env::var_os("RUSTLE_HARDEND_ENTRY_DIAG").is_some() {
+        let mut n_he = 0usize;
+        for (i, n) in graph.nodes.iter().enumerate() {
+            if n.hardend && i != graph.source_id && i != graph.sink_id {
+                n_he += 1;
+                if n_he <= 40 {
+                    eprintln!(
+                        "[HE_ENTRY] bundle={} node_id={} coord={}-{} has_sink_child={}",
+                        bundle_id, i, n.start, n.end,
+                        n.children.contains(graph.sink_id)
+                    );
+                }
+            }
+        }
+        eprintln!("[HE_ENTRY] bundle={} total hardend nodes={}", bundle_id, n_he);
+    }
 
     // Incomplete-seed source/sink rescue (opt-in): for each trflong_seed
     // with abundance >= threshold whose first/last real node lacks a
