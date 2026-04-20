@@ -582,6 +582,10 @@ fn create_graph_inner(
         }
 
         let mut completed = false;
+        // Collect overlap-alias node IDs created within this bundlenode,
+        // so we can patch their children (= final split node's children)
+        // after the event loop finishes.
+        let mut bundlenode_aliases: Vec<usize> = Vec::new();
         // (-3880): compute longtrim boundaries PER
         // BUNDLENODE using the coverage derivative sliding window. the original implementation
         // runs this detection inside the create_graph per-bundlenode loop,
@@ -772,6 +776,7 @@ fn create_graph_inner(
                         // acceptor node 34 — see trace PASS_ID=260 STRG.294).
                         let pre_shrink_start = graph.nodes[graphnode_id].start;
                         let old_end = graph.nodes[graphnode_id].end;
+                        let shrunk_id = graphnode_id;
                         graph.nodes[graphnode_id].end = acceptor;
                         create_graph_node_shrink_jend(
                             trace_s,
@@ -798,22 +803,24 @@ fn create_graph_inner(
                         graph.add_edge(graphnode_id, next_id);
                         graphnode_id = next_id;
 
-                        // Overlap-alias scaffold. Two modes:
+                        // Overlap-alias scaffold. Three modes:
                         //
-                        // RUSTLE_OVERLAP_NODE_MEASURE=1 — log-only, emit a counter
-                        //   of where an alias WOULD be created. Zero behavioral impact.
+                        // RUSTLE_OVERLAP_NODE_MEASURE=1 — log-only counter
+                        //   of where an alias WOULD be created.
                         //
-                        // RUSTLE_OVERLAP_NODE_SCAFFOLD=1 — create the alias node
-                        //   as a full-span overlap [pre_shrink_start, endbundle)
-                        //   matching StringTie's "anchor" node 33 model. Initially
-                        //   inert (no edges), but still regresses F1 because
-                        //   multiple downstream iterations (bundle2graph,
-                        //   coverage-source/sink-edges, longtrim schedules, prune
-                        //   source/sink attach) must each be taught to skip alias
-                        //   nodes. Guards added but evidently incomplete.
-                        //   Kept for future integration work.
+                        // RUSTLE_OVERLAP_NODE_SCAFFOLD=1 — create inert alias
+                        //   nodes (no edges). CURRENTLY REGRESSES F1.
+                        //
+                        // RUSTLE_OVERLAP_NODE_EDGES=1 — create alias nodes AND
+                        //   wire parents (from shrunk node, i.e., original
+                        //   pre-shrink parents) + children (patched at end of
+                        //   bundlenode to match final split node's children).
+                        //   No transfrags mapped through alias yet, so flow can't
+                        //   use it (no capacity). Purely structural parallel edge.
                         let emit_measure = std::env::var_os("RUSTLE_OVERLAP_NODE_MEASURE").is_some();
-                        let emit_alias = std::env::var_os("RUSTLE_OVERLAP_NODE_SCAFFOLD").is_some();
+                        let emit_alias = std::env::var_os("RUSTLE_OVERLAP_NODE_SCAFFOLD").is_some()
+                            || std::env::var_os("RUSTLE_OVERLAP_NODE_EDGES").is_some();
+                        let wire_edges = std::env::var_os("RUSTLE_OVERLAP_NODE_EDGES").is_some();
                         if (emit_measure || emit_alias)
                             && pre_shrink_start < acceptor
                             && acceptor < endbundle
@@ -838,6 +845,19 @@ fn create_graph_inner(
                                     endbundle,
                                     "overlap_alias(jend)",
                                 );
+                                if wire_edges {
+                                    // Inherit parents from the shrunk node
+                                    // (shrink doesn't change parents). These are
+                                    // the original pre-shrink parents.
+                                    let shrunk_parents: Vec<usize> =
+                                        graph.nodes[shrunk_id].parents.ones().collect();
+                                    for p in shrunk_parents {
+                                        if p != alias_id {
+                                            graph.add_edge(p, alias_id);
+                                        }
+                                    }
+                                    bundlenode_aliases.push(alias_id);
+                                }
                             }
                         }
                     }
@@ -876,6 +896,24 @@ fn create_graph_inner(
                 endbundle,
             );
             sink_parents.push(graphnode_id);
+        }
+
+        // Patch overlap-alias children to match the final split node
+        // (graphnode_id at this point) of this bundlenode. An alias
+        // spans [pre_shrink_start, endbundle) and shares the same
+        // outgoing junctions/continuations as the last split node.
+        // Executed only when RUSTLE_OVERLAP_NODE_EDGES=1 (aliases were
+        // already emitted with parents).
+        if !bundlenode_aliases.is_empty() {
+            let final_children: Vec<usize> =
+                graph.nodes[graphnode_id].children.ones().collect();
+            for &alias_id in &bundlenode_aliases {
+                for &c in &final_children {
+                    if c != alias_id {
+                        graph.add_edge(alias_id, c);
+                    }
+                }
+            }
         }
 
         bnode_opt = bn.next.as_deref();
