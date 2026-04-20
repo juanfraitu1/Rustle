@@ -581,6 +581,167 @@ pub fn discover_terminal_donor_hardends(
     out
 }
 
+/// Diagnostic MISSED-TX ORACLE: inject ref tx (from a StringTie GTF) as
+/// high-abundance long-read seeds into the transfrag list. Classifies
+/// per-tx why Rustle fails to emit: unmappable (exon has no matching
+/// graph node = graph-build gap), partial (some exons missing), or
+/// mappable but not-emitted (path-extract or filter gap).
+///
+/// Usage:
+///   RUSTLE_MISSED_ORACLE=/path/to/stringtie.gtf \
+///   [RUSTLE_MISSED_ORACLE_ONLY=tx1,tx2,...] \
+///   [RUSTLE_MISSED_ORACLE_DEBUG=1] \
+///   ./target/release/rustle -L in.bam -o out.gtf
+///
+/// If RUSTLE_MISSED_ORACLE_ONLY is set, restrict to that tx subset.
+/// The injected transfrags have guide_tid = "oracle:<tid>" so downstream
+/// emission can be traced to their oracle source.
+pub fn inject_missed_tx_oracle(
+    graph: &Graph,
+    transfrags: &mut Vec<GraphTransfrag>,
+    bundle_chrom: &str,
+    bundle_start: u64,
+    bundle_end: u64,
+    bundle_strand: char,
+) -> usize {
+    let path = match std::env::var("RUSTLE_MISSED_ORACLE") {
+        Ok(p) => p,
+        Err(_) => return 0,
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    let only: Option<std::collections::HashSet<String>> = std::env::var("RUSTLE_MISSED_ORACLE_ONLY")
+        .ok()
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).collect());
+    let debug = std::env::var_os("RUSTLE_MISSED_ORACLE_DEBUG").is_some();
+    let abundance: f64 = std::env::var("RUSTLE_MISSED_ORACLE_ABUND")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(100.0);
+
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let pattern_size = graph.pattern_size();
+
+    // Parse GTF grouped by transcript
+    let mut cur_tid: Option<String> = None;
+    let mut cur_chrom: String = String::new();
+    let mut cur_strand: char = '.';
+    let mut cur_exons: Vec<(u64, u64)> = Vec::new();
+
+    let mut injected = 0usize;
+
+    let mut flush = |tid: &Option<String>,
+                     chrom: &str,
+                     strand: char,
+                     exons: &[(u64, u64)],
+                     transfrags: &mut Vec<GraphTransfrag>,
+                     injected: &mut usize| {
+        let Some(tid) = tid else { return };
+        if let Some(only) = &only {
+            if !only.contains(tid) { return; }
+        }
+        if chrom != bundle_chrom { return; }
+        if exons.is_empty() { return; }
+        let first = exons[0].0;
+        let last = exons.last().unwrap().1;
+        if first > bundle_end || last < bundle_start { return; }
+        if strand != bundle_strand { return; }
+
+        // Map each exon to graph nodes whose coord range is contained in or
+        // overlaps the exon. Report per-exon hits to diagnose "unmappable".
+        let mut nids: Vec<usize> = Vec::new();
+        let mut exon_hit_counts: Vec<usize> = Vec::with_capacity(exons.len());
+        for (es, ee) in exons {
+            let mut this_exon_hits = 0;
+            for (i, n) in graph.nodes.iter().enumerate() {
+                if i == source_id || i == sink_id { continue; }
+                if n.end <= n.start { continue; }
+                // Inclusive GTF coords [es, ee]; node coords half-open [start, end).
+                // Accept if node is fully inside OR node-end matches exon-end.
+                let contained = n.start >= *es && n.end <= *ee + 1;
+                let overlaps = n.start < *ee + 1 && n.end > *es;
+                if contained || overlaps {
+                    nids.push(i);
+                    this_exon_hits += 1;
+                }
+            }
+            exon_hit_counts.push(this_exon_hits);
+        }
+        let missing_exons = exon_hit_counts.iter().filter(|&&c| c == 0).count();
+        let classification = if missing_exons == exons.len() {
+            "UNMAPPABLE"
+        } else if missing_exons > 0 {
+            "PARTIAL"
+        } else {
+            "MAPPABLE"
+        };
+
+        if debug {
+            eprintln!(
+                "ORACLE_CLASSIFY tid={} bundle={}:{}-{} strand={} class={} exons_total={} exons_missing={} n_nodes_chained={}",
+                tid, bundle_chrom, bundle_start, bundle_end, strand,
+                classification, exons.len(), missing_exons, nids.len()
+            );
+        }
+        if classification == "UNMAPPABLE" {
+            return; // nothing to inject
+        }
+
+        nids.sort();
+        nids.dedup();
+        if nids.is_empty() { return; }
+
+        let mut tf = GraphTransfrag::new(nids, pattern_size);
+        tf.abundance = abundance;
+        tf.trflong_seed = true;
+        tf.longread = true;
+        tf.real = true;
+        tf.guide_tid = Some(format!("oracle:{tid}"));
+        tf.longstart = first;
+        tf.longend = last;
+        transfrags.push(tf);
+        *injected += 1;
+    };
+
+    for line in content.lines() {
+        if line.starts_with('#') || line.is_empty() { continue; }
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 9 { continue; }
+        if cols[2] != "exon" { continue; }
+        let chrom = cols[0];
+        let strand = cols[6].chars().next().unwrap_or('.');
+        let es: u64 = cols[3].parse().unwrap_or(0);
+        let ee: u64 = cols[4].parse().unwrap_or(0);
+        let attrs = cols[8];
+        let tid = attrs.find("transcript_id \"")
+            .and_then(|idx| {
+                let rest = &attrs[idx + "transcript_id \"".len()..];
+                rest.find('"').map(|end| rest[..end].to_string())
+            })
+            .unwrap_or_default();
+        if cur_tid.as_ref() != Some(&tid) {
+            flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons,
+                  transfrags, &mut injected);
+            cur_tid = Some(tid);
+            cur_chrom = chrom.to_string();
+            cur_strand = strand;
+            cur_exons.clear();
+        }
+        cur_exons.push((es, ee));
+    }
+    flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons,
+          transfrags, &mut injected);
+
+    if debug && injected > 0 {
+        eprintln!(
+            "ORACLE_INJECTED total={} bundle={}:{}-{} strand={}",
+            injected, bundle_chrom, bundle_start, bundle_end, bundle_strand
+        );
+    }
+    injected
+}
+
 fn collect_bundlenodes(bn: Option<&CBundlenode>) -> Vec<(usize, u64, u64, f64)> {
     let mut out = Vec::new();
     let mut cur = bn;

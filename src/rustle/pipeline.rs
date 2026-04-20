@@ -106,6 +106,115 @@ fn consensus_cache_capacity() -> NonZeroUsize {
 /// Rustle's build_sub_bundles creates separate subbundles for each
 /// component. This function merges overlapping same-strand subbundles so
 /// that reads can see all graph nodes in the region, matching the expected behavior.
+/// Direct-emit missed-tx oracle: for each ref tx (from a StringTie GTF)
+/// that overlaps the current bundle, synthesize a Transcript and append
+/// to the extracted tx list. Opt-in via RUSTLE_MISSED_ORACLE_DIRECT=path.
+/// Use RUSTLE_MISSED_ORACLE_ONLY=tid1,tid2,... to restrict.
+/// This bypasses path_extract entirely — if gffcompare matches after
+/// direct emit, path_extract was the blocker; if still not matched,
+/// a downstream filter (pairwise/RI/etc) killed the synthetic output.
+fn append_missed_oracle_direct_emit(
+    txs: &mut Vec<crate::path_extract::Transcript>,
+    bundle_chrom: &str,
+    bundle_start: u64,
+    bundle_end: u64,
+    bundle_strand: char,
+) {
+    let path = match std::env::var("RUSTLE_MISSED_ORACLE_DIRECT") {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let only: Option<std::collections::HashSet<String>> = std::env::var("RUSTLE_MISSED_ORACLE_ONLY")
+        .ok()
+        .map(|v| v.split(',').map(|s| s.trim().to_string()).collect());
+    let debug = std::env::var_os("RUSTLE_MISSED_ORACLE_DEBUG").is_some();
+    let cov: f64 = std::env::var("RUSTLE_MISSED_ORACLE_COV")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+
+    let mut cur_tid: Option<String> = None;
+    let mut cur_chrom: String = String::new();
+    let mut cur_strand: char = '.';
+    let mut cur_exons: Vec<(u64, u64)> = Vec::new();
+
+    let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
+                     exons: &[(u64, u64)],
+                     txs: &mut Vec<crate::path_extract::Transcript>| {
+        let Some(tid) = tid else { return };
+        if let Some(only) = &only {
+            if !only.contains(tid) { return; }
+        }
+        if chrom != bundle_chrom || strand != bundle_strand { return; }
+        if exons.is_empty() { return; }
+        let first = exons[0].0;
+        let last = exons.last().unwrap().1;
+        if first > bundle_end || last < bundle_start { return; }
+
+        let exon_cov = vec![cov; exons.len()];
+        let tx = crate::path_extract::Transcript {
+            chrom: bundle_chrom.to_string(),
+            strand: bundle_strand,
+            exons: exons.to_vec(),
+            coverage: cov,
+            exon_cov,
+            tpm: 0.0,
+            fpkm: 0.0,
+            source: Some(format!("oracle_direct:{tid}")),
+            is_longread: true,
+            longcov: cov,
+            bpcov_cov: 0.0,
+            transcript_id: None,
+            gene_id: None,
+            ref_transcript_id: Some(tid.to_string()),
+            ref_gene_id: None,
+            hardstart: true,
+            hardend: true,
+            alt_tts_end: true,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
+        };
+        txs.push(tx);
+        if debug {
+            eprintln!(
+                "ORACLE_DIRECT_EMITTED tid={} bundle={}:{}-{} strand={} exons={} coord={}-{}",
+                tid, bundle_chrom, bundle_start, bundle_end, strand,
+                exons.len(), first, last
+            );
+        }
+    };
+
+    for line in content.lines() {
+        if line.starts_with('#') || line.is_empty() { continue; }
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 9 || cols[2] != "exon" { continue; }
+        let chrom = cols[0];
+        let strand = cols[6].chars().next().unwrap_or('.');
+        let es: u64 = cols[3].parse().unwrap_or(0);
+        let ee: u64 = cols[4].parse().unwrap_or(0);
+        let attrs = cols[8];
+        let tid = attrs.find("transcript_id \"")
+            .and_then(|idx| {
+                let rest = &attrs[idx + "transcript_id \"".len()..];
+                rest.find('"').map(|end| rest[..end].to_string())
+            })
+            .unwrap_or_default();
+        if cur_tid.as_ref() != Some(&tid) {
+            flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons, txs);
+            cur_tid = Some(tid);
+            cur_chrom = chrom.to_string();
+            cur_strand = strand;
+            cur_exons.clear();
+        }
+        cur_exons.push((es, ee));
+    }
+    flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons, txs);
+}
+
 fn merge_overlapping_subbundles(
     subs: &[crate::bundle_builder::SubBundleResult],
     reads: &[crate::types::BundleRead],
@@ -4874,6 +4983,10 @@ fn extract_bundle_transcripts_for_graph(
 
     let mut seed_outcomes_buf: Vec<(usize, crate::path_extract::SeedOutcome)> = Vec::new();
     let mut longrec_summary = LongRecSummary::default();
+    // Direct-emit oracle: before extract_transcripts, record which ref tx
+    // to inject. After, we compare per-tx with emitted output to classify
+    // PATH_EXTRACT_BLOCK (if forced emission matches and default doesn't)
+    // vs FILTER_BLOCK. See append_missed_oracle_direct_emit below.
     let mut txs = if config.rawreads {
         extract_rawreads_transcripts(
             graph_mut,
@@ -4909,6 +5022,18 @@ fn extract_bundle_transcripts_for_graph(
             Some(&mut longrec_summary),
         )
     };
+    // Direct-emit oracle for diagnostic classification of missed tx.
+    // Appends Transcript structs synthesized from GTF for ref tx that
+    // overlap this bundle. Opt-in via RUSTLE_MISSED_ORACLE_DIRECT=path.gtf.
+    if std::env::var_os("RUSTLE_MISSED_ORACLE_DIRECT").is_some() {
+        append_missed_oracle_direct_emit(
+            &mut txs,
+            &bundle.chrom,
+            bundle.start,
+            bundle.end,
+            bundle.strand,
+        );
+    }
     if std::env::var_os("RUSTLE_SEED_STATS").is_some() {
         let mut counts: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();
@@ -9062,6 +9187,17 @@ pub fn run<P: AsRef<Path>>(
                     config.verbose,
                     config.eonly,
                     config.keeptrf_usepath_tsv.as_deref(),
+                );
+                // Diagnostic missed-tx oracle: inject StringTie ref tx as
+                // high-abundance seeds and classify per-tx why Rustle fails
+                // to emit (unmappable / partial / mappable-not-emitted).
+                let _oracle_injected = crate::graph_build::inject_missed_tx_oracle(
+                    &graph_mut,
+                    &mut transfrags,
+                    &graph_bundle.chrom,
+                    graph_bundle.start,
+                    graph_bundle.end,
+                    graph_bundle.strand,
                 );
                 if snapshot_enabled && (snapshot_full || snapshot_this) {
                     let key = snapshot::bundle_key(bundle_idx, graph_bundle);
