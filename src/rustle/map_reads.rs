@@ -267,8 +267,39 @@ fn collect_read_nodes_exact(
     let mut exon_idx = 0usize;
     let kmer = KMER.saturating_sub(1);
 
+    // Pure-overlap disambiguation: reads whose exon starts BEFORE an
+    // overlap node's start traverse via OverlapAnchor (continuous
+    // entry), not JunctionEntry. Reads whose exon starts EXACTLY at a
+    // JunctionEntry's start enter via that junction and should NOT
+    // also traverse OverlapAnchor.
+    let pure_overlap_active = std::env::var_os("RUSTLE_PURE_OVERLAP").is_some();
     for &nid in ordered_nodes {
         let node = &graph.nodes[nid];
+        // Pure-overlap gate: when iterating overlap nodes, only include
+        // them if this read's current exon start position matches the
+        // node's entry semantics.
+        if pure_overlap_active && node.role.is_overlap() {
+            let exon_for_node = read.exons.iter().find(|&&(_, e)| e > node.start);
+            if let Some(&(es, _)) = exon_for_node {
+                match node.role {
+                    crate::graph::NodeRole::OverlapAnchor => {
+                        // Continuous entry: exon started before node.start
+                        if es >= node.start {
+                            continue;
+                        }
+                    }
+                    crate::graph::NodeRole::JunctionEntry => {
+                        // Junction entry: exon starts exactly at node.start
+                        if es != node.start {
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
+            } else {
+                continue;
+            }
+        }
         let mut intersect = false;
         while exon_idx < read.exons.len() {
             let (seg_start, seg_end) = read.exons[exon_idx];

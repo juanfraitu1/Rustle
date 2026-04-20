@@ -683,6 +683,7 @@ fn create_graph_inner(
                 JunctionEventType::Start => {
                     // Junction start at donor position
                     // Set current graphnode end to donor.
+                    let pure_overlap_active = std::env::var_os("RUSTLE_PURE_OVERLAP").is_some();
                     let old_end = graph.nodes[graphnode_id].end;
                     graph.nodes[graphnode_id].end = pos;
                     create_graph_node_shrink_jstart(
@@ -694,11 +695,35 @@ fn create_graph_inner(
                         pos,
                         pos,
                     );
+                    // In pure-overlap mode, the donor is a shared exon
+                    // boundary across ALL parallels in this bundlenode
+                    // (OverlapAnchor + each JunctionEntry). Each parallel's
+                    // end must be shrunk to pos too.
+                    if pure_overlap_active {
+                        for &par in &bundlenode_aliases {
+                            if par == graphnode_id { continue; }
+                            if par < graph.nodes.len() && graph.nodes[par].end > pos {
+                                graph.nodes[par].end = pos;
+                            }
+                        }
+                    }
 
-                    // Record all junctions starting at this position in ends[]
+                    // Record all junctions starting at this position in ends[].
+                    // In pure-overlap mode, register ALL parallels so downstream
+                    // bundlenodes link to each; otherwise only graphnode_id.
                     for j in &filtered_juncs {
                         if j.donor == pos {
-                            ends.entry(j.acceptor).or_default().push(graphnode_id);
+                            if pure_overlap_active && !bundlenode_aliases.is_empty() {
+                                for &par in &bundlenode_aliases {
+                                    ends.entry(j.acceptor).or_default().push(par);
+                                }
+                                // Also register graphnode_id if not already in aliases
+                                if !bundlenode_aliases.contains(&graphnode_id) {
+                                    ends.entry(j.acceptor).or_default().push(graphnode_id);
+                                }
+                            } else {
+                                ends.entry(j.acceptor).or_default().push(graphnode_id);
+                            }
                         }
                     }
 
@@ -949,6 +974,16 @@ fn create_graph_inner(
                 endbundle,
             );
             sink_parents.push(graphnode_id);
+            // In pure-overlap mode, all parallels share this bundle-end
+            // terminus; each must also be a sink parent so downstream
+            // bundlenodes can link to any of them via ends[].
+            if std::env::var_os("RUSTLE_PURE_OVERLAP").is_some() {
+                for &par in &bundlenode_aliases {
+                    if par != graphnode_id && par < graph.nodes.len() {
+                        sink_parents.push(par);
+                    }
+                }
+            }
         }
 
         // Patch overlap-alias children to match the final split node
