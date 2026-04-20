@@ -8793,6 +8793,16 @@ pub fn run<P: AsRef<Path>>(
                     &graph_bpcov_stranded,
                     covlinks_sno,
                 );
+                // Opt-in alt-TTS sink edges at nodes whose end coincides
+                // with a junction donor (STRG.294.3 class: alt-TTS
+                // terminating where a splice-donor continues for the
+                // dominant isoform). Gated RUSTLE_IMPLICIT_ALT_TTS_SINK=1.
+                let alt_tts_synth = crate::graph_build::add_alt_tts_sink_edges(
+                    &mut graph_mut,
+                    junctions.as_ref(),
+                    graph_bundle.strand,
+                    Some(&graph_bundle.junction_stats),
+                );
 
                 // Coverage-based node splitting: short-read always (trimnode_all); long/mixed when longtrim not yet implemented
                 let synthetic = if use_coverage_trim(mode) {
@@ -8831,6 +8841,11 @@ pub fn run<P: AsRef<Path>>(
                 // In long-read mode, futuretr transfrags get longread=true.
                 // In mixed mode, the algorithm creates both a non-longread and a longread copy .
                 let mut coverage_synth = coverage_synth;
+                // Merge alt_tts synth into coverage_synth so they flow
+                // through the same post-prune remap + flow seeding paths.
+                if !alt_tts_synth.is_empty() {
+                    coverage_synth.extend(alt_tts_synth);
+                }
                 if mode.is_long_read() {
                     for tf in &mut coverage_synth {
                         tf.longread = true;

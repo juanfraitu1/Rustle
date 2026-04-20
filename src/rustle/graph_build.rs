@@ -231,6 +231,77 @@ pub fn add_coverage_source_sink_edges(
     synth_transfrags
 }
 
+/// Add sink edges at nodes whose `.end` coincides with a junction
+/// donor position — these are candidate alt-TTS termini.
+///
+/// Motivation (STRG.294.3 class): StringTie emits alt-TTS isoforms
+/// that terminate at an exon boundary which is ALSO a splice donor
+/// for the dominant isoform. Rustle's graph treats such nodes as
+/// pure "continue via junction" sites; without an explicit sink
+/// edge the alt-TTS path is unreachable.
+///
+/// This pass adds sink edges with a small synthetic abundance
+/// (`abundance = RUSTLE_ALT_TTS_SINK_ABUND` or 1.0 default) to
+/// every non-source/sink Primary node whose end is in the set of
+/// strand-filtered junction donor positions.
+///
+/// Opt-in via `RUSTLE_IMPLICIT_ALT_TTS_SINK=1`. Intentionally
+/// conservative: only when donor exists do we add a sink; doesn't
+/// flood every node with sink edges.
+pub fn add_alt_tts_sink_edges(
+    graph: &mut Graph,
+    junctions: &[Junction],
+    bundle_strand: char,
+    junction_stats: Option<&JunctionStats>,
+) -> Vec<GraphTransfrag> {
+    let mut out: Vec<GraphTransfrag> = Vec::new();
+    if std::env::var_os("RUSTLE_IMPLICIT_ALT_TTS_SINK").is_none() {
+        return out;
+    }
+    let filtered = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
+    let donor_set: HashSet<u64> = filtered.iter().map(|j| j.donor).collect();
+    if donor_set.is_empty() {
+        return out;
+    }
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let abundance: f64 = std::env::var("RUSTLE_ALT_TTS_SINK_ABUND")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
+    let pattern_size = graph.pattern_size();
+    // Nodes that already have a direct sink edge are skipped.
+    let n_nodes = graph.n_nodes;
+    let mut additions: Vec<usize> = Vec::new();
+    for i in 0..n_nodes {
+        if i == source_id || i == sink_id {
+            continue;
+        }
+        let node = &graph.nodes[i];
+        if node.role != NodeRole::Primary {
+            continue;
+        }
+        if node.end <= node.start {
+            continue;
+        }
+        if !donor_set.contains(&node.end) {
+            continue;
+        }
+        if node.children.contains(sink_id) {
+            continue;
+        }
+        additions.push(i);
+    }
+    for nid in additions {
+        graph.add_edge(nid, sink_id);
+        let mut tf = GraphTransfrag::new(vec![nid, sink_id], pattern_size);
+        tf.abundance = abundance;
+        tf.longread = true;
+        out.push(tf);
+    }
+    out
+}
+
 fn collect_bundlenodes(bn: Option<&CBundlenode>) -> Vec<(usize, u64, u64, f64)> {
     let mut out = Vec::new();
     let mut cur = bn;
