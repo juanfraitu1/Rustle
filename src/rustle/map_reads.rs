@@ -477,11 +477,13 @@ pub fn map_reads_to_graph(
         let weight = read.weight;
         let ref_start = read.ref_start;
         let ref_end = read.ref_end;
-        // Hard boundary evidence must come from unaligned (soft-clip) poly tails only.
-        // Counting aligned poly runs (RT drop-off artifacts) inflates hardstart/hardend and
-        // causes hard-boundary mismatches during long-read stitching.
-        let has_poly_start = read.has_poly_start_unaligned;
-        let has_poly_end = read.has_poly_end_unaligned;
+        // Aggregate unaligned AND aligned polyA tail evidence from reads onto
+        // transfrags. StringTie stores both (tf->poly_*_aligned and
+        // tf->poly_*_unaligned) to feed later hardstart/hardend marking.
+        let has_poly_start_un = read.has_poly_start_unaligned;
+        let has_poly_end_un = read.has_poly_end_unaligned;
+        let has_poly_start_al = read.has_poly_start_aligned;
+        let has_poly_end_al = read.has_poly_end_aligned;
 
         for seg in &segments {
             if seg.path.is_empty() {
@@ -508,8 +510,10 @@ pub fn map_reads_to_graph(
                 weight,
                 ref_start,
                 ref_end,
-                has_poly_start,
-                has_poly_end,
+                has_poly_start_un,
+                has_poly_end_un,
+                has_poly_start_al,
+                has_poly_end_al,
                 seg.orphan,
                 &read.junctions,
             );
@@ -773,8 +777,10 @@ pub fn map_reads_to_graph_bundlenodes(
         let weight = read.weight;
         let ref_start = read.ref_start;
         let ref_end = read.ref_end;
-        let has_poly_start = read.has_poly_start_unaligned;
-        let has_poly_end = read.has_poly_end_unaligned;
+        let has_poly_start_un = read.has_poly_start_unaligned;
+        let has_poly_end_un = read.has_poly_end_unaligned;
+        let has_poly_start_al = read.has_poly_start_aligned;
+        let has_poly_end_al = read.has_poly_end_aligned;
 
         for seg in &segments {
             if seg.path.is_empty() {
@@ -801,8 +807,10 @@ pub fn map_reads_to_graph_bundlenodes(
                 weight,
                 ref_start,
                 ref_end,
-                has_poly_start,
-                has_poly_end,
+                has_poly_start_un,
+                has_poly_end_un,
+                has_poly_start_al,
+                has_poly_end_al,
                 seg.orphan,
                 &read.junctions,
             );
@@ -1093,8 +1101,10 @@ fn add_or_update_transfrag(
     weight: f64,
     ref_start: u64,
     ref_end: u64,
-    has_poly_start: bool,
-    has_poly_end: bool,
+    has_poly_start_un: bool,
+    has_poly_end_un: bool,
+    has_poly_start_al: bool,
+    has_poly_end_al: bool,
     killed_junction_orphan: bool,
     junctions: &[Junction],
 ) {
@@ -1135,7 +1145,7 @@ fn add_or_update_transfrag(
         eprintln!("PATH_update_abund: FINAL_NODES nodes={:?}", &key);
         eprintln!(
             "PATH_update_abund: LR_FLAGS poly_start={} poly_end={} orphan={}",
-            has_poly_start, has_poly_end, killed_junction_orphan
+            has_poly_start_un, has_poly_end_un, killed_junction_orphan
         );
     }
     if path_overlaps_trace(&raw_key, graph, trace_locus)
@@ -1154,8 +1164,8 @@ fn add_or_update_transfrag(
             ref_start,
             ref_end,
             is_long,
-            has_poly_start,
-            has_poly_end,
+            has_poly_start_un,
+            has_poly_end_un,
             killed_junction_orphan
         );
     }
@@ -1226,11 +1236,17 @@ fn add_or_update_transfrag(
                 tf.longend = cand_longend;
             }
         }
-        if has_poly_start {
+        if has_poly_start_un {
             tf.poly_start_unaligned = tf.poly_start_unaligned.saturating_add(1).min(65535);
         }
-        if has_poly_end {
+        if has_poly_end_un {
             tf.poly_end_unaligned = tf.poly_end_unaligned.saturating_add(1).min(65535);
+        }
+        if has_poly_start_al {
+            tf.poly_start_aligned = tf.poly_start_aligned.saturating_add(1).min(65535);
+        }
+        if has_poly_end_al {
+            tf.poly_end_aligned = tf.poly_end_aligned.saturating_add(1).min(65535);
         }
         if killed_junction_orphan {
             tf.killed_junction_orphan = true;
@@ -1274,11 +1290,17 @@ fn add_or_update_transfrag(
         tf.longread = true;
         tf.longstart = cand_longstart;
         tf.longend = cand_longend;
-        if has_poly_start {
+        if has_poly_start_un {
             tf.poly_start_unaligned = 1;
         }
-        if has_poly_end {
+        if has_poly_end_un {
             tf.poly_end_unaligned = 1;
+        }
+        if has_poly_start_al {
+            tf.poly_start_aligned = 1;
+        }
+        if has_poly_end_al {
+            tf.poly_end_aligned = 1;
         }
         tf.killed_junction_orphan = killed_junction_orphan;
         let idx = transfrags.len();
