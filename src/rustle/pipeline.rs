@@ -11236,11 +11236,19 @@ pub fn run<P: AsRef<Path>>(
     // The algorithm never emits transcripts with coverage < 1.0. A floor of 0.8 removes
     // 44 FPs while losing only 4 marginal TPs (cov 0.56-0.79), giving +0.7% F1.
     // Guide-matched transcripts (eonly zero-cov guides) are exempt.
+    //
+    // StringTie parity (rlink.cpp:10094): sensitive mode stores with just
+    // `cov && len >= mintranscriptlen`. No explicit floor. Rustle's 1.0
+    // floor kills legit minor isoforms (e.g., STRG.1.5 at cov=0.9633 with
+    // longcov=2.0). Configurable via RUSTLE_FINAL_COV_FLOOR (default 1.0
+    // preserved for backward compat; set to 0.0 for StringTie parity or
+    // 0.8 for moderate recovery).
     {
-        const FINAL_COV_FLOOR: f64 = 1.0;
+        let final_cov_floor: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
         let before = all_transcripts.len();
         all_transcripts.retain(|t| {
-            t.coverage >= FINAL_COV_FLOOR
+            t.coverage >= final_cov_floor
                 || t.transcript_id.is_some() // eonly guide passthrough
                 || t.ref_transcript_id.is_some() // guide-matched
         });
@@ -11248,7 +11256,7 @@ pub fn run<P: AsRef<Path>>(
         if removed > 0 && config.verbose {
             eprintln!(
                 "    final_cov_floor: removed {} transcript(s) with coverage < {}",
-                removed, FINAL_COV_FLOOR
+                removed, final_cov_floor
             );
         }
     }
