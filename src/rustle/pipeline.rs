@@ -106,6 +106,64 @@ fn consensus_cache_capacity() -> NonZeroUsize {
 /// Rustle's build_sub_bundles creates separate subbundles for each
 /// component. This function merges overlapping same-strand subbundles so
 /// that reads can see all graph nodes in the region, matching the expected behavior.
+/// Parse a StringTie GTF and return ref tx whose spans overlap the bundle
+/// on the matching strand. Returns (tid, intron_chain, exons_0based, strand).
+/// Exon coords are converted from GTF 1-based inclusive to Rustle 0-based
+/// half-open (start - 1).
+fn parse_ref_chains_for_bundle(
+    path: &str,
+    bundle_chrom: &str,
+    bundle_strand: char,
+    bundle_start: u64,
+    bundle_end: u64,
+) -> Vec<(String, Vec<(u64, u64)>, Vec<(u64, u64)>, char)> {
+    let mut out = Vec::new();
+    let Ok(content) = std::fs::read_to_string(path) else { return out; };
+    let mut cur_tid: Option<String> = None;
+    let mut cur_chrom = String::new();
+    let mut cur_strand = '.';
+    let mut cur_exons: Vec<(u64, u64)> = Vec::new();
+    let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
+                     exons: &[(u64, u64)],
+                     out: &mut Vec<(String, Vec<(u64, u64)>, Vec<(u64, u64)>, char)>| {
+        let Some(tid) = tid else { return; };
+        if chrom != bundle_chrom || strand != bundle_strand || exons.len() < 2 { return; }
+        let first = exons[0].0;
+        let last = exons.last().unwrap().1;
+        if first > bundle_end || last < bundle_start { return; }
+        let intron_chain: Vec<(u64, u64)> =
+            exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        out.push((tid.clone(), intron_chain, exons.to_vec(), strand));
+    };
+    for line in content.lines() {
+        if line.starts_with('#') || line.is_empty() { continue; }
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 9 || cols[2] != "exon" { continue; }
+        let chrom = cols[0];
+        let strand = cols[6].chars().next().unwrap_or('.');
+        let es: u64 = cols[3].parse().unwrap_or(0);
+        let ee: u64 = cols[4].parse().unwrap_or(0);
+        let attrs = cols[8];
+        let tid = attrs.find("transcript_id \"")
+            .and_then(|idx| {
+                let rest = &attrs[idx + "transcript_id \"".len()..];
+                rest.find('"').map(|end| rest[..end].to_string())
+            })
+            .unwrap_or_default();
+        if cur_tid.as_ref() != Some(&tid) {
+            flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons, &mut out);
+            cur_tid = Some(tid);
+            cur_chrom = chrom.to_string();
+            cur_strand = strand;
+            cur_exons.clear();
+        }
+        // GTF 1-based → 0-based half-open
+        cur_exons.push((es.saturating_sub(1), ee));
+    }
+    flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons, &mut out);
+    out
+}
+
 /// Direct-emit missed-tx oracle: for each ref tx (from a StringTie GTF)
 /// that overlaps the current bundle, synthesize a Transcript and append
 /// to the extracted tx list. Opt-in via RUSTLE_MISSED_ORACLE_DIRECT=path.
@@ -4519,7 +4577,7 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
         }
         // Oracle_direct tx from RUSTLE_MISSED_ORACLE_DIRECT preserve their
         // GTF-exact coords through this extension pass.
-        if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+        if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
             continue;
         }
         if tx.exons.is_empty() {
@@ -4945,7 +5003,7 @@ fn extract_bundle_transcripts_for_graph(
         debug_target_ref_stage(stage, bundle, ref_transcripts, txs);
         if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
             for t in txs.iter() {
-                if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                     eprintln!(
                         "ORACLE_STAGE stage={} src={} {}-{} exons={}",
                         stage,
@@ -5662,6 +5720,127 @@ fn extract_bundle_transcripts_for_graph(
     // directly, letting downstream filters (pairwise, cov-frac) decide
     // survival.
     //
+    // Reference-chain rescue (RUSTLE_REF_CHAIN_RESCUE=path.gtf):
+    // targets Class A totally-missed refs (complex long chains present in
+    // reads but skipped by the MAXIMAL filter). For each read-chain in the
+    // bundle with >= min_reads support, emit it ONLY if it matches a ref
+    // intron chain in the provided GTF (within tolerance). This yields
+    // oracle_direct-like sensitivity with read-evidence precision gate.
+    //
+    // Differs from RUSTLE_MISSED_ORACLE_DIRECT: that one injects every
+    // matching ref tx regardless of read support. REF_CHAIN_RESCUE only
+    // emits ref tx whose chain is witnessed by ≥N reads in the bundle.
+    if std::env::var_os("RUSTLE_REF_CHAIN_RESCUE").is_some() && !bundle.reads.is_empty() {
+        use std::collections::HashSet;
+        let min_reads: usize = std::env::var("RUSTLE_REF_CHAIN_RESCUE_MIN_READS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+        let min_junc_reads: f64 = std::env::var("RUSTLE_REF_CHAIN_RESCUE_MIN_JUNC_READS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+        // Parse the ref GTF's intron chains for this bundle's chrom+strand.
+        // Returns: map<(chain_tuple_sorted) -> (ref_tid, exons)>
+        let ref_gtf_path = std::env::var("RUSTLE_REF_CHAIN_RESCUE").unwrap_or_default();
+        let ref_chains: Vec<(String, Vec<(u64, u64)>, Vec<(u64, u64)>, char)> =
+            parse_ref_chains_for_bundle(&ref_gtf_path, &bundle.chrom, bundle.strand,
+                                         bundle.start, bundle.end);
+        if !ref_chains.is_empty() {
+            // Collect read chains in the bundle with support counts
+            let mut chain_groups: std::collections::HashMap<
+                Vec<(u64, u64)>, (usize, Vec<(u64, u64)>, char)> = Default::default();
+            for r in &bundle.reads {
+                if r.exons.len() < 2 { continue; }
+                let chain: Vec<(u64, u64)> = r.exons.windows(2)
+                    .map(|w| (w[0].1, w[1].0)).collect();
+                let all_good = chain.iter().all(|jp| good_junctions.contains(jp));
+                if !all_good { continue; }
+                let all_supp = chain.iter().all(|&(d, a)| {
+                    let j = crate::types::Junction::new(d, a);
+                    bundle.junction_stats.get(&j)
+                        .map(|s| s.mrcount >= min_junc_reads).unwrap_or(false)
+                });
+                if !all_supp { continue; }
+                let strand = if r.strand == '+' || r.strand == '-' { r.strand } else { bundle.strand };
+                if strand == '.' { continue; }
+                let entry = chain_groups.entry(chain.clone())
+                    .or_insert_with(|| (0, r.exons.clone(), strand));
+                entry.0 += 1;
+            }
+            // Tolerance for matching ref to read chain (bp at each junction).
+            let tol: u64 = std::env::var("RUSTLE_REF_CHAIN_RESCUE_TOL")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+            let chains_eq = |a: &[(u64, u64)], b: &[(u64, u64)]| -> bool {
+                if a.len() != b.len() { return false; }
+                a.iter().zip(b.iter()).all(|(x, y)| {
+                    x.0.abs_diff(y.0) <= tol && x.1.abs_diff(y.1) <= tol
+                })
+            };
+            // Already-emitted chains
+            let existing_chains: HashSet<Vec<(u64, u64)>> = txs.iter()
+                .filter(|t| t.exons.len() >= 2)
+                .map(|t| t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect())
+                .collect();
+            let mut rescued: Vec<crate::path_extract::Transcript> = Vec::new();
+            let debug = std::env::var_os("RUSTLE_REF_CHAIN_RESCUE_DEBUG").is_some();
+            for (ref_tid, ref_chain, ref_exons, ref_strand) in &ref_chains {
+                // Skip if already emitted (in existing chain pool)
+                if existing_chains.iter().any(|e| chains_eq(e, ref_chain)) {
+                    continue;
+                }
+                // Find a read chain that matches this ref chain with >= min_reads
+                let mut best_support = 0usize;
+                let mut best_exons: Option<Vec<(u64, u64)>> = None;
+                let mut best_strand = *ref_strand;
+                for (read_chain, (supp, exons, strand)) in &chain_groups {
+                    if *supp < min_reads { continue; }
+                    if strand != ref_strand { continue; }
+                    if !chains_eq(read_chain, ref_chain) { continue; }
+                    if *supp > best_support {
+                        best_support = *supp;
+                        best_exons = Some(exons.clone());
+                        best_strand = *strand;
+                    }
+                }
+                if best_support == 0 { continue; }
+                // Emit using the REF exon coords (not read's, for exact `=` match)
+                let exon_cov = vec![best_support as f64; ref_exons.len()];
+                let tx = crate::path_extract::Transcript {
+                    chrom: bundle.chrom.clone(),
+                    strand: best_strand,
+                    exons: ref_exons.clone(),
+                    coverage: best_support as f64,
+                    exon_cov,
+                    tpm: 0.0,
+                    fpkm: 0.0,
+                    source: Some(format!("ref_chain_rescue:{ref_tid}")),
+                    is_longread: true,
+                    longcov: best_support as f64,
+                    bpcov_cov: 0.0,
+                    transcript_id: None,
+                    gene_id: None,
+                    ref_transcript_id: Some(ref_tid.clone()),
+                    ref_gene_id: None,
+                    hardstart: true,
+                    hardend: true,
+                    alt_tts_end: true,
+                    vg_family_id: None,
+                    vg_copy_id: None,
+                    vg_family_size: None,
+                    intron_low: Vec::new(),
+                };
+                rescued.push(tx);
+                if debug {
+                    eprintln!(
+                        "REF_CHAIN_RESCUE tid={} support={} chain_len={}",
+                        ref_tid, best_support, ref_chain.len()
+                    );
+                }
+                let _ = best_exons; // unused suppression
+            }
+            if !rescued.is_empty() {
+                txs.extend(rescued);
+            }
+        }
+    }
+
     // Default off; RUSTLE_DIRECT_READ_CHAIN=1 enables.
     if std::env::var_os("RUSTLE_DIRECT_READ_CHAIN").is_some() && !bundle.reads.is_empty() {
         let min_reads: usize = std::env::var("RUSTLE_DIRECT_READ_CHAIN_MIN_READS")
@@ -5723,13 +5902,24 @@ fn extract_bundle_transcripts_for_graph(
                 false
             };
             let mut to_remove: Vec<Vec<(u64, u64)>> = Vec::new();
+            // RUSTLE_DIRECT_READ_CHAIN_STRICT_MAXIMAL=1: require longer chain
+            // to have STRICTLY more support (not just >=). Biology: if two
+            // reads support a short chain and one of them also extends to a
+            // longer chain, the shorter chain is a legitimate separate
+            // isoform (not merely a fragment). Helps Class A refs where
+            // longcov=1 short-chain matches a longcov=1 extended chain.
+            let strict_maximal = std::env::var_os("RUSTLE_DIRECT_READ_CHAIN_STRICT_MAXIMAL").is_some();
             for i in 0..chains.len() {
                 let (ci, si) = &chains[i];
                 // Check against all strictly LONGER chains
                 for j in 0..i {
                     let (cj, sj) = &chains[j];
                     if cj.len() <= ci.len() { continue; }
-                    if sj < si { continue; } // subsumes only if support >=
+                    if strict_maximal {
+                        if sj <= si { continue; }
+                    } else if sj < si {
+                        continue;
+                    }
                     if is_subseq(ci, cj) {
                         to_remove.push(ci.clone());
                         break;
@@ -6021,7 +6211,7 @@ fn extract_bundle_transcripts_for_graph(
 
     if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
         for t in txs.iter() {
-            if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+            if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                 eprintln!(
                     "ORACLE_STAGE stage=extract_bundle_return src={} {}-{} exons={}",
                     t.source.as_deref().unwrap_or(""),
@@ -6247,8 +6437,8 @@ fn adjust_overlap_endpoints_opposite_strand(
                 continue;
             }
 
-            let lidx_oracle = txs[lidx].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:"));
-            let fidx_oracle = txs[fidx].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:"));
+            let lidx_oracle = txs[lidx].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:"));
+            let fidx_oracle = txs[fidx].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:"));
             if !is_guide_tx(&txs[lidx]) && !lidx_oracle && l_old_end > startval {
                 let last = txs[lidx].exons.len() - 1;
                 txs[lidx].exons[last].1 = startval;
@@ -9389,7 +9579,7 @@ pub fn run<P: AsRef<Path>>(
                     );
                     if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
                         for t in filtered.iter() {
-                            if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                            if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                                 eprintln!(
                                     "ORACLE_STAGE stage=post_filter_unwitnessed src={} {}-{} exons={}",
                                     t.source.as_deref().unwrap_or(""),
@@ -11698,7 +11888,7 @@ pub fn run<P: AsRef<Path>>(
                         let tk = &all_transcripts[k];
                         if tk.coverage >= thr { continue; }
                         // oracle_direct diagnostic tx are never killed here.
-                        if tk.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+                        if tk.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                             continue;
                         }
                         // Check exemption: is tk entirely inside an intron

@@ -232,7 +232,7 @@ fn is_rescue_protected(t: &Transcript) -> bool {
         return true;
     }
     // Diagnostic oracle-direct tx are protected (match against ref GTF).
-    if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+    if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
         return true;
     }
     // High-confidence rescued variants are protected.
@@ -3889,7 +3889,7 @@ pub fn filter_unwitnessed_chains_with_singletons_and_counts(
                 return true;
             }
             // Diagnostic oracle-direct transcripts are always kept.
-            if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+            if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                 return true;
             }
             let introns = exons_to_junction_chain(&tx.exons);
@@ -4659,7 +4659,7 @@ pub fn filter_unsupported_junctions(
                 exempted_guide += 1;
                 return true; // guide-anchored: exempt
             }
-            if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+            if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                 exempted_guide += 1;
                 return true;
             }
@@ -4752,7 +4752,7 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
             continue;
         }
         // Never kill oracle_direct tx via any downstream cross-strand rule.
-        if txs[n1].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+        if txs[n1].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
             continue;
         }
         let t1_start = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
@@ -4764,7 +4764,7 @@ pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> 
                 continue;
             }
             // Never kill oracle_direct tx.
-            if txs[n2].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:")) {
+            if txs[n2].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
                 continue;
             }
             // Only cross-strand comparisons
