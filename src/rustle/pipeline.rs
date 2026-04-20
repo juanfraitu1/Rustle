@@ -6787,12 +6787,16 @@ fn emit_stranded_single_exon_candidates(
             continue;
         }
 
+        // coverage is a per-base average (consistent with flow-derived tx);
+        // SE tx was previously storing avg_cov*tlen which inflated cov by
+        // orders of magnitude, causing intra_gene_cov_frac to use SE tx
+        // as cluster-max and kill multi-exon siblings en masse.
         out.push(Transcript {
             chrom: bundle.chrom.clone(),
             strand: bundle.strand,
             exons: vec![(med_start, med_end)],
-            coverage: avg_cov * tlen as f64,
-            exon_cov: vec![avg_cov * tlen as f64],
+            coverage: avg_cov,
+            exon_cov: vec![avg_cov],
             tpm: 0.0,
             fpkm: 0.0,
             source: Some("stranded_single_exon".to_string()),
@@ -10675,12 +10679,60 @@ pub fn run<P: AsRef<Path>>(
     if !single_exon_predictions.is_empty() {
         let singlethr = config.singlethr;
         let original_count = single_exon_predictions.len();
+        // SE boundary precision: gffcompare classes SE tx as k (covers ref),
+        // c (contained), u (intergenic), o (generic overlap), x/e (antisense),
+        // i/n/m (intronic). Most noise is i/n/m (SE sits inside a multi-exon
+        // gene's intron) or x/e (antisense overlap with a multi-exon gene).
+        // Filter against the FULL multi-exon set (not just same-bundle) since
+        // a bundle-local check misses cross-bundle or unstranded interactions.
+        let mut multi_spans: Vec<(String, char, Vec<(u64, u64)>)> = all_transcripts
+            .iter()
+            .filter(|t| t.exons.len() >= 2)
+            .map(|t| (t.chrom.clone(), t.strand, t.exons.clone()))
+            .collect();
+        multi_spans.sort_by(|a, b| a.0.cmp(&b.0).then(
+            a.2.first().map(|e| e.0).unwrap_or(0)
+                .cmp(&b.2.first().map(|e| e.0).unwrap_or(0))));
         let filtered: Vec<Transcript> = single_exon_predictions
             .into_iter()
             .filter(|tx| {
-                let tx_len = tx.exons.iter().map(|(s, e)| e - s).sum::<u64>().max(1) as f64;
-                let cov_per_base = tx.coverage / tx_len;
-                cov_per_base >= singlethr
+                if tx.coverage < singlethr { return false; }
+                let se_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
+                let se_end = tx.exons.last().map(|e| e.1).unwrap_or(0);
+                for (chrom, strand, exons) in &multi_spans {
+                    if chrom != &tx.chrom { continue; }
+                    let me_start = exons.first().map(|e| e.0).unwrap_or(0);
+                    let me_end = exons.last().map(|e| e.1).unwrap_or(0);
+                    if se_end < me_start { continue; }
+                    if se_start > me_end { continue; }
+                    // Antisense overlap kill (x/e-class).
+                    if *strand != tx.strand && *strand != '.' && tx.strand != '.' {
+                        return false;
+                    }
+                    if *strand == tx.strand {
+                        // Kill if inside an intron (i/n/m-class).
+                        if exons.len() >= 2 {
+                            for w in exons.windows(2) {
+                                let intron_s = w[0].1;
+                                let intron_e = w[1].0;
+                                if se_start >= intron_s && se_end <= intron_e {
+                                    return false;
+                                }
+                            }
+                        }
+                        // Kill if SE is fully contained in a multi-exon's exon
+                        // (c-class): these are intra-exon read-cluster noise,
+                        // not independent SE genes. The real SE refs we want
+                        // to recover (STRG.3.1, STRG.183.1, etc.) live in
+                        // their OWN loci, not nested inside a larger gene.
+                        for &(es, ee) in exons {
+                            if es <= se_start && se_end <= ee {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                true
             })
             .collect();
         if config.verbose {
