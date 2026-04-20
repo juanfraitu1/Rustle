@@ -53,5 +53,9 @@ __pycache__/
 !/test_data/
 !/test_data/synthetic_family/
 !/test_data/synthetic_family/**
+
+# Regression test harness (shell + python, no Rust test infra)
+!/tests/
+!/tests/**
 # Keep large real data files out
 /test_data/chr1*
