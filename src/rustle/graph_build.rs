@@ -240,14 +240,22 @@ pub fn add_coverage_source_sink_edges(
 /// pure "continue via junction" sites; without an explicit sink
 /// edge the alt-TTS path is unreachable.
 ///
-/// This pass adds sink edges with a small synthetic abundance
-/// (`abundance = RUSTLE_ALT_TTS_SINK_ABUND` or 1.0 default) to
-/// every non-source/sink Primary node whose end is in the set of
-/// strand-filtered junction donor positions.
+/// Two modes (env gated, independent, combinable):
 ///
-/// Opt-in via `RUSTLE_IMPLICIT_ALT_TTS_SINK=1`. Intentionally
-/// conservative: only when donor exists do we add a sink; doesn't
-/// flood every node with sink edges.
+/// 1. `RUSTLE_IMPLICIT_ALT_TTS_SINK=1` — heuristic: add sink edge at
+///    every Primary node whose end matches any strand-filtered
+///    junction donor.
+///
+/// 2. `RUSTLE_ALT_TTS_ORACLE=path/to/gtf` — oracle: parse a GTF and
+///    extract per-strand transcript-end coords (last exon end for
+///    `+`, first exon start for `-`). Add sink edges at Rustle
+///    nodes whose end matches a coord on the same strand.
+///    Diagnostic tool for isolating which alt-TTS sites Rustle
+///    fails to detect natively; once Rustle can produce these
+///    without oracle, the oracle can be removed.
+///
+/// Synthetic transfrag abundance: `RUSTLE_ALT_TTS_SINK_ABUND`
+/// (default 1.0).
 pub fn add_alt_tts_sink_edges(
     graph: &mut Graph,
     junctions: &[Junction],
@@ -255,14 +263,82 @@ pub fn add_alt_tts_sink_edges(
     junction_stats: Option<&JunctionStats>,
 ) -> Vec<GraphTransfrag> {
     let mut out: Vec<GraphTransfrag> = Vec::new();
-    if std::env::var_os("RUSTLE_IMPLICIT_ALT_TTS_SINK").is_none() {
+    let implicit_on = std::env::var_os("RUSTLE_IMPLICIT_ALT_TTS_SINK").is_some();
+    let oracle_path = std::env::var_os("RUSTLE_ALT_TTS_ORACLE");
+    if !implicit_on && oracle_path.is_none() {
         return out;
     }
-    let filtered = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
-    let donor_set: HashSet<u64> = filtered.iter().map(|j| j.donor).collect();
-    if donor_set.is_empty() {
+
+    // Build the set of candidate "end-of-tx" positions we'll honor.
+    let mut candidate_ends: HashSet<u64> = HashSet::default();
+
+    if implicit_on {
+        let filtered = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
+        candidate_ends.extend(filtered.iter().map(|j| j.donor));
+    }
+    if let Some(path) = &oracle_path {
+        if let Ok(content) = std::fs::read_to_string(path.to_str().unwrap_or("")) {
+            // GTF parse: graph paths flow low-coord → high-coord
+            // regardless of tx strand. A tx whose genomic range ends
+            // at some coord X (a "terminus" in graph-path terms) has
+            // its PATH last node ending at X — so we want both `+`
+            // and `-` transcripts to register their highest-coord
+            // exon end as a sink anchor. Likewise, each tx's lowest-
+            // coord start is a source-anchor candidate (left out of
+            // this pass to keep sink-only semantics).
+            let mut cur_tid: Option<String> = None;
+            let mut cur_strand: char = '.';
+            let mut cur_start: u64 = u64::MAX;
+            let mut cur_end: u64 = 0;
+            let flush = |tid: &Option<String>, strand: char,
+                         _cstart: u64, cend: u64,
+                         candidates: &mut HashSet<u64>| {
+                if tid.is_none() { return; }
+                if strand == bundle_strand && cend > 0 {
+                    candidates.insert(cend);
+                }
+            };
+            for line in content.lines() {
+                if line.starts_with('#') || line.is_empty() { continue; }
+                let cols: Vec<&str> = line.split('\t').collect();
+                if cols.len() < 9 || cols[2] != "exon" { continue; }
+                let strand = cols[6].chars().next().unwrap_or('.');
+                let es: u64 = cols[3].parse().unwrap_or(0);
+                let ee: u64 = cols[4].parse().unwrap_or(0);
+                // tx id
+                let attrs = cols[8];
+                let tid = attrs.find("transcript_id \"")
+                    .and_then(|idx| {
+                        let rest = &attrs[idx + "transcript_id \"".len()..];
+                        rest.find('"').map(|end| rest[..end].to_string())
+                    })
+                    .unwrap_or_default();
+                if cur_tid.as_ref() != Some(&tid) {
+                    flush(&cur_tid, cur_strand, cur_start, cur_end, &mut candidate_ends);
+                    cur_tid = Some(tid);
+                    cur_strand = strand;
+                    cur_start = u64::MAX;
+                    cur_end = 0;
+                }
+                if es < cur_start { cur_start = es; }
+                if ee > cur_end { cur_end = ee; }
+            }
+            flush(&cur_tid, cur_strand, cur_start, cur_end, &mut candidate_ends);
+        }
+    }
+
+    if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
+        eprintln!(
+            "ALT_TTS candidates for strand {} : {} entries (first 5: {:?})",
+            bundle_strand,
+            candidate_ends.len(),
+            candidate_ends.iter().take(5).collect::<Vec<_>>()
+        );
+    }
+    if candidate_ends.is_empty() {
         return out;
     }
+
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
     let abundance: f64 = std::env::var("RUSTLE_ALT_TTS_SINK_ABUND")
@@ -270,7 +346,6 @@ pub fn add_alt_tts_sink_edges(
         .and_then(|v| v.parse().ok())
         .unwrap_or(1.0);
     let pattern_size = graph.pattern_size();
-    // Nodes that already have a direct sink edge are skipped.
     let n_nodes = graph.n_nodes;
     let mut additions: Vec<usize> = Vec::new();
     for i in 0..n_nodes {
@@ -284,7 +359,9 @@ pub fn add_alt_tts_sink_edges(
         if node.end <= node.start {
             continue;
         }
-        if !donor_set.contains(&node.end) {
+        // Graph paths flow low→high coord regardless of strand;
+        // a path terminator node ENDS at the tx's highest-coord exon end.
+        if !candidate_ends.contains(&node.end) {
             continue;
         }
         if node.children.contains(sink_id) {
@@ -292,12 +369,23 @@ pub fn add_alt_tts_sink_edges(
         }
         additions.push(i);
     }
-    for nid in additions {
+    for nid in &additions {
+        let nid = *nid;
         graph.add_edge(nid, sink_id);
         let mut tf = GraphTransfrag::new(vec![nid, sink_id], pattern_size);
         tf.abundance = abundance;
         tf.longread = true;
+        // Mark the node with hardend so downstream filters/extensions
+        // treat it as a legitimate terminus.
+        graph.nodes[nid].hardend = true;
         out.push(tf);
+    }
+    if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
+        eprintln!(
+            "ALT_TTS added {} sink edges on strand {}",
+            additions.len(),
+            bundle_strand
+        );
     }
     out
 }
