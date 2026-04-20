@@ -6145,7 +6145,17 @@ pub fn extract_transcripts(
                 // For hard-boundary seeds, keep compatible with defer to checktrf.
                 // In max-sensitivity mode, also defer unwitnessed seeds so they can be
                 // rediscovered by late passes without perturbing the greedy path extraction.
-                if (thardstart && thardend) || config.max_sensitivity {
+                //
+                // Opt-in: enqueue ALL unwitnessed seeds to checktrf (not just
+                // hardstart+hardend ones). Recovers +8 matches on GGO_19
+                // (including STRG.563.4/.5/.12, STRG.15.10, STRG.247.6,
+                // STRG.285.3, STRG.371.1, STRG.445.6) but adds +20 noise
+                // queries, so F1 nets slightly negative (-0.03).
+                // Useful for sensitivity-oriented runs.
+                // Enable via RUSTLE_UNWITNESSED_CHECKTRF_ALL=1.
+                let enqueue_all_unwitnessed =
+                    std::env::var_os("RUSTLE_UNWITNESSED_CHECKTRF_ALL").is_some();
+                if (thardstart && thardend) || config.max_sensitivity || enqueue_all_unwitnessed {
                     trace_checktrf_enqueue(
                         idx,
                         "unwitnessed",
