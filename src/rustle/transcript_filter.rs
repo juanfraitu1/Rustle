@@ -4120,12 +4120,12 @@ pub fn print_predcluster_with_summary(
         emit_fate("eliminate_incomplete_vs_guides", &before, &txs);
         trace_stage("predcluster.eliminate_incomplete_vs_guides", &txs);
     }
-    // retained_intron filter ( merge_transfrags).
-    // Removes transcripts that have retained introns relative to higher-coverage transcripts.
-    if config.long_reads {
+    // retained_intron filter (legacy; default OFF).
+    // Replacement is TODO — this gate was over-aggressive, killing legit
+    // alt-TTS / intron-retention biology. Keep code for reference; enable via
+    // RUSTLE_RI_FILTER_LEGACY=1 until a new filter is designed.
+    if config.long_reads && std::env::var_os("RUSTLE_RI_FILTER_LEGACY").is_some() {
         let before = if fate_trace { txs.clone() } else { Vec::new() };
-        // Use retained_intron_error_perc if set != default, else fall back to
-        // pairwise_error_perc. Higher value = looser filter = kills MORE tx.
         let ri_frac = if (config.retained_intron_error_perc - 0.1).abs() > 1e-6 {
             config.retained_intron_error_perc
         } else {
@@ -4488,9 +4488,11 @@ pub fn find_print_predcluster_killing_stage(
         if !ref_chain_match(&txs) {
             return "eliminate_incomplete_vs_guides";
         }
-        txs = retained_intron_filter(txs, config.pairwise_error_perc, false);
-        if !ref_chain_match(&txs) {
-            return "retained_intron_filter";
+        if std::env::var_os("RUSTLE_RI_FILTER_LEGACY").is_some() {
+            txs = retained_intron_filter(txs, config.pairwise_error_perc, false);
+            if !ref_chain_match(&txs) {
+                return "retained_intron_filter";
+            }
         }
     }
     if !config.max_sensitivity {
