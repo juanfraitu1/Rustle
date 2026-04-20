@@ -106,6 +106,9 @@ pub fn add_coverage_source_sink_edges(
         if i == source_id || i == sink_id {
             continue;
         }
+        if graph.nodes[i].is_overlap_alias {
+            continue;
+        }
         // source coverage-drop check starts at i>1 (skips node 1,
         // which is the first real node after source). This prevents spurious source
         // edges to nodes immediately after the source.
@@ -319,6 +322,9 @@ fn build_longtrim_bundle_schedules(
         if nid == graph.source_id || nid == graph.sink_id {
             continue;
         }
+        if node.is_overlap_alias {
+            continue;
+        }
         if let Some(bid) = node.source_bnode {
             nodes_by_bid.entry(bid).or_default().push(nid);
         }
@@ -425,6 +431,11 @@ pub fn build_bundle2graph(graph: &Graph, bundlenodes: Option<&CBundlenode>) -> B
     let mut map: Bundle2Graph = vec![Vec::new(); max_bid + 1];
     for (nid, node) in graph.nodes.iter().enumerate() {
         if nid == graph.source_id || nid == graph.sink_id {
+            continue;
+        }
+        // Exclude overlap-alias nodes from read routing; they're scaffolded
+        // to live alongside disjoint splits but aren't yet wired for reads.
+        if node.is_overlap_alias {
             continue;
         }
         if let Some(bid) = node.source_bnode {
@@ -755,6 +766,11 @@ fn create_graph_inner(
 
                     // Split current node if it started before this acceptor
                     if graph.nodes[graphnode_id].start < acceptor {
+                        // Capture the bundlenode-level pre-shrink state for
+                        // overlap-alias scaffold (StringTie keeps a full-span
+                        // "anchor" node 33 alongside the narrower junction-
+                        // acceptor node 34 — see trace PASS_ID=260 STRG.294).
+                        let pre_shrink_start = graph.nodes[graphnode_id].start;
                         let old_end = graph.nodes[graphnode_id].end;
                         graph.nodes[graphnode_id].end = acceptor;
                         create_graph_node_shrink_jend(
@@ -781,6 +797,49 @@ fn create_graph_inner(
                         );
                         graph.add_edge(graphnode_id, next_id);
                         graphnode_id = next_id;
+
+                        // Overlap-alias scaffold. Two modes:
+                        //
+                        // RUSTLE_OVERLAP_NODE_MEASURE=1 — log-only, emit a counter
+                        //   of where an alias WOULD be created. Zero behavioral impact.
+                        //
+                        // RUSTLE_OVERLAP_NODE_SCAFFOLD=1 — create the alias node
+                        //   as a full-span overlap [pre_shrink_start, endbundle)
+                        //   matching StringTie's "anchor" node 33 model. Initially
+                        //   inert (no edges), but still regresses F1 because
+                        //   multiple downstream iterations (bundle2graph,
+                        //   coverage-source/sink-edges, longtrim schedules, prune
+                        //   source/sink attach) must each be taught to skip alias
+                        //   nodes. Guards added but evidently incomplete.
+                        //   Kept for future integration work.
+                        let emit_measure = std::env::var_os("RUSTLE_OVERLAP_NODE_MEASURE").is_some();
+                        let emit_alias = std::env::var_os("RUSTLE_OVERLAP_NODE_SCAFFOLD").is_some();
+                        if (emit_measure || emit_alias)
+                            && pre_shrink_start < acceptor
+                            && acceptor < endbundle
+                        {
+                            if emit_measure {
+                                eprintln!(
+                                    "OVERLAP_ALIAS_CANDIDATE bid={} span={}-{} acceptor={} endbundle={}",
+                                    source_bid, pre_shrink_start, endbundle, acceptor, endbundle
+                                );
+                            }
+                            if emit_alias {
+                                let alias = graph.add_node(pre_shrink_start, endbundle);
+                                alias.source_bnode = Some(source_bid);
+                                alias.coverage = 0.0;
+                                alias.is_overlap_alias = true;
+                                let alias_id = alias.node_id;
+                                create_graph_new_node(
+                                    trace_s,
+                                    trace_g,
+                                    alias_id,
+                                    pre_shrink_start,
+                                    endbundle,
+                                    "overlap_alias(jend)",
+                                );
+                            }
+                        }
                     }
 
                     // Link nodes from ends[] to current graphnode
@@ -1566,6 +1625,12 @@ pub fn prune_graph_nodes(graph: &mut Graph, allowed_nodes: usize, verbose: bool)
     }
 
     for id in 1..sink_id {
+        // Skip overlap-alias nodes: they intentionally have no parents/children
+        // (scaffold awaiting later wiring). Auto-attaching source/sink to them
+        // would create spurious single-node transcripts.
+        if graph.nodes[id].is_overlap_alias {
+            continue;
+        }
         if graph.nodes[id].parents.is_empty() {
             graph.add_edge(source_id, id);
         }
@@ -1573,6 +1638,9 @@ pub fn prune_graph_nodes(graph: &mut Graph, allowed_nodes: usize, verbose: bool)
     // only sink-link nodes reachable from source traversal.
     let source_reach = reachable_from_source(graph);
     for id in 1..sink_id {
+        if graph.nodes[id].is_overlap_alias {
+            continue;
+        }
         if source_reach.contains(id) && graph.nodes[id].children.is_empty() {
             graph.add_edge(id, sink_id);
         }
@@ -1791,6 +1859,9 @@ pub fn prune_graph_nodes_with_redirects(
     }
 
     for id in 1..sink_id {
+        if id >= graph.nodes.len() || graph.nodes[id].is_overlap_alias {
+            continue;
+        }
         if graph.nodes[id].parents.is_empty() {
             graph.add_edge(source_id, id);
         }
@@ -1798,6 +1869,9 @@ pub fn prune_graph_nodes_with_redirects(
     // only sink-link nodes reachable from source traversal.
     let source_reach = reachable_from_source(graph);
     for id in 1..sink_id {
+        if id >= graph.nodes.len() || graph.nodes[id].is_overlap_alias {
+            continue;
+        }
         if source_reach.contains(id) && graph.nodes[id].children.is_empty() {
             graph.add_edge(id, sink_id);
         }

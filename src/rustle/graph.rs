@@ -54,6 +54,13 @@ pub struct GraphNode {
     /// from weak alt-TTS/alt-TSS boundaries.
     /// 0.0 when no longtrim split applies to this node.
     pub longtrim_cov: f64,
+    /// StringTie-style overlap-alias marker. When true, this node was
+    /// created as an overlapping alias at a junction-acceptor — its span
+    /// OVERLAPS with another node (the "primary" split node that covers
+    /// the same genomic range but is entered from an earlier position).
+    /// Scaffold for the overlapping-node graph model (see docs/NETWORK_FLOW_WALKTHROUGH.md
+    /// §7 and memory project_prefer_contig_attempt.md). Default false.
+    pub is_overlap_alias: bool,
 }
 
 impl GraphNode {
@@ -81,6 +88,7 @@ impl GraphNode {
             childpat: None,
             parentpat: None,
             longtrim_cov: 0.0,
+            is_overlap_alias: false,
         }
     }
 
