@@ -5,6 +5,83 @@ use crate::bitvec::GBitVec;
 use crate::coord::len_half_open;
 use crate::types::{AssemblyMode, DetHashMap as HashMap, DetHashSet as HashSet};
 
+/// Role classification for a splice-graph node.
+///
+/// In the default (disjoint-split) build, every node is `Primary` — it
+/// represents an exclusive genomic interval with normal participation in
+/// all downstream systems.
+///
+/// Overlap-model builds (StringTie-parity; gated behind
+/// `RUSTLE_OVERLAP_NODE_SCAFFOLD` / `RUSTLE_PURE_OVERLAP` variants) add
+/// nodes whose genomic range intentionally overlaps with `Primary`
+/// siblings. Each overlap role selects different participation flags:
+///
+/// - `accepts_reads` — whether read-to-node mapping (bundle2graph,
+///   `substitute_alias_for_spanning_run`) may route reads here.
+/// - `accrues_coverage` — whether per-base coverage aggregation sums bp
+///   mass onto this node. Set to false for overlap nodes so the same bp
+///   isn't counted twice.
+/// - `prune_autoattach` — whether `prune_graph_nodes*` source/sink
+///   auto-attach loops consider this node. Overlap nodes receive edges
+///   programmatically; auto-attach would create spurious short paths.
+/// - `longtrim_schedule` — whether per-bundlenode longtrim scheduling
+///   iterates this node. Overlap nodes share a bundlenode with their
+///   Primary siblings; longtrim runs per Primary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeRole {
+    /// Normal graph node. Participates in everything.
+    Primary,
+    /// StringTie-node-33 equivalent: full-span anchor OVERLAPPING one or
+    /// more Primary disjoint splits within the same bundlenode.
+    OverlapAnchor,
+    /// StringTie-node-34/35 equivalent: junction-acceptor entry node,
+    /// spans [acceptor, endbundle) and is entered only via the junction
+    /// landing at its start. Overlaps downstream Primary splits.
+    JunctionEntry,
+}
+
+impl Default for NodeRole {
+    fn default() -> Self {
+        NodeRole::Primary
+    }
+}
+
+impl NodeRole {
+    /// Whether read-to-node mapping considers this node as a candidate.
+    #[inline]
+    pub fn accepts_reads(self) -> bool {
+        // Currently: primary only. Overlap-alongside mode routes reads
+        // via post-pass (substitute_alias_for_spanning_run) rather than
+        // via bundle2graph. A future pure-overlap mode will flip this
+        // to true for OverlapAnchor/JunctionEntry.
+        matches!(self, NodeRole::Primary)
+    }
+
+    /// Whether per-base coverage aggregation sums onto this node.
+    #[inline]
+    pub fn accrues_coverage(self) -> bool {
+        matches!(self, NodeRole::Primary)
+    }
+
+    /// Whether prune source/sink auto-attach considers this node.
+    #[inline]
+    pub fn prune_autoattach(self) -> bool {
+        matches!(self, NodeRole::Primary)
+    }
+
+    /// Whether longtrim bundle scheduling iterates this node.
+    #[inline]
+    pub fn longtrim_schedule(self) -> bool {
+        matches!(self, NodeRole::Primary)
+    }
+
+    /// Whether this node is any flavor of overlap (not Primary).
+    #[inline]
+    pub fn is_overlap(self) -> bool {
+        !matches!(self, NodeRole::Primary)
+    }
+}
+
 /// Single node in the splice graph (exon segment).
 #[derive(Debug, Clone)]
 pub struct GraphNode {
@@ -54,13 +131,11 @@ pub struct GraphNode {
     /// from weak alt-TTS/alt-TSS boundaries.
     /// 0.0 when no longtrim split applies to this node.
     pub longtrim_cov: f64,
-    /// StringTie-style overlap-alias marker. When true, this node was
-    /// created as an overlapping alias at a junction-acceptor — its span
-    /// OVERLAPS with another node (the "primary" split node that covers
-    /// the same genomic range but is entered from an earlier position).
-    /// Scaffold for the overlapping-node graph model (see docs/NETWORK_FLOW_WALKTHROUGH.md
-    /// §7 and memory project_prefer_contig_attempt.md). Default false.
-    pub is_overlap_alias: bool,
+    /// Role classification for participation in read routing, coverage
+    /// aggregation, prune auto-attach, and longtrim scheduling. Default
+    /// `Primary` matches the historical behavior of all nodes.
+    /// See [`NodeRole`] for semantics.
+    pub role: NodeRole,
 }
 
 impl GraphNode {
@@ -88,8 +163,14 @@ impl GraphNode {
             childpat: None,
             parentpat: None,
             longtrim_cov: 0.0,
-            is_overlap_alias: false,
+            role: NodeRole::Primary,
         }
+    }
+
+    /// Convenience: alias for the common check.
+    #[inline]
+    pub fn is_overlap(&self) -> bool {
+        self.role.is_overlap()
     }
 
     pub fn length(&self) -> u64 {

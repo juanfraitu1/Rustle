@@ -377,7 +377,7 @@ fn substitute_alias_for_spanning_run(
                     .iter()
                     .enumerate()
                     .find(|(_, n)| {
-                        n.is_overlap_alias && n.start == run_start && n.end == run_end
+                        n.is_overlap() && n.start == run_start && n.end == run_end
                     })
                     .map(|(nid, _)| nid);
                 if let Some(aid) = alias_id {

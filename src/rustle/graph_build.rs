@@ -2,7 +2,7 @@
 
 use crate::bitset::NodeSet;
 use crate::bpcov::{Bpcov, BpcovStranded, BPCOV_STRAND_ALL, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
-use crate::graph::{Graph, GraphTransfrag};
+use crate::graph::{Graph, GraphTransfrag, NodeRole};
 use crate::longtrim::{
     apply_longtrim_direct, LongtrimBundleSchedule, LongtrimNodeCall, LongtrimStats,
 };
@@ -106,7 +106,8 @@ pub fn add_coverage_source_sink_edges(
         if i == source_id || i == sink_id {
             continue;
         }
-        if graph.nodes[i].is_overlap_alias {
+        // Skip nodes whose role opts out of coverage aggregation.
+        if !graph.nodes[i].role.accrues_coverage() {
             continue;
         }
         // source coverage-drop check starts at i>1 (skips node 1,
@@ -322,7 +323,7 @@ fn build_longtrim_bundle_schedules(
         if nid == graph.source_id || nid == graph.sink_id {
             continue;
         }
-        if node.is_overlap_alias {
+        if !node.role.longtrim_schedule() {
             continue;
         }
         if let Some(bid) = node.source_bnode {
@@ -433,9 +434,8 @@ pub fn build_bundle2graph(graph: &Graph, bundlenodes: Option<&CBundlenode>) -> B
         if nid == graph.source_id || nid == graph.sink_id {
             continue;
         }
-        // Exclude overlap-alias nodes from read routing; they're scaffolded
-        // to live alongside disjoint splits but aren't yet wired for reads.
-        if node.is_overlap_alias {
+        // Skip nodes whose role opts out of read routing.
+        if !node.role.accepts_reads() {
             continue;
         }
         if let Some(bid) = node.source_bnode {
@@ -835,7 +835,7 @@ fn create_graph_inner(
                                 let alias = graph.add_node(pre_shrink_start, endbundle);
                                 alias.source_bnode = Some(source_bid);
                                 alias.coverage = 0.0;
-                                alias.is_overlap_alias = true;
+                                alias.role = NodeRole::OverlapAnchor;
                                 let alias_id = alias.node_id;
                                 create_graph_new_node(
                                     trace_s,
@@ -1663,10 +1663,10 @@ pub fn prune_graph_nodes(graph: &mut Graph, allowed_nodes: usize, verbose: bool)
     }
 
     for id in 1..sink_id {
-        // Skip overlap-alias nodes: they intentionally have no parents/children
-        // (scaffold awaiting later wiring). Auto-attaching source/sink to them
-        // would create spurious single-node transcripts.
-        if graph.nodes[id].is_overlap_alias {
+        // Skip nodes whose role opts out of prune auto-attach. Overlap
+        // nodes get edges programmatically; auto-attach would create
+        // spurious single-node paths.
+        if !graph.nodes[id].role.prune_autoattach() {
             continue;
         }
         if graph.nodes[id].parents.is_empty() {
@@ -1676,7 +1676,7 @@ pub fn prune_graph_nodes(graph: &mut Graph, allowed_nodes: usize, verbose: bool)
     // only sink-link nodes reachable from source traversal.
     let source_reach = reachable_from_source(graph);
     for id in 1..sink_id {
-        if graph.nodes[id].is_overlap_alias {
+        if !graph.nodes[id].role.prune_autoattach() {
             continue;
         }
         if source_reach.contains(id) && graph.nodes[id].children.is_empty() {
@@ -1897,7 +1897,7 @@ pub fn prune_graph_nodes_with_redirects(
     }
 
     for id in 1..sink_id {
-        if id >= graph.nodes.len() || graph.nodes[id].is_overlap_alias {
+        if id >= graph.nodes.len() || !graph.nodes[id].role.prune_autoattach() {
             continue;
         }
         if graph.nodes[id].parents.is_empty() {
@@ -1907,7 +1907,7 @@ pub fn prune_graph_nodes_with_redirects(
     // only sink-link nodes reachable from source traversal.
     let source_reach = reachable_from_source(graph);
     for id in 1..sink_id {
-        if id >= graph.nodes.len() || graph.nodes[id].is_overlap_alias {
+        if id >= graph.nodes.len() || !graph.nodes[id].role.prune_autoattach() {
             continue;
         }
         if source_reach.contains(id) && graph.nodes[id].children.is_empty() {
