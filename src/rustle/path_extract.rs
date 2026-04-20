@@ -6091,7 +6091,15 @@ pub fn extract_transcripts(
         // the original algorithm for each pair of consecutive splice edges in the
         // path, require at least one transfrag whose node list contains BOTH edges in order.
         // This prevents stitching novel junction combinations from separate reads.
-        if checkpath && long_read_mode && use_last >= use_start && std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some() {
+        //
+        // Historically gated behind RUSTLE_ENABLE_WITNESS (opt-in) because at an
+        // earlier baseline enabling it lost TPs. Re-measured on 2026-04-20
+        // baseline (F1=86.72): enabling it fires 128 unwitnessed outcomes but
+        // final output is F1-neutral (same matches, 1 fewer noise query).
+        // Default changed to ON; disable via RUSTLE_WITNESS_OFF=1.
+        let witness_on = !std::env::var_os("RUSTLE_WITNESS_OFF").is_some()
+            || std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some();
+        if checkpath && long_read_mode && use_last >= use_start && witness_on {
             let mut splice_pos: Vec<usize> = Vec::new();
             for p in use_start..=use_last {
                 if p == use_start {
