@@ -4135,6 +4135,27 @@ pub fn print_predcluster_with_summary(
             trace_tx_detail("ENTER_PAIRWISE", t, None);
         }
     }
+    // Pre-pairwise dedup: collapse near-equal/exact/subset chains BEFORE
+    // pairwise_overlap_filter runs its INCLUDED_DROP kill. This reduces the
+    // number of sibling preds competing in pairwise, so legit alt-TSS/TTS
+    // isoforms are less likely to be collateral-killed.
+    //
+    // StringTie's pairwise runs after fewer preds reach it because their
+    // flow decomposition produces fewer path variants. Rustle compensates
+    // by pre-dedup.
+    //
+    // Opt-out via RUSTLE_PRE_PAIRWISE_DEDUP_OFF=1.
+    if config.long_reads && std::env::var_os("RUSTLE_PRE_PAIRWISE_DEDUP_OFF").is_none() {
+        let before_pre_dedup = if fate_trace { txs.clone() } else { Vec::new() };
+        txs = collapse_near_equal_intron_chains(
+            txs,
+            config.junction_correction_window,
+            config.verbose,
+        );
+        txs = dedup_exact_intron_chains(txs, config.verbose);
+        emit_fate("pre_pairwise_dedup", &before_pre_dedup, &txs);
+        trace_stage("predcluster.pre_pairwise_dedup", &txs);
+    }
     if !config.max_sensitivity {
         let before_pairwise = if fate_trace { txs.clone() } else { Vec::new() };
         // the readthrough elimination block is commented out,
