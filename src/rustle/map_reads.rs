@@ -319,7 +319,83 @@ fn collect_read_nodes_exact(
         }
     }
 
+    // Overlap-alias post-pass (RUSTLE_OVERLAP_NODE_MAP=1): replace a
+    // contiguous disjoint-split run [A, B, ..., C] in path with the
+    // alias node that spans [A.start, C.end] IFF the read's exon
+    // fully spans that range (meaning: the read did NOT take any
+    // junction within the span — it continuously traversed the full
+    // region, which is what alias represents). Prevents alias from
+    // being a shortcut: only reads that could biologically traverse
+    // the full alias span are routed to it.
+    if !path.is_empty() && std::env::var_os("RUSTLE_OVERLAP_NODE_MAP").is_some() {
+        path = substitute_alias_for_spanning_run(read, graph, path);
+    }
+
     (path, cov_add)
+}
+
+/// Scan `path` for maximal contiguous runs (adjacent nodes where
+/// consecutive nodes share an edge and genomic coords are contiguous:
+/// prev.end == next.start). For each such run A..C, look for an
+/// alias node `a` with `a.start == A.start && a.end == C.end` and
+/// a read exon fully spanning `[A.start, C.end]`. If found, replace
+/// the run with the alias id.
+fn substitute_alias_for_spanning_run(
+    read: &BundleRead,
+    graph: &Graph,
+    path: Vec<usize>,
+) -> Vec<usize> {
+    if path.len() < 2 {
+        return path;
+    }
+    // Identify contiguous runs.
+    let mut out: Vec<usize> = Vec::with_capacity(path.len());
+    let mut i = 0usize;
+    while i < path.len() {
+        let mut j = i;
+        while j + 1 < path.len() {
+            let cur = &graph.nodes[path[j]];
+            let nxt = &graph.nodes[path[j + 1]];
+            if cur.end == nxt.start && cur.children.contains(path[j + 1]) {
+                j += 1;
+            } else {
+                break;
+            }
+        }
+        if j > i {
+            // run from i..=j; try to find a spanning alias.
+            let run_start = graph.nodes[path[i]].start;
+            let run_end = graph.nodes[path[j]].end;
+            // Read must span continuously [run_start, run_end] via a single exon.
+            let spanning = read.exons.iter().any(|&(es, ee)| {
+                es <= run_start && ee >= run_end
+            });
+            if spanning {
+                // Find any alias node matching [run_start, run_end].
+                let alias_id = graph
+                    .nodes
+                    .iter()
+                    .enumerate()
+                    .find(|(_, n)| {
+                        n.is_overlap_alias && n.start == run_start && n.end == run_end
+                    })
+                    .map(|(nid, _)| nid);
+                if let Some(aid) = alias_id {
+                    out.push(aid);
+                    i = j + 1;
+                    continue;
+                }
+            }
+            for k in i..=j {
+                out.push(path[k]);
+            }
+            i = j + 1;
+        } else {
+            out.push(path[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 fn collect_bundlenode_ranges(bn: Option<&CBundlenode>) -> Vec<(usize, u64, u64)> {
