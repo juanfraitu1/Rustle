@@ -11246,17 +11246,29 @@ pub fn run<P: AsRef<Path>>(
     {
         let final_cov_floor: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+        // Longcov-exempt sub-floor: allow tx below final_cov_floor if longcov
+        // is strong. Trace on STRG.1.5 shows cov=0.9633 longcov=2.0; keeping
+        // it matches StringTie's behavior (no floor at storage, gated by
+        // downstream filters already passed here). Default OFF — gated
+        // behind RUSTLE_FINAL_COV_FLOOR_LONGCOV_EXEMPT with two thresholds.
+        let longcov_min: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR_LONGCOV_MIN")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let sub_floor: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR_SUB")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(final_cov_floor);
         let before = all_transcripts.len();
         all_transcripts.retain(|t| {
             t.coverage >= final_cov_floor
+                || (longcov_min > 0.0
+                    && t.coverage >= sub_floor
+                    && t.longcov >= longcov_min)
                 || t.transcript_id.is_some() // eonly guide passthrough
                 || t.ref_transcript_id.is_some() // guide-matched
         });
         let removed = before - all_transcripts.len();
         if removed > 0 && config.verbose {
             eprintln!(
-                "    final_cov_floor: removed {} transcript(s) with coverage < {}",
-                removed, final_cov_floor
+                "    final_cov_floor: removed {} transcript(s) with coverage < {} (sub={} longcov_min={})",
+                removed, final_cov_floor, sub_floor, longcov_min
             );
         }
     }

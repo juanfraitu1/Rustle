@@ -4335,18 +4335,40 @@ pub fn print_predcluster_with_summary(
     } else {
         config.readthr // 1.0 default
     };
+    // Fused readthr gate with longcov exemption (StringTie-parity direction):
+    // StringTie stores preds with just cov>0 (rlink.cpp:10094) and relies on
+    // earlier/tighter filters to kill noise. Rustle's readthr hard-cuts at
+    // cov<1.0 but this kills legit minor isoforms (e.g., STRG.1.5 at
+    // cov=0.9633 longcov=2.0).
+    //
+    // Compromise: keep the 1.0 threshold as default, but EXEMPT multi-exon
+    // tx with strong longcov support. Tunable via RUSTLE_READTHR_LONGCOV_MIN
+    // (default 0 = off). Recommended: 2.0 for balanced recovery.
+    let readthr_longcov_min: f64 = std::env::var("RUSTLE_READTHR_LONGCOV_MIN")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let readthr_longcov_subfloor: f64 = std::env::var("RUSTLE_READTHR_LONGCOV_SUBFLOOR")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
     txs.retain(|t| {
         if is_guide_pair(t) {
             return true;
         }
-        // Simple readthr gate matching the original algorithm (line 19910):
-        // cov < readthr → kill. No exceptions for rescue or longcov.
         let threshold = if t.exons.len() == 1 {
-            config.singlethr // 4.75 for single-exon
+            config.singlethr // 4.75 for single-exon (always strict)
         } else {
             base_threshold // readthr (1.0)
         };
-        t.coverage >= threshold
+        if t.coverage >= threshold {
+            return true;
+        }
+        // Longcov exemption for multi-exon (gated opt-in).
+        if readthr_longcov_min > 0.0
+            && t.exons.len() > 1
+            && t.longcov >= readthr_longcov_min
+            && t.coverage >= readthr_longcov_subfloor
+        {
+            return true;
+        }
+        false
     });
     summary.after_readthr = txs.len();
     if config.verbose && txs.len() < before {
