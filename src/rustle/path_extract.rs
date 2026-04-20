@@ -6873,7 +6873,28 @@ pub fn extract_transcripts(
         let min_cov_gate = if std::env::var_os("RUSTLE_BUNDLE_GRAPH").is_some() {
             0.5  // 0.5x coverage minimum in bundle mode (loses 3 TPs, removes ~22 FPs)
         } else {
-            EPS
+            // StringTie-parity lite: reject low-flux seeds EARLIER (pre-store)
+            // so they don't clutter predcluster and get killed by readthr.
+            // Rejected seeds go to checktrf for rescue.
+            // Default: EPS (historic). Tune via RUSTLE_MIN_COV_GATE.
+            //
+            // Measurements on GGO_19 (14-locus path-extension analysis
+            // showed Rustle produces 504 preds avg 25.3 exons vs StringTie's
+            // 275 preds avg 14.7; flow-cov fragments across too many preds):
+            //   gate  matches  query  F1
+            //   EPS    1638    1939   86.72 (baseline)
+            //   0.05   1638    1939   86.72
+            //   0.10   1638    1937   86.76 (+0.04)
+            //   0.15   1639    1938   86.81 (+0.09)
+            //   0.17   1638    1938   86.76
+            //   0.30   1638    1937   86.76
+            //   0.50   1634    ~     (regress -4 matches)
+            //   0.75   1619    —     (regress -19)
+            //   1.00   1473    —     (regress -165)
+            //
+            // Gate=0.15 gains +1 match + 1 fewer noise query. Small win.
+            std::env::var("RUSTLE_MIN_COV_GATE")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(EPS)
         };
         
         
