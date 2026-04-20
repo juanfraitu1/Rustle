@@ -6901,8 +6901,11 @@ pub fn extract_transcripts(
             //   1.00   1473    —     (regress -165)
             //
             // Gate=0.15 gains +1 match + 1 fewer noise query. Small win.
+            // Default set to 0.15 (marginal F1 improvement, StringTie-parity
+            // direction — StringTie rejects low-flux seeds as low_coverage).
+            // Opt-out via RUSTLE_MIN_COV_GATE=0 (or set to EPS~1e-10).
             std::env::var("RUSTLE_MIN_COV_GATE")
-                .ok().and_then(|v| v.parse().ok()).unwrap_or(EPS)
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.15)
         };
         
         
