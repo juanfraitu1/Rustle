@@ -3581,13 +3581,20 @@ pub fn collapse_near_equal_intron_chains(
             }
             let b_j = exons_to_junction_chain(&bj.exons);
             // collapse transcripts with near-identical intron chains.
-            // LR alignment noise creates shifted splice site calls (±10bp), producing
-            // transcripts that differ only by small junction offsets.  Match intron
-            // chains with the same tolerance used for junction coalescing.
+            // Internal splice sites (donor/acceptor of each intron) are legit
+            // alt-splice when they differ by >= 1bp and each has its own read
+            // support; junction_correction upstream already snaps genuine
+            // alignment drift. So require EXACT match on internal splice sites,
+            // reserving terminal_tolerance for first/last exon boundaries only.
+            // Override internal tolerance via RUSTLE_COLLAPSE_INTERNAL_TOL.
+            let internal_tol: u64 = std::env::var("RUSTLE_COLLAPSE_INTERNAL_TOL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
             let chain_match = if a_j.len() == b_j.len() {
                 a_j.iter().zip(b_j.iter()).all(|(aj, bj)| {
-                    aj.0.abs_diff(bj.0) <= terminal_tolerance
-                        && aj.1.abs_diff(bj.1) <= terminal_tolerance
+                    aj.0.abs_diff(bj.0) <= internal_tol
+                        && aj.1.abs_diff(bj.1) <= internal_tol
                 })
             } else {
                 false
