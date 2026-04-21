@@ -775,7 +775,7 @@ fn filter_junctions_for_bundle<'a>(
     junction_stats: Option<&JunctionStats>,
 ) -> Vec<&'a Junction> {
     let target_strand = target_bundle_strand(bundle_strand);
-    junctions
+    let pre: Vec<&'a Junction> = junctions
         .iter()
         .filter(|j| {
             if let Some(js) = junction_stats {
@@ -795,7 +795,131 @@ fn filter_junctions_for_bundle<'a>(
             }
             true
         })
-        .collect()
+        .collect();
+    // Alt-junction coalescing: demote weak alt-donors/acceptors to reduce
+    // graph over-segmentation. Targets the STRG.309 class of j-class
+    // over-emission where Rustle explores 2^N combinations of alt-splice
+    // shifts. Opt-in via RUSTLE_ALT_JUNC_COALESCE=1.
+    if std::env::var_os("RUSTLE_ALT_JUNC_COALESCE").is_some() && junction_stats.is_some() {
+        coalesce_weak_alt_junctions(pre, junction_stats.unwrap())
+    } else {
+        pre
+    }
+}
+
+/// Drop alt-donor and alt-acceptor junctions that cluster within N bp of
+/// a canonical (highest-read) junction AND have < min_ratio * canonical
+/// read support. Reduces graph over-segmentation at alt-splice hot spots.
+///
+/// Algorithm:
+/// 1. For each donor coord D, find the canonical junction (D, A_canon)
+///    = max-read junction starting at D. Drop junctions (D, A') where
+///    |A' - A_canon| <= window AND reads(D, A') < min_ratio * reads(D, A_canon).
+///    This demotes weak alt-acceptors at the same donor.
+/// 2. For each acceptor coord A, find the canonical junction (D_canon, A)
+///    = max-read junction ending at A. Drop (D', A) where
+///    |D' - D_canon| <= window AND reads(D', A) < min_ratio * reads(D_canon, A).
+///    This demotes weak alt-donors at the same acceptor.
+///
+/// Does NOT drop junctions whose donor AND acceptor both differ from any
+/// canonical — those are legitimate novel splice events to preserve.
+///
+/// Env vars:
+///   RUSTLE_ALT_JUNC_WINDOW (default 100) — bp tolerance
+///   RUSTLE_ALT_JUNC_MIN_RATIO (default 0.5) — alt must have at least this
+///                                              fraction of canonical reads to be kept
+fn coalesce_weak_alt_junctions<'a>(
+    juncs: Vec<&'a Junction>,
+    stats: &JunctionStats,
+) -> Vec<&'a Junction> {
+    let window: u64 = std::env::var("RUSTLE_ALT_JUNC_WINDOW")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+    let min_ratio: f64 = std::env::var("RUSTLE_ALT_JUNC_MIN_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    let debug = std::env::var_os("RUSTLE_ALT_JUNC_DEBUG").is_some();
+
+    // Helper: get read support (mrcount) for a junction; 0 if no stats.
+    let reads_of = |j: &Junction| -> f64 {
+        stats.get(j).map(|s| s.mrcount.max(s.nreads_good)).unwrap_or(0.0)
+    };
+
+    // Group by acceptor: find canonical donor for each acceptor, drop weak alt-donors.
+    use std::collections::HashMap as StdHashMap;
+    let mut by_acceptor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in &juncs {
+        by_acceptor.entry(j.acceptor).or_default().push(j);
+    }
+    // Demote set: junctions to remove.
+    let mut demoted: std::collections::HashSet<(u64, u64)> = Default::default();
+    for (_acceptor, siblings) in &by_acceptor {
+        if siblings.len() < 2 { continue; }
+        // Find max-read canonical
+        let canon = siblings.iter().copied().max_by(|a, b| {
+            reads_of(a).partial_cmp(&reads_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(canon) = canon else { continue; };
+        let canon_r = reads_of(canon);
+        if canon_r <= 0.0 { continue; }
+        for &alt in siblings {
+            if alt.donor == canon.donor { continue; }
+            let alt_r = reads_of(alt);
+            let donor_dist = alt.donor.abs_diff(canon.donor);
+            if donor_dist <= window && alt_r < min_ratio * canon_r {
+                demoted.insert((alt.donor, alt.acceptor));
+                if debug {
+                    eprintln!(
+                        "ALT_JUNC demote_at_acceptor alt={}-{} alt_reads={:.0} canon={}-{} canon_reads={:.0}",
+                        alt.donor, alt.acceptor, alt_r,
+                        canon.donor, canon.acceptor, canon_r
+                    );
+                }
+            }
+        }
+    }
+
+    // Group by donor: find canonical acceptor for each donor, drop weak alt-acceptors.
+    let mut by_donor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in &juncs {
+        by_donor.entry(j.donor).or_default().push(j);
+    }
+    for (_donor, siblings) in &by_donor {
+        if siblings.len() < 2 { continue; }
+        let canon = siblings.iter().copied().max_by(|a, b| {
+            reads_of(a).partial_cmp(&reads_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(canon) = canon else { continue; };
+        let canon_r = reads_of(canon);
+        if canon_r <= 0.0 { continue; }
+        for &alt in siblings {
+            if alt.acceptor == canon.acceptor { continue; }
+            let alt_r = reads_of(alt);
+            let acc_dist = alt.acceptor.abs_diff(canon.acceptor);
+            if acc_dist <= window && alt_r < min_ratio * canon_r {
+                demoted.insert((alt.donor, alt.acceptor));
+                if debug {
+                    eprintln!(
+                        "ALT_JUNC demote_at_donor alt={}-{} alt_reads={:.0} canon={}-{} canon_reads={:.0}",
+                        alt.donor, alt.acceptor, alt_r,
+                        canon.donor, canon.acceptor, canon_r
+                    );
+                }
+            }
+        }
+    }
+
+    let before = juncs.len();
+    let kept: Vec<&Junction> = juncs.into_iter()
+        .filter(|j| !demoted.contains(&(j.donor, j.acceptor)))
+        .collect();
+    if debug {
+        eprintln!(
+            "ALT_JUNC coalesce: {} → {} ({} demoted, window={}bp ratio={:.2})",
+            before, kept.len(), before - kept.len(), window, min_ratio
+        );
+    }
+    kept
 }
 
 fn collect_bundlenode_events(
