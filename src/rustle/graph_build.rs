@@ -927,21 +927,142 @@ fn collect_bundlenode_events(
     currentstart: u64,
     endbundle: u64,
     bundle_end: u64,
+    demoted_donors: &HashSet<u64>,
+    demoted_acceptors: &HashSet<u64>,
 ) -> Vec<(u64, JunctionEventType)> {
     let mut events: Vec<(u64, JunctionEventType)> = Vec::new();
     for j in filtered_juncs {
         if j.donor > currentstart && j.donor <= endbundle {
             if j.acceptor <= bundle_end {
-                events.push((j.donor, JunctionEventType::Start));
+                // Skip Start (donor) events at demoted alt-donor coords.
+                // The junction still contributes as an edge from the node
+                // containing this coord to the acceptor node, but we don't
+                // create an extra graph-node boundary here. Reduces alt-
+                // splice combinatorial path exploration at STRG.309 class.
+                if !demoted_donors.contains(&j.donor) {
+                    events.push((j.donor, JunctionEventType::Start));
+                }
             }
         }
         if j.acceptor >= currentstart && j.acceptor <= endbundle {
-            events.push((j.acceptor, JunctionEventType::End));
+            if !demoted_acceptors.contains(&j.acceptor) {
+                events.push((j.acceptor, JunctionEventType::End));
+            }
         }
     }
     events.sort_unstable();
     events.dedup_by_key(|e| (e.0, e.1));
     events
+}
+
+/// Compute alt-donor and alt-acceptor coords that should NOT create
+/// graph-node boundaries. Targets the STRG.309 over-segmentation class:
+/// at an acceptor shared by multiple donors, if an alt-donor has much
+/// less read support than the canonical donor AND is within N bp of it,
+/// demote the alt-donor coord so no extra graph segment is created.
+///
+/// Reads still map to junctions via exon boundaries; the demoted coord
+/// just doesn't split the node. This keeps reads using alt-donors
+/// coalesced into the same transfrag pattern as reads using canonical.
+///
+/// Opt-in via RUSTLE_GRAPH_ALT_COALESCE=1.
+///
+/// Skips junctions marked guide_match (preserves annotation-driven splits).
+fn compute_demoted_alt_coords(
+    filtered_juncs: &[&Junction],
+    stats: &JunctionStats,
+) -> (HashSet<u64>, HashSet<u64>) {
+    let mut demoted_donors: HashSet<u64> = Default::default();
+    let mut demoted_acceptors: HashSet<u64> = Default::default();
+    if std::env::var_os("RUSTLE_GRAPH_ALT_COALESCE").is_none() {
+        return (demoted_donors, demoted_acceptors);
+    }
+    let window: u64 = std::env::var("RUSTLE_GRAPH_ALT_WINDOW")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+    let min_ratio: f64 = std::env::var("RUSTLE_GRAPH_ALT_MIN_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.3);
+    let debug = std::env::var_os("RUSTLE_GRAPH_ALT_DEBUG").is_some();
+
+    let reads_of = |j: &Junction| -> f64 {
+        stats.get(j).map(|s| s.mrcount.max(s.nreads_good)).unwrap_or(0.0)
+    };
+    let is_guide = |j: &Junction| -> bool {
+        stats.get(j).map(|s| s.guide_match).unwrap_or(false)
+    };
+
+    use std::collections::HashMap as StdHashMap;
+
+    // Demote alt-donors at the same acceptor.
+    let mut by_acceptor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in filtered_juncs {
+        by_acceptor.entry(j.acceptor).or_default().push(j);
+    }
+    for (_acc, sibs) in &by_acceptor {
+        if sibs.len() < 2 { continue; }
+        let canon = sibs.iter().copied().max_by(|a, b| {
+            reads_of(a).partial_cmp(&reads_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(canon) = canon else { continue; };
+        if is_guide(canon) { continue; }
+        let canon_r = reads_of(canon);
+        if canon_r <= 0.0 { continue; }
+        for &alt in sibs {
+            if alt.donor == canon.donor { continue; }
+            if is_guide(alt) { continue; }
+            let alt_r = reads_of(alt);
+            let dist = alt.donor.abs_diff(canon.donor);
+            if dist <= window && alt_r < min_ratio * canon_r {
+                demoted_donors.insert(alt.donor);
+                if debug {
+                    eprintln!(
+                        "GRAPH_ALT demote_donor={} alt_reads={:.0} canon_donor={} canon_reads={:.0} dist={}bp",
+                        alt.donor, alt_r, canon.donor, canon_r, dist
+                    );
+                }
+            }
+        }
+    }
+
+    // Demote alt-acceptors at the same donor.
+    let mut by_donor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in filtered_juncs {
+        by_donor.entry(j.donor).or_default().push(j);
+    }
+    for (_d, sibs) in &by_donor {
+        if sibs.len() < 2 { continue; }
+        let canon = sibs.iter().copied().max_by(|a, b| {
+            reads_of(a).partial_cmp(&reads_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(canon) = canon else { continue; };
+        if is_guide(canon) { continue; }
+        let canon_r = reads_of(canon);
+        if canon_r <= 0.0 { continue; }
+        for &alt in sibs {
+            if alt.acceptor == canon.acceptor { continue; }
+            if is_guide(alt) { continue; }
+            let alt_r = reads_of(alt);
+            let dist = alt.acceptor.abs_diff(canon.acceptor);
+            if dist <= window && alt_r < min_ratio * canon_r {
+                demoted_acceptors.insert(alt.acceptor);
+                if debug {
+                    eprintln!(
+                        "GRAPH_ALT demote_acceptor={} alt_reads={:.0} canon_acceptor={} canon_reads={:.0} dist={}bp",
+                        alt.acceptor, alt_r, canon.acceptor, canon_r, dist
+                    );
+                }
+            }
+        }
+    }
+
+    if debug && !(demoted_donors.is_empty() && demoted_acceptors.is_empty()) {
+        eprintln!(
+            "GRAPH_ALT demoted donors={} acceptors={} (W={}bp R={:.2})",
+            demoted_donors.len(), demoted_acceptors.len(), window, min_ratio
+        );
+    }
+    (demoted_donors, demoted_acceptors)
 }
 
 fn build_longtrim_bundle_schedules(
@@ -953,6 +1074,9 @@ fn build_longtrim_bundle_schedules(
     junction_stats: Option<&JunctionStats>,
 ) -> Vec<LongtrimBundleSchedule> {
     let filtered_juncs = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
+    let (demoted_donors, demoted_acceptors) = junction_stats
+        .map(|s| compute_demoted_alt_coords(&filtered_juncs, s))
+        .unwrap_or_else(|| (Default::default(), Default::default()));
     let mut nodes_by_bid: HashMap<usize, Vec<usize>> = Default::default();
     for (nid, node) in graph.nodes.iter().enumerate() {
         if nid == graph.source_id || nid == graph.sink_id {
@@ -978,7 +1102,8 @@ fn build_longtrim_bundle_schedules(
             continue;
         }
 
-        let events = collect_bundlenode_events(&filtered_juncs, bn.start, bn.end, bundle_end);
+        let events = collect_bundlenode_events(&filtered_juncs, bn.start, bn.end, bundle_end,
+            &demoted_donors, &demoted_acceptors);
         let mut calls: Vec<LongtrimNodeCall> = Vec::new();
         let mut node_idx = 0usize;
         let mut current_start = bn.start;
@@ -1175,6 +1300,13 @@ fn create_graph_inner(
 
     // Filter junctions by strand and killed status (once, reuse for all bundlenodes).
     let filtered_juncs = filter_junctions_for_bundle(junctions, bundle_strand, junction_stats);
+    // Graph-segment alt-coalesce: compute demoted alt-donor/acceptor coords.
+    // When enabled via RUSTLE_GRAPH_ALT_COALESCE=1, weak alt positions within
+    // N bp of a canonical donor/acceptor (at the same other-endpoint) do NOT
+    // create graph-node boundaries. Reduces combinatorial path exploration.
+    let (demoted_donors, demoted_acceptors) = junction_stats
+        .map(|s| compute_demoted_alt_coords(&filtered_juncs, s))
+        .unwrap_or_else(|| (Default::default(), Default::default()));
 
     // ends[] hashmap: tracks junction endpoints for cross-junction linking.
     // Persists across bundlenodes ( 4080-4088).
@@ -1194,7 +1326,8 @@ fn create_graph_inner(
         // START event at donor: junction starts here (exon ends, intron begins).
         // END event at acceptor: junction ends here (intron ends, exon begins).
         let events =
-            collect_bundlenode_events(&filtered_juncs, currentstart, endbundle, bundle_end);
+            collect_bundlenode_events(&filtered_juncs, currentstart, endbundle, bundle_end,
+                &demoted_donors, &demoted_acceptors);
 
         // Create initial graphnode [currentstart, endbundle)
         let node = graph.add_node(currentstart, endbundle);
