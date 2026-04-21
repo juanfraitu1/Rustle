@@ -8374,6 +8374,34 @@ pub fn run<P: AsRef<Path>>(
             correct_junctions_with_map(&junction_stats_corr, config.verbose);
         junction_stats_corr = corrected_stats;
         junction_redirect_map.extend(corrected_map);
+
+        // Alt-junction demotion: snap alt-donors/acceptors with weak read
+        // support to the canonical at the shared endpoint. Reduces graph
+        // segmentation at alt-splice hot spots (STRG.309 class: 14 j-class
+        // over-emissions from alt-donor combinations). Opt-in via
+        // RUSTLE_ALT_JUNC_SNAP=1. The redirect map flows into
+        // repair_reads_after_junction_quality below, which updates read
+        // exon boundaries accordingly.
+        let alt_demote_map = crate::junction_correction::demote_alt_junctions_to_canonical(
+            &junction_stats_corr
+        );
+        if !alt_demote_map.is_empty() {
+            // Apply to stats: merge demoted junction's counts into canonical
+            for (from, to) in &alt_demote_map {
+                if from == to { continue; }
+                if let Some(from_stat) = junction_stats_corr.get(from).cloned() {
+                    if let Some(to_stat) = junction_stats_corr.get_mut(to) {
+                        to_stat.mrcount += from_stat.mrcount;
+                        to_stat.nreads_good += from_stat.nreads_good;
+                        to_stat.nm += from_stat.nm;
+                        to_stat.leftsupport += from_stat.leftsupport;
+                        to_stat.rightsupport += from_stat.rightsupport;
+                    }
+                    junction_stats_corr.remove(from);
+                }
+            }
+            junction_redirect_map.extend(alt_demote_map);
+        }
         if stage_debug {
             eprintln!(
                 "[EARLY_DEBUG] post_higherr {}:{}-{} count={} redirects={}",

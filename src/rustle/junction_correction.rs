@@ -368,6 +368,128 @@ pub fn correct_bundle_junctions_higherr(
     (new_stats, redirect)
 }
 
+/// Demote alt-donor and alt-acceptor junctions that have much less read
+/// support than a nearby canonical junction sharing the other endpoint.
+/// Returns redirect map: alt_junction → canonical_junction.
+///
+/// Reduces graph segmentation at alt-splice hot spots (STRG.309 class):
+/// after reads get their alt-donor boundaries snapped to canonical, the
+/// resulting graph has fewer distinguishing segments, so max_flow explores
+/// fewer path combinations and emits fewer noise variants.
+///
+/// Targets ONLY intra-acceptor (or intra-donor) alt-splicing — does not
+/// touch junctions whose donor AND acceptor both differ from canonicals.
+/// Those are true alt-splice events that should be preserved.
+///
+/// Env vars (all opt-in):
+///   RUSTLE_ALT_JUNC_SNAP=1       enable
+///   RUSTLE_ALT_JUNC_SNAP_WINDOW  bp tolerance (default 50)
+///   RUSTLE_ALT_JUNC_SNAP_RATIO   alt must have at least this fraction of
+///                                 canonical reads to survive (default 0.5)
+///   RUSTLE_ALT_JUNC_SNAP_DEBUG=1 trace each demotion
+pub fn demote_alt_junctions_to_canonical(
+    stats: &JunctionStats,
+) -> HashMap<Junction, Junction> {
+    let mut redirect: HashMap<Junction, Junction> = Default::default();
+    if std::env::var_os("RUSTLE_ALT_JUNC_SNAP").is_none() {
+        return redirect;
+    }
+    let window: u64 = std::env::var("RUSTLE_ALT_JUNC_SNAP_WINDOW")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+    let min_ratio: f64 = std::env::var("RUSTLE_ALT_JUNC_SNAP_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    let debug = std::env::var_os("RUSTLE_ALT_JUNC_SNAP_DEBUG").is_some();
+
+    // Skip junctions marked as guide (preserve explicit annotation)
+    let reads_of = |j: &Junction| -> f64 {
+        stats.get(j).map(|s| {
+            if s.guide_match { return f64::MAX; } // guide junctions never demoted
+            s.mrcount.max(s.nreads_good)
+        }).unwrap_or(0.0)
+    };
+
+    let juncs: Vec<&Junction> = stats.keys().collect();
+
+    // 1. Alt-donor demotion: for each acceptor, find canonical donor, demote
+    //    alt-donors within WINDOW with < MIN_RATIO * canonical reads.
+    use std::collections::HashMap as StdHashMap;
+    let mut by_acceptor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in &juncs {
+        by_acceptor.entry(j.acceptor).or_default().push(j);
+    }
+    for (_acc, sibs) in &by_acceptor {
+        if sibs.len() < 2 { continue; }
+        let canon = sibs.iter().copied().max_by(|a, b| {
+            reads_of(a).partial_cmp(&reads_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(canon) = canon else { continue; };
+        let canon_r = reads_of(canon);
+        if canon_r <= 0.0 || canon_r == f64::MAX { continue; }
+        for &alt in sibs {
+            if alt.donor == canon.donor { continue; }
+            // Skip guide alt-junctions
+            if stats.get(alt).map(|s| s.guide_match).unwrap_or(false) { continue; }
+            let alt_r = reads_of(alt);
+            if alt_r == f64::MAX { continue; }
+            let donor_dist = alt.donor.abs_diff(canon.donor);
+            if donor_dist <= window && alt_r < min_ratio * canon_r {
+                redirect.insert(*alt, *canon);
+                if debug {
+                    eprintln!(
+                        "ALT_JUNC_SNAP demote_at_acceptor={} alt={}-{} reads={:.0} → canon={}-{} reads={:.0} dist={}bp",
+                        alt.acceptor, alt.donor, alt.acceptor, alt_r,
+                        canon.donor, canon.acceptor, canon_r, donor_dist
+                    );
+                }
+            }
+        }
+    }
+
+    // 2. Alt-acceptor demotion: for each donor, find canonical acceptor,
+    //    demote alt-acceptors within WINDOW with < MIN_RATIO * canonical reads.
+    let mut by_donor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in &juncs {
+        by_donor.entry(j.donor).or_default().push(j);
+    }
+    for (_don, sibs) in &by_donor {
+        if sibs.len() < 2 { continue; }
+        let canon = sibs.iter().copied().max_by(|a, b| {
+            reads_of(a).partial_cmp(&reads_of(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(canon) = canon else { continue; };
+        let canon_r = reads_of(canon);
+        if canon_r <= 0.0 || canon_r == f64::MAX { continue; }
+        for &alt in sibs {
+            if alt.acceptor == canon.acceptor { continue; }
+            if stats.get(alt).map(|s| s.guide_match).unwrap_or(false) { continue; }
+            let alt_r = reads_of(alt);
+            if alt_r == f64::MAX { continue; }
+            let acc_dist = alt.acceptor.abs_diff(canon.acceptor);
+            if acc_dist <= window && alt_r < min_ratio * canon_r {
+                // Don't overwrite existing redirect (alt-donor takes priority)
+                redirect.entry(*alt).or_insert(*canon);
+                if debug {
+                    eprintln!(
+                        "ALT_JUNC_SNAP demote_at_donor={} alt={}-{} reads={:.0} → canon={}-{} reads={:.0} dist={}bp",
+                        alt.donor, alt.donor, alt.acceptor, alt_r,
+                        canon.donor, canon.acceptor, canon_r, acc_dist
+                    );
+                }
+            }
+        }
+    }
+
+    if debug && !redirect.is_empty() {
+        eprintln!(
+            "ALT_JUNC_SNAP total={} window={}bp ratio={:.2}",
+            redirect.len(), window, min_ratio
+        );
+    }
+    redirect
+}
+
 /// Guide-based coordinate snapping for high-mismatch junctions
 /// For junctions where nm >= nreads (all reads are high-mismatch), snaps donor/acceptor
 /// to the closest guide junction within `sserror` tolerance.
