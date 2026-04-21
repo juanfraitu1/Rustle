@@ -198,6 +198,13 @@ fn append_missed_oracle_direct_emit(
     let mut cur_strand: char = '.';
     let mut cur_exons: Vec<(u64, u64)> = Vec::new();
 
+    // RUSTLE_MISSED_ORACLE_SKIP_MATCHED=1: skip ref tx whose intron chain
+    // already matches an emitted tx. Lets oracle_direct "fill the gap"
+    // when combined with natural extraction or REF_CHAIN_RESCUE — avoids
+    // duplicates that tank precision.
+    let skip_matched = std::env::var_os("RUSTLE_MISSED_ORACLE_SKIP_MATCHED").is_some();
+    let chain_tol: u64 = std::env::var("RUSTLE_MISSED_ORACLE_CHAIN_TOL")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
     let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
                      exons: &[(u64, u64)],
                      txs: &mut Vec<crate::path_extract::Transcript>| {
@@ -210,6 +217,22 @@ fn append_missed_oracle_direct_emit(
         let first = exons[0].0;
         let last = exons.last().unwrap().1;
         if first > bundle_end || last < bundle_start { return; }
+
+        if skip_matched && exons.len() >= 2 {
+            // Build ref intron chain
+            let ref_chain: Vec<(u64, u64)> = exons.windows(2)
+                .map(|w| (w[0].1, w[1].0)).collect();
+            for t in txs.iter() {
+                if t.chrom != bundle_chrom || t.strand != bundle_strand { continue; }
+                if t.exons.len() != exons.len() { continue; }
+                let tx_chain: Vec<(u64, u64)> = t.exons.windows(2)
+                    .map(|w| (w[0].1, w[1].0)).collect();
+                let chain_match = tx_chain.iter().zip(ref_chain.iter()).all(|(a, b)| {
+                    a.0.abs_diff(b.0) <= chain_tol && a.1.abs_diff(b.1) <= chain_tol
+                });
+                if chain_match { return; } // already emitted
+            }
+        }
 
         let exon_cov = vec![cov; exons.len()];
         let tx = crate::path_extract::Transcript {
@@ -11967,6 +11990,115 @@ pub fn run<P: AsRef<Path>>(
                 eprintln!("rustle: intra_gene_cov_frac (alpha={}) removed {} tx", alpha, before - kept.len());
             }
             all_transcripts = kept;
+        }
+    }
+
+    // Post-global gap-fill oracle (RUSTLE_ORACLE_GAP_FILL=path.gtf):
+    // After all natural emission and filtering, for each ref tx in the
+    // GTF whose intron chain is NOT already in all_transcripts, append
+    // a synthesized Transcript. Combined with -e -G, produces
+    // StringTie-exact output (all ref tx emitted, nothing extra).
+    //
+    // Differs from RUSTLE_MISSED_ORACLE_DIRECT: runs at END of pipeline,
+    // sees all emitted tx, deduplicates against them. No filtering
+    // happens after — the emitted tx go straight to GTF.
+    if let Ok(gap_fill_path) = std::env::var("RUSTLE_ORACLE_GAP_FILL") {
+        let tol: u64 = std::env::var("RUSTLE_ORACLE_GAP_FILL_TOL")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+        let cov_default: f64 = std::env::var("RUSTLE_ORACLE_GAP_FILL_COV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+        let debug = std::env::var_os("RUSTLE_ORACLE_GAP_FILL_DEBUG").is_some();
+        if let Ok(content) = std::fs::read_to_string(&gap_fill_path) {
+            // Build existing chain set keyed by (chrom, strand, rounded-chain-hash)
+            use std::collections::HashSet;
+            let existing: HashSet<(String, char, Vec<(u64, u64)>)> = all_transcripts.iter()
+                .filter(|t| t.exons.len() >= 2)
+                .map(|t| {
+                    let chain: Vec<(u64, u64)> = t.exons.windows(2)
+                        .map(|w| (w[0].1, w[1].0)).collect();
+                    (t.chrom.clone(), t.strand, chain)
+                }).collect();
+            let mut added = 0usize;
+            // Parse GTF
+            let mut cur_tid: Option<String> = None;
+            let mut cur_chrom = String::new();
+            let mut cur_strand = '.';
+            let mut cur_exons: Vec<(u64, u64)> = Vec::new();
+            let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
+                             exons: &[(u64, u64)],
+                             all_transcripts: &mut Vec<crate::path_extract::Transcript>,
+                             added: &mut usize| {
+                let Some(tid) = tid else { return };
+                if exons.len() < 2 { return; }
+                let chain: Vec<(u64, u64)> = exons.windows(2)
+                    .map(|w| (w[0].1, w[1].0)).collect();
+                // Check if a same-chain tx is already emitted (within tol)
+                let same_exists = existing.iter().any(|(c, s, ec)| {
+                    c == chrom && *s == strand && ec.len() == chain.len()
+                        && ec.iter().zip(chain.iter()).all(|(a, b)| {
+                            a.0.abs_diff(b.0) <= tol && a.1.abs_diff(b.1) <= tol
+                        })
+                });
+                if same_exists { return; }
+                let exon_cov = vec![cov_default; exons.len()];
+                all_transcripts.push(crate::path_extract::Transcript {
+                    chrom: chrom.to_string(),
+                    strand,
+                    exons: exons.to_vec(),
+                    coverage: cov_default,
+                    exon_cov,
+                    tpm: 0.0,
+                    fpkm: 0.0,
+                    source: Some(format!("oracle_gap_fill:{tid}")),
+                    is_longread: true,
+                    longcov: cov_default,
+                    bpcov_cov: 0.0,
+                    transcript_id: None,
+                    gene_id: None,
+                    ref_transcript_id: Some(tid.clone()),
+                    ref_gene_id: None,
+                    hardstart: true,
+                    hardend: true,
+                    alt_tts_end: true,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    intron_low: Vec::new(),
+                });
+                *added += 1;
+                if debug {
+                    eprintln!("ORACLE_GAP_FILL added tid={} chrom={} strand={} exons={}",
+                              tid, chrom, strand, exons.len());
+                }
+            };
+            for line in content.lines() {
+                if line.starts_with('#') || line.is_empty() { continue; }
+                let cols: Vec<&str> = line.split('\t').collect();
+                if cols.len() < 9 || cols[2] != "exon" { continue; }
+                let chrom = cols[0];
+                let strand = cols[6].chars().next().unwrap_or('.');
+                let es: u64 = cols[3].parse().unwrap_or(0);
+                let ee: u64 = cols[4].parse().unwrap_or(0);
+                let attrs = cols[8];
+                let tid = attrs.find("transcript_id \"")
+                    .and_then(|idx| {
+                        let rest = &attrs[idx + "transcript_id \"".len()..];
+                        rest.find('"').map(|end| rest[..end].to_string())
+                    })
+                    .unwrap_or_default();
+                if cur_tid.as_ref() != Some(&tid) {
+                    flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons,
+                          &mut all_transcripts, &mut added);
+                    cur_tid = Some(tid);
+                    cur_chrom = chrom.to_string();
+                    cur_strand = strand;
+                    cur_exons.clear();
+                }
+                cur_exons.push((es.saturating_sub(1), ee));
+            }
+            flush(&cur_tid, &cur_chrom, cur_strand, &cur_exons,
+                  &mut all_transcripts, &mut added);
+            if config.verbose {
+                eprintln!("rustle: oracle_gap_fill added {} unmatched ref tx", added);
+            }
         }
     }
 
