@@ -9630,7 +9630,7 @@ pub fn run<P: AsRef<Path>>(
                     let read_pairs = crate::transcript_filter::build_read_intron_pairs(reads);
                     let read_singles = crate::transcript_filter::build_read_junction_singletons(reads);
                     let read_junc_counts = crate::transcript_filter::build_read_junction_counts(reads);
-                    let filtered = crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
+                    let mut filtered = crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
                         txs,
                         &read_pairs,
                         Some(&read_singles),
@@ -9638,6 +9638,20 @@ pub fn run<P: AsRef<Path>>(
                         config.junction_correction_window,
                         config.verbose,
                     );
+                    // Full-chain-witness filter (DEFAULT-ON): kill tx where
+                    // some contiguous K-intron window of the chain isn't
+                    // witnessed by any read. Targets STRG.309-class j-class
+                    // noise where flow-combinatorial variants use junction
+                    // combinations no read actually has together.
+                    // Default K=4 is lossless on GGO_19; opt-out via
+                    // RUSTLE_FULL_CHAIN_WITNESS_OFF=1.
+                    if std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_OFF").is_none() {
+                        let read_chains = crate::transcript_filter::build_read_intron_chains(reads);
+                        let tol = config.junction_correction_window;
+                        filtered = crate::transcript_filter::filter_by_full_chain_witness(
+                            filtered, &read_chains, tol, config.verbose,
+                        );
+                    }
                     if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
                         for t in filtered.iter() {
                             if t.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {

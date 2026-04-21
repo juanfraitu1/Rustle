@@ -4021,6 +4021,104 @@ pub fn build_read_junction_counts(
     counts
 }
 
+/// Build the set of distinct read intron chains (contiguous full chains
+/// from each read). Used by filter_by_full_chain_witness to determine
+/// which tx have direct read-chain support (versus flow-combinatorial
+/// invention of junction combinations not actually co-observed in reads).
+pub fn build_read_intron_chains(
+    reads: &[crate::types::BundleRead],
+) -> std::collections::HashSet<Vec<(u64, u64)>> {
+    let mut chains: std::collections::HashSet<Vec<(u64, u64)>> = std::collections::HashSet::new();
+    for read in reads {
+        if read.junctions.len() < 1 { continue; }
+        let chain: Vec<(u64, u64)> = read.junctions.iter()
+            .map(|j| (j.donor, j.acceptor)).collect();
+        chains.insert(chain);
+    }
+    chains
+}
+
+/// Full-chain-witness filter: kill a tx if its intron chain isn't a
+/// contiguous subsequence of any read's intron chain within tolerance.
+///
+/// Differs from filter_unwitnessed_chains_with_singletons (which checks
+/// only consecutive junction PAIRS) by requiring the ENTIRE intron chain
+/// to co-occur in some single read. Targets flow-combinatorial noise
+/// like the 14 j-class variants at STRG.309 — they use combinations of
+/// individually-observed junctions that NO SINGLE READ has together.
+///
+/// Gated by RUSTLE_FULL_CHAIN_WITNESS=1. Opt-in because it may kill
+/// legit long-isoform tx that no single read spans fully. Use with
+/// RUSTLE_DIRECT_READ_CHAIN to recover read-supported chains directly.
+///
+/// Exemptions:
+/// - Guide-matched tx (source "guide:*" or ref_transcript_id set)
+/// - Rescue-sourced tx (oracle_direct, ref_chain_rescue)
+/// - Single-intron tx (trivially witnessed)
+pub fn filter_by_full_chain_witness(
+    transcripts: Vec<Transcript>,
+    read_chains: &std::collections::HashSet<Vec<(u64, u64)>>,
+    tolerance: u64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if read_chains.is_empty() || transcripts.is_empty() {
+        return transcripts;
+    }
+    // Minimum contiguous match length (in number of introns). For long tx,
+    // requiring FULL chain match is too strict (no single read spans all
+    // introns). Instead: for every contiguous K-window of introns in tx,
+    // require SOME read to witness that window. K default 3; small enough
+    // that real tx with 4+ reads survive, large enough that combinatorial
+    // alt-donor combinations fail (no read has that specific combination).
+    let min_window: usize = std::env::var("RUSTLE_FULL_CHAIN_WITNESS_K")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        // Always-keep exemptions
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:")
+            || s.starts_with("oracle_direct:")
+            || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+        let tx_chain: Vec<(u64, u64)> = tx.exons.windows(2)
+            .map(|w| (w[0].1, w[1].0)).collect();
+        // Tx with fewer introns than K: fall back to requiring the full
+        // chain (same as before — small chains must be fully witnessed).
+        let k = min_window.min(tx_chain.len()).max(2);
+        if tx_chain.len() < 2 { return true; }
+
+        // For EVERY k-contiguous window in tx_chain, require some read
+        // chain to witness it (contiguous subsequence within tolerance).
+        // If ANY window is unwitnessed, the tx is flow-combinatorial noise.
+        let n_windows = tx_chain.len() - k + 1;
+        for i in 0..n_windows {
+            let window = &tx_chain[i..i+k];
+            let mut witnessed = false;
+            for rc in read_chains {
+                if rc.len() < window.len() { continue; }
+                for start in 0..=(rc.len() - window.len()) {
+                    let matches = window.iter().zip(rc[start..start+window.len()].iter())
+                        .all(|(a, b)| {
+                            a.0.abs_diff(b.0) <= tolerance && a.1.abs_diff(b.1) <= tolerance
+                        });
+                    if matches { witnessed = true; break; }
+                }
+                if witnessed { break; }
+            }
+            if !witnessed { return false; }
+        }
+        true
+    }).collect();
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_by_full_chain_witness (K={}): removed {} flow-combinatorial tx",
+            min_window, before - out.len()
+        );
+    }
+    out
+}
+
 /// Apply the same prediction filters as the pipeline (print_predcluster).
 /// Order: pairwise overlap/inclusion filtering → long-read isofrac → runoff/readthr gates.
 /// the pairwise block runs for long-read predictions too; only the CMaxIntv
