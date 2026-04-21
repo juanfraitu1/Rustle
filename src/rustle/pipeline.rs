@@ -11794,6 +11794,59 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // Same-span top-K filter: for each cluster of tx sharing EXACTLY the
+    // same (chrom, strand, TSS, TTS), keep top-K by coverage. This
+    // targets the alt-splice combinatorial explosion observed at
+    // STRG.309 (16 Rustle variants vs 2 StringTie emissions) where
+    // flow decomposition explores every combination of alt-donor /
+    // alt-acceptor pairs on top of the same TSS/TTS backbone. Opt-out
+    // via RUSTLE_SAME_SPAN_TOPK_OFF=1.
+    if !all_transcripts.is_empty() {
+        let topk: usize = std::env::var("RUSTLE_SAME_SPAN_TOPK")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        if topk > 0 {
+        use std::collections::HashMap;
+        let mut groups: HashMap<(String, char, u64, u64), Vec<usize>> = Default::default();
+        for (i, t) in all_transcripts.iter().enumerate() {
+            if t.exons.len() < 2 { continue; }
+            // Guide-matched and rescue-sourced tx always kept.
+            if t.source.as_deref().map_or(false, |s|
+                s.starts_with("guide:") || s.starts_with("oracle_direct:")
+                || s.starts_with("ref_chain_rescue:")) {
+                continue;
+            }
+            let ts = t.exons.first().unwrap().0;
+            let te = t.exons.last().unwrap().1;
+            groups.entry((t.chrom.clone(), t.strand, ts, te))
+                .or_default()
+                .push(i);
+        }
+        let mut drop = vec![false; all_transcripts.len()];
+        for (_, mut indices) in groups {
+            if indices.len() <= topk { continue; }
+            // Sort by coverage DESC; drop everything past topk.
+            indices.sort_by(|&a, &b| {
+                all_transcripts[b].coverage
+                    .partial_cmp(&all_transcripts[a].coverage)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            for &idx in indices.iter().skip(topk) {
+                drop[idx] = true;
+            }
+        }
+        let before = all_transcripts.len();
+        let kept: Vec<_> = all_transcripts.into_iter().enumerate()
+            .filter(|(i, _)| !drop[*i]).map(|(_, t)| t).collect();
+        if config.verbose && kept.len() < before {
+            eprintln!(
+                "rustle: same_span_topk (K={}) removed {} tx",
+                topk, before - kept.len()
+            );
+        }
+        all_transcripts = kept;
+        } // end if topk > 0
+    }
+
     // Precision cleanup: group tx by Rustle's own gene-assignment (exon-
     // overlap union-find, same algorithm as GTF gene numbering). Within
     // each gene, drop tx with cov < alpha × max-sibling-cov. Targets

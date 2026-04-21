@@ -3621,7 +3621,9 @@ pub fn collapse_near_equal_intron_chains(
                 } else {
                     (txs[i].coverage, txs[j].coverage)
                 };
-                if cov_hi > 0.0 && cov_lo / cov_hi > 0.3 {
+                let cov_ratio_cap: f64 = std::env::var("RUSTLE_COLLAPSE_COV_RATIO")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(0.3);
+                if cov_hi > 0.0 && cov_lo / cov_hi > cov_ratio_cap {
                     continue; // Both well-supported, don't collapse
                 }
                 if txs[j].coverage > txs[i].coverage {
