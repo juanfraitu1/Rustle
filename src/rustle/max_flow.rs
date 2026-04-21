@@ -1088,24 +1088,36 @@ fn long_max_flow_direct(
             }
 
             // Seed-chord protection: skip capacity contribution from a transfrag
-            // that is itself a future long-read seed whose pattern is a strict
-            // subset of the current path. Without this, the minor-isoform seed's
-            // chord becomes the cheapest source→sink channel during a major-isoform
-            // seed's BFS and gets fully depleted, so it arrives at its own run
-            // with abundance=0 and produces flux=0.
+            // that is itself a future long-read seed. Without this, minor-
+            // isoform seeds get depleted by major-isoform seeds' flow
+            // extraction → they arrive at their own run with abundance=0
+            // and produce flux=0.
             //
-            // StringTie avoids this organically because its graph-node segmentation
-            // tends to give minor-isoform transfrags at least one node outside the
-            // major-isoform pathpat (so `pathpat.contains_pattern` fails). Rustle's
-            // segmentation collapses those distinguishing nodes, so we need an
-            // explicit protection. Disable with RUSTLE_NO_SEED_CHORD_PROTECT=1.
+            // RUSTLE_SMART_CHORD_PROTECT=1 (opt-in refinement): only protect
+            // seeds whose pattern has nodes OUTSIDE the current pathpat
+            // (truly different biology). Seeds whose entire pattern is a
+            // subset of current pathpat are alt-splice variants — allow
+            // depletion. Targets the STRG.309 over-emission: 14 j-class
+            // variants are alt-splice combos of the current path, their
+            // seeds should be depleted by the canonical seed's flow.
             if i > 0
                 && tf.trflong_seed
                 && !istranscript.contains(t_idx)
                 && Some(t_idx) != seed_tf
                 && std::env::var_os("RUSTLE_NO_SEED_CHORD_PROTECT").is_none()
             {
-                continue;
+                let smart = std::env::var_os("RUSTLE_SMART_CHORD_PROTECT").is_some();
+                if smart {
+                    // Protect only if seed's pattern has nodes NOT in current
+                    // pathpat (different biological isoform). Allow depletion
+                    // if pattern fully within pathpat (alt-splice variant).
+                    if !pathpat.contains_pattern(&tf.pattern) {
+                        continue;
+                    }
+                    // Fall through: count capacity (allow depletion)
+                } else {
+                    continue; // legacy: always protect
+                }
             }
 
             istranscript.insert_grow(t_idx);
