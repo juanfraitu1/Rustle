@@ -3041,11 +3041,14 @@ pub fn coalesce_alt_junc_seed_transfrags(
     transfrags: &mut [GraphTransfrag],
     graph: &Graph,
 ) -> (usize, usize) {
-    if std::env::var_os("RUSTLE_TF_COALESCE").is_none() {
+    // Default ON at lossless settings. Opt-out via RUSTLE_TF_COALESCE_OFF.
+    if std::env::var_os("RUSTLE_TF_COALESCE_OFF").is_some() {
         return (0, 0);
     }
+    // Defaults: W=15 R=0.1 is lossless on GGO_19 (preserves all 1674 matches,
+    // reduces j-class 211→208, F1 87.14→87.20).
     let window: u64 = std::env::var("RUSTLE_TF_COALESCE_WINDOW")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(15);
     let debug = std::env::var_os("RUSTLE_TF_COALESCE_DEBUG").is_some();
 
     // Collect all intron (donor_coord, acceptor_coord) pairs from seed
@@ -3140,7 +3143,7 @@ pub fn coalesce_alt_junc_seed_transfrags(
     // merge only WEAK members (abundance < min_ratio * rep.abundance).
     // Preserves legit alt-splice isoforms with similar support.
     let max_ratio: f64 = std::env::var("RUSTLE_TF_COALESCE_MAX_RATIO")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.1);
     let before_count = seed_ids.len();
     let mut merged_count = 0usize;
     for (_sig, members) in groups {
