@@ -9466,6 +9466,16 @@ pub fn run<P: AsRef<Path>>(
                     config.eonly,
                     config.keeptrf_usepath_tsv.as_deref(),
                 );
+                // Option A (graph segmentation refactor): coalesce seed
+                // transfrags whose intron chains differ only by alt-donor/
+                // acceptor shifts within a small window. Reduces seed count
+                // at alt-splice hot spots (STRG.309 class: 39 → target ~2-3
+                // seeds), which prevents max_flow from emitting 16
+                // combinatorial variants. Opt-in via RUSTLE_TF_COALESCE=1.
+                let (_coalesce_before, _coalesce_after) =
+                    crate::transfrag_process::coalesce_alt_junc_seed_transfrags(
+                        &mut transfrags, &graph_mut
+                    );
                 // Diagnostic missed-tx oracle: inject StringTie ref tx as
                 // high-abundance seeds and classify per-tx why Rustle fails
                 // to emit (unmappable / partial / mappable-not-emitted).

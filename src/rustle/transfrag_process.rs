@@ -3012,3 +3012,194 @@ pub fn process_transfrags(
 
     transfrags
 }
+
+/// Coalesce trflong_seed transfrags whose intron chains differ only by
+/// alt-donor/acceptor shifts within a tolerance. Targets the STRG.309
+/// class: 39 seeds producing 16 j-class variants from combinations of
+/// alt-splice shifts at individually well-supported junctions.
+///
+/// Algorithm:
+/// 1. Build global donor-cluster and acceptor-cluster maps: cluster all
+///    donor (resp. acceptor) coords seen in seed transfrags using a
+///    greedy sweep — coords within WINDOW bp of the previous cluster
+///    center collapse into the same cluster ID.
+/// 2. For each seed transfrag, compute a "blurred" intron chain
+///    signature: (donor_cluster_id, acceptor_cluster_id) tuple per
+///    intron. First/last node indices also included so distinct
+///    TSS/TTS variants stay apart.
+/// 3. Group seeds by signature. Within each group, keep the one with
+///    max abundance as representative; merge others' abundance into
+///    it; mark merged seeds as non-seeds (trflong_seed = false) and
+///    zero their abundance (so max_flow doesn't see them).
+///
+/// Enabled by RUSTLE_TF_COALESCE=1. Tune with:
+///   RUSTLE_TF_COALESCE_WINDOW=N  (default 50 bp)
+///   RUSTLE_TF_COALESCE_DEBUG=1
+///
+/// Returns (#seeds_before, #seeds_after) for diagnostic tracking.
+pub fn coalesce_alt_junc_seed_transfrags(
+    transfrags: &mut [GraphTransfrag],
+    graph: &Graph,
+) -> (usize, usize) {
+    if std::env::var_os("RUSTLE_TF_COALESCE").is_none() {
+        return (0, 0);
+    }
+    let window: u64 = std::env::var("RUSTLE_TF_COALESCE_WINDOW")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+    let debug = std::env::var_os("RUSTLE_TF_COALESCE_DEBUG").is_some();
+
+    // Collect all intron (donor_coord, acceptor_coord) pairs from seed
+    // transfrags. Each intron corresponds to two consecutive NON-source,
+    // NON-sink nodes where node[i].end != node[i+1].start (there's a gap).
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let mut all_donors: Vec<u64> = Vec::new();
+    let mut all_acceptors: Vec<u64> = Vec::new();
+    let mut seed_ids: Vec<usize> = Vec::new();
+    for (idx, tf) in transfrags.iter().enumerate() {
+        if !tf.trflong_seed || tf.abundance <= 0.0 { continue; }
+        seed_ids.push(idx);
+        let real_path: Vec<usize> = tf.node_ids.iter().copied()
+            .filter(|&n| n != source_id && n != sink_id).collect();
+        for w in real_path.windows(2) {
+            let a = graph.nodes.get(w[0]);
+            let b = graph.nodes.get(w[1]);
+            if let (Some(a), Some(b)) = (a, b) {
+                if a.end < b.start {
+                    // intron a.end → b.start (half-open/exclusive ends)
+                    all_donors.push(a.end);
+                    all_acceptors.push(b.start);
+                }
+            }
+        }
+    }
+    if seed_ids.is_empty() { return (0, 0); }
+
+    // Cluster coord list: sort, sweep, assign cluster id each time a gap
+    // >= window appears. Returns map coord → cluster_id.
+    let cluster_coords = |coords: &[u64]| -> HashMap<u64, u32> {
+        let mut unique: Vec<u64> = coords.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        let mut out: HashMap<u64, u32> = Default::default();
+        let mut cur_id = 0u32;
+        let mut last: Option<u64> = None;
+        for c in unique {
+            if let Some(l) = last {
+                if c.saturating_sub(l) > window {
+                    cur_id += 1;
+                }
+            }
+            out.insert(c, cur_id);
+            last = Some(c);
+        }
+        out
+    };
+    let donor_cluster = cluster_coords(&all_donors);
+    let acceptor_cluster = cluster_coords(&all_acceptors);
+
+    // Build signature for each seed. Signature = (first_real_node_coord_bucket,
+    // [(donor_cluster, acceptor_cluster) per intron],
+    //  last_real_node_coord_bucket).
+    // Buckets ensure near-equal TSS/TTS coords collide but fundamentally
+    // different TSS/TTS do not.
+    let bucket_size = window.max(1);
+    let bucket_of = |c: u64| -> u64 { c / bucket_size };
+    let mut signatures: Vec<(u32, Vec<(u32, u32)>, u32)> = Vec::with_capacity(seed_ids.len());
+    for &sid in &seed_ids {
+        let tf = &transfrags[sid];
+        let real_path: Vec<usize> = tf.node_ids.iter().copied()
+            .filter(|&n| n != source_id && n != sink_id).collect();
+        let first = real_path.first().copied().and_then(|n| graph.nodes.get(n))
+            .map(|n| bucket_of(n.start) as u32).unwrap_or(0);
+        let last = real_path.last().copied().and_then(|n| graph.nodes.get(n))
+            .map(|n| bucket_of(n.end) as u32).unwrap_or(0);
+        let mut introns: Vec<(u32, u32)> = Vec::new();
+        for w in real_path.windows(2) {
+            let a = graph.nodes.get(w[0]);
+            let b = graph.nodes.get(w[1]);
+            if let (Some(a), Some(b)) = (a, b) {
+                if a.end < b.start {
+                    let d = donor_cluster.get(&a.end).copied().unwrap_or(u32::MAX);
+                    let ac = acceptor_cluster.get(&b.start).copied().unwrap_or(u32::MAX);
+                    introns.push((d, ac));
+                }
+            }
+        }
+        signatures.push((first, introns, last));
+    }
+
+    // Group seeds by signature
+    let mut groups: HashMap<(u32, Vec<(u32, u32)>, u32), Vec<usize>> = Default::default();
+    for (i, &sid) in seed_ids.iter().enumerate() {
+        let sig = signatures[i].clone();
+        groups.entry(sig).or_default().push(sid);
+    }
+
+    // For each group with >1 seed, pick max-abundance representative;
+    // merge only WEAK members (abundance < min_ratio * rep.abundance).
+    // Preserves legit alt-splice isoforms with similar support.
+    let max_ratio: f64 = std::env::var("RUSTLE_TF_COALESCE_MAX_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    let before_count = seed_ids.len();
+    let mut merged_count = 0usize;
+    for (_sig, members) in groups {
+        if members.len() <= 1 { continue; }
+        // Find max-abundance representative
+        let rep = members.iter().copied().max_by(|&a, &b| {
+            transfrags[a].abundance
+                .partial_cmp(&transfrags[b].abundance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }).unwrap();
+        let rep_abund_orig = transfrags[rep].abundance;
+        let mut rep_abund = rep_abund_orig;
+        let mut rep_read_count = transfrags[rep].read_count;
+        let mut rep_group: Vec<usize> = transfrags[rep].group.clone();
+        let mut rep_longstart = transfrags[rep].longstart;
+        let mut rep_longend = transfrags[rep].longend;
+        for &m in &members {
+            if m == rep { continue; }
+            let (abund, rc, ls, le) = {
+                let tm = &transfrags[m];
+                (tm.abundance, tm.read_count, tm.longstart, tm.longend)
+            };
+            // Gate: only merge if weak relative to rep (< max_ratio)
+            if rep_abund_orig > 0.0 && abund >= max_ratio * rep_abund_orig {
+                // Similarly-abundant — leave alone (legit alt-splice)
+                continue;
+            }
+            rep_abund += abund;
+            rep_read_count += rc;
+            rep_group.push(m);
+            if ls > 0 && (rep_longstart == 0 || ls < rep_longstart) {
+                rep_longstart = ls;
+            }
+            if le > rep_longend {
+                rep_longend = le;
+            }
+            // Zero merged transfrag to remove from future consideration
+            transfrags[m].abundance = 0.0;
+            transfrags[m].trflong_seed = false;
+            transfrags[m].weak = 1;
+            merged_count += 1;
+            if debug {
+                eprintln!(
+                    "TF_COALESCE merge seed idx={} abund={:.2} → rep={} rep_abund={:.2}",
+                    m, abund, rep, rep_abund_orig
+                );
+            }
+        }
+        transfrags[rep].abundance = rep_abund;
+        transfrags[rep].read_count = rep_read_count;
+        transfrags[rep].group = rep_group;
+        transfrags[rep].longstart = rep_longstart;
+        transfrags[rep].longend = rep_longend;
+    }
+    if debug && merged_count > 0 {
+        eprintln!(
+            "TF_COALESCE seeds before={} after={} merged={} window={}bp",
+            before_count, before_count - merged_count, merged_count, window
+        );
+    }
+    (before_count, before_count - merged_count)
+}
