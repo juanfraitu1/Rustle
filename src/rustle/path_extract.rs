@@ -502,6 +502,28 @@ fn trace_checktrf_match_snapshot(
     }
 }
 
+fn trace_abundance_lifecycle(
+    stage: &str,
+    t: usize,
+    tf: &GraphTransfrag,
+    graph: &Graph,
+    detail: &str,
+) {
+    if !tf.node_ids.iter().any(|&nid| trace_locus_active(graph, nid)) {
+        return;
+    }
+    eprintln!(
+        "[TRACE_ABUND] stage={} t={} abund={:.4} read_count={:.4} guide={} nodes={} detail={}",
+        stage,
+        t,
+        tf.abundance,
+        tf.read_count,
+        tf.guide,
+        tf.node_ids.len(),
+        detail
+    );
+}
+
 /// Outcome of a single seed transfrag during extraction (for deep tracing).
 #[derive(Debug, Clone)]
 pub enum SeedOutcome {
@@ -2777,10 +2799,67 @@ fn best_trf_match(
     (tmatch, abundancesum)
 }
 
+/// StringTie-style checktrf nuance:
+/// if a failed long-read transfrag has the same outer boundaries as an already kept path
+/// but differs internally, prefer rescuing it as its own transcript once instead of
+/// immediately redistributing it into the longer sibling. This matches the trace pattern
+/// where same-boundary exon-skip variants are rescued before later low-support leftovers
+/// get absorbed.
+fn prefer_independent_rescue_over_matched_redistribution(
+    tf_nodes: &[usize],
+    tmatch: &[usize],
+    kept_paths: &[(Vec<usize>, f64, bool, usize)],
+) -> bool {
+    if tf_nodes.len() <= 2 || tmatch.is_empty() {
+        return false;
+    }
+    let tf_first = tf_nodes[0];
+    let tf_last = *tf_nodes.last().unwrap_or(&tf_first);
+    let mut saw_same_outer = false;
+    for &kidx in tmatch {
+        let Some((k_nodes, _k_cov, _k_guide, _out_idx)) = kept_paths.get(kidx) else {
+            continue;
+        };
+        if k_nodes.is_empty() {
+            continue;
+        }
+        let k_first = k_nodes[0];
+        let k_last = *k_nodes.last().unwrap_or(&k_first);
+        if k_first == tf_first && k_last == tf_last {
+            if k_nodes == tf_nodes {
+                return false;
+            }
+            saw_same_outer = true;
+        }
+    }
+    saw_same_outer
+}
+
+#[inline]
+fn is_synthetic_source_connector(tf: &GraphTransfrag) -> bool {
+    matches!(tf.origin_tag.as_deref(), Some("source_connector"))
+}
+
+#[inline]
+fn is_synthetic_sink_connector(tf: &GraphTransfrag) -> bool {
+    matches!(tf.origin_tag.as_deref(), Some("sink_connector"))
+}
+
+#[inline]
+fn is_pure_source_endpoint_stub(tf: &GraphTransfrag, source: usize) -> bool {
+    tf.node_ids.len() == 2 && tf.node_ids.first() == Some(&source)
+}
+
+#[inline]
+fn is_pure_sink_endpoint_stub(tf: &GraphTransfrag, sink: usize) -> bool {
+    tf.node_ids.len() == 2 && tf.node_ids.last() == Some(&sink)
+}
+
 /// Redistribute transfrag abundance into matched kept predictions, mirroring checktrf/second-pass update:
 /// add per-node support to overlapping exons only when the node is present in kept path.
 /// Rust stores per-base coverage, so bp-weighted additions are normalized by exon/tx lengths.
 fn redistribute_transfrag_to_matches(
+    t_idx: usize,
     tf: &GraphTransfrag,
     tmatch: &[usize],
     abundancesum: f64,
@@ -2802,6 +2881,7 @@ fn redistribute_transfrag_to_matches(
         .node_ids
         .iter()
         .rposition(|&n| n != source_id && n != sink_id);
+    let traced_tf = tf.node_ids.iter().any(|&nid| trace_locus_active(graph, nid));
 
     for (j, kmatch) in tmatch.iter().enumerate() {
         let Some((keep_nodes, keep_support, _keep_guide, out_idx)) = kept_paths.get(*kmatch) else {
@@ -2820,6 +2900,17 @@ fn redistribute_transfrag_to_matches(
         };
         if abundprop <= 0.0 {
             continue;
+        }
+        if traced_tf {
+            eprintln!(
+                "[TRACE_ABUND] stage=checktrf_redistribute t={} keep={} keep_support={:.4} abundsum={:.4} tf_abund={:.4} assigned={:.4}",
+                t_idx,
+                kmatch,
+                keep_support,
+                abundancesum,
+                tf.abundance,
+                abundprop
+            );
         }
         let tx_len: f64 = out[oi]
             .exons
@@ -3119,6 +3210,8 @@ struct LongRecDiag {
     fwd_no_reach: usize,
     fwd_no_choice: usize,
     fwd_exclude_no_support: usize,
+    back_used_pure_source_stub: bool,
+    fwd_used_pure_sink_stub: bool,
     // Detailed diagnostics
     back_parents_checked: usize,
     back_parents_skipped_reachability: usize,
@@ -3879,6 +3972,12 @@ fn fwd_to_sink_fast_long(
                         }
                         continue;
                     }
+                    if require_longread && c == sink && is_synthetic_sink_connector(tf) {
+                        if trace_fwd {
+                            eprintln!("[TRACE_FWD_SINK]   tf={} reject=synthetic_sink_connector", t);
+                        }
+                        continue;
+                    }
                     if tf.node_ids.is_empty() {
                         if trace_fwd && c == sink {
                             eprintln!("[TRACE_FWD_SINK]   tf={} reject=empty_nodes", t);
@@ -3916,6 +4015,9 @@ fn fwd_to_sink_fast_long(
                             );
                         }
                         if accepted {
+                            if is_pure_sink_endpoint_stub(tf, sink) {
+                                diag.fwd_used_pure_sink_stub = true;
+                            }
                             childcov += tf.abundance;
                             if tchild.is_none()
                                 || tf.abundance > transfrags[tchild.unwrap()].abundance
@@ -4506,6 +4608,15 @@ fn back_to_source_fast_long(
                         }
                         continue;
                     }
+                    if require_longread && p == source && is_synthetic_source_connector(tf) {
+                        if trace_back {
+                            eprintln!(
+                                "[TRACE_BACK_SOURCE]   tf={} reject=synthetic_source_connector abundance={:.4}",
+                                t, tf.abundance
+                            );
+                        }
+                        continue;
+                    }
                     if tf.node_ids.is_empty() {
                         if trace_seed_diagnostics(seed_idx) {
                             eprintln!(
@@ -4542,14 +4653,34 @@ fn back_to_source_fast_long(
                         // and `i` is at/left of the current minpath.
                         let min_start = node_start_or_zero(graph, *minpath);
                         let exact_source_match = last == i && min_start >= inode_start;
+                        let pure_source_stub = is_pure_source_endpoint_stub(tf, source);
+                        let competing_internal_parent_cov = parents
+                            .iter()
+                            .copied()
+                            .filter(|&pp| pp != source)
+                            .map(|pp| nodecov.get(pp).copied().unwrap_or(0.0))
+                            .fold(0.0f64, f64::max);
+                        let internal_parent_dominates = pure_source_stub
+                            && exact_source_match
+                            && competing_internal_parent_cov > tf.abundance * 1.25;
                         if trace_back {
                             eprintln!(
-                                "[TRACE_BACK_SOURCE]   tf={} first={} last={} abundance={:.4} minpath={} exact={} accepted={}",
-                                t, first, last, tf.abundance, *minpath, exact_source_match,
-                                exact_source_match
+                                "[TRACE_BACK_SOURCE]   tf={} first={} last={} abundance={:.4} minpath={} exact={} pure_stub={} alt_parent_cov={:.4} accepted={}",
+                                t,
+                                first,
+                                last,
+                                tf.abundance,
+                                *minpath,
+                                exact_source_match,
+                                pure_source_stub,
+                                competing_internal_parent_cov,
+                                exact_source_match && !internal_parent_dominates
                             );
                         }
-                        if exact_source_match {
+                        if exact_source_match && !internal_parent_dominates {
+                            if pure_source_stub {
+                                diag.back_used_pure_source_stub = true;
+                            }
                             parentcov += tf.abundance;
                             if tpar.is_none() || tf.abundance > transfrags[tpar.unwrap()].abundance
                             {
@@ -5849,8 +5980,11 @@ pub fn extract_transcripts(
                     trace_node_trf_watch(idx, "maxp_after_fwd_fail", maxp, graph, &watched_tfs);
                 }
                 if fwd_ok {
-                    // parse_trflong only checks back/fwd success.
-                    // It does not enforce an extra source/sink endpoint validity gate here.
+                    // parse_trflong normally accepts direct success on back/fwd alone.
+                    // Endpoint-stub certification diagnostics are still recorded in `diag`
+                    // for trace-guided audits, but the force-checktrf experiment was reverted:
+                    // it improved the no-checktrf hotspot behavior, yet regressed full GGO_19
+                    // before depletion parity was fixed.
                     used_direct = true;
                 }
                 // NOTE: simple fwd fallback tested but causes regression (1596 vs 1606).
@@ -7532,6 +7666,29 @@ pub fn extract_transcripts(
                     abundancesum = s;
                 }
                 if !tmatch.is_empty() {
+                    if prefer_independent_rescue_over_matched_redistribution(
+                        &tf_nodes,
+                        &tmatch,
+                        &kept_paths,
+                    ) {
+                        if let Some((lo, hi)) = trace_locus {
+                            let in_range = transfrags[t].node_ids.iter().any(|&nid| {
+                                graph
+                                    .nodes
+                                    .get(nid)
+                                    .map_or(false, |n| n.start <= hi && n.end >= lo)
+                            });
+                            if in_range {
+                                eprintln!(
+                                    "[TRACE_CHECKTRF] t={} SAME_OUTER_ALT → prefer independent rescue over matched kept_paths={:?}",
+                                    t, &tmatch
+                                );
+                            }
+                        }
+                        tmatch.clear();
+                    }
+                }
+                if !tmatch.is_empty() {
                     // Strict redistribute filter (DEFAULT OFF, opt-in via
                     // RUSTLE_STRICT_REDIST=1):
                     // When ON, require tf's intron chain to be a contiguous subsequence
@@ -7629,6 +7786,7 @@ pub fn extract_transcripts(
                             &out,
                         );
                         let updated = redistribute_transfrag_to_matches(
+                            t,
                             &transfrags[t],
                             &tmatch,
                             abundancesum,
@@ -7637,7 +7795,21 @@ pub fn extract_transcripts(
                             &mut out,
                         );
                         if updated {
+                            trace_abundance_lifecycle(
+                                "checktrf_matched_before_zero",
+                                t,
+                                &transfrags[t],
+                                graph,
+                                &format!("matched_paths={:?} abundsum={:.4}", &tmatch, abundancesum),
+                            );
                             transfrags[t].abundance = 0.0;
+                            trace_abundance_lifecycle(
+                                "checktrf_matched_after_zero",
+                                t,
+                                &transfrags[t],
+                                graph,
+                                &format!("matched_paths={:?}", &tmatch),
+                            );
                         }
                         // DEBUG: emit DEBUG_CHK for matched outcome
                         emit_debug_chk!(t, transfrags[t].abundance, "matched", tmatch.len(), abundancesum);
@@ -8020,7 +8192,21 @@ pub fn extract_transcripts(
                     }
                 }
                 kept_paths.push((rescue_nodes.to_vec(), coverage, transfrags[t].guide, out_idx));
+                trace_abundance_lifecycle(
+                    "checktrf_rescued_before_zero",
+                    t,
+                    &transfrags[t],
+                    graph,
+                    &format!("coverage={:.4} out_idx={}", coverage, out_idx),
+                );
                 transfrags[t].abundance = 0.0;
+                trace_abundance_lifecycle(
+                    "checktrf_rescued_after_zero",
+                    t,
+                    &transfrags[t],
+                    graph,
+                    &format!("coverage={:.4} out_idx={}", coverage, out_idx),
+                );
             }
         }
     }
@@ -8065,6 +8251,7 @@ pub fn extract_transcripts(
                 continue;
             }
             let updated = redistribute_transfrag_to_matches(
+                t,
                 &transfrags[t],
                 &tmatch,
                 abundancesum,
@@ -8073,6 +8260,13 @@ pub fn extract_transcripts(
                 &mut out,
             );
             if updated {
+                trace_abundance_lifecycle(
+                    "secondpass_matched_before_zero",
+                    t,
+                    &transfrags[t],
+                    graph,
+                    &format!("matched_paths={:?} abundsum={:.4}", &tmatch, abundancesum),
+                );
                 if zero_flux_set.contains(&t) {
                     zero_flux_rescued += 1;
                     if audit_zero_flux {
@@ -8085,6 +8279,13 @@ pub fn extract_transcripts(
                     }
                 }
                 transfrags[t].abundance = 0.0;
+                trace_abundance_lifecycle(
+                    "secondpass_matched_after_zero",
+                    t,
+                    &transfrags[t],
+                    graph,
+                    &format!("matched_paths={:?}", &tmatch),
+                );
             }
         }
     }

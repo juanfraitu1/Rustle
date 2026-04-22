@@ -1,0 +1,30 @@
+# gffcompare v0.12.6 | Command line was:
+#/storage/group/kdm16/default/jxi21/miniforge/bin/gffcompare -r GGO_19_stringtie.gtf -o bench/full_bam_parity_run/cmp_rs bench/full_bam_parity_run/GGO_19_rustle.gtf
+#
+
+#= Summary for dataset: bench/full_bam_parity_run/GGO_19_rustle.gtf 
+#     Query mRNAs :   17540 in     652 loci  (17540 multi-exon transcripts)
+#            (551 multi-transcript loci, ~26.9 transcripts per locus)
+# Reference mRNAs :    1839 in     583 loci  (1814 multi-exon)
+# Super-loci w/ reference transcripts:      564
+#-----------------| Sensitivity | Precision  |
+        Base level:    93.6     |    55.2    |
+        Exon level:    97.1     |    55.8    |
+      Intron level:    99.9     |    80.2    |
+Intron chain level:    94.1     |     9.7    |
+  Transcript level:    92.8     |     9.7    |
+       Locus level:    96.9     |    85.7    |
+
+     Matching intron chains:    1707
+       Matching transcripts:    1707
+              Matching loci:     565
+
+          Missed exons:       9/6866	(  0.1%)
+           Novel exons:     880/15120	(  5.8%)
+        Missed introns:       5/6396	(  0.1%)
+         Novel introns:     524/7966	(  6.6%)
+           Missed loci:       4/583	(  0.7%)
+            Novel loci:      87/652	( 13.3%)
+
+ Total union super-loci across all input datasets: 651 
+17540 out of 17540 consensus transcripts written in bench/full_bam_parity_run/cmp_rs.annotated.gtf (0 discarded as redundant)

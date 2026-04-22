@@ -4084,6 +4084,7 @@ fn inject_guide_transfrags(
             existing.guide_tid = Some(gi.transcript_id.clone());
             existing.longread = true;
             existing.trflong_seed = true;
+            existing.origin_tag = Some("guide".to_string());
             if existing.abundance < min_seed_abund {
                 existing.abundance = min_seed_abund;
             }
@@ -4103,6 +4104,7 @@ fn inject_guide_transfrags(
             tf.guide_tid = Some(gi.transcript_id.clone());
             tf.longread = true;
             tf.trflong_seed = true;
+            tf.origin_tag = Some("guide".to_string());
             tf.abundance = min_seed_abund;
             tf.read_count = min_seed_abund;
             let first = sorted_node_ids[0];
@@ -4153,6 +4155,7 @@ fn inject_guide_transfrags(
                 existing.guide = true;
                 existing.longread = true;
                 existing.trflong_seed = true;
+                existing.origin_tag = Some("guide_edge".to_string());
                 if existing.abundance < min_seed_abund {
                     existing.abundance = min_seed_abund;
                 }
@@ -4166,6 +4169,7 @@ fn inject_guide_transfrags(
             edge_tf.guide = true;
             edge_tf.longread = true;
             edge_tf.trflong_seed = true;
+            edge_tf.origin_tag = Some("guide_edge".to_string());
             edge_tf.abundance = min_seed_abund;
             edge_tf.read_count = min_seed_abund;
             if node_pair[0] == source {
@@ -4187,6 +4191,22 @@ fn inject_guide_transfrags(
         }
     }
     added
+}
+
+fn tag_transfrags_origin(transfrags: &mut [GraphTransfrag], label: &str) {
+    let value = label.to_string();
+    for tf in transfrags.iter_mut() {
+        tf.origin_tag = Some(value.clone());
+    }
+}
+
+fn tag_transfrags_origin_if_missing(transfrags: &mut [GraphTransfrag], label: &str) {
+    let value = label.to_string();
+    for tf in transfrags.iter_mut() {
+        if tf.origin_tag.is_none() {
+            tf.origin_tag = Some(value.clone());
+        }
+    }
 }
 
 fn tx_bounds(tx: &Transcript) -> (u64, u64) {
@@ -9048,7 +9068,7 @@ pub fn run<P: AsRef<Path>>(
                     }
                 }
 
-                let (mut graph, longtrim_synth, longtrim_stats) = create_graph_with_longtrim(
+                let (mut graph, mut longtrim_synth, longtrim_stats) = create_graph_with_longtrim(
                     &junctions,
                     graph_bundle.start,
                     graph_bundle.end,
@@ -9214,7 +9234,7 @@ pub fn run<P: AsRef<Path>>(
                 // with a junction donor (STRG.294.3 class: alt-TTS
                 // terminating where a splice-donor continues for the
                 // dominant isoform). Gated RUSTLE_IMPLICIT_ALT_TTS_SINK=1.
-                let alt_tts_synth = crate::graph_build::add_alt_tts_sink_edges(
+                let mut alt_tts_synth = crate::graph_build::add_alt_tts_sink_edges(
                     &mut graph_mut,
                     junctions.as_ref(),
                     graph_bundle.strand,
@@ -9223,7 +9243,7 @@ pub fn run<P: AsRef<Path>>(
                 // Terminal-read cluster → junction-donor hardend (opt-in
                 // read-signal-based alt-TTS detection). Replaces the need
                 // for RUSTLE_ALT_TTS_ORACLE when enabled.
-                let terminal_donor_synth = crate::graph_build::discover_terminal_donor_hardends(
+                let mut terminal_donor_synth = crate::graph_build::discover_terminal_donor_hardends(
                     &mut graph_mut,
                     reads,
                     junctions.as_ref(),
@@ -9232,7 +9252,7 @@ pub fn run<P: AsRef<Path>>(
                 );
 
                 // Coverage-based node splitting: short-read always (trimnode_all); long/mixed when longtrim not yet implemented
-                let synthetic = if use_coverage_trim(mode) {
+                let mut synthetic = if use_coverage_trim(mode) {
                     // trimnode_all can expose new candidate nodes after a split; run a few passes.
                     const MAX_COVERAGE_TRIM_PASSES: usize = 1;
                     let mut all_synth = Vec::new();
@@ -9268,12 +9288,18 @@ pub fn run<P: AsRef<Path>>(
                 // In long-read mode, futuretr transfrags get longread=true.
                 // In mixed mode, the algorithm creates both a non-longread and a longread copy .
                 let mut coverage_synth = coverage_synth;
+                tag_transfrags_origin(&mut longtrim_synth, "longtrim");
+                tag_transfrags_origin(&mut synthetic, "coverage_trim");
+                tag_transfrags_origin(&mut coverage_synth, "coverage_edge");
+                tag_transfrags_origin(&mut guide_boundary_synth, "guide_boundary");
                 // Merge alt_tts synth into coverage_synth so they flow
                 // through the same post-prune remap + flow seeding paths.
                 if !alt_tts_synth.is_empty() {
+                    tag_transfrags_origin(&mut alt_tts_synth, "alt_tts");
                     coverage_synth.extend(alt_tts_synth);
                 }
                 if !terminal_donor_synth.is_empty() {
+                    tag_transfrags_origin(&mut terminal_donor_synth, "terminal_donor");
                     coverage_synth.extend(terminal_donor_synth);
                 }
                 if mode.is_long_read() {
@@ -9360,6 +9386,7 @@ pub fn run<P: AsRef<Path>>(
                         None,
                     )
                 };
+                tag_transfrags_origin_if_missing(&mut transfrags, "read_map");
                 debug_stage::emit_with_detail(
                     "graph_evolution",
                     &graph_bundle.chrom,
@@ -9505,6 +9532,7 @@ pub fn run<P: AsRef<Path>>(
                         let mut tf = GraphTransfrag::new(vec![nid, sink_id_sc], graph_mut.pattern_size());
                         tf.abundance = fallback_abund;
                         tf.longread = true;
+                        tf.origin_tag = Some("sink_connector".to_string());
                         graph_mut.set_pattern_edges_for_path(&mut tf.pattern, &tf.node_ids);
                         transfrags.push(tf);
                         added_sink += 1;
@@ -9524,6 +9552,7 @@ pub fn run<P: AsRef<Path>>(
                         let mut tf = GraphTransfrag::new(vec![source_id_sc, nid], graph_mut.pattern_size());
                         tf.abundance = fallback_abund;
                         tf.longread = true;
+                        tf.origin_tag = Some("source_connector".to_string());
                         graph_mut.set_pattern_edges_for_path(&mut tf.pattern, &tf.node_ids);
                         transfrags.push(tf);
                         added_src += 1;
@@ -12288,6 +12317,22 @@ pub fn run<P: AsRef<Path>>(
                 eprintln!("rustle: oracle_gap_fill added {} unmatched ref tx", added);
             }
         }
+    }
+
+    // Cross-strand retained-intron cleanup (StringTie parity, opt-in).
+    //
+    // StringTie applies retainedintron() before strand-conflict handling in the
+    // predcluster pairwise loop, which can suppress low-coverage opposite-strand
+    // predictions in overlap regions (e.g., STRG.309 vs STRG.308). Rustle runs
+    // predcluster per bundle/strand, so we optionally apply a post-pass across
+    // all transcripts to recover this behavior.
+    if std::env::var_os("RUSTLE_CROSS_STRAND_RI").is_some() {
+        let frac: f64 = std::env::var("RUSTLE_CROSS_STRAND_RI_FRAC")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(config.pairwise_error_perc);
+        all_transcripts =
+            crate::transcript_filter::cross_strand_retained_intron_cleanup(all_transcripts, frac, config.verbose);
     }
 
     // Compute TPM/FPKM globally across the whole run (standard).

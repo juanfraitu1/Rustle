@@ -1061,6 +1061,11 @@ mod tests {
             ref_gene_id: None,
             hardstart: false,
             hardend: false,
+            alt_tts_end: false,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
         }
     }
 
@@ -1576,6 +1581,59 @@ fn retainedintron_like(
     }
     if trace_ri {
         eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=no_lowintron_match", n1, n2);
+    }
+    false
+}
+
+/// StringTie-style retainedintron() predicate operating on a single "killer"
+/// transcript's low-intron flags.
+///
+/// Used for post-pass cross-strand cleanup to mirror StringTie's behavior where
+/// a high-coverage transcript can suppress low-coverage opposite-strand models
+/// that overlap its low-coverage introns.
+fn retainedintron_like_with_flags(
+    killer: &Transcript,
+    cand: &Transcript,
+    killer_lowintron: &[bool],
+    frac: f64,
+    allow_middle_unconditional: bool,
+) -> bool {
+    if killer.exons.len() < 2 || cand.exons.is_empty() {
+        return false;
+    }
+    // lowintron length should be exons.len()-1; tolerate mismatch by bounds checking.
+    let mut j = 0usize;
+    for i in 1..killer.exons.len() {
+        if j > cand.exons.len().saturating_sub(1) {
+            return false;
+        }
+        if !killer_lowintron.get(i - 1).copied().unwrap_or(false) {
+            continue;
+        }
+        // last exon overlap (coverage-gated)
+        if j == cand.exons.len() - 1
+            && cand.coverage < frac * killer.coverage
+            && cand.exons[j].0 < killer.exons[i - 1].1
+        {
+            return true;
+        }
+        while j < cand.exons.len() && cand.exons[j].1 <= killer.exons[i].0 {
+            j += 1;
+        }
+        // first exon special-case (coverage-gated)
+        if j == 0 && cand.coverage < frac * killer.coverage {
+            return true;
+        }
+        if j < cand.exons.len() && cand.exons[j].0 < killer.exons[i - 1].1 {
+            // middle-exon overlap is unconditional in the original code path
+            if allow_middle_unconditional && j > 0 && j < cand.exons.len() - 1 {
+                return true;
+            }
+            // end overlap (coverage-gated)
+            if cand.coverage < frac * killer.coverage {
+                return true;
+            }
+        }
     }
     false
 }
@@ -2794,6 +2852,262 @@ pub fn retained_intron_filter(
         .filter(|(i, _)| !remove_set.contains(i))
         .map(|(_, t)| t)
         .collect()
+}
+
+/// Cross-strand retained-intron cleanup (StringTie parity).
+///
+/// StringTie can suppress low-coverage predictions on the opposite strand via
+/// retainedintron() in its predcluster pairwise loop. Rustle runs predcluster
+/// per-bundle and per-strand, so those cross-strand interactions never occur.
+///
+/// When enabled, this post-pass applies a similar retained-intron predicate
+/// across opposite-strand transcripts, using each killer transcript's
+/// precomputed `intron_low` flags (computed from all-strand bpcov).
+pub fn cross_strand_retained_intron_cleanup(
+    transcripts: Vec<Transcript>,
+    frac: f64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if transcripts.len() <= 1 {
+        return transcripts;
+    }
+    if std::env::var_os("RUSTLE_CROSS_STRAND_RI").is_none() {
+        return transcripts;
+    }
+
+    let allow_middle_unconditional =
+        std::env::var_os("RUSTLE_CROSS_STRAND_RI_MIDDLE_UNCOND_OFF").is_none();
+    let trace = std::env::var_os("RUSTLE_CROSS_STRAND_RI_TRACE").is_some();
+
+    fn build_significant_overlap_matrix_subset(
+        txs: &[Transcript],
+        idxs: &[usize],
+        error_perc: f64,
+    ) -> Vec<SmallBitset> {
+        let n = idxs.len();
+        let mut ov: Vec<SmallBitset> = (0..n)
+            .map(|_| SmallBitset::with_capacity(n.min(64)))
+            .collect();
+        for i in 0..n {
+            ov[i].insert_grow(i);
+        }
+
+        let mut all_exons: Vec<(u64, u64, usize, usize)> = Vec::new(); // (start,end,local_tx,exon_idx)
+        for (ti_local, &ti_global) in idxs.iter().enumerate() {
+            let t = &txs[ti_global];
+            for (ei, &(s, e)) in t.exons.iter().enumerate() {
+                if e > s {
+                    all_exons.push((s, e, ti_local, ei));
+                }
+            }
+        }
+        if all_exons.len() < 2 {
+            return ov;
+        }
+
+        #[derive(Clone, Copy)]
+        struct Ev {
+            pos: u64,
+            is_start: bool,
+            idx: usize,
+        }
+        let mut evs: Vec<Ev> = Vec::with_capacity(all_exons.len() * 2);
+        for (idx, &(s, e, _, _)) in all_exons.iter().enumerate() {
+            evs.push(Ev {
+                pos: s,
+                is_start: true,
+                idx,
+            });
+            evs.push(Ev {
+                pos: e,
+                is_start: false,
+                idx,
+            });
+        }
+        evs.sort_unstable_by(|a, b| {
+            a.pos
+                .cmp(&b.pos)
+                // End events before start events at same coordinate to preserve half-open interval semantics.
+                .then_with(|| a.is_start.cmp(&b.is_start))
+        });
+
+        let mut active: Vec<usize> = Vec::new(); // indices into all_exons
+        for ev in evs {
+            if !ev.is_start {
+                active.retain(|&k| k != ev.idx);
+                continue;
+            }
+            let (_s, _e, ti, ei) = all_exons[ev.idx];
+            for &other in &active {
+                let (_os, _oe, tj, ej) = all_exons[other];
+                if ti == tj || ov[ti].contains(tj) {
+                    continue;
+                }
+                let a = &txs[idxs[ti]];
+                let b = &txs[idxs[tj]];
+                if significant_overlap_pair(a, ei, b, ej, error_perc) {
+                    ov[ti].insert_grow(tj);
+                    ov[tj].insert_grow(ti);
+                }
+            }
+            active.push(ev.idx);
+        }
+        ov
+    }
+
+    fn cross_strand_retained_intron_cleanup_inner(
+        txs: Vec<Transcript>,
+        frac: f64,
+        allow_middle_unconditional: bool,
+        trace: bool,
+        verbose: bool,
+    ) -> Vec<Transcript> {
+        if txs.len() <= 1 {
+            return txs;
+        }
+
+        let txs = txs;
+        let mut remove = vec![false; txs.len()];
+        let mut removed = 0usize;
+
+        // Group indices by chrom to avoid cross-chrom comparisons.
+        let mut by_chrom: HashMap<String, Vec<usize>> = Default::default();
+        for (idx, t) in txs.iter().enumerate() {
+            by_chrom.entry(t.chrom.clone()).or_default().push(idx);
+        }
+
+        let span = |t: &Transcript| -> Option<(u64, u64)> {
+            let s = t.exons.first()?.0;
+            let e = t.exons.last()?.1;
+            Some((s, e))
+        };
+
+        const ERROR_PERC: f64 = 0.1;
+
+        for (_chrom, idxs_global) in by_chrom {
+            if idxs_global.len() < 2 {
+                continue;
+            }
+
+            // Local indexing for overlap matrix.
+            let local_to_global = idxs_global;
+            let overlaps = build_significant_overlap_matrix_subset(&txs, &local_to_global, ERROR_PERC);
+
+            let mut plus: Vec<usize> = Vec::new(); // local indices
+            let mut minus: Vec<usize> = Vec::new(); // local indices
+            for (li, &gi) in local_to_global.iter().enumerate() {
+                match txs[gi].strand {
+                    '+' => plus.push(li),
+                    '-' => minus.push(li),
+                    _ => {}
+                }
+            }
+            if plus.is_empty() || minus.is_empty() {
+                continue;
+            }
+
+            // Sort killers by predcluster order (predordCmp): abs(tlen)*cov.
+            plus.sort_unstable_by(|&a, &b| {
+                let ga = local_to_global[a];
+                let gb = local_to_global[b];
+                tx_score(&txs[gb])
+                    .partial_cmp(&tx_score(&txs[ga]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            minus.sort_unstable_by(|&a, &b| {
+                let ga = local_to_global[a];
+                let gb = local_to_global[b];
+                tx_score(&txs[gb])
+                    .partial_cmp(&tx_score(&txs[ga]))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            let mut apply = |killers: &[usize], cand_strand: char| {
+                for &k_local in killers {
+                    let kidx = local_to_global[k_local];
+                    if remove[kidx] {
+                        continue;
+                    }
+                    let killer = &txs[kidx];
+                    let killer_score = tx_score(killer);
+                    let Some((ks, ke)) = span(killer) else { continue };
+                    if killer.exons.len() < 2 || killer.intron_low.is_empty() {
+                        continue;
+                    }
+                    for c_local in overlaps[k_local].ones() {
+                        let cidx = local_to_global[c_local];
+                        if remove[cidx] {
+                            continue;
+                        }
+                        let cand = &txs[cidx];
+                        if cand.strand != cand_strand {
+                            continue;
+                        }
+                        if is_rescue_protected(cand) {
+                            continue;
+                        }
+                        // In StringTie, retainedintron() is only evaluated when killer is earlier
+                        // in predcluster order (higher score). Avoid killing a higher-scoring model.
+                        if tx_score(cand) > killer_score {
+                            continue;
+                        }
+                        let Some((cs, ce)) = span(cand) else { continue };
+                        if ce < ks || cs > ke {
+                            continue;
+                        }
+                        // Quick abundance gate: if middle-exon unconditional is disabled, skip
+                        // cases that can't pass the frac check.
+                        if !allow_middle_unconditional && cand.coverage >= frac * killer.coverage {
+                            continue;
+                        }
+                        if retainedintron_like_with_flags(
+                            killer,
+                            cand,
+                            &killer.intron_low,
+                            frac,
+                            allow_middle_unconditional,
+                        ) {
+                            remove[cidx] = true;
+                            removed += 1;
+                            if trace && tx_in_trace_locus(killer) && tx_in_trace_locus(cand) {
+                                eprintln!(
+                                    "[CROSS_STRAND_RI] kill cand={} by killer={} frac={:.4}",
+                                    tx_summary(cand),
+                                    tx_summary(killer),
+                                    frac
+                                );
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Symmetric pass: plus killers suppress minus candidates and vice versa.
+            apply(&plus, '-');
+            apply(&minus, '+');
+        }
+
+        if verbose && removed > 0 {
+            eprintln!(
+                "    cross_strand_retained_intron_cleanup (frac={:.4}): removed {} transcript(s)",
+                frac, removed
+            );
+        }
+
+        txs.into_iter()
+            .enumerate()
+            .filter(|(i, _)| !remove[*i])
+            .map(|(_, t)| t)
+            .collect()
+    }
+
+    cross_strand_retained_intron_cleanup_inner(
+        transcripts,
+        frac,
+        allow_middle_unconditional,
+        trace,
+        verbose,
+    )
 }
 
 /// Remove single-exon fragments that are isolated and lie near multi-exon transcript ends

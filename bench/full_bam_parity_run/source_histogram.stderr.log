@@ -1,0 +1,8 @@
+RUSTLE_SOURCE_HISTOGRAM: 15978 transcripts by GTF source attribute (see path_extract/pipeline tags)
+        6921   43.32%  flow
+        3323   20.80%  junction_path
+        3218   20.14%  checktrf_rescue
+        1919   12.01%  terminal_alt_acceptor
+         555    3.47%  micro_exon_rescue
+          42    0.26%  terminal_stop_variant
+elapsed_sec=982.88

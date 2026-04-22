@@ -1,0 +1,6 @@
+locus_run	ref_mrnas	query_mrnas	matching_transcripts	transcript_sn_pr	trace_notes	needy_bundle_summary
+STRG_29	3	29	3	100.0     |    10.3	no_ref_blockers	bundle_context_rows=17 seed_flow_rows=15
+STRG_440	3	95	3	100.0     |     3.2	no_ref_blockers	bundle_context_rows=15 seed_flow_rows=13
+STRG_442	3	37	3	100.0     |     8.1	no_ref_blockers	bundle_context_rows=15 seed_flow_rows=13
+STRG_445	3	27	3	100.0     |    11.1	no_ref_blockers	bundle_context_rows=10 seed_flow_rows=8
+STRG_566	4	23	3	75.0     |    13.0	STRG.566.9:not_extracted:junctions_present	bundle_context_rows=6 seed_flow_rows=3

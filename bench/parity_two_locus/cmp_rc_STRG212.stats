@@ -1,0 +1,30 @@
+# gffcompare v0.12.6 | Command line was:
+#/storage/group/kdm16/default/jxi21/miniforge/bin/gffcompare -r bench/parity_two_locus/ref_STRG212.gtf -R -Q -o bench/parity_two_locus/cmp_rc_STRG212 bench/parity_two_locus/rustle_conservative_STRG212.gtf
+#
+
+#= Summary for dataset: bench/parity_two_locus/rustle_conservative_STRG212.gtf 
+#     Query mRNAs :      90 in       1 loci  (90 multi-exon transcripts)
+#            (1 multi-transcript loci, ~90.0 transcripts per locus)
+# Reference mRNAs :      13 in       1 loci  (13 multi-exon)
+# Super-loci w/ reference transcripts:        1
+#-----------------| Sensitivity | Precision  |
+        Base level:   100.0     |    60.6    |
+        Exon level:   100.0     |    47.5    |
+      Intron level:    95.8     |    67.6    |
+Intron chain level:    84.6     |    12.2    |
+  Transcript level:    84.6     |    12.2    |
+       Locus level:   100.0     |   100.0    |
+
+     Matching intron chains:      11
+       Matching transcripts:      11
+              Matching loci:       1
+
+          Missed exons:       0/21	(  0.0%)
+           Novel exons:       4/61	(  6.6%)
+        Missed introns:       0/24	(  0.0%)
+         Novel introns:       0/34	(  0.0%)
+           Missed loci:       0/1	(  0.0%)
+            Novel loci:       0/1	(  0.0%)
+
+ Total union super-loci across all input datasets: 1 
+90 out of 90 consensus transcripts written in bench/parity_two_locus/cmp_rc_STRG212.annotated.gtf (0 discarded as redundant)

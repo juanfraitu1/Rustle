@@ -17,6 +17,7 @@ pub struct FutureLink {
     pub to: usize,
     pub abundance: f64,
     pub longread: bool,
+    pub origin_tag: Option<String>,
     /// Apply futuretr sink suppression heuristic
     /// for node->sink synthetic links.
     pub suppress_sink_heuristic: bool,
@@ -28,6 +29,7 @@ impl FutureLink {
         to: usize,
         abundance: f64,
         longread: bool,
+        origin_tag: Option<String>,
         suppress_sink_heuristic: bool,
     ) -> Self {
         Self {
@@ -35,6 +37,7 @@ impl FutureLink {
             to,
             abundance,
             longread,
+            origin_tag,
             suppress_sink_heuristic,
         }
     }
@@ -59,6 +62,7 @@ pub fn collect_from_transfrags(
             to,
             tf.abundance,
             tf.longread,
+            tf.origin_tag.clone(),
             suppress_sink_heuristic,
         ));
     }
@@ -204,6 +208,7 @@ pub fn materialize_links(
         tf.abundance = l.abundance.max(0.0);
         tf.read_count = tf.abundance;
         tf.longread = l.longread;
+        tf.origin_tag = l.origin_tag.clone();
         out.push(tf);
     }
     if !out.is_empty() {

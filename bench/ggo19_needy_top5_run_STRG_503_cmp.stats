@@ -1,0 +1,30 @@
+# gffcompare v0.12.6 | Command line was:
+#gffcompare -r bench/ggo19_needy_top5_refs/STRG_503.gtf -R -Q -o bench/ggo19_needy_top5_run_STRG_503_cmp bench/ggo19_needy_top5_run_STRG_503.gtf
+#
+
+#= Summary for dataset: bench/ggo19_needy_top5_run_STRG_503.gtf 
+#     Query mRNAs :      11 in       1 loci  (11 multi-exon transcripts)
+#            (1 multi-transcript loci, ~11.0 transcripts per locus)
+# Reference mRNAs :       5 in       1 loci  (5 multi-exon)
+# Super-loci w/ reference transcripts:        1
+#-----------------| Sensitivity | Precision  |
+        Base level:    62.1     |    67.4    |
+        Exon level:    93.9     |    86.8    |
+      Intron level:   100.0     |    93.6    |
+Intron chain level:    80.0     |    36.4    |
+  Transcript level:    80.0     |    36.4    |
+       Locus level:   100.0     |   100.0    |
+
+     Matching intron chains:       4
+       Matching transcripts:       4
+              Matching loci:       1
+
+          Missed exons:       0/49	(  0.0%)
+           Novel exons:       3/53	(  5.7%)
+        Missed introns:       0/44	(  0.0%)
+         Novel introns:       2/47	(  4.3%)
+           Missed loci:       0/1	(  0.0%)
+            Novel loci:       0/1	(  0.0%)
+
+ Total union super-loci across all input datasets: 2 
+23 out of 23 consensus transcripts written in bench/ggo19_needy_top5_run_STRG_503_cmp.annotated.gtf (0 discarded as redundant)

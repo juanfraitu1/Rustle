@@ -8,7 +8,9 @@ jobs = 48
 strip = "debuginfo"
 
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-cpu=native"]
+# target-cpu=native can cause illegal instruction errors when building on one machine 
+# and running on another with a different CPU architecture.
+# rustflags = ["-C", "target-cpu=native"]
 
 [profile.quick]
 # Fastest build for development - optimize for compile time, not runtime

@@ -1,0 +1,7 @@
+# reference_id	blocker	bundle_region	seed_diag
+STRG.503.5	eliminate_incomplete_vs_guides	NC_073243.2:97542380-97757915	
+# summary:
+#   eliminate_incomplete_vs_guides: 1
+# blocked by strand (refs with at least one bundle where not extracted or filtered):
+#   strand +: 0 blocked / 0 total (0.0%)
+#   strand -: 1 blocked / 5 total (20.0%)

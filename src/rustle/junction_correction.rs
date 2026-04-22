@@ -810,36 +810,47 @@ mod tests {
     #[test]
     fn test_higherr_merges_weak_nearby() {
         let mut stats: JunctionStats = Default::default();
-        // Strong junction at (100, 200)
+        // Strong junction at (100, 100200) (long intron)
         stats.insert(
-            Junction::new(100, 200),
+            Junction::new(100, 100_200),
             JunctionStat {
                 mrcount: 10.0,
                 leftsupport: 10.0,
                 rightsupport: 10.0,
+                nreads_good: 10.0,
                 rcount: 10,
                 ..Default::default()
             },
         );
-        // Weak nearby at (105, 205) - within 25bp
+        // Weak nearby at (105, 100205) - within 25bp; mark as "bad" by
+        // higherr criteria (long intron + low good-read support).
         stats.insert(
-            Junction::new(105, 205),
+            Junction::new(105, 100_205),
             JunctionStat {
                 mrcount: 1.0,
                 nm: 1.0,
                 leftsupport: 1.0,
                 rightsupport: 1.0,
+                nreads_good: 1.0,
                 rcount: 1,
                 ..Default::default()
             },
         );
         let (new_stats, map) = correct_bundle_junctions_higherr(&stats, 25, 0.9, false);
-        assert!(map.contains_key(&Junction::new(105, 205)));
+        assert!(map.contains_key(&Junction::new(105, 100_205)));
         assert_eq!(
-            map.get(&Junction::new(105, 205)),
-            Some(&Junction::new(100, 200))
+            map.get(&Junction::new(105, 100_205)),
+            Some(&Junction::new(100, 100_200))
         );
         assert_eq!(new_stats.len(), 1);
-        assert!((new_stats.get(&Junction::new(100, 200)).unwrap().mrcount - 11.0).abs() < 1e-6);
+        assert!(
+            (new_stats
+                .get(&Junction::new(100, 100_200))
+                .unwrap()
+                .mrcount
+                - 11.0)
+                .abs()
+                < 1e-6
+        );
     }
 }

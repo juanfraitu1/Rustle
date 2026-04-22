@@ -1,0 +1,100 @@
+stage_id	chrom	start	end	strand	n_reads	n_junctions	n_nodes	n_edges	n_transfrags	n_transcripts	seed_total	seed_stored	seed_rescued	bundle_bnodes	bundle_read_bnode_links	bundle_color_count	struct_hash	graph_active_transfrags	graph_long_transfrags	graph_pattern_size	graph_hard_boundary_nodes	seed_unwitnessed	seed_zero_flux	seed_low_cov	seed_back_fail	seed_fwd_fail	longrec_back_no_choice	longrec_fwd_no_choice	longrec_back_no_reach	longrec_fwd_no_reach	longrec_back_unreachable	longrec_fwd_unreachable	checktrf_total	checktrf_pre_filter	predcluster_before	predcluster_removed	pairwise_included_kill	pairwise_secontained_kill	pairwise_intronic_kill	pairwise_bettercov_kill	pairwise_other_kill	isofrac_longunder_kill	junction_support_removed	note
+bundle_context	NC_073243.2	80915835	81238160	-	5	10	0	0	0	0	0	0	0	0	0	0	18319007836588156831	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	detected_bundle
+bundle_context	NC_073243.2	80915835	81238160	+	90	585	0	0	0	0	0	0	0	0	0	0	3575503354884042492	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	detected_bundle
+bundle_context	NC_073243.2	80915835	81059362	-	2	5	0	0	0	0	0	0	0	4	6	4	12547780814641609891	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	80915835	81059362	-	2	3	4	8	3	0	0	0	0	0	0	0	16719866783549886381	3	3	78	2	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=0 fwd_fail=0 longrec_attempted=1 longrec_succeeded=1 longrec_fallback=0 back_no_choice=0 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	checktrf_total=0 rescued=0 pre_filter=1
+pairwise_overlap_filter	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 
+isofrac	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0
+polymerase_runoff_filter	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0
+polymerase_runon_filter	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0
+readthr_gate	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0
+junction_support_filter	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0
+final_family_selection	NC_073243.2	80915835	81059362	-	2	3	4	8	9	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	0	0	0	0	0	0	0	0	pre_filter=1
+bundle_context	NC_073243.2	80917416	81172569	+	54	455	0	0	0	0	0	0	0	46	421	46	10829768973229022813	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	80917416	81172569	+	54	66	87	135	61	0	0	0	0	0	0	0	3282605547899757906	61	61	288	36	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	80917416	81172569	+	54	66	87	139	119	27	53	17	0	0	0	0	0	0	0	0	0	0	0	0	18	0	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=18 fwd_fail=0 longrec_attempted=35 longrec_succeeded=17 longrec_fallback=18 back_no_choice=18 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	80917416	81172569	+	54	66	87	139	119	27	18	0	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	18	7505	0	0	0	0	0	0	0	0	0	checktrf_total=18 rescued=14 pre_filter=7505
+pairwise_overlap_filter	NC_073243.2	80917416	81172569	+	54	66	87	139	119	25	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	31	6	6	0	0	0	0	0	0	before=31 removed=6 included_drop=1 reverse_included=5
+isofrac	NC_073243.2	80917416	81172569	+	54	66	87	139	119	25	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	25	0	0	0	0	0	0	0	0	before=25 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	80917416	81172569	+	54	66	87	139	119	24	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	25	1	0	0	0	0	0	0	0	before=25 removed=1
+polymerase_runoff_filter	NC_073243.2	80917416	81172569	+	54	66	87	139	119	24	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	24	0	0	0	0	0	0	0	0	before=24 removed=0
+polymerase_runon_filter	NC_073243.2	80917416	81172569	+	54	66	87	139	119	24	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	24	0	0	0	0	0	0	0	0	before=24 removed=0
+readthr_gate	NC_073243.2	80917416	81172569	+	54	66	87	139	119	24	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	24	0	0	0	0	0	0	0	0	before=24 removed=0
+junction_support_filter	NC_073243.2	80917416	81172569	+	54	66	87	139	119	27	53	17	14	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	24	7471	0	0	0	0	0	0	7471	before=24 removed=7471
+final_family_selection	NC_073243.2	80917416	81172569	+	54	66	87	139	119	27	53	17	14	0	0	0	0	0	0	0	0	0	0	0	18	0	0	0	0	0	0	0	18	7505	7505	7478	0	0	0	0	0	0	7471	pre_filter=7505
+bundle_context	NC_073243.2	80957142	80962881	-	1	0	0	0	0	0	0	0	0	1	1	1	9292181916092741169	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	80957142	80962881	-	1	0	1	2	1	0	0	0	0	0	0	0	11964927848853630403	1	1	69	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=0 fwd_fail=0 longrec_attempted=1 longrec_succeeded=1 longrec_fallback=0 back_no_choice=0 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	checktrf_total=0 rescued=0 pre_filter=1
+pairwise_overlap_filter	NC_073243.2	80957142	80962881	-	1	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 
+isofrac	NC_073243.2	80957142	80962881	-	1	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	0	0	0	0	0	0	0	before=1 removed=1
+polymerase_runoff_filter	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+polymerase_runon_filter	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+readthr_gate	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+junction_support_filter	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+final_family_selection	NC_073243.2	80957142	80962881	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	pre_filter=1
+bundle_context	NC_073243.2	80992658	80997400	+	1	0	0	0	0	0	0	0	0	1	1	1	3282371037928500483	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	80992658	80997400	+	1	0	1	2	1	0	0	0	0	0	0	0	13359913988125401956	1	1	69	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=0 fwd_fail=0 longrec_attempted=1 longrec_succeeded=1 longrec_fallback=0 back_no_choice=0 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	checktrf_total=0 rescued=0 pre_filter=1
+pairwise_overlap_filter	NC_073243.2	80992658	80997400	+	1	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 
+isofrac	NC_073243.2	80992658	80997400	+	1	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	0	0	0	0	0	0	0	before=1 removed=1
+polymerase_runoff_filter	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+polymerase_runon_filter	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+readthr_gate	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+junction_support_filter	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+final_family_selection	NC_073243.2	80992658	80997400	+	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	pre_filter=1
+bundle_context	NC_073243.2	81106659	81108842	-	1	0	0	0	0	0	0	0	0	1	1	1	5813300156046982213	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	81106659	81108842	-	1	0	1	2	1	0	0	0	0	0	0	0	10101707806470268591	1	1	69	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=0 fwd_fail=0 longrec_attempted=1 longrec_succeeded=1 longrec_fallback=0 back_no_choice=0 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	checktrf_total=0 rescued=0 pre_filter=1
+pairwise_overlap_filter	NC_073243.2	81106659	81108842	-	1	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 
+isofrac	NC_073243.2	81106659	81108842	-	1	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	0	0	0	0	0	0	0	before=1 removed=1
+polymerase_runoff_filter	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+polymerase_runon_filter	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+readthr_gate	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+junction_support_filter	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+final_family_selection	NC_073243.2	81106659	81108842	-	1	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	pre_filter=1
+bundle_context	NC_073243.2	81139012	81220123	-	2	9	0	0	0	0	0	0	0	6	7	6	5459798155094580937	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	81139012	81220123	-	2	5	6	12	6	0	0	0	0	0	0	0	714176939557282203	6	6	84	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=0 fwd_fail=0 longrec_attempted=0 longrec_succeeded=0 longrec_fallback=0 back_no_choice=0 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	checktrf_total=0 rescued=0 pre_filter=0
+pairwise_overlap_filter	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0 
+isofrac	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+polymerase_runoff_filter	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+polymerase_runon_filter	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+readthr_gate	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+junction_support_filter	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+final_family_selection	NC_073243.2	81139012	81220123	-	2	5	6	12	18	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	pre_filter=0
+bundle_context	NC_073243.2	81204920	81208197	+	2	0	0	0	0	0	0	0	0	1	2	1	9663633490459510059	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	81204920	81208197	+	2	0	1	2	1	0	0	0	0	0	0	0	11931781852243794813	1	1	69	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=0 fwd_fail=0 longrec_attempted=1 longrec_succeeded=1 longrec_fallback=0 back_no_choice=0 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	checktrf_total=0 rescued=0 pre_filter=1
+pairwise_overlap_filter	NC_073243.2	81204920	81208197	+	2	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 
+isofrac	NC_073243.2	81204920	81208197	+	2	0	1	2	3	1	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	before=1 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	0	0	0	0	0	0	0	before=1 removed=1
+polymerase_runoff_filter	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+polymerase_runon_filter	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+readthr_gate	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+junction_support_filter	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	before=0 removed=0
+final_family_selection	NC_073243.2	81204920	81208197	+	2	0	1	2	3	0	1	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	1	1	0	0	0	0	0	0	0	pre_filter=1
+bundle_context	NC_073243.2	81211098	81238161	+	33	130	0	0	0	0	0	0	0	10	162	10	15289624961323094511	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	cpp_subbundle
+graph_evolution	NC_073243.2	81211098	81238161	+	33	12	17	26	14	0	0	0	0	0	0	0	757002710672126638	14	14	109	7	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	after_map_reads
+seed_flow	NC_073243.2	81211098	81238161	+	33	12	17	26	26	10	8	6	0	0	0	0	0	0	0	0	0	0	0	0	1	0	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	unwitnessed=0 zero_flux=0 low_cov=0 back_fail=1 fwd_fail=0 longrec_attempted=7 longrec_succeeded=6 longrec_fallback=1 back_no_choice=1 fwd_no_choice=0 back_no_reach=0 fwd_no_reach=0 back_unreachable=0 fwd_unreachable=0
+checktrf	NC_073243.2	81211098	81238161	+	33	12	17	26	26	10	1	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	1	18	0	0	0	0	0	0	0	0	0	checktrf_total=1 rescued=0 pre_filter=18
+pairwise_overlap_filter	NC_073243.2	81211098	81238161	+	33	12	17	26	26	4	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	6	2	2	0	0	0	0	0	0	before=6 removed=2 included_drop=1 reverse_included=1
+isofrac	NC_073243.2	81211098	81238161	+	33	12	17	26	26	4	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	0	before=4 removed=0 longunder=0
+collapse_single_exon_runoff	NC_073243.2	81211098	81238161	+	33	12	17	26	26	4	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	0	before=4 removed=0
+polymerase_runoff_filter	NC_073243.2	81211098	81238161	+	33	12	17	26	26	4	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	0	before=4 removed=0
+polymerase_runon_filter	NC_073243.2	81211098	81238161	+	33	12	17	26	26	4	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	0	before=4 removed=0
+readthr_gate	NC_073243.2	81211098	81238161	+	33	12	17	26	26	4	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	4	0	0	0	0	0	0	0	0	before=4 removed=0
+junction_support_filter	NC_073243.2	81211098	81238161	+	33	12	17	26	26	10	8	6	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	4	6	0	0	0	0	0	0	6	before=4 removed=6
+final_family_selection	NC_073243.2	81211098	81238161	+	33	12	17	26	26	10	8	6	0	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	1	18	18	8	0	0	0	0	0	0	6	pre_filter=18
+transcript_emission	*	80915835	81238161	.	0	0	0	0	0	38	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	final_gtf

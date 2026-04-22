@@ -1,0 +1,30 @@
+# gffcompare v0.12.6 | Command line was:
+#gffcompare -r /storage/group/kdm16/default/jxi21/apes_transcriptome_analysis/clusterer/GGO_19.gtf -o /storage/group/kdm16/default/jxi21/apes_transcriptome_analysis/clusterer/bench/ggo19_top1_cmp /storage/group/kdm16/default/jxi21/apes_transcriptome_analysis/clusterer/bench/ggo19_top1_rustle.gtf
+#
+
+#= Summary for dataset: /storage/group/kdm16/default/jxi21/apes_transcriptome_analysis/clusterer/bench/ggo19_top1_rustle.gtf 
+#     Query mRNAs :     505 in       1 loci  (505 multi-exon transcripts)
+#            (1 multi-transcript loci, ~505.0 transcripts per locus)
+# Reference mRNAs :    1839 in     583 loci  (1814 multi-exon)
+# Super-loci w/ reference transcripts:        1
+#-----------------| Sensitivity | Precision  |
+        Base level:     0.4     |    98.0    |
+        Exon level:     0.4     |    81.6    |
+      Intron level:     0.5     |    92.1    |
+Intron chain level:     0.2     |     0.6    |
+  Transcript level:     0.2     |     0.6    |
+       Locus level:     0.2     |   100.0    |
+
+     Matching intron chains:       3
+       Matching transcripts:       3
+              Matching loci:       1
+
+          Missed exons:    6837/6866	( 99.6%)
+           Novel exons:       0/38	(  0.0%)
+        Missed introns:    6361/6396	( 99.5%)
+         Novel introns:       0/38	(  0.0%)
+           Missed loci:     582/583	( 99.8%)
+            Novel loci:       0/1	(  0.0%)
+
+ Total union super-loci across all input datasets: 1 
+505 out of 505 consensus transcripts written in /storage/group/kdm16/default/jxi21/apes_transcriptome_analysis/clusterer/bench/ggo19_top1_cmp.annotated.gtf (0 discarded as redundant)

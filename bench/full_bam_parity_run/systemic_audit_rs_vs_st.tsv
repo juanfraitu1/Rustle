@@ -1,0 +1,40 @@
+key	value
+gffcompare_stats.matching_transcripts	1707
+gffcompare_stats.query_loci	652
+gffcompare_stats.query_mrnas	17540
+gffcompare_stats.reference_loci	583
+gffcompare_stats.reference_mrnas	1839
+gffcompare_stats.transcript_precision_pct	9.7
+gffcompare_stats.transcript_sensitivity_pct	92.8
+reference_transcripts_in_tmap	1807
+reference_transcripts_exact_match	1707
+reference_transcripts_no_exact_match	100
+
+# per_reference_class	count
+per_ref_class.=	1707
+per_ref_class.c	51
+per_ref_class.j	28
+per_ref_class.k	9
+per_ref_class.n	5
+per_ref_class.o	4
+per_ref_class.m	3
+
+# miss_only_class	count
+miss_per_ref.c	51
+miss_per_ref.j	28
+miss_per_ref.k	9
+miss_per_ref.n	5
+miss_per_ref.o	4
+miss_per_ref.m	3
+
+# raw_tmap_row_class	count
+raw_row.j	6039
+raw_row.=	4332
+raw_row.c	4247
+raw_row.m	1506
+raw_row.n	800
+raw_row.k	191
+raw_row.x	117
+raw_row.o	42
+raw_row.i	16
+raw_row.s	12

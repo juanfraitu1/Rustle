@@ -2897,15 +2897,40 @@ pub fn process_transfrags(
             }
             let tf = &transfrags[rid];
             let (tf_s, tf_e) = tf_span_graph(tf, graph);
+            let mut origin_counts: HashMap<String, usize> = Default::default();
+            let rep_origin = tf
+                .origin_tag
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+            *origin_counts.entry(rep_origin.clone()).or_insert(0) += 1;
+            for &gid in &tf.group {
+                if let Some(gtf) = transfrags.get(gid) {
+                    let tag = gtf
+                        .origin_tag
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string());
+                    *origin_counts.entry(tag).or_insert(0) += 1;
+                }
+            }
+            let mut origin_summary: Vec<(String, usize)> = origin_counts.into_iter().collect();
+            origin_summary.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let origin_summary = origin_summary
+                .into_iter()
+                .map(|(k, v)| format!("{k}:{v}"))
+                .collect::<Vec<_>>()
+                .join(",");
             eprintln!(
-                "[TRACE_KEEPTRF] rep={} usepath={} seed={} span={}-{} nodes={} group={:?}",
+                "[TRACE_KEEPTRF] rep={} usepath={} seed={} span={}-{} nodes={} origin={} group={:?} origin_mix=[{}]",
                 rid,
                 tf.usepath,
                 tf.trflong_seed,
                 tf_s,
                 tf_e,
                 tf.node_ids.len(),
+                rep_origin,
                 tf.group
+                ,
+                origin_summary
             );
             trace_tf_pattern_outgoing("keeptrf.rep_pattern", rid, tf, graph);
             if let Some(target) = trace_intron {

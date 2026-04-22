@@ -271,6 +271,8 @@ pub struct GraphTransfrag {
     pub flow_path_idx: i32,
     /// Nascent marker (nascent handling scaffold).
     pub nascent: bool,
+    /// Lightweight provenance tag for seed-inventory tracing.
+    pub origin_tag: Option<String>,
 }
 
 impl GraphTransfrag {
@@ -310,6 +312,7 @@ impl GraphTransfrag {
             flow_paths: Vec::new(),
             flow_path_idx: -1,
             nascent: false,
+            origin_tag: None,
         }
     }
 

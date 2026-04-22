@@ -1,0 +1,18 @@
+GGO_19.bam full-BAM source histogram (RUSTLE_SOURCE_HISTOGRAM=1)
+================================================================
+Run: ./target/release/rustle -L -p 8 -o GGO_19_rustle_source_hist.gtf
+Transcripts: 15978 total
+
+ 6921   43.32%  flow                 <- max-flow / parse_trflong (primary)
+ 3323   20.80%  junction_path        <- splice-graph enumeration (cap: max_junction_paths)
+ 3218   20.14%  checktrf_rescue      <- seeds deferred to checktrf
+ 1919   12.01%  terminal_alt_acceptor
+  555    3.47%  micro_exon_rescue
+   42    0.26%  terminal_stop_variant
+
+Tuning knobs (opt-in, for StringTie-like density experiments):
+  RUSTLE_DISABLE_TERMINAL_ALT_ACCEPTOR=1   — skip terminal alt-acceptor rescue (~12% of tx)
+  RUSTLE_DISABLE_MICRO_EXON_RESCUE=1      — skip micro-exon insertion rescue
+  RUSTLE_CHECKTRF_ABUNDANCE_FLOOR_FRAC=0.15 — stricter floor for checktrf partial-depletion gate (default 0.05)
+
+Core flow (43%) is addressed via predcluster (-f, readthr, pairwise) and graph caps; junction_path via max_junction_paths.

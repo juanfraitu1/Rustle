@@ -1,0 +1,39 @@
+Two-locus regional parity (GGO_19), reference = StringTie truth slice from out_full.gtf
+===================================================================================
+
+Inputs
+------
+  STRG171 : GGO_19_STRG171_reads.bam (repo root)
+  STRG212 : GGO_19_STRG212_reads.bam (this dir; samtools region NC_073243.2:30720000-30850000)
+  gffcompare: -R -Q (regional query GTF)
+
+Historical baseline (pre precision work, junction_path bypassed predcluster with epsilon cov)
+--------------------------------------------------------------------------------------------
+  STRG171 Rustle: ~237 query mRNAs, ~100% Sn / ~5% Pr vs 12-ref slice
+  STRG212 Rustle: ~109 query mRNAs, ~92% Sn / ~11% Pr
+
+Code changes (precision)
+------------------------
+  - `junction_path` transcripts use per-path **bottleneck** node coverage/longcov and run through
+    the **full predcluster** chain (pairwise, isofrac, readthr, dedup). Ref/trace assists
+    (`ref_chain*`, `junction_chain`, …) stay on the legacy bypass unless `RUSTLE_PROTECT_JUNCTION_PATH`
+    is set (restores old junction_path bypass for debugging).
+  - Paths weaker than **readthr** on both coverage and longcov are not emitted from DFS.
+  - Default **max_junction_paths** lowered 10000 → **1200** per bundle; `--max-junction-paths`
+    overrides. `--max-sensitivity` still enables junction-path enumeration with the new cap.
+  - Default **-E / junction_correction_window** 25 → **30** bp; default **RUSTLE_EMIT_REF_SSDIST**
+    40 → **48** for `find_guide_pat` / ref assist snapping (helps gffcompare **j**-class near misses).
+
+Sample re-run (post-change, regional -R -Q)
+-------------------------------------------
+  STRG212 mini-BAM: 97 query mRNAs (was ~109), transcript Pr ~12.4% (was ~11%), Sn 92.3%, 12/13 ref matches
+    (STRG.212.3 remains a gffcompare `j` near-miss — boundary tuning, not raw junction support.)
+  STRG171 mini-BAM: flow-derived isoforms still dominate output (~245 multi-exon queries vs ~237);
+    junction_path bypass is fixed but most excess transcripts come from max-flow path extraction, not DFS.
+
+Re-run
+------
+  scripts/run_two_locus_parity_bench.sh
+
+For headline Sn/Pr vs StringTie, use full GGO_19.bam + full reference GTF (regional metrics are
+noisy for precision).

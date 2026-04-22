@@ -1,0 +1,5 @@
+# reference_id	blocker	bundle_region	seed_diag
+# summary:
+# blocked by strand (refs with at least one bundle where not extracted or filtered):
+#   strand +: 0 blocked / 4 total (0.0%)
+#   strand -: 0 blocked / 0 total (0.0%)

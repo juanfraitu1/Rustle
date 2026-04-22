@@ -110,6 +110,19 @@ fn format_tf_coords(tf: &GraphTransfrag, graph: &Graph, limit: usize) -> String 
         .join(" ")
 }
 
+fn tf_overlaps_trace(tf: &GraphTransfrag, graph: &Graph) -> bool {
+    let Some((lo, hi)) = parse_trace_locus() else {
+        return false;
+    };
+    tf.node_ids.iter().any(|&nid| {
+        graph
+            .nodes
+            .get(nid)
+            .map(|n| n.end >= lo && n.start <= hi)
+            .unwrap_or(false)
+    })
+}
+
 /// BFS for augmenting path in residual network (capacity - flow). Fills pred; returns true if sink reached.
 fn bfs_augmenting_path(
     n: usize,
@@ -2197,6 +2210,7 @@ pub fn edmonds_karp(
     }
 
     let depletion_diag = std::env::var_os("RUSTLE_DEPLETION_DIAG").is_some();
+    let traced_path = any_path_node_overlaps_trace(path, graph);
     if !no_subtract {
         for pi in 0..n {
             let nid = path[pi];
@@ -2224,6 +2238,7 @@ pub fn edmonds_karp(
                     let fl = flow_mat[pi][end_i];
                     if fl > 0.0 {
                         if fl < tf.abundance {
+                            let before = tf.abundance;
                             if pi == 0 {
                                 sumout = sumout + fl;
                             }
@@ -2236,11 +2251,24 @@ pub fn edmonds_karp(
                                     seed_tf, t_idx, fl, tf.abundance, tf.abundance - fl);
                             }
                             update_transfrag_capacity(tf, fl, &mut nodecapacity, &node2path, t_idx);
+                            if traced_path && tf_overlaps_trace(tf, graph) {
+                                eprintln!(
+                                    "[TRACE_ABUND] stage=maxflow_partial seed={:?} tf={} before={:.4} delta={:.4} after={:.4} path={} tf_nodes={}",
+                                    seed_tf,
+                                    t_idx,
+                                    before,
+                                    fl,
+                                    tf.abundance,
+                                    format_tf_coords(tf, graph, 8),
+                                    tf.node_ids.len()
+                                );
+                            }
                             if tf.abundance < DBL_ERROR {
                                 tf.abundance = 0.0;
                             }
                             flow_mat[pi][end_i] = 0.0;
                         } else {
+                            let before = tf.abundance;
                             if pi == 0 {
                                 sumout = sumout + tf.abundance;
                             }
@@ -2257,6 +2285,18 @@ pub fn edmonds_karp(
                             }
                             flow_mat[pi][end_i] -= val;
                             update_transfrag_capacity(tf, val, &mut nodecapacity, &node2path, t_idx);
+                            if traced_path && tf_overlaps_trace(tf, graph) {
+                                eprintln!(
+                                    "[TRACE_ABUND] stage=maxflow_full seed={:?} tf={} before={:.4} delta={:.4} after={:.4} path={} tf_nodes={}",
+                                    seed_tf,
+                                    t_idx,
+                                    before,
+                                    val,
+                                    tf.abundance,
+                                    format_tf_coords(tf, graph, 8),
+                                    tf.node_ids.len()
+                                );
+                            }
                             if tf.abundance < DBL_ERROR {
                                 tf.abundance = 0.0;
                             }
@@ -2270,6 +2310,7 @@ pub fn edmonds_karp(
                 if let Some(entering_tf_pos) = entering_tf_pos {
                     let etf = &mut transfrags[entering_tf_pos];
                     let val = sumout / noderate_local[pi];
+                    let before = etf.abundance;
                     if depletion_diag {
                         eprintln!(
                             "DEPL_TF seed={:?} tf={} entering amt={:.6} before={:.6} after={:.6}",
@@ -2278,6 +2319,18 @@ pub fn edmonds_karp(
                             val,
                             etf.abundance,
                             (etf.abundance - val).max(0.0)
+                        );
+                    }
+                    if traced_path && tf_overlaps_trace(etf, graph) {
+                        eprintln!(
+                            "[TRACE_ABUND] stage=maxflow_entering seed={:?} tf={} before={:.4} delta={:.4} after={:.4} path={} tf_nodes={}",
+                            seed_tf,
+                            entering_tf_pos,
+                            before,
+                            val,
+                            (etf.abundance - val).max(0.0),
+                            format_tf_coords(etf, graph, 8),
+                            etf.node_ids.len()
                         );
                     }
                     etf.abundance = (etf.abundance - val).max(0.0);

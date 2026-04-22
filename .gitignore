@@ -1,43 +1,44 @@
-# Ignore everything by default
+# 1. Ignore everything by default
 *
 
-# Allow the essentials
-!/.gitignore
-!/Cargo.toml
-!/Cargo.lock
-!/README.md
-!/src/
-!/src/**
-!/scripts/
-!/scripts/**
+# 2. Allow directory structures (non-recursive allow of the directory itself)
 !/.cargo/
-!/.cargo/**
+!/bench/
 !/docs/
-!/docs/**
 !/figures/
-!/figures/**
+!/scripts/
+!/src/
+!/test_data/
+!/tests/
 
-# Specifically allow our analysis scripts for now if they are useful
+# 3. Allow specific root files
+!/.gitignore
+!/Cargo.lock
+!/Cargo.toml
+!/README.md
 !/analyze_missed_patterns.py
 !/find_missed_loci.py
 !/analyze_novel.py
 
-# But still ignore target and other common build artifacts
+# 4. Recursively allow content in these directories
+!/.cargo/**
+!/bench/**
+!/docs/**
+!/figures/**
+!/scripts/**
+!/src/**
+!/tests/**
+
+# 5. Specific re-ignores for common junk (must come AFTER allows)
 /target/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 **/*.rs.bk
 .DS_Store
-__pycache__/
-*.pyc
-*.pyo
 .claude/
 
-# Old source files
-/src/*.rs
-/src/bin/
-/src_prev/
-*.py
-/scripts/
-/stringtie_debug/
+# 6. Specific re-ignores for large data files and artifacts
 *.bam
 *.bam.bai
 *.gtf
@@ -46,16 +47,26 @@ __pycache__/
 *.fasta.fai
 *.fa
 *.fa.fai
+/archive/
+/chr19_stringtie_graphs/
+/chr19_stringtie_supported_gfas/
+/stringtie_debug/
+/test_adaptive*/
+/test_auto_recovery/
+/test_bundle_graph/
+/test_clean/
+/test_compat*/
+/test_final*/
+/test_flow*/
+/test_group_only/
+/test_integrated/
+/test_nofilter/
+/test_revert/
+/test_sensitive/
 /gene_family_detector/
-/target/
 
-# Test data (synthetic gene family for VG mode) — must come after *.bam etc.
-!/test_data/
+# 7. Test data handling (Keep synthetic family, ignore large chr1 subsets)
+/test_data/*
 !/test_data/synthetic_family/
 !/test_data/synthetic_family/**
-
-# Regression test harness (shell + python, no Rust test infra)
-!/tests/
-!/tests/**
-# Keep large real data files out
-/test_data/chr1*
+*.log

@@ -107,6 +107,18 @@ full audit trail.
 
 - **Default baseline on GGO_19**: 1911 tx (zero-width compact on; StringTie
   1839). Parity arc plateau; remaining +72 gap is architectural.
+- **StringTie parity experiment (cross-strand RI)**: StringTie can suppress
+  opposite-strand low-coverage models via `retainedintron()` inside
+  `print_predcluster` (because it clusters both strands together). Rustle runs
+  predcluster per bundle+strand, so this interaction is normally missing.
+  An opt-in post-pass (`RUSTLE_CROSS_STRAND_RI=1`) now applies the same
+  retained-intron predicate across opposite-strand transcripts, gated by a
+  StringTie-style significant-overlap matrix (the `overlaps.get(n1,n2)` gate).
+  On `GGO_19.bam` vs `GGO_19_stringtie.gtf`:
+  - baseline: 1911 query tx, matching tx 1634, transcript-level Sn/Pr 88.9/85.5
+  - with `RUSTLE_CROSS_STRAND_RI=1`: 1856 query tx, matching tx 1627, Sn/Pr 88.5/87.7
+  This fixes the STRG.309-like antisense explosion, but still costs 7 matches,
+  consistent with lingering `pred->cov` (flow-derived coverage) drift at some loci.
 - **Default baseline on GGO KRAB-ZNF chromosome (NC_073244.2)**: StringTie
   3733, Rustle default 3826, Rustle `--vg` 3829. The story is per-locus
   paralog recovery, not whole-chromosome sensitivity.
@@ -201,3 +213,222 @@ python3 docs/figures/make_loc115930085_figs.py
 # view the falsifier story
 less docs/experiments/05_loc115930085_s2_falsifier.md
 ```
+
+## 2026-04-22 trace follow-up: next StringTie deviation after checktrf audit
+
+### What was tested
+
+I added a narrow `checktrf` change in [src/rustle/path_extract.rs](../src/rustle/path_extract.rs)
+so that a failed long-read seed with the same outer boundaries as an already-kept
+path, but a different internal splice pattern, prefers independent rescue over
+immediate redistribution.
+
+Result on `GGO_19.bam` vs `GGO_19_stringtie.gtf`:
+
+- query transcripts: `1911 -> 1915`
+- matching transcripts: `1634 -> 1638`
+- transcript sensitivity / precision: `88.9 / 85.5 -> 89.1 / 85.5`
+
+So the patch appears net-positive and is currently left in place.
+
+### What the STRG.110-class trace showed
+
+The targeted downstream-gene locus did **not** change under that patch.
+The decisive difference is earlier than `best_trf_match`.
+
+StringTie trace (`bundle=22118027-22157884`):
+
+- dominant downstream-gene seeds `idx=4,8,10,11,15,16,18` all hit
+  `back=fail fwd=fail outcome=checktrf`
+- then only a few are rescued:
+  - `t=4` rescued
+  - `t=8` rescued
+  - `t=18` rescued
+  - `t=11`, `t=16` matched afterward
+
+Rustle trace at the analogous locus (`SEED_STATS NC_073243.2:22149137-22155355`):
+
+- `stored=8`, `checktrf_redist=3`, `fwd_fail=1`
+- the dominant downstream-gene seed is stored directly instead of being deferred:
+  - `[TRACE_LOCUS] idx=4 ... -> STORED`
+- this happens because endpoint support is accepted:
+  - `[TRACE_BACK_SOURCE] tf=23 first=0 last=9 ... exact=true accepted=true`
+  - `[TRACE_FWD_SINK] tf=27 first=20 last=21 ... accepted=true`
+
+That is the next major deviation. Rustle is certifying complete downstream-gene
+paths from exact source-edge / sink-edge support transfrags, while StringTie is
+still failing `back_to_source` / `fwd_to_sink` for the same seed family and
+deferring them to `checktrf`.
+
+### Next warranted target
+
+Focus next on `back_to_source_fast_long()` and `fwd_to_sink_fast_long()` in
+[src/rustle/path_extract.rs](../src/rustle/path_extract.rs).
+
+The evidence-backed question is:
+
+- when should exact `source -> first_seed_node` or `last_seed_node -> sink`
+  support be considered sufficient to store a full path immediately?
+
+Current trace evidence says this gate is too permissive for the
+`22152353-22155355` family. The over-permissive endpoint acceptance inflates the
+pre-`checktrf` keep-set, and that in turn makes later `checktrf` redistribution
+look too eager.
+
+### 2026-04-22 checkpoint: disable-checktrf audit
+
+I also ran the traced loci with `RUSTLE_DISABLE_CHECKTRF=1` to isolate the base
+long-recursion behavior from rescue logic.
+
+Key result:
+
+- the `22149137-22155355` / `22152353-22155355` class is already diverging
+  **before** `checktrf`
+- with the broad endpoint-stub experiment enabled, Rustle started sending the
+  dominant downstream-gene seed into `LONGREC_FAIL -> checktrf`, which matches
+  StringTie qualitatively
+- but that experiment was too broad: it also forced many legitimate seeds in
+  the same merged bundle into `checktrf`, increasing this locus from
+  `seeds=17` to `seeds=28`, `fwd_fail=1` to `fwd_fail=14`, and
+  `checktrf_rescued=0` to `checktrf_rescued=8`
+
+Conclusion:
+
+- the endpoint-certification hypothesis is real
+- but the correct fix is **not** to globally reject all 2-node
+  `source -> node` / `node -> sink` stubs
+- the next patch must be narrower and topology-aware, likely only blocking
+  endpoint-only certification when the seed is being pulled across a merged
+  adjacent-gene structure with competing internal children/parents
+
+### 2026-04-22 checkpoint: endpoint-stub gate was real but not yet keepable
+
+I wired trace-only provenance for long-rec endpoint certification:
+
+- `back_used_pure_source_stub`
+- `fwd_used_pure_sink_stub`
+
+and tested a narrow force-`checktrf` experiment for long-read direct paths that
+were certified by pure source/sink stubs.
+
+What held up:
+
+- At the hotspot merged bundle, the target downstream-gene seed did move in the
+  desired direction:
+  - `idx=4` changed from direct store to
+    `LONGREC_FAIL -> checktrf -> RESCUED_INDEP`
+- With `RUSTLE_DISABLE_CHECKTRF=1`, the base long-rec layer moved closer to the
+  intended StringTie shape without increasing hotspot seed count:
+  - previous no-`checktrf` hotspot:
+    `seeds=14`, `stored=8`, `fwd_fail=1`, `unwitnessed=2`
+  - force-`checktrf` hotspot:
+    `seeds=14`, `stored=6`, `fwd_fail=3`, `unwitnessed=1`
+
+What failed:
+
+- The same endpoint-stub gate regressed full `GGO_19` before rescue/depletion
+  parity was fixed.
+- Direction-agnostic asymmetric gating was too broad:
+  - full run: `1946` query tx, `1605` matching tx,
+    transcript-level `87.3 / 82.5`
+- Restricting the gate to the observed hotspot direction
+  (`hardstart=true && hardend=false`) was better but still regressive:
+  - full run: `1923` query tx, `1621` matching tx,
+    transcript-level `88.1 / 84.3`
+- Both variants were worse than the current checked-in baseline and the earlier
+  same-boundary `checktrf` patch.
+
+Decision:
+
+- keep the provenance/trace scaffolding
+- **revert** the force-`checktrf` behavioral gate for now
+- treat this as evidence that endpoint certification is upstream of the hotspot,
+  but that the next actionable parity target is now **seed-failure abundance
+  depletion / rescue-time depletion**, not another broad endpoint gate
+
+Practical implication for the next pass:
+
+- use the endpoint-stub diagnostics only to classify which seeds are suspicious
+- then audit how much abundance those deferred seeds keep, when they are
+  reintroduced, and whether StringTie is depleting or suppressing competing seed
+  families earlier in the same bundle
+
+### 2026-04-22 checkpoint: depletion trace says the hotspot is about residuals, not split count
+
+I added hotspot-only abundance lifecycle tracing in:
+
+- [src/rustle/path_extract.rs](../src/rustle/path_extract.rs)
+- [src/rustle/max_flow.rs](../src/rustle/max_flow.rs)
+
+This traces:
+
+- max-flow depletion on overlapping transfrags
+- `checktrf` matched redistribution
+- independent `checktrf` rescue
+- second-pass redistribution
+
+Hotspot command:
+
+```bash
+RUSTLE_TRACE_LOCUS=22118027-22157884 \
+RUSTLE_SEED_STATS=1 \
+RUSTLE_DEPLETION_DIAG=1 \
+target/release/rustle -L GGO_19.bam -o /tmp/rustle_trace_depletion_audit.gtf \
+  2> /tmp/rustle_trace_depletion_audit.err
+```
+
+Key readout:
+
+- the hotspot still runs in the same baseline branch:
+  `SEED_STATS NC_073243.2:22149137-22155355 strand=+ seeds=17 checktrf_redist=3 fwd_fail=1 skipped_hard_boundary_low_abund=2 skipped_single_exon_from_multinode=1 stored=8 unwitnessed=2`
+- strongly supported direct seeds are being depleted normally:
+  - `idx=7`: `ab_before=8 -> flux=8 -> ab_after=0`
+  - `idx=11`: `ab_before=2 -> flux=2 -> ab_after=0`
+- the suspicious class is different:
+  small deferred seeds keep enough residual abundance to survive until
+  `CHECKTRF_MATCH`, then contribute fractional mass into already-kept paths
+
+Concrete hotspot examples from `/tmp/rustle_trace_depletion_audit.err`:
+
+- `t=10`
+  - deferred by `hard_boundary_low_abund`
+  - reaches `checktrf` with `abund=4.0`
+  - matched only to kept path `3`
+  - all `4.0` is redistributed there
+- `t=12`
+  - deferred by `hard_boundary_low_abund`
+  - reaches `checktrf` with `abund=2.0`
+  - split across kept paths `0` and `2`
+  - redistribution is `1.8711 + 0.1289`
+- `t=19`
+  - deferred by `longrec_fail`
+  - no later max-flow depletion on this transfrag was observed before `checktrf`
+  - reaches `checktrf` still at `abund=1.0`
+  - gets split across four kept paths:
+    `0.7421 + 0.1485 + 0.0387 + 0.0707`
+
+Interpretation:
+
+- for this hotspot, the next deviation does **not** look like a primary
+  bundle-over-segmentation / seed-count problem
+- earlier endpoint-force experiments changed the downstream behavior without
+  increasing hotspot seed count, which already pointed away from "wrong split
+  count" as the main local blocker
+- the stronger current explanation is:
+  **some deferred seeds retain too much residual abundance before
+  `CHECKTRF_GATE`, then get redistributed into multiple kept paths**
+
+What this rules out:
+
+- this is not simply a failure to zero seeds after `checktrf`
+- the new traces show matched and rescued seeds being zeroed correctly after
+  redistribution / rescue
+
+What this points to next:
+
+1. compare which deferred StringTie seeds reach `CHECKTRF_MATCH` with non-zero
+   abundance versus which ones have already been drained to zero by the time
+   the `CHECKTRF_GATE` runs
+2. focus especially on `longrec_fail` residuals like hotspot `t=19`
+3. keep bundle color-break / fragmentation on the list as a separate
+   architectural target, but not as the main explanation for this hotspot

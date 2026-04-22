@@ -13,7 +13,8 @@
 # Exit 0 on pass, 1 on fail. Prints diagnostic summary.
 
 set -u
-REPO=/storage/group/kdm16/default/jxi21/apes_transcriptome_analysis/clusterer
+# Find the repository root relative to the script location
+REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 BAM=$REPO/GGO_19.bam
 REF=$REPO/GGO_19_stringtie.gtf
 RUSTLE=$REPO/target/release/rustle

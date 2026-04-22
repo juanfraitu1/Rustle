@@ -1,0 +1,6 @@
+locus_run	ref_mrnas	query_mrnas	matching_transcripts	transcript_sn_pr	trace_notes
+STRG_151	6	51	6	100.0     |    11.8	no_ref_blockers
+STRG_157	5	21	4	80.0     |    19.0	no_ref_blockers
+STRG_251	6	505	2	33.3     |     0.4	STRG.251.1:not_extracted:junctions_present; STRG.251.2:not_extracted:junctions_present; STRG.251.4:not_extracted:junctions_present; STRG.251.5:not_extracted:junctions_present
+STRG_453	4	43	4	100.0     |     9.3	no_ref_blockers
+STRG_503	5	11	4	80.0     |    36.4	STRG.503.5:eliminate_incomplete_vs_guides
