@@ -9454,6 +9454,86 @@ pub fn run<P: AsRef<Path>>(
                 // which runs before process_transfrags.
                 graph_mut.compute_reachability();
 
+                // StringTie-parity sink/source connector synthesis. Opt-in via
+                // RUSTLE_SINK_CONNECTOR_TF. For each real node N that has sink
+                // as a child but no existing [N, sink] 2-node transfrag,
+                // synthesize one with fallback abundance. This populates
+                // hassink[N] in process_transfrags so chimeric tfs ending at N
+                // SKIP trflong pass 1 (matching StringTie). Analogous sweep
+                // for [source, N] links.
+                if std::env::var_os("RUSTLE_SINK_CONNECTOR_TF").is_some() {
+                    let trace_sc = std::env::var_os("RUSTLE_SINK_CONNECTOR_TRACE").is_some();
+                    // Fallback abundance for synthetic [n, sink] / [source, n] connectors.
+                    // MUST be high enough to survive multi-seed depletion during
+                    // parse_trflong (each seed's long_max_flow can consume abundance).
+                    // Default 25.0 matches StringTie's `tmpcov+trthr` scale in longtrim
+                    // (typical range 25-200 depending on coverage contrast). Lower values
+                    // (1-10) cause the connector to deplete after the first seed, leaving
+                    // subsequent seeds stranded → checktrf rescue → over-emission.
+                    let fallback_abund: f64 = std::env::var("RUSTLE_SINK_CONNECTOR_FALLBACK_ABUND")
+                        .ok()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .unwrap_or(25.0);
+                    let source_id_sc = graph_mut.source_id;
+                    let sink_id_sc = graph_mut.sink_id;
+                    // Record existing 2-node connectors so we don't duplicate.
+                    let mut has_sink_tf: std::collections::HashSet<usize> = Default::default();
+                    let mut has_src_tf: std::collections::HashSet<usize> = Default::default();
+                    for tf in transfrags.iter() {
+                        if tf.node_ids.len() < 2 { continue; }
+                        if tf.node_ids.last().copied() == Some(sink_id_sc) {
+                            has_sink_tf.insert(tf.node_ids[0]);
+                        }
+                        if tf.node_ids[0] == source_id_sc {
+                            has_src_tf.insert(tf.node_ids[1]);
+                        }
+                    }
+                    let mut added_sink = 0usize;
+                    let mut added_src = 0usize;
+                    // Sink sweep: nodes with sink as child.
+                    let sink_candidates: Vec<usize> = (0..graph_mut.nodes.len())
+                        .filter(|&nid| nid != source_id_sc && nid != sink_id_sc)
+                        .filter(|&nid| graph_mut.nodes[nid].children.contains(sink_id_sc))
+                        .filter(|nid| !has_sink_tf.contains(nid))
+                        .collect();
+                    for nid in sink_candidates {
+                        if trace_sc && graph_bundle.start <= 70761097 && graph_bundle.end >= 70637431 {
+                            let n = &graph_mut.nodes[nid];
+                            eprintln!("SINK_CONN_PIPELINE nid={} coord={}-{} abund={:.2}",
+                                nid, n.start, n.end, fallback_abund);
+                        }
+                        let mut tf = GraphTransfrag::new(vec![nid, sink_id_sc], graph_mut.pattern_size());
+                        tf.abundance = fallback_abund;
+                        tf.longread = true;
+                        graph_mut.set_pattern_edges_for_path(&mut tf.pattern, &tf.node_ids);
+                        transfrags.push(tf);
+                        added_sink += 1;
+                    }
+                    // Source sweep: nodes with source as parent.
+                    let src_candidates: Vec<usize> = (0..graph_mut.nodes.len())
+                        .filter(|&nid| nid != source_id_sc && nid != sink_id_sc)
+                        .filter(|&nid| graph_mut.nodes[nid].parents.contains(source_id_sc))
+                        .filter(|nid| !has_src_tf.contains(nid))
+                        .collect();
+                    for nid in src_candidates {
+                        if trace_sc && graph_bundle.start <= 70761097 && graph_bundle.end >= 70637431 {
+                            let n = &graph_mut.nodes[nid];
+                            eprintln!("SRC_CONN_PIPELINE nid={} coord={}-{} abund={:.2}",
+                                nid, n.start, n.end, fallback_abund);
+                        }
+                        let mut tf = GraphTransfrag::new(vec![source_id_sc, nid], graph_mut.pattern_size());
+                        tf.abundance = fallback_abund;
+                        tf.longread = true;
+                        graph_mut.set_pattern_edges_for_path(&mut tf.pattern, &tf.node_ids);
+                        transfrags.push(tf);
+                        added_src += 1;
+                    }
+                    if trace_sc && (added_sink > 0 || added_src > 0) {
+                        eprintln!("SINK_CONN_SUMMARY bundle={}-{} added_sink={} added_src={}",
+                            graph_bundle.start, graph_bundle.end, added_sink, added_src);
+                    }
+                }
+
                 transfrags = process_transfrags(
                     transfrags,
                     &mut graph_mut,
@@ -9619,6 +9699,62 @@ pub fn run<P: AsRef<Path>>(
                     &graph_bpcov_stranded,
                     trace_reference.is_some() || config.debug_stage_tsv.is_some(),
                 );
+                // BUNDLE_STATS per-bundle summary across all layers (RUSTLE_BUNDLE_STATS=1).
+                // Emits one line with: reads, junctions, nodes/edges, transfrags,
+                // seeds, outcome counts. Paired with StringTie PARITY_BUNDLE_STATS
+                // for cross-pipeline layer-by-layer diff.
+                if std::env::var_os("RUSTLE_BUNDLE_STATS").is_some() {
+                    let n_reads = reads.len();
+                    let n_junc = junctions.len();
+                    let n_junc_kept = good_junctions_local.len();
+                    let n_nodes = graph_mut.nodes.len().saturating_sub(2); // exclude source/sink
+                    let mut n_edges = 0usize;
+                    let src_bs = graph_mut.source_id;
+                    let snk_bs = graph_mut.sink_id;
+                    for i in 0..graph_mut.nodes.len() {
+                        if i == src_bs || i == snk_bs { continue; }
+                        for c in graph_mut.nodes[i].children.ones() {
+                            if c == src_bs || c == snk_bs { continue; }
+                            n_edges += 1;
+                        }
+                    }
+                    let n_transfrags = transfrags.len();
+                    let n_seeds = transfrags.iter().filter(|tf| tf.trflong_seed).count();
+                    // Count seed outcomes by type.
+                    use crate::path_extract::SeedOutcome;
+                    let mut n_stored = 0usize;
+                    let mut n_checktrf = 0usize;
+                    let mut n_lowcov = 0usize;
+                    let mut n_back_fail = 0usize;
+                    let mut n_fwd_fail = 0usize;
+                    let mut n_hard_bound = 0usize;
+                    let mut n_unwit = 0usize;
+                    let mut n_zflux = 0usize;
+                    let mut n_other = 0usize;
+                    for (_idx, outcome) in &seed_outcomes {
+                        match outcome {
+                            SeedOutcome::LowCoverage(_) => n_lowcov += 1,
+                            SeedOutcome::BackToSourceFail => n_back_fail += 1,
+                            SeedOutcome::FwdToSinkFail => n_fwd_fail += 1,
+                            SeedOutcome::HardBoundaryMismatch => n_hard_bound += 1,
+                            SeedOutcome::UnwitnessedSplice => n_unwit += 1,
+                            SeedOutcome::ZeroFlux => n_zflux += 1,
+                            SeedOutcome::ChecktrfRescued => n_stored += 1,
+                            SeedOutcome::ChecktrfRescueFail => n_checktrf += 1,
+                            _ => n_other += 1,
+                        }
+                    }
+                    let n_final = txs.len();
+                    eprintln!(
+                        "RUSTLE_BUNDLE_STATS chrom={} bundle={}-{} strand={} n_reads={} n_junc={} n_junc_kept={} n_nodes={} n_edges={} n_transfrags={} n_seeds={} n_stored={} n_checktrf={} n_lowcov={} n_back_fail={} n_fwd_fail={} n_hard_bound={} n_unwit={} n_zflux={} n_other={} n_final={}",
+                        graph_bundle.chrom, graph_bundle.start, graph_bundle.end, graph_bundle.strand,
+                        n_reads, n_junc, n_junc_kept, n_nodes, n_edges,
+                        n_transfrags, n_seeds,
+                        n_stored, n_checktrf, n_lowcov, n_back_fail, n_fwd_fail,
+                        n_hard_bound, n_unwit, n_zflux, n_other,
+                        n_final
+                    );
+                }
                 // Read-chain witness filter: remove transcripts whose intron
                 // chain pairs are not witnessed by any read. This prevents the
                 // flow decomposition from creating novel junction combinations.
@@ -12307,6 +12443,7 @@ pub fn run<P: AsRef<Path>>(
                 &vg_families,
                 &vg_bundle_coords,
                 &vg_em_results,
+                Some(&all_transcripts),
             )?;
             eprintln!("[VG] Wrote family report to {}", report_path.display());
         }

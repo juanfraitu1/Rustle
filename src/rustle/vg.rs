@@ -224,6 +224,34 @@ pub fn build_multimap_index_with_supplementary(
     read_locs
 }
 
+/// Two bundles on the same chromosome with nearly-identical coords but
+/// opposite strands are strand-mirror artifacts of Rustle's per-strand
+/// bundling. They are NOT biological paralogs, and linking them creates
+/// spurious "families" that dominate the family report. Filter them out
+/// before union-find merges connected components.
+fn is_strand_mirror(b1: &Bundle, b2: &Bundle) -> bool {
+    if b1.chrom != b2.chrom {
+        return false;
+    }
+    // Opposite strands only: '+' vs '-'. If either is unknown ('.'), not a mirror.
+    let opp = (b1.strand == '+' && b2.strand == '-')
+        || (b1.strand == '-' && b2.strand == '+');
+    if !opp {
+        return false;
+    }
+    // High coordinate overlap (≥90% of the smaller bundle).
+    let lo = b1.start.max(b2.start);
+    let hi = b1.end.min(b2.end);
+    if hi <= lo {
+        return false;
+    }
+    let overlap = (hi - lo) as f64;
+    let l1 = (b1.end.saturating_sub(b1.start)) as f64;
+    let l2 = (b2.end.saturating_sub(b2.start)) as f64;
+    let smaller = l1.min(l2).max(1.0);
+    overlap / smaller >= 0.90
+}
+
 /// Discover family groups from multi-mapping read patterns.
 ///
 /// Two bundles are linked if they share at least `min_shared_reads` multi-mapping
@@ -254,6 +282,7 @@ pub fn discover_family_groups(
     // Build bundle-pair link counts.
     let n_bundles = bundles.len();
     let mut link_counts: HashMap<(usize, usize), usize> = HashMap::new();
+    let mut skipped_mirror_pairs = 0usize;
     for locs in multimap_index.values() {
         // Collect unique bundle indices for this read.
         let mut bundle_set: Vec<usize> = locs.iter().map(|(bi, _)| *bi).collect();
@@ -262,10 +291,24 @@ pub fn discover_family_groups(
         // Create pairwise links.
         for i in 0..bundle_set.len() {
             for j in (i + 1)..bundle_set.len() {
-                let key = (bundle_set[i], bundle_set[j]);
+                let bi = bundle_set[i];
+                let bj = bundle_set[j];
+                // Skip strand-mirror pairs (same-coord opposite-strand bundles
+                // are per-strand bundling artifacts, not biological paralogs).
+                if is_strand_mirror(&bundles[bi], &bundles[bj]) {
+                    skipped_mirror_pairs += 1;
+                    continue;
+                }
+                let key = (bi, bj);
                 *link_counts.entry(key).or_insert(0) += 1;
             }
         }
+    }
+    if skipped_mirror_pairs > 0 && std::env::var_os("RUSTLE_VG_TRACE").is_some() {
+        eprintln!(
+            "[VG] Skipped {} strand-mirror bundle pairs from family linking",
+            skipped_mirror_pairs
+        );
     }
 
     // Union-Find for connected components.
@@ -300,7 +343,11 @@ pub fn discover_family_groups(
         }
     }
     // Also link bundles with high exonic sequence similarity.
+    // Same strand-mirror filter as above.
     for &(a, b) in &seq_links {
+        if is_strand_mirror(&bundles[a], &bundles[b]) {
+            continue;
+        }
         union(&mut parent, &mut rank, a, b);
     }
 
@@ -1152,28 +1199,51 @@ fn run_pre_assembly_em_inner(
 }
 
 /// Write family report with EM results (uses pre-saved coords since bundles are consumed).
+///
+/// `transcripts` (optional): when provided, each bundle's reported region is
+/// refined by clustering emitted transcripts within the bundle into gene-like
+/// sub-loci (default gap = 5kb). A 430kb Rustle bundle that contains 5 separate
+/// ZNF genes will report 5 per-gene regions instead of one mega-bundle span.
+/// Tune the gap via env `RUSTLE_VG_REPORT_GAP` (bp).
 pub fn write_family_report_with_em(
     path: &std::path::Path,
     families: &[FamilyGroup],
     bundle_coords: &[(String, u64, u64, char)],
     em_results: &[EmResult],
+    transcripts: Option<&[crate::path_extract::Transcript]>,
 ) -> std::io::Result<()> {
     use std::io::Write;
+    let gene_gap: u64 = std::env::var("RUSTLE_VG_REPORT_GAP")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5_000);
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
     writeln!(
         f,
-        "family_id\tn_copies\tchrom\tregions\tn_shared_reads\tem_iterations\tem_converged\tem_delta\treads_reweighted"
+        "family_id\tn_copies\tchrom\tregions\tn_shared_reads\tem_iterations\tem_converged\tem_delta\treads_reweighted\tn_gene_loci"
     )?;
     for (fi, family) in families.iter().enumerate() {
-        let regions: Vec<String> = family
-            .bundle_indices
-            .iter()
-            .filter_map(|&bi| {
-                bundle_coords
-                    .get(bi)
-                    .map(|(c, s, e, st)| format!("{}:{}-{}:{}", c, s, e, st))
-            })
-            .collect();
+        let mut refined_regions: Vec<String> = Vec::new();
+        let mut refined_gene_count = 0usize;
+        for &bi in &family.bundle_indices {
+            let (chrom, bs, be, strand) = match bundle_coords.get(bi) {
+                Some(c) => (c.0.as_str(), c.1, c.2, c.3),
+                None => continue,
+            };
+            let sub = match transcripts {
+                Some(txs) => refine_bundle_into_gene_loci(txs, chrom, bs, be, strand, gene_gap),
+                None => Vec::new(),
+            };
+            if sub.is_empty() {
+                refined_regions.push(format!("{}:{}-{}:{}", chrom, bs, be, strand));
+                refined_gene_count += 1;
+            } else {
+                for (s, e) in &sub {
+                    refined_regions.push(format!("{}:{}-{}:{}", chrom, s, e, strand));
+                }
+                refined_gene_count += sub.len();
+            }
+        }
         let chrom = bundle_coords
             .get(*family.bundle_indices.first().unwrap_or(&0))
             .map(|(c, _, _, _)| c.as_str())
@@ -1181,19 +1251,63 @@ pub fn write_family_report_with_em(
         let em = em_results.get(fi).cloned().unwrap_or_default();
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{}",
             family.family_id,
             family.bundle_indices.len(),
             chrom,
-            regions.join(";"),
+            refined_regions.join(";"),
             family.multimap_reads.len(),
             em.iterations,
             em.converged,
             em.max_delta,
             em.reads_reweighted,
+            refined_gene_count,
         )?;
     }
     Ok(())
+}
+
+/// Cluster transcripts overlapping `(chrom, bundle_start, bundle_end)` on matching
+/// strand into gene-like sub-loci, separated by gaps ≥ `gap` bp.
+/// Returns `Vec<(start, end)>` per sub-locus. If no transcripts overlap, returns empty.
+fn refine_bundle_into_gene_loci(
+    transcripts: &[crate::path_extract::Transcript],
+    chrom: &str,
+    bstart: u64,
+    bend: u64,
+    strand: char,
+    gap: u64,
+) -> Vec<(u64, u64)> {
+    let mut ranges: Vec<(u64, u64)> = transcripts
+        .iter()
+        .filter(|t| t.chrom == chrom && t.strand == strand)
+        .filter_map(|t| {
+            let ts = t.exons.first().map(|e| e.0).unwrap_or(0);
+            let te = t.exons.last().map(|e| e.1).unwrap_or(0);
+            if te >= bstart && ts <= bend {
+                Some((ts, te))
+            } else {
+                None
+            }
+        })
+        .collect();
+    if ranges.is_empty() {
+        return Vec::new();
+    }
+    ranges.sort_unstable();
+    let mut clusters: Vec<(u64, u64)> = Vec::new();
+    let (mut cs, mut ce) = ranges[0];
+    for &(s, e) in &ranges[1..] {
+        if s > ce + gap {
+            clusters.push((cs, ce));
+            cs = s;
+            ce = e;
+        } else if e > ce {
+            ce = e;
+        }
+    }
+    clusters.push((cs, ce));
+    clusters
 }
 
 // ── Novel copy discovery (Phase 3) ──────────────────────────────────────────
