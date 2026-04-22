@@ -836,6 +836,12 @@ fn coalesce_weak_alt_junctions<'a>(
         .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
     let min_ratio: f64 = std::env::var("RUSTLE_ALT_JUNC_MIN_RATIO")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    // Require minimum number of siblings (donors at same acceptor, or acceptors
+    // at same donor) before demotion fires. STRG.309 class has 3-4+ siblings;
+    // isolated alt-donor pairs are usually legitimate. Default 2 preserves prior
+    // behavior; tuning to 3 targets the combinatorial-explosion pattern.
+    let min_siblings: usize = std::env::var("RUSTLE_ALT_JUNC_MIN_SIBLINGS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     let debug = std::env::var_os("RUSTLE_ALT_JUNC_DEBUG").is_some();
 
     // Helper: get read support (mrcount) for a junction; 0 if no stats.
@@ -852,7 +858,7 @@ fn coalesce_weak_alt_junctions<'a>(
     // Demote set: junctions to remove.
     let mut demoted: std::collections::HashSet<(u64, u64)> = Default::default();
     for (_acceptor, siblings) in &by_acceptor {
-        if siblings.len() < 2 { continue; }
+        if siblings.len() < min_siblings { continue; }
         // Find max-read canonical
         let canon = siblings.iter().copied().max_by(|a, b| {
             reads_of(a).partial_cmp(&reads_of(b))
@@ -884,7 +890,7 @@ fn coalesce_weak_alt_junctions<'a>(
         by_donor.entry(j.donor).or_default().push(j);
     }
     for (_donor, siblings) in &by_donor {
-        if siblings.len() < 2 { continue; }
+        if siblings.len() < min_siblings { continue; }
         let canon = siblings.iter().copied().max_by(|a, b| {
             reads_of(a).partial_cmp(&reads_of(b))
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -1240,8 +1246,10 @@ pub fn create_graph(
     junction_stats: Option<&JunctionStats>,
     bpcov: Option<&Bpcov>,
 ) -> Graph {
+    let mut _sink_futuretr: Vec<(usize, f64)> = Vec::new();
     create_graph_inner(junctions, _bundle_start, bundle_end, bundlenodes,
-        junction_support, _reads, bundle_strand, junction_stats, bpcov, None, &[], &[])
+        junction_support, _reads, bundle_strand, junction_stats, bpcov, None, &[], &[],
+        &mut _sink_futuretr)
 }
 
 fn create_graph_inner(
@@ -1257,6 +1265,7 @@ fn create_graph_inner(
     bpcov_stranded: Option<&BpcovStranded>,
     lstart: &[ReadBoundary],
     lend: &[ReadBoundary],
+    sink_futuretr_out: &mut Vec<(usize, f64)>,
 ) -> Graph {
     let mut graph = Graph::new();
     let trace_s = trace_strand_index(bundle_strand);
@@ -1313,6 +1322,7 @@ fn create_graph_inner(
     let mut ends: HashMap<u64, Vec<usize>> = Default::default();
 
     let mut sink_parents: Vec<usize> = Vec::new();
+    let sink_futuretr: &mut Vec<(usize, f64)> = sink_futuretr_out;
     let mut bnode_opt = bundlenodes;
     while let Some(bn) = bnode_opt {
         let currentstart = bn.start;
@@ -1443,6 +1453,7 @@ fn create_graph_inner(
                         _bundle_start, nodeend,
                         has_junction_start, has_junction_end, source_bid,
                         &mut sink_parents,
+                        sink_futuretr,
                     );
                 }
             }
@@ -1727,6 +1738,7 @@ fn create_graph_inner(
                     _bundle_start, endbundle,
                     true, true, source_bid,
                     &mut sink_parents,
+                    sink_futuretr,
                 );
             }
         }
@@ -2094,6 +2106,12 @@ fn longtrim_inline(
     endcov: bool,   // true if junction exists at nodeend
     source_bid: usize,
     sink_parents: &mut Vec<usize>,
+    // Sink-connector futuretr: (prev_node, tmpcov) entries for synthetic 2-node
+    // [prev, sink] transfrags. StringTie creates these inside its longtrim()
+    // via futuretr with n2=-1; they populate hassink[prev] and make the
+    // terminal node "complete" at trflong.Add time so chimeric tfs ending at
+    // this node SKIP pass 1 (matching StringTie behavior).
+    sink_futuretr: &mut Vec<(usize, f64)>,
 ) {
     const CHI_THR: i64 = 50;
     const DROP: f64 = 0.5;
@@ -2202,6 +2220,14 @@ fn longtrim_inline(
                     if std::env::var_os("RUSTLE_NO_LSTART_SINK").is_none() {
                         graph.nodes[prev_id].hardend = true;
                         sink_parents.push(prev_id);
+                        // Record synthetic [prev_id, sink] connector for
+                        // post-graph transfrag materialization. Mirrors
+                        // StringTie longtrim() futuretr with n2=-1. Gated by
+                        // RUSTLE_SINK_CONNECTOR_TF (opt-in) — StringTie parity
+                        // candidate; validation pending.
+                        if std::env::var_os("RUSTLE_SINK_CONNECTOR_TF").is_some() {
+                            sink_futuretr.push((prev_id, tmpcov));
+                        }
                     }
                     *graphnode_id = new_id;
                 }
@@ -2244,7 +2270,13 @@ fn longtrim_inline(
                     // Prev → new (contiguous)
                     graph.add_edge(*graphnode_id, new_id);
                     // Prev → sink (hardend)
-                    sink_parents.push(*graphnode_id);
+                    let prev_for_sink = *graphnode_id;
+                    sink_parents.push(prev_for_sink);
+                    // Record synthetic [prev, sink] connector for lend event.
+                    // Same rationale as lstart branch above.
+                    if std::env::var_os("RUSTLE_SINK_CONNECTOR_TF").is_some() {
+                        sink_futuretr.push((prev_for_sink, tmpcov));
+                    }
                     *graphnode_id = new_id;
                 }
             }
@@ -2307,6 +2339,7 @@ pub fn create_graph_with_longtrim(
     } else {
         (&[] as &[ReadBoundary], &[] as &[ReadBoundary])
     };
+    let mut sink_futuretr: Vec<(usize, f64)> = Vec::new();
     let mut graph = create_graph_inner(
         junctions,
         bundle_start,
@@ -2320,7 +2353,58 @@ pub fn create_graph_with_longtrim(
         bpcov_stranded,
         lt_starts,
         lt_ends,
+        &mut sink_futuretr,
     );
+
+    // Zero-width node compaction (DEFAULT-ON): junction events at shared
+    // donor/acceptor coords leave `[X, X)` empty nodes. Treat them as transparent
+    // via transitive closure — for every path u→[zw*]→v, add direct edge u→v.
+    // Reduces graph node count ~1300 / edges ~4500 globally on GGO_19. Net +12
+    // fewer novel chains, -3 valid chains (20% FP rate, far below the 40-60% FP
+    // rate of generic filters).
+    // Opt-out: RUSTLE_COMPACT_ZW_NODES_OFF=1.
+    //
+    // Extension (opt-in): RUSTLE_COMPACT_PASS_THROUGH=1 also merges pass-through
+    // nodes (exactly one contiguous parent + one contiguous child, non-source/sink)
+    // via the same transitive-closure approach. Addresses remaining non-zw
+    // over-segmentation at ~6,500 nodes globally.
+    if std::env::var_os("RUSTLE_COMPACT_ZW_NODES_OFF").is_none() {
+        let include_pt = std::env::var_os("RUSTLE_COMPACT_PASS_THROUGH").is_some();
+        let removed = graph.compact_transparent_nodes(include_pt);
+        if std::env::var_os("RUSTLE_COMPACT_ZW_NODES_TRACE").is_some() && removed > 0 {
+            eprintln!(
+                "COMPACT_ZW bundle={}-{} strand={} removed={} remaining_nodes={} pass_through={}",
+                bundle_start, bundle_end, bundle_strand, removed, graph.n_nodes, include_pt
+            );
+        }
+    }
+
+    // Proper chain-compression pass (opt-in via RUSTLE_COMPACT_CHAIN=1).
+    // Extends head-node coord to absorb downstream pass-through members.
+    //
+    // EXPERIMENTAL — DO NOT ENABLE. Measured on GGO_19: removes 1219 nodes
+    // across 351 bundles but regresses catastrophically:
+    //   matching tx 1637 → 729 (-908)
+    //   transcript F1  87 → 36
+    //   base sens 94.3% → 82.5%
+    // Filter excludes source/sink/hardstart/hardend/longtrim_cov>0 nodes,
+    // but the surviving pass-throughs (exon-interior segments created by
+    // junction events elsewhere in the locus) still carry signal that the
+    // downstream pipeline (pathpat compatibility, seed selection, flow
+    // path enumeration) depends on. Merging them yields a more permissive
+    // graph with many more emitted paths, most novel/spurious.
+    //
+    // Kept for future investigation: the right approach would require
+    // simultaneous recalibration of downstream pathpat heuristics.
+    if std::env::var_os("RUSTLE_COMPACT_CHAIN").is_some() {
+        let removed = graph.compact_chain_pass_through();
+        if std::env::var_os("RUSTLE_COMPACT_CHAIN_TRACE").is_some() && removed > 0 {
+            eprintln!(
+                "COMPACT_CHAIN bundle={}-{} strand={} removed={} remaining_nodes={}",
+                bundle_start, bundle_end, bundle_strand, removed, graph.n_nodes
+            );
+        }
+    }
 
     let mut stats = CreateGraphLongtrimStats {
         lstart_events: lstart.len(),
@@ -2328,6 +2412,14 @@ pub fn create_graph_with_longtrim(
         ..Default::default()
     };
     let mut synthetic: Vec<GraphTransfrag> = Vec::new();
+
+    // NOTE: sink-connector synthesis moved to pipeline.rs, just before
+    // process_transfrags runs. Graph node IDs can be remapped by post-
+    // create_graph steps (prune/split/redirect), which would invalidate
+    // [n, sink] connectors created here. See `synthesize_sink_connectors` in
+    // pipeline.rs for the active implementation. sink_futuretr still collected
+    // here for future reference (e.g. to seed abundance) but not materialized.
+    let _ = (&sink_futuretr, bundle_strand, bundle_start, bundle_end);
 
     if enable_longtrim {
         // the original algorithm's longtrim uses only chi-square coverage-based boundary detection
