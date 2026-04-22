@@ -1477,9 +1477,39 @@ fn retainedintron_like(
     if a.exons.len() < 2 || b.exons.is_empty() {
         return false;
     }
+    let trace_ri = std::env::var_os("RUSTLE_RI_TRACE").is_some()
+        && tx_in_trace_locus(a)
+        && tx_in_trace_locus(b);
+    // StringTie-parity (tightened for end-RI): the vanilla RI-filter threshold
+    // (ERROR_PERC=0.1) lets tx with cov 10-35% of parent survive. At STRG.371,
+    // 4 novel merged-last-exon chains (cov 2-3.5 vs parent 14) escape because
+    // 3.5 > 1.4 (= 0.1 * 14). Rustle's flow emits these RI chains that StringTie
+    // doesn't generate in the first place. A stricter fraction for END-retained-
+    // intron (where n2's merged exon IS the last exon — clear end-RI signal)
+    // catches these without affecting middle-RI which already kills regardless.
+    // Opt-out: RUSTLE_END_RI_STRICT_OFF=1. Tune via RUSTLE_END_RI_FRAC (default 0.5).
+    let end_ri_strict = std::env::var_os("RUSTLE_END_RI_STRICT_OFF").is_none();
+    let end_ri_frac: f64 = std::env::var("RUSTLE_END_RI_FRAC")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.5);
+    if trace_ri {
+        let a_low: Vec<u8> = lowintron
+            .get(n1)
+            .map(|v| v.iter().map(|&b| if b { 1 } else { 0 }).collect())
+            .unwrap_or_default();
+        eprintln!(
+            "[RI_ENTER] n1={} n1_exons={} n1_cov={:.4} n1_low={:?} n2={} n2_exons={} n2_cov={:.4} frac={:.4} threshold={:.4}",
+            n1, a.exons.len(), a.coverage, a_low,
+            n2, b.exons.len(), b.coverage, frac, frac * a.coverage
+        );
+    }
     let mut j = 0usize;
     for i in 1..a.exons.len() {
         if j > b.exons.len().saturating_sub(1) {
+            if trace_ri {
+                eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=j_gt_exons", n1, n2);
+            }
             return false;
         }
         if !lowintron
@@ -1490,29 +1520,62 @@ fn retainedintron_like(
         {
             continue;
         }
+        if trace_ri {
+            eprintln!(
+                "[RI_CHECK] n1={} n2={} i={} j={} lowintron_set=1 n1_intron={}-{} n2_exon={}-{}",
+                n1, n2, i, j,
+                a.exons[i - 1].1, a.exons[i].0,
+                b.exons[j].0, b.exons[j].1
+            );
+        }
+        // End-RI (n2's last exon overlaps and extends into n1's intron).
+        // Use stricter frac (end_ri_frac=0.5 default) since StringTie's flow
+        // doesn't emit these merged-last-exon variants at all — Rustle over-emits.
+        let last_exon_frac = if end_ri_strict { end_ri_frac } else { frac };
         if j == b.exons.len() - 1
-            && b.coverage < frac * a.coverage
+            && b.coverage < last_exon_frac * a.coverage
             && b.exons[j].0 < a.exons[i - 1].1
         {
+            if trace_ri {
+                eprintln!("[RI_RESULT] n1={} n2={} result=1 reason=last_exon j={} last_exon_frac={:.4}", n1, n2, j, last_exon_frac);
+            }
             return true;
         }
-        // uses inclusive exon ends:
-        //   b.end < a.next.start  <=>  b.end_exclusive <= a.next.start
-        //   b.start <= a.prev.end <=>  b.start < a.prev.end_exclusive
         while j < b.exons.len() && b.exons[j].1 <= a.exons[i].0 {
             j += 1;
         }
         if j == 0 && b.coverage < frac * a.coverage {
+            if trace_ri {
+                eprintln!("[RI_RESULT] n1={} n2={} result=1 reason=first_exon j=0", n1, n2);
+            }
             return true;
         }
         if j < b.exons.len() && b.exons[j].0 < a.exons[i - 1].1 {
             if j > 0 && j < b.exons.len() - 1 {
+                if trace_ri {
+                    eprintln!("[RI_RESULT] n1={} n2={} result=2 reason=middle_exon i={} j={}", n1, n2, i, j);
+                }
                 return true;
             }
-            if b.coverage < frac * a.coverage {
+            // End-of-chain exon overlap: use stricter end_ri_frac so Rustle's
+            // over-emitted merged-last-exon variants get killed.
+            let overlap_frac = if end_ri_strict && j == b.exons.len() - 1 {
+                end_ri_frac
+            } else {
+                frac
+            };
+            if b.coverage < overlap_frac * a.coverage {
+                if trace_ri {
+                    eprintln!("[RI_RESULT] n1={} n2={} result=1 reason=exon_overlap i={} j={} frac={:.4}", n1, n2, i, j, overlap_frac);
+                }
                 return true;
+            } else if trace_ri {
+                eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=overlap_but_cov_too_high i={} j={} n2_cov={:.4} thr={:.4}", n1, n2, i, j, b.coverage, overlap_frac * a.coverage);
             }
         }
+    }
+    if trace_ri {
+        eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=no_lowintron_match", n1, n2);
     }
     false
 }

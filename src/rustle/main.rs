@@ -424,6 +424,9 @@ fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
 pub fn run_cli() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // Emit StringTie-exact banner if RUSTLE_STRINGTIE_EXACT=1.
+    rustle::stringtie_parity::maybe_emit_banner();
+
     let output = args
         .output
         .as_deref()

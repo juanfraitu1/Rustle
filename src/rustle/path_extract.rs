@@ -1358,6 +1358,25 @@ pub fn collect_path(
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
     let mut exons: Vec<(u64, u64)> = Vec::new();
+    // StringTie-parity: skip contiguous trailing micro-nodes (< MICRO_NODE_CAP bp)
+    // that only extend the last exon's end. These are longtrim-derived artifacts:
+    // Rustle creates 10bp nodes (e.g., 70744124-70744134 at STRG.398) when reads
+    // extend slightly past the canonical exon end. StringTie's graph snaps the
+    // read endpoint to the canonical exon boundary and doesn't preserve the tail.
+    // Matching that behavior reduces alt-boundary over-emission.
+    //
+    // Only skip micro-nodes when:
+    //   - width < MICRO_NODE_CAP
+    //   - contiguous with the previous path node (would merge into last exon)
+    //   - NOT the first real exon (so we don't drop a legit tiny terminal exon)
+    //
+    // Opt-out: RUSTLE_MICRO_NODE_TRIM_OFF=1. Default cap: 20bp (StringTie's longintronanchor=25bp).
+    let micro_trim = std::env::var_os("RUSTLE_MICRO_NODE_TRIM_OFF").is_none();
+    let micro_cap: u64 = std::env::var("RUSTLE_MICRO_NODE_CAP")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20);
+    let mut prev_real_end: Option<u64> = None;
     for (_i, &nid) in path.iter().enumerate() {
         if nid == source_id || nid == sink_id {
             continue;
@@ -1370,14 +1389,26 @@ pub fn collect_path(
             continue;
         }
         let (node_start, node_end) = (node.start, node.end);
+        let node_width = node_end.saturating_sub(node_start);
+        if micro_trim
+            && node_width < micro_cap
+            && !exons.is_empty()
+            && prev_real_end.map_or(false, |pe| pe == node_start)
+        {
+            // Contiguous micro-node tail: skip entirely. Last exon keeps prev_real_end.
+            // This mirrors StringTie's behavior of not preserving the 10bp extension.
+            continue;
+        }
         if let Some(last) = exons.last() {
             if node_start <= last.1 {
                 let last = exons.last_mut().unwrap();
                 last.1 = last.1.max(node_end);
+                prev_real_end = Some(last.1);
                 continue;
             }
         }
         exons.push((node_start, node_end));
+        prev_real_end = Some(node_end);
     }
     if exons.is_empty() {
         return exons;
@@ -2950,11 +2981,19 @@ fn rebuild_flow_pathpat(path: &[usize], seed_pattern: &GBitVec, graph: &Graph) -
 }
 
 fn tf_weak(tf: &GraphTransfrag, graph: &Graph, nodecov: &[f64]) -> bool {
-    // reuses `transfrag->weak` both for absorbed/grouped members set during
-    // process_transfrags and for lazily computed coverage-weakness in
-    // replace_transfrag/compute_weak. Rust stores the grouping marker eagerly in
-    // `tf.weak`, so helper selection must honor it before the coverage-based test.
-    if tf.weak != 0 {
+    // StringTie-parity (rlink.cpp:compute_weak): `weak` semantics should be ONLY
+    // about cov-drop between adjacent-coord nodes. StringTie does not mark
+    // absorbed tfs as weak. Rustle's `tf.weak` field historically did double duty
+    // (absorbed + cov-drop); honoring the absorbed marker in replace_tmax caused
+    // STRG.398-class divergence — tf=8 (abund=6, 14 nodes, ends at seed_max) lost
+    // to tf=42 (abund=1, 15 nodes, extends past) because tf=8 was marked
+    // weak-due-to-absorption rather than cov-drop.
+    //
+    // `tf.coverage_weak` is the dedicated cov-drop flag set in nodecov.rs.
+    // Honor only that plus the lazy on-the-fly cov-drop check below. Opt-in
+    // RUSTLE_TF_WEAK_ABSORBED=1 restores the prior dual-semantics behavior for
+    // regression testing.
+    if std::env::var_os("RUSTLE_TF_WEAK_ABSORBED").is_some() && tf.weak != 0 {
         return true;
     }
     if tf.coverage_weak {
@@ -3135,12 +3174,20 @@ fn onpath_long(
                 return false;
             }
         } else {
-            // compare based on genomic coordinates, not node IDs
+            // StringTie's onpath_long (rlink.cpp:7979) is strict:
+            //   `if(trnode.Last()>maxp) return false;`
+            // Rustle's default adds a `!node_can_reach(maxp, trnode_last)` relaxation
+            // that lets tfs past maxp pass if still reachable. In RUSTLE_STRINGTIE_EXACT
+            // mode, match StringTie's strict behavior.
             let trnode_last = *trnode.last().unwrap();
             let trnode_last_start = graph.nodes.get(trnode_last).map(|n| n.start).unwrap_or(0);
             let maxp_start = graph.nodes.get(maxp).map(|n| n.start).unwrap_or(0);
-            if trnode_last_start > maxp_start && !node_can_reach(graph, maxp, trnode_last) {
-                return false;
+            if trnode_last_start > maxp_start {
+                if crate::stringtie_parity::stringtie_exact()
+                    || !node_can_reach(graph, maxp, trnode_last)
+                {
+                    return false;
+                }
             }
         }
     }
@@ -3715,17 +3762,13 @@ fn fwd_to_sink_fast_long(
     let i_coord = graph.nodes.get(i).map(|n| n.start).unwrap_or(0);
     let mut reach = maxpath_coord <= i_coord;
 
-    // Significantly past the seed's maxpath: only follow children already on the
-    // seed's pattern. This prevents chimeric extension through bridging nodes into
-    // adjacent genes while still allowing 1-2 exon terminal extensions.
-    // A seed at maxpath_coord is allowed to extend through children up to a
-    // reasonable distance (50kb = one intron gap). Beyond that, new exploration
-    // is blocked — only pathpat children are accepted.
-    // When we've reached or passed the seed's maxpath, restrict exploration to
-    // only children already on the seed's pathpat. This prevents fwd_to_sink from
-    // extending the path into adjacent genes through bridging nodes.
-    // Allow one node of slack (maxpath itself may need to connect to sink).
-    let past_seed = i_coord > maxpath_coord;
+    // Rustle-specific past_seed gate: restrict fwd exploration to pathpat-children
+    // once we've reached or passed the seed's maxpath. Prevents chimeric extension
+    // into adjacent genes via bridging nodes. StringTie has no equivalent gate
+    // (rlink.cpp:fwd_to_sink_fast_long relies on reach/childpat checks only).
+    // Disabled in RUSTLE_STRINGTIE_EXACT mode.
+    let past_seed = !crate::stringtie_parity::stringtie_exact()
+        && i_coord > maxpath_coord;
 
     // Fast-path, but only if `i+1` is an actual child edge. Node IDs are not guaranteed
     // coordinate-ordered, so we must not select `i+1` unless it is explicitly present in children.
@@ -4205,7 +4248,25 @@ fn fwd_to_sink_fast_long(
     pathpat.set_bit(c);
     edge_set(pathpat, graph, i, c, true);
     if let Some(t) = tmax {
+        // StringTie-parity PATHPAT_OR trace (opt-in RUSTLE_PATHPAT_OR_TRACE=1):
+        // Emit `PATHPAT_OR t=N bits_before=X bits_after=Y new_bits=Z reason=fwd_tmax`
+        // to match StringTie's rlink.cpp:8422 format for side-by-side comparison.
+        // Gated by the same locus/seed filters as [TRACE_FWD] via `trace_fwd`.
+        let trace_or = std::env::var_os("RUSTLE_PATHPAT_OR_TRACE").is_some() && trace_fwd;
+        let bits_before = if trace_or { pathpat.count_ones() } else { 0 };
         pathpat.or_assign(&transfrags[t].pattern);
+        if trace_or {
+            let bits_after = pathpat.count_ones();
+            let last_node = transfrags[t].node_ids.last().copied().unwrap_or(0);
+            let last_coord = graph.nodes.get(last_node).map(|n| (n.start, n.end)).unwrap_or((0, 0));
+            eprintln!(
+                "PATHPAT_OR seed={} t={} i={} bits_before={} bits_after={} new_bits={} tf_last={} tf_last_coord={}-{} abund={:.2} reason=fwd_tmax",
+                seed_idx, t, i, bits_before, bits_after,
+                bits_after.saturating_sub(bits_before),
+                last_node, last_coord.0, last_coord.1,
+                transfrags[t].abundance
+            );
+        }
         // node IDs are coordinate-ordered; in Rust, explicitly
         // maintain min/max path endpoints by coordinate to match semantics.
         if let Some(&first) = transfrags[t].node_ids.first() {
@@ -4466,6 +4527,13 @@ fn back_to_source_fast_long(
                         }
                         continue;
                     }
+                    // Skip chimeric tfs that extend past seed's original maxpath
+                    // during back_to_source (opt-in RUSTLE_BACK_SKIP_PAST_SEED_MAX=1).
+                    // Target: STRG.398 pattern where a single-read chimeric tf
+                    // (tf=42, 15 nodes, abund=1) spans from pre-seed node 10 to
+                    // node 48 past seed's maxp=46. Absorbing it in back_tmax extends
+                    // pathpat to include edge 46→48, derailing fwd extension
+                    // (project_stringtie_parity_audit Layer 2).
                     let Some((first, last)) = first_last_raw(tf) else {
                         continue;
                     };
@@ -4864,7 +4932,27 @@ fn back_to_source_fast_long(
                 coords
             );
         }
+        // StringTie-parity PATHPAT_OR trace (opt-in RUSTLE_PATHPAT_OR_TRACE=1):
+        // `PATHPAT_OR seed=S t=N bits_before=X bits_after=Y new_bits=Z reason=back_tmax`
+        let trace_or = std::env::var_os("RUSTLE_PATHPAT_OR_TRACE").is_some() && trace_back;
+        let bits_before = if trace_or { pathpat.count_ones() } else { 0 };
         pathpat.or_assign(&transfrags[t].pattern);
+        if trace_or {
+            let bits_after = pathpat.count_ones();
+            let first_node = transfrags[t].node_ids.first().copied().unwrap_or(0);
+            let last_node = transfrags[t].node_ids.last().copied().unwrap_or(0);
+            let first_coord = graph.nodes.get(first_node).map(|n| (n.start, n.end)).unwrap_or((0, 0));
+            let last_coord = graph.nodes.get(last_node).map(|n| (n.start, n.end)).unwrap_or((0, 0));
+            eprintln!(
+                "PATHPAT_OR seed={} t={} i={} bits_before={} bits_after={} new_bits={} tf_first={} ({}-{}) tf_last={} ({}-{}) abund={:.2} nodes={} reason=back_tmax",
+                seed_idx, t, i, bits_before, bits_after,
+                bits_after.saturating_sub(bits_before),
+                first_node, first_coord.0, first_coord.1,
+                last_node, last_coord.0, last_coord.1,
+                transfrags[t].abundance,
+                transfrags[t].node_ids.len()
+            );
+        }
         // Keep min/max endpoints in coordinate space to match node-id ordering.
         if let Some(&first) = transfrags[t].node_ids.first() {
             if node_start_or_zero(graph, first) < node_start_or_zero(graph, *minpath) {
@@ -6330,7 +6418,21 @@ pub fn extract_transcripts(
             }
         }
 
-        // Build exons from path[use_start..=use_last], merging contiguous nodes
+        // Build exons from path[use_start..=use_last], merging contiguous nodes.
+        // StringTie-parity: strip trailing contiguous micro-nodes (< MICRO_NODE_CAP bp)
+        // that only extend the exon end. Rustle's longtrim creates 10bp tail nodes
+        // (e.g. 70744124-70744134 at STRG.398) from read-endpoint splits; StringTie
+        // snaps read ends to the canonical exon boundary. Opt-out via
+        // RUSTLE_MICRO_NODE_TRIM_OFF=1.
+        //
+        // NOTE: leading-side trim was attempted for STRG.371's 4bp start shift
+        // (59394487 vs 59394483) but didn't help — the STRG.371 8 extras are
+        // structural alt-exon differences, not boundary shifts. Reverted.
+        let micro_trim = std::env::var_os("RUSTLE_MICRO_NODE_TRIM_OFF").is_none();
+        let micro_cap: u64 = std::env::var("RUSTLE_MICRO_NODE_CAP")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(20);
         let mut exons: Vec<(u64, u64)> = Vec::new();
         let mut j = use_start;
         while j <= use_last {
@@ -6342,16 +6444,42 @@ pub fn extract_transcripts(
             let node = &graph.nodes[nid];
             let nodestart = node.start;
             let mut nodeend = node.end;
+            let mut last_merged_start = nodestart;
+            let mut last_merged_end = nodeend;
 
             while j + 1 <= use_last {
                 let next_nid = use_path[j + 1];
                 if next_nid < graph.nodes.len()
                     && nodes_are_contiguous(graph, use_path[j], next_nid)
                 {
+                    last_merged_start = graph.nodes[next_nid].start;
+                    last_merged_end = graph.nodes[next_nid].end;
                     j += 1;
                     nodeend = graph.nodes[next_nid].end;
                 } else {
                     break;
+                }
+            }
+            if micro_trim
+                && last_merged_start > nodestart
+                && last_merged_end.saturating_sub(last_merged_start) < micro_cap
+            {
+                let mut scan = j;
+                let mut rewind_to: Option<u64> = None;
+                while scan > use_start {
+                    scan -= 1;
+                    if let Some(n) = graph.nodes.get(use_path[scan]) {
+                        let w = n.end.saturating_sub(n.start);
+                        if w >= micro_cap {
+                            rewind_to = Some(n.end);
+                            break;
+                        }
+                    }
+                }
+                if let Some(te) = rewind_to {
+                    if te > nodestart {
+                        nodeend = te;
+                    }
                 }
             }
             if nodeend > nodestart {
@@ -7404,18 +7532,21 @@ pub fn extract_transcripts(
                     abundancesum = s;
                 }
                 if !tmatch.is_empty() {
-                    // Strict redistribute filter (default on, disable via
-                    // RUSTLE_NO_STRICT_REDIST=1):
-                    // Before absorbing tf into a kept path, require tf's intron chain
-                    // to be a contiguous subsequence of at least one matched kept path.
-                    // Otherwise tf is a different isoform (has introns not in the kept
-                    // path) and should rescue as an independent transcript rather than
-                    // donate its coverage to an incompatible chain.
+                    // Strict redistribute filter (DEFAULT OFF, opt-in via
+                    // RUSTLE_STRICT_REDIST=1):
+                    // When ON, require tf's intron chain to be a contiguous subsequence
+                    // of at least one matched kept path before absorbing tf into it.
                     //
-                    // SEED_STATS analysis found 988 redistributed seeds in under-split
-                    // bundles — many are novel isoforms absorbed by node-overlap
-                    // matching against a related isoform. This gate retains them.
-                    if std::env::var_os("RUSTLE_NO_STRICT_REDIST").is_none() {
+                    // StringTie's best_trf_match (rlink.cpp:10241) uses a LOOSER criterion
+                    // — `internaldist ≤ CHI_THR` (50bp of skipped nodes allowed). The
+                    // Rustle-specific strict-subsequence filter was tighter, sending more
+                    // transfrags to rescue as new tx instead of absorbing their coverage.
+                    // At STRG.398 this produced 15 rescues vs StringTie's 1.
+                    //
+                    // Flipped to off-by-default 2026-04-21 per "behave like StringTie from
+                    // the beginning" directive (project_stringtie_parity_audit.md). Opt-in
+                    // via RUSTLE_STRICT_REDIST=1 for legacy behavior.
+                    if std::env::var_os("RUSTLE_STRICT_REDIST").is_some() {
                         let tf_chain = intron_chain_from_nodes(graph, &tf_nodes);
                         if !tf_chain.is_empty() {
                             // Tolerance = 0: exact-coord subsequence. Non-zero lets tf
@@ -7659,6 +7790,34 @@ pub fn extract_transcripts(
                                     }
                                     local_nodecov[nid2] = newnodecov;
                                     exon_bp_cov += addcov;
+                                }
+                            }
+                        }
+                    }
+                    // StringTie-parity: trim trailing contiguous micro-node from the
+                    // merged exon. Rustle creates 10bp "tail" nodes (e.g.,
+                    // 70744124-70744134 at STRG.398) from longtrim splits at read
+                    // endpoints; StringTie snaps the read end to the exon boundary
+                    // and doesn't preserve the tail. Opt-out via
+                    // RUSTLE_MICRO_NODE_TRIM_OFF=1.
+                    if std::env::var_os("RUSTLE_MICRO_NODE_TRIM_OFF").is_none() {
+                        let micro_cap: u64 = std::env::var("RUSTLE_MICRO_NODE_CAP")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(20);
+                        if j >= 1 && j < rescue_nodes.len() {
+                            if let Some(last_n) = graph.nodes.get(rescue_nodes[j]) {
+                                let last_width = last_n.end.saturating_sub(last_n.start);
+                                if last_width < micro_cap
+                                    && last_width > 0
+                                    && rescue_nodes[j - 1] != graph.source_id
+                                {
+                                    if let Some(prev_n) = graph.nodes.get(rescue_nodes[j - 1]) {
+                                        if prev_n.end == last_n.start {
+                                            // Contiguous micro-tail: snap exon end back.
+                                            end = prev_n.end;
+                                        }
+                                    }
                                 }
                             }
                         }

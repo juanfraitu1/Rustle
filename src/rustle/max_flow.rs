@@ -10,6 +10,32 @@ use crate::graph::{Graph, GraphTransfrag};
 
 const EPSILON: f64 = crate::constants::FLOW_EPSILON;
 const DBL_ERROR: f64 = 0.01;
+
+thread_local! {
+    /// Thread-local seed context used by trace_tf_deplete. Set by the outer
+    /// seed loop in path_extract.rs to carry the seed tf index into max_flow
+    /// code without threading it through every function signature.
+    pub(crate) static CURRENT_SEED_TF: std::cell::Cell<Option<usize>> =
+        std::cell::Cell::new(None);
+}
+
+/// Diagnostic trace: fires when a target tf index (set via RUSTLE_TRACE_TF_DEPLETE=<id>)
+/// has its abundance zeroed. Used to find the seed + code site that consumed a specific tf.
+#[inline]
+pub(crate) fn trace_tf_deplete(idx: usize, site: &str, before: f64) {
+    if let Ok(target) = std::env::var("RUSTLE_TRACE_TF_DEPLETE") {
+        if let Ok(tgt) = target.parse::<usize>() {
+            if idx == tgt && before > EPSILON {
+                let seed =
+                    CURRENT_SEED_TF.with(|c| c.get()).map(|v| v.to_string()).unwrap_or_else(|| "?".into());
+                eprintln!(
+                    "[TF_DEPLETE] tf={} seed={} site={} abund_before={:.4} -> 0.0",
+                    idx, seed, site, before
+                );
+            }
+        }
+    }
+}
 // Max unmatched path span (bp) tolerated between consecutive transfrag nodes when deciding
 // whether to keep a transfrag on a path (the original algorithm `long_max_flow` keeptr gap test).
 //
@@ -342,9 +368,12 @@ fn update_transfrag_capacity(
     val: f64,
     nodecapacity: &mut [f64],
     node2path: &HashMap<usize, usize>,
+    tf_idx: usize,
 ) {
+    let before = tf.abundance;
     tf.abundance = (tf.abundance - val).max(0.0);
     if tf.abundance < EPSILON {
+        trace_tf_deplete(tf_idx, "update_transfrag_capacity", before);
         tf.abundance = 0.0;
     }
     for &tn in tf.node_ids.iter().take(tf.node_ids.len().saturating_sub(1)) {
@@ -1549,6 +1578,7 @@ fn long_max_flow_direct(
                                 val,
                                 &mut nodecapacity,
                                 &node2path,
+                                t_idx,
                             );
                             if debug_ek {
                                 eprintln!(
@@ -1579,6 +1609,7 @@ fn long_max_flow_direct(
                                 val,
                                 &mut nodecapacity,
                                 &node2path,
+                                t_idx,
                             );
                             if debug_ek {
                                 eprintln!(
@@ -2204,7 +2235,7 @@ pub fn edmonds_karp(
                                 eprintln!("DEPL_TF seed={:?} tf={} partial amt={:.6} before={:.6} after={:.6}",
                                     seed_tf, t_idx, fl, tf.abundance, tf.abundance - fl);
                             }
-                            update_transfrag_capacity(tf, fl, &mut nodecapacity, &node2path);
+                            update_transfrag_capacity(tf, fl, &mut nodecapacity, &node2path, t_idx);
                             if tf.abundance < DBL_ERROR {
                                 tf.abundance = 0.0;
                             }
@@ -2225,7 +2256,7 @@ pub fn edmonds_karp(
                                 );
                             }
                             flow_mat[pi][end_i] -= val;
-                            update_transfrag_capacity(tf, val, &mut nodecapacity, &node2path);
+                            update_transfrag_capacity(tf, val, &mut nodecapacity, &node2path, t_idx);
                             if tf.abundance < DBL_ERROR {
                                 tf.abundance = 0.0;
                             }
@@ -2312,7 +2343,8 @@ pub fn long_max_flow_seeded_with_used_pathpat(
     seed_tf: Option<usize>,
     pathpat_override: Option<&GBitVec>,
 ) -> (f64, Vec<f64>, NodeSet) {
-    long_max_flow_direct(
+    CURRENT_SEED_TF.with(|c| c.set(seed_tf));
+    let result = long_max_flow_direct(
         path,
         transfrags,
         graph,
@@ -2320,7 +2352,9 @@ pub fn long_max_flow_seeded_with_used_pathpat(
         seed_tf,
         None,
         pathpat_override,
-    )
+    );
+    CURRENT_SEED_TF.with(|c| c.set(None));
+    result
 }
 
 /// Long-read max flow with nodecov-limited max_fl (parse_trflong: max_fl = nodecov[path[0]]).

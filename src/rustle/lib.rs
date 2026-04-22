@@ -64,6 +64,9 @@ pub mod ballgown; // Ballgown table output
 pub mod gene_abundance; // gene-level abundance summary
 pub mod report_losses; // diagnostic loss reporting
 
+// ── StringTie-parity scaffold ────────────────────────────────────────────────
+pub mod stringtie_parity; // RUSTLE_STRINGTIE_EXACT meta-flag for parallel parity mode
+
 // ── Stage 9: Orchestration ────────────────────────────────────────────────────
 pub mod assembly_mode; // assembly mode dispatch
 pub mod merge_mode; // merge mode (multi-sample)

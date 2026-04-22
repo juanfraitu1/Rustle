@@ -880,6 +880,19 @@ fn trace_locus_active_span(start: u64, end: u64, trace_locus: Option<(u64, u64)>
     end >= lo && start <= hi
 }
 
+thread_local! {
+    /// Last incompat-return site code inside compatible_long. Callers read this
+    /// after a ret==0 to discover which gate fired. Paired with StringTie's
+    /// PARITY_CL_TRACE to diff gate behavior per transfrag pair.
+    pub static LAST_CL_INCOMPAT_SITE: std::cell::Cell<&'static str> =
+        const { std::cell::Cell::new("") };
+}
+
+#[inline]
+fn set_cl_site(site: &'static str) {
+    LAST_CL_INCOMPAT_SITE.with(|c| c.set(site));
+}
+
 /// compatible_long return: 0 = incompatible, 1 = tf1 extends past tf2, 2 = tf2 extends past tf1, 3 = same/compatible.
 /// lens: [len0, len1, len2, len3] for distance checks (len[]).
 pub fn compatible_long(
@@ -891,6 +904,7 @@ pub fn compatible_long(
     let n0 = &tf1.node_ids;
     let n1 = &tf2.node_ids;
     if n0.is_empty() || n1.is_empty() {
+        set_cl_site("S0_EMPTY");
         return incompat;
     }
 
@@ -900,11 +914,13 @@ pub fn compatible_long(
     // Both starts can't be hard at different nodes
     if nodes[0][0] != nodes[1][0] {
         if get_node(0, 0).hardstart && get_node(1, 0).hardstart {
+            set_cl_site("S1_HARDSTART_BOTH");
             return incompat;
         }
     }
     if nodes[0][nodes[0].len() - 1] != nodes[1][nodes[1].len() - 1] {
         if get_node(0, nodes[0].len() - 1).hardend && get_node(1, nodes[1].len() - 1).hardend {
+            set_cl_site("S2_HARDEND_BOTH");
             return incompat;
         }
     }
@@ -941,6 +957,7 @@ pub fn compatible_long(
         s = 0;
     }
     if nodes[f][nodes[f].len() - 1] < nodes[s][0] {
+        set_cl_site("S3_NO_OVERLAP");
         return incompat;
     }
 
@@ -958,6 +975,7 @@ pub fn compatible_long(
             if curr_end < next_start {
                 rets = 1 + if f == 0 { 0 } else { 1 };
                 if get_node(s, 0).hardstart {
+                    set_cl_site("S4_HARDSTART_S");
                     return incompat;
                 }
             }
@@ -970,6 +988,7 @@ pub fn compatible_long(
         i[f] += 1;
     }
     if i[f] < nodes[f].len() && nodes[s][nodes[s].len() - 1] < nodes[f][i[f]] {
+        set_cl_site("S5_CONTAINED");
         return incompat;
     }
     if i[f] == 0 {
@@ -977,6 +996,7 @@ pub fn compatible_long(
     }
     if i[f] < nodes[f].len() && nodes[s][0] < nodes[f][i[f]] {
         if !graph.can_reach(nodes[s][0], nodes[f][i[f]]) {
+            set_cl_site("S6_CHILDPAT_START");
             return incompat;
         }
         lens[1] = (get_node(f, i[f]).start.saturating_sub(tstart[s])) as i64;
@@ -986,6 +1006,7 @@ pub fn compatible_long(
                 let prev_end = get_node(s, i[s] - 1).end;
                 let curr_start = get_node(s, i[s]).start;
                 if prev_end < curr_start {
+                    set_cl_site("S7_WALK_START_GAP");
                     return incompat;
                 }
             }
@@ -1014,9 +1035,11 @@ pub fn compatible_long(
             if prev_end < curr_start {
                 rete = 1 + if f == 0 { 0 } else { 1 };
                 if rets != 3 && rete != rets {
+                    set_cl_site("S8_RETE_CONTRADICT");
                     return incompat;
                 }
                 if get_node(s, nodes[s].len() - 1).hardend {
+                    set_cl_site("S9_HARDEND_S");
                     return incompat;
                 }
             }
@@ -1032,6 +1055,7 @@ pub fn compatible_long(
         j[f] -= 1;
     }
     if j[f] < nodes[f].len() && nodes[s][0] > nodes[f][j[f]] {
+        set_cl_site("S10_NO_OVERLAP_END");
         return incompat;
     }
     if j[f] == nodes[f].len() - 1 {
@@ -1039,6 +1063,7 @@ pub fn compatible_long(
     }
     if j[f] < nodes[f].len() && nodes[s][j[s]] > nodes[f][j[f]] {
         if !graph.can_reach(nodes[f][j[f]], nodes[s][j[s]]) {
+            set_cl_site("S11_CHILDPAT_END");
             return incompat;
         }
         lens[3] = (tend[s] - get_node(f, j[f]).end) as i64;
@@ -1051,6 +1076,7 @@ pub fn compatible_long(
                 let curr_end = get_node(s, j[s]).end;
                 let next_start = get_node(s, j[s] + 1).start;
                 if curr_end < next_start {
+                    set_cl_site("S12_WALK_END_GAP");
                     return incompat;
                 }
             }
@@ -1060,6 +1086,7 @@ pub fn compatible_long(
         lens[2] += last_end.saturating_sub(tend[s]) as i64;
     }
     if i[0] > j[0] || i[1] > j[1] {
+        set_cl_site("S13_I_GT_J");
         return incompat;
     }
     if f == 1 {
@@ -1081,6 +1108,7 @@ pub fn compatible_long(
                 std::mem::swap(&mut fi, &mut si);
             }
             if ii[fi] == 0 || ii[si] == 0 {
+                set_cl_site("S13b_MID_IDX_ZERO");
                 return incompat;
             }
             while ii[fi] > 0
@@ -1096,6 +1124,7 @@ pub fn compatible_long(
                 && ii[fi] > 0
                 && get_node(fi, ii[fi] - 1).end == get_node(fi, ii[fi]).start
             {
+                set_cl_site("S14_GAP_FILLED");
                 return incompat; // gap filled
             }
             // Hard-edge pattern check (5756-5759):
@@ -1111,6 +1140,7 @@ pub fn compatible_long(
                         let edge_key_s = (s_prev.min(s_curr), s_prev.max(s_curr));
                         if let Some(&eid_s) = graph.gpos.get(&edge_key_s) {
                             if patterns[si].get_bit(eid_s) {
+                                set_cl_site("S15_HARD_EDGE_BOTH");
                                 return incompat;
                             }
                         }
@@ -1129,6 +1159,7 @@ pub fn compatible_long(
             {
                 if ii[fi] + 1 < nodes[fi].len() {
                     if get_node(fi, ii[fi]).end < get_node(fi, ii[fi] + 1).start {
+                        set_cl_site("S16_MID_WALK_GAP");
                         return incompat;
                     }
                 }
@@ -1976,11 +2007,16 @@ pub fn process_transfrags(
             }
 
             let (ret, lens) = compatible_long(tf, kept_tf, graph);
-            if trace_pair && ret != 0 {
+            if trace_pair {
+                let site = if ret == 0 {
+                    LAST_CL_INCOMPAT_SITE.with(|c| c.get())
+                } else {
+                    ""
+                };
                 let (tf_s, tf_e) = tf_span_graph(tf, graph);
                 let (kt_s, kt_e) = tf_span_graph(kept_tf, graph);
                 eprintln!(
-                    "[TRACE_SEEDMERGE] cand={} span={}-{} nodes={} abund={:.3} vs kept={} span={}-{} nodes={} abund={:.3} ret={} lens=[{},{},{},{}] guide_pair={}/{} hard={}/{} kept_hard={}/{}",
+                    "[TRACE_SEEDMERGE] cand={} span={}-{} nodes={} abund={:.3} vs kept={} span={}-{} nodes={} abund={:.3} ret={} site={} lens=[{},{},{},{}] guide_pair={}/{} hard={}/{} kept_hard={}/{}",
                     tf_idx,
                     tf_s,
                     tf_e,
@@ -1992,6 +2028,7 @@ pub fn process_transfrags(
                     kept_tf.node_ids.len(),
                     tf_weight(kept_tf),
                     ret,
+                    site,
                     lens[0],
                     lens[1],
                     lens[2],
@@ -2153,7 +2190,11 @@ pub fn process_transfrags(
         // This matters for needy refs like STRG.29 where a left-anchored long-read fragment
         // carries the distinguishing early junctions, but keeptrf would otherwise absorb it into
         // a downstream representative that lacks those junctions.
-        let novel_splice_rescue = included
+        //
+        // StringTie's rlink.cpp process_transfrags has no equivalent — contained tfs are
+        // strictly marked weak=1. Disabled in RUSTLE_STRINGTIE_EXACT mode for parity.
+        let novel_splice_rescue = !crate::stringtie_parity::stringtie_exact()
+            && included
             && !included_via_group
             && long_mode
             && !tf.guide
@@ -2173,7 +2214,20 @@ pub fn process_transfrags(
             // guides are added to keeptrf even without proper boundaries.
             let has_source_strict = first_node.hardstart || tf.longstart != 0;
             let has_sink = last_node.hardend || tf.longend != 0;
-            let strict_pass = tf.guide || (has_source_strict && has_sink);
+            // Short-tf stricter gate (opt-in RUSTLE_SHORT_TF_STRICT=1): for tfs with
+            // ≤2 nodes, require BOTH boundary evidence. Prevents short mid-chain
+            // tfs (like STRG.398's t=82) from becoming keeptrf seeds and depleting
+            // dominant tfs via aggressive back/fwd extension. Opt-in because the
+            // true STRG.398 divergence is deeper (graph alt-junction 10→14 lets
+            // tf=42 avoid cov-drop weak marking and win over the preserved tf=8).
+            let short_tf_stricter = !tf.guide
+                && tf.node_ids.len() <= 2
+                && std::env::var_os("RUSTLE_SHORT_TF_STRICT").is_some();
+            let strict_pass = if short_tf_stricter {
+                tf.longstart != 0 && tf.longend != 0
+            } else {
+                tf.guide || (has_source_strict && has_sink)
+            };
             // Register chain for family-rescue lookup when a transfrag passes the
             // strict boundary gate. Later bundles' single-boundary transfrags that
             // match this chain (a confirmed family member) become eligible for
@@ -2327,6 +2381,14 @@ pub fn process_transfrags(
     // build trflong seed order from keeptrf before source/sink rewiring.
     // pass 1 (reverse keeptrf): incomplete non-guide
     // pass 2 (reverse keeptrf): complete or guide
+    //
+    // StringTie also runs pass 2 (rlink.cpp:6470-6477); Rustle matches. Pass 2
+    // is DEFAULT-ON because disabling it regresses 1980→1136 predictions. Opt-out
+    // via RUSTLE_TRFLONG_PASS2_OFF=1 for StringTie-parity experiments (does not
+    // fix STRG.398 over-emission — divergence is actually in hassink[]
+    // population, not pass-2 logic).
+    let enable_pass2 = std::env::var_os("RUSTLE_TRFLONG_PASS2_OFF").is_none();
+    let trace_trflong = std::env::var_os("RUSTLE_TRFLONG_TRACE").is_some();
     let rep_order_now: Vec<usize> = keeptrf.iter().map(|(r, _, _)| *r).collect();
     let mut trflong_insert: Vec<usize> = Vec::new();
     let mut n_complete = 0usize;
@@ -2353,26 +2415,48 @@ pub fn process_transfrags(
         if complete {
             n_complete += 1;
         }
+        if trace_trflong && tf_overlaps_trace_graph(&transfrags[rid], graph, trace_locus) {
+            let (sp_s, sp_e) = tf_span_graph(&transfrags[rid], graph);
+            eprintln!(
+                "[RUSTLE_TRFLONG] pass=1 tf={} first={} last={} coord={}-{} abund={:.3} longstart={} longend={} hardstart={} hardend={} hassource={:?} keepsource={} hassink={:?} keepsink={} decision={}",
+                rid, n1, n2, sp_s, sp_e, tf_weight(&transfrags[rid]),
+                transfrags[rid].longstart, transfrags[rid].longend,
+                hardstart, hardend,
+                hassource[n1], keepsource[n1],
+                hassink[n2], keepsink[n2],
+                if incomplete { "ADD" } else { "SKIP" }
+            );
+        }
         if incomplete {
             n_incomplete += 1;
             trflong_insert.push(rid);
         }
     }
-    for rid in rep_order_now.iter().rev().copied() {
-        if transfrags[rid].node_ids.is_empty() {
-            continue;
-        }
-        let n1 = transfrags[rid].node_ids[0];
-        let n2 = *transfrags[rid].node_ids.last().unwrap();
-        let hardstart = graph.nodes.get(n1).map(|n| n.hardstart).unwrap_or(false);
-        let hardend = graph.nodes.get(n2).map(|n| n.hardend).unwrap_or(false);
-        let has_source_keep = hassource[n1].is_some() && keepsource[n1];
-        let has_sink_keep = hassink[n2].is_some() && keepsink[n2];
-        let complete = transfrags[rid].guide
-            || ((hardstart || has_source_keep)
-                && (hardend || has_sink_keep || has_sink_completion(n2, graph, &keepsink, &hassink)));
-        if transfrags[rid].guide || complete {
-            trflong_insert.push(rid);
+    if enable_pass2 {
+        for rid in rep_order_now.iter().rev().copied() {
+            if transfrags[rid].node_ids.is_empty() {
+                continue;
+            }
+            let n1 = transfrags[rid].node_ids[0];
+            let n2 = *transfrags[rid].node_ids.last().unwrap();
+            let hardstart = graph.nodes.get(n1).map(|n| n.hardstart).unwrap_or(false);
+            let hardend = graph.nodes.get(n2).map(|n| n.hardend).unwrap_or(false);
+            let has_source_keep = hassource[n1].is_some() && keepsource[n1];
+            let has_sink_keep = hassink[n2].is_some() && keepsink[n2];
+            let complete = transfrags[rid].guide
+                || ((hardstart || has_source_keep)
+                    && (hardend || has_sink_keep || has_sink_completion(n2, graph, &keepsink, &hassink)));
+            if trace_trflong && tf_overlaps_trace_graph(&transfrags[rid], graph, trace_locus) {
+                let (sp_s, sp_e) = tf_span_graph(&transfrags[rid], graph);
+                eprintln!(
+                    "[RUSTLE_TRFLONG] pass=2 tf={} first={} last={} coord={}-{} abund={:.3} decision={}",
+                    rid, n1, n2, sp_s, sp_e, tf_weight(&transfrags[rid]),
+                    if transfrags[rid].guide || complete { "ADD" } else { "SKIP" }
+                );
+            }
+            if transfrags[rid].guide || complete {
+                trflong_insert.push(rid);
+            }
         }
     }
 
@@ -3007,6 +3091,57 @@ pub fn process_transfrags(
             &hassink,
         ) {
             eprintln!("warning: failed to write keeptrf/usepath TSV {}: {}", path, err);
+        }
+    }
+
+    // StringTie-parity PARITY_TF dump: emit one line per transfrag in StringTie's
+    // format. Gated via RUSTLE_PARITY_TF_DUMP=1 + RUSTLE_TRACE_LOCUS=start-end.
+    // Enables side-by-side comparison of transfrag sets between the two pipelines.
+    if std::env::var_os("RUSTLE_PARITY_TF_DUMP").is_some() {
+        let locus: Option<(u64, u64)> = std::env::var("RUSTLE_TRACE_LOCUS")
+            .ok()
+            .and_then(|v| {
+                let (s, e) = v.split_once('-')?;
+                let s = s.trim().parse::<u64>().ok()?;
+                let e = e.trim().parse::<u64>().ok()?;
+                Some((s, e))
+            });
+        let in_locus = |nid: usize| -> bool {
+            match locus {
+                None => false,
+                Some((lo, hi)) => graph
+                    .nodes
+                    .get(nid)
+                    .map_or(false, |n| n.end >= lo && n.start <= hi),
+            }
+        };
+        let any_in_locus =
+            transfrags.iter().any(|tf| tf.node_ids.iter().any(|&nid| in_locus(nid)));
+        if any_in_locus {
+            for (t, tf) in transfrags.iter().enumerate() {
+                let mut coord_parts = Vec::with_capacity(tf.node_ids.len());
+                for &nid in &tf.node_ids {
+                    let (s, e) = graph
+                        .nodes
+                        .get(nid)
+                        .map(|n| (n.start, n.end))
+                        .unwrap_or((0, 0));
+                    coord_parts.push(format!("{}({}-{})", nid, s, e));
+                }
+                eprintln!(
+                    "PARITY_TF t={} abund={:.4} longstart={} longend={} guide={} longread={} seed={} usepath={} nodes={}: {}",
+                    t,
+                    tf.abundance,
+                    tf.longstart,
+                    tf.longend,
+                    tf.guide as u8,
+                    tf.longread as u8,
+                    tf.trflong_seed as u8,
+                    tf.usepath,
+                    tf.node_ids.len(),
+                    coord_parts.join(" "),
+                );
+            }
         }
     }
 

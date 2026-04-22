@@ -328,6 +328,99 @@ pub fn correct_bundle_junctions_higherr(
         }
     }
 
+    // Alt-donor-cluster coalesce (opt-in via RUSTLE_ALT_DONOR_COALESCE=1).
+    // Targets the STRG.309 pattern: multiple weak alt-donors targeting the SAME
+    // acceptor, each with much less support than a dominant canonical donor. The
+    // existing higherr redirect skips these (is_bad=false for clean-read alt-donors),
+    // so they remain as separate graph nodes and cause combinatorial flow explosion.
+    //
+    // This additional pass:
+    //   - Groups junctions by acceptor.
+    //   - Within each acceptor group, finds the donor with max mrcount (canonical).
+    //   - For each non-canonical donor with:
+    //       - mrcount <= RUSTLE_ALT_DONOR_WEAK_MAX (default 3), AND
+    //       - within RUSTLE_ALT_DONOR_WINDOW bp of canonical (default 5000), AND
+    //       - canonical.mrcount >= RUSTLE_ALT_DONOR_DOMINANT_RATIO * weak.mrcount (default 5.0)
+    //     → redirect weak → canonical.
+    //
+    // Opt-in because it's a targeted fix for alt-donor clusters, not a generic
+    // junction filter. Tight gates (weak ≤ 3, ratio ≥ 5) keep it from affecting
+    // legit low-cov alt-isoforms elsewhere.
+    if std::env::var_os("RUSTLE_ALT_DONOR_COALESCE").is_some() {
+        let weak_max: f64 = std::env::var("RUSTLE_ALT_DONOR_WEAK_MAX")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3.0);
+        let dom_ratio: f64 = std::env::var("RUSTLE_ALT_DONOR_DOMINANT_RATIO")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5.0);
+        let ad_window: u64 = std::env::var("RUSTLE_ALT_DONOR_WINDOW")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5000);
+
+        // Group junctions by acceptor
+        let mut by_acceptor: HashMap<u64, Vec<Junction>> = Default::default();
+        for j in &junctions {
+            by_acceptor.entry(j.acceptor).or_default().push(*j);
+        }
+        let mut alt_donor_redirects = 0usize;
+        for (_acc, group) in by_acceptor.iter() {
+            if group.len() < 2 {
+                continue;
+            }
+            // Find canonical (max mrcount)
+            let (canon_idx, canon_mrcount) = group
+                .iter()
+                .enumerate()
+                .filter_map(|(i, j)| stats.get(j).map(|s| (i, s.mrcount)))
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap_or((0, 0.0));
+            if canon_mrcount < dom_ratio * weak_max {
+                continue;
+            }
+            let canon = group[canon_idx];
+            // Redirect weak alt-donors to canonical
+            for (i, j) in group.iter().enumerate() {
+                if i == canon_idx {
+                    continue;
+                }
+                let Some(weak) = stats.get(j) else { continue };
+                if weak.mrcount > weak_max {
+                    continue;
+                }
+                let donor_diff = j.donor.abs_diff(canon.donor);
+                if donor_diff == 0 || donor_diff > ad_window {
+                    continue;
+                }
+                if canon_mrcount < dom_ratio * weak.mrcount.max(1.0) {
+                    continue;
+                }
+                // Check strand compatibility
+                if let (Some(a), Some(b)) = (weak.strand, stats.get(&canon).and_then(|s| s.strand)) {
+                    if a != b {
+                        continue;
+                    }
+                }
+                // Skip if already redirected
+                if redirect.contains_key(j) {
+                    continue;
+                }
+                redirect.insert(*j, canon);
+                alt_donor_redirects += 1;
+            }
+        }
+        if (verbose || std::env::var_os("RUSTLE_ALT_DONOR_TRACE").is_some())
+            && alt_donor_redirects > 0
+        {
+            eprintln!(
+                "    alt-donor-coalesce redirected {} weak alt-donor junction(s) (weak_max={} dom_ratio={} window={})",
+                alt_donor_redirects, weak_max, dom_ratio, ad_window
+            );
+        }
+    }
+
     let mut new_stats: JunctionStats = Default::default();
     for (j, stat) in stats.iter() {
         let canonical = redirect.get(j).copied().unwrap_or(*j);

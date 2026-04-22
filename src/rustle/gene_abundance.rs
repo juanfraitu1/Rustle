@@ -110,7 +110,57 @@ pub fn compute_transcript_intron_low(tx: &Transcript, bpcov: &BpcovStranded) -> 
             out.push(false);
             continue;
         }
-        // Left-drop check: exon = last LONGINTRONANCHOR bp of prev, intron = first LONGINTRONANCHOR bp.
+
+        // StringTie parity (rlink.cpp:19334-19361): three-tier check.
+        //
+        // Tier 1: intron cov < 1 → LOW. Short-circuit for essentially-empty introns.
+        // Tier 2: full-intron vs full-flanking-exon avg cov. intron < 0.1 * exon → LOW.
+        // Tier 3: anchor-window (25bp) donor-side or acceptor-side drop. Either → LOW.
+        //
+        // Rustle previously only implemented Tier 3, which missed cases where the
+        // whole intron is depleted but anchor windows at the boundaries have enough
+        // reads to fail the drop contrast (e.g., alt-donor residue bleed).
+        // Opt-out via RUSTLE_INTRON_LOW_STRINGTIE_OFF=1.
+        let stringtie_mode = std::env::var_os("RUSTLE_INTRON_LOW_STRINGTIE_OFF").is_none();
+        let trace_il = std::env::var_os("RUSTLE_INTRON_LOW_TRACE").is_some();
+        let intron_full_cov = avg_cov(bpcov.plus.idx(intron_start), bpcov.plus.idx(intron_end));
+        if stringtie_mode && intron_full_cov < 1.0 {
+            if trace_il {
+                eprintln!(
+                    "[IL] intron={}-{} tier=1 full_cov={:.4} RESULT=LOW",
+                    intron_start, intron_end, intron_full_cov
+                );
+            }
+            out.push(true);
+            continue;
+        }
+        if stringtie_mode {
+            let prev_len = prev.1.saturating_sub(prev.0);
+            let curr_len = curr.1.saturating_sub(curr.0);
+            if prev_len > 0 && curr_len > 0 {
+                let prev_sum = avg_cov(bpcov.plus.idx(prev.0), bpcov.plus.idx(prev.1))
+                    * prev_len as f64;
+                let curr_sum = avg_cov(bpcov.plus.idx(curr.0), bpcov.plus.idx(curr.1))
+                    * curr_len as f64;
+                let exon_full_avg = (prev_sum + curr_sum) / (prev_len + curr_len) as f64;
+                if trace_il {
+                    eprintln!(
+                        "[IL] intron={}-{} tier=2 intron_full={:.4} exon_full={:.4} threshold={:.4}",
+                        intron_start, intron_end, intron_full_cov,
+                        exon_full_avg, exon_full_avg * intronfrac
+                    );
+                }
+                if intron_full_cov < exon_full_avg * intronfrac {
+                    if trace_il {
+                        eprintln!("[IL]   tier=2 RESULT=LOW");
+                    }
+                    out.push(true);
+                    continue;
+                }
+            }
+        }
+
+        // Tier 3 (existing): anchor-window donor/acceptor drop.
         let anchor = LONGINTRONANCHOR.min(intron_end - intron_start);
         let exon_left_start = prev.1.saturating_sub(LONGINTRONANCHOR).max(prev.0);
         let exon_left_end = prev.1;
@@ -122,7 +172,6 @@ pub fn compute_transcript_intron_low(tx: &Transcript, bpcov: &BpcovStranded) -> 
             out.push(true);
             continue;
         }
-        // Right-drop check: intron = last LONGINTRONANCHOR bp of intron, exon = first LONGINTRONANCHOR bp of curr.
         let intron_right_end = intron_end;
         let intron_right_start = intron_end.saturating_sub(anchor);
         let exon_right_start = curr.0;
