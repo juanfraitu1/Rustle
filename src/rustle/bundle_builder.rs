@@ -4,12 +4,72 @@
 use anyhow::Result;
 use hashbrown::{HashMap as HbHashMap, HashSet as HbHashSet};
 use roaring::RoaringBitmap;
+use std::env;
 use std::time::Instant;
 use std::sync::Arc;
 
 use crate::bpcov::BpcovStranded;
-use crate::killed_junctions::good_junc_second_stage;
 use crate::types::{BundleRead, CBundlenode, DetHashSet as HashSet, Junction, JunctionStats, RunConfig};
+
+#[inline]
+fn strict_cgroup_boundaries_enabled() -> bool {
+    matches!(
+        env::var("RUSTLE_CGROUP_STRICT_BOUNDARIES")
+            .ok()
+            .as_deref(),
+        Some("1")
+    )
+}
+
+#[inline]
+fn stringtie_pair_stitch_coords_enabled() -> bool {
+    matches!(
+        env::var("RUSTLE_STRINGTIE_PAIR_STITCH_COORDS")
+            .ok()
+            .as_deref(),
+        Some("1")
+    )
+}
+
+#[inline]
+fn stringtie_longread_keep_exon_enabled() -> bool {
+    matches!(
+        env::var("RUSTLE_STRINGTIE_LONGREAD_KEEP_EXON")
+            .ok()
+            .as_deref(),
+        Some("1")
+    )
+}
+
+#[inline]
+fn stringtie_merge_close_pass_enabled() -> bool {
+    matches!(
+        env::var("RUSTLE_STRINGTIE_MERGE_CLOSE_PASS")
+            .ok()
+            .as_deref(),
+        Some("1")
+    )
+}
+
+#[inline]
+fn merge_hard_boundary_veto_enabled() -> bool {
+    matches!(
+        env::var("RUSTLE_MERGE_HARD_BOUNDARY_VETO")
+            .ok()
+            .as_deref(),
+        Some("1")
+    )
+}
+
+#[inline]
+fn group_start_extend_first_exon_only_enabled() -> bool {
+    matches!(
+        env::var("RUSTLE_GROUP_START_EXTEND_FIRST_EXON_ONLY")
+            .ok()
+            .as_deref(),
+        Some("1")
+    )
+}
 
 /// Per-read good_junc check: if bpcov and junction_stats are available,
 /// run the second-stage validation that StringTie performs inside build_graphs.
@@ -32,7 +92,7 @@ fn per_read_good_junc_ok(
     let (Some(bpcov), Some(stats)) = (bpcov, junction_stats) else {
         return true;
     };
-    let Some(st) = stats.get(&junction) else {
+    let Some(_st) = stats.get(&junction) else {
         return true;
     };
     // Per-read good_junc re-evaluation is available but currently disabled.
@@ -135,6 +195,24 @@ pub struct SubBundleResult {
     pub read_to_bnodes: Vec<Vec<usize>>, // Maps read index to bundlenode IDs
     pub bnode_colors: Vec<usize>,        // Color for each bundlenode (by bid)
     pub read_scale: Vec<f64>,            // Per-read strand proportion (rprop)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BoundaryMutationStats {
+    pub group_start_extend: usize,
+    pub group_end_extend: usize,
+    pub pair_bridge_extend: usize,
+    pub pair_first_exon_extend: usize,
+}
+
+impl BoundaryMutationStats {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.group_start_extend += rhs.group_start_extend;
+        self.group_end_extend += rhs.group_end_extend;
+        self.pair_bridge_extend += rhs.pair_bridge_extend;
+        self.pair_first_exon_extend += rhs.pair_first_exon_extend;
+    }
 }
 
 /// Union-find find operation
@@ -448,6 +526,109 @@ fn build_local_pair_links(reads: &[BundleRead]) -> Vec<Vec<(usize, f64)>> {
 
 /// Determine if exon should be kept (keep exon logic from 
 /// For long reads, also checks CHI_THR and DROP thresholds
+/// Shared, file-serialized emitter for per-read-exon keep/drop decisions.
+/// Used by both the pair_count (merge) and single_count paths so we get one
+/// line per decision across threads without interleaved writes.
+fn parity_read_exon_emit(
+    read: &BundleRead,
+    ei: usize,
+    seg_start: u64,
+    seg_end: u64,
+    seg_len: u64,
+    good_junctions: &HashSet<Junction>,
+    killed_junctions: &HashSet<Junction>,
+    junction_support: u64,
+    is_long_read: bool,
+    read_len: u64,
+    keep: bool,
+    path: &str,
+) {
+    use std::io::Write;
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+    let rd_path = match env::var("RUSTLE_PARITY_READ_EXON_DECISION_TSV") {
+        Ok(p) if !p.is_empty() => p,
+        _ => return,
+    };
+    // Shared mutex/handle for all writers so the file stays line-synchronized
+    // even under rayon parallelism.
+    static RD_WRITER: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+    static RD_HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+    let writer = RD_WRITER.get_or_init(|| {
+        Mutex::new(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&rd_path)
+                .ok(),
+        )
+    });
+    let hdr = RD_HDR.get_or_init(|| Mutex::new(false));
+    let Ok(mut f_guard) = writer.lock() else { return };
+    let Some(f) = f_guard.as_mut() else { return };
+    if let Ok(mut h) = hdr.lock() {
+        if !*h {
+            let _ = writeln!(
+                f,
+                "source\trstart\trend\trstrand\ti\tncoord\tsstart\tsend\tslen\tncj\tjL\tjR\tsmall\tkeep\tpath"
+            );
+            *h = true;
+        }
+    }
+    let ncj = read.junctions.len();
+    let jl_strand = if ei > 0 {
+        let j = Junction::new(read.exons[ei - 1].1, seg_start);
+        if killed_junctions.contains(&j) {
+            0
+        } else if good_junctions.contains(&j) {
+            1
+        } else {
+            0
+        }
+    } else {
+        99
+    };
+    let jr_strand = if ei < ncj {
+        let j = Junction::new(seg_end, read.exons[ei + 1].0);
+        if killed_junctions.contains(&j) {
+            0
+        } else if good_junctions.contains(&j) {
+            1
+        } else {
+            0
+        }
+    } else {
+        99
+    };
+    let small = (seg_len < junction_support
+        || (is_long_read
+            && seg_len < CHI_THR
+            && (seg_len as f64) < DROP * (read_len as f64))) as i32;
+    let rstrand_i: i32 = match read.strand {
+        '+' => 1,
+        '-' => -1,
+        _ => 0,
+    };
+    let _ = writeln!(
+        f,
+        "rustle\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        read.ref_start,
+        read.ref_end.saturating_sub(1),
+        rstrand_i,
+        ei,
+        read.exons.len(),
+        seg_start,
+        seg_end.saturating_sub(1),
+        seg_len,
+        ncj,
+        jl_strand,
+        jr_strand,
+        small,
+        keep as i32,
+        path,
+    );
+}
+
 fn should_keep_exon(
     seg_len: u64,
     exon_idx: usize,
@@ -458,7 +639,7 @@ fn should_keep_exon(
     is_long_read: bool,
     read_len: u64,
 ) -> bool {
-    // 
+    //
     // seg_len < junctionsupport || (longread && seg_len < CHI_THR && seg_len < DROP * read_len)
     let is_small = seg_len < junction_support
         || (is_long_read && seg_len < CHI_THR && (seg_len as f64) < DROP * (read_len as f64));
@@ -489,6 +670,7 @@ fn should_keep_exon(
 #[derive(Debug, Clone, Copy)]
 struct ProcessReadResult {
     next_color: usize,
+    boundary_stats: BoundaryMutationStats,
 }
 
 fn first_exon_valid(
@@ -540,6 +722,17 @@ fn fragment_pair_joinable(
         && left.ref_end.saturating_add(localdist) > right.ref_start
         && last_exon_valid(left, junction_support, killed_junctions)
         && first_exon_valid(right, junction_support, killed_junctions)
+}
+
+/// Mirrors StringTie's keepstrand check (rlink.cpp:15443-15447).
+/// Returns true when a multi-exon read has NO junction in good_junctions,
+/// meaning the read should be neutralized (strand→0) before group assignment.
+/// Single-exon reads always return false (no junctions to evaluate).
+fn all_junctions_bad(read: &BundleRead, good_junctions: &HashSet<Junction>) -> bool {
+    if read.exons.len() < 2 {
+        return false;
+    }
+    !read.exons.windows(2).any(|w| good_junctions.contains(&Junction::new(w[0].1, w[1].0)))
 }
 
 /// Main Original-style bundle building function
@@ -601,6 +794,7 @@ pub fn build_sub_bundles(
     }
     let mut grid_to_group: Vec<(usize, usize)> = Vec::new();
     let mut next_group_grid: usize = 0;
+    let mut boundary_stats_by_strand = [BoundaryMutationStats::default(); 3];
 
     // Sort reads by (start, end)
     let mut read_order: Vec<usize> = (0..reads.len()).collect();
@@ -672,8 +866,10 @@ pub fn build_sub_bundles(
                 continue;
             }
 
-            let mut sno = strand_idx(read.strand);
-            let snop = strand_idx(reads[pair_idx].strand);
+            let eff_strand = if read.strand != '.' && all_junctions_bad(read, good_junctions) { '.' } else { read.strand };
+            let eff_pair_strand = if reads[pair_idx].strand != '.' && all_junctions_bad(&reads[pair_idx], good_junctions) { '.' } else { reads[pair_idx].strand };
+            let mut sno = strand_idx(eff_strand);
+            let snop = strand_idx(eff_pair_strand);
             if sno != snop {
                 if sno == 1 {
                     sno = snop;
@@ -750,10 +946,12 @@ pub fn build_sub_bundles(
                 refstart,
             )?;
             next_color = r1.next_color;
+            boundary_stats_by_strand[sno].add_assign(r1.boundary_stats);
         }
 
         if single_count > EPSILON {
-            let sno = strand_idx(read.strand);
+            let eff_strand = if read.strand != '.' && all_junctions_bad(read, good_junctions) { '.' } else { read.strand };
+            let sno = strand_idx(eff_strand);
             let mut readcol = usedcol_read[sno];
             if readcol < 0 {
                 readcol = next_color as i64;
@@ -787,6 +985,7 @@ pub fn build_sub_bundles(
                 refstart,
             )?;
             next_color = r.next_color;
+            boundary_stats_by_strand[sno].add_assign(r.boundary_stats);
         }
         if profile_3strand && reads.len() > 800 && (430..=520).contains(&ord_pos) {
             eprintln!(
@@ -1187,10 +1386,15 @@ fn process_read_for_group(
     };
 
     let mut readcol = initial_color;
+    let strict_boundaries = strict_cgroup_boundaries_enabled();
+    let stringtie_pair_coords = stringtie_pair_stitch_coords_enabled();
+    let stringtie_longread_keep_exon = stringtie_longread_keep_exon_enabled();
+    let first_exon_start_only = group_start_extend_first_exon_only_enabled();
     let mut active_idx = read_idx;
     let mut active_read = read;
     let mut active_pair_precedes = pair_precedes;
     let mut pending_forward = pair_forward;
+    let mut boundary_stats = BoundaryMutationStats::default();
 
     // merge_read_to_group pointer flow
     let mut currgroup = strand_data.currgroup;
@@ -1227,12 +1431,17 @@ fn process_read_for_group(
         let mut ncoord = active_read.exons.len();
         while ei < ncoord {
             let (seg_start, seg_end) = active_read.exons[ei];
-            let seg_len = seg_end.saturating_sub(seg_start).saturating_add(1);
+            // Rustle's exon.end is 0-based exclusive (end = start + length), so
+            // the true segment length is `end - start` (no +1).  The previous
+            // +1 formula made 49-bp exons look like 50 and skipped the
+            // `seg_len < CHI_THR` small-exon filter, leaving isolated tiny
+            // exons in the partition that StringTie dropped.
+            let seg_len = seg_end.saturating_sub(seg_start);
             let read_len = active_read.query_length.unwrap_or_else(|| {
                 active_read
                     .exons
                     .iter()
-                    .map(|(s, e)| e.saturating_sub(*s).saturating_add(1))
+                    .map(|(s, e)| e.saturating_sub(*s))
                     .sum()
             });
 
@@ -1266,6 +1475,13 @@ fn process_read_for_group(
                 config.junction_support,
                 config.long_reads,
                 read_len,
+            );
+
+            parity_read_exon_emit(
+                &active_read, ei, seg_start, seg_end, seg_len,
+                good_junctions, killed_junctions,
+                config.junction_support, config.long_reads, read_len,
+                keep, "merge",
             );
 
             if !keep {
@@ -1319,8 +1535,9 @@ fn process_read_for_group(
                 if active_read.nh > 1 {
                     strand_data.groups[ti].multi += readcov * (seg_len as f64);
                 }
-                if seg_start < strand_data.groups[ti].start {
+                if seg_start < strand_data.groups[ti].start && (!first_exon_start_only || ei == 0) {
                     strand_data.groups[ti].start = seg_start;
+                    boundary_stats.group_start_extend += 1;
                 }
 
                 let mut nextgroup = strand_data.groups[ti].next_gr;
@@ -1336,6 +1553,7 @@ fn process_read_for_group(
                 }
                 if seg_end > strand_data.groups[ti].end {
                     strand_data.groups[ti].end = seg_end;
+                    boundary_stats.group_end_extend += 1;
                 }
 
                 if active_read.ref_start == seg_start && ei == 0 {
@@ -1487,22 +1705,34 @@ fn process_read_for_group(
                         ncoord = active_read.exons.len();
                         first = true;
                         if let Some(ti) = thisgroup {
+                            let pair_start = if stringtie_pair_coords {
+                                active_read
+                                    .exons
+                                    .first()
+                                    .map(|(s, _)| *s)
+                                    .unwrap_or(active_read.ref_start)
+                            } else {
+                                active_read.ref_start
+                            };
                             if ti < strand_data.groups.len()
-                                && active_read.ref_start > strand_data.groups[ti].end
+                                && pair_start > strand_data.groups[ti].end
                             {
                                 let mut nextgroup = strand_data.groups[ti].next_gr;
                                 while let Some(ni) = nextgroup {
                                     if ni >= strand_data.groups.len() {
                                         break;
                                     }
-                                    if active_read.ref_start < strand_data.groups[ni].start {
+                                    if pair_start < strand_data.groups[ni].start {
                                         break;
                                     }
                                     merge_fwd_groups(strand_data, ti, ni, merge, eqcol)?;
                                     nextgroup = strand_data.groups[ti].next_gr;
                                 }
-                                if active_read.ref_start > strand_data.groups[ti].end {
-                                    strand_data.groups[ti].end = active_read.ref_start;
+                                if !strict_boundaries
+                                    && pair_start > strand_data.groups[ti].end
+                                {
+                                    strand_data.groups[ti].end = pair_start;
+                                    boundary_stats.pair_bridge_extend += 1;
                                 }
                             }
                         }
@@ -1540,12 +1770,17 @@ fn process_read_for_group(
         let mut ncoord = active_read.exons.len();
         while ei < ncoord {
             let (seg_start, seg_end) = active_read.exons[ei];
-            let seg_len = seg_end.saturating_sub(seg_start).saturating_add(1);
+            // Rustle's exon.end is 0-based exclusive (end = start + length), so
+            // the true segment length is `end - start` (no +1).  The previous
+            // +1 formula made 49-bp exons look like 50 and skipped the
+            // `seg_len < CHI_THR` small-exon filter, leaving isolated tiny
+            // exons in the partition that StringTie dropped.
+            let seg_len = seg_end.saturating_sub(seg_start);
             let read_len = active_read.query_length.unwrap_or_else(|| {
                 active_read
                     .exons
                     .iter()
-                    .map(|(s, e)| e.saturating_sub(*s).saturating_add(1))
+                    .map(|(s, e)| e.saturating_sub(*s))
                     .sum()
             });
             let has_good_left = ei > 0 && {
@@ -1573,8 +1808,21 @@ fn process_read_for_group(
                 has_good_left,
                 has_good_right,
                 config.junction_support,
-                false,
+                stringtie_longread_keep_exon && config.long_reads,
                 read_len,
+            );
+
+            // Note: StringTie's add_read_to_group single-read path uses only
+            // `< junctionsupport` (no CHI_THR).  Emit "small" matching ST's simple
+            // check so the diff is apples-to-apples on this path.
+            let single_keep_matches_st =
+                (seg_len < config.junction_support) as i32;
+            let _ = single_keep_matches_st;
+            parity_read_exon_emit(
+                &active_read, ei, seg_start, seg_end, seg_len,
+                good_junctions, killed_junctions,
+                config.junction_support, false, read_len, // is_long_read=false: match ST single path
+                keep, "single",
             );
 
             if ei > 0 && !keep {
@@ -1657,13 +1905,18 @@ fn process_read_for_group(
                         ncoord = active_read.exons.len();
                         if let Some(li) = lastgroup {
                             if li < strand_data.groups.len() {
-                                let first_pair_end = active_read
-                                    .exons
-                                    .first()
-                                    .map(|(_, e)| *e)
-                                    .unwrap_or(active_read.ref_end);
-                                if first_pair_end > strand_data.groups[li].end {
+                                let first_pair_end = if stringtie_pair_coords {
+                                    active_read
+                                        .exons
+                                        .first()
+                                        .map(|(_, e)| *e)
+                                        .unwrap_or(active_read.ref_end)
+                                } else {
+                                    active_read.ref_end
+                                };
+                                if !strict_boundaries && first_pair_end > strand_data.groups[li].end {
                                     strand_data.groups[li].end = first_pair_end;
+                                    boundary_stats.pair_first_exon_extend += 1;
                                     readgroups[active_idx].push(ngroup_grid);
                                     let first_pair_len = active_read
                                         .exons
@@ -1690,7 +1943,10 @@ fn process_read_for_group(
         }
     }
 
-    Ok(ProcessReadResult { next_color })
+    Ok(ProcessReadResult {
+        next_color,
+        boundary_stats,
+    })
 }
 
 /// Merge two groups forward 
@@ -1759,6 +2015,7 @@ fn merge_close_groups(
     eqcol: &mut Vec<usize>,
     _bundledist: u64,
 ) -> Result<()> {
+    let hard_boundary_veto = merge_hard_boundary_veto_enabled();
     // Ensure merge array is sized
     let max_grid = strand_data.groups.iter().map(|g| g.grid).max().unwrap_or(0);
     if merge.len() <= max_grid {
@@ -1767,42 +2024,80 @@ fn merge_close_groups(
         }
     }
 
-    // for each strand, merge groups within bundledist
-    let mut lastgroup_idx = strand_data.startgroup;
-    let mut outer_loops = 0;
-
-    while let Some(li) = lastgroup_idx {
-        outer_loops += 1;
-        if outer_loops > strand_data.groups.len() * 2 {
-            break;
-        }
-        let mut procgroup_idx = strand_data.groups[li].next_gr;
-        let mut inner_loops = 0;
-
+    if stringtie_merge_close_pass_enabled() {
+        // StringTie-style single-pass merge: track adjacent last/proc groups and
+        // only advance lastgroup when no merge is performed.
+        let mut lastgroup_idx: Option<usize> = None;
+        let mut procgroup_idx = strand_data.startgroup;
+        let mut loops = 0usize;
         while let Some(pi) = procgroup_idx {
-            inner_loops += 1;
-            if inner_loops > strand_data.groups.len() * 2 {
+            loops += 1;
+            if loops > strand_data.groups.len().saturating_mul(3).max(1) {
                 break;
             }
             if pi >= strand_data.groups.len() {
                 break;
             }
-
-            let gap = strand_data.groups[pi]
-                .start
-                .saturating_sub(strand_data.groups[li].end);
-
-            if gap <= _bundledist {
-                merge_fwd_groups(strand_data, li, pi, merge, eqcol)?;
-                procgroup_idx = strand_data.groups[li].next_gr;
-                continue;
+            if let Some(li) = lastgroup_idx {
+                if li >= strand_data.groups.len() {
+                    break;
+                }
+                let gap = strand_data.groups[pi]
+                    .start
+                    .saturating_sub(strand_data.groups[li].end);
+                if gap <= _bundledist {
+                    if hard_boundary_veto
+                        && (strand_data.groups[li].hardend || strand_data.groups[pi].hardstart)
+                    {
+                        lastgroup_idx = Some(pi);
+                        procgroup_idx = strand_data.groups[pi].next_gr;
+                        continue;
+                    }
+                    merge_fwd_groups(strand_data, li, pi, merge, eqcol)?;
+                    procgroup_idx = strand_data.groups[li].next_gr;
+                    continue;
+                }
             }
-
-            // Move to next procgroup
+            lastgroup_idx = Some(pi);
             procgroup_idx = strand_data.groups[pi].next_gr;
         }
-
-        lastgroup_idx = strand_data.groups[li].next_gr;
+    } else {
+        // Legacy Rustle pass.
+        let mut lastgroup_idx = strand_data.startgroup;
+        let mut outer_loops = 0;
+        while let Some(li) = lastgroup_idx {
+            outer_loops += 1;
+            if outer_loops > strand_data.groups.len() * 2 {
+                break;
+            }
+            let mut procgroup_idx = strand_data.groups[li].next_gr;
+            let mut inner_loops = 0;
+            while let Some(pi) = procgroup_idx {
+                inner_loops += 1;
+                if inner_loops > strand_data.groups.len() * 2 {
+                    break;
+                }
+                if pi >= strand_data.groups.len() {
+                    break;
+                }
+                let gap = strand_data.groups[pi]
+                    .start
+                    .saturating_sub(strand_data.groups[li].end);
+                if gap <= _bundledist {
+                    if hard_boundary_veto
+                        && (strand_data.groups[li].hardend || strand_data.groups[pi].hardstart)
+                    {
+                        procgroup_idx = strand_data.groups[pi].next_gr;
+                        continue;
+                    }
+                    merge_fwd_groups(strand_data, li, pi, merge, eqcol)?;
+                    procgroup_idx = strand_data.groups[li].next_gr;
+                    continue;
+                }
+                procgroup_idx = strand_data.groups[pi].next_gr;
+            }
+            lastgroup_idx = strand_data.groups[li].next_gr;
+        }
     }
 
     Ok(())

@@ -190,12 +190,12 @@ pub fn apply_longtrim_direct(
                     .filter(|b| b.pos >= dn_lo && b.pos < dn_hi)
                     .map(|b| b.cov)
                     .fold(0.0f64, f64::max);
-                let max_lend_in = bundlenode_lend
+                let _max_lend_in = bundlenode_lend
                     .iter()
                     .filter(|b| b.pos >= ns && b.pos < ne)
                     .map(|b| b.cov)
                     .fold(0.0f64, f64::max);
-                let max_lstart_in = bundlenode_lstart
+                let _max_lstart_in = bundlenode_lstart
                     .iter()
                     .filter(|b| b.pos >= ns && b.pos < ne)
                     .map(|b| b.cov)

@@ -5,7 +5,7 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::assembly_mode::LONGINTRONANCHOR;
 use crate::assembly_mode::{use_coverage_trim, use_longtrim};
@@ -15,8 +15,7 @@ use crate::bitset::NodeSet;
 use crate::bpcov::{Bpcov, BpcovStranded, BPCOV_STRAND_ALL, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
 use crate::bundle::{
     build_bundlenodes_and_readgroups_from_cgroups,
-    build_bundlenodes_and_readgroups_from_cgroups_3strand, compare_bundles_to_log,
-    detect_bundles_from_bam, parse_bundle_log,
+    build_bundlenodes_and_readgroups_from_cgroups_3strand, compare_bundles_to_log, parse_bundle_log,
 };
 use crate::bundle_builder::build_sub_bundles;
 
@@ -50,12 +49,17 @@ use crate::path_extract::{
     extract_rawreads_transcripts, extract_shortread_transcripts, extract_transcripts,
     LongRecSummary, Transcript,
 };
+use crate::parity_junction_dump;
+use crate::parity_partition_dump;
+use crate::parity_trace_dump;
+use crate::parity_shadow;
 use crate::read_boundaries::collect_read_boundaries_with_cpas;
 use crate::reference_gtf::{
     find_guide_pat, parse_reference_gtf, process_refguides, GuideInfo, RefTranscript,
 };
 use crate::snapshot;
 use crate::snapshot::SnapshotDetail;
+use crate::stringtie_parity::stringtie_exact;
 use crate::trace_reference::{
     debug_target_ref_stage, drop_resolved_blockers_by_final_matches, find_traced_ref_in_bundle,
     ref_overlaps_bundle, trace_refs_in_bundles, write_blocker_report,
@@ -123,7 +127,7 @@ fn parse_ref_chains_for_bundle(
     let mut cur_chrom = String::new();
     let mut cur_strand = '.';
     let mut cur_exons: Vec<(u64, u64)> = Vec::new();
-    let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
+    let flush = |tid: &Option<String>, chrom: &str, strand: char,
                      exons: &[(u64, u64)],
                      out: &mut Vec<(String, Vec<(u64, u64)>, Vec<(u64, u64)>, char)>| {
         let Some(tid) = tid else { return; };
@@ -205,7 +209,7 @@ fn append_missed_oracle_direct_emit(
     let skip_matched = std::env::var_os("RUSTLE_MISSED_ORACLE_SKIP_MATCHED").is_some();
     let chain_tol: u64 = std::env::var("RUSTLE_MISSED_ORACLE_CHAIN_TOL")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
-    let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
+    let flush = |tid: &Option<String>, chrom: &str, strand: char,
                      exons: &[(u64, u64)],
                      txs: &mut Vec<crate::path_extract::Transcript>| {
         let Some(tid) = tid else { return };
@@ -758,23 +762,6 @@ fn trace_numeric_state_active() -> bool {
     std::env::var_os("RUSTLE_TRACE_METRICS").is_some()
 }
 
-#[inline]
-fn parse_trace_bad_mm_neg_junc() -> Option<(u64, u64)> {
-    let val = std::env::var("RUSTLE_TRACE_BAD_MM_NEG_JUNC").ok()?;
-    let (a, b) = val.split_once('-')?;
-    let donor = a.trim().parse::<u64>().ok()?;
-    let acceptor = b.trim().parse::<u64>().ok()?;
-    Some((donor, acceptor))
-}
-
-#[inline]
-fn trace_bad_mm_neg_match(j: Junction) -> bool {
-    let Some((donor, acceptor)) = parse_trace_bad_mm_neg_junc() else {
-        return false;
-    };
-    j.donor == donor && (j.acceptor == acceptor || j.acceptor.saturating_add(1) == acceptor)
-}
-
 /// Collapse zero-length internal graph nodes.
 ///
 /// When the event-driven builder processes End→Start at the same genomic
@@ -849,27 +836,6 @@ fn emit_jfinal_trace(cjunctions: &[crate::types::CJunction], tag: &str) {
 fn zero_graph_node_bp_coverage(graph: &mut Graph) {
     for node in graph.nodes.iter_mut() {
         node.coverage = 0.0;
-    }
-}
-
-fn refresh_graph_node_bp_coverage_from_bpcov(graph: &mut Graph, bpcov_stranded: &BpcovStranded) {
-    let source_id = graph.source_id;
-    let sink_id = graph.sink_id;
-    for i in 0..graph.n_nodes {
-        if i == source_id || i == sink_id {
-            continue;
-        }
-        let (ns, ne) = {
-            let n = &graph.nodes[i];
-            (n.start, n.end)
-        };
-        if ns >= ne {
-            continue;
-        }
-        let si = bpcov_stranded.plus.idx(ns);
-        let ei = bpcov_stranded.plus.idx(ne);
-        let total_cov = bpcov_stranded.get_cov_range(BPCOV_STRAND_ALL, si, ei);
-        graph.nodes[i].coverage = total_cov;
     }
 }
 
@@ -973,6 +939,76 @@ struct DebugBundleTarget {
     chrom: String,
     start: u64,
     end: u64,
+}
+
+#[derive(Clone, Debug)]
+struct FocusLocus {
+    chrom: String,
+    start: u64,
+    end: u64,
+    strand: Option<char>,
+}
+
+fn parse_focus_loci_env() -> Vec<FocusLocus> {
+    let Some(raw) = std::env::var_os("RUSTLE_PARITY_FOCUS_LOCI") else {
+        return Vec::new();
+    };
+    let raw = raw.to_string_lossy();
+    let mut out = Vec::new();
+    for item in raw.split(',') {
+        let item = item.trim();
+        if item.is_empty() {
+            continue;
+        }
+        let (chrom, rest) = match item.split_once(':') {
+            Some(v) => v,
+            None => continue,
+        };
+        let mut strand: Option<char> = None;
+        let mut range_part = rest;
+        if let Some((range, sfx)) = rest.rsplit_once(':') {
+            let s = sfx.trim();
+            if s == "+" || s == "-" || s == "." {
+                strand = s.chars().next();
+                range_part = range;
+            }
+        }
+        let (start, end) = match range_part.split_once('-') {
+            Some(v) => v,
+            None => continue,
+        };
+        let start = match start.replace(',', "").parse::<u64>() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let end = match end.replace(',', "").parse::<u64>() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        out.push(FocusLocus {
+            chrom: chrom.to_string(),
+            start,
+            end,
+            strand,
+        });
+    }
+    out
+}
+
+#[inline]
+fn focus_locus_match(
+    loci: &[FocusLocus],
+    chrom: &str,
+    start: u64,
+    end: u64,
+    strand: char,
+) -> bool {
+    loci.iter().any(|l| {
+        l.chrom == chrom
+            && l.start == start.saturating_add(1)
+            && l.end == end.saturating_add(1)
+            && l.strand.map(|s| s == strand).unwrap_or(true)
+    })
 }
 
 fn parse_debug_bundle_target(config: &RunConfig) -> Option<DebugBundleTarget> {
@@ -1136,6 +1172,7 @@ fn merge_region_outer_bundles(
         return bundles;
     }
     let debug_target = parse_debug_bundle_target(config);
+    let keep_strand = std::env::var_os("RUSTLE_REGION_MERGE_KEEP_STRAND").is_some();
     bundles.sort_unstable_by(|a, b| {
         (a.chrom.as_str(), a.start, a.end, a.strand).cmp(&(
             b.chrom.as_str(),
@@ -1151,17 +1188,85 @@ fn merge_region_outer_bundles(
         let chrom = bundles[i].chrom.clone();
         let start = bundles[i].start;
         let end = bundles[i].end;
+        let merged_strand = if keep_strand { bundles[i].strand } else { '.' };
         let mut reads: Vec<BundleRead> = Vec::new();
+        let mut contributing_minus = 0usize;
+        let mut contributing_neutral = 0usize;
+        let mut contributing_plus = 0usize;
+        let mut contributing_other = 0usize;
         while i < bundles.len()
             && bundles[i].chrom == chrom
             && bundles[i].start == start
             && bundles[i].end == end
+            && (!keep_strand || bundles[i].strand == merged_strand)
         {
+            match bundles[i].strand {
+                '-' => contributing_minus += 1,
+                '.' => contributing_neutral += 1,
+                '+' => contributing_plus += 1,
+                _ => contributing_other += 1,
+            }
             reads.extend(std::mem::take(&mut bundles[i].reads));
             i += 1;
         }
         reads.sort_unstable_by_key(|r| (r.ref_start, r.ref_end, r.read_uid));
+        let mut read_minus = 0usize;
+        let mut read_neutral = 0usize;
+        let mut read_plus = 0usize;
+        let mut read_other = 0usize;
+        for r in &reads {
+            match r.strand {
+                '-' => read_minus += 1,
+                '.' => read_neutral += 1,
+                '+' => read_plus += 1,
+                _ => read_other += 1,
+            }
+        }
         let junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
+        if debug_stage::is_enabled() {
+            debug_stage::emit(
+                "region_merge_bundle",
+                &chrom,
+                start,
+                end,
+                merged_strand,
+                reads.len(),
+                reads.iter().map(|r| r.junctions.len()).sum(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                &format!(
+                    "keep_strand={} src_bundle(-/.+/o)={}/{}/{}/{} src_read(-/.+/o)={}/{}/{}/{}",
+                    if keep_strand { 1 } else { 0 },
+                    contributing_minus,
+                    contributing_neutral,
+                    contributing_plus,
+                    contributing_other,
+                    read_minus,
+                    read_neutral,
+                    read_plus,
+                    read_other
+                ),
+            );
+        }
+        parity_shadow::emit_counts(
+            "layer0_region_merge",
+            &chrom,
+            start,
+            end,
+            merged_strand,
+            1,
+            contributing_minus as i64 + contributing_plus as i64 + contributing_neutral as i64,
+            reads.len() as i64,
+            (contributing_minus + contributing_plus + contributing_neutral + contributing_other) as i64,
+            (contributing_minus + contributing_plus + contributing_neutral) as i64,
+            reads.len() as i64,
+            "rustle_bundle_count/rustle_src_bundles/rustle_reads vs shadow_src_bundle_count/src_stranded_or_neutral/src_reads",
+        );
         if debug_bundle_overlaps(debug_target.as_ref(), &chrom, start, end) {
             let contributing = bundles
                 .iter()
@@ -1194,7 +1299,7 @@ fn merge_region_outer_bundles(
             chrom,
             start,
             end,
-            strand: '.',
+            strand: merged_strand,
             reads,
             junction_stats,
             bundlenodes: None,
@@ -1349,6 +1454,96 @@ fn unique_color_roots(colors: &[usize]) -> usize {
         seen.insert(c);
     }
     seen.len()
+}
+
+fn parity_forced_keep_junctions(chrom: &str, start: u64, end: u64) -> Vec<Junction> {
+    type BundleKey = (String, u64, u64);
+    static CACHE: OnceLock<Option<HashMap<BundleKey, Vec<Junction>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| {
+        let path = std::env::var_os("RUSTLE_PARITY_FORCE_KEEP_JUNCTIONS_TSV")?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let mut map: HashMap<BundleKey, Vec<Junction>> = HashMap::default();
+        for (li, line) in text.lines().enumerate() {
+            let s = line.trim();
+            if s.is_empty() || s.starts_with('#') {
+                continue;
+            }
+            let cols: Vec<&str> = s.split('\t').collect();
+            if cols.len() < 5 {
+                continue;
+            }
+            if li == 0 && cols[0] == "chrom" {
+                continue;
+            }
+            let Ok(bs) = cols[1].parse::<u64>() else {
+                continue;
+            };
+            let Ok(be) = cols[2].parse::<u64>() else {
+                continue;
+            };
+            let Ok(donor) = cols[3].parse::<u64>() else {
+                continue;
+            };
+            let Ok(acceptor) = cols[4].parse::<u64>() else {
+                continue;
+            };
+            map.entry((cols[0].to_string(), bs, be))
+                .or_default()
+                .push(Junction::new(donor, acceptor));
+        }
+        Some(map)
+    });
+    let Some(map) = cache.as_ref() else {
+        return Vec::new();
+    };
+    map.get(&(chrom.to_string(), start, end))
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn parity_forced_drop_junctions(chrom: &str, start: u64, end: u64) -> Vec<Junction> {
+    type BundleKey = (String, u64, u64);
+    static CACHE: OnceLock<Option<HashMap<BundleKey, Vec<Junction>>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| {
+        let path = std::env::var_os("RUSTLE_PARITY_FORCE_DROP_JUNCTIONS_TSV")?;
+        let text = std::fs::read_to_string(path).ok()?;
+        let mut map: HashMap<BundleKey, Vec<Junction>> = HashMap::default();
+        for (li, line) in text.lines().enumerate() {
+            let s = line.trim();
+            if s.is_empty() || s.starts_with('#') {
+                continue;
+            }
+            let cols: Vec<&str> = s.split('\t').collect();
+            if cols.len() < 5 {
+                continue;
+            }
+            if li == 0 && cols[0] == "chrom" {
+                continue;
+            }
+            let Ok(bs) = cols[1].parse::<u64>() else {
+                continue;
+            };
+            let Ok(be) = cols[2].parse::<u64>() else {
+                continue;
+            };
+            let Ok(donor) = cols[3].parse::<u64>() else {
+                continue;
+            };
+            let Ok(acceptor) = cols[4].parse::<u64>() else {
+                continue;
+            };
+            map.entry((cols[0].to_string(), bs, be))
+                .or_default()
+                .push(Junction::new(donor, acceptor));
+        }
+        Some(map)
+    });
+    let Some(map) = cache.as_ref() else {
+        return Vec::new();
+    };
+    map.get(&(chrom.to_string(), start, end))
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn trace_junction_reason(st: &JunctionStat, _junction_thr: f64) -> &'static str {
@@ -7559,6 +7754,10 @@ pub fn run<P: AsRef<Path>>(
         }
     }
     debug_stage::init(diag_tsv_resolved.as_deref())?;
+    parity_junction_dump::init()?;
+    parity_partition_dump::init()?;
+    parity_trace_dump::init()?;
+    parity_shadow::init(output_gtf.as_ref())?;
     let snapshot_writer = std::sync::Arc::new(std::sync::Mutex::new(snapshot::SnapshotWriter::new(config.snapshot_jsonl.as_deref())?));
     let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
     let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
@@ -7837,7 +8036,9 @@ pub fn run<P: AsRef<Path>>(
     let all_transcripts_mutex = std::sync::Mutex::new(Vec::<Transcript>::new());
     let single_exon_predictions_mutex = std::sync::Mutex::new(Vec::<Transcript>::new());
     let trace_pass_id = std::sync::atomic::AtomicUsize::new(0);
-    let shadow_strict_3strand = std::env::var_os("RUSTLE_SHADOW_STRICT_3STRAND").is_some();
+    let shadow_strict_3strand =
+        std::env::var_os("RUSTLE_SHADOW_STRICT_3STRAND").is_some() || parity_shadow::enabled();
+    let focus_loci = parse_focus_loci_env();
     let shadow_bundle_diags_mutex = std::sync::Mutex::new(Vec::<ShadowStrictBundleDiag>::new());
 
     // Pre-compute per-strand coverage for ALL bundles at each region.
@@ -8390,10 +8591,24 @@ pub fn run<P: AsRef<Path>>(
             );
         }
 
-        let (corrected_stats, corrected_map) =
-            correct_junctions_with_map(&junction_stats_corr, config.verbose);
-        junction_stats_corr = corrected_stats;
-        junction_redirect_map.extend(corrected_map);
+        // StringTie has only `apply_higherr_demotions` as its junction demotion
+        // mechanism — it stores redirect pointers (`jd.nreads<0`) without
+        // hard-merging junctions in the read data.  Rustle's parallel
+        // pipeline also ran `correct_junctions_with_map` whose output populated
+        // `junction_redirect_map`, which `repair_reads_after_junction_quality`
+        // then used to hard-merge alt-donor/acceptor junctions into the read
+        // structure.  That double-demotion ERASED alt-donor junctions from the
+        // cjunction set before apply_higherr_demotions ran on them, so ST's
+        // per-alt-donor changelr events couldn't fire in Rustle.
+        //
+        // Opt back in with RUSTLE_ENABLE_JUNCTION_MERGE=1 if a specific
+        // workflow needs the old hard-merge behavior.
+        if std::env::var_os("RUSTLE_ENABLE_JUNCTION_MERGE").is_some() {
+            let (corrected_stats, corrected_map) =
+                correct_junctions_with_map(&junction_stats_corr, config.verbose);
+            junction_stats_corr = corrected_stats;
+            junction_redirect_map.extend(corrected_map);
+        }
 
         // Alt-junction demotion: snap alt-donors/acceptors with weak read
         // support to the canonical at the shared endpoint. Reduces graph
@@ -8402,25 +8617,30 @@ pub fn run<P: AsRef<Path>>(
         // RUSTLE_ALT_JUNC_SNAP=1. The redirect map flows into
         // repair_reads_after_junction_quality below, which updates read
         // exon boundaries accordingly.
-        let alt_demote_map = crate::junction_correction::demote_alt_junctions_to_canonical(
-            &junction_stats_corr
-        );
-        if !alt_demote_map.is_empty() {
-            // Apply to stats: merge demoted junction's counts into canonical
-            for (from, to) in &alt_demote_map {
-                if from == to { continue; }
-                if let Some(from_stat) = junction_stats_corr.get(from).cloned() {
-                    if let Some(to_stat) = junction_stats_corr.get_mut(to) {
-                        to_stat.mrcount += from_stat.mrcount;
-                        to_stat.nreads_good += from_stat.nreads_good;
-                        to_stat.nm += from_stat.nm;
-                        to_stat.leftsupport += from_stat.leftsupport;
-                        to_stat.rightsupport += from_stat.rightsupport;
+        // Alt-donor/acceptor demotion is a Rustle-specific graph-simplification pass; StringTie has
+        // no equivalent between higherr and `good_junc`. Skip under STRINGTIE_EXACT parity mode.
+        if !stringtie_exact() {
+            let alt_demote_map = crate::junction_correction::demote_alt_junctions_to_canonical(
+                &junction_stats_corr,
+            );
+            if !alt_demote_map.is_empty() {
+                for (from, to) in &alt_demote_map {
+                    if from == to {
+                        continue;
                     }
-                    junction_stats_corr.remove(from);
+                    if let Some(from_stat) = junction_stats_corr.get(from).cloned() {
+                        if let Some(to_stat) = junction_stats_corr.get_mut(to) {
+                            to_stat.mrcount += from_stat.mrcount;
+                            to_stat.nreads_good += from_stat.nreads_good;
+                            to_stat.nm += from_stat.nm;
+                            to_stat.leftsupport += from_stat.leftsupport;
+                            to_stat.rightsupport += from_stat.rightsupport;
+                        }
+                        junction_stats_corr.remove(from);
+                    }
                 }
+                junction_redirect_map.extend(alt_demote_map);
             }
-            junction_redirect_map.extend(alt_demote_map);
         }
         if stage_debug {
             eprintln!(
@@ -8529,6 +8749,36 @@ pub fn run<P: AsRef<Path>>(
         // The cjunctions contain redirect pointers (negative nreads/nreads_good)
         // from apply_higherr_demotions, needed to adjust read exon boundaries.
         let cjunctions_for_redirect = cjunctions.clone();
+        // PARITY POST-HIGHERR DUMP: mirrors StringTie's PARITY_JUNC_POSTHIGHERR_TSV.
+        if let Ok(pp_path) = std::env::var("RUSTLE_PARITY_JUNC_POSTHIGHERR_TSV") {
+            if !pp_path.is_empty() {
+                use std::io::Write;
+                use std::sync::Mutex;
+                use std::sync::OnceLock;
+                static PP_MUTEX: OnceLock<Mutex<bool>> = OnceLock::new();
+                let mtx = PP_MUTEX.get_or_init(|| Mutex::new(false));
+                if let Ok(mut hdr_written) = mtx.lock() {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&pp_path)
+                    {
+                        if !*hdr_written {
+                            let _ = writeln!(f, "source\tchrom\tbstart\tbend\tstart\tend\tstrand\tnreads\tnm\tmm\tleftsup\trightsup\tnreads_good\tguide");
+                            *hdr_written = true;
+                        }
+                        for c in &cjunctions_for_redirect {
+                            let _ = writeln!(f,
+                                "rustle\t{}\t{}\t{}\t{}\t{}\t{}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{}",
+                                bundle.chrom, bundle.start, bundle.end,
+                                c.start, c.end, c.strand,
+                                c.nreads, c.nm, c.mm, c.leftsupport, c.rightsupport,
+                                c.nreads_good, c.guide_match as i32);
+                        }
+                    }
+                }
+            }
+        }
         junction_stats_corr = crate::types::cjunctions_to_junction_stats(&cjunctions);
         apply_bad_mm_neg_stage(
             &mut junction_stats_corr,
@@ -8607,6 +8857,21 @@ pub fn run<P: AsRef<Path>>(
                 &junction_stats_corr,
             );
         }
+        if parity_junction_dump::enabled() {
+            let read_juncs: crate::types::DetHashSet<crate::types::Junction> = bundle
+                .reads
+                .iter()
+                .flat_map(|r| r.junctions.iter().copied())
+                .collect();
+            parity_junction_dump::emit_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "read_union",
+                &parity_junction_dump::encode_junction_set_sorted(read_juncs.into_iter()),
+            );
+        }
         if trace_log_style {
             eprintln!(
                 "--- infer_transcripts: AFTER_COUNT_GOOD_JUNCTIONS bdata={}-{}",
@@ -8662,14 +8927,94 @@ pub fn run<P: AsRef<Path>>(
         }
 
         let junction_stats_corr_final = junction_stats_corr.clone();
-        let junction_stats = apply_junction_filters_and_canonicalize(
-            junction_stats_corr,
-            config.min_junction_reads,
-            config.junction_canonical_tolerance,
-            config.per_splice_site_isofrac,
-            config.verbose,
-        );
-        let junctions = filter_junctions(&junction_stats, config.min_junction_reads);
+        if parity_junction_dump::enabled() {
+            parity_junction_dump::emit_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "pre_canonical",
+                &parity_junction_dump::encode_stats_graphlike(
+                    &junction_stats_corr_final,
+                    config.min_junction_reads,
+                ),
+            );
+        }
+        // Batch B2 parity probe: keep pre-canonical junction set as graph input source.
+        // This isolates losses caused by canonical merge / per-splice-site isofrac filtering
+        // between `pre_canonical` and `graph_input`.
+        let keep_precanonical_junctions =
+            std::env::var_os("RUSTLE_KEEP_PRECANONICAL_JUNCTIONS").is_some();
+        if keep_precanonical_junctions {
+            parity_trace_dump::emit_event_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "junction_filter_mode",
+                2,
+                "mode=keep_precanonical_for_graph_input",
+            );
+        }
+        let junction_stats = if keep_precanonical_junctions {
+            junction_stats_corr_final.clone()
+        } else {
+            apply_junction_filters_and_canonicalize(
+                junction_stats_corr,
+                config.min_junction_reads,
+                config.junction_canonical_tolerance,
+                config.per_splice_site_isofrac,
+                config.verbose,
+            )
+        };
+        let mut junctions = filter_junctions(&junction_stats, config.min_junction_reads);
+        let forced_keep_junctions =
+            parity_forced_keep_junctions(&bundle.chrom, bundle.start, bundle.end);
+        let forced_drop_junctions =
+            parity_forced_drop_junctions(&bundle.chrom, bundle.start, bundle.end);
+        if !forced_keep_junctions.is_empty() {
+            let mut added = 0usize;
+            for j in &forced_keep_junctions {
+                if !junctions.contains(j) {
+                    junctions.push(*j);
+                    added += 1;
+                }
+            }
+            parity_trace_dump::emit_event_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "forced_keep_junctions_graph_input",
+                2,
+                &format!("requested={};added={}", forced_keep_junctions.len(), added),
+            );
+        }
+        if !forced_drop_junctions.is_empty() {
+            let before = junctions.len();
+            let drop_set: HashSet<Junction> = forced_drop_junctions.iter().copied().collect();
+            junctions.retain(|j| !drop_set.contains(j));
+            let removed = before.saturating_sub(junctions.len());
+            parity_trace_dump::emit_event_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "forced_drop_junctions_graph_input",
+                2,
+                &format!("requested={};removed={}", forced_drop_junctions.len(), removed),
+            );
+        }
+        if parity_junction_dump::enabled() {
+            parity_junction_dump::emit_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "graph_input",
+                &parity_junction_dump::encode_junction_set_sorted(junctions.iter().copied()),
+            );
+        }
         if trace_log_style {
             let pass_id = trace_pass_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
             eprintln!(
@@ -8802,6 +9147,36 @@ pub fn run<P: AsRef<Path>>(
                 }
             }
         }
+        if !forced_keep_junctions.is_empty() {
+            for j in &forced_keep_junctions {
+                good_junctions_set.insert(*j);
+            }
+            parity_trace_dump::emit_event_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "forced_keep_junctions_cgroup_feed",
+                2,
+                &format!("inserted={}", forced_keep_junctions.len()),
+            );
+        }
+        if !forced_drop_junctions.is_empty() {
+            let before = good_junctions_set.len();
+            for j in &forced_drop_junctions {
+                good_junctions_set.remove(j);
+            }
+            let removed = before.saturating_sub(good_junctions_set.len());
+            parity_trace_dump::emit_event_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "forced_drop_junctions_cgroup_feed",
+                2,
+                &format!("requested={};removed={}", forced_drop_junctions.len(), removed),
+            );
+        }
         let mut killed_juncs: HashSet<crate::types::Junction> = junction_stats_corr_final
             .iter()
             .filter(|(_, s)| {
@@ -8833,6 +9208,27 @@ pub fn run<P: AsRef<Path>>(
                     killed_juncs.insert(*orig);
                 }
             }
+        }
+        if !forced_keep_junctions.is_empty() {
+            for j in &forced_keep_junctions {
+                killed_juncs.remove(j);
+            }
+        }
+        if !forced_drop_junctions.is_empty() {
+            for j in &forced_drop_junctions {
+                killed_juncs.insert(*j);
+            }
+        }
+
+        if parity_junction_dump::enabled() {
+            parity_junction_dump::emit_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "cgroup_feed",
+                &parity_junction_dump::encode_junction_set_sorted(good_junctions_set.iter().copied()),
+            );
         }
 
         if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
@@ -8868,10 +9264,218 @@ pub fn run<P: AsRef<Path>>(
             &bundle.reads
         };
         let region_key = (bundle.chrom.clone(), bundle.start, bundle.end);
-        let region_reads: &[BundleRead] = region_reads_for_groupflow
-            .get(&region_key)
-            .map(|v| v.as_slice())
-            .unwrap_or_else(|| bundle.reads.as_slice());
+        // Apply all StringTie-equivalent per-read adjustments to a local copy of region reads
+        // here (BEFORE cached_sub_bundles builds the partition signature), so both the parity
+        // TSV and the final build_sub_bundles see the same exon coordinates:
+        //   1. junction_redirect_map exon-boundary snapping (higherr/alt-junction/guide snap)
+        //   2. apply_higherr_demotions changeleft/changeright per-read redirect (StringTie
+        //      rlink.cpp:15443+ with rd.juncs[j]->nreads<0 or nreads_good<0)
+        //   3. unstranding of reads whose junctions all end up killed
+        let region_reads_adjusted: Vec<BundleRead>;
+        let mut replacement_junctions: Vec<Junction> = Vec::new();
+        let mut redirected_count: usize = 0;
+        let mut unstranded_count: usize = 0;
+        let region_reads: &[BundleRead] = {
+            let raw = region_reads_for_groupflow
+                .get(&region_key)
+                .map(|v| v.as_slice())
+                .unwrap_or_else(|| bundle.reads.as_slice());
+            let has_map_adj = !junction_redirect_map.is_empty();
+            let has_cj_adj = config.long_reads && !cjunctions_for_redirect.is_empty();
+            if !has_map_adj && !has_cj_adj {
+                raw
+            } else {
+                let cj_by_start_end: std::collections::HashMap<(u64, u64), usize> =
+                    cjunctions_for_redirect
+                        .iter()
+                        .enumerate()
+                        .map(|(i, cj)| ((cj.start, cj.end), i))
+                        .collect();
+                let mut reads = raw.to_vec();
+                for r in reads.iter_mut() {
+                    // (1) junction_redirect_map boundary adjustment
+                    if has_map_adj {
+                        for j_idx in 0..r.junctions.len() {
+                            if j_idx + 1 < r.exons.len() {
+                                let exon_junc =
+                                    Junction::new(r.exons[j_idx].1, r.exons[j_idx + 1].0);
+                                if junction_redirect_map.contains_key(&exon_junc) {
+                                    let junc = r.junctions[j_idx];
+                                    r.exons[j_idx].1 = junc.donor;
+                                    r.exons[j_idx + 1].0 = junc.acceptor;
+                                }
+                            }
+                        }
+                    }
+                    // (2) per-read changeleft/changeright via cjunctions_for_redirect
+                    if !has_cj_adj || r.strand == '.' || r.junctions.is_empty() {
+                        continue;
+                    }
+                    let mut any_bad = false;
+                    let mut all_killed = true;
+                    for ji in 0..r.junctions.len() {
+                        // StringTie's rd.juncs[i] is a pointer to a CJunction whose
+                        // start/end match rd.segs[i].end/rd.segs[i+1].start.  Rustle's
+                        // r.junctions[ji] may carry deletion-aware offsets that differ
+                        // from the exon boundaries.  Look up the cjunction by the EXON-
+                        // derived key to match StringTie's indexing.
+                        let j = if ji + 1 < r.exons.len() {
+                            Junction::new(r.exons[ji].1, r.exons[ji + 1].0)
+                        } else {
+                            r.junctions[ji]
+                        };
+                        let cj = cj_by_start_end
+                            .get(&(j.donor, j.acceptor))
+                            .and_then(|&i| cjunctions_for_redirect.get(i));
+                        let Some(cj) = cj else {
+                            all_killed = false;
+                            continue;
+                        };
+                        let changeleft = cj.nreads < 0.0;
+                        let changeright = cj.nreads_good < 0.0;
+                        let is_killed = cj.strand == 0 || cj.mm < 0.0;
+                        if !is_killed {
+                            all_killed = false;
+                        }
+                        if !(changeleft || changeright) {
+                            if is_killed {
+                                any_bad = true;
+                            }
+                            continue;
+                        }
+                        any_bad = true;
+                        let mut newstart = r.exons[ji].1;
+                        let mut newend = if ji + 1 < r.exons.len() {
+                            r.exons[ji + 1].0
+                        } else {
+                            continue;
+                        };
+                        // Single-hop replacement to match StringTie rlink.cpp:15277-15308.
+                        // apply_higherr_demotions stores pointers as `-(idx + 1.0)`
+                        // (see resolved_cj_index in killed_junctions.rs); decode with
+                        // `.saturating_sub(1)`.  If the target is itself demoted
+                        // (nreads<0 for left, nreads_good<0 for right), StringTie
+                        // marks the read segment as invalid so the validation step
+                        // below fails — we mirror by forcing newstart/newend outside
+                        // the valid range.
+                        if changeleft {
+                            let jk = (cj.nreads.abs() as usize).saturating_sub(1);
+                            if let Some(target) = cjunctions_for_redirect.get(jk) {
+                                if target.nreads < 0.0 {
+                                    newstart = r.exons[ji].0.saturating_sub(1);
+                                } else {
+                                    newstart = target.start;
+                                }
+                            } else {
+                                newstart = r.exons[ji].0.saturating_sub(1);
+                            }
+                        }
+                        if changeright {
+                            let ek = (cj.nreads_good.abs() as usize).saturating_sub(1);
+                            if let Some(target) = cjunctions_for_redirect.get(ek) {
+                                if target.nreads_good < 0.0 {
+                                    newend = r.exons[ji + 1].1.saturating_add(1);
+                                } else {
+                                    newend = target.end;
+                                }
+                            } else {
+                                newend = r.exons[ji + 1].1.saturating_add(1);
+                            }
+                        }
+                        let seg_start = r.exons[ji].0;
+                        let seg_end = if ji + 1 < r.exons.len() {
+                            r.exons[ji + 1].1
+                        } else {
+                            continue;
+                        };
+                        let changelr_valid = newstart >= seg_start
+                            && newend <= seg_end
+                            && newstart <= newend;
+                        if parity_trace_dump::enabled() {
+                            parity_trace_dump::emit_event_row(
+                                &bundle.chrom,
+                                bundle.start,
+                                bundle.end,
+                                bundle.strand,
+                                "changelr_event",
+                                2,
+                                &format!(
+                                    "j={}-{};cl={};cr={};origL={};origR={};newL={};newR={};segL={};segR={};mm={};valid={}",
+                                    j.donor,
+                                    j.acceptor,
+                                    changeleft as i32,
+                                    changeright as i32,
+                                    r.exons[ji].1,
+                                    r.exons[ji + 1].0,
+                                    newstart,
+                                    newend,
+                                    seg_start,
+                                    seg_end,
+                                    cj.mm,
+                                    changelr_valid as i32,
+                                ),
+                            );
+                        }
+                        if !changelr_valid {
+                            continue;
+                        }
+                        let new_j = Junction::new(newstart, newend);
+                        // StringTie applies changeleft/changeright at all junctions, including
+                        // terminal. Apply unconditionally for parity. Gate via
+                        // RUSTLE_CHANGELR_INTERNAL_ONLY if rollback is needed.
+                        let internal_only =
+                            std::env::var_os("RUSTLE_CHANGELR_INTERNAL_ONLY").is_some();
+                        let gate_internal = internal_only && !(ji > 0 && ji + 1 < r.junctions.len());
+                        if !gate_internal {
+                            // Exon segments are always updated (StringTie rlink.cpp:15314-15315
+                            // adjusts rd.segs unconditionally when the new coords are valid).
+                            if changeleft {
+                                r.exons[ji].1 = newstart;
+                            }
+                            if changeright {
+                                r.exons[ji + 1].0 = newend;
+                            }
+                            // Junction pointer replacement ONLY when the current junction has
+                            // mm>=0 (StringTie rlink.cpp:15316 `if(jd.mm>=0) { ... rd.juncs.Put }`).
+                            // For mm<0 junctions (cont-demoted run-through, low-support bad),
+                            // StringTie leaves rd.juncs[i] pointing at the ORIGINAL killed
+                            // junction — add_read_to_group then sees strand=0 on that exon's
+                            // flank and drops the exon if it's small enough.
+                            if cj.mm >= 0.0 {
+                                r.junctions[ji] = new_j;
+                                replacement_junctions.push(new_j);
+                            }
+                        }
+                        redirected_count += 1;
+                        all_killed = false;
+                    }
+                    // (3) unstrand reads with all junctions killed
+                    if any_bad && all_killed {
+                        let still_all_killed = r.junctions.iter().all(|j| {
+                            cj_by_start_end
+                                .get(&(j.donor, j.acceptor))
+                                .and_then(|&i| cjunctions_for_redirect.get(i))
+                                .map(|cj| cj.strand == 0 || cj.mm < 0.0)
+                                .unwrap_or(true)
+                        });
+                        if still_all_killed {
+                            r.strand = '.';
+                            unstranded_count += 1;
+                        }
+                    }
+                }
+                region_reads_adjusted = reads;
+                &region_reads_adjusted
+            }
+        };
+        if config.verbose && (redirected_count > 0 || unstranded_count > 0) {
+            eprintln!(
+                "    junction_redirect: {} redirected, {} unstranded, {} replacement juncs",
+                redirected_count,
+                unstranded_count,
+                replacement_junctions.len()
+            );
+        }
         let (boundary_left, boundary_right) =
             collect_guide_boundary_sets_for_bundle(&guide_transcripts, &bundle);
         // Keep 3-strand flow on all bundles by default for compatibility. Allow explicit opt-out.
@@ -8887,7 +9491,16 @@ pub fn run<P: AsRef<Path>>(
         // unless output is clearly unusable (no assignments / catastrophic mapping).
         let legacy_3strand_fallback = std::env::var_os("RUSTLE_ENABLE_3STRAND_FALLBACK").is_some();
 
-        let (bundlenodes, cgroup_read_bnodes, bnode_colors, cgroup_read_scales) =
+        let count_bnodes = |head: Option<&CBundlenode>| {
+            let mut n = 0usize;
+            let mut cur = head;
+            while let Some(node) = cur {
+                n += 1;
+                cur = node.next.as_deref();
+            }
+            n
+        };
+        let (bundlenodes, cgroup_read_bnodes, bnode_colors, cgroup_read_scales, partition_mode) =
             if use_3strand_for_bundle {
                 let (bn_all, read_bnodes_all, bcolors, read_scale_all) =
                     build_bundlenodes_and_readgroups_from_cgroups_3strand(
@@ -8974,9 +9587,15 @@ pub fn run<P: AsRef<Path>>(
                         three_assigned
                     );
                     }
-                    direct_candidate
+                    (
+                        direct_candidate.0,
+                        direct_candidate.1,
+                        direct_candidate.2,
+                        direct_candidate.3,
+                        "fallback_direct",
+                    )
                 } else {
-                    (bn_all, subset_read_bnodes, bcolors, subset_read_scales)
+                    (bn_all, subset_read_bnodes, bcolors, subset_read_scales, "three_strand")
                 }
             } else {
                 let (bn, rb, bc) = build_bundlenodes_and_readgroups_from_cgroups(
@@ -8989,7 +9608,7 @@ pub fn run<P: AsRef<Path>>(
                     &boundary_left,
                     &boundary_right,
                 );
-                (bn, rb, bc, vec![1.0; cgroup_reads.len()])
+                (bn, rb, bc, vec![1.0; cgroup_reads.len()], "direct")
             };
 
         let mut scaled_bundle_reads: Vec<BundleRead> = bundle.reads.clone();
@@ -9000,6 +9619,271 @@ pub fn run<P: AsRef<Path>>(
                 r.junc_mismatch_weight *= scale;
                 for pc in r.pair_count.iter_mut() {
                     *pc *= scale;
+                }
+            }
+        }
+        if debug_stage::is_enabled() {
+            let bnode_count = count_bnodes(bundlenodes.as_ref());
+            let n_junctions: usize = bundle.reads.iter().map(|r| r.junctions.len()).sum();
+            let assigned_reads = cgroup_read_bnodes.iter().filter(|v| !v.is_empty()).count();
+            let (shadow_bnodes, shadow_groups, shadow_assigned) =
+                if parity_shadow::enabled() {
+                    let (s_bn, s_rb, s_bc) = build_bundlenodes_and_readgroups_from_cgroups(
+                        cgroup_reads,
+                        &good_junctions_set,
+                        &killed_juncs,
+                        config.cgroup_junction_support,
+                        config.bundle_merge_dist,
+                        config.long_reads,
+                        &boundary_left,
+                        &boundary_right,
+                    );
+                    (
+                        count_bnodes(s_bn.as_ref()) as i64,
+                        s_bc.len() as i64,
+                        s_rb.iter().filter(|v| !v.is_empty()).count() as i64,
+                    )
+                } else {
+                    (-1, -1, -1)
+                };
+            let detail = debug_stage::StageDetail {
+                bundle_bnodes: bnode_count,
+                bundle_read_bnode_links: cgroup_read_bnodes.iter().map(|v| v.len()).sum(),
+                bundle_color_count: bnode_colors.len(),
+                ..debug_stage::StageDetail::default()
+            };
+            let partition_note = format!(
+                "post_cgroup_bnodes mode={} cgroup_reads={} assigned_reads={} region_reads={}",
+                partition_mode,
+                cgroup_reads.len(),
+                assigned_reads,
+                region_reads.len()
+            );
+            debug_stage::emit_with_detail(
+                "bundle_partition",
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                bundle.reads.len(),
+                n_junctions,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                detail,
+                &partition_note,
+            );
+            parity_shadow::emit_counts(
+                "layer1_bundle_partition",
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                bnode_count as i64,
+                bnode_colors.len() as i64,
+                assigned_reads as i64,
+                shadow_bnodes,
+                shadow_groups,
+                shadow_assigned,
+                partition_mode,
+            );
+        }
+        let parity_need_sub_bundles = parity_partition_dump::enabled() || parity_trace_dump::enabled();
+        // Mirror the (color_good, color_killed) composition used by the final build_sub_bundles
+        // call so the partition TSV reflects the same junction sets as the actual assembly.
+        let cached_color_good: HashSet<crate::types::Junction> = {
+            let mut s = good_junctions_set.clone();
+            for rj in &replacement_junctions {
+                s.insert(*rj);
+            }
+            s
+        };
+        let cached_color_killed: HashSet<crate::types::Junction> = {
+            let mut s = killed_juncs.clone();
+            for rj in &replacement_junctions {
+                s.remove(rj);
+            }
+            s
+        };
+        let cached_sub_bundles: Option<Vec<crate::bundle_builder::SubBundleResult>> =
+            if parity_need_sub_bundles {
+                match build_sub_bundles(
+                    region_reads,
+                    &config,
+                    &cached_color_good,
+                    &cached_color_killed,
+                    None,
+                    None,
+                    bundle.start,
+                ) {
+                    Ok(subs) if !subs.is_empty() => Some(subs),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+        if parity_partition_dump::enabled() {
+            // StringTie emits one chain per `CBundle` (linked-list walk). The merged 3-strand
+            // `bundlenodes` list plus color components collapses many ST chains into one; rebuild
+            // from `build_sub_bundles` for parity TSV only (graph still uses `bundlenodes`).
+            let partition_sig_mode = std::env::var("RUSTLE_PARTITION_SIGNATURE_MODE")
+                .ok()
+                .unwrap_or_else(|| "subbundle".to_string());
+            let sig = if partition_sig_mode.eq_ignore_ascii_case("color_components") {
+                let geom: Vec<Vec<(u64, u64)>> =
+                    bundlenode_components_by_color(bundlenodes.as_ref(), &bnode_colors)
+                        .into_iter()
+                        .map(|comp| comp.into_iter().map(|(_, s, e, _)| (s, e)).collect())
+                        .collect();
+                parity_partition_dump::encode_partition_signature(&geom)
+            } else if let Some(ref subs) = cached_sub_bundles {
+                parity_partition_dump::encode_partition_signature_sub_bundle_walk(subs)
+            } else {
+                let geom: Vec<Vec<(u64, u64)>> =
+                    bundlenode_components_by_color(bundlenodes.as_ref(), &bnode_colors)
+                        .into_iter()
+                        .map(|comp| comp.into_iter().map(|(_, s, e, _)| (s, e)).collect())
+                        .collect();
+                parity_partition_dump::encode_partition_signature(&geom)
+            };
+            parity_trace_dump::emit_event_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                "partition_signature_mode",
+                2,
+                &format!("mode={}", partition_sig_mode),
+            );
+            parity_partition_dump::emit_rustle_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                &sig,
+            );
+            // Full bundlenode dump for cross-tool diff (matches ST's
+            // PARITY_BUNDLENODE_TSV).
+            if let Ok(bn_path) = std::env::var("RUSTLE_PARITY_BUNDLENODE_TSV") {
+                if !bn_path.is_empty() {
+                    if let Some(ref subs) = cached_sub_bundles {
+                        use std::io::Write;
+                        use std::sync::Mutex;
+                        use std::sync::OnceLock;
+                        static BN_MUTEX: OnceLock<Mutex<bool>> = OnceLock::new();
+                        let mtx = BN_MUTEX.get_or_init(|| Mutex::new(false));
+                        if let Ok(mut hdr_written) = mtx.lock() {
+                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&bn_path)
+                            {
+                                if !*hdr_written {
+                                    let _ = writeln!(f, "source\tchrom\tbundle_start\tbundle_end\tsno\tcbundle\tnode_idx\tnstart\tnend\tcov_sum\tnext_id");
+                                    *hdr_written = true;
+                                }
+                                for (ci, sb) in subs.iter().enumerate() {
+                                    let sno: i32 = match sb.strand {
+                                        '-' => 0,
+                                        '.' => 1,
+                                        '+' => 2,
+                                        _ => 1,
+                                    };
+                                    let mut ni = 0usize;
+                                    let mut cur = sb.bnode_head.as_ref();
+                                    while let Some(n) = cur {
+                                        // Rustle CBundlenode.end is exclusive; ST emits
+                                        // cur->end - 1 (0-based inclusive last base).  Use
+                                        // n.end.saturating_sub(1) so both dumps use the same
+                                        // inclusive-last convention.
+                                        let next_id = if n.next.is_some() { 1 } else { 0 };
+                                        let _ = writeln!(f,
+                                            "rustle\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{}",
+                                            bundle.chrom, bundle.start, bundle.end,
+                                            sno, ci, ni,
+                                            n.start, n.end.saturating_sub(1),
+                                            n.cov, next_id,
+                                        );
+                                        cur = n.next.as_deref();
+                                        ni += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if parity_trace_dump::enabled() {
+            let sub_n = cached_sub_bundles.as_ref().map(|s| s.len()).unwrap_or(0);
+            let bnodes_n = count_bnodes(bundlenodes.as_ref());
+            let roots_n = unique_color_roots(&bnode_colors);
+            let assigned_n = count_assigned_reads(&cgroup_read_bnodes, &cgroup_read_scales);
+            parity_trace_dump::emit_cgroup_row(
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                sub_n,
+                bnodes_n,
+                roots_n,
+                assigned_n,
+            );
+            if parity_trace_dump::chain_detail_enabled() {
+                if let Some(ref subs) = cached_sub_bundles {
+                    for (ci, sb) in subs.iter().enumerate() {
+                        let mut segs: Vec<String> = Vec::new();
+                        let mut cur = sb.bnode_head.as_ref();
+                        while let Some(n) = cur {
+                            segs.push(format!("{}-{}", n.start, n.end.saturating_sub(1)));
+                            cur = n.next.as_deref();
+                        }
+                        parity_trace_dump::emit_partition_chain_row(
+                            &bundle.chrom,
+                            bundle.start,
+                            bundle.end,
+                            bundle.strand,
+                            "subbundle",
+                            ci,
+                            &segs.join("+"),
+                        );
+                    }
+                }
+                let comps = bundlenode_components_by_color(bundlenodes.as_ref(), &bnode_colors);
+                for (ci, comp) in comps.iter().enumerate() {
+                    let segs = comp
+                        .iter()
+                        .map(|(_, s, e, _)| format!("{}-{}", s, e.saturating_sub(1)))
+                        .collect::<Vec<_>>()
+                        .join("+");
+                    parity_trace_dump::emit_partition_chain_row(
+                        &bundle.chrom,
+                        bundle.start,
+                        bundle.end,
+                        bundle.strand,
+                        "color_components",
+                        ci,
+                        &segs,
+                    );
+                }
+            }
+            if parity_trace_dump::read_exons_enabled() {
+                for (ri, r) in cgroup_reads.iter().enumerate() {
+                    let chain = parity_trace_dump::format_read_exon_chain(&r.exons);
+                    parity_trace_dump::emit_read_exon_row(
+                        &bundle.chrom,
+                        bundle.start,
+                        bundle.end,
+                        bundle.strand,
+                        ri,
+                        &chain,
+                    );
                 }
             }
         }
@@ -9016,7 +9900,26 @@ pub fn run<P: AsRef<Path>>(
              coverage_reads: &[BundleRead],
              read_bundles: Option<&[Vec<usize>]>,
              good_junctions_local: &HashSet<(u64, u64)>,
-             killed_junction_pairs_local: &HashSet<Junction>| {
+             killed_junction_pairs_local: &HashSet<Junction>,
+             run_tag: &str| {
+                parity_trace_dump::emit_event_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    "process_graph_enter",
+                    1,
+                    &format!(
+                        "run_tag={};graph_range={}-{};reads={};junctions={};good_junctions={};killed_junctions={}",
+                        run_tag,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        reads.len(),
+                        junctions.len(),
+                        good_junctions_local.len(),
+                        killed_junction_pairs_local.len()
+                    ),
+                );
                 let snapshot_full = snapshot_enabled
                     && (snapshot_detail == SnapshotDetail::Full
                         || snapshot_all
@@ -9120,6 +10023,19 @@ pub fn run<P: AsRef<Path>>(
                     collapse_zero_length_nodes(&mut graph);
                 }
 
+                // Partition / junction parity keys use the parent pipeline bundle. Sub-slices
+                // (`graph_bundle` for per-subbundle graphs) use different coordinates; trace rows
+                // must repeat the parent key so `disambiguate_parity_bundles.py` can join rows.
+                parity_trace_dump::emit_graph_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    "post_graph_build",
+                    run_tag,
+                    &graph,
+                );
+
                 // GNODE trace: emit per-graph-node state for diffing vs StringTie.
                 // Format matches stringtie_debug/rlink.cpp GNODE block.
                 // s: 0=minus, 1=unstranded, 2=plus (matches StringTie sno).
@@ -9218,6 +10134,24 @@ pub fn run<P: AsRef<Path>>(
                     )
                 };
 
+                // Patch A: when chasing StringTie parity, freeze pre-read-map graph mutation
+                // from coverage/terminal edge synthesis so topology diffs can be attributed
+                // to earlier cgroup/junction stages first. Opt-in for non-exact runs via
+                // RUSTLE_FREEZE_GRAPH_PRE_READ_MAP=1.
+                let freeze_pre_read_map_graph = crate::stringtie_parity::stringtie_exact()
+                    || std::env::var_os("RUSTLE_FREEZE_GRAPH_PRE_READ_MAP").is_some();
+                if freeze_pre_read_map_graph {
+                    parity_trace_dump::emit_event_row(
+                        &bundle.chrom,
+                        bundle.start,
+                        bundle.end,
+                        bundle.strand,
+                        "process_graph_pre_read_map_freeze",
+                        2,
+                        &format!("run_tag={};mode=freeze_cov_terminal_edges", run_tag),
+                    );
+                }
+
                 // Add source/sink edges for coverage drops (per-coverage source/sink logic).
                 // uses strand-indexed get_cov_sign(sno, ...).
                 let covlinks_sno = match graph_bundle.strand {
@@ -9225,31 +10159,43 @@ pub fn run<P: AsRef<Path>>(
                     '+' => BPCOV_STRAND_PLUS,
                     _ => BPCOV_STRAND_ALL,
                 };
-                let coverage_synth = crate::graph_build::add_coverage_source_sink_edges(
-                    &mut graph_mut,
-                    &graph_bpcov_stranded,
-                    covlinks_sno,
-                );
+                let coverage_synth = if freeze_pre_read_map_graph {
+                    Vec::new()
+                } else {
+                    crate::graph_build::add_coverage_source_sink_edges(
+                        &mut graph_mut,
+                        &graph_bpcov_stranded,
+                        covlinks_sno,
+                    )
+                };
                 // Opt-in alt-TTS sink edges at nodes whose end coincides
                 // with a junction donor (STRG.294.3 class: alt-TTS
                 // terminating where a splice-donor continues for the
                 // dominant isoform). Gated RUSTLE_IMPLICIT_ALT_TTS_SINK=1.
-                let mut alt_tts_synth = crate::graph_build::add_alt_tts_sink_edges(
-                    &mut graph_mut,
-                    junctions.as_ref(),
-                    graph_bundle.strand,
-                    Some(&graph_bundle.junction_stats),
-                );
+                let mut alt_tts_synth = if freeze_pre_read_map_graph {
+                    Vec::new()
+                } else {
+                    crate::graph_build::add_alt_tts_sink_edges(
+                        &mut graph_mut,
+                        junctions.as_ref(),
+                        graph_bundle.strand,
+                        Some(&graph_bundle.junction_stats),
+                    )
+                };
                 // Terminal-read cluster → junction-donor hardend (opt-in
                 // read-signal-based alt-TTS detection). Replaces the need
                 // for RUSTLE_ALT_TTS_ORACLE when enabled.
-                let mut terminal_donor_synth = crate::graph_build::discover_terminal_donor_hardends(
-                    &mut graph_mut,
-                    reads,
-                    junctions.as_ref(),
-                    graph_bundle.strand,
-                    Some(&graph_bundle.junction_stats),
-                );
+                let mut terminal_donor_synth = if freeze_pre_read_map_graph {
+                    Vec::new()
+                } else {
+                    crate::graph_build::discover_terminal_donor_hardends(
+                        &mut graph_mut,
+                        reads,
+                        junctions.as_ref(),
+                        graph_bundle.strand,
+                        Some(&graph_bundle.junction_stats),
+                    )
+                };
 
                 // Coverage-based node splitting: short-read always (trimnode_all); long/mixed when longtrim not yet implemented
                 let mut synthetic = if use_coverage_trim(mode) {
@@ -9358,6 +10304,16 @@ pub fn run<P: AsRef<Path>>(
                         reads.len()
                     );
                 }
+                parity_trace_dump::emit_graph_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    "pre_read_map",
+                    run_tag,
+                    &graph_mut,
+                );
+
                 // `GraphNode::coverage` is bp-coverage mass (`CGraphnode::cov`), not bundlenode coverage.
                 // Start clean before `get_fragment_pattern`-equivalent mapping accumulates read support.
                 zero_graph_node_bp_coverage(&mut graph_mut);
@@ -9387,6 +10343,15 @@ pub fn run<P: AsRef<Path>>(
                     )
                 };
                 tag_transfrags_origin_if_missing(&mut transfrags, "read_map");
+                parity_trace_dump::emit_read_map_summary_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    run_tag,
+                    transfrags.len(),
+                    &graph_mut,
+                );
                 debug_stage::emit_with_detail(
                     "graph_evolution",
                     &graph_bundle.chrom,
@@ -9405,7 +10370,36 @@ pub fn run<P: AsRef<Path>>(
                     debug_stage::graph_detail(&graph_mut, &transfrags),
                     "after_map_reads",
                 );
+                parity_shadow::emit_counts(
+                    "layer2_graph",
+                    &graph_bundle.chrom,
+                    graph_bundle.start,
+                    graph_bundle.end,
+                    graph_bundle.strand,
+                    graph_mut.n_nodes.saturating_sub(2) as i64,
+                    debug_stage::graph_edge_count(&graph_mut) as i64,
+                    transfrags.len() as i64,
+                    -1,
+                    -1,
+                    -1,
+                    "after_map_reads",
+                );
                 trace_graph_numeric_state("graph:after_map_reads", &graph_mut, &transfrags);
+                parity_trace_dump::emit_event_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    "process_graph_after_read_map",
+                    2,
+                    &format!(
+                        "run_tag={};graph_nodes={};graph_edges={};mapped_transfrags={}",
+                        run_tag,
+                        graph_mut.n_nodes.saturating_sub(2),
+                        debug_stage::graph_edge_count(&graph_mut),
+                        transfrags.len()
+                    ),
+                );
                 if !mapped_guides.is_empty() {
                     let min_seed_abund = config.readthr.max(1.0);
                     let added_guides = inject_guide_transfrags(
@@ -9468,7 +10462,7 @@ pub fn run<P: AsRef<Path>>(
                     );
                 }
                 normalize_links(&graph_mut, &mut future_links);
-                let mut realized =
+                let realized =
                     materialize_links(&mut graph_mut, &future_links, 1.0, LONGINTRONANCHOR as u64);
                 // long-read only: realized transfrags keep abundance as-is
                 transfrags.extend(realized);
@@ -9622,6 +10616,20 @@ pub fn run<P: AsRef<Path>>(
                     "graph:after_process_transfrags",
                     &graph_mut,
                     &transfrags,
+                );
+                parity_shadow::emit_counts(
+                    "layer3_transfrag",
+                    &graph_bundle.chrom,
+                    graph_bundle.start,
+                    graph_bundle.end,
+                    graph_bundle.strand,
+                    graph_mut.n_nodes.saturating_sub(2) as i64,
+                    debug_stage::graph_edge_count(&graph_mut) as i64,
+                    transfrags.len() as i64,
+                    -1,
+                    -1,
+                    -1,
+                    "after_process_transfrags",
                 );
                 if crate::trace_pipeline::active() {
                     let src = graph_mut.source_id;
@@ -9892,6 +10900,138 @@ pub fn run<P: AsRef<Path>>(
                 let readthr_removed = predcluster_summary
                     .after_polymerase_runon
                     .saturating_sub(predcluster_summary.after_readthr);
+                let focus_hit = !focus_loci.is_empty()
+                    && focus_locus_match(
+                        &focus_loci,
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                    );
+                if focus_hit {
+                    let layer_suffix = if run_tag == "shadow" { "shadow" } else { "base" };
+                    parity_shadow::emit_counts(
+                        &format!("focus_pairwise_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        predcluster_summary.after_pairwise as i64,
+                        pairwise_removed as i64,
+                        seed_summary.stored as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "after_pairwise/removed/seed_stored",
+                    );
+                    parity_shadow::emit_counts(
+                        &format!("focus_pairwise_reason_a_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        predcluster_summary.pairwise_summary.included_kill as i64,
+                        predcluster_summary.pairwise_summary.secontained_kill as i64,
+                        predcluster_summary.pairwise_summary.intronic_kill as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "included/secontained/intronic",
+                    );
+                    parity_shadow::emit_counts(
+                        &format!("focus_pairwise_reason_b_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        predcluster_summary.pairwise_summary.bettercov_kill as i64,
+                        predcluster_summary.pairwise_summary.other_kill as i64,
+                        pairwise_removed as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "bettercov/other/removed_total",
+                    );
+                    for (reason, cnt) in predcluster_summary
+                        .pairwise_summary
+                        .pairwise_reason_detail
+                        .iter()
+                    {
+                        if *cnt == 0 {
+                            continue;
+                        }
+                        parity_shadow::emit_counts(
+                            &format!("focus_pairwise_detail_{}", layer_suffix),
+                            &graph_bundle.chrom,
+                            graph_bundle.start,
+                            graph_bundle.end,
+                            graph_bundle.strand,
+                            *cnt as i64,
+                            0,
+                            0,
+                            -1,
+                            -1,
+                            -1,
+                            reason.as_str(),
+                        );
+                    }
+                    parity_shadow::emit_counts(
+                        &format!("focus_isofrac_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        predcluster_summary.after_isofrac as i64,
+                        isofrac_removed as i64,
+                        predcluster_summary.isofrac_summary.longunder_kill as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "after_isofrac/removed/longunder_kill",
+                    );
+                    parity_shadow::emit_counts(
+                        &format!("focus_runoff_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        predcluster_summary.after_runoff as i64,
+                        runoff_removed as i64,
+                        polymerase_runoff_removed as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "after_runoff/runoff_removed/polymerase_runoff_removed",
+                    );
+                    parity_shadow::emit_counts(
+                        &format!("focus_readthr_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        predcluster_summary.after_readthr as i64,
+                        readthr_removed as i64,
+                        junction_support_removed as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "after_readthr/readthr_removed/junction_support_removed",
+                    );
+                    parity_shadow::emit_counts(
+                        &format!("focus_final_{}", layer_suffix),
+                        &graph_bundle.chrom,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        txs.len() as i64,
+                        pre_filter_count as i64,
+                        seed_summary.checktrf_rescued as i64,
+                        -1,
+                        -1,
+                        -1,
+                        "txs/pre_filter/checktrf_rescued",
+                    );
+                }
                 debug_stage::emit_with_detail(
                     "seed_flow",
                     &graph_bundle.chrom,
@@ -10186,6 +11326,37 @@ pub fn run<P: AsRef<Path>>(
                     },
                     &format!("pre_filter={}", pre_filter_count),
                 );
+                parity_shadow::emit_counts(
+                    "layer4_transcript",
+                    &graph_bundle.chrom,
+                    graph_bundle.start,
+                    graph_bundle.end,
+                    graph_bundle.strand,
+                    txs.len() as i64,
+                    pre_filter_count as i64,
+                    seed_summary.total as i64,
+                    -1,
+                    -1,
+                    -1,
+                    "txs/pre_filter/seeds_total",
+                );
+                parity_trace_dump::emit_event_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    "process_graph_exit",
+                    1,
+                    &format!(
+                        "run_tag={};txs={};pre_filter={};seed_total={};seed_stored={};checktrf_rescued={}",
+                        run_tag,
+                        txs.len(),
+                        pre_filter_count,
+                        seed_summary.total,
+                        seed_summary.stored,
+                        seed_summary.checktrf_rescued
+                    ),
+                );
                 (txs, pre_filter_txs, seed_outcomes)
             };
 
@@ -10193,153 +11364,60 @@ pub fn run<P: AsRef<Path>>(
         let mut baseline_seed_summary = SeedOutcomeSummary::default();
 
         if use_region_bundle_pass {
-            // per-read junction redirect and
-            // unstranding. When a junction has mm<0 AND nreads<0 (higherr redirect),
-            // adjust the read's exon boundaries to match the replacement junction,
-            // then replace the read's junction with a new one at the adjusted coords.
-            // After processing, reads with ALL killed junctions get strand='.'.
-            // This creates sno=1 CGroups bridging strands into mega-bundles.
-            // Collect replacement junctions to add to good_junctions_set.
-            let mut replacement_junctions: Vec<crate::types::Junction> = Vec::new();
-            let effective_reads: Vec<BundleRead> = if config.long_reads {
-                // Build lookup: junction (start,end) → index in cjunctions_for_redirect
-                let cj_by_start_end: std::collections::HashMap<(u64, u64), usize> =
-                    cjunctions_for_redirect.iter().enumerate()
-                        .map(|(i, cj)| ((cj.start, cj.end), i))
-                        .collect();
-
-                let mut reads = region_reads.to_vec();
-                let mut unstranded_count = 0usize;
-                let mut redirected_count = 0usize;
-
-                for r in reads.iter_mut() {
-                    if r.strand == '.' || r.junctions.is_empty() {
-                        continue;
-                    }
-                    let mut any_bad = false;
-                    let mut all_killed = true;
-                    let mut any_redirect_attempted = false;
-
-                    for ji in 0..r.junctions.len() {
-                        let j = r.junctions[ji];
-                        let cj_idx = cj_by_start_end.get(&(j.donor, j.acceptor));
-                        let cj = cj_idx.and_then(|&i| cjunctions_for_redirect.get(i));
-                        let Some(cj) = cj else {
-                            all_killed = false;
-                            continue;
-                        };
-
-                        let changeleft = cj.nreads < 0.0;
-                        let changeright = cj.nreads_good < 0.0;
-                        let is_killed = cj.strand == 0 || cj.mm < 0.0;
-
-                        if !is_killed {
-                            all_killed = false;
-                            continue;
-                        }
-
-                        if !changeleft && !changeright {
-                            any_bad = true;
-                            continue;
-                        }
-                        any_bad = true;
-                        any_redirect_attempted = true;
-
-                        // decode redirect
-                        // pointers to compute new exon boundaries, adjust the
-                        // read's exons, search for matching junction, replace.
-                        let mut newstart = r.exons[ji].1;
-                        let mut newend = if ji + 1 < r.exons.len() { r.exons[ji + 1].0 } else { continue };
-
-                        if changeleft {
-                            let mut jk = cj.nreads.abs() as usize;
-                            // Follow redirect chain (max 5 hops to avoid cycles)
-                            for _ in 0..5 {
-                                if let Some(target) = cjunctions_for_redirect.get(jk) {
-                                    if target.nreads < 0.0 {
-                                        jk = target.nreads.abs() as usize;
-                                    } else {
-                                        newstart = target.start;
-                                        break;
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-                        if changeright {
-                            let mut ek = cj.nreads_good.abs() as usize;
-                            for _ in 0..5 {
-                                if let Some(target) = cjunctions_for_redirect.get(ek) {
-                                    if target.nreads_good < 0.0 {
-                                        ek = target.nreads_good.abs() as usize;
-                                    } else {
-                                        newend = target.end;
-                                        break;
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
-
-                        // Validate boundaries
-                        let seg_start = r.exons[ji].0;
-                        let seg_end = if ji + 1 < r.exons.len() { r.exons[ji + 1].1 } else { continue };
-                        if !(newstart >= seg_start && newend <= seg_end && newstart <= newend) {
-                            continue;
-                        }
-
-                        // Search for existing junction at (newstart, newend).
-                        // Only adjust exon boundaries when a matching junction
-                        // exists — this confirms the coordinates are exact.
-                        let new_j = crate::types::Junction::new(newstart, newend);
-                        let exists_in_good = good_junctions_set.contains(&new_j);
-                        let exists_in_stats = cj_by_start_end.contains_key(&(newstart, newend));
-
-                        // Skip exon adjustment: internal-only junction replacement
-                        // already gives +3 TPs. Exon adjustment loses 4 TPs from
-                        // changing CGroup boundaries at confirmed junctions.
-                        let _ = (exists_in_good, exists_in_stats);
-                        // Only replace INTERNAL junctions (not first/last) to
-                        // avoid changing first_exon_valid/last_exon_valid behavior
-                        // which affects CGroup keep/drop for terminal exons.
-                        if ji > 0 && ji + 1 < r.junctions.len() {
-                            r.junctions[ji] = new_j;
-                        }
-                        replacement_junctions.push(new_j);
-                        redirected_count += 1;
-                        all_killed = false;
-                    }
-
-                    // Unstrand reads whose junctions are all killed (mm<0 or strand=0).
-                    // Matching the original algorithm (line 15278 + 15457-15461):
-                    // killed junctions have strand forced to 0; reads with all
-                    // strand=0 junctions get unstranded → placed on sno=1 →
-                    // creates cross-strand bridges that merge bnodes.
-                    if any_bad && all_killed {
-                        let still_all_killed = r.junctions.iter().all(|j| {
-                            cj_by_start_end.get(&(j.donor, j.acceptor))
-                                .and_then(|&i| cjunctions_for_redirect.get(i))
-                                .map(|cj| cj.strand == 0 || cj.mm < 0.0)
-                                .unwrap_or(true)
-                        });
-                        if still_all_killed {
-                            r.strand = '.';
-                            unstranded_count += 1;
-                        }
+            let count_strands = |reads: &[BundleRead]| {
+                let mut minus = 0usize;
+                let mut neutral = 0usize;
+                let mut plus = 0usize;
+                let mut other = 0usize;
+                for r in reads {
+                    match r.strand {
+                        '-' => minus += 1,
+                        '.' => neutral += 1,
+                        '+' => plus += 1,
+                        _ => other += 1,
                     }
                 }
-                if config.verbose && (unstranded_count > 0 || redirected_count > 0) {
-                    eprintln!(
-                        "    junction_redirect: {} redirected, {} unstranded, {} replacement juncs",
-                        redirected_count, unstranded_count, replacement_junctions.len()
-                    );
-                }
-                reads
-            } else {
-                region_reads.to_vec()
+                (minus, neutral, plus, other)
             };
+            // StringTie per-read changeleft/changeright (and junction_redirect_map
+            // exon-boundary snapping + all-killed unstranding) are applied to region_reads
+            // earlier in this loop, so both cached_sub_bundles (partition signature) and
+            // build_sub_bundles here see the same adjusted coordinates.  replacement_junctions
+            // was populated there as well.
+            let effective_reads: Vec<BundleRead> = region_reads.to_vec();
+            if debug_stage::is_enabled() {
+                let (r_minus, r_neutral, r_plus, r_other) = count_strands(region_reads);
+                let (e_minus, e_neutral, e_plus, e_other) = count_strands(&effective_reads);
+                let n_junctions: usize = effective_reads.iter().map(|r| r.junctions.len()).sum();
+                debug_stage::emit(
+                    "region_groupflow",
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    effective_reads.len(),
+                    n_junctions,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    &format!(
+                        "region_reads={} region(-/.+/o)={}/{}/{}/{} effective(-/.+/o)={}/{}/{}/{}",
+                        region_reads.len(),
+                        r_minus,
+                        r_neutral,
+                        r_plus,
+                        r_other,
+                        e_minus,
+                        e_neutral,
+                        e_plus,
+                        e_other
+                    ),
+                );
+            }
             // Replacement junctions affect color propagation through TWO mechanisms:
             // A) good_junctions_set: bundle_builder checks !good_junctions for color breaks
             // B) killed_juncs: bundle_builder checks killed_junctions for bad-junction color breaks
@@ -10462,7 +11540,8 @@ pub fn run<P: AsRef<Path>>(
                     vec![None] // Single pass with full bundlenode chain
                 };
 
-                for color_group in &color_groups {
+                for (cgi, color_group) in color_groups.iter().enumerate() {
+                let graph_run_tag = format!("base_s{}_g{}", sbr_idx, cgi);
 
                 // Determine the bundlenode chain and range for this iteration.
                 let (iter_bnode_head, iter_start, iter_end): (Option<CBundlenode>, u64, u64) = if let Some(group) = color_group {
@@ -10933,6 +12012,7 @@ pub fn run<P: AsRef<Path>>(
                     Some(&sub_read_bnodes),
                     &sub_good_junctions,
                     &sub_killed_junction_pairs,
+                    graph_run_tag.as_str(),
                 );
                 accumulate_seed_outcomes(&mut baseline_seed_summary, &seed_outcomes);
                 if trace_reference.is_some() {
@@ -10963,7 +12043,7 @@ pub fn run<P: AsRef<Path>>(
                     single_exon_predictions_mutex.lock().unwrap().extend(term_se);
                 }
                 bundle_txs.extend(txs);
-            } // end for color_group
+            } // end for color_group (cgi)
             } // end for sbr_idx
 
             // Per-bnode deduplication: when multiple components produce the same
@@ -11129,6 +12209,7 @@ pub fn run<P: AsRef<Path>>(
                     &junctions,
                     allowed_junction_idx.as_ref(),
                 );
+                let graph_run_tag = format!("base_c{}", ci);
                 let (txs, pre_filter, seed_outcomes) = process_graph(
                     &bundle,
                     comp_junctions.clone(),
@@ -11138,6 +12219,7 @@ pub fn run<P: AsRef<Path>>(
                     None,
                     &good_junctions,
                     &killed_junction_pairs,
+                    graph_run_tag.as_str(),
                 );
                 accumulate_seed_outcomes(&mut baseline_seed_summary, &seed_outcomes);
                 if trace_reference.is_some() {
@@ -11206,6 +12288,7 @@ pub fn run<P: AsRef<Path>>(
                 None,
                 &good_junctions,
                 &killed_junction_pairs,
+                "base",
             );
             accumulate_seed_outcomes(&mut baseline_seed_summary, &seed_outcomes);
             if trace_reference.is_some() {
@@ -11280,6 +12363,8 @@ pub fn run<P: AsRef<Path>>(
                 &strict_scaled_reads,
             );
             let mut strict_seed_summary = SeedOutcomeSummary::default();
+            let mut strict_tx_total = 0usize;
+            let mut strict_pre_filter_total = 0usize;
             if strict_components > 1 {
                 let strict_allowed_junction_idx = build_allowed_junction_index(&junctions);
                 for (ci, comp) in strict_comps.into_iter().enumerate() {
@@ -11289,7 +12374,8 @@ pub fn run<P: AsRef<Path>>(
                         &junctions,
                         strict_allowed_junction_idx.as_ref(),
                     );
-                    let (_txs, _pre_filter, seed_outcomes) = process_graph(
+                    let graph_run_tag = format!("shadow_c{}", ci);
+                    let (txs, pre_filter, seed_outcomes) = process_graph(
                         &bundle,
                         comp_junctions,
                         comp_bn,
@@ -11298,7 +12384,10 @@ pub fn run<P: AsRef<Path>>(
                         None,
                         &good_junctions,
                         &killed_junction_pairs,
+                        graph_run_tag.as_str(),
                     );
+                    strict_tx_total += txs.len();
+                    strict_pre_filter_total += pre_filter.as_ref().map(|v| v.len()).unwrap_or(0);
                     accumulate_seed_outcomes(&mut strict_seed_summary, &seed_outcomes);
                 }
             } else {
@@ -11307,7 +12396,7 @@ pub fn run<P: AsRef<Path>>(
                     .filter(|r| r.weight > 0.0)
                     .cloned()
                     .collect();
-                let (_txs, _pre_filter, seed_outcomes) = process_graph(
+                let (txs, pre_filter, seed_outcomes) = process_graph(
                     &bundle,
                     junctions.clone(),
                     strict_bn,
@@ -11316,9 +12405,54 @@ pub fn run<P: AsRef<Path>>(
                     None,
                     &good_junctions,
                     &killed_junction_pairs,
+                    "shadow",
                 );
+                strict_tx_total += txs.len();
+                strict_pre_filter_total += pre_filter.as_ref().map(|v| v.len()).unwrap_or(0);
                 accumulate_seed_outcomes(&mut strict_seed_summary, &seed_outcomes);
             }
+            parity_shadow::emit_counts(
+                "layer2_graph_shadow",
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                baseline_bnodes as i64,
+                baseline_components as i64,
+                baseline_assigned as i64,
+                strict_bnodes as i64,
+                strict_components as i64,
+                strict_assigned as i64,
+                "bnodes/components/assigned",
+            );
+            parity_shadow::emit_counts(
+                "layer3_transfrag_shadow",
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                baseline_seed_summary.total as i64,
+                baseline_seed_summary.stored as i64,
+                baseline_seed_summary.checktrf_total as i64,
+                strict_seed_summary.total as i64,
+                strict_seed_summary.stored as i64,
+                strict_seed_summary.checktrf_total as i64,
+                "seed_total/seed_stored/checktrf_total",
+            );
+            parity_shadow::emit_counts(
+                "layer4_transcript_shadow",
+                &bundle.chrom,
+                bundle.start,
+                bundle.end,
+                bundle.strand,
+                bundle_txs.len() as i64,
+                baseline_seed_summary.stored as i64,
+                baseline_seed_summary.checktrf_rescued as i64,
+                strict_tx_total as i64,
+                strict_pre_filter_total as i64,
+                strict_seed_summary.checktrf_rescued as i64,
+                "tx_count/base_stored_or_prefilter/checktrf_rescued",
+            );
             let score = shadow_divergence_score(
                 baseline_assigned,
                 strict_assigned,
@@ -12241,7 +13375,7 @@ pub fn run<P: AsRef<Path>>(
             let mut cur_chrom = String::new();
             let mut cur_strand = '.';
             let mut cur_exons: Vec<(u64, u64)> = Vec::new();
-            let mut flush = |tid: &Option<String>, chrom: &str, strand: char,
+            let flush = |tid: &Option<String>, chrom: &str, strand: char,
                              exons: &[(u64, u64)],
                              all_transcripts: &mut Vec<crate::path_extract::Transcript>,
                              added: &mut usize| {
@@ -12427,6 +13561,10 @@ pub fn run<P: AsRef<Path>>(
         "final_gtf",
     );
     debug_stage::flush();
+    parity_junction_dump::flush();
+    parity_partition_dump::flush();
+    parity_trace_dump::flush();
+    parity_shadow::flush();
 
     if let Some(ref ballgown_dir) = config.ballgown_dir {
         write_ballgown(&all_transcripts, ballgown_dir, &config.label)?;
@@ -12564,18 +13702,29 @@ fn count_good_junctions(
     // Phase 1 trims exons to match junctions, which would mask the deletion offsets.
     let original_exons: Vec<Vec<(u64, u64)>> = reads.iter().map(|r| r.exons.clone()).collect();
 
-    // Phase 1: Adjust read exon boundaries to match junction coordinates
-    for r in reads.iter_mut() {
-        for i in 0..r.junctions.len() {
-            let junc = r.junctions[i];
-            // Trim left exon's right end to junction donor
-            if r.exons[i].0 <= junc.donor && r.exons[i].1 > junc.donor {
-                r.exons[i].1 = junc.donor;
-            }
-            // Trim right exon's left end to junction acceptor
-            if i + 1 < r.exons.len() {
-                if r.exons[i + 1].1 >= junc.acceptor && r.exons[i + 1].0 < junc.acceptor {
-                    r.exons[i + 1].0 = junc.acceptor;
+    // Phase 1: Adjust read exon boundaries to match junction coordinates.
+    //
+    // StringTie (rlink.cpp) has no equivalent trim — rd.segs[i].end stays at
+    // the raw exon end and rd.juncs[i]->start matches it.  Rustle previously
+    // trimmed r.exons[i].1 down to r.junctions[i].donor, but r.junctions uses
+    // deletion-aware coords, so for reads with deletions near a splice site the
+    // exon got trimmed shorter than StringTie's segs.  This produced two
+    // divergent cjunction entries (one deletion-aware, one exon-derived) and
+    // asymmetric demotion behavior in apply_higherr_demotions.
+    //
+    // Skip Phase 1 entirely by default to match StringTie.  Opt back in with
+    // RUSTLE_COUNT_GOOD_PHASE1_TRIM=1 if a regression needs isolating.
+    if std::env::var_os("RUSTLE_COUNT_GOOD_PHASE1_TRIM").is_some() {
+        for r in reads.iter_mut() {
+            for i in 0..r.junctions.len() {
+                let junc = r.junctions[i];
+                if r.exons[i].0 <= junc.donor && r.exons[i].1 > junc.donor {
+                    r.exons[i].1 = junc.donor;
+                }
+                if i + 1 < r.exons.len() {
+                    if r.exons[i + 1].1 >= junc.acceptor && r.exons[i + 1].0 < junc.acceptor {
+                        r.exons[i + 1].0 = junc.acceptor;
+                    }
                 }
             }
         }

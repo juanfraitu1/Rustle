@@ -5985,6 +5985,11 @@ pub fn extract_transcripts(
                     // for trace-guided audits, but the force-checktrf experiment was reverted:
                     // it improved the no-checktrf hotspot behavior, yet regressed full GGO_19
                     // before depletion parity was fixed.
+                    // Stub-drop experiments also tried (RUSTLE_DROP_BOTH_ARTIFICIAL_STUBS):
+                    //   - back_stub→checktrf: 1952 total (worse), checktrf rescues instead of match
+                    //   - both_stubs→drop (no length): Sn=49.1 (drops too many legitimate paths)
+                    //   - both_stubs→drop (path.len≤4): Sn=84.6/Pr=85.1 (still regresses Sn -4.4)
+                    // Root cause (sub-bundle splitting) requires architectural fix, not a gate here.
                     used_direct = true;
                 }
                 // NOTE: simple fwd fallback tested but causes regression (1596 vs 1606).
@@ -7598,6 +7603,23 @@ pub fn extract_transcripts(
                 record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
                 continue;
             }
+            // Log all checktrf candidates before the gate for ST_CHECKTRF_TRACE_BUNDLE comparison.
+            if let Some((lo, hi)) = trace_locus {
+                let in_range = transfrags[t].node_ids.iter().any(|&nid| {
+                    graph.nodes.get(nid).map_or(false, |n| n.start <= hi && n.end >= lo)
+                });
+                if in_range {
+                    let passes = checktrf_passes_abundance_gate(&transfrags[t], config.readthr);
+                    eprintln!(
+                        "[TRACE_CHECKTRF_CAND] t={} abund={:.4} guide={} nodes={} passes={}",
+                        t,
+                        transfrags[t].abundance,
+                        transfrags[t].guide,
+                        transfrags[t].node_ids.len(),
+                        passes as u8
+                    );
+                }
+            }
             // process checktrf only when guide OR abundance>=readthr.
             // The `(!eonly || guide)` logic is applied later for independent rescue.
             if !checktrf_passes_abundance_gate(&transfrags[t], config.readthr) {
@@ -8559,87 +8581,6 @@ fn node_path_to_exons(graph: &Graph, path: &[usize]) -> Vec<(u64, u64)> {
     exons
 }
 
-/// Least-visited completion: from start_node, walk to sink picking the child
-/// with LOWEST usage (tie-break by highest coverage). This explores hybrid
-/// regions rather than reconstructing the dominant already-extracted path.
-fn greedy_to_sink(graph: &Graph, start: usize, max_len: usize, usage: &[u32]) -> Option<Vec<usize>> {
-    let mut path = vec![start];
-    let mut cur = start;
-    let mut steps = 0;
-    while cur != graph.sink_id && steps < max_len {
-        let children: Vec<usize> = graph.nodes[cur].children.ones().collect();
-        if children.is_empty() {
-            return None;
-        }
-        // Prefer sink if directly reachable and we've covered real nodes
-        if children.contains(&graph.sink_id) && path.len() > 1 {
-            return Some(path);
-        }
-        // Pick child with min usage, tie-break by max coverage
-        let mut best: Option<(usize, u32, f64)> = None;
-        for &c in &children {
-            if c == graph.sink_id {
-                continue;
-            }
-            let u = usage.get(c).copied().unwrap_or(0);
-            let cov = graph.nodes[c].coverage;
-            if best.map_or(true, |(_, bu, bc)| u < bu || (u == bu && cov > bc)) {
-                best = Some((c, u, cov));
-            }
-        }
-        match best {
-            Some((nxt, _, _)) => {
-                path.push(nxt);
-                cur = nxt;
-            }
-            None => return Some(path),
-        }
-        steps += 1;
-    }
-    Some(path)
-}
-
-/// Least-visited completion backward: from end_node, walk to source by parents.
-fn greedy_to_source(graph: &Graph, end: usize, max_len: usize, usage: &[u32]) -> Option<Vec<usize>> {
-    let mut path = vec![end];
-    let mut cur = end;
-    let mut steps = 0;
-    while cur != graph.source_id && steps < max_len {
-        let parents: Vec<usize> = graph.nodes[cur].parents.ones().collect();
-        if parents.is_empty() {
-            return None;
-        }
-        if parents.contains(&graph.source_id) && path.len() > 1 {
-            path.reverse();
-            return Some(path);
-        }
-        let mut best: Option<(usize, u32, f64)> = None;
-        for &p in &parents {
-            if p == graph.source_id {
-                continue;
-            }
-            let u = usage.get(p).copied().unwrap_or(0);
-            let cov = graph.nodes[p].coverage;
-            if best.map_or(true, |(_, bu, bc)| u < bu || (u == bu && cov > bc)) {
-                best = Some((p, u, cov));
-            }
-        }
-        match best {
-            Some((prv, _, _)) => {
-                path.push(prv);
-                cur = prv;
-            }
-            None => {
-                path.reverse();
-                return Some(path);
-            }
-        }
-        steps += 1;
-    }
-    path.reverse();
-    Some(path)
-}
-
 /// Build hybrid candidates from existing transcripts.
 pub fn hybrid_path_reexplore(
     graph: &Graph,
@@ -8666,7 +8607,7 @@ pub fn hybrid_path_reexplore(
     // least half as supported as the dominant branch).
     let alt_cov_ratio: f64 = std::env::var("RUSTLE_HYBRID_ALT_COV_RATIO")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
-    let max_len = graph.nodes.len().saturating_add(2);
+    let _max_len = graph.nodes.len().saturating_add(2);
 
     // Dedup against existing tx chains (hybrid must be novel)
     let existing_set: std::collections::HashSet<Vec<(u64, u64)>> =

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::assembly_mode::LONGINTRONANCHOR;
-use crate::bam::{junctions_from_exons, open_bam, record_ref_span, record_to_bundle_read};
+use crate::bam::{junctions_from_exons, open_bam, record_ref_span};
 use crate::junction_correction::mismatch_anchor;
 use crate::types::{
     Bundle, BundleRead, CBundlenode, DetHashMap as HashMap, DetHashSet as HashSet, Junction,
@@ -1032,7 +1032,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     cfg.bundle_merge_dist = bundledist;
     cfg.junction_support = junction_support;
 
-    let sub_bundles = match crate::bundle_builder::build_sub_bundles(
+    let mut sub_bundles = match crate::bundle_builder::build_sub_bundles(
         region_reads,
         &cfg,
         good_junctions,
@@ -1082,9 +1082,16 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
             }
         }
     }
-    let mut strand_bundles: Vec<crate::bundle_builder::SubBundleResult> = sub_bundles
-        .into_iter()
-        .filter(|b| {
+    // Pick SubBundleResults for this pipeline bundle's strand. For unstranded ('.')
+    // bundles, `build_sub_bundles` may emit only stranded ('-' / '+') TB rows (common on
+    // sparse long-read loci). The strict `strand == '.'` filter would then drop everything,
+    // leaving no bundlenodes / empty partition geometry vs StringTie. When the primary
+    // filter matches nothing, fall back to all stranded sub-bundles (same effect as
+    // `RUSTLE_3STRAND_DOT_INCLUDE_STRANDED=1`, but automatic).
+    let primary_indices: Vec<usize> = sub_bundles
+        .iter()
+        .enumerate()
+        .filter(|(_, b)| {
             if include_projected_for_dot {
                 return true;
             }
@@ -1093,7 +1100,25 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
             }
             b.strand == target_strand
         })
+        .map(|(i, _)| i)
         .collect();
+    let chosen_indices: Vec<usize> = if primary_indices.is_empty() && target_strand == '.' {
+        sub_bundles
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.strand == '-' || b.strand == '+')
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        primary_indices
+    };
+    let mut chosen_sorted = chosen_indices;
+    chosen_sorted.sort_unstable();
+    let mut strand_bundles: Vec<crate::bundle_builder::SubBundleResult> = Vec::new();
+    for &i in chosen_sorted.iter().rev() {
+        strand_bundles.push(sub_bundles.swap_remove(i));
+    }
+    strand_bundles.reverse();
     if diag_strand_count {
         let mut n_sel_neg = 0usize;
         let mut n_sel_dot = 0usize;
@@ -1134,7 +1159,10 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     let mut read_bnodes_old: Vec<Vec<usize>> = vec![Vec::new(); region_reads.len()];
     let mut read_scales: Vec<f64> = vec![0.0; region_reads.len()];
 
-    for (color_group, bres) in strand_bundles.into_iter().enumerate() {
+    // Preserve per-bundlenode cgroup colors from each `SubBundleResult` (see `bnode_colors`).
+    // Pack (sub_bundle_index, local_color) so disjoint sub-bundles never share a root id.
+    const COLOR_SPACE: usize = 1_000_000_000;
+    for (sub_bundle_idx, bres) in strand_bundles.into_iter().enumerate() {
         let mut local_nodes: Vec<(u64, u64, f64)> = Vec::new();
         let mut cur = bres.bnode_head.as_ref();
         while let Some(n) = cur {
@@ -1144,7 +1172,15 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
         let bid_offset = merged_nodes_raw.len();
         for (li, (s, e, c)) in local_nodes.into_iter().enumerate() {
             merged_nodes_raw.push((s, e, c, bid_offset + li));
-            merged_colors_raw.push(color_group);
+            let local_col = bres
+                .bnode_colors
+                .get(li)
+                .copied()
+                .unwrap_or(sub_bundle_idx);
+            let global_col = sub_bundle_idx
+                .saturating_mul(COLOR_SPACE)
+                .saturating_add(local_col);
+            merged_colors_raw.push(global_col);
         }
         for (ri, bids) in bres.read_to_bnodes.iter().enumerate() {
             if ri >= read_bnodes_old.len() {
@@ -1216,20 +1252,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     (Some(head), read_bnodes_new, sorted_colors, read_scales)
 }
 
-/// Detect bundles from BAM using runoff distance (original algorithm.cpp:598).
-/// Single stream in BAM order: all alignments (incl. secondary/supplementary) define bundle
-/// boundaries; only primary alignments are added to bundle.reads (reference _assign_reads_to_bundles_by_chrom).
-/// Coordinates 0-based [start_incl, end_incl]. New bundle when ref_start > current_end + runoffdist.
-pub fn detect_bundles_from_bam<P: AsRef<Path>>(
-    bam_path: P,
-    config: &RunConfig,
-    chrom_filter: Option<&str>,
-) -> Result<Vec<Bundle>> {
-    detect_bundles_from_bam_with_snp(bam_path, config, chrom_filter, None)
-}
-
-/// Same as [`detect_bundles_from_bam`] but additionally threads an optional
-/// reference FASTA through to read ingest for FASTA-based SNP extraction.
+/// Detect bundles from BAM and optionally use a reference FASTA for SNP extraction.
 pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
     bam_path: P,
     config: &RunConfig,
@@ -1487,6 +1510,48 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
                         trace_strand_i8(read.strand),
                         format_trace_exons(&read.exons)
                     );
+                }
+
+                // PARITY READ DUMP: emit read_name + final exon coords for cross-tool diff
+                if let Ok(dump_path) = std::env::var("RUSTLE_PARITY_READ_DUMP_TSV") {
+                    if !dump_path.is_empty() {
+                        use std::io::Write;
+                        use std::sync::Mutex;
+                        use std::sync::OnceLock;
+                        static DUMP_MUTEX: OnceLock<Mutex<bool>> = OnceLock::new();
+                        let mtx = DUMP_MUTEX.get_or_init(|| Mutex::new(false));
+                        if let Ok(mut hdr_written) = mtx.lock() {
+                            if let Ok(mut f) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&dump_path)
+                            {
+                                if !*hdr_written {
+                                    let _ = writeln!(f, "source\tchrom\tread_name\tstart\tend\tstrand\texons");
+                                    *hdr_written = true;
+                                }
+                                let mut exons_str = String::new();
+                                for (i, (s, e)) in read.exons.iter().enumerate() {
+                                    if i > 0 { exons_str.push(','); }
+                                    // StringTie uses 1-based inclusive coords; convert
+                                    // Rustle's 0-based half-open [s, e) to 1-based [s+1, e].
+                                    exons_str.push_str(&format!("{}-{}", s + 1, *e));
+                                }
+                                let strand_i = match read.strand {
+                                    '+' => 1i32,
+                                    '-' => -1i32,
+                                    _ => 0i32,
+                                };
+                                let _ = writeln!(f, "rustle\t{}\t{}\t{}\t{}\t{}\t{}",
+                                    &name,
+                                    &*read.read_name,
+                                    read.ref_start + 1,
+                                    read.ref_end,
+                                    strand_i,
+                                    exons_str);
+                            }
+                        }
+                    }
                 }
 
                 // mismatch gate is per alignment event (before collapsing into readlist entry).

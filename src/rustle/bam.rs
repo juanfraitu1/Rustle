@@ -226,74 +226,6 @@ fn get_nm_adjusted(record: &RecordBuf, clip_left: u32, clip_right: u32) -> u32 {
     nm
 }
 
-/// MD mismatch/deletion string when present.
-fn get_md(record: &RecordBuf) -> Option<String> {
-    let tag = parse_tag("MD")?;
-    let data = record.data();
-    data.get(&tag)
-        .and_then(|v| match v {
-            noodles_sam::alignment::record_buf::data::field::Value::String(s)
-            | noodles_sam::alignment::record_buf::data::field::Value::Hex(s) => {
-                Some(s.to_string())
-            }
-            _ => None,
-        })
-}
-
-/// Parse MD tag into per-base mismatches: Vec<(ref_position, query_base)>.
-/// The MD tag format: "10A5^AC3T2" means 10 matches, mismatch at ref A, 5 matches,
-/// 2bp deletion (^AC), 3 matches, mismatch at ref T, 2 matches.
-/// We extract the mismatch positions (not deletions) and look up the query base
-/// from the BAM record's sequence.
-fn parse_md_mismatches(md: Option<&str>, ref_start: u64, record: &RecordBuf) -> Vec<(u64, u8)> {
-    let Some(md_str) = md else {
-        return Vec::new();
-    };
-    let seq = record.sequence();
-    if seq.is_empty() {
-        return Vec::new();
-    }
-    let bytes = md_str.as_bytes();
-    let mut mismatches = Vec::new();
-    let mut ref_pos = ref_start;
-    let mut query_offset = 0usize; // Offset into the query sequence.
-    let mut p = 0usize;
-
-    while p < bytes.len() {
-        let c = bytes[p];
-        if c.is_ascii_digit() {
-            // Parse number of matching bases.
-            let mut n = 0u64;
-            while p < bytes.len() && bytes[p].is_ascii_digit() {
-                n = n * 10 + (bytes[p] - b'0') as u64;
-                p += 1;
-            }
-            ref_pos += n;
-            query_offset += n as usize;
-        } else if c == b'^' {
-            // Deletion from reference: skip ref bases, don't advance query.
-            p += 1;
-            while p < bytes.len() && bytes[p].is_ascii_alphabetic() {
-                ref_pos += 1;
-                p += 1;
-            }
-        } else if c.is_ascii_alphabetic() {
-            // Mismatch: `c` is the reference base, query base is at query_offset.
-            if query_offset < seq.len() {
-                let query_base = seq.as_ref()[query_offset];
-                mismatches.push((ref_pos, query_base));
-            }
-            ref_pos += 1;
-            query_offset += 1;
-            p += 1;
-        } else {
-            p += 1; // Skip unknown characters.
-        }
-    }
-
-    mismatches
-}
-
 /// YC tag (alignment count): the original algorithm rdcount uses YC when present, then scales by NH.
 fn get_yc(record: &RecordBuf) -> f64 {
     let Some(tag) = parse_tag("YC") else {
@@ -709,9 +641,21 @@ pub fn record_to_bundle_read_with_snp(
         );
     }
 
-    // Keep active junction stream deletion-aware (existing pipeline behavior),
-    // while retaining raw exon-boundary junctions audits.
-    let junctions = junctions_del.clone();
+    // Use exon-derived (raw) junctions for the active pipeline to match
+    // StringTie's simpler junction model (rd.juncs[i]->start/end align with
+    // rd.segs[i].end/rd.segs[i+1].start, no deletion offsets).
+    // Opt-out with RUSTLE_ACTIVE_JUNCTIONS_DEL=1 to fall back to the prior
+    // deletion-aware active stream if a regression needs isolating.
+    let use_raw = std::env::var_os("RUSTLE_ACTIVE_JUNCTIONS_DEL").is_none();
+    let junctions = if use_raw {
+        junctions_raw.clone()
+    } else {
+        junctions_del.clone()
+    };
+    // When the active pipeline uses raw junctions, also align `junctions_del` so
+    // deljuncmatch-based dedup groups reads by the same exon-derived signature
+    // StringTie effectively uses (it has no separate deletion-aware signature).
+    let junctions_del = if use_raw { junctions_raw.clone() } else { junctions_del };
     let junction_valid = vec![true; junctions.len()];
     let mate_start = record
         .mate_alignment_start()

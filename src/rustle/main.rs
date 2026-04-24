@@ -115,8 +115,11 @@ struct Args {
     #[arg(short = 'x', long)]
     exclude_seqids: Option<String>,
 
-    /// Window around splice sites for long-read error margin in bp -E) [default: 30]
-    #[arg(short = 'E', long, default_value = "30")]
+    /// Window around splice sites for long-read error margin in bp -E) [default: 0].
+    /// A wide window can snap PacBio/ONT donors and acceptors away from StringTie’s
+    /// SSERROR-based bundle coordinates; on GGO_19 IsoSeq vs `stringtie -L` this default
+    /// recovers a few exact transcript matches. Use `-E 30` for the legacy snap behavior.
+    #[arg(short = 'E', long, default_value = "0")]
     junction_correction_window: u64,
 
     /// Conservative assembly --conservative): same as -t -c 1.5 -f 0.05
@@ -581,6 +584,8 @@ pub fn run_cli() -> anyhow::Result<()> {
     if config.max_sensitivity {
         config.apply_max_sensitivity();
     }
+    // After compat / max-sensitivity so LR junction-merge floors cannot override exact parity.
+    config.apply_stringtie_exact_overrides();
 
     if args.merge {
         if args.merge_bam_compat {

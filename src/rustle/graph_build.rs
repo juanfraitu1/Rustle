@@ -631,7 +631,7 @@ pub fn inject_missed_tx_oracle(
 
     let mut injected = 0usize;
 
-    let mut flush = |tid: &Option<String>,
+    let flush = |tid: &Option<String>,
                      chrom: &str,
                      strand: char,
                      exons: &[(u64, u64)],
@@ -1377,19 +1377,19 @@ fn create_graph_inner(
         // runs this detection inside the create_graph per-bundlenode loop,
         // not externally per-bundle. When external lstart/lend are empty but
         // bpcov is available, generate per-bundlenode boundaries here.
-        let bnode_lstart_owned;
-        let bnode_lend_owned;
+        let mut bnode_lstart_owned: Vec<ReadBoundary> = Vec::new();
+        let mut bnode_lend_owned: Vec<ReadBoundary> = Vec::new();
+        let mut use_bnode_boundaries = false;
         // compute boundaries per-bundlenode when longtrim is active
         // and no external boundaries were provided. External boundaries come from
         // CPAS/poly-A evidence; when absent, use coverage-derivative detection.
         let bnode_span = endbundle.saturating_sub(currentstart);
         let min_lt_span = 2 * (100 + 50) + 50; // 2*(CHI_WIN+CHI_THR) + margin = 350
-        let (effective_lstart, effective_lend): (&[ReadBoundary], &[ReadBoundary]) =
-            if lstart.is_empty() && lend.is_empty()
-                && std::env::var_os("RUSTLE_DISABLE_LONGTRIM").is_none()
-                && bnode_span >= min_lt_span
-            {
-                if let Some(bpc) = bpcov {
+        if lstart.is_empty() && lend.is_empty()
+            && std::env::var_os("RUSTLE_DISABLE_LONGTRIM").is_none()
+            && bnode_span >= min_lt_span
+        {
+            if let Some(bpc) = bpcov {
                     // Build strand-specific bpcov for this bundlenode
                     let strand_bpc = if let Some(bps) = bpcov_stranded {
                         let n = bpc.cov.len();
@@ -1415,15 +1415,13 @@ fn create_graph_inner(
                     );
                     bnode_lstart_owned = ls;
                     bnode_lend_owned = le;
-                    (bnode_lstart_owned.as_slice(), bnode_lend_owned.as_slice())
-                } else {
-                    bnode_lstart_owned = Vec::new();
-                    bnode_lend_owned = Vec::new();
-                    (lstart, lend)
-                }
+                    use_bnode_boundaries = true;
+            }
+        }
+        let (effective_lstart, effective_lend): (&[ReadBoundary], &[ReadBoundary]) =
+            if use_bnode_boundaries {
+                (bnode_lstart_owned.as_slice(), bnode_lend_owned.as_slice())
             } else {
-                bnode_lstart_owned = Vec::new();
-                bnode_lend_owned = Vec::new();
                 (lstart, lend)
             };
         // Longtrim state: pointers into lstart/lend arrays (never backtrack).

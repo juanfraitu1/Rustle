@@ -66,6 +66,10 @@ pub mod report_losses; // diagnostic loss reporting
 
 // ── StringTie-parity scaffold ────────────────────────────────────────────────
 pub mod stringtie_parity; // RUSTLE_STRINGTIE_EXACT meta-flag for parallel parity mode
+pub mod parity_shadow; // layer-by-layer shadow parity logging
+pub mod parity_partition_dump; // canonical partition geometry TSV (StringTie vs Rustle)
+pub mod parity_junction_dump; // multi-stage junction-set TSV for parity vs StringTie
+pub mod parity_trace_dump; // cgroup + graph topology + optional read-exon trace TSV
 
 // ── Stage 9: Orchestration ────────────────────────────────────────────────────
 pub mod assembly_mode; // assembly mode dispatch

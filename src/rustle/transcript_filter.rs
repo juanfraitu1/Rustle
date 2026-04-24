@@ -448,6 +448,9 @@ pub struct PairwiseKillSummary {
     pub intronic_kill: usize,
     pub bettercov_kill: usize,
     pub other_kill: usize,
+    /// Exact `kill!` reason strings for this `pairwise_overlap_filter` invocation,
+    /// sorted by count descending then reason name (for stable TSV / diffs).
+    pub pairwise_reason_detail: Vec<(String, usize)>,
     pub exact_reason_note: String,
 }
 
@@ -2703,6 +2706,13 @@ pub fn pairwise_overlap_filter_with_summary(
             total_removed
         );
     }
+    pairwise_summary.pairwise_reason_detail = reason_counts
+        .iter()
+        .map(|(&reason, &count)| (reason.to_string(), count))
+        .collect();
+    pairwise_summary
+        .pairwise_reason_detail
+        .sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
     pairwise_summary.exact_reason_note = format_reason_histogram(&reason_counts);
     (
         txs.into_iter()

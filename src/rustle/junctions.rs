@@ -1,6 +1,7 @@
 //! Junction filtering: keep junctions above threshold; weak and nearby-weak filters.
 
 use crate::junction_correction::correct_bundle_junctions_higherr;
+use crate::stringtie_parity::stringtie_exact;
 use crate::types::{
     DetHashMap as HashMap, DetHashSet as HashSet, Junction, JunctionStat, JunctionStats,
 };
@@ -396,6 +397,25 @@ pub fn apply_junction_filters_and_canonicalize(
     per_splice_site_isofrac: f64,
     verbose: bool,
 ) -> JunctionStats {
+    // StringTie does not run Rustle's extra merge passes (coalesce / nearby-weak / donor-isofrac /
+    // canonicalize) between `good_junc` and graph construction; those passes shrink and remap the
+    // junction set and are a major source of bundle-level junction count divergence vs StringTie.
+    // Under `RUSTLE_STRINGTIE_EXACT=1`, keep only post-`good_junc` hygiene: drop strand=0 kills and
+    // the same weak threshold used elsewhere (`filter_weak_junctions`).
+    if stringtie_exact() {
+        let mut stats = stats;
+        let killed: Vec<Junction> = stats
+            .iter()
+            .filter(|(_, s)| s.strand == Some(0))
+            .map(|(j, _)| *j)
+            .collect();
+        for j in killed {
+            stats.remove(&j);
+        }
+        filter_weak_junctions(&mut stats, min_junction_reads, verbose);
+        return stats;
+    }
+
     let mut stats = coalesce_junctions(stats, canonical_tolerance, verbose);
     stats = apply_junction_filters(stats, min_junction_reads, verbose);
     if per_splice_site_isofrac > 0.0 {

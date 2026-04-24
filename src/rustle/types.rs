@@ -967,10 +967,31 @@ impl RunConfig {
             // Coalescing with 2bp tolerance leaves many near-identical junctions that
             // create tiny graph nodes (1-10bp) and fragment transfrags.  10bp tolerance
             // merges the shifted copies into the strongest representative.
-            self.junction_canonical_tolerance = self.junction_canonical_tolerance.max(10);
+            //
+            // Skip under `RUSTLE_STRINGTIE_EXACT`: StringTie's cgroup / partition dump does not
+            // apply this Rustle-specific merge before bundlenode construction.
+            if !crate::stringtie_parity::stringtie_exact() {
+                self.junction_canonical_tolerance = self.junction_canonical_tolerance.max(10);
+            }
         }
         // filter_contained and retained_intron_filter are too aggressive for sensitivity;
         // they're available via CLI but not forced by the compatibility preset.
+    }
+
+    /// When `RUSTLE_STRINGTIE_EXACT=1`, undo Rustle-only tuning that diverges from StringTie's
+    /// rlink inputs **before** bundle/cgroup construction (junction stats → read exons).
+    ///
+    /// Call **after** [`Self::apply_compat_preset`] so long-read defaults are applied first,
+    /// then selectively tightened for bit-identical parity work (e.g. `partition_geometry` vs
+    /// `PARITY_PARTITION_TSV`).
+    pub fn apply_stringtie_exact_overrides(&mut self) {
+        if !crate::stringtie_parity::stringtie_exact() {
+            return;
+        }
+        // Compat LR preset raises `junction_canonical_tolerance` to ≥10bp to merge noisy
+        // aligner splice shifts. StringTie's cgroup / CBundle bundlenode pass does not apply
+        // that same merge before `post_bundle_partition`, so partition signatures drift.
+        self.junction_canonical_tolerance = 0;
     }
 
     /// Assembly mode: always long-read.
@@ -986,7 +1007,7 @@ impl Default for RunConfig {
             long_read_min_len: 0,
             min_junction_reads: 1.0, // the original algorithm default junctionthr=1 (original algorithm.cpp:142)
             junction_support: 10,
-            junction_correction_window: 30,
+            junction_correction_window: 0,
             junction_correction_tolerance: 0.0,
             junction_canonical_tolerance: 2, // Enable 2bp tolerance for canonicalization
             per_splice_site_isofrac: 0.05, // Enable 5% per-splice-site isofrac

@@ -303,6 +303,13 @@ pub fn correct_bundle_junctions_higherr(
         }
         let left = donor_redirect.get(j).copied();
         let right = acceptor_redirect.get(j).copied();
+        // StringTie's apply_higherr_demotions keeps donor and acceptor
+        // redirects independent — a junction can get its donor replaced
+        // OR its acceptor replaced (or both independently), but never
+        // wholesale replaced to an unrelated junction with arbitrary
+        // coords.  When only one side has a redirect, preserve the
+        // unchanged side's current coord rather than taking the
+        // redirect-target's unrelated coord (which could be 100kb away).
         let target = match (left, right) {
             (Some(l), Some(r)) if l == r => Some(l),
             (Some(l), Some(r)) => {
@@ -311,14 +318,14 @@ pub fn correct_bundle_junctions_higherr(
                     if is_reliable(s, &synth) {
                         Some(synth)
                     } else {
-                        Some(l)
+                        Some(Junction::new(l.donor, j.acceptor))
                     }
                 } else {
-                    Some(l)
+                    Some(Junction::new(l.donor, j.acceptor))
                 }
             }
-            (Some(l), None) => Some(l),
-            (None, Some(r)) => Some(r),
+            (Some(l), None) => Some(Junction::new(l.donor, j.acceptor)),
+            (None, Some(r)) => Some(Junction::new(j.donor, r.acceptor)),
             _ => None,
         };
         if let Some(t) = target {

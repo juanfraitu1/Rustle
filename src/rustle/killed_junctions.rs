@@ -23,6 +23,23 @@ fn trace_cjunction_acceptor(cj: &CJunction) -> u64 {
     cj.end.saturating_add(1)
 }
 
+/// `RUSTLE_WATCH_CJUNC="DONOR-ACCEPTOR"` trace filter. If set, emits
+/// targeted `CJWATCH` lines whenever the matching cjunction is mutated in the
+/// apply_higherr / good_junc / aggregate_splice_site_support pipeline.
+/// DONOR/ACCEPTOR are 0-based Rustle coords; ACCEPTOR is the first exon base
+/// after the intron.
+#[inline]
+fn cj_watch_target() -> Option<(u64, u64)> {
+    let s = std::env::var("RUSTLE_WATCH_CJUNC").ok()?;
+    let (a, b) = s.split_once('-')?;
+    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+}
+
+#[inline]
+fn cj_watch_match(cj: &CJunction) -> bool {
+    cj_watch_target().map_or(false, |(d, a)| cj.start == d && cj.end == a)
+}
+
 /// Junctions with strand == 0 (good_junc), map-based variant.
 /// Key = (donor, acceptor) same as Junction.
 pub fn compute_killed_junction_pairs_stats(junction_stats: &JunctionStats) -> HashSet<Junction> {
@@ -865,10 +882,28 @@ pub fn aggregate_splice_site_support(cjunctions: &mut Vec<CJunction>) {
                         if cjunctions[idx].nreads > other.nreads
                             && cjunctions[idx].nreads_good > other.nreads_good
                         {
+                            if cj_watch_match(&cjunctions[other_idx]) {
+                                eprintln!(
+                                    "CJWATCH agg_strand_conflict KILL {}-{} (nr={:.1} ng={:.1}) beat by {}-{} (nr={:.1} ng={:.1})",
+                                    cjunctions[other_idx].start, cjunctions[other_idx].end,
+                                    other.nreads, other.nreads_good,
+                                    cjunctions[idx].start, cjunctions[idx].end,
+                                    cjunctions[idx].nreads, cjunctions[idx].nreads_good
+                                );
+                            }
                             cjunctions[other_idx].strand = 0;
                         } else if cjunctions[idx].nreads < other.nreads
                             && cjunctions[idx].nreads_good < other.nreads_good
                         {
+                            if cj_watch_match(&cjunctions[idx]) {
+                                eprintln!(
+                                    "CJWATCH agg_strand_conflict KILL {}-{} (nr={:.1} ng={:.1}) beat by {}-{} (nr={:.1} ng={:.1})",
+                                    cjunctions[idx].start, cjunctions[idx].end,
+                                    cjunctions[idx].nreads, cjunctions[idx].nreads_good,
+                                    other.start, other.end,
+                                    other.nreads, other.nreads_good
+                                );
+                            }
                             cjunctions[idx].strand = 0;
                         }
                     }
@@ -1019,6 +1054,12 @@ pub fn demote_runthrough_junctions(
                     cj.start, cj.end, donor_cov, intron_cov, acceptor_cov, ratio_d, ratio_a
                 );
             }
+            if cj_watch_match(cj) {
+                eprintln!(
+                    "CJWATCH runthrough strand=0 {}-{} dcov={:.1} acov={:.1} icov={:.2}",
+                    cj.start, cj.end, donor_cov, acceptor_cov, intron_cov
+                );
+            }
             cj.strand = 0;
         }
     }
@@ -1069,6 +1110,9 @@ pub fn good_junc(
                     cj.nreads_good
                 );
             }
+            if cj_watch_match(cj) {
+                eprintln!("CJWATCH gj_kill eonly {}-{}", cj.start, cj.end);
+            }
             cj.strand = 0;
             continue;
         }
@@ -1092,6 +1136,12 @@ pub fn good_junc(
                     trace_cjunction_acceptor(cj),
                     cj.nreads_good,
                     junction_thr
+                );
+            }
+            if cj_watch_match(cj) {
+                eprintln!(
+                    "CJWATCH gj_kill min_support {}-{} nrg={:.1} thr={:.1}",
+                    cj.start, cj.end, cj.nreads_good, junction_thr
                 );
             }
             cj.strand = 0;
@@ -1156,6 +1206,9 @@ pub fn good_junc(
                     cj.nreads
                 );
             }
+            if cj_watch_match(cj) {
+                eprintln!("CJWATCH gj_kill bad_long_intron {}-{}", cj.start, cj.end);
+            }
             cj.strand = 0;
             continue;
         }
@@ -1198,6 +1251,12 @@ pub fn good_junc(
                     mismatch
                 );
             }
+            if cj_watch_match(cj) {
+                eprintln!(
+                    "CJWATCH gj_kill left_witness {}-{} lsup={:.1} llc={:.1} lrc={:.1}",
+                    cj.start, cj.end, cj.leftsupport, lleftcov, lrightcov
+                );
+            }
             cj.strand = 0;
             continue;
         }
@@ -1229,6 +1288,12 @@ pub fn good_junc(
                     mismatch
                 );
             }
+            if cj_watch_match(cj) {
+                eprintln!(
+                    "CJWATCH gj_kill right_witness {}-{} rsup={:.1} rlc={:.1} rrc={:.1}",
+                    cj.start, cj.end, cj.rightsupport, rleftcov, rrightcov
+                );
+            }
             cj.strand = 0;
             continue;
         }
@@ -1255,6 +1320,12 @@ pub fn good_junc(
                         cj.nreads,
                         cj.leftsupport,
                         cj.rightsupport
+                    );
+                }
+                if cj_watch_match(cj) {
+                    eprintln!(
+                        "CJWATCH gj_kill low_splice_frac {}-{} nreads={:.1} lsup={:.1} rsup={:.1}",
+                        cj.start, cj.end, cj.nreads, cj.leftsupport, cj.rightsupport
                     );
                 }
                 cj.strand = 0;
@@ -1291,6 +1362,13 @@ pub fn good_junc(
             }
             let sum = donor_sum.get(&cj.start).copied().unwrap_or(0.0);
             if sum > 0.0 && cj.nreads_good * 100.0 / sum < isofrac_percent {
+                if cj_watch_match(cj) {
+                    eprintln!(
+                        "CJWATCH gj_kill isofrac {}-{} nrg={:.1} sum={:.1} pct={:.2} thr={:.2}",
+                        cj.start, cj.end, cj.nreads_good, sum,
+                        cj.nreads_good * 100.0 / sum, isofrac_percent
+                    );
+                }
                 cj.strand = 0;
             }
         }
@@ -1325,12 +1403,28 @@ pub fn apply_higherr_demotions(
 
     let mut donor_order: Vec<usize> = (0..cjunctions.len()).collect();
     donor_order.sort_by_key(|&i| (cjunctions[i].start, cjunctions[i].end, cjunctions[i].strand));
+    let mut acceptor_order: Vec<usize> = (0..cjunctions.len()).collect();
+    acceptor_order.sort_by_key(|&i| (cjunctions[i].end, cjunctions[i].start, cjunctions[i].strand));
 
-    for ord_i in 0..donor_order.len() {
+    // StringTie interleaves donor (junction[]) and acceptor (ejunction[]) processing
+    // per iteration `i` in a single loop (rlink.cpp:15153). Within iteration i, donor
+    // search runs on junction[i] (start-sorted) and acceptor search runs on
+    // ejunction[i] (end-sorted) — they target different underlying junctions because
+    // the two arrays have different orders.  Crucially, the donor mutations from
+    // iteration i do NOT precede all acceptor searches: an acceptor search at i=k
+    // visits candidates whose own donor mutation may run at iteration j>k (if their
+    // start-sorted position > k), so they still show the pre-mutation `nreads`.
+    // Rustle previously ran donor fully then acceptor fully (two separate passes),
+    // which caused acceptor searches to see already-demoted `nreads` values and
+    // therefore pick different redirect targets than StringTie.  Matching the
+    // interleave is essential for parity.
+    for ord_i in 1..cjunctions.len() {
+        // ---- donor body (StringTie junction[i] branch) ----
+        'donor: {
         let idx_i = donor_order[ord_i];
         let cur = cjunctions[idx_i];
         if !cj_higherr_candidate(&cur) {
-            continue;
+            break 'donor;
         }
         // StringTie rlink.cpp:15008-15026: for all-bad junctions (nm>=nreads) with
         // nreads_good >= 1.25*junctionthr, StringTie marks mm=-1 if bpcov is
@@ -1370,12 +1464,19 @@ pub fn apply_higherr_demotions(
                             donor_idx,
                             donor_idx + 1,
                         );
-                        // Sanity check: if bpcov at the donor is much smaller than the junction's
-                        // read support, the bpcov doesn't reflect this junction's context
-                        // (e.g., the junction was accumulated from reads in a different subbundle).
-                        // Skip to avoid spurious kills of real junctions.
-                        if leftcov < cur.nreads / 2.0 {
-                            continue;
+                        // NOTE: a previous sanity-skip (`leftcov < cur.nreads / 2.0 → continue`)
+                        // was removed because it also short-circuited the demotion search
+                        // below, so higherr candidates whose bpcov under-reports their read
+                        // support (deletion-aware junctions, per-subbundle contexts) never
+                        // got their `nreads<0` replacement pointer set.  StringTie rlink.cpp:
+                        // 15015-15048 has no such skip — it runs the demotion search for
+                        // every higherr candidate.  Opt back into the skip via
+                        // RUSTLE_HIGHERR_CONT_SANITY=1 if needed.
+                        let skip_low_bpcov =
+                            std::env::var_os("RUSTLE_HIGHERR_CONT_SANITY").is_some()
+                                && leftcov < cur.nreads / 2.0;
+                        if skip_low_bpcov {
+                            break 'donor;
                         }
                         if leftcov > 0.0 && rightcov > tolerance * leftcov {
                             cjunctions[idx_i].mm = -1.0;
@@ -1466,7 +1567,7 @@ pub fn apply_higherr_demotions(
         }
 
         if !search {
-            continue;
+            break 'donor;
         }
 
         let mut dist = sserror as i64;
@@ -1527,16 +1628,14 @@ pub fn apply_higherr_demotions(
             }
             j += 1;
         }
-    }
+        } // 'donor block
 
-    let mut acceptor_order: Vec<usize> = (0..cjunctions.len()).collect();
-    acceptor_order.sort_by_key(|&i| (cjunctions[i].end, cjunctions[i].start, cjunctions[i].strand));
-
-    for ord_i in 0..acceptor_order.len() {
+        // ---- acceptor body (StringTie ejunction[i] branch) ----
+        'acceptor: {
         let idx_i = acceptor_order[ord_i];
         let cur = cjunctions[idx_i];
         if !cj_higherr_candidate(&cur) {
-            continue;
+            break 'acceptor;
         }
         // Port of StringTie rlink.cpp:15112-15120 acceptor-side continuity check.
         // Check bpcov at last intron base vs first downstream exon base: if coverage
@@ -1581,6 +1680,12 @@ pub fn apply_higherr_demotions(
                                     leftcov / rightcov
                                 );
                             }
+                            if cj_watch_match(&cur) {
+                                eprintln!(
+                                    "CJWATCH he_cont_r mm=-1 {}-{} leftcov={:.1} rightcov={:.1} ratio={:.2}",
+                                    cur.start, cur.end, leftcov, rightcov, leftcov / rightcov
+                                );
+                            }
                         }
                     }
                 }
@@ -1602,11 +1707,32 @@ pub fn apply_higherr_demotions(
             }
             if cand.strand == cur.strand {
                 if cand.end == cur.end {
+                    if cj_watch_match(&cur) {
+                        eprintln!(
+                            "CJWATCH he_right down.same_end VISIT cand={}-{}:{} cand.nrg={:.1}",
+                            cand.start, cand.end, cand.strand, cand.nreads_good
+                        );
+                    }
                     if cand.nreads_good < 0.0 {
                         if let Some(point_idx) =
                             resolved_cj_index(&acceptor_order, cand.nreads_good)
                         {
-                            if cj_ok_to_demote(&cjunctions[idx_i], &cjunctions[point_idx]) {
+                            let tgt = &cjunctions[point_idx];
+                            let ok = cj_ok_to_demote(&cjunctions[idx_i], tgt);
+                            if cj_watch_match(&cur) {
+                                eprintln!(
+                                    "CJWATCH he_right down.same_end chain_check target={}-{}:{} tgt.nreads={:.1} cur.nreads={:.1} ok_to_demote={}",
+                                    tgt.start, tgt.end, tgt.strand,
+                                    tgt.nreads, cjunctions[idx_i].nreads, ok
+                                );
+                            }
+                            if ok {
+                                if cj_watch_match(&cur) {
+                                    eprintln!(
+                                        "CJWATCH he_right down.same_end chain APPLY -> {}-{} (point_idx={}, chain_nrg={})",
+                                        cand.start, cand.end, point_idx, cand.nreads_good
+                                    );
+                                }
                                 cjunctions[idx_i].nreads_good = cand.nreads_good;
                                 search = false;
                             }
@@ -1618,6 +1744,12 @@ pub fn apply_higherr_demotions(
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
                         reliable = true;
+                        if cj_watch_match(&cur) {
+                            eprintln!(
+                                "CJWATCH he_right down.reliable -> {}-{} (idx_j={}) rsup cand={:.1} vs cur={:.1}",
+                                cand.start, cand.end, idx_j, cand.rightsupport, cur.rightsupport
+                            );
+                        }
                         cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
@@ -1642,6 +1774,14 @@ pub fn apply_higherr_demotions(
                             d_up >= 4 && d_up < 9 && cur.nreads >= 5.0
                         })
                 {
+                    if cj_watch_match(&cur) {
+                        eprintln!(
+                            "CJWATCH he_right down.unreliable -> {}-{} (idx_j={}) d={} rsup cand={:.1} vs cur={:.1}",
+                            cand.start, cand.end, idx_j,
+                            cur.end.saturating_sub(cand.end),
+                            cand.rightsupport, cur.rightsupport
+                        );
+                    }
                     cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                     support = cand.rightsupport;
                     if gjd {
@@ -1661,7 +1801,7 @@ pub fn apply_higherr_demotions(
         }
 
         if !search {
-            continue;
+            break 'acceptor;
         }
 
         let mut dist = sserror as i64;
@@ -1687,6 +1827,12 @@ pub fn apply_higherr_demotions(
                         && cand.rightsupport > cur.rightsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
+                        if cj_watch_match(&cur) {
+                            eprintln!(
+                                "CJWATCH he_right up.reliable -> {}-{} (idx_j={}) d={} rsup cand={:.1} vs cur={:.1}",
+                                cand.start, cand.end, idx_j, d, cand.rightsupport, cur.rightsupport
+                            );
+                        }
                         cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
@@ -1712,7 +1858,16 @@ pub fn apply_higherr_demotions(
                         && d < 9
                         && cur.nreads >= 5.0)
                 {
-                    cjunctions[idx_i].nreads_good = -((j + 1) as f64);
+                    // Bug fix: store cjunctions ARRAY index, not the sorted-position
+                    // `j` (other call sites use `idx_j`).  Decoding via resolved_cj_index
+                    // / `abs() - 1` expects the cjunctions index.
+                    if cj_watch_match(&cur) {
+                        eprintln!(
+                            "CJWATCH he_right up.unreliable -> {}-{} (idx_j={}) d={} rsup cand={:.1} vs cur={:.1}",
+                            cand.start, cand.end, idx_j, d, cand.rightsupport, cur.rightsupport
+                        );
+                    }
+                    cjunctions[idx_i].nreads_good = -(idx_j as f64 + 1.0);
                     support = cand.rightsupport;
                     if gjd {
                         eprintln!(
@@ -1729,6 +1884,7 @@ pub fn apply_higherr_demotions(
             }
             j += 1;
         }
+        } // 'acceptor block
     }
 }
 

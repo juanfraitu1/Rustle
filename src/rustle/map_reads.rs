@@ -229,15 +229,6 @@ fn ensure_edges_for_read_path(
     }
 }
 
-/// Classify read as long in mixed mode: length >= long_read_min_len (_is_long_read).
-#[inline]
-fn is_long_read(read: &BundleRead, long_read_min_len: u64) -> bool {
-    if long_read_min_len == 0 {
-        return true;
-    }
-    read.query_length.map_or(true, |q| q >= long_read_min_len)
-}
-
 /// Return the node path (fragment pattern) for one read (get_fragment_pattern).
 /// Uses same logic as map_reads_to_graph: exon→node assignment, unique_nodes, split at disconnected/killed; returns primary (longest) path.
 pub fn read_to_path(
