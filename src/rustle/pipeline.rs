@@ -3429,9 +3429,9 @@ fn collect_guide_boundary_sets_for_bundle(
 }
 
 use crate::transcript_filter::{
-    add_pred, apply_global_cross_strand_filter, collapse_equal_predictions, compute_tpm_fpkm,
-    filter_unsupported_junctions, print_predcluster_with_summary, suppress_near_duplicate_chains,
-    PredclusterStageSummary,
+    add_pred, alt_donor_acceptor_rescue, apply_global_cross_strand_filter,
+    collapse_equal_predictions, compute_tpm_fpkm, filter_unsupported_junctions,
+    print_predcluster_with_summary, suppress_near_duplicate_chains, PredclusterStageSummary,
 };
 use crate::transfrag_process::{
     chain_subsequence_offset, exons_intron_length_chain, process_transfrags,
@@ -5607,6 +5607,14 @@ fn extract_bundle_transcripts_for_graph(
         txs.extend(nascent_txs);
         trace_stage("isnascent_extend", &txs);
     }
+
+    // Alt-donor / alt-acceptor rescue: Rustle's flow decomposition picks only
+    // one of several viable alt-splice paths. When the bundle's junction_stats
+    // contains a same-acceptor-alt-donor or same-donor-alt-acceptor junction
+    // with comparable support, emit the alt transcript so print_predcluster can
+    // cluster it alongside the main variant. Gated by RUSTLE_ALT_SPLICE_RESCUE=1.
+    txs = alt_donor_acceptor_rescue(txs, &bundle.junction_stats, config.verbose);
+    trace_stage("alt_donor_acceptor_rescue", &txs);
 
     // Capture pre-filter transcripts for trace analysis before any predcluster filtering.
     let pre_filter = if trace_mode { Some(txs.clone()) } else { None };
