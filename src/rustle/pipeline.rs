@@ -5331,7 +5331,10 @@ fn extract_bundle_transcripts_for_graph(
             &format!("{}:{}-{}", bundle.chrom, bundle.start, bundle.end),
             config,
             false,
-            if trace_mode || std::env::var_os("RUSTLE_SEED_STATS").is_some() {
+            if trace_mode
+                || std::env::var_os("RUSTLE_SEED_STATS").is_some()
+                || std::env::var_os("RUSTLE_PATH_DECISION_TSV").is_some()
+            {
                 Some(&mut seed_outcomes_buf)
             } else {
                 None
@@ -5608,13 +5611,19 @@ fn extract_bundle_transcripts_for_graph(
         trace_stage("isnascent_extend", &txs);
     }
 
-    // Alt-donor / alt-acceptor rescue: Rustle's flow decomposition picks only
-    // one of several viable alt-splice paths. When the bundle's junction_stats
-    // contains a same-acceptor-alt-donor or same-donor-alt-acceptor junction
-    // with comparable support, emit the alt transcript so print_predcluster can
-    // cluster it alongside the main variant. Gated by RUSTLE_ALT_SPLICE_RESCUE=1.
-    txs = alt_donor_acceptor_rescue(txs, &bundle.junction_stats, config.verbose);
-    trace_stage("alt_donor_acceptor_rescue", &txs);
+    // Alt-donor / alt-acceptor rescue position. Two modes:
+    //   PRE  (default): rescue runs BEFORE print_predcluster. Alt variants go
+    //                   through all filters. Safer but isofrac kills many.
+    //   POST (opt-in RUSTLE_ALT_SPLICE_RESCUE_POST=1): rescue runs AFTER
+    //                   predcluster. Alt variants bypass isofrac, so more
+    //                   survive — but no pairwise filtering either, so
+    //                   potential Pr cost. Use with cov_strategy=same so the
+    //                   alt variant inherits the source's post-flow cov.
+    let rescue_post = std::env::var_os("RUSTLE_ALT_SPLICE_RESCUE_POST").is_some();
+    if !rescue_post {
+        txs = alt_donor_acceptor_rescue(txs, &bundle.junction_stats, config.verbose);
+        trace_stage("alt_donor_acceptor_rescue", &txs);
+    }
 
     // Capture pre-filter transcripts for trace analysis before any predcluster filtering.
     let pre_filter = if trace_mode { Some(txs.clone()) } else { None };
@@ -5624,6 +5633,11 @@ fn extract_bundle_transcripts_for_graph(
         print_predcluster_with_summary(txs, config, Some(bpcov), traced_ref);
     txs = predcluster_txs;
     trace_stage("print_predcluster", &txs);
+
+    if rescue_post {
+        txs = alt_donor_acceptor_rescue(txs, &bundle.junction_stats, config.verbose);
+        trace_stage("alt_donor_acceptor_rescue_post", &txs);
+    }
 
     // Remove transcripts with unsupported junctions.
     let before_junction_support = txs.len();

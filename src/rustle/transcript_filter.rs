@@ -4155,6 +4155,15 @@ pub fn alt_donor_acceptor_rescue(
         .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
     let max_per_bundle: usize = std::env::var("RUSTLE_ALT_SPLICE_MAX_PER_BUNDLE")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(200);
+    // Coverage strategy for the alt transcript:
+    //   `split`  (default): cov = t.cov * alt_support / (main_support + alt_support).
+    //   `same`           : cov = t.cov (don't scale down). More survives isofrac but
+    //                      over-counts total locus coverage.
+    //   `max_support`    : cov = max(t.cov * split_fraction, alt_support). Keeps the
+    //                      variant above the isofrac floor when alt has direct read
+    //                      support comparable to t.cov.
+    let cov_strategy = std::env::var("RUSTLE_ALT_SPLICE_COV_STRATEGY")
+        .unwrap_or_else(|_| "split".to_string());
 
     // Index junctions by donor and by acceptor for quick lookup.
     // Only keep junctions with non-negative nreads_good (exclude redirect pointers).
@@ -4237,8 +4246,13 @@ pub fn alt_donor_acceptor_rescue(
                         if delta > window { continue; }
                         let mut alt_tx = t.clone();
                         alt_tx.exons[i].1 = alt_j.donor;
-                        alt_tx.coverage =
+                        let split_cov =
                             t.coverage * alt_support / (main_support + alt_support);
+                        alt_tx.coverage = match cov_strategy.as_str() {
+                            "same" => t.coverage,
+                            "max_support" => split_cov.max(alt_support),
+                            _ => split_cov,  // "split" default
+                        };
                         let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
                             .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
                             .collect();
@@ -4260,8 +4274,13 @@ pub fn alt_donor_acceptor_rescue(
                         if delta > window { continue; }
                         let mut alt_tx = t.clone();
                         alt_tx.exons[i + 1].0 = alt_j.acceptor;
-                        alt_tx.coverage =
+                        let split_cov =
                             t.coverage * alt_support / (main_support + alt_support);
+                        alt_tx.coverage = match cov_strategy.as_str() {
+                            "same" => t.coverage,
+                            "max_support" => split_cov.max(alt_support),
+                            _ => split_cov,  // "split" default
+                        };
                         let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
                             .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
                             .collect();

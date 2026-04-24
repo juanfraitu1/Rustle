@@ -8527,6 +8527,114 @@ pub fn extract_transcripts(
         }
     }
 
+    // RUSTLE_PATH_DECISION_TSV=/path/file.tsv — dump per-seed decisions to
+    // diff against StringTie's PARITY_PATH_DECISION_TSV. Only emits when
+    // `seed_outcomes` was supplied by the caller (captured above).
+    if let Ok(dump_path) = std::env::var("RUSTLE_PATH_DECISION_TSV") {
+        if !dump_path.is_empty() {
+            if let Some(ref outcomes) = seed_outcomes {
+                use std::io::Write;
+                use std::sync::Mutex;
+                use std::sync::OnceLock;
+                static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+                static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+                let wr = WR.get_or_init(|| {
+                    Mutex::new(
+                        std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&dump_path)
+                            .ok(),
+                    )
+                });
+                let hdr = HDR.get_or_init(|| Mutex::new(false));
+                if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+                    if let Some(f) = f_opt.as_mut() {
+                        if !*hdr_w {
+                            let _ = writeln!(
+                                f,
+                                "source\tchrom\tbstart\tbend\tstrand\tseed_idx\tseed_abundance\tseed_first_node\tseed_last_node\tseed_n_nodes\tseed_first_coord\tseed_last_coord\tdecision\tpath_len\tpath_first_coord\tpath_last_coord\tpath_nodes\tpath_intron_chain"
+                            );
+                            *hdr_w = true;
+                        }
+                        // Parse bundle_id "chrom:bstart-bend"
+                        let (bs, be) = if let Some((_, rng)) = bundle_id.split_once(':') {
+                            if let Some((s, e)) = rng.split_once('-') {
+                                (
+                                    s.trim().parse::<u64>().unwrap_or(0),
+                                    e.trim().parse::<u64>().unwrap_or(0),
+                                )
+                            } else {
+                                (0, 0)
+                            }
+                        } else {
+                            (0, 0)
+                        };
+                        for (idx, outcome) in outcomes.iter() {
+                            let tf = &transfrags[*idx];
+                            let real_nodes: Vec<usize> = tf
+                                .node_ids
+                                .iter()
+                                .copied()
+                                .filter(|&n| n != graph.source_id && n != graph.sink_id)
+                                .collect();
+                            let sfirst = real_nodes.first().copied().unwrap_or(0);
+                            let slast = real_nodes.last().copied().unwrap_or(0);
+                            let sfirst_c = graph.nodes.get(sfirst).map(|n| n.start).unwrap_or(0);
+                            let slast_c = graph.nodes.get(slast).map(|n| n.end).unwrap_or(0);
+                            let (decision, stored_idx) = match outcome {
+                                SeedOutcome::Stored(i) => ("extended", Some(*i)),
+                                SeedOutcome::BackToSourceFail => ("b2s_fail", None),
+                                SeedOutcome::FwdToSinkFail => ("f2s_fail", None),
+                                SeedOutcome::Skipped(r) => (*r, None),
+                                SeedOutcome::UnwitnessedSplice => ("unwitnessed_splice", None),
+                                SeedOutcome::HardBoundaryMismatch => ("hard_boundary", None),
+                                SeedOutcome::ZeroFlux => ("zero_flux", None),
+                                SeedOutcome::LowCoverage(_) => ("low_cov", None),
+                                SeedOutcome::EonlyNonGuide => ("eonly_non_guide", None),
+                                SeedOutcome::TooShort => ("too_short", None),
+                                SeedOutcome::ChecktrfReadthr => ("checktrf_readthr", None),
+                                SeedOutcome::ChecktrfEonlySkip => ("checktrf_eonly_skip", None),
+                                SeedOutcome::ChecktrfRedistributed => ("checktrf_redistributed", None),
+                                SeedOutcome::ChecktrfRescued => ("checktrf_rescued", None),
+                                SeedOutcome::ChecktrfIncomplete => ("checktrf_incomplete", None),
+                                SeedOutcome::ChecktrfRescueFail => ("checktrf_rescue_fail", None),
+                            };
+                            // Path data only available for Stored — pull from out[stored_idx].
+                            let (path_len, pfirst_c, plast_c, path_nodes_str, intron_chain) =
+                                if let Some(si) = stored_idx {
+                                    let tx = &out[si];
+                                    let pn = tx.exons.len();
+                                    let pfc = tx.exons.first().map(|e| e.0).unwrap_or(0);
+                                    let plc = tx.exons.last().map(|e| e.1).unwrap_or(0);
+                                    let nodes_s = String::new(); // Transcript doesn't carry path nodes
+                                    let mut chain = String::new();
+                                    for i in 0..tx.exons.len().saturating_sub(1) {
+                                        if i > 0 { chain.push('|'); }
+                                        chain.push_str(&format!("{}-{}", tx.exons[i].1, tx.exons[i+1].0));
+                                    }
+                                    (pn, pfc, plc, nodes_s, chain)
+                                } else {
+                                    (0usize, 0u64, 0u64, String::new(), String::new())
+                                };
+                            let _ = writeln!(
+                                f,
+                                "rustle\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                bundle_chrom, bs, be, bundle_strand,
+                                *idx, tf.abundance,
+                                sfirst, slast, real_nodes.len(),
+                                sfirst_c, slast_c,
+                                decision,
+                                path_len, pfirst_c, plast_c,
+                                path_nodes_str, intron_chain
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     out
 }
 
