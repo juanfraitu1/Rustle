@@ -4115,10 +4115,21 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
 /// transcripts, Rustle emits only one.
 ///
 /// Gated behind `RUSTLE_ALT_SPLICE_RESCUE=1` for experimentation.
+///
+/// Cascading: setting `RUSTLE_ALT_SPLICE_DEPTH=N` (default 1) re-runs the
+/// rescue N times on accumulating output. Depth=1 emits single-swap
+/// variants; depth=2 also emits 2-junction-swap variants; etc. Depth>1
+/// enables "aggressive" enumeration — the Sn gain compounds but Pr
+/// typically regresses. Additional cap: `RUSTLE_ALT_SPLICE_MAX_PER_BUNDLE`
+/// (default 200) caps total variants per bundle to prevent combinatorial
+/// explosion on long heavily-spliced transcripts.
+///
 /// Conservative parameters (via env):
 /// - RUSTLE_ALT_SPLICE_MIN_SUPPORT (default 3): min nreads_good for alt junction
-/// - RUSTLE_ALT_SPLICE_MIN_RATIO (default 0.30): alt.nreads_good / main.nreads_good
-/// - RUSTLE_ALT_SPLICE_WINDOW (default 500): max bp between main and alt junction endpoint
+/// - RUSTLE_ALT_SPLICE_MIN_RATIO (default 0.70): alt.nreads_good / main.nreads_good
+/// - RUSTLE_ALT_SPLICE_WINDOW (default 25): max bp between main and alt junction endpoint
+/// - RUSTLE_ALT_SPLICE_DEPTH (default 1): cascading iterations
+/// - RUSTLE_ALT_SPLICE_MAX_PER_BUNDLE (default 200): total variant cap per bundle
 pub fn alt_donor_acceptor_rescue(
     transcripts: Vec<Transcript>,
     junction_stats: &JunctionStats,
@@ -4140,6 +4151,10 @@ pub fn alt_donor_acceptor_rescue(
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.70);
     let window: u64 = std::env::var("RUSTLE_ALT_SPLICE_WINDOW")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(25);
+    let depth: u32 = std::env::var("RUSTLE_ALT_SPLICE_DEPTH")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    let max_per_bundle: usize = std::env::var("RUSTLE_ALT_SPLICE_MAX_PER_BUNDLE")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(200);
 
     // Index junctions by donor and by acceptor for quick lookup.
     // Only keep junctions with non-negative nreads_good (exclude redirect pointers).
@@ -4165,89 +4180,120 @@ pub fn alt_donor_acceptor_rescue(
         existing_chains.insert(chain);
     }
 
-    let mut additions: Vec<Transcript> = Vec::new();
-    for t in &transcripts {
-        if t.exons.len() < 2 { continue; }
-        for i in 0..t.exons.len() - 1 {
-            let main_donor = t.exons[i].1;
-            let main_acceptor = t.exons[i + 1].0;
-            let main_j = crate::types::Junction::new(main_donor, main_acceptor);
-            let main_support = junction_stats
-                .get(&main_j)
-                .and_then(|s| if s.strand != Some(0) && s.nreads_good >= 0.0 && s.mm >= 0.0 {
-                    Some(s.nreads_good)
-                } else {
-                    None
-                })
-                .unwrap_or(0.0);
-            if main_support <= 0.0 { continue; }
+    let mut out = transcripts;
+    let mut total_emitted = 0usize;
+    let mut frontier_start = 0usize;
 
-            // --- Alt donor: same acceptor, different donor ---
-            if let Some(cands) = by_acceptor.get(&main_acceptor) {
-                for &(alt_j, alt_support) in cands {
-                    if alt_j == main_j { continue; }
-                    if alt_support < min_support { continue; }
-                    if alt_support < main_support * min_ratio { continue; }
-                    // Alt donor must sit inside exon i (so exon becomes [start, alt_donor]).
-                    let exon_i_start = t.exons[i].0;
-                    if alt_j.donor <= exon_i_start { continue; }
-                    // Alt donor must be within window of the main donor.
-                    let delta = if alt_j.donor > main_donor {
-                        alt_j.donor - main_donor
+    // Cascading: at each iteration, generate alt variants from transcripts
+    // emitted in the previous iteration (the "frontier"). Iteration 1
+    // scans the original input; iteration 2 scans variants from
+    // iteration 1; etc. Each emitted variant differs from the ORIGINAL
+    // by exactly `iter` junctions.
+    for _iter in 0..depth {
+        if total_emitted >= max_per_bundle {
+            break;
+        }
+        let frontier_end = out.len();
+        if frontier_start >= frontier_end {
+            break;
+        }
+        let mut additions: Vec<Transcript> = Vec::new();
+
+        // Only scan transcripts added in the previous iteration
+        // (or the original input on the first iteration).
+        for idx in frontier_start..frontier_end {
+            if additions.len() + total_emitted >= max_per_bundle {
+                break;
+            }
+            let t = &out[idx];
+            if t.exons.len() < 2 { continue; }
+
+            for i in 0..t.exons.len() - 1 {
+                if additions.len() + total_emitted >= max_per_bundle {
+                    break;
+                }
+                let main_donor = t.exons[i].1;
+                let main_acceptor = t.exons[i + 1].0;
+                let main_j = crate::types::Junction::new(main_donor, main_acceptor);
+                let main_support = junction_stats
+                    .get(&main_j)
+                    .and_then(|s| if s.strand != Some(0) && s.nreads_good >= 0.0 && s.mm >= 0.0 {
+                        Some(s.nreads_good)
                     } else {
-                        main_donor - alt_j.donor
-                    };
-                    if delta > window { continue; }
-                    // Build alt transcript.
-                    let mut alt_tx = t.clone();
-                    alt_tx.exons[i].1 = alt_j.donor;
-                    // Coverage is split proportionally.
-                    alt_tx.coverage = t.coverage * alt_support / (main_support + alt_support);
-                    // De-dup by chain signature.
-                    let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
-                        .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
-                        .collect();
-                    if existing_chains.insert(chain) {
-                        additions.push(alt_tx);
+                        None
+                    })
+                    .unwrap_or(0.0);
+                if main_support <= 0.0 { continue; }
+
+                // --- Alt donor: same acceptor, different donor ---
+                if let Some(cands) = by_acceptor.get(&main_acceptor) {
+                    for &(alt_j, alt_support) in cands {
+                        if alt_j == main_j { continue; }
+                        if alt_support < min_support { continue; }
+                        if alt_support < main_support * min_ratio { continue; }
+                        let exon_i_start = t.exons[i].0;
+                        if alt_j.donor <= exon_i_start { continue; }
+                        let delta = alt_j.donor.abs_diff(main_donor);
+                        if delta > window { continue; }
+                        let mut alt_tx = t.clone();
+                        alt_tx.exons[i].1 = alt_j.donor;
+                        alt_tx.coverage =
+                            t.coverage * alt_support / (main_support + alt_support);
+                        let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
+                            .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
+                            .collect();
+                        if existing_chains.insert(chain) {
+                            additions.push(alt_tx);
+                        }
                     }
                 }
-            }
 
-            // --- Alt acceptor: same donor, different acceptor ---
-            if let Some(cands) = by_donor.get(&main_donor) {
-                for &(alt_j, alt_support) in cands {
-                    if alt_j == main_j { continue; }
-                    if alt_support < min_support { continue; }
-                    if alt_support < main_support * min_ratio { continue; }
-                    let exon_next_end = t.exons[i + 1].1;
-                    if alt_j.acceptor >= exon_next_end { continue; }
-                    let delta = if alt_j.acceptor > main_acceptor {
-                        alt_j.acceptor - main_acceptor
-                    } else {
-                        main_acceptor - alt_j.acceptor
-                    };
-                    if delta > window { continue; }
-                    let mut alt_tx = t.clone();
-                    alt_tx.exons[i + 1].0 = alt_j.acceptor;
-                    alt_tx.coverage = t.coverage * alt_support / (main_support + alt_support);
-                    let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
-                        .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
-                        .collect();
-                    if existing_chains.insert(chain) {
-                        additions.push(alt_tx);
+                // --- Alt acceptor: same donor, different acceptor ---
+                if let Some(cands) = by_donor.get(&main_donor) {
+                    for &(alt_j, alt_support) in cands {
+                        if alt_j == main_j { continue; }
+                        if alt_support < min_support { continue; }
+                        if alt_support < main_support * min_ratio { continue; }
+                        let exon_next_end = t.exons[i + 1].1;
+                        if alt_j.acceptor >= exon_next_end { continue; }
+                        let delta = alt_j.acceptor.abs_diff(main_acceptor);
+                        if delta > window { continue; }
+                        let mut alt_tx = t.clone();
+                        alt_tx.exons[i + 1].0 = alt_j.acceptor;
+                        alt_tx.coverage =
+                            t.coverage * alt_support / (main_support + alt_support);
+                        let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
+                            .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
+                            .collect();
+                        if existing_chains.insert(chain) {
+                            additions.push(alt_tx);
+                        }
                     }
                 }
             }
         }
+
+        if std::env::var_os("RUSTLE_ALT_SPLICE_TRACE").is_some() {
+            eprintln!(
+                "    alt_donor_acceptor_rescue iter {}: scanned {}..{} ({} tx), emitted {}",
+                _iter, frontier_start, frontier_end,
+                frontier_end - frontier_start, additions.len()
+            );
+        }
+        if additions.is_empty() {
+            break;
+        }
+        total_emitted += additions.len();
+        frontier_start = frontier_end;
+        out.extend(additions);
     }
-    if verbose && !additions.is_empty() {
+
+    if verbose && total_emitted > 0 {
         eprintln!(
-            "    alt_donor_acceptor_rescue: emitted {} alt-splice variant(s)",
-            additions.len()
+            "    alt_donor_acceptor_rescue: emitted {} alt-splice variant(s) (depth={})",
+            total_emitted, depth
         );
     }
-    let mut out = transcripts;
-    out.extend(additions);
     out
 }
 
