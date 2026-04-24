@@ -45,7 +45,14 @@ struct CigarCompatParse {
 fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
     let mut out = CigarCompatParse::default();
 
-    // CIGAR state machine state machine variables.
+    // Byte-for-byte port of StringTie's `GSamRecord::setupCoordinates`
+    // (gclib/GSam.cpp:197-291). `juncsdel` entries are pushed by BOTH the
+    // D-branch AND the M-branch whenever `intron` is true — for `N D M`
+    // patterns this produces TWO entries per intron. We intentionally
+    // replicate that shape so `juncsdel[i-1]` indexing (rlink.cpp:1226-1230)
+    // matches StringTie's output byte-for-byte, including the cases where
+    // the extra entry misaligns indexing for reads with `N ... D ... M ... N`
+    // patterns — the goal is parity, not correctness-over-StringTie.
     let mut l = 0u64;
     let mut exstart = ref_start;
     let mut exon_started = false;
@@ -53,9 +60,15 @@ fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
     let mut ins = false;
     let mut del = 0u64;
     let mut prevdel = 0u64;
-    // Deletion(s) immediately after an intron (N) before the first matched base of the next exon.
-    // We accumulate these and apply them once to the acceptor coordinate for that intron.
-    let mut post_n_del = 0u64;
+
+    // StringTie's `GSeg(s, e)` constructor silently SWAPS `s` and `e` if `s > e`
+    // so that `start <= end` always holds (gclib/GBase.h:381). That means the
+    // `juncsdel` entries ST pushes are not semantically `(left_del, right_del)`
+    // but rather `(min(a, b), max(a, b))`. Replicate exactly.
+    let push_gseg = |out: &mut CigarCompatParse, a: u64, b: u64| {
+        let (s, e) = if a > b { (b, a) } else { (a, b) };
+        out.junc_del_offsets.push((s, e));
+    };
 
     for result in cigar.iter() {
         let Ok(op) = result else {
@@ -69,9 +82,8 @@ fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
                 exon_started = true;
                 l = l.saturating_add(len);
                 if intron {
-                    // Close the intron boundary: one offset entry per N.
-                    out.junc_del_offsets.push((prevdel, post_n_del));
-                    post_n_del = 0;
+                    // GSam.cpp:223-226 — push GSeg(prevdel, 0) on first M after N.
+                    push_gseg(&mut out, prevdel, 0);
                 }
                 intron = false;
                 ins = false;
@@ -81,8 +93,9 @@ fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
                 del = len;
                 l = l.saturating_add(del);
                 if intron {
-                    // Deletions between N and the first match belong to the acceptor boundary.
-                    post_n_del = post_n_del.saturating_add(del);
+                    // GSam.cpp:234-237 — D immediately after N (possibly following I).
+                    // `intron` stays true; the subsequent M will also push (prevdel, 0).
+                    push_gseg(&mut out, prevdel, del);
                 }
                 ins = false;
             }
@@ -98,7 +111,7 @@ fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
                     // it does not abort parsing the rest of the alignment.
                     continue;
                 }
-                // if (!ins || !intron) close previous exon.
+                // GSam.cpp:247 — `if(!ins || !intron)` closes the preceding exon.
                 if !ins || !intron {
                     let exon_end = ref_start.saturating_add(l);
                     if exon_end > exstart {
@@ -109,7 +122,6 @@ fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
                 exstart = ref_start.saturating_add(l);
                 prevdel = del;
                 intron = true;
-                post_n_del = 0;
                 del = 0;
             }
             Kind::SoftClip => {
@@ -129,6 +141,7 @@ fn parse_cigar_compat(ref_start: u64, cigar: &Cigar) -> CigarCompatParse {
         }
     }
 
+    // GSam.cpp:283-287 — close the final exon only if the read did not end in an intron.
     if !intron {
         let exon_end = ref_start.saturating_add(l);
         if exon_end > exstart {
@@ -626,6 +639,68 @@ pub fn record_to_bundle_read_with_snp(
     let insertion_sites = parsed.insertion_sites;
     let junctions_raw = junctions_from_exons(&exons);
     let junctions_del = deletion_aware_junctions_from_parts(&exons, &parsed.junc_del_offsets);
+
+    // RUSTLE_JUNCSDEL_DUMP=/path/file.tsv — emit per-read juncsdel array for
+    // byte-level parity verification against StringTie's PARITY_JUNCSDEL_TSV.
+    // Columns: read_name, ref_start, ref_end, n_exons, n_juncs, n_juncsdel,
+    //          cigar_exons (as start-end,...), juncsdel (as start|end,...).
+    if let Ok(path) = std::env::var("RUSTLE_JUNCSDEL_DUMP") {
+        if !path.is_empty() {
+            use std::io::Write;
+            use std::sync::Mutex;
+            use std::sync::OnceLock;
+            static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+            static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+            let wr = WR.get_or_init(|| {
+                Mutex::new(
+                    std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&path)
+                        .ok(),
+                )
+            });
+            let hdr = HDR.get_or_init(|| Mutex::new(false));
+            if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+                if let Some(f) = f_opt.as_mut() {
+                    if !*hdr_w {
+                        let _ = writeln!(
+                            f,
+                            "source\tread_name\tref_start\tref_end\tn_exons\tn_juncs\tn_juncsdel\texons\tjuncsdel"
+                        );
+                        *hdr_w = true;
+                    }
+                    let name = record
+                        .name()
+                        .map(|n| n.to_string())
+                        .unwrap_or_default();
+                    let ex_str = exons
+                        .iter()
+                        .map(|(s, e)| format!("{}-{}", s, e))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let jd_str = parsed
+                        .junc_del_offsets
+                        .iter()
+                        .map(|(l, r)| format!("{}|{}", l, r))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let _ = writeln!(
+                        f,
+                        "rustle\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        name,
+                        ref_start,
+                        ref_end,
+                        exons.len(),
+                        junctions_raw.len(),
+                        parsed.junc_del_offsets.len(),
+                        ex_str,
+                        jd_str
+                    );
+                }
+            }
+        }
+    }
 
     if std::env::var_os("RUSTLE_READ_DEBUG_COORDS").is_some()
         && exons.iter().any(|(s, e)| *s == 17439907 || *e == 17433882)
