@@ -243,6 +243,13 @@ fn is_rescue_protected(t: &Transcript) -> bool {
     ) {
         return true;
     }
+    // Alt-splice rescue emissions are protected from isofrac when RUSTLE_ALT_SPLICE_PROTECT=1.
+    // Default OFF because blanket protection trades Pr for Sn; opt-in lets the user compare.
+    if std::env::var_os("RUSTLE_ALT_SPLICE_PROTECT").is_some()
+        && t.source.as_deref() == Some("alt_splice_rescue")
+    {
+        return true;
+    }
     // Verified complete transcripts (both boundaries found in reads/graph) are also protected.
     t.hardstart && t.hardend
 }
@@ -4162,8 +4169,16 @@ pub fn alt_donor_acceptor_rescue(
     //   `max_support`    : cov = max(t.cov * split_fraction, alt_support). Keeps the
     //                      variant above the isofrac floor when alt has direct read
     //                      support comparable to t.cov.
+    //   `boost`          : cov = t.cov * alt/(main+alt) * BOOST where
+    //                      BOOST = RUSTLE_ALT_SPLICE_COV_BOOST (default 3.0). This
+    //                      approximates ST's flow-based coverage (which tends to
+    //                      exceed naive splits by 2-4x because path coverage is
+    //                      computed via Edmonds-Karp max-flow, not proportional
+    //                      split).  Capped at t.cov.
     let cov_strategy = std::env::var("RUSTLE_ALT_SPLICE_COV_STRATEGY")
         .unwrap_or_else(|_| "split".to_string());
+    let cov_boost: f64 = std::env::var("RUSTLE_ALT_SPLICE_COV_BOOST")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3.0);
 
     // Index junctions by donor and by acceptor for quick lookup.
     // Only keep junctions with non-negative nreads_good (exclude redirect pointers).
@@ -4251,8 +4266,13 @@ pub fn alt_donor_acceptor_rescue(
                         alt_tx.coverage = match cov_strategy.as_str() {
                             "same" => t.coverage,
                             "max_support" => split_cov.max(alt_support),
+                            "boost" => split_cov * cov_boost,
                             _ => split_cov,  // "split" default
                         };
+                        // Mark the source explicitly so downstream filters can
+                        // identify rescue variants and protect them from
+                        // isofrac if needed (RUSTLE_ALT_SPLICE_PROTECT=1).
+                        alt_tx.source = Some("alt_splice_rescue".to_string());
                         let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
                             .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
                             .collect();
@@ -4279,8 +4299,13 @@ pub fn alt_donor_acceptor_rescue(
                         alt_tx.coverage = match cov_strategy.as_str() {
                             "same" => t.coverage,
                             "max_support" => split_cov.max(alt_support),
+                            "boost" => split_cov * cov_boost,
                             _ => split_cov,  // "split" default
                         };
+                        // Mark the source explicitly so downstream filters can
+                        // identify rescue variants and protect them from
+                        // isofrac if needed (RUSTLE_ALT_SPLICE_PROTECT=1).
+                        alt_tx.source = Some("alt_splice_rescue".to_string());
                         let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
                             .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
                             .collect();
