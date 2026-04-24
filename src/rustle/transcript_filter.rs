@@ -4276,7 +4276,13 @@ pub fn alt_donor_acceptor_rescue(
                         let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
                             .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
                             .collect();
-                        if existing_chains.insert(chain) {
+                        // Always emit when ALLOW_DUP=1: downstream
+                        // dedup_exact_intron_chains will keep the higher-cov copy.
+                        // This lets the rescue's boosted cov override a natively-
+                        // extracted low-cov variant of the same chain.
+                        let allow_dup =
+                            std::env::var_os("RUSTLE_ALT_SPLICE_ALLOW_DUP").is_some();
+                        if allow_dup || existing_chains.insert(chain) {
                             additions.push(alt_tx);
                         }
                     }
@@ -4309,7 +4315,13 @@ pub fn alt_donor_acceptor_rescue(
                         let chain: Vec<(u64, u64)> = (0..alt_tx.exons.len() - 1)
                             .map(|k| (alt_tx.exons[k].1, alt_tx.exons[k + 1].0))
                             .collect();
-                        if existing_chains.insert(chain) {
+                        // Always emit when ALLOW_DUP=1: downstream
+                        // dedup_exact_intron_chains will keep the higher-cov copy.
+                        // This lets the rescue's boosted cov override a natively-
+                        // extracted low-cov variant of the same chain.
+                        let allow_dup =
+                            std::env::var_os("RUSTLE_ALT_SPLICE_ALLOW_DUP").is_some();
+                        if allow_dup || existing_chains.insert(chain) {
                             additions.push(alt_tx);
                         }
                     }
