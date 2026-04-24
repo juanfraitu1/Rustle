@@ -1418,13 +1418,30 @@ pub fn apply_higherr_demotions(
     // which caused acceptor searches to see already-demoted `nreads` values and
     // therefore pick different redirect targets than StringTie.  Matching the
     // interleave is essential for parity.
-    for ord_i in 1..cjunctions.len() {
+    //
+    // NOTE on the loop start: StringTie's loop is `for(int i=1; i<junction.Count();
+    // i++)` because `junction[0]` is a GList sentinel (start=0,end=0,strand=0,
+    // everything zero); i=1 is the first REAL junction. Rustle's cjunctions has no
+    // sentinel, so we iterate from 0 to len — i=0 here is the first real junction.
+    for ord_i in 0..cjunctions.len() {
         // ---- donor body (StringTie junction[i] branch) ----
         'donor: {
         let idx_i = donor_order[ord_i];
         let cur = cjunctions[idx_i];
         if !cj_higherr_candidate(&cur) {
+            if cj_watch_match(&cur) {
+                eprintln!(
+                    "CJWATCH he_left SKIP (not_higherr_candidate) {}-{}:{} nm={:.1} nreads={:.1}",
+                    cur.start, cur.end, cur.strand, cur.nm, cur.nreads
+                );
+            }
             break 'donor;
+        }
+        if cj_watch_match(&cur) {
+            eprintln!(
+                "CJWATCH he_left ENTER ord_i={} idx_i={} {}-{}:{} nm={:.1} nreads={:.1} lsup={:.1}",
+                ord_i, idx_i, cur.start, cur.end, cur.strand, cur.nm, cur.nreads, cur.leftsupport
+            );
         }
         // StringTie rlink.cpp:15008-15026: for all-bad junctions (nm>=nreads) with
         // nreads_good >= 1.25*junctionthr, StringTie marks mm=-1 if bpcov is
@@ -1513,9 +1530,21 @@ pub fn apply_higherr_demotions(
             }
             if cand.strand == cur.strand {
                 if cand.start == cur.start {
+                    if cj_watch_match(&cur) {
+                        eprintln!(
+                            "CJWATCH he_left down.same_start VISIT cand={}-{}:{} cand.nr={:.1}",
+                            cand.start, cand.end, cand.strand, cand.nreads
+                        );
+                    }
                     if cand.nreads < 0.0 {
                         if let Some(point_idx) = resolved_cj_index(&donor_order, cand.nreads) {
                             if cj_ok_to_demote(&cjunctions[idx_i], &cjunctions[point_idx]) {
+                                if cj_watch_match(&cur) {
+                                    eprintln!(
+                                        "CJWATCH he_left down.same_start chain APPLY -> (point_idx={}, chain_nr={:.1})",
+                                        point_idx, cand.nreads
+                                    );
+                                }
                                 cjunctions[idx_i].nreads = cand.nreads;
                                 search = false;
                             }
@@ -1527,6 +1556,12 @@ pub fn apply_higherr_demotions(
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
                         reliable = true;
+                        if cj_watch_match(&cur) {
+                            eprintln!(
+                                "CJWATCH he_left down.reliable -> {}-{} (idx_j={}) lsup cand={:.1} vs cur={:.1}",
+                                cand.start, cand.end, idx_j, cand.leftsupport, cur.leftsupport
+                            );
+                        }
                         // Store the CJUNCTIONS ARRAY index (not sorted order position)
                         // so the per-read redirect can decode it directly.
                         cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
@@ -1548,6 +1583,12 @@ pub fn apply_higherr_demotions(
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                 {
+                    if cj_watch_match(&cur) {
+                        eprintln!(
+                            "CJWATCH he_left down.unreliable -> {}-{} (idx_j={}) lsup cand={:.1} vs cur={:.1}",
+                            cand.start, cand.end, idx_j, cand.leftsupport, cur.leftsupport
+                        );
+                    }
                     cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                     support = cand.leftsupport;
                     if gjd {
@@ -1591,6 +1632,12 @@ pub fn apply_higherr_demotions(
                         && cand.leftsupport > cur.leftsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
+                        if cj_watch_match(&cur) {
+                            eprintln!(
+                                "CJWATCH he_left up.reliable -> {}-{} (idx_j={}) d={} lsup cand={:.1} vs cur={:.1}",
+                                cand.start, cand.end, idx_j, d, cand.leftsupport, cur.leftsupport
+                            );
+                        }
                         cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                         if gjd {
                             eprintln!(
@@ -1611,6 +1658,12 @@ pub fn apply_higherr_demotions(
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                 {
+                    if cj_watch_match(&cur) {
+                        eprintln!(
+                            "CJWATCH he_left up.unreliable -> {}-{} (idx_j={}) d={} lsup cand={:.1} vs cur={:.1}",
+                            cand.start, cand.end, idx_j, d, cand.leftsupport, cur.leftsupport
+                        );
+                    }
                     cjunctions[idx_i].nreads = -(idx_j as f64 + 1.0);
                     support = cand.leftsupport;
                     if gjd {
@@ -1635,7 +1688,19 @@ pub fn apply_higherr_demotions(
         let idx_i = acceptor_order[ord_i];
         let cur = cjunctions[idx_i];
         if !cj_higherr_candidate(&cur) {
+            if cj_watch_match(&cur) {
+                eprintln!(
+                    "CJWATCH he_right SKIP (not_higherr_candidate) {}-{}:{} nm={:.1} nreads={:.1}",
+                    cur.start, cur.end, cur.strand, cur.nm, cur.nreads
+                );
+            }
             break 'acceptor;
+        }
+        if cj_watch_match(&cur) {
+            eprintln!(
+                "CJWATCH he_right ENTER ord_i={} idx_i={} {}-{}:{} nm={:.1} nreads={:.1} rsup={:.1}",
+                ord_i, idx_i, cur.start, cur.end, cur.strand, cur.nm, cur.nreads, cur.rightsupport
+            );
         }
         // Port of StringTie rlink.cpp:15112-15120 acceptor-side continuity check.
         // Check bpcov at last intron base vs first downstream exon base: if coverage
