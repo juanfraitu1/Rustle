@@ -4399,31 +4399,71 @@ pub fn alt_terminal_rescue(
         return transcripts;
     }
 
+    // ST CPAS defaults (rlink.cpp:745-746):
+    //   CPAS_POS_BIN = 5 bp clustering window
+    //   CPAS_MIN_SUPPORT = 20 weighted polyA/T tail bases per cluster
     let min_reads: usize = std::env::var("RUSTLE_ALT_TERMINAL_MIN_READS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(8);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(20);
     let window: u64 = std::env::var("RUSTLE_ALT_TERMINAL_WINDOW")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(25);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
     let max_per_bundle: usize = std::env::var("RUSTLE_ALT_TERMINAL_MAX_PER_BUNDLE")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(8);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(16);
     let cov_frac: f64 = std::env::var("RUSTLE_ALT_TERMINAL_COV_FRAC")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
     // Cluster must be at least this fraction of the parent's longcov.
-    // Default 0.20 prevents tiny clusters in high-cov genes from spawning
-    // dozens of micro-variants. Set to 0.0 to disable.
+    // Default 0.0 — CPAS gating already filters by poly-tail evidence,
+    // so a hard ratio is unnecessary.
     let min_parent_ratio: f64 = std::env::var("RUSTLE_ALT_TERMINAL_MIN_PARENT_RATIO")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.20);
-    // Parent must have at least this longcov to be eligible. Avoids
-    // spawning variants from already-low-cov tx.
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    // Parent must have at least this longcov to be eligible.
     let min_parent_longcov: f64 = std::env::var("RUSTLE_ALT_TERMINAL_MIN_PARENT_LONGCOV")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
 
-    // Sort read endpoints once. Strand-agnostic: the same cluster may
-    // serve as TSS for one strand and TTS for the other; the boundary
-    // semantic comes from the transcript's strand at use time.
-    let mut starts: Vec<u64> = reads.iter().map(|r| r.ref_start).collect();
-    let mut ends: Vec<u64> = reads.iter().map(|r| r.ref_end).collect();
+    // ST-style CPAS gating (rlink.cpp:15179): only reads whose
+    // soft-clipped tail contains polyA (3' end) or polyT (5' end on -
+    // strand reads) contribute to the cluster. Each contributing read
+    // is weighted by its tail-A/T base count (`unaligned_poly_a`/
+    // `unaligned_poly_t`). Reads without poly-tail evidence are
+    // excluded — this is what stops random read-endpoint noise from
+    // generating false TSS/TTS clusters.
+    //
+    // Strand mapping (ST rlink.cpp:15195-15204):
+    //   read.strand == '+' : cluster ref_end with weight=unaligned_poly_a
+    //   read.strand == '-' : cluster ref_start with weight=unaligned_poly_t
+    //   read.strand == '.' : include both
+    //
+    // For the rescue we collect into two pools (TSS-side starts and
+    // TTS-side ends) regardless of strand, since the variant's strand
+    // is known at use time.
+    let cpas_only = std::env::var_os("RUSTLE_ALT_TERMINAL_NO_CPAS").is_none();
+    let mut starts: Vec<u64> = Vec::new();
+    let mut ends: Vec<u64> = Vec::new();
+    for r in reads {
+        let w_a = r.unaligned_poly_a as usize;
+        let w_t = r.unaligned_poly_t as usize;
+        if cpas_only {
+            // Plus-strand polyA at ref_end → 3' TTS cluster source.
+            // Minus-strand polyT at ref_start → 5' TSS cluster source
+            // (which on minus strand is the larger genomic coord, but
+            // the cluster pos is ref_start because that's where the
+            // polyT tail attaches in the minus-strand convention).
+            for _ in 0..w_a { ends.push(r.ref_end); }
+            for _ in 0..w_t { starts.push(r.ref_start); }
+        } else {
+            starts.push(r.ref_start);
+            ends.push(r.ref_end);
+        }
+    }
     starts.sort_unstable();
     ends.sort_unstable();
+    if std::env::var_os("RUSTLE_TRACE_ALT_TERMINAL").is_some() {
+        let polya = reads.iter().filter(|r| r.unaligned_poly_a > 0).count();
+        let polyt = reads.iter().filter(|r| r.unaligned_poly_t > 0).count();
+        eprintln!(
+            "[ALT_TERMINAL] reads={} polyA={} polyT={} starts_pool={} ends_pool={}",
+            reads.len(), polya, polyt, starts.len(), ends.len()
+        );
+    }
 
     let count_near = |sorted: &[u64], pos: u64, w: u64| -> usize {
         let lo = pos.saturating_sub(w);
