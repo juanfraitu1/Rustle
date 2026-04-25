@@ -315,6 +315,18 @@ fn cj_ok_to_demote(cur: &CJunction, better: &CJunction) -> bool {
 
 #[inline]
 fn cj_higherr_candidate(cj: &CJunction) -> bool {
+    // Opt-in: RUSTLE_HIGHERR_MIN_READS=N exempts junctions with >= N
+    // absolute reads from the higherr-candidate classification. Default 0
+    // (off). Tested for STRG.275.3 alt-junction (25 reads, 4bp shift)
+    // — the exemption alone doesn't unlock it because downstream
+    // good_junc/redirect machinery still kills, AND exempting all such
+    // candidates regresses other loci (-17 to -54 matches at floors
+    // 30/20/10 respectively).
+    let exempt_floor: f64 = std::env::var("RUSTLE_HIGHERR_MIN_READS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    if exempt_floor > 0.0 && cj.nreads >= exempt_floor {
+        return false;
+    }
     cj.strand != 0 && !cj.guide_match && cj.nm > 0.0 && cj.nm + 1e-9 >= cj.nreads
 }
 
