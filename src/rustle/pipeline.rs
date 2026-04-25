@@ -5434,6 +5434,36 @@ fn extract_bundle_transcripts_for_graph(
             bundle.strand,
         );
     }
+    // RUSTLE_TRACE_EXTRACT_BUNDLE=chrom:start-end dumps transcripts produced
+    // by extract_transcripts BEFORE post-processing filters fire — useful
+    // when investigating why a specific transcript is missing from final
+    // output (it may have been killed by retained-intron, isofrac, etc.).
+    if let Ok(trg) = std::env::var("RUSTLE_TRACE_EXTRACT_BUNDLE") {
+        if let Some((chrom, range)) = trg.split_once(':') {
+            if let Some((s, e)) = range.split_once('-') {
+                if let (Ok(s), Ok(e)) = (s.trim().parse::<u64>(), e.trim().parse::<u64>()) {
+                    if bundle.chrom == chrom && bundle.start == s && bundle.end == e {
+                        eprintln!(
+                            "TRACE_EXTRACT bundle={}:{}-{}{} txs_after_extract={}",
+                            bundle.chrom, bundle.start, bundle.end,
+                            bundle.strand, txs.len()
+                        );
+                        for (ti, t) in txs.iter().enumerate() {
+                            let chain: Vec<String> = (0..t.exons.len()
+                                .saturating_sub(1))
+                                .map(|i| format!("{}-{}", t.exons[i].1, t.exons[i+1].0))
+                                .collect();
+                            eprintln!(
+                                "  TX[{}] cov={:.3} longcov={:.3} src={:?} exons={} chain={}",
+                                ti, t.coverage, t.longcov, t.source.as_deref(),
+                                t.exons.len(), chain.join("|"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
     if std::env::var_os("RUSTLE_SEED_STATS").is_some() {
         let mut counts: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();

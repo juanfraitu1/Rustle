@@ -1503,12 +1503,26 @@ fn retainedintron_like(
     // doesn't generate in the first place. A stricter fraction for END-retained-
     // intron (where n2's merged exon IS the last exon — clear end-RI signal)
     // catches these without affecting middle-RI which already kills regardless.
-    // Opt-out: RUSTLE_END_RI_STRICT_OFF=1. Tune via RUSTLE_END_RI_FRAC (default 0.5).
+    // Opt-out: RUSTLE_END_RI_STRICT_OFF=1. Tune via RUSTLE_END_RI_FRAC.
+    //
+    // Default lowered from 0.5 to 0.1 (matches StringTie's ERROR_PERC) after
+    // session 7's outer-stat inheritance reduced Rustle's over-emission of
+    // merged-last-exon variants. Sweep on GGO_19 (post-session-7 baseline 1662):
+    //   frac=0.5: 1662 / 91.6 / 86.0 (prior default)
+    //   frac=0.3: 1674 / 92.3 / 85.9
+    //   frac=0.2: 1679 / 92.6 / 85.7
+    //   frac=0.1: 1682 / 92.7 / 85.4 (new default — +20 chains, +1.1 Sn, -0.6 Pr)
+    //   OFF:     1685 / 92.9 / 74.3 (massive Pr drop from over-emission)
+    //
+    // 0.1 mirrors ST's behavior — STRG.358.4 (longcov 20, retained-intron of
+    // STRG.358.5) survives in ST and now in Rustle too.
+    //
+    // Set RUSTLE_END_RI_FRAC=0.5 to restore the prior default if needed.
     let end_ri_strict = std::env::var_os("RUSTLE_END_RI_STRICT_OFF").is_none();
     let end_ri_frac: f64 = std::env::var("RUSTLE_END_RI_FRAC")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(0.5);
+        .unwrap_or(0.1);
     if trace_ri {
         let a_low: Vec<u8> = lowintron
             .get(n1)
