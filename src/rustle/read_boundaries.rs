@@ -358,6 +358,218 @@ pub fn collect_read_boundaries_with_cpas(
     finalize_boundaries(start_counts, end_counts)
 }
 
+/// Port of StringTie's `find_all_trims` (rlink.cpp:2686-2900) as a
+/// pre-filter on `lstart`/`lend`. Walks bpcov over each bundlenode
+/// region, accepting only positions where the local coverage drop ratio
+/// passes ST's localdrop threshold. CPAS cluster positions force-add
+/// regardless of drop (mirroring `lastdrop=0` at rlink.cpp:2712).
+///
+/// Constants mirror rlink.cpp: CHI_THR=50, CHI_WIN=100, ERROR_PERC=0.1,
+/// DROP=0.5, longintronanchor=25, localdrop=ERROR_PERC/DROP=0.2.
+pub fn find_all_trims_for_bundle(
+    bpcov: &Bpcov,
+    bundlenodes_head: Option<&CBundlenode>,
+    reads: &[BundleRead],
+    bundle_start: u64,
+    bundle_end: u64,
+    _bundle_strand: char,
+) -> (Vec<ReadBoundary>, Vec<ReadBoundary>) {
+    // Flatten the linked list of bundlenodes for iteration.
+    let mut bundlenodes: Vec<(u64, u64)> = Vec::new();
+    let mut cur = bundlenodes_head;
+    while let Some(bn) = cur {
+        bundlenodes.push((bn.start, bn.end));
+        cur = bn.next.as_deref();
+    }
+    const CHI_WIN: u64 = 100;
+    const CHI_THR: u64 = 50;
+    const DROP: f64 = 0.5;
+    const ERROR_PERC: f64 = 0.1;
+    const LONGINTRONANCHOR: u64 = 25;
+
+    // Build CPAS clusters from polyA-bearing read endpoints (same as
+    // collect_read_boundaries_with_cpas).
+    let mut raw_plus: Vec<(u64, f64)> = Vec::new();
+    let mut raw_minus: Vec<(u64, f64)> = Vec::new();
+    for r in reads {
+        let s_p = match r.exons.first() { Some(e) => e.0, None => continue };
+        let e_p = match r.exons.last() { Some(e) => e.1.saturating_sub(1), None => continue };
+        let w_plus = r.unaligned_poly_a as f64;
+        let w_minus = r.unaligned_poly_t as f64;
+        match r.strand {
+            '+' => if w_plus > 0.0 { raw_plus.push((e_p, w_plus)); },
+            '-' => if w_minus > 0.0 { raw_minus.push((s_p, w_minus)); },
+            _ => {
+                if w_plus > 0.0 { raw_plus.push((e_p, w_plus)); }
+                if w_minus > 0.0 { raw_minus.push((s_p, w_minus)); }
+            }
+        }
+    }
+    let cpas_starts_in =
+        cluster_positions_with_counts(&raw_minus, CPAS_POS_BIN, CPAS_MIN_SUPPORT);
+    let cpas_ends_in =
+        cluster_positions_with_counts(&raw_plus, CPAS_POS_BIN, CPAS_MIN_SUPPORT);
+    let refend = bundle_end.saturating_sub(1).max(bundle_start);
+    let mut cpas_starts: Vec<(u64, f64)> = Vec::new();
+    let mut cpas_ends: Vec<(u64, f64)> = Vec::new();
+    for (pos, sup) in cpas_starts_in {
+        let p = pos.clamp(bundle_start, refend);
+        add_cpas_trimpoint(&mut cpas_starts, p, sup, CPAS_POS_BIN);
+    }
+    for (pos, sup) in cpas_ends_in {
+        let p = pos.clamp(bundle_start, refend);
+        add_cpas_trimpoint(&mut cpas_ends, p, sup, CPAS_POS_BIN);
+    }
+    cpas_starts.sort_by_key(|&(p, _)| p);
+    cpas_ends.sort_by_key(|&(p, _)| p);
+
+    let cov_avg = |a: u64, b: u64| -> f64 {
+        if b < a { return 0.0; }
+        let ai = bpcov.idx(a);
+        if ai >= bpcov.cov.len() { return 0.0; }
+        let bi = bpcov.idx(b).min(bpcov.cov.len() - 1);
+        let len = (bi - ai + 1) as f64;
+        bpcov.get_cov_range(ai, bi + 1) / len.max(1.0)
+    };
+
+    let mut lstart_out: Vec<ReadBoundary> = Vec::new();
+    let mut lend_out: Vec<ReadBoundary> = Vec::new();
+
+    fn push_or_replace(
+        out: &mut Vec<ReadBoundary>,
+        pos: u64,
+        cov: f64,
+        lastdrop: &mut f64,
+        thisdrop: f64,
+    ) {
+        const CHI_THR_LOCAL: u64 = 50;
+        if let Some(last) = out.last() {
+            if pos.saturating_sub(last.pos) <= CHI_THR_LOCAL {
+                if thisdrop < *lastdrop {
+                    let l = out.last_mut().unwrap();
+                    l.pos = pos;
+                    l.cov = cov;
+                    *lastdrop = thisdrop;
+                }
+                return;
+            }
+        }
+        out.push(ReadBoundary { pos, cov });
+        *lastdrop = thisdrop;
+    }
+
+    fn match_cpas(i: u64, cpas: &[(u64, f64)]) -> Option<f64> {
+        for &(p, sup) in cpas {
+            if p.abs_diff(i) <= CPAS_POS_BIN {
+                return Some(sup);
+            }
+        }
+        None
+    }
+
+    for &(bn_start, bn_end) in &bundlenodes {
+        let start = bn_start.max(bundle_start);
+        let end = bn_end.min(refend);
+        if end <= start { continue; }
+        let len = end.saturating_sub(start).saturating_add(1);
+        if len < CHI_THR { continue; }
+
+        let local_s: Vec<(u64, f64)> = cpas_starts
+            .iter().copied().filter(|&(p, _)| p >= start && p <= end).collect();
+        let local_e: Vec<(u64, f64)> = cpas_ends
+            .iter().copied().filter(|&(p, _)| p >= start && p <= end).collect();
+
+        let mut localdrop: f64 = ERROR_PERC / DROP;
+        if len < 2 * (CHI_WIN + CHI_THR) + 1 && len < CHI_WIN {
+            localdrop = ERROR_PERC / (10.0 * DROP);
+        }
+        let mut lastdrop_s = localdrop;
+        let mut lastdrop_e = localdrop;
+
+        let walk = |i: u64,
+                    cov_l: f64,
+                    cov_r: f64,
+                    lstart_out: &mut Vec<ReadBoundary>,
+                    lend_out: &mut Vec<ReadBoundary>,
+                    lastdrop_s: &mut f64,
+                    lastdrop_e: &mut f64,
+                    drop_scale: f64| {
+            // CPAS force.
+            if let Some(sup) = match_cpas(i, &local_s) {
+                push_or_replace(lstart_out, i + 1, sup, lastdrop_s, 0.0);
+                return;
+            }
+            if let Some(sup) = match_cpas(i, &local_e) {
+                push_or_replace(lend_out, i, sup, lastdrop_e, 0.0);
+                return;
+            }
+            if cov_l < cov_r {
+                let thisdrop = cov_l / cov_r.max(f64::EPSILON);
+                if thisdrop < localdrop {
+                    push_or_replace(
+                        lstart_out, i + 1, (cov_r - cov_l) / drop_scale,
+                        lastdrop_s, thisdrop,
+                    );
+                }
+            } else if cov_l > cov_r {
+                let thisdrop = cov_r / cov_l.max(f64::EPSILON);
+                if thisdrop < localdrop {
+                    push_or_replace(
+                        lend_out, i, (cov_l - cov_r) / drop_scale,
+                        lastdrop_e, thisdrop,
+                    );
+                }
+            }
+        };
+
+        // Short region (rlink.cpp:2698-2754).
+        if len < 2 * (CHI_WIN + CHI_THR) + 1 {
+            let lo = start.saturating_add(LONGINTRONANCHOR);
+            let hi = end.saturating_sub(LONGINTRONANCHOR);
+            for i in lo..hi {
+                let cov_l = cov_avg(start, i.saturating_sub(1));
+                let cov_r = cov_avg(i, end);
+                walk(i, cov_l, cov_r,
+                     &mut lstart_out, &mut lend_out,
+                     &mut lastdrop_s, &mut lastdrop_e, DROP);
+            }
+            continue;
+        }
+
+        // Phase 1: ramp-up window (rlink.cpp:2762-2811).
+        let winlen = CHI_WIN + CHI_THR;
+        for i in (start + CHI_THR - 1)..(start + winlen - 1) {
+            let cov_l = cov_avg(start, i);
+            let cov_r = cov_avg(i + 1, i + winlen);
+            walk(i, cov_l, cov_r,
+                 &mut lstart_out, &mut lend_out,
+                 &mut lastdrop_s, &mut lastdrop_e, DROP);
+        }
+        // Phase 2: full sliding window (rlink.cpp:2818-2868).
+        let mid_end = end.saturating_sub(winlen);
+        for i in (start + winlen - 1)..mid_end {
+            let cov_l = cov_avg(i + 1 - winlen, i);
+            let cov_r = cov_avg(i + 1, i + winlen);
+            walk(i, cov_l, cov_r,
+                 &mut lstart_out, &mut lend_out,
+                 &mut lastdrop_s, &mut lastdrop_e, DROP * winlen as f64);
+        }
+        // Phase 3: ramp-down window (rlink.cpp:2872+).
+        let phase3_end = end.saturating_sub(CHI_THR + 1);
+        for i in mid_end..phase3_end {
+            let cov_l = cov_avg(i + 1 - winlen, i);
+            let cov_r = cov_avg(i + 1, end);
+            walk(i, cov_l, cov_r,
+                 &mut lstart_out, &mut lend_out,
+                 &mut lastdrop_s, &mut lastdrop_e, DROP);
+        }
+    }
+
+    lstart_out.sort_by_key(|b| b.pos);
+    lend_out.sort_by_key(|b| b.pos);
+    (lstart_out, lend_out)
+}
+
 /// CPAS-augmented endpoints exported as `CPred` entries.
 pub fn collect_read_cpreds_with_cpas(
     reads: &[BundleRead],

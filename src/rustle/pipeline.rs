@@ -10091,13 +10091,33 @@ pub fn run<P: AsRef<Path>>(
                 // the algorithm uses lstart/lend for longtrim during graph construction
                 let _longtrim_on = config.enable_longtrim; // unused: longtrim always enabled for long-read mode
                 let longtrim_in_graph = use_longtrim(mode); // longtrim always enabled for long-read mode
-                let (lstart, lend) = collect_read_boundaries_with_cpas(
-                    coverage_reads,
-                    mode,
-                    config.long_read_min_len,
-                    graph_bundle.start,
-                    graph_bundle.end,
-                );
+                let use_fat = std::env::var_os("RUSTLE_FIND_ALL_TRIMS").is_some();
+                let (lstart, lend) = if use_fat {
+                    crate::read_boundaries::find_all_trims_for_bundle(
+                        &bpcov,
+                        graph_bundle.bundlenodes.as_ref(),
+                        coverage_reads,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                    )
+                } else {
+                    collect_read_boundaries_with_cpas(
+                        coverage_reads,
+                        mode,
+                        config.long_read_min_len,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                    )
+                };
+                if std::env::var_os("RUSTLE_FAT_TRACE").is_some() {
+                    eprintln!(
+                        "[FAT] bundle={}-{} use_fat={} lstart={} lend={}",
+                        graph_bundle.start, graph_bundle.end, use_fat,
+                        lstart.len(), lend.len(),
+                    );
+                }
+                let _ = use_fat; // silence warning when trace off
                 if std::env::var_os("RUSTLE_BOUNDARY_TRACE").is_some() {
                     let cov_floor: f64 = std::env::var("RUSTLE_BOUNDARY_TRACE_MIN")
                         .ok()
