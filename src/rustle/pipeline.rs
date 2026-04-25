@@ -4413,9 +4413,11 @@ fn inject_guide_transfrags(
             continue;
         }
         if let Some(n) = graph.nodes.get_mut(first) {
+            crate::bump_hs!("pipeline.rs:4416:hardstart");
             n.hardstart = true;
         }
         if let Some(n) = graph.nodes.get_mut(last) {
+            crate::bump_hs!("pipeline.rs:4419:hardend");
             n.hardend = true;
         }
         graph.add_edge(source, first);
@@ -13937,6 +13939,7 @@ pub fn run<P: AsRef<Path>>(
     parity_partition_dump::flush();
     parity_trace_dump::flush();
     parity_shadow::flush();
+    crate::hard_counters::dump();
 
     if let Some(ref ballgown_dir) = config.ballgown_dir {
         write_ballgown(&all_transcripts, ballgown_dir, &config.label)?;

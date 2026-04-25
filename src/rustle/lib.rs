@@ -30,6 +30,7 @@ pub mod bpcov; // base-pair coverage prefix sums
 mod bundle; // Internal bundle implementation (legacy)
 pub mod bundle_builder; // Sub-bundle building (public API)
 pub mod hard_boundaries;
+pub mod hard_counters;
 pub mod junction_correction; // sserror-based junction position correction
 pub mod junctions; // splice junction data structures
 pub mod killed_junctions; // good_junc gate, junction splice aggregation

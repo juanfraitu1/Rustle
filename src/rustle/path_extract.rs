@@ -5262,6 +5262,7 @@ pub fn extract_transcripts(
         for f in src_targets {
             if !graph.nodes[src].children.contains(f) {
                 graph.add_edge(src, f);
+                crate::bump_hs!("path_extract.rs:5265:hardstart");
                 graph.nodes[f].hardstart = true;
                 added_src += 1;
             }
@@ -5269,6 +5270,7 @@ pub fn extract_transcripts(
         for l in snk_targets {
             if !graph.nodes[l].children.contains(snk) {
                 graph.add_edge(l, snk);
+                crate::bump_hs!("path_extract.rs:5272:hardend");
                 graph.nodes[l].hardend = true;
                 added_snk += 1;
             }

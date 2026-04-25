@@ -394,9 +394,11 @@ pub fn process_refguides(
             let first_nid = *node_ids.first().unwrap_or(&0);
             let last_nid = *node_ids.last().unwrap_or(&0);
             if first_nid < graph.nodes.len() {
+                crate::bump_hs!("reference_gtf.rs:397:hardstart");
                 graph.nodes[first_nid].hardstart = true;
             }
             if last_nid < graph.nodes.len() {
+                crate::bump_hs!("reference_gtf.rs:400:hardend");
                 graph.nodes[last_nid].hardend = true;
             }
             mapped.push(GuideInfo {

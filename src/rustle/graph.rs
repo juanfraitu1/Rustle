@@ -749,6 +749,7 @@ impl Graph {
                 // Propagate hardend if the last pass-through had it.
                 if let Some(&last_pt) = pts.last() {
                     if self.nodes[last_pt].hardend {
+                        crate::bump_hs!("graph.rs:752:hardend");
                         self.nodes[head].hardend = true;
                     }
                 }

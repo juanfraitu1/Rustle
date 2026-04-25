@@ -1593,9 +1593,11 @@ fn process_read_for_group(
 
                 if !std::env::var_os("RUSTLE_BUNDLE_HARDSTART_OFF").is_some() {
                     if active_read.ref_start == seg_start && ei == 0 {
+                        crate::bump_hs!("bundle_builder.rs:1596:hardstart");
                         strand_data.groups[ti].hardstart = true;
                     }
                     if active_read.ref_end == seg_end && ei + 1 == ncoord {
+                        crate::bump_hs!("bundle_builder.rs:1599:hardend");
                         strand_data.groups[ti].hardend = true;
                     }
                 }
@@ -1695,9 +1697,11 @@ fn process_read_for_group(
                 );
                 if !std::env::var_os("RUSTLE_BUNDLE_HARDSTART_OFF").is_some() {
                     if active_read.ref_start == seg_start && ei == 0 {
+                        crate::bump_hs!("bundle_builder.rs:1698:hardstart");
                         newgroup.hardstart = true;
                     }
                     if active_read.ref_end == seg_end && ei + 1 == ncoord {
+                        crate::bump_hs!("bundle_builder.rs:1701:hardend");
                         newgroup.hardend = true;
                     }
                 }
@@ -1901,9 +1905,11 @@ fn process_read_for_group(
             );
             if !std::env::var_os("RUSTLE_BUNDLE_HARDSTART_OFF").is_some() {
                 if active_read.ref_start == seg_start && ei == 0 {
+                    crate::bump_hs!("bundle_builder.rs:1904:hardstart");
                     newgroup.hardstart = true;
                 }
                 if active_read.ref_end == seg_end && ei + 1 == ncoord {
+                    crate::bump_hs!("bundle_builder.rs:1907:hardend");
                     newgroup.hardend = true;
                 }
             }
@@ -2173,9 +2179,11 @@ fn add_group_to_tmp_bundle(nodes: &mut Vec<CBundlenode>, group: &CGroup, localdi
         }
         last.cov += group.cov_sum;
         if group.hardstart && group.start == last.start {
+            crate::bump_hs!("bundle_builder.rs:2176:hardstart");
             last.hardstart = true;
         }
         if group.hardend && group.end == last.end {
+            crate::bump_hs!("bundle_builder.rs:2179:hardend");
             last.hardend = true;
         }
         last_idx

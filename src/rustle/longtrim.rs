@@ -268,12 +268,14 @@ pub fn apply_longtrim_direct(
                             if c != source && c != sink {
                                 graph.add_edge(source, c);
                                 if let Some(n) = graph.nodes.get_mut(c) {
+                                    crate::bump_hs!("longtrim.rs:271:hardstart");
                                     n.hardstart = true;
                                 }
                             }
                         }
                         for &p in &parents {
                             if let Some(n) = graph.nodes.get_mut(p) {
+                                crate::bump_hs!("longtrim.rs:277:hardend");
                                 n.hardend = true;
                             }
                         }
@@ -441,6 +443,7 @@ pub fn apply_longtrim_direct(
                     graph.nodes[cur_nid].end = pos;
                     let new_nid = graph.add_node(pos, prev_end).node_id;
                     graph.nodes[new_nid].source_bnode = graph.nodes[cur_nid].source_bnode;
+                    crate::bump_hs!("longtrim.rs:444:hardstart");
                     graph.nodes[new_nid].hardstart = true;
                     graph.add_edge(source, new_nid);
                     graph.add_edge(cur_nid, new_nid);
@@ -576,6 +579,7 @@ pub fn apply_longtrim_direct(
                                     cur_nid, pos, cut, prev_end, tmpcov, b.cov,
                                     graph.nodes[cur_nid].children.ones().count());
                             }
+                            crate::bump_hs!("longtrim.rs:579:hardend");
                             graph.nodes[cur_nid].hardend = true;
                             graph.nodes[cur_nid].longtrim_cov = tmpcov;
                             // Use old_children (pre-remove snapshot) since the loop
@@ -598,6 +602,7 @@ pub fn apply_longtrim_direct(
                                 if graph.nodes[c].start == cut
                                     && !graph.nodes[c].parents.contains(source)
                                 {
+                                    crate::bump_hs!("longtrim.rs:601:hardstart");
                                     graph.nodes[c].hardstart = true;
                                     graph.nodes[c].longtrim_cov = tmpcov;
                                     graph.add_edge(source, c);
@@ -615,12 +620,14 @@ pub fn apply_longtrim_direct(
                         continue;
                     }
                     graph.nodes[cur_nid].end = cut;
+                    crate::bump_hs!("longtrim.rs:618:hardend");
                     graph.nodes[cur_nid].hardend = true;
                     graph.nodes[cur_nid].longtrim_cov = tmpcov;
                     let new_nid = graph.add_node(cut, prev_end).node_id;
                     graph.nodes[new_nid].source_bnode = graph.nodes[cur_nid].source_bnode;
                     // Mark the new node as hardstart so the RUSTLE_LONGTRIM_READ_SPLIT
                     // gate in map_reads.rs can identify this as a split boundary.
+                    crate::bump_hs!("longtrim.rs:624:hardstart");
                     graph.nodes[new_nid].hardstart = true;
                     graph.nodes[new_nid].longtrim_cov = tmpcov;
                     // Restore original longtrim behavior: link cur->new AND cur->sink.
@@ -810,8 +817,10 @@ pub fn apply_longtrim_direct(
         }
         for (prev_nid, curr_nid, tmpcov, is_up) in boundary_jumps {
             if prev_nid >= graph.nodes.len() || curr_nid >= graph.nodes.len() { continue; }
+            crate::bump_hs!("longtrim.rs:813:hardend");
             graph.nodes[prev_nid].hardend = true;
             graph.nodes[prev_nid].longtrim_cov = tmpcov;
+            crate::bump_hs!("longtrim.rs:815:hardstart");
             graph.nodes[curr_nid].hardstart = true;
             graph.nodes[curr_nid].longtrim_cov = tmpcov;
             let ps = graph.pattern_size();
@@ -855,10 +864,12 @@ pub fn apply_longtrim_direct(
             let old_children: Vec<usize> = graph.nodes[nid].children.ones().collect();
             for &c in &old_children { graph.remove_edge(nid, c); }
             graph.nodes[nid].end = cut;
+            crate::bump_hs!("longtrim.rs:858:hardend");
             graph.nodes[nid].hardend = true;
             graph.nodes[nid].longtrim_cov = tmpcov;
             let new_nid = graph.add_node(cut, prev_end).node_id;
             graph.nodes[new_nid].source_bnode = graph.nodes[nid].source_bnode;
+            crate::bump_hs!("longtrim.rs:862:hardstart");
             graph.nodes[new_nid].hardstart = true;
             graph.nodes[new_nid].longtrim_cov = tmpcov;
             graph.add_edge(nid, new_nid);
@@ -967,6 +978,7 @@ pub fn apply_guide_boundary_splits(
                 if let Some(new_first) = split_node_keep_children(graph, first, g.tx_start) {
                     let had = graph.nodes[source].children.contains(new_first);
                     graph.add_edge(source, new_first);
+                    crate::bump_hs!("longtrim.rs:970:hardstart");
                     graph.nodes[new_first].hardstart = true;
                     if !had {
                         st.source_edges_added += 1;
@@ -992,6 +1004,7 @@ pub fn apply_guide_boundary_splits(
                 if split_node_keep_children(graph, last, g.tx_end).is_some() {
                     let had = graph.nodes[last].children.contains(sink);
                     graph.add_edge(last, sink);
+                    crate::bump_hs!("longtrim.rs:995:hardend");
                     graph.nodes[last].hardend = true;
                     if !had {
                         st.sink_edges_added += 1;
@@ -1010,6 +1023,7 @@ pub fn apply_guide_boundary_splits(
             } else if g.tx_end == n.end {
                 let had = graph.nodes[last].children.contains(sink);
                 graph.add_edge(last, sink);
+                crate::bump_hs!("longtrim.rs:1013:hardend");
                 graph.nodes[last].hardend = true;
                 if !had {
                     st.sink_edges_added += 1;
@@ -1080,6 +1094,7 @@ pub fn apply_guide_boundary_splits_from_refs(
                     }
                     let had = graph.nodes[source].children.contains(new_first);
                     graph.add_edge(source, new_first);
+                    crate::bump_hs!("longtrim.rs:1083:hardstart");
                     graph.nodes[new_first].hardstart = true;
                     if !had {
                         st.source_edges_added += 1;
@@ -1110,6 +1125,7 @@ pub fn apply_guide_boundary_splits_from_refs(
                     }
                     let had = graph.nodes[last].children.contains(sink);
                     graph.add_edge(last, sink);
+                    crate::bump_hs!("longtrim.rs:1113:hardend");
                     graph.nodes[last].hardend = true;
                     if !had {
                         st.sink_edges_added += 1;
@@ -1128,6 +1144,7 @@ pub fn apply_guide_boundary_splits_from_refs(
             } else if tx_end == n.end {
                 let had = graph.nodes[last].children.contains(sink);
                 graph.add_edge(last, sink);
+                crate::bump_hs!("longtrim.rs:1131:hardend");
                 graph.nodes[last].hardend = true;
                 if !had {
                     st.sink_edges_added += 1;

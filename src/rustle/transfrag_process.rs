@@ -1713,9 +1713,11 @@ pub fn process_transfrags(
             let first = core[0];
             let last = *core.last().unwrap_or(&first);
             if let Some(n) = graph.nodes.get_mut(first) {
+                crate::bump_hs!("transfrag_process.rs:1716:hardstart");
                 n.hardstart = true;
             }
             if let Some(n) = graph.nodes.get_mut(last) {
+                crate::bump_hs!("transfrag_process.rs:1719:hardend");
                 n.hardend = true;
             }
             graph.add_edge(source_id, first);

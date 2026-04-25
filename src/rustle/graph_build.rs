@@ -389,6 +389,7 @@ pub fn add_alt_tts_sink_edges(
         tf.longread = true;
         // Mark the node with hardend so downstream filters/extensions
         // treat it as a legitimate terminus.
+        crate::bump_hs!("graph_build.rs:392:hardend");
         graph.nodes[nid].hardend = true;
         if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
             eprintln!(
@@ -400,6 +401,7 @@ pub fn add_alt_tts_sink_edges(
     }
     for nid in &hardend_only {
         let nid = *nid;
+        crate::bump_hs!("graph_build.rs:403:hardend");
         graph.nodes[nid].hardend = true;
         if std::env::var_os("RUSTLE_ALT_TTS_DEBUG").is_some() {
             eprintln!(
@@ -548,6 +550,7 @@ pub fn discover_terminal_donor_hardends(
     for &nid in &additions {
         graph.nodes[nid].alt_tts_end = true;
         if set_hardend_too {
+            crate::bump_hs!("graph_build.rs:551:hardend");
             graph.nodes[nid].hardend = true;
         }
         if add_edges {
@@ -569,6 +572,7 @@ pub fn discover_terminal_donor_hardends(
     for &nid in &hardend_only {
         graph.nodes[nid].alt_tts_end = true;
         if set_hardend_too {
+            crate::bump_hs!("graph_build.rs:572:hardend");
             graph.nodes[nid].hardend = true;
         }
         if diag {
@@ -2010,6 +2014,7 @@ fn apply_iterative_longtrim_splits(
                         new_node.node_id = new_nid;
                         new_node.start = pos;
                         new_node.end = cur_end;
+                        crate::bump_hs!("graph_build.rs:2013:hardstart");
                         new_node.hardstart = true;
                         graph.nodes.push(new_node);
                         graph.n_nodes = graph.nodes.len();
@@ -2052,6 +2057,7 @@ fn apply_iterative_longtrim_splits(
                         // In half-open: [cur_start, pos+1) and [pos+1, cur_end)
                         let split_pos = pos + 1; // half-open boundary
                         graph.nodes[cur_nid].end = split_pos;
+                        crate::bump_hs!("graph_build.rs:2055:hardend");
                         graph.nodes[cur_nid].hardend = true;
 
                         let new_nid = graph.nodes.len();
@@ -2272,6 +2278,7 @@ fn longtrim_inline(
                     graph.nodes[prev_id].end = pos;
                     let new_node = graph.add_node(pos, cur_end);
                     new_node.source_bnode = Some(source_bid);
+                    crate::bump_hs!("graph_build.rs:2275:hardstart");
                     new_node.hardstart = true;
                     let new_id = new_node.node_id;
                     // Source → new (hardstart boundary)
@@ -2285,6 +2292,7 @@ fn longtrim_inline(
                     // 22459860 with ~18 supporting read starts). Disable via
                     // RUSTLE_NO_LSTART_SINK=1.
                     if std::env::var_os("RUSTLE_NO_LSTART_SINK").is_none() {
+                        crate::bump_hs!("graph_build.rs:2288:hardend");
                         graph.nodes[prev_id].hardend = true;
                         sink_parents.push(prev_id);
                         // Record synthetic [prev_id, sink] connector for
@@ -2362,6 +2370,7 @@ fn longtrim_inline(
                 if split > graph.nodes[*graphnode_id].start && split < cur_end {
                     // Split: [cur_start, split) and [split, cur_end)
                     graph.nodes[*graphnode_id].end = split;
+                    crate::bump_hs!("graph_build.rs:2365:hardend");
                     graph.nodes[*graphnode_id].hardend = true;
                     let new_node = graph.add_node(split, cur_end);
                     new_node.source_bnode = Some(source_bid);
@@ -2595,17 +2604,33 @@ pub fn create_graph_with_longtrim(
             bundle_strand,
             junction_stats,
         );
-        let (lt_synth, lt_stats) = apply_longtrim_direct(
-            &mut graph,
-            &boundary_map,
-            &schedule,
-            bpcov,
-            longtrim_min_boundary_cov,
-            trace_strand_index(bundle_strand),
-            bundle_start,
-            bundle_end,
-        );
-        stats.applied = true;
+        // RUSTLE_APPLY_LONGTRIM_DIRECT_OFF=1: skip the bpcov-derivative
+        // longtrim split pass that runs on top of longtrim_inline. This
+        // pass is the dominant hardstart/hardend over-marking source —
+        // 1001 + 158 + 19 hardstart writes per default GGO_19 run come
+        // from here regardless of whether external lstart/lend are
+        // supplied (the boundary_map's own bpcov-diff scan generates
+        // candidates internally).
+        let skip_apply =
+            std::env::var_os("RUSTLE_APPLY_LONGTRIM_DIRECT_OFF").is_some();
+        let (lt_synth, lt_stats) = if skip_apply {
+            (
+                Vec::<GraphTransfrag>::new(),
+                LongtrimStats::default(),
+            )
+        } else {
+            apply_longtrim_direct(
+                &mut graph,
+                &boundary_map,
+                &schedule,
+                bpcov,
+                longtrim_min_boundary_cov,
+                trace_strand_index(bundle_strand),
+                bundle_start,
+                bundle_end,
+            )
+        };
+        stats.applied = !skip_apply;
         stats.longtrim = lt_stats;
         stats.lstart_events = lt_stats.start_boundary_events;
         stats.lend_events = lt_stats.end_boundary_events;

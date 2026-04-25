@@ -43,6 +43,7 @@ pub fn annotate_hard_boundaries(
             if bundle_strand == '-'
                 && n.poly_start_unaligned_total >= POLY_TAIL_STOP_COUNT
             {
+                crate::bump_hs!("hard_boundaries.rs:46:hardstart");
                 n.hardstart = true;
             }
         }
@@ -58,6 +59,7 @@ pub fn annotate_hard_boundaries(
             if bundle_strand == '+'
                 && n.poly_end_unaligned_total >= POLY_TAIL_STOP_COUNT
             {
+                crate::bump_hs!("hard_boundaries.rs:61:hardend");
                 n.hardend = true;
             }
         }
@@ -69,6 +71,7 @@ pub fn annotate_hard_boundaries(
             && tf.poly_start_unaligned as u32 >= POLY_TAIL_STOP_COUNT
         {
             if let Some(n) = graph.node_mut(first_nid) {
+                crate::bump_hs!("hard_boundaries.rs:72:hardstart");
                 n.hardstart = true;
             }
         }
@@ -77,6 +80,7 @@ pub fn annotate_hard_boundaries(
             && tf.poly_end_unaligned as u32 >= POLY_TAIL_STOP_COUNT
         {
             if let Some(n) = graph.node_mut(last_nid) {
+                crate::bump_hs!("hard_boundaries.rs:80:hardend");
                 n.hardend = true;
             }
         }
