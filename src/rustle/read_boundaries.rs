@@ -395,6 +395,11 @@ pub fn find_all_trims_for_bundle(
     const DROP: f64 = 0.5;
     const ERROR_PERC: f64 = 0.1;
     const LONGINTRONANCHOR: u64 = 25;
+    // Configurable localdrop threshold (default ST-faithful 0.2 = 5×
+    // drop required for source-trim). Higher = more permissive =
+    // more trim points emitted. Override via RUSTLE_FAT_LOCALDROP=N.
+    let env_localdrop: Option<f64> = std::env::var("RUSTLE_FAT_LOCALDROP")
+        .ok().and_then(|v| v.parse().ok());
 
     // Build CPAS clusters from polyA-bearing read endpoints (same as
     // collect_read_boundaries_with_cpas).
@@ -488,8 +493,11 @@ pub fn find_all_trims_for_bundle(
         let local_e: Vec<(u64, f64)> = cpas_ends
             .iter().copied().filter(|&(p, _)| p >= start && p <= end).collect();
 
-        let mut localdrop: f64 = ERROR_PERC / DROP;
-        if len < 2 * (CHI_WIN + CHI_THR) + 1 && len < CHI_WIN {
+        let mut localdrop: f64 = env_localdrop.unwrap_or(ERROR_PERC / DROP);
+        if env_localdrop.is_none()
+            && len < 2 * (CHI_WIN + CHI_THR) + 1
+            && len < CHI_WIN
+        {
             localdrop = ERROR_PERC / (10.0 * DROP);
         }
         let mut lastdrop_s = localdrop;
