@@ -117,6 +117,15 @@ pub fn collect_longtrim_boundaries_in_span(
         return (lstart, lend);
     }
 
+    // RUSTLE_LONGTRIM_CURATED_ONLY=1: skip the bpcov-derivative scan and
+    // use only the externally-curated start/end features. Set when the
+    // caller has already produced ST-faithful trim points (via
+    // find_all_trims_for_bundle) and we don't want this function adding
+    // additional bpcov-derivative candidates that over-mark hardstart.
+    if std::env::var_os("RUSTLE_LONGTRIM_CURATED_ONLY").is_some() {
+        return (lstart, lend);
+    }
+
     let mut diffval: Vec<f64> = Vec::with_capacity(CHI_WIN as usize);
     let mut sumstartleft = 0.0;
     let mut sumendleft = 0.0;
