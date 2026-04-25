@@ -4999,14 +4999,20 @@ fn back_to_source_fast_long(
     pathpat.set_bit(p);
     edge_set(pathpat, graph, p, i, true);
 
-    // StringTie-parity PATHPAT_OR gate (DEFAULT ON): after speculatively
-    // setting the parent node bit + edge bit, check if OR-ing the chosen
-    // transfrag's pattern adds any new bits. If new_bits == 0, the
-    // transfrag brings no additional information beyond what
-    // speculative-set already covers — StringTie rejects extension here
-    // (reason=back_tmax new_bits=0). Ported to match StringTie's
-    // DEEP_PATH_EXTEND gate. Disable via RUSTLE_BACK_PATHPAT_OR_GATE_OFF=1.
-    if std::env::var_os("RUSTLE_BACK_PATHPAT_OR_GATE_OFF").is_none() {
+    // StringTie-parity PATHPAT_OR gate (DEFAULT OFF as of session 9):
+    // after speculatively setting the parent node bit + edge bit, check
+    // if OR-ing the chosen transfrag's pattern adds any new bits. If
+    // new_bits == 0, the original intent was to reject extension where
+    // the transfrag brings no additional information beyond what
+    // speculative-set already covers (ST DEEP_PATH_EXTEND analog).
+    // In practice `before` is measured AFTER speculative set_bit(p) +
+    // edge_set(p,i), so any tmax that only covers those two bits
+    // reverts — false-positive for legitimate bridging tmax (e.g.,
+    // STRG.501.1-class back-extension where the seed already spans the
+    // downstream nodes and the tmax proves the last step through p).
+    // Disabling globally on GGO_19: +1 match, +0.6 Pr, -13 total tx.
+    // Opt in via RUSTLE_BACK_PATHPAT_OR_GATE_ON=1 (historical default).
+    if std::env::var_os("RUSTLE_BACK_PATHPAT_OR_GATE_ON").is_some() {
         if let Some(t) = tmax {
             let before = pathpat.count_ones();
             let mut speculative = pathpat.clone();
