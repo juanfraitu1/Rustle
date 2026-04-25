@@ -4555,8 +4555,20 @@ pub fn filter_unwitnessed_chains_with_singletons_and_counts(
             }
             // Flow-sourced transcripts are eligible for singleton relaxation.
             let flow_sourced = matches!(tx.source.as_deref(), Some("flow"));
+            // Terminal-pair relaxation: graph-derived first/last junctions
+            // (read-endpoint evidence, no CIGAR support) can produce unwitnessed
+            // terminal pairs even though the chain itself is correct. Example:
+            // STRG.501.1 where the first junction 97413241-97413600 has 0
+            // CIGAR reads but is inferred from a non-spliced 5' read +
+            // downstream spliced reads. Enabled by default for flow-sourced
+            // transcripts with >=4 introns (inner witnessed backbone is
+            // non-trivial). Opt-out via RUSTLE_WITNESS_TERMINAL_STRICT=1.
+            let terminal_relax_on = flow_sourced
+                && introns.len() >= 4
+                && std::env::var_os("RUSTLE_WITNESS_TERMINAL_STRICT").is_none();
+            let n_pairs = introns.len().saturating_sub(1);
             // Check every consecutive pair of introns.
-            for w in introns.windows(2) {
+            for (pair_idx, w) in introns.windows(2).enumerate() {
                 let key = (w[0].0, w[0].1, w[1].0, w[1].1);
                 if read_intron_pairs.contains(&key) {
                     continue;
@@ -4615,6 +4627,11 @@ pub fn filter_unwitnessed_chains_with_singletons_and_counts(
                             continue;
                         }
                     }
+                }
+                // Terminal-pair relaxation: accept first/last pair when
+                // the transcript qualifies (flow-sourced, >=4 introns).
+                if terminal_relax_on && (pair_idx == 0 || pair_idx == n_pairs - 1) {
+                    continue;
                 }
                 return false; // Unwitnessed pair found.
             }
@@ -4746,8 +4763,20 @@ pub fn filter_by_full_chain_witness(
         // For EVERY k-contiguous window in tx_chain, require some read
         // chain to witness it (contiguous subsequence within tolerance).
         // If ANY window is unwitnessed, the tx is flow-combinatorial noise.
+        //
+        // Terminal-window relaxation (DEFAULT ON): when tx has >= 3 windows,
+        // skip the first AND last windows. Graph-derived 5'/3' terminal
+        // junctions (read-endpoint evidence, no CIGAR support) produce
+        // unwitnessed terminal windows even when the chain is correct
+        // (e.g., STRG.501.1's first junction 97413241-97413600 has 0
+        // CIGAR reads but graph-level support). Inner k-1 windows still
+        // gate combinatorial noise. Opt out via
+        // RUSTLE_FULL_CHAIN_WITNESS_TERMINAL_STRICT=1.
         let n_windows = tx_chain.len() - k + 1;
+        let terminal_relax = n_windows >= 3
+            && std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_TERMINAL_STRICT").is_none();
         for i in 0..n_windows {
+            if terminal_relax && (i == 0 || i == n_windows - 1) { continue; }
             let window = &tx_chain[i..i+k];
             let mut witnessed = false;
             for rc in read_chains {
