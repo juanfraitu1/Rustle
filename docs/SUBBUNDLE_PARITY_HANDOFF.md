@@ -189,7 +189,73 @@ where Rustle has 1 (the STRG.18 wobble pattern). With session-7 outer-stats
 inheritance, some of these may now resolve naturally. Re-run the diff to
 quantify how many remain.
 
-### 5.4 Guide-driven runs (-G)
+### 5.4 Missing-transcript walk-through (RECOMMENDED — proven in session 8)
+
+This is the highest-yield methodology so far. It found **+20 matches in
+one threshold change** when investigating STRG.358.4.
+
+#### Steps
+
+1. **Build list of truly-missing ST transcripts** (those with no Rustle
+   match in `gffcompare`'s refmap):
+   ```bash
+   awk -F'\t' 'NR>1 {print $2}' cmp.ru.gtf.refmap | sort -u > matched_ids.txt
+   awk -F'\t' '$3=="transcript"' stringtie.gtf | \
+     grep -oE 'transcript_id "[^"]+"' | sed 's/transcript_id "//;s/"//' | \
+     sort -u > all_ids.txt
+   comm -23 all_ids.txt matched_ids.txt > missing.txt
+   ```
+
+2. **Pick a target with strong signal** (high `cov` or `longcov` from ST,
+   ≥3 exons). Easier to debug than single-exon cases.
+
+3. **Verify parse_trflong DID produce the transcript** before any filter:
+   ```bash
+   RUSTLE_TRACE_EXTRACT_BUNDLE='chrom:start-end' rustle ... 2>&1 | \
+     grep TRACE_EXTRACT
+   ```
+   `bundle.start-end` is the OUTER bundle range (not the transcript
+   range). If parse_trflong produced it, you'll see it in the dump.
+
+4. **If yes (common case)**, find which downstream filter killed it:
+   ```bash
+   RUSTLE_TRACE_PRED_FATE=1 RUSTLE_TRACE_LOCUS=start-end rustle ... 2>&1 | \
+     grep -E "PRED_FATE|FILTER pred"
+   ```
+
+5. **Inspect the killer filter's threshold**. Look for a `RUSTLE_*_FRAC`
+   or similar tuning knob. Compare its current value to ST's ERROR_PERC=0.1.
+
+6. **Sweep the threshold**. If the F1-optimal value is closer to ST's
+   ERROR_PERC, the Rustle default was probably tuned for older
+   architectural assumptions. Lower it to ST-faithful and document the
+   change with a sweep table in code comments.
+
+#### Patterns observed
+
+- Filters tuned with default ratios in 0.3–0.5 range are often candidates.
+  Original ST behavior typically corresponds to ERROR_PERC=0.1.
+- Each filter alignment typically yields 5-20 chains.
+- Watch Pr — it usually drops 0.3-1.0 pp per match-recovery alignment.
+  Acceptable when Sn gains are 4-20× the Pr loss.
+
+#### Filters worth auditing similarly
+
+| filter | location | current threshold |
+|---|---|---|
+| `pairwise_overlap_filter` retained-intron end-frac | `transcript_filter.rs:1481` | now 0.1 (was 0.5) ✅ |
+| `pairwise_overlap_filter` middle-exon overlap | same | unconditional `allow_middle_unconditional` |
+| `pairwise_overlap_filter` first-exon coverage | same | `frac` (default 0.1, OK) |
+| `isofrac_filter` | `transcript_filter.rs:538` | `isofrac` (config; check) |
+| `filter_min_exon_length` | `transcript_filter.rs:493` | check defaults |
+| `filter_short_terminal_exons` | `transcript_filter.rs:2133` | check defaults |
+| `filter_contained_transcripts` | `transcript_filter.rs:729` | strict; may need cov-aware |
+| `polymerase_runoff_filter` | `transcript_filter.rs:3136` | single-exon only — likely OK |
+
+For each: pick a missing transcript that's killed by it, sweep the
+threshold, find F1-optimum.
+
+### 5.5 Guide-driven runs (-G)
 
 Session 7 only validated on de-novo (`-L` without `-G`). The
 `mark_guide_junctions_for_junctions` and snap-to-guides paths were
