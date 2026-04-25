@@ -2235,7 +2235,36 @@ fn longtrim_inline(
             if cpas_force_cov > 0.0 && boundary_cov >= cpas_force_cov && tmpcov < min_tmpcov + 1.0 {
                 tmpcov = min_tmpcov + 1.0;
             }
-            if tmpcov > min_tmpcov {
+            // ST find_all_trims-style localdrop ratio gate (rlink.cpp:2718).
+            // ST's source-trim accepts lstart splits only when
+            //   covleft_avg / covright_avg < localdrop (default 0.2 = 5× drop).
+            // Rustle's longtrim_inline previously used only the absolute
+            // tmpcov gate, which fires on flat-coverage internal positions
+            // where avg coverage is high. Result: 6× hardstart over-marking
+            // vs ST. Default ON (opt-out via RUSTLE_LONGTRIM_RATIO_GATE_OFF=1).
+            let ratio_gate_on =
+                std::env::var_os("RUSTLE_LONGTRIM_RATIO_GATE").is_some();
+            let ratio_threshold: f64 = std::env::var("RUSTLE_LONGTRIM_RATIO")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.2);
+            let mut ratio_pass = true;
+            if ratio_gate_on && tmpcov > min_tmpcov && start_ok && end_ok && pos > cur_start {
+                let startpos = (pos - bundle_start) as i64;
+                let winstart = (startpos - CHI_THR).max(0);
+                let winend = (startpos + CHI_THR - 1).min(bpcov_len as i64 - 1);
+                let left_window = (startpos - winstart).max(1) as f64;
+                let right_window = (winend - startpos + 1).max(1) as f64;
+                let avg_left = get_cov(winstart, startpos - 1) / left_window;
+                let avg_right = get_cov(startpos, winend) / right_window;
+                if avg_right > 0.0 && avg_left / avg_right >= ratio_threshold {
+                    ratio_pass = false;
+                }
+            }
+            // CPAS-force boundaries bypass the ratio gate (matches ST's
+            // lastdrop=0 force at find_all_trims:2712).
+            if cpas_force_cov > 0.0 && boundary_cov >= cpas_force_cov {
+                ratio_pass = true;
+            }
+            if tmpcov > min_tmpcov && ratio_pass {
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if pos > graph.nodes[*graphnode_id].start && pos < cur_end {
                     // Split: [cur_start, pos) and [pos, cur_end)
@@ -2304,7 +2333,30 @@ fn longtrim_inline(
             if cpas_force_cov > 0.0 && boundary_end_cov >= cpas_force_cov && tmpcov < min_tmpcov + 1.0 {
                 tmpcov = min_tmpcov + 1.0;
             }
-            if tmpcov > min_tmpcov {
+            // ST localdrop ratio gate (mirror of lstart): for sink-trim,
+            // covright_avg / covleft_avg < localdrop (right is 5× lower).
+            // Bypassed at strong CPAS clusters.
+            let ratio_gate_on =
+                std::env::var_os("RUSTLE_LONGTRIM_RATIO_GATE").is_some();
+            let ratio_threshold: f64 = std::env::var("RUSTLE_LONGTRIM_RATIO")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.2);
+            let mut ratio_pass = true;
+            if ratio_gate_on && tmpcov > min_tmpcov && start_ok && end_ok && pos > cur_start {
+                let endpos = (pos - bundle_start) as i64;
+                let winstart = (endpos - CHI_THR + 1).max(0);
+                let winend = (endpos + CHI_THR).min(bpcov_len as i64 - 1);
+                let left_window = (endpos - winstart + 1).max(1) as f64;
+                let right_window = (winend - endpos).max(1) as f64;
+                let avg_left = get_cov(winstart, endpos) / left_window;
+                let avg_right = get_cov(endpos + 1, winend) / right_window;
+                if avg_left > 0.0 && avg_right / avg_left >= ratio_threshold {
+                    ratio_pass = false;
+                }
+            }
+            if cpas_force_cov > 0.0 && boundary_end_cov >= cpas_force_cov {
+                ratio_pass = true;
+            }
+            if tmpcov > min_tmpcov && ratio_pass {
                 let split = pos + 1; // half-open boundary
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if split > graph.nodes[*graphnode_id].start && split < cur_end {
