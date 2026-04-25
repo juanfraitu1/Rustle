@@ -5749,6 +5749,20 @@ fn extract_bundle_transcripts_for_graph(
         trace_stage("alt_donor_acceptor_rescue_post", &txs);
     }
 
+    // Alt-TSS/TTS rescue via read-endpoint clustering. Additive — emits
+    // truncated alt-variants when interior exon boundaries coincide with
+    // a read-endpoint cluster. Targets STRG.300.5-class isoforms where
+    // back_to_source extension swallowed the truncated TSS/TTS form.
+    // Gated by RUSTLE_ALT_TERMINAL_RESCUE=1; runs after predcluster so
+    // alt variants bypass pairwise-overlap dedup but still face
+    // junction-support and witness filters.
+    txs = crate::transcript_filter::alt_terminal_rescue(
+        txs,
+        &bundle.reads,
+        config.verbose,
+    );
+    trace_stage("alt_terminal_rescue", &txs);
+
     // Remove transcripts with unsupported junctions.
     let before_junction_support = txs.len();
     txs = filter_unsupported_junctions(

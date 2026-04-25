@@ -4367,6 +4367,201 @@ pub fn alt_donor_acceptor_rescue(
     out
 }
 
+/// Alt-TSS/TTS rescue via read-endpoint clustering.
+///
+/// `back_to_source_fast_long` extends every 5'-truncated seed past its
+/// hardstart down to the gene-wide TSS, collapsing alt-TSS isoforms into
+/// a single extended form (e.g. STRG.300.5 lost as 5'-truncated variant
+/// of STRG.300.2). ST emits both because it clusters read 5'/3' ends
+/// (CPAS-style) and recognises distinct TSS/TTS clusters.
+///
+/// This pass mirrors `alt_donor_acceptor_rescue` for terminal boundaries:
+/// for each emitted multi-exon transcript, walk its interior exon
+/// boundaries; if a sufficient cluster of read endpoints (5' starts or
+/// 3' ends) sits within `window` bp of a boundary, emit a truncated
+/// alt-variant terminating at that boundary.
+///
+/// Gated by `RUSTLE_ALT_TERMINAL_RESCUE=1`. Knobs:
+/// - `RUSTLE_ALT_TERMINAL_MIN_READS` (default 5)
+/// - `RUSTLE_ALT_TERMINAL_WINDOW` (default 25)
+/// - `RUSTLE_ALT_TERMINAL_MAX_PER_BUNDLE` (default 50)
+/// - `RUSTLE_ALT_TERMINAL_COV_FRAC` (default 0.5) — alt variant cov =
+///   parent.cov * frac (and longcov = min(parent, support)).
+pub fn alt_terminal_rescue(
+    transcripts: Vec<Transcript>,
+    reads: &[crate::types::BundleRead],
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_ALT_TERMINAL_RESCUE").is_none() {
+        return transcripts;
+    }
+    if transcripts.is_empty() || reads.is_empty() {
+        return transcripts;
+    }
+
+    let min_reads: usize = std::env::var("RUSTLE_ALT_TERMINAL_MIN_READS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(8);
+    let window: u64 = std::env::var("RUSTLE_ALT_TERMINAL_WINDOW")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(25);
+    let max_per_bundle: usize = std::env::var("RUSTLE_ALT_TERMINAL_MAX_PER_BUNDLE")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(8);
+    let cov_frac: f64 = std::env::var("RUSTLE_ALT_TERMINAL_COV_FRAC")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    // Cluster must be at least this fraction of the parent's longcov.
+    // Default 0.20 prevents tiny clusters in high-cov genes from spawning
+    // dozens of micro-variants. Set to 0.0 to disable.
+    let min_parent_ratio: f64 = std::env::var("RUSTLE_ALT_TERMINAL_MIN_PARENT_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.20);
+    // Parent must have at least this longcov to be eligible. Avoids
+    // spawning variants from already-low-cov tx.
+    let min_parent_longcov: f64 = std::env::var("RUSTLE_ALT_TERMINAL_MIN_PARENT_LONGCOV")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+
+    // Sort read endpoints once. Strand-agnostic: the same cluster may
+    // serve as TSS for one strand and TTS for the other; the boundary
+    // semantic comes from the transcript's strand at use time.
+    let mut starts: Vec<u64> = reads.iter().map(|r| r.ref_start).collect();
+    let mut ends: Vec<u64> = reads.iter().map(|r| r.ref_end).collect();
+    starts.sort_unstable();
+    ends.sort_unstable();
+
+    let count_near = |sorted: &[u64], pos: u64, w: u64| -> usize {
+        let lo = pos.saturating_sub(w);
+        let hi = pos + w;
+        let i = sorted.partition_point(|&x| x < lo);
+        let j = sorted.partition_point(|&x| x <= hi);
+        j - i
+    };
+
+    // Find cluster peaks: positions where a window of `window` bp contains
+    // >= min_reads endpoints, returning the median position of each cluster.
+    // Greedy: scan sorted positions, group runs where consecutive entries
+    // are within `window` bp.
+    fn cluster_peaks(sorted: &[u64], window: u64, min_reads: usize) -> Vec<u64> {
+        if sorted.is_empty() { return Vec::new(); }
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < sorted.len() {
+            let mut j = i + 1;
+            while j < sorted.len() && sorted[j].saturating_sub(sorted[j - 1]) <= window {
+                j += 1;
+            }
+            if j - i >= min_reads {
+                out.push(sorted[(i + j) / 2]);
+            }
+            i = j;
+        }
+        out
+    }
+    let start_peaks = cluster_peaks(&starts, window, min_reads);
+    let end_peaks = cluster_peaks(&ends, window, min_reads);
+
+    // Existing exon signatures to avoid emitting duplicates.
+    let mut existing: HashSet<(String, char, Vec<(u64, u64)>)> = HashSet::default();
+    for t in &transcripts {
+        existing.insert((t.chrom.clone(), t.strand, t.exons.clone()));
+    }
+
+    let mut additions: Vec<Transcript> = Vec::new();
+    let mut emitted = 0usize;
+
+    for t in &transcripts {
+        if emitted >= max_per_bundle { break; }
+        if t.exons.len() < 3 { continue; }
+        if t.longcov < min_parent_longcov { continue; }
+        // Skip rescue/guide-derived transcripts — they're already
+        // anchored to references.
+        if t.source.as_deref().map_or(false, |s| {
+            s.starts_with("guide:") || s.starts_with("oracle_direct:")
+                || s.starts_with("ref_chain_rescue:")
+        }) { continue; }
+        let cluster_floor = ((t.longcov * min_parent_ratio).ceil() as usize).max(min_reads);
+
+        // For each tx exon, look for cluster peaks falling inside or at
+        // the exon's bounds. A peak in `start_peaks` near the start of
+        // exon i (or strictly inside) suggests an alt-TSS at that
+        // genomic position; emit a variant with exons[0..i] dropped and
+        // exons[i] left-trimmed to the peak. Same for `end_peaks` →
+        // alt-TTS by trimming the right side of exons[i] and dropping
+        // exons[i+1..].
+        let n_ex = t.exons.len();
+        for i in 1..n_ex {
+            if emitted >= max_per_bundle { break; }
+            let (es, ee) = t.exons[i];
+            for &peak in &start_peaks {
+                if peak < es.saturating_sub(window) { continue; }
+                if peak > ee { break; } // start_peaks sorted; later peaks won't overlap
+                // Boundary or intra-exon left-trim. Peak must produce a
+                // non-empty exon (peak < ee).
+                let trim_to = peak.max(es).min(ee.saturating_sub(1));
+                if trim_to >= ee { continue; }
+                let support = count_near(&starts, peak, window);
+                if support < cluster_floor { continue; }
+                let mut alt = t.clone();
+                alt.exons = t.exons[i..].to_vec();
+                alt.exons[0].0 = trim_to;
+                if t.exon_cov.len() == n_ex {
+                    alt.exon_cov = t.exon_cov[i..].to_vec();
+                }
+                if t.intron_low.len() >= i {
+                    alt.intron_low = t.intron_low[i..].to_vec();
+                }
+                let key = (alt.chrom.clone(), alt.strand, alt.exons.clone());
+                if existing.contains(&key) { continue; }
+                existing.insert(key);
+                alt.source = Some("alt_tss_rescue".to_string());
+                alt.coverage = (t.coverage * cov_frac).max(1.0);
+                alt.longcov = t.longcov.min(support as f64);
+                alt.transcript_id = None;
+                additions.push(alt);
+                emitted += 1;
+                if emitted >= max_per_bundle { break; }
+            }
+        }
+        for i in 0..n_ex.saturating_sub(1) {
+            if emitted >= max_per_bundle { break; }
+            let (es, ee) = t.exons[i];
+            for &peak in &end_peaks {
+                if peak < es { continue; }
+                if peak > ee + window { break; }
+                let trim_to = peak.min(ee).max(es.saturating_add(1));
+                if trim_to <= es { continue; }
+                let support = count_near(&ends, peak, window);
+                if support < cluster_floor { continue; }
+                let mut alt = t.clone();
+                alt.exons = t.exons[..=i].to_vec();
+                alt.exons[i].1 = trim_to;
+                if t.exon_cov.len() == n_ex {
+                    alt.exon_cov = t.exon_cov[..=i].to_vec();
+                }
+                if t.intron_low.len() > i {
+                    alt.intron_low = t.intron_low[..i].to_vec();
+                }
+                let key = (alt.chrom.clone(), alt.strand, alt.exons.clone());
+                if existing.contains(&key) { continue; }
+                existing.insert(key);
+                alt.source = Some("alt_tts_rescue".to_string());
+                alt.coverage = (t.coverage * cov_frac).max(1.0);
+                alt.longcov = t.longcov.min(support as f64);
+                alt.transcript_id = None;
+                additions.push(alt);
+                emitted += 1;
+                if emitted >= max_per_bundle { break; }
+            }
+        }
+    }
+
+    if verbose && emitted > 0 {
+        eprintln!(
+            "    alt_terminal_rescue: emitted {} alt-TSS/TTS variant(s)",
+            emitted
+        );
+    }
+    let mut out = transcripts;
+    out.extend(additions);
+    out
+}
+
 /// Collapse transcripts that share a high fraction of junctions with a higher-coverage
 /// transcript from the same locus.  Targets flow decomposition artifacts where the same
 /// gene produces multiple near-identical paths differing by 1–2 terminal exon boundaries
