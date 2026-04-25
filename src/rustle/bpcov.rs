@@ -41,6 +41,13 @@ impl Bpcov {
         let len = len.saturating_add(1).max(1);
         let mut cov = vec![0.0; len];
 
+        // ST-faithful: include unstranded ('.') reads in both strands'
+        // bpcov, mirroring ST's `bpcov[1]=all` semantic (rlink.cpp:533-535)
+        // where stranded reads also add to the all-strand layer. Empirical:
+        // +2 matches / +0.1 Sn / -0.1 Pr on GGO_19 vs the prior strand-
+        // exclusive default. Opt out via RUSTLE_BPCOV_EXCLUDE_NEUTRAL=1.
+        let include_neutral =
+            std::env::var_os("RUSTLE_BPCOV_EXCLUDE_NEUTRAL").is_none();
         for r in reads {
             // get_cov_sign(sno,...) expects strand-specific coverage:
             // - plus bundles use only '+' reads
@@ -48,10 +55,10 @@ impl Bpcov {
             // Neutralized '.' reads should not be counted as minus (asymmetric) because that can
             // mask real boundary drops and prevent longtrim splits.
             if use_plus_strand {
-                if r.strand != '+' {
+                if r.strand != '+' && !(include_neutral && r.strand == '.') {
                     continue;
                 }
-            } else if r.strand != '-' {
+            } else if r.strand != '-' && !(include_neutral && r.strand == '.') {
                 continue;
             }
             let w = r.weight;
@@ -71,10 +78,15 @@ impl Bpcov {
         }
 
         // Convert delta-encoded array to actual per-base coverage via prefix sum scan
+        // RUSTLE_BPCOV_NEG_CLAMP=1: clamp negative values to 0 after the
+        // prefix-sum scan, mirroring ST's negative-clamp at rlink.cpp:18222
+        // (`if(bpcov[s][i]<0) bpcov[s][i]=0`). Floating-point ordering of
+        // diff-array updates can leave small negatives after summation.
+        let neg_clamp = std::env::var_os("RUSTLE_BPCOV_NEG_CLAMP").is_some();
         let mut acc = 0.0f64;
         for v in cov.iter_mut() {
             acc += *v;
-            *v = acc;
+            *v = if neg_clamp && acc < 0.0 { 0.0 } else { acc };
         }
 
         Self {
