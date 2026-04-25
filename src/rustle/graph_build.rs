@@ -2223,6 +2223,18 @@ fn longtrim_inline(
             if tmpcov <= 0.0 && lstart[*nls].cov < 0.0 {
                 tmpcov = ERROR_PERC;
             }
+            // CPAS-style force: when a boundary cluster has strong support
+            // (>= cpas_force_cov reads, default 15) it represents a real
+            // alt-TSS even if the coverage transition isn't sharp. Mirrors
+            // ST's CPAS path in find_all_trims (rlink.cpp:2712) where the
+            // tstartend match sets lastdrop=0 to force trimpoint emission
+            // regardless of coverage drop. Off by default — opt in via
+            // RUSTLE_CPAS_FORCE_COV=N (set 0 to disable; recommended 15-20).
+            let cpas_force_cov: f64 = std::env::var("RUSTLE_CPAS_FORCE_COV")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            if cpas_force_cov > 0.0 && boundary_cov >= cpas_force_cov && tmpcov < min_tmpcov + 1.0 {
+                tmpcov = min_tmpcov + 1.0;
+            }
             if tmpcov > min_tmpcov {
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if pos > graph.nodes[*graphnode_id].start && pos < cur_end {
@@ -2282,6 +2294,15 @@ fn longtrim_inline(
             }
             if tmpcov <= 0.0 && lend[*nle].cov < 0.0 {
                 tmpcov = ERROR_PERC;
+            }
+            // CPAS-style force (mirror of lstart): force a split at
+            // strongly-supported alt-TTS boundaries even when surrounding
+            // coverage is flat. See lstart branch for rationale.
+            let cpas_force_cov: f64 = std::env::var("RUSTLE_CPAS_FORCE_COV")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            let boundary_end_cov = lend[*nle].cov;
+            if cpas_force_cov > 0.0 && boundary_end_cov >= cpas_force_cov && tmpcov < min_tmpcov + 1.0 {
+                tmpcov = min_tmpcov + 1.0;
             }
             if tmpcov > min_tmpcov {
                 let split = pos + 1; // half-open boundary
