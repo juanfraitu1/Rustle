@@ -10613,7 +10613,9 @@ pub fn run<P: AsRef<Path>>(
                 // long-read only: realized transfrags keep abundance as-is
                 transfrags.extend(realized);
                 register_transfrag_range_on_nodes(&mut graph_mut, &transfrags, start_add);
-                annotate_hard_boundaries(&mut graph_mut, &transfrags, graph_bundle.strand);
+                if std::env::var_os("RUSTLE_HARD_BOUNDARIES_OFF").is_none() {
+                    annotate_hard_boundaries(&mut graph_mut, &transfrags, graph_bundle.strand);
+                }
                 // long-read only: no mixed-mode srfrag redistribution
                 // compute reachability BEFORE process_transfrags so
                 // that compatible_long/conflict can use childpat/parentpat.

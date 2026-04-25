@@ -1591,11 +1591,13 @@ fn process_read_for_group(
                     boundary_stats.group_end_extend += 1;
                 }
 
-                if active_read.ref_start == seg_start && ei == 0 {
-                    strand_data.groups[ti].hardstart = true;
-                }
-                if active_read.ref_end == seg_end && ei + 1 == ncoord {
-                    strand_data.groups[ti].hardend = true;
+                if !std::env::var_os("RUSTLE_BUNDLE_HARDSTART_OFF").is_some() {
+                    if active_read.ref_start == seg_start && ei == 0 {
+                        strand_data.groups[ti].hardstart = true;
+                    }
+                    if active_read.ref_end == seg_end && ei + 1 == ncoord {
+                        strand_data.groups[ti].hardend = true;
+                    }
                 }
 
                 let group_color = find_color_root_mut(strand_data.groups[ti].color, eqcol);
@@ -1691,11 +1693,13 @@ fn process_read_for_group(
                     (seg_len as f64) * readcov,
                     multi,
                 );
-                if active_read.ref_start == seg_start && ei == 0 {
-                    newgroup.hardstart = true;
-                }
-                if active_read.ref_end == seg_end && ei + 1 == ncoord {
-                    newgroup.hardend = true;
+                if !std::env::var_os("RUSTLE_BUNDLE_HARDSTART_OFF").is_some() {
+                    if active_read.ref_start == seg_start && ei == 0 {
+                        newgroup.hardstart = true;
+                    }
+                    if active_read.ref_end == seg_end && ei + 1 == ncoord {
+                        newgroup.hardend = true;
+                    }
                 }
                 newgroup.next_gr = thisgroup;
 
@@ -1895,11 +1899,13 @@ fn process_read_for_group(
                 (seg_len as f64) * readcov,
                 multi,
             );
-            if active_read.ref_start == seg_start && ei == 0 {
-                newgroup.hardstart = true;
-            }
-            if active_read.ref_end == seg_end && ei + 1 == ncoord {
-                newgroup.hardend = true;
+            if !std::env::var_os("RUSTLE_BUNDLE_HARDSTART_OFF").is_some() {
+                if active_read.ref_start == seg_start && ei == 0 {
+                    newgroup.hardstart = true;
+                }
+                if active_read.ref_end == seg_end && ei + 1 == ncoord {
+                    newgroup.hardend = true;
+                }
             }
 
             strand_data.groups.push(newgroup);
