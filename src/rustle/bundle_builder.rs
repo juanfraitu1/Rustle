@@ -109,6 +109,41 @@ fn per_read_good_junc_ok(
     true
 }
 
+/// Decide whether a junction should BREAK the color-union chain when a read
+/// crosses it (i.e., start a new read color for subsequent exons rather than
+/// unifying the colors of the groups on either side).
+///
+/// Matches StringTie's semantics (rlink.cpp:1962, 2012, 2103): break only
+/// when the junction's strand field is 0 — unstranded / ambiguous
+/// dinucleotide. A junction with a canonical GT-AG strand still propagates
+/// color even when it has weak per-read support, which is critical for
+/// long-read bundles where a single long read may splice through many
+/// low-support junctions and should still pull all groups into one bundle.
+///
+/// Opt out with `RUSTLE_LEGACY_COLOR_BREAK=1` to restore the pre-parity
+/// behavior that broke color on any `!has_good_left`.
+#[inline]
+fn color_should_break_left(
+    ei: usize,
+    exons: &[(u64, u64)],
+    seg_start: u64,
+    has_good_left: bool,
+    junction_stats: Option<&JunctionStats>,
+) -> bool {
+    if ei == 0 {
+        return false;
+    }
+    if std::env::var_os("RUSTLE_LEGACY_COLOR_BREAK").is_some() {
+        return !has_good_left;
+    }
+    let Some(stats) = junction_stats else {
+        return !has_good_left;
+    };
+    let j = Junction::new(exons[ei - 1].1, seg_start);
+    let strand = stats.get(&j).and_then(|st| st.strand).unwrap_or(0);
+    strand == 0
+}
+
 /// CGroup structure matching header:145-155 exactly
 /// next_gr is the index of the next group in the linked list (like pointer)
 #[derive(Debug, Clone)]
@@ -1582,7 +1617,9 @@ fn process_read_for_group(
                     // non-canonical junction (strand==0)
                     // prevents color propagation — readcol takes group's color instead of merging.
                     // Equivalent in rustle: junction not in good_junctions (!has_good_left).
-                    if ei > 0 && !has_good_left {
+                    if ei > 0 && color_should_break_left(
+                        ei, &active_read.exons, seg_start, has_good_left, junction_stats,
+                    ) {
                         // Gate: force fresh color instead of merging with existing group.
                         // Matches StringTie's JUNC_COLOR_BREAK with strand_now=0 — prevents
                         // reads crossing bad junctions from unifying two separate gene colors.
@@ -1622,7 +1659,9 @@ fn process_read_for_group(
                         next_color += 1;
                     }
                     readcol = rc as usize;
-                } else if ei > 0 && !has_good_left {
+                } else if ei > 0 && color_should_break_left(
+                    ei, &active_read.exons, seg_start, has_good_left, junction_stats,
+                ) {
                     // non-canonical junction → fresh color.
                     // Breaks color chain so groups across non-canonical introns are separate.
                     usedcol[sno] = next_color as i64;
@@ -1830,7 +1869,9 @@ fn process_read_for_group(
                 continue;
             }
 
-            if ei > 0 && !has_good_left {
+            if ei > 0 && color_should_break_left(
+                ei, &active_read.exons, seg_start, has_good_left, junction_stats,
+            ) {
                 // non-canonical junction → fresh color.
                 // When creating entirely new groups, a non-canonical junction breaks color chain.
                 usedcol[sno] = next_color as i64;

@@ -2,6 +2,9 @@
 
 This document ties together **trace outputs**, **`rlink.cpp` reasoning**, and **Rustle** so we can separate (a) missing paths StringTie would emit from (b) extra paths StringTie would not emit, with **coverage consistency** as the first-class invariant.
 
+For operational handoff (commands, env flags, current batch status), see:
+`docs/STRINGTIE_LONGREAD_PARITY_CONTINUATION_GUIDE.md`.
+
 ## 1. What the trace files are for
 
 | Artifact | Role |

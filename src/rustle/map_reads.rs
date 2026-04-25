@@ -571,6 +571,7 @@ pub fn map_reads_to_graph(
                 );
             }
         }
+        emit_read_node_tsv(read_idx, read, graph, &segments);
 
         let weight = read.weight;
         let ref_start = read.ref_start;
@@ -871,6 +872,7 @@ pub fn map_reads_to_graph_bundlenodes(
                 );
             }
         }
+        emit_read_node_tsv(read_idx, read, graph, &segments);
 
         let weight = read.weight;
         let ref_start = read.ref_start;
@@ -936,6 +938,82 @@ pub fn map_reads_to_graph_bundlenodes(
 struct ReadPathSegment {
     path: Vec<usize>,
     orphan: bool,
+}
+
+/// Emit per-read node-path rows to `RUSTLE_READ_NODE_TSV` with a schema that
+/// mirrors StringTie's `PARITY_READ_NODE_TSV` so the two dumps can be diffed
+/// directly by (chrom, ref_start, ref_end, seg_coords).
+fn emit_read_node_tsv(
+    read_idx: usize,
+    read: &BundleRead,
+    graph: &Graph,
+    segments: &[ReadPathSegment],
+) {
+    let pth = match std::env::var("RUSTLE_READ_NODE_TSV") {
+        Ok(v) if !v.is_empty() => v,
+        _ => return,
+    };
+    use std::io::Write;
+    use std::sync::{Mutex, OnceLock};
+    static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+    static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+    let wr = WR.get_or_init(|| {
+        Mutex::new(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&pth)
+                .ok(),
+        )
+    });
+    let hdr = HDR.get_or_init(|| Mutex::new(false));
+    let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) else {
+        return;
+    };
+    let Some(f) = f_opt.as_mut() else { return; };
+    if !*hdr_w {
+        let _ = writeln!(
+            f,
+            "source\tchrom\tbdstart\tbdend\tstrand\tread_idx\tref_start\tref_end\tn_segs\tseg_coords\tgraph_idx\tnode_path\tnode_coords"
+        );
+        *hdr_w = true;
+    }
+    // bdstart/bdend and chrom aren't reachable from this scope. Diff matches
+    // rows by (ref_start, ref_end, seg_coords) across tools.
+    let chrom = "?";
+    let segs_str: Vec<String> = read
+        .exons
+        .iter()
+        .map(|(s, e)| format!("{}-{}", s, e))
+        .collect();
+    let segs_join = segs_str.join(",");
+    for seg in segments {
+        if seg.path.is_empty() {
+            continue;
+        }
+        let nodes_s: Vec<String> = seg.path.iter().map(|n| format!("{}", n)).collect();
+        let coords_s: Vec<String> = seg
+            .path
+            .iter()
+            .map(|&n| {
+                let gn = &graph.nodes[n];
+                format!("{}-{}", gn.start, gn.end)
+            })
+            .collect();
+        let _ = writeln!(
+            f,
+            "rustle\t{}\t0\t0\t{}\t{}\t{}\t{}\t{}\t{}\t0\t{}\t{}",
+            chrom,
+            read.strand,
+            read_idx,
+            read.ref_start,
+            read.ref_end,
+            read.exons.len(),
+            segs_join,
+            nodes_s.join(" "),
+            coords_s.join(" "),
+        );
+    }
 }
 
 /// the original algorithm get_fragment_pattern: walk the read left-to-right and emit a new
@@ -1034,9 +1112,28 @@ fn split_read_segments(
                             }
                         })
                         .unwrap_or(false);
-                    let valid = !killed
-                        && (within_window
-                            || (junc.donor == prev_node.end && junc.acceptor == curr_node.start));
+                    // ST-faithful mode (RUSTLE_BADJUNC_TRUST_NODE_BOUNDARY=1):
+                    // when the junction is within the correction window of the
+                    // node boundary, trust the node boundary. ST's
+                    // changeleft/changeright redirects the read to the node
+                    // boundary regardless of whether the original junction was
+                    // killed; Rustle's default rejects on `killed` which
+                    // forces a split at this position. Session 5 read-path
+                    // diff shows SPLIT_BADJUNC fires ~5000× per run — this is
+                    // the dominant segmentation divergence.
+                    let trust_node_boundary =
+                        std::env::var_os("RUSTLE_BADJUNC_TRUST_NODE_BOUNDARY").is_some();
+                    let valid = if trust_node_boundary {
+                        within_window
+                            || (!killed
+                                && junc.donor == prev_node.end
+                                && junc.acceptor == curr_node.start)
+                    } else {
+                        !killed
+                            && (within_window
+                                || (junc.donor == prev_node.end
+                                    && junc.acceptor == curr_node.start))
+                    };
                     // (get_read_pattern:4431-4512): the original algorithm
                     // adds ALL nodes the read intersects to a single pattern.  When a
                     // junction is killed, the original algorithm's changeleft/changeright repair

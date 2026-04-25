@@ -114,6 +114,110 @@ pub fn filter_nearby_weak_junctions(
     to_remove
 }
 
+/// Strong-kills-weak on SHARED SPLICE SITE (donor-only or acceptor-only).
+///
+/// Mirrors StringTie's `leftsupport`/`rightsupport` aggregation (rlink.cpp:15285-15350):
+/// for each junction, if another junction shares the same splice site (donor or
+/// acceptor within `window` bp) AND carries >> reads, the weaker ghost is
+/// suppressed. Unlike `filter_nearby_weak_junctions` which requires BOTH ends
+/// within window, this catches junctions with one shifted splice site and one
+/// stable — the dominant pattern in LR aligner noise that creates phantom
+/// graph nodes (see STRG.18 and bundle 20126937-20733034+ trace).
+///
+/// Runs two passes (donor-side, acceptor-side) so a weak junction sharing
+/// either end with a dominant neighbor gets dropped.
+pub fn filter_shared_splice_site_weak_junctions(
+    stats: &JunctionStats,
+    window: u64,
+    ratio_threshold: f64,
+    verbose: bool,
+) -> HashSet<Junction> {
+    if stats.is_empty() {
+        return Default::default();
+    }
+    // Absolute floor on weak junction read count — only kill truly low-support
+    // noise candidates. Configurable; default=2 so a 3-read alt splice site
+    // stays even next to a 100-read dominant one. Mirrors ST's junctionthr.
+    let weak_max_reads: f64 = std::env::var("RUSTLE_SHARED_SITE_WEAK_MAX_READS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(2.0);
+    let junctions: Vec<Junction> = {
+        let mut v: Vec<_> = stats.keys().copied().collect();
+        v.sort_by_key(|j| (j.donor, j.acceptor));
+        v
+    };
+    let n = junctions.len();
+    let reads: Vec<f64> = junctions
+        .iter()
+        .map(|j| stats.get(j).map(|s| s.mrcount).unwrap_or(0.0))
+        .collect();
+
+    let mut to_remove: HashSet<Junction> = Default::default();
+
+    // Donor-shared pass: for each junction, if any OTHER junction with a donor
+    // within `window` bp carries >> reads, mark the weaker for removal.
+    for i in 0..n {
+        let ji = junctions[i];
+        let ri = reads[i];
+        if ri > weak_max_reads {
+            continue; // not a candidate for suppression
+        }
+        let mut max_shared_reads = ri;
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let jj = junctions[j];
+            if ji.donor.abs_diff(jj.donor) <= window {
+                if reads[j] > max_shared_reads {
+                    max_shared_reads = reads[j];
+                }
+            }
+        }
+        if max_shared_reads > ri && ri / max_shared_reads < ratio_threshold {
+            to_remove.insert(ji);
+        }
+    }
+
+    // Acceptor-shared pass: same logic on acceptor side.
+    for i in 0..n {
+        let ji = junctions[i];
+        if to_remove.contains(&ji) {
+            continue;
+        }
+        let ri = reads[i];
+        if ri > weak_max_reads {
+            continue;
+        }
+        let mut max_shared_reads = ri;
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let jj = junctions[j];
+            if ji.acceptor.abs_diff(jj.acceptor) <= window {
+                if reads[j] > max_shared_reads {
+                    max_shared_reads = reads[j];
+                }
+            }
+        }
+        if max_shared_reads > ri && ri / max_shared_reads < ratio_threshold {
+            to_remove.insert(ji);
+        }
+    }
+
+    if verbose && !to_remove.is_empty() {
+        eprintln!(
+            "    Shared-splice-site weak filter: removed {} junctions (sharing donor or acceptor within {}bp, ratio < {})",
+            to_remove.len(),
+            window,
+            ratio_threshold
+        );
+    }
+    to_remove
+}
+
 /// Canonicalize junctions: merge those within tolerance bp (donor and acceptor);
 /// keep the junction with highest mrcount per cluster (reference-style boundary noise reduction).
 pub fn canonicalize_junctions(
@@ -386,6 +490,29 @@ pub fn apply_junction_filters(
     for j in to_remove {
         stats.remove(&j);
     }
+
+    // Experimental: shared-splice-site filter gated by
+    // RUSTLE_SHARED_SITE_WEAK_FILTER=1. Regression testing on GGO_19
+    // consistently loses more valid alt splice sites than phantom noise —
+    // the "strong-kills-weak sharing one end" rule is too aggressive for
+    // long reads. Kept available for future tuning; NOT wired to default.
+    // Tuning knobs: RUSTLE_SHARED_SITE_WEAK_WINDOW, RUSTLE_SHARED_SITE_WEAK_RATIO.
+    if std::env::var_os("RUSTLE_SHARED_SITE_WEAK_FILTER").is_some() {
+        let ss_window = std::env::var("RUSTLE_SHARED_SITE_WEAK_WINDOW")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(30);
+        let ss_ratio = std::env::var("RUSTLE_SHARED_SITE_WEAK_RATIO")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.10);
+        let shared_remove =
+            filter_shared_splice_site_weak_junctions(&stats, ss_window, ss_ratio, verbose);
+        for j in shared_remove {
+            stats.remove(&j);
+        }
+    }
+
     stats
 }
 

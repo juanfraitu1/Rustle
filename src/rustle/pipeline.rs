@@ -1583,6 +1583,48 @@ fn apply_bad_mm_neg_stage(
     // For long reads: mult = 1/(ERROR_PERC^2) = 100
     let mult: f64 = 1.0 / (ERROR_PERC * ERROR_PERC);
 
+    // In ST-strict mode, compute aggregated leftsupport/rightsupport (summed
+    // across junctions sharing a donor/acceptor on the same strand, matching
+    // rlink.cpp:15298-15370) for use by good_junc ONLY. We cannot mutate
+    // `junction_stats.leftsupport` in place because several downstream passes
+    // rely on per-junction values — replacing them with donor-aggregated sums
+    // corrupts graph coverage and other checks. Instead, build lookup maps
+    // keyed by (donor, strand) and (acceptor, strand) and consult them in the
+    // good_junc branch.
+    let (left_agg, right_agg): (
+        HashMap<(u64, i8), f64>,
+        HashMap<(u64, i8), f64>,
+    ) = if std::env::var_os("RUSTLE_GOOD_JUNC_STRICT").is_some()
+        && std::env::var_os("RUSTLE_GOOD_JUNC_NO_AGG").is_none()
+    {
+        let mut ls: HashMap<(u64, i8), f64> = HashMap::default();
+        let mut rs: HashMap<(u64, i8), f64> = HashMap::default();
+        for (j, st) in junction_stats.iter() {
+            let s = st.strand.unwrap_or(0);
+            if s == 0 {
+                continue;
+            }
+            *ls.entry((j.donor, s)).or_insert(0.0) += st.leftsupport;
+            *rs.entry((j.acceptor, s)).or_insert(0.0) += st.rightsupport;
+        }
+        (ls, rs)
+    } else {
+        (HashMap::default(), HashMap::default())
+    };
+
+    // ST-faithful mode (RUSTLE_GOOD_JUNC_STRICT=1): run the coverage-relative
+    // check on ALL junctions, matching StringTie's good_junc (rlink.cpp:14823).
+    // In ST, the inner condition `(mismatch || lrightcov > lleftcov*(1-ERROR_PERC))`
+    // gates firing — coverage signature alone is enough for a sharp boundary
+    // mismatch, without requiring nm > 0. Rustle's default gates
+    // (`nm <= 0 skip` + `nreads_good >= 5*junction_thr protect`) were Rustle
+    // relaxations that preserved precision at the cost of divergence.
+    //
+    // Enabling this may lose Sn short-term but removes a known architectural
+    // gap flagged during graph/transfrag parity work (session 4, 2026-04-24)
+    // and is a prerequisite for untangling the 1293 ST-only transfrag chains.
+    let st_strict = std::env::var_os("RUSTLE_GOOD_JUNC_STRICT").is_some();
+
     /// Strand-specific coverage over a range: total - opposite_strand.
     fn strand_cov(bpcov: &BpcovStranded, opp: usize, start: usize, end: usize) -> f64 {
         let total = bpcov.get_cov_range(BPCOV_STRAND_ALL, start, end);
@@ -1599,22 +1641,41 @@ fn apply_bad_mm_neg_stage(
         let Some(st) = junction_stats.get_mut(&j) else { continue };
         let strand = st.strand.unwrap_or(0);
 
-        // Skip: already killed, guide, no mismatches, or nm < mrcount
-        if strand == 0 || st.guide_match || st.nm <= 0.0 || st.nm + 1e-9 < st.mrcount {
-            continue;
-        }
-        // Skip: already redirected
-        if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
-            continue;
-        }
-        // Kill: below junction threshold
-        if st.nreads_good < junction_thr {
-            st.mm = -1.0;
-            continue;
-        }
-        // Protect well-supported junctions (matching splice site fix)
-        if st.nreads_good >= 5.0 * junction_thr {
-            continue;
+        if st_strict {
+            // ST mode: skip only already-killed and guide-matched.
+            if strand == 0 || st.guide_match {
+                continue;
+            }
+            if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
+                continue;
+            }
+            // ST rlink.cpp:15419 kills junctions with `nreads_good < 1.25*junctionthr`
+            // OUTRIGHT (independent of good_junc). Only stronger junctions proceed
+            // to the coverage-relative good_junc check.
+            if st.nreads_good < 1.25 * junction_thr {
+                st.mm = -1.0;
+                continue;
+            }
+            // Fall through to run good_junc's bpcov-relative check below.
+        } else {
+            // Default (Rustle-relaxed) mode:
+            // Skip: already killed, guide, no mismatches, or nm < mrcount
+            if strand == 0 || st.guide_match || st.nm <= 0.0 || st.nm + 1e-9 < st.mrcount {
+                continue;
+            }
+            // Skip: already redirected
+            if st.mrcount < 0.0 || st.nreads_good < 0.0 || st.mm < 0.0 {
+                continue;
+            }
+            // Kill: below junction threshold
+            if st.nreads_good < junction_thr {
+                st.mm = -1.0;
+                continue;
+            }
+            // Protect well-supported junctions (matching splice site fix)
+            if st.nreads_good >= 5.0 * junction_thr {
+                continue;
+            }
         }
 
         let mismatch = st.nm > 0.0 && (st.nm - st.mrcount).abs() < 0.5;
@@ -1624,13 +1685,32 @@ fn apply_bad_mm_neg_stage(
             _ => BPCOV_STRAND_ALL,
         };
 
+        // In ST-strict mode, use donor- and acceptor-aggregated support
+        // (matches ST good_junc semantics). Otherwise use per-junction values.
+        let eff_leftsupport = if st_strict {
+            left_agg
+                .get(&(j.donor, strand))
+                .copied()
+                .unwrap_or(st.leftsupport)
+        } else {
+            st.leftsupport
+        };
+        let eff_rightsupport = if st_strict {
+            right_agg
+                .get(&(j.acceptor, strand))
+                .copied()
+                .unwrap_or(st.rightsupport)
+        } else {
+            st.rightsupport
+        };
+
         // === Donor check (bw=5 window) ===
         let dp = j.donor.saturating_sub(refstart) as usize;
         if dp >= BW && dp + BW + 1 < bpcov.minus.cov.len() {
             let lleftcov = strand_cov(bpcov, opp, dp.saturating_sub(BW) + 1, dp + 1);
             let lrightcov = strand_cov(bpcov, opp, dp + 1, dp + BW + 1);
             if lleftcov > 1.0 / ERROR_PERC
-                && st.leftsupport * mult < ERROR_PERC * lleftcov
+                && eff_leftsupport * mult < ERROR_PERC * lleftcov
                 && (mismatch || lrightcov > lleftcov * (1.0 - ERROR_PERC))
             {
                 st.mm = -1.0;
@@ -1644,7 +1724,7 @@ fn apply_bad_mm_neg_stage(
             let rleftcov = strand_cov(bpcov, opp, ap.saturating_sub(BW) + 1, ap + 1);
             let rrightcov = strand_cov(bpcov, opp, ap + 1, ap + BW + 1);
             if rrightcov > 1.0 / ERROR_PERC
-                && st.rightsupport * mult < rrightcov * ERROR_PERC
+                && eff_rightsupport * mult < rrightcov * ERROR_PERC
                 && (mismatch || rleftcov > rrightcov * (1.0 - ERROR_PERC))
             {
                 st.mm = -1.0;
@@ -1653,8 +1733,8 @@ fn apply_bad_mm_neg_stage(
         }
 
         // === Isofrac: junction reads as fraction of splice site support ===
-        if st.mrcount * 10.0 < ERROR_PERC * st.leftsupport
-            || st.mrcount * 10.0 < ERROR_PERC * st.rightsupport
+        if st.mrcount * 10.0 < ERROR_PERC * eff_leftsupport
+            || st.mrcount * 10.0 < ERROR_PERC * eff_rightsupport
         {
             st.mm = -1.0;
         }
@@ -11694,12 +11774,33 @@ pub fn run<P: AsRef<Path>>(
                     debug_stage::bundle_detail(&sub_bundle),
                     "subbundle",
                 );
-                let mut sub_junction_stats_corr = compute_initial_junction_stats_for_reads(
-                    &sub_bundle.reads,
-                    sub_bundle.start,
-                    sub_bundle.end,
-                    &config,
-                );
+                // Source of `sub_junction_stats_corr`: default seeds from
+                // outer-bundle `junction_stats_corr_final` (restricted to
+                // sub-bundle coord range) so fields like `strand`, `mrcount`,
+                // `guide_match`, and `nm` reflect the full-bundle evidence.
+                // Later `count_good_junctions` still recomputes
+                // leftsupport/rightsupport/nreads_good from sub-bundle reads.
+                //
+                // Opt out with `RUSTLE_LEGACY_SUB_JUNC_STATS=1` to recompute
+                // initial stats from sub-bundle reads only (pre-session-7
+                // behavior).
+                let mut sub_junction_stats_corr =
+                    if std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_none() {
+                        let mut seeded: crate::types::JunctionStats = Default::default();
+                        for (j, stat) in &junction_stats_corr_final {
+                            if j.donor >= sub_bundle.start && j.acceptor <= sub_bundle.end {
+                                seeded.insert(*j, stat.clone());
+                            }
+                        }
+                        seeded
+                    } else {
+                        compute_initial_junction_stats_for_reads(
+                            &sub_bundle.reads,
+                            sub_bundle.start,
+                            sub_bundle.end,
+                            &config,
+                        )
+                    };
                 // Inherit bundle-level "killed" flags (mm<0, strand=Some(0),
                 // nreads_good<0, mrcount<0) to sub-bundle stats. This ensures
                 // sub-bundle's compute_killed_junction_pairs treats bundle-demoted
@@ -11729,7 +11830,30 @@ pub fn run<P: AsRef<Path>>(
                         }
                     }
                 }
-                let mut sub_junction_redirect_map: HashMap<Junction, Junction> = Default::default();
+                // Sub-bundle redirect map: legacy path rebuilds it from sub-
+                // bundle stats; new default inherits the outer bundle's map
+                // so read corrections are consistent with outer junction decisions.
+                // Opt-out: RUSTLE_LEGACY_SUB_REDIRECT_MAP=1.
+                let mut sub_junction_redirect_map: HashMap<Junction, Junction> =
+                    if std::env::var_os("RUSTLE_LEGACY_SUB_REDIRECT_MAP").is_some() {
+                        Default::default()
+                    } else {
+                        // Copy outer redirect map entries whose keys intersect
+                        // the sub-bundle's coord range.
+                        junction_redirect_map
+                            .iter()
+                            .filter(|(k, _)| {
+                                k.donor >= sub_bundle.start && k.acceptor <= sub_bundle.end
+                            })
+                            .map(|(k, v)| (*k, *v))
+                            .collect()
+                    };
+                // NOTE: sub-bundle count_good_junctions cannot be skipped —
+                // it does DEL-aware per-read junction resolution and anchor
+                // support recomputation that outer's earlier call did on
+                // bundle.reads but some sub-bundle specific mutations remain
+                // needed. Sweep on GGO_19 (session 7): skipping regresses -2
+                // matches, -0.1 Sn/Pr. Keep enabled.
                 count_good_junctions(
                     &mut sub_bundle.reads,
                     &mut sub_junction_stats_corr,
@@ -11743,11 +11867,27 @@ pub fn run<P: AsRef<Path>>(
                     &sub_bundle.chrom,
                     &chrom_junction_strand_evidence,
                 );
-                let (sub_corrected_stats, sub_corrected_map) =
-                    correct_junctions_with_map(&sub_junction_stats_corr, config.verbose);
-                sub_junction_stats_corr = sub_corrected_stats;
-                sub_junction_redirect_map.extend(sub_corrected_map);
-                if !guide_transcripts.is_empty() && config.long_reads {
+                // Sub-bundle `correct_junctions_with_map` is REDUNDANT when
+                // we inherit outer stats: outer already produced the
+                // corrected stats and redirect map at pipeline.rs:8710.
+                // Skipped by default, opt in via
+                // `RUSTLE_SUB_CORRECT_JUNCTIONS=1`.
+                let run_sub_correct =
+                    std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_some()
+                        || std::env::var_os("RUSTLE_SUB_CORRECT_JUNCTIONS").is_some();
+                if run_sub_correct {
+                    let (sub_corrected_stats, sub_corrected_map) =
+                        correct_junctions_with_map(&sub_junction_stats_corr, config.verbose);
+                    sub_junction_stats_corr = sub_corrected_stats;
+                    sub_junction_redirect_map.extend(sub_corrected_map);
+                }
+                // Sub-bundle `snap_junctions_to_guides` redundant with outer
+                // call at pipeline.rs:8772. Outer redirect map (which we now
+                // inherit) already includes guide-snap mappings.
+                // Opt in via `RUSTLE_SUB_SNAP_GUIDES=1`.
+                let run_sub_snap = std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_some()
+                    || std::env::var_os("RUSTLE_SUB_SNAP_GUIDES").is_some();
+                if run_sub_snap && !guide_transcripts.is_empty() && config.long_reads {
                     let guide_junctions_vec = cached_bundle_guide_junctions(
                         &mut guide_junction_cache,
                         &mut chrom_arc_cache,
@@ -11790,25 +11930,37 @@ pub fn run<P: AsRef<Path>>(
                 let mut sub_cjunctions =
                     crate::types::junction_stats_to_cjunctions(&sub_junction_stats_corr);
                 aggregate_splice_site_support(&mut sub_cjunctions);
-                // apply_higherr_demotions before good_junc
-                apply_higherr_demotions(
-                    &mut sub_cjunctions,
-                    config.sserror,
-                    config.min_junction_reads,
-                    Some(&sub_bpcov_stranded),
-                    sub_bundle.start,
-                );
-                demote_runthrough_junctions(&mut sub_cjunctions, &sub_bpcov_stranded, sub_bundle.start);
-                good_junc(
-                    &mut sub_cjunctions,
-                    &sub_bpcov_stranded,
-                    sub_bundle.start,
-                    config.min_junction_reads,
-                    config.longintron,
-                    config.per_splice_site_isofrac,
-                    config.long_reads,
-                    config.eonly,
-                );
+                // Sub-bundle demotions + good_junc are REDUNDANT when
+                // `RUSTLE_LEGACY_SUB_JUNC_STATS` is unset (default), because
+                // outer bundle already ran the same passes on the same
+                // junctions at pipeline.rs:8808-8827 and the sub-bundle final
+                // `sub_junction_stats` now inherits outer stats directly.
+                // Opt back in via `RUSTLE_SUB_JUNC_DEMOTIONS=1` for the
+                // legacy behavior.
+                let run_sub_demotions =
+                    std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_some()
+                        || std::env::var_os("RUSTLE_SUB_JUNC_DEMOTIONS").is_some();
+                if run_sub_demotions {
+                    // apply_higherr_demotions before good_junc
+                    apply_higherr_demotions(
+                        &mut sub_cjunctions,
+                        config.sserror,
+                        config.min_junction_reads,
+                        Some(&sub_bpcov_stranded),
+                        sub_bundle.start,
+                    );
+                    demote_runthrough_junctions(&mut sub_cjunctions, &sub_bpcov_stranded, sub_bundle.start);
+                    good_junc(
+                        &mut sub_cjunctions,
+                        &sub_bpcov_stranded,
+                        sub_bundle.start,
+                        config.min_junction_reads,
+                        config.longintron,
+                        config.per_splice_site_isofrac,
+                        config.long_reads,
+                        config.eonly,
+                    );
+                }
                 emit_jfinal_trace(&sub_cjunctions, "subbundle");
                 // mm<0 junctions with non-zero
                 // strand are kept alive (read-redirect creates replacement junctions
@@ -11821,6 +11973,13 @@ pub fn run<P: AsRef<Path>>(
                 // that survive the initial good_junc are re-evaluated against local coverage.
                 // This catches junctions where nreads << bpcov (e.g., 1 read vs 700x coverage)
                 // that create spurious graph node boundaries and fragment transfrags.
+                //
+                // When `RUSTLE_LEGACY_SUB_JUNC_STATS` is unset (default), this
+                // sub-bundle-level kill is redundant because `sub_junction_stats`
+                // is later overridden with the outer-bundle set. Skip it.
+                // Opt back in via `RUSTLE_SUB_GOOD_JUNC_SECOND_STAGE=1`.
+                if std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_some()
+                    || std::env::var_os("RUSTLE_SUB_GOOD_JUNC_SECOND_STAGE").is_some()
                 {
                     use crate::killed_junctions::good_junc_second_stage;
                     let strand_val: i8 = match sub_bundle.strand {
@@ -11893,7 +12052,19 @@ pub fn run<P: AsRef<Path>>(
                 let sub_cjunctions_post =
                     crate::types::junction_stats_to_cjunctions(&sub_junction_stats_corr);
                 let sub_killed_junction_pairs = compute_killed_junction_pairs(&sub_cjunctions_post);
-                if !sub_killed_junction_pairs.is_empty() || !sub_junction_redirect_map.is_empty() {
+                // Sub-bundle read repair is REDUNDANT by default when
+                // `RUSTLE_LEGACY_SUB_JUNC_STATS` is unset: the outer bundle
+                // already ran `repair_reads_after_junction_quality` on
+                // `bundle.reads` at pipeline.rs:8955 using the same
+                // junction_redirect_map + outer-killed pairs that now flow
+                // into the sub-bundle via our inheritance changes.
+                // Opt back in via `RUSTLE_SUB_REPAIR_READS=1` for legacy.
+                let run_sub_repair =
+                    std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_some()
+                        || std::env::var_os("RUSTLE_SUB_REPAIR_READS").is_some();
+                if run_sub_repair
+                    && (!sub_killed_junction_pairs.is_empty() || !sub_junction_redirect_map.is_empty())
+                {
                     repair_reads_after_junction_quality(
                         &mut sub_bundle.reads,
                         &sub_junction_redirect_map,
@@ -11901,13 +12072,56 @@ pub fn run<P: AsRef<Path>>(
                         &sub_junction_stats_corr,
                     );
                 }
-                let sub_junction_stats = apply_junction_filters_and_canonicalize(
-                    sub_junction_stats_corr,
-                    config.min_junction_reads,
-                    config.junction_canonical_tolerance,
-                    config.per_splice_site_isofrac,
-                    config.verbose,
-                );
+                // `apply_junction_filters_and_canonicalize` here is REDUNDANT
+                // when we override `sub_junction_stats` from outer below:
+                // its output is immediately discarded. Skip by default.
+                // Opt back in via `RUSTLE_SUB_APPLY_FILTERS=1` (only useful
+                // when also opting out of the outer-stats override).
+                let sub_junction_stats = if std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS")
+                    .is_some()
+                    || std::env::var_os("RUSTLE_SUB_APPLY_FILTERS").is_some()
+                {
+                    apply_junction_filters_and_canonicalize(
+                        sub_junction_stats_corr,
+                        config.min_junction_reads,
+                        config.junction_canonical_tolerance,
+                        config.per_splice_site_isofrac,
+                        config.verbose,
+                    )
+                } else {
+                    sub_junction_stats_corr
+                };
+                // Outer-bundle junction stats restricted to sub-bundle coord
+                // range — default ON, opt out with `RUSTLE_LEGACY_SUB_JUNC_STATS=1`.
+                // Skips sub-bundle junction stat recomputation and uses outer
+                // bundle stats (junction_stats_corr_final) directly.
+                //
+                // Why this wins (session 6 finding): sub-bundle's narrower
+                // read pool was killing alt-variants whose outer-bundle
+                // support is strong but local support is weak (e.g., STRG.18
+                // junction 20532451-20532513, STRG.275 acceptor 40068714).
+                // Those kills cascade into missed graph-node boundaries (74%
+                // of reads in STRG.18's bundle had fragmented node paths)
+                // and lost transcripts. Using outer stats directly gave
+                // +104 matching reads in the STRG.18 bundle alone.
+                //
+                // Global impact on GGO_19: +2 matching chains (1655→1657),
+                // +0.1 Sn, +0.3 Pr.
+                let mut sub_junction_stats =
+                    if std::env::var_os("RUSTLE_LEGACY_SUB_JUNC_STATS").is_none() {
+                        // Build stats from outer set, restricted to this
+                        // sub-bundle's coord range.
+                        let mut out: crate::types::JunctionStats = Default::default();
+                        for (j, stat) in &junction_stats_corr_final {
+                            if j.donor < sub_bundle.start || j.acceptor > sub_bundle.end {
+                                continue;
+                            }
+                            out.insert(*j, stat.clone());
+                        }
+                        out
+                    } else {
+                        sub_junction_stats
+                    };
                 let mut sub_junctions =
                     filter_junctions(&sub_junction_stats, config.min_junction_reads);
                 // Alt-acceptor sub-bundle rescue (opt-in, scaffold).
@@ -11929,7 +12143,6 @@ pub fn run<P: AsRef<Path>>(
                 // flow attribution can be adjusted proportionally.
                 //
                 // Enable via RUSTLE_ALT_ACCEPTOR_RESCUE=1.
-                let mut sub_junction_stats = sub_junction_stats;
                 if std::env::var_os("RUSTLE_ALT_ACCEPTOR_RESCUE").is_some() {
                     let rescue_min_reads: f64 = std::env::var(
                         "RUSTLE_ALT_ACCEPTOR_RESCUE_MIN_READS")
@@ -11966,6 +12179,77 @@ pub fn run<P: AsRef<Path>>(
                         );
                     }
                 }
+
+                // Dual-junction-set architecture (experimental):
+                // `RUSTLE_DUAL_JUNC_SET=1` reinjects ALL outer-bundle-alive
+                // junctions into `sub_junctions` (for graph-node-boundary
+                // decisions in create_graph_with_longtrim) WITHOUT adding them
+                // to `sub_junction_stats` (so flow/coverage computation still
+                // uses the sub-bundle-local stats).
+                //
+                // Motivation: sub-bundle stat recomputation (pipeline.rs:11992)
+                // kills junctions whose outer-bundle support is strong but
+                // local support is weak (e.g., STRG.275's 40068714, STRG.18's
+                // 20532451-20532513). These kills cascade into missed graph-
+                // node boundaries and fragmented transfrag paths.
+                //
+                // Rustle's existing `RUSTLE_ALT_ACCEPTOR_RESCUE` addresses
+                // this but: (a) only for alt-siblings within tight windows,
+                // and (b) ALSO injects stats, which perturbs flow
+                // decomposition.
+                //
+                // Dual-set keeps stats pristine — graph node boundaries match
+                // ST without perturbing the flow computation.
+                if std::env::var_os("RUSTLE_DUAL_JUNC_SET").is_some() {
+                    let sub_set: HashSet<Junction> =
+                        sub_junctions.iter().copied().collect();
+                    let target_strand = match sbr.strand {
+                        '+' => Some(1i8),
+                        '-' => Some(-1i8),
+                        _ => None,
+                    };
+                    let mut added = 0usize;
+                    for (j, outer_stat) in &junction_stats_corr_final {
+                        if sub_set.contains(j) {
+                            continue;
+                        }
+                        // Require outer-bundle-alive: strand matches, not killed.
+                        if let Some(ts) = target_strand {
+                            if outer_stat.strand != Some(ts) {
+                                continue;
+                            }
+                        } else if outer_stat.strand == Some(0) {
+                            continue;
+                        }
+                        if outer_stat.mm < 0.0 {
+                            continue;
+                        }
+                        // Must fall within the sub-bundle coord range so both
+                        // donor and acceptor can create in-range node splits.
+                        if j.donor < sub_bundle.start || j.acceptor > sub_bundle.end {
+                            continue;
+                        }
+                        // Add junction for graph-boundary purposes. Do NOT
+                        // inject into sub_junction_stats — flow/coverage stays
+                        // sub-bundle-local.
+                        sub_junctions.push(*j);
+                        added += 1;
+                        // Opt-in: RUSTLE_DUAL_JUNC_SET_WITH_STATS=1 also
+                        // inserts outer stats (equivalent to the existing
+                        // alt-acceptor-rescue, but without the alt-sibling
+                        // filter).
+                        if std::env::var_os("RUSTLE_DUAL_JUNC_SET_WITH_STATS").is_some() {
+                            sub_junction_stats.insert(*j, outer_stat.clone());
+                        }
+                    }
+                    if added > 0 && config.verbose {
+                        eprintln!(
+                            "    sub-bundle DUAL_JUNC_SET: added {} outer-alive junction(s) (graph-boundary only)",
+                            added
+                        );
+                    }
+                }
+
                 let sub_good_junctions: HashSet<(u64, u64)> = sub_junctions
                     .iter()
                     .map(|j| (j.donor, j.acceptor))

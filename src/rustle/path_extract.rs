@@ -5378,6 +5378,106 @@ pub fn extract_transcripts(
     } else if long_read_mode {
         order = parse_trflong(transfrags, graph);
 
+        // RUSTLE_PARITY_GRAPH_TSV + RUSTLE_PARITY_TF_TSV: dump per-bundle graph node
+        // and transfrag lists immediately before seed iteration, matching
+        // StringTie's PARITY_GRAPH_DUMP / PARITY_TF_DUMP at the same point in
+        // the pipeline. Used to diff the transfrag/graph construction stages.
+        if let Ok(gp) = std::env::var("RUSTLE_PARITY_GRAPH_TSV") {
+            if !gp.is_empty() {
+                use std::io::Write;
+                use std::sync::{Mutex, OnceLock};
+                static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+                static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+                let wr = WR.get_or_init(|| {
+                    Mutex::new(
+                        std::fs::OpenOptions::new()
+                            .create(true).append(true).open(&gp).ok(),
+                    )
+                });
+                let hdr = HDR.get_or_init(|| Mutex::new(false));
+                let (bs, be) = bundle_id.split_once(':')
+                    .and_then(|(_, rng)| rng.split_once('-'))
+                    .map(|(s, e)| (
+                        s.trim().parse::<u64>().unwrap_or(0),
+                        e.trim().parse::<u64>().unwrap_or(0),
+                    ))
+                    .unwrap_or((0, 0));
+                if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+                    if let Some(f) = f_opt.as_mut() {
+                        if !*hdr_w {
+                            let _ = writeln!(f, "source\tchrom\tbdstart\tbdend\tstrand\tnode_idx\tstart\tend\tcov\thardstart\thardend\tnchildren\tnparents");
+                            *hdr_w = true;
+                        }
+                        for (idx, n) in graph.nodes.iter().enumerate() {
+                            if idx == graph.source_id || idx == graph.sink_id {
+                                continue;
+                            }
+                            let _ = writeln!(
+                                f,
+                                "rustle\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}\t{}\t{}",
+                                bundle_chrom, bs, be, bundle_strand,
+                                idx, n.start, n.end, n.coverage,
+                                n.hardstart as u8, n.hardend as u8,
+                                n.children.count_ones(), n.parents.count_ones(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        if let Ok(tp) = std::env::var("RUSTLE_PARITY_TF_TSV") {
+            if !tp.is_empty() {
+                use std::io::Write;
+                use std::sync::{Mutex, OnceLock};
+                static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+                static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+                let wr = WR.get_or_init(|| {
+                    Mutex::new(
+                        std::fs::OpenOptions::new()
+                            .create(true).append(true).open(&tp).ok(),
+                    )
+                });
+                let hdr = HDR.get_or_init(|| Mutex::new(false));
+                let (bs, be) = bundle_id.split_once(':')
+                    .and_then(|(_, rng)| rng.split_once('-'))
+                    .map(|(s, e)| (
+                        s.trim().parse::<u64>().unwrap_or(0),
+                        e.trim().parse::<u64>().unwrap_or(0),
+                    ))
+                    .unwrap_or((0, 0));
+                if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+                    if let Some(f) = f_opt.as_mut() {
+                        if !*hdr_w {
+                            let _ = writeln!(f, "source\tchrom\tbdstart\tbdend\tstrand\ttf_idx\tabundance\tusepath\tweak\treal\tlongread\tguide\tlongstart\tlongend\tnnodes\tfirst_node\tlast_node\tnode_coords");
+                            *hdr_w = true;
+                        }
+                        for (t, tf) in transfrags.iter().enumerate() {
+                            let nn = tf.node_ids.len();
+                            let first_n = tf.node_ids.first().copied().map(|x| x as i64).unwrap_or(-1);
+                            let last_n = tf.node_ids.last().copied().map(|x| x as i64).unwrap_or(-1);
+                            let mut coords = String::new();
+                            for (k, &nid) in tf.node_ids.iter().enumerate() {
+                                if k > 0 { coords.push(' '); }
+                                let (s, e) = graph.nodes.get(nid)
+                                    .map(|n| (n.start, n.end))
+                                    .unwrap_or((0, 0));
+                                coords.push_str(&format!("{}({}-{})", nid, s, e));
+                            }
+                            let _ = writeln!(
+                                f,
+                                "rustle\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                bundle_chrom, bs, be, bundle_strand,
+                                t, tf.abundance, tf.usepath, tf.weak,
+                                tf.real as u8, tf.longread as u8, tf.guide as u8,
+                                tf.longstart, tf.longend,
+                                nn, first_n, last_n, coords,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // Max-sensitivity diagnostic mode: also consider non-keeptrf long-read transfrags as seeds.
         // This helps recover transcripts that are stitchable from partials but never appear as a
         // keeptrf representative (common root cause of `not_extracted:junctions_present`).
@@ -5480,6 +5580,13 @@ pub fn extract_transcripts(
     // nodecov at the time of first evaluation (not current depleted nodecov).
     let mut weak_cache: Vec<Option<bool>> = vec![None; transfrags.len()];
 
+    // Bisect instrumentation — capture each seed's abundance AT ITS LOOP-ENTRY
+    // moment, mirroring StringTie's `double longcov=transfrag[t]->abundance;`
+    // at the top of parse_trflong. Emitted via RUSTLE_PATH_DECISION_TSV so we
+    // match ST's seed_abundance semantics rather than the post-iteration residue.
+    let mut seed_entry_abund: std::collections::HashMap<usize, f64> =
+        std::collections::HashMap::new();
+
     // Macro to emit DEBUG_SEED_PROC line at each seed exit point
     macro_rules! emit_debug_seed_proc {
         ($idx:expr, $graph:expr, $transfrags:expr, $real_nodes:expr,
@@ -5538,6 +5645,8 @@ pub fn extract_transcripts(
 
     let ntrflong = transfrags.iter().filter(|tf| tf.trflong_seed).count();
     for idx in order {
+        // Snapshot entry-time abundance for bisect dump (matches ST's longcov).
+        seed_entry_abund.insert(idx, transfrags[idx].abundance);
         if loop_trace_active() && long_read_mode && transfrags[idx].trflong_seed {
             eprintln!(
                 "LOOP_parse_trflong: ntrflong={} nasc={}",
@@ -8617,11 +8726,15 @@ pub fn extract_transcripts(
                                 } else {
                                     (0usize, 0u64, 0u64, String::new(), String::new())
                                 };
+                            let entry_abund = seed_entry_abund
+                                .get(idx)
+                                .copied()
+                                .unwrap_or(tf.abundance);
                             let _ = writeln!(
                                 f,
                                 "rustle\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                                 bundle_chrom, bs, be, bundle_strand,
-                                *idx, tf.abundance,
+                                *idx, entry_abund,
                                 sfirst, slast, real_nodes.len(),
                                 sfirst_c, slast_c,
                                 decision,

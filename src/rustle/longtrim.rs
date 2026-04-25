@@ -479,10 +479,23 @@ pub fn apply_longtrim_direct(
                     let b = bundlenode_lend[nle];
                     nle += 1;
                     let pos = b.pos;
-                    if !(b.cov < 0.0
-                        || (b.cov >= min_boundary_cov
-                            && pos >= node_start0
-                            && pos < node_end0))
+                    // StringTie-faithful lend gate
+                    // (RUSTLE_LONGTRIM_STRICT_LEND=1): ST's longtrim accepts any
+                    // lend event within the node and decides solely on the
+                    // coverage-drop signal (tmpcov > 0). Rustle's default
+                    // requires b.cov >= min_boundary_cov (default 2.0), which
+                    // filters single-read ends and leaves graph nodes
+                    // extending 20-100bp past real read 3' ends (~5096 cases
+                    // observed, session 5 read-path diff, 2026-04-24).
+                    let strict_lend =
+                        std::env::var_os("RUSTLE_LONGTRIM_STRICT_LEND").is_some();
+                    let in_range = pos >= node_start0 && pos < node_end0;
+                    if strict_lend {
+                        if !in_range {
+                            continue;
+                        }
+                    } else if !(b.cov < 0.0
+                        || (b.cov >= min_boundary_cov && in_range))
                     {
                         continue;
                     }
@@ -493,7 +506,8 @@ pub fn apply_longtrim_direct(
                     let strong_boundary = b.cov >= (min_boundary_cov.max(1.0) * 4.0);
                     let allow = ((!startcov
                         || pos > graph.nodes[cur_nid].start.saturating_add(LONGINTRONANCHOR))
-                        || strong_boundary)
+                        || strong_boundary
+                        || strict_lend)
                         && (!call.endcov || pos < node_end0.saturating_add(LONGINTRONANCHOR));
                     if !allow {
                         continue;
