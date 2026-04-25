@@ -1845,10 +1845,12 @@ pub fn apply_higherr_demotions(
                     && cur.end.saturating_sub(cand.end) < sserror
                     && cand.rightsupport * tolerance > cur.rightsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
-                    && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE").is_some()
+                    && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE_OFF").is_none()
                         && {
                             let d_up = cur.end.saturating_sub(cand.end);
-                            d_up >= 4 && d_up < 9 && cur.nreads >= 5.0
+                            let min_r = std::env::var("RUSTLE_ALT_ACCEPTOR_PRESERVE_MIN_READS")
+                                .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(25.0);
+                            d_up >= 4 && d_up < 9 && cur.nreads >= min_r
                         })
                 {
                     if cj_watch_match(&cur) {
@@ -1930,10 +1932,11 @@ pub fn apply_higherr_demotions(
                     && cand.rightsupport * tolerance > cur.rightsupport)
                     || (d < dist && cj_reliable(&cand)))
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
-                    && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE").is_some()
+                    && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE_OFF").is_none()
                         && d >= 4
                         && d < 9
-                        && cur.nreads >= 5.0)
+                        && cur.nreads >= std::env::var("RUSTLE_ALT_ACCEPTOR_PRESERVE_MIN_READS")
+                            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(25.0))
                 {
                     // Bug fix: store cjunctions ARRAY index, not the sorted-position
                     // `j` (other call sites use `idx_j`).  Decoding via resolved_cj_index
