@@ -580,6 +580,108 @@ pub fn find_all_trims_for_bundle(
                  &mut lstart_out, &mut lend_out,
                  &mut lastdrop_s, &mut lastdrop_e, DROP);
         }
+
+        // Per-position derivative-magnitude trim — port of
+        // collect_longtrim_boundaries_in_span:120-215. Catches sharp
+        // single-position coverage transitions that the window-average
+        // ratio gates miss. Adds candidates at positions where:
+        //   diffval[m] > 1/ERROR_PERC (≥10-read jump) AND
+        //   sumstartleft < sumstartright * ERROR_PERC  → lstart trim
+        //   diffval[m] < -1/ERROR_PERC AND
+        //   sumendleft * ERROR_PERC > sumendright → lend trim
+        // Default ON; opt-out via RUSTLE_FAT_DIFFVAL_OFF=1.
+        if std::env::var_os("RUSTLE_FAT_DIFFVAL_OFF").is_none()
+            && end.saturating_sub(start) > CHI_WIN + CHI_THR
+        {
+            let mut diffval: Vec<f64> = Vec::with_capacity(CHI_WIN as usize);
+            let mut sumstartleft = 0.0f64;
+            let mut sumendleft = 0.0f64;
+            let mut sumstartright = 0.0f64;
+            let mut sumendright = 0.0f64;
+
+            // Use bpcov.cov directly via cov_at (per-position, not avg).
+            let cov_at_pos = |p: u64| -> f64 {
+                let idx = bpcov.idx(p);
+                if idx >= bpcov.cov.len() { 0.0 } else { bpcov.cov[idx] }
+            };
+
+            let mut lastcov = cov_at_pos(
+                start.saturating_add(LONGINTRONANCHOR).saturating_sub(1),
+            );
+            // Phase A: prime sumstartleft/sumendleft over first CHI_THR
+            for pos in start.saturating_add(LONGINTRONANCHOR)
+                ..start.saturating_add(CHI_THR + LONGINTRONANCHOR)
+            {
+                let icov = cov_at_pos(pos);
+                let diff = icov - lastcov;
+                diffval.push(diff);
+                if diff > 0.0 { sumstartleft += diff; } else { sumendleft -= diff; }
+                lastcov = icov;
+            }
+            // Phase B: prime sumstartright/sumendright over next CHI_WIN
+            for pos in start.saturating_add(CHI_THR + LONGINTRONANCHOR)
+                ..start.saturating_add(CHI_WIN + LONGINTRONANCHOR)
+            {
+                let icov = cov_at_pos(pos);
+                let diff = icov - lastcov;
+                diffval.push(diff);
+                if diff > 0.0 { sumstartright += diff; } else { sumendright -= diff; }
+                lastcov = icov;
+            }
+            // Main loop: walk pos through scan range, emit at
+            // diffval-magnitude conditions.
+            let max_cov_pos = bpcov.bundle_end.saturating_sub(1);
+            let covend = end.min(max_cov_pos).saturating_sub(LONGINTRONANCHOR);
+            let start_scan = start.saturating_add(CHI_WIN + LONGINTRONANCHOR);
+            if covend > start_scan {
+                let inv_err = 1.0 / ERROR_PERC; // 10.0
+                for pos in start_scan..covend {
+                    let m = ((pos
+                        .saturating_sub(CHI_THR)
+                        .saturating_sub(LONGINTRONANCHOR)
+                        .saturating_sub(start))
+                        % CHI_WIN) as usize;
+                    if m >= diffval.len() { break; }
+                    if diffval[m] > inv_err
+                        && sumstartleft < sumstartright * ERROR_PERC
+                    {
+                        let istart = pos.saturating_sub(CHI_THR);
+                        push_boundary(&mut lstart_out, istart, diffval[m]);
+                    }
+
+                    let icov = cov_at_pos(pos);
+                    let p = (m + CHI_THR as usize) % CHI_WIN as usize;
+                    if p >= diffval.len() { break; }
+                    let diff = icov - lastcov;
+                    if diffval[p] > 0.0 {
+                        sumstartleft -= diffval[p];
+                    } else {
+                        sumendleft += diffval[p];
+                    }
+                    if diffval[m] > 0.0 {
+                        sumstartleft += diffval[m];
+                        sumstartright -= diffval[m];
+                    } else {
+                        sumendleft -= diffval[m];
+                        sumendright += diffval[m];
+                    }
+                    diffval[p] = diff;
+                    if diff > 0.0 {
+                        sumstartright += diff;
+                    } else {
+                        sumendright -= diff;
+                    }
+                    lastcov = icov;
+
+                    if diffval[m] < -inv_err
+                        && sumendleft * ERROR_PERC > sumendright
+                    {
+                        let iend = pos.saturating_sub(CHI_THR).saturating_sub(1);
+                        push_boundary(&mut lend_out, iend, -diffval[m]);
+                    }
+                }
+            }
+        }
     }
 
     lstart_out.sort_by_key(|b| b.pos);
