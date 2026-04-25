@@ -584,6 +584,13 @@ pub fn find_all_trims_for_bundle(
 
     lstart_out.sort_by_key(|b| b.pos);
     lend_out.sort_by_key(|b| b.pos);
+    if std::env::var_os("RUSTLE_FAT_EMIT_TRACE").is_some() {
+        eprintln!(
+            "[FAT_EMIT] bundle={}-{} bnodes={} lstart_out={} lend_out={}",
+            bundle_start, bundle_end,
+            bundlenodes.len(), lstart_out.len(), lend_out.len()
+        );
+    }
     (lstart_out, lend_out)
 }
 
