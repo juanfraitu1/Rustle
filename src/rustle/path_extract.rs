@@ -5800,7 +5800,9 @@ pub fn extract_transcripts(
         // yields 0 for non-guides, so they always fail the store gate.
         // Skip them BEFORE path extension and flow extraction to prevent flow budget
         // depletion — this is the #1 precision/sensitivity fix, recovering ~500 TPs.
-        if long_read_mode && real_nodes.len() == 1 && !transfrags[idx].guide {
+        // Set RUSTLE_SINGLE_NODE_LR_OFF=1 to disable this skip for audit purposes.
+        let single_node_lr_skip = std::env::var_os("RUSTLE_SINGLE_NODE_LR_OFF").is_none();
+        if single_node_lr_skip && long_read_mode && real_nodes.len() == 1 && !transfrags[idx].guide {
             transfrags[idx].abundance = 0.0;
             record_outcome!(idx, SeedOutcome::Skipped("single_node_lr"));
             continue;
