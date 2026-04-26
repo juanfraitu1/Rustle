@@ -10154,6 +10154,7 @@ pub fn run<P: AsRef<Path>>(
                     &lend,
                     longtrim_in_graph,
                     config.longtrim_min_boundary_cov,
+                    &graph_bundle.chrom,
                 );
                 if longtrim_stats.applied && config.verbose {
                     eprintln!(

@@ -1253,7 +1253,7 @@ pub fn create_graph(
     let mut _sink_futuretr: Vec<(usize, f64)> = Vec::new();
     create_graph_inner(junctions, _bundle_start, bundle_end, bundlenodes,
         junction_support, _reads, bundle_strand, junction_stats, bpcov, None, &[], &[],
-        &mut _sink_futuretr)
+        &mut _sink_futuretr, "")
 }
 
 fn create_graph_inner(
@@ -1270,6 +1270,7 @@ fn create_graph_inner(
     lstart: &[ReadBoundary],
     lend: &[ReadBoundary],
     sink_futuretr_out: &mut Vec<(usize, f64)>,
+    bundle_chrom: &str,
 ) -> Graph {
     let mut graph = Graph::new();
     let trace_s = trace_strand_index(bundle_strand);
@@ -1453,7 +1454,7 @@ fn create_graph_inner(
                     longtrim_inline(
                         &mut graph, &mut graphnode_id, &mut nls, &mut nle,
                         effective_lstart, effective_lend, bpc, bpcov_stranded, bundle_strand,
-                        _bundle_start, nodeend,
+                        _bundle_start, bundle_end, bundle_chrom, nodeend,
                         has_junction_start, has_junction_end, source_bid,
                         &mut sink_parents,
                         sink_futuretr,
@@ -1738,7 +1739,7 @@ fn create_graph_inner(
                 longtrim_inline(
                     &mut graph, &mut graphnode_id, &mut nls, &mut nle,
                     lstart, lend, bpc, bpcov_stranded, bundle_strand,
-                    _bundle_start, endbundle,
+                    _bundle_start, bundle_end, bundle_chrom, endbundle,
                     true, true, source_bid,
                     &mut sink_parents,
                     sink_futuretr,
@@ -2106,6 +2107,8 @@ fn longtrim_inline(
     bpcov_stranded: Option<&BpcovStranded>,
     bundle_strand: char,
     bundle_start: u64,
+    bundle_end: u64,
+    bundle_chrom: &str,
     nodeend: u64,
     startcov: bool, // true if junction exists at current node start
     endcov: bool,   // true if junction exists at nodeend
@@ -2144,6 +2147,46 @@ fn longtrim_inline(
             (total - opposite).max(0.0)
         } else {
             bpcov.get_cov_range(su, eu)
+        }
+    };
+
+    // RUSTLE_PARITY_LONGTRIM_SPLIT_TSV: emit per-event longtrim decisions
+    // for cross-tool diff against ST's PARITY_LONGTRIM_SPLIT_TSV.
+    // Schema matches ST: source, chrom, bundle_start, bundle_end, sno,
+    // bnode_start, bnode_end, pos, direction, abundance, tmpcov, accepted, reason.
+    let lt_emit = |graph: &Graph, graphnode_id: usize, direction: &str, pos: u64,
+                   abundance: f64, tmpcov: f64, accepted: u8, reason: &str| {
+        if let Ok(p) = std::env::var("RUSTLE_PARITY_LONGTRIM_SPLIT_TSV") {
+            if !p.is_empty() {
+                use std::io::Write;
+                use std::sync::{Mutex, OnceLock};
+                static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+                static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+                let wr = WR.get_or_init(|| Mutex::new(
+                    std::fs::OpenOptions::new()
+                        .create(true).append(true).open(&p).ok()));
+                let hdr = HDR.get_or_init(|| Mutex::new(false));
+                if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+                    if let Some(f) = f_opt.as_mut() {
+                        if !*hdr_w {
+                            let _ = writeln!(f, "source\tchrom\tbundle_start\tbundle_end\tsno\tbnode_start\tbnode_end\tpos\tdirection\tabundance\ttmpcov\taccepted\treason");
+                            *hdr_w = true;
+                        }
+                        let sno: i32 = match bundle_strand {
+                            '-' => 0,
+                            '+' => 2,
+                            _ => 1,
+                        };
+                        let bn_start = graph.nodes[graphnode_id].start;
+                        let bn_end = graph.nodes[graphnode_id].end.saturating_sub(1);
+                        let _ = writeln!(f,
+                            "rustle\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}",
+                            bundle_chrom, bundle_start, bundle_end, sno,
+                            bn_start, bn_end, pos, direction,
+                            abundance, tmpcov, accepted, reason);
+                    }
+                }
+            }
         }
     };
 
@@ -2210,6 +2253,7 @@ fn longtrim_inline(
 
             // Skip boundaries with insufficient read support.
             if boundary_cov.abs() < min_boundary_reads {
+                lt_emit(graph, *graphnode_id, "source", pos, boundary_cov, 0.0, 0, "low_reads");
                 *nls += 1;
                 continue;
             }
@@ -2273,6 +2317,7 @@ fn longtrim_inline(
             if tmpcov > min_tmpcov && ratio_pass {
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if pos > graph.nodes[*graphnode_id].start && pos < cur_end {
+                    lt_emit(graph, *graphnode_id, "source", pos, boundary_cov, tmpcov, 1, "tmpcov_pos");
                     // Split: [cur_start, pos) and [pos, cur_end)
                     let prev_id = *graphnode_id;
                     graph.nodes[prev_id].end = pos;
@@ -2305,7 +2350,14 @@ fn longtrim_inline(
                         }
                     }
                     *graphnode_id = new_id;
+                } else {
+                    lt_emit(graph, *graphnode_id, "source", pos, boundary_cov, tmpcov, 0, "out_of_range");
                 }
+            } else {
+                let reason = if !ratio_pass { "ratio_fail" }
+                             else if !(start_ok && end_ok) { "out_of_anchor" }
+                             else { "tmpcov_le_min" };
+                lt_emit(graph, *graphnode_id, "source", pos, boundary_cov, tmpcov, 0, reason);
             }
             *nls += 1;
         } else {
@@ -2314,6 +2366,7 @@ fn longtrim_inline(
             let cur_start = graph.nodes[*graphnode_id].start;
 
             if boundary_cov.abs() < min_boundary_reads {
+                lt_emit(graph, *graphnode_id, "sink", pos, boundary_cov, 0.0, 0, "low_reads");
                 *nle += 1;
                 continue;
             }
@@ -2368,6 +2421,7 @@ fn longtrim_inline(
                 let split = pos + 1; // half-open boundary
                 let cur_end = graph.nodes[*graphnode_id].end;
                 if split > graph.nodes[*graphnode_id].start && split < cur_end {
+                    lt_emit(graph, *graphnode_id, "sink", pos, boundary_cov, tmpcov, 1, "tmpcov_pos");
                     // Split: [cur_start, split) and [split, cur_end)
                     graph.nodes[*graphnode_id].end = split;
                     crate::bump_hs!("graph_build.rs:2365:hardend");
@@ -2386,7 +2440,14 @@ fn longtrim_inline(
                         sink_futuretr.push((prev_for_sink, tmpcov));
                     }
                     *graphnode_id = new_id;
+                } else {
+                    lt_emit(graph, *graphnode_id, "sink", pos, boundary_cov, tmpcov, 0, "out_of_range");
                 }
+            } else {
+                let reason = if !ratio_pass { "ratio_fail" }
+                             else if !(start_ok && end_ok) { "out_of_anchor" }
+                             else { "tmpcov_le_min" };
+                lt_emit(graph, *graphnode_id, "sink", pos, boundary_cov, tmpcov, 0, reason);
             }
             *nle += 1;
         }
@@ -2411,6 +2472,7 @@ pub fn create_graph_with_longtrim(
     lend: &[ReadBoundary],
     enable_longtrim: bool,
     longtrim_min_boundary_cov: f64,
+    bundle_chrom: &str,
 ) -> (Graph, Vec<GraphTransfrag>, CreateGraphLongtrimStats) {
     // Oracle splits: read exact split positions from a file (for debugging/validation).
     // Format: one line per split, "position type" where type is "start" or "end".
@@ -2472,6 +2534,7 @@ pub fn create_graph_with_longtrim(
         lt_starts,
         lt_ends,
         &mut sink_futuretr,
+        bundle_chrom,
     );
 
     // Zero-width node compaction (DEFAULT-ON): junction events at shared
