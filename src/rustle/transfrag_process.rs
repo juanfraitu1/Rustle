@@ -3203,12 +3203,13 @@ pub fn coalesce_alt_junc_seed_transfrags(
     transfrags: &mut [GraphTransfrag],
     graph: &Graph,
 ) -> (usize, usize) {
-    // Default ON at lossless settings. Opt-out via RUSTLE_TF_COALESCE_OFF.
-    if std::env::var_os("RUSTLE_TF_COALESCE_OFF").is_some() {
+    // Re-measured 2026-04-26 post Layer-4: default-on costs 1 match.
+    // Default flipped to OFF; opt-in via RUSTLE_TF_COALESCE=1 to restore.
+    if std::env::var_os("RUSTLE_TF_COALESCE").is_none() {
         return (0, 0);
     }
-    // Defaults: W=15 R=0.1 is lossless on GGO_19 (preserves all 1674 matches,
-    // reduces j-class 211→208, F1 87.14→87.20).
+    // Defaults: W=15 R=0.1 was lossless at prior baseline (1674 matches);
+    // post Layer-4 alignment costs 1 match. Opt-in for evaluation.
     let window: u64 = std::env::var("RUSTLE_TF_COALESCE_WINDOW")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(15);
     let debug = std::env::var_os("RUSTLE_TF_COALESCE_DEBUG").is_some();
