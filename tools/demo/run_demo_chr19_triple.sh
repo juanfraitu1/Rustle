@@ -50,6 +50,16 @@ echo "== Rustle --vg on same region =="
 RUSTLE_VG_TRACE=1 \
 ./target/release/rustle -L --vg -o "$GTF_VG" "$REGION_BAM" 2> "$VG_LOG"
 
+echo "== StringTie 3.0.3 baseline on same region =="
+GTF_STRINGTIE="$OUT/stringtie.gtf"
+STRINGTIE_LOG="$OUT/stringtie.log"
+if command -v stringtie >/dev/null 2>&1; then
+  stringtie -L -o "$GTF_STRINGTIE" "$REGION_BAM" 2> "$STRINGTIE_LOG" || \
+    echo "  (stringtie failed; check $STRINGTIE_LOG)"
+else
+  echo "  (stringtie not installed; skipping comparison)"
+fi
+
 echo "== Bundles overlapping each paralog locus =="
 for L in "$LOCUS_A" "$LOCUS_B" "$LOCUS_C"; do
   echo "-- $L"
@@ -103,8 +113,13 @@ else
 fi
 
 echo "== Side-by-side baseline-vs-VG transcript counts =="
-echo "Baseline transcripts: $(grep -cE '^[^#].*\ttranscript\t' "$GTF_BASELINE" 2>/dev/null || echo 0)"
-echo "VG transcripts:       $(grep -cE '^[^#].*\ttranscript\t' "$GTF_VG" 2>/dev/null || echo 0)"
+TAB=$(printf '\t')
+count_transcripts() {
+  awk -F"$TAB" -v OFS="$TAB" '$3=="transcript"{n++} END{print n+0}' "$1" 2>/dev/null || echo 0
+}
+echo "Rustle baseline transcripts: $(count_transcripts "$GTF_BASELINE")"
+echo "Rustle --vg  transcripts:    $(count_transcripts "$GTF_VG")"
+echo "StringTie    transcripts:    $(count_transcripts "$GTF_STRINGTIE" 2>/dev/null || echo 'n/a')"
 
 echo "== Tier 2 complete. Outputs in $OUT =="
 ls -lh "$OUT"
