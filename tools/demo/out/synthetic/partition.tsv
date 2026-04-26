@@ -1,0 +1,3 @@
+kind	source	chrom	start	end	strand	signature
+partition_geometry_v1	rustle	chr_test	9997	13502	.	9997-10199+11000-11299+12000-12149+13000-13502
+partition_geometry_v1	rustle	chr_test	997	4502	.	997-1199+2000-2299+3000-3149+4000-4502
