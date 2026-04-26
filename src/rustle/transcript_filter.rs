@@ -2519,10 +2519,15 @@ pub fn pairwise_overlap_filter_with_summary(
                     // Additional gate: only protect when the shorter transcript has
                     // meaningful abundance relative to the longer one — otherwise
                     // it's a contained fragment, not a genuine alt-TSS/TTS variant.
-                    // Require t2.longcov >= 0.5 * t1.longcov.
+                    // Default ratio: 0.5 (t2.longcov >= 0.5 * t1.longcov). Tunable
+                    // via RUSTLE_ALT_BOUNDARY_LONGCOV_RATIO.
+                    let alt_boundary_longcov_ratio: f64 = std::env::var("RUSTLE_ALT_BOUNDARY_LONGCOV_RATIO")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0.5);
                     let alt_boundary_protected = longreads
                         && std::env::var_os("RUSTLE_INCLUDED_DROP_ALT_BOUNDARY_OFF").is_none()
-                        && t2.longcov >= 0.5 * t1.longcov
+                        && t2.longcov >= alt_boundary_longcov_ratio * t1.longcov
                         && {
                             let t2_last_end = t2.exons.last().map(|e| e.1).unwrap_or(0);
                             let t1_last_end = t1.exons.last().map(|e| e.1).unwrap_or(0);
@@ -2531,7 +2536,7 @@ pub fn pairwise_overlap_filter_with_summary(
                             let alt_end_threshold: u64 = std::env::var("RUSTLE_ALT_BOUNDARY_MIN")
                                 .ok()
                                 .and_then(|v| v.parse().ok())
-                                .unwrap_or(500);
+                                .unwrap_or(1000);
                             let alt_tts = (t2.hardend || t2.alt_tts_end)
                                 && t1_last_end > t2_last_end + alt_end_threshold;
                             let alt_tss = t2.hardstart
@@ -4974,11 +4979,11 @@ pub fn filter_by_full_chain_witness(
     // Minimum contiguous match length (in number of introns). For long tx,
     // requiring FULL chain match is too strict (no single read spans all
     // introns). Instead: for every contiguous K-window of introns in tx,
-    // require SOME read to witness that window. K default 3; small enough
-    // that real tx with 4+ reads survive, large enough that combinatorial
-    // alt-donor combinations fail (no read has that specific combination).
+    // require SOME read to witness that window. K=5 is a free precision
+    // win on GGO_19 (drops 1 j-class FP, 0 TPs); larger K removes more
+    // novel intron-chain combinations but also kills legit long isoforms.
     let min_window: usize = std::env::var("RUSTLE_FULL_CHAIN_WITNESS_K")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
     let before = transcripts.len();
     let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
         // Always-keep exemptions
