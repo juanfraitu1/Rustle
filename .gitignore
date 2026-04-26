@@ -10,6 +10,7 @@
 !/src/
 !/test_data/
 !/tests/
+!/tools/
 
 # 3. Allow specific root files
 !/.gitignore
@@ -28,6 +29,7 @@
 !/scripts/**
 !/src/**
 !/tests/**
+!/tools/**
 
 # 5. Specific re-ignores for common junk (must come AFTER allows)
 /target/
