@@ -243,9 +243,10 @@ fn is_rescue_protected(t: &Transcript) -> bool {
     ) {
         return true;
     }
-    // Alt-splice rescue emissions are protected from isofrac when RUSTLE_ALT_SPLICE_PROTECT=1.
-    // Default OFF because blanket protection trades Pr for Sn; opt-in lets the user compare.
-    if std::env::var_os("RUSTLE_ALT_SPLICE_PROTECT").is_some()
+    // Alt-splice rescue emissions are protected from isofrac.
+    // Re-measured 2026-04-26 post Layer-4: default-on +2 matches (1687→1689),
+    // +0.1 Sn, -0.1 Pr — net F1 positive. Opt-out via RUSTLE_ALT_SPLICE_PROTECT_OFF=1.
+    if std::env::var_os("RUSTLE_ALT_SPLICE_PROTECT_OFF").is_none()
         && t.source.as_deref() == Some("alt_splice_rescue")
     {
         return true;
@@ -4151,7 +4152,7 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
 /// explosion on long heavily-spliced transcripts.
 ///
 /// Conservative parameters (via env):
-/// - RUSTLE_ALT_SPLICE_MIN_SUPPORT (default 3): min nreads_good for alt junction
+/// - RUSTLE_ALT_SPLICE_MIN_SUPPORT (default 2): min nreads_good for alt junction
 /// - RUSTLE_ALT_SPLICE_MIN_RATIO (default 0.70): alt.nreads_good / main.nreads_good
 /// - RUSTLE_ALT_SPLICE_WINDOW (default 25): max bp between main and alt junction endpoint
 /// - RUSTLE_ALT_SPLICE_DEPTH (default 1): cascading iterations
@@ -4167,12 +4168,11 @@ pub fn alt_donor_acceptor_rescue(
     if transcripts.is_empty() {
         return transcripts;
     }
-    // Defaults chosen by tuning on GGO_19 (long-read): ratio=0.70, window=25.
-    // With these parameters, Sn 90.0→90.8 and +15 matching chains with no
-    // Pr regression (85.4 unchanged). Looser settings (ratio<0.5) give more
-    // rescues but cost 1-2 Pr points.
+    // Defaults: ratio=0.70, window=25. min_support=2 (re-tuned 2026-04-26
+    // post Layer-4: 3→2 gives +1 match, no Pr loss).
+    // Looser settings (ratio<0.5) give more rescues but cost 1-2 Pr points.
     let min_support: f64 = std::env::var("RUSTLE_ALT_SPLICE_MIN_SUPPORT")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(3.0);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
     let min_ratio: f64 = std::env::var("RUSTLE_ALT_SPLICE_MIN_RATIO")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.70);
     let window: u64 = std::env::var("RUSTLE_ALT_SPLICE_WINDOW")
