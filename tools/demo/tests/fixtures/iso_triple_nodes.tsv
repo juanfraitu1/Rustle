@@ -1,0 +1,13 @@
+source	chrom	bdstart	bdend	strand	node_idx	start	end	cov	hardstart	hardend	nchildren	nparents
+rustle	copy1	0	1100	+	0	100	200	10	1	0	1	0
+rustle	copy1	0	1100	+	1	400	500	11	0	0	2	1
+rustle	copy1	0	1100	+	2	700	800	9	0	0	1	1
+rustle	copy1	0	1100	+	3	1000	1100	12	0	1	0	2
+rustle	copy2	0	1100	+	0	100	200	10	1	0	1	0
+rustle	copy2	0	1100	+	1	400	500	11	0	0	2	1
+rustle	copy2	0	1100	+	2	700	800	9	0	0	1	1
+rustle	copy2	0	1100	+	3	1000	1100	12	0	1	0	2
+rustle	copy3	0	1100	+	0	100	200	10	1	0	1	0
+rustle	copy3	0	1100	+	1	400	500	11	0	0	2	1
+rustle	copy3	0	1100	+	2	700	800	9	0	0	1	1
+rustle	copy3	0	1100	+	3	1000	1100	12	0	1	0	2
