@@ -47,25 +47,24 @@ thread_local! {
 }
 
 /// Set the active bundle context for the current thread. Returns the previous
-/// context so the caller can restore it (intended use is via `BundleCtxGuard`).
-pub fn set_bundle_context(
+/// context so the caller can restore it. Private so callers must use
+/// `BundleCtxGuard`, which guarantees panic-safe restore.
+fn set_bundle_context(
     bundle_chrom: &str,
     bundle_strand: char,
     bundle_id: &str,
 ) -> Option<(String, char, String)> {
     BUNDLE_CTX.with(|cell| {
-        let prev = cell.borrow_mut().take();
-        *cell.borrow_mut() = Some((
+        cell.borrow_mut().replace((
             bundle_chrom.to_string(),
             bundle_strand,
             bundle_id.to_string(),
-        ));
-        prev
+        ))
     })
 }
 
-/// Clear or restore the bundle context for the current thread.
-pub fn clear_bundle_context(prev: Option<(String, char, String)>) {
+/// Restore (or clear) the bundle context for the current thread.
+fn clear_bundle_context(prev: Option<(String, char, String)>) {
     BUNDLE_CTX.with(|cell| {
         *cell.borrow_mut() = prev;
     });
