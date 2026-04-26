@@ -69,3 +69,7 @@ panic = "unwind"
 [[bin]]
 name = "rustle"
 path = "src/rustle/main.rs"
+
+[[test]]
+name = "test_parity_graph_edges_dump"
+path = "tests/regression/test_parity_graph_edges_dump.rs"

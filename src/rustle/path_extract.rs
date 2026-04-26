@@ -5433,6 +5433,7 @@ pub fn extract_transcripts(
                 }
             }
         }
+        crate::parity_graph_edges_dump::emit(graph, bundle_chrom, bundle_strand, bundle_id);
         if let Ok(tp) = std::env::var("RUSTLE_PARITY_TF_TSV") {
             if !tp.is_empty() {
                 use std::io::Write;
