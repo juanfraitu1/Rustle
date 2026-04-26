@@ -11601,10 +11601,23 @@ pub fn run<P: AsRef<Path>>(
                 color_good.insert(*rj);
                 color_killed.remove(rj);
             }
+            // Layer-4 structural alignment with cached_sub_bundles (which is the
+            // partition signature emitted to PARITY_PARTITION_TSV and matches
+            // StringTie's CBundle granularity). The `junction_stats` arg
+            // changes `color_should_break_left` semantics inside build_sub_bundles:
+            //   - None: break color on any non-good_junction (legacy behavior; matches
+            //     ST's per-read juncs[i-1]->strand=0 break in rlink.cpp:1962-1979).
+            //   - Some: break only on stats.strand==Some(0) (modern, more permissive,
+            //     produces ~3× FEWER sub-bundles → 12 instead of 35 for target bundle
+            //     111204404-111650231).
+            // For Layer-4 parity with ST and partition_dump, pass None.
+            // Set RUSTLE_SUBBUNDLE_USE_STATS=1 to restore prior behavior.
+            let use_stats_for_subbundle = std::env::var_os("RUSTLE_SUBBUNDLE_USE_STATS").is_some();
             let raw_subbundles =
                 build_sub_bundles(
                     &effective_reads, &config, &color_good, &color_killed,
-                    Some(&bpcov_stranded), Some(&junction_stats_corr_final),
+                    if use_stats_for_subbundle { Some(&bpcov_stranded) } else { None },
+                    if use_stats_for_subbundle { Some(&junction_stats_corr_final) } else { None },
                     bundle.start,
                 )?;
 
