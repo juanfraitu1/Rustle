@@ -1200,10 +1200,12 @@ fn split_read_segments(
         // produces two separate transfrags).
         // Gate: enable with RUSTLE_EXON_SKIP_SPLIT=1 (default off — current implementation
         // fires too broadly and regresses matches).
-        // Default-on: disable via RUSTLE_EXON_SKIP_SPLIT_OFF=1.
+        // Re-measured 2026-04-26 post Layer-4 fix: default-on COSTS 2 matches
+        // (1684→1686 with OFF=1). Default flipped to OFF; opt-in via
+        // RUSTLE_EXON_SKIP_SPLIT=1 to restore prior behavior.
         if !split_here
             && prev_node.end < curr_node.start
-            && std::env::var_os("RUSTLE_EXON_SKIP_SPLIT_OFF").is_none()
+            && std::env::var_os("RUSTLE_EXON_SKIP_SPLIT").is_some()
         {
             // StringTie-style intergenic split signature:
             // 1. The node BEFORE the gap (prev_node) has sink as a child (covlink-added)
