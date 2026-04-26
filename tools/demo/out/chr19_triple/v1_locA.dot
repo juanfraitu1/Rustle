@@ -1,0 +1,25 @@
+digraph G {
+  rankdir=LR;
+  node [fontname="Helvetica" fontsize=10];
+  edge [fontname="Helvetica" fontsize=9];
+  labelloc="t"; label="LOC115931294"; fontsize=14;
+  n1 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#1\n[104773937-104776227]\ncov=15309.0"];
+  n2 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#2\n[104779072-104781499]\ncov=2427.0"];
+  n3 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#3\n[104781499-104781595]\ncov=864.0"];
+  n4 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#4\n[104781734-104781928]\ncov=1940.0"];
+  n5 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#5\n[104785765-104788158]\ncov=8483.0"];
+  n6 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#6\n[104788158-104788681]\ncov=523.0"];
+  n7 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#7\n[104799143-104799293]\ncov=340.0"];
+  n8 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#8\n[104799293-104799428]\ncov=2430.0"];
+  n9 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#9\n[104804729-104804832]\ncov=1957.0"];
+  n10 [shape=box style="rounded,filled" fillcolor="#E8F1F8" label="#10\n[104805657-104805833]\ncov=2106.0"];
+  n1 -> n3 [color="#C0504D" label="junction\nbn=864.0" penwidth=5.0];
+  n2 -> n3 [color="#C0504D" label="junction\nbn=864.0" penwidth=5.0];
+  n3 -> n4 [color="#C0504D" label="junction\nbn=864.0" penwidth=5.0];
+  n4 -> n8 [color="#C0504D" label="junction\nbn=1940.0" penwidth=5.0];
+  n5 -> n6 [color="#C0504D" label="junction\nbn=523.0" penwidth=5.0];
+  n5 -> n8 [color="#C0504D" label="junction\nbn=2430.0" penwidth=5.0];
+  n7 -> n8 [color="#C0504D" label="junction\nbn=340.0" penwidth=5.0];
+  n8 -> n9 [color="#C0504D" label="junction\nbn=1957.0" penwidth=5.0];
+  n9 -> n10 [color="#C0504D" label="junction\nbn=1957.0" penwidth=5.0];
+}

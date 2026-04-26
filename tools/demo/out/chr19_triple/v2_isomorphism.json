@@ -1,0 +1,151 @@
+{
+  "isomorphic": false,
+  "pairwise": {
+    "1\u21942": {
+      "isomorphic": false,
+      "diff": {
+        "node_counts": [
+          10,
+          9
+        ],
+        "edge_counts": [
+          9,
+          8
+        ],
+        "edge_kind_counts": [
+          {
+            "junction": 9
+          },
+          {
+            "junction": 8
+          }
+        ]
+      }
+    },
+    "1\u21943": {
+      "isomorphic": false,
+      "diff": {
+        "node_counts": [
+          10,
+          4
+        ],
+        "edge_counts": [
+          9,
+          3
+        ],
+        "edge_kind_counts": [
+          {
+            "junction": 9
+          },
+          {
+            "junction": 3
+          }
+        ]
+      }
+    },
+    "2\u21943": {
+      "isomorphic": false,
+      "diff": {
+        "node_counts": [
+          9,
+          4
+        ],
+        "edge_counts": [
+          8,
+          3
+        ],
+        "edge_kind_counts": [
+          {
+            "junction": 8
+          },
+          {
+            "junction": 3
+          }
+        ]
+      }
+    }
+  },
+  "bijection": {},
+  "graph_summary": [
+    {
+      "locus": "NC_073243.2:104789647-104796276",
+      "n_nodes": 10,
+      "n_edges": 9,
+      "edge_kinds": {
+        "junction": 9
+      }
+    },
+    {
+      "locus": "NC_073243.2:104830536-104837094",
+      "n_nodes": 9,
+      "n_edges": 8,
+      "edge_kinds": {
+        "junction": 8
+      }
+    },
+    {
+      "locus": "NC_073243.2:104871356-104877901",
+      "n_nodes": 4,
+      "n_edges": 3,
+      "edge_kinds": {
+        "junction": 3
+      }
+    }
+  ],
+  "diff": {
+    "1\u21942": {
+      "node_counts": [
+        10,
+        9
+      ],
+      "edge_counts": [
+        9,
+        8
+      ],
+      "edge_kind_counts": [
+        {
+          "junction": 9
+        },
+        {
+          "junction": 8
+        }
+      ]
+    },
+    "1\u21943": {
+      "node_counts": [
+        10,
+        4
+      ],
+      "edge_counts": [
+        9,
+        3
+      ],
+      "edge_kind_counts": [
+        {
+          "junction": 9
+        },
+        {
+          "junction": 3
+        }
+      ]
+    },
+    "2\u21943": {
+      "node_counts": [
+        9,
+        4
+      ],
+      "edge_counts": [
+        8,
+        3
+      ],
+      "edge_kind_counts": [
+        {
+          "junction": 8
+        },
+        {
+          "junction": 3
+        }
+      ]
+    }
+  }
+}
