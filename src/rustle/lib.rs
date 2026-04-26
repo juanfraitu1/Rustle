@@ -71,6 +71,7 @@ pub mod parity_shadow; // layer-by-layer shadow parity logging
 pub mod parity_partition_dump; // canonical partition geometry TSV (StringTie vs Rustle)
 pub mod parity_junction_dump; // multi-stage junction-set TSV for parity vs StringTie
 pub mod parity_graph_edges_dump; // splice-graph edges TSV (env-gated, complements GRAPH_TSV)
+pub mod parity_flow_iter_dump; // per-iteration max-flow augmenting-path TSV (env-gated)
 pub mod parity_trace_dump; // cgroup + graph topology + optional read-exon trace TSV
 
 // ── Stage 9: Orchestration ────────────────────────────────────────────────────

@@ -1240,6 +1240,9 @@ fn long_max_flow_direct(
     let mut flux = 0.0f64;
     let mut bfs_iters = 0usize;
     let debug_flow = std::env::var_os("RUSTLE_DEBUG_FLOW").is_some();
+    let __flow_run_id = crate::parity_flow_iter_dump::next_run_id();
+    let mut __flow_iter: usize = 0;
+    let mut __flow_total: f64 = 0.0;
     while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, false) {
         bfs_iters += 1;
         let mut increment = max_fl;
@@ -1279,6 +1282,28 @@ fn long_max_flow_direct(
         }
         if increment < EPSILON {
             break;
+        }
+
+        // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
+        {
+            let mut __path: Vec<usize> = Vec::new();
+            let mut __tu = n - 1;
+            __path.push(__tu);
+            while pred[__tu] >= 0 {
+                let __ppu = pred[__tu] as usize;
+                __path.push(__ppu);
+                __tu = __ppu;
+            }
+            __path.reverse();
+            __flow_iter += 1;
+            __flow_total += increment;
+            crate::parity_flow_iter_dump::emit(
+                __flow_run_id,
+                __flow_iter,
+                &__path,
+                increment,
+                __flow_total,
+            );
         }
 
         if std::env::var_os("RUSTLE_FLOW_DETAIL").is_some() {
@@ -1330,6 +1355,9 @@ fn long_max_flow_direct(
             }
         }
         flux = 0.0;
+        let __flow_run_id_retry = crate::parity_flow_iter_dump::next_run_id();
+        let mut __flow_iter_retry: usize = 0;
+        let mut __flow_total_retry: f64 = 0.0;
         while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, false) {
             let mut increment = max_fl;
             let mut rate = vec![1.0f64; n];
@@ -1366,6 +1394,29 @@ fn long_max_flow_direct(
             if increment < EPSILON {
                 break;
             }
+
+            // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
+            {
+                let mut __path: Vec<usize> = Vec::new();
+                let mut __tu = n - 1;
+                __path.push(__tu);
+                while pred[__tu] >= 0 {
+                    let __ppu = pred[__tu] as usize;
+                    __path.push(__ppu);
+                    __tu = __ppu;
+                }
+                __path.reverse();
+                __flow_iter_retry += 1;
+                __flow_total_retry += increment;
+                crate::parity_flow_iter_dump::emit(
+                    __flow_run_id_retry,
+                    __flow_iter_retry,
+                    &__path,
+                    increment,
+                    __flow_total_retry,
+                );
+            }
+
             r = 0;
             u = n - 1;
             while pred[u] >= 0 {
@@ -2061,6 +2112,9 @@ pub fn edmonds_karp(
     {
         eprintln!("LOOP_max_flow: entering bfs loop n={}", n);
     }
+    let __flow_run_id_ek = crate::parity_flow_iter_dump::next_run_id();
+    let mut __flow_iter_ek: usize = 0;
+    let mut __flow_total_ek: f64 = 0.0;
     while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, weighted_node_cap) {
         let mut increment = if long_only { max_fl } else { 1e30_f64 };
         let mut r = 1usize;
@@ -2098,6 +2152,29 @@ pub fn edmonds_karp(
         if increment < EPSILON {
             break;
         }
+
+        // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
+        {
+            let mut __path: Vec<usize> = Vec::new();
+            let mut __tu = n - 1;
+            __path.push(__tu);
+            while pred[__tu] >= 0 {
+                let __ppu = pred[__tu] as usize;
+                __path.push(__ppu);
+                __tu = __ppu;
+            }
+            __path.reverse();
+            __flow_iter_ek += 1;
+            __flow_total_ek += increment;
+            crate::parity_flow_iter_dump::emit(
+                __flow_run_id_ek,
+                __flow_iter_ek,
+                &__path,
+                increment,
+                __flow_total_ek,
+            );
+        }
+
         r = 0;
         u = n - 1;
         while pred[u] >= 0 {
@@ -2135,6 +2212,9 @@ pub fn edmonds_karp(
             }
         }
         flux = 0.0;
+        let __flow_run_id_ek_retry = crate::parity_flow_iter_dump::next_run_id();
+        let mut __flow_iter_ek_retry: usize = 0;
+        let mut __flow_total_ek_retry: f64 = 0.0;
         while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, weighted_node_cap) {
             let mut increment = max_fl;
             let mut r = 1usize;
@@ -2172,6 +2252,29 @@ pub fn edmonds_karp(
             if increment < EPSILON {
                 break;
             }
+
+            // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
+            {
+                let mut __path: Vec<usize> = Vec::new();
+                let mut __tu = n - 1;
+                __path.push(__tu);
+                while pred[__tu] >= 0 {
+                    let __ppu = pred[__tu] as usize;
+                    __path.push(__ppu);
+                    __tu = __ppu;
+                }
+                __path.reverse();
+                __flow_iter_ek_retry += 1;
+                __flow_total_ek_retry += increment;
+                crate::parity_flow_iter_dump::emit(
+                    __flow_run_id_ek_retry,
+                    __flow_iter_ek_retry,
+                    &__path,
+                    increment,
+                    __flow_total_ek_retry,
+                );
+            }
+
             r = 0;
             u = n - 1;
             while pred[u] >= 0 {

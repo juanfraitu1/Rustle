@@ -5209,6 +5209,11 @@ pub fn extract_transcripts(
     let depletion_diag = std::env::var_os("RUSTLE_DEPLETION_DIAG").is_some();
     let plumb_debug = std::env::var_os("RUSTLE_PLUMB_DEBUG").is_some();
 
+    // Set thread-local bundle context for parity_flow_iter_dump (lives until end of fn).
+    let _flow_iter_ctx = crate::parity_flow_iter_dump::BundleCtxGuard::new(
+        bundle_chrom, bundle_strand, bundle_id,
+    );
+
     if std::env::var_os("RUSTLE_HARDEND_ENTRY_DIAG").is_some() {
         let mut n_he = 0usize;
         for (i, n) in graph.nodes.iter().enumerate() {
