@@ -5093,6 +5093,59 @@ pub fn print_predcluster_with_summary(
         (s, e, t.exons.len(), t.coverage.to_bits())
     };
     let emit_fate = |stage: &str, before: &[Transcript], after: &[Transcript]| {
+        // RUSTLE_PRED_FATE_AGGREGATE: emit per-tx kill records to a global TSV
+        // for filter-loss analysis (not gated by trace_locus). Each row:
+        // chrom, strand, start, end, n_exons, n_introns, coverage,
+        // intron_chain (donor-acceptor pairs), killed_by_stage.
+        if let Ok(path) = std::env::var("RUSTLE_PRED_FATE_AGGREGATE") {
+            if !path.is_empty() {
+                use std::io::Write;
+                use std::sync::{Mutex, OnceLock};
+                static WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+                static HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+                let wr = WR.get_or_init(|| {
+                    Mutex::new(
+                        std::fs::OpenOptions::new()
+                            .create(true).append(true).open(&path).ok(),
+                    )
+                });
+                let hdr = HDR.get_or_init(|| Mutex::new(false));
+                let after_keys: HashSet<(u64, u64, usize, u64)> =
+                    after.iter().map(|t| tx_key(t)).collect();
+                if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+                    if let Some(f) = f_opt.as_mut() {
+                        if !*hdr_w {
+                            let _ = writeln!(f, "chrom\tstrand\tstart\tend\tn_exons\tcoverage\tintron_chain\tkilled_by");
+                            *hdr_w = true;
+                        }
+                        for t in before {
+                            let k = tx_key(t);
+                            if !after_keys.contains(&k) {
+                                let s = t.exons.first().map(|e| e.0).unwrap_or(0);
+                                let e = t.exons.last().map(|e| e.1).unwrap_or(0);
+                                let mut chain = String::new();
+                                let exons_sorted: Vec<_> = {
+                                    let mut v = t.exons.clone();
+                                    v.sort_unstable_by_key(|x| x.0);
+                                    v
+                                };
+                                for w in exons_sorted.windows(2) {
+                                    if w[0].1 < w[1].0 {
+                                        if !chain.is_empty() { chain.push('|'); }
+                                        chain.push_str(&format!("{}-{}", w[0].1, w[1].0));
+                                    }
+                                }
+                                let _ = writeln!(f,
+                                    "{}\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
+                                    t.chrom, t.strand, s, e, t.exons.len(),
+                                    t.coverage, chain, stage,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if !fate_trace {
             return;
         }
