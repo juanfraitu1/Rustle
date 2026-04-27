@@ -10886,6 +10886,16 @@ pub fn run<P: AsRef<Path>>(
                     tf.pattern.grow(needed_psize);
                 }
 
+                // Stash parent-partition coords so RUSTLE_PATH_DECISION_TSV
+                // emits bstart/bend matching StringTie's PARITY_PATH_DECISION_TSV
+                // scope (parent partition, not per-CBundle/graph range).
+                // ST writes `bdata->{start,end} - 1` (1-based inclusive → 0-based
+                // inclusive). Rustle's Bundle.start/end are already 0-based with
+                // end inclusive at this layer (matches partition dump output).
+                crate::path_extract::set_parent_partition_for_dump(Some((
+                    bundle.start,
+                    bundle.end,
+                )));
                 let (
                     txs,
                     pre_filter_txs,
@@ -10907,6 +10917,7 @@ pub fn run<P: AsRef<Path>>(
                     &graph_bpcov_stranded,
                     trace_reference.is_some() || config.debug_stage_tsv.is_some(),
                 );
+                crate::path_extract::set_parent_partition_for_dump(None);
                 // BUNDLE_STATS per-bundle summary across all layers (RUSTLE_BUNDLE_STATS=1).
                 // Emits one line with: reads, junctions, nodes/edges, transfrags,
                 // seeds, outcome counts. Paired with StringTie PARITY_BUNDLE_STATS

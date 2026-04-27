@@ -102,6 +102,22 @@ fn path_extract_debug() -> bool {
     std::env::var_os("RUSTLE_PATH_EXTRACT_DEBUG").is_some()
 }
 
+thread_local! {
+    /// Parent-partition (top-level Bundle) coordinates for the path-decision
+    /// dump. Set by the caller before invoking extract_transcripts so the
+    /// dumper can emit `bstart/bend` matching StringTie's PARITY_PATH_DECISION_TSV
+    /// scope (parent partition, not per-CBundle).
+    static PARENT_PARTITION: std::cell::Cell<Option<(u64, u64)>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_parent_partition_for_dump(coords: Option<(u64, u64)>) {
+    PARENT_PARTITION.with(|c| c.set(coords));
+}
+
+fn parent_partition_for_dump() -> Option<(u64, u64)> {
+    PARENT_PARTITION.with(|c| c.get())
+}
+
 #[inline]
 fn loop_trace_active() -> bool {
     std::env::var_os("RUSTLE_LOOP_TRACE").is_some()
@@ -3272,12 +3288,23 @@ fn onpath_long(
             // Rustle's default adds a `!node_can_reach(maxp, trnode_last)` relaxation
             // that lets tfs past maxp pass if still reachable. In RUSTLE_STRINGTIE_EXACT
             // mode, match StringTie's strict behavior.
+            //
+            // RUSTLE_STUB_GATE_PASTMAXP=1 adds a complementary "stub gate":
+            // also reject if trnode_last itself cannot reach sink — those
+            // transfrags pollute pathpat with edges to dead-end stubs and
+            // make fwd_to_sink target an unreachable node (see RSTL.182.3
+            // diagnostic in bench/path_decision_diff/RSTL182_trace).
             let trnode_last = *trnode.last().unwrap();
             let trnode_last_start = graph.nodes.get(trnode_last).map(|n| n.start).unwrap_or(0);
             let maxp_start = graph.nodes.get(maxp).map(|n| n.start).unwrap_or(0);
             if trnode_last_start > maxp_start {
                 if crate::stringtie_parity::stringtie_exact()
                     || !node_can_reach(graph, maxp, trnode_last)
+                {
+                    return false;
+                }
+                if std::env::var_os("RUSTLE_STUB_GATE_PASTMAXP").is_some()
+                    && !node_can_reach(graph, trnode_last, sink)
                 {
                     return false;
                 }
@@ -4648,6 +4675,24 @@ fn back_to_source_fast_long(
                     let Some((first, last)) = first_last_raw(tf) else {
                         continue;
                     };
+                    if std::env::var_os("RUSTLE_BACK_SKIP_PAST_SEED_MAX").is_some() {
+                        if let Some(seed_tf) = transfrags.get(seed_idx) {
+                            if let Some(&seed_last) = seed_tf.node_ids.last() {
+                                let seed_last_start =
+                                    node_start_or_zero(graph, seed_last);
+                                let cand_last_start = node_start_or_zero(graph, last);
+                                if cand_last_start > seed_last_start {
+                                    if trace_seed_diagnostics(seed_idx) {
+                                        eprintln!(
+                                            "[BACK_TRACE seed={}]     skip trf={} reason=past_seed_max cand_last={} seed_last={}",
+                                            seed_idx, t, last, seed_last
+                                        );
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
                     if p == source {
                         // Only count source support when the transfrag ends exactly at `i`
                         // and `i` is at/left of the current minpath.
@@ -4940,6 +4985,27 @@ fn back_to_source_fast_long(
                 let Some((first, last)) = first_last_raw(tf) else {
                     continue;
                 };
+                // Mirror gate from the primary back loop (RUSTLE_BACK_SKIP_PAST_SEED_MAX=1):
+                // skip transfrags whose last node extends past the seed's true maxp.
+                // Without this the exclude-fallback selects a long-spanning chimeric tf
+                // (RSTL.182.3 case), polluting pathpat and bumping *maxpath to a stub.
+                if std::env::var_os("RUSTLE_BACK_SKIP_PAST_SEED_MAX").is_some() {
+                    if let Some(seed_tf) = transfrags.get(seed_idx) {
+                        if let Some(&seed_last) = seed_tf.node_ids.last() {
+                            let seed_last_start = node_start_or_zero(graph, seed_last);
+                            let cand_last_start = node_start_or_zero(graph, last);
+                            if cand_last_start > seed_last_start {
+                                if trace_seed_diagnostics(seed_idx) {
+                                    eprintln!(
+                                        "[BACK_TRACE seed={}]     exclude_fallback skip trf={} reason=past_seed_max cand_last={} seed_last={}",
+                                        seed_idx, t, last, seed_last
+                                    );
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                }
                 if first <= ep
                     && last >= i
                     && if require_longread {
@@ -5096,9 +5162,17 @@ fn back_to_source_fast_long(
                 *minpath = first;
             }
         }
-        if let Some(&last) = transfrags[t].node_ids.last() {
-            if node_start_or_zero(graph, last) > node_start_or_zero(graph, *maxpath) {
-                *maxpath = last;
+        // back_to_source extends backward; the chosen tmax transfrag may span
+        // far forward (covering bundle-tail stubs). Bumping *maxpath here
+        // forces fwd_to_sink to target a node the seed never reached, often
+        // an artificial stub with no path to sink. Opt-in to skip via
+        // RUSTLE_BACK_NO_MAXPATH_BUMP=1 (gated for measurement).
+        let skip_back_maxpath_bump = std::env::var_os("RUSTLE_BACK_NO_MAXPATH_BUMP").is_some();
+        if !skip_back_maxpath_bump {
+            if let Some(&last) = transfrags[t].node_ids.last() {
+                if node_start_or_zero(graph, last) > node_start_or_zero(graph, *maxpath) {
+                    *maxpath = last;
+                }
             }
         }
     }
@@ -8682,18 +8756,26 @@ pub fn extract_transcripts(
                             );
                             *hdr_w = true;
                         }
-                        // Parse bundle_id "chrom:bstart-bend"
-                        let (bs, be) = if let Some((_, rng)) = bundle_id.split_once(':') {
-                            if let Some((s, e)) = rng.split_once('-') {
-                                (
-                                    s.trim().parse::<u64>().unwrap_or(0),
-                                    e.trim().parse::<u64>().unwrap_or(0),
-                                )
+                        // Parent partition coords (matches StringTie's
+                        // PARITY_PATH_DECISION_TSV scope). Falls back to parsing
+                        // bundle_id (per-CBundle range) if the caller didn't set
+                        // a parent. The bundle_id range was emitted as half-open
+                        // (graph_end + 1), so subtract 1 in the fallback to match
+                        // StringTie's inclusive convention.
+                        let (bs, be) = match parent_partition_for_dump() {
+                            Some((ps, pe)) => (ps, pe),
+                            None => if let Some((_, rng)) = bundle_id.split_once(':') {
+                                if let Some((s, e)) = rng.split_once('-') {
+                                    (
+                                        s.trim().parse::<u64>().unwrap_or(0),
+                                        e.trim().parse::<u64>().unwrap_or(0).saturating_sub(1),
+                                    )
+                                } else {
+                                    (0, 0)
+                                }
                             } else {
                                 (0, 0)
-                            }
-                        } else {
-                            (0, 0)
+                            },
                         };
                         for (idx, outcome) in outcomes.iter() {
                             let tf = &transfrags[*idx];
