@@ -1414,7 +1414,16 @@ pub fn collect_path(
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
+    // Coverage-aware skip (RUSTLE_MICRO_NODE_TRIM_COV_RATIO=R, default 0.30):
+    // mirrors the gate in the per-graph exon construction near line 6871.
+    // Keeps real alt-splice donor micro nodes (high cov_per_bp ratio vs prev
+    // larger node) while still skipping low-cov longtrim artifacts.
+    let cov_ratio: f64 = std::env::var("RUSTLE_MICRO_NODE_TRIM_COV_RATIO")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.30);
     let mut prev_real_end: Option<u64> = None;
+    let mut prev_real_nid: Option<usize> = None;
     for (_i, &nid) in path.iter().enumerate() {
         if nid == source_id || nid == sink_id {
             continue;
@@ -1433,20 +1442,37 @@ pub fn collect_path(
             && !exons.is_empty()
             && prev_real_end.map_or(false, |pe| pe == node_start)
         {
-            // Contiguous micro-node tail: skip entirely. Last exon keeps prev_real_end.
-            // This mirrors StringTie's behavior of not preserving the 10bp extension.
-            continue;
+            // Coverage-aware keep: don't skip if this micro node carries strong
+            // alt-splice signal relative to its parent.
+            let micro_cov_per_bp = node.coverage / (node_width.max(1) as f64);
+            let prev_cov_per_bp = prev_real_nid
+                .and_then(|pn| graph.nodes.get(pn))
+                .map(|pn| {
+                    let w = pn.end.saturating_sub(pn.start).max(1) as f64;
+                    pn.coverage / w
+                })
+                .unwrap_or(0.0);
+            let keep_micro = cov_ratio > 0.0
+                && prev_cov_per_bp > 0.0
+                && micro_cov_per_bp >= cov_ratio * prev_cov_per_bp;
+            if !keep_micro {
+                // Contiguous micro-node tail: skip entirely. Last exon keeps prev_real_end.
+                // This mirrors StringTie's behavior of not preserving the 10bp extension.
+                continue;
+            }
         }
         if let Some(last) = exons.last() {
             if node_start <= last.1 {
                 let last = exons.last_mut().unwrap();
                 last.1 = last.1.max(node_end);
                 prev_real_end = Some(last.1);
+                prev_real_nid = Some(nid);
                 continue;
             }
         }
         exons.push((node_start, node_end));
         prev_real_end = Some(node_end);
+        prev_real_nid = Some(nid);
     }
     if exons.is_empty() {
         return exons;
@@ -8291,6 +8317,11 @@ pub fn extract_transcripts(
                             .ok()
                             .and_then(|s| s.parse().ok())
                             .unwrap_or(20);
+                        // Coverage-aware skip — same gate as the other two micro-trim sites.
+                        let cov_ratio: f64 = std::env::var("RUSTLE_MICRO_NODE_TRIM_COV_RATIO")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.30);
                         if j >= 1 && j < rescue_nodes.len() {
                             if let Some(last_n) = graph.nodes.get(rescue_nodes[j]) {
                                 let last_width = last_n.end.saturating_sub(last_n.start);
@@ -8300,8 +8331,23 @@ pub fn extract_transcripts(
                                 {
                                     if let Some(prev_n) = graph.nodes.get(rescue_nodes[j - 1]) {
                                         if prev_n.end == last_n.start {
-                                            // Contiguous micro-tail: snap exon end back.
-                                            end = prev_n.end;
+                                            // Coverage-aware keep: don't snap if the micro
+                                            // tail node carries strong alt-splice signal.
+                                            let micro_cpb = last_n.coverage
+                                                / (last_width.max(1) as f64);
+                                            let prev_w = prev_n
+                                                .end
+                                                .saturating_sub(prev_n.start)
+                                                .max(1)
+                                                as f64;
+                                            let prev_cpb = prev_n.coverage / prev_w;
+                                            let keep_micro = cov_ratio > 0.0
+                                                && prev_cpb > 0.0
+                                                && micro_cpb >= cov_ratio * prev_cpb;
+                                            if !keep_micro {
+                                                // Contiguous micro-tail: snap exon end back.
+                                                end = prev_n.end;
+                                            }
                                         }
                                     }
                                 }
