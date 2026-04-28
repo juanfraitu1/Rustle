@@ -4383,7 +4383,41 @@ fn fwd_to_sink_fast_long(
         // Gated by the same locus/seed filters as [TRACE_FWD] via `trace_fwd`.
         let trace_or = std::env::var_os("RUSTLE_PATHPAT_OR_TRACE").is_some() && trace_fwd;
         let bits_before = if trace_or { pathpat.count_ones() } else { 0 };
-        pathpat.or_assign(&transfrags[t].pattern);
+        // RUSTLE_FWD_PATHPAT_OR_MASK=1: only OR-in tmax's pattern bits for
+        // nodes at or before the chosen child `c`. Without the mask, the
+        // chosen tmax can pollute pathpat with edge bits FORWARD of `c` that
+        // confuse the next iteration's child-selection (e.g., the dominant
+        // 21→24 transfrag adds edge bit 21→24 even when current i is far
+        // upstream, making fwd_to_sink later prefer 21→24 over 21→22 even
+        // for seeds whose own pattern has 21→22→24). Diagnosed on STRG.225.
+        if std::env::var_os("RUSTLE_FWD_PATHPAT_OR_MASK").is_some() {
+            let c_end = graph.nodes.get(c).map(|n| n.end).unwrap_or(u64::MAX);
+            let tmax_pat = &transfrags[t].pattern;
+            let mut masked = GBitVec::new(graph.pattern_size());
+            for &nid in &transfrags[t].node_ids {
+                if let Some(node) = graph.nodes.get(nid) {
+                    if node.end <= c_end && tmax_pat.get_bit(nid) {
+                        masked.set_bit(nid);
+                    }
+                }
+            }
+            let nodes = &transfrags[t].node_ids;
+            for w in nodes.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let a_ok = graph.nodes.get(a).map_or(false, |n| n.end <= c_end);
+                let b_ok = graph.nodes.get(b).map_or(false, |n| n.end <= c_end);
+                if a_ok && b_ok {
+                    if let Some(eid) = graph.edge_bit_index(a, b) {
+                        if tmax_pat.get_bit(eid) {
+                            masked.set_bit(eid);
+                        }
+                    }
+                }
+            }
+            pathpat.or_assign(&masked);
+        } else {
+            pathpat.or_assign(&transfrags[t].pattern);
+        }
         if trace_or {
             let bits_after = pathpat.count_ones();
             let last_node = transfrags[t].node_ids.last().copied().unwrap_or(0);
@@ -5139,7 +5173,43 @@ fn back_to_source_fast_long(
         // `PATHPAT_OR seed=S t=N bits_before=X bits_after=Y new_bits=Z reason=back_tmax`
         let trace_or = std::env::var_os("RUSTLE_PATHPAT_OR_TRACE").is_some() && trace_back;
         let bits_before = if trace_or { pathpat.count_ones() } else { 0 };
-        pathpat.or_assign(&transfrags[t].pattern);
+        // RUSTLE_BACK_PATHPAT_OR_MASK=1: only OR-in tmax's pattern bits for
+        // nodes BEFORE the current back-walk position `i`. Without the mask,
+        // the chosen tmax may set edge bits forward of `i` (e.g., 21→24 when
+        // the seed transfrag wanted 21→22→24), polluting fwd_to_sink's
+        // edge-bit fast-path so it picks the wrong child. Diagnosed on
+        // STRG.225 alt-splice (see project_missed_tx_breakdown).
+        if std::env::var_os("RUSTLE_BACK_PATHPAT_OR_MASK").is_some() {
+            let i_start = graph.nodes.get(i).map(|n| n.start).unwrap_or(u64::MAX);
+            // Build a masked pattern: copy tmax's bits only for nodes whose
+            // coord is strictly less than i_start, plus the edges among them.
+            let tmax_pat = &transfrags[t].pattern;
+            let mut masked = GBitVec::new(graph.pattern_size());
+            for &nid in &transfrags[t].node_ids {
+                if let Some(node) = graph.nodes.get(nid) {
+                    if node.start < i_start && tmax_pat.get_bit(nid) {
+                        masked.set_bit(nid);
+                    }
+                }
+            }
+            // Also OR-in edge bits for adjacent pairs both below i_start.
+            let nodes = &transfrags[t].node_ids;
+            for w in nodes.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                let a_ok = graph.nodes.get(a).map_or(false, |n| n.start < i_start);
+                let b_ok = graph.nodes.get(b).map_or(false, |n| n.start < i_start);
+                if a_ok && b_ok {
+                    if let Some(eid) = graph.edge_bit_index(a, b) {
+                        if tmax_pat.get_bit(eid) {
+                            masked.set_bit(eid);
+                        }
+                    }
+                }
+            }
+            pathpat.or_assign(&masked);
+        } else {
+            pathpat.or_assign(&transfrags[t].pattern);
+        }
         if trace_or {
             let bits_after = pathpat.count_ones();
             let first_node = transfrags[t].node_ids.first().copied().unwrap_or(0);
