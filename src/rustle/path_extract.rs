@@ -5978,7 +5978,18 @@ pub fn extract_transcripts(
         // depletion — this is the #1 precision/sensitivity fix, recovering ~500 TPs.
         // Set RUSTLE_SINGLE_NODE_LR_OFF=1 to disable this skip for audit purposes.
         let single_node_lr_skip = std::env::var_os("RUSTLE_SINGLE_NODE_LR_OFF").is_none();
-        if single_node_lr_skip && long_read_mode && real_nodes.len() == 1 && !transfrags[idx].guide {
+        // RUSTLE_SINGLE_EXON_MIN_READS=N: when set, allow single-node LR seeds with
+        // abundance ≥ N to bypass the early-skip and reach path extension. The later
+        // single-exon emission gate at the bottom of this function applies the same
+        // threshold to the resulting transcript. Targets recovery of high-confidence
+        // single-exon refs (GGO_19 has 25 such, most with longcov ≥ 5).
+        let single_exon_min: f64 = std::env::var("RUSTLE_SINGLE_EXON_MIN_READS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
+        if single_node_lr_skip && long_read_mode && real_nodes.len() == 1 && !transfrags[idx].guide
+            && (single_exon_min <= 0.0 || transfrags[idx].abundance < single_exon_min)
+        {
             transfrags[idx].abundance = 0.0;
             record_outcome!(idx, SeedOutcome::Skipped("single_node_lr"));
             continue;
@@ -6974,11 +6985,23 @@ pub fn extract_transcripts(
             continue;
         }
         if long_read_mode && exons.len() == 1 && !transfrags[idx].guide {
-            // Single-exon non-guide prediction: skip in LR mode (like 
-            // These deplete flow budget without contributing to multi-exon assembly.
-            transfrags[idx].abundance = 0.0;
-            record_outcome!(idx, SeedOutcome::Skipped("single_exon_lr"));
-            continue;
+            // Single-exon non-guide prediction: skip in LR mode by default
+            // ("removes ~2376 FPs at no Sn cost" per comment in apply_compat_preset).
+            //
+            // RUSTLE_SINGLE_EXON_MIN_READS=N (default 0 = always skip): when set,
+            // ALLOW the single-exon prediction through if transfrag abundance
+            // (= supporting long-read count for single-node seeds) ≥ N.
+            // Targets the 25 single-exon refs in GGO_19 (most have longcov ≥ 5).
+            let single_exon_min: f64 = std::env::var("RUSTLE_SINGLE_EXON_MIN_READS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.0);
+            if single_exon_min <= 0.0 || transfrags[idx].abundance < single_exon_min {
+                transfrags[idx].abundance = 0.0;
+                record_outcome!(idx, SeedOutcome::Skipped("single_exon_lr"));
+                continue;
+            }
+            // Otherwise fall through and emit the single-exon transcript.
         }
 
         let mut source_ext_start: Option<u64> = None;

@@ -3760,10 +3760,26 @@ pub fn collapse_single_exon_runoff(
             }
         }
 
-        // coverage comparison uses per-base coverage
-        let tx_len = txs[i].exons.iter().map(|(s, e)| e - s).sum::<u64>().max(1) as f64;
-        let cov_per_base = txs[i].coverage / tx_len;
-        if !did_stitch && !is_guide_tx(&txs[i]) && cov_per_base < singlethr {
+        // Note: txs[i].coverage is ALREADY per-base average (reads/bp depth).
+        // The historical code divided by tx_len again, producing reads/bp² —
+        // a numerically wrong threshold that effectively suppressed virtually
+        // all non-guide single-exon emission (since it always failed
+        // <singlethr). This may have been load-bearing: when corrected to
+        // `coverage < singlethr`, on GGO_19 it admits 7 single-exon tx of
+        // which 0 match the reference (pure FP load, -0.3 pp Pr).
+        //
+        // Gate the corrected math behind RUSTLE_SINGLE_EXON_COV_FIX=1 so
+        // future workflows can opt in once a complementary structural filter
+        // (e.g., suppress single-exon when overlapping a multi-exon tx) is in
+        // place. Default = original (broken-but-effective) behavior.
+        let use_correct_cov = std::env::var_os("RUSTLE_SINGLE_EXON_COV_FIX").is_some();
+        let cov_value = if use_correct_cov {
+            txs[i].coverage
+        } else {
+            let tx_len = txs[i].exons.iter().map(|(s, e)| e - s).sum::<u64>().max(1) as f64;
+            txs[i].coverage / tx_len
+        };
+        if !did_stitch && !is_guide_tx(&txs[i]) && cov_value < singlethr {
             dead.insert_grow(i);
             dropped += 1;
         }
