@@ -6872,20 +6872,43 @@ pub fn extract_transcripts(
                 && last_merged_start > nodestart
                 && last_merged_end.saturating_sub(last_merged_start) < micro_cap
             {
+                // Coverage-aware skip (RUSTLE_MICRO_NODE_TRIM_COV_RATIO=R, default 0.30):
+                // do NOT trim a micro tail node if its per-bp coverage is at least
+                // R * the per-bp coverage of the prior larger node. Real alt-splice
+                // donors (e.g. STRG.225 node 22 at 12bp) carry strong read evidence;
+                // alignment-artifact tail nodes from longtrim splits are sparse.
+                // A ratio of 0.30 keeps the alt-splice signal (cov_per_bp_ratio ~0.7)
+                // while still trimming the noisy tail nodes from longtrim.
+                // Set to 0.0 to restore the unconditional trim behavior.
+                let cov_ratio: f64 = std::env::var("RUSTLE_MICRO_NODE_TRIM_COV_RATIO")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0.30);
                 let mut scan = j;
                 let mut rewind_to: Option<u64> = None;
+                let mut prev_cov_per_bp: f64 = 0.0;
                 while scan > use_start {
                     scan -= 1;
                     if let Some(n) = graph.nodes.get(use_path[scan]) {
                         let w = n.end.saturating_sub(n.start);
                         if w >= micro_cap {
                             rewind_to = Some(n.end);
+                            prev_cov_per_bp = n.coverage / (w.max(1) as f64);
                             break;
                         }
                     }
                 }
                 if let Some(te) = rewind_to {
-                    if te > nodestart {
+                    let micro_node_cov_per_bp = if let Some(n) =
+                        graph.nodes.get(use_path[j])
+                    {
+                        let w = n.end.saturating_sub(n.start);
+                        n.coverage / (w.max(1) as f64)
+                    } else { 0.0 };
+                    let keep_micro = cov_ratio > 0.0
+                        && prev_cov_per_bp > 0.0
+                        && micro_node_cov_per_bp >= cov_ratio * prev_cov_per_bp;
+                    if !keep_micro && te > nodestart {
                         nodeend = te;
                     }
                 }
