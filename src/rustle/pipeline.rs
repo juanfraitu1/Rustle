@@ -5740,6 +5740,40 @@ fn extract_bundle_transcripts_for_graph(
     // Capture pre-filter transcripts for trace analysis before any predcluster filtering.
     let pre_filter = if trace_mode { Some(txs.clone()) } else { None };
 
+    // Optional reorder: kill chimeric / junction-unsupported chains BEFORE the
+    // pairwise included_drop runs. Default order leaves them alive long enough
+    // to nuke shorter, well-supported isoforms (e.g., STRG.356.1: a 6-exon
+    // chimera with longcov=1 ate the 3-exon ref-matching path during pairwise
+    // then died itself in filter_by_full_chain_witness → 0 output for that locus).
+    // Opt-in via RUSTLE_JUNC_FILTER_PRE_PREDCLUSTER=1.
+    if std::env::var_os("RUSTLE_JUNC_FILTER_PRE_PREDCLUSTER").is_some() {
+        let before_pre = txs.len();
+        txs = filter_unsupported_junctions(
+            txs,
+            good_junctions,
+            config.junction_correction_window,
+            config.verbose,
+        );
+        // Also run the read-chain witness filter (the actual STRG.356.1 killer):
+        // a chimeric chain whose K-intron windows aren't witnessed by any read
+        // dies here instead of nuking shorter siblings in pairwise.
+        if config.long_reads
+            && std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_OFF").is_none()
+        {
+            let read_chains = crate::transcript_filter::build_read_intron_chains(&bundle.reads);
+            txs = crate::transcript_filter::filter_by_full_chain_witness(
+                txs, &read_chains, config.junction_correction_window, config.verbose,
+            );
+        }
+        if config.verbose && txs.len() < before_pre {
+            eprintln!(
+                "    junction+witness filters (pre-pairwise): kept {}/{}",
+                txs.len(), before_pre
+            );
+        }
+        trace_stage("filter_unsupported_junctions_pre", &txs);
+    }
+
     // Canonical post-extraction ordering mirroring print_predcluster flow.
     let (predcluster_txs, predcluster_summary) =
         print_predcluster_with_summary(txs, config, Some(bpcov), traced_ref);
