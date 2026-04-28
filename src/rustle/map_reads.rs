@@ -292,14 +292,39 @@ fn collect_read_nodes_exact(
             }
         }
         let mut intersect = false;
+        // RUSTLE_TRACE_NODE_MAP=<nid>:<nid>:... — emit per-read mapping
+        // diagnostics for the named node ids. Used to debug why specific
+        // reads skip a node they should have mapped to (e.g., alt-splice
+        // donor/acceptor where node was created but reads route around it).
+        let trace_node = std::env::var("RUSTLE_TRACE_NODE_MAP")
+            .ok()
+            .map(|v| v.split(':').filter_map(|s| s.parse::<usize>().ok())
+                 .collect::<std::collections::HashSet<_>>());
+        let trace_this_node = trace_node
+            .as_ref()
+            .map_or(false, |s| s.contains(&nid));
+        let saved_exon_idx = exon_idx;
         while exon_idx < read.exons.len() {
             let (seg_start, seg_end) = read.exons[exon_idx];
             if seg_end <= node.start {
+                if trace_this_node {
+                    eprintln!(
+                        "[TRACE_NODE_MAP] node={} ({}-{}) read=? exon[{}]=({},{}) → seg_end<=node.start, advance",
+                        nid, node.start, node.end, exon_idx, seg_start, seg_end
+                    );
+                }
                 exon_idx += 1;
                 continue;
             }
 
             let bp = overlap_len_half_open(seg_start, seg_end, node.start, node.end);
+            if trace_this_node {
+                eprintln!(
+                    "[TRACE_NODE_MAP] node={} ({}-{}) read_ref_start={} exon[{}]=({},{}) bp_overlap={}",
+                    nid, node.start, node.end, read.ref_start,
+                    exon_idx, seg_start, seg_end, bp
+                );
+            }
             if bp > 0 {
                 intersect = true;
                 if add_coverage && !read.unitig {
@@ -314,6 +339,7 @@ fn collect_read_nodes_exact(
                 break;
             }
         }
+        let _ = saved_exon_idx;
 
         if !intersect || path.last() == Some(&nid) {
             continue;
@@ -1027,6 +1053,24 @@ fn split_read_segments(
     killed_junction_pairs: Option<&HashSet<Junction>>,
     read_idx: Option<usize>,
 ) -> Vec<ReadPathSegment> {
+    // RUSTLE_TRACE_NODE_MAP echoes the unique_nodes input at function entry
+    // so we can compare what collect_read_nodes_exact produced vs what
+    // segments end up with after splits. If a target node is missing from
+    // unique_nodes, the bug is upstream (collect_read_nodes_exact). If it
+    // is present here but missing from the emitted segments, the bug is
+    // in the split logic below.
+    if let Ok(trace_node_str) = std::env::var("RUSTLE_TRACE_NODE_MAP") {
+        let trace_set: std::collections::HashSet<usize> = trace_node_str
+            .split(':')
+            .filter_map(|s| s.parse::<usize>().ok())
+            .collect();
+        if !trace_set.is_empty() && unique_nodes.iter().any(|n| trace_set.contains(n)) {
+            eprintln!(
+                "[TRACE_NODE_MAP] split_entry read_ref_start={} unique_nodes={:?}",
+                read.ref_start, unique_nodes
+            );
+        }
+    }
     if unique_nodes.is_empty() {
         return Vec::new();
     }
@@ -1282,6 +1326,23 @@ fn split_read_segments(
         });
     }
 
+    // RUSTLE_TRACE_NODE_MAP exit-trace: dump the final segments alongside the
+    // input unique_nodes so we can spot where target nodes are stripped.
+    if let Ok(trace_node_str) = std::env::var("RUSTLE_TRACE_NODE_MAP") {
+        let trace_set: std::collections::HashSet<usize> = trace_node_str
+            .split(':')
+            .filter_map(|s| s.parse::<usize>().ok())
+            .collect();
+        if !trace_set.is_empty() && unique_nodes.iter().any(|n| trace_set.contains(n)) {
+            for (si, seg) in segments.iter().enumerate() {
+                eprintln!(
+                    "[TRACE_NODE_MAP] split_exit read_ref_start={} seg={} path={:?} orphan={}",
+                    read.ref_start, si, seg.path, seg.orphan
+                );
+            }
+        }
+    }
+
     segments
 }
 
@@ -1309,8 +1370,32 @@ fn add_or_update_transfrag(
     let ua_trace = update_abund_trace_active();
     let mut key = path.to_vec();
     let raw_key = key.clone();
+    // RUSTLE_TRACE_NODE_MAP entry trace for add_or_update_transfrag — dump
+    // the path for any transfrag mentioning a target node, before any trim.
+    if let Ok(s) = std::env::var("RUSTLE_TRACE_NODE_MAP") {
+        let set: std::collections::HashSet<usize> =
+            s.split(':').filter_map(|x| x.parse::<usize>().ok()).collect();
+        if !set.is_empty() && key.iter().any(|n| set.contains(n)) {
+            eprintln!(
+                "[TRACE_NODE_MAP] add_or_update_entry weight={:.2} ref={}-{} key={:?}",
+                weight, ref_start, ref_end, key
+            );
+        }
+    }
     if is_long && std::env::var_os("RUSTLE_DISABLE_LR_PATH_TRIM").is_none() {
         trim_longread_path_for_update_abundance(graph, &mut key, ref_start, ref_end);
+        if let Ok(s) = std::env::var("RUSTLE_TRACE_NODE_MAP") {
+            let set: std::collections::HashSet<usize> =
+                s.split(':').filter_map(|x| x.parse::<usize>().ok()).collect();
+            if !set.is_empty() && (raw_key.iter().any(|n| set.contains(n)) || key.iter().any(|n| set.contains(n))) {
+                if raw_key != key {
+                    eprintln!(
+                        "[TRACE_NODE_MAP] add_or_update_after_trim raw_key={:?} key_after_trim={:?}",
+                        raw_key, key
+                    );
+                }
+            }
+        }
     } else if key.len() == 1 {
         // update_abundance: skip single-node non-long transfrags.
         if ua_trace {
