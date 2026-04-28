@@ -434,23 +434,53 @@ pub fn filter_per_splice_site_isofrac(
         return Default::default();
     }
     let threshold = isofrac_percent / 100.0;
+    // RUSTLE_PSI_ABS_FLOOR (default 0 = off): junctions with mrcount >= floor
+    // are exempt from the per-splice-site isofrac kill. Lets us tighten the
+    // ratio (e.g., to 5%) to suppress very-weak alt-junctions in dense loci
+    // (STRG.309: 5 alt-donors with 2-29 reads at one acceptor) WITHOUT
+    // killing real isoforms whose alts have substantial absolute support.
+    // RUSTLE_PSI_ALSO_BY_ACCEPTOR=1: aggregate by acceptor in addition to
+    // donor (default off); per-acceptor catches the STRG.309 pattern where
+    // multiple alt-donors share a single canonical acceptor.
+    let abs_floor: f64 = std::env::var("RUSTLE_PSI_ABS_FLOOR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.0);
+    let by_acceptor = std::env::var_os("RUSTLE_PSI_ALSO_BY_ACCEPTOR").is_some();
     let mut donor_sum: HashMap<u64, f64> = Default::default();
+    let mut acceptor_sum: HashMap<u64, f64> = Default::default();
     for (j, s) in stats.iter() {
         *donor_sum.entry(j.donor).or_insert(0.0) += s.mrcount;
+        if by_acceptor {
+            *acceptor_sum.entry(j.acceptor).or_insert(0.0) += s.mrcount;
+        }
     }
     let to_remove: Vec<Junction> = stats
         .iter()
         .filter(|(j, s)| {
-            let total = donor_sum.get(&j.donor).copied().unwrap_or(0.0);
-            total > 0.0 && (s.mrcount / total) < threshold
+            // Absolute-floor exemption: never drop strong junctions.
+            if abs_floor > 0.0 && s.mrcount >= abs_floor {
+                return false;
+            }
+            let dt = donor_sum.get(&j.donor).copied().unwrap_or(0.0);
+            let donor_drop = dt > 0.0 && (s.mrcount / dt) < threshold;
+            if by_acceptor {
+                let at = acceptor_sum.get(&j.acceptor).copied().unwrap_or(0.0);
+                let acc_drop = at > 0.0 && (s.mrcount / at) < threshold;
+                donor_drop || acc_drop
+            } else {
+                donor_drop
+            }
         })
         .map(|(j, _)| *j)
         .collect();
     if verbose && !to_remove.is_empty() {
         eprintln!(
-            "    Per-splice-site filter removed {} junctions (isofrac={}%)",
+            "    Per-splice-site filter removed {} junctions (isofrac={}%, abs_floor={}, by_acceptor={})",
             to_remove.len(),
-            isofrac_percent
+            isofrac_percent,
+            abs_floor,
+            by_acceptor
         );
     }
     to_remove.into_iter().collect()
