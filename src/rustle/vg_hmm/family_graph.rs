@@ -23,6 +23,8 @@ pub struct ExonClass {
     pub per_copy_sequences: Vec<(CopyId, Vec<u8>)>,
     /// True iff exactly one copy contributes — i.e. a bubble branch.
     pub copy_specific: bool,
+    /// Per-exon profile HMM. None until fit_profiles_in_place is called.
+    pub profile: Option<crate::vg_hmm::profile::ProfileHmm>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -280,6 +282,7 @@ pub fn build_family_graph(
                 strand: strand0,
                 per_copy_sequences,
                 copy_specific: cids.len() == 1,
+                profile: None,
             });
         }
     }
@@ -311,4 +314,48 @@ pub fn build_family_graph(
     }
 
     Ok(FamilyGraph { family_id: family.family_id, nodes, edges })
+}
+
+use crate::vg_hmm::profile::ProfileHmm;
+
+pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
+    for node in &mut fg.nodes {
+        let seqs: Vec<Vec<u8>> = node.per_copy_sequences.iter().map(|(_, s)| s.clone()).collect();
+        node.profile = Some(if seqs.is_empty() {
+            ProfileHmm::empty(0)
+        } else if seqs.len() == 1 {
+            ProfileHmm::from_singleton(&seqs[0])
+        } else {
+            // Mean pairwise identity gate (spec §12 risk mitigation): if too divergent,
+            // fall back to per-copy singletons by collapsing to the first one.
+            let id = mean_pairwise_identity(&seqs);
+            if id < 0.60 {
+                ProfileHmm::from_singleton(&seqs[0])
+            } else {
+                let msa = match crate::vg_hmm::profile::poa_msa(&seqs) {
+                    Ok(m) => m,
+                    Err(_) => { node.copy_specific = true; vec![seqs[0].clone()] }
+                };
+                ProfileHmm::from_msa(&msa).unwrap_or_else(|_| ProfileHmm::from_singleton(&seqs[0]))
+            }
+        });
+    }
+    Ok(())
+}
+
+fn mean_pairwise_identity(seqs: &[Vec<u8>]) -> f64 {
+    let n = seqs.len();
+    if n < 2 { return 1.0; }
+    let mut total = 0.0_f64; let mut pairs = 0u32;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let m = seqs[i].iter().zip(seqs[j].iter())
+                .take(seqs[i].len().min(seqs[j].len()))
+                .filter(|(a, b)| a == b).count();
+            let l = seqs[i].len().max(seqs[j].len()).max(1);
+            total += m as f64 / l as f64;
+            pairs += 1;
+        }
+    }
+    total / pairs.max(1) as f64
 }

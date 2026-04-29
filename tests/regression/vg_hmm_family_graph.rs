@@ -52,6 +52,7 @@ fn exon_class_carries_per_copy_sequences() {
         strand: '+',
         per_copy_sequences: vec![(0, b"ACGT".to_vec()), (1, b"ACAT".to_vec())],
         copy_specific: false,
+        profile: None,
     };
     assert_eq!(cls.per_copy_sequences.len(), 2);
     assert!(!cls.copy_specific);
@@ -133,4 +134,26 @@ fn position_overlap_clusters_partition_exons() {
     // Expect 3 clusters: {(c0,0),(c1,0)}, {(c0,1)}, {(c1,1)}
     assert_eq!(clusters.len(), 3);
     assert!(clusters.iter().any(|c| c.len() == 2)); // the overlapping pair
+}
+
+#[test]
+fn build_family_graph_fits_profiles_when_sequences_present() {
+    use rustle::vg_hmm::family_graph::build_family_graph;
+    use rustle::vg::FamilyGroup;
+    use std::collections::HashMap;
+    // Without genome the test in 1.6 keeps profiles None — that case still holds.
+    // Here we simulate sequences by stubbing the genome path. Easiest: extend
+    // build_family_graph with a function variant that takes preloaded sequences.
+    // For test-only API, see fit_profiles_in_place below.
+    let bundles = vec![mk_bundle_with_reads(0, 100, vec![(0, 50), (60, 100)]),
+                       mk_bundle_with_reads(0, 100, vec![(0, 50), (60, 100)])];
+    let family = FamilyGroup { family_id: 0, bundle_indices: vec![0, 1], multimap_reads: HashMap::new() };
+    let mut fg = build_family_graph(&family, &bundles, None, 0.30, 0.30).unwrap();
+    // Inject sequences and refit.
+    for n in &mut fg.nodes {
+        n.per_copy_sequences = vec![(0, b"ACGTACGT".to_vec()), (1, b"ACGAACGT".to_vec())];
+    }
+    rustle::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).unwrap();
+    assert!(fg.nodes.iter().all(|n| n.profile.is_some()));
+    assert!(fg.nodes[0].profile.as_ref().unwrap().n_columns >= 6);
 }
