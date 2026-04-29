@@ -166,8 +166,8 @@ impl ProfileHmm {
                             // prev → I → ... → I → cur
                             if prev_was_match { trans_counts[prev_mi][1] += 1; } // M->I
                             // I->I edges within would need to be counted; skip for simplicity (single insert run).
-                            if cur_is_delete { trans_counts[prev_mi + 1][3] += 0; /* I->D not modelled */ }
-                            else { trans_counts[prev_mi][3] += 1; } // I->M (counted at prev's row for simplicity)
+                            // I->D transitions are not modelled (insert ends in a delete is rare and design defers it).
+                            if !cur_is_delete { trans_counts[prev_mi][3] += 1; } // I->M (counted at prev's row for simplicity)
                         } else {
                             if prev_was_match {
                                 if cur_is_delete { trans_counts[prev_mi][2] += 1; } // M->D
