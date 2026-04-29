@@ -86,3 +86,7 @@ path = "tests/regression/test_parity_flow_iter_dump.rs"
 [[test]]
 name = "vg_hmm_family_graph"
 path = "tests/regression/vg_hmm_family_graph.rs"
+
+[[test]]
+name = "vg_hmm_profile"
+path = "tests/regression/vg_hmm_profile.rs"
