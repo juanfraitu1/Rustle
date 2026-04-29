@@ -90,7 +90,10 @@ impl ProfileHmm {
         ];
 
         // Smoothing weight: alpha = 1 / (1 + n_seq) — fewer copies → lean on prior.
-        let alpha = 1.0 / (1.0 + n_seq as f64);
+        // Used as Laplace-style additive pseudocount: p[k] = (count[k] + alpha*bg[k]) / (obs + alpha).
+        // Floor at SMOOTH_FLOOR to ensure alpha is never zero and keeps fully-conserved
+        // columns near log(1) while regularising sparse columns.
+        let alpha = (1.0 / (1.0 + n_seq as f64)).min(SMOOTH_FLOOR);
 
         // Build only match columns; record their original column index for trans fitting.
         let match_col_idx: Vec<usize> = (0..n_col).filter(|&c| is_match[c]).collect();
@@ -104,10 +107,10 @@ impl ProfileHmm {
                 if let Some(k) = idx(r[c]) { counts[k] += 1; observed += 1; }
             }
             let obs_total = observed.max(1) as f64;
+            // Laplace-style: add alpha * bg[k] pseudo-counts, divide by (obs + alpha).
             let mut row_p = [0.0_f64; 4];
             for k in 0..4 {
-                let emp = counts[k] as f64 / obs_total;
-                let p = alpha * bg[k] + (1.0 - alpha) * emp;
+                let p = (counts[k] as f64 + alpha * bg[k]) / (obs_total + alpha);
                 row_p[k] = p.max(SMOOTH_FLOOR);
             }
             // Renormalize and log.
