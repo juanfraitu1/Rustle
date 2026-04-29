@@ -36,6 +36,17 @@ fn idx(b: u8) -> Option<usize> {
     match b { b'A' => Some(0), b'C' => Some(1), b'G' => Some(2), b'T' => Some(3), _ => None }
 }
 
+/// Sensible prior for unobserved transition rows: M→M dominant.
+/// All values are log-probabilities; rows must sum (in linear space)
+/// to ~1 within their out-group (M-out, I-out, D-out).
+fn default_trans_row() -> TransRow {
+    TransRow {
+        mm: (0.95_f64).ln(), mi: (0.025_f64).ln(), md: (0.025_f64).ln(),
+        im: (0.5_f64).ln(),  ii: (0.5_f64).ln(),
+        dm: (0.95_f64).ln(), dd: (0.05_f64).ln(),
+    }
+}
+
 impl ProfileHmm {
     pub fn empty(n_columns: usize) -> Self {
         let bg = [(0.25_f64).ln(); 4];
@@ -43,7 +54,7 @@ impl ProfileHmm {
             n_columns,
             match_emit: vec![bg; n_columns],
             insert_emit: vec![bg; n_columns + 1],
-            trans: vec![TransRow::default(); n_columns + 1],
+            trans: vec![default_trans_row(); n_columns + 1],
             n_seed_copies: 0,
         }
     }
