@@ -66,6 +66,25 @@ fn exon_extraction_returns_unique_sorted_intervals() {
 }
 
 #[test]
+fn junction_edges_count_unique_copies_supporting_each_edge() {
+    use rustle::vg_hmm::family_graph::collect_family_junctions;
+    // Three copies, two of which share a junction at (1000,1100); one has a private (2000,2100).
+    let per_copy = vec![
+        ('+', vec![(1000u64, 1100u64), (3000, 3100)]),
+        ('+', vec![(1000, 1100)]),
+        ('+', vec![(2000, 2100)]),
+    ];
+    let edges = collect_family_junctions(&per_copy);
+    // Expect 3 distinct junctions with supports 2, 1, 1.
+    let supp = |donor, accept| edges.iter()
+        .find(|e| e.donor == donor && e.acceptor == accept)
+        .map(|e| e.family_support).unwrap_or(0);
+    assert_eq!(supp(1000, 1100), 2);
+    assert_eq!(supp(2000, 2100), 1);
+    assert_eq!(supp(3000, 3100), 1);
+}
+
+#[test]
 fn minimizer_jaccard_splits_position_cluster_when_sequences_diverge() {
     use rustle::vg_hmm::family_graph::refine_by_minimizer_jaccard;
     // Two "exons" at the same position cluster but with no shared k-mers.

@@ -177,3 +177,32 @@ pub fn refine_by_minimizer_jaccard(
     }
     g.into_values().collect()
 }
+
+/// A junction observation before binding to graph nodes.
+#[derive(Debug, Clone, Copy)]
+pub struct RawJunction {
+    pub donor: u64,
+    pub acceptor: u64,
+    pub strand: char,
+    pub family_support: u32,
+}
+
+/// Aggregate per-copy junctions into family junctions with copy-support counts.
+pub fn collect_family_junctions(per_copy: &[(char, Vec<(u64, u64)>)]) -> Vec<RawJunction> {
+    use std::collections::BTreeMap;
+    // Round to nearest 10 bp to absorb long-read jitter (matches existing
+    // build_family_consensus_junctions in vg.rs).
+    let mut counts: BTreeMap<(char, u64, u64), u32> = BTreeMap::new();
+    for (strand, juncs) in per_copy {
+        let mut seen: HashSet<(u64, u64)> = HashSet::new();
+        for &(d, a) in juncs {
+            let key = (d / 10 * 10, a / 10 * 10);
+            if seen.insert(key) {
+                *counts.entry((*strand, key.0, key.1)).or_insert(0) += 1;
+            }
+        }
+    }
+    counts.into_iter()
+        .map(|((strand, d, a), n)| RawJunction { donor: d, acceptor: a, strand, family_support: n })
+        .collect()
+}
