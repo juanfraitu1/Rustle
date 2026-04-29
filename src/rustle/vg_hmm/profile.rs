@@ -68,12 +68,15 @@ impl ProfileHmm {
             return Err(anyhow!("from_msa: rows have unequal lengths"));
         }
 
-        // Per-row gap fraction; columns where >= 50% of rows have a gap become
-        // INSERT columns (no match state); others are match columns.
+        // Match-column detection: a column is a match column if at least one row
+        // has a non-gap base (i.e., not all rows have a gap). Columns where ALL
+        // rows have gaps are pure insert columns with no match state.
+        // Note: the ≥50% non-gap threshold is too strict for typical exon MSAs
+        // where even a minority-insertion column still represents a real exon position.
         let mut is_match: Vec<bool> = vec![false; n_col];
         for c in 0..n_col {
             let gaps = rows.iter().filter(|r| r[c] == b'-').count();
-            is_match[c] = gaps * 2 < n_seq;
+            is_match[c] = gaps < n_seq;
         }
 
         // Background composition (family-wide), used as the smoothing prior.
@@ -142,7 +145,7 @@ impl ProfileHmm {
         // columns count as M->I->...->I->M (one M->I out, then I->I within,
         // and I->M into the next match). Gaps at the next match column count
         // M->D or D->D depending on whether the *current* column is M or D.
-        let mut counts: Vec<[u32; 7]> = vec![[0; 7]; n_match + 1]; // M->M, M->I, M->D, I->M, I->I, D->M, D->D
+        let mut trans_counts: Vec<[u32; 7]> = vec![[0; 7]; n_match + 1]; // M->M, M->I, M->D, I->M, I->I, D->M, D->D
 
         for row in rows {
             // Walk left->right tracking previous match-column state.
@@ -157,17 +160,17 @@ impl ProfileHmm {
                         let prev_mi = prev_match_idx_in_match.unwrap();
                         if had_insert_after_prev {
                             // prev → I → ... → I → cur
-                            if prev_was_match { counts[prev_mi][1] += 1; } // M->I
+                            if prev_was_match { trans_counts[prev_mi][1] += 1; } // M->I
                             // I->I edges within would need to be counted; skip for simplicity (single insert run).
-                            if cur_is_delete { counts[prev_mi + 1][3] += 0; /* I->D not modelled */ }
-                            else { counts[prev_mi][3] += 1; } // I->M (counted at prev's row for simplicity)
+                            if cur_is_delete { trans_counts[prev_mi + 1][3] += 0; /* I->D not modelled */ }
+                            else { trans_counts[prev_mi][3] += 1; } // I->M (counted at prev's row for simplicity)
                         } else {
                             if prev_was_match {
-                                if cur_is_delete { counts[prev_mi][2] += 1; } // M->D
-                                else { counts[prev_mi][0] += 1; }             // M->M
+                                if cur_is_delete { trans_counts[prev_mi][2] += 1; } // M->D
+                                else { trans_counts[prev_mi][0] += 1; }             // M->M
                             } else {
-                                if cur_is_delete { counts[prev_mi][6] += 1; } // D->D
-                                else { counts[prev_mi][5] += 1; }             // D->M
+                                if cur_is_delete { trans_counts[prev_mi][6] += 1; } // D->D
+                                else { trans_counts[prev_mi][5] += 1; }             // D->M
                             }
                         }
                     }
@@ -181,15 +184,29 @@ impl ProfileHmm {
         }
 
         // Convert counts → smoothed log-probabilities per row.
+        // Prior: when no observed transitions, bias toward M->M by adding a
+        // "virtual" M->M prior count (0.95) vs M->I/D (0.025 each). This ensures
+        // terminal and unobserved columns still have M->M dominant.
+        const PRIOR_MM: f64 = 0.95;
+        const PRIOR_MI: f64 = 0.025;
+        const PRIOR_MD: f64 = 0.025;
         let mut trans: Vec<TransRow> = Vec::with_capacity(n_match + 1);
-        for c in &counts {
-            let m_total = (c[0] + c[1] + c[2]).max(1) as f64;
+        for c in &trans_counts {
+            let observed_m = c[0] + c[1] + c[2];
+            let s = SMOOTH_FLOOR;
+            let (mm, mi, md) = if observed_m == 0 {
+                // No data: use M->M-biased prior.
+                ((PRIOR_MM).ln(), (PRIOR_MI).ln(), (PRIOR_MD).ln())
+            } else {
+                let m_total = observed_m as f64;
+                (
+                    ((c[0] as f64 + s) / (m_total + 3.0 * s)).ln(),
+                    ((c[1] as f64 + s) / (m_total + 3.0 * s)).ln(),
+                    ((c[2] as f64 + s) / (m_total + 3.0 * s)).ln(),
+                )
+            };
             let i_total = (c[3] + c[4]).max(1) as f64;
             let d_total = (c[5] + c[6]).max(1) as f64;
-            let s = SMOOTH_FLOOR;
-            let mm = ((c[0] as f64 + s) / (m_total + 3.0 * s)).ln();
-            let mi = ((c[1] as f64 + s) / (m_total + 3.0 * s)).ln();
-            let md = ((c[2] as f64 + s) / (m_total + 3.0 * s)).ln();
             let im = ((c[3] as f64 + s) / (i_total + 2.0 * s)).ln();
             let ii = ((c[4] as f64 + s) / (i_total + 2.0 * s)).ln();
             let dm = ((c[5] as f64 + s) / (d_total + 2.0 * s)).ln();

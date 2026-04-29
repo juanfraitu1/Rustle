@@ -45,3 +45,22 @@ fn divergent_column_is_flatter_than_conserved() {
     let log_p_c_col1 = p.match_emit[1][1];
     assert!(log_p_a_col0 > log_p_c_col1, "conserved must beat divergent: {} vs {}", log_p_a_col0, log_p_c_col1);
 }
+
+#[test]
+fn no_gaps_msa_makes_mm_dominant() {
+    let rows: Vec<Vec<u8>> = vec![b"ACGT".to_vec(), b"ACGT".to_vec()];
+    let p = ProfileHmm::from_msa(&rows).unwrap();
+    // M->M should be the dominant transition out of every column.
+    for tr in &p.trans {
+        assert!(tr.mm > tr.mi && tr.mm > tr.md, "expected M->M dominant, got {:?}", tr);
+    }
+}
+
+#[test]
+fn gappy_msa_increases_md_or_mi() {
+    let rows: Vec<Vec<u8>> = vec![b"AC-GT".to_vec(), b"ACGGT".to_vec(), b"AC-GT".to_vec()];
+    let p = ProfileHmm::from_msa(&rows).unwrap();
+    // Transition out of column 1 (after the C) should show non-trivial M->D
+    // because two of three rows have a deletion at column 2.
+    assert!(p.trans[1].md > (1e-3_f64).ln(), "expected M->D > 0 at col 1, got {}", p.trans[1].md);
+}
