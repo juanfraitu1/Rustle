@@ -261,7 +261,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(),
+            intron_low: Vec::new(), synthetic: false,
         };
         txs.push(tx);
         if debug {
@@ -2372,7 +2372,7 @@ fn add_contained_isoforms(
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                 });
                 added += 1;
             }
@@ -2562,7 +2562,7 @@ fn emit_junction_paths(
             hardstart,
             hardend,
             alt_tts_end,
-            vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+            vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -2846,7 +2846,7 @@ fn emit_chain_from_graph(
         hardstart: true,
         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
     })
 }
 
@@ -2976,7 +2976,7 @@ fn emit_reference_chains(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -3109,7 +3109,7 @@ fn emit_reference_chains(
                         hardstart: true,
                         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -3202,7 +3202,7 @@ fn emit_reference_chains(
             hardstart: true,
             hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
         });
         added += 1;
         emitted_cnt += 1;
@@ -6116,7 +6116,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                intron_low: Vec::new(),
+                intron_low: Vec::new(), synthetic: false,
             });
         }
 
@@ -6245,7 +6245,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    intron_low: Vec::new(),
+                    intron_low: Vec::new(), synthetic: false,
                 };
                 rescued.push(tx);
                 if debug {
@@ -6460,7 +6460,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                intron_low: Vec::new(),
+                intron_low: Vec::new(), synthetic: false,
             });
             added += 1;
         }
@@ -6591,7 +6591,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    intron_low: Vec::new(),
+                    intron_low: Vec::new(), synthetic: false,
                 });
             }
         }
@@ -7596,7 +7596,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(),
+            intron_low: Vec::new(), synthetic: false,
         });
     }
     out
@@ -7726,7 +7726,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(),
+            intron_low: Vec::new(), synthetic: false,
         });
     }
     out
@@ -7805,7 +7805,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardstart: false,
                         hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                     };
                     predictions.push(tx);
                 }
@@ -7845,7 +7845,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardstart: false,
                     hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                 };
                 predictions.push(tx);
             }
@@ -8128,6 +8128,28 @@ pub fn run<P: AsRef<Path>>(
     } else {
         Vec::new()
     };
+
+    // ── Variation graph: HMM rescue → synthetic bundles (Phase 5) ─────────────
+    if config.vg_mode && config.vg_discover_novel
+        && config.vg_discover_novel_mode == "hmm"
+        && !vg_families.is_empty()
+    {
+        match crate::vg_hmm::rescue::run_rescue_with_bundles(
+            bam_path.as_ref(),
+            &vg_families,
+            &vg_bundles_for_novel,
+            &config,
+        ) {
+            Ok((_, synthetic_bundles)) => {
+                if !synthetic_bundles.is_empty() {
+                    bundles.extend(synthetic_bundles);
+                }
+            }
+            Err(e) => {
+                eprintln!("[VG-HMM] rescue failed: {} — continuing without synthetic bundles", e);
+            }
+        }
+    }
 
     // ── Variation graph: multi-mapping read resolution ──────────────────────
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
@@ -13305,7 +13327,7 @@ pub fn run<P: AsRef<Path>>(
                 hardstart: true,
                 hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {
@@ -13848,7 +13870,7 @@ pub fn run<P: AsRef<Path>>(
                     hardend: true,
                     alt_tts_end: true,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None,
-                    intron_low: Vec::new(),
+                    intron_low: Vec::new(), synthetic: false,
                 });
                 *added += 1;
                 if debug {
@@ -14017,16 +14039,15 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: novel copy discovery (Phase 3, opt-in) ─────────────
-    if config.vg_mode && config.vg_discover_novel && !vg_families.is_empty() {
-        // Need bundles for consensus junctions — reconstruct from coords + junction stats.
-        // Since bundles were consumed, we only have coords. For a full implementation,
-        // we'd need to save junction stats before the loop. For now, report that novel
-        // discovery requires a separate BAM pass with junction data.
+    // HMM mode: rescue + synthetic bundles were already injected into the
+    // assembly loop above (before the per-bundle pass). Nothing to do here.
+    // k-mer mode: run the legacy scan and report candidates.
+    if config.vg_mode && config.vg_discover_novel && !vg_families.is_empty()
+        && config.vg_discover_novel_mode != "hmm"
+    {
         eprintln!(
             "[VG] Novel copy discovery: scanning supplementary alignments in uncovered regions..."
         );
-        // Re-open BAM for novel discovery scan.
-        // Note: this is a lightweight scan, not a full assembly pass.
         let novel_candidates = crate::vg::discover_novel_copies(
             bam_path.as_ref(),
             &vg_families,
@@ -14038,8 +14059,6 @@ pub fn run<P: AsRef<Path>>(
                 "[VG] Found {} novel copy candidate reads",
                 novel_candidates.len()
             );
-            // TODO: Create synthetic bundles from novel candidates and assemble.
-            // For now, just report them.
             for c in &novel_candidates {
                 eprintln!(
                     "[VG]   Novel candidate: family={} read={} region={}:{}-{} junctions={}/{}",

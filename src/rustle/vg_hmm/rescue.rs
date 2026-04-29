@@ -208,6 +208,11 @@ pub fn run_rescue_with_bundles(
         }
     }
 
+    if family_graphs.is_empty() {
+        eprintln!("[VG-HMM] 0 candidates, 0 synthetic bundles (no valid family graphs)");
+        return Ok((Vec::new(), Vec::new()));
+    }
+
     // (d) Open BAM and iterate unmapped reads.
     let bam_file = match std::fs::File::open(bam_path) {
         Ok(f) => f,
@@ -281,6 +286,7 @@ pub fn run_rescue_with_bundles(
     );
 
     if unmapped_reads.is_empty() {
+        eprintln!("[VG-HMM] 0 candidates, 0 synthetic bundles");
         return Ok((Vec::new(), Vec::new()));
     }
 

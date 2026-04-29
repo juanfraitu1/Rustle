@@ -651,6 +651,10 @@ pub struct Transcript {
     /// threshold used by retainedintron() in StringTie (ERROR_PERC * exon_avg_cov).
     /// Empty if bpcov was unavailable at construction time.
     pub intron_low: Vec<bool>,
+    /// True when this transcript was assembled from a VG-HMM synthetic bundle.
+    /// Synthetic transcripts are exempt from isofrac and cross-bundle
+    /// pairwise-contained filters (they have no real coverage signal).
+    pub synthetic: bool,
 }
 
 #[inline]
@@ -749,7 +753,7 @@ impl Transcript {
             hardstart: pred.hardstart,
             hardend: pred.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
         }
     }
 }
@@ -1226,7 +1230,7 @@ pub fn extract_rawreads_transcripts(
             hardstart: false,
             hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
         });
     }
     out
@@ -1361,7 +1365,7 @@ pub fn extract_shortread_transcripts(
             hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
             alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
         });
     }
 
@@ -7801,7 +7805,7 @@ pub fn extract_transcripts(
             hardstart: thardstart,
             hardend: thardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
         });
         if debug_flow {
             let exons_str = exons
@@ -8543,7 +8547,7 @@ pub fn extract_transcripts(
                     hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
                     hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
                     alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(),
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                 });
                 let out_idx = out.len() - 1;
                 record_outcome!(t, SeedOutcome::ChecktrfRescued);
@@ -9498,7 +9502,7 @@ pub fn hybrid_path_reexplore(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(),
+            intron_low: Vec::new(), synthetic: false,
         });
     }
 

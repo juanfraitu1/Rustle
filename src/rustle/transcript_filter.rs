@@ -587,6 +587,11 @@ pub fn isofrac_filter(
                 .map(|t| t.coverage)
                 .fold(0.0, f64::max);
             for tx in locus {
+                // Synthetic transcripts are exempt from isofrac filtering.
+                if tx.synthetic {
+                    out.push(tx);
+                    continue;
+                }
                 let is_single = tx.exons.len() == 1;
 
                 // Dynamic isofrac scaling (19041-19049): relax for high-coverage transcripts
@@ -738,11 +743,19 @@ pub fn filter_contained_transcripts(
             continue;
         }
         let a = &transcripts[i];
+        // Synthetic transcripts are never dropped by containment filter.
+        if a.synthetic {
+            continue;
+        }
         for j in 0..n {
             if i == j || drop.contains(j) {
                 continue;
             }
             let b = &transcripts[j];
+            // Don't apply containment filter across synthetic/non-synthetic boundary.
+            if b.synthetic != a.synthetic {
+                continue;
+            }
             if transcript_contained_in(a, b) && b.coverage >= a.coverage {
                 drop.insert_grow(i);
                 break;
@@ -1077,7 +1090,7 @@ mod tests {
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(),
+            intron_low: Vec::new(), synthetic: false,
         }
     }
 
@@ -1973,8 +1986,8 @@ fn isofrac_with_summary(
             let sidx = if txs[k].strand == '+' { 1usize } else { 0usize };
             let cov = txs[k].coverage;
 
-            // skip isofrac check for guide-matched transcripts (pred->t_eq)
-            if is_guide_pair(&txs[k]) || is_rescue_protected(&txs[k]) {
+            // skip isofrac check for guide-matched transcripts (pred->t_eq) and synthetic bundles
+            if is_guide_pair(&txs[k]) || is_rescue_protected(&txs[k]) || txs[k].synthetic {
                 usedcov[sidx] += cov;
                 if txs[k].exons.len() > 1 {
                     multicov[sidx] += cov;
