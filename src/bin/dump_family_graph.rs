@@ -16,24 +16,8 @@ use std::sync::Arc;
 use rustle::genome::GenomeIndex;
 use rustle::types::{Bundle, BundleRead, Junction, JunctionStat, JunctionStats};
 use rustle::vg::FamilyGroup;
-use rustle::vg_hmm::family_graph::{build_family_graph, fit_profiles_in_place, FamilyGraph};
-use rustle::vg_hmm::scorer::{forward_against_family, forward_against_profile};
-
-/// Score a read against all node profiles in the family graph independently
-/// and return the maximum log-likelihood.  This is O(n_nodes × m × l) per
-/// read and avoids the O(l³) cost of the full inter-node DP in
-/// `forward_against_family`.  Used as a fast-path for the smoke check where
-/// the reads are long (3-10 kb) and we only need positive/random separation.
-fn best_profile_score(fg: &FamilyGraph, read: &[u8]) -> f64 {
-    let mut best = f64::NEG_INFINITY;
-    for node in &fg.nodes {
-        if let Some(p) = &node.profile {
-            let s = forward_against_profile(p, read);
-            if s > best { best = s; }
-        }
-    }
-    best
-}
+use rustle::vg_hmm::family_graph::{build_family_graph, fit_profiles_in_place};
+use rustle::vg_hmm::scorer::forward_against_family;
 
 // ── Hard-coded GOLGA6L7 exon coordinates (0-based, half-open) ──────────────
 // Extracted from GGO_genomic.gff: $4-1 gives 0-based start, $5 is end.
@@ -311,42 +295,20 @@ fn main() -> anyhow::Result<()> {
     }
     println!("[smoke] random reads collected: {}", rnd_seqs.len());
 
-    // ── Score both populations ────────────────────────────────────────────────
-    // forward_against_family has an O(l³ × m) worst-case cost per read due to
-    // the nested (start, end) loop over read positions in the inter-node DP.
-    // With long-read BAM entries of 3-10 kb this is prohibitive.  Instead we
-    // use best_profile_score() which calls forward_against_profile() on each
-    // node independently and takes the maximum; this is O(n_nodes × m × l)
-    // and still tests the full HMM forward algorithm against real sequences.
-    // forward_against_family is invoked on a single representative read as an
-    // end-to-end API smoke check; its score is printed alongside.
-    // 50 bp is enough to span 1-2 GOLGA6L7 exons and demonstrate positive/random
-    // separation; it keeps forward_against_profile and forward_against_family fast
-    // (O(m×l) and O(l³×m×n_edges) respectively, both tractable at l=50).
-    const SCORE_LEN_CAP: usize = 50;
-
-    // Truncate reads to SCORE_LEN_CAP before scoring.  forward_against_profile
-    // allocates O(m × l) matrices; with long reads (3-10 kb) and 27 profiles the
-    // memory-bandwidth cost dominates.  A 300 bp window covers the longest
-    // individual GOLGA6L7 exon (exon 0 = 272 bp) and is sufficient to show
-    // positive/random separation.
-    eprintln!("[smoke] scoring positive reads via best_profile_score ({}bp cap) ...", SCORE_LEN_CAP);
+    // ── Score both populations via forward_against_family (full-length reads) ──
+    // Single-DP boundary threading makes this O(N × L × profile_len) per read —
+    // tractable for 3-10 kb long reads across 27 profiles.
+    eprintln!("[smoke] scoring positive reads via forward_against_family (full-length) ...");
     let mut pos_scores: Vec<f64> = pos_seqs.iter()
-        .map(|s| best_profile_score(&fg, &s[..s.len().min(SCORE_LEN_CAP)]))
+        .map(|s| forward_against_family(&fg, s))
         .collect();
     pos_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    eprintln!("[smoke] scoring random reads via best_profile_score ({}bp cap) ...", SCORE_LEN_CAP);
+    eprintln!("[smoke] scoring random reads via forward_against_family (full-length) ...");
     let mut rnd_scores: Vec<f64> = rnd_seqs.iter()
-        .map(|s| best_profile_score(&fg, &s[..s.len().min(SCORE_LEN_CAP)]))
+        .map(|s| forward_against_family(&fg, s))
         .collect();
     rnd_scores.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-    // API smoke: call forward_against_family on one short read prefix to confirm
-    // the function compiles and runs without panic.
-    let api_read = &pos_seqs[0][..pos_seqs[0].len().min(SCORE_LEN_CAP)];
-    let api_score = forward_against_family(&fg, api_read);
-    println!("[smoke] forward_against_family API check (first positive read, {}bp prefix): {:.2}", api_read.len(), api_score);
 
     // ── Print statistics ──────────────────────────────────────────────────────
     println!();
