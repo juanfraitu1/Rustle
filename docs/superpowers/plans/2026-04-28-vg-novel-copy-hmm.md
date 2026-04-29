@@ -51,6 +51,7 @@
 - **Branch:** all work lands on a new branch `vg-hmm-novel-copy` cut from `investigation/parity-diagnostic-gates`.
 - **Tests:** every regression test file is registered in `Cargo.toml` under `[[test]]` so `cargo test` picks it up. Prefer `cargo test --profile dev-opt -- --nocapture` for iteration.
 - **Commits:** one commit per completed step from this plan unless explicitly noted. Commit messages: `vg-hmm: <component> <verb>` (e.g. `vg-hmm: family_graph add ExonClass cluster_by_position`).
+- **Confidence checkpoints:** the python research spike (`tools/spike_vg_hmm.py`, results in `tools/SPIKE_VG_HMM_RESULTS.md`) has already validated the architectural premise on real data. Two intermediate Rust smoke checkpoints (Tasks 1.6.5 and 3.2.5 below) confirm the Rust port stays consistent with that signal.
 - **No `unwrap()` in non-test code** — propagate `Result` through `anyhow::Result` (already in `Cargo.toml`).
 - **Determinism:** anywhere we hash, sort, or iterate `HashMap`/`HashSet`, sort the output for determinism. Test assertions depend on it.
 
@@ -870,6 +871,95 @@ Expected: PASS.
 ```bash
 git add -u
 git commit -m "vg-hmm: family_graph build_family_graph orchestrator (no MSA yet)"
+```
+
+### Task 1.6.5: Smoke checkpoint — dump GOLGA6L7 family graph
+
+**Files:**
+- Create: `src/bin/dump_family_graph.rs` (throwaway dev binary).
+- Modify: `Cargo.toml` (register the binary).
+
+This task is a confidence checkpoint, not a deliverable. It exists so that
+after Phase 1 we can confirm the Rust port produces the same family-graph
+shape as the python spike for GOLGA6L7. If the node count or spans look
+wrong, fix Phase 1 before moving on to Phase 2 — the profiles built on a
+broken graph won't tell us anything.
+
+- [ ] **Step 1: Register the binary**
+
+Append to `Cargo.toml`:
+
+```toml
+[[bin]]
+name = "dump_family_graph"
+path = "src/bin/dump_family_graph.rs"
+```
+
+- [ ] **Step 2: Implement a minimal driver**
+
+```rust
+//! Throwaway: load GGO_19.bam, run discover_family_groups, find the
+//! GOLGA6L7 family on chr19, build_family_graph, print structure.
+//! Drop this file once Phase 7 integration tests pin the same numbers.
+
+use rustle::bam::load_bundles;
+use rustle::vg::discover_family_groups;
+use rustle::vg_hmm::family_graph::build_family_graph;
+
+fn main() -> anyhow::Result<()> {
+    let bam = std::env::args().nth(1).unwrap_or_else(||
+        "/mnt/c/Users/jfris/Desktop/GGO_19.bam".to_string());
+    // Load bundles via the same path pipeline.rs uses; this requires a
+    // minimal RunConfig — copy whatever pipeline.rs does for its first
+    // bundle-load step. If that's awkward, replace with a hand-rolled
+    // BAM read that builds Bundles directly from the chr19 region around
+    // 104789647-104877901.
+    let bundles = load_bundles(std::path::Path::new(&bam))?;
+    let families = discover_family_groups(&bundles, /* matches existing call site */ Default::default());
+    println!("[smoke] {} families discovered", families.len());
+
+    // Pick the family overlapping the GOLGA6L7 region (104789647-104877901).
+    let target = families.iter().find(|f| {
+        f.bundle_indices.iter().any(|&bi| {
+            let b = &bundles[bi];
+            b.chrom == "NC_073243.2" && b.start < 104_877_901 && b.end > 104_789_647
+        })
+    });
+    let f = target.ok_or_else(|| anyhow::anyhow!("no family covering GOLGA6L7"))?;
+    println!("[smoke] family {} has {} copies", f.family_id, f.bundle_indices.len());
+
+    let fg = build_family_graph(f, &bundles, None, 0.30, 0.30)?;
+    println!("[smoke] family graph: {} nodes, {} edges", fg.n_nodes(), fg.n_edges());
+    for n in &fg.nodes {
+        println!("  node {}: {} {}-{} ({} copies, copy_specific={})",
+                 n.idx.0, n.chrom, n.span.0, n.span.1,
+                 n.per_copy_sequences.len(), n.copy_specific);
+    }
+    Ok(())
+}
+```
+
+If `load_bundles` does not exist with that signature, search `pipeline.rs`
+for the actual bundle-loading entry point and adapt. The exact API
+matters less than the output: 3 copies, ~9 exon-class nodes, no
+copy-specific singletons (since GOLGA6L7 is architecturally homogeneous).
+
+- [ ] **Step 3: Build and run**
+
+```bash
+cargo build --profile dev-opt --bin dump_family_graph 2>&1 | tail -3
+./target/dev-opt/dump_family_graph /mnt/c/Users/jfris/Desktop/GGO_19.bam 2>&1 | head -30
+```
+
+Expected: 3-copy family found, ~9 nodes, all `copy_specific=false`.
+The python spike sees 3 mRNAs × 9 exons each on this region; the Rust
+graph should approximate that.
+
+- [ ] **Step 4: Commit (do NOT delete the binary yet)**
+
+```bash
+git add -u
+git commit -m "vg-hmm: smoke binary dump_family_graph (delete after Phase 7)"
 ```
 
 ---
@@ -1858,6 +1948,72 @@ Expected: PASS.
 ```bash
 git add -u
 git commit -m "vg-hmm: scorer Viterbi best-path traceback"
+```
+
+### Task 3.2.5: Smoke checkpoint — score positive vs random reads
+
+**Files:**
+- Modify: `src/bin/dump_family_graph.rs` (extend the throwaway binary).
+
+After Phase 3 Task 3.2 we have a working family-graph forward scorer.
+The python spike showed unmapped reads have a tail of family signal
+above random reads (max 18 vs 7 k-mer hits; max 15.5 vs 9.7 PSSM
+log-odds). The Rust port must reproduce at least the qualitative
+ordering — positive >> random — or something in Phase 1–3 is wrong.
+
+- [ ] **Step 1: Extend the smoke binary to score reads**
+
+Add to `dump_family_graph.rs`, after the family-graph dump:
+
+```rust
+use rustle::vg_hmm::family_graph::fit_profiles_in_place;
+use rustle::vg_hmm::scorer::forward_against_family;
+use rustle::genome::GenomeIndex;
+
+let genome = GenomeIndex::from_fasta(std::path::Path::new(
+    "/mnt/c/Users/jfris/Desktop/GGO.fasta"))?;
+// Re-build with sequences this time.
+let mut fg = build_family_graph(f, &bundles, Some(&genome), 0.30, 0.30)?;
+fit_profiles_in_place(&mut fg)?;
+println!("[smoke] profiles fit on {} nodes", fg.nodes.iter().filter(|n| n.profile.is_some()).count());
+
+// Pull a few reads from the family bundle (positive) and from a far
+// region of chr19 (random control). Score each.
+let pos_seqs: Vec<Vec<u8>> = bundles[f.bundle_indices[0]].reads.iter()
+    .take(20).map(|r| r.read_name.as_bytes().to_vec()).collect();
+//   ^ NB: BundleRead does not carry sequence — pull it from BAM by read name,
+//   or use a small pysam-like helper. For the smoke, simplest path is a
+//   one-off `samtools view -f 0 ... | head -20 | awk '{print $10}'` shelled
+//   out and piped. Document the chosen approach in this file's header.
+
+println!("[smoke] scoring {} positive reads", pos_seqs.len());
+for s in &pos_seqs {
+    let lp = forward_against_family(&fg, s);
+    println!("  positive  {} bp  log-lik = {:.2}", s.len(), lp);
+}
+// Repeat with reads sampled from chr19:75_000_000-80_000_000 as the
+// random control — should produce noticeably lower log-likelihoods.
+```
+
+- [ ] **Step 2: Run and inspect**
+
+```bash
+cargo build --profile dev-opt --bin dump_family_graph 2>&1 | tail -3
+./target/dev-opt/dump_family_graph /mnt/c/Users/jfris/Desktop/GGO_19.bam 2>&1 | tail -50
+```
+
+Expected: positive reads score systematically higher than random. The
+spike showed ~5× separation in the tail; the Rust HMM should match or
+exceed because it has M/I/D states and family-prior smoothing that the
+PSSM lacked. **If positives don't score higher than random, stop and
+debug Phase 2 (profile fitting) or Phase 3 (forward DP) before
+proceeding to Phase 4.**
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -u
+git commit -m "vg-hmm: smoke checkpoint score positives vs random in dump_family_graph"
 ```
 
 ---
