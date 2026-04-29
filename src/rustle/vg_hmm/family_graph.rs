@@ -206,3 +206,104 @@ pub fn collect_family_junctions(per_copy: &[(char, Vec<(u64, u64)>)]) -> Vec<Raw
         .map(|((strand, d, a), n)| RawJunction { donor: d, acceptor: a, strand, family_support: n })
         .collect()
 }
+
+use crate::genome::GenomeIndex;
+use crate::vg::FamilyGroup;
+use anyhow::Result;
+
+pub fn build_family_graph(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    genome: Option<&GenomeIndex>,
+    min_pos_recip: f64,
+    min_jaccard: f64,
+) -> Result<FamilyGraph> {
+    // 1. Collect (chrom, strand, exons) per copy.
+    let copies: Vec<(&str, char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
+        .map(|&bi| {
+            let b = &bundles[bi];
+            (b.chrom.as_str(), b.strand, extract_copy_exons(b))
+        })
+        .collect();
+    if copies.is_empty() {
+        return Ok(FamilyGraph { family_id: family.family_id, nodes: Vec::new(), edges: Vec::new() });
+    }
+
+    // Anyhow-error if strands are mixed — caller should have filtered this.
+    let strand0 = copies[0].1;
+    if copies.iter().any(|(_, s, _)| *s != strand0) {
+        anyhow::bail!("family {} has mixed strands; build_family_graph requires single-strand families", family.family_id);
+    }
+
+    // 2. Stage 1: position-overlap clusters.
+    let pos_clusters = cluster_by_position(&copies, min_pos_recip);
+
+    // 3. Stage 2: refine by minimizer Jaccard (requires sequences). If no genome,
+    //    skip refinement — every position cluster becomes one ExonClass.
+    let mut nodes: Vec<ExonClass> = Vec::new();
+    for cluster in &pos_clusters {
+        // Recover sequences (or empty stubs if no genome).
+        let with_seq: Vec<(CopyId, Vec<u8>)> = cluster.iter().map(|&(cid, ei)| {
+            let (chrom, _, exons) = &copies[cid];
+            let (s, e) = exons[ei];
+            let seq = match genome {
+                Some(g) => g.fetch_sequence(chrom, s, e).unwrap_or_default(),
+                None => Vec::new(),
+            };
+            (cid, seq)
+        }).collect();
+        // If we have sequences, refine; otherwise skip.
+        let groups: Vec<Vec<CopyId>> = if with_seq.iter().all(|(_, s)| !s.is_empty()) {
+            refine_by_minimizer_jaccard(&with_seq, min_jaccard, 15, 10)
+        } else {
+            vec![with_seq.iter().map(|(c, _)| *c).collect()]
+        };
+        for cids in groups {
+            let mut per_copy_sequences: Vec<(CopyId, Vec<u8>)> = with_seq.iter()
+                .filter(|(c, _)| cids.contains(c))
+                .cloned().collect();
+            per_copy_sequences.sort_by_key(|(c, _)| *c);
+            // Representative span = union of contributing exon spans.
+            let mut s_min = u64::MAX; let mut e_max = 0u64;
+            for &cid in &cids {
+                let pos_in_cluster = cluster.iter().find(|&&(c, _)| c == cid).unwrap();
+                let (_, _, exs) = &copies[pos_in_cluster.0];
+                let (s, e) = exs[pos_in_cluster.1];
+                s_min = s_min.min(s); e_max = e_max.max(e);
+            }
+            nodes.push(ExonClass {
+                idx: NodeIdx(nodes.len()),
+                chrom: copies[0].0.to_string(),
+                span: (s_min, e_max),
+                strand: strand0,
+                per_copy_sequences,
+                copy_specific: cids.len() == 1,
+            });
+        }
+    }
+
+    // 4. Junction edges: collect junctions from each copy's bundle, bind to nodes
+    //    by mapping (donor, acceptor) → nodes whose span ends at donor / starts at acceptor.
+    let per_copy_juncs: Vec<(char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
+        .map(|&bi| {
+            let b = &bundles[bi];
+            let mut js = Vec::new();
+            for (j, _) in &b.junction_stats {
+                js.push((j.donor, j.acceptor));
+            }
+            (b.strand, js)
+        })
+        .collect();
+    let raw = collect_family_junctions(&per_copy_juncs);
+
+    let mut edges: Vec<JunctionEdge> = Vec::new();
+    for r in &raw {
+        let from = nodes.iter().find(|n| n.span.1 == (r.donor / 10 * 10) || n.span.1 == r.donor).map(|n| n.idx);
+        let to   = nodes.iter().find(|n| n.span.0 == (r.acceptor / 10 * 10) || n.span.0 == r.acceptor).map(|n| n.idx);
+        if let (Some(f), Some(t)) = (from, to) {
+            edges.push(JunctionEdge { from: f, to: t, family_support: r.family_support, strand: r.strand });
+        }
+    }
+
+    Ok(FamilyGraph { family_id: family.family_id, nodes, edges })
+}

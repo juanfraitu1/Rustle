@@ -66,6 +66,25 @@ fn exon_extraction_returns_unique_sorted_intervals() {
 }
 
 #[test]
+fn build_family_graph_two_copy_smoke() {
+    use rustle::vg_hmm::family_graph::build_family_graph;
+    use rustle::vg::FamilyGroup;
+    use std::collections::HashMap;
+    // Two bundles, identical exon coordinates.
+    let b0 = mk_bundle_with_reads(100, 500, vec![(100, 200), (300, 400)]);
+    let b1 = mk_bundle_with_reads(100, 500, vec![(100, 200), (300, 400)]);
+    let bundles = vec![b0, b1];
+    let family = FamilyGroup { family_id: 7, bundle_indices: vec![0, 1], multimap_reads: HashMap::new() };
+
+    // No genome FASTA available in this test — pass `None`; build should still
+    // produce nodes (with empty per-copy sequences) and edges.
+    let fg = build_family_graph(&family, &bundles, None, 0.30, 0.30).unwrap();
+    assert_eq!(fg.family_id, 7);
+    assert_eq!(fg.nodes.len(), 2, "two shared exon classes expected");
+    assert!(fg.nodes.iter().all(|n| !n.copy_specific));
+}
+
+#[test]
 fn junction_edges_count_unique_copies_supporting_each_edge() {
     use rustle::vg_hmm::family_graph::collect_family_junctions;
     // Three copies, two of which share a junction at (1000,1100); one has a private (2000,2100).
