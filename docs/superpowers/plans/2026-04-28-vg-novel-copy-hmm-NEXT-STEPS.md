@@ -1,8 +1,8 @@
 # VG-HMM novel-copy — next-steps brief
 
 Companion to `2026-04-28-vg-novel-copy-hmm.md` (the full implementation
-plan). Last updated 2026-04-29 at the end-of-Phase-7.3 pause; branch
-`vg-hmm-novel-copy` at `4f859f3`.
+plan). Last updated 2026-04-29 after Blocker 1 (strand split) and Blocker 2
+(forward DP banding) fixes; branch `vg-hmm-novel-copy` at `a9a8f02`.
 
 ## Where we are
 
@@ -35,65 +35,86 @@ plan). Last updated 2026-04-29 at the end-of-Phase-7.3 pause; branch
 
 ## What's blocking Task 7.4
 
-Three concerns must be resolved before flipping the `--vg-discover-novel-mode`
-default to `hmm`:
+### Blocker 1 — Mixed-strand family rejection ✅ FIXED (commit `9a2cbb6`)
+`build_family_graph` rejects mixed-strand families; `is_strand_mirror`'s
+filter was too narrow (only same-locus opposite-strand pairs). Fixed by
+adding `partition_family_by_strand` in `vg_hmm/rescue.rs`: splits a
+mixed-strand `FamilyGroup` into per-strand sub-families before building
+the HMM family graph. Sub-families with <2 bundles are dropped.
+Result on `GGO_19.bam`: 22 input families → 25 sub-families ready for
+HMM scoring; zero `[VG-HMM] skipping family ... mixed strands` messages
+(was ~12).
 
-### Blocker 1 — All chr19 families rejected as mixed-strand
-`build_family_graph` (in `family_graph.rs`) has a strict assertion that
-all bundles in a family must share strand. On `GGO_19.bam`, all 22 chr19
-families discovered by `discover_family_groups` get rejected. The plan
-assumed `discover_family_groups`'s `is_strand_mirror` filter prevents
-this — but it doesn't, in practice.
+### Blocker 2 — Forward DP perf ✅ MITIGATED (commit `a9a8f02`)
+Active-band tracking in `profile_forward_with_boundary_banded` (default
+`FORWARD_BANDWIDTH = 100`). Smoke runtime on chr19 dropped from 4m46s
+wall to 4m29s wall (1.7× user-time speedup, but wall time dominated by
+I/O / BAM iteration). Score separation preserved — actually slightly
+improved at +2402 nats (was +2307).
 
-**Investigation needed before Task 7.4:**
-- Why does `is_strand_mirror` fail to filter? (Look at `vg.rs:232–258`.)
-- Should `build_family_graph` relax the constraint (e.g., split into
-  per-strand sub-families)?
-- Does GOLGA6L7 specifically pass the check on the full BAM? (We know
-  from the GFF that it's all `+` strand at NC_073243.2.)
+**Known limitation:** downstream nodes in a chain inherit wide
+boundary distributions, so the effective band grows through the chain.
+Full ~17× speedup would need per-edge band propagation (passing narrow
+`r_min/r_max` metadata across edges). Deferred. Acceptable for the
+Phase 7.4 benchmark — extrapolated full-BAM runtime ~2.5 hours, not 20.
 
-### Blocker 2 — Forward DP too slow for full-BAM benchmark
-Phase 7.1's chr19 integration took 31 minutes. Full `GGO.bam` is 37× the
-size: ~20 hours. Need banding before the benchmark is tractable.
-
-**F1 (banding) approach:** add a `bandwidth` parameter to
-`profile_forward_with_boundary`; only update DP cells where
-`|column − read_position| < bandwidth`. Bandwidth ≈ 2× max-deletion-tolerance
-(say 100 bp) is sufficient for biological reads. Expected speedup: 5–10×.
-
-### Blocker 3 — Synthetic BAM fixture has no mapped reads
+### Blocker 3 — Synthetic BAM fixture has no mapped reads ⏳ STILL OPEN
 The Phase 7.2 fixture exercises the BAM-write path but doesn't fire the
-full rescue logic. Phase 7.4 needs a fixture with realistic input:
+full rescue logic. Phase 7.4 still needs a fixture with realistic input:
 several mapped paralog reads (to seed family discovery) + several
 unmapped reads matching a perturbed novel copy (to test rescue).
 
+**Workaround:** Phase 7.4 can run directly against `GGO.bam` (full
+gorilla IsoSeq, ~10⁵ unmapped reads, real biology) without needing the
+synthetic fixture extended. The synthetic fixture extension can stay
+deferred to F-future.
+
 ## Recommended ordering for next session
 
-1. **Investigate mixed-strand rejection (Blocker 1).** ~1–2 hours. Find
-   the gap between `is_strand_mirror` and `build_family_graph`'s strand
-   check; decide whether to relax or fix the upstream filter. Outcome:
-   single commit on the same branch.
+Blockers 1 and 2 fixed. Phase 7.4 is ready to run.
 
-2. **Land F1 (banding) (Blocker 2).** ~half-day. Add bandwidth parameter
-   to forward DP; preserve unbanded as the default when bandwidth=0
-   (backwards compat for existing tests). Outcome: 1–2 commits.
+1. **Phase 7.4 — Full-BAM benchmark on `GGO.bam`.** ~2.5 hours runtime
+   (extrapolated from chr19 wall time × 37). Run from inside a tmux/screen
+   session or as a background job:
+   ```bash
+   ./target/release/rustle -L --vg --vg-discover-novel \
+       --vg-discover-novel-mode hmm \
+       --vg-report /tmp/fam_hmm.tsv \
+       --genome-fasta /mnt/c/Users/jfris/Desktop/GGO.fasta \
+       -o /tmp/rustle_hmm_full.gtf \
+       /mnt/c/Users/jfris/Desktop/GGO.bam 2>&1 | tee /tmp/rustle_hmm_full.log
+   ```
+   Build with `cargo build --release` first (the existing `dev-opt`
+   profile is fine but `release` is faster).
 
-3. **Extend Phase 7.2 fixture for real rescue test (Blocker 3).** ~1
-   hour. Generate one or two synthetic "primary" alignments anchoring a
-   family, plus several unmapped reads against a perturbed copy. Re-run
-   the synthetic ground-truth test with assertions that actually exercise
-   rescue (≥80% recovery, rescue_class populated).
+2. **Compare against `MULTI_COPY_FAMILY_PROOF.md` baseline:**
+   ```bash
+   python3 tools/classify_family_assembly.py /mnt/c/Users/jfris/Desktop/GGO_genomic.gff \
+       "golgin subfamily A member 6||golgin A6 family like" \
+       /tmp/rustle_hmm_full.gtf --label Rustle_HMM/GOLGA6
+   python3 tools/classify_family_assembly.py /mnt/c/Users/jfris/Desktop/GGO_genomic.gff \
+       "golgin subfamily A member 8||golgin A8 family like" \
+       /tmp/rustle_hmm_full.gtf --label Rustle_HMM/GOLGA8
+   ```
+   Baseline: GOLGA6 3 exact, 1 wrong-strand, 9 missing; GOLGA8 5 exact,
+   0 wrong-strand, 5 missing. Net 8/33 exact across both.
 
-4. **Phase 7.4 — Full benchmark + flip default.** ~30–45 min runtime
-   after F1, plus ~15 min to compare results vs `MULTI_COPY_FAMILY_PROOF.md`
-   baseline. **Decision point:** if HMM ≥ baseline (≥ 8/33 GOLGA-exact
-   matches, ≤ 1 wrong-strand) and no regressions on AMY/TBC1D3, flip
-   default; otherwise document why and keep `kmer` as default.
+3. **Decision point:** if HMM ≥ baseline (8/33 exact, 1 wrong-strand)
+   AND no regressions on AMY/TBC1D3 families, flip default in
+   `src/bin/rustle.rs`:
+   ```rust
+   #[arg(long = "vg-discover-novel-mode", default_value = "hmm")]  // was "kmer"
+   ```
+   Otherwise: keep default at "kmer", document the gap, and decide
+   whether F-future work (per-edge band propagation, multi-copy POA
+   smoke F3, synthetic fixture extension) is worth before re-attempting.
 
-5. **Final docs update.** Update `MULTI_COPY_FAMILY_PROOF.md` (replace
+4. **Final docs update.** Update `MULTI_COPY_FAMILY_PROOF.md` (replace
    item #3 "scaffold exists" with shipped status + rescue-class
-   breakdown). Update `docs/ALGORITHMS.md §10` linking to spec +
-   companion. Delete `dump_family_graph` smoke binary (next-steps F5).
+   breakdown from the TSV). Update `docs/ALGORITHMS.md §10` linking to
+   spec + companion. Delete `src/bin/dump_family_graph.rs` smoke binary
+   (F5). Squash the `vg-hmm: smoke …` commits into the relevant phase
+   commits if a clean PR history is desired.
 
 ## Other follow-ups (not blocking 7.4 but worth before genome-wide)
 
@@ -114,10 +135,10 @@ unmapped reads matching a perturbed novel copy (to test rescue).
 | Risk | Status |
 |---|---|
 | POA crate maturity (poasta 0.1.0) | ✅ Validated through Phase 6; pinned. |
-| Forward DP perf on long reads | ⚠️ **Active blocker** for Task 7.4. F1 mitigates. |
+| Forward DP perf on long reads | ✅ Mitigated (commit `a9a8f02`, F1 banding). Per-edge band propagation deferred for further speedup. |
 | Topological-order assumption | Acceptable; F2 deferred. |
 | Multi-copy POA path untested on real data | ⚠️ Should land F3 before genome-wide. Not strict 7.4 blocker. |
-| Mixed-strand family rejection | 🔴 **NEW critical blocker.** Needs investigation in Blocker 1 above. |
+| Mixed-strand family rejection | ✅ Fixed (commit `9a2cbb6`, partition_family_by_strand). |
 | `BundleRead` field drift | ✅ Stable across phases. |
 | External minimap2 dependency | ✅ Available; `--vg-rescue-diagnostic` off by default. |
 | Synthetic-flag propagation through transcript filtering | ✅ Fixed at end of Phase 5 (commit d1720dc). |
@@ -126,7 +147,8 @@ unmapped reads matching a perturbed novel copy (to test rescue).
 
 When picking back up:
 
-- [ ] `cd /mnt/c/Users/jfris/Desktop/Rustle && git checkout vg-hmm-novel-copy && git status` — confirm clean tree at `4f859f3` (or whatever HEAD is).
-- [ ] `cargo test --profile quick 2>&1 | grep "test result"` — confirm 81 tests still pass.
-- [ ] Read this file. Pick up at "Recommended ordering" above.
+- [ ] `cd /mnt/c/Users/jfris/Desktop/Rustle && git checkout vg-hmm-novel-copy && git status` — confirm clean tree (HEAD should be `a9a8f02` or descendant).
+- [ ] `cargo test --profile quick --lib --test vg_hmm_family_graph --test vg_hmm_profile --test vg_hmm_scorer --test vg_hmm_rescue --test vg_hmm_diagnostic --test vg_hmm_negative_control 2>&1 | grep "test result"` — confirm unit tests pass (75 tests; skip the 30+min `vg_hmm_integration_golga` for fast feedback).
+- [ ] `cargo build --release` — release binary for the Phase 7.4 benchmark.
+- [ ] Read this file. Pick up at step 1 of "Recommended ordering" above (Phase 7.4 full-BAM benchmark).
 - [ ] Open `docs/superpowers/plans/2026-04-28-vg-novel-copy-hmm.md` for the canonical task texts; this file is the index.
