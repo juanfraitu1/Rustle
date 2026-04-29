@@ -12,7 +12,7 @@ pub mod scorer;
 pub mod rescue;
 pub mod diagnostic;
 
-// pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};   // Task 1.1
+pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 // pub use profile::ProfileHmm;                                     // Task 2.1
 // pub use rescue::RescueResult;                                    // Task 5.x
 // pub use diagnostic::{RescueClass, FailureMode};                  // Task 6.1

@@ -266,7 +266,9 @@ pub fn build_family_graph(
             // Representative span = union of contributing exon spans.
             let mut s_min = u64::MAX; let mut e_max = 0u64;
             for &cid in &cids {
-                let pos_in_cluster = cluster.iter().find(|&&(c, _)| c == cid).unwrap();
+                let pos_in_cluster = cluster.iter().find(|&&(c, _)| c == cid)
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "copy {} produced by minimizer-Jaccard refinement not found in originating position cluster (invariant violated)", cid))?;
                 let (_, _, exs) = &copies[pos_in_cluster.0];
                 let (s, e) = exs[pos_in_cluster.1];
                 s_min = s_min.min(s); e_max = e_max.max(e);
