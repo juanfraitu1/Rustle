@@ -4,6 +4,11 @@
 //! get a degenerate 1-hot profile.
 
 use anyhow::{anyhow, Result};
+use poasta::graphs::poa::{POAGraph, POANodeIndex};
+use poasta::aligner::PoastaAligner;
+use poasta::aligner::config::AffineDijkstra;
+use poasta::aligner::scoring::{GapAffine, AlignmentType};
+use poasta::io::fasta::poa_graph_to_fasta;
 
 /// Log-probability for each base A/C/G/T (in that order).
 pub type LogEmit = [f64; 4];
@@ -224,127 +229,85 @@ impl ProfileHmm {
     }
 }
 
-/// Multiple sequence alignment via progressive Needleman-Wunsch.
+/// Multiple sequence alignment via poasta POA graph traversal.
 /// Returns rows of equal length, padded with b'-' for gaps.
 /// One row per input sequence, in the same order.
 /// Errors if fewer than 2 sequences provided.
-///
-/// Note: poasta's API is graph-based (POAGraph + PoastaAligner) and does not
-/// expose a direct MSA-rows output. Per the plan's §12 risk mitigation, we
-/// implement a pure-Rust banded progressive NW here. For the exon sizes in
-/// scope (<300 bp), this is trivially fast.
 pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
     if seqs.len() < 2 {
         return Err(anyhow!("poa_msa requires at least 2 sequences"));
     }
-    // Progressive pairwise NW: align seqs[1..] against the growing consensus.
-    // We build an MSA incrementally by aligning each new sequence to the
-    // current profile-consensus (gapless projection) and inserting gaps.
-    let mut msa: Vec<Vec<u8>> = vec![seqs[0].clone()];
-    for next_seq in &seqs[1..] {
-        // Consensus of current MSA: take most-common non-gap base at each column.
-        let consensus = msa_consensus(&msa);
-        // Align next_seq to consensus.
-        let (aln_cons, aln_next) = nw_align(&consensus, next_seq);
-        // Expand existing MSA rows to match aln_cons (insert gap columns where
-        // aln_cons has a gap == insertion in next_seq).
-        let mut new_msa: Vec<Vec<u8>> = msa.iter().map(|_| Vec::new()).collect();
-        // We need to know which columns in the original consensus correspond to
-        // which positions in aln_cons.
-        let mut orig_pos = 0usize;
-        for (&ac, &an) in aln_cons.iter().zip(aln_next.iter()) {
-            if ac == b'-' {
-                // Insertion in next_seq: all existing rows get a gap here.
-                for r in &mut new_msa { r.push(b'-'); }
-            } else {
-                // Match or deletion in next_seq: copy column orig_pos from each old row.
-                for (i, r) in new_msa.iter_mut().enumerate() {
-                    r.push(msa[i][orig_pos]);
-                }
-                orig_pos += 1;
-            }
-            // next_seq column:
-            let _ = an; // already encoded in aln_next
-        }
-        // Add next_seq row (using aln_next directly, but we need it indexed by
-        // the new column layout — aln_next is already padded correctly).
-        new_msa.push(aln_next);
-        msa = new_msa;
-    }
-    // Verify equal lengths.
-    let l = msa[0].len();
-    assert!(msa.iter().all(|r| r.len() == l));
-    Ok(msa)
-}
 
-/// Compute majority-vote consensus from an MSA (ignoring gaps).
-fn msa_consensus(msa: &[Vec<u8>]) -> Vec<u8> {
-    if msa.is_empty() { return Vec::new(); }
-    let n_col = msa[0].len();
-    let mut cons = Vec::with_capacity(n_col);
-    for c in 0..n_col {
-        let mut counts = [0u32; 256];
-        for row in msa {
-            let b = row[c];
-            if b != b'-' { counts[b as usize] += 1; }
-        }
-        // Pick the most common non-gap base; default to 'N' if all gaps.
-        let best = counts.iter().enumerate()
-            .filter(|&(i, _)| i != b'-' as usize)
-            .max_by_key(|&(_, &c)| c)
-            .map(|(i, _)| i as u8)
-            .unwrap_or(b'N');
-        cons.push(best);
-    }
-    cons
-}
+    // Build a POA graph by aligning each sequence progressively.
+    // Uses affine-gap Dijkstra (no A* heuristic) with mismatch=1, gap_extend=1, gap_open=2.
+    let gap_costs = GapAffine::new(1, 1, 2);
+    let aligner: PoastaAligner<'_, AffineDijkstra> =
+        PoastaAligner::new(AffineDijkstra(gap_costs), AlignmentType::Global);
 
-/// Global Needleman-Wunsch alignment. Returns (aligned_a, aligned_b) with b'-' for gaps.
-fn nw_align(a: &[u8], b: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let m = a.len();
-    let n = b.len();
-    // Scoring: match=1, mismatch=-1, gap=-2.
-    const MATCH: i32 = 1;
-    const MISMATCH: i32 = -1;
-    const GAP: i32 = -2;
+    let mut graph: POAGraph<u32> = POAGraph::new();
+    let unit_weights: Vec<usize> = vec![1; seqs.iter().map(|s| s.len()).max().unwrap_or(0)];
 
-    // DP matrix.
-    let mut dp = vec![vec![0i32; n + 1]; m + 1];
-    for i in 0..=m { dp[i][0] = i as i32 * GAP; }
-    for j in 0..=n { dp[0][j] = j as i32 * GAP; }
-
-    for i in 1..=m {
-        for j in 1..=n {
-            let s = if a[i-1] == b[j-1] { MATCH } else { MISMATCH };
-            dp[i][j] = (dp[i-1][j-1] + s)
-                .max(dp[i-1][j] + GAP)
-                .max(dp[i][j-1] + GAP);
-        }
-    }
-
-    // Traceback.
-    let mut aa = Vec::new();
-    let mut bb = Vec::new();
-    let mut i = m;
-    let mut j = n;
-    while i > 0 || j > 0 {
-        if i > 0 && j > 0 {
-            let s = if a[i-1] == b[j-1] { MATCH } else { MISMATCH };
-            if dp[i][j] == dp[i-1][j-1] + s {
-                aa.push(a[i-1]); bb.push(b[j-1]);
-                i -= 1; j -= 1;
-                continue;
-            }
-        }
-        if i > 0 && dp[i][j] == dp[i-1][j] + GAP {
-            aa.push(a[i-1]); bb.push(b'-');
-            i -= 1;
+    for (i, seq) in seqs.iter().enumerate() {
+        let w = &unit_weights[..seq.len()];
+        if graph.is_empty() {
+            // First sequence: add unaligned (no existing graph to align to).
+            graph
+                .add_alignment_with_weights(&format!("seq{i}"), seq, None, w)
+                .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
         } else {
-            aa.push(b'-'); bb.push(b[j-1]);
-            j -= 1;
+            // Subsequent sequences: align against the current graph.
+            let aln_result = aligner.align::<u32, _>(&graph, seq);
+            let alignment = if aln_result.alignment.is_empty() {
+                None
+            } else {
+                Some(&aln_result.alignment as &poasta::aligner::Alignment<POANodeIndex<u32>>)
+            };
+            graph
+                .add_alignment_with_weights(&format!("seq{i}"), seq, alignment, w)
+                .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
         }
     }
-    aa.reverse();
-    bb.reverse();
-    (aa, bb)
+
+    // Extract the MSA rows by using poasta's public poa_graph_to_fasta function,
+    // which walks the graph in topological order and writes aligned FASTA records.
+    // We write into a Vec<u8> buffer and parse the resulting FASTA lines.
+    let mut fasta_buf: Vec<u8> = Vec::new();
+    poa_graph_to_fasta(&graph, &mut fasta_buf)
+        .map_err(|e| anyhow!("poa_graph_to_fasta failed: {e}"))?;
+
+    // Parse the FASTA output: each sequence record is a set of lines starting with '>'.
+    // We collect the sequences in order and convert them to Vec<u8> rows.
+    let mut msa: Vec<Vec<u8>> = Vec::with_capacity(seqs.len());
+    let mut current_seq: Option<Vec<u8>> = None;
+    for line in fasta_buf.split(|&b| b == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        if line[0] == b'>' {
+            if let Some(seq) = current_seq.take() {
+                msa.push(seq);
+            }
+            current_seq = Some(Vec::new());
+        } else if let Some(ref mut seq) = current_seq {
+            seq.extend_from_slice(line);
+        }
+    }
+    if let Some(seq) = current_seq {
+        msa.push(seq);
+    }
+
+    if msa.len() != seqs.len() {
+        return Err(anyhow!(
+            "poa_msa: expected {} rows from graph but got {}",
+            seqs.len(),
+            msa.len()
+        ));
+    }
+
+    // Verify equal lengths.
+    let n_cols = msa[0].len();
+    if !msa.iter().all(|r| r.len() == n_cols) {
+        return Err(anyhow!("poa_msa: internal error — unequal row lengths after graph walk"));
+    }
+    Ok(msa)
 }
