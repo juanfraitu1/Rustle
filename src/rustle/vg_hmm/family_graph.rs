@@ -49,3 +49,16 @@ impl Index<NodeIdx> for FamilyGraph {
     type Output = ExonClass;
     fn index(&self, idx: NodeIdx) -> &ExonClass { &self.nodes[idx.0] }
 }
+
+use crate::types::Bundle;
+
+/// Collect, dedup, and sort exonic intervals from a bundle's reads.
+/// Returns half-open (start, end) pairs on the bundle's chromosome.
+pub fn extract_copy_exons(bundle: &Bundle) -> Vec<(u64, u64)> {
+    let mut all: Vec<(u64, u64)> = bundle.reads.iter()
+        .flat_map(|r| r.exons.iter().copied())
+        .collect();
+    all.sort_unstable();
+    all.dedup();
+    all
+}
