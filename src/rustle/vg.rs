@@ -1205,6 +1205,17 @@ fn run_pre_assembly_em_inner(
 /// sub-loci (default gap = 5kb). A 430kb Rustle bundle that contains 5 separate
 /// ZNF genes will report 5 per-gene regions instead of one mega-bundle span.
 /// Tune the gap via env `RUSTLE_VG_REPORT_GAP` (bp).
+/// Per-family rescue diagnostic counts aggregated from synthetic transcripts.
+#[derive(Default, Clone)]
+pub struct RescueCounts {
+    pub n_rescued: usize,
+    pub n_below_thresh: usize,
+    pub n_seed_masked: usize,
+    pub n_divergent: usize,
+    pub n_structural: usize,
+    pub n_ref_absent: usize,
+}
+
 pub fn write_family_report_with_em(
     path: &std::path::Path,
     families: &[FamilyGroup],
@@ -1212,15 +1223,36 @@ pub fn write_family_report_with_em(
     em_results: &[EmResult],
     transcripts: Option<&[crate::path_extract::Transcript]>,
 ) -> std::io::Result<()> {
+    use crate::vg_hmm::diagnostic::RescueClass;
     use std::io::Write;
     let gene_gap: u64 = std::env::var("RUSTLE_VG_REPORT_GAP")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(5_000);
+
+    // Build per-family_id rescue counts from synthetic transcripts.
+    let mut rescue_map: HashMap<usize, RescueCounts> = HashMap::new();
+    if let Some(txs) = transcripts {
+        for tx in txs.iter().filter(|t| t.synthetic) {
+            if let Some(fam_id) = tx.vg_family_id {
+                let c = rescue_map.entry(fam_id).or_default();
+                c.n_rescued += 1;
+                match tx.rescue_class {
+                    Some(RescueClass::BelowThresholdChain) => c.n_below_thresh += 1,
+                    Some(RescueClass::SeedMasked)          => c.n_seed_masked  += 1,
+                    Some(RescueClass::Divergent)            => c.n_divergent    += 1,
+                    Some(RescueClass::Structural)           => c.n_structural   += 1,
+                    Some(RescueClass::ReferenceAbsent)      => c.n_ref_absent   += 1,
+                    Some(RescueClass::NeedsExternalVerification) | None => {}
+                }
+            }
+        }
+    }
+
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
     writeln!(
         f,
-        "family_id\tn_copies\tchrom\tregions\tn_shared_reads\tem_iterations\tem_converged\tem_delta\treads_reweighted\tn_gene_loci"
+        "family_id\tn_copies\tchrom\tregions\tn_shared_reads\tem_iterations\tem_converged\tem_delta\treads_reweighted\tn_gene_loci\tn_rescued\tn_below_thresh\tn_seed_masked\tn_divergent\tn_structural\tn_ref_absent"
     )?;
     for (fi, family) in families.iter().enumerate() {
         let mut refined_regions: Vec<String> = Vec::new();
@@ -1249,9 +1281,10 @@ pub fn write_family_report_with_em(
             .map(|(c, _, _, _)| c.as_str())
             .unwrap_or("?");
         let em = em_results.get(fi).cloned().unwrap_or_default();
+        let rc = rescue_map.get(&family.family_id).cloned().unwrap_or_default();
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             family.family_id,
             family.bundle_indices.len(),
             chrom,
@@ -1262,6 +1295,12 @@ pub fn write_family_report_with_em(
             em.max_delta,
             em.reads_reweighted,
             refined_gene_count,
+            rc.n_rescued,
+            rc.n_below_thresh,
+            rc.n_seed_masked,
+            rc.n_divergent,
+            rc.n_structural,
+            rc.n_ref_absent,
         )?;
     }
     Ok(())

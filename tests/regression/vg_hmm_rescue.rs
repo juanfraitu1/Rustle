@@ -147,7 +147,7 @@ fn synthesize_bundles_min_reads_drops_small_clusters() {
         ("r1".to_string(), path.clone()),
         ("r2".to_string(), path.clone()),
     ];
-    let bundles = synthesize_bundles(&fg, &reads, 3);
+    let bundles = synthesize_bundles(&fg, &reads, 3, 15, false);
     assert!(bundles.is_empty(), "cluster of 2 should be dropped with min_reads=3");
 }
 
@@ -158,7 +158,7 @@ fn synthesize_bundles_emits_synthetic_bundle_for_sufficient_cluster() {
     let reads: Vec<(String, Vec<NodeIdx>)> = (0..3)
         .map(|i| (format!("r{}", i), path.clone()))
         .collect();
-    let bundles = synthesize_bundles(&fg, &reads, 3);
+    let bundles = synthesize_bundles(&fg, &reads, 3, 15, false);
     assert_eq!(bundles.len(), 1, "expected exactly 1 bundle");
     let b = &bundles[0];
     assert!(b.synthetic, "bundle must be marked synthetic");
@@ -181,7 +181,7 @@ fn synthesize_bundles_two_clusters_emit_two_bundles() {
         .map(|i| (format!("ra{}", i), path_a.clone()))
         .chain((0..3).map(|i| (format!("rb{}", i), path_b.clone())))
         .collect();
-    let bundles = synthesize_bundles(&fg, &reads, 3);
+    let bundles = synthesize_bundles(&fg, &reads, 3, 15, false);
     assert_eq!(bundles.len(), 2, "expected two distinct clusters → two bundles");
 }
 
@@ -201,7 +201,7 @@ fn synthetic_flag_propagates_from_bundle_to_transcripts() {
     let reads: Vec<(String, Vec<NodeIdx>)> = (0..3)
         .map(|i| (format!("r{}", i), path.clone()))
         .collect();
-    let bundles = synthesize_bundles(&fg, &reads, 3);
+    let bundles = synthesize_bundles(&fg, &reads, 3, 15, false);
     assert_eq!(bundles.len(), 1);
     let bundle = &bundles[0];
     assert!(bundle.synthetic, "precondition: synthesize_bundles must set synthetic=true");
@@ -240,7 +240,7 @@ fn non_synthetic_bundle_leaves_transcript_flag_false() {
     let reads: Vec<(String, Vec<NodeIdx>)> = (0..3)
         .map(|i| (format!("r{}", i), path.clone()))
         .collect();
-    let mut bundles = synthesize_bundles(&fg, &reads, 3);
+    let mut bundles = synthesize_bundles(&fg, &reads, 3, 15, false);
     bundles[0].synthetic = false; // normal (non-rescue) bundle
     let bundle = &bundles[0];
 

@@ -1090,7 +1090,7 @@ mod tests {
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(), synthetic: false,
+            intron_low: Vec::new(), synthetic: false, rescue_class: None,
         }
     }
 

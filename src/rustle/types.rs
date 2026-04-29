@@ -98,6 +98,11 @@ pub struct Bundle {
     /// (see src/rustle/vg_hmm/rescue.rs). Synthetic bundles bypass
     /// transcript_isofrac and cross-bundle pairwise-contained filters.
     pub synthetic: bool,
+    /// Diagnostic classification bucket for this synthetic bundle (None for
+    /// real bundles). Set by `vg_hmm::diagnostic::classify_internal` and
+    /// optionally refined by `classify_external` when
+    /// `config.vg_rescue_diagnostic == true`.
+    pub rescue_class: Option<crate::vg_hmm::diagnostic::RescueClass>,
 }
 
 #[derive(Debug, Clone)]
@@ -655,6 +660,7 @@ impl BundleData {
             read_bnodes: None,
             bnode_colors: None,
             synthetic: false,
+            rescue_class: None,
         }
     }
 }

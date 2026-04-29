@@ -261,7 +261,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(), synthetic: false,
+            intron_low: Vec::new(), synthetic: false, rescue_class: None,
         };
         txs.push(tx);
         if debug {
@@ -1306,6 +1306,7 @@ fn merge_region_outer_bundles(
             read_bnodes: None,
             bnode_colors: None,
             synthetic: false,
+            rescue_class: None,
         });
     }
 
@@ -2372,7 +2373,7 @@ fn add_contained_isoforms(
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 });
                 added += 1;
             }
@@ -2562,7 +2563,7 @@ fn emit_junction_paths(
             hardstart,
             hardend,
             alt_tts_end,
-            vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+            vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -2846,7 +2847,7 @@ fn emit_chain_from_graph(
         hardstart: true,
         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
     })
 }
 
@@ -2976,7 +2977,7 @@ fn emit_reference_chains(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -3109,7 +3110,7 @@ fn emit_reference_chains(
                         hardstart: true,
                         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -3202,7 +3203,7 @@ fn emit_reference_chains(
             hardstart: true,
             hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
         });
         added += 1;
         emitted_cnt += 1;
@@ -5435,6 +5436,13 @@ fn extract_bundle_transcripts_for_graph(
             tx.synthetic = true;
         }
     }
+    // Propagate Bundle.rescue_class → Transcript.rescue_class so GTF output
+    // can emit the rescue_class attribute for synthetic transcripts.
+    if let Some(rc) = bundle.rescue_class {
+        for tx in &mut txs {
+            tx.rescue_class = Some(rc);
+        }
+    }
     // Direct-emit oracle for diagnostic classification of missed tx.
     // Appends Transcript structs synthesized from GTF for ref tx that
     // overlap this bundle. Opt-in via RUSTLE_MISSED_ORACLE_DIRECT=path.gtf.
@@ -6126,7 +6134,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                intron_low: Vec::new(), synthetic: false,
+                intron_low: Vec::new(), synthetic: false, rescue_class: None,
             });
         }
 
@@ -6255,7 +6263,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    intron_low: Vec::new(), synthetic: false,
+                    intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 };
                 rescued.push(tx);
                 if debug {
@@ -6470,7 +6478,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                intron_low: Vec::new(), synthetic: false,
+                intron_low: Vec::new(), synthetic: false, rescue_class: None,
             });
             added += 1;
         }
@@ -6601,7 +6609,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    intron_low: Vec::new(), synthetic: false,
+                    intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 });
             }
         }
@@ -7606,7 +7614,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(), synthetic: false,
+            intron_low: Vec::new(), synthetic: false, rescue_class: None,
         });
     }
     out
@@ -7736,7 +7744,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            intron_low: Vec::new(), synthetic: false,
+            intron_low: Vec::new(), synthetic: false, rescue_class: None,
         });
     }
     out
@@ -7815,7 +7823,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardstart: false,
                         hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     };
                     predictions.push(tx);
                 }
@@ -7855,7 +7863,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardstart: false,
                     hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 };
                 predictions.push(tx);
             }
@@ -8133,6 +8141,7 @@ pub fn run<P: AsRef<Path>>(
                 read_bnodes: None,
                 bnode_colors: None,
                 synthetic: false,
+                rescue_class: None,
             })
             .collect()
     } else {
@@ -11877,6 +11886,7 @@ pub fn run<P: AsRef<Path>>(
                     read_bnodes: Some(sub_read_bnodes.clone()),
                     bnode_colors: Some(sbr.bnode_colors.clone()),
                     synthetic: false,
+                    rescue_class: None,
                 };
 
                 // DEBUG_BUNDLE: emit bundle summary matching expected format.
@@ -13337,7 +13347,7 @@ pub fn run<P: AsRef<Path>>(
                 hardstart: true,
                 hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {
@@ -13880,7 +13890,7 @@ pub fn run<P: AsRef<Path>>(
                     hardend: true,
                     alt_tts_end: true,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None,
-                    intron_low: Vec::new(), synthetic: false,
+                    intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 });
                 *added += 1;
                 if debug {

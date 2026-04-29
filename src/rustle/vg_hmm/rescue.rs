@@ -2,6 +2,7 @@
 
 use crate::types::{Bundle, BundleRead, JunctionStats, RunConfig};
 use crate::vg::{FamilyGroup, NovelCandidate};
+use crate::vg_hmm::diagnostic::{classify_internal, RescueClass};
 use crate::vg_hmm::family_graph::{FamilyGraph, NodeIdx};
 use crate::vg_hmm::scorer::{forward_against_family, viterbi_path, ViterbiPath};
 use anyhow::Result;
@@ -312,7 +313,13 @@ pub fn run_rescue_with_bundles(
     let mut synthetic_bundles: Vec<Bundle> = Vec::new();
     for (_family_id, (fg_idx, reads_with_paths)) in &per_family {
         let fg = &family_graphs[*fg_idx];
-        let mut new_bundles = synthesize_bundles(fg, reads_with_paths, min_reads_per_cluster);
+        let mut new_bundles = synthesize_bundles(
+            fg,
+            reads_with_paths,
+            min_reads_per_cluster,
+            kmer_len,
+            config.vg_rescue_diagnostic,
+        );
         synthetic_bundles.append(&mut new_bundles);
     }
 
@@ -332,10 +339,14 @@ pub fn run_rescue_with_bundles(
 ///
 /// `rescued_with_paths`: slice of `(read_name, node_path)` pairs — all from the
 /// same family graph `fg`.
+/// `kmer_len`: k-mer length used in the prefilter (for classify_internal).
+/// `vg_rescue_diagnostic`: when true, enables external minimap2 classification.
 pub fn synthesize_bundles(
     fg: &FamilyGraph,
     rescued_with_paths: &[(String, Vec<NodeIdx>)],
     min_reads: usize,
+    kmer_len: usize,
+    _vg_rescue_diagnostic: bool,
 ) -> Vec<Bundle> {
     // Cluster by the exact Vec<NodeIdx> path key.
     let mut clusters: HashMap<Vec<usize>, Vec<usize>> = HashMap::new();
@@ -430,6 +441,18 @@ pub fn synthesize_bundles(
             })
             .collect();
 
+        // Run internal diagnostic classifier.  Use cluster size as a proxy
+        // for n_kmer_hits (each read passed the prefilter, so ≥ min_kmer_hits
+        // each; cluster size × kmer_len is a conservative lower bound on the
+        // aggregate chain score).  masked_fraction is 0.0 — no per-read mask
+        // signal is threaded here yet (Phase 7 will refine).
+        let rc: Option<RescueClass> = Some(classify_internal(
+            member_indices.len(), // proxy for n_kmer_hits
+            kmer_len,
+            (max_end - min_start) as usize,
+            0.0, // masked_fraction placeholder
+        ));
+
         out.push(Bundle {
             chrom,
             start: bundle_start,
@@ -441,6 +464,7 @@ pub fn synthesize_bundles(
             read_bnodes: None,
             bnode_colors: None,
             synthetic: true,
+            rescue_class: rc,
         });
     }
 

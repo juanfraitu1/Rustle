@@ -175,6 +175,9 @@ pub fn write_gtf<W: Write>(
         if let Some(fam_size) = tx.vg_family_size {
             tx_attrs.push_str(&format!(" family_size \"{}\";", fam_size));
         }
+        if let Some(rc) = tx.rescue_class {
+            tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
+        }
         writeln!(
             writer,
             "{}\t{}\ttranscript\t{}\t{}\t1000\t{}\t.\t{}",
