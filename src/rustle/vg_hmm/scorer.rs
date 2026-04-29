@@ -11,6 +11,11 @@ fn idx(b: u8) -> Option<usize> {
 
 const NEG_INF: f64 = f64::NEG_INFINITY;
 
+/// Banding width for profile forward DP. Set to 0 to disable banding
+/// (for tests / debugging). 100 is sufficient for biological reads
+/// (allows up to 100 consecutive insertions/deletions before scoring breaks down).
+pub const FORWARD_BANDWIDTH: usize = 100;
+
 #[inline]
 fn logsumexp(a: f64, b: f64) -> f64 {
     if a == NEG_INF { return b; }
@@ -30,7 +35,61 @@ fn logsumexp(a: f64, b: f64) -> f64 {
 /// Returns `boundary_out` of length `read.len() + 1`, where `boundary_out[r]` is
 /// the log probability of having *exited* the profile's last state with `read[0..r]`
 /// consumed in total (i.e. `read[enter..r]` consumed internally).
+///
+/// This is a thin wrapper around `profile_forward_with_boundary_banded` using
+/// `FORWARD_BANDWIDTH`.
 pub fn profile_forward_with_boundary(p: &ProfileHmm, read: &[u8], boundary_in: &[f64]) -> Vec<f64> {
+    profile_forward_with_boundary_banded(p, read, boundary_in, FORWARD_BANDWIDTH)
+}
+
+/// Banded forward DP over a profile with a per-read-position boundary distribution.
+///
+/// Identical to `profile_forward_with_boundary` but restricts the inner DP to a
+/// diagonal band around each active entry in `boundary_in`, giving O(W) work per
+/// column instead of O(L).  `bandwidth = 0` disables banding (full DP, for
+/// debugging or short-read parity checks).
+///
+/// # Banding strategy
+///
+/// For each active entry `r` in `boundary_in` (where `boundary_in[r] > NEG_INF`),
+/// the natural alignment diagonal is `i = r + j`.  Cell `(j, i)` is updated only
+/// if there exists an active `r` such that `|i - (r + j)| ≤ bandwidth`.
+///
+/// Equivalently, define `offset[j][i] = i - j`.  Cell `(j, i)` is in-band iff
+/// `offset[j][i] ∈ [active_r_min - bandwidth, active_r_max + bandwidth]`,
+/// where `active_r_min/max` are the min/max active entry positions in `boundary_in`.
+///
+/// This keeps each column's window to `(active_r_max - active_r_min) + 2*bandwidth + 1`
+/// cells, which is at most `2*bandwidth + 1` cells when there is a single active
+/// entry (the common case for source nodes).
+/// Banded forward DP over a profile with a per-read-position boundary distribution.
+///
+/// Identical to `profile_forward_with_boundary` but restricts the inner DP to a
+/// diagonal band around each active entry in `boundary_in`, giving O(W) work per
+/// column instead of O(L).  `bandwidth = 0` disables banding (full DP, for
+/// debugging or short-read parity checks).
+///
+/// # Banding strategy
+///
+/// For each active entry `r` in `boundary_in` (where `boundary_in[r] > NEG_INF`),
+/// the natural alignment diagonal is `i = r + j`.  Cell `(j, i)` is updated only
+/// if there exists an active `r` such that `|i - (r + j)| ≤ bandwidth`.
+///
+/// Equivalently: define the column range at column j as
+/// `[r_min + j - W, r_max + j + W]` (clamped to `[0, l]`), where `r_min/r_max`
+/// are the min/max active positions in `boundary_in`.  This keeps the band at
+/// `(r_max - r_min) + 2*W + 1` cells per column — O(W) for a single entry point.
+///
+/// # Memory layout
+///
+/// Uses a 2-row rolling buffer (current + previous column) so allocation is
+/// O(W) rather than O(M × L).  The full `boundary_out` vector is still O(L).
+pub fn profile_forward_with_boundary_banded(
+    p: &ProfileHmm,
+    read: &[u8],
+    boundary_in: &[f64],
+    bandwidth: usize,
+) -> Vec<f64> {
     let m = p.n_columns;
     let l = read.len();
     assert_eq!(boundary_in.len(), l + 1, "boundary_in length mismatch");
@@ -39,47 +98,116 @@ pub fn profile_forward_with_boundary(p: &ProfileHmm, read: &[u8], boundary_in: &
         return vec![NEG_INF; l + 1];
     }
 
-    // dp_M[j][i], dp_I[j][i], dp_D[j][i]: log-prob of being in state (j, i)
-    // where j ∈ 1..=m is the profile column and i ∈ 0..=l is the read position.
-    let mut m_dp = vec![vec![NEG_INF; l + 1]; m + 1];
-    let mut i_dp = vec![vec![NEG_INF; l + 1]; m + 1];
-    let mut d_dp = vec![vec![NEG_INF; l + 1]; m + 1];
+    // For banding: find the range of active read positions in boundary_in.
+    // The diagonal for entry r at column j is i = r + j.
+    // The allowed i-range at column j is [r_min + j - W, r_max + j + W].
+    let (r_min, r_max) = if bandwidth == 0 {
+        (0usize, l)
+    } else {
+        let mut lo = l + 1;
+        let mut hi = 0usize;
+        for r in 0..=l {
+            if boundary_in[r] > NEG_INF {
+                if r < lo { lo = r; }
+                if r > hi { hi = r; }
+            }
+        }
+        if lo > hi {
+            // No active entries — entire output is NEG_INF.
+            return vec![NEG_INF; l + 1];
+        }
+        (lo, hi)
+    };
 
-    // Initialise virtual-start row from boundary_in instead of a single m_dp[0][0] = 0.
-    for r in 0..=l {
-        m_dp[0][r] = boundary_in[r];
-    }
+    // Rolling 2-row buffers: prev_m/i/d = row j-1, cur_m/i/d = row j.
+    // Size is l+1 (full read length) to allow direct indexing by i.
+    // We fill only the band cells; the rest stay NEG_INF.
+    let mut prev_m: Vec<f64> = boundary_in.to_vec(); // row 0 = boundary_in
+    let mut prev_i: Vec<f64> = vec![NEG_INF; l + 1];
+    let mut prev_d: Vec<f64> = vec![NEG_INF; l + 1];
+    let mut cur_m:  Vec<f64> = vec![NEG_INF; l + 1];
+    let mut cur_i:  Vec<f64> = vec![NEG_INF; l + 1];
+    let mut cur_d:  Vec<f64> = vec![NEG_INF; l + 1];
+
+    // We need the final row (j == m) in full to build boundary_out.
+    // With rolling buffers we naturally have the last row in cur_{m,i,d} after the loop.
 
     for j in 1..=m {
-        for i in 0..=l {
+        // Reset cur row to NEG_INF only over the band we're about to write.
+        // (Previous iterations may have written to adjacent bands; clear them.)
+        let prev_col_lo = if bandwidth == 0 {
+            0
+        } else {
+            (r_min + j - 1).saturating_sub(bandwidth)
+        };
+        let col_lo = if bandwidth == 0 {
+            0
+        } else {
+            (r_min + j).saturating_sub(bandwidth)
+        };
+        let col_hi = if bandwidth == 0 {
+            l
+        } else {
+            (r_max + j + bandwidth).min(l)
+        };
+
+        // Clear current column buffer for the range we'll write.
+        for i in col_lo..=col_hi {
+            cur_m[i] = NEG_INF;
+            cur_i[i] = NEG_INF;
+            cur_d[i] = NEG_INF;
+        }
+
+        for i in col_lo..=col_hi {
             // ── Match state ──────────────────────────────────────────────────
             let emit_m = if i > 0 {
                 idx(read[i - 1]).map(|k| p.match_emit[j - 1][k]).unwrap_or(NEG_INF)
             } else { NEG_INF };
-            let from_m = if i > 0 { m_dp[j - 1][i - 1] + p.trans[j - 1].mm + emit_m } else { NEG_INF };
-            let from_i = if i > 0 { i_dp[j - 1][i - 1] + p.trans[j - 1].im + emit_m } else { NEG_INF };
-            let from_d = if i > 0 { d_dp[j - 1][i - 1] + p.trans[j - 1].dm + emit_m } else { NEG_INF };
-            m_dp[j][i] = logsumexp(logsumexp(from_m, from_i), from_d);
+            let pm_prev = if i > 0 { prev_m[i - 1] } else { NEG_INF };
+            let pi_prev = if i > 0 { prev_i[i - 1] } else { NEG_INF };
+            let pd_prev = if i > 0 { prev_d[i - 1] } else { NEG_INF };
+            let from_m = if pm_prev > NEG_INF { pm_prev + p.trans[j - 1].mm + emit_m } else { NEG_INF };
+            let from_i = if pi_prev > NEG_INF { pi_prev + p.trans[j - 1].im + emit_m } else { NEG_INF };
+            let from_d = if pd_prev > NEG_INF { pd_prev + p.trans[j - 1].dm + emit_m } else { NEG_INF };
+            cur_m[i] = logsumexp(logsumexp(from_m, from_i), from_d);
 
             // ── Insert state ─────────────────────────────────────────────────
             let emit_i = if i > 0 {
                 idx(read[i - 1]).map(|k| p.insert_emit[j][k]).unwrap_or(NEG_INF)
             } else { NEG_INF };
-            let i_from_m = if i > 0 { m_dp[j][i - 1] + p.trans[j].mi + emit_i } else { NEG_INF };
-            let i_from_i = if i > 0 { i_dp[j][i - 1] + p.trans[j].ii + emit_i } else { NEG_INF };
-            i_dp[j][i] = logsumexp(i_from_m, i_from_i);
+            let i_from_m = if i > 0 && cur_m[i - 1] > NEG_INF { cur_m[i - 1] + p.trans[j].mi + emit_i } else { NEG_INF };
+            let i_from_i = if i > 0 && cur_i[i - 1] > NEG_INF { cur_i[i - 1] + p.trans[j].ii + emit_i } else { NEG_INF };
+            cur_i[i] = logsumexp(i_from_m, i_from_i);
 
             // ── Delete state ─────────────────────────────────────────────────
-            let d_from_m = m_dp[j - 1][i] + p.trans[j - 1].md;
-            let d_from_d = d_dp[j - 1][i] + p.trans[j - 1].dd;
-            d_dp[j][i] = logsumexp(d_from_m, d_from_d);
+            let d_from_m = if prev_m[i] > NEG_INF { prev_m[i] + p.trans[j - 1].md } else { NEG_INF };
+            let d_from_d = if prev_d[i] > NEG_INF { prev_d[i] + p.trans[j - 1].dd } else { NEG_INF };
+            cur_d[i] = logsumexp(d_from_m, d_from_d);
         }
+
+        // Clear the previous band cells so stale data doesn't affect future columns.
+        // (Only cells not covered by the new band need clearing, and only in [0, l].)
+        if bandwidth > 0 {
+            let clear_lo = prev_col_lo.min(l);
+            let clear_hi = col_lo.min(l);
+            for i in clear_lo..clear_hi {
+                prev_m[i] = NEG_INF;
+                prev_i[i] = NEG_INF;
+                prev_d[i] = NEG_INF;
+            }
+        }
+
+        // Swap rolling buffers: cur → prev for next column.
+        std::mem::swap(&mut prev_m, &mut cur_m);
+        std::mem::swap(&mut prev_i, &mut cur_i);
+        std::mem::swap(&mut prev_d, &mut cur_d);
     }
 
+    // After the loop, prev_* holds row m (the last column).
     // boundary_out[r] = log P exiting after consuming read[0..r] total.
     let mut out = vec![NEG_INF; l + 1];
     for r in 0..=l {
-        out[r] = logsumexp(logsumexp(m_dp[m][r], i_dp[m][r]), d_dp[m][r]);
+        out[r] = logsumexp(logsumexp(prev_m[r], prev_i[r]), prev_d[r]);
     }
     out
 }
@@ -344,5 +472,24 @@ mod tests {
         let names: Vec<usize> = path.nodes.iter().map(|n| n.0).collect();
         assert_eq!(names, vec![0, 1]);
         assert!(path.score > 0.0_f64.ln() - 100.0, "score={}", path.score);
+    }
+
+    #[test]
+    fn banded_matches_unbanded_for_short_read() {
+        let p = ProfileHmm::from_singleton(b"ACGTACGT");
+        let read = b"ACGTACGT";
+        let mut bin = vec![NEG_INF; read.len() + 1];
+        bin[0] = 0.0;
+        let unbanded = profile_forward_with_boundary_banded(&p, read, &bin, 0);
+        let banded   = profile_forward_with_boundary_banded(&p, read, &bin, 100);
+        for i in 0..unbanded.len() {
+            if unbanded[i].is_finite() {
+                assert!(
+                    (banded[i] - unbanded[i]).abs() < 1e-6,
+                    "banded[{}] = {} != unbanded[{}] = {}",
+                    i, banded[i], i, unbanded[i]
+                );
+            }
+        }
     }
 }
