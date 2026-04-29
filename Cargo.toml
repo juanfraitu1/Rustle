@@ -111,5 +111,9 @@ path = "tests/regression/vg_hmm_integration_golga.rs"
 name = "vg_hmm_synthetic_ground_truth"
 path = "tests/regression/vg_hmm_synthetic_ground_truth.rs"
 
+[[test]]
+name = "vg_hmm_negative_control"
+path = "tests/regression/vg_hmm_negative_control.rs"
+
 [dev-dependencies]
 tempfile = "3"
