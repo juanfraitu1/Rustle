@@ -94,6 +94,10 @@ pub struct Bundle {
     pub read_bnodes: Option<Vec<Vec<usize>>>,
     /// Color assignments for bundlenodes
     pub bnode_colors: Option<Vec<usize>>,
+    /// True for bundles synthesized by VG rescue from unmapped reads
+    /// (see src/rustle/vg_hmm/rescue.rs). Synthetic bundles bypass
+    /// transcript_isofrac and cross-bundle pairwise-contained filters.
+    pub synthetic: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -650,6 +654,7 @@ impl BundleData {
             bundlenodes: None,
             read_bnodes: None,
             bnode_colors: None,
+            synthetic: false,
         }
     }
 }

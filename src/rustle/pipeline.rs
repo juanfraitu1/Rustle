@@ -1305,6 +1305,7 @@ fn merge_region_outer_bundles(
             bundlenodes: None,
             read_bnodes: None,
             bnode_colors: None,
+            synthetic: false,
         });
     }
 
@@ -8121,6 +8122,7 @@ pub fn run<P: AsRef<Path>>(
                 bundlenodes: None,
                 read_bnodes: None,
                 bnode_colors: None,
+                synthetic: false,
             })
             .collect()
     } else {
@@ -11842,6 +11844,7 @@ pub fn run<P: AsRef<Path>>(
                     },
                     read_bnodes: Some(sub_read_bnodes.clone()),
                     bnode_colors: Some(sbr.bnode_colors.clone()),
+                    synthetic: false,
                 };
 
                 // DEBUG_BUNDLE: emit bundle summary matching expected format.

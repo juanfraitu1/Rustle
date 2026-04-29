@@ -2071,6 +2071,7 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
                 bundlenodes: None,
                 read_bnodes: None,
                 bnode_colors: None,
+                synthetic: false,
             });
         } // end for strand
     } // end for regions
