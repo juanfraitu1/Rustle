@@ -31,9 +31,12 @@ fn poa_msa_returns_equal_length_rows() {
 fn fully_conserved_column_has_peaked_emission() {
     let aligned: Vec<Vec<u8>> = vec![b"ACGT".to_vec(), b"ACGT".to_vec(), b"ACGT".to_vec()];
     let p = ProfileHmm::from_msa(&aligned).expect("fit failed");
-    // Column 0 is fully A; expect P(A) close to 1.
+    // Column 0 is fully A; with n_seq=3 and mixing alpha=0.25, log P(A) ≈ −0.21.
     let log_pa = p.match_emit[0][0];
-    assert!(log_pa > (-0.05_f64), "expected log P(A | col 0) ≈ 0, got {}", log_pa);
+    assert!(log_pa > -0.30, "expected fully conserved log P(A) > -0.30, got {}", log_pa);
+    // Conserved A column should dominate C column by more than 1 nat.
+    let log_pc = p.match_emit[0][1];
+    assert!(log_pa > log_pc + 1.0, "conserved A column should beat C column by > 1 nat: log_pa={} log_pc={}", log_pa, log_pc);
 }
 
 #[test]
