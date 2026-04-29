@@ -103,5 +103,9 @@ path = "tests/regression/vg_hmm_rescue.rs"
 name = "vg_hmm_diagnostic"
 path = "tests/regression/vg_hmm_diagnostic.rs"
 
+[[test]]
+name = "vg_hmm_integration_golga"
+path = "tests/regression/vg_hmm_integration_golga.rs"
+
 [dev-dependencies]
 tempfile = "3"
