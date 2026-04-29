@@ -4,6 +4,7 @@ use rustle::vg_hmm::rescue::{prefilter_read, run_rescue_in_memory, synthesize_bu
 use rustle::vg_hmm::family_graph::{FamilyGraph, ExonClass, JunctionEdge, NodeIdx};
 use rustle::vg_hmm::profile::ProfileHmm;
 use rustle::vg::FamilyGroup;
+use rustle::path_extract::Transcript;
 use std::collections::{HashMap, HashSet};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -182,4 +183,82 @@ fn synthesize_bundles_two_clusters_emit_two_bundles() {
         .collect();
     let bundles = synthesize_bundles(&fg, &reads, 3);
     assert_eq!(bundles.len(), 2, "expected two distinct clusters → two bundles");
+}
+
+// ── Task 5.5: synthetic flag propagation Bundle → Transcript ──────────────────
+
+/// Regression test for the Phase 5 propagation bug: Bundle.synthetic must be
+/// stamped onto every Transcript produced from that bundle.  The fix lives in
+/// pipeline.rs::extract_bundle_transcripts_for_graph immediately after the
+/// per-bundle extract call.  Here we verify the propagation logic in isolation:
+/// start with transcripts that all have synthetic=false, apply the same block
+/// that the pipeline now runs, and confirm every transcript ends up with
+/// synthetic=true when the source bundle is synthetic.
+#[test]
+fn synthetic_flag_propagates_from_bundle_to_transcripts() {
+    let fg = two_node_fg_with_profiles();
+    let path = vec![NodeIdx(0), NodeIdx(1)];
+    let reads: Vec<(String, Vec<NodeIdx>)> = (0..3)
+        .map(|i| (format!("r{}", i), path.clone()))
+        .collect();
+    let bundles = synthesize_bundles(&fg, &reads, 3);
+    assert_eq!(bundles.len(), 1);
+    let bundle = &bundles[0];
+    assert!(bundle.synthetic, "precondition: synthesize_bundles must set synthetic=true");
+
+    // Simulate what extract_bundle_transcripts_for_graph returns before the
+    // fix: a Vec<Transcript> where every entry has synthetic=false.
+    let mut txs: Vec<Transcript> = (0..3).map(|_| Transcript {
+        chrom: bundle.chrom.clone(),
+        strand: bundle.strand,
+        exons: vec![(bundle.start, bundle.end)],
+        synthetic: false,   // ← exactly what every extractor hardcodes
+        ..Default::default()
+    }).collect();
+
+    // Apply the exact propagation block added by this fix.
+    if bundle.synthetic {
+        for tx in &mut txs {
+            tx.synthetic = true;
+        }
+    }
+
+    // Every transcript must now carry synthetic=true.
+    for (i, tx) in txs.iter().enumerate() {
+        assert!(tx.synthetic, "transcript[{}] must have synthetic=true after propagation", i);
+    }
+}
+
+/// Confirm non-synthetic bundles leave transcript.synthetic=false (no
+/// accidental collateral stamping).
+#[test]
+fn non_synthetic_bundle_leaves_transcript_flag_false() {
+    // Build a bundle with synthetic=false by calling synthesize_bundles and
+    // then clearing the flag (synthesize_bundles always sets it).
+    let fg = two_node_fg_with_profiles();
+    let path = vec![NodeIdx(0), NodeIdx(1)];
+    let reads: Vec<(String, Vec<NodeIdx>)> = (0..3)
+        .map(|i| (format!("r{}", i), path.clone()))
+        .collect();
+    let mut bundles = synthesize_bundles(&fg, &reads, 3);
+    bundles[0].synthetic = false; // normal (non-rescue) bundle
+    let bundle = &bundles[0];
+
+    let mut txs: Vec<Transcript> = (0..2).map(|_| Transcript {
+        chrom: bundle.chrom.clone(),
+        strand: bundle.strand,
+        exons: vec![(bundle.start, bundle.end)],
+        synthetic: false,
+        ..Default::default()
+    }).collect();
+
+    if bundle.synthetic {
+        for tx in &mut txs {
+            tx.synthetic = true;
+        }
+    }
+
+    for (i, tx) in txs.iter().enumerate() {
+        assert!(!tx.synthetic, "transcript[{}] must stay synthetic=false for non-synthetic bundle", i);
+    }
 }

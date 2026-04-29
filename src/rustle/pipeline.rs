@@ -5425,6 +5425,16 @@ fn extract_bundle_transcripts_for_graph(
             Some(&mut longrec_summary),
         )
     };
+    // Propagate Bundle.synthetic → Transcript.synthetic so that downstream
+    // filter exemptions (isofrac, cross-bundle pairwise-contained) actually
+    // fire for VG-HMM rescued bundles.  Every extractor hardcodes
+    // `synthetic: false`; we stamp the flag here, at the single choke-point
+    // that owns both the bundle and the freshly-produced Vec<Transcript>.
+    if bundle.synthetic {
+        for tx in &mut txs {
+            tx.synthetic = true;
+        }
+    }
     // Direct-emit oracle for diagnostic classification of missed tx.
     // Appends Transcript structs synthesized from GTF for ref tx that
     // overlap this bundle. Opt-in via RUSTLE_MISSED_ORACLE_DIRECT=path.gtf.
