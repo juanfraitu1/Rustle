@@ -73,15 +73,13 @@ impl ProfileHmm {
             return Err(anyhow!("from_msa: rows have unequal lengths"));
         }
 
-        // Match-column detection: a column is a match column if at least one row
-        // has a non-gap base (i.e., not all rows have a gap). Columns where ALL
-        // rows have gaps are pure insert columns with no match state.
-        // Note: the ≥50% non-gap threshold is too strict for typical exon MSAs
-        // where even a minority-insertion column still represents a real exon position.
+        // Match-column detection: a column is a match column if a strict majority
+        // of rows have a non-gap base (i.e., more than half are non-gap).
+        // Columns where ≥50% of rows have gaps are INSERT columns with no match state.
         let mut is_match: Vec<bool> = vec![false; n_col];
         for c in 0..n_col {
             let gaps = rows.iter().filter(|r| r[c] == b'-').count();
-            is_match[c] = gaps < n_seq;
+            is_match[c] = gaps * 2 < n_seq;
         }
 
         // Background composition (family-wide), used as the smoothing prior.

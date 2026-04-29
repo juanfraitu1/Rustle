@@ -61,9 +61,17 @@ fn no_gaps_msa_makes_mm_dominant() {
 
 #[test]
 fn gappy_msa_increases_md_or_mi() {
-    let rows: Vec<Vec<u8>> = vec![b"AC-GT".to_vec(), b"ACGGT".to_vec(), b"AC-GT".to_vec()];
+    use rustle::vg_hmm::profile::ProfileHmm;
+    // 4-row MSA: column 2 has 1/4 gap → still MATCH (25% gap < 50%).
+    // The single deletion at column 2 in row 2 should produce a non-trivial M->D out of column 1.
+    let rows: Vec<Vec<u8>> = vec![
+        b"ACGGT".to_vec(),
+        b"ACGGT".to_vec(),
+        b"AC-GT".to_vec(),
+        b"ACGGT".to_vec(),
+    ];
     let p = ProfileHmm::from_msa(&rows).unwrap();
-    // Transition out of column 1 (after the C) should show non-trivial M->D
-    // because two of three rows have a deletion at column 2.
-    assert!(p.trans[1].md > (1e-3_f64).ln(), "expected M->D > 0 at col 1, got {}", p.trans[1].md);
+    // Out of match column 1 (the C column), one row goes to a delete at column 2.
+    assert!(p.trans[1].md > (1e-3_f64).ln(),
+            "expected M->D > log(0.001) at col 1, got {}", p.trans[1].md);
 }
