@@ -66,6 +66,25 @@ fn exon_extraction_returns_unique_sorted_intervals() {
 }
 
 #[test]
+fn minimizer_jaccard_splits_position_cluster_when_sequences_diverge() {
+    use rustle::vg_hmm::family_graph::refine_by_minimizer_jaccard;
+    // Two "exons" at the same position cluster but with no shared k-mers.
+    let cluster = vec![(0usize, b"AAAAAAAAAAAAAAAA".to_vec()),
+                       (1usize, b"GGGGGGGGGGGGGGGG".to_vec())];
+    let split = refine_by_minimizer_jaccard(&cluster, 0.30, 15, 10);
+    assert_eq!(split.len(), 2, "fully divergent should split");
+}
+
+#[test]
+fn minimizer_jaccard_keeps_similar_sequences_together() {
+    use rustle::vg_hmm::family_graph::refine_by_minimizer_jaccard;
+    let s = b"ACGTACGTACGTACGTACGTACGTACGT".to_vec();
+    let cluster = vec![(0usize, s.clone()), (1usize, s.clone())];
+    let split = refine_by_minimizer_jaccard(&cluster, 0.30, 15, 10);
+    assert_eq!(split.len(), 1, "identical should stay together");
+}
+
+#[test]
 fn position_overlap_clusters_partition_exons() {
     use rustle::vg_hmm::family_graph::cluster_by_position;
     // copy 0: exons at 100-200 and 300-400

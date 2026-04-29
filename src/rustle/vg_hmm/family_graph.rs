@@ -117,3 +117,63 @@ pub fn cluster_by_position(
     }
     groups.into_values().collect()
 }
+
+use std::collections::HashSet;
+
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in bytes { h ^= b as u64; h = h.wrapping_mul(0x100000001b3); }
+    h
+}
+
+fn minimizers(seq: &[u8], k: usize, w: usize) -> HashSet<u64> {
+    let mut out = HashSet::new();
+    if seq.len() < k { return out; }
+    let n = seq.len() - k + 1;
+    for win_start in 0..n.saturating_sub(w).max(1) {
+        let win_end = (win_start + w).min(n);
+        let mut best: Option<u64> = None;
+        for i in win_start..win_end {
+            let h = fnv1a(&seq[i..i + k]);
+            best = Some(best.map_or(h, |b| b.min(h)));
+        }
+        if let Some(h) = best { out.insert(h); }
+    }
+    out
+}
+
+/// Within a position-overlap cluster, split by minimizer-Jaccard similarity.
+pub fn refine_by_minimizer_jaccard(
+    cluster: &[(CopyId, Vec<u8>)],
+    min_jaccard: f64,
+    k: usize,
+    w: usize,
+) -> Vec<Vec<CopyId>> {
+    let n = cluster.len();
+    let mins: Vec<HashSet<u64>> = cluster.iter().map(|(_, s)| minimizers(s, k, w)).collect();
+
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(p: &mut [usize], x: usize) -> usize {
+        if p[x] == x { x } else { let r = find(p, p[x]); p[x] = r; r }
+    }
+    fn union(p: &mut [usize], a: usize, b: usize) {
+        let ra = find(p, a); let rb = find(p, b);
+        if ra != rb { p[ra] = rb; }
+    }
+
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let inter = mins[i].intersection(&mins[j]).count() as f64;
+            let union_sz = mins[i].union(&mins[j]).count() as f64;
+            if union_sz == 0.0 { continue; }
+            if inter / union_sz >= min_jaccard { union(&mut parent, i, j); }
+        }
+    }
+    use std::collections::BTreeMap;
+    let mut g: BTreeMap<usize, Vec<CopyId>> = BTreeMap::new();
+    for i in 0..n {
+        let r = find(&mut parent, i);
+        g.entry(r).or_default().push(cluster[i].0);
+    }
+    g.into_values().collect()
+}
