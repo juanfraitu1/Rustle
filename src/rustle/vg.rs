@@ -1359,6 +1359,28 @@ pub fn build_family_consensus_junctions(
     all_consensus
 }
 
+/// Top-level dispatcher for novel gene-copy discovery.
+///
+/// Routes to the k-mer legacy path or the new HMM-based rescue path depending on
+/// `config.vg_discover_novel_mode`. The HMM path falls back to k-mer on error.
+pub fn discover_novel_copies(
+    bam_path: &std::path::Path,
+    families: &[FamilyGroup],
+    bundles: &[Bundle],
+    config: &crate::types::RunConfig,
+) -> Vec<NovelCandidate> {
+    match config.vg_discover_novel_mode.as_str() {
+        "hmm" => match crate::vg_hmm::rescue::run_rescue(bam_path, families, bundles, config) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("[VG-HMM] rescue failed: {} — falling back to kmer", e);
+                discover_novel_copies_kmer(bam_path, families, bundles, config)
+            }
+        },
+        _ => discover_novel_copies_kmer(bam_path, families, bundles, config),
+    }
+}
+
 /// Discover novel gene copies from unmapped reads using k-mer matching.
 ///
 /// Approach: extract exonic sequences from each family's bundles (via genome FASTA),
@@ -1367,7 +1389,7 @@ pub fn build_family_consensus_junctions(
 ///
 /// This avoids supplementary alignments (which contain chimeric artifacts).
 /// Requires `--genome-fasta` for exon sequence extraction.
-pub fn discover_novel_copies(
+fn discover_novel_copies_kmer(
     bam_path: &std::path::Path,
     families: &[FamilyGroup],
     bundles: &[Bundle],
