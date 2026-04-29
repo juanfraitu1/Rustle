@@ -94,3 +94,7 @@ path = "tests/regression/vg_hmm_profile.rs"
 [[test]]
 name = "vg_hmm_scorer"
 path = "tests/regression/vg_hmm_scorer.rs"
+
+[[test]]
+name = "vg_hmm_rescue"
+path = "tests/regression/vg_hmm_rescue.rs"
