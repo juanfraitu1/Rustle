@@ -64,3 +64,16 @@ fn exon_extraction_returns_unique_sorted_intervals() {
     let exons = extract_copy_exons(&b);
     assert_eq!(exons, vec![(100, 200), (300, 400), (450, 500)]);
 }
+
+#[test]
+fn position_overlap_clusters_partition_exons() {
+    use rustle::vg_hmm::family_graph::cluster_by_position;
+    // copy 0: exons at 100-200 and 300-400
+    // copy 1: exons at 110-210 (overlaps copy0[0]) and 500-600 (no overlap)
+    let copy0 = vec![(100u64, 200u64), (300, 400)];
+    let copy1 = vec![(110u64, 210u64), (500, 600)];
+    let clusters = cluster_by_position(&[("chrA", '+', copy0), ("chrA", '+', copy1)], 0.30);
+    // Expect 3 clusters: {(c0,0),(c1,0)}, {(c0,1)}, {(c1,1)}
+    assert_eq!(clusters.len(), 3);
+    assert!(clusters.iter().any(|c| c.len() == 2)); // the overlapping pair
+}
