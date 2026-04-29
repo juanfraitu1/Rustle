@@ -72,7 +72,13 @@ fn test_external_classify_skip_if_no_minimap2() {
     use std::process::Command;
     use std::io::Write;
 
-    if Command::new("minimap2").arg("--version").output().is_err() {
+    // Accept either the known install path or a PATH-visible minimap2.
+    let has_mm2 = Command::new("/home/juanfra/miniforge3/bin/minimap2")
+        .arg("--version")
+        .output()
+        .is_ok()
+        || Command::new("minimap2").arg("--version").output().is_ok();
+    if !has_mm2 {
         eprintln!("skipping: minimap2 not on PATH");
         return;
     }

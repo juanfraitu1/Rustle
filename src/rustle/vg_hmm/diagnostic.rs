@@ -142,6 +142,19 @@ fn extract_cigar(sam_line: &str) -> Option<&str> {
 
 /// Try to align `read_seq` to `ref_fasta` using minimap2 with `extra_args`.
 ///
+/// Preferred minimap2 binary path (checked first; falls back to PATH lookup).
+const MINIMAP2_PREFERRED_PATH: &str = "/home/juanfra/miniforge3/bin/minimap2";
+
+/// Resolve the minimap2 command: use `MINIMAP2_PREFERRED_PATH` if it exists,
+/// otherwise fall back to `"minimap2"` (PATH lookup).
+fn minimap2_cmd() -> std::process::Command {
+    if std::path::Path::new(MINIMAP2_PREFERRED_PATH).exists() {
+        std::process::Command::new(MINIMAP2_PREFERRED_PATH)
+    } else {
+        std::process::Command::new("minimap2")
+    }
+}
+
 /// Returns `(has_primary, primary_cigar)`.
 fn try_minimap2(
     ref_fasta: &Path,
@@ -149,9 +162,9 @@ fn try_minimap2(
     extra_args: &[&str],
 ) -> Result<(bool, Option<String>)> {
     use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
-    let mut child = Command::new("minimap2")
+    let mut child = minimap2_cmd()
         .args(extra_args)
         .arg("-a") // SAM output
         .arg(ref_fasta)
