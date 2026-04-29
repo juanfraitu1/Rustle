@@ -298,10 +298,13 @@ pub fn build_family_graph(
         .collect();
     let raw = collect_family_junctions(&per_copy_juncs);
 
+    // r.donor / r.acceptor are already rounded to nearest 10 bp by
+    // collect_family_junctions (jitter absorption). Round node spans the
+    // same way so junction-to-node binding survives the rounding.
     let mut edges: Vec<JunctionEdge> = Vec::new();
     for r in &raw {
-        let from = nodes.iter().find(|n| n.span.1 == (r.donor / 10 * 10) || n.span.1 == r.donor).map(|n| n.idx);
-        let to   = nodes.iter().find(|n| n.span.0 == (r.acceptor / 10 * 10) || n.span.0 == r.acceptor).map(|n| n.idx);
+        let from = nodes.iter().find(|n| n.span.1 / 10 * 10 == r.donor || n.span.1 == r.donor).map(|n| n.idx);
+        let to   = nodes.iter().find(|n| n.span.0 / 10 * 10 == r.acceptor || n.span.0 == r.acceptor).map(|n| n.idx);
         if let (Some(f), Some(t)) = (from, to) {
             edges.push(JunctionEdge { from: f, to: t, family_support: r.family_support, strand: r.strand });
         }
