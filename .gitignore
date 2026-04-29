@@ -67,8 +67,10 @@
 /test_sensitive/
 /gene_family_detector/
 
-# 7. Test data handling (Keep synthetic family, ignore large chr1 subsets)
+# 7. Test data handling (Keep synthetic family and vg_hmm fixtures, ignore large chr1 subsets)
 /test_data/*
 !/test_data/synthetic_family/
 !/test_data/synthetic_family/**
+!/test_data/vg_hmm/
+!/test_data/vg_hmm/**
 *.log
