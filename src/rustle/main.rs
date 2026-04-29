@@ -399,6 +399,18 @@ struct Args {
     /// Minimum reads to create a novel copy bundle [default: 3]
     #[arg(long, default_value = "3")]
     vg_min_novel_reads: usize,
+
+    /// VG novel-copy discovery algorithm: `kmer` (legacy) or `hmm` (family RNA-HMM).
+    #[arg(long = "vg-discover-novel-mode", default_value = "kmer")]
+    vg_discover_novel_mode: String,
+
+    /// Run external minimap2 verification on each rescued read (slower).
+    #[arg(long = "vg-rescue-diagnostic")]
+    vg_rescue_diagnostic: bool,
+
+    /// Forward log-odds threshold for HMM rescue (nats). Default 30.0.
+    #[arg(long = "vg-rescue-min-loglik", default_value_t = 30.0)]
+    vg_rescue_min_loglik: f64,
 }
 
 fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
@@ -576,6 +588,9 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_snp: args.vg_snp,
         vg_phase: args.vg_phase,
         vg_min_novel_reads: args.vg_min_novel_reads,
+        vg_discover_novel_mode: args.vg_discover_novel_mode,
+        vg_rescue_diagnostic: args.vg_rescue_diagnostic,
+        vg_rescue_min_loglik: args.vg_rescue_min_loglik,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

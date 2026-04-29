@@ -866,6 +866,12 @@ pub struct RunConfig {
     pub vg_phase: bool,
     /// Minimum reads to create a novel copy bundle [default: 3].
     pub vg_min_novel_reads: usize,
+    /// `kmer` (legacy) or `hmm` (new). Default `kmer` until validation flips it.
+    pub vg_discover_novel_mode: String,
+    /// Enable external minimap2 verification of rescued reads.
+    pub vg_rescue_diagnostic: bool,
+    /// Forward log-odds threshold for HMM rescue (nats).
+    pub vg_rescue_min_loglik: f64,
 }
 
 impl RunConfig {
@@ -1093,6 +1099,9 @@ impl Default for RunConfig {
             vg_snp: false,
             vg_phase: false,
             vg_min_novel_reads: 3,
+            vg_discover_novel_mode: "kmer".to_string(),
+            vg_rescue_diagnostic: false,
+            vg_rescue_min_loglik: 30.0,
         }
     }
 }
