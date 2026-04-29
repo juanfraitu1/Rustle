@@ -140,13 +140,16 @@ pub struct ProfileHmm {
 
 ### 5.2 MSA strategy
 
-- For up to 10 copies (covers all four families benchmarked in
-  `MULTI_COPY_FAMILY_PROOF.md`): banded pairwise progressive alignment,
-  guided by pairwise edit distance. Implementation in pure Rust to avoid
-  FFI; banded Needleman-Wunsch with band width = 2 × max pairwise edit
-  distance.
-- Future: replace with POA (spoa) via FFI if a family ever exceeds 10
-  copies and progressive alignment quality drops.
+- **Partial-order alignment (POA) via spoa**, from day one. Bind through
+  an existing crate (`rust-spoa` or equivalent FFI wrapper); pin the
+  version in `Cargo.toml`. POA handles repeated and structural elements
+  more honestly than progressive pairwise alignment, which matters at
+  copy-specific exon boundaries.
+- POA produces a consensus + per-sequence alignment columns, which feed
+  directly into §5.3 emission estimation.
+- Build-time fallback: if POA fails or produces a degenerate alignment
+  (consensus length < 0.5 × median input length), drop the affected
+  exon class to per-copy singletons (per §12).
 
 ### 5.3 Emission distributions
 
@@ -336,10 +339,20 @@ In order of integration testing:
    match emission is peaked (`P(observed base) > 0.95`) and a divergent
    column is near-uniform.
 3. **Integration: GOLGA6L7 chr19 triple smoke** — full Rustle run on
-   `GGO.bam`, `--vg-discover-novel-mode hmm`. Assert: family graph for
-   GOLGA6L7 has 9 exon classes, no copy-specific singletons, ≥ 1
+   `../GGO_19.bam` (45 MB chr19 subset; lives at
+   `/mnt/c/Users/jfris/Desktop/GGO_19.bam`, parent of the Rustle repo
+   working tree), `--vg-discover-novel-mode hmm`. Assert: family graph
+   for GOLGA6L7 has 9 exon classes, no copy-specific singletons, ≥ 1
    synthetic bundle emitted, `rescue_class` populated. Cross-check
-   diagnostic counts against `tools/golga6l7_snp_probe.py`.
+   diagnostic counts against `tools/golga6l7_snp_probe.py`. The
+   chr19-only BAM keeps the smoke test fast (~10 s) while exercising
+   the GOLGA6L7 triple end-to-end.
+
+   The full-BAM benchmark (used to validate `MULTI_COPY_FAMILY_PROOF.md`
+   numbers in §11 step 4) runs against `../GGO.bam`
+   (1.67 GB, full gorilla IsoSeq, at
+   `/mnt/c/Users/jfris/Desktop/GGO.bam`); not part of the regression
+   suite because of size.
 4. **Synthetic ground truth** — take one annotated GOLGA copy, perturb 5%
    of bases, insert a copy-specific exon, simulate 50 reads via a small
    read simulator (or even fixed perturbations of real reads). Assert:
