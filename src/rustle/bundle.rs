@@ -1300,6 +1300,20 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
             }
         }
 
+        // LOO experiment: skip reads whose alignment overlaps a mask region.
+        // The same read's sequence is collected by the HMM rescue path
+        // (vg_hmm/rescue.rs) so it can be recovered as a "novel" copy.
+        if !config.vg_mask_regions.is_empty() {
+            if let Some((rs, re_excl)) = crate::bam::record_ref_span(&record) {
+                let masked = config.vg_mask_regions.iter().any(|(c, ms, me)| {
+                    c == &name && rs < *me && *ms < re_excl
+                });
+                if masked {
+                    continue;
+                }
+            }
+        }
+
         let is_primary = !record.flags().is_secondary() && !record.flags().is_supplementary();
         let mut parsed_read = crate::bam::record_to_bundle_read_with_snp(
             &record,

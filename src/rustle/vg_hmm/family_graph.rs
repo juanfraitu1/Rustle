@@ -77,9 +77,42 @@ use crate::types::Bundle;
 /// Collect, dedup, and sort exonic intervals from a bundle's reads.
 /// Returns half-open (start, end) pairs on the bundle's chromosome.
 pub fn extract_copy_exons(bundle: &Bundle) -> Vec<(u64, u64)> {
+    // Primary path: reads carry exact aligned-exon spans.
     let mut all: Vec<(u64, u64)> = bundle.reads.iter()
         .flat_map(|r| r.exons.iter().copied())
         .collect();
+    if all.is_empty() {
+        // Fallback: lightweight bundle clones (e.g., the slim copy passed to
+        // discover_novel_copies — pipeline.rs:8137) strip reads to save
+        // memory. Reconstruct exons from junction_stats: the regions between
+        // consecutive (donor, acceptor) pairs are introns, so exonic regions
+        // are the gaps. First/last exon use bundle.{start,end}.
+        let mut donors: Vec<u64> = Vec::new();
+        let mut acceptors: Vec<u64> = Vec::new();
+        for (j, _) in &bundle.junction_stats {
+            donors.push(j.donor);
+            acceptors.push(j.acceptor);
+        }
+        donors.sort_unstable();
+        acceptors.sort_unstable();
+        if donors.is_empty() {
+            return vec![(bundle.start, bundle.end)];
+        }
+        let n = donors.len();
+        let mut out = Vec::with_capacity(n + 1);
+        out.push((bundle.start, donors[0]));
+        for i in 0..n.saturating_sub(1) {
+            let s = acceptors[i];
+            let e = donors[i + 1];
+            if e > s {
+                out.push((s, e));
+            }
+        }
+        out.push((acceptors[n - 1], bundle.end));
+        out.sort_unstable();
+        out.dedup();
+        return out;
+    }
     all.sort_unstable();
     all.dedup();
     all

@@ -889,6 +889,13 @@ pub struct RunConfig {
     pub vg_multimap_sequences: std::collections::HashMap<u64, Vec<u8>>,
     /// Forward log-odds threshold for HMM rescue (nats).
     pub vg_rescue_min_loglik: f64,
+    /// Mask regions for the novel-copy LOO experiment. Reads whose primary
+    /// alignment overlaps any region in this list are treated as **unaligned**:
+    /// they're excluded from bundle building (no normal transcript) and
+    /// included in the HMM rescue pool (sequence used; alignment ignored).
+    /// Useful for verifying `--vg-discover-novel` actually recovers a paralog
+    /// from its sequence alone. Repeatable: `--vg-mask-region chrom:start-end`.
+    pub vg_mask_regions: Vec<(String, u64, u64)>,
 }
 
 impl RunConfig {
@@ -1120,6 +1127,7 @@ impl Default for RunConfig {
             vg_rescue_diagnostic: false,
             vg_rescue_min_loglik: 30.0,
             vg_multimap_sequences: std::collections::HashMap::new(),
+            vg_mask_regions: Vec::new(),
         }
     }
 }

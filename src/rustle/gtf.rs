@@ -178,6 +178,12 @@ pub fn write_gtf<W: Write>(
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
         }
+        // Mark transcripts produced from a synthetic bundle (HMM rescue of
+        // unmapped or mask-region reads) so they're identifiable as
+        // novel-copy candidates from objective 4 (--vg-discover-novel).
+        if tx.synthetic {
+            tx_attrs.push_str(" copy_status \"novel\";");
+        }
         writeln!(
             writer,
             "{}\t{}\ttranscript\t{}\t{}\t1000\t{}\t.\t{}",

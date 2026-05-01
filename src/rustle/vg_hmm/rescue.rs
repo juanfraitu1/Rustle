@@ -221,9 +221,24 @@ pub fn run_rescue_with_bundles(
     let families = &split_families;
 
     // (a) Load genome.
-    let genome = config.genome_fasta.as_ref().and_then(|p| {
-        crate::genome::GenomeIndex::from_fasta(p).ok()
-    });
+    let genome = match config.genome_fasta.as_ref() {
+        Some(p) => match crate::genome::GenomeIndex::from_fasta(p) {
+            Ok(g) => {
+                eprintln!("[VG-HMM] loaded genome FASTA: {}", p);
+                Some(g)
+            }
+            Err(e) => {
+                eprintln!("[VG-HMM] WARNING: failed to load genome FASTA {}: {} — \
+                           per-copy sequences unavailable; rescue will fail prefilter",
+                          p, e);
+                None
+            }
+        },
+        None => {
+            eprintln!("[VG-HMM] WARNING: --genome-fasta not provided; rescue will fail prefilter");
+            None
+        }
+    };
 
     // (b) Build family graphs with sequences.
     let kmer_len: usize = 15;
@@ -279,6 +294,16 @@ pub fn run_rescue_with_bundles(
         return Ok((Vec::new(), Vec::new()));
     }
 
+    // Diagnostic: how many family graphs have any sequences vs. empty?
+    let n_with_seq = family_graphs.iter().filter(|fg| {
+        fg.nodes.iter().any(|n| n.per_copy_sequences.iter().any(|(_, s)| !s.is_empty()))
+    }).count();
+    let total_kmers: usize = family_kmer_sets.iter().map(|s| s.len()).sum();
+    eprintln!(
+        "[VG-HMM] family graphs: {}/{} have non-empty sequences; total k-mers in prefilter set: {}",
+        n_with_seq, family_graphs.len(), total_kmers
+    );
+
     // (d) Open BAM and iterate unmapped reads.
     let bam_file = match std::fs::File::open(bam_path) {
         Ok(f) => f,
@@ -288,24 +313,57 @@ pub fn run_rescue_with_bundles(
     let worker_count = std::num::NonZeroUsize::MIN;
     let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker_count, buf);
     let mut reader = noodles_bam::io::Reader::from(bgzf);
-    let _header = reader.read_header()?;
+    let header = reader.read_header()?;
 
     // Threshold: any score above NEG_INF is kept for now; tighten later.
     let min_loglik: f64 = -1000.0;
 
-    let mut unmapped_reads: Vec<(String, Vec<u8>)> = Vec::new();
+    // (read_name, sequence, candidate_family_indices_after_prefilter)
+    let mut unmapped_reads: Vec<(String, Vec<u8>, Vec<usize>)> = Vec::new();
     let mut n_unmapped = 0usize;
+    let mut n_masked = 0usize;
     let mut n_prefilter_pass = 0usize;
+    let mask_active = !config.vg_mask_regions.is_empty();
 
     for result in reader.records() {
         let record = match result {
             Ok(r) => r,
             Err(_) => continue,
         };
-        if !record.flags().is_unmapped() {
+        let is_unmapped = record.flags().is_unmapped();
+        // LOO mask: include reads whose primary alignment overlaps a mask
+        // region (treat as if unaligned). Skip secondary/supplementary so we
+        // collect the sequence only once per read.
+        let mut is_masked = false;
+        if !is_unmapped && mask_active
+            && !record.flags().is_secondary()
+            && !record.flags().is_supplementary()
+        {
+            // Resolve chromosome name from the reference index.
+            let ref_name = record.reference_sequence_id()
+                .and_then(|r| r.ok())
+                .and_then(|rid| header.reference_sequences().get_index(rid))
+                .map(|(name, _)| String::from_utf8_lossy(name.as_ref()).into_owned());
+            if let Some(name) = ref_name {
+                let span = record.alignment_start()
+                    .and_then(|s| s.ok())
+                    .map(|s| s.get() as u64);
+                if let Some(start_1b) = span {
+                    use noodles_sam::alignment::record::Cigar as _;
+                    let rs = start_1b.saturating_sub(1);
+                    let span_len = record.cigar().alignment_span().unwrap_or(0) as u64;
+                    let re_excl = rs.saturating_add(span_len);
+                    is_masked = config.vg_mask_regions.iter().any(|(c, ms, me)| {
+                        c == &name && rs < *me && *ms < re_excl
+                    });
+                }
+            }
+        }
+        if !is_unmapped && !is_masked {
             continue;
         }
-        n_unmapped += 1;
+        if is_unmapped { n_unmapped += 1; }
+        if is_masked { n_masked += 1; }
 
         // Decode 4-bit BAM sequence (same pattern as vg.rs:discover_novel_copies_kmer).
         let seq_obj = record.sequence();
@@ -333,32 +391,76 @@ pub fn run_rescue_with_bundles(
             continue;
         }
 
-        // (e) Prefilter: must match at least one family.
-        let passes_any = family_kmer_sets.iter().any(|fk| {
-            prefilter_read(&seq_bytes, fk, kmer_len, min_kmer_hits).0
-        });
-        if !passes_any {
+        // (e) Prefilter: collect the families this read passes against, so
+        // HMM scoring restricts to candidate families instead of all 26+.
+        // For 22 reads × 26 families on chr19 the unfiltered loop is 572
+        // forward DPs (≥30min); per-read candidate sets typically have ≤2
+        // families.
+        let mut candidate_fams: Vec<usize> = Vec::new();
+        for (fi, fk) in family_kmer_sets.iter().enumerate() {
+            if prefilter_read(&seq_bytes, fk, kmer_len, min_kmer_hits).0 {
+                candidate_fams.push(fi);
+            }
+        }
+        if candidate_fams.is_empty() {
             continue;
         }
         n_prefilter_pass += 1;
 
         let read_name = record.name().map(|n| n.to_string()).unwrap_or_default();
-        unmapped_reads.push((read_name, seq_bytes));
+        unmapped_reads.push((read_name, seq_bytes, candidate_fams));
     }
 
-    eprintln!(
-        "[VG-HMM] rescue: {} unmapped reads, {} passed k-mer prefilter",
-        n_unmapped, n_prefilter_pass
-    );
+    if mask_active {
+        eprintln!(
+            "[VG-HMM] rescue: {} unmapped + {} mask-region reads, {} passed k-mer prefilter",
+            n_unmapped, n_masked, n_prefilter_pass
+        );
+    } else {
+        eprintln!(
+            "[VG-HMM] rescue: {} unmapped reads, {} passed k-mer prefilter",
+            n_unmapped, n_prefilter_pass
+        );
+    }
 
     if unmapped_reads.is_empty() {
         eprintln!("[VG-HMM] 0 candidates, 0 synthetic bundles");
         return Ok((Vec::new(), Vec::new()));
     }
 
-    // Score in-memory.
-    let (candidates, scored_reads) =
-        run_rescue_in_memory(families, &family_graphs, &unmapped_reads, min_loglik)?;
+    // Score each read only against its candidate families (prefilter narrowed
+    // the family set per-read above). For typical reads, ≤2 candidates.
+    let mut candidates: Vec<NovelCandidate> = Vec::new();
+    let mut scored_reads: Vec<ScoredRead> = Vec::new();
+    let _ = families; // reserved for future use; scoring uses family_graphs.
+    for (read_name, seq, cand_fams) in &unmapped_reads {
+        let mut best_score = f64::NEG_INFINITY;
+        let mut best_fi: Option<usize> = None;
+        let mut best_vpath: Option<crate::vg_hmm::scorer::ViterbiPath> = None;
+        for &fi in cand_fams {
+            let fg = match family_graphs.get(fi) { Some(g) => g, None => continue };
+            let ll = crate::vg_hmm::scorer::forward_against_family(fg, seq);
+            if ll > best_score {
+                best_score = ll;
+                best_fi = Some(fi);
+                best_vpath = crate::vg_hmm::scorer::viterbi_path(fg, seq);
+            }
+        }
+        if best_score <= min_loglik { continue; }
+        let fi = match best_fi { Some(x) => x, None => continue };
+        let vpath = match best_vpath { Some(x) => x, None => continue };
+        let family_id = family_graphs[fi].family_id;
+        candidates.push(NovelCandidate {
+            read_name: read_name.clone(),
+            family_id,
+            matched_junctions: vpath.nodes.len(),
+            total_junctions: family_graphs[fi].nodes.len(),
+            approx_chrom: String::new(),
+            approx_start: 0,
+            approx_end: seq.len() as u64,
+        });
+        scored_reads.push((read_name.clone(), family_id, vpath, best_score));
+    }
 
     // (f) Build per-family scored maps for synthesize_bundles_refined.
     // Group by family_id, threading the per-node Viterbi read spans through

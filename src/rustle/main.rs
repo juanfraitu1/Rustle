@@ -414,6 +414,14 @@ struct Args {
     /// Forward log-odds threshold for HMM rescue (nats). Default 30.0.
     #[arg(long = "vg-rescue-min-loglik", default_value_t = 30.0)]
     vg_rescue_min_loglik: f64,
+
+    /// LOO experiment harness: mask reads whose primary alignment overlaps
+    /// `chrom:start-end` so they enter the HMM rescue pool as if unaligned,
+    /// instead of forming a normal bundle. Repeatable. Use with
+    /// `--vg --vg-discover-novel --vg-discover-novel-mode hmm` and
+    /// `--genome-fasta` to verify novel-copy recovery from sequence alone.
+    #[arg(long = "vg-mask-region", value_name = "CHROM:START-END")]
+    vg_mask_region: Vec<String>,
 }
 
 fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
@@ -598,6 +606,25 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_rescue_diagnostic: args.vg_rescue_diagnostic,
         vg_rescue_min_loglik: args.vg_rescue_min_loglik,
         vg_multimap_sequences: std::collections::HashMap::new(),
+        vg_mask_regions: {
+            let mut out: Vec<(String, u64, u64)> = Vec::new();
+            for spec in &args.vg_mask_region {
+                let (chrom, range) = match spec.split_once(':') {
+                    Some(v) => v,
+                    None => anyhow::bail!("--vg-mask-region: expected `chrom:start-end`, got `{}`", spec),
+                };
+                let (s, e) = match range.split_once('-') {
+                    Some(v) => v,
+                    None => anyhow::bail!("--vg-mask-region: expected `chrom:start-end`, got `{}`", spec),
+                };
+                let start: u64 = s.trim().parse()
+                    .map_err(|_| anyhow::anyhow!("--vg-mask-region: bad start `{}`", s))?;
+                let end: u64 = e.trim().parse()
+                    .map_err(|_| anyhow::anyhow!("--vg-mask-region: bad end `{}`", e))?;
+                out.push((chrom.trim().to_string(), start, end));
+            }
+            out
+        },
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {
