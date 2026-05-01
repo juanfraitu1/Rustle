@@ -14089,6 +14089,17 @@ pub fn run<P: AsRef<Path>>(
             crate::transcript_filter::cross_strand_retained_intron_cleanup(all_transcripts, frac, config.verbose);
     }
 
+    // Opposite-strand dominance filter: kill thin minor-strand predictions
+    // that are dwarfed by a major-strand pred at the same locus. Default 0=OFF.
+    {
+        let opp_ratio: f64 = std::env::var("RUSTLE_OPP_STRAND_KILL_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        if opp_ratio > 0.0 {
+            all_transcripts = crate::transcript_filter::opp_strand_dominance_filter(
+                all_transcripts, opp_ratio, config.verbose);
+        }
+    }
+
     // Compute TPM/FPKM globally across the whole run (standard).
     compute_tpm_fpkm(&mut all_transcripts, global_num_frag, global_frag_len_sum);
 

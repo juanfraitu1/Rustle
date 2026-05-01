@@ -3229,6 +3229,85 @@ pub fn cross_strand_retained_intron_cleanup(
     )
 }
 
+/// Suppress predictions that are dominated by an opposite-strand prediction
+/// at the same locus. Surfaced by the path_emit parity diff: rustle emits
+/// thin `+`-strand multi-exon variants spanning the intergenic between two
+/// strongly-supported `-`-strand genes (or vice versa) — the read evidence
+/// belongs to the dominant strand, but rustle's bundle/strand assignment
+/// kept some unstranded reads on the wrong strand and called multi-exon
+/// flow paths from them.
+///
+/// Rule: kill non-guide tx where some opposite-strand tx overlaps it (in
+/// genomic span, half-open) and that opposite-strand tx has cov >= ratio
+/// times this tx's cov. Default ratio = 0 = OFF.
+///
+/// On GGO_19, ratio=6 catches 13/18 hard-FP intron chains surfaced by the
+/// path_emit diff (class=x exonic-overlap-on-opposite-strand). Higher
+/// ratios reduce blast radius further (fewer alt-isoform false-kills).
+pub fn opp_strand_dominance_filter(
+    transcripts: Vec<Transcript>,
+    ratio: f64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if ratio <= 0.0 || transcripts.len() < 2 {
+        return transcripts;
+    }
+    // Lc cap: skip candidates with longcov above this. Real adjacent antisense
+    // genes typically have meaningful long-read support; the FPs surfaced by
+    // the path_emit diff cluster at lc <= 8.
+    let lc_cap: f64 = std::env::var("RUSTLE_OPP_STRAND_KILL_LC_MAX")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(8.0);
+    // Cov cap: skip candidates with cov above this.
+    let cov_cap: f64 = std::env::var("RUSTLE_OPP_STRAND_KILL_COV_MAX")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+    // Group by chrom for fast O(n*k) checks per chromosome.
+    let mut by_chrom: HashMap<String, Vec<usize>> = Default::default();
+    for (i, t) in transcripts.iter().enumerate() {
+        by_chrom.entry(t.chrom.clone()).or_default().push(i);
+    }
+    let mut dead: SmallBitset = SmallBitset::with_capacity(transcripts.len().min(64));
+    let mut killed = 0usize;
+    for (_chrom, idxs) in by_chrom {
+        for &i in &idxs {
+            if dead.contains(i) { continue; }
+            let ti = &transcripts[i];
+            if is_guide_tx(ti) { continue; }
+            // Skip candidates with substantial own evidence — real antisense
+            // genes (often long, multi-exon) get to keep their prediction.
+            if ti.longcov > lc_cap { continue; }
+            if ti.coverage > cov_cap { continue; }
+            let (is, ie) = match (ti.exons.first(), ti.exons.last()) {
+                (Some(&(s, _)), Some(&(_, e))) => (s, e),
+                _ => continue,
+            };
+            // Find the strongest opposite-strand pred that overlaps (half-open).
+            let opp_max_cov = idxs.iter().filter_map(|&j| {
+                if j == i || dead.contains(j) { return None; }
+                let tj = &transcripts[j];
+                if tj.strand == ti.strand || tj.strand == '.' { return None; }
+                let (js, je) = (tj.exons.first()?.0, tj.exons.last()?.1);
+                if is < je && js < ie {
+                    Some(tj.coverage)
+                } else {
+                    None
+                }
+            }).fold(0.0_f64, f64::max);
+            if opp_max_cov >= ratio * ti.coverage {
+                dead.insert_grow(i);
+                killed += 1;
+            }
+        }
+    }
+    let out: Vec<Transcript> = transcripts.into_iter().enumerate()
+        .filter(|(i, _)| !dead.contains(*i))
+        .map(|(_, t)| t)
+        .collect();
+    if verbose && killed > 0 {
+        eprintln!("    opp_strand_dominance (ratio={:.1}): removed {} transcript(s)", ratio, killed);
+    }
+    out
+}
+
 /// Remove single-exon fragments that are isolated and lie near multi-exon transcript ends
 /// (polymerase run-off). Isolated = no overlap with any other transcript. Near = within runoff_dist.
 /// 19247-19276: pred[i] single-exon, alone between p and c; if prev multi-exon and
