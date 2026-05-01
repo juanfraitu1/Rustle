@@ -2578,13 +2578,43 @@ pub fn pairwise_overlap_filter_with_summary(
                 } else if t2.exons.len() <= t1.exons.len()
                     && t1.coverage > t2.coverage * drop
                     && {
-                    let ok = included_pred(
+                    // Surfaced by path_emit parity diff: the drop=0.5 ratio
+                    // admits the kill even when t2.cov > t1.cov AND t1 is
+                    // much longer than t2 (i.e., t2 is a concentrated alt-
+                    // boundary variant whose read support is denser per
+                    // base than the long-spread container's). Opt-in via
+                    // RUSTLE_INCLUDED_DROP_T1_DOM=1 since the rule generally
+                    // false-protects more low-cov noise than it recovers
+                    // legit alt-isoforms in current data.
+                    // Use genomic SPAN (start-to-end including introns) so the
+                    // ratio reflects the alt-TTS pattern: container walks
+                    // through a long intronic region while the contained pred
+                    // terminates early (e.g., 64kb container vs 2kb 2-exon).
+                    let t1_span: u64 = match (t1.exons.first(), t1.exons.last()) {
+                        (Some(&(s, _)), Some(&(_, e))) => e.saturating_sub(s),
+                        _ => 0,
+                    };
+                    let t2_span: u64 = match (t2.exons.first(), t2.exons.last()) {
+                        (Some(&(s, _)), Some(&(_, e))) => e.saturating_sub(s),
+                        _ => 0,
+                    };
+                    let len_ratio_min: f64 = std::env::var("RUSTLE_INCLUDED_DROP_LEN_RATIO_MIN")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+                    // Default ON in long-read mode; opt-out via _OFF=1.
+                    let enabled = longreads
+                        && std::env::var_os("RUSTLE_INCLUDED_DROP_T1_DOM_OFF").is_none();
+                    let t2_concentrated = enabled
+                        && t2.coverage > t1.coverage
+                        && t2.longcov >= 1.0
+                        && (t1_span as f64) >= len_ratio_min * (t2_span as f64);
+                    let t1_dominates = !t2_concentrated;
+                    let ok = t1_dominates && included_pred(
                         &txs, n1, n2, longreads, bpcov, singlethr, error_perc, true,
                     );
                     if pairwise_target_trace_enabled() && pairwise_trace_target(t1, t2) {
                         eprintln!(
-                            "[TRACE_PAIRWISE_TARGET] included_drop n1={} n2={} ok={}",
-                            n1, n2, ok
+                            "[TRACE_PAIRWISE_TARGET] included_drop n1={} n2={} ok={} t2_concentrated={}",
+                            n1, n2, ok, t2_concentrated
                         );
                     }
                     ok
