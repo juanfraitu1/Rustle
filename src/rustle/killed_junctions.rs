@@ -678,23 +678,56 @@ pub fn good_junc_stats(
         }
 
         // higherr (+ 15365):
-        // all-bad junctions (nm >= nreads) under 1.25*junctionthr are marked with mm=-1
-        // (mm=-1 there, then strand=0 in read loop only if good_junc fails).
-        // This gate is critical for long-read weak all-bad junction splitting behavior.
+        // all-bad junctions (nm >= nreads) under 1.25*junctionthr are marked with mm=-1.
+        // Original logic was "always mark when nreads_good < 1.25*thr"; we now require
+        // bpcov ALSO to look noisy (donor sees high upstream coverage AND junction
+        // leftsupport is small relative to that coverage). This matches StringTie's
+        // good_junc step 5 spirit (mm=-1 only when bpcov disagrees with the junction).
+        // Bypass via RUSTLE_HIGHERR_NO_BPCOV_GUARD=1 (legacy aggressive behavior).
         let all_bad = st.nm > 0.0 && st.nm + 1e-9 >= st.mrcount;
         if all_bad && st.nreads_good < 1.25 * junction_thr {
-            if gjd {
+            // Compute donor-side bpcov to determine if this is "really" noise
+            // (high cov but tiny junction support) vs a legit low-cov splice site
+            // (low cov on both sides).
+            let mut mult_pre = 1.0 / ERROR_PERC;
+            if longreads { mult_pre /= ERROR_PERC; }
+            let bw_pre = 5u64;
+            let sno_pre = if strand > 0 { BPCOV_STRAND_PLUS } else { BPCOV_STRAND_MINUS };
+            let j_pre = jn.donor.saturating_sub(refstart) as i64;
+            let mut bpcov_says_noise = true; // default: kill (preserves legacy F1)
+            if std::env::var_os("RUSTLE_HIGHERR_NO_BPCOV_GUARD").is_none()
+                && j_pre >= bw_pre as i64
+                && (j_pre + bw_pre as i64 + 1) < bpcov.plus.cov.len() as i64
+            {
+                let a = (j_pre - bw_pre as i64 + 1) as usize;
+                let b = (j_pre + 1) as usize;
+                let llcov = cov_sign_window(bpcov, sno_pre, a, b, longreads);
+                // Noise iff donor sees substantial cov AND leftsupport is tiny relative to it.
+                // This is the same shape as good_junc step 5/6 but applied at this stage.
+                bpcov_says_noise = llcov > 1.0 / ERROR_PERC
+                    && st.leftsupport * mult_pre < ERROR_PERC * llcov;
+            }
+            if bpcov_says_noise {
+                if gjd {
+                    eprintln!(
+                        "GJ_MARK_BAD_MM {}-{} reason=higherr_low_support_bad+bpcov_noise nm={:.1} mrcount={:.1} good={:.1} thr={:.2}",
+                        jn.donor,
+                        trace_junction_acceptor(jn),
+                        st.nm,
+                        st.mrcount,
+                        st.nreads_good,
+                        junction_thr
+                    );
+                }
+                st.mm = -1.0;  // Mark for BAD_MM_NEG stage, don't kill yet
+            } else if gjd {
                 eprintln!(
-                    "GJ_MARK_BAD_MM {}-{} reason=higherr_low_support_bad nm={:.1} mrcount={:.1} good={:.1} thr={:.2}",
+                    "GJ_BPCOV_RESCUE {}-{} reason=higherr_low_support_bad_but_bpcov_clean leftsupport={:.1}",
                     jn.donor,
                     trace_junction_acceptor(jn),
-                    st.nm,
-                    st.mrcount,
-                    st.nreads_good,
-                    junction_thr
+                    st.leftsupport,
                 );
             }
-            st.mm = -1.0;  // Mark for BAD_MM_NEG stage, don't kill yet
             // Don't continue - let junction survive to apply_bad_mm_neg_stage
         }
 
@@ -1165,6 +1198,8 @@ pub fn good_junc(
             // Optional rescue: if bpcov is DIS-continuous at the donor (right << left),
             // this looks like a real splice site despite low mismatch-free support — skip
             // the mm=-1 demotion. Mirrors StringTie rlink.cpp:14958 good_junc() rescue.
+            // (Bpcov-window guard tested at this stage regresses F1; the junction_stats
+            // path guard is safer because it runs earlier with cleaner support values.)
             let mut rescued = false;
             if std::env::var_os("RUSTLE_RESCUE_LOWSUPPORT_BAD").is_some() && cj.start > refstart {
                 let donor_idx = (cj.start - refstart) as usize;

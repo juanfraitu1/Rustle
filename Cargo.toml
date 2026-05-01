@@ -17,6 +17,8 @@ noodles = { version = "0.85", features = ["bam", "sam"] }
 noodles-bam = "0.70"
 noodles-bgzf = "0.33"
 noodles-sam = "0.66"
+noodles-csi = "0.40"
+noodles-core = "0.15"
 
 # Fast hashmap - significantly faster than std
 hashbrown = "0.15"
@@ -75,6 +77,34 @@ path = "src/rustle/main.rs"
 name = "dump_family_graph"
 path = "src/bin/dump_family_graph.rs"
 
+[[bin]]
+name = "roundtrip_family_graph"
+path = "src/bin/roundtrip_family_graph.rs"
+
+[[bin]]
+name = "debug_poa"
+path = "src/bin/debug_poa.rs"
+
+[[bin]]
+name = "bam_header"
+path = "src/bin/bam_header.rs"
+
+[[bin]]
+name = "leave_one_out_rescue"
+path = "src/bin/leave_one_out_rescue.rs"
+
+[[bin]]
+name = "loo_assembly"
+path = "src/bin/loo_assembly.rs"
+
+[[bin]]
+name = "filter_bam_by_as"
+path = "src/bin/filter_bam_by_as.rs"
+
+[[bin]]
+name = "index_bam"
+path = "src/bin/index_bam.rs"
+
 [[test]]
 name = "test_parity_graph_edges_dump"
 path = "tests/regression/test_parity_graph_edges_dump.rs"
@@ -98,6 +128,10 @@ path = "tests/regression/vg_hmm_scorer.rs"
 [[test]]
 name = "vg_hmm_rescue"
 path = "tests/regression/vg_hmm_rescue.rs"
+
+[[test]]
+name = "vg_hmm_em"
+path = "tests/regression/vg_hmm_em.rs"
 
 [[test]]
 name = "vg_hmm_diagnostic"

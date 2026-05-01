@@ -21,6 +21,10 @@ pub struct ExonClass {
     pub strand: char,
     /// (CopyId, raw genomic exon sequence on the transcript strand).
     pub per_copy_sequences: Vec<(CopyId, Vec<u8>)>,
+    /// (CopyId, original genomic span) for each contributing copy. The node's
+    /// `span` field is the union; `per_copy_spans` preserves the exact
+    /// per-copy coordinates so a transcript can be reconstructed losslessly.
+    pub per_copy_spans: Vec<(CopyId, (u64, u64))>,
     /// True iff exactly one copy contributes — i.e. a bubble branch.
     pub copy_specific: bool,
     /// Per-exon profile HMM. None until fit_profiles_in_place is called.
@@ -45,6 +49,22 @@ pub struct FamilyGraph {
 impl FamilyGraph {
     pub fn n_nodes(&self) -> usize { self.nodes.len() }
     pub fn n_edges(&self) -> usize { self.edges.len() }
+
+    /// Recover the path of `NodeIdx` that paralog `cid` traverses through this
+    /// graph, in genomic-ascending order. Walks `nodes`, keeps only those
+    /// where `per_copy_sequences` contains an entry for `cid`. Used as the
+    /// E-step of HMM-based EM: the per-paralog path is what each in-family
+    /// copy "looks like" through the family graph.
+    ///
+    /// Returns an empty Vec if `cid` does not contribute to any node.
+    pub fn recover_paralog_path(&self, cid: CopyId) -> Vec<NodeIdx> {
+        let mut nodes_with_pos: Vec<(u64, NodeIdx)> = self.nodes.iter()
+            .filter(|n| n.per_copy_sequences.iter().any(|(c, _)| *c == cid))
+            .map(|n| (n.span.0, n.idx))
+            .collect();
+        nodes_with_pos.sort_by_key(|(s, _)| *s);
+        nodes_with_pos.into_iter().map(|(_, idx)| idx).collect()
+    }
 }
 
 impl Index<NodeIdx> for FamilyGraph {
@@ -244,7 +264,7 @@ pub fn build_family_graph(
     //    skip refinement — every position cluster becomes one ExonClass.
     let mut nodes: Vec<ExonClass> = Vec::new();
     for cluster in &pos_clusters {
-        // Recover sequences (or empty stubs if no genome).
+        // Recover sequences (or empty stubs if no genome) and original spans.
         let with_seq: Vec<(CopyId, Vec<u8>)> = cluster.iter().map(|&(cid, ei)| {
             let (chrom, _, exons) = &copies[cid];
             let (s, e) = exons[ei];
@@ -265,6 +285,8 @@ pub fn build_family_graph(
                 .filter(|(c, _)| cids.contains(c))
                 .cloned().collect();
             per_copy_sequences.sort_by_key(|(c, _)| *c);
+            // Original per-copy spans (lossless preservation of input coords).
+            let mut per_copy_spans: Vec<(CopyId, (u64, u64))> = Vec::with_capacity(cids.len());
             // Representative span = union of contributing exon spans.
             let mut s_min = u64::MAX; let mut e_max = 0u64;
             for &cid in &cids {
@@ -273,14 +295,17 @@ pub fn build_family_graph(
                         "copy {} produced by minimizer-Jaccard refinement not found in originating position cluster (invariant violated)", cid))?;
                 let (_, _, exs) = &copies[pos_in_cluster.0];
                 let (s, e) = exs[pos_in_cluster.1];
+                per_copy_spans.push((cid, (s, e)));
                 s_min = s_min.min(s); e_max = e_max.max(e);
             }
+            per_copy_spans.sort_by_key(|(c, _)| *c);
             nodes.push(ExonClass {
                 idx: NodeIdx(nodes.len()),
                 chrom: copies[0].0.to_string(),
                 span: (s_min, e_max),
                 strand: strand0,
                 per_copy_sequences,
+                per_copy_spans,
                 copy_specific: cids.len() == 1,
                 profile: None,
             });

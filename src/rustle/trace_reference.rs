@@ -142,6 +142,21 @@ fn trace_target_ref_id() -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+/// Loads a multi-ref ID list from RUSTLE_TRACE_REF_LIST (path to a newline-
+/// separated file). Used for batch tracing of many references in one run.
+fn trace_target_ref_id_set() -> Option<std::collections::HashSet<String>> {
+    use std::io::Read;
+    let path = std::env::var("RUSTLE_TRACE_REF_LIST").ok()?;
+    let mut s = String::new();
+    std::fs::File::open(&path).ok()?.read_to_string(&mut s).ok()?;
+    let set: std::collections::HashSet<String> = s
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    if set.is_empty() { None } else { Some(set) }
+}
+
 fn boundary_distance(ref_tx: &RefTranscript, tx: &Transcript) -> u64 {
     let (Some(ref_first), Some(ref_last), Some(tx_first), Some(tx_last)) = (
         ref_tx.exons.first(),
@@ -262,11 +277,55 @@ pub fn debug_target_ref_stage(
     ref_transcripts: &[RefTranscript],
     txs: &[Transcript],
 ) {
-    let Some(ref_tx) = find_traced_ref_in_bundle(bundle, ref_transcripts) else {
-        return;
-    };
     let bundle_region = format!("bundle={}:{}-{}", bundle.chrom, bundle.start, bundle.end);
-    debug_ref_stage(stage, &bundle_region, ref_tx, txs);
+    // Multi-ref batch mode: iterate all overlapping refs in the list.
+    if let Some(ref_set) = trace_target_ref_id_set() {
+        for r in ref_transcripts {
+            if !ref_set.contains(&r.id) { continue; }
+            if !ref_overlaps_bundle(r, bundle) { continue; }
+            debug_ref_stage(stage, &bundle_region, r, txs);
+        }
+        return;
+    }
+    if let Some(ref_tx) = find_traced_ref_in_bundle(bundle, ref_transcripts) {
+        debug_ref_stage(stage, &bundle_region, ref_tx, txs);
+    }
+}
+
+/// Collect batch-traced refs (from RUSTLE_TRACE_REF_LIST) that overlap a bundle.
+/// Returns an empty Vec when not in batch mode.
+pub fn collect_batch_overlapping_refs<'a>(
+    bundle: &Bundle,
+    ref_transcripts: &'a [RefTranscript],
+) -> Vec<&'a RefTranscript> {
+    let Some(ref_set) = trace_target_ref_id_set() else {
+        return Vec::new();
+    };
+    ref_transcripts.iter()
+        .filter(|r| ref_set.contains(&r.id) && ref_overlaps_bundle(r, bundle))
+        .collect()
+}
+
+/// Global (cross-bundle) trace stage: emit for every ref in the
+/// RUSTLE_TRACE_REF_LIST batch (or RUSTLE_TRACE_REF_ID single).
+pub fn debug_target_ref_global_stage(
+    stage: &str,
+    ref_transcripts: &[RefTranscript],
+    txs: &[Transcript],
+) {
+    if let Some(ref_set) = trace_target_ref_id_set() {
+        for r in ref_transcripts {
+            if !ref_set.contains(&r.id) { continue; }
+            debug_ref_stage(stage, "global", r, txs);
+        }
+        return;
+    }
+    if let Some(target) = trace_target_ref_id() {
+        for r in ref_transcripts {
+            if r.id != target { continue; }
+            debug_ref_stage(stage, "global", r, txs);
+        }
+    }
 }
 
 /// True if ref transcript overlaps bundle (same chrom, strand, and span overlaps).

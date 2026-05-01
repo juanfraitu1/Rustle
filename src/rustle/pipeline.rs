@@ -5794,8 +5794,13 @@ fn extract_bundle_transcripts_for_graph(
     }
 
     // Canonical post-extraction ordering mirroring print_predcluster flow.
+    // Collect any additional batch-traced refs that overlap this bundle so
+    // predcluster substages emit per-ref TRACE_REF lines (RUSTLE_TRACE_REF_LIST).
+    let extra_trace_refs: Vec<&RefTranscript> = crate::trace_reference::collect_batch_overlapping_refs(bundle, ref_transcripts);
     let (predcluster_txs, predcluster_summary) =
-        print_predcluster_with_summary(txs, config, Some(bpcov), traced_ref);
+        crate::transcript_filter::print_predcluster_with_summary_multi(
+            txs, config, Some(bpcov), traced_ref, &extra_trace_refs,
+        );
     txs = predcluster_txs;
     trace_stage("print_predcluster", &txs);
 
@@ -7942,6 +7947,8 @@ pub fn run<P: AsRef<Path>>(
             if show_timing { eprintln!("[TIMING] {} {:.3}s", $label, _t0.elapsed().as_secs_f64()); }
         };
     }
+    // EM-HMM populates config.vg_multimap_sequences after family discovery.
+    let mut config = config;
     init_rayon_pool(config.threads);
     let diag_tsv_resolved = resolve_debug_stage_tsv_path(&config, output_gtf.as_ref(), trace_reference);
     if let Some(ref p) = diag_tsv_resolved {
@@ -8171,6 +8178,36 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: multi-mapping read resolution ──────────────────────
+    // For VgSolver::EmHmm, collect raw read sequences for multi-mappers via a
+    // dedicated BAM scan (one pass; primary alignments only — secondaries
+    // share read_name with their primary so we get the same sequence).
+    if config.vg_mode
+        && config.vg_solver == crate::types::VgSolver::EmHmm
+        && !vg_families.is_empty()
+    {
+        let needed_hashes: std::collections::HashSet<u64> = vg_families.iter()
+            .flat_map(|f| f.multimap_reads.keys().copied())
+            .collect();
+        if !needed_hashes.is_empty() {
+            eprintln!(
+                "[VG-HMM-EM] Collecting sequences for {} multi-mapped read names from BAM",
+                needed_hashes.len()
+            );
+            match crate::bam::collect_multimapper_sequences(bam_path.as_ref(), &needed_hashes) {
+                Ok(seqs) => {
+                    eprintln!(
+                        "[VG-HMM-EM] Collected {} sequences ({} requested)",
+                        seqs.len(), needed_hashes.len()
+                    );
+                    config.vg_multimap_sequences = seqs;
+                }
+                Err(e) => {
+                    eprintln!("[VG-HMM-EM] WARNING: sequence collection failed: {} — falling back", e);
+                }
+            }
+        }
+    }
+
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
         match config.vg_solver {
@@ -8191,6 +8228,98 @@ pub fn run<P: AsRef<Path>>(
                     crate::vg::run_pre_assembly_em(
                         &vg_families,
                         &mut bundles,
+                        config.vg_em_max_iter,
+                    )
+                }
+            }
+            VgSolver::EmHmm => {
+                // HMM-based EM: per-paralog forward log-likelihood replaces
+                // the heuristic junction_compatibility × log_context score.
+                // Requires (a) read sequences for multi-mappers (collected at
+                // BAM parse — see config.vg_collected_sequences) and (b) a
+                // family-graph HMM per family (built here on demand).
+                eprintln!("[VG] Using HMM-based EM solver (sequence-aware copy assignment)");
+                let n_with_seq = config.vg_multimap_sequences.len();
+                if n_with_seq == 0 {
+                    eprintln!(
+                        "[VG] WARNING: --vg-solver em-hmm but no multi-mapper sequences collected. \
+                         Falling back to junction-based EM. Re-run with --vg --vg-solver em-hmm to \
+                         collect sequences (sequence collection runs only when this solver is selected)."
+                    );
+                    crate::vg::run_pre_assembly_em(
+                        &vg_families,
+                        &mut bundles,
+                        config.vg_em_max_iter,
+                    )
+                } else {
+                    eprintln!("[VG-HMM-EM] {} multi-mapper sequences available", n_with_seq);
+                    // Genome FASTA is required to fit profiles. Reuse the snp
+                    // genome if loaded; otherwise load it now (one-time cost).
+                    let em_hmm_genome: Option<crate::genome::GenomeIndex> = if vg_snp_genome.is_some() {
+                        None  // we'll borrow vg_snp_genome below
+                    } else if let Some(p) = config.genome_fasta.as_ref() {
+                        eprintln!("[VG-HMM-EM] Loading genome FASTA for profile fitting: {}", p);
+                        crate::genome::GenomeIndex::from_fasta(p).ok()
+                    } else {
+                        None
+                    };
+                    let genome_ref: Option<&crate::genome::GenomeIndex> = em_hmm_genome
+                        .as_ref()
+                        .or(vg_snp_genome.as_ref());
+                    if genome_ref.is_none() {
+                        eprintln!(
+                            "[VG-HMM-EM] WARNING: no genome FASTA available — falling back to junction-based EM. \
+                             Pass --genome <fasta> for HMM-EM."
+                        );
+                    }
+                    // Partition mixed-strand families into single-strand sub-families
+                    // (build_family_graph requires single-strand input). Remaps multimap_reads
+                    // to the partition's bundle_indices and drops cross-strand placements.
+                    let mut em_families: Vec<crate::vg::FamilyGroup> = Vec::new();
+                    for fam in vg_families.iter() {
+                        let partitions = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
+                        em_families.extend(partitions);
+                    }
+                    let n_part = em_families.len();
+                    if n_part > vg_families.len() {
+                        eprintln!(
+                            "[VG-HMM-EM] Strand partitioning split {} families → {} single-strand sub-families",
+                            vg_families.len(), n_part
+                        );
+                    }
+                    // Build family graphs per partition (parallel — each call only
+                    // reads &bundles + &genome_ref, owns its own FamilyGraph mutation).
+                    use rayon::prelude::*;
+                    let t_fg_start = std::time::Instant::now();
+                    let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
+                        em_families.par_iter()
+                            .map(|fam| {
+                                if genome_ref.is_none() { return None; }
+                                match crate::vg_hmm::family_graph::build_family_graph(fam, &bundles, genome_ref, 0.30, 0.30) {
+                                    Ok(mut fg) => {
+                                        if crate::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).is_err() {
+                                            eprintln!("[VG-HMM-EM] family {} profile fit failed; skipping", fam.family_id);
+                                            return None;
+                                        }
+                                        Some(fg)
+                                    }
+                                    Err(e) => {
+                                        eprintln!("[VG-HMM-EM] family {} graph build failed: {}", fam.family_id, e);
+                                        None
+                                    }
+                                }
+                            })
+                            .collect();
+                    let n_built = family_graphs.iter().filter(|g| g.is_some()).count();
+                    eprintln!(
+                        "[VG-HMM-EM] Built {}/{} family graphs in {:.1}s",
+                        n_built, em_families.len(), t_fg_start.elapsed().as_secs_f64()
+                    );
+                    crate::vg::run_pre_assembly_em_hmm(
+                        &em_families,
+                        &mut bundles,
+                        &family_graphs,
+                        &config.vg_multimap_sequences,
                         config.vg_em_max_iter,
                     )
                 }
@@ -11062,6 +11191,10 @@ pub fn run<P: AsRef<Path>>(
                     let read_pairs = crate::transcript_filter::build_read_intron_pairs(reads);
                     let read_singles = crate::transcript_filter::build_read_junction_singletons(reads);
                     let read_junc_counts = crate::transcript_filter::build_read_junction_counts(reads);
+                    // POST_BUNDLE_TRACE: log STRG.1.5-style targeted ref before this stage
+                    crate::trace_reference::debug_target_ref_stage(
+                        "post_bundle_pre_unwitnessed", graph_bundle, &ref_transcripts, &txs,
+                    );
                     let mut filtered = crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
                         txs,
                         &read_pairs,
@@ -11069,6 +11202,9 @@ pub fn run<P: AsRef<Path>>(
                         Some(&read_junc_counts),
                         config.junction_correction_window,
                         config.verbose,
+                    );
+                    crate::trace_reference::debug_target_ref_stage(
+                        "post_bundle_after_unwitnessed", graph_bundle, &ref_transcripts, &filtered,
                     );
                     // Full-chain-witness filter (DEFAULT-ON): kill tx where
                     // some contiguous K-intron window of the chain isn't
@@ -11082,6 +11218,9 @@ pub fn run<P: AsRef<Path>>(
                         let tol = config.junction_correction_window;
                         filtered = crate::transcript_filter::filter_by_full_chain_witness(
                             filtered, &read_chains, tol, config.verbose,
+                        );
+                        crate::trace_reference::debug_target_ref_stage(
+                            "post_bundle_after_full_chain_witness", graph_bundle, &ref_transcripts, &filtered,
                         );
                     }
                     if std::env::var_os("RUSTLE_ORACLE_STAGE_TRACE").is_some() {
@@ -13082,7 +13221,9 @@ pub fn run<P: AsRef<Path>>(
     // print_predcluster processes both strands of a locus together; single-exon
     // transcripts on the minority strand are eliminated by higher-scored opposite-strand
     // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
+    crate::trace_reference::debug_target_ref_global_stage("global_pre_cross_strand", &ref_transcripts, &all_transcripts);
     all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
+    crate::trace_reference::debug_target_ref_global_stage("global_after_cross_strand", &ref_transcripts, &all_transcripts);
 
     // Near-duplicate chain suppression (opt-in via RUSTLE_SUPPRESS_NEAR_DUP=1):
     // drop low-cov multi-exon transcripts whose intron chain differs from a
@@ -13090,6 +13231,7 @@ pub fn run<P: AsRef<Path>>(
     // These are typical j-class artifacts that inflate tx count without
     // recovering real missed isoforms.
     all_transcripts = suppress_near_duplicate_chains(all_transcripts, config.verbose);
+    crate::trace_reference::debug_target_ref_global_stage("global_after_near_dup", &ref_transcripts, &all_transcripts);
 
     // Family-extension: for each transcript whose intron chain is a strict
     // contiguous subsequence of a longer transcript's chain (within 5 bp per
@@ -13984,20 +14126,17 @@ pub fn run<P: AsRef<Path>>(
     //
     // StringTie parity (rlink.cpp:10094): sensitive mode stores with just
     // `cov && len >= mintranscriptlen`. No explicit floor. Rustle's 1.0
-    // floor kills legit minor isoforms (e.g., STRG.1.5 at cov=0.9633 with
-    // longcov=2.0). Configurable via RUSTLE_FINAL_COV_FLOOR (default 1.0
-    // preserved for backward compat; set to 0.0 for StringTie parity or
-    // 0.8 for moderate recovery).
+    // floor used to kill legit minor isoforms (e.g., STRG.1.5 at cov=0.9633
+    // with longcov=2.0). Default lowered to 0.8 plus a longcov-exempt
+    // sub-floor (multi-exon tx with longcov ≥ 2.0 only need cov ≥ 0.8).
+    // Override via RUSTLE_FINAL_COV_FLOOR / RUSTLE_FINAL_COV_FLOOR_LONGCOV_MIN.
     {
         let final_cov_floor: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
-        // Longcov-exempt sub-floor: allow tx below final_cov_floor if longcov
-        // is strong. Trace on STRG.1.5 shows cov=0.9633 longcov=2.0; keeping
-        // it matches StringTie's behavior (no floor at storage, gated by
-        // downstream filters already passed here). Default OFF — gated
-        // behind RUSTLE_FINAL_COV_FLOOR_LONGCOV_EXEMPT with two thresholds.
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.8);
+        // Longcov-exempt sub-floor: allow multi-exon tx with strong long-read
+        // support to bypass the floor. Default 2.0 (on); set to 0 to disable.
         let longcov_min: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR_LONGCOV_MIN")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
         let sub_floor: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR_SUB")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(final_cov_floor);
         let before = all_transcripts.len();
@@ -14009,6 +14148,7 @@ pub fn run<P: AsRef<Path>>(
                 || t.transcript_id.is_some() // eonly guide passthrough
                 || t.ref_transcript_id.is_some() // guide-matched
         });
+        crate::trace_reference::debug_target_ref_global_stage("global_after_final_cov_floor", &ref_transcripts, &all_transcripts);
         let removed = before - all_transcripts.len();
         if removed > 0 && config.verbose {
             eprintln!(

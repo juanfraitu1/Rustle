@@ -670,8 +670,12 @@ impl BundleData {
 pub enum VgSolver {
     /// No multi-mapping resolution — discovery/reporting only (default).
     None,
-    /// Expectation-Maximization with junction-based compatibility.
+    /// Expectation-Maximization with junction-based compatibility (heuristic).
     Em,
+    /// Expectation-Maximization with HMM-based per-path sequence likelihood
+    /// scoring. Requires read sequences for multi-mappers (collected at BAM
+    /// parse) and a fitted family-graph HMM per family group.
+    EmHmm,
     /// Flow-based redistribution: two-pass assembly, redistribute proportional to transcript coverage.
     Flow,
 }
@@ -688,8 +692,9 @@ impl std::str::FromStr for VgSolver {
         match s.to_lowercase().as_str() {
             "none" | "off" | "discover" => Ok(Self::None),
             "em" => Ok(Self::Em),
+            "em-hmm" | "em_hmm" | "emhmm" | "hmm" => Ok(Self::EmHmm),
             "flow" => Ok(Self::Flow),
-            _ => Err(format!("unknown VG solver '{}': expected none, em, or flow", s)),
+            _ => Err(format!("unknown VG solver '{}': expected none, em, em-hmm, or flow", s)),
         }
     }
 }
@@ -699,6 +704,7 @@ impl std::fmt::Display for VgSolver {
         match self {
             Self::None => write!(f, "none"),
             Self::Em => write!(f, "em"),
+            Self::EmHmm => write!(f, "em-hmm"),
             Self::Flow => write!(f, "flow"),
         }
     }
@@ -876,6 +882,11 @@ pub struct RunConfig {
     pub vg_discover_novel_mode: String,
     /// Enable external minimap2 verification of rescued reads.
     pub vg_rescue_diagnostic: bool,
+    /// Sequences for multi-mapped reads (read_name_hash → bytes), populated
+    /// at BAM-parse time when `vg_solver == VgSolver::EmHmm`. Empty for other
+    /// solvers (sequence collection has memory cost). Consumed by
+    /// `run_pre_assembly_em_hmm` to compute per-paralog forward log-likelihoods.
+    pub vg_multimap_sequences: std::collections::HashMap<u64, Vec<u8>>,
     /// Forward log-odds threshold for HMM rescue (nats).
     pub vg_rescue_min_loglik: f64,
 }
@@ -1108,6 +1119,7 @@ impl Default for RunConfig {
             vg_discover_novel_mode: "kmer".to_string(),
             vg_rescue_diagnostic: false,
             vg_rescue_min_loglik: 30.0,
+            vg_multimap_sequences: std::collections::HashMap::new(),
         }
     }
 }

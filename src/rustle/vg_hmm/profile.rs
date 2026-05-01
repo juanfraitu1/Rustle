@@ -314,10 +314,16 @@ pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
         ));
     }
 
-    // Verify equal lengths.
-    let n_cols = msa[0].len();
-    if !msa.iter().all(|r| r.len() == n_cols) {
-        return Err(anyhow!("poa_msa: internal error — unequal row lengths after graph walk"));
+    // poasta's fasta_aln_for_seq has an off-by-one in the trailing-gap fill for
+    // sequences whose path ends before max_col, so rows can occasionally come
+    // back one column short. Pad with trailing gaps to the max row length —
+    // this is content-neutral for an MSA (gaps are not part of the ungapped
+    // sequence) and the round-trip ungap(row) ≡ original input is preserved.
+    let n_cols = msa.iter().map(|r| r.len()).max().unwrap_or(0);
+    for row in msa.iter_mut() {
+        if row.len() < n_cols {
+            row.extend(std::iter::repeat(b'-').take(n_cols - row.len()));
+        }
     }
     Ok(msa)
 }

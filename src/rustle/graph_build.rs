@@ -779,25 +779,56 @@ fn filter_junctions_for_bundle<'a>(
     junction_stats: Option<&JunctionStats>,
 ) -> Vec<&'a Junction> {
     let target_strand = target_bundle_strand(bundle_strand);
+    let parity_on = crate::parity_decisions::is_enabled();
     let pre: Vec<&'a Junction> = junctions
         .iter()
         .filter(|j| {
+            let mut reject_reason: Option<&'static str> = None;
             if let Some(js) = junction_stats {
                 if let Some(stat) = js.get(j) {
                     if let Some(ts) = target_strand {
                         if stat.strand != Some(ts) {
-                            return false;
+                            reject_reason = Some("strand_mismatch");
                         }
                     }
-                    if stat.mm < 0.0 {
-                        return false;
+                    if reject_reason.is_none() && stat.mm < 0.0 {
+                        reject_reason = Some("mm_negative");
                     }
-                    if stat.strand == Some(0) {
-                        return false;
+                    if reject_reason.is_none() && stat.strand == Some(0) {
+                        reject_reason = Some("strand_zero");
                     }
                 }
             }
-            true
+            let accepted = reject_reason.is_none();
+            if parity_on {
+                let mm = junction_stats.and_then(|js| js.get(j)).map(|s| s.mm).unwrap_or(0.0);
+                let strand_byte = junction_stats
+                    .and_then(|js| js.get(j))
+                    .and_then(|s| s.strand)
+                    .map(|x| x as i64)
+                    .unwrap_or(-1);
+                let payload = format!(
+                    r#""accepted":{},"bundle_strand":"{}","jstrand":{},"mm":{:.4},"reason":"{}""#,
+                    accepted, bundle_strand, strand_byte, mm,
+                    reject_reason.unwrap_or("ok"),
+                );
+                // Convention normalization: rustle stores 0-based half-open exon [s, e),
+                // so j.donor = last-base+1 (0-based exclusive donor exon end) and j.acceptor =
+                // first base of next exon (0-based). StringTie uses 1-based inclusive: jstart =
+                // last-base of donor exon, jend = first base of acceptor exon. Donor coincidentally
+                // matches numerically (0-based exclusive end == 1-based inclusive last base).
+                // Acceptor needs +1 to align (rustle 0-based first base → StringTie 1-based first base).
+                // Junction has no chrom field — emit None and rely on coord match for cross-tool diff.
+                crate::parity_decisions::emit(
+                    "junction_accept",
+                    None,
+                    j.donor,
+                    j.acceptor + 1,
+                    bundle_strand,
+                    &payload,
+                );
+            }
+            accepted
         })
         .collect();
     // Alt-junction coalescing: demote weak alt-donors/acceptors to reduce

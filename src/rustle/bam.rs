@@ -836,3 +836,57 @@ pub fn open_bam<P: AsRef<Path>>(
     let reader = BamReader::from(bgzf);
     Ok(reader)
 }
+
+/// Decode a noodles BAM 4-bit-encoded sequence to ASCII bytes.
+fn decode_bam_sequence(seq_obj: &noodles_bam::record::Sequence) -> Vec<u8> {
+    let raw = seq_obj.as_ref();
+    let len = seq_obj.len();
+    let mut out: Vec<u8> = Vec::with_capacity(len);
+    for (i, &byte) in raw.iter().enumerate() {
+        let nibs = [(byte >> 4) & 0xF, byte & 0xF];
+        for (j, n) in nibs.iter().enumerate() {
+            if i * 2 + j >= len { break; }
+            out.push(match n { 1 => b'A', 2 => b'C', 4 => b'G', 8 => b'T', _ => b'N' });
+        }
+    }
+    out
+}
+
+/// Scan BAM (single pass, primary alignments only) and collect raw sequence
+/// bytes for any read whose `read_name_hash` is in `needed_hashes`. Used by
+/// VG HMM-EM to provide per-read sequences for forward-likelihood scoring;
+/// secondaries share read_name with their primary so we only need the
+/// primary-alignment sequence per read.
+pub fn collect_multimapper_sequences<P: AsRef<Path>>(
+    bam_path: P,
+    needed_hashes: &std::collections::HashSet<u64>,
+) -> Result<std::collections::HashMap<u64, Vec<u8>>> {
+    use std::collections::HashMap;
+    if needed_hashes.is_empty() { return Ok(HashMap::new()); }
+
+    // Plain (non-indexed) reader — single pass over the whole BAM.
+    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path.as_ref())?;
+    let _header = reader.read_header()?;
+
+    let mut out: HashMap<u64, Vec<u8>> = HashMap::with_capacity(needed_hashes.len());
+    for r in reader.records() {
+        let rec = r?;
+        let f = rec.flags();
+        if f.is_secondary() || f.is_supplementary() { continue; }
+        let name = match rec.name() {
+            Some(n) => n,
+            None => continue,
+        };
+        // Compute read_name_hash matching record_to_bundle_read (FNV-1a over the read-name bytes).
+        let name_str = String::from_utf8_lossy(name.as_ref());
+        let h = fnv1a64(&name_str);
+        if !needed_hashes.contains(&h) { continue; }
+        if out.contains_key(&h) { continue; }  // already collected
+        let seq = decode_bam_sequence(&rec.sequence());
+        if !seq.is_empty() {
+            out.insert(h, seq);
+            if out.len() == needed_hashes.len() { break; }  // got everything
+        }
+    }
+    Ok(out)
+}

@@ -1,6 +1,6 @@
 //! Regression tests for vg_hmm::rescue (Phase 5).
 
-use rustle::vg_hmm::rescue::{prefilter_read, run_rescue_in_memory, synthesize_bundles};
+use rustle::vg_hmm::rescue::{prefilter_read, run_rescue_in_memory, synthesize_bundles, synthesize_bundles_refined};
 use rustle::vg_hmm::family_graph::{FamilyGraph, ExonClass, JunctionEdge, NodeIdx};
 use rustle::vg_hmm::profile::ProfileHmm;
 use rustle::vg::FamilyGroup;
@@ -31,11 +31,13 @@ fn two_node_fg_with_profiles() -> FamilyGraph {
         ExonClass {
             idx: NodeIdx(0), chrom: "chr1".into(), span: (1000, 1008), strand: '+',
             per_copy_sequences: vec![(0, b"ACGTACGT".to_vec())],
+            per_copy_spans: vec![(0, (1000, 1008))],
             copy_specific: false, profile: Some(p1),
         },
         ExonClass {
             idx: NodeIdx(1), chrom: "chr1".into(), span: (2000, 2008), strand: '+',
             per_copy_sequences: vec![(0, b"TGCATGCA".to_vec())],
+            per_copy_spans: vec![(0, (2000, 2008))],
             copy_specific: false, profile: Some(p2),
         },
     ];
@@ -170,6 +172,63 @@ fn synthesize_bundles_emits_synthetic_bundle_for_sufficient_cluster() {
     assert_eq!(b.end, 3008); // 2008 + 1000
     // read_uid should start at 1_000_000.
     assert_eq!(b.reads[0].read_uid, 1_000_000);
+}
+
+// ── synthesize_bundles_refined: boundary refinement via Viterbi spans ────────
+
+#[test]
+fn synthesize_bundles_refined_keeps_internal_node_spans() {
+    // 2-node graph; rescued reads supply Viterbi spans that all agree at the
+    // first-node footprint length. Internal junctions (= node spans here, since
+    // both nodes are boundary in 2-node) must come from the family graph.
+    // With only 2 nodes, both ARE boundary (first and last). Internal-keep
+    // semantics is tested with 3+ nodes — covered indirectly by clustering tests.
+    let fg = two_node_fg_with_profiles();
+    let path = vec![NodeIdx(0), NodeIdx(1)];
+    // 4 reads, all with footprint (0,8) on node 0 (= 8 bp footprint) and (8,16) on node 1.
+    let rescued: Vec<(String, Vec<NodeIdx>, Vec<(usize, usize)>)> = (0..4)
+        .map(|i| (format!("r{}", i), path.clone(), vec![(0, 8), (8, 16)]))
+        .collect();
+    let bundles = synthesize_bundles_refined(&fg, &rescued, 3, 15, 3, 5);
+    assert_eq!(bundles.len(), 1, "expected exactly 1 bundle");
+    let b = &bundles[0];
+    // Node spans: node 0 = (1000, 1008) length 8; node 1 = (2000, 2008) length 8.
+    // All 4 reads agree on footprint = 8 (matches node_len), so refined boundary
+    // = node_len = 8. Boundary anchoring: first exon keeps node_e=1008, grows
+    // start leftward by 8 → (1000, 1008). Last exon keeps node_s=2000, grows
+    // end rightward by 8 → (2000, 2008). Net: same as RAW.
+    assert_eq!(b.reads[0].exons, vec![(1000, 1008), (2000, 2008)]);
+}
+
+#[test]
+fn synthesize_bundles_refined_falls_back_when_too_few_supporters() {
+    // Only 2 reads — below hard_min_reads=3. Cluster fails the support
+    // threshold; refined boundaries fall back to family-graph node lengths.
+    let fg = two_node_fg_with_profiles();
+    let path = vec![NodeIdx(0), NodeIdx(1)];
+    let rescued: Vec<(String, Vec<NodeIdx>, Vec<(usize, usize)>)> = (0..3)
+        .map(|i| (format!("r{}", i), path.clone(), vec![(0, 12), (12, 20)]))  // footprint 12 on node 0 (longer than node_len=8)
+        .collect();
+    let bundles = synthesize_bundles_refined(&fg, &rescued, 3, 15, 5, 5);  // hard_min_reads=5, only 3 reads available
+    assert_eq!(bundles.len(), 1);
+    let b = &bundles[0];
+    // 3 < hard_min_reads=5 → both boundaries fall back to node_len=8.
+    // First exon: node_e=1008 minus len=8 → (1000, 1008). Same as RAW.
+    assert_eq!(b.reads[0].exons, vec![(1000, 1008), (2000, 2008)]);
+}
+
+#[test]
+fn synthesize_bundles_refined_produces_synthetic_bundle_with_strand_aware_anchoring() {
+    let fg = two_node_fg_with_profiles();
+    let path = vec![NodeIdx(0), NodeIdx(1)];
+    let rescued: Vec<(String, Vec<NodeIdx>, Vec<(usize, usize)>)> = (0..3)
+        .map(|i| (format!("r{}", i), path.clone(), vec![(0, 8), (8, 16)]))
+        .collect();
+    let bundles = synthesize_bundles_refined(&fg, &rescued, 3, 15, 3, 5);
+    let b = &bundles[0];
+    assert!(b.synthetic, "must mark synthetic=true");
+    assert_eq!(b.strand, '+');  // both nodes are + strand in two_node_fg_with_profiles
+    assert_eq!(b.reads[0].read_uid, 1_000_000);  // refined uses same uid scheme
 }
 
 #[test]

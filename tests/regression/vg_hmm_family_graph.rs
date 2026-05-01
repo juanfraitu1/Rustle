@@ -52,10 +52,12 @@ fn exon_class_carries_per_copy_sequences() {
         span: (1000, 1500),
         strand: '+',
         per_copy_sequences: vec![(0, b"ACGT".to_vec()), (1, b"ACAT".to_vec())],
+        per_copy_spans: vec![(0, (1000, 1500)), (1, (1000, 1500))],
         copy_specific: false,
         profile: None,
     };
     assert_eq!(cls.per_copy_sequences.len(), 2);
+    assert_eq!(cls.per_copy_spans.len(), 2);
     assert!(!cls.copy_specific);
 }
 

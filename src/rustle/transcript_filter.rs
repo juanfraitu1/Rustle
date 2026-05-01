@@ -2023,16 +2023,84 @@ fn isofrac_with_summary(
             // Minor-isoform rescue (opt-in via RUSTLE_RELAX_LONGUNDER=1):
             // when the pre-flow longcov is clearly supported but flow depletion
             // pushed cov under the isofrac threshold, allow multi-exon transcripts
-            // (>=5 exons) with longcov>=4 and cov>=2 through. Empirically this
-            // recovers ~5 minor isoforms on GGO_19 at ~0.3 pp precision cost, a
-            // borderline trade — hence opt-in rather than default.
+            // through. Tunable thresholds:
+            //   RUSTLE_RELAX_LONGUNDER_MIN_EXONS (default 5)
+            //   RUSTLE_RELAX_LONGUNDER_MIN_LONGCOV (default 4.0)
+            //   RUSTLE_RELAX_LONGUNDER_MIN_COV (default 2.0)
             if longunder
                 && std::env::var_os("RUSTLE_RELAX_LONGUNDER").is_some()
-                && txs[k].exons.len() >= 5
-                && txs[k].longcov >= 4.0
-                && cov >= 2.0
             {
-                longunder = false;
+                let min_exons: usize = std::env::var("RUSTLE_RELAX_LONGUNDER_MIN_EXONS")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+                let min_longcov: f64 = std::env::var("RUSTLE_RELAX_LONGUNDER_MIN_LONGCOV")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(4.0);
+                let min_cov: f64 = std::env::var("RUSTLE_RELAX_LONGUNDER_MIN_COV")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+                if txs[k].exons.len() >= min_exons
+                    && txs[k].longcov >= min_longcov
+                    && cov >= min_cov
+                {
+                    longunder = false;
+                }
+            }
+
+            // Per-locus context rescue (default OFF — see below):
+            // shared-prefix/suffix + distinguishing-intron rescue for minor
+            // isoforms killed by isofrac. Tested at multiple operating
+            // points on GGO_19 and found F1-negative because rustle's flow
+            // decomposition assigns too-low cov to real minor isoforms,
+            // making them indistinguishable from j-class noise by intron
+            // structure alone. Real fix needs upstream flow accounting.
+            // Available as opt-in for future tuning. Enable via
+            // RUSTLE_ISOFRAC_CONTEXT_RESCUE=1.
+            if longunder {
+                let ctx_enabled = std::env::var("RUSTLE_ISOFRAC_CONTEXT_RESCUE")
+                    .ok().and_then(|v| v.parse::<u32>().ok())
+                    .map(|v| v != 0).unwrap_or(false);
+                if ctx_enabled && txs[k].exons.len() >= 2 && txs[first].exons.len() >= 2 {
+                    let min_shared: usize = std::env::var("RUSTLE_ISOFRAC_CONTEXT_MIN_SHARED")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                    let min_longcov_ctx: f64 = std::env::var("RUSTLE_ISOFRAC_CONTEXT_MIN_LONGCOV")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+                    // Only rescue if candidate has long-read support (otherwise
+                    // it's likely flow-noise, not a legit minor isoform).
+                    if txs[k].longcov >= min_longcov_ctx && txs[k].coverage > 0.0 {
+                        let k_introns: Vec<(u64, u64)> =
+                            (0..txs[k].exons.len().saturating_sub(1))
+                                .map(|i| (txs[k].exons[i].1 + 1, txs[k].exons[i+1].0 - 1))
+                                .collect();
+                        let f_introns: Vec<(u64, u64)> =
+                            (0..txs[first].exons.len().saturating_sub(1))
+                                .map(|i| (txs[first].exons[i].1 + 1, txs[first].exons[i+1].0 - 1))
+                                .collect();
+                        // Shared prefix
+                        let shared_prefix = k_introns.iter()
+                            .zip(f_introns.iter())
+                            .take_while(|(a, b)| a == b)
+                            .count();
+                        // Shared suffix
+                        let shared_suffix = k_introns.iter().rev()
+                            .zip(f_introns.iter().rev())
+                            .take_while(|(a, b)| a == b)
+                            .count();
+                        // Distinguishing intron requirement: candidate must have at
+                        // least one intron NOT in dominant's chain. Otherwise the
+                        // candidate is just a strict subset and should be killed as
+                        // a near-duplicate. This separates real splicing variants
+                        // from boundary-noise duplicates.
+                        let f_set: std::collections::HashSet<_> = f_introns.iter().copied().collect();
+                        let n_distinct_in_k = k_introns.iter().filter(|x| !f_set.contains(x)).count();
+                        // Require min N "novel" introns in candidate compared to dominant.
+                        // Default 2 — strict enough to exclude single-intron-shift j-class artifacts.
+                        let min_distinct: usize = std::env::var("RUSTLE_ISOFRAC_CONTEXT_MIN_DISTINCT")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+                        if (shared_prefix >= min_shared || shared_suffix >= min_shared)
+                            && n_distinct_in_k >= min_distinct
+                        {
+                            longunder = false;
+                        }
+                    }
+                }
             }
 
             if std::env::var("RUSTLE_FILTER_DEBUG").is_ok()
@@ -5107,10 +5175,26 @@ pub fn print_predcluster_with_summary(
     bpcov: Option<&Bpcov>,
     trace_ref: Option<&RefTranscript>,
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
+    print_predcluster_with_summary_multi(transcripts, config, bpcov, trace_ref, &[])
+}
+
+/// Same as `print_predcluster_with_summary` but accepts an additional slice of
+/// reference transcripts for batch tracing (each emits its own [TRACE_REF] line
+/// at every predcluster substage).
+pub fn print_predcluster_with_summary_multi(
+    transcripts: Vec<Transcript>,
+    config: &RunConfig,
+    bpcov: Option<&Bpcov>,
+    trace_ref: Option<&RefTranscript>,
+    extra_trace_refs: &[&RefTranscript],
+) -> (Vec<Transcript>, PredclusterStageSummary) {
     let trace_stage = |stage: &str, txs: &[Transcript]| {
         if let Some(ref_tx) = trace_ref {
             debug_ref_stage(stage, "predcluster", ref_tx, txs);
             predcluster_trace_dump(stage, ref_tx, txs);
+        }
+        for r in extra_trace_refs {
+            debug_ref_stage(stage, "predcluster", r, txs);
         }
     };
     let fate_trace = pred_fate_trace_enabled();
@@ -5485,10 +5569,11 @@ pub fn print_predcluster_with_summary(
     // cov=0.9633 longcov=2.0).
     //
     // Compromise: keep the 1.0 threshold as default, but EXEMPT multi-exon
-    // tx with strong longcov support. Tunable via RUSTLE_READTHR_LONGCOV_MIN
-    // (default 0 = off). Recommended: 2.0 for balanced recovery.
+    // tx with strong longcov support. Tunable via RUSTLE_READTHR_LONGCOV_MIN.
+    // Default 2.0 (on) — recovers minor isoforms like STRG.1.5 (cov=0.96
+    // longcov=2.0). Set to 0 to disable.
     let readthr_longcov_min: f64 = std::env::var("RUSTLE_READTHR_LONGCOV_MIN")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
     let readthr_longcov_subfloor: f64 = std::env::var("RUSTLE_READTHR_LONGCOV_SUBFLOOR")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
     txs.retain(|t| {

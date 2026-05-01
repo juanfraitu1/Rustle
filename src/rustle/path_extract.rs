@@ -3813,6 +3813,64 @@ fn fwd_to_sink_fast_long(
         return true;
     }
 
+    // HARDEND guard (symmetric to back_to_source's HARDSTART guard).
+    // Default OFF — IsoSeq read 3' ends are unreliable (internal polyA
+    // priming, truncation), so polyA at read end isn't a reliable TES
+    // signal. On GGO_19 this guard is purely negative (-10 matches,
+    // 0 gained) when default-on. Available as opt-in for future tuning.
+    // Enable via RUSTLE_FWD_HARDEND_GUARD=1. Override thresholds via
+    // RUSTLE_FWD_HARDEND_GUARD_MIN_ABUND (default 2.0) and
+    // RUSTLE_FWD_HARDEND_GUARD_POLYA (default 1 = required).
+    //
+    // The asymmetry with back-side: read 5' start is the actual TSS
+    // (cap-trapped), so polyA-start + abund≥2 is a reliable TSS signal.
+    // Read 3' ends in IsoSeq are commonly internal-priming artifacts.
+    {
+        let guard_enabled = std::env::var("RUSTLE_FWD_HARDEND_GUARD")
+            .ok().and_then(|v| v.parse::<u32>().ok())
+            .map(|v| v != 0).unwrap_or(false);
+        if guard_enabled {
+            let min_abund: f64 = std::env::var("RUSTLE_FWD_HARDEND_GUARD_MIN_ABUND")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+            let require_polya: bool = std::env::var("RUSTLE_FWD_HARDEND_GUARD_POLYA")
+                .ok().and_then(|v| v.parse::<u32>().ok())
+                .map(|v| v != 0).unwrap_or(true);
+            if let Some(seed_tf) = transfrags.get(seed_idx) {
+                let qualifies = seed_tf.trflong_seed
+                    && seed_tf.longend > 0
+                    && seed_tf.abundance >= min_abund
+                    && (!require_polya || (seed_tf.poly_end_unaligned + seed_tf.poly_end_aligned) > 0);
+                if qualifies {
+                    let source_id = graph.source_id;
+                    // Last real node of the seed (excluding source/sink).
+                    let seed_last_real = seed_tf
+                        .node_ids
+                        .iter()
+                        .rev()
+                        .copied()
+                        .find(|&n| n != source_id && n != sink);
+                    if seed_last_real == Some(i) {
+                        // Ensure i→sink edge exists for valid path emission.
+                        if !graph.nodes[i].children.contains(sink) {
+                            graph.add_edge(i, sink);
+                        }
+                        path.push(sink);
+                        pathpat.set_bit(sink);
+                        edge_set(pathpat, graph, i, sink, true);
+                        if trace_fwd || trace_seed_diagnostics(seed_idx) {
+                            eprintln!(
+                                "[FWD_HARDEND_GUARD seed={}] short-circuit at i={} (seed_last_real, longend={}, abund={:.2}, polyA_end={})",
+                                seed_idx, i, seed_tf.longend, seed_tf.abundance,
+                                seed_tf.poly_end_unaligned + seed_tf.poly_end_aligned
+                            );
+                        }
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
     // Hardend-aware alt-TTS termination (RUSTLE_FWD_HARDEND_TERMINATE=1).
     // When the current node is marked hardend (StringTie-style real
     // tx terminus), sink is in its children, AND the seed's longend
@@ -4524,6 +4582,55 @@ fn back_to_source_fast_long(
     }
     let gno = graph.n_nodes;
     let source = graph.source_id;
+
+    // HARDSTART guard (opt-in via RUSTLE_BACK_HARDSTART_GUARD): short-circuit
+    // back-extension when `i` is the seed's first real node AND the seed
+    // transfrag carries a long-read TSS marker (longstart > 0). This prevents
+    // extending the seed's path through upstream nodes the read never covered
+    // (e.g., STRG.338.1 case: seed has nodes [7,8] but back_to_source would
+    // otherwise walk n7 ← n6 ← ... ← n1, producing a 7-exon chimera instead
+    // of the 2-exon ref-matching transcript).
+    // HARDSTART guard: default ON with conservative profile (polyA required,
+    // abund >= 2). Disable via RUSTLE_BACK_HARDSTART_GUARD=0. Override
+    // thresholds via RUSTLE_BACK_HARDSTART_GUARD_MIN_ABUND (default 2.0) and
+    // RUSTLE_BACK_HARDSTART_GUARD_POLYA (default 1 = required, set to 0 to relax).
+    let guard_enabled = std::env::var("RUSTLE_BACK_HARDSTART_GUARD")
+        .ok().and_then(|v| v.parse::<u32>().ok())
+        .map(|v| v != 0).unwrap_or(true);
+    if guard_enabled {
+        let min_abund: f64 = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_MIN_ABUND")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+        let require_polya: bool = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_POLYA")
+            .ok().and_then(|v| v.parse::<u32>().ok())
+            .map(|v| v != 0).unwrap_or(true);
+        if let Some(seed_tf) = transfrags.get(seed_idx) {
+            let qualifies = seed_tf.trflong_seed
+                && seed_tf.longstart > 0
+                && seed_tf.abundance >= min_abund
+                && (!require_polya || (seed_tf.poly_start_unaligned + seed_tf.poly_start_aligned) > 0);
+            if qualifies {
+                let sink_id = graph.sink_id;
+                let seed_first_real = seed_tf
+                    .node_ids
+                    .iter()
+                    .copied()
+                    .find(|&n| n != source && n != sink_id);
+                if seed_first_real == Some(i) {
+                    if !graph.nodes[source].children.contains(i) {
+                        graph.add_edge(source, i);
+                    }
+                    if trace_seed_diagnostics(seed_idx) || trace_locus_active(graph, i) {
+                        eprintln!(
+                            "[BACK_HARDSTART_GUARD seed={}] short-circuit at i={} (longstart={}, abund={:.2}, polyA={})",
+                            seed_idx, i, seed_tf.longstart, seed_tf.abundance,
+                            seed_tf.poly_start_unaligned + seed_tf.poly_start_aligned
+                        );
+                    }
+                    return true;
+                }
+            }
+        }
+    }
     let trace_back = trace_locus_active(graph, i) || trace_seed_diagnostics(seed_idx);
     let Some(inode) = graph.nodes.get(i) else {
         if trace_seed_diagnostics(seed_idx) {
@@ -6166,16 +6273,18 @@ pub fn extract_transcripts(
             if pathpat_trace {
                 let (nb, eb, bits) = pathpat_summary(&pathpat, graph.n_nodes);
                 eprintln!(
-                    "parse_trflong: SEED idx={} abund={:.4} nnodes={} minp={} maxp={}",
+                    "parse_trflong: SEED bundle={} idx={} abund={:.4} nnodes={} minp={} maxp={} nodes={:?}",
+                    bundle_id,
                     idx,
                     abundance,
                     seed_nodes.len(),
                     minp,
-                    maxp
+                    maxp,
+                    seed_nodes
                 );
                 eprintln!(
-                    "parse_trflong: SEED_PATHPAT idx={} node_bits={} edge_bits={} bits={}",
-                    idx, nb, eb, bits
+                    "parse_trflong: SEED_PATHPAT bundle={} idx={} node_bits={} edge_bits={} bits={}",
+                    bundle_id, idx, nb, eb, bits
                 );
             }
             let maxi = minp;
@@ -7779,8 +7888,8 @@ pub fn extract_transcripts(
             let first_start = exons.first().map(|e| e.0).unwrap_or(0);
             let last_end = exons.last().map(|e| e.1).unwrap_or(0);
             eprintln!(
-                "parse_trflong: PRED_STORED idx={} pred={} cov={:.4} exons={} span={}-{} longcov={:.4}",
-                idx, out.len(), coverage, exons.len(), first_start, last_end, abundance
+                "parse_trflong: PRED_STORED bundle={} idx={} pred={} cov={:.4} exons={} span={}-{} longcov={:.4}",
+                bundle_id, idx, out.len(), coverage, exons.len(), first_start, last_end, abundance
             );
         }
         // DEBUG: emit SEED_DECISION for stored transcripts

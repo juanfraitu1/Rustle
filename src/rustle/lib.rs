@@ -78,6 +78,7 @@ pub mod parity_trace_dump; // cgroup + graph topology + optional read-exon trace
 pub mod assembly_mode; // assembly mode dispatch
 pub mod merge_mode; // merge mode (multi-sample)
 pub mod debug_stage;
+pub mod parity_decisions; // structured per-decision JSONL log for cross-tool diffing
 pub mod pipeline; // main long-read assembly pipeline
 
 // ── Per-bundlenode graph processing ───────────────────────────────────────────

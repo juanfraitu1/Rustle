@@ -12,6 +12,7 @@ use crate::coord::overlaps_half_open;
 use crate::graph::Graph;
 use crate::map_reads::read_to_path_bundlenodes;
 use crate::types::{Bundle, BundleRead, CBundlenode, Bundle2Graph};
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 /// FNV-1a hash matching bam.rs read_name_hash computation.
@@ -671,6 +672,269 @@ pub fn run_em_reweighting(
     result
 }
 
+/// Partition a (possibly mixed-strand) family into single-strand sub-families
+/// AND remap each sub-family's `multimap_reads` so `fam_pos` values index into
+/// the new `bundle_indices`. Multi-mapper entries pointing to bundles outside
+/// the partition are dropped. Reads left with < 2 placements after remapping
+/// are dropped entirely (no EM benefit).
+///
+/// Sub-families with < 2 bundles are dropped (no EM possible).
+///
+/// Use this before `build_family_graph` + `run_pre_assembly_em_hmm` because
+/// `build_family_graph` requires single-strand input — without this, ~70 % of
+/// real-world families fail the strand check and skip HMM-EM.
+pub fn partition_and_remap_family_by_strand(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+) -> Vec<FamilyGroup> {
+    use std::collections::BTreeMap;
+
+    // Group ORIGINAL bundle_indices by strand.
+    let mut by_strand: BTreeMap<char, Vec<usize>> = BTreeMap::new();
+    for &bi in &family.bundle_indices {
+        by_strand.entry(bundles[bi].strand).or_default().push(bi);
+    }
+    if by_strand.len() <= 1 {
+        // Already single-strand — return as-is (no remapping needed).
+        return vec![FamilyGroup {
+            family_id: family.family_id,
+            bundle_indices: family.bundle_indices.clone(),
+            multimap_reads: family.multimap_reads.clone(),
+        }];
+    }
+
+    let mut out = Vec::new();
+    for (i, (_strand, partition_bis)) in by_strand.into_iter().enumerate() {
+        if partition_bis.len() < 2 { continue; }
+
+        // global_bi → new_fam_pos in this partition.
+        let bi_to_pos: HashMap<usize, usize> = partition_bis.iter()
+            .enumerate()
+            .map(|(idx, &bi)| (bi, idx))
+            .collect();
+
+        // Remap multimap_reads.
+        let mut new_multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for (&rnh, locs) in &family.multimap_reads {
+            let mut new_locs: Vec<(usize, usize)> = Vec::with_capacity(locs.len());
+            for &(old_fam_pos, ri) in locs {
+                if old_fam_pos >= family.bundle_indices.len() { continue; }
+                let global_bi = family.bundle_indices[old_fam_pos];
+                if let Some(&new_fp) = bi_to_pos.get(&global_bi) {
+                    new_locs.push((new_fp, ri));
+                }
+            }
+            // Drop multi-mapper entries that no longer have ≥2 placements.
+            if new_locs.len() >= 2 {
+                new_multimap.insert(rnh, new_locs);
+            }
+        }
+
+        out.push(FamilyGroup {
+            family_id: family.family_id * 10 + i,
+            bundle_indices: partition_bis,
+            multimap_reads: new_multimap,
+        });
+    }
+
+    out
+}
+
+// ── HMM-based EM reweighting (sequence-aware copy assignment) ────────────────
+
+/// HMM-based EM reweighting across copies in a family group.
+///
+/// **Difference from `run_em_reweighting`:** the E-step compatibility score
+/// is `forward_against_path(family_graph, read_seq, paralog_path)` —
+/// the full sequence-level forward log-likelihood through that paralog's
+/// path through the family graph. This replaces the heuristic
+/// `compat × √context` with a probabilistic likelihood that uses every
+/// base-level mismatch the read carries (in particular, the diagnostic
+/// SNPs that distinguish paralogs).
+///
+/// Preconditions:
+///   - `family_graph` was built from the bundles indexed by
+///     `family.bundle_indices` (same order; CopyId = position in
+///     bundle_indices = `family_pos` in `family.multimap_reads` values).
+///   - `family_graph` has profiles fitted (`fit_profiles_in_place` called).
+///   - `sequences` contains entries for every multi-mapped read's
+///     `read_name_hash`. Reads without sequences are skipped (no
+///     reweighting applied — keeps original weight).
+///
+/// Returns the EM result summary. Modifies `BundleRead.weight` in place.
+pub fn run_em_reweighting_hmm(
+    family: &FamilyGroup,
+    bundles: &mut [Bundle],
+    family_graph: &crate::vg_hmm::family_graph::FamilyGraph,
+    sequences: &HashMap<u64, Vec<u8>>,
+    max_iter: usize,
+    convergence_thr: f64,
+) -> EmResult {
+    use crate::vg_hmm::scorer::forward_against_path;
+
+    let n_copies = family.bundle_indices.len();
+    if n_copies < 2 || family.multimap_reads.is_empty() {
+        return EmResult::default();
+    }
+
+    // Pre-compute per-paralog paths through the family graph.
+    let paralog_paths: Vec<Vec<crate::vg_hmm::family_graph::NodeIdx>> = (0..n_copies)
+        .map(|cid| family_graph.recover_paralog_path(cid))
+        .collect();
+
+    // Filter family.multimap_reads to entries where we have the read sequence
+    // and at least one paralog has a non-empty path. Build the working entry
+    // list with pre-computed log-likelihood scores per placement (constant
+    // across EM iterations because the family graph and sequences don't change).
+    struct ReadEntry {
+        locs: Vec<(usize, usize, usize)>,  // (family_pos, global_bi, read_idx)
+        log_scores: Vec<f64>,              // forward_against_path per placement (len = locs.len())
+        weights: Vec<f64>,                 // current EM weights (sum to 1)
+    }
+    // PHASE 1 (sequential): collect work items. The expensive forward DP per
+    // placement is deferred to PHASE 2 where it runs in parallel via rayon.
+    struct WorkItem<'a> {
+        rnh: u64,
+        seq: &'a [u8],
+        // (fam_pos, global_bi, ri, current_weight)
+        placements: Vec<(usize, usize, usize, f64)>,
+    }
+    let mut work: Vec<WorkItem> = Vec::with_capacity(family.multimap_reads.len());
+    for (&rnh, locs) in &family.multimap_reads {
+        let seq = match sequences.get(&rnh) {
+            Some(s) if !s.is_empty() => s.as_slice(),
+            _ => continue,
+        };
+        let mut placements = Vec::with_capacity(locs.len());
+        for &(fam_pos, ri) in locs {
+            if fam_pos >= n_copies { continue; }
+            let global_bi = family.bundle_indices[fam_pos];
+            let w = bundles[global_bi].reads[ri].weight;
+            placements.push((fam_pos, global_bi, ri, w));
+        }
+        if placements.len() < 2 { continue; }
+        work.push(WorkItem { rnh, seq, placements });
+    }
+
+    // PHASE 2 (parallel): forward_against_path is pure in (graph, seq, path).
+    let mut entries: Vec<(u64, ReadEntry)> = work.par_iter()
+        .filter_map(|item| {
+            let mut entry_locs = Vec::with_capacity(item.placements.len());
+            let mut log_scores = Vec::with_capacity(item.placements.len());
+            let mut weights   = Vec::with_capacity(item.placements.len());
+            for &(fam_pos, global_bi, ri, w) in &item.placements {
+                let path = &paralog_paths[fam_pos];
+                let score = if path.is_empty() {
+                    f64::NEG_INFINITY
+                } else {
+                    forward_against_path(family_graph, item.seq, path)
+                };
+                entry_locs.push((fam_pos, global_bi, ri));
+                log_scores.push(score);
+                weights.push(w);
+            }
+            if entry_locs.len() < 2 { return None; }
+            if !log_scores.iter().any(|s| s.is_finite()) { return None; }
+            Some((item.rnh, ReadEntry { locs: entry_locs, log_scores, weights }))
+        })
+        .collect();
+
+    if entries.is_empty() {
+        return EmResult::default();
+    }
+
+    // EM iteration. With pre-computed log-scores, each iteration is just a
+    // softmax + delta check. We optionally weight by current per-paralog
+    // coverage (M-step prior) so iteration converges to a self-consistent
+    // assignment given the weights from the previous round. This is the
+    // proper EM with Bayesian prior on copy abundance.
+    let mut result = EmResult::default();
+
+    for iter in 0..max_iter {
+        // M-step: aggregate per-paralog total weight (proxy for per-copy coverage).
+        let mut copy_total: Vec<f64> = vec![0.0; n_copies];
+        for (_, entry) in &entries {
+            for (i, w) in entry.weights.iter().enumerate() {
+                let fam_pos = entry.locs[i].0;
+                copy_total[fam_pos] += w;
+            }
+        }
+        // Convert to log-priors (softmax over copy totals, smoothed). 1e-3
+        // floor avoids -∞ when a paralog is fully drained.
+        let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
+        let log_priors: Vec<f64> = copy_total.iter()
+            .map(|&t| ((t / total_sum) + 1e-3).ln())
+            .collect();
+
+        let mut max_delta: f64 = 0.0;
+
+        for (_, entry) in &mut entries {
+            // E-step: posterior = softmax(log_score + log_prior).
+            let n = entry.locs.len();
+            let mut log_post = vec![f64::NEG_INFINITY; n];
+            for i in 0..n {
+                let s = entry.log_scores[i];
+                if !s.is_finite() { continue; }
+                let fam_pos = entry.locs[i].0;
+                log_post[i] = s + log_priors[fam_pos];
+            }
+            // Numerically-stable softmax.
+            let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            if !max_lp.is_finite() { continue; }
+            let mut total = 0.0_f64;
+            let mut exps = vec![0.0_f64; n];
+            for i in 0..n {
+                if log_post[i].is_finite() {
+                    exps[i] = (log_post[i] - max_lp).exp();
+                    total += exps[i];
+                }
+            }
+            if total <= 0.0 { continue; }
+            for i in 0..n {
+                let new_w = exps[i] / total;
+                let delta = (new_w - entry.weights[i]).abs();
+                if delta > max_delta { max_delta = delta; }
+                entry.weights[i] = new_w;
+            }
+        }
+
+        result.iterations = iter + 1;
+        result.max_delta = max_delta;
+        if max_delta < convergence_thr {
+            result.converged = true;
+            break;
+        }
+    }
+
+    // Apply final weights back to BundleRead.weight.
+    let mut n_reweighted = 0usize;
+    for (_, entry) in &entries {
+        for (i, &(_, global_bi, ri)) in entry.locs.iter().enumerate() {
+            let old_w = bundles[global_bi].reads[ri].weight;
+            let new_w = entry.weights[i];
+            if (old_w - new_w).abs() > 1e-9 {
+                bundles[global_bi].reads[ri].weight = new_w;
+                n_reweighted += 1;
+            }
+        }
+    }
+    result.reads_reweighted = n_reweighted;
+
+    if n_reweighted > 0 {
+        eprintln!(
+            "[VG-HMM-EM] Family {}: HMM-EM converged={} in {} iter (delta={:.6}), reweighted {} read entries across {} copies",
+            family.family_id,
+            result.converged,
+            result.iterations,
+            result.max_delta,
+            n_reweighted,
+            n_copies,
+        );
+    }
+
+    result
+}
+
 // ── Family report ────────────────────────────────────────────────────────────
 
 /// Write a TSV report using pre-saved bundle coordinates (bundles consumed by processing loop).
@@ -1195,6 +1459,243 @@ fn run_pre_assembly_em_inner(
         );
     }
 
+    results
+}
+
+/// Pre-assembly EM using HMM-based per-path scoring (sequence-aware).
+///
+/// Mirrors `run_pre_assembly_em` but replaces the heuristic
+/// `junction_compatibility × log_context` with `forward_against_path` —
+/// the full forward log-likelihood of the read against each paralog's
+/// path through the family-graph HMM.
+///
+/// Inputs:
+///   - `families`: as before, the discovered family groups.
+///   - `bundles`: as before, mutated in place.
+///   - `family_graphs`: parallel slice to `families`. `family_graphs[i]`
+///     must be the FamilyGraph built from `families[i]`'s bundles, with
+///     profiles fitted (`fit_profiles_in_place`). If a family has `None`
+///     here, that family falls back to `run_pre_assembly_em` semantics
+///     (uniform / no-op).
+///   - `sequences`: `read_name_hash → bytes` for multi-mappers. Reads
+///     without sequences are skipped (no reweighting).
+pub fn run_pre_assembly_em_hmm(
+    families: &[FamilyGroup],
+    bundles: &mut [Bundle],
+    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    sequences: &HashMap<u64, Vec<u8>>,
+    max_iter: usize,
+) -> Vec<EmResult> {
+    use crate::vg_hmm::scorer::forward_against_path;
+    let mut results = Vec::with_capacity(families.len());
+    let convergence_thr = 0.001;
+    let t_em_start = std::time::Instant::now();
+
+    for (fam_idx, family) in families.iter().enumerate() {
+        let n_copies = family.bundle_indices.len();
+        if n_copies < 2 || family.multimap_reads.is_empty() {
+            results.push(EmResult::default());
+            continue;
+        }
+
+        let fg_opt = family_graphs.get(fam_idx).and_then(|f| f.as_ref());
+        let fg = match fg_opt {
+            Some(g) if !g.nodes.is_empty() => g,
+            _ => {
+                eprintln!(
+                    "[VG-HMM-EM] Family {}: no family graph available — skipping EM",
+                    family.family_id
+                );
+                results.push(EmResult::default());
+                continue;
+            }
+        };
+
+        // Pre-compute per-paralog paths.
+        let paralog_paths: Vec<Vec<crate::vg_hmm::family_graph::NodeIdx>> = (0..n_copies)
+            .map(|cid| fg.recover_paralog_path(cid))
+            .collect();
+
+        // Build entries with pre-computed log-likelihoods (constant across EM iters).
+        struct Entry {
+            locs: Vec<(usize, usize)>,
+            log_scores: Vec<f64>,
+            weights: Vec<f64>,
+            fam_pos: Vec<usize>,
+        }
+
+        // Optional cap on reads scored per family (env: RUSTLE_VG_HMM_EM_READ_CAP).
+        // Bounds runtime on huge families (e.g. 769 reads × 18 copies). Set to 0
+        // to disable. Default: 200 reads — usually enough to estimate copy
+        // priors, after which the EM iteration handles redistribution.
+        let read_cap: usize = std::env::var("RUSTLE_VG_HMM_EM_READ_CAP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(200);
+
+        // PHASE 1 (sequential): collect work items — one per multimap read with
+        // a usable sequence. The expensive part (forward_against_path per
+        // placement) is deferred to PHASE 2 where it runs in parallel.
+        struct WorkItem<'a> {
+            seq: &'a [u8],
+            // (fam_pos, global_bi, ri, current_weight)
+            placements: Vec<(usize, usize, usize, f64)>,
+        }
+        let mut work: Vec<WorkItem> = Vec::with_capacity(family.multimap_reads.len());
+        let mut n_no_seq = 0usize;
+
+        // Iterate deterministically (HashMap order is unspecified). Sort by rnh so
+        // capping is reproducible across runs.
+        let mut keys: Vec<u64> = family.multimap_reads.keys().copied().collect();
+        keys.sort_unstable();
+
+        for rnh in keys {
+            let locs = &family.multimap_reads[&rnh];
+            let seq = match sequences.get(&rnh) {
+                Some(s) if !s.is_empty() => s.as_slice(),
+                _ => { n_no_seq += 1; continue; }
+            };
+            let mut placements = Vec::with_capacity(locs.len());
+            for &(fam_pos, ri) in locs {
+                if fam_pos >= n_copies { continue; }
+                let global_bi = family.bundle_indices[fam_pos];
+                let w = if ri < bundles[global_bi].reads.len() {
+                    bundles[global_bi].reads[ri].weight
+                } else {
+                    0.0
+                };
+                placements.push((fam_pos, global_bi, ri, w));
+            }
+            if placements.len() < 2 { continue; }
+            work.push(WorkItem { seq, placements });
+            if read_cap > 0 && work.len() >= read_cap { break; }
+        }
+        let n_capped = if read_cap > 0 && family.multimap_reads.len() > read_cap {
+            family.multimap_reads.len() - read_cap
+        } else {
+            0
+        };
+
+        // PHASE 2 (parallel): score every placement with forward_against_path.
+        // forward_against_path is a pure function of (fg, seq, path) — fg is
+        // shared `&` across threads, seqs/paths are non-overlapping reads.
+        let scored: Vec<Entry> = work.par_iter()
+            .filter_map(|item| {
+                let mut entry_locs = Vec::with_capacity(item.placements.len());
+                let mut log_scores = Vec::with_capacity(item.placements.len());
+                let mut weights   = Vec::with_capacity(item.placements.len());
+                let mut fp_vec    = Vec::with_capacity(item.placements.len());
+                for &(fam_pos, global_bi, ri, w) in &item.placements {
+                    let path = &paralog_paths[fam_pos];
+                    let score = if path.is_empty() {
+                        f64::NEG_INFINITY
+                    } else {
+                        forward_against_path(fg, item.seq, path)
+                    };
+                    entry_locs.push((global_bi, ri));
+                    log_scores.push(score);
+                    weights.push(w);
+                    fp_vec.push(fam_pos);
+                }
+                if entry_locs.len() < 2 { return None; }
+                if !log_scores.iter().any(|s| s.is_finite()) { return None; }
+                Some(Entry { locs: entry_locs, log_scores, weights, fam_pos: fp_vec })
+            })
+            .collect();
+        let mut entries = scored;
+
+        if entries.is_empty() {
+            if n_no_seq > 0 || n_capped > 0 {
+                eprintln!(
+                    "[VG-HMM-EM] Family {}: 0 entries usable ({} reads lacked sequences, {} capped)",
+                    family.family_id, n_no_seq, n_capped
+                );
+            }
+            results.push(EmResult::default());
+            continue;
+        }
+
+        let mut result = EmResult::default();
+        for iter in 0..max_iter {
+            // M-step: per-copy weight totals → log-priors with floor.
+            let mut copy_total = vec![0.0_f64; n_copies];
+            for entry in &entries {
+                for (i, w) in entry.weights.iter().enumerate() {
+                    copy_total[entry.fam_pos[i]] += w;
+                }
+            }
+            let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
+            let log_priors: Vec<f64> = copy_total.iter()
+                .map(|&t| ((t / total_sum) + 1e-3).ln())
+                .collect();
+
+            let mut max_delta: f64 = 0.0;
+            for entry in &mut entries {
+                let n = entry.locs.len();
+                let mut log_post = vec![f64::NEG_INFINITY; n];
+                for i in 0..n {
+                    let s = entry.log_scores[i];
+                    if !s.is_finite() { continue; }
+                    log_post[i] = s + log_priors[entry.fam_pos[i]];
+                }
+                let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                if !max_lp.is_finite() { continue; }
+                let mut total = 0.0_f64;
+                let mut exps = vec![0.0_f64; n];
+                for i in 0..n {
+                    if log_post[i].is_finite() {
+                        exps[i] = (log_post[i] - max_lp).exp();
+                        total += exps[i];
+                    }
+                }
+                if total <= 0.0 { continue; }
+                for i in 0..n {
+                    let new_w = exps[i] / total;
+                    let delta = (new_w - entry.weights[i]).abs();
+                    if delta > max_delta { max_delta = delta; }
+                    entry.weights[i] = new_w;
+                }
+            }
+            result.iterations = iter + 1;
+            result.max_delta = max_delta;
+            if max_delta < convergence_thr {
+                result.converged = true;
+                break;
+            }
+        }
+
+        // Apply final weights.
+        let mut n_reweighted = 0usize;
+        for entry in &entries {
+            for (i, &(global_bi, ri)) in entry.locs.iter().enumerate() {
+                if ri >= bundles[global_bi].reads.len() { continue; }
+                let old_w = bundles[global_bi].reads[ri].weight;
+                let new_w = entry.weights[i];
+                if (old_w - new_w).abs() > 1e-9 {
+                    bundles[global_bi].reads[ri].weight = new_w;
+                    n_reweighted += 1;
+                }
+            }
+        }
+        result.reads_reweighted = n_reweighted;
+
+        if n_reweighted > 0 || n_no_seq > 0 || n_capped > 0 {
+            eprintln!(
+                "[VG-HMM-EM] Family {}: HMM-EM converged={} in {} iter (delta={:.6}), reweighted {} reads ({} skipped: no seq, {} capped) across {} copies",
+                family.family_id, result.converged, result.iterations, result.max_delta,
+                n_reweighted, n_no_seq, n_capped, n_copies,
+            );
+        }
+        results.push(result);
+    }
+
+    let total_reweighted: usize = results.iter().map(|r| r.reads_reweighted).sum();
+    eprintln!(
+        "[VG-HMM-EM] HMM-EM reweighting complete: {} reads adjusted across {} families in {:.1}s",
+        total_reweighted,
+        results.iter().filter(|r| r.reads_reweighted > 0).count(),
+        t_em_start.elapsed().as_secs_f64(),
+    );
     results
 }
 

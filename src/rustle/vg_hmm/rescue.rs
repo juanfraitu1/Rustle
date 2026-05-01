@@ -360,9 +360,10 @@ pub fn run_rescue_with_bundles(
     let (candidates, scored_reads) =
         run_rescue_in_memory(families, &family_graphs, &unmapped_reads, min_loglik)?;
 
-    // (f) Build per-family scored maps for synthesize_bundles.
-    // Group by family_id.
-    let mut per_family: HashMap<usize, (usize, Vec<(String, Vec<NodeIdx>)>)> = HashMap::new();
+    // (f) Build per-family scored maps for synthesize_bundles_refined.
+    // Group by family_id, threading the per-node Viterbi read spans through
+    // so the refined synthesis can apply boundary refinement.
+    let mut per_family: HashMap<usize, (usize, Vec<(String, Vec<NodeIdx>, Vec<(usize, usize)>)>)> = HashMap::new();
     for (read_name, family_id, vpath, _ll) in &scored_reads {
         let fg_idx = family_graphs.iter().position(|fg| fg.family_id == *family_id);
         if let Some(fi) = fg_idx {
@@ -370,20 +371,23 @@ pub fn run_rescue_with_bundles(
                 .entry(*family_id)
                 .or_insert_with(|| (fi, Vec::new()))
                 .1
-                .push((read_name.clone(), vpath.nodes.clone()));
+                .push((read_name.clone(), vpath.nodes.clone(), vpath.read_spans.clone()));
         }
     }
 
     let min_reads_per_cluster: usize = 3;
+    let hard_min_reads: usize = 3;
+    let cluster_window: u64 = 20;
     let mut synthetic_bundles: Vec<Bundle> = Vec::new();
-    for (_family_id, (fg_idx, reads_with_paths)) in &per_family {
+    for (_family_id, (fg_idx, reads_with_spans)) in &per_family {
         let fg = &family_graphs[*fg_idx];
-        let mut new_bundles = synthesize_bundles(
+        let mut new_bundles = synthesize_bundles_refined(
             fg,
-            reads_with_paths,
+            reads_with_spans,
             min_reads_per_cluster,
             kmer_len,
-            config.vg_rescue_diagnostic,
+            hard_min_reads,
+            cluster_window,
         );
         synthetic_bundles.append(&mut new_bundles);
     }
@@ -516,6 +520,189 @@ pub fn synthesize_bundles(
             kmer_len,
             (max_end - min_start) as usize,
             0.0, // masked_fraction placeholder
+        ));
+
+        out.push(Bundle {
+            chrom,
+            start: bundle_start,
+            end: bundle_end,
+            strand,
+            reads,
+            junction_stats: JunctionStats::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: true,
+            rescue_class: rc,
+        });
+    }
+
+    out
+}
+
+// ── Boundary-refined bundle synthesis (uses Viterbi per-node read spans) ───
+
+/// Production-realistic synthesize_bundles that applies boundary refinement
+/// using per-read Viterbi traceback spans.
+///
+/// For each cluster of reads with the same path through the family graph:
+///   - Internal exons keep family-graph node spans (splice junctions are
+///     conserved across paralogs by construction).
+///   - Boundary exons (TSS / TES) get refined lengths via:
+///       1. Strand-aware identification of TSS vs TES from `fg.nodes[i].strand`
+///          (TSS = genomic-first for + strand, genomic-last for − strand).
+///       2. StringTie-style position clustering (`cluster_positions_with_counts`)
+///          on per-read footprint lengths at that node position, with
+///          window=`cluster_window` bp.
+///       3. The cluster with the highest read count wins → its center is the
+///          consensus boundary length.
+///       4. Hard-boundary fallback: if no cluster has ≥`hard_min_reads`
+///          supporters, fall back to the family-graph node length (RAW)
+///          rather than invent a boundary from too few reads.
+///
+/// `rescued`: slice of `(read_name, node_path, viterbi_read_spans)`. The
+/// `viterbi_read_spans[i] = (entry_r, exit_r)` records the read positions at
+/// which node i was active. Same length as `node_path`.
+pub fn synthesize_bundles_refined(
+    fg: &FamilyGraph,
+    rescued: &[(String, Vec<NodeIdx>, Vec<(usize, usize)>)],
+    min_reads: usize,
+    kmer_len: usize,
+    hard_min_reads: usize,
+    cluster_window: u64,
+) -> Vec<Bundle> {
+    use crate::tss_tts::cluster_positions_with_counts;
+
+    // Cluster reads by exact node-path key; also accumulate per-position
+    // footprint lengths (from Viterbi exit_r - entry_r) for each cluster.
+    let mut clusters: HashMap<Vec<usize>, Vec<usize>> = HashMap::new();
+    let mut spans_by_path: HashMap<Vec<usize>, Vec<Vec<u64>>> = HashMap::new();
+    let mut read_lens: Vec<u64> = Vec::with_capacity(rescued.len());
+    for (i, (_, path, spans)) in rescued.iter().enumerate() {
+        let key: Vec<usize> = path.iter().map(|n| n.0).collect();
+        clusters.entry(key.clone()).or_default().push(i);
+        let entry = spans_by_path.entry(key).or_insert_with(|| vec![Vec::new(); path.len()]);
+        for (j, &(s, e)) in spans.iter().enumerate() {
+            if j < entry.len() { entry[j].push(e.saturating_sub(s) as u64); }
+        }
+        // Read length is approximately the max read position seen in any span.
+        let l = spans.iter().map(|&(_, e)| e as u64).max().unwrap_or(0);
+        read_lens.push(l);
+    }
+
+    let mut out: Vec<Bundle> = Vec::new();
+
+    for (path_key, member_indices) in &clusters {
+        if member_indices.len() < min_reads { continue; }
+
+        let path_nodes: Vec<&crate::vg_hmm::family_graph::ExonClass> = path_key
+            .iter()
+            .filter_map(|&ni| fg.nodes.get(ni))
+            .collect();
+        if path_nodes.is_empty() { continue; }
+
+        let chrom: String = path_nodes[0].chrom.clone();
+        let strand: char = path_nodes[0].strand;
+
+        // Raw exon spans from family-graph nodes.
+        let raw_exons: Vec<(u64, u64)> = path_nodes.iter().map(|n| n.span).collect();
+        let n_ex = raw_exons.len();
+
+        // Strand-aware TSS / TES identification:
+        //   + strand: TSS = genomic-first, TES = genomic-last
+        //   − strand: TSS = genomic-last,  TES = genomic-first
+        let strand_plus = strand == '+';
+        let tss_idx = if strand_plus { 0 } else { n_ex.saturating_sub(1) };
+        let tes_idx = if strand_plus { n_ex.saturating_sub(1) } else { 0 };
+
+        // Build refined exon list.
+        let footprints_per_pos: &Vec<Vec<u64>> = match spans_by_path.get(path_key) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let refine_boundary = |i: usize, node_s: u64, node_e: u64, is_tss: bool| -> u64 {
+            let node_len = node_e - node_s;
+            if i >= footprints_per_pos.len() || footprints_per_pos[i].is_empty() {
+                return node_len;
+            }
+            // For the TSS exon, include pre-profile boundary-state bases by
+            // using exit_r as the footprint (= total read consumed up to and
+            // including this node). We already stored exit-entry as length
+            // above; for the TSS we want the more permissive measure.
+            // Here we just use the cluster-of-lengths approach: each footprint
+            // is one (length, weight=1) point; cluster within window; take
+            // highest-count cluster center.
+            let pos: Vec<(u64, f64)> = footprints_per_pos[i].iter().map(|&f| (f, 1.0)).collect();
+            let clusters = cluster_positions_with_counts(&pos, cluster_window, 1);
+            let best = clusters.iter().max_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            match best {
+                Some(&(center, w)) if (w as usize) >= hard_min_reads => center,
+                _ => node_len,  // hard-boundary fallback
+            }
+        };
+
+        let mut refined_exons: Vec<(u64, u64)> = Vec::with_capacity(n_ex);
+        for (i, &(node_s, node_e)) in raw_exons.iter().enumerate() {
+            let node_len = node_e - node_s;
+            let is_first = i == 0;
+            let is_last = i + 1 == n_ex;
+            let len = if i == tss_idx && (is_first || is_last) && n_ex > 1 {
+                refine_boundary(i, node_s, node_e, true)
+            } else if i == tes_idx && (is_first || is_last) && n_ex > 1 {
+                refine_boundary(i, node_s, node_e, false)
+            } else {
+                node_len
+            };
+            // Anchor: keep the splice junction (= shared splice site) and grow
+            // the boundary outward. For the genomic-first boundary exon, keep
+            // node_e (splice donor); for genomic-last, keep node_s (acceptor).
+            if is_first && n_ex > 1 {
+                refined_exons.push((node_e.saturating_sub(len), node_e));
+            } else if is_last && n_ex > 1 {
+                refined_exons.push((node_s, node_s + len));
+            } else {
+                refined_exons.push((node_s, node_e));
+            }
+        }
+
+        let min_start = refined_exons.iter().map(|&(s, _)| s).min().unwrap_or(0);
+        let max_end   = refined_exons.iter().map(|&(_, e)| e).max().unwrap_or(0);
+        let bundle_start = min_start.saturating_sub(1000);
+        let bundle_end   = max_end + 1000;
+
+        let reads: Vec<BundleRead> = member_indices.iter().enumerate().map(|(i, &ri)| {
+            let read_name = rescued[ri].0.clone();
+            BundleRead {
+                read_uid: 1_000_000 + i as u64,
+                read_name: std::sync::Arc::from(read_name.as_str()),
+                read_name_hash: 0,
+                ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+                ref_start: min_start, ref_end: max_end,
+                exons: refined_exons.clone(),
+                junctions: Vec::new(), junction_valid: Vec::new(),
+                junctions_raw: Vec::new(), junctions_del: Vec::new(),
+                weight: 1.0, is_reverse: strand == '-', strand,
+                has_poly_start: false, has_poly_end: false,
+                has_poly_start_aligned: false, has_poly_start_unaligned: false,
+                has_poly_end_aligned: false, has_poly_end_unaligned: false,
+                unaligned_poly_t: 0, unaligned_poly_a: 0,
+                has_last_exon_polya: false, has_first_exon_polyt: false,
+                query_length: None, clip_left: 0, clip_right: 0,
+                nh: 1, nm: 0, md: None, insertion_sites: Vec::new(),
+                unitig: false, unitig_cov: 0.0, read_count_yc: 0.0,
+                countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
+                pair_idx: Vec::new(), pair_count: Vec::new(),
+                mapq: 0, mismatches: Vec::new(),
+                hp_tag: None, ps_tag: None, is_primary_alignment: true,
+            }
+        }).collect();
+
+        let rc: Option<RescueClass> = Some(classify_internal(
+            member_indices.len(),
+            kmer_len,
+            (max_end - min_start) as usize,
+            0.0,
         ));
 
         out.push(Bundle {

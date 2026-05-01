@@ -381,10 +381,13 @@ struct Args {
     #[arg(long)]
     vg_report: Option<String>,
 
-    /// Multi-mapping resolution method: none (discover only), em, or flow [default: em].
-    /// In VG mode, `em` replaces the default 1/NH weighting on multi-mappers with
-    /// evidence-based (junction-compatibility + context) weights. Use `none` to
-    /// disable redistribution and keep StringTie-equivalent 1/NH behaviour.
+    /// Multi-mapping resolution method: none (discover only), em, em-hmm, or flow [default: em].
+    /// `em` replaces the default 1/NH weighting on multi-mappers with evidence-based
+    /// (junction-compatibility + context) weights. `em-hmm` replaces the heuristic
+    /// E-step with HMM-based per-paralog forward log-likelihood scoring (sequence-aware;
+    /// requires a `--genome` FASTA and triggers a one-pass BAM scan to collect read
+    /// sequences for multi-mappers). Use `none` to disable redistribution and keep
+    /// StringTie-equivalent 1/NH behaviour.
     #[arg(long, default_value = "em")]
     vg_solver: String,
 
@@ -441,6 +444,9 @@ pub fn run_cli() -> anyhow::Result<()> {
 
     // Emit StringTie-exact banner if RUSTLE_STRINGTIE_EXACT=1.
     rustle::stringtie_parity::maybe_emit_banner();
+
+    // Initialize parity-decision JSONL log if RUSTLE_PARITY_LOG is set.
+    rustle::parity_decisions::init_from_env();
 
     let output = args
         .output
@@ -591,6 +597,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_discover_novel_mode: args.vg_discover_novel_mode,
         vg_rescue_diagnostic: args.vg_rescue_diagnostic,
         vg_rescue_min_loglik: args.vg_rescue_min_loglik,
+        vg_multimap_sequences: std::collections::HashMap::new(),
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {
@@ -648,6 +655,8 @@ pub fn run_cli() -> anyhow::Result<()> {
         args.trace_output.as_deref(),
     )?;
 
+    // Explicit flush of parity log (BufWriter inside static OnceLock doesn't auto-flush).
+    rustle::parity_decisions::flush();
     Ok(())
 }
 

@@ -282,25 +282,67 @@ pub fn forward_against_family(fg: &FamilyGraph, read: &[u8]) -> f64 {
     best
 }
 
+/// Score a read against a SPECIFIC path through the family graph (constrained
+/// forward, not the unconstrained sum-over-all-paths of `forward_against_family`).
+///
+/// Walks `path` in order; chains profile_forward through each node's profile,
+/// using the previous node's exit boundary as the next node's entry boundary.
+/// The final score is the log-prob of consuming all `l` read bases through
+/// exactly this node sequence.
+///
+/// This is the per-paralog likelihood needed by HMM-based EM for read-to-copy
+/// assignment: for a multi-mapped read with placements at paralogs P0..Pn,
+/// `forward_against_path(fg, read, &path_Pi)` for each `Pi` gives the score
+/// vector that the EM E-step can use directly (or normalize via softmax to a
+/// posterior).
+///
+/// Returns `NEG_INF` if `path` is empty, contains an out-of-range NodeIdx, or
+/// any node lacks a fitted profile.
+pub fn forward_against_path(fg: &FamilyGraph, read: &[u8], path: &[NodeIdx]) -> f64 {
+    if path.is_empty() { return NEG_INF; }
+    let l = read.len();
+
+    let mut boundary = vec![NEG_INF; l + 1];
+    boundary[0] = 0.0;
+
+    for &nidx in path {
+        if nidx.0 >= fg.nodes.len() { return NEG_INF; }
+        let node = &fg.nodes[nidx.0];
+        match &node.profile {
+            Some(profile) => {
+                boundary = profile_forward_with_boundary(profile, read, &boundary);
+            }
+            None => return NEG_INF,
+        }
+        // No edge log-probability is added: the path is given (deterministic
+        // topology). Including edge weight here would double-count the path
+        // identity, which the caller has already chosen.
+    }
+
+    boundary[l]
+}
+
 // ── Viterbi best-path (Task 3.3) ─────────────────────────────────────────────
 
-/// Family-level Viterbi result: ordered sequence of node indices traversed and
-/// the total Viterbi log-probability.
+/// Family-level Viterbi result.
+///
+/// `read_spans[i]` is `(entry, exit)` — the read positions at which the i-th
+/// node in the path started and finished consuming. Same length as `nodes`,
+/// in path order (source-to-sink). Per-node read footprint length is
+/// `exit - entry` and is what enables "VG-only" (no-CIGAR) length-consensus
+/// refinement of rescued bundles.
 #[derive(Debug, Clone)]
 pub struct ViterbiPath {
     pub nodes: Vec<NodeIdx>,
+    pub read_spans: Vec<(usize, usize)>,
     pub score: f64,
 }
 
 /// Viterbi (max instead of sum) DP over a profile with a per-read-position
 /// boundary distribution.
 ///
-/// Returns `(boundary_out, bp_prev_node, bp_prev_pos)` where:
-/// - `boundary_out[r]` is the Viterbi log-probability of entering the profile
-///   at some position ≤ r and exiting at r,
-/// - `bp_prev_node[r]` and `bp_prev_pos[r]` are the backpointer predecessor
-///   node index and read position (for family-level traceback only; no
-///   internal-column traceback).
+/// Returns `boundary_out[r]` — the Viterbi log-probability of entering the
+/// profile at some position ≤ r and exiting at r.
 ///
 /// boundary_in.len() must equal read.len() + 1.
 fn profile_viterbi_with_boundary(
@@ -308,51 +350,108 @@ fn profile_viterbi_with_boundary(
     read: &[u8],
     boundary_in: &[f64],
 ) -> Vec<f64> {
-    // Identical structure to profile_forward_with_boundary but using max.
+    // Forward to the with_entry variant and discard the entry-r data.
+    profile_viterbi_with_boundary_and_entry(p, read, boundary_in).0
+}
+
+/// Same as `profile_viterbi_with_boundary` but additionally returns
+/// `entry_r[r_out]` — the read position at which the profile started consuming
+/// in order to achieve the max-prob exit at `r_out`. This is the per-profile
+/// intra-DP traceback needed for read-footprint length recovery (used by the
+/// "VG-only" / no-CIGAR rescue refinement).
+fn profile_viterbi_with_boundary_and_entry(
+    p: &ProfileHmm,
+    read: &[u8],
+    boundary_in: &[f64],
+) -> (Vec<f64>, Vec<usize>) {
     let m = p.n_columns;
     let l = read.len();
     assert_eq!(boundary_in.len(), l + 1, "boundary_in length mismatch");
 
     if m == 0 {
-        return vec![NEG_INF; l + 1];
+        return (vec![NEG_INF; l + 1], (0..=l).collect());
     }
 
     let mut m_dp = vec![vec![NEG_INF; l + 1]; m + 1];
     let mut i_dp = vec![vec![NEG_INF; l + 1]; m + 1];
     let mut d_dp = vec![vec![NEG_INF; l + 1]; m + 1];
 
+    // Parallel "entry-r" arrays: each cell records the read position at which
+    // the path achieving its max log-prob first entered the profile (i.e., the
+    // column-0 starting position).
+    let mut m_e: Vec<Vec<usize>> = vec![vec![0; l + 1]; m + 1];
+    let mut i_e: Vec<Vec<usize>> = vec![vec![0; l + 1]; m + 1];
+    let mut d_e: Vec<Vec<usize>> = vec![vec![0; l + 1]; m + 1];
+
+    // Column 0 base case: enter at position r (no profile-column consumption yet).
     for r in 0..=l {
         m_dp[0][r] = boundary_in[r];
+        m_e[0][r] = r;
     }
 
     for j in 1..=m {
         for i in 0..=l {
+            // Match state at (j, i): consumes one read base AND advances column.
             let emit_m = if i > 0 {
                 idx(read[i - 1]).map(|k| p.match_emit[j - 1][k]).unwrap_or(NEG_INF)
             } else { NEG_INF };
             let from_m = if i > 0 { m_dp[j - 1][i - 1] + p.trans[j - 1].mm + emit_m } else { NEG_INF };
             let from_i = if i > 0 { i_dp[j - 1][i - 1] + p.trans[j - 1].im + emit_m } else { NEG_INF };
             let from_d = if i > 0 { d_dp[j - 1][i - 1] + p.trans[j - 1].dm + emit_m } else { NEG_INF };
-            m_dp[j][i] = from_m.max(from_i).max(from_d);
+            let (best_m, src_m) = max3_with_src(from_m, from_i, from_d);
+            m_dp[j][i] = best_m;
+            if best_m > NEG_INF && i > 0 {
+                m_e[j][i] = match src_m { 0 => m_e[j - 1][i - 1], 1 => i_e[j - 1][i - 1], _ => d_e[j - 1][i - 1] };
+            }
 
+            // Insert state at (j, i): consumes one read base, stays in column j.
             let emit_i = if i > 0 {
                 idx(read[i - 1]).map(|k| p.insert_emit[j][k]).unwrap_or(NEG_INF)
             } else { NEG_INF };
             let i_from_m = if i > 0 { m_dp[j][i - 1] + p.trans[j].mi + emit_i } else { NEG_INF };
             let i_from_i = if i > 0 { i_dp[j][i - 1] + p.trans[j].ii + emit_i } else { NEG_INF };
-            i_dp[j][i] = i_from_m.max(i_from_i);
+            let (best_i, src_i) = max2_with_src(i_from_m, i_from_i);
+            i_dp[j][i] = best_i;
+            if best_i > NEG_INF && i > 0 {
+                i_e[j][i] = if src_i == 0 { m_e[j][i - 1] } else { i_e[j][i - 1] };
+            }
 
+            // Delete state at (j, i): consumes no read base, advances column.
             let d_from_m = m_dp[j - 1][i] + p.trans[j - 1].md;
             let d_from_d = d_dp[j - 1][i] + p.trans[j - 1].dd;
-            d_dp[j][i] = d_from_m.max(d_from_d);
+            let (best_d, src_d) = max2_with_src(d_from_m, d_from_d);
+            d_dp[j][i] = best_d;
+            if best_d > NEG_INF {
+                d_e[j][i] = if src_d == 0 { m_e[j - 1][i] } else { d_e[j - 1][i] };
+            }
         }
     }
 
+    // Exit: for each r, pick the max over {m, i, d} at column m, position r.
     let mut out = vec![NEG_INF; l + 1];
+    let mut out_e = vec![0_usize; l + 1];
     for r in 0..=l {
-        out[r] = m_dp[m][r].max(i_dp[m][r]).max(d_dp[m][r]);
+        let (best, src) = max3_with_src(m_dp[m][r], i_dp[m][r], d_dp[m][r]);
+        out[r] = best;
+        if best > NEG_INF {
+            out_e[r] = match src { 0 => m_e[m][r], 1 => i_e[m][r], _ => d_e[m][r] };
+        } else {
+            out_e[r] = r;
+        }
     }
-    out
+    (out, out_e)
+}
+
+#[inline]
+fn max3_with_src(a: f64, b: f64, c: f64) -> (f64, u8) {
+    if a >= b && a >= c { (a, 0) }
+    else if b >= c { (b, 1) }
+    else { (c, 2) }
+}
+
+#[inline]
+fn max2_with_src(a: f64, b: f64) -> (f64, u8) {
+    if a >= b { (a, 0) } else { (b, 1) }
 }
 
 /// Viterbi best-path through the family graph.
@@ -372,11 +471,14 @@ pub fn viterbi_path(fg: &FamilyGraph, read: &[u8]) -> Option<ViterbiPath> {
     let mut boundary_in:  Vec<Vec<f64>> = vec![vec![NEG_INF; l + 1]; n];
     let mut boundary_out: Vec<Vec<f64>> = vec![vec![NEG_INF; l + 1]; n];
 
-    // Backpointers: for each (node, r) record which predecessor node was best.
-    // bp_node[node][r] = predecessor node index (usize::MAX = no predecessor / source).
+    // Per-node intra-profile entry tracking: for each node and exit position
+    // r_out, the read position at which the profile started consuming.
+    let mut node_entry_r: Vec<Vec<usize>> = vec![vec![0; l + 1]; n];
+
+    // Family-level backpointers: for each (node, exit_r), which predecessor
+    // node and at what read position it was exited.
     let mut bp_node: Vec<Vec<usize>> = vec![vec![usize::MAX; l + 1]; n];
-    // bp_entry_r[node][r] = read position at which the predecessor exited (= entry point).
-    let mut bp_entry_r: Vec<Vec<usize>> = vec![vec![usize::MAX; l + 1]; n];
+    let mut bp_prev_exit: Vec<Vec<usize>> = vec![vec![usize::MAX; l + 1]; n];
 
     let mut has_incoming = vec![false; n];
     for e in &fg.edges { has_incoming[e.to.0] = true; }
@@ -387,10 +489,15 @@ pub fn viterbi_path(fg: &FamilyGraph, read: &[u8]) -> Option<ViterbiPath> {
         }
 
         if let Some(p) = &fg.nodes[nidx].profile {
-            boundary_out[nidx] = profile_viterbi_with_boundary(p, read, &boundary_in[nidx]);
+            let (out, e_r) = profile_viterbi_with_boundary_and_entry(p, read, &boundary_in[nidx]);
+            boundary_out[nidx] = out;
+            node_entry_r[nidx] = e_r;
         }
 
-        // Propagate to successors (max update with backpointer).
+        // Propagate to successors. The successor's `boundary_in[succ][r]` =
+        // best `boundary_out[pred][r]` over all preds. The handoff is at the
+        // same read position r (instantaneous edge — no read consumption on
+        // junction). Backpointers record (predecessor, predecessor's exit r).
         for e in fg.edges.iter().filter(|e| e.from.0 == nidx) {
             let log_edge = (e.family_support as f64 / max_support as f64).ln();
             let to = e.to.0;
@@ -399,7 +506,7 @@ pub fn viterbi_path(fg: &FamilyGraph, read: &[u8]) -> Option<ViterbiPath> {
                 if cand > boundary_in[to][r] {
                     boundary_in[to][r] = cand;
                     bp_node[to][r] = nidx;
-                    bp_entry_r[to][r] = r;
+                    bp_prev_exit[to][r] = r;
                 }
             }
         }
@@ -419,23 +526,27 @@ pub fn viterbi_path(fg: &FamilyGraph, read: &[u8]) -> Option<ViterbiPath> {
         return None;
     }
 
-    // Traceback: follow bp_node backwards from best_node.
+    // Traceback: at each node we know the exit position (from bp_prev_exit of
+    // the next node, or l for the terminal). The entry position into the
+    // current node is node_entry_r[node][exit] — recovered from the per-profile
+    // intra-DP backpointer.
     let mut path_nodes: Vec<NodeIdx> = Vec::new();
+    let mut path_spans: Vec<(usize, usize)> = Vec::new();
     let mut cur = best_node;
-    let mut cur_r = l;
+    let mut cur_exit = l;
     loop {
+        let entry = node_entry_r[cur][cur_exit];
         path_nodes.push(NodeIdx(cur));
-        let prev = bp_node[cur][cur_r];
-        if prev == usize::MAX {
-            break; // reached source
-        }
-        let prev_r = bp_entry_r[cur][cur_r];
+        path_spans.push((entry, cur_exit));
+        let prev = bp_node[cur][entry];  // predecessor at this node's entry r (== predecessor's exit r)
+        if prev == usize::MAX { break; }
         cur = prev;
-        cur_r = prev_r;
+        cur_exit = entry;
     }
     path_nodes.reverse();
+    path_spans.reverse();
 
-    Some(ViterbiPath { nodes: path_nodes, score: best })
+    Some(ViterbiPath { nodes: path_nodes, read_spans: path_spans, score: best })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -453,11 +564,13 @@ mod tests {
             ExonClass {
                 idx: NodeIdx(0), chrom: "x".into(), span: (0, 4), strand: '+',
                 per_copy_sequences: vec![(0, b"ACGT".to_vec())],
+                per_copy_spans: vec![(0, (0, 4))],
                 copy_specific: true, profile: Some(p1),
             },
             ExonClass {
                 idx: NodeIdx(1), chrom: "x".into(), span: (10, 14), strand: '+',
                 per_copy_sequences: vec![(0, b"TGCA".to_vec())],
+                per_copy_spans: vec![(0, (10, 14))],
                 copy_specific: true, profile: Some(p2),
             },
         ];
