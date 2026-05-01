@@ -3797,7 +3797,23 @@ pub fn collapse_single_exon_runoff(
     let mut dead = SmallBitset::with_capacity(n.min(64));
     let mut stitched = 0usize;
     let mut dropped = 0usize;
+    let mut dropped_multi_overlap = 0usize;
     const ERROR_PERC: f64 = 0.1;
+
+    // Per-strand multi-exon spans for the no-overlap check; only computed when needed.
+    let suppress_multi_overlap = std::env::var_os("RUSTLE_SINGLE_EXON_NO_MULTI_OVERLAP").is_some();
+    let multi_spans: Vec<(u64, u64, char)> = if suppress_multi_overlap {
+        txs.iter()
+            .filter(|t| t.exons.len() > 1)
+            .map(|t| (
+                t.exons.first().map(|e| e.0).unwrap_or(0),
+                t.exons.last().map(|e| e.1).unwrap_or(0),
+                t.strand,
+            ))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     for i in 0..n {
         if dead.contains(i) {
@@ -3845,14 +3861,14 @@ pub fn collapse_single_exon_runoff(
         // The historical code divided by tx_len again, producing reads/bp² —
         // a numerically wrong threshold that effectively suppressed virtually
         // all non-guide single-exon emission (since it always failed
-        // <singlethr). This may have been load-bearing: when corrected to
-        // `coverage < singlethr`, on GGO_19 it admits 7 single-exon tx of
-        // which 0 match the reference (pure FP load, -0.3 pp Pr).
+        // <singlethr).
         //
-        // Gate the corrected math behind RUSTLE_SINGLE_EXON_COV_FIX=1 so
-        // future workflows can opt in once a complementary structural filter
-        // (e.g., suppress single-exon when overlapping a multi-exon tx) is in
-        // place. Default = original (broken-but-effective) behavior.
+        // RUSTLE_SINGLE_EXON_COV_FIX=1 enables correct math; pair with
+        // RUSTLE_SINGLE_EXON_MIN_READS=N (gates upstream emission) and
+        // RUSTLE_SINGLE_EXON_NO_MULTI_OVERLAP=1 (rejects single-exon overlapping
+        // a multi-exon tx — the structural FP suppressor that this gate's prior
+        // doc-comment called for). On GGO_19 with all three set + N=60, recovers
+        // STRG.183.1 + STRG.575.1 (locus matches 566→568) at F1 unchanged.
         let use_correct_cov = std::env::var_os("RUSTLE_SINGLE_EXON_COV_FIX").is_some();
         let cov_value = if use_correct_cov {
             txs[i].coverage
@@ -3863,6 +3879,22 @@ pub fn collapse_single_exon_runoff(
         if !did_stitch && !is_guide_tx(&txs[i]) && cov_value < singlethr {
             dead.insert_grow(i);
             dropped += 1;
+            continue;
+        }
+        // Structural FP suppression: when SE_COV_FIX admits a single-exon
+        // non-guide that overlaps a surviving multi-exon on the same strand,
+        // it's almost always retained-intron / runoff noise rather than a
+        // genuine novel locus. Reference single-exons live at distinct loci.
+        if suppress_multi_overlap
+            && !did_stitch
+            && !is_guide_tx(&txs[i])
+            && multi_spans.iter().any(|(ms, me, mstrand)| {
+                // half-open semantics: [is, ie) overlaps [ms, me) iff is < me && ms < ie
+                *mstrand == txs[i].strand && is < *me && *ms < ie
+            })
+        {
+            dead.insert_grow(i);
+            dropped_multi_overlap += 1;
         }
     }
 
@@ -3872,10 +3904,10 @@ pub fn collapse_single_exon_runoff(
         .filter(|(i, _)| !dead.contains(*i))
         .map(|(_, t)| t)
         .collect();
-    if verbose && (stitched > 0 || dropped > 0) {
+    if verbose && (stitched > 0 || dropped > 0 || dropped_multi_overlap > 0) {
         eprintln!(
-            "    single_exon_runoff: stitched={} dropped_lowcov={}",
-            stitched, dropped
+            "    single_exon_runoff: stitched={} dropped_lowcov={} dropped_multi_overlap={}",
+            stitched, dropped, dropped_multi_overlap
         );
     }
     out

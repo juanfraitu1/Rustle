@@ -8554,6 +8554,17 @@ pub fn extract_transcripts(
                     record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
                     continue;
                 }
+                // Single-exon checktrf rescues have been observed to be pure-FP
+                // load (e.g., 73427291-73431711 + on GGO_19), produced by
+                // polymerase runoff against a high-coverage neighbor. The main
+                // parse_trflong path is the right place for high-confidence
+                // single-exon emission (gated by RUSTLE_SINGLE_EXON_MIN_READS).
+                // Reject single-exon non-guide rescues here unconditionally.
+                if long_read_mode && exons.len() == 1 && !transfrags[t].guide {
+                    transfrags[t].abundance = 0.0;
+                    record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
+                    continue;
+                }
 
                 // Clip terminal exons to longstart/longend (read boundaries)
                 // AFTER gates have been applied on the full span.

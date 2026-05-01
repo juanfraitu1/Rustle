@@ -183,6 +183,31 @@ pub fn write_gtf<W: Write>(
             "{}\t{}\ttranscript\t{}\t{}\t1000\t{}\t.\t{}",
             tx.chrom, source_col, t_start, t_end, tx.strand, tx_attrs
         )?;
+        // Parity-decisions: emit one path_emit row per final transcript so
+        // the rustle/StringTie outputs can be diffed by (start, end, strand)
+        // to surface "rustle-only" predictions and cluster their causes.
+        // Coordinates are 1-based inclusive (same as the GTF line above) so
+        // they align with StringTie's pd_emit on the C side.
+        let exons_csv: String = tx.exons.iter()
+            .map(|(s, e)| format!("{}-{}", s + 1, e))
+            .collect::<Vec<_>>()
+            .join(",");
+        let payload = format!(
+            r#""nexons":{},"cov":{:.6},"longcov":{:.6},"source":"{}","exons":"{}""#,
+            tx.exons.len(),
+            tx.coverage,
+            tx.longcov,
+            tx.source.as_deref().unwrap_or(""),
+            exons_csv,
+        );
+        crate::parity_decisions::emit(
+            "path_emit",
+            Some(&tx.chrom),
+            t_start,
+            t_end,
+            tx.strand,
+            &payload,
+        );
         for (j, (start, end)) in tx.exons.iter().enumerate() {
             // Match the original algorithm formatting: report per-exon coverage as stored in `exon_cov` (or fall back to tx.coverage).
             let ecov = tx
