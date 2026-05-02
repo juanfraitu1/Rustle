@@ -68,24 +68,35 @@ From gffcompare `Matching transcripts:` field — exact intron-chain match.
    lower-coverage data, a stricter junction-tie scenario, or per-copy
    TPM evaluation rather than locus presence.
 
-3. **GOLGA6L10 loss was a `--vg` cross-mapping bug — fixed in commit `e22ad2b`.**
-   Earlier writeup (commit `389c505`) blamed bundle-detection. Wrong. Pure
-   baseline rustle (no `--vg`) emits GOLGA6L10 at exactly ST's coordinates
-   (84003400-84007349). The bug was: with `--vg`, ingest keeps secondary
-   alignments to fuel family discovery, but those secondaries (cross-mapped
-   from other GOLGA6 paralogs) carry wrong-intron structures (8228N/858N/
-   4557N/210N from the parent paralog) that get accumulated into
-   `bundle.junction_stats` and pollute the splice graph. The original
-   post-discovery strip only ran on non-family bundles, which left
-   GOLGA6L10's bundle (sitting inside a GOLGA6 family range) untouched.
-   The fix strips secondaries from ALL bundles after discovery (family
-   data is captured by name-hash, not via `bundle.reads`) and rebuilds
-   `junction_stats` from primary-only reads.
+3. **`--vg` cross-mapping noise was a real bug — refined to commit `5c8e401`.**
+   The original e22ad2b "blunt" fix stripped secondaries from ALL bundles,
+   recovering GOLGA6L10 but collateral-damaging rustle's multi-mapper-EM
+   advantages (lost LOC129523543 in GOLGA6 + 1 GOLGA8 paralog). Net 0.
 
-   With the fix, the per-paralog table updates: GOLGA6 6→7 for both
-   rustle EM and rustle EM+SNP — pulling rustle ahead of StringTie
-   on this family too (was tied at 6/16; now 7/16 vs ST's 6/16).
-   Re-run on full GGO.bam pending to confirm the new total.
+   The correct fix (5c8e401, default behavior) is more conservative:
+     - non-family bundles: strip secondaries AND rebuild `junction_stats`
+       from primary reads (the previous strip touched only `bundle.reads`,
+       leaving stale secondary-derived junctions polluting the splice graph)
+     - family bundles: untouched. Secondaries stay (EM needs them).
+
+   chr19 GGO_19.bam (extracted from full GGO.bam) per-paralog:
+
+   | family  | ST | rustle pre-fix | blunt | **CONSERVATIVE** |
+   |---|---|---|---|---|
+   | GOLGA6  | 5  | 5              | 5     | 5                |
+   | GOLGA8  | 8  | 9              | 8     | **12**           |
+   | AMY     | 0  | 0              | 0     | 0 (chr1)         |
+   | TBC1D3  | 0  | 0              | 0     | 0 (chr17)        |
+
+   **+3 GOLGA8 paralogs unique to rustle** with conservative fix:
+   LOC134757307, LOC129527021, LOC115930779 — all sit in non-family
+   bundles previously polluted by cross-mapped secondaries from sister
+   paralogs; rebuilding `junction_stats` after the strip clears the noise.
+
+   GOLGA6L10 still missed by default — it lives inside a GOLGA6 family
+   bundle and the conservative fix won't touch family bundles. Available
+   as opt-in via `RUSTLE_VG_STRIP_FAMILY_SECONDARY=1` (recovers GOLGA6L10
+   but loses LOC129523543; net 0).
 
 4. **rustle missed 1 AMY transcript ST caught.**
    At the locus level both find AMY2A and AMY2B (2/3); ST has an exact
