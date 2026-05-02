@@ -50,19 +50,33 @@ From gffcompare `Matching transcripts:` field — exact intron-chain match.
    23.6Mb) where ST collapses the cross-mapping reads to the first copy
    while rustle's multi-mapper-aware EM keeps both visible.
 
-2. **SNP-aware copy assignment did NOT improve recovery on this BAM.**
-   `rustle EM+SNP` is identical to `rustle EM` at every level (locus, transcript,
-   intron-chain). This is consistent with the chr19 finding (only 1 family
-   triggered SNP-active scoring): SNP-EM helps assign multi-mappers to the
-   *correct* copy, not whether a copy gets discovered. Both variants
-   converged in 2 iterations on all 450 families with 123,447 reads
-   reweighted — the EM was a no-op refinement on top of the same priors.
+2. **SNP-aware copy assignment moved a few reads but no ref paralogs.**
+   `rustle EM+SNP` is essentially identical to `rustle EM` at locus and
+   ref-paralog level. 11 families on full BAM had ≥1 diagnostic SNP
+   (biggest: 21-copy/11-SNPs, 6-copy/12-SNPs, 30-copy/10-SNPs) and the
+   SNP factor IS scored into the EM (multiplicative on top of junction
+   compat × ln-context). Per-transcript count differs slightly (73,262 EM
+   vs 73,263 EM+SNP), and TPM values differ at ~1e-5 precision, so SNP did
+   shift some weights. But the differing transcripts (e.g. RSTL.2875.2 at
+   chr17:45.9Mb, RSTL.18734.8 on unplaced contig) fall *between*
+   annotated paralogs, not at any ref-paralog locus we measure.
 
-3. **Both rustle variants lose GOLGA6L10 vs ST.**
-   `GOLGA6L10` (chr19, 83.99Mb) is caught by ST but missed by rustle.
-   Possible cause: the family-quality filter dropped the GOLGA6 sub-cluster
-   that contains GOLGA6L10 (low_shared <10), removing its multi-mapper
-   evidence; primaries alone may not be enough to seed the assembly.
+   Implication: at PacBio IsoSeq depth on full GGO.bam, the junction-EM
+   signal is so dominant that adding SNPs only perturbs assembly at the
+   margins — never enough to gain or lose a reference paralog hit on
+   GOLGA6/GOLGA8/AMY/TBC1D3. To make SNPs discriminating we'd need
+   lower-coverage data, a stricter junction-tie scenario, or per-copy
+   TPM evaluation rather than locus presence.
+
+3. **Both rustle variants lose GOLGA6L10 vs ST — pre-existing bundle-detection
+   gap, NOT a multi-mapper EM regression.**
+   `GOLGA6L10` (chr19 NC_073240.2:83999064-84007244, +) is caught by ST as
+   `STRG.14456.1` (4 small exons, longcov=2) but missed by rustle in *all*
+   variants — including the discovery-only run with no EM applied. So this
+   is a baseline assembly miss at the bundle-detection / single-exon-rescue
+   stage, not a family-quality filter or EM stripping issue. ST has more
+   aggressive short-transcript rescue for low-coverage 4-exon transcripts
+   with small introns (60bp, 100bp, 211bp).
 
 4. **rustle missed 1 AMY transcript ST caught.**
    At the locus level both find AMY2A and AMY2B (2/3); ST has an exact
