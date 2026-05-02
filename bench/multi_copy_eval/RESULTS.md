@@ -11,6 +11,24 @@ annotation, NCBI/Gnomon).
 | rustle EM | `rustle GGO.bam --vg --vg-solver em` |
 | rustle EM+SNP | `rustle GGO.bam --genome-fasta GGO.fasta --vg --vg-solver em --vg-snp` |
 
+## Graph-structural family definition (commit 4e8ba80)
+
+A multi-copy gene family is defined by 5 signals:
+1. n_copies in [2, 30]
+2. multimap_reads ≥ 10
+3. multimap_reads / n_copies ≥ 1.0
+4. CV of intron-counts ≤ 1.5
+5. **Pairwise intron-length-set Jaccard ≥ 0.20 (±200bp tolerance)** — the graph-structural signal
+
+The 5th signal is what makes this a *graph-structural* definition: real paralogs share intron lengths because gene structure is conserved; random cross-cluster TE-bridge merges (chr19-GOLGA8 ↔ chr17-TBC1D3 etc.) do not.
+
+**Effect on full GGO.bam:**
+- Without primitive_jaccard signal: 706 raw → 450 high-confidence
+- With primitive_jaccard signal: 706 raw → **298 high-confidence** (-152 spurious cross-cluster merges filtered)
+- **Per-paralog count for the 4 proof families unchanged at 33 vs ST's 23.**
+
+So the stricter definition tightens the family set by 34% without losing any of rustle's paralog-discovery wins.
+
 All rustle runs use the family-quality filter (defaults: min_shared=10,
 max_copies=30, min_shared_per_copy=1.0, max_exon_cv=1.5). On full BAM:
 706 raw families → 450 high-confidence families.
