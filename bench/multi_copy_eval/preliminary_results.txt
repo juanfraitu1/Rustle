@@ -1,0 +1,16 @@
+=== Preliminary results (rustle-EM still running) ===
+
+Per-family LOCUS-level recovery (matching paralogs / total ref paralogs):
+  GOLGA6: ST=6/16, rustle-EM+SNP=6/16   (tie)
+  GOLGA8: ST=8/17, rustle-EM+SNP=9/17   (rustle +1: LOC129527057)
+  AMY:    ST=2/3,  rustle-EM+SNP=2/3    (tie)
+  TBC1D3: ST=7/13, rustle-EM+SNP=7/13   (tie)
+
+Per-family TRANSCRIPT-level recovery (gffcompare match_tx):
+  GOLGA6: ST=2,  rustle-EM+SNP=2   (tie)
+  GOLGA8: ST=6,  rustle-EM+SNP=7   (rustle +1)
+  AMY:    ST=1,  rustle-EM+SNP=0   (rustle -1)
+  TBC1D3: ST=4,  rustle-EM+SNP=4   (tie)
+
+Note: AMY transcript count differs from locus count (locus matches ✓ but
+transcripts not exact match — likely off-by-1 exon or boundary).
