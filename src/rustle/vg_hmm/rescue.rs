@@ -8,6 +8,11 @@ use crate::vg_hmm::scorer::{forward_against_family, viterbi_path, ViterbiPath};
 use anyhow::Result;
 use std::collections::HashMap;
 
+/// Original alignment of a masked read: (chrom, strand, exons).
+/// Used as a positional prior so LOO-rescued reads land at their
+/// original genomic location instead of a sister-paralog's.
+pub(crate) type OriginalAlignment = (String, char, Vec<(u64, u64)>);
+
 // ── FNV-1a (same as vg.rs) ────────────────────────────────────────────────────
 
 #[inline]
@@ -336,8 +341,12 @@ pub fn run_rescue_with_bundles(
         .and_then(|v| v.parse().ok())
         .unwrap_or(-5000.0);
 
-    // (read_name, sequence, candidate_family_indices_after_prefilter)
-    let mut unmapped_reads: Vec<(String, Vec<u8>, Vec<usize>)> = Vec::new();
+    // (read_name, sequence, candidate_family_indices, optional original
+    // genomic position prior). The position prior is `Some` for masked
+    // reads (LOO experiment) — we know where they aligned originally,
+    // BEFORE the mask, including their CIGAR-derived exons. Truly
+    // unmapped reads have `None` and use the family-graph copy spans.
+    let mut unmapped_reads: Vec<(String, Vec<u8>, Vec<usize>, Option<OriginalAlignment>)> = Vec::new();
     let mut n_unmapped = 0usize;
     let mut n_masked = 0usize;
     let mut n_prefilter_pass = 0usize;
@@ -352,12 +361,15 @@ pub fn run_rescue_with_bundles(
         // LOO mask: include reads whose primary alignment overlaps a mask
         // region (treat as if unaligned). Skip secondary/supplementary so we
         // collect the sequence only once per read.
+        // Capture (chrom, strand, exons) when masking — used as a positional
+        // prior so synthetic bundles land at the read's ORIGINAL genomic
+        // location, not at a sister-paralog's location chosen by the HMM.
         let mut is_masked = false;
+        let mut original_alignment: Option<OriginalAlignment> = None;
         if !is_unmapped && mask_active
             && !record.flags().is_secondary()
             && !record.flags().is_supplementary()
         {
-            // Resolve chromosome name from the reference index.
             let ref_name = record.reference_sequence_id()
                 .and_then(|r| r.ok())
                 .and_then(|rid| header.reference_sequences().get_index(rid))
@@ -374,6 +386,39 @@ pub fn run_rescue_with_bundles(
                     is_masked = config.vg_mask_regions.iter().any(|(c, ms, me)| {
                         c == &name && rs < *me && *ms < re_excl
                     });
+                    if is_masked {
+                        // Walk CIGAR to extract exon spans (M/=/X consume ref,
+                        // N is intron, D consumes ref but stays in exon).
+                        // Each contiguous M/D run between N ops is one exon.
+                        use noodles_sam::alignment::record::cigar::op::Kind;
+                        let mut exons: Vec<(u64, u64)> = Vec::new();
+                        let mut ref_pos: u64 = rs;
+                        let mut exon_start: u64 = rs;
+                        let mut in_exon = false;
+                        for op_res in record.cigar().iter() {
+                            let Ok(op) = op_res else { break; };
+                            let l = op.len() as u64;
+                            match op.kind() {
+                                Kind::Match | Kind::SequenceMatch | Kind::SequenceMismatch | Kind::Deletion => {
+                                    if !in_exon { exon_start = ref_pos; in_exon = true; }
+                                    ref_pos += l;
+                                }
+                                Kind::Skip => {
+                                    if in_exon && ref_pos > exon_start {
+                                        exons.push((exon_start, ref_pos));
+                                    }
+                                    in_exon = false;
+                                    ref_pos += l;
+                                }
+                                _ => {}  // Insertion, soft/hard clip, pad: no ref advance
+                            }
+                        }
+                        if in_exon && ref_pos > exon_start {
+                            exons.push((exon_start, ref_pos));
+                        }
+                        let strand = if record.flags().is_reverse_complemented() { '-' } else { '+' };
+                        original_alignment = Some((name.clone(), strand, exons));
+                    }
                 }
             }
         }
@@ -426,7 +471,7 @@ pub fn run_rescue_with_bundles(
         n_prefilter_pass += 1;
 
         let read_name = record.name().map(|n| n.to_string()).unwrap_or_default();
-        unmapped_reads.push((read_name, seq_bytes, candidate_fams));
+        unmapped_reads.push((read_name, seq_bytes, candidate_fams, original_alignment));
     }
 
     if mask_active {
@@ -460,8 +505,8 @@ pub fn run_rescue_with_bundles(
     // code recomputed viterbi every time the running-best forward score
     // improved — wasteful and a distinct hot path itself.
     let _ = families; // reserved for future use; scoring uses family_graphs.
-    let scored_per_read: Vec<Option<(String, usize, crate::vg_hmm::scorer::ViterbiPath, f64)>> =
-        unmapped_reads.par_iter().map(|(read_name, seq, cand_fams)| {
+    let scored_per_read: Vec<Option<(String, usize, crate::vg_hmm::scorer::ViterbiPath, f64, Option<OriginalAlignment>)>> =
+        unmapped_reads.par_iter().map(|(read_name, seq, cand_fams, orig)| {
             let mut best_score = f64::NEG_INFINITY;
             let mut best_fi: Option<usize> = None;
             for &fi in cand_fams {
@@ -477,20 +522,20 @@ pub fn run_rescue_with_bundles(
             let fg = family_graphs.get(fi)?;
             let vpath = crate::vg_hmm::scorer::viterbi_path(fg, seq)?;
             let family_id = fg.family_id;
-            Some((read_name.clone(), family_id, vpath, best_score))
+            Some((read_name.clone(), family_id, vpath, best_score, orig.clone()))
         }).collect();
 
     // Score-distribution diagnostic: helps tune min_loglik and explains
     // why rescue rejects reads. Counts per-bucket of the best forward log-lik.
     let mut score_dist: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
     let mut n_no_candidate = 0usize;
-    for (_rn, _seq, cand_fams) in &unmapped_reads {
+    for (_rn, _seq, cand_fams, _orig) in &unmapped_reads {
         if cand_fams.is_empty() { n_no_candidate += 1; }
     }
     for entry in scored_per_read.iter() {
         match entry {
             None => *score_dist.entry("rejected_below_min_loglik").or_insert(0) += 1,
-            Some((_, _, _, s)) => {
+            Some((_, _, _, s, _)) => {
                 let bucket = if *s > -500.0 { "score>-500" }
                     else if *s > -1500.0 { "-1500<score<=-500" }
                     else if *s > -3000.0 { "-3000<score<=-1500" }
@@ -508,29 +553,48 @@ pub fn run_rescue_with_bundles(
 
     let mut candidates: Vec<NovelCandidate> = Vec::new();
     let mut scored_reads: Vec<ScoredRead> = Vec::new();
+    // Reads that came in with an original alignment (LOO mask) — bypass
+    // the family-graph-coords synthesis and emit at their original locus.
+    let mut anchored_reads: Vec<(String, OriginalAlignment, f64, usize)> = Vec::new();
     for entry in scored_per_read.into_iter().flatten() {
-        let (read_name, family_id, vpath, score) = entry;
+        let (read_name, family_id, vpath, score, orig) = entry;
         let fi = match family_graphs.iter().position(|fg| fg.family_id == family_id) {
             Some(i) => i,
             None => continue,
+        };
+        let (chrom, start, end) = match &orig {
+            Some((c, _, exons)) => {
+                let s = exons.first().map(|e| e.0).unwrap_or(0);
+                let e = exons.last().map(|e| e.1).unwrap_or(0);
+                (c.clone(), s, e)
+            }
+            None => (String::new(), 0, 0),
         };
         candidates.push(NovelCandidate {
             read_name: read_name.clone(),
             family_id,
             matched_junctions: vpath.nodes.len(),
             total_junctions: family_graphs[fi].nodes.len(),
-            approx_chrom: String::new(),
-            approx_start: 0,
-            approx_end: 0,
+            approx_chrom: chrom,
+            approx_start: start,
+            approx_end: end,
         });
+        if let Some(o) = orig {
+            anchored_reads.push((read_name.clone(), o, score, family_id));
+        }
         scored_reads.push((read_name, family_id, vpath, score));
     }
 
     // (f) Build per-family scored maps for synthesize_bundles_refined.
     // Group by family_id, threading the per-node Viterbi read spans through
     // so the refined synthesis can apply boundary refinement.
+    // Reads with `anchored_reads` entries skip this — they go through the
+    // original-alignment synthesis below instead.
+    let anchored_names: std::collections::HashSet<String> =
+        anchored_reads.iter().map(|(rn, _, _, _)| rn.clone()).collect();
     let mut per_family: HashMap<usize, (usize, Vec<(String, Vec<NodeIdx>, Vec<(usize, usize)>)>)> = HashMap::new();
     for (read_name, family_id, vpath, _ll) in &scored_reads {
+        if anchored_names.contains(read_name) { continue; }
         let fg_idx = family_graphs.iter().position(|fg| fg.family_id == *family_id);
         if let Some(fi) = fg_idx {
             per_family
@@ -565,13 +629,161 @@ pub fn run_rescue_with_bundles(
         synthetic_bundles.append(&mut new_bundles);
     }
 
+    // ── Position-anchored synthesis (LOO mask reads) ──────────────────
+    // For reads that came in with a known original alignment, bundle them
+    // at THEIR original genomic position rather than at the matching
+    // family-graph copy's spans. This is the LOO recovery path: the HMM
+    // confirms the read belongs to a paralog family, but the rescue's
+    // goal is to recover the *masked* paralog, which lives at the read's
+    // own coordinates — not at a sister-paralog's coordinates.
+    let n_anchored_input = anchored_reads.len();
+    let n_anchored_bundles = synthesize_bundles_from_original_alignments(
+        &anchored_reads,
+        &mut synthetic_bundles,
+        min_reads_per_cluster.max(1),
+    );
+
     eprintln!(
-        "[VG-HMM] {} candidates, {} synthetic bundles",
+        "[VG-HMM] {} candidates, {} synthetic bundles ({} from family-graph spans, {} from {} position-anchored reads)",
         candidates.len(),
-        synthetic_bundles.len()
+        synthetic_bundles.len(),
+        synthetic_bundles.len() - n_anchored_bundles,
+        n_anchored_bundles,
+        n_anchored_input,
     );
 
     Ok((candidates, synthetic_bundles))
+}
+
+/// Cluster `anchored_reads` by chrom + overlapping genomic position and
+/// emit one synthetic Bundle per cluster, using the reads' own
+/// CIGAR-derived exons (NOT family-graph copy spans). Returns the number
+/// of bundles appended.
+fn synthesize_bundles_from_original_alignments(
+    anchored_reads: &[(String, OriginalAlignment, f64, usize)],
+    out_bundles: &mut Vec<Bundle>,
+    min_reads: usize,
+) -> usize {
+    if anchored_reads.is_empty() { return 0; }
+    // Group by (chrom, strand). Within each group, cluster by overlap.
+    let mut grouped: std::collections::BTreeMap<(String, char), Vec<&(String, OriginalAlignment, f64, usize)>> =
+        std::collections::BTreeMap::new();
+    for r in anchored_reads {
+        let (chrom, strand, _) = &r.1;
+        grouped.entry((chrom.clone(), *strand)).or_default().push(r);
+    }
+    let mut emitted = 0usize;
+    for ((chrom, strand), mut reads) in grouped {
+        // Sort by first-exon start.
+        reads.sort_by_key(|r| r.1.2.first().map(|e| e.0).unwrap_or(0));
+        // Greedy single-pass cluster: merge into running cluster as long as
+        // the next read's first-exon overlaps the current cluster's range.
+        let mut idx = 0usize;
+        while idx < reads.len() {
+            let mut cluster: Vec<&(String, OriginalAlignment, f64, usize)> = vec![reads[idx]];
+            let mut cluster_end = reads[idx].1.2.last().map(|e| e.1).unwrap_or(0);
+            idx += 1;
+            while idx < reads.len() {
+                let next_start = reads[idx].1.2.first().map(|e| e.0).unwrap_or(0);
+                if next_start > cluster_end { break; }
+                let next_end = reads[idx].1.2.last().map(|e| e.1).unwrap_or(0);
+                if next_end > cluster_end { cluster_end = next_end; }
+                cluster.push(reads[idx]);
+                idx += 1;
+            }
+            if cluster.len() < min_reads { continue; }
+
+            // Build a "consensus" read by taking the union of exons from
+            // all cluster members. Two-pass: collect all exon edges, sort,
+            // merge overlapping into consensus exons.
+            let mut edges: Vec<(u64, i32)> = Vec::new();
+            for r in &cluster {
+                for &(s, e) in &r.1.2 {
+                    edges.push((s, 1));
+                    edges.push((e, -1));
+                }
+            }
+            edges.sort_by_key(|&(p, _)| p);
+            let mut depth = 0i32;
+            let mut consensus_exons: Vec<(u64, u64)> = Vec::new();
+            let mut cur_start: Option<u64> = None;
+            for &(pos, delta) in &edges {
+                let prev_depth = depth;
+                depth += delta;
+                if prev_depth == 0 && depth > 0 {
+                    cur_start = Some(pos);
+                } else if prev_depth > 0 && depth == 0 {
+                    if let Some(s) = cur_start.take() {
+                        if pos > s {
+                            consensus_exons.push((s, pos));
+                        }
+                    }
+                }
+            }
+            if consensus_exons.is_empty() { continue; }
+
+            let bundle_start = consensus_exons.first().map(|e| e.0.saturating_sub(100)).unwrap_or(0);
+            let bundle_end   = consensus_exons.last().map(|e| e.1 + 100).unwrap_or(0);
+
+            // Build BundleReads using each cluster member's own exons (so
+            // junction support is real, not synthesized from a consensus).
+            let synth_junctions_for_member = |exons: &[(u64, u64)]| -> Vec<crate::types::Junction> {
+                exons.windows(2)
+                    .map(|w| crate::types::Junction { donor: w[0].1, acceptor: w[1].0 })
+                    .collect()
+            };
+            let reads_vec: Vec<BundleRead> = cluster.iter().enumerate().map(|(i, r)| {
+                let exons = &r.1.2;
+                let juncs = synth_junctions_for_member(exons);
+                let jvalid = vec![true; juncs.len()];
+                let ref_start = exons.first().map(|e| e.0).unwrap_or(0);
+                let ref_end = exons.last().map(|e| e.1).unwrap_or(0);
+                BundleRead {
+                    read_uid: 2_000_000 + i as u64,
+                    read_name: std::sync::Arc::from(r.0.as_str()),
+                    read_name_hash: 0,
+                    ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+                    ref_start, ref_end,
+                    exons: exons.clone(),
+                    junctions: juncs.clone(),
+                    junction_valid: jvalid,
+                    junctions_raw: juncs,
+                    junctions_del: Vec::new(),
+                    weight: 1.0, is_reverse: strand == '-', strand,
+                    has_poly_start: false, has_poly_end: false,
+                    has_poly_start_aligned: false, has_poly_start_unaligned: false,
+                    has_poly_end_aligned: false, has_poly_end_unaligned: false,
+                    unaligned_poly_t: 0, unaligned_poly_a: 0,
+                    has_last_exon_polya: false, has_first_exon_polyt: false,
+                    query_length: None, clip_left: 0, clip_right: 0,
+                    nh: 1, nm: 0, md: None, insertion_sites: Vec::new(),
+                    unitig: false, unitig_cov: 0.0,
+                    read_count_yc: 0.0, countfrag_len: 0.0, countfrag_num: 0.0,
+                    junc_mismatch_weight: 0.0,
+                    pair_idx: Vec::new(), pair_count: Vec::new(),
+                    mapq: 0, mismatches: Vec::new(),
+                    hp_tag: None, ps_tag: None,
+                    is_primary_alignment: true,
+                }
+            }).collect();
+
+            out_bundles.push(Bundle {
+                chrom: chrom.clone(),
+                start: bundle_start,
+                end: bundle_end,
+                strand,
+                reads: reads_vec,
+                junction_stats: JunctionStats::default(),
+                bundlenodes: None,
+                read_bnodes: None,
+                bnode_colors: None,
+                synthetic: true,
+                rescue_class: Some(RescueClass::NeedsExternalVerification),
+            });
+            emitted += 1;
+        }
+    }
+    emitted
 }
 
 // ── Task 5.4: synthesize_bundles ──────────────────────────────────────────────
