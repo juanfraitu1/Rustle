@@ -402,6 +402,16 @@ struct Args {
     #[arg(long, default_value_t = 1.5)]
     vg_family_max_exon_cv: f64,
 
+    /// Family-quality filter: minimum mean pairwise Jaccard of intron-length
+    /// sets (binned at 50bp) across copies. THE GRAPH-STRUCTURAL SIGNAL —
+    /// real paralogs share intron lengths; cross-cluster TE-bridge merges
+    /// (chr19-GOLGA8 ↔ chr17-TBC1D3 etc.) have Jaccard near 0. Default 0.20
+    /// — strict enough to filter most TE-bridges, lenient enough to keep
+    /// real paralogs even with copy-number variation. Single-exon paralog
+    /// clusters skip this check. Set to 0 to disable.
+    #[arg(long, default_value_t = 0.20)]
+    vg_family_min_primitive_jaccard: f64,
+
     /// Maximum EM iterations for multi-mapping resolution [default: 20]
     #[arg(long, default_value = "20")]
     vg_em_iter: usize,
@@ -682,6 +692,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_max_copies: args.vg_family_max_copies,
         vg_family_min_shared_per_copy: args.vg_family_min_shared_per_copy,
         vg_family_max_exon_cv: args.vg_family_max_exon_cv,
+        vg_family_min_primitive_jaccard: args.vg_family_min_primitive_jaccard,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

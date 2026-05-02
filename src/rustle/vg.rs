@@ -411,35 +411,42 @@ pub fn discover_family_groups(
 }
 
 /// Quality-filter discovered families to keep only those that look like
-/// real multi-copy gene paralogs (vs noise, mtDNA, repetitive megafamilies).
+/// real multi-copy gene paralogs (vs noise, mtDNA, repetitive megafamilies,
+/// TE-bridge spurious merges).
 ///
-/// Four signals corroborate "this is a real multi-copy gene family":
+/// Five signals corroborate "this is a real multi-copy gene family":
 ///   1. **n_copies in [min_copies, max_copies]** — drops mtDNA / repetitive
-///      mega-clusters (1500-copy "families" on full GGO.bam) and singletons.
+///      mega-clusters and singletons.
 ///   2. **multimap_reads ≥ min_shared** — total read sharing. Random
 ///      alignment artifacts produce 1-3 spurious shared reads; real paralogs
 ///      have substantially more (the GOLGA6L7 chr19 cluster has 386).
 ///   3. **multimap_reads / n_copies ≥ min_shared_per_copy** — sharing density.
 ///      A family of N copies held together by O(1) cross-mapping reads is
-///      almost always an alignment artifact (one read randomly cross-mapped
-///      between many bundles). Real paralog clusters maintain a roughly
-///      uniform read density across their copies.
+///      almost always an alignment artifact.
 ///   4. **Coefficient of variation (CV) of intron-counts ≤ max_exon_cv** —
-///      paralogs of the same gene have similar exon structure (within a
-///      copy-number variant or two). Mixed-gene "families" (random genes
-///      that happen to share a multi-mapping read) have wildly different
-///      exon counts → high CV. The check applies only when ≥2 copies have
-///      introns; single-exon paralog families (olfactory receptors,
-///      KRAB-ZNF intronless members) skip this signal.
+///      cheap exon-count similarity proxy.
+///   5. **Pairwise intron-length-set Jaccard ≥ min_primitive_jaccard** —
+///      the structural-paralogy signal. For each pair of multi-exon copies,
+///      compute the Jaccard of their intron-length sets (binned at 50bp).
+///      Real paralogs of the same gene have nearly identical intron lengths
+///      (Jaccard typically >0.5 even after copy-number variants). Random
+///      cross-cluster merges via repetitive elements (chr19-GOLGA8 ↔
+///      chr17-TBC1D3 is the canonical case) have intron-length Jaccard
+///      near 0 — different genes have different intron lengths.
 ///
-/// Note on junction Jaccard: junction donor/acceptor are absolute genomic
-/// coordinates, so paralogs at different loci have Jaccard ≡ 0. The earlier
-/// Jaccard test was a primitive bug and has been removed in favor of the CV
-/// of intron counts (a structure signal that does survive across loci).
+/// THIS IS THE GRAPH-STRUCTURAL DEFINITION of a multi-copy gene family in
+/// rustle: paralogs share a "primitive" splice topology (signal #5),
+/// supported by structural cross-mapping (signals #2, #3) at non-trivial
+/// scale (#1) with consistent exon counts (#4).
 ///
-/// Empirical: on chr19 GGO_19.bam (14 discovered families), defaults
-/// (min_copies=2, max_copies=30, min_shared=10) keep 8 of 14 (drop 6 by
-/// low_shared, all <10 multimappers — clear alignment noise).
+/// Why intron lengths and not absolute splice coordinates: paralogs at
+/// different genomic loci have ZERO shared (donor, acceptor) coordinates by
+/// definition, but their RELATIVE intron structure is conserved. Binning
+/// at 50bp absorbs minor copy-number-variant size differences.
+///
+/// Implementation: only multi-exon copies (≥1 intron) participate in the
+/// Jaccard. Single-exon paralog clusters (olfactory receptors etc.) skip
+/// this check.
 pub fn filter_high_confidence_families(
     families: Vec<FamilyGroup>,
     bundles: &[Bundle],
@@ -448,6 +455,7 @@ pub fn filter_high_confidence_families(
     min_shared: usize,
     min_shared_per_copy: f64,
     max_exon_cv: f64,
+    min_primitive_jaccard: f64,
 ) -> Vec<FamilyGroup> {
     let n_in = families.len();
     let mut kept: Vec<FamilyGroup> = Vec::new();
@@ -494,6 +502,59 @@ pub fn filter_high_confidence_families(
                         *drops.entry("high_exon_cv").or_insert(0) += 1;
                         continue;
                     }
+                }
+            }
+        }
+        // Primitive (graph-structural) signal: pairwise intron-length-set
+        // similarity using fuzzy matching (±200bp tolerance). Real paralogs
+        // share intron lengths within tens of bp; TE-bridge artifacts have
+        // wildly different intron lengths. Hard-bin Jaccard misses paralogs
+        // whose introns differ by exactly one bin width — fuzzy matching
+        // counts an intron as "shared" if some other copy has an intron of
+        // length within ±200bp.
+        if min_primitive_jaccard > 0.0 {
+            let intron_lens_per_copy: Vec<Vec<u64>> = fam.bundle_indices.iter()
+                .map(|&bi| {
+                    bundles.get(bi)
+                        .map(|b| b.junction_stats.iter()
+                            .map(|(j, _)| j.acceptor.saturating_sub(j.donor))
+                            .collect::<Vec<u64>>())
+                        .unwrap_or_default()
+                })
+                .collect();
+            let multi_exon: Vec<&Vec<u64>> = intron_lens_per_copy.iter()
+                .filter(|s| !s.is_empty())
+                .collect();
+            if multi_exon.len() >= 2 {
+                let tolerance: u64 = 200; // bp — paralogs typically agree at this scale
+                // Fuzzy Jaccard: |A∩B| counts introns in A with a within-
+                // tolerance match in B; |A∪B| = |A| + |B| − |A∩B|.
+                let fuzzy_match = |a: &[u64], b: &[u64]| -> f64 {
+                    let mut matched = 0usize;
+                    for &x in a {
+                        if b.iter().any(|&y| {
+                            let d = if x > y { x - y } else { y - x };
+                            d <= tolerance
+                        }) {
+                            matched += 1;
+                        }
+                    }
+                    let intersection = matched as f64;
+                    let union = (a.len() + b.len()) as f64 - intersection;
+                    if union > 0.0 { intersection / union } else { 0.0 }
+                };
+                let mut sum = 0.0_f64;
+                let mut n_pairs = 0usize;
+                for i in 0..multi_exon.len() {
+                    for j in (i + 1)..multi_exon.len() {
+                        sum += fuzzy_match(multi_exon[i], multi_exon[j]);
+                        n_pairs += 1;
+                    }
+                }
+                let mean_jaccard = if n_pairs > 0 { sum / n_pairs as f64 } else { 0.0 };
+                if mean_jaccard < min_primitive_jaccard {
+                    *drops.entry("low_primitive_jaccard").or_insert(0) += 1;
+                    continue;
                 }
             }
         }

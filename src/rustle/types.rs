@@ -938,6 +938,12 @@ pub struct RunConfig {
     /// to share a multi-mapper have wildly different exon counts (CV often
     /// >1.0). Single-exon paralog clusters skip this check.
     pub vg_family_max_exon_cv: f64,
+    /// Family-quality filter: minimum mean pairwise Jaccard of intron-length
+    /// sets across copies (binned at 50bp). The graph-structural signal —
+    /// real paralogs share intron lengths; TE-bridge cross-cluster merges
+    /// (chr19-GOLGA8 ↔ chr17-TBC1D3 spurious link) have Jaccard near 0.
+    /// Single-exon paralog clusters skip this check.
+    pub vg_family_min_primitive_jaccard: f64,
 }
 
 impl RunConfig {
@@ -1177,6 +1183,7 @@ impl Default for RunConfig {
             vg_family_max_copies: 30,
             vg_family_min_shared_per_copy: 1.0,
             vg_family_max_exon_cv: 1.5,
+            vg_family_min_primitive_jaccard: 0.20,
         }
     }
 }

@@ -8116,6 +8116,7 @@ pub fn run<P: AsRef<Path>>(
             config.vg_family_min_shared,
             config.vg_family_min_shared_per_copy,
             config.vg_family_max_exon_cv,
+            config.vg_family_min_primitive_jaccard,
         );
         if !families.is_empty() {
             eprintln!(
