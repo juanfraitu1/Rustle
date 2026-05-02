@@ -68,15 +68,24 @@ From gffcompare `Matching transcripts:` field — exact intron-chain match.
    lower-coverage data, a stricter junction-tie scenario, or per-copy
    TPM evaluation rather than locus presence.
 
-3. **Both rustle variants lose GOLGA6L10 vs ST — pre-existing bundle-detection
-   gap, NOT a multi-mapper EM regression.**
-   `GOLGA6L10` (chr19 NC_073240.2:83999064-84007244, +) is caught by ST as
-   `STRG.14456.1` (4 small exons, longcov=2) but missed by rustle in *all*
-   variants — including the discovery-only run with no EM applied. So this
-   is a baseline assembly miss at the bundle-detection / single-exon-rescue
-   stage, not a family-quality filter or EM stripping issue. ST has more
-   aggressive short-transcript rescue for low-coverage 4-exon transcripts
-   with small introns (60bp, 100bp, 211bp).
+3. **GOLGA6L10 loss was a `--vg` cross-mapping bug — fixed in commit `e22ad2b`.**
+   Earlier writeup (commit `389c505`) blamed bundle-detection. Wrong. Pure
+   baseline rustle (no `--vg`) emits GOLGA6L10 at exactly ST's coordinates
+   (84003400-84007349). The bug was: with `--vg`, ingest keeps secondary
+   alignments to fuel family discovery, but those secondaries (cross-mapped
+   from other GOLGA6 paralogs) carry wrong-intron structures (8228N/858N/
+   4557N/210N from the parent paralog) that get accumulated into
+   `bundle.junction_stats` and pollute the splice graph. The original
+   post-discovery strip only ran on non-family bundles, which left
+   GOLGA6L10's bundle (sitting inside a GOLGA6 family range) untouched.
+   The fix strips secondaries from ALL bundles after discovery (family
+   data is captured by name-hash, not via `bundle.reads`) and rebuilds
+   `junction_stats` from primary-only reads.
+
+   With the fix, the per-paralog table updates: GOLGA6 6→7 for both
+   rustle EM and rustle EM+SNP — pulling rustle ahead of StringTie
+   on this family too (was tied at 6/16; now 7/16 vs ST's 6/16).
+   Re-run on full GGO.bam pending to confirm the new total.
 
 4. **rustle missed 1 AMY transcript ST caught.**
    At the locus level both find AMY2A and AMY2B (2/3); ST has an exact
