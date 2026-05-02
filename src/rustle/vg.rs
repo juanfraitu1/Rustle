@@ -280,9 +280,12 @@ pub fn discover_family_groups(
         return Vec::new();
     }
 
-    // Build bundle-pair link counts.
+    // Build bundle-pair link counts. FxHash for the (usize,usize) keys —
+    // this map sees ~120K entries on full GGO.bam and was a real hashing
+    // hotspot during family discovery.
     let n_bundles = bundles.len();
-    let mut link_counts: HashMap<(usize, usize), usize> = HashMap::new();
+    let mut link_counts: crate::types::DetHashMap<(usize, usize), usize> =
+        crate::types::DetHashMap::default();
     let mut skipped_mirror_pairs = 0usize;
     for locs in multimap_index.values() {
         // Collect unique bundle indices for this read.
@@ -1305,6 +1308,21 @@ pub fn build_diagnostic_snps(
 /// read's base at that position is ALSO the reference — i.e. the read did
 /// NOT record a mismatch at this position. We test coverage via the read's
 /// exons.
+/// Memoized SNP factor weights, parsed once per process. Without this,
+/// `snp_compatibility` did 2× `std::env::var` (libc getenv) per call —
+/// during full GGO.bam SNP-EM cache build, that's ~1M getenv calls.
+fn snp_weights() -> (f64, f64) {
+    use std::sync::OnceLock;
+    static WEIGHTS: OnceLock<(f64, f64)> = OnceLock::new();
+    *WEIGHTS.get_or_init(|| {
+        let m = std::env::var("RUSTLE_VG_SNP_MATCH_BONUS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+        let p = std::env::var("RUSTLE_VG_SNP_MISMATCH_PENALTY")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.3);
+        (m, p)
+    })
+}
+
 pub fn snp_compatibility(
     read: &BundleRead,
     copy_idx: usize,
@@ -1313,11 +1331,7 @@ pub fn snp_compatibility(
     if diagnostic.positions.is_empty() {
         return 1.0; // No info — neutral.
     }
-    // Read-once SNP weights so we don't re-parse env vars per call.
-    let match_bonus: f64 = std::env::var("RUSTLE_VG_SNP_MATCH_BONUS")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
-    let mismatch_penalty: f64 = std::env::var("RUSTLE_VG_SNP_MISMATCH_PENALTY")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.3);
+    let (match_bonus, mismatch_penalty) = snp_weights();
     // Build mismatch lookup for this read using FxHash (3-5x faster than
     // std HashMap with SipHash). The map is small (typical PacBio CCS read
     // has 50-200 mismatches) but this function is in a hot per-(entry,copy)
@@ -1501,9 +1515,13 @@ fn run_pre_assembly_em_inner(
         // O(entries × copies × iterations) times, each doing an O(positions ×
         // read_exons) scan. At family sizes of 2000 reads × 20 iterations with
         // 3000+ diagnostic positions this hangs the pipeline.
+        // Parallelized over entries (rayon par_iter): snp_compatibility is
+        // a pure function of (read, copy_idx, diagnostic). Bundles are
+        // shared `&` for read-only access here.
         let snp_cache: Vec<Vec<f64>> = if let Some(ref diag) = diagnostic {
+            use rayon::prelude::*;
             entries
-                .iter()
+                .par_iter()
                 .map(|(_, entry)| {
                     entry
                         .locs
