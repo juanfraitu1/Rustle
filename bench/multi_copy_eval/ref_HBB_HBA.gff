@@ -1,0 +1,146 @@
+##gff-version 3
+#!gff-spec-version 1.21
+#!processor NCBI annotwriter
+#!genome-build NHGRI_mGorGor1-v2.0_pri
+#!genome-build-accession NCBI_Assembly:GCF_029281585.2
+#!annotation-date 02/27/2024
+#!annotation-source NCBI RefSeq GCF_029281585.2-RS_2024_02
+##sequence-region NC_073224.2 1 243847345
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_086017.1 1 215253457
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073227.2 1 215373162
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073228.2 1 195332687
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073229.2 1 199452338
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073230.2 1 170803427
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073231.2 1 158533252
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073232.2 1 150804130
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073233.2 1 147876701
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+NC_073233.2	Gnomon	gene	11555363	11556979	.	-	.	ID=gene-LOC101126932;Dbxref=GeneID:101126932;Name=LOC101126932;description=hemoglobin subunit beta;gbkey=Gene;gene=LOC101126932;gene_biotype=protein_coding
+NC_073233.2	Gnomon	mRNA	11555363	11556979	.	-	.	ID=rna-XM_019036164.3;Parent=gene-LOC101126932;Dbxref=GeneID:101126932,GenBank:XM_019036164.3;Name=XM_019036164.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC101126932;model_evidence=Supporting evidence includes similarity to: 1 mRNA%2C 174 Proteins;product=hemoglobin subunit beta;transcript_id=XM_019036164.3
+NC_073233.2	Gnomon	exon	11556828	11556979	.	-	.	ID=exon-XM_019036164.3-1;Parent=rna-XM_019036164.3;Dbxref=GeneID:101126932,GenBank:XM_019036164.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC101126932;product=hemoglobin subunit beta;transcript_id=XM_019036164.3
+NC_073233.2	Gnomon	exon	11556475	11556697	.	-	.	ID=exon-XM_019036164.3-2;Parent=rna-XM_019036164.3;Dbxref=GeneID:101126932,GenBank:XM_019036164.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC101126932;product=hemoglobin subunit beta;transcript_id=XM_019036164.3
+NC_073233.2	Gnomon	exon	11555363	11555625	.	-	.	ID=exon-XM_019036164.3-3;Parent=rna-XM_019036164.3;Dbxref=GeneID:101126932,GenBank:XM_019036164.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC101126932;product=hemoglobin subunit beta;transcript_id=XM_019036164.3
+NC_073233.2	Gnomon	CDS	11556828	11556919	.	-	0	ID=cds-XP_018891709.1;Parent=rna-XM_019036164.3;Dbxref=GeneID:101126932,GenBank:XP_018891709.1;Name=XP_018891709.1;gbkey=CDS;gene=LOC101126932;product=hemoglobin subunit beta;protein_id=XP_018891709.1
+NC_073233.2	Gnomon	CDS	11556475	11556697	.	-	1	ID=cds-XP_018891709.1;Parent=rna-XM_019036164.3;Dbxref=GeneID:101126932,GenBank:XP_018891709.1;Name=XP_018891709.1;gbkey=CDS;gene=LOC101126932;product=hemoglobin subunit beta;protein_id=XP_018891709.1
+NC_073233.2	Gnomon	CDS	11555497	11555625	.	-	0	ID=cds-XP_018891709.1;Parent=rna-XM_019036164.3;Dbxref=GeneID:101126932,GenBank:XP_018891709.1;Name=XP_018891709.1;gbkey=CDS;gene=LOC101126932;product=hemoglobin subunit beta;protein_id=XP_018891709.1
+NC_073233.2	Gnomon	gene	11563032	11564790	.	-	.	ID=gene-LOC101127306;Dbxref=GeneID:101127306;Name=LOC101127306;description=hemoglobin subunit delta;gbkey=Gene;gene=LOC101127306;gene_biotype=protein_coding
+NC_073233.2	Gnomon	mRNA	11563032	11564790	.	-	.	ID=rna-XM_019036165.4;Parent=gene-LOC101127306;Dbxref=GeneID:101127306,GenBank:XM_019036165.4;Name=XM_019036165.4;gbkey=mRNA;gene=LOC101127306;model_evidence=Supporting evidence includes similarity to: 1 mRNA%2C 172 Proteins;product=hemoglobin subunit delta;transcript_id=XM_019036165.4
+NC_073233.2	Gnomon	exon	11564531	11564790	.	-	.	ID=exon-XM_019036165.4-1;Parent=rna-XM_019036165.4;Dbxref=GeneID:101127306,GenBank:XM_019036165.4;gbkey=mRNA;gene=LOC101127306;product=hemoglobin subunit delta;transcript_id=XM_019036165.4
+NC_073233.2	Gnomon	exon	11564178	11564400	.	-	.	ID=exon-XM_019036165.4-2;Parent=rna-XM_019036165.4;Dbxref=GeneID:101127306,GenBank:XM_019036165.4;gbkey=mRNA;gene=LOC101127306;product=hemoglobin subunit delta;transcript_id=XM_019036165.4
+NC_073233.2	Gnomon	exon	11563032	11563286	.	-	.	ID=exon-XM_019036165.4-3;Parent=rna-XM_019036165.4;Dbxref=GeneID:101127306,GenBank:XM_019036165.4;gbkey=mRNA;gene=LOC101127306;product=hemoglobin subunit delta;transcript_id=XM_019036165.4
+NC_073233.2	Gnomon	CDS	11564531	11564622	.	-	0	ID=cds-XP_018891710.2;Parent=rna-XM_019036165.4;Dbxref=GeneID:101127306,GenBank:XP_018891710.2;Name=XP_018891710.2;gbkey=CDS;gene=LOC101127306;product=hemoglobin subunit delta;protein_id=XP_018891710.2
+NC_073233.2	Gnomon	CDS	11564178	11564400	.	-	1	ID=cds-XP_018891710.2;Parent=rna-XM_019036165.4;Dbxref=GeneID:101127306,GenBank:XP_018891710.2;Name=XP_018891710.2;gbkey=CDS;gene=LOC101127306;product=hemoglobin subunit delta;protein_id=XP_018891710.2
+NC_073233.2	Gnomon	CDS	11563158	11563286	.	-	0	ID=cds-XP_018891710.2;Parent=rna-XM_019036165.4;Dbxref=GeneID:101127306,GenBank:XP_018891710.2;Name=XP_018891710.2;gbkey=CDS;gene=LOC101127306;product=hemoglobin subunit delta;protein_id=XP_018891710.2
+NC_073233.2	Gnomon	gene	11578499	11580095	.	-	.	ID=gene-LOC134759280;Dbxref=GeneID:134759280;Name=LOC134759280;description=hemoglobin subunit gamma-1;gbkey=Gene;gene=LOC134759280;gene_biotype=protein_coding
+NC_073233.2	Gnomon	mRNA	11578499	11580095	.	-	.	ID=rna-XM_063710785.1;Parent=gene-LOC134759280;Dbxref=GeneID:134759280,GenBank:XM_063710785.1;Name=XM_063710785.1;gbkey=mRNA;gene=LOC134759280;model_evidence=Supporting evidence includes similarity to: 1 mRNA%2C 176 Proteins;product=hemoglobin subunit gamma-1;transcript_id=XM_063710785.1
+NC_073233.2	Gnomon	exon	11579951	11580095	.	-	.	ID=exon-XM_063710785.1-1;Parent=rna-XM_063710785.1;Dbxref=GeneID:134759280,GenBank:XM_063710785.1;gbkey=mRNA;gene=LOC134759280;product=hemoglobin subunit gamma-1;transcript_id=XM_063710785.1
+NC_073233.2	Gnomon	exon	11579606	11579828	.	-	.	ID=exon-XM_063710785.1-2;Parent=rna-XM_063710785.1;Dbxref=GeneID:134759280,GenBank:XM_063710785.1;gbkey=mRNA;gene=LOC134759280;product=hemoglobin subunit gamma-1;transcript_id=XM_063710785.1
+NC_073233.2	Gnomon	exon	11578499	11578717	.	-	.	ID=exon-XM_063710785.1-3;Parent=rna-XM_063710785.1;Dbxref=GeneID:134759280,GenBank:XM_063710785.1;gbkey=mRNA;gene=LOC134759280;product=hemoglobin subunit gamma-1;transcript_id=XM_063710785.1
+NC_073233.2	Gnomon	CDS	11579951	11580042	.	-	0	ID=cds-XP_063566855.1;Parent=rna-XM_063710785.1;Dbxref=GeneID:134759280,GenBank:XP_063566855.1;Name=XP_063566855.1;gbkey=CDS;gene=LOC134759280;product=hemoglobin subunit gamma-1;protein_id=XP_063566855.1
+NC_073233.2	Gnomon	CDS	11579606	11579828	.	-	1	ID=cds-XP_063566855.1;Parent=rna-XM_063710785.1;Dbxref=GeneID:134759280,GenBank:XP_063566855.1;Name=XP_063566855.1;gbkey=CDS;gene=LOC134759280;product=hemoglobin subunit gamma-1;protein_id=XP_063566855.1
+NC_073233.2	Gnomon	CDS	11578589	11578717	.	-	0	ID=cds-XP_063566855.1;Parent=rna-XM_063710785.1;Dbxref=GeneID:134759280,GenBank:XP_063566855.1;Name=XP_063566855.1;gbkey=CDS;gene=LOC134759280;product=hemoglobin subunit gamma-1;protein_id=XP_063566855.1
+NC_073233.2	Gnomon	gene	11583434	11585046	.	-	.	ID=gene-LOC134759281;Dbxref=GeneID:134759281;Name=LOC134759281;description=hemoglobin subunit gamma-2;gbkey=Gene;gene=LOC134759281;gene_biotype=protein_coding
+NC_073233.2	Gnomon	mRNA	11583434	11585046	.	-	.	ID=rna-XM_063710786.1;Parent=gene-LOC134759281;Dbxref=GeneID:134759281,GenBank:XM_063710786.1;Name=XM_063710786.1;gbkey=mRNA;gene=LOC134759281;model_evidence=Supporting evidence includes similarity to: 1 mRNA%2C 176 Proteins;product=hemoglobin subunit gamma-2;transcript_id=XM_063710786.1
+NC_073233.2	Gnomon	exon	11584902	11585046	.	-	.	ID=exon-XM_063710786.1-1;Parent=rna-XM_063710786.1;Dbxref=GeneID:134759281,GenBank:XM_063710786.1;gbkey=mRNA;gene=LOC134759281;product=hemoglobin subunit gamma-2;transcript_id=XM_063710786.1
+NC_073233.2	Gnomon	exon	11584557	11584779	.	-	.	ID=exon-XM_063710786.1-2;Parent=rna-XM_063710786.1;Dbxref=GeneID:134759281,GenBank:XM_063710786.1;gbkey=mRNA;gene=LOC134759281;product=hemoglobin subunit gamma-2;transcript_id=XM_063710786.1
+NC_073233.2	Gnomon	exon	11583434	11583651	.	-	.	ID=exon-XM_063710786.1-3;Parent=rna-XM_063710786.1;Dbxref=GeneID:134759281,GenBank:XM_063710786.1;gbkey=mRNA;gene=LOC134759281;product=hemoglobin subunit gamma-2;transcript_id=XM_063710786.1
+NC_073233.2	Gnomon	CDS	11584902	11584993	.	-	0	ID=cds-XP_063566856.1;Parent=rna-XM_063710786.1;Dbxref=GeneID:134759281,GenBank:XP_063566856.1;Name=XP_063566856.1;gbkey=CDS;gene=LOC134759281;product=hemoglobin subunit gamma-2;protein_id=XP_063566856.1
+NC_073233.2	Gnomon	CDS	11584557	11584779	.	-	1	ID=cds-XP_063566856.1;Parent=rna-XM_063710786.1;Dbxref=GeneID:134759281,GenBank:XP_063566856.1;Name=XP_063566856.1;gbkey=CDS;gene=LOC134759281;product=hemoglobin subunit gamma-2;protein_id=XP_063566856.1
+NC_073233.2	Gnomon	CDS	11583523	11583651	.	-	0	ID=cds-XP_063566856.1;Parent=rna-XM_063710786.1;Dbxref=GeneID:134759281,GenBank:XP_063566856.1;Name=XP_063566856.1;gbkey=CDS;gene=LOC134759281;product=hemoglobin subunit gamma-2;protein_id=XP_063566856.1
+NC_073233.2	Gnomon	gene	11588404	11589972	.	-	.	ID=gene-LOC115933478;Dbxref=GeneID:115933478;Name=LOC115933478;description=hemoglobin subunit gamma-2;gbkey=Gene;gene=LOC115933478;gene_biotype=protein_coding
+NC_073233.2	Gnomon	mRNA	11588404	11589972	.	-	.	ID=rna-XM_031007632.3;Parent=gene-LOC115933478;Dbxref=GeneID:115933478,GenBank:XM_031007632.3;Name=XM_031007632.3;gbkey=mRNA;gene=LOC115933478;model_evidence=Supporting evidence includes similarity to: 176 Proteins;product=hemoglobin subunit gamma-2;transcript_id=XM_031007632.3
+NC_073233.2	Gnomon	exon	11589853	11589972	.	-	.	ID=exon-XM_031007632.3-1;Parent=rna-XM_031007632.3;Dbxref=GeneID:115933478,GenBank:XM_031007632.3;gbkey=mRNA;gene=LOC115933478;product=hemoglobin subunit gamma-2;transcript_id=XM_031007632.3
+NC_073233.2	Gnomon	exon	11589508	11589730	.	-	.	ID=exon-XM_031007632.3-2;Parent=rna-XM_031007632.3;Dbxref=GeneID:115933478,GenBank:XM_031007632.3;gbkey=mRNA;gene=LOC115933478;product=hemoglobin subunit gamma-2;transcript_id=XM_031007632.3
+NC_073233.2	Gnomon	exon	11588404	11588602	.	-	.	ID=exon-XM_031007632.3-3;Parent=rna-XM_031007632.3;Dbxref=GeneID:115933478,GenBank:XM_031007632.3;gbkey=mRNA;gene=LOC115933478;product=hemoglobin subunit gamma-2;transcript_id=XM_031007632.3
+NC_073233.2	Gnomon	CDS	11589853	11589944	.	-	0	ID=cds-XP_030863492.1;Parent=rna-XM_031007632.3;Dbxref=GeneID:115933478,GenBank:XP_030863492.1;Name=XP_030863492.1;gbkey=CDS;gene=LOC115933478;product=hemoglobin subunit gamma-2;protein_id=XP_030863492.1
+NC_073233.2	Gnomon	CDS	11589508	11589730	.	-	1	ID=cds-XP_030863492.1;Parent=rna-XM_031007632.3;Dbxref=GeneID:115933478,GenBank:XP_030863492.1;Name=XP_030863492.1;gbkey=CDS;gene=LOC115933478;product=hemoglobin subunit gamma-2;protein_id=XP_030863492.1
+NC_073233.2	Gnomon	CDS	11588474	11588602	.	-	0	ID=cds-XP_030863492.1;Parent=rna-XM_031007632.3;Dbxref=GeneID:115933478,GenBank:XP_030863492.1;Name=XP_030863492.1;gbkey=CDS;gene=LOC115933478;product=hemoglobin subunit gamma-2;protein_id=XP_030863492.1
+NC_073233.2	Gnomon	gene	11603594	11605706	.	-	.	ID=gene-HBE1;Dbxref=GeneID:101151732;Name=HBE1;description=hemoglobin subunit epsilon 1;gbkey=Gene;gene=HBE1;gene_biotype=protein_coding
+NC_073233.2	Gnomon	mRNA	11603594	11605706	.	-	.	ID=rna-XM_004050539.4;Parent=gene-HBE1;Dbxref=GeneID:101151732,GenBank:XM_004050539.4;Name=XM_004050539.4;gbkey=mRNA;gene=HBE1;model_evidence=Supporting evidence includes similarity to: 1 mRNA%2C 175 Proteins%2C 1 long SRA read;product=hemoglobin subunit epsilon 1;transcript_id=XM_004050539.4
+NC_073233.2	Gnomon	exon	11605051	11605706	.	-	.	ID=exon-XM_004050539.4-1;Parent=rna-XM_004050539.4;Dbxref=GeneID:101151732,GenBank:XM_004050539.4;gbkey=mRNA;gene=HBE1;product=hemoglobin subunit epsilon 1;transcript_id=XM_004050539.4
+NC_073233.2	Gnomon	exon	11604706	11604928	.	-	.	ID=exon-XM_004050539.4-2;Parent=rna-XM_004050539.4;Dbxref=GeneID:101151732,GenBank:XM_004050539.4;gbkey=mRNA;gene=HBE1;product=hemoglobin subunit epsilon 1;transcript_id=XM_004050539.4
+NC_073233.2	Gnomon	exon	11603594	11603846	.	-	.	ID=exon-XM_004050539.4-3;Parent=rna-XM_004050539.4;Dbxref=GeneID:101151732,GenBank:XM_004050539.4;gbkey=mRNA;gene=HBE1;product=hemoglobin subunit epsilon 1;transcript_id=XM_004050539.4
+NC_073233.2	Gnomon	CDS	11605051	11605142	.	-	0	ID=cds-XP_004050587.1;Parent=rna-XM_004050539.4;Dbxref=GeneID:101151732,GenBank:XP_004050587.1;Name=XP_004050587.1;gbkey=CDS;gene=HBE1;product=hemoglobin subunit epsilon;protein_id=XP_004050587.1
+NC_073233.2	Gnomon	CDS	11604706	11604928	.	-	1	ID=cds-XP_004050587.1;Parent=rna-XM_004050539.4;Dbxref=GeneID:101151732,GenBank:XP_004050587.1;Name=XP_004050587.1;gbkey=CDS;gene=HBE1;product=hemoglobin subunit epsilon;protein_id=XP_004050587.1
+NC_073233.2	Gnomon	CDS	11603718	11603846	.	-	0	ID=cds-XP_004050587.1;Parent=rna-XM_004050539.4;Dbxref=GeneID:101151732,GenBank:XP_004050587.1;Name=XP_004050587.1;gbkey=CDS;gene=HBE1;product=hemoglobin subunit epsilon;protein_id=XP_004050587.1
+##sequence-region NC_073234.2 1 154228409
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073235.2 1 150248535
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073236.2 1 145906006
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073237.2 1 134695396
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073238.2 1 132018348
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073239.2 1 131692671
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073240.2 1 107915467
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073241.2 1 116054869
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073242.2 1 131347499
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+NC_073242.2	Gnomon	gene	3771003	3772966	.	+	.	ID=gene-HBZ;Dbxref=GeneID:129527460;Name=HBZ;description=hemoglobin subunit zeta;gbkey=Gene;gene=HBZ;gene_biotype=protein_coding
+NC_073242.2	Gnomon	mRNA	3771003	3772966	.	+	.	ID=rna-XM_055364712.2;Parent=gene-HBZ;Dbxref=GeneID:129527460,GenBank:XM_055364712.2;Name=XM_055364712.2;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=HBZ;model_evidence=Supporting evidence includes similarity to: 1 mRNA%2C 9 Proteins%2C 1 long SRA read;product=hemoglobin subunit zeta;transcript_id=XM_055364712.2
+NC_073242.2	Gnomon	exon	3771003	3771363	.	+	.	ID=exon-XM_055364712.2-1;Parent=rna-XM_055364712.2;Dbxref=GeneID:129527460,GenBank:XM_055364712.2;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=HBZ;product=hemoglobin subunit zeta;transcript_id=XM_055364712.2
+NC_073242.2	Gnomon	exon	3772346	3772550	.	+	.	ID=exon-XM_055364712.2-2;Parent=rna-XM_055364712.2;Dbxref=GeneID:129527460,GenBank:XM_055364712.2;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=HBZ;product=hemoglobin subunit zeta;transcript_id=XM_055364712.2
+NC_073242.2	Gnomon	exon	3772725	3772966	.	+	.	ID=exon-XM_055364712.2-3;Parent=rna-XM_055364712.2;Dbxref=GeneID:129527460,GenBank:XM_055364712.2;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=HBZ;product=hemoglobin subunit zeta;transcript_id=XM_055364712.2
+NC_073242.2	Gnomon	CDS	3771269	3771363	.	+	0	ID=cds-XP_055220687.1;Parent=rna-XM_055364712.2;Dbxref=GeneID:129527460,GenBank:XP_055220687.1;Name=XP_055220687.1;gbkey=CDS;gene=HBZ;product=hemoglobin subunit zeta;protein_id=XP_055220687.1
+NC_073242.2	Gnomon	CDS	3772346	3772550	.	+	1	ID=cds-XP_055220687.1;Parent=rna-XM_055364712.2;Dbxref=GeneID:129527460,GenBank:XP_055220687.1;Name=XP_055220687.1;gbkey=CDS;gene=HBZ;product=hemoglobin subunit zeta;protein_id=XP_055220687.1
+NC_073242.2	Gnomon	CDS	3772725	3772853	.	+	0	ID=cds-XP_055220687.1;Parent=rna-XM_055364712.2;Dbxref=GeneID:129527460,GenBank:XP_055220687.1;Name=XP_055220687.1;gbkey=CDS;gene=HBZ;product=hemoglobin subunit zeta;protein_id=XP_055220687.1
+NC_073242.2	Gnomon	gene	3782046	3782962	.	+	.	ID=gene-LOC129527462;Dbxref=GeneID:129527462;Name=LOC129527462;description=hemoglobin subunit alpha;gbkey=Gene;gene=LOC129527462;gene_biotype=protein_coding
+NC_073242.2	Gnomon	mRNA	3782046	3782962	.	+	.	ID=rna-XM_063699715.1;Parent=gene-LOC129527462;Dbxref=GeneID:129527462,GenBank:XM_063699715.1;Name=XM_063699715.1;gbkey=mRNA;gene=LOC129527462;model_evidence=Supporting evidence includes similarity to: 3 Proteins;product=hemoglobin subunit alpha;transcript_id=XM_063699715.1
+NC_073242.2	Gnomon	exon	3782046	3782624	.	+	.	ID=exon-XM_063699715.1-1;Parent=rna-XM_063699715.1;Dbxref=GeneID:129527462,GenBank:XM_063699715.1;gbkey=mRNA;gene=LOC129527462;product=hemoglobin subunit alpha;transcript_id=XM_063699715.1
+NC_073242.2	Gnomon	exon	3782834	3782962	.	+	.	ID=exon-XM_063699715.1-2;Parent=rna-XM_063699715.1;Dbxref=GeneID:129527462,GenBank:XM_063699715.1;gbkey=mRNA;gene=LOC129527462;product=hemoglobin subunit alpha;transcript_id=XM_063699715.1
+NC_073242.2	Gnomon	CDS	3782046	3782624	.	+	0	ID=cds-XP_063555785.1;Parent=rna-XM_063699715.1;Dbxref=GeneID:129527462,GenBank:XP_063555785.1;Name=XP_063555785.1;gbkey=CDS;gene=LOC129527462;product=hemoglobin subunit alpha;protein_id=XP_063555785.1
+NC_073242.2	Gnomon	CDS	3782834	3782962	.	+	0	ID=cds-XP_063555785.1;Parent=rna-XM_063699715.1;Dbxref=GeneID:129527462,GenBank:XP_063555785.1;Name=XP_063555785.1;gbkey=CDS;gene=LOC129527462;product=hemoglobin subunit alpha;protein_id=XP_063555785.1
+NC_073242.2	Gnomon	gene	3790658	3791553	.	+	.	ID=gene-LOC115931067;Dbxref=GeneID:115931067;Name=LOC115931067;description=hemoglobin subunit alpha;gbkey=Gene;gene=LOC115931067;gene_biotype=protein_coding
+NC_073242.2	Gnomon	mRNA	3790658	3791553	.	+	.	ID=rna-XM_031002843.3;Parent=gene-LOC115931067;Dbxref=GeneID:115931067,GenBank:XM_031002843.3;Name=XM_031002843.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC115931067;model_evidence=Supporting evidence includes similarity to: 99 Proteins%2C 8 long SRA reads;product=hemoglobin subunit alpha;transcript_id=XM_031002843.3
+NC_073242.2	Gnomon	exon	3790658	3790843	.	+	.	ID=exon-XM_031002843.3-1;Parent=rna-XM_031002843.3;Dbxref=GeneID:115931067,GenBank:XM_031002843.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC115931067;product=hemoglobin subunit alpha;transcript_id=XM_031002843.3
+NC_073242.2	Gnomon	exon	3790961	3791165	.	+	.	ID=exon-XM_031002843.3-2;Parent=rna-XM_031002843.3;Dbxref=GeneID:115931067,GenBank:XM_031002843.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC115931067;product=hemoglobin subunit alpha;transcript_id=XM_031002843.3
+NC_073242.2	Gnomon	exon	3791315	3791553	.	+	.	ID=exon-XM_031002843.3-3;Parent=rna-XM_031002843.3;Dbxref=GeneID:115931067,GenBank:XM_031002843.3;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC115931067;product=hemoglobin subunit alpha;transcript_id=XM_031002843.3
+NC_073242.2	Gnomon	CDS	3790749	3790843	.	+	0	ID=cds-XP_030858703.1;Parent=rna-XM_031002843.3;Dbxref=GeneID:115931067,GenBank:XP_030858703.1;Name=XP_030858703.1;gbkey=CDS;gene=LOC115931067;product=hemoglobin subunit alpha;protein_id=XP_030858703.1
+NC_073242.2	Gnomon	CDS	3790961	3791165	.	+	1	ID=cds-XP_030858703.1;Parent=rna-XM_031002843.3;Dbxref=GeneID:115931067,GenBank:XP_030858703.1;Name=XP_030858703.1;gbkey=CDS;gene=LOC115931067;product=hemoglobin subunit alpha;protein_id=XP_030858703.1
+NC_073242.2	Gnomon	CDS	3791315	3791443	.	+	0	ID=cds-XP_030858703.1;Parent=rna-XM_031002843.3;Dbxref=GeneID:115931067,GenBank:XP_030858703.1;Name=XP_030858703.1;gbkey=CDS;gene=LOC115931067;product=hemoglobin subunit alpha;protein_id=XP_030858703.1
+NC_073242.2	Gnomon	gene	3794438	3795362	.	+	.	ID=gene-LOC134757486;Dbxref=GeneID:134757486;Name=LOC134757486;description=hemoglobin subunit alpha-like;gbkey=Gene;gene=LOC134757486;gene_biotype=protein_coding
+NC_073242.2	Gnomon	mRNA	3794438	3795362	.	+	.	ID=rna-XM_063699834.1;Parent=gene-LOC134757486;Dbxref=GeneID:134757486,GenBank:XM_063699834.1;Name=XM_063699834.1;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC134757486;model_evidence=Supporting evidence includes similarity to: 99 Proteins%2C 8 long SRA reads;product=hemoglobin subunit alpha-like;transcript_id=XM_063699834.1
+NC_073242.2	Gnomon	exon	3794438	3794652	.	+	.	ID=exon-XM_063699834.1-1;Parent=rna-XM_063699834.1;Dbxref=GeneID:134757486,GenBank:XM_063699834.1;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC134757486;product=hemoglobin subunit alpha-like;transcript_id=XM_063699834.1
+NC_073242.2	Gnomon	exon	3794770	3794974	.	+	.	ID=exon-XM_063699834.1-2;Parent=rna-XM_063699834.1;Dbxref=GeneID:134757486,GenBank:XM_063699834.1;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC134757486;product=hemoglobin subunit alpha-like;transcript_id=XM_063699834.1
+NC_073242.2	Gnomon	exon	3795124	3795362	.	+	.	ID=exon-XM_063699834.1-3;Parent=rna-XM_063699834.1;Dbxref=GeneID:134757486,GenBank:XM_063699834.1;experiment=COORDINATES: polyA evidence [ECO:0006239];gbkey=mRNA;gene=LOC134757486;product=hemoglobin subunit alpha-like;transcript_id=XM_063699834.1
+NC_073242.2	Gnomon	CDS	3794453	3794652	.	+	0	ID=cds-XP_063555904.1;Parent=rna-XM_063699834.1;Dbxref=GeneID:134757486,GenBank:XP_063555904.1;Name=XP_063555904.1;gbkey=CDS;gene=LOC134757486;product=hemoglobin subunit alpha-like;protein_id=XP_063555904.1
+NC_073242.2	Gnomon	CDS	3794770	3794974	.	+	1	ID=cds-XP_063555904.1;Parent=rna-XM_063699834.1;Dbxref=GeneID:134757486,GenBank:XP_063555904.1;Name=XP_063555904.1;gbkey=CDS;gene=LOC134757486;product=hemoglobin subunit alpha-like;protein_id=XP_063555904.1
+NC_073242.2	Gnomon	CDS	3795124	3795252	.	+	0	ID=cds-XP_063555904.1;Parent=rna-XM_063699834.1;Dbxref=GeneID:134757486,GenBank:XP_063555904.1;Name=XP_063555904.1;gbkey=CDS;gene=LOC134757486;product=hemoglobin subunit alpha-like;protein_id=XP_063555904.1
+NC_073242.2	Gnomon	gene	3797923	3799186	.	+	.	ID=gene-LOC101146261;Dbxref=GeneID:101146261;Name=LOC101146261;description=hemoglobin subunit alpha-3;gbkey=Gene;gene=LOC101146261;gene_biotype=protein_coding
+NC_073242.2	Gnomon	mRNA	3797923	3799186	.	+	.	ID=rna-XM_004056858.5;Parent=gene-LOC101146261;Dbxref=GeneID:101146261,GenBank:XM_004056858.5;Name=XM_004056858.5;gbkey=mRNA;gene=LOC101146261;model_evidence=Supporting evidence includes similarity to: 99 Proteins%2C 1 long SRA read;product=hemoglobin subunit alpha-3;transcript_id=XM_004056858.5
+NC_073242.2	Gnomon	exon	3797923	3798475	.	+	.	ID=exon-XM_004056858.5-1;Parent=rna-XM_004056858.5;Dbxref=GeneID:101146261,GenBank:XM_004056858.5;gbkey=mRNA;gene=LOC101146261;product=hemoglobin subunit alpha-3;transcript_id=XM_004056858.5
+NC_073242.2	Gnomon	exon	3798593	3798797	.	+	.	ID=exon-XM_004056858.5-2;Parent=rna-XM_004056858.5;Dbxref=GeneID:101146261,GenBank:XM_004056858.5;gbkey=mRNA;gene=LOC101146261;product=hemoglobin subunit alpha-3;transcript_id=XM_004056858.5
+NC_073242.2	Gnomon	exon	3798948	3799186	.	+	.	ID=exon-XM_004056858.5-3;Parent=rna-XM_004056858.5;Dbxref=GeneID:101146261,GenBank:XM_004056858.5;gbkey=mRNA;gene=LOC101146261;product=hemoglobin subunit alpha-3;transcript_id=XM_004056858.5
+NC_073242.2	Gnomon	CDS	3798267	3798475	.	+	0	ID=cds-XP_004056906.4;Parent=rna-XM_004056858.5;Dbxref=GeneID:101146261,GenBank:XP_004056906.4;Name=XP_004056906.4;gbkey=CDS;gene=LOC101146261;product=hemoglobin subunit alpha-3;protein_id=XP_004056906.4
+NC_073242.2	Gnomon	CDS	3798593	3798797	.	+	1	ID=cds-XP_004056906.4;Parent=rna-XM_004056858.5;Dbxref=GeneID:101146261,GenBank:XP_004056906.4;Name=XP_004056906.4;gbkey=CDS;gene=LOC101146261;product=hemoglobin subunit alpha-3;protein_id=XP_004056906.4
+NC_073242.2	Gnomon	CDS	3798948	3799076	.	+	0	ID=cds-XP_004056906.4;Parent=rna-XM_004056858.5;Dbxref=GeneID:101146261,GenBank:XP_004056906.4;Name=XP_004056906.4;gbkey=CDS;gene=LOC101146261;product=hemoglobin subunit alpha-3;protein_id=XP_004056906.4
+##sequence-region NC_073243.2 1 120452965
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073244.2 1 80312928
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073245.2 1 84443219
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073246.2 1 59507314
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_086018.1 1 54769797
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073247.2 1 177558554
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_073248.2 1 67405748
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+##sequence-region NC_011120.1 1 16412
+##species https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=9595
+###
