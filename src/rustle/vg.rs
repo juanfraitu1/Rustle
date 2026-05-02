@@ -1160,8 +1160,9 @@ pub fn junction_compatibility(read: &BundleRead, bundle: &Bundle) -> f64 {
 /// A "diagnostic SNP" is a position where one copy has >80% of one allele and
 /// another copy has >80% of a different allele.
 pub struct DiagnosticSnps {
-    /// ref_pos → Vec<(copy_idx_in_family, dominant_base, frequency)>
-    pub positions: HashMap<u64, Vec<(usize, u8, f64)>>,
+    /// ref_pos → Vec<(copy_idx_in_family, dominant_base, frequency)>.
+    /// FxHash-keyed for fast u64 lookup in snp_compatibility's hot loop.
+    pub positions: crate::types::DetHashMap<u64, Vec<(usize, u8, f64)>>,
 }
 
 /// Build diagnostic SNP set for a family group.
@@ -1183,8 +1184,12 @@ pub fn build_diagnostic_snps(
 
     let n_copies = family.bundle_indices.len();
 
-    // Per-copy allele counts: ref_pos → copy_idx → base → count
-    let mut counts: HashMap<u64, Vec<HashMap<u8, u32>>> = HashMap::new();
+    // Per-copy allele counts: ref_pos → copy_idx → base → count.
+    // Use DetHashMap (FxHash) for the position-keyed outer map — called
+    // ~10K times per family during build_diagnostic_snps, so SipHash
+    // overhead matters.
+    let mut counts: crate::types::DetHashMap<u64, Vec<crate::types::DetHashMap<u8, u32>>> =
+        crate::types::DetHashMap::default();
 
     // Step 1: collect positions with ≥ min_support mismatch reads across the
     // family. Random sequencing errors hit any given position with 1-2 reads;
@@ -1195,7 +1200,7 @@ pub fn build_diagnostic_snps(
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
-    let mut mism_counts: HashMap<u64, u32> = HashMap::new();
+    let mut mism_counts: crate::types::DetHashMap<u64, u32> = crate::types::DetHashMap::default();
     for &bi in &family.bundle_indices {
         for read in &bundles[bi].reads {
             for &(ref_pos, _) in &read.mismatches {
@@ -1203,7 +1208,7 @@ pub fn build_diagnostic_snps(
             }
         }
     }
-    let candidates: HashSet<u64> = mism_counts
+    let candidates: crate::types::DetHashSet<u64> = mism_counts
         .iter()
         .filter(|&(_, &c)| c >= min_support)
         .map(|(&p, _)| p)
@@ -1220,8 +1225,12 @@ pub fn build_diagnostic_snps(
         for read in &bundle.reads {
             total_reads_seen += 1;
             total_mismatches_seen += read.mismatches.len();
-            // Per-read mismatch lookup
-            let mut mism_map: HashMap<u64, u8> = HashMap::new();
+            // Per-read mismatch lookup (FxHash for fast u64 keys).
+            let mut mism_map: crate::types::DetHashMap<u64, u8> =
+                crate::types::DetHashMap::with_capacity_and_hasher(
+                    read.mismatches.len(),
+                    crate::types::FixedBuild::default(),
+                );
             for &(p, b) in &read.mismatches {
                 mism_map.insert(p, b);
             }
@@ -1236,7 +1245,7 @@ pub fn build_diagnostic_snps(
                 }
                 let base = mism_map.get(&pos).copied().unwrap_or(b'=');
                 let entry = counts.entry(pos).or_insert_with(|| {
-                    vec![HashMap::new(); n_copies]
+                    vec![crate::types::DetHashMap::default(); n_copies]
                 });
                 if copy_idx < entry.len() {
                     *entry[copy_idx].entry(base).or_insert(0) += 1;
@@ -1252,7 +1261,8 @@ pub fn build_diagnostic_snps(
     }
 
     // Find diagnostic positions: where copies have different dominant alleles.
-    let mut positions: HashMap<u64, Vec<(usize, u8, f64)>> = HashMap::new();
+    let mut positions: crate::types::DetHashMap<u64, Vec<(usize, u8, f64)>> =
+        crate::types::DetHashMap::default();
     for (pos, copy_alleles) in &counts {
         let mut copy_dominants: Vec<(usize, u8, f64)> = Vec::new();
         for (ci, alleles) in copy_alleles.iter().enumerate() {
@@ -1303,8 +1313,20 @@ pub fn snp_compatibility(
     if diagnostic.positions.is_empty() {
         return 1.0; // No info — neutral.
     }
-    // Build mismatch lookup for this read.
-    let mut mism_map: std::collections::HashMap<u64, u8> = std::collections::HashMap::new();
+    // Read-once SNP weights so we don't re-parse env vars per call.
+    let match_bonus: f64 = std::env::var("RUSTLE_VG_SNP_MATCH_BONUS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    let mismatch_penalty: f64 = std::env::var("RUSTLE_VG_SNP_MISMATCH_PENALTY")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.3);
+    // Build mismatch lookup for this read using FxHash (3-5x faster than
+    // std HashMap with SipHash). The map is small (typical PacBio CCS read
+    // has 50-200 mismatches) but this function is in a hot per-(entry,copy)
+    // loop, so the SipHash overhead was real.
+    let mut mism_map: crate::types::DetHashMap<u64, u8> =
+        crate::types::DetHashMap::with_capacity_and_hasher(
+            read.mismatches.len(),
+            crate::types::FixedBuild::default(),
+        );
     for &(p, b) in &read.mismatches {
         mism_map.insert(p, b);
     }
@@ -1330,8 +1352,7 @@ pub fn snp_compatibility(
     if matches + mismatches == 0 {
         return 1.0;
     }
-    // Bonus: each matching diagnostic SNP adds 0.5, each mismatch subtracts 0.3.
-    let bonus = 1.0 + 0.5 * matches as f64 - 0.3 * mismatches as f64;
+    let bonus = 1.0 + match_bonus * matches as f64 - mismatch_penalty * mismatches as f64;
     bonus.max(0.1)
 }
 
@@ -1563,6 +1584,60 @@ fn run_pre_assembly_em_inner(
             }
         }
 
+        // Diagnostic: when running with SNPs, compute what the no-SNP
+        // argmax-copy would have been per read and count how many reads
+        // had their argmax-copy CHANGED by the SNP signal. This is the
+        // measurement of objective 5 ("did SNPs actually shift any read
+        // attributions?") that the prior "reweighted reads" count missed.
+        // Activated by RUSTLE_VG_SNP_TRACE_FLIPS=1.
+        let trace_flips = use_snps && std::env::var_os("RUSTLE_VG_SNP_TRACE_FLIPS").is_some();
+        let mut snp_flip_count = 0usize;
+        if trace_flips {
+            // Re-run EM without SNP cache on a copy of the entries to see
+            // what the argmax would have been. Cheap: same iteration loop,
+            // just zero out the snp factor multiplication.
+            let mut shadow_entries: Vec<(u64, Vec<f64>)> = entries.iter()
+                .map(|(rnh, e)| (*rnh, vec![1.0 / e.weights.len() as f64; e.weights.len()]))
+                .collect();
+            let no_snp_cache: Vec<Vec<f64>> = Vec::new();
+            for _ in 0..max_iter {
+                let mut max_d: f64 = 0.0;
+                for (ei, (_rnh, w)) in shadow_entries.iter_mut().enumerate() {
+                    let entry = &entries[ei].1;
+                    let mut scores: Vec<f64> = Vec::with_capacity(entry.locs.len());
+                    for &(global_bi, ri) in &entry.locs {
+                        if ri >= bundles[global_bi].reads.len() {
+                            scores.push(0.1); continue;
+                        }
+                        let read = &bundles[global_bi].reads[ri];
+                        let bundle = &bundles[global_bi];
+                        let compat = junction_compatibility(read, bundle);
+                        let context: f64 = bundle.junction_stats.iter()
+                            .map(|(_, st)| st.nreads_good).sum::<f64>().max(1.0);
+                        scores.push((compat + 0.01) * context.ln().max(1.0));
+                    }
+                    let total: f64 = scores.iter().sum();
+                    if total <= 0.0 { continue; }
+                    for i in 0..scores.len() {
+                        let new_w = scores[i] / total;
+                        let d = (new_w - w[i]).abs();
+                        if d > max_d { max_d = d; }
+                        w[i] = new_w;
+                    }
+                }
+                if max_d < convergence_thr { break; }
+            }
+            let _ = no_snp_cache;
+            // Compare argmax of each entry between SNP and no-SNP runs.
+            for (ei, (_, snp_e)) in entries.iter().enumerate() {
+                let snp_argmax = snp_e.weights.iter().enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|x| x.0);
+                let no_snp_argmax = shadow_entries[ei].1.iter().enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|x| x.0);
+                if snp_argmax != no_snp_argmax { snp_flip_count += 1; }
+            }
+        }
+
         // Apply final weights.
         let mut n_reweighted = 0usize;
         for (_rnh, entry) in &entries {
@@ -1579,6 +1654,12 @@ fn run_pre_assembly_em_inner(
             }
         }
         result.reads_reweighted = n_reweighted;
+        if trace_flips && snp_flip_count > 0 {
+            eprintln!(
+                "[VG-SNP-FLIP] family {}: {} reads had argmax-copy changed by SNP signal (out of {} multi-mappers)",
+                family.family_id, snp_flip_count, entries.len()
+            );
+        }
 
         if n_reweighted > 0 {
             let bi_str: Vec<String> = family

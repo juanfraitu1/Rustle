@@ -1,6 +1,6 @@
 //! Rescue pipeline: read prefilter → HMM scoring → clustering → synthetic bundle emission.
 
-use crate::types::{Bundle, BundleRead, JunctionStats, RunConfig};
+use crate::types::{Bundle, BundleRead, DetHashMap, DetHashSet, JunctionStats, RunConfig};
 use crate::vg::{FamilyGroup, NovelCandidate};
 use crate::vg_hmm::diagnostic::{classify_internal, RescueClass};
 use crate::vg_hmm::family_graph::{FamilyGraph, NodeIdx};
@@ -35,7 +35,7 @@ fn fnv1a64(s: &[u8]) -> u64 {
 ///   `family_kmers`.
 pub fn prefilter_read(
     seq: &[u8],
-    family_kmers: &std::collections::HashSet<u64>,
+    family_kmers: &DetHashSet<u64>,
     k: usize,
     min_hits: usize,
 ) -> (bool, usize) {
@@ -253,7 +253,7 @@ pub fn run_rescue_with_bundles(
     let min_kmer_hits: usize = 3;
 
     use rayon::prelude::*;
-    let built: Vec<Option<(FamilyGraph, std::collections::HashSet<u64>)>> = families
+    let built: Vec<Option<(FamilyGraph, DetHashSet<u64>)>> = families
         .par_iter()
         .map(|family| {
             let fg = match crate::vg_hmm::family_graph::build_family_graph(
@@ -266,7 +266,7 @@ pub fn run_rescue_with_bundles(
                 Ok(g) => g,
                 Err(_) => return None,
             };
-            let mut kmers: std::collections::HashSet<u64> = std::collections::HashSet::new();
+            let mut kmers: DetHashSet<u64> = DetHashSet::default();
             for node in &fg.nodes {
                 for (_, seq) in &node.per_copy_sequences {
                     if seq.len() >= kmer_len {
@@ -283,7 +283,7 @@ pub fn run_rescue_with_bundles(
         .collect();
 
     let mut family_graphs: Vec<FamilyGraph> = Vec::with_capacity(families.len());
-    let mut family_kmer_sets: Vec<std::collections::HashSet<u64>> =
+    let mut family_kmer_sets: Vec<DetHashSet<u64>> =
         Vec::with_capacity(families.len());
     let mut n_skipped = 0usize;
     for entry in built {

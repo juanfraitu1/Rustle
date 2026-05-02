@@ -8100,7 +8100,7 @@ pub fn run<P: AsRef<Path>>(
         // Stripping secondaries from a dropped-family bundle made
         // LOC134757307 etc. lose path emission on full GGO.bam even
         // though they emit fine on chr19-only.
-        let raw_family_bundles: std::collections::HashSet<usize> = raw_families
+        let raw_family_bundles: crate::types::DetHashSet<usize> = raw_families
             .iter()
             .flat_map(|f| f.bundle_indices.iter().copied())
             .collect();
@@ -8126,12 +8126,14 @@ pub fn run<P: AsRef<Path>>(
         }
         (families, raw_family_bundles)
     } else {
-        (Vec::new(), std::collections::HashSet::new())
+        (Vec::new(), crate::types::DetHashSet::default())
     };
     let vg_raw_family_bundle_set = vg_families.1;
     let vg_families = vg_families.0;
     // Build set of bundle indices that belong to a kept family group (for deferred processing).
-    let vg_family_bundle_set: std::collections::HashSet<usize> = vg_families
+    // FxHash is ~3-5x faster than SipHash here; the strip loop calls
+    // .contains() once per bundle (~40K times on full GGO.bam).
+    let vg_family_bundle_set: crate::types::DetHashSet<usize> = vg_families
         .iter()
         .flat_map(|f| f.bundle_indices.iter().copied())
         .collect();
