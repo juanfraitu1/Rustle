@@ -326,8 +326,15 @@ pub fn run_rescue_with_bundles(
     let mut reader = noodles_bam::io::Reader::from(bgzf);
     let header = reader.read_header()?;
 
-    // Threshold: any score above NEG_INF is kept for now; tighten later.
-    let min_loglik: f64 = -1000.0;
+    // HMM forward-log-lik threshold for accepting a rescued read. Scores
+    // are sums of per-base log-probs; a typical 2kb read has ~ -2000 to
+    // -3000 against a well-fit family. Default cutoff is generous (-5000)
+    // so the cluster-size filter below does most of the false-positive
+    // rejection. Override with RUSTLE_VG_RESCUE_MIN_LOGLIK=<f64>.
+    let min_loglik: f64 = std::env::var("RUSTLE_VG_RESCUE_MIN_LOGLIK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(-5000.0);
 
     // (read_name, sequence, candidate_family_indices_after_prefilter)
     let mut unmapped_reads: Vec<(String, Vec<u8>, Vec<usize>)> = Vec::new();
@@ -473,6 +480,32 @@ pub fn run_rescue_with_bundles(
             Some((read_name.clone(), family_id, vpath, best_score))
         }).collect();
 
+    // Score-distribution diagnostic: helps tune min_loglik and explains
+    // why rescue rejects reads. Counts per-bucket of the best forward log-lik.
+    let mut score_dist: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
+    let mut n_no_candidate = 0usize;
+    for (_rn, _seq, cand_fams) in &unmapped_reads {
+        if cand_fams.is_empty() { n_no_candidate += 1; }
+    }
+    for entry in scored_per_read.iter() {
+        match entry {
+            None => *score_dist.entry("rejected_below_min_loglik").or_insert(0) += 1,
+            Some((_, _, _, s)) => {
+                let bucket = if *s > -500.0 { "score>-500" }
+                    else if *s > -1500.0 { "-1500<score<=-500" }
+                    else if *s > -3000.0 { "-3000<score<=-1500" }
+                    else if *s > -5000.0 { "-5000<score<=-3000" }
+                    else { "score<=-5000" };
+                *score_dist.entry(bucket).or_insert(0) += 1;
+            }
+        }
+    }
+    let n_accepted: usize = scored_per_read.iter().filter(|x| x.is_some()).count();
+    eprintln!(
+        "[VG-HMM] HMM scoring: {} reads scored ({} no candidate fams); {} accepted at min_loglik={}; distribution: {:?}",
+        unmapped_reads.len(), n_no_candidate, n_accepted, min_loglik, score_dist
+    );
+
     let mut candidates: Vec<NovelCandidate> = Vec::new();
     let mut scored_reads: Vec<ScoredRead> = Vec::new();
     for entry in scored_per_read.into_iter().flatten() {
@@ -508,8 +541,15 @@ pub fn run_rescue_with_bundles(
         }
     }
 
-    let min_reads_per_cluster: usize = 3;
-    let hard_min_reads: usize = 3;
+    // Cluster-size thresholds for synthesis. Tunable via env vars to
+    // explore single-paralog LOO recovery — defaults are conservative so
+    // the rescue doesn't over-create synthetic bundles from low-coverage
+    // alignment noise. RUSTLE_VG_RESCUE_MIN_CLUSTER lowers to 1 for LOO
+    // testing of low-expression paralogs.
+    let min_reads_per_cluster: usize = std::env::var("RUSTLE_VG_RESCUE_MIN_CLUSTER")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+    let hard_min_reads: usize = std::env::var("RUSTLE_VG_RESCUE_HARD_MIN")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
     let cluster_window: u64 = 20;
     let mut synthetic_bundles: Vec<Bundle> = Vec::new();
     for (_family_id, (fg_idx, reads_with_spans)) in &per_family {
@@ -586,6 +626,15 @@ pub fn synthesize_bundles(
         // Build one BundleRead per member read.
         let exons: Vec<(u64, u64)> = path_nodes.iter().map(|n| n.span).collect();
 
+        // Derive junctions from consecutive exons. Without these, the
+        // assembly's splice graph has no edges and emits zero transcripts
+        // from the synthetic bundle. Each junction is (donor=prev_exon_end,
+        // acceptor=next_exon_start).
+        let synth_junctions: Vec<crate::types::Junction> = exons.windows(2)
+            .map(|w| crate::types::Junction { donor: w[0].1, acceptor: w[1].0 })
+            .collect();
+        let synth_junction_valid: Vec<bool> = vec![true; synth_junctions.len()];
+
         let reads: Vec<BundleRead> = member_indices
             .iter()
             .enumerate()
@@ -602,9 +651,9 @@ pub fn synthesize_bundles(
                     ref_start: min_start,
                     ref_end: max_end,
                     exons: exons.clone(),
-                    junctions: Vec::new(),
-                    junction_valid: Vec::new(),
-                    junctions_raw: Vec::new(),
+                    junctions: synth_junctions.clone(),
+                    junction_valid: synth_junction_valid.clone(),
+                    junctions_raw: synth_junctions.clone(),
                     junctions_del: Vec::new(),
                     weight: 1.0,
                     is_reverse: strand == '-',
@@ -804,6 +853,17 @@ pub fn synthesize_bundles_refined(
         let bundle_start = min_start.saturating_sub(1000);
         let bundle_end   = max_end + 1000;
 
+        // Derive junctions from consecutive refined exons. Without these,
+        // the assembly's splice graph has no edges and emits zero
+        // transcripts from the synthetic bundle (the merge step recomputes
+        // junction_stats from `r.junctions`, so leaving them empty kills
+        // the rescue's downstream effect).
+        let synth_junctions: Vec<crate::types::Junction> = refined_exons
+            .windows(2)
+            .map(|w| crate::types::Junction { donor: w[0].1, acceptor: w[1].0 })
+            .collect();
+        let synth_junction_valid: Vec<bool> = vec![true; synth_junctions.len()];
+
         let reads: Vec<BundleRead> = member_indices.iter().enumerate().map(|(i, &ri)| {
             let read_name = rescued[ri].0.clone();
             BundleRead {
@@ -813,8 +873,10 @@ pub fn synthesize_bundles_refined(
                 ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
                 ref_start: min_start, ref_end: max_end,
                 exons: refined_exons.clone(),
-                junctions: Vec::new(), junction_valid: Vec::new(),
-                junctions_raw: Vec::new(), junctions_del: Vec::new(),
+                junctions: synth_junctions.clone(),
+                junction_valid: synth_junction_valid.clone(),
+                junctions_raw: synth_junctions.clone(),
+                junctions_del: Vec::new(),
                 weight: 1.0, is_reverse: strand == '-', strand,
                 has_poly_start: false, has_poly_end: false,
                 has_poly_start_aligned: false, has_poly_start_unaligned: false,

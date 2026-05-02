@@ -1194,6 +1194,12 @@ fn merge_region_outer_bundles(
         let mut contributing_neutral = 0usize;
         let mut contributing_plus = 0usize;
         let mut contributing_other = 0usize;
+        // Preserve synthetic / rescue_class through the merge: if ANY
+        // contributing bundle was a VG-HMM rescue synthetic, the merged
+        // bundle should still be marked synthetic so its transcripts get
+        // `copy_status "novel"` in the GTF (otherwise the rescue is a no-op).
+        let mut any_synthetic = false;
+        let mut merged_rescue_class: Option<crate::vg_hmm::diagnostic::RescueClass> = None;
         while i < bundles.len()
             && bundles[i].chrom == chrom
             && bundles[i].start == start
@@ -1205,6 +1211,10 @@ fn merge_region_outer_bundles(
                 '.' => contributing_neutral += 1,
                 '+' => contributing_plus += 1,
                 _ => contributing_other += 1,
+            }
+            if bundles[i].synthetic { any_synthetic = true; }
+            if merged_rescue_class.is_none() {
+                merged_rescue_class = bundles[i].rescue_class;
             }
             reads.extend(std::mem::take(&mut bundles[i].reads));
             i += 1;
@@ -1305,8 +1315,8 @@ fn merge_region_outer_bundles(
             bundlenodes: None,
             read_bnodes: None,
             bnode_colors: None,
-            synthetic: false,
-            rescue_class: None,
+            synthetic: any_synthetic,
+            rescue_class: merged_rescue_class,
         });
     }
 
@@ -5432,6 +5442,13 @@ fn extract_bundle_transcripts_for_graph(
     // `synthetic: false`; we stamp the flag here, at the single choke-point
     // that owns both the bundle and the freshly-produced Vec<Transcript>.
     if bundle.synthetic {
+        if std::env::var_os("RUSTLE_VG_HMM_DEBUG_SYNTHETIC").is_some() {
+            eprintln!(
+                "[VG-HMM-DEBUG] synthetic bundle {}:{}-{}:{} produced {} transcripts (n_reads={}, n_juncs={})",
+                bundle.chrom, bundle.start, bundle.end, bundle.strand,
+                txs.len(), bundle.reads.len(), bundle.junction_stats.len(),
+            );
+        }
         for tx in &mut txs {
             tx.synthetic = true;
         }
@@ -8260,8 +8277,21 @@ pub fn run<P: AsRef<Path>>(
             &vg_bundles_for_novel,
             &config,
         ) {
-            Ok((_, synthetic_bundles)) => {
+            Ok((_, mut synthetic_bundles)) => {
                 if !synthetic_bundles.is_empty() {
+                    let n = synthetic_bundles.len();
+                    // Synthetic bundles are constructed with empty
+                    // `junction_stats` (rescue.rs line ~704). Rebuild from
+                    // the rescued reads' junctions so the assembly's splice
+                    // graph has something to work with — without this, the
+                    // bundles produce 0 transcripts and the rescue is a no-op.
+                    for sb in &mut synthetic_bundles {
+                        crate::bundle::recompute_junction_stats(sb, &config);
+                    }
+                    eprintln!(
+                        "[VG-HMM] integrated {} synthetic bundle(s) into assembly (junction_stats rebuilt)",
+                        n
+                    );
                     bundles.extend(synthetic_bundles);
                 }
             }
@@ -9045,7 +9075,18 @@ pub fn run<P: AsRef<Path>>(
     let snapshot_all = std::env::var_os("RUSTLE_SNAPSHOT_ALL").is_some();
     use rayon::prelude::*;
     let bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
+    if std::env::var_os("RUSTLE_VG_HMM_DEBUG_SYNTHETIC").is_some() {
+        let n_synth = bundles_vec.iter().filter(|(_, b)| b.synthetic).count();
+        eprintln!("[VG-HMM-DEBUG] par_iter starting with {} bundles total, {} synthetic", bundles_vec.len(), n_synth);
+    }
     bundles_vec.into_par_iter().try_for_each(|(bundle_idx, mut bundle)| -> Result<()> {
+        if bundle.synthetic && std::env::var_os("RUSTLE_VG_HMM_DEBUG_SYNTHETIC").is_some() {
+            eprintln!(
+                "[VG-HMM-DEBUG] entering par_iter for synthetic bundle bi={} {}:{}-{}:{} reads={} juncs={}",
+                bundle_idx, bundle.chrom, bundle.start, bundle.end, bundle.strand,
+                bundle.reads.len(), bundle.junction_stats.len(),
+            );
+        }
         let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
         let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
             LruCache::new(consensus_cache_capacity());
@@ -12240,8 +12281,12 @@ pub fn run<P: AsRef<Path>>(
                     },
                     read_bnodes: Some(sub_read_bnodes.clone()),
                     bnode_colors: Some(sbr.bnode_colors.clone()),
-                    synthetic: false,
-                    rescue_class: None,
+                    // Inherit synthetic flag and rescue_class from the parent
+                    // bundle. Sub-bundles produced for VG-HMM rescue bundles
+                    // need to carry the flag forward so transcripts get
+                    // marked `copy_status "novel"` in the GTF.
+                    synthetic: bundle.synthetic,
+                    rescue_class: bundle.rescue_class,
                 };
 
                 // DEBUG_BUNDLE: emit bundle summary matching expected format.
