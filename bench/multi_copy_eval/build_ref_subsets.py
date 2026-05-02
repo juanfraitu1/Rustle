@@ -11,6 +11,12 @@ FAMILIES = {
     "GOLGA8": re.compile(r"golgin subfamily A member 8", re.IGNORECASE),
     "AMY":    re.compile(r"alpha-amylase|amylase alpha [12]", re.IGNORECASE),
     "TBC1D3": re.compile(r"TBC1 domain family member 3[A-Z]?-?(like)?$|TBC1 domain family member 3[A-Z]?\b(?!.*23)", re.IGNORECASE),
+    # Expanded panel — additional known multi-copy families.
+    "NBPF":   re.compile(r"neuroblastoma breakpoint family", re.IGNORECASE),
+    "OR":     re.compile(r"olfactory receptor", re.IGNORECASE),  # 500+ paralogs, mostly intronless
+    "MUC":    re.compile(r"\bmucin\b", re.IGNORECASE),
+    "HBB_HBA":re.compile(r"hemoglobin subunit (alpha|beta|gamma|delta|epsilon|zeta)", re.IGNORECASE),
+    "KRABZNF":re.compile(r"\bKRAB\b", re.IGNORECASE),
 }
 
 # Pass 1: collect gene IDs per family.
