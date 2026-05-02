@@ -8178,11 +8178,12 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: multi-mapping read resolution ──────────────────────
-    // For VgSolver::EmHmm, collect raw read sequences for multi-mappers via a
-    // dedicated BAM scan (one pass; primary alignments only — secondaries
-    // share read_name with their primary so we get the same sequence).
+    // For VgSolver::EmHmm or VgSolver::Auto (which may dispatch families to
+    // HMM), collect raw read sequences for multi-mappers via a dedicated
+    // BAM scan (one pass; primary alignments only — secondaries share
+    // read_name with their primary so we get the same sequence).
     if config.vg_mode
-        && config.vg_solver == crate::types::VgSolver::EmHmm
+        && matches!(config.vg_solver, crate::types::VgSolver::EmHmm | crate::types::VgSolver::Auto)
         && !vg_families.is_empty()
     {
         let needed_hashes: std::collections::HashSet<u64> = vg_families.iter()
@@ -8323,6 +8324,113 @@ pub fn run<P: AsRef<Path>>(
                         config.vg_em_max_iter,
                     )
                 }
+            }
+            VgSolver::Auto => {
+                // Per-family dispatch. See vg.rs::classify_family_for_em
+                // and project_novel_copy_rescue.md for the empirical
+                // basis of these routing thresholds.
+                let has_genome = config.genome_fasta.is_some();
+                let mut hmm_families: Vec<crate::vg::FamilyGroup> = Vec::new();
+                let mut heuristic_families: Vec<crate::vg::FamilyGroup> = Vec::new();
+                let mut skip_counts: std::collections::BTreeMap<&str, usize> =
+                    std::collections::BTreeMap::new();
+                for fam in &vg_families {
+                    match crate::vg::classify_family_for_em(
+                        fam, &bundles,
+                        config.vg_em_max_copies,
+                        config.vg_em_hmm_max_copies,
+                        config.vg_em_skip_intronless,
+                        has_genome,
+                    ) {
+                        crate::vg::EmRoute::Skip(reason) => {
+                            *skip_counts.entry(reason).or_insert(0) += 1;
+                        }
+                        crate::vg::EmRoute::Heuristic => heuristic_families.push(fam.clone()),
+                        crate::vg::EmRoute::Hmm => hmm_families.push(fam.clone()),
+                    }
+                }
+                eprintln!(
+                    "[VG] auto-solver: {} families → heuristic, {} → HMM, {} skipped {:?}",
+                    heuristic_families.len(), hmm_families.len(),
+                    skip_counts.values().sum::<usize>(),
+                    skip_counts,
+                );
+
+                // Run heuristic EM on the larger / high-similarity bucket.
+                let mut em_results: Vec<crate::vg::EmResult> = if !heuristic_families.is_empty() {
+                    crate::vg::run_pre_assembly_em(
+                        &heuristic_families,
+                        &mut bundles,
+                        config.vg_em_max_iter,
+                    )
+                } else {
+                    Vec::new()
+                };
+
+                // Run HMM-EM on medium-divergence bucket (only if genome available
+                // and sequences were collected — same prerequisites as the explicit
+                // em-hmm solver).
+                if !hmm_families.is_empty() && has_genome
+                    && !config.vg_multimap_sequences.is_empty()
+                {
+                    // Mirror the EmHmm branch's strand partitioning + family-graph build.
+                    let em_hmm_genome: Option<crate::genome::GenomeIndex> =
+                        if vg_snp_genome.is_some() {
+                            None
+                        } else if let Some(p) = config.genome_fasta.as_ref() {
+                            crate::genome::GenomeIndex::from_fasta(p).ok()
+                        } else {
+                            None
+                        };
+                    let genome_ref: Option<&crate::genome::GenomeIndex> = em_hmm_genome
+                        .as_ref()
+                        .or(vg_snp_genome.as_ref());
+                    let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
+                    for fam in hmm_families.iter() {
+                        let parts = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
+                        em_hmm_partitions.extend(parts);
+                    }
+                    use rayon::prelude::*;
+                    let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
+                        em_hmm_partitions.par_iter()
+                            .map(|fam| {
+                                if genome_ref.is_none() { return None; }
+                                match crate::vg_hmm::family_graph::build_family_graph(
+                                    fam, &bundles, genome_ref, 0.30, 0.30,
+                                ) {
+                                    Ok(mut fg) => {
+                                        if crate::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).is_err() {
+                                            return None;
+                                        }
+                                        Some(fg)
+                                    }
+                                    Err(_) => None,
+                                }
+                            })
+                            .collect();
+                    let mut hmm_results = crate::vg::run_pre_assembly_em_hmm(
+                        &em_hmm_partitions,
+                        &mut bundles,
+                        &family_graphs,
+                        &config.vg_multimap_sequences,
+                        config.vg_em_max_iter,
+                    );
+                    em_results.append(&mut hmm_results);
+                } else if !hmm_families.is_empty() {
+                    eprintln!(
+                        "[VG] auto: HMM bucket has {} families but {}; falling back to heuristic",
+                        hmm_families.len(),
+                        if !has_genome { "no --genome-fasta" }
+                        else { "no multi-mapper sequences collected" }
+                    );
+                    let mut fallback = crate::vg::run_pre_assembly_em(
+                        &hmm_families,
+                        &mut bundles,
+                        config.vg_em_max_iter,
+                    );
+                    em_results.append(&mut fallback);
+                }
+                em_results
             }
             VgSolver::Flow => {
                 // Flow-based redistribution requires two-pass assembly.

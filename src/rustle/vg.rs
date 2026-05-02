@@ -28,7 +28,7 @@ fn fnv1a64(s: &[u8]) -> u64 {
 // ── Data structures ──────────────────────────────────────────────────────────
 
 /// A group of bundles linked by multi-mapping reads (gene family copies).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FamilyGroup {
     pub family_id: usize,
     /// Indices into the global bundle list.
@@ -1253,6 +1253,61 @@ pub fn run_pre_assembly_em(
     max_iter: usize,
 ) -> Vec<EmResult> {
     run_pre_assembly_em_inner(families, bundles, max_iter, false)
+}
+
+/// Per-family routing decision used by `--vg-solver auto` and applied as a
+/// noise-filter for the explicit `em` / `em-hmm` solvers. See
+/// `project_novel_copy_rescue.md` and the loo_assembly cross-family results
+/// for the empirical basis of these thresholds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmRoute {
+    /// Skip — too noisy or wrong shape for any EM.
+    Skip(&'static str),
+    /// Use heuristic junction-based EM (fast, good for high-similarity
+    /// paralogs and large families).
+    Heuristic,
+    /// Use HMM-based EM (sequence-aware, good for medium-divergence
+    /// paralogs in 30-90% pairwise-id band).
+    Hmm,
+}
+
+/// Decide per-family routing.
+///
+/// Skip rules:
+///   - `n_copies > max_copies` (default 20): mtDNA, megafamilies, alignment artifacts.
+///   - `skip_intronless && all bundles have empty junction_stats`: intronless paralogs
+///     (e.g. olfactory receptors) yield degenerate single-node family graphs.
+///
+/// Otherwise route to:
+///   - `Hmm` if `n_copies <= hmm_max_copies` and `has_genome` (HMM scoring needs profiles).
+///   - `Heuristic` otherwise (too large for HMM, or no genome — junctions still informative).
+pub fn classify_family_for_em(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    max_copies: usize,
+    hmm_max_copies: usize,
+    skip_intronless: bool,
+    has_genome: bool,
+) -> EmRoute {
+    let n_copies = family.bundle_indices.len();
+    if n_copies > max_copies {
+        return EmRoute::Skip("too_many_copies");
+    }
+    if n_copies < 2 {
+        return EmRoute::Skip("singleton");
+    }
+    if skip_intronless {
+        let any_introns = family.bundle_indices.iter()
+            .any(|&bi| bundles.get(bi).map(|b| !b.junction_stats.is_empty()).unwrap_or(false));
+        if !any_introns {
+            return EmRoute::Skip("intronless");
+        }
+    }
+    if n_copies <= hmm_max_copies && has_genome {
+        EmRoute::Hmm
+    } else {
+        EmRoute::Heuristic
+    }
 }
 
 /// EM with optional SNP integration.

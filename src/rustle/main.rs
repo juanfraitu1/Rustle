@@ -422,6 +422,23 @@ struct Args {
     /// `--genome-fasta` to verify novel-copy recovery from sequence alone.
     #[arg(long = "vg-mask-region", value_name = "CHROM:START-END")]
     vg_mask_region: Vec<String>,
+
+    /// Skip EM on families with more than N copies. Default 20 — bigger
+    /// groups are typically noise (mtDNA, megafamilies) where EM is either
+    /// uninformative or computationally infeasible.
+    #[arg(long = "vg-em-max-copies", default_value_t = 20)]
+    vg_em_max_copies: usize,
+
+    /// Cap for routing a family to HMM-EM under `--vg-solver auto`.
+    /// Default 10 — HMM scoring scales as O(reads × copies × seq × profile);
+    /// above this, fall back to heuristic EM for the family.
+    #[arg(long = "vg-em-hmm-max-copies", default_value_t = 10)]
+    vg_em_hmm_max_copies: usize,
+
+    /// Skip EM on intronless families (default true). Single-exon paralogs
+    /// (olfactory receptors etc.) yield degenerate family graphs.
+    #[arg(long = "vg-em-no-skip-intronless")]
+    vg_em_no_skip_intronless: bool,
 }
 
 fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
@@ -625,6 +642,9 @@ pub fn run_cli() -> anyhow::Result<()> {
             }
             out
         },
+        vg_em_max_copies: args.vg_em_max_copies,
+        vg_em_hmm_max_copies: args.vg_em_hmm_max_copies,
+        vg_em_skip_intronless: !args.vg_em_no_skip_intronless,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

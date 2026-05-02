@@ -676,6 +676,13 @@ pub enum VgSolver {
     /// scoring. Requires read sequences for multi-mappers (collected at BAM
     /// parse) and a fitted family-graph HMM per family group.
     EmHmm,
+    /// Per-family dispatch: HMM for medium-divergence multi-copy families
+    /// (2..=10 copies, has junctions, --genome-fasta provided); heuristic
+    /// EM for the rest; skip noise families (n_copies > max, intronless).
+    /// See loo_assembly cross-family results — HMM only pays off in the
+    /// 30-90% pairwise-id band; cheaper for the high-similarity end and
+    /// useless for intronless / extreme-divergence cases.
+    Auto,
     /// Flow-based redistribution: two-pass assembly, redistribute proportional to transcript coverage.
     Flow,
 }
@@ -693,8 +700,9 @@ impl std::str::FromStr for VgSolver {
             "none" | "off" | "discover" => Ok(Self::None),
             "em" => Ok(Self::Em),
             "em-hmm" | "em_hmm" | "emhmm" | "hmm" => Ok(Self::EmHmm),
+            "auto" => Ok(Self::Auto),
             "flow" => Ok(Self::Flow),
-            _ => Err(format!("unknown VG solver '{}': expected none, em, em-hmm, or flow", s)),
+            _ => Err(format!("unknown VG solver '{}': expected none, em, em-hmm, auto, or flow", s)),
         }
     }
 }
@@ -705,6 +713,7 @@ impl std::fmt::Display for VgSolver {
             Self::None => write!(f, "none"),
             Self::Em => write!(f, "em"),
             Self::EmHmm => write!(f, "em-hmm"),
+            Self::Auto => write!(f, "auto"),
             Self::Flow => write!(f, "flow"),
         }
     }
@@ -896,6 +905,21 @@ pub struct RunConfig {
     /// Useful for verifying `--vg-discover-novel` actually recovers a paralog
     /// from its sequence alone. Repeatable: `--vg-mask-region chrom:start-end`.
     pub vg_mask_regions: Vec<(String, u64, u64)>,
+    /// Skip families with > N copies during EM (`--vg-em-max-copies`).
+    /// Default 20 — bigger groups are usually noise (mtDNA, repetitive
+    /// elements, very large gene-family clusters where pairwise-ID is
+    /// either ~100% or below useful threshold).
+    pub vg_em_max_copies: usize,
+    /// Cap for routing a family to HMM-EM under `--vg-solver auto`.
+    /// Default 10 — HMM scoring scales as O(reads × copies × seq × profile);
+    /// medium families fit, megafamilies don't.
+    pub vg_em_hmm_max_copies: usize,
+    /// Skip intronless families during EM (`--vg-em-skip-intronless`).
+    /// Default true — intronless paralogs (e.g. olfactory receptors) yield
+    /// degenerate single-node family graphs that are uninformative for
+    /// HMM scoring. Per the loo_assembly cross-family test, OR cluster:
+    /// 0/0 reads rescued.
+    pub vg_em_skip_intronless: bool,
 }
 
 impl RunConfig {
@@ -1128,6 +1152,9 @@ impl Default for RunConfig {
             vg_rescue_min_loglik: 30.0,
             vg_multimap_sequences: std::collections::HashMap::new(),
             vg_mask_regions: Vec::new(),
+            vg_em_max_copies: 20,
+            vg_em_hmm_max_copies: 10,
+            vg_em_skip_intronless: true,
         }
     }
 }
