@@ -150,12 +150,14 @@ paralog count tied at 6 (different alternative isoforms found).
      LOC115930772 (5/7), LOC115930818 (2/5), LOC101140620 (7/7),
      LOC134757625 (6/67, where 67 includes secondaries),
      LOC101137218 (5/66). These are the depth-aware-bundling targets.
-   - **Locus merging (high cov but misattributed, 1+ paralogs)**:
-     GOLGA6L7 has **52 primary reads** but its assembled transcript
-     spans 29803-29861 (a 58kb interval covering GOLGA6L7 +
-     neighbors). gffcompare attributes it to a single ref locus,
-     leaving GOLGA6L7 as "missed". Real signal exists; it's a
-     transcript-granularity failure.
+   - **Silent paralog with antisense expression (1 paralog)**: GOLGA6L7
+     (chr19 29848-29854, `-` strand) has 52 primary reads at its range
+     but ALL on `+` strand (alignment AND `ts:A:+` tag). They belong to
+     `LOC115930831` — an overlapping `+`-strand lncRNA at 29838-29861.
+     Both rustle and ST correctly assemble the lncRNA on `+` and
+     correctly emit nothing for GOLGA6L7 (which has 0 `-`-strand reads
+     in this BAM). gffcompare's locus-overlap matching can't tell the
+     two genes apart, so it appears as a "miss". Not a tool bug.
 
    The +10 paralog gain from rustle's multi-mapper EM (vs ST) directly
    addresses the low-cov-assembly-gap class — by preserving cross-
