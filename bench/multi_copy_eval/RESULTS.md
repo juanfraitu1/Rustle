@@ -68,35 +68,47 @@ From gffcompare `Matching transcripts:` field — exact intron-chain match.
    lower-coverage data, a stricter junction-tie scenario, or per-copy
    TPM evaluation rather than locus presence.
 
-3. **`--vg` cross-mapping noise was a real bug — refined to commit `5c8e401`.**
-   The original e22ad2b "blunt" fix stripped secondaries from ALL bundles,
-   recovering GOLGA6L10 but collateral-damaging rustle's multi-mapper-EM
-   advantages (lost LOC129523543 in GOLGA6 + 1 GOLGA8 paralog). Net 0.
+3. **`--vg` cross-mapping noise — partial fix in commit `5c8e401`.**
+   The default behavior now rebuilds `junction_stats` for non-family
+   bundles after stripping secondaries (the previous strip touched only
+   `bundle.reads`, leaving stale secondary-derived junctions in
+   `junction_stats` that polluted the splice graph). Family bundles are
+   left untouched (secondaries are real EM evidence there).
 
-   The correct fix (5c8e401, default behavior) is more conservative:
-     - non-family bundles: strip secondaries AND rebuild `junction_stats`
-       from primary reads (the previous strip touched only `bundle.reads`,
-       leaving stale secondary-derived junctions polluting the splice graph)
-     - family bundles: untouched. Secondaries stay (EM needs them).
+   chr19-extracted BAM (one chromosome, no cross-chrom multi-mappers):
 
-   chr19 GGO_19.bam (extracted from full GGO.bam) per-paralog:
+   | family  | ST | rustle pre-fix | conservative-fix |
+   |---|---|---|---|
+   | GOLGA8  | 8  | 9              | **12** (+3 unique to rustle) |
 
-   | family  | ST | rustle pre-fix | blunt | **CONSERVATIVE** |
-   |---|---|---|---|---|
-   | GOLGA6  | 5  | 5              | 5     | 5                |
-   | GOLGA8  | 8  | 9              | 8     | **12**           |
-   | AMY     | 0  | 0              | 0     | 0 (chr1)         |
-   | TBC1D3  | 0  | 0              | 0     | 0 (chr17)        |
+   Full GGO.bam (whole genome — the actual benchmark):
 
-   **+3 GOLGA8 paralogs unique to rustle** with conservative fix:
-   LOC134757307, LOC129527021, LOC115930779 — all sit in non-family
-   bundles previously polluted by cross-mapped secondaries from sister
-   paralogs; rebuilding `junction_stats` after the strip clears the noise.
+   | family  | ST | rustle pre-fix | conservative-fix |
+   |---|---|---|---|
+   | GOLGA6  | 6  | 6              | 6 |
+   | GOLGA8  | 8  | 9              | 9 |
+   | AMY     | 2  | 2              | 2 |
+   | TBC1D3  | 7  | 7              | 7 |
 
-   GOLGA6L10 still missed by default — it lives inside a GOLGA6 family
-   bundle and the conservative fix won't touch family bundles. Available
-   as opt-in via `RUSTLE_VG_STRIP_FAMILY_SECONDARY=1` (recovers GOLGA6L10
-   but loses LOC129523543; net 0).
+   **The chr19 gain doesn't generalize to full BAM.** The 3 paralogs that
+   appeared on chr19 (LOC134757307, LOC129527021, LOC115930779) are still
+   missing on full BAM. Hypothesis: full-BAM family discovery sees more
+   cross-chromosomal multi-mapping evidence, so the GOLGA8 33Mb cluster
+   ends up linked into a family bundle where the conservative fix doesn't
+   reach. On chr19-only the same paralogs sit in non-family bundles,
+   benefiting from the strip+rebuild. The fix is *correct* on its own
+   terms but gated on family-membership outcomes that change with BAM
+   scope.
+
+   GOLGA6L10 still missed by default — opt-in via
+   `RUSTLE_VG_STRIP_FAMILY_SECONDARY=1` recovers it but loses
+   LOC129523543; net 0 paralogs gained.
+
+   Pending: a more surgical filter that reaches inside family bundles
+   without losing rustle's multi-mapper EM advantages
+   (LOC129523543 / LOC129527057). The naive primary-supported-junction
+   filter doesn't suffice because the bridging primary itself can carry
+   paralog-imprint introns.
 
 4. **rustle missed 1 AMY transcript ST caught.**
    At the locus level both find AMY2A and AMY2B (2/3); ST has an exact
