@@ -8074,6 +8074,19 @@ pub fn run<P: AsRef<Path>>(
             Some(bam_path.as_ref()),
             vg_genome_for_discovery.as_ref(),
         );
+        // Capture the union of bundle indices across ALL raw (pre-filter)
+        // families. Used below as the secondary-strip exemption set: a
+        // bundle that participated in family discovery — even if its
+        // family was later dropped by the quality filter (e.g.,
+        // megafamily on chr19-GOLGA8 ↔ chr17-TBC1D3 spurious merge) —
+        // still benefits from keeping cross-mapper evidence for assembly.
+        // Stripping secondaries from a dropped-family bundle made
+        // LOC134757307 etc. lose path emission on full GGO.bam even
+        // though they emit fine on chr19-only.
+        let raw_family_bundles: std::collections::HashSet<usize> = raw_families
+            .iter()
+            .flat_map(|f| f.bundle_indices.iter().copied())
+            .collect();
         // Quality-filter discovered families to drop noise (low shared-read
         // count, megafamilies, low junction-overlap pairs). Keeps real
         // multi-copy paralogs while removing alignment artifacts. See
@@ -8094,11 +8107,13 @@ pub fn run<P: AsRef<Path>>(
                 families.iter().map(|f| f.bundle_indices.len()).sum::<usize>(),
             );
         }
-        families
+        (families, raw_family_bundles)
     } else {
-        Vec::new()
+        (Vec::new(), std::collections::HashSet::new())
     };
-    // Build set of bundle indices that belong to a family group (for deferred processing).
+    let vg_raw_family_bundle_set = vg_families.1;
+    let vg_families = vg_families.0;
+    // Build set of bundle indices that belong to a kept family group (for deferred processing).
     let vg_family_bundle_set: std::collections::HashSet<usize> = vg_families
         .iter()
         .flat_map(|f| f.bundle_indices.iter().copied())
@@ -8140,17 +8155,35 @@ pub fn run<P: AsRef<Path>>(
         let strip_family = std::env::var_os("RUSTLE_VG_STRIP_FAMILY_SECONDARY").is_some();
         let filter_family_juncs =
             std::env::var_os("RUSTLE_VG_FAMILY_PRIMARY_SUPPORTED_JUNCTIONS").is_some();
+        // Whether to also strip bundles from filter-DROPPED raw families.
+        // Default: skip them (keep secondaries) so a megafamily-drop on
+        // spurious cross-cluster merges (chr19 GOLGA8 ↔ chr17 TBC1D3)
+        // doesn't cascade into losing the chr19 paralogs' assembly.
+        let strip_dropped_family =
+            std::env::var_os("RUSTLE_VG_STRIP_DROPPED_FAMILY_SECONDARY").is_some();
         let mut stripped_reads = 0usize;
         let mut stripped_bundles = 0usize;
         let mut family_filtered = 0usize;
+        let mut dropped_family_skipped = 0usize;
         for (bi, bundle) in bundles.iter_mut().enumerate() {
-            if vg_family_bundle_set.contains(&bi) && !strip_family {
+            let in_kept_family = vg_family_bundle_set.contains(&bi);
+            let in_raw_family = vg_raw_family_bundle_set.contains(&bi);
+            if in_kept_family && !strip_family {
                 if filter_family_juncs
                     && bundle.reads.iter().any(|r| !r.is_primary_alignment)
                 {
                     crate::bundle::recompute_junction_stats_primary_supported(bundle, &config);
                     family_filtered += 1;
                 }
+                continue;
+            }
+            // Bundle was in a raw (pre-filter) family but its family got
+            // dropped (megafamily / low_shared / etc.). Don't strip — the
+            // secondary reads' multi-mapper evidence is still useful for
+            // assembly, and stripping caused LOC134757307 etc. to fail
+            // path emission on full GGO.bam.
+            if !in_kept_family && in_raw_family && !strip_dropped_family {
+                dropped_family_skipped += 1;
                 continue;
             }
             let before = bundle.reads.len();
@@ -8162,12 +8195,20 @@ pub fn run<P: AsRef<Path>>(
                 crate::bundle::recompute_junction_stats(bundle, &config);
             }
         }
-        if stripped_reads > 0 || family_filtered > 0 {
-            let extra = if family_filtered > 0 {
-                format!("; primary-supported junction filter applied to {} family bundles", family_filtered)
-            } else {
-                String::new()
-            };
+        if stripped_reads > 0 || family_filtered > 0 || dropped_family_skipped > 0 {
+            let mut extra = String::new();
+            if family_filtered > 0 {
+                extra.push_str(&format!(
+                    "; primary-supported junction filter applied to {} family bundles",
+                    family_filtered
+                ));
+            }
+            if dropped_family_skipped > 0 {
+                extra.push_str(&format!(
+                    "; preserved secondaries on {} bundles whose raw family was filter-dropped",
+                    dropped_family_skipped
+                ));
+            }
             eprintln!(
                 "[VG] Stripped {} secondary/supplementary read(s) from {} bundles (junction_stats rebuilt){}",
                 stripped_reads, stripped_bundles, extra
