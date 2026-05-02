@@ -33,6 +33,8 @@ populated, then counting unique ref `gene-LOCxxxxx` IDs that appear.
 
 From gffcompare `Matching transcripts:` field — exact intron-chain match.
 
+Pre-fix:
+
 | family  | StringTie | rustle EM | rustle EM+SNP |
 |---|---|---|---|
 | GOLGA6  | 2 | 2 | 2 |
@@ -40,6 +42,21 @@ From gffcompare `Matching transcripts:` field — exact intron-chain match.
 | AMY     | 1 | 0 | 0 |
 | TBC1D3  | 4 | 4 | 4 |
 | TOTAL   | 13 | 13 | 13 |
+
+Post-fix (commit `c69e7fd`, dropped-family-exempt):
+
+| family  | StringTie | rustle EM-v3 | rustle EM+SNP-v3 |
+|---|---|---|---|
+| GOLGA6  | 2 | **3**  | **3**  |
+| GOLGA8  | 6 | **12** | **12** |
+| AMY     | 1 | **2**  | **2**  |
+| TBC1D3  | 4 | **8**  | **8**  |
+| **TOTAL** | **13** | **25** | **25** |
+
+**rustle gains +12 exact-intron-chain transcripts over StringTie** —
+even better than the +10 paralog gain. GOLGA8 nearly doubles (6 → 12).
+Note GOLGA6 picks up +1 transcript at intron-chain level even though
+paralog count tied at 6 (different alternative isoforms found).
 
 ## Findings
 
