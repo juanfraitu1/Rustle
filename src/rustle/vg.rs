@@ -68,7 +68,10 @@ pub struct FamilyReportRow {
 /// For long reads where supplementary alignments are filtered during BAM parsing,
 /// use `build_multimap_index_with_supplementary()` which does a second BAM pass.
 pub fn build_multimap_index(bundles: &[Bundle]) -> HashMap<u64, Vec<(usize, usize)>> {
-    let mut read_locs: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+    // Use FxHash internally for speed (read_name_hash is a u64). The
+    // public return type stays std HashMap for ABI compatibility.
+    let mut read_locs: crate::types::DetHashMap<u64, Vec<(usize, usize)>> =
+        crate::types::DetHashMap::default();
     for (bi, bundle) in bundles.iter().enumerate() {
         for (ri, read) in bundle.reads.iter().enumerate() {
             read_locs
@@ -85,7 +88,8 @@ pub fn build_multimap_index(bundles: &[Bundle]) -> HashMap<u64, Vec<(usize, usiz
         let first_bundle = locs[0].0;
         locs.iter().any(|(bi, _)| *bi != first_bundle)
     });
-    read_locs
+    // Convert back to std HashMap for the public API.
+    read_locs.into_iter().collect()
 }
 
 /// Second-pass BAM scan: find supplementary alignments and link them to bundles.
