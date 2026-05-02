@@ -8357,12 +8357,23 @@ pub fn run<P: AsRef<Path>>(
                 );
 
                 // Run heuristic EM on the larger / high-similarity bucket.
+                // When --vg-snp is set, use the SNP-aware variant — diagnostic
+                // SNVs separate near-identical paralogs that junctions can't.
                 let mut em_results: Vec<crate::vg::EmResult> = if !heuristic_families.is_empty() {
-                    crate::vg::run_pre_assembly_em(
-                        &heuristic_families,
-                        &mut bundles,
-                        config.vg_em_max_iter,
-                    )
+                    if config.vg_snp {
+                        eprintln!("[VG] auto: heuristic bucket using SNP-aware EM");
+                        crate::vg::run_pre_assembly_em_with_snps(
+                            &heuristic_families,
+                            &mut bundles,
+                            config.vg_em_max_iter,
+                        )
+                    } else {
+                        crate::vg::run_pre_assembly_em(
+                            &heuristic_families,
+                            &mut bundles,
+                            config.vg_em_max_iter,
+                        )
+                    }
                 } else {
                     Vec::new()
                 };
@@ -8418,16 +8429,19 @@ pub fn run<P: AsRef<Path>>(
                     em_results.append(&mut hmm_results);
                 } else if !hmm_families.is_empty() {
                     eprintln!(
-                        "[VG] auto: HMM bucket has {} families but {}; falling back to heuristic",
+                        "[VG] auto: HMM bucket has {} families but {}; falling back to heuristic{}",
                         hmm_families.len(),
                         if !has_genome { "no --genome-fasta" }
-                        else { "no multi-mapper sequences collected" }
+                        else { "no multi-mapper sequences collected" },
+                        if config.vg_snp { " (SNP-aware)" } else { "" }
                     );
-                    let mut fallback = crate::vg::run_pre_assembly_em(
-                        &hmm_families,
-                        &mut bundles,
-                        config.vg_em_max_iter,
-                    );
+                    let mut fallback = if config.vg_snp {
+                        crate::vg::run_pre_assembly_em_with_snps(
+                            &hmm_families, &mut bundles, config.vg_em_max_iter)
+                    } else {
+                        crate::vg::run_pre_assembly_em(
+                            &hmm_families, &mut bundles, config.vg_em_max_iter)
+                    };
                     em_results.append(&mut fallback);
                 }
                 em_results
