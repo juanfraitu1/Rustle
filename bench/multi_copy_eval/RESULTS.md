@@ -137,11 +137,29 @@ paralog count tied at 6 (different alternative isoforms found).
    exon-boundary discrepancy. Likely a parity issue, not a multi-copy
    one — same paralogs, just slight transcript-structure mismatch.
 
-5. **25/49 paralogs missed by all three methods.** Common causes (not
-   tool-specific): silent/low-expression paralogs without read coverage,
-   single-exon paralogs whose alignments are too short to assemble,
-   paralogs in regions with too much sequence ambiguity for unique
-   primary alignment.
+5. **15/49 paralogs still missed by all methods (post-fix)** — broken down
+   by failure mode (BAM coverage probed via samtools at the ref ranges):
+
+   - **Truly silent (≤3 total alignments, 6 paralogs)**: cannot be
+     recovered without more depth or external annotation guides:
+     LOC134757233 (0/0), LOC134759231 (0/0), LOC134757232 (0/1),
+     LOC101153918 (1/3), LOC101153208 (1/2), LOC109026840 (1/1).
+   - **Low-cov assembly gap (4-7 primaries, 7 paralogs)**: reads
+     present but bundle thresholds reject them:
+     LOC101138059 (4/7), LOC115933515 (4/8), LOC101133389 (4/8),
+     LOC115930772 (5/7), LOC115930818 (2/5), LOC101140620 (7/7),
+     LOC134757625 (6/67, where 67 includes secondaries),
+     LOC101137218 (5/66). These are the depth-aware-bundling targets.
+   - **Locus merging (high cov but misattributed, 1+ paralogs)**:
+     GOLGA6L7 has **52 primary reads** but its assembled transcript
+     spans 29803-29861 (a 58kb interval covering GOLGA6L7 +
+     neighbors). gffcompare attributes it to a single ref locus,
+     leaving GOLGA6L7 as "missed". Real signal exists; it's a
+     transcript-granularity failure.
+
+   The +10 paralog gain from rustle's multi-mapper EM (vs ST) directly
+   addresses the low-cov-assembly-gap class — by preserving cross-
+   mapping evidence even when family discovery misclassifies a cluster.
 
 ## Net signal vs the user's objectives
 
