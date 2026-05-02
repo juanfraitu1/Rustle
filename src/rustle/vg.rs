@@ -403,6 +403,104 @@ pub fn discover_family_groups(
     families
 }
 
+/// Quality-filter discovered families to keep only those that look like
+/// real multi-copy gene paralogs (vs noise, mtDNA, repetitive megafamilies).
+///
+/// Four signals corroborate "this is a real multi-copy gene family":
+///   1. **n_copies in [min_copies, max_copies]** — drops mtDNA / repetitive
+///      mega-clusters (1500-copy "families" on full GGO.bam) and singletons.
+///   2. **multimap_reads ≥ min_shared** — total read sharing. Random
+///      alignment artifacts produce 1-3 spurious shared reads; real paralogs
+///      have substantially more (the GOLGA6L7 chr19 cluster has 386).
+///   3. **multimap_reads / n_copies ≥ min_shared_per_copy** — sharing density.
+///      A family of N copies held together by O(1) cross-mapping reads is
+///      almost always an alignment artifact (one read randomly cross-mapped
+///      between many bundles). Real paralog clusters maintain a roughly
+///      uniform read density across their copies.
+///   4. **Coefficient of variation (CV) of intron-counts ≤ max_exon_cv** —
+///      paralogs of the same gene have similar exon structure (within a
+///      copy-number variant or two). Mixed-gene "families" (random genes
+///      that happen to share a multi-mapping read) have wildly different
+///      exon counts → high CV. The check applies only when ≥2 copies have
+///      introns; single-exon paralog families (olfactory receptors,
+///      KRAB-ZNF intronless members) skip this signal.
+///
+/// Note on junction Jaccard: junction donor/acceptor are absolute genomic
+/// coordinates, so paralogs at different loci have Jaccard ≡ 0. The earlier
+/// Jaccard test was a primitive bug and has been removed in favor of the CV
+/// of intron counts (a structure signal that does survive across loci).
+///
+/// Empirical: on chr19 GGO_19.bam (14 discovered families), defaults
+/// (min_copies=2, max_copies=30, min_shared=10) keep 8 of 14 (drop 6 by
+/// low_shared, all <10 multimappers — clear alignment noise).
+pub fn filter_high_confidence_families(
+    families: Vec<FamilyGroup>,
+    bundles: &[Bundle],
+    min_copies: usize,
+    max_copies: usize,
+    min_shared: usize,
+    min_shared_per_copy: f64,
+    max_exon_cv: f64,
+) -> Vec<FamilyGroup> {
+    let n_in = families.len();
+    let mut kept: Vec<FamilyGroup> = Vec::new();
+    let mut drops: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
+
+    for fam in families {
+        let n_copies = fam.bundle_indices.len();
+        if n_copies < min_copies {
+            *drops.entry("singleton").or_insert(0) += 1;
+            continue;
+        }
+        if n_copies > max_copies {
+            *drops.entry("megafamily").or_insert(0) += 1;
+            continue;
+        }
+        let n_shared = fam.multimap_reads.len();
+        if n_shared < min_shared {
+            *drops.entry("low_shared").or_insert(0) += 1;
+            continue;
+        }
+        // Sharing density: a 17-copy "family" with 13 shared reads has
+        // 0.76 reads/copy — most copies see no cross-mapping evidence at all.
+        let shared_per_copy = n_shared as f64 / n_copies as f64;
+        if shared_per_copy < min_shared_per_copy {
+            *drops.entry("low_shared_per_copy").or_insert(0) += 1;
+            continue;
+        }
+        // CV of intron counts (only over copies with ≥1 intron). Cheap
+        // structure-similarity proxy that works across loci.
+        if max_exon_cv > 0.0 {
+            let intron_counts: Vec<usize> = fam.bundle_indices.iter()
+                .map(|&bi| bundles.get(bi).map(|b| b.junction_stats.len()).unwrap_or(0))
+                .filter(|&c| c > 0)
+                .collect();
+            if intron_counts.len() >= 2 {
+                let n = intron_counts.len() as f64;
+                let mean = intron_counts.iter().map(|&c| c as f64).sum::<f64>() / n;
+                if mean > 0.0 {
+                    let var = intron_counts.iter()
+                        .map(|&c| { let d = c as f64 - mean; d * d })
+                        .sum::<f64>() / n;
+                    let cv = var.sqrt() / mean;
+                    if cv > max_exon_cv {
+                        *drops.entry("high_exon_cv").or_insert(0) += 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        kept.push(fam);
+    }
+    if !drops.is_empty() {
+        eprintln!(
+            "[VG] family-quality filter: {} → {} families ({} dropped: {:?})",
+            n_in, kept.len(), n_in - kept.len(), drops
+        );
+    }
+    kept
+}
+
 // ── Sequence-similarity-based family discovery ───────────────────────────────
 
 /// Find bundle pairs with high exonic sequence similarity (for tandem duplicates
@@ -1778,6 +1876,7 @@ pub fn write_family_report_with_em(
     bundle_coords: &[(String, u64, u64, char)],
     em_results: &[EmResult],
     transcripts: Option<&[crate::path_extract::Transcript]>,
+    bundles: Option<&[Bundle]>,
 ) -> std::io::Result<()> {
     use crate::vg_hmm::diagnostic::RescueClass;
     use std::io::Write;
@@ -1808,7 +1907,7 @@ pub fn write_family_report_with_em(
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
     writeln!(
         f,
-        "family_id\tn_copies\tchrom\tregions\tn_shared_reads\tem_iterations\tem_converged\tem_delta\treads_reweighted\tn_gene_loci\tn_rescued\tn_below_thresh\tn_seed_masked\tn_divergent\tn_structural\tn_ref_absent"
+        "family_id\tn_copies\tchrom\tregions\tn_shared_reads\tshared_per_copy\tn_intron_copies\texon_cv\tem_iterations\tem_converged\tem_delta\treads_reweighted\tn_gene_loci\tn_rescued\tn_below_thresh\tn_seed_masked\tn_divergent\tn_structural\tn_ref_absent"
     )?;
     for (fi, family) in families.iter().enumerate() {
         let mut refined_regions: Vec<String> = Vec::new();
@@ -1838,14 +1937,47 @@ pub fn write_family_report_with_em(
             .unwrap_or("?");
         let em = em_results.get(fi).cloned().unwrap_or_default();
         let rc = rescue_map.get(&family.family_id).cloned().unwrap_or_default();
+
+        // Family-quality diagnostics: shared-per-copy density and CV of
+        // intron counts (the actual signals used by the post-discovery
+        // quality filter — see filter_high_confidence_families).
+        let n_copies = family.bundle_indices.len();
+        let shared_per_copy = if n_copies > 0 {
+            family.multimap_reads.len() as f64 / n_copies as f64
+        } else { 0.0 };
+        let (n_intron_copies, exon_cv): (usize, f64) = match bundles {
+            Some(bs) => {
+                let intron_counts: Vec<usize> = family.bundle_indices.iter()
+                    .map(|&bi| bs.get(bi).map(|b| b.junction_stats.len()).unwrap_or(0))
+                    .filter(|&c| c > 0)
+                    .collect();
+                let n_intron = intron_counts.len();
+                let cv = if n_intron >= 2 {
+                    let n = n_intron as f64;
+                    let mean = intron_counts.iter().map(|&c| c as f64).sum::<f64>() / n;
+                    if mean > 0.0 {
+                        let var = intron_counts.iter()
+                            .map(|&c| { let d = c as f64 - mean; d * d })
+                            .sum::<f64>() / n;
+                        var.sqrt() / mean
+                    } else { 0.0 }
+                } else { -1.0 };
+                (n_intron, cv)
+            }
+            None => (0, -1.0),
+        };
+
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.6}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{:.3}\t{}\t{}\t{:.6}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             family.family_id,
             family.bundle_indices.len(),
             chrom,
             refined_regions.join(";"),
             family.multimap_reads.len(),
+            shared_per_copy,
+            n_intron_copies,
+            exon_cv,
             em.iterations,
             em.converged,
             em.max_delta,

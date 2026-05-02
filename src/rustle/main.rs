@@ -365,9 +365,42 @@ struct Args {
     #[arg(long)]
     vg: bool,
 
-    /// Minimum shared multi-mapping reads to link bundles into a family group [default: 3]
+    /// Minimum shared multi-mapping reads to link two bundles into the same
+    /// family group at discovery time [default: 3]. The post-discovery
+    /// quality filter (--vg-family-min-shared) imposes a separate threshold
+    /// on the FAMILY's total multimap_reads count.
     #[arg(long, default_value = "3")]
     vg_min_shared: usize,
+
+    /// Family-quality filter: drop families with fewer than N total
+    /// multi-mapping reads. Default 10 — empirically the noise/signal
+    /// boundary on GGO.bam (32% of discovered families have <10 shared
+    /// reads and are mostly random alignment artifacts).
+    #[arg(long, default_value_t = 10)]
+    vg_family_min_shared: usize,
+
+    /// Family-quality filter: drop families with more than N copies.
+    /// Default 30 — catches mtDNA mega-clusters (1509 "copies" on GGO.bam)
+    /// and other non-paralog repetitive elements while keeping legitimate
+    /// gene-family clusters (largest tested: TBC1D3 ~16, OR cluster ~5).
+    #[arg(long, default_value_t = 30)]
+    vg_family_max_copies: usize,
+
+    /// Family-quality filter: drop families where shared multi-mapping
+    /// reads per copy < N. Default 1.0 — a family where the average copy
+    /// has fewer than 1 cross-mapping read is almost always an alignment
+    /// artifact, not a real paralog cluster. Set to 0 to disable.
+    #[arg(long, default_value_t = 1.0)]
+    vg_family_min_shared_per_copy: f64,
+
+    /// Family-quality filter: drop families with coefficient of variation
+    /// (CV) of per-copy intron counts above N. Default 1.5 — only the most
+    /// extreme cases (mixed-gene mega-clusters where some copies have 1
+    /// intron and others have 20+) are dropped. Real paralog clusters
+    /// typically have CV well below 1.0 even with uneven coverage.
+    /// Single-exon paralog clusters skip this check. Set to 0 to disable.
+    #[arg(long, default_value_t = 1.5)]
+    vg_family_max_exon_cv: f64,
 
     /// Maximum EM iterations for multi-mapping resolution [default: 20]
     #[arg(long, default_value = "20")]
@@ -645,6 +678,10 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_em_max_copies: args.vg_em_max_copies,
         vg_em_hmm_max_copies: args.vg_em_hmm_max_copies,
         vg_em_skip_intronless: !args.vg_em_no_skip_intronless,
+        vg_family_min_shared: args.vg_family_min_shared,
+        vg_family_max_copies: args.vg_family_max_copies,
+        vg_family_min_shared_per_copy: args.vg_family_min_shared_per_copy,
+        vg_family_max_exon_cv: args.vg_family_max_exon_cv,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

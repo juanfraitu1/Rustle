@@ -8068,15 +8068,28 @@ pub fn run<P: AsRef<Path>>(
         } else {
             None
         };
-        let families = crate::vg::discover_family_groups(
+        let raw_families = crate::vg::discover_family_groups(
             &bundles,
             config.vg_min_shared_reads,
             Some(bam_path.as_ref()),
             vg_genome_for_discovery.as_ref(),
         );
+        // Quality-filter discovered families to drop noise (low shared-read
+        // count, megafamilies, low junction-overlap pairs). Keeps real
+        // multi-copy paralogs while removing alignment artifacts. See
+        // vg.rs::filter_high_confidence_families for the rationale.
+        let families = crate::vg::filter_high_confidence_families(
+            raw_families,
+            &bundles,
+            2,
+            config.vg_family_max_copies,
+            config.vg_family_min_shared,
+            config.vg_family_min_shared_per_copy,
+            config.vg_family_max_exon_cv,
+        );
         if !families.is_empty() {
             eprintln!(
-                "[VG] {} family group(s) covering {} bundles",
+                "[VG] {} family group(s) covering {} bundles after quality filter",
                 families.len(),
                 families.iter().map(|f| f.bundle_indices.len()).sum::<usize>(),
             );
@@ -8133,8 +8146,11 @@ pub fn run<P: AsRef<Path>>(
     } else {
         Vec::new()
     };
-    // Save lightweight bundle copies for novel copy discovery (junction stats only).
-    let vg_bundles_for_novel: Vec<crate::types::Bundle> = if config.vg_mode && config.vg_discover_novel {
+    // Save lightweight bundle copies for novel copy discovery and family-quality
+    // reporting (junction stats only — reads are cleared to keep the snapshot
+    // cheap). Built whenever vg_mode is on so the family report can compute
+    // mean junction Jaccard even without --vg-discover-novel.
+    let vg_bundles_for_novel: Vec<crate::types::Bundle> = if config.vg_mode {
         bundles
             .iter()
             .map(|b| crate::types::Bundle {
@@ -14376,6 +14392,7 @@ pub fn run<P: AsRef<Path>>(
                 &vg_bundle_coords,
                 &vg_em_results,
                 Some(&all_transcripts),
+                if !vg_bundles_for_novel.is_empty() { Some(vg_bundles_for_novel.as_slice()) } else { None },
             )?;
             eprintln!("[VG] Wrote family report to {}", report_path.display());
         }

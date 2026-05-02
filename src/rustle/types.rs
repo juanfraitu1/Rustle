@@ -920,6 +920,24 @@ pub struct RunConfig {
     /// HMM scoring. Per the loo_assembly cross-family test, OR cluster:
     /// 0/0 reads rescued.
     pub vg_em_skip_intronless: bool,
+    /// Family-quality filter: minimum total multi-mapping reads per family
+    /// (post-discovery). Below this, a "family" is more likely random
+    /// alignment artifacts than a real multi-copy paralog cluster.
+    pub vg_family_min_shared: usize,
+    /// Family-quality filter: maximum copies per family. Above this, a
+    /// "family" is more likely a repetitive element / mega-cluster than
+    /// a real paralog group.
+    pub vg_family_max_copies: usize,
+    /// Family-quality filter: minimum shared multi-mapping reads per copy
+    /// (multimap_reads / n_copies). Sparse mega-clusters (one cross-mapper
+    /// linking many bundles) fail this; real paralogs maintain ≥0.5 reads/copy.
+    pub vg_family_min_shared_per_copy: f64,
+    /// Family-quality filter: maximum coefficient of variation (CV) of
+    /// per-copy intron counts. Real paralogs of the same gene have similar
+    /// exon structure (CV typically <0.3); mixed-gene clusters that happen
+    /// to share a multi-mapper have wildly different exon counts (CV often
+    /// >1.0). Single-exon paralog clusters skip this check.
+    pub vg_family_max_exon_cv: f64,
 }
 
 impl RunConfig {
@@ -1155,6 +1173,10 @@ impl Default for RunConfig {
             vg_em_max_copies: 20,
             vg_em_hmm_max_copies: 10,
             vg_em_skip_intronless: true,
+            vg_family_min_shared: 10,
+            vg_family_max_copies: 30,
+            vg_family_min_shared_per_copy: 1.0,
+            vg_family_max_exon_cv: 1.5,
         }
     }
 }
