@@ -2203,21 +2203,104 @@ pub fn compare_bundles_to_log(bundles: &[Bundle], log_regions: &[BundleLogRegion
 /// alignments from other paralogs leave wrong-intron junctions in the splice
 /// graph. The reads vec itself is left untouched — only `junction_stats` is
 /// rewritten.
-///
-/// Without this rebuild, the GOLGA6L10 regression on full GGO.bam manifests:
-/// 5 cross-mapping secondary reads at the GOLGA6L10 locus inject
-/// wrong-intron junctions (8228N/858N/4557N/210N) that pollute the splice
-/// graph and break path emission for the real 4-exon GOLGA6L10 transcript.
 pub fn recompute_junction_stats(bundle: &mut Bundle, config: &RunConfig) {
     recompute_junction_stats_inner(bundle, config, /*primary_only*/ false);
 }
 
-/// Rebuild `junction_stats` using only the bundle's primary alignments.
-/// Use this for family bundles where secondary reads must remain in
-/// `bundle.reads` for EM weighting but should not contribute their
-/// (cross-mapped, often wrong-intron) junctions to the splice graph.
+/// Rebuild `junction_stats` using only primary alignments — secondaries are
+/// dropped entirely. Used in --vg mode AFTER family discovery to clean
+/// cross-mapping junction noise from non-family bundles where secondaries
+/// have no useful role.
 pub fn recompute_junction_stats_primary_only(bundle: &mut Bundle, config: &RunConfig) {
     recompute_junction_stats_inner(bundle, config, /*primary_only*/ true);
+}
+
+/// Rebuild `junction_stats` using ALL reads, but only count junctions that
+/// at least one PRIMARY read supports. This is the right knob for family
+/// bundles: it drops "wrong-intron" cross-mapping junctions (introns that
+/// no primary read at this locus uses — they came from a sister paralog's
+/// structure when its read was secondary-aligned here) while preserving
+/// real junctions where primaries AND secondaries agree. The
+/// secondary-confirmed counts on real junctions stay intact so EM and
+/// flow-based assembly still see the cross-mapping evidence.
+///
+/// This is what the GOLGA6L10 fix needs WITHOUT the LOC129523543 collateral
+/// damage: GOLGA6L10's wrong-intron secondaries (8228N/858N/4557N/210N)
+/// have no primary support → dropped. LOC129523543's primary+secondary
+/// supported junctions keep their full counts → paralog still recovered.
+pub fn recompute_junction_stats_primary_supported(bundle: &mut Bundle, config: &RunConfig) {
+    let primary_supported: std::collections::HashSet<crate::types::Junction> = bundle
+        .reads
+        .iter()
+        .filter(|r| r.is_primary_alignment)
+        .flat_map(|r| r.junctions.iter().copied())
+        .collect();
+    recompute_junction_stats_filtered(bundle, config, &primary_supported);
+}
+
+fn recompute_junction_stats_filtered(
+    bundle: &mut Bundle,
+    config: &RunConfig,
+    keep_set: &std::collections::HashSet<crate::types::Junction>,
+) {
+    let min_intron = config.min_intron_length;
+    let start = bundle.start;
+    let end_incl = bundle.end;
+    let mut new_stats: JunctionStats = Default::default();
+    for r in &bundle.reads {
+        let nex = r.exons.len();
+        let mut leftsup = vec![0u64; nex];
+        let mut rightsup = vec![0u64; nex];
+        if nex > 0 {
+            let mut max_left = 0u64;
+            let mut max_right = 0u64;
+            for ei in 0..nex {
+                let seg_len = r.exons[ei].1.saturating_sub(r.exons[ei].0);
+                if seg_len > max_left { max_left = seg_len; }
+                leftsup[ei] = max_left;
+            }
+            for ei in (0..nex).rev() {
+                let seg_len = r.exons[ei].1.saturating_sub(r.exons[ei].0);
+                if seg_len > max_right { max_right = seg_len; }
+                rightsup[ei] = max_right;
+            }
+        }
+        for i in 0..r.junctions.len() {
+            let j = r.junctions[i];
+            if !keep_set.contains(&j) { continue; }
+            let intron_len = j.acceptor.saturating_sub(j.donor);
+            if intron_len < min_intron { continue; }
+            if !(j.donor >= start && j.donor <= end_incl
+                && j.acceptor >= start && j.acceptor <= end_incl) { continue; }
+            let left_anchor = leftsup.get(i).copied().unwrap_or(0);
+            let right_anchor = rightsup.get(i + 1).copied().unwrap_or(0);
+            let st = new_stats.entry(j).or_insert_with(JunctionStat::default);
+            st.mrcount += r.weight;
+            let mut anchor = config.junction_support;
+            if intron_len > config.longintron && anchor < LONGINTRONANCHOR {
+                anchor = LONGINTRONANCHOR;
+            }
+            if left_anchor >= anchor {
+                st.leftsupport += r.weight;
+                if right_anchor >= anchor {
+                    st.rightsupport += r.weight;
+                    st.nreads_good += r.weight;
+                }
+            } else if right_anchor >= anchor {
+                st.rightsupport += r.weight;
+            }
+            st.nm += r.junc_mismatch_weight;
+            if leftsup.get(i).copied().unwrap_or(0) > LONGINTRONANCHOR
+                && rightsup.get(i + 1).copied().unwrap_or(0) > LONGINTRONANCHOR
+            {
+                st.mm += r.weight;
+            }
+            if st.strand.is_none() {
+                st.strand = Some(if r.strand == '-' { -1 } else { 1 });
+            }
+        }
+    }
+    bundle.junction_stats = new_stats;
 }
 
 fn recompute_junction_stats_inner(bundle: &mut Bundle, config: &RunConfig, primary_only: bool) {

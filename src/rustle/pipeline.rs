@@ -8113,22 +8113,46 @@ pub fn run<P: AsRef<Path>>(
     // unrelated loci behave exactly like the StringTie baseline.
     //
     // Disable with RUSTLE_VG_KEEP_NONFAMILY_SECONDARY=1 for diagnostics.
+    // Default behavior: strip secondary/supplementary reads only from
+    // non-family bundles. For family bundles we keep secondaries because
+    // the multi-mapper EM uses them and they often provide real cross-
+    // mapper evidence (e.g., LOC129523543 only emerges in rustle because
+    // of cross-mapped secondaries supporting its junctions).
+    //
+    // Two opt-in alternatives are available for diagnosing cross-mapping
+    // noise inside family bundles (e.g., GOLGA6L10's wrong-intron
+    // secondaries from sister paralogs):
+    //   RUSTLE_VG_FAMILY_PRIMARY_SUPPORTED_JUNCTIONS=1
+    //     → for family bundles, filter junction_stats to only those
+    //       junctions used by ≥1 primary read at the bundle locus.
+    //       Note: a bridging primary at the locus may itself carry
+    //       paralog-imprint introns, so this filter is not always
+    //       sufficient (chr19 test: doesn't recover GOLGA6L10).
+    //   RUSTLE_VG_STRIP_FAMILY_SECONDARY=1
+    //     → strip secondaries from family bundles too. Recovers
+    //       GOLGA6L10 but loses LOC129523543. Net 0 paralogs gained.
+    //
+    // Disable the default non-family strip with
+    // RUSTLE_VG_KEEP_NONFAMILY_SECONDARY=1.
     if config.vg_mode
         && std::env::var_os("RUSTLE_VG_KEEP_NONFAMILY_SECONDARY").is_none()
     {
-        // Strip secondary/supplementary reads from ALL bundles after family
-        // discovery. Family discovery (above) already extracted multi-mapper
-        // evidence into `family.multimap_reads` keyed by read-name hash; the
-        // EM solver later looks up reads by hash, not via `bundle.reads`. So
-        // it's safe to drop the secondaries here. KEEPING them poisons the
-        // assembly with cross-mapping noise — secondaries from other paralogs
-        // inject wrong-intron junctions, inflated bpcov, and false boundary
-        // hints into the splice graph for primary-only loci that sit inside
-        // family-bundle ranges (e.g., GOLGA6L10 inside a GOLGA6 family).
-        // Disable with RUSTLE_VG_KEEP_NONFAMILY_SECONDARY=1.
+        let strip_family = std::env::var_os("RUSTLE_VG_STRIP_FAMILY_SECONDARY").is_some();
+        let filter_family_juncs =
+            std::env::var_os("RUSTLE_VG_FAMILY_PRIMARY_SUPPORTED_JUNCTIONS").is_some();
         let mut stripped_reads = 0usize;
         let mut stripped_bundles = 0usize;
-        for bundle in bundles.iter_mut() {
+        let mut family_filtered = 0usize;
+        for (bi, bundle) in bundles.iter_mut().enumerate() {
+            if vg_family_bundle_set.contains(&bi) && !strip_family {
+                if filter_family_juncs
+                    && bundle.reads.iter().any(|r| !r.is_primary_alignment)
+                {
+                    crate::bundle::recompute_junction_stats_primary_supported(bundle, &config);
+                    family_filtered += 1;
+                }
+                continue;
+            }
             let before = bundle.reads.len();
             bundle.reads.retain(|r| r.is_primary_alignment);
             let dropped = before - bundle.reads.len();
@@ -8138,10 +8162,15 @@ pub fn run<P: AsRef<Path>>(
                 crate::bundle::recompute_junction_stats(bundle, &config);
             }
         }
-        if stripped_reads > 0 {
+        if stripped_reads > 0 || family_filtered > 0 {
+            let extra = if family_filtered > 0 {
+                format!("; primary-supported junction filter applied to {} family bundles", family_filtered)
+            } else {
+                String::new()
+            };
             eprintln!(
-                "[VG] Stripped {} secondary/supplementary read(s) from {} bundles (junction_stats rebuilt)",
-                stripped_reads, stripped_bundles
+                "[VG] Stripped {} secondary/supplementary read(s) from {} bundles (junction_stats rebuilt){}",
+                stripped_reads, stripped_bundles, extra
             );
         }
     }
