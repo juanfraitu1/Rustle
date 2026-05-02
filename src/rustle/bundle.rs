@@ -2194,3 +2194,105 @@ pub fn compare_bundles_to_log(bundles: &[Bundle], log_regions: &[BundleLogRegion
         }
     }
 }
+
+/// Rebuild a bundle's `junction_stats` from a filtered view of its `reads`,
+/// applying the same anchor/intron-length logic used at ingest time.
+///
+/// `primary_only`: when true, junction stats are built only from primary
+/// alignments. Used to clean cross-mapping noise in --vg mode where secondary
+/// alignments from other paralogs leave wrong-intron junctions in the splice
+/// graph. The reads vec itself is left untouched — only `junction_stats` is
+/// rewritten.
+///
+/// Without this rebuild, the GOLGA6L10 regression on full GGO.bam manifests:
+/// 5 cross-mapping secondary reads at the GOLGA6L10 locus inject
+/// wrong-intron junctions (8228N/858N/4557N/210N) that pollute the splice
+/// graph and break path emission for the real 4-exon GOLGA6L10 transcript.
+pub fn recompute_junction_stats(bundle: &mut Bundle, config: &RunConfig) {
+    recompute_junction_stats_inner(bundle, config, /*primary_only*/ false);
+}
+
+/// Rebuild `junction_stats` using only the bundle's primary alignments.
+/// Use this for family bundles where secondary reads must remain in
+/// `bundle.reads` for EM weighting but should not contribute their
+/// (cross-mapped, often wrong-intron) junctions to the splice graph.
+pub fn recompute_junction_stats_primary_only(bundle: &mut Bundle, config: &RunConfig) {
+    recompute_junction_stats_inner(bundle, config, /*primary_only*/ true);
+}
+
+fn recompute_junction_stats_inner(bundle: &mut Bundle, config: &RunConfig, primary_only: bool) {
+    let min_intron = config.min_intron_length;
+    let start = bundle.start;
+    let end_incl = bundle.end;
+
+    let mut new_stats: JunctionStats = Default::default();
+    for r in &bundle.reads {
+        if primary_only && !r.is_primary_alignment {
+            continue;
+        }
+        let nex = r.exons.len();
+        let mut leftsup = vec![0u64; nex];
+        let mut rightsup = vec![0u64; nex];
+        if nex > 0 {
+            let mut max_left = 0u64;
+            let mut max_right = 0u64;
+            for ei in 0..nex {
+                let seg_len = r.exons[ei].1.saturating_sub(r.exons[ei].0);
+                if seg_len > max_left {
+                    max_left = seg_len;
+                }
+                leftsup[ei] = max_left;
+            }
+            for ei in (0..nex).rev() {
+                let seg_len = r.exons[ei].1.saturating_sub(r.exons[ei].0);
+                if seg_len > max_right {
+                    max_right = seg_len;
+                }
+                rightsup[ei] = max_right;
+            }
+        }
+        for i in 0..r.junctions.len() {
+            let j = r.junctions[i];
+            let intron_len = j.acceptor.saturating_sub(j.donor);
+            if intron_len < min_intron {
+                continue;
+            }
+            if !(j.donor >= start
+                && j.donor <= end_incl
+                && j.acceptor >= start
+                && j.acceptor <= end_incl)
+            {
+                continue;
+            }
+            let left_anchor = leftsup.get(i).copied().unwrap_or(0);
+            let right_anchor = rightsup.get(i + 1).copied().unwrap_or(0);
+            let st = new_stats
+                .entry(j)
+                .or_insert_with(JunctionStat::default);
+            st.mrcount += r.weight;
+            let mut anchor = config.junction_support;
+            if intron_len > config.longintron && anchor < LONGINTRONANCHOR {
+                anchor = LONGINTRONANCHOR;
+            }
+            if left_anchor >= anchor {
+                st.leftsupport += r.weight;
+                if right_anchor >= anchor {
+                    st.rightsupport += r.weight;
+                    st.nreads_good += r.weight;
+                }
+            } else if right_anchor >= anchor {
+                st.rightsupport += r.weight;
+            }
+            st.nm += r.junc_mismatch_weight;
+            if leftsup.get(i).copied().unwrap_or(0) > LONGINTRONANCHOR
+                && rightsup.get(i + 1).copied().unwrap_or(0) > LONGINTRONANCHOR
+            {
+                st.mm += r.weight;
+            }
+            if st.strand.is_none() {
+                st.strand = Some(if r.strand == '-' { -1 } else { 1 });
+            }
+        }
+    }
+    bundle.junction_stats = new_stats;
+}

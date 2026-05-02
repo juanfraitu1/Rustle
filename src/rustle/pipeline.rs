@@ -8116,23 +8116,31 @@ pub fn run<P: AsRef<Path>>(
     if config.vg_mode
         && std::env::var_os("RUSTLE_VG_KEEP_NONFAMILY_SECONDARY").is_none()
     {
+        // Strip secondary/supplementary reads from ALL bundles after family
+        // discovery. Family discovery (above) already extracted multi-mapper
+        // evidence into `family.multimap_reads` keyed by read-name hash; the
+        // EM solver later looks up reads by hash, not via `bundle.reads`. So
+        // it's safe to drop the secondaries here. KEEPING them poisons the
+        // assembly with cross-mapping noise — secondaries from other paralogs
+        // inject wrong-intron junctions, inflated bpcov, and false boundary
+        // hints into the splice graph for primary-only loci that sit inside
+        // family-bundle ranges (e.g., GOLGA6L10 inside a GOLGA6 family).
+        // Disable with RUSTLE_VG_KEEP_NONFAMILY_SECONDARY=1.
         let mut stripped_reads = 0usize;
         let mut stripped_bundles = 0usize;
-        for (bi, bundle) in bundles.iter_mut().enumerate() {
-            if vg_family_bundle_set.contains(&bi) {
-                continue;
-            }
+        for bundle in bundles.iter_mut() {
             let before = bundle.reads.len();
             bundle.reads.retain(|r| r.is_primary_alignment);
             let dropped = before - bundle.reads.len();
             if dropped > 0 {
                 stripped_reads += dropped;
                 stripped_bundles += 1;
+                crate::bundle::recompute_junction_stats(bundle, &config);
             }
         }
         if stripped_reads > 0 {
             eprintln!(
-                "[VG] Stripped {} secondary/supplementary read(s) from {} non-family bundles",
+                "[VG] Stripped {} secondary/supplementary read(s) from {} bundles (junction_stats rebuilt)",
                 stripped_reads, stripped_bundles
             );
         }
