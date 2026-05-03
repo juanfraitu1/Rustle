@@ -418,10 +418,10 @@ struct Args {
     /// intron-length-Jaccard signal by coincidence (similar intron sizes
     /// between unrelated genes) but have no actual sequence similarity.
     /// Requires building the family graph (uses --genome-fasta sequences).
-    /// Default 0 (disabled) since it requires the genome FASTA. Try 0.05
-    /// to start — real paralogs typically have >0.10 pairwise k-mer Jaccard
-    /// at 15-mer resolution.
-    #[arg(long, default_value_t = 0.0)]
+    /// Default 0.05 — empirical bimodal split on full GGO.bam: dropped
+    /// artifacts have jaccard 0.000-0.049, real paralogs 0.052-0.998.
+    /// No-op if --genome-fasta not provided. Set to 0 to disable.
+    #[arg(long, default_value_t = 0.05)]
     vg_family_min_kmer_jaccard: f64,
 
     /// Maximum EM iterations for multi-mapping resolution [default: 20]

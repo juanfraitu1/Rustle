@@ -1192,7 +1192,7 @@ impl Default for RunConfig {
             vg_family_min_shared_per_copy: 1.0,
             vg_family_max_exon_cv: 1.5,
             vg_family_min_primitive_jaccard: 0.20,
-            vg_family_min_kmer_jaccard: 0.0,  // disabled by default (requires --genome-fasta)
+            vg_family_min_kmer_jaccard: 0.05,  // bimodal split on full GGO; no-op without --genome-fasta
         }
     }
 }
