@@ -29,6 +29,62 @@ The 5th signal is what makes this a *graph-structural* definition: real paralogs
 
 So the stricter definition tightens the family set by 34% without losing any of rustle's paralog-discovery wins.
 
+## Validation E — gene-description coherence (external-validation proxy)
+
+For each rustle family on full GGO.bam, look up which protein-coding
+genes overlap each region in the gorilla NCBI annotation. Categorize:
+- **real_paralog**: ≥2 distinct genes, all share a single description
+  family-stem (≥80% coverage). E.g., GOLGA8I + GOLGA8N + GOLGA8B all
+  share stem "golgin subfamily A".
+- **single_gene**: all bundles overlap the same single gene (segmentation
+  artifact, not paralogy).
+- **te_bridge**: bundles span unrelated gene families — no common stem.
+- **no_protein**: no protein-coding gene overlaps any bundle (pseudogene
+  or unannotated cluster).
+
+Result on full GGO.bam (commit 4e8ba80, default thr=0.20):
+
+| category     | KEPT families (298) | DROPPED-by-low_pj (152) |
+|--------------|---------------------|-------------------------|
+| real_paralog |  36 (12.1%)         |   9 (5.9%)              |
+| single_gene  |  31 (10.4%)         |  61 (40.1%)             |
+| te_bridge    | 219 (73.5%)         |  80 (52.6%)             |
+| no_protein   |  12 (4.0%)          |   2 (1.3%)              |
+
+**On the DROPPED side** (the validation goal):
+- 94% of drops are correctly filtered: 40% single-gene segmentation +
+  53% TE-bridges + 1% no-protein-coding-gene = 94%
+- 6% (9 of 152) are real paralog families — these are false-negative drops.
+  Net cost: tightening from 0.10 to 0.20 drops 9 additional real paralog
+  loci. Consistent with the panel test (validation C) showing per-paralog
+  gain unchanged across the threshold range — these 9 are real paralogs
+  but in genes outside the 9-family panel.
+
+**On the KEPT side**:
+- Only 12% of kept families are unambiguously real paralog clusters by
+  description coherence
+- 73.5% are flagged as "te_bridge" — bundles span unrelated genes
+- 10.4% are single-gene segmentation (one gene wrongly split)
+
+**The high TE-bridge rate in the KEPT set is real but not catastrophic**:
+the per-paralog recovery gain (validation A) shows rustle still finds
++19 panel paralogs over ST despite this. So:
+- The primitive_jaccard signal correctly filters EXTREME TE-bridges
+  (those with no shared intron lengths whatsoever)
+- It admits MILDER TE-bridges where bundles happen to have introns of
+  similar lengths (coincidence at 200bp tolerance)
+- These admitted TE-bridges don't break paralog recovery on the panel,
+  presumably because the multi-mapper EM redistributes reads correctly
+  even within a heterogeneous "family" (each read goes to the gene that
+  matches its actual sequence)
+
+**Open follow-up**: a stricter signal could use SEQUENCE similarity in
+addition to intron-length Jaccard. Specifically: pairwise k-mer Jaccard
+on exonic sequence (already implemented for novel-rescue prefilter,
+could be exposed as a 6th family-quality signal). This would distinguish
+true paralogs (high sequence identity) from intron-length-coincidence
+TE-bridges. Not yet wired into the family filter.
+
 ## Validation D — TE-bridge spot-check (10 of 152 drops)
 
 Manually inspected 10 random low_primitive_jaccard drops by looking up
