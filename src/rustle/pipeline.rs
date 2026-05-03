@@ -86,44 +86,51 @@ struct GuideJunctionCacheKey {
     strand: char,
 }
 
-/// Diagnostic: scan the genome for each family's k-mer profile and print
-/// candidate novel-paralog loci to stderr. Triggered by --vg-scan-novel-loci.
-/// Loads the genome on demand if `genome` is None and `genome_fasta_path`
-/// is provided. No-op without either.
-fn run_genome_scan_diagnostic(
+/// Run the family-profile genome scan. Returns a map of family_id (or
+/// single-strand sub-family id derived as `family_id * 10 + i`) to the
+/// candidate loci that family's k-mer profile hit. Used by Phase 2 of
+/// the positional rescue path. When `verbose` is true, also prints a
+/// per-family summary to stderr.
+fn run_genome_scan(
     families: &[crate::vg::FamilyGroup],
     bundles: &[crate::types::Bundle],
     genome: Option<&crate::genome::GenomeIndex>,
     genome_fasta_path: Option<&str>,
-) {
-    use crate::vg_hmm::positional::{scan_genome_for_family_loci, ScanParams, KnownParalogSpan};
+    verbose: bool,
+) -> std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>> {
+    use crate::vg_hmm::positional::{ScanParams, KnownParalogSpan};
+    let mut empty_map: std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>> =
+        std::collections::HashMap::new();
     let owned_genome: Option<crate::genome::GenomeIndex>;
     let g = match genome {
         Some(g) => g,
         None => match genome_fasta_path {
             Some(p) => {
-                eprintln!("[VG-SCAN] loading genome FASTA for scan: {}", p);
+                if verbose { eprintln!("[VG-SCAN] loading genome FASTA for scan: {}", p); }
                 match crate::genome::GenomeIndex::from_fasta(p) {
                     Ok(g) => { owned_genome = Some(g); owned_genome.as_ref().unwrap() }
                     Err(e) => {
                         eprintln!("[VG-SCAN] cannot load genome: {} — skipping scan", e);
-                        return;
+                        return empty_map;
                     }
                 }
             }
             None => {
-                eprintln!("[VG-SCAN] no genome FASTA available — skipping scan");
-                return;
+                if verbose { eprintln!("[VG-SCAN] no genome FASTA available — skipping scan"); }
+                return empty_map;
             }
         },
     };
     if families.is_empty() {
-        eprintln!("[VG-SCAN] no families to scan");
-        return;
+        if verbose { eprintln!("[VG-SCAN] no families to scan"); }
+        return empty_map;
     }
+    let _ = &mut empty_map;
     let params = ScanParams::default();
-    eprintln!("[VG-SCAN] scanning {} families against genome (window={}bp, stride={}bp, min_hits={})",
-              families.len(), params.window, params.stride, params.min_hits_per_window);
+    if verbose {
+        eprintln!("[VG-SCAN] scanning {} families against genome (window={}bp, stride={}bp, min_hits={})",
+                  families.len(), params.window, params.stride, params.min_hits_per_window);
+    }
     let t_setup = std::time::Instant::now();
     use rayon::prelude::*;
     // Stage 1: build family graphs + k-mer sets (parallel across families).
@@ -171,32 +178,44 @@ fn run_genome_scan_diagnostic(
         known_per_family.push(known);
     }
     let t_setup_ms = t_setup.elapsed().as_millis();
-    eprintln!("[VG-SCAN] family-graph + k-mer build: {} families, {}ms",
-              family_kmer_sets.len(), t_setup_ms);
+    if verbose {
+        eprintln!("[VG-SCAN] family-graph + k-mer build: {} families, {}ms",
+                  family_kmer_sets.len(), t_setup_ms);
+    }
     let t_scan = std::time::Instant::now();
     let per_family = crate::vg_hmm::positional::scan_genome_for_all_families(
         &family_kmer_sets, g, &known_per_family, &params, 4,
     );
     let t_scan_ms = t_scan.elapsed().as_millis();
-    eprintln!("[VG-SCAN] genome scan completed in {}ms", t_scan_ms);
+    if verbose {
+        eprintln!("[VG-SCAN] genome scan completed in {}ms", t_scan_ms);
+    }
 
+    let mut out: std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>> =
+        std::collections::HashMap::new();
     let mut total_candidates = 0usize;
-    for (fi, candidates) in per_family.iter().enumerate() {
+    for (fi, candidates) in per_family.into_iter().enumerate() {
         if candidates.is_empty() { continue; }
         let (fid, n_copies, n_kmers) = keep[fi];
-        eprintln!(
-            "[VG-SCAN] family {} ({} known copies, {} k-mers): {} candidate loci",
-            fid, n_copies, n_kmers, candidates.len()
-        );
-        for c in candidates.iter().take(5) {
+        if verbose {
             eprintln!(
-                "[VG-SCAN]   {}:{}-{} hits={} density={:.1}/kb",
-                c.chrom, c.start, c.end, c.n_kmer_hits, c.density_per_kb,
+                "[VG-SCAN] family {} ({} known copies, {} k-mers): {} candidate loci",
+                fid, n_copies, n_kmers, candidates.len()
             );
+            for c in candidates.iter().take(5) {
+                eprintln!(
+                    "[VG-SCAN]   {}:{}-{} hits={} density={:.1}/kb",
+                    c.chrom, c.start, c.end, c.n_kmer_hits, c.density_per_kb,
+                );
+            }
         }
         total_candidates += candidates.len();
+        out.insert(fid, candidates);
     }
-    eprintln!("[VG-SCAN] total {} candidate loci across all families", total_candidates);
+    if verbose {
+        eprintln!("[VG-SCAN] total {} candidate loci across all families", total_candidates);
+    }
+    out
 }
 
 fn init_rayon_pool(threads: usize) {
@@ -8270,18 +8289,22 @@ pub fn run<P: AsRef<Path>>(
             );
         }
 
-        // Diagnostic: --vg-scan-novel-loci runs the genome k-mer scan against
-        // each family's profile and prints candidate novel-paralog loci.
-        // Phase 1 of the positional-prior rescue path. Reads no reads, only
-        // genome — runs offline relative to the BAM iteration.
+        // --vg-scan-novel-loci runs the genome k-mer scan against each
+        // family's profile, finds candidate novel-paralog loci, and stores
+        // them in `config.vg_candidate_loci` keyed by family id. The
+        // verbose form (always on when this flag is set) prints a per-
+        // family summary to stderr. Phase 2 of the positional-prior rescue
+        // path. Reads no reads, only genome.
         if config.vg_scan_novel_loci {
-            run_genome_scan_diagnostic(
+            let candidate_map = run_genome_scan(
                 &families,
                 &bundles,
                 vg_genome_for_kmer_filter.as_ref()
                     .or(vg_genome_for_discovery.as_ref()),
                 config.genome_fasta.as_deref(),
+                true,
             );
+            config.vg_candidate_loci = candidate_map;
         }
         (families, raw_family_bundles)
     } else {

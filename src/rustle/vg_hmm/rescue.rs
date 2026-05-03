@@ -319,6 +319,20 @@ pub fn run_rescue_with_bundles(
         "[VG-HMM] family graphs: {}/{} have non-empty sequences; total k-mers in prefilter set: {}",
         n_with_seq, family_graphs.len(), total_kmers
     );
+    // Phase 2: report candidate loci availability per family. Used in
+    // Phase 3 as positional priors for synthesizing bundles at novel
+    // paralog locations. Logged here for traceability.
+    if !config.vg_candidate_loci.is_empty() {
+        let n_with_cand = family_graphs.iter()
+            .filter(|fg| config.vg_candidate_loci.get(&fg.family_id).map_or(false, |v| !v.is_empty()))
+            .count();
+        let total_cand: usize = config.vg_candidate_loci.values()
+            .map(|v| v.len()).sum();
+        eprintln!(
+            "[VG-HMM] positional priors: {} families have candidate loci, {} total candidates",
+            n_with_cand, total_cand
+        );
+    }
 
     // (d) Open BAM and iterate unmapped reads.
     let bam_file = match std::fs::File::open(bam_path) {

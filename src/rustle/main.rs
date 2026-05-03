@@ -678,6 +678,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_em_max_iter: args.vg_em_iter,
         vg_discover_novel: args.vg_discover_novel,
         vg_scan_novel_loci: args.vg_scan_novel_loci,
+        vg_candidate_loci: std::collections::HashMap::new(),
         vg_report: args.vg_report.map(std::path::PathBuf::from),
         vg_solver: args.vg_solver.parse().unwrap_or(rustle::types::VgSolver::Em),
         vg_snp: args.vg_snp,
