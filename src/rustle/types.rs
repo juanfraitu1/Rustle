@@ -944,6 +944,14 @@ pub struct RunConfig {
     /// (chr19-GOLGA8 ↔ chr17-TBC1D3 spurious link) have Jaccard near 0.
     /// Single-exon paralog clusters skip this check.
     pub vg_family_min_primitive_jaccard: f64,
+    /// Family-quality filter (optional, requires --genome-fasta): minimum
+    /// mean pairwise k-mer Jaccard of family-graph per-copy SEQUENCES.
+    /// The 6th signal — catches mild TE-bridges that pass intron-length
+    /// Jaccard by coincidence (similar intron sizes between unrelated genes)
+    /// but have no actual sequence similarity. Requires building the family
+    /// graph, so skipped when --genome-fasta is not provided. Set to 0
+    /// (default) to disable this signal.
+    pub vg_family_min_kmer_jaccard: f64,
 }
 
 impl RunConfig {
@@ -1184,6 +1192,7 @@ impl Default for RunConfig {
             vg_family_min_shared_per_copy: 1.0,
             vg_family_max_exon_cv: 1.5,
             vg_family_min_primitive_jaccard: 0.20,
+            vg_family_min_kmer_jaccard: 0.0,  // disabled by default (requires --genome-fasta)
         }
     }
 }

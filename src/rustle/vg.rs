@@ -410,6 +410,181 @@ pub fn discover_family_groups(
     families
 }
 
+/// Compute the mean pairwise k-mer Jaccard over the family graph's per-copy
+/// sequences. **Graph-supported** because it uses sequences extracted at the
+/// family graph's exon-class nodes (not raw read k-mers). For each pair of
+/// copies, builds a k-mer set per copy by concatenating its node-level
+/// sequences, then takes Jaccard.
+///
+/// Real paralog clusters: high pairwise Jaccard (paralogs share most
+/// exonic sequence). TE-bridge artifacts: low Jaccard (different gene
+/// families have different sequences even when their bundles span similar
+/// intron-length patterns by coincidence).
+///
+/// Returns `None` when family graph build fails (e.g., genome not available,
+/// mixed-strand family) — caller should treat absence as "skip this signal".
+pub fn compute_family_graph_kmer_jaccard(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    genome: &crate::genome::GenomeIndex,
+    kmer_len: usize,
+) -> Option<f64> {
+    compute_family_graph_kmer_jaccard_diag(family, bundles, genome, kmer_len).0
+}
+
+/// Diagnostic variant: returns (jaccard, skip_reason). skip_reason is None
+/// when computation succeeded; otherwise it carries a short label so the
+/// caller can tally why families are skipped.
+pub fn compute_family_graph_kmer_jaccard_diag(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    genome: &crate::genome::GenomeIndex,
+    kmer_len: usize,
+) -> (Option<f64>, Option<&'static str>) {
+    // Mixed-strand families fail build_family_graph, so partition first
+    // (same approach as vg_hmm/rescue.rs uses). For the k-mer Jaccard score
+    // we use the LARGEST single-strand sub-family — this is the "primary"
+    // paralog cluster on one strand. Sub-families with <2 copies are
+    // ignored (no pairs to compute Jaccard over).
+    let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+    let largest = match sub_families.into_iter()
+        .filter(|f| f.bundle_indices.len() >= 2)
+        .max_by_key(|f| f.bundle_indices.len())
+    {
+        Some(f) => f,
+        None => return (None, Some("no_substrand_with_2_copies")),
+    };
+    let fg = match crate::vg_hmm::family_graph::build_family_graph(
+        &largest, bundles, Some(genome), 0.30, 0.30,
+    ) {
+        Ok(g) => g,
+        Err(_) => return (None, Some("graph_build_err")),
+    };
+    if fg.nodes.is_empty() {
+        return (None, Some("graph_empty"));
+    }
+    let n_copies = largest.bundle_indices.len();
+    let mut kmer_sets: Vec<crate::types::DetHashSet<u64>> =
+        (0..n_copies).map(|_| crate::types::DetHashSet::default()).collect();
+    for node in &fg.nodes {
+        for (cid, seq) in &node.per_copy_sequences {
+            if *cid >= n_copies { continue; }
+            if seq.len() < kmer_len { continue; }
+            for window in seq.windows(kmer_len) {
+                if window.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
+                    let h = {
+                        // Same FNV-1a hash as the rescue prefilter.
+                        let mut h: u64 = 0xcbf29ce484222325;
+                        for &b in window {
+                            h ^= b as u64;
+                            h = h.wrapping_mul(0x100000001b3);
+                        }
+                        h
+                    };
+                    kmer_sets[*cid].insert(h);
+                }
+            }
+        }
+    }
+    // Mean pairwise Jaccard over copies that have any k-mers.
+    let with_kmers: Vec<&crate::types::DetHashSet<u64>> = kmer_sets.iter()
+        .filter(|s| !s.is_empty())
+        .collect();
+    if with_kmers.len() < 2 {
+        return (None, Some("fewer_than_2_copies_with_kmers"));
+    }
+    let mut sum = 0.0_f64;
+    let mut n_pairs = 0usize;
+    for i in 0..with_kmers.len() {
+        for j in (i + 1)..with_kmers.len() {
+            let inter = with_kmers[i].intersection(with_kmers[j]).count();
+            let uni = with_kmers[i].union(with_kmers[j]).count();
+            if uni > 0 {
+                sum += inter as f64 / uni as f64;
+                n_pairs += 1;
+            }
+        }
+    }
+    if n_pairs > 0 { (Some(sum / n_pairs as f64), None) } else { (None, Some("no_pairs")) }
+}
+
+/// Optional 6th-signal filter: drops families whose graph-supported pairwise
+/// k-mer Jaccard is below `min_kmer_jaccard`. Catches mild TE-bridges that
+/// pass the intron-length-Jaccard signal by coincidence (similar intron sizes
+/// across unrelated genes) but have NO actual sequence similarity.
+///
+/// Skips families where the family graph couldn't be built or has <2 copies
+/// with any k-mers (typically: single-exon paralog clusters where node
+/// sequences are too short, or mixed-strand families).
+///
+/// Disabled when `min_kmer_jaccard <= 0.0`. Requires genome FASTA — caller
+/// must pass `Some(genome)` or this filter is a no-op.
+pub fn filter_by_graph_kmer_jaccard(
+    families: Vec<FamilyGroup>,
+    bundles: &[Bundle],
+    genome: Option<&crate::genome::GenomeIndex>,
+    min_kmer_jaccard: f64,
+    kmer_len: usize,
+) -> Vec<FamilyGroup> {
+    if min_kmer_jaccard <= 0.0 {
+        return families;
+    }
+    let g = match genome {
+        Some(g) => g,
+        None => {
+            eprintln!("[VG] graph-k-mer-Jaccard filter requested but no genome available — skipping");
+            return families;
+        }
+    };
+    let n_in = families.len();
+    let mut kept: Vec<FamilyGroup> = Vec::new();
+    let mut n_dropped = 0usize;
+    let mut n_skipped_signal = 0usize;
+    let mut skip_reasons: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    let mut kept_jaccards: Vec<f64> = Vec::new();
+    let mut dropped_jaccards: Vec<f64> = Vec::new();
+    for fam in families {
+        let (j_opt, reason) = compute_family_graph_kmer_jaccard_diag(&fam, bundles, g, kmer_len);
+        match j_opt {
+            Some(j) => {
+                if j < min_kmer_jaccard {
+                    n_dropped += 1;
+                    dropped_jaccards.push(j);
+                } else {
+                    kept_jaccards.push(j);
+                    kept.push(fam);
+                }
+            }
+            None => {
+                // Couldn't compute (single-exon, mixed-strand, etc.) — keep
+                // by default; the prior 5 signals already vetted it.
+                n_skipped_signal += 1;
+                if let Some(r) = reason { *skip_reasons.entry(r).or_insert(0) += 1; }
+                kept.push(fam);
+            }
+        }
+    }
+    if n_dropped > 0 || n_skipped_signal > 0 {
+        eprintln!(
+            "[VG] graph-k-mer-Jaccard filter: {} → {} families ({} dropped by low_kmer_jaccard < {:.2}, {} skipped — graph build failed or single-exon)",
+            n_in, kept.len(), n_dropped, min_kmer_jaccard, n_skipped_signal
+        );
+        if !skip_reasons.is_empty() {
+            eprintln!("[VG]   skip reasons: {:?}", skip_reasons);
+        }
+        if !kept_jaccards.is_empty() {
+            let s: Vec<String> = kept_jaccards.iter().map(|j| format!("{:.3}", j)).collect();
+            eprintln!("[VG]   kept jaccards: [{}]", s.join(", "));
+        }
+        if !dropped_jaccards.is_empty() {
+            let s: Vec<String> = dropped_jaccards.iter().map(|j| format!("{:.3}", j)).collect();
+            eprintln!("[VG]   dropped jaccards: [{}]", s.join(", "));
+        }
+    }
+    kept
+}
+
 /// Quality-filter discovered families to keep only those that look like
 /// real multi-copy gene paralogs (vs noise, mtDNA, repetitive megafamilies,
 /// TE-bridge spurious merges).

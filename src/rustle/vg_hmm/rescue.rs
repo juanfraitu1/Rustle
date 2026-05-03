@@ -162,7 +162,7 @@ pub fn run_rescue(
 /// new FamilyGroup per strand. Each split family inherits a derived
 /// `family_id` (`original * 10 + 0/1/2`) so the source family is recoverable
 /// from the report.
-fn partition_family_by_strand(
+pub fn partition_family_by_strand(
     family: &FamilyGroup,
     bundles: &[Bundle],
 ) -> Vec<FamilyGroup> {

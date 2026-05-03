@@ -412,6 +412,18 @@ struct Args {
     #[arg(long, default_value_t = 0.20)]
     vg_family_min_primitive_jaccard: f64,
 
+    /// Family-quality filter (optional, requires --genome-fasta): minimum
+    /// mean pairwise k-mer Jaccard of FAMILY-GRAPH per-copy sequences.
+    /// The 6th signal — catches mild TE-bridges that pass the
+    /// intron-length-Jaccard signal by coincidence (similar intron sizes
+    /// between unrelated genes) but have no actual sequence similarity.
+    /// Requires building the family graph (uses --genome-fasta sequences).
+    /// Default 0 (disabled) since it requires the genome FASTA. Try 0.05
+    /// to start — real paralogs typically have >0.10 pairwise k-mer Jaccard
+    /// at 15-mer resolution.
+    #[arg(long, default_value_t = 0.0)]
+    vg_family_min_kmer_jaccard: f64,
+
     /// Maximum EM iterations for multi-mapping resolution [default: 20]
     #[arg(long, default_value = "20")]
     vg_em_iter: usize,
@@ -693,6 +705,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_min_shared_per_copy: args.vg_family_min_shared_per_copy,
         vg_family_max_exon_cv: args.vg_family_max_exon_cv,
         vg_family_min_primitive_jaccard: args.vg_family_min_primitive_jaccard,
+        vg_family_min_kmer_jaccard: args.vg_family_min_kmer_jaccard,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

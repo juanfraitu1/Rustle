@@ -8085,6 +8085,22 @@ pub fn run<P: AsRef<Path>>(
         } else {
             None
         };
+        // Separately: load genome for the graph-k-mer-Jaccard 6th signal
+        // (decoupled from discovery so enabling k-mer filter doesn't change
+        // the discovery output). Reuse vg_genome_for_discovery if already
+        // loaded, otherwise load fresh.
+        let vg_genome_for_kmer_filter = if config.vg_family_min_kmer_jaccard > 0.0 {
+            if let Some(g) = vg_genome_for_discovery.as_ref() {
+                Some(g.clone())  // fall back to cheap clone if Send/Sync allows; otherwise load fresh
+            } else {
+                config.genome_fasta.as_ref().and_then(|p| {
+                    eprintln!("[VG] Loading genome FASTA for graph-k-mer-Jaccard family filter: {}", p);
+                    crate::genome::GenomeIndex::from_fasta(p).ok()
+                })
+            }
+        } else {
+            None
+        };
         let raw_families = crate::vg::discover_family_groups(
             &bundles,
             config.vg_min_shared_reads,
@@ -8118,6 +8134,21 @@ pub fn run<P: AsRef<Path>>(
             config.vg_family_max_exon_cv,
             config.vg_family_min_primitive_jaccard,
         );
+        // Optional 6th signal: graph-supported k-mer Jaccard. Requires the
+        // genome FASTA to be loaded so the family graph can extract per-copy
+        // sequences. If --vg-family-min-kmer-jaccard is 0 (default) this is
+        // a no-op. If genome isn't available, the helper logs and skips.
+        let families = if config.vg_family_min_kmer_jaccard > 0.0 {
+            crate::vg::filter_by_graph_kmer_jaccard(
+                families,
+                &bundles,
+                vg_genome_for_kmer_filter.as_ref(),
+                config.vg_family_min_kmer_jaccard,
+                15,
+            )
+        } else {
+            families
+        };
         if !families.is_empty() {
             eprintln!(
                 "[VG] {} family group(s) covering {} bundles after quality filter",
