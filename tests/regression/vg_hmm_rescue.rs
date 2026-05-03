@@ -5,17 +5,18 @@ use rustle::vg_hmm::family_graph::{FamilyGraph, ExonClass, JunctionEdge, NodeIdx
 use rustle::vg_hmm::profile::ProfileHmm;
 use rustle::vg::FamilyGroup;
 use rustle::path_extract::Transcript;
-use std::collections::{HashMap, HashSet};
+use rustle::types::{DetHashSet, DetHashMap};
+use std::collections::HashMap;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn kmer_set(seqs: &[&[u8]], k: usize) -> HashSet<u64> {
+fn kmer_set(seqs: &[&[u8]], k: usize) -> DetHashSet<u64> {
     fn fnv1a64(s: &[u8]) -> u64 {
         let mut h: u64 = 0xcbf29ce484222325;
         for &b in s { h ^= b as u64; h = h.wrapping_mul(0x100000001b3); }
         h
     }
-    let mut set = HashSet::new();
+    let mut set: DetHashSet<u64> = DetHashSet::default();
     for seq in seqs {
         for w in seq.windows(k) {
             set.insert(fnv1a64(w));
@@ -68,7 +69,7 @@ fn prefilter_read_fails_when_too_few_hits() {
 
 #[test]
 fn prefilter_read_empty_family_kmers_always_fails() {
-    let empty: HashSet<u64> = HashSet::new();
+    let empty: DetHashSet<u64> = DetHashSet::default();
     let (passed, hits) = prefilter_read(b"ACGTACGT", &empty, 5, 1);
     assert!(!passed);
     assert_eq!(hits, 0);
@@ -320,4 +321,78 @@ fn non_synthetic_bundle_leaves_transcript_flag_false() {
     for (i, tx) in txs.iter().enumerate() {
         assert!(!tx.synthetic, "transcript[{}] must stay synthetic=false for non-synthetic bundle", i);
     }
+}
+
+// ── Phase 3.1 helpers: paralog structure projection ──────────────────────────
+
+/// Build a 3-node FamilyGraph with two copies that share node 0 + node 2 but
+/// differ in node 1 (copy 1 has it, copy 2 doesn't). Used to verify the
+/// representative-copy and exon-projection helpers.
+fn three_node_two_copy_fg() -> FamilyGraph {
+    let nodes = vec![
+        ExonClass {
+            idx: NodeIdx(0), chrom: "chr1".into(), span: (1000, 1100), strand: '+',
+            per_copy_sequences: vec![(0, b"AAAA".to_vec()), (1, b"AAAA".to_vec())],
+            per_copy_spans: vec![(0, (1000, 1100)), (1, (5000, 5100))],
+            copy_specific: false, profile: None,
+        },
+        ExonClass {
+            idx: NodeIdx(1), chrom: "chr1".into(), span: (1500, 1600), strand: '+',
+            per_copy_sequences: vec![(0, b"CCCC".to_vec())],
+            per_copy_spans: vec![(0, (1500, 1600))],
+            copy_specific: true, profile: None,
+        },
+        ExonClass {
+            idx: NodeIdx(2), chrom: "chr1".into(), span: (2000, 2100), strand: '+',
+            per_copy_sequences: vec![(0, b"GGGG".to_vec()), (1, b"GGGG".to_vec())],
+            per_copy_spans: vec![(0, (2000, 2100)), (1, (6000, 6100))],
+            copy_specific: false, profile: None,
+        },
+    ];
+    let edges = vec![
+        JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 1, strand: '+' },
+        JunctionEdge { from: NodeIdx(1), to: NodeIdx(2), family_support: 1, strand: '+' },
+        JunctionEdge { from: NodeIdx(0), to: NodeIdx(2), family_support: 1, strand: '+' },
+    ];
+    FamilyGraph { family_id: 0, nodes, edges }
+}
+
+#[test]
+fn representative_copy_picks_most_complete() {
+    let fg = three_node_two_copy_fg();
+    // Copy 0 contributes to all 3 nodes, copy 1 to 2 nodes — copy 0 wins.
+    assert_eq!(fg.representative_copy(), Some(0));
+}
+
+#[test]
+fn paralog_exon_spans_returns_genomic_order_for_copy() {
+    let fg = three_node_two_copy_fg();
+    // Copy 0: 3 exons in genomic order
+    assert_eq!(
+        fg.paralog_exon_spans(0),
+        vec![(1000, 1100), (1500, 1600), (2000, 2100)],
+    );
+    // Copy 1: 2 exons (skips the copy-specific node)
+    assert_eq!(
+        fg.paralog_exon_spans(1),
+        vec![(5000, 5100), (6000, 6100)],
+    );
+    // Nonexistent copy
+    assert_eq!(fg.paralog_exon_spans(99), Vec::<(u64, u64)>::new());
+}
+
+#[test]
+fn paralog_offsets_project_onto_candidate_locus() {
+    // Phase 3.1 logic: offsets relative to first exon, then add candidate.start.
+    let fg = three_node_two_copy_fg();
+    let exons = fg.paralog_exon_spans(0);
+    let base = exons[0].0;
+    let offsets: Vec<(u64, u64)> = exons.iter().map(|(s, e)| (s - base, e - base)).collect();
+    assert_eq!(offsets, vec![(0, 100), (500, 600), (1000, 1100)]);
+    // Project onto candidate at chr2:50000.
+    let cand_start: u64 = 50000;
+    let projected: Vec<(u64, u64)> = offsets.iter()
+        .map(|(rs, re)| (cand_start + *rs, cand_start + *re))
+        .collect();
+    assert_eq!(projected, vec![(50000, 50100), (50500, 50600), (51000, 51100)]);
 }
