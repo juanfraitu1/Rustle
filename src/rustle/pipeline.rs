@@ -86,6 +86,119 @@ struct GuideJunctionCacheKey {
     strand: char,
 }
 
+/// Diagnostic: scan the genome for each family's k-mer profile and print
+/// candidate novel-paralog loci to stderr. Triggered by --vg-scan-novel-loci.
+/// Loads the genome on demand if `genome` is None and `genome_fasta_path`
+/// is provided. No-op without either.
+fn run_genome_scan_diagnostic(
+    families: &[crate::vg::FamilyGroup],
+    bundles: &[crate::types::Bundle],
+    genome: Option<&crate::genome::GenomeIndex>,
+    genome_fasta_path: Option<&str>,
+) {
+    use crate::vg_hmm::positional::{scan_genome_for_family_loci, ScanParams, KnownParalogSpan};
+    let owned_genome: Option<crate::genome::GenomeIndex>;
+    let g = match genome {
+        Some(g) => g,
+        None => match genome_fasta_path {
+            Some(p) => {
+                eprintln!("[VG-SCAN] loading genome FASTA for scan: {}", p);
+                match crate::genome::GenomeIndex::from_fasta(p) {
+                    Ok(g) => { owned_genome = Some(g); owned_genome.as_ref().unwrap() }
+                    Err(e) => {
+                        eprintln!("[VG-SCAN] cannot load genome: {} — skipping scan", e);
+                        return;
+                    }
+                }
+            }
+            None => {
+                eprintln!("[VG-SCAN] no genome FASTA available — skipping scan");
+                return;
+            }
+        },
+    };
+    if families.is_empty() {
+        eprintln!("[VG-SCAN] no families to scan");
+        return;
+    }
+    let params = ScanParams::default();
+    eprintln!("[VG-SCAN] scanning {} families against genome (window={}bp, stride={}bp, min_hits={})",
+              families.len(), params.window, params.stride, params.min_hits_per_window);
+    let t_setup = std::time::Instant::now();
+    use rayon::prelude::*;
+    // Stage 1: build family graphs + k-mer sets (parallel across families).
+    let prepared: Vec<Option<(usize, usize, crate::types::DetHashSet<u64>, Vec<KnownParalogSpan>)>> = families
+        .par_iter()
+        .map(|family| {
+            let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+            let largest = sub_families.into_iter()
+                .filter(|f| f.bundle_indices.len() >= 2)
+                .max_by_key(|f| f.bundle_indices.len())?;
+            let fg = match crate::vg_hmm::family_graph::build_family_graph(
+                &largest, bundles, Some(g), 0.30, 0.30,
+            ) { Ok(g) => g, Err(_) => return None };
+            if fg.nodes.is_empty() { return None; }
+            let mut kmers: crate::types::DetHashSet<u64> = crate::types::DetHashSet::default();
+            for node in &fg.nodes {
+                for (_, seq) in &node.per_copy_sequences {
+                    if seq.len() < params.kmer_len { continue; }
+                    for w in seq.windows(params.kmer_len) {
+                        if !w.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) { continue; }
+                        let mut h: u64 = 0xcbf29ce484222325;
+                        for &b in w {
+                            h ^= b as u64;
+                            h = h.wrapping_mul(0x100000001b3);
+                        }
+                        kmers.insert(h);
+                    }
+                }
+            }
+            if kmers.is_empty() { return None; }
+            let known: Vec<KnownParalogSpan> = largest.bundle_indices.iter()
+                .map(|&bi| (bundles[bi].chrom.clone(), bundles[bi].start, bundles[bi].end))
+                .collect();
+            Some((largest.family_id, largest.bundle_indices.len(), kmers, known))
+        })
+        .collect();
+    // Stage 2: single-pass multi-family genome scan.
+    let mut keep: Vec<(usize, usize, usize)> = Vec::new();   // (family_id, n_copies, n_kmers) for output
+    let mut family_kmer_sets: Vec<crate::types::DetHashSet<u64>> = Vec::new();
+    let mut known_per_family: Vec<Vec<KnownParalogSpan>> = Vec::new();
+    for entry in prepared.into_iter().flatten() {
+        let (fid, n_copies, kmers, known) = entry;
+        keep.push((fid, n_copies, kmers.len()));
+        family_kmer_sets.push(kmers);
+        known_per_family.push(known);
+    }
+    let t_setup_ms = t_setup.elapsed().as_millis();
+    eprintln!("[VG-SCAN] family-graph + k-mer build: {} families, {}ms",
+              family_kmer_sets.len(), t_setup_ms);
+    let t_scan = std::time::Instant::now();
+    let per_family = crate::vg_hmm::positional::scan_genome_for_all_families(
+        &family_kmer_sets, g, &known_per_family, &params, 4,
+    );
+    let t_scan_ms = t_scan.elapsed().as_millis();
+    eprintln!("[VG-SCAN] genome scan completed in {}ms", t_scan_ms);
+
+    let mut total_candidates = 0usize;
+    for (fi, candidates) in per_family.iter().enumerate() {
+        if candidates.is_empty() { continue; }
+        let (fid, n_copies, n_kmers) = keep[fi];
+        eprintln!(
+            "[VG-SCAN] family {} ({} known copies, {} k-mers): {} candidate loci",
+            fid, n_copies, n_kmers, candidates.len()
+        );
+        for c in candidates.iter().take(5) {
+            eprintln!(
+                "[VG-SCAN]   {}:{}-{} hits={} density={:.1}/kb",
+                c.chrom, c.start, c.end, c.n_kmer_hits, c.density_per_kb,
+            );
+        }
+        total_candidates += candidates.len();
+    }
+    eprintln!("[VG-SCAN] total {} candidate loci across all families", total_candidates);
+}
+
 fn init_rayon_pool(threads: usize) {
     if threads > 0 {
         rayon::ThreadPoolBuilder::new()
@@ -8154,6 +8267,20 @@ pub fn run<P: AsRef<Path>>(
                 "[VG] {} family group(s) covering {} bundles after quality filter",
                 families.len(),
                 families.iter().map(|f| f.bundle_indices.len()).sum::<usize>(),
+            );
+        }
+
+        // Diagnostic: --vg-scan-novel-loci runs the genome k-mer scan against
+        // each family's profile and prints candidate novel-paralog loci.
+        // Phase 1 of the positional-prior rescue path. Reads no reads, only
+        // genome — runs offline relative to the BAM iteration.
+        if config.vg_scan_novel_loci {
+            run_genome_scan_diagnostic(
+                &families,
+                &bundles,
+                vg_genome_for_kmer_filter.as_ref()
+                    .or(vg_genome_for_discovery.as_ref()),
+                config.genome_fasta.as_deref(),
             );
         }
         (families, raw_family_bundles)

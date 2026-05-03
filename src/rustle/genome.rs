@@ -59,6 +59,17 @@ impl GenomeIndex {
         Some(seq[s..e].to_vec())
     }
 
+    /// Iterate over (chrom_name, sequence_bytes) for every contig in the genome.
+    /// Used by genome-wide scans (e.g. positional k-mer scan).
+    pub fn chroms(&self) -> impl Iterator<Item = (&str, &[u8])> {
+        self.seqs.iter().map(|(k, v)| (k.as_str(), v.as_slice()))
+    }
+
+    /// Length of a chromosome's sequence, or 0 if not present.
+    pub fn chrom_len(&self, chrom: &str) -> u64 {
+        self.seqs.get(chrom).map(|s| s.len() as u64).unwrap_or(0)
+    }
+
     /// Check reference-like splice consensus at intron boundaries.
     /// Junction coordinates are donor=left exon end, acceptor=right exon start (0-based half-open).
     /// The intron spans [donor, acceptor) — first intron base is at `donor`, last at `acceptor - 1`.

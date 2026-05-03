@@ -877,6 +877,7 @@ pub struct RunConfig {
     pub vg_em_max_iter: usize,
     /// Discover novel gene copies from poorly-mapped/unmapped reads (--vg-discover-novel).
     pub vg_discover_novel: bool,
+    pub vg_scan_novel_loci: bool,
     /// Output path for family group report TSV (--vg-report).
     pub vg_report: Option<std::path::PathBuf>,
     /// Multi-mapping solver: em or flow [default: em].
@@ -1174,6 +1175,7 @@ impl Default for RunConfig {
             vg_min_shared_reads: 3,
             vg_em_max_iter: 20,
             vg_discover_novel: false,
+            vg_scan_novel_loci: false,
             vg_report: None,
             vg_solver: VgSolver::Em,
             vg_snp: false,

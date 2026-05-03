@@ -432,6 +432,14 @@ struct Args {
     #[arg(long)]
     vg_discover_novel: bool,
 
+    /// Diagnostic: scan the genome with each family's k-mer profile and print
+    /// candidate novel-paralog loci (regions whose 15-mer content matches
+    /// the family but that don't overlap any known paralog). Phase 1 of the
+    /// positional-prior rescue path. Off by default; requires --genome-fasta
+    /// and --vg.
+    #[arg(long)]
+    vg_scan_novel_loci: bool,
+
     /// Output path for family group report TSV
     #[arg(long)]
     vg_report: Option<String>,
@@ -669,6 +677,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_min_shared_reads: args.vg_min_shared,
         vg_em_max_iter: args.vg_em_iter,
         vg_discover_novel: args.vg_discover_novel,
+        vg_scan_novel_loci: args.vg_scan_novel_loci,
         vg_report: args.vg_report.map(std::path::PathBuf::from),
         vg_solver: args.vg_solver.parse().unwrap_or(rustle::types::VgSolver::Em),
         vg_snp: args.vg_snp,
