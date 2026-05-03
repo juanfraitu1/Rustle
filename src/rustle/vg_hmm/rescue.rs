@@ -505,6 +505,25 @@ pub fn run_rescue_with_bundles(
         return Ok((Vec::new(), Vec::new()));
     }
 
+    // Diagnostic cap on the number of unmapped reads scored. The
+    // forward_against_family DP is the bottleneck on full-scale family
+    // graphs (93 families × 70K-k-mer graphs × 5K reads on full GGO.bam
+    // never finished within an hour). Setting this env var to a small
+    // number (e.g. 500) makes Phase-3 diagnostic runs tractable. 0 =
+    // unlimited (default).
+    let read_cap: usize = std::env::var("RUSTLE_VG_RESCUE_READ_CAP")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    if read_cap > 0 && unmapped_reads.len() > read_cap {
+        // Sort by read name for determinism, then truncate.
+        unmapped_reads.sort_by(|a, b| a.0.cmp(&b.0));
+        let n_before = unmapped_reads.len();
+        unmapped_reads.truncate(read_cap);
+        eprintln!(
+            "[VG-HMM] read cap active: scoring first {} of {} prefilter-passing reads (RUSTLE_VG_RESCUE_READ_CAP={})",
+            unmapped_reads.len(), n_before, read_cap,
+        );
+    }
+
     // Score each read only against its candidate families (prefilter narrowed
     // the family set per-read above). For typical reads, ≤2 candidates.
     //
@@ -599,16 +618,220 @@ pub fn run_rescue_with_bundles(
         scored_reads.push((read_name, family_id, vpath, score));
     }
 
+    // ── Phase 3: candidate-locus matching for unmapped reads ──────────────
+    // For reads with no original alignment but whose assigned family has
+    // scan-discovered candidate loci, score the read's k-mers against each
+    // candidate locus's reference sequence. If the best candidate's k-mer
+    // overlap exceeds a threshold, route the read to a "novel" synthesis
+    // path that emits a synthetic bundle at the candidate's coords with
+    // rescue_class=NovelLocusFromScan. Reads that don't match any candidate
+    // strongly fall back to the existing family-graph-spans path.
+    // Phase 3 routed-read tuple: (read_name, chrom, strand, locus_start,
+    // locus_end, score, family_id, projected_exons). The projected_exons
+    // come from Phase 3.1: project a representative paralog's exon
+    // structure onto the candidate locus so the resulting synthetic
+    // bundle preserves splice structure (multi-exon, with junctions),
+    // not just a single big exon. The downstream assembly can then
+    // discover alternative isoforms within the novel locus from per-read
+    // coverage of these projected exons.
+    type RoutedRead = (String, String, char, u64, u64, f64, usize, Vec<(u64, u64)>);
+    let candidate_anchored_reads: Vec<RoutedRead> =
+        if !config.vg_candidate_loci.is_empty() && genome.is_some() {
+            let g = genome.as_ref().unwrap();
+            let anchored_set: std::collections::HashSet<&str> =
+                anchored_reads.iter().map(|(rn, _, _, _)| rn.as_str()).collect();
+            // Build per-family candidate k-mer sets (precompute once).
+            let mut fam_cand_kmers: HashMap<usize, Vec<(crate::vg_hmm::positional::CandidateLocus, DetHashSet<u64>)>> =
+                HashMap::new();
+            for (&fid, locs) in &config.vg_candidate_loci {
+                let mut entry: Vec<(crate::vg_hmm::positional::CandidateLocus, DetHashSet<u64>)> = Vec::new();
+                for c in locs {
+                    let seq = match g.fetch_sequence(&c.chrom, c.start, c.end) {
+                        Some(s) => s,
+                        None => continue,
+                    };
+                    let mut ks: DetHashSet<u64> = DetHashSet::default();
+                    for w in seq.windows(kmer_len) {
+                        if w.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
+                            ks.insert(fnv1a64(w));
+                        }
+                    }
+                    if !ks.is_empty() {
+                        entry.push((c.clone(), ks));
+                    }
+                }
+                if !entry.is_empty() {
+                    fam_cand_kmers.insert(fid, entry);
+                }
+            }
+
+            // Phase 3.1: per family_id, precompute the representative
+            // paralog's exon offsets relative to its first-exon start.
+            // Used to project structure onto each candidate locus.
+            let mut fam_paralog_offsets: HashMap<usize, Vec<(u64, u64)>> = HashMap::new();
+            for fg in family_graphs.iter() {
+                let rep_cid = match fg.representative_copy() {
+                    Some(c) => c,
+                    None => continue,
+                };
+                let exons = fg.paralog_exon_spans(rep_cid);
+                if exons.is_empty() { continue; }
+                let base = exons[0].0;
+                let offsets: Vec<(u64, u64)> = exons.iter()
+                    .map(|(s, e)| (s.saturating_sub(base), e.saturating_sub(base)))
+                    .collect();
+                fam_paralog_offsets.insert(fg.family_id, offsets);
+            }
+
+            // Phase 3.2: per (family, candidate locus) pair, precompute
+            // per-projected-exon k-mer sets. Lets us decide PER READ which
+            // exons it supports — same family, same locus, different reads
+            // may light up different exon subsets, which is exactly what
+            // enables isoform discovery within the novel locus.
+            //
+            // Keyed by (family_id, locus_start) since loci are unique
+            // within a family by chrom+start. Stores (projected_exons,
+            // exon_kmer_sets).
+            type LocusKey = (usize, String, u64);
+            let mut per_locus_exon_kmers: HashMap<LocusKey, (Vec<(u64, u64)>, Vec<DetHashSet<u64>>)> =
+                HashMap::new();
+            for (&fid, locs) in &config.vg_candidate_loci {
+                let offsets = match fam_paralog_offsets.get(&fid) {
+                    Some(o) if !o.is_empty() => o,
+                    _ => continue,
+                };
+                for c in locs {
+                    let proj: Vec<(u64, u64)> = offsets.iter().map(|(rs, re)| {
+                        (c.start.saturating_add(*rs), c.start.saturating_add(*re))
+                    }).collect();
+                    let mut exon_kmers: Vec<DetHashSet<u64>> = Vec::with_capacity(proj.len());
+                    for (s, e) in &proj {
+                        let seq = g.fetch_sequence(&c.chrom, *s, *e).unwrap_or_default();
+                        let mut ks: DetHashSet<u64> = DetHashSet::default();
+                        for w in seq.windows(kmer_len) {
+                            if w.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
+                                ks.insert(fnv1a64(w));
+                            }
+                        }
+                        exon_kmers.push(ks);
+                    }
+                    per_locus_exon_kmers.insert((fid, c.chrom.clone(), c.start), (proj, exon_kmers));
+                }
+            }
+
+            // Build seq lookup by read name.
+            let seq_by_name: HashMap<&str, &[u8]> = unmapped_reads.iter()
+                .map(|(rn, seq, _, _)| (rn.as_str(), seq.as_slice()))
+                .collect();
+
+            let min_overlap_frac: f64 = std::env::var("RUSTLE_VG_RESCUE_NOVEL_OVERLAP")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.30);
+
+            let mut out: Vec<RoutedRead> = Vec::new();
+            let mut n_evaluated = 0usize;
+            let mut n_with_projection = 0usize;
+            for (read_name, family_id, _vpath, score) in &scored_reads {
+                if anchored_set.contains(read_name.as_str()) { continue; }
+                let cands = match fam_cand_kmers.get(family_id) {
+                    Some(c) => c,
+                    None => continue,
+                };
+                let seq = match seq_by_name.get(read_name.as_str()) {
+                    Some(s) => *s,
+                    None => continue,
+                };
+                if seq.len() < kmer_len { continue; }
+                n_evaluated += 1;
+                let mut read_kmers: DetHashSet<u64> = DetHashSet::default();
+                for w in seq.windows(kmer_len) {
+                    if w.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
+                        read_kmers.insert(fnv1a64(w));
+                    }
+                }
+                if read_kmers.is_empty() { continue; }
+                let mut best: Option<(usize, f64)> = None;
+                for (idx, (_loc, cand_kmers)) in cands.iter().enumerate() {
+                    let inter = read_kmers.intersection(cand_kmers).count();
+                    let frac = inter as f64 / read_kmers.len() as f64;
+                    if best.map_or(true, |(_, f)| frac > f) {
+                        best = Some((idx, frac));
+                    }
+                }
+                if let Some((idx, frac)) = best {
+                    if frac >= min_overlap_frac {
+                        let loc = &cands[idx].0;
+                        let strand = family_graphs.iter()
+                            .find(|fg| fg.family_id == *family_id)
+                            .and_then(|fg| fg.nodes.first().map(|n| n.strand))
+                            .unwrap_or('+');
+                        // Phase 3.1+3.2: pick per-locus projection and
+                        // compute which projected exons THIS read supports
+                        // (≥20% of the exon's k-mers appear in the read).
+                        // Reads with different supported-exon subsets at
+                        // the same locus produce alternative isoforms.
+                        let key = (*family_id, loc.chrom.clone(), loc.start);
+                        let supported_exons: Vec<(u64, u64)> =
+                            match per_locus_exon_kmers.get(&key) {
+                                Some((proj, ekmers)) if !proj.is_empty() => {
+                                    n_with_projection += 1;
+                                    let supp: Vec<(u64, u64)> = proj.iter().enumerate()
+                                        .filter_map(|(ei, exon)| {
+                                            let ek = &ekmers[ei];
+                                            if ek.is_empty() { return None; }
+                                            let inter = read_kmers.intersection(ek).count();
+                                            let frac_e = inter as f64 / ek.len() as f64;
+                                            if frac_e >= 0.20 { Some(*exon) } else { None }
+                                        })
+                                        .collect();
+                                    if supp.is_empty() {
+                                        // Read doesn't strongly support any
+                                        // projected exon — fall back to
+                                        // first projected exon as anchor.
+                                        vec![proj[0]]
+                                    } else {
+                                        supp
+                                    }
+                                }
+                                _ => vec![(loc.start, loc.end)],
+                            };
+                        out.push((
+                            read_name.clone(),
+                            loc.chrom.clone(),
+                            strand,
+                            loc.start,
+                            loc.end,
+                            *score,
+                            *family_id,
+                            supported_exons,
+                        ));
+                    }
+                }
+            }
+            if n_evaluated > 0 {
+                eprintln!(
+                    "[VG-HMM] candidate-locus match: {} unmapped reads evaluated, {} routed (overlap≥{:.2}), {} with projected paralog structure",
+                    n_evaluated, out.len(), min_overlap_frac, n_with_projection
+                );
+            }
+            out
+        } else {
+            Vec::new()
+        };
+    let candidate_anchored_names: std::collections::HashSet<String> =
+        candidate_anchored_reads.iter().map(|t| t.0.clone()).collect();
+
     // (f) Build per-family scored maps for synthesize_bundles_refined.
     // Group by family_id, threading the per-node Viterbi read spans through
     // so the refined synthesis can apply boundary refinement.
-    // Reads with `anchored_reads` entries skip this — they go through the
-    // original-alignment synthesis below instead.
+    // Reads with `anchored_reads` (LOO mask) or `candidate_anchored_reads`
+    // (Phase 3 novel-locus) entries skip this — they go through the
+    // dedicated synthesis paths below instead.
     let anchored_names: std::collections::HashSet<String> =
         anchored_reads.iter().map(|(rn, _, _, _)| rn.clone()).collect();
     let mut per_family: HashMap<usize, (usize, Vec<(String, Vec<NodeIdx>, Vec<(usize, usize)>)>)> = HashMap::new();
     for (read_name, family_id, vpath, _ll) in &scored_reads {
         if anchored_names.contains(read_name) { continue; }
+        if candidate_anchored_names.contains(read_name) { continue; }
         let fg_idx = family_graphs.iter().position(|fg| fg.family_id == *family_id);
         if let Some(fi) = fg_idx {
             per_family
@@ -657,16 +880,131 @@ pub fn run_rescue_with_bundles(
         min_reads_per_cluster.max(1),
     );
 
+    // ── Phase 3: candidate-locus synthesis (novel paralog rescue) ─────
+    // For reads routed to a scan-discovered candidate locus, emit a
+    // synthetic bundle at the candidate's coords with rescue_class set
+    // so the GTF carries copy_status="novel".
+    let n_novel_input = candidate_anchored_reads.len();
+    let n_novel_bundles = synthesize_bundles_at_candidate_loci(
+        &candidate_anchored_reads,
+        &mut synthetic_bundles,
+        min_reads_per_cluster.max(1),
+    );
+
     eprintln!(
-        "[VG-HMM] {} candidates, {} synthetic bundles ({} from family-graph spans, {} from {} position-anchored reads)",
+        "[VG-HMM] {} candidates, {} synthetic bundles ({} graph-spans, {} from {} mask-anchored reads, {} from {} candidate-locus reads)",
         candidates.len(),
         synthetic_bundles.len(),
-        synthetic_bundles.len() - n_anchored_bundles,
+        synthetic_bundles.len() - n_anchored_bundles - n_novel_bundles,
         n_anchored_bundles,
         n_anchored_input,
+        n_novel_bundles,
+        n_novel_input,
     );
 
     Ok((candidates, synthetic_bundles))
+}
+
+/// Phase 3 synthesis: cluster reads routed to scan-discovered candidate
+/// loci by overlapping locus span, and emit one synthetic Bundle per
+/// cluster. Each bundle uses the read's projected paralog structure
+/// (Phase 3.1) so the resulting transcripts are multi-exon with proper
+/// junctions — enabling isoform discovery within the novel locus.
+///
+/// `routed_reads`: tuples of (read_name, chrom, strand, locus_start,
+/// locus_end, score, family_id, projected_exons). projected_exons is the
+/// representative paralog's exon structure offset to start at locus_start.
+fn synthesize_bundles_at_candidate_loci(
+    routed_reads: &[(String, String, char, u64, u64, f64, usize, Vec<(u64, u64)>)],
+    out_bundles: &mut Vec<Bundle>,
+    min_reads: usize,
+) -> usize {
+    if routed_reads.is_empty() { return 0; }
+    // Group by (chrom, strand, span). Within each group all reads share
+    // identical projected_exons (since we used a single representative
+    // paralog per family).
+    let mut groups: std::collections::BTreeMap<(String, char, u64, u64),
+        Vec<&(String, String, char, u64, u64, f64, usize, Vec<(u64, u64)>)>> =
+        std::collections::BTreeMap::new();
+    for r in routed_reads {
+        groups.entry((r.1.clone(), r.2, r.3, r.4)).or_default().push(r);
+    }
+    let mut emitted = 0usize;
+    for ((chrom, strand, locus_start, locus_end), group) in groups {
+        if group.len() < min_reads { continue; }
+        // Bundle bounds = union of all reads' supported exons in this
+        // locus. Different reads may support different exon subsets
+        // (Phase 3.2), so we take the outer envelope.
+        let mut all_exon_starts: Vec<u64> = Vec::new();
+        let mut all_exon_ends: Vec<u64> = Vec::new();
+        for r in &group {
+            for &(s, e) in &r.7 {
+                all_exon_starts.push(s);
+                all_exon_ends.push(e);
+            }
+        }
+        let cluster_first = *all_exon_starts.iter().min().unwrap_or(&locus_start);
+        let cluster_last = *all_exon_ends.iter().max().unwrap_or(&locus_end);
+        let bundle_start = cluster_first.saturating_sub(100);
+        let bundle_end = cluster_last + 100;
+        let reads_vec: Vec<BundleRead> = group.iter().enumerate().map(|(i, r)| {
+            // Per-read exon list = the exons THIS read supports via
+            // k-mer match (Phase 3.2). Junctions are derived from
+            // consecutive supported exons — so reads with different
+            // exon subsets generate different junctions, enabling
+            // alternative-isoform discovery downstream.
+            let exons = r.7.clone();
+            let juncs: Vec<crate::types::Junction> = exons.windows(2)
+                .map(|w| crate::types::Junction { donor: w[0].1, acceptor: w[1].0 })
+                .collect();
+            let jvalid = vec![true; juncs.len()];
+            let ref_start = exons.first().map(|e| e.0).unwrap_or(locus_start);
+            let ref_end = exons.last().map(|e| e.1).unwrap_or(locus_end);
+            BundleRead {
+                read_uid: 3_000_000 + i as u64,
+                read_name: std::sync::Arc::from(r.0.as_str()),
+                read_name_hash: 0,
+                ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+                ref_start, ref_end,
+                exons,
+                junctions: juncs.clone(),
+                junction_valid: jvalid,
+                junctions_raw: juncs,
+                junctions_del: Vec::new(),
+                weight: 1.0, is_reverse: strand == '-', strand,
+                has_poly_start: false, has_poly_end: false,
+                has_poly_start_aligned: false, has_poly_start_unaligned: false,
+                has_poly_end_aligned: false, has_poly_end_unaligned: false,
+                unaligned_poly_t: 0, unaligned_poly_a: 0,
+                has_last_exon_polya: false, has_first_exon_polyt: false,
+                query_length: None, clip_left: 0, clip_right: 0,
+                nh: 1, nm: 0, md: None, insertion_sites: Vec::new(),
+                unitig: false, unitig_cov: 0.0,
+                read_count_yc: 0.0, countfrag_len: 0.0, countfrag_num: 0.0,
+                junc_mismatch_weight: 0.0,
+                pair_idx: Vec::new(), pair_count: Vec::new(),
+                mapq: 0, mismatches: Vec::new(),
+                hp_tag: None, ps_tag: None,
+                is_primary_alignment: true,
+            }
+        }).collect();
+
+        out_bundles.push(Bundle {
+            chrom: chrom.clone(),
+            start: bundle_start,
+            end: bundle_end,
+            strand,
+            reads: reads_vec,
+            junction_stats: JunctionStats::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: true,
+            rescue_class: Some(RescueClass::NovelLocusFromScan),
+        });
+        emitted += 1;
+    }
+    emitted
 }
 
 /// Cluster `anchored_reads` by chrom + overlapping genomic position and

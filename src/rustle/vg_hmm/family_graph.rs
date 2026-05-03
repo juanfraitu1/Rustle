@@ -65,6 +65,31 @@ impl FamilyGraph {
         nodes_with_pos.sort_by_key(|(s, _)| *s);
         nodes_with_pos.into_iter().map(|(_, idx)| idx).collect()
     }
+
+    /// Pick the "representative" copy whose path traverses the most exon
+    /// classes — i.e., the most complete known paralog. Used for Phase 3.1
+    /// projection of exon structure onto a candidate locus.
+    pub fn representative_copy(&self) -> Option<CopyId> {
+        let mut counts: std::collections::BTreeMap<CopyId, usize> = std::collections::BTreeMap::new();
+        for n in &self.nodes {
+            for (cid, _) in &n.per_copy_sequences {
+                *counts.entry(*cid).or_insert(0) += 1;
+            }
+        }
+        counts.into_iter().max_by_key(|(_, c)| *c).map(|(cid, _)| cid)
+    }
+
+    /// Genomic-ordered (start, end) spans for the given copy's exons. Returns
+    /// empty Vec if the copy doesn't contribute. Used by Phase 3.1 to
+    /// project paralog structure onto a novel candidate locus.
+    pub fn paralog_exon_spans(&self, cid: CopyId) -> Vec<(u64, u64)> {
+        let path = self.recover_paralog_path(cid);
+        path.into_iter().filter_map(|nidx| {
+            self.nodes[nidx.0].per_copy_spans.iter()
+                .find(|(c, _)| *c == cid)
+                .map(|(_, sp)| *sp)
+        }).collect()
+    }
 }
 
 impl Index<NodeIdx> for FamilyGraph {

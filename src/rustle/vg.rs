@@ -2284,7 +2284,9 @@ pub fn write_family_report_with_em(
                     Some(RescueClass::Divergent)            => c.n_divergent    += 1,
                     Some(RescueClass::Structural)           => c.n_structural   += 1,
                     Some(RescueClass::ReferenceAbsent)      => c.n_ref_absent   += 1,
-                    Some(RescueClass::NeedsExternalVerification) | None => {}
+                    Some(RescueClass::NovelLocusFromScan)
+                    | Some(RescueClass::NeedsExternalVerification)
+                    | None => {}
                 }
             }
         }

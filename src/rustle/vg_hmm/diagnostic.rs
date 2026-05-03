@@ -40,6 +40,12 @@ pub enum RescueClass {
     ReferenceAbsent,
     /// Internal stage inconclusive; requires external minimap2 verification.
     NeedsExternalVerification,
+    /// Synthetic bundle was placed at a candidate locus discovered by the
+    /// genome k-mer scan (Phase 3 positional rescue) — represents a novel
+    /// paralog not present in any aligned bundle. The locus's family
+    /// signature was detected by `vg_hmm::positional` but no bundle existed
+    /// there at family-discovery time.
+    NovelLocusFromScan,
 }
 
 impl RescueClass {
@@ -52,6 +58,7 @@ impl RescueClass {
             RescueClass::Structural => "structural",
             RescueClass::ReferenceAbsent => "reference_absent",
             RescueClass::NeedsExternalVerification => "needs_external_verification",
+            RescueClass::NovelLocusFromScan => "novel_locus_from_scan",
         }
     }
 }
