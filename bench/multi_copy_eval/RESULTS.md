@@ -29,6 +29,32 @@ The 5th signal is what makes this a *graph-structural* definition: real paralogs
 
 So the stricter definition tightens the family set by 34% without losing any of rustle's paralog-discovery wins.
 
+## Validation D — TE-bridge spot-check (10 of 152 drops)
+
+Manually inspected 10 random low_primitive_jaccard drops by looking up
+which gorilla genes overlap each region.
+
+Distribution of all 152 low_primitive_jaccard drops:
+- 72 cross 2 chromosomes; 55 same chrom; 25 cross 3+ chromosomes
+- 87/152 (57%) have computed jaccard <0.10 (clear failures)
+- 64/152 (42%) are just 2-copy clusters
+
+10/10 sampled drops are correctly filtered (NOT real paralogs):
+- 6 cross-cluster TE-bridges: different gene families spuriously merged
+  via repetitive-element cross-mapping (CTNNA2+LRRTM1, MICOS+CHCHD3+EXOC4+
+  EEF1G across 3 chromosomes, casein-kinase + 10 unrelated genes,
+  PRKN+PACRG adjacent-but-distinct, mitochondrial-ribosomal+other-ribosomal,
+  CTNNA3+TASP1)
+- 3 same-gene segmentation artifacts: one gene wrongly split into multiple
+  bundles via alternative isoforms or coverage gaps (MAGI1 → 2 bundles,
+  HPSE2 → 3 bundles, LOC+intergenic → 7 bundles)
+- 1 borderline (jaccard=0.182, just below threshold): SNX14/SYNCRIP+intergenic
+  cross-chrom — genuine TE-bridge
+
+NONE of the 10 sampled drops are real multi-copy paralog families. The
+primitive_jaccard signal correctly filters two distinct artifact classes:
+spurious cross-locus merges and same-gene multi-bundle splits.
+
 ## Validation C — threshold sensitivity sweep
 
 Sweep `--vg-family-min-primitive-jaccard` from 0.05 to 0.50 on full GGO.bam:

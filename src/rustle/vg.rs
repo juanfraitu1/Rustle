@@ -461,19 +461,60 @@ pub fn filter_high_confidence_families(
     let mut kept: Vec<FamilyGroup> = Vec::new();
     let mut drops: std::collections::BTreeMap<&'static str, usize> = std::collections::BTreeMap::new();
 
+    // Optional dump of dropped families for offline analysis (validation D —
+    // confirm filter drops are TE-bridges, not real paralogs).
+    let dump_path = std::env::var("RUSTLE_VG_DUMP_DROPPED_FAMILIES").ok();
+    let mut dump_file: Option<std::io::BufWriter<std::fs::File>> = dump_path.as_ref()
+        .and_then(|p| std::fs::File::create(p).ok())
+        .map(std::io::BufWriter::new);
+    if let Some(ref mut f) = dump_file {
+        use std::io::Write;
+        let _ = writeln!(f, "family_id\tn_copies\tn_intron_copies\tn_chroms\tchrom\tregions\tn_shared_reads\tshared_per_copy\texon_cv\tprimitive_jaccard\tdrop_reason");
+    }
+    let dump_drop = |df: &mut Option<std::io::BufWriter<std::fs::File>>, fam: &FamilyGroup,
+                     bundles: &[Bundle], reason: &str, exon_cv: f64, primitive_jaccard: f64| {
+        if let Some(f) = df {
+            use std::io::Write;
+            let n_copies = fam.bundle_indices.len();
+            let n_shared = fam.multimap_reads.len();
+            let shared_per_copy = if n_copies > 0 { n_shared as f64 / n_copies as f64 } else { 0.0 };
+            let n_intron_copies = fam.bundle_indices.iter()
+                .filter(|&&bi| bundles.get(bi).map(|b| !b.junction_stats.is_empty()).unwrap_or(false))
+                .count();
+            let chroms: std::collections::BTreeSet<&str> = fam.bundle_indices.iter()
+                .filter_map(|&bi| bundles.get(bi).map(|b| b.chrom.as_str()))
+                .collect();
+            let chrom = bundles.get(fam.bundle_indices[0])
+                .map(|b| b.chrom.as_str()).unwrap_or("?");
+            let regions: Vec<String> = fam.bundle_indices.iter()
+                .filter_map(|&bi| bundles.get(bi))
+                .map(|b| format!("{}:{}-{}:{}", b.chrom, b.start, b.end, b.strand))
+                .collect();
+            let _ = writeln!(f,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{}",
+                fam.family_id, n_copies, n_intron_copies, chroms.len(), chrom,
+                regions.join(";"), n_shared, shared_per_copy, exon_cv,
+                primitive_jaccard, reason
+            );
+        }
+    };
+
     for fam in families {
         let n_copies = fam.bundle_indices.len();
         if n_copies < min_copies {
             *drops.entry("singleton").or_insert(0) += 1;
+            dump_drop(&mut dump_file, &fam, bundles, "singleton", -1.0, -1.0);
             continue;
         }
         if n_copies > max_copies {
             *drops.entry("megafamily").or_insert(0) += 1;
+            dump_drop(&mut dump_file, &fam, bundles, "megafamily", -1.0, -1.0);
             continue;
         }
         let n_shared = fam.multimap_reads.len();
         if n_shared < min_shared {
             *drops.entry("low_shared").or_insert(0) += 1;
+            dump_drop(&mut dump_file, &fam, bundles, "low_shared", -1.0, -1.0);
             continue;
         }
         // Sharing density: a 17-copy "family" with 13 shared reads has
@@ -481,10 +522,12 @@ pub fn filter_high_confidence_families(
         let shared_per_copy = n_shared as f64 / n_copies as f64;
         if shared_per_copy < min_shared_per_copy {
             *drops.entry("low_shared_per_copy").or_insert(0) += 1;
+            dump_drop(&mut dump_file, &fam, bundles, "low_shared_per_copy", -1.0, -1.0);
             continue;
         }
         // CV of intron counts (only over copies with ≥1 intron). Cheap
         // structure-similarity proxy that works across loci.
+        let mut computed_exon_cv = -1.0_f64;
         if max_exon_cv > 0.0 {
             let intron_counts: Vec<usize> = fam.bundle_indices.iter()
                 .map(|&bi| bundles.get(bi).map(|b| b.junction_stats.len()).unwrap_or(0))
@@ -498,8 +541,10 @@ pub fn filter_high_confidence_families(
                         .map(|&c| { let d = c as f64 - mean; d * d })
                         .sum::<f64>() / n;
                     let cv = var.sqrt() / mean;
+                    computed_exon_cv = cv;
                     if cv > max_exon_cv {
                         *drops.entry("high_exon_cv").or_insert(0) += 1;
+                        dump_drop(&mut dump_file, &fam, bundles, "high_exon_cv", cv, -1.0);
                         continue;
                     }
                 }
@@ -554,6 +599,8 @@ pub fn filter_high_confidence_families(
                 let mean_jaccard = if n_pairs > 0 { sum / n_pairs as f64 } else { 0.0 };
                 if mean_jaccard < min_primitive_jaccard {
                     *drops.entry("low_primitive_jaccard").or_insert(0) += 1;
+                    dump_drop(&mut dump_file, &fam, bundles,
+                              "low_primitive_jaccard", computed_exon_cv, mean_jaccard);
                     continue;
                 }
             }
