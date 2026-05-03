@@ -527,36 +527,100 @@ pub fn run_rescue_with_bundles(
     // Score each read only against its candidate families (prefilter narrowed
     // the family set per-read above). For typical reads, ≤2 candidates.
     //
-    // Parallelized over reads (rayon par_iter): forward_against_family and
-    // viterbi_path are pure functions of `(fg, seq)` — fg shared `&` across
-    // threads, seqs are non-overlapping reads. On full GGO.bam scale (10K+
-    // unmapped + masked reads), the prior sequential loop took hours; with
-    // par_iter on 32 cores the scoring drops to a few minutes.
+    // Per-path scoring: for each (read, candidate-family) we score the read
+    // against EACH KNOWN PARALOG'S path through the graph via
+    // `forward_against_path`, instead of running family-wide
+    // `forward_against_family` once. Per-path DP is O(K × L × prof) where K
+    // is the path length (≈ 10-15 nodes per paralog) versus the family-wide
+    // O(N × L × prof) where N is the union of all paralog node sets (≈ 30+
+    // for multi-copy families). The total work scales with the number of
+    // paralogs but each call has a much smaller working set, so memory
+    // bandwidth contention drops dramatically — on full GGO.bam this was
+    // the bottleneck that stalled the rescue at 5K+ reads × 2-cores
+    // utilization for hours.
     //
-    // Algorithmic fix: only compute viterbi_path ONCE per read, against the
-    // best-scoring family (found via forward_against_family). The previous
-    // code recomputed viterbi every time the running-best forward score
-    // improved — wasteful and a distinct hot path itself.
-    let _ = families; // reserved for future use; scoring uses family_graphs.
+    // Tradeoffs:
+    //  - We get per-paralog likelihoods directly (useful for downstream
+    //    HMM-EM — already a separate path, but the per-path scoring here
+    //    means the same primitive is reusable).
+    //  - Viterbi for read_spans is replaced by `viterbi_against_path` on
+    //    the chosen best path, also O(K × L × prof) — the prior
+    //    `viterbi_path` was a second family-wide DP.
+    //
+    // Precompute per-family per-copy paths once (outside the hot loop).
+    let mut family_paths: Vec<Vec<(crate::vg_hmm::family_graph::CopyId, Vec<crate::vg_hmm::family_graph::NodeIdx>)>> =
+        Vec::with_capacity(family_graphs.len());
+    for fg in &family_graphs {
+        let mut entries: Vec<(crate::vg_hmm::family_graph::CopyId, Vec<crate::vg_hmm::family_graph::NodeIdx>)> = Vec::new();
+        for cid in fg.all_copies() {
+            let path = fg.recover_paralog_path(cid);
+            if !path.is_empty() {
+                entries.push((cid, path));
+            }
+        }
+        family_paths.push(entries);
+    }
+    let _ = families;
+    // Per-path vs family-wide scoring: opt-in via RUSTLE_VG_RESCUE_PER_PATH=1.
+    // Per-path was hypothesized to be cache-friendlier but on full GGO.bam it
+    // does ~5x more total work per family (one DP per copy, not per family),
+    // and has not been validated end-to-end. Default keeps the prior
+    // family-wide forward + family-wide Viterbi path.
+    let use_per_path: bool = std::env::var("RUSTLE_VG_RESCUE_PER_PATH")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0) != 0;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let progress = AtomicUsize::new(0);
+    let total_reads = unmapped_reads.len();
+    let progress_step = (total_reads / 10).max(50);
+    let scoring_t0 = std::time::Instant::now();
     let scored_per_read: Vec<Option<(String, usize, crate::vg_hmm::scorer::ViterbiPath, f64, Option<OriginalAlignment>)>> =
         unmapped_reads.par_iter().map(|(read_name, seq, cand_fams, orig)| {
             let mut best_score = f64::NEG_INFINITY;
             let mut best_fi: Option<usize> = None;
-            for &fi in cand_fams {
-                let fg = match family_graphs.get(fi) { Some(g) => g, None => continue };
-                let ll = crate::vg_hmm::scorer::forward_against_family(fg, seq);
-                if ll > best_score {
-                    best_score = ll;
-                    best_fi = Some(fi);
+            let mut best_copy_idx: Option<usize> = None;
+            if use_per_path {
+                for &fi in cand_fams {
+                    let _fg = match family_graphs.get(fi) { Some(g) => g, None => continue };
+                    let paths = match family_paths.get(fi) { Some(p) => p, None => continue };
+                    for (ci, (_cid, path)) in paths.iter().enumerate() {
+                        let ll = crate::vg_hmm::scorer::forward_against_path(&family_graphs[fi], seq, path);
+                        if ll > best_score {
+                            best_score = ll;
+                            best_fi = Some(fi);
+                            best_copy_idx = Some(ci);
+                        }
+                    }
                 }
+            } else {
+                for &fi in cand_fams {
+                    let fg = match family_graphs.get(fi) { Some(g) => g, None => continue };
+                    let ll = crate::vg_hmm::scorer::forward_against_family(fg, seq);
+                    if ll > best_score {
+                        best_score = ll;
+                        best_fi = Some(fi);
+                    }
+                }
+            }
+            let n = progress.fetch_add(1, Ordering::Relaxed) + 1;
+            if n % progress_step == 0 {
+                let elapsed = scoring_t0.elapsed().as_secs();
+                eprintln!("[VG-HMM]   scored {}/{} reads ({}s elapsed)", n, total_reads, elapsed);
             }
             if best_score <= min_loglik { return None; }
             let fi = best_fi?;
             let fg = family_graphs.get(fi)?;
-            let vpath = crate::vg_hmm::scorer::viterbi_path(fg, seq)?;
+            let vpath = if use_per_path {
+                let ci = best_copy_idx?;
+                let path = &family_paths[fi][ci].1;
+                crate::vg_hmm::scorer::viterbi_against_path(fg, seq, path)?
+            } else {
+                crate::vg_hmm::scorer::viterbi_path(fg, seq)?
+            };
             let family_id = fg.family_id;
             Some((read_name.clone(), family_id, vpath, best_score, orig.clone()))
         }).collect();
+    eprintln!("[VG-HMM] HMM scoring: {} reads in {}s (per_path={})",
+              total_reads, scoring_t0.elapsed().as_secs(), use_per_path);
 
     // Score-distribution diagnostic: helps tune min_loglik and explains
     // why rescue rejects reads. Counts per-bucket of the best forward log-lik.
