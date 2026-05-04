@@ -322,6 +322,66 @@ pub fn forward_against_path(fg: &FamilyGraph, read: &[u8], path: &[NodeIdx]) -> 
     boundary[l]
 }
 
+/// Constrained Viterbi over a single path through the family graph.
+///
+/// Returns `(read_spans, score)` where:
+///  - `read_spans[i]` is the (entry, exit) read positions consumed by `path[i]`
+///  - `score` is the Viterbi log-probability for that exact path
+///
+/// Path-constrained variant of [`viterbi_path`]: the topology is fully
+/// specified by `path`, so we walk the nodes in sequence and chain a per-node
+/// Viterbi DP through them. Per-call cost is O(K × L × profile_len) where K
+/// is the path length — much cheaper than the family-wide O(N × L × prof) DP
+/// when N >> K (large multi-copy families with shared exon classes).
+///
+/// Returns `None` if `path` is empty or scores `NEG_INF`.
+pub fn viterbi_against_path(
+    fg: &FamilyGraph,
+    read: &[u8],
+    path: &[NodeIdx],
+) -> Option<ViterbiPath> {
+    if path.is_empty() { return None; }
+    let l = read.len();
+
+    // Per-node entry r-vector for traceback.
+    let mut entry_rs: Vec<Vec<usize>> = Vec::with_capacity(path.len());
+    let mut boundary = vec![NEG_INF; l + 1];
+    boundary[0] = 0.0;
+
+    for &nidx in path {
+        if nidx.0 >= fg.nodes.len() { return None; }
+        let node = &fg.nodes[nidx.0];
+        match &node.profile {
+            Some(profile) => {
+                let (out, e_r) = profile_viterbi_with_boundary_and_entry(profile, read, &boundary);
+                boundary = out;
+                entry_rs.push(e_r);
+            }
+            None => return None,
+        }
+    }
+
+    let score = boundary[l];
+    if score == NEG_INF { return None; }
+
+    // Traceback: at the LAST node, exit position is l. Each predecessor's
+    // exit position is the current node's entry position (instantaneous edge).
+    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(path.len());
+    let mut cur_exit = l;
+    for entry_r in entry_rs.iter().rev() {
+        let entry = entry_r[cur_exit];
+        spans.push((entry, cur_exit));
+        cur_exit = entry;
+    }
+    spans.reverse();
+
+    Some(ViterbiPath {
+        nodes: path.to_vec(),
+        read_spans: spans,
+        score,
+    })
+}
+
 // ── Viterbi best-path (Task 3.3) ─────────────────────────────────────────────
 
 /// Family-level Viterbi result.

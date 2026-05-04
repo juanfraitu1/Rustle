@@ -66,6 +66,18 @@ impl FamilyGraph {
         nodes_with_pos.into_iter().map(|(_, idx)| idx).collect()
     }
 
+    /// Set of all CopyIds that contribute to at least one exon class.
+    /// Sorted ascending (deterministic for downstream iteration).
+    pub fn all_copies(&self) -> Vec<CopyId> {
+        let mut s: std::collections::BTreeSet<CopyId> = std::collections::BTreeSet::new();
+        for n in &self.nodes {
+            for (cid, _) in &n.per_copy_sequences {
+                s.insert(*cid);
+            }
+        }
+        s.into_iter().collect()
+    }
+
     /// Pick the "representative" copy whose path traverses the most exon
     /// classes — i.e., the most complete known paralog. Used for Phase 3.1
     /// projection of exon structure onto a candidate locus.
