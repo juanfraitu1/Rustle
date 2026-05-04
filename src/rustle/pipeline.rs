@@ -11394,6 +11394,81 @@ pub fn run<P: AsRef<Path>>(
                     config.eonly,
                     config.keeptrf_usepath_tsv.as_deref(),
                 );
+
+                // parity_decisions Layer 2: emit one event per finalized
+                // transfrag at this bundle. Span is the genomic span (first
+                // node start → last node end). Payload includes the intron
+                // chain (junction donor/acceptor coords) so we can join
+                // transfrags by intron chain across rustle and StringTie.
+                {
+                    let src = graph_mut.source_id;
+                    let snk = graph_mut.sink_id;
+                    for tf in transfrags.iter() {
+                        // Skip empty / virtual transfrags.
+                        let real_nodes: Vec<usize> = tf
+                            .node_ids
+                            .iter()
+                            .copied()
+                            .filter(|&n| n != src && n != snk)
+                            .collect();
+                        if real_nodes.is_empty() {
+                            continue;
+                        }
+                        let first_node = real_nodes.first().copied().unwrap();
+                        let last_node = real_nodes.last().copied().unwrap();
+                        let span_start = graph_mut
+                            .nodes
+                            .get(first_node)
+                            .map(|n| n.start)
+                            .unwrap_or(0);
+                        let span_end = graph_mut
+                            .nodes
+                            .get(last_node)
+                            .map(|n| n.end)
+                            .unwrap_or(0);
+                        // Build intron chain: for each consecutive pair of
+                        // real nodes, if they're not contiguous, the gap is
+                        // an intron. We emit the INTRON coordinates (1-based
+                        // inclusive: first base of intron, last base of intron)
+                        // so they match StringTie's GTF intron convention.
+                        //
+                        // Conversion:
+                        //   rustle a.end = 0-based exclusive end of donor exon
+                        //                = 1-based last base of donor exon
+                        //   intron starts at the next base = a.end + 1
+                        //   rustle b.start = 0-based inclusive start of acceptor
+                        //                  = 1-based first base of acceptor - 1
+                        //   intron ends at the previous base = b.start
+                        let mut introns: Vec<(u64, u64)> = Vec::new();
+                        for w in real_nodes.windows(2) {
+                            let a = &graph_mut.nodes[w[0]];
+                            let b = &graph_mut.nodes[w[1]];
+                            if b.start > a.end {
+                                introns.push((a.end + 1, b.start));
+                            }
+                        }
+                        let intron_str: String = introns
+                            .iter()
+                            .map(|(d, ac)| format!("{}-{}", d, ac))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let payload = format!(
+                            r#""abund":{:.4},"longread":{},"n_introns":{},"introns":"{}""#,
+                            tf.abundance,
+                            if tf.longread { "true" } else { "false" },
+                            introns.len(),
+                            intron_str,
+                        );
+                        crate::parity_decisions::emit(
+                            "transfrag_define",
+                            Some(&graph_bundle.chrom),
+                            span_start + 1, // 0-based → 1-based
+                            span_end,
+                            graph_bundle.strand,
+                            &payload,
+                        );
+                    }
+                }
                 // Option A (graph segmentation refactor): coalesce seed
                 // transfrags whose intron chains differ only by alt-donor/
                 // acceptor shifts within a small window. Reduces seed count
