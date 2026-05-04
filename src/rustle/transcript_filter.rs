@@ -4855,93 +4855,6 @@ pub fn alt_terminal_rescue(
 ///   - There exists a transcript A with coverage ≥ `cov_ratio` × B.coverage
 ///   - A and B share the same strand and overlapping span
 ///   - At least `min_shared_frac` of B's junctions appear in A (exact coordinate match)
-/// Structural containment check ported from StringTie's `included_pred`
-/// (rlink.cpp:17638). Returns true iff the smaller (by exon count) transcript
-/// is structurally included in the larger one — i.e. its intron junctions
-/// are a subset of the larger's, with terminal-exon variation allowed within
-/// `intronextension`.
-///
-/// Simplified vs upstream: omits the bpcov-based intron-extension coverage
-/// checks (rlink.cpp:17684-17712). Those further-restrict false positives
-/// when the smaller pred extends into the larger's intron with high cov.
-/// The basic structural check is what does the bulk of the kill work.
-fn included_pred_structural(a: &Transcript, b: &Transcript) -> bool {
-    // Long-read mode uses CHI_WIN=100; short-read uses 2*longintronanchor=20.
-    // We're long-read default.
-    let intron_ext: u64 = 100;
-
-    // Spans must overlap.
-    let a_start = a.exons.first().map(|e| e.0).unwrap_or(0);
-    let a_end = a.exons.last().map(|e| e.1).unwrap_or(0);
-    let b_start = b.exons.first().map(|e| e.0).unwrap_or(0);
-    let b_end = b.exons.last().map(|e| e.1).unwrap_or(0);
-    if a_start > b_end || b_start > a_end {
-        return false;
-    }
-
-    // big = the one with more exons; small = the other.
-    let (big, small) = if a.exons.len() >= b.exons.len() {
-        (a, b)
-    } else {
-        (b, a)
-    };
-
-    // Walk big's exons until we find one overlapping small's first exon.
-    let mut bex: usize = 0;
-    while bex < big.exons.len() {
-        if small.exons[0].0 > big.exons[bex].1 {
-            bex += 1;
-            continue;
-        }
-        // small.exons[0].start <= big.exons[bex].end
-        if small.exons[0].1 < big.exons[bex].0 {
-            return false; // no overlap
-        }
-        // small.exons[0].end >= big.exons[bex].start
-        let mut sex: usize = 0;
-
-        while sex < small.exons.len() && bex < big.exons.len() {
-            if sex == small.exons.len() - 1 {
-                // small's last exon
-                if bex == big.exons.len() - 1 {
-                    return true; // same intron structure + overlap
-                }
-                // small ends inside big's chain — only true if small's last
-                // exon doesn't extend past big's next intron.
-                if sex > 0 && small.exons[sex].1 > big.exons[bex + 1].0 {
-                    return false;
-                }
-                // (skipped: bpcov-based intron-extension check)
-                let extends_far = sex > 0
-                    && small.exons[sex].1 > big.exons[bex].1 + intron_ext;
-                if extends_far {
-                    // Conservative: if small extends materially into big's
-                    // intron without bpcov confirmation, treat as not-included.
-                    return false;
-                }
-                return true;
-            }
-            // sex is not last in small.
-            if bex == big.exons.len() - 1 {
-                return false; // small still has more exons but big is done
-            }
-            // donor end must match exactly
-            if small.exons[sex].1 != big.exons[bex].1 {
-                return false;
-            }
-            // skipped: bpcov-based intron-extension check on first exon
-
-            bex += 1;
-            sex += 1;
-            // acceptor start must match
-            if small.exons[sex].0 != big.exons[bex].0 {
-                return false;
-            }
-        }
-        return false;
-    }
-    false
-}
 
 /// Kill predictions that are structurally INCLUDED in a higher-coverage
 /// prediction. Mirrors StringTie's predord pairwise loop kill at
@@ -4957,19 +4870,19 @@ fn included_pred_structural(a: &Transcript, b: &Transcript) -> bool {
 pub fn kill_included_variants(
     transcripts: Vec<Transcript>,
     drop: f64,
+    bpcov: Option<&Bpcov>,
     verbose: bool,
 ) -> Vec<Transcript> {
     if transcripts.len() < 2 {
         return transcripts;
     }
-    // Sort by score desc (cov × tlen, mirroring ST's predordCmp). For us,
-    // cov × num_exons works as a proxy since we don't have transcript length
-    // here; use coverage as tiebreaker so dominant isoforms float to top.
+    // ST sorts by cov only (predordCmp at rlink.cpp:17497) — desc.
     let mut order: Vec<usize> = (0..transcripts.len()).collect();
     order.sort_unstable_by(|&a, &b| {
-        let sa = transcripts[a].coverage * transcripts[a].exons.len() as f64;
-        let sb = transcripts[b].coverage * transcripts[b].exons.len() as f64;
-        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+        transcripts[b]
+            .coverage
+            .partial_cmp(&transcripts[a].coverage)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     let mut dead = SmallBitset::with_capacity(transcripts.len().min(64));
@@ -5002,8 +4915,9 @@ pub fn kill_included_variants(
             if t1.coverage <= t2.coverage * drop {
                 continue;
             }
-            // Structural inclusion check.
-            if !included_pred_structural(t1, t2) {
+            // Structural + bpcov-extension inclusion check (rlink.cpp:17638
+            // plus 17680-17690 / 17703-17712). Long-read mode, reference=true.
+            if !included_pred(&transcripts, n1, n2, true, bpcov, 4.75, 0.1, true) {
                 continue;
             }
             dead.insert_grow(n2);
@@ -5060,17 +4974,19 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
     };
 
     for j in 1..n_exons {
-        // Intron is between exon[j-1] and exon[j] in 0-based half-open
-        // [donor_exon.1, acceptor_exon.0). For 1-based inclusive intron coords
-        // matching ST: [donor_exon.1 + 1, acceptor_exon.0 - 1].
+        // Rustle exon (s, e) is 0-based half-open [s, e); ST exon (s, e) is
+        // 1-based inclusive [s, e]. Numerically e_rustle == e_st (rustle's
+        // exclusive end equals ST's inclusive last base) and s_rustle ==
+        // s_st - 1. The intron 0-based half-open is [donor_end, acc_start)
+        // — donor_end is the rustle exclusive end of the donor exon and
+        // acc_start is the rustle inclusive start of the acceptor exon.
         let donor_end = tx.exons[j - 1].1;
         let acc_start = tx.exons[j].0;
-        if acc_start <= donor_end + 1 {
-            // contiguous (no intron) — leave as not-low
-            continue;
+        if acc_start <= donor_end {
+            continue; // contiguous or overlap — leave as not-low
         }
-        let intron_len = (acc_start - 1) - donor_end;
-        let intron_sum = cov_range(donor_end + 1, acc_start);
+        let intron_len = acc_start - donor_end;
+        let intron_sum = cov_range(donor_end, acc_start);
         let introncov = intron_sum / (intron_len as f64).max(1.0);
 
         if introncov == 0.0 {
@@ -5091,25 +5007,22 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
             lowintron[j - 1] = true;
             continue;
         }
-        // Left drop: compare exon-end window vs intron-start window.
-        let l_e_start = donor_end.saturating_sub(LONG_INTRON_ANCHOR - 1);
+        // Left drop: 25 bases of donor-exon end vs 25 bases of intron start.
+        // ST compares raw sums (line 18668), not averages.
+        let l_e_start = donor_end.saturating_sub(LONG_INTRON_ANCHOR);
         let l_e = cov_range(l_e_start, donor_end);
-        let l_i_end = donor_end + LONG_INTRON_ANCHOR;
-        let l_i = cov_range(donor_end + 1, l_i_end + 1);
-        let l_e_avg = l_e / (LONG_INTRON_ANCHOR as f64);
-        let l_i_avg = l_i / (LONG_INTRON_ANCHOR as f64);
-        if l_i_avg < l_e_avg * intronfrac {
+        let l_i = cov_range(donor_end, donor_end + LONG_INTRON_ANCHOR);
+        if l_i < l_e * intronfrac {
             lowintron[j - 1] = true;
             continue;
         }
-        // Right drop
-        let r_i_start = acc_start.saturating_sub(LONG_INTRON_ANCHOR);
-        let r_i = cov_range(r_i_start, acc_start);
-        let r_e_end = acc_start + LONG_INTRON_ANCHOR;
-        let r_e = cov_range(acc_start, r_e_end);
-        let r_i_avg = r_i / (LONG_INTRON_ANCHOR as f64);
-        let r_e_avg = r_e / (LONG_INTRON_ANCHOR as f64);
-        if r_i_avg < r_e_avg * intronfrac {
+        // Right drop: 25 bases of intron end vs 25 bases of acceptor-exon start.
+        let r_i = cov_range(
+            acc_start.saturating_sub(LONG_INTRON_ANCHOR),
+            acc_start,
+        );
+        let r_e = cov_range(acc_start, acc_start + LONG_INTRON_ANCHOR);
+        if r_i < r_e * intronfrac {
             lowintron[j - 1] = true;
         }
     }
@@ -5144,21 +5057,24 @@ fn retained_intron_score(
         if !lowintron_n1[i - 1] {
             continue;
         }
-        // ST: if(j==pred[n2]->exons.Count()-1 && pred[n2]->cov<frac*pred[n1]->cov && pred[n2]->exons[j].start<=pred[n1]->exons[i-1].end) return 1;
+        // ST: if(j==pred[n2]->exons.Count()-1 && pred[n2]->cov<frac*pred[n1]->cov && pred[n2]->exons[j].start<=pred[n1]->exons[i-1].end)
+        // ST is 1-based inclusive; rustle is 0-based half-open: numerically
+        // s_st = s_r + 1 and e_st = e_r, so ST's `s <= e` (1-based) ↔
+        // rustle's `s < e` (0-based half-open) and ST's `e < s` ↔ `e <= s`.
         if j == n2_exons.len() - 1
             && n2.coverage < frac * n1.coverage
-            && n2_exons[j].0 <= n1_exons[i - 1].1
+            && n2_exons[j].0 < n1_exons[i - 1].1
         {
             return 1;
         }
         // advance j while n2's exon ends before n1's intron-i
-        while j < n2_exons.len() && n2_exons[j].1 < n1_exons[i].0 {
+        while j < n2_exons.len() && n2_exons[j].1 <= n1_exons[i].0 {
             j += 1;
         }
         if j == 0 && n2.coverage < frac * n1.coverage {
             return 1;
         }
-        if j < n2_exons.len() && n2_exons[j].0 <= n1_exons[i - 1].1 {
+        if j < n2_exons.len() && n2_exons[j].0 < n1_exons[i - 1].1 {
             if j > 0 && j < n2_exons.len() - 1 {
                 return 2; // middle exon spans n1's low intron — strong kill
             } else if n2.coverage < frac * n1.coverage {
@@ -5186,11 +5102,13 @@ pub fn kill_retained_intron_variants(
         Some(b) => b,
         None => return transcripts, // need bpcov for lowintron computation
     };
+    // ST sorts by cov only (predordCmp at rlink.cpp:17497) — desc.
     let mut order: Vec<usize> = (0..transcripts.len()).collect();
     order.sort_unstable_by(|&a, &b| {
-        let sa = transcripts[a].coverage * transcripts[a].exons.len() as f64;
-        let sb = transcripts[b].coverage * transcripts[b].exons.len() as f64;
-        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+        transcripts[b]
+            .coverage
+            .partial_cmp(&transcripts[a].coverage)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     // Precompute lowintron per transcript (only used as n1).
     let lowintrons: Vec<Vec<bool>> = transcripts
@@ -5221,7 +5139,25 @@ pub fn kill_retained_intron_variants(
             if t2.ref_transcript_id.is_some() {
                 continue;
             }
-            if retained_intron_score(t1, t2, &lowintrons[n1]) > 0 {
+            let score = retained_intron_score(t1, t2, &lowintrons[n1]);
+            if score > 0 {
+                if std::env::var_os("RUSTLE_KRI_DEBUG").is_some() {
+                    eprintln!(
+                        "[KRI] kill n2={}:{}-{} cov={:.2} nex={} \
+                         by n1={}:{}-{} cov={:.2} nex={} score={}",
+                        t2.chrom,
+                        t2.exons.first().map(|e| e.0).unwrap_or(0),
+                        t2.exons.last().map(|e| e.1).unwrap_or(0),
+                        t2.coverage,
+                        t2.exons.len(),
+                        t1.chrom,
+                        t1.exons.first().map(|e| e.0).unwrap_or(0),
+                        t1.exons.last().map(|e| e.1).unwrap_or(0),
+                        t1.coverage,
+                        t1.exons.len(),
+                        score,
+                    );
+                }
                 dead.insert_grow(n2);
                 killed += 1;
             }
@@ -6067,7 +6003,7 @@ pub fn print_predcluster_with_summary_multi(
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0.5);
             let before_kic = if fate_trace { txs.clone() } else { Vec::new() };
-            txs = kill_included_variants(txs, drop, config.verbose);
+            txs = kill_included_variants(txs, drop, bpcov, config.verbose);
             emit_fate("kill_included_variants", &before_kic, &txs);
             trace_stage("predcluster.kill_included_variants", &txs);
             emit_pred_stage("AFTER_kill_included_variants", &txs);
