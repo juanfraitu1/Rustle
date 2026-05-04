@@ -8163,6 +8163,13 @@ pub fn run<P: AsRef<Path>>(
         (acc.0 + n, acc.1 + s)
     });
     let mut n_bundles = bundles.len();
+
+    // (Layer 1 bundle_define moved downstream — rustle's outer Bundle is a
+    // BAM-region read group spanning many genes; the StringTie `CBundle`
+    // analogue is the SubBundleResult emitted by build_sub_bundles. We emit
+    // bundle_define from that loop instead. See line 12341 for the per-
+    // subbundle emit.)
+
     if debug_stage::is_enabled() {
         for bundle in &bundles {
             let n_junctions: usize = bundle.reads.iter().map(|r| r.junctions.len()).sum();
@@ -12316,6 +12323,31 @@ pub fn run<P: AsRef<Path>>(
             // each bundlenode in the merged bundle and create a SEPARATE graph for each,
             // matching architecture (per-bundlenode graphs with shared read mapping).
             let per_bnode_mode = bundle_graph_mode && std::env::var_os("RUSTLE_PER_BNODE").is_some();
+
+            // parity_decisions Layer 1: emit one event per finalized subbundle
+            // (the unit comparable to StringTie's CBundle).
+            //
+            // Convention normalization: rustle stores 0-based half-open
+            // [start, end) exon-region coordinates. StringTie uses 1-based
+            // inclusive [start, end]. Both are reported as the same span if
+            // we shift rustle's start by +1 (and leave end unchanged, since
+            // 0-based exclusive end == 1-based inclusive last base).
+            for sbr in &effective_subbundles {
+                let n_bnodes = sbr.bnode_colors.len();
+                let n_reads = sbr.read_scale.iter().filter(|&&s| s > 0.0).count();
+                let payload = format!(
+                    r#""n_bnodes":{},"n_reads":{}"#,
+                    n_bnodes, n_reads
+                );
+                crate::parity_decisions::emit(
+                    "bundle_define",
+                    Some(&bundle.chrom),
+                    sbr.start + 1,
+                    sbr.end,
+                    sbr.strand,
+                    &payload,
+                );
+            }
 
             for (sbr_idx, sbr) in effective_subbundles.iter().enumerate() {
                 if sbr.strand == '.' {
