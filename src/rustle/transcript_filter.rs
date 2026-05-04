@@ -5024,6 +5024,223 @@ pub fn kill_included_variants(
         .collect()
 }
 
+/// Compute the "low intron" bitmask for one transcript, mirroring StringTie's
+/// per-intron lowintron computation in print_predcluster (rlink.cpp:18653-18681).
+///
+/// An intron is marked "low" if any of these holds:
+///   - introncov < 1.0 (long-read mode threshold; short-read uses singlethr)
+///   - introncov < exoncov * intronfrac (intronfrac=ERROR_PERC=0.1 for long reads)
+///   - the left or right junction shows a strong cov drop within
+///     longintronanchor=25 bp of the splice site
+///
+/// Returns Vec<bool> of length n_exons - 1 (same as intron count).
+fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
+    const LONG_INTRON_ANCHOR: u64 = 25;
+    const ERROR_PERC: f64 = 0.1;
+    let intronfrac = ERROR_PERC;
+    let bundle_start = bpcov.bundle_start;
+    let n_exons = tx.exons.len();
+    if n_exons < 2 {
+        return Vec::new();
+    }
+    let mut lowintron = vec![false; n_exons - 1];
+
+    let cov_range = |s: u64, e: u64| -> f64 {
+        if e <= s {
+            return 0.0;
+        }
+        let s_idx = s.saturating_sub(bundle_start) as usize;
+        let e_idx = e.saturating_sub(bundle_start) as usize;
+        let s_idx = s_idx.min(bpcov.cov.len());
+        let e_idx = e_idx.min(bpcov.cov.len());
+        if e_idx <= s_idx {
+            return 0.0;
+        }
+        bpcov.get_cov_range(s_idx, e_idx)
+    };
+
+    for j in 1..n_exons {
+        // Intron is between exon[j-1] and exon[j] in 0-based half-open
+        // [donor_exon.1, acceptor_exon.0). For 1-based inclusive intron coords
+        // matching ST: [donor_exon.1 + 1, acceptor_exon.0 - 1].
+        let donor_end = tx.exons[j - 1].1;
+        let acc_start = tx.exons[j].0;
+        if acc_start <= donor_end + 1 {
+            // contiguous (no intron) — leave as not-low
+            continue;
+        }
+        let intron_len = (acc_start - 1) - donor_end;
+        let intron_sum = cov_range(donor_end + 1, acc_start);
+        let introncov = intron_sum / (intron_len as f64).max(1.0);
+
+        if introncov == 0.0 {
+            // ST: only sets low if introncov non-zero. Mirror that.
+            continue;
+        }
+        if introncov < 1.0 {
+            lowintron[j - 1] = true;
+            continue;
+        }
+        // exoncov = avg cov over the two flanking exons combined
+        let prev_len = (tx.exons[j - 1].1 - tx.exons[j - 1].0).max(1);
+        let next_len = (tx.exons[j].1 - tx.exons[j].0).max(1);
+        let prev_sum = cov_range(tx.exons[j - 1].0, tx.exons[j - 1].1);
+        let next_sum = cov_range(tx.exons[j].0, tx.exons[j].1);
+        let exoncov = (prev_sum + next_sum) / ((prev_len + next_len) as f64);
+        if introncov < exoncov * intronfrac {
+            lowintron[j - 1] = true;
+            continue;
+        }
+        // Left drop: compare exon-end window vs intron-start window.
+        let l_e_start = donor_end.saturating_sub(LONG_INTRON_ANCHOR - 1);
+        let l_e = cov_range(l_e_start, donor_end);
+        let l_i_end = donor_end + LONG_INTRON_ANCHOR;
+        let l_i = cov_range(donor_end + 1, l_i_end + 1);
+        let l_e_avg = l_e / (LONG_INTRON_ANCHOR as f64);
+        let l_i_avg = l_i / (LONG_INTRON_ANCHOR as f64);
+        if l_i_avg < l_e_avg * intronfrac {
+            lowintron[j - 1] = true;
+            continue;
+        }
+        // Right drop
+        let r_i_start = acc_start.saturating_sub(LONG_INTRON_ANCHOR);
+        let r_i = cov_range(r_i_start, acc_start);
+        let r_e_end = acc_start + LONG_INTRON_ANCHOR;
+        let r_e = cov_range(acc_start, r_e_end);
+        let r_i_avg = r_i / (LONG_INTRON_ANCHOR as f64);
+        let r_e_avg = r_e / (LONG_INTRON_ANCHOR as f64);
+        if r_i_avg < r_e_avg * intronfrac {
+            lowintron[j - 1] = true;
+        }
+    }
+    lowintron
+}
+
+/// Returns nonzero if `n2` has an exon spanning a "low" intron of `n1` —
+/// i.e., n2 is reading through what n1 (correctly) splices out as a low-cov
+/// intron. Mirrors StringTie's int-returning `retainedintron` (rlink.cpp:17608).
+///
+/// Returns:
+///   0 — no retained intron detected
+///   1 — n2's terminal exon spans n1's low intron AND n2.cov < frac * n1.cov
+///   2 — n2 has a middle (internal) exon spanning n1's low intron (always kill)
+fn retained_intron_score(
+    n1: &Transcript,
+    n2: &Transcript,
+    lowintron_n1: &[bool],
+) -> i32 {
+    const ERROR_PERC: f64 = 0.1;
+    let frac = ERROR_PERC;
+    let n2_exons = &n2.exons;
+    let n1_exons = &n1.exons;
+    if n1_exons.len() < 2 || n2_exons.is_empty() {
+        return 0;
+    }
+    let mut j: usize = 0;
+    for i in 1..n1_exons.len() {
+        if j > n2_exons.len().saturating_sub(1) {
+            return 0;
+        }
+        if !lowintron_n1[i - 1] {
+            continue;
+        }
+        // ST: if(j==pred[n2]->exons.Count()-1 && pred[n2]->cov<frac*pred[n1]->cov && pred[n2]->exons[j].start<=pred[n1]->exons[i-1].end) return 1;
+        if j == n2_exons.len() - 1
+            && n2.coverage < frac * n1.coverage
+            && n2_exons[j].0 <= n1_exons[i - 1].1
+        {
+            return 1;
+        }
+        // advance j while n2's exon ends before n1's intron-i
+        while j < n2_exons.len() && n2_exons[j].1 < n1_exons[i].0 {
+            j += 1;
+        }
+        if j == 0 && n2.coverage < frac * n1.coverage {
+            return 1;
+        }
+        if j < n2_exons.len() && n2_exons[j].0 <= n1_exons[i - 1].1 {
+            if j > 0 && j < n2_exons.len() - 1 {
+                return 2; // middle exon spans n1's low intron — strong kill
+            } else if n2.coverage < frac * n1.coverage {
+                return 1;
+            }
+        }
+    }
+    0
+}
+
+/// Kill predictions whose exons span "low" introns of a higher-coverage
+/// prediction (StringTie's retainedintron rule, rlink.cpp:18954).
+///
+/// For each pair (n1, n2) sorted desc by cov*n_exons, kill n2 if
+/// retained_intron_score(n1, n2, lowintron(n1)) > 0.
+pub fn kill_retained_intron_variants(
+    transcripts: Vec<Transcript>,
+    bpcov: Option<&Bpcov>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if transcripts.len() < 2 {
+        return transcripts;
+    }
+    let bpcov = match bpcov {
+        Some(b) => b,
+        None => return transcripts, // need bpcov for lowintron computation
+    };
+    let mut order: Vec<usize> = (0..transcripts.len()).collect();
+    order.sort_unstable_by(|&a, &b| {
+        let sa = transcripts[a].coverage * transcripts[a].exons.len() as f64;
+        let sb = transcripts[b].coverage * transcripts[b].exons.len() as f64;
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    // Precompute lowintron per transcript (only used as n1).
+    let lowintrons: Vec<Vec<bool>> = transcripts
+        .iter()
+        .map(|t| compute_lowintron(t, bpcov))
+        .collect();
+
+    let mut dead = SmallBitset::with_capacity(transcripts.len().min(64));
+    let mut killed = 0usize;
+    for ii in 0..order.len() {
+        let n1 = order[ii];
+        if dead.contains(n1) {
+            continue;
+        }
+        if lowintrons[n1].iter().all(|&b| !b) {
+            continue; // n1 has no low introns to retain
+        }
+        for jj in (ii + 1)..order.len() {
+            let n2 = order[jj];
+            if dead.contains(n2) {
+                continue;
+            }
+            let t1 = &transcripts[n1];
+            let t2 = &transcripts[n2];
+            if t1.chrom != t2.chrom || t1.strand != t2.strand {
+                continue;
+            }
+            if t2.ref_transcript_id.is_some() {
+                continue;
+            }
+            if retained_intron_score(t1, t2, &lowintrons[n1]) > 0 {
+                dead.insert_grow(n2);
+                killed += 1;
+            }
+        }
+    }
+    if verbose && killed > 0 {
+        eprintln!(
+            "    kill_retained_intron_variants: removed {} transcript(s)",
+            killed
+        );
+    }
+    transcripts
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !dead.contains(*i))
+        .map(|(_, t)| t)
+        .collect()
+}
+
 ///   - B.coverage < A.coverage (weaker variant)
 pub fn collapse_high_overlap_variants(
     transcripts: Vec<Transcript>,
@@ -5854,6 +6071,16 @@ pub fn print_predcluster_with_summary_multi(
             emit_fate("kill_included_variants", &before_kic, &txs);
             trace_stage("predcluster.kill_included_variants", &txs);
             emit_pred_stage("AFTER_kill_included_variants", &txs);
+        }
+        // StringTie-parity: kill predictions whose exon spans a "low" intron
+        // of a higher-coverage prediction. Mirrors rlink.cpp:18954.
+        // Default off; enable via RUSTLE_KILL_RETAINED_INTRON=1.
+        if std::env::var_os("RUSTLE_KILL_RETAINED_INTRON").is_some() {
+            let before_kri = if fate_trace { txs.clone() } else { Vec::new() };
+            txs = kill_retained_intron_variants(txs, bpcov, config.verbose);
+            emit_fate("kill_retained_intron_variants", &before_kri, &txs);
+            trace_stage("predcluster.kill_retained_intron_variants", &txs);
+            emit_pred_stage("AFTER_kill_retained_intron_variants", &txs);
         }
     } else {
         summary.after_near_equal_chain_collapse = txs.len();
