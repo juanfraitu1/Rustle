@@ -5430,6 +5430,59 @@ pub fn print_predcluster_with_summary_multi(
             );
         }
     };
+    // parity_decisions Layer 4: emit one pred_filter_stage event per surviving
+    // transcript after each named filter stage. Span = first exon start (1-based)
+    // → last exon end. Payload includes stage name + intron chain so we can
+    // diff per-stage on both sides.
+    let emit_pred_stage = |stage: &str, txs: &[Transcript]| {
+        for t in txs {
+            if t.exons.is_empty() {
+                continue;
+            }
+            let span_start = t.exons.first().map(|e| e.0).unwrap_or(0);
+            let span_end = t.exons.last().map(|e| e.1).unwrap_or(0);
+            // Build intron chain (1-based inclusive, donor+1 → acceptor-1).
+            // Note: rustle's exons are stored 0-based half-open, but coverage
+            // payloads downstream typically write GTF-style 1-based inclusive.
+            // For consistency with Layer 2's transfrag_define convention,
+            // emit donor_exon_last_base+1 .. acceptor_exon_first_base-1.
+            // rustle exon (s,e) is [s, e) with 0-based half-open, so:
+            //   1-based donor exon last base = e
+            //   1-based acceptor exon first base = s+1
+            //   intron first base = e + 1
+            //   intron last base  = s   (since acceptor first base - 1 = s)
+            let mut introns_str = String::new();
+            let mut n_introns = 0usize;
+            for w in t.exons.windows(2) {
+                let donor_end = w[0].1;
+                let acc_start = w[1].0;
+                if acc_start > donor_end {
+                    if n_introns > 0 {
+                        introns_str.push(',');
+                    }
+                    introns_str.push_str(&format!("{}-{}", donor_end + 1, acc_start));
+                    n_introns += 1;
+                }
+            }
+            let payload = format!(
+                r#""stage":"{}","cov":{:.4},"n_exons":{},"n_introns":{},"introns":"{}""#,
+                stage,
+                t.coverage,
+                t.exons.len(),
+                n_introns,
+                introns_str,
+            );
+            crate::parity_decisions::emit(
+                "pred_filter_stage",
+                Some(&t.chrom),
+                span_start + 1, // 0-based → 1-based
+                span_end,
+                t.strand,
+                &payload,
+            );
+        }
+    };
+
     let (mut protected, mut txs): (Vec<_>, Vec<_>) = if config.emit_junction_paths {
         transcripts
             .into_iter()
@@ -5437,6 +5490,7 @@ pub fn print_predcluster_with_summary_multi(
     } else {
         (Vec::new(), transcripts)
     };
+    emit_pred_stage("ENTER", &txs);
     let mut summary = PredclusterStageSummary {
         entry_count: txs.len(),
         ..PredclusterStageSummary::default()
@@ -5460,6 +5514,7 @@ pub fn print_predcluster_with_summary_multi(
         txs = eliminate_incomplete_vs_guides(txs, config.verbose);
         emit_fate("eliminate_incomplete_vs_guides", &before, &txs);
         trace_stage("predcluster.eliminate_incomplete_vs_guides", &txs);
+        emit_pred_stage("AFTER_eliminate_incomplete_vs_guides", &txs);
     }
     // retained_intron filter (legacy; default OFF).
     // Replacement is TODO — this gate was over-aggressive, killing legit
@@ -5502,6 +5557,7 @@ pub fn print_predcluster_with_summary_multi(
         txs = dedup_exact_intron_chains(txs, config.verbose);
         emit_fate("pre_pairwise_dedup", &before_pre_dedup, &txs);
         trace_stage("predcluster.pre_pairwise_dedup", &txs);
+        emit_pred_stage("AFTER_pre_pairwise_dedup", &txs);
     }
     if !config.max_sensitivity {
         let before_pairwise = if fate_trace { txs.clone() } else { Vec::new() };
@@ -5527,6 +5583,7 @@ pub fn print_predcluster_with_summary_multi(
         emit_fate("pairwise_overlap_filter", &before_pairwise, &txs);
         trace_stage("predcluster.pairwise_overlap_filter", &txs);
         bundle_cov_dump_stage("after_pairwise", &txs);
+        emit_pred_stage("AFTER_pairwise_overlap_filter", &txs);
     } else {
         // In diagnostic max-sensitivity mode, keep everything through pairwise to avoid
         // masking extractability issues behind heuristic overlap pruning.
@@ -5560,6 +5617,7 @@ pub fn print_predcluster_with_summary_multi(
         emit_fate("isofrac", &before_isofrac, &txs);
         trace_stage("predcluster.isofrac", &txs);
         bundle_cov_dump_stage("after_isofrac", &txs);
+        emit_pred_stage("AFTER_isofrac", &txs);
         if trace_locus_range().is_some() {
             for t in &txs {
                 trace_tx_detail("AFTER_ISOFRAC", t, None);
@@ -5578,6 +5636,7 @@ pub fn print_predcluster_with_summary_multi(
         summary.after_near_equal_chain_collapse = txs.len();
         emit_fate("collapse_near_equal_intron_chains", &before_collapse, &txs);
         trace_stage("predcluster.collapse_near_equal_intron_chains", &txs);
+        emit_pred_stage("AFTER_collapse_near_equal_intron_chains", &txs);
         // Deduplicate transcripts that have identical intron chains (same splice sites)
         // but different terminal exon positions. the original algorithm never emits two transcripts
         // from the same locus with the same intron chain; collapse to the best-coverage copy.
@@ -5586,6 +5645,7 @@ pub fn print_predcluster_with_summary_multi(
         summary.after_exact_chain_dedup = txs.len();
         emit_fate("dedup_exact_intron_chains", &before_exact, &txs);
         trace_stage("predcluster.dedup_exact_intron_chains", &txs);
+        emit_pred_stage("AFTER_dedup_exact_intron_chains", &txs);
         // High-overlap variant collapse: kill transcripts sharing ≥80% of junctions
         // with a higher-coverage transcript (matching StringTie's cascading pairwise kills).
         let before_hov = if fate_trace { txs.clone() } else { Vec::new() };
@@ -5609,6 +5669,7 @@ pub fn print_predcluster_with_summary_multi(
         // cov ratio. See project_parity_dive_2026_05_04.md.
         emit_fate("collapse_high_overlap_variants", &before_hov, &txs);
         trace_stage("predcluster.collapse_high_overlap_variants", &txs);
+        emit_pred_stage("AFTER_collapse_high_overlap_variants", &txs);
     } else {
         summary.after_near_equal_chain_collapse = txs.len();
         summary.after_exact_chain_dedup = txs.len();
@@ -5619,6 +5680,7 @@ pub fn print_predcluster_with_summary_multi(
         summary.after_dedup_subset_chain = txs.len();
         emit_fate("dedup_subset_intron_chains", &before_dedup, &txs);
         trace_stage("predcluster.dedup_subset_intron_chains", &txs);
+        emit_pred_stage("AFTER_dedup_subset_intron_chains", &txs);
     } else {
         summary.after_dedup_subset_chain = txs.len();
     }
@@ -5628,6 +5690,7 @@ pub fn print_predcluster_with_summary_multi(
         emit_fate("filter_contained_transcripts", &before_contained, &txs);
         trace_stage("predcluster.filter_contained_transcripts", &txs);
         bundle_cov_dump_stage("after_filter_contained", &txs);
+        emit_pred_stage("AFTER_filter_contained_transcripts", &txs);
     }
     let before_runoff = if fate_trace { txs.clone() } else { Vec::new() };
     let mut runoff_dist = if config.long_reads { 0 } else { 200 };
@@ -5640,6 +5703,7 @@ pub fn print_predcluster_with_summary_multi(
     summary.after_runoff = txs.len();
     emit_fate("collapse_single_exon_runoff", &before_runoff, &txs);
     trace_stage("predcluster.collapse_single_exon_runoff", &txs);
+    emit_pred_stage("AFTER_collapse_single_exon_runoff", &txs);
     if trace_locus_range().is_some() {
         for t in &txs {
             trace_tx_detail("AFTER_RUNOFF", t, None);
@@ -5657,6 +5721,7 @@ pub fn print_predcluster_with_summary_multi(
     summary.after_polymerase_runoff = txs.len();
     emit_fate("polymerase_runoff_filter", &before_polyrunoff, &txs);
     trace_stage("predcluster.polymerase_runoff_filter", &txs);
+    emit_pred_stage("AFTER_polymerase_runoff_filter", &txs);
     if trace_locus_range().is_some() {
         for t in &txs {
             trace_tx_detail("AFTER_POLYRUNOFF", t, None);
@@ -5670,6 +5735,7 @@ pub fn print_predcluster_with_summary_multi(
     summary.after_polymerase_runon = txs.len();
     emit_fate("polymerase_runon_filter", &before_runon, &txs);
     trace_stage("predcluster.polymerase_runon_filter", &txs);
+    emit_pred_stage("AFTER_polymerase_runon_filter", &txs);
     if trace_locus_range().is_some() {
         for t in &txs {
             trace_tx_detail("AFTER_POLYRUNON", t, None);
@@ -5763,6 +5829,7 @@ pub fn print_predcluster_with_summary_multi(
     }
     emit_fate("readthr_gate", &before_readthr, &txs);
     trace_stage("predcluster.readthr_gate", &txs);
+    emit_pred_stage("AFTER_readthr_gate", &txs);
     bundle_cov_dump_stage("after_readthr", &txs);
 
     if trace_locus_range().is_some() {
@@ -5810,6 +5877,10 @@ pub fn print_predcluster_with_summary_multi(
             );
         }
     }
+    // Layer 4 final emit: surviving transcripts after the entire predcluster
+    // filter chain (just before merging with protected sources).
+    emit_pred_stage("FINAL", &txs);
+
     if !protected.is_empty() {
         protected.extend(txs);
         return (protected, summary);
