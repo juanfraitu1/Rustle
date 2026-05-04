@@ -4867,15 +4867,23 @@ pub fn alt_terminal_rescue(
 ///
 /// Where n1 is the higher-cov pred (predord-sorted desc) and n2 is the
 /// challenger. Guide-pinned predictions are NEVER killed.
+///
+/// When `enable_reverse` is true, also runs StringTie's Rule B at
+/// rlink.cpp:19030-19036 in the same pass: kill the higher-cov but
+/// fewer-exon `n1` when `n1.cov < n2.cov + singlethr` and `n1` is
+/// structurally included in `n2`. Targets truncated j-class predictions.
+/// `n1` at predord index 0 (the global top-cov pred) is immune (`n1 &&`).
 pub fn kill_included_variants(
     transcripts: Vec<Transcript>,
     drop: f64,
     bpcov: Option<&Bpcov>,
+    enable_reverse: bool,
     verbose: bool,
 ) -> Vec<Transcript> {
     if transcripts.len() < 2 {
         return transcripts;
     }
+    const SINGLETHR: f64 = 4.75;
     // ST sorts by cov only (predordCmp at rlink.cpp:17497) — desc.
     let mut order: Vec<usize> = (0..transcripts.len()).collect();
     order.sort_unstable_by(|&a, &b| {
@@ -4886,7 +4894,8 @@ pub fn kill_included_variants(
     });
 
     let mut dead = SmallBitset::with_capacity(transcripts.len().min(64));
-    let mut killed = 0usize;
+    let mut killed_a = 0usize;
+    let mut killed_b = 0usize;
 
     for ii in 0..order.len() {
         let n1 = order[ii];
@@ -4903,31 +4912,52 @@ pub fn kill_included_variants(
             if t1.chrom != t2.chrom || t1.strand != t2.strand {
                 continue;
             }
-            // Don't kill guide-pinned predictions.
-            if t2.ref_transcript_id.is_some() {
+
+            // Rule A (rlink.cpp:19024-19029): kill n2 when n2 has weakly
+            // fewer exons, n1.cov dominates, and n2 is included in n1.
+            // Guide-pinned n2 immune.
+            if t2.ref_transcript_id.is_none()
+                && t2.exons.len() <= t1.exons.len()
+                && t1.coverage > t2.coverage * drop
+                && included_pred(
+                    &transcripts, n1, n2, true, bpcov, SINGLETHR, 0.1, true,
+                )
+            {
+                dead.insert_grow(n2);
+                killed_a += 1;
                 continue;
             }
-            // Must have weakly fewer exons.
-            if t2.exons.len() > t1.exons.len() {
-                continue;
+
+            // Rule B (rlink.cpp:19030-19036): kill n1 when n1 has STRICTLY
+            // fewer exons than n2 and is included in n2. Long-read mode
+            // collapses ST's first || branch (requires n1.tlen>0); we use
+            // only the second branch:
+            //   (n2.cov > singlethr || n1.cov < singlethr)
+            //   && n1.cov < n2.cov + singlethr
+            // ST's `n1 &&` guard protects the global top-cov predord[0]
+            // — translate to `ii > 0`.
+            if enable_reverse
+                && ii > 0
+                && t1.ref_transcript_id.is_none()
+                && t1.exons.len() < t2.exons.len()
+                && (t2.coverage > SINGLETHR || t1.coverage < SINGLETHR)
+                && t1.coverage < t2.coverage + SINGLETHR
+                && included_pred(
+                    &transcripts, n2, n1, true, bpcov, SINGLETHR, 0.1, true,
+                )
+            {
+                dead.insert_grow(n1);
+                killed_b += 1;
+                break; // n1 dead — exit inner loop
             }
-            // n1.cov > n2.cov * DROP — n1 must be at least DROP× n2.
-            if t1.coverage <= t2.coverage * drop {
-                continue;
-            }
-            // Structural + bpcov-extension inclusion check (rlink.cpp:17638
-            // plus 17680-17690 / 17703-17712). Long-read mode, reference=true.
-            if !included_pred(&transcripts, n1, n2, true, bpcov, 4.75, 0.1, true) {
-                continue;
-            }
-            dead.insert_grow(n2);
-            killed += 1;
         }
     }
+    let killed = killed_a + killed_b;
     if verbose && killed > 0 {
         eprintln!(
-            "    kill_included_variants: removed {} transcript(s) (DROP={})",
-            killed, drop
+            "    kill_included_variants: removed {} transcript(s) \
+             (A={}, B={}, DROP={})",
+            killed, killed_a, killed_b, drop
         );
     }
     transcripts
@@ -5994,16 +6024,22 @@ pub fn print_predcluster_with_summary_multi(
         emit_pred_stage("AFTER_collapse_high_overlap_variants", &txs);
 
         // StringTie-parity: kill structurally-included low-coverage variants.
-        // Mirrors rlink.cpp:19002. Default off; enable via:
+        // Mirrors rlink.cpp:19024 (Rule A) and 19030 (Rule B reverse-include).
+        // Default off; enable via:
         //   RUSTLE_KILL_INCLUDED=1
-        //   RUSTLE_KILL_INCLUDED_DROP=0.5   (default 0.5 = ST's DROP)
+        //   RUSTLE_KILL_INCLUDED_DROP=0.5     (default 0.5 = ST's DROP)
+        //   RUSTLE_KILL_INCLUDED_REVERSE=1    (also enable Rule B; default off)
         if std::env::var_os("RUSTLE_KILL_INCLUDED").is_some() {
             let drop: f64 = std::env::var("RUSTLE_KILL_INCLUDED_DROP")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(0.5);
+            let enable_reverse =
+                std::env::var_os("RUSTLE_KILL_INCLUDED_REVERSE").is_some();
             let before_kic = if fate_trace { txs.clone() } else { Vec::new() };
-            txs = kill_included_variants(txs, drop, bpcov, config.verbose);
+            txs = kill_included_variants(
+                txs, drop, bpcov, enable_reverse, config.verbose,
+            );
             emit_fate("kill_included_variants", &before_kic, &txs);
             trace_stage("predcluster.kill_included_variants", &txs);
             emit_pred_stage("AFTER_kill_included_variants", &txs);
