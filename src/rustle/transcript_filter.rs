@@ -4855,6 +4855,175 @@ pub fn alt_terminal_rescue(
 ///   - There exists a transcript A with coverage ≥ `cov_ratio` × B.coverage
 ///   - A and B share the same strand and overlapping span
 ///   - At least `min_shared_frac` of B's junctions appear in A (exact coordinate match)
+/// Structural containment check ported from StringTie's `included_pred`
+/// (rlink.cpp:17638). Returns true iff the smaller (by exon count) transcript
+/// is structurally included in the larger one — i.e. its intron junctions
+/// are a subset of the larger's, with terminal-exon variation allowed within
+/// `intronextension`.
+///
+/// Simplified vs upstream: omits the bpcov-based intron-extension coverage
+/// checks (rlink.cpp:17684-17712). Those further-restrict false positives
+/// when the smaller pred extends into the larger's intron with high cov.
+/// The basic structural check is what does the bulk of the kill work.
+fn included_pred_structural(a: &Transcript, b: &Transcript) -> bool {
+    // Long-read mode uses CHI_WIN=100; short-read uses 2*longintronanchor=20.
+    // We're long-read default.
+    let intron_ext: u64 = 100;
+
+    // Spans must overlap.
+    let a_start = a.exons.first().map(|e| e.0).unwrap_or(0);
+    let a_end = a.exons.last().map(|e| e.1).unwrap_or(0);
+    let b_start = b.exons.first().map(|e| e.0).unwrap_or(0);
+    let b_end = b.exons.last().map(|e| e.1).unwrap_or(0);
+    if a_start > b_end || b_start > a_end {
+        return false;
+    }
+
+    // big = the one with more exons; small = the other.
+    let (big, small) = if a.exons.len() >= b.exons.len() {
+        (a, b)
+    } else {
+        (b, a)
+    };
+
+    // Walk big's exons until we find one overlapping small's first exon.
+    let mut bex: usize = 0;
+    while bex < big.exons.len() {
+        if small.exons[0].0 > big.exons[bex].1 {
+            bex += 1;
+            continue;
+        }
+        // small.exons[0].start <= big.exons[bex].end
+        if small.exons[0].1 < big.exons[bex].0 {
+            return false; // no overlap
+        }
+        // small.exons[0].end >= big.exons[bex].start
+        let mut sex: usize = 0;
+
+        while sex < small.exons.len() && bex < big.exons.len() {
+            if sex == small.exons.len() - 1 {
+                // small's last exon
+                if bex == big.exons.len() - 1 {
+                    return true; // same intron structure + overlap
+                }
+                // small ends inside big's chain — only true if small's last
+                // exon doesn't extend past big's next intron.
+                if sex > 0 && small.exons[sex].1 > big.exons[bex + 1].0 {
+                    return false;
+                }
+                // (skipped: bpcov-based intron-extension check)
+                let extends_far = sex > 0
+                    && small.exons[sex].1 > big.exons[bex].1 + intron_ext;
+                if extends_far {
+                    // Conservative: if small extends materially into big's
+                    // intron without bpcov confirmation, treat as not-included.
+                    return false;
+                }
+                return true;
+            }
+            // sex is not last in small.
+            if bex == big.exons.len() - 1 {
+                return false; // small still has more exons but big is done
+            }
+            // donor end must match exactly
+            if small.exons[sex].1 != big.exons[bex].1 {
+                return false;
+            }
+            // skipped: bpcov-based intron-extension check on first exon
+
+            bex += 1;
+            sex += 1;
+            // acceptor start must match
+            if small.exons[sex].0 != big.exons[bex].0 {
+                return false;
+            }
+        }
+        return false;
+    }
+    false
+}
+
+/// Kill predictions that are structurally INCLUDED in a higher-coverage
+/// prediction. Mirrors StringTie's predord pairwise loop kill at
+/// rlink.cpp:19002:
+///
+///   if n2.exons.len() <= n1.exons.len()
+///      && n1.cov > n2.cov * DROP   (DROP = 0.5)
+///      && included_pred(n1, n2)
+///   { kill n2 }
+///
+/// Where n1 is the higher-cov pred (predord-sorted desc) and n2 is the
+/// challenger. Guide-pinned predictions are NEVER killed.
+pub fn kill_included_variants(
+    transcripts: Vec<Transcript>,
+    drop: f64,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if transcripts.len() < 2 {
+        return transcripts;
+    }
+    // Sort by score desc (cov × tlen, mirroring ST's predordCmp). For us,
+    // cov × num_exons works as a proxy since we don't have transcript length
+    // here; use coverage as tiebreaker so dominant isoforms float to top.
+    let mut order: Vec<usize> = (0..transcripts.len()).collect();
+    order.sort_unstable_by(|&a, &b| {
+        let sa = transcripts[a].coverage * transcripts[a].exons.len() as f64;
+        let sb = transcripts[b].coverage * transcripts[b].exons.len() as f64;
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let mut dead = SmallBitset::with_capacity(transcripts.len().min(64));
+    let mut killed = 0usize;
+
+    for ii in 0..order.len() {
+        let n1 = order[ii];
+        if dead.contains(n1) {
+            continue;
+        }
+        for jj in (ii + 1)..order.len() {
+            let n2 = order[jj];
+            if dead.contains(n2) {
+                continue;
+            }
+            let t1 = &transcripts[n1];
+            let t2 = &transcripts[n2];
+            if t1.chrom != t2.chrom || t1.strand != t2.strand {
+                continue;
+            }
+            // Don't kill guide-pinned predictions.
+            if t2.ref_transcript_id.is_some() {
+                continue;
+            }
+            // Must have weakly fewer exons.
+            if t2.exons.len() > t1.exons.len() {
+                continue;
+            }
+            // n1.cov > n2.cov * DROP — n1 must be at least DROP× n2.
+            if t1.coverage <= t2.coverage * drop {
+                continue;
+            }
+            // Structural inclusion check.
+            if !included_pred_structural(t1, t2) {
+                continue;
+            }
+            dead.insert_grow(n2);
+            killed += 1;
+        }
+    }
+    if verbose && killed > 0 {
+        eprintln!(
+            "    kill_included_variants: removed {} transcript(s) (DROP={})",
+            killed, drop
+        );
+    }
+    transcripts
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !dead.contains(*i))
+        .map(|(_, t)| t)
+        .collect()
+}
+
 ///   - B.coverage < A.coverage (weaker variant)
 pub fn collapse_high_overlap_variants(
     transcripts: Vec<Transcript>,
@@ -5670,6 +5839,22 @@ pub fn print_predcluster_with_summary_multi(
         emit_fate("collapse_high_overlap_variants", &before_hov, &txs);
         trace_stage("predcluster.collapse_high_overlap_variants", &txs);
         emit_pred_stage("AFTER_collapse_high_overlap_variants", &txs);
+
+        // StringTie-parity: kill structurally-included low-coverage variants.
+        // Mirrors rlink.cpp:19002. Default off; enable via:
+        //   RUSTLE_KILL_INCLUDED=1
+        //   RUSTLE_KILL_INCLUDED_DROP=0.5   (default 0.5 = ST's DROP)
+        if std::env::var_os("RUSTLE_KILL_INCLUDED").is_some() {
+            let drop: f64 = std::env::var("RUSTLE_KILL_INCLUDED_DROP")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.5);
+            let before_kic = if fate_trace { txs.clone() } else { Vec::new() };
+            txs = kill_included_variants(txs, drop, config.verbose);
+            emit_fate("kill_included_variants", &before_kic, &txs);
+            trace_stage("predcluster.kill_included_variants", &txs);
+            emit_pred_stage("AFTER_kill_included_variants", &txs);
+        }
     } else {
         summary.after_near_equal_chain_collapse = txs.len();
         summary.after_exact_chain_dedup = txs.len();
