@@ -5594,6 +5594,19 @@ pub fn print_predcluster_with_summary_multi(
         // net negative — they kill real alternative isoforms that share most junctions.
         // The remaining excess comes from graph node granularity differences between
         // Rustle and StringTie that create more path variants.
+        //
+        // 2026-05-04: re-verified with parameter sweep over (min_shared_frac, cov_ratio).
+        // All four cells {(0.70,3), (0.80,5), (0.90,5), (0.95,10)} were net-negative
+        // on chr19 GGO_19.bam:
+        //   (0.70,3.0): Sn 92.1→56.1, Pr 86.3→80.0, exact_match 1694→?
+        //   (0.80,5.0): Sn 92.1→65.7, Pr 86.3→82.8
+        //   (0.90,5.0): Sn 92.1→75.1, Pr 86.3→84.7, exact_match 1694→1382
+        //   (0.95,10.0): Sn 92.1→87.9, Pr 86.3→85.5, exact_match 1694→1616
+        //                (didn't even touch RSTL.135 — 15→15 — yet still lost 78 real matches)
+        // The cov_ratio + shared_frac gates aren't enough to distinguish noise alt-
+        // isoforms (RSTL.135 j-class) from real alt-isoforms in other loci.
+        // Real fix likely needs per-junction coverage support, not transcript-level
+        // cov ratio. See project_parity_dive_2026_05_04.md.
         emit_fate("collapse_high_overlap_variants", &before_hov, &txs);
         trace_stage("predcluster.collapse_high_overlap_variants", &txs);
     } else {
