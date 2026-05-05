@@ -2390,6 +2390,14 @@ pub fn process_transfrags(
     // fix STRG.398 over-emission — divergence is actually in hassink[]
     // population, not pass-2 logic).
     let enable_pass2 = std::env::var_os("RUSTLE_TRFLONG_PASS2_OFF").is_none();
+    // ST-faithful seed inclusion (port slice 1): ST's pass-2 condition is
+    // `guide || ((hardstart||proper_source) && (hardend||proper_sink))`.
+    // Rustle adds `has_sink_completion(n2, ...)` (a forward-chain walk to
+    // hardend/sink) which ST lacks. The chain-walk admits seeds whose last
+    // node isn't directly anchored, contributing to the +1166 extra seeds
+    // seen vs ST on chr19 (parity_decisions seed-iteration trace).
+    // Default off to match ST; legacy behavior via RUSTLE_TRFLONG_SINK_COMPLETION=1.
+    let allow_sink_completion = std::env::var_os("RUSTLE_TRFLONG_SINK_COMPLETION").is_some();
     let trace_trflong = std::env::var_os("RUSTLE_TRFLONG_TRACE").is_some();
     let rep_order_now: Vec<usize> = keeptrf.iter().map(|(r, _, _)| *r).collect();
     let mut trflong_insert: Vec<usize> = Vec::new();
@@ -2406,9 +2414,11 @@ pub fn process_transfrags(
         let hardend = graph.nodes.get(n2).map(|n| n.hardend).unwrap_or(false);
         let has_source_keep = hassource[n1].is_some() && keepsource[n1];
         let has_sink_keep = hassink[n2].is_some() && keepsink[n2];
+        let sink_completion =
+            allow_sink_completion && has_sink_completion(n2, graph, &keepsink, &hassink);
         let complete = transfrags[rid].guide
             || ((hardstart || has_source_keep)
-                && (hardend || has_sink_keep || has_sink_completion(n2, graph, &keepsink, &hassink)));
+                && (hardend || has_sink_keep || sink_completion));
         let incomplete = !transfrags[rid].guide
             && ((!hardstart && !has_source_keep) || (!hardend && !has_sink_keep));
         if transfrags[rid].guide {
@@ -2445,9 +2455,11 @@ pub fn process_transfrags(
             let hardend = graph.nodes.get(n2).map(|n| n.hardend).unwrap_or(false);
             let has_source_keep = hassource[n1].is_some() && keepsource[n1];
             let has_sink_keep = hassink[n2].is_some() && keepsink[n2];
+            let sink_completion =
+                allow_sink_completion && has_sink_completion(n2, graph, &keepsink, &hassink);
             let complete = transfrags[rid].guide
                 || ((hardstart || has_source_keep)
-                    && (hardend || has_sink_keep || has_sink_completion(n2, graph, &keepsink, &hassink)));
+                    && (hardend || has_sink_keep || sink_completion));
             if trace_trflong && tf_overlaps_trace_graph(&transfrags[rid], graph, trace_locus) {
                 let (sp_s, sp_e) = tf_span_graph(&transfrags[rid], graph);
                 eprintln!(
