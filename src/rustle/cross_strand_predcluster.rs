@@ -101,28 +101,55 @@ fn assumed_lowintron(n1: &Transcript, min_lowintron_cov: f64) -> Vec<bool> {
     }
 }
 
-/// Mirror ST's `overlaps[n1, n2]` gate: at least one exon of `a` and one
-/// exon of `b` share a base. Span-only overlap is NOT enough (a transcript
-/// whose last exon ends just before another's first exon shares the bundle
-/// region but not actual exonic territory).
-fn exons_share_a_base(a: &Transcript, b: &Transcript) -> bool {
+/// Total number of bases shared between exons of `a` and `b`.
+fn exon_overlap_bp(a: &Transcript, b: &Transcript) -> u64 {
     let mut i = 0;
     let mut j = 0;
+    let mut total: u64 = 0;
     while i < a.exons.len() && j < b.exons.len() {
         let (as_, ae) = a.exons[i];
         let (bs, be) = b.exons[j];
-        // 0-based half-open overlap: max(start) < min(end).
-        if as_.max(bs) < ae.min(be) {
-            return true;
+        let s = as_.max(bs);
+        let e = ae.min(be);
+        if s < e {
+            total += e - s;
         }
-        // Advance whichever ends first.
         if ae <= be {
             i += 1;
         } else {
             j += 1;
         }
     }
-    false
+    total
+}
+
+fn transcript_tlen(t: &Transcript) -> u64 {
+    t.exons.iter().map(|&(s, e)| e.saturating_sub(s)).sum()
+}
+
+/// Mirror ST's `overlaps[n1, n2]` gate (rlink.cpp:18957) plus the
+/// `update_overlap` size threshold (rlink.cpp:17828-17855): a pair is
+/// considered "overlapping" only if their exons share a meaningful number
+/// of bases relative to either transcript's total length. ST rejects
+/// overlaps where the shared region is shorter than `ERROR_PERC * tlen`
+/// in any of four engulfing configurations; we approximate by requiring
+/// `overlap_bp >= error_perc * min(a.tlen, b.tlen)`. Stricter than ST in
+/// general (rejects more pairs), but ST-faithful in the antisense-
+/// overlapping-termini case that drives our chr19 collateral kills (e.g.
+/// RSTL.149.4 vs RSTL.466.1 sharing only 144 bp at gene termini).
+fn exons_significantly_overlap(
+    a: &Transcript,
+    b: &Transcript,
+    error_perc: f64,
+) -> bool {
+    let overlap = exon_overlap_bp(a, b);
+    if overlap == 0 {
+        return false;
+    }
+    let a_tlen = transcript_tlen(a);
+    let b_tlen = transcript_tlen(b);
+    let threshold = error_perc * a_tlen.min(b_tlen) as f64;
+    (overlap as f64) >= threshold
 }
 
 /// Apply cross-strand KRI to the full transcript set.
@@ -185,11 +212,12 @@ pub fn cross_strand_kri_filter(
                 if t2.ref_transcript_id.is_some() {
                     continue;
                 }
-                // ST's `overlaps[n1, n2]` gate (rlink.cpp:18957) — only
-                // consider pairs that share at least one base of exonic
-                // territory. Span-only overlap from cluster grouping is
-                // not sufficient.
-                if !exons_share_a_base(t1, t2) {
+                // ST's `overlaps[n1, n2]` gate (rlink.cpp:18957) plus the
+                // `update_overlap` size-threshold rejection
+                // (rlink.cpp:17828-17855). Skips antisense-overlapping-
+                // termini pairs whose shared region is < ERROR_PERC ×
+                // min(tlen).
+                if !exons_significantly_overlap(t1, t2, 0.1) {
                     continue;
                 }
                 // SAME-strand pairs are already handled by rustle's
@@ -286,5 +314,36 @@ mod tests {
         let low = mk("c", '+', 1.0, vec![(0, 10), (20, 30)]);
         assert_eq!(assumed_lowintron(&high, 50.0), vec![true]);
         assert_eq!(assumed_lowintron(&low, 50.0), vec![false]);
+    }
+
+    #[test]
+    fn significant_overlap_rejects_termini_kiss() {
+        // Antisense pattern like RSTL.149.4 vs RSTL.466.1: shared 144 bp
+        // at terminus, both ~5kb tlen. 144 < 0.1 × 5000 → reject.
+        let a = mk(
+            "c",
+            '+',
+            100.0,
+            vec![(0, 100), (500, 600), (1000, 5000)], // tlen ~5200
+        );
+        let b = mk(
+            "c",
+            '-',
+            10.0,
+            vec![(4856, 5000), (6000, 7000), (8000, 10000)], // tlen ~3144
+        );
+        // Overlap = 5000 - 4856 = 144 bp at terminus.
+        assert_eq!(exon_overlap_bp(&a, &b), 144);
+        // 144 < 0.1 × min(5200, 3144) = 314 → not significant.
+        assert!(!exons_significantly_overlap(&a, &b, 0.1));
+    }
+
+    #[test]
+    fn significant_overlap_keeps_real_inclusion() {
+        // n2 mostly inside n1 — exon shares are large. Should be kept.
+        let a = mk("c", '+', 100.0, vec![(0, 1000), (1500, 2500)]);
+        let b = mk("c", '+', 10.0, vec![(100, 900)]);
+        assert_eq!(exon_overlap_bp(&a, &b), 800);
+        assert!(exons_significantly_overlap(&a, &b, 0.1));
     }
 }
