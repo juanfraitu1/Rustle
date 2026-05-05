@@ -13820,6 +13820,17 @@ pub fn run<P: AsRef<Path>>(
             );
         }
     }
+    if std::env::var_os("RUSTLE_PARALLEL_PRUNE").is_some() {
+        let (filtered, n_m, n_kf, n_kl) =
+            crate::parallel_predprune::parallel_prune(all_transcripts, config.verbose);
+        all_transcripts = filtered;
+        if config.verbose {
+            eprintln!(
+                "[PARALLEL_PRUNE] m_killed={} k_first={} k_last={}",
+                n_m, n_kf, n_kl
+            );
+        }
+    }
     let single_exon_predictions = single_exon_predictions_mutex.into_inner().unwrap();
     let mut shadow_bundle_diags = shadow_bundle_diags_mutex.into_inner().unwrap();
     let raw_for_trace = raw_for_trace_mutex.into_inner().unwrap();
@@ -14428,6 +14439,7 @@ pub fn run<P: AsRef<Path>>(
                 trimmed_first, trimmed_last);
         }
     }
+
 
     // Precision cleanup C (OPT-IN, regresses): drop multi-exon tx lacking
     // both hardstart AND hardend when cov is modest. Hypothesis was that

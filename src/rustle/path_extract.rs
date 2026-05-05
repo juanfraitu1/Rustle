@@ -3284,6 +3284,18 @@ struct LongRecDiag {
     back_transfrags_skipped_onpath: usize,
 }
 
+/// Crate-internal accessor for the ST-port module (parse_trflong_st).
+pub(crate) fn onpath_long_pub(
+    trpattern: &GBitVec,
+    trnode: &[usize],
+    pathpattern: &GBitVec,
+    minp: usize,
+    maxp: usize,
+    graph: &Graph,
+) -> bool {
+    onpath_long(trpattern, trnode, pathpattern, minp, maxp, graph)
+}
+
 fn onpath_long(
     trpattern: &GBitVec,
     trnode: &[usize],
@@ -5951,9 +5963,31 @@ pub fn extract_transcripts(
     }
 
     let ntrflong = transfrags.iter().filter(|tf| tf.trflong_seed).count();
-    for idx in order {
+    let parity_seed_trace = std::env::var_os("RUSTLE_PARITY_SEED_TRACE").is_some();
+    for (loop_pos, idx) in order.into_iter().enumerate() {
         // Snapshot entry-time abundance for bisect dump (matches ST's longcov).
         seed_entry_abund.insert(idx, transfrags[idx].abundance);
+        if parity_seed_trace {
+            // Mirror ST's `[ST_TRACE_SEED]` format from rlink.cpp:10089.
+            // f counts "from end" in ST (reverse iter); here we use loop_pos
+            // (forward 0-indexed). The pair (t, abund, nodes) is what diffs.
+            let nodes_str: String = transfrags[idx]
+                .node_ids
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            eprintln!(
+                "[RUSTLE_TRACE_SEED] f={} t={} abund={:.4} long={} guide={} nodes={}",
+                loop_pos,
+                idx,
+                transfrags[idx].abundance,
+                transfrags[idx].longread as i32,
+                transfrags[idx].guide as i32,
+                nodes_str,
+            );
+        }
+        let _ = loop_pos;
         if loop_trace_active() && long_read_mode && transfrags[idx].trflong_seed {
             eprintln!(
                 "LOOP_parse_trflong: ntrflong={} nasc={}",
@@ -6326,7 +6360,21 @@ pub fn extract_transcripts(
             trace_node_trf_watch(idx, "minp_before", minp, graph, &watched_tfs);
             let mut visited_back: HashSet<usize> = Default::default();
             let mut visited_fwd: HashSet<usize> = Default::default();
-            let back_ok = back_to_source_fast_long(
+            // ST-port comparison harness: snapshot inputs before rustle's call.
+            // Snapshot when EITHER comparison or gate is active.
+            let pa_active = crate::parse_trflong_st::comparison_active()
+                || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some();
+            let pa_snapshot_before = if pa_active {
+                Some((
+                    path.clone(),
+                    pathpat.clone(),
+                    minp,
+                    maxp,
+                ))
+            } else {
+                None
+            };
+            let mut back_ok = back_to_source_fast_long(
                 idx,
                 maxi,
                 &mut path,
@@ -6347,6 +6395,40 @@ pub fn extract_transcripts(
                 &mut visited_back,
                 &mut weak_cache,
             );
+            // ST-port comparison: run ST-faithful on snapshot, diff outcomes.
+            if let Some((path_pre, pp_pre, minp_pre, maxp_pre)) = pa_snapshot_before {
+                let st = crate::parse_trflong_st::run_back_to_source_st_on_clone(
+                    graph,
+                    transfrags,
+                    &local_nodecov,
+                    &pp_pre,
+                    &path_pre,
+                    minp_pre,
+                    maxp_pre,
+                    maxi,
+                );
+                let r = crate::parse_trflong_st::outcome_from_rustle(
+                    back_ok,
+                    &pathpat,
+                    &path,
+                    minp,
+                    maxp,
+                );
+                crate::parse_trflong_st::emit_diff_if_diverges(&r, &st, "back", idx, maxi);
+                // ST soft gate (back direction): same idea as fwd gate below.
+                if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some()
+                    && back_ok
+                    && !st.returned_true
+                {
+                    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_TRACE").is_some() {
+                        eprintln!(
+                            "[ST_GATE] idx={} back_ok=true but ST disagreed → fail back",
+                            idx
+                        );
+                    }
+                    back_ok = false;
+                }
+            }
             let mut fwd_ok = false;
             if pathpat_trace || trace_seed_diagnostics(idx) || trace_locus_active(graph, seed_minp)
             {
@@ -6372,6 +6454,18 @@ pub fn extract_transcripts(
             if back_ok {
                 path.push(source_id);
                 path.reverse();
+                let pa_fwd_active = crate::parse_trflong_st::comparison_active()
+                    || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some();
+                let pa_fwd_snapshot = if pa_fwd_active {
+                    Some((
+                        path.clone(),
+                        pathpat.clone(),
+                        minp,
+                        maxp,
+                    ))
+                } else {
+                    None
+                };
                 fwd_ok = fwd_to_sink_fast_long(
                     idx,
                     maxi,
@@ -6387,6 +6481,44 @@ pub fn extract_transcripts(
                     &mut visited_fwd,
                     &mut weak_cache,
                 );
+                if let Some((path_pre, pp_pre, minp_pre, maxp_pre)) = pa_fwd_snapshot {
+                    let st = crate::parse_trflong_st::run_fwd_to_sink_st_on_clone(
+                        graph,
+                        transfrags,
+                        &local_nodecov,
+                        &pp_pre,
+                        &path_pre,
+                        minp_pre,
+                        maxp_pre,
+                        maxi,
+                    );
+                    let r = crate::parse_trflong_st::outcome_from_rustle(
+                        fwd_ok,
+                        &pathpat,
+                        &path,
+                        minp,
+                        maxp,
+                    );
+                    crate::parse_trflong_st::emit_diff_if_diverges(&r, &st, "fwd", idx, maxi);
+                    // ST-port soft gate (option C): when rustle succeeds but
+                    // ST's strict algorithm would have given up, treat the
+                    // path as failed so it routes to checktrf rescue. ST's
+                    // give-up signals over-extension via weak/inconsistent
+                    // transfrags — exactly the k-class artifact pattern.
+                    // Default off; enable via RUSTLE_PARSE_TRFLONG_ST_GATE=1.
+                    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some()
+                        && fwd_ok
+                        && !st.returned_true
+                    {
+                        if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_TRACE").is_some() {
+                            eprintln!(
+                                "[ST_GATE] idx={} fwd_ok=true but ST disagreed → route to checktrf",
+                                idx
+                            );
+                        }
+                        fwd_ok = false;
+                    }
+                }
                 if pathpat_trace
                     || trace_seed_diagnostics(idx)
                     || trace_locus_active(graph, seed_maxp)
@@ -8601,6 +8733,14 @@ pub fn extract_transcripts(
                 } else {
                     0.0
                 };
+                // Path-enum RI suppression: if THIS rescue's intron chain is
+                // a strict subset of some kept path's chain AND the rescue's
+                // exons strictly contain every missing intron AND the rescue's
+                // first/last exon coords are equal to the kept path's at the
+                // matching positions (= same scaffold, just merged at one+
+                // intron), then this is structurally a retained-intron
+                // duplicate of a sibling that flow already extracted; skip.
+                // Default off; enable via RUSTLE_CHECKTRF_RI_SUPPRESS=1.
                 if let Some((lo, hi)) = trace_locus {
                     let in_range = transfrags[t].node_ids.iter().any(|&nid| {
                         graph
