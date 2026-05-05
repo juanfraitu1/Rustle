@@ -4978,7 +4978,7 @@ pub fn kill_included_variants(
 ///     longintronanchor=25 bp of the splice site
 ///
 /// Returns Vec<bool> of length n_exons - 1 (same as intron count).
-fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
+pub(crate) fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
     const LONG_INTRON_ANCHOR: u64 = 25;
     const ERROR_PERC: f64 = 0.1;
     let intronfrac = ERROR_PERC;
@@ -5112,7 +5112,7 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
 ///   0 — no retained intron detected
 ///   1 — n2's terminal exon spans n1's low intron AND n2.cov < frac * n1.cov
 ///   2 — n2 has a middle (internal) exon spanning n1's low intron (always kill)
-fn retained_intron_score(
+pub(crate) fn retained_intron_score(
     n1: &Transcript,
     n2: &Transcript,
     lowintron_n1: &[bool],

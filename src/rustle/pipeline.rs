@@ -13711,6 +13711,26 @@ pub fn run<P: AsRef<Path>>(
 
     phase_timer!("assembly_done");
     let mut all_transcripts = all_transcripts_mutex.into_inner().unwrap();
+
+    // Cross-strand predcluster pass (gated; default off). Runs subtractive
+    // KRI across both strands at overlapping spans — replicates the
+    // antisense-neighbor LEADING-return-1 kill that ST's cross-strand
+    // bundles produce naturally but rustle's per-strand bundles miss.
+    // See `cross_strand_predcluster.rs` for the audit and rationale.
+    if std::env::var_os("RUSTLE_CROSS_STRAND_KRI").is_some() {
+        let (filtered, n_killed, n_would_fire) =
+            crate::cross_strand_predcluster::cross_strand_kri_filter(
+                all_transcripts,
+                config.verbose,
+            );
+        all_transcripts = filtered;
+        if config.verbose {
+            eprintln!(
+                "[XSKRI] cross-strand pass: would_fire={} killed={}",
+                n_would_fire, n_killed
+            );
+        }
+    }
     let single_exon_predictions = single_exon_predictions_mutex.into_inner().unwrap();
     let mut shadow_bundle_diags = shadow_bundle_diags_mutex.into_inner().unwrap();
     let raw_for_trace = raw_for_trace_mutex.into_inner().unwrap();

@@ -58,6 +58,7 @@ pub mod treepat; // tree pattern matching for path patterns // coverage-based tr
 pub mod exon_merge; // exon boundary merging
 pub mod polya; // poly-A site detection
 pub mod transcript_filter; // isofrac, pairwise, runoff, dedup, merge, lowintron
+pub mod cross_strand_predcluster; // post-pipeline cross-strand KRI (gated, default off)
 pub mod tss_tts; // TSS / TTS refinement
 
 // ── Stage 8: Output ───────────────────────────────────────────────────────────
