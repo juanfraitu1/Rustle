@@ -65,6 +65,44 @@ pub fn compute_transcript_bpcov(tx: &Transcript, bpcov: &BpcovStranded) -> f64 {
     sum
 }
 
+/// All-strand per-base bpcov average over a transcript's exons. Mirrors
+/// ST's `bpcov[1]` semantic — sums fwd + rev (and unstranded) without
+/// strand-weighting and divides by total exonic length.
+///
+/// Used by `cross_strand_predcluster` for ST-faithful cov ratios at
+/// antisense-overlap loci, where rustle's per-strand `coverage` (which
+/// only counts reads on the same strand as the transcript) under-counts
+/// vs ST's all-strand `pred->cov`.
+pub fn compute_transcript_all_strand_cov(
+    tx: &Transcript,
+    bpcov: &BpcovStranded,
+) -> f64 {
+    let mut sum = 0.0f64;
+    let mut tlen: u64 = 0;
+    for &(s, e) in &tx.exons {
+        let elen = e.saturating_sub(s);
+        if elen == 0 {
+            continue;
+        }
+        let si = bpcov.plus.idx(s);
+        let ei = bpcov.plus.idx(e).min(bpcov.plus.cov.len());
+        if ei <= si {
+            continue;
+        }
+        for i in si..ei {
+            let fwd = bpcov.plus.cov[i];
+            let rev = bpcov.minus.cov.get(i).copied().unwrap_or(0.0);
+            sum += fwd + rev;
+        }
+        tlen += elen;
+    }
+    if tlen == 0 {
+        0.0
+    } else {
+        sum / tlen as f64
+    }
+}
+
 /// Per-intron low-coverage classifier. Returns a Vec<bool> of length
 /// `exons.len() - 1` where `true` indicates the intron at that index has
 /// average bpcov (all-strand) below `ERROR_PERC * flanking_exon_avg` — the

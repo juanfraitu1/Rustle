@@ -38,7 +38,7 @@
 //! - `RUSTLE_CROSS_STRAND_MIN_COV=N` — override `MIN_LOWINTRON_COV` (default 50.0).
 
 use crate::path_extract::Transcript;
-use crate::transcript_filter::retained_intron_score;
+use crate::transcript_filter::retained_intron_score_with_covs;
 
 const DEFAULT_MIN_LOWINTRON_COV: f64 = 50.0;
 
@@ -278,25 +278,54 @@ pub fn cross_strand_kri_filter(
                 if !allow_same_strand && t1.strand == t2.strand {
                     continue;
                 }
-                let score = retained_intron_score(t1, t2, &lowintron[ii]);
+                // Cov-ratio source. Default uses rustle's per-strand
+                // `coverage` (flow-derived, matching ST's `pred->cov`
+                // semantics). Opting into `RUSTLE_CROSS_STRAND_USE_ALL_STRAND_COV`
+                // swaps to bpcov[1]-style all-strand cov, which is what ST
+                // uses for its `lowintron` bpcov sums but NOT for the
+                // retainedintron cov-ratio threshold. Empirically inflates
+                // n2 too much at antisense-overlap loci, breaking the
+                // RSTL.135 j-class kill (chr19 F1 89.91 → 89.27 vs v6).
+                let use_all_strand = std::env::var_os(
+                    "RUSTLE_CROSS_STRAND_USE_ALL_STRAND_COV",
+                ).is_some();
+                let n1_eff_cov = if use_all_strand && t1.all_strand_cov > 0.0 {
+                    t1.all_strand_cov
+                } else {
+                    t1.coverage
+                };
+                let n2_eff_cov = if use_all_strand && t2.all_strand_cov > 0.0 {
+                    t2.all_strand_cov
+                } else {
+                    t2.coverage
+                };
+                let score = retained_intron_score_with_covs(
+                    t1,
+                    t2,
+                    &lowintron[ii],
+                    n1_eff_cov,
+                    n2_eff_cov,
+                );
                 if score > 0 {
                     n_would_fire += 1;
                     if debug {
                         eprintln!(
-                            "[XSKRI] {} n2={}:{}-{}({}) cov={:.2} nex={} \
-                             by n1={}:{}-{}({}) cov={:.2} nex={} score={}",
+                            "[XSKRI] {} n2={}:{}-{}({}) cov={:.2}(eff={:.2}) nex={} \
+                             by n1={}:{}-{}({}) cov={:.2}(eff={:.2}) nex={} score={}",
                             if dry_run { "would_kill" } else { "KILL" },
                             t2.chrom,
                             t2.exons.first().map(|e| e.0).unwrap_or(0),
                             t2.exons.last().map(|e| e.1).unwrap_or(0),
                             t2.strand,
                             t2.coverage,
+                            n2_eff_cov,
                             t2.exons.len(),
                             t1.chrom,
                             t1.exons.first().map(|e| e.0).unwrap_or(0),
                             t1.exons.last().map(|e| e.1).unwrap_or(0),
                             t1.strand,
                             t1.coverage,
+                            n1_eff_cov,
                             t1.exons.len(),
                             score,
                         );

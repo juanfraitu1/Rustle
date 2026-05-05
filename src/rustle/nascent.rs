@@ -422,6 +422,7 @@ Some(Transcript {
     is_longread: true,
     longcov: cov,
     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
     transcript_id: None,
     gene_id: None,
     ref_transcript_id: None,

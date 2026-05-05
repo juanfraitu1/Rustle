@@ -1080,6 +1080,7 @@ mod tests {
             is_longread: true,
             longcov: 1.0,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -5117,6 +5118,21 @@ pub(crate) fn retained_intron_score(
     n2: &Transcript,
     lowintron_n1: &[bool],
 ) -> i32 {
+    retained_intron_score_with_covs(n1, n2, lowintron_n1, n1.coverage, n2.coverage)
+}
+
+/// Same as `retained_intron_score` but with explicit `n1_cov` / `n2_cov`
+/// overrides for the cov-ratio checks. Use this from `cross_strand_predcluster`
+/// to swap rustle's per-strand `coverage` for an ST-faithful all-strand
+/// cov (so the LEADING/TERMINAL/EDGE thresholds match ST's at antisense-
+/// overlap loci).
+pub(crate) fn retained_intron_score_with_covs(
+    n1: &Transcript,
+    n2: &Transcript,
+    lowintron_n1: &[bool],
+    n1_cov: f64,
+    n2_cov: f64,
+) -> i32 {
     const ERROR_PERC: f64 = 0.1;
     let frac = ERROR_PERC;
     let n2_exons = &n2.exons;
@@ -5137,7 +5153,7 @@ pub(crate) fn retained_intron_score(
         // s_st = s_r + 1 and e_st = e_r, so ST's `s <= e` (1-based) ↔
         // rustle's `s < e` (0-based half-open) and ST's `e < s` ↔ `e <= s`.
         if j == n2_exons.len() - 1
-            && n2.coverage < frac * n1.coverage
+            && n2_cov < frac * n1_cov
             && n2_exons[j].0 < n1_exons[i - 1].1
         {
             return 1;
@@ -5146,13 +5162,13 @@ pub(crate) fn retained_intron_score(
         while j < n2_exons.len() && n2_exons[j].1 <= n1_exons[i].0 {
             j += 1;
         }
-        if j == 0 && n2.coverage < frac * n1.coverage {
+        if j == 0 && n2_cov < frac * n1_cov {
             return 1;
         }
         if j < n2_exons.len() && n2_exons[j].0 < n1_exons[i - 1].1 {
             if j > 0 && j < n2_exons.len() - 1 {
                 return 2; // middle exon spans n1's low intron — strong kill
-            } else if n2.coverage < frac * n1.coverage {
+            } else if n2_cov < frac * n1_cov {
                 return 1;
             }
         }

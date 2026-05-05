@@ -298,6 +298,7 @@ pub fn run_merge<P: AsRef<Path>>(
             is_longread: false,
             longcov: 1.0,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,

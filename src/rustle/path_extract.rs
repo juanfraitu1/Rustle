@@ -621,6 +621,12 @@ pub struct Transcript {
     /// Strand-weighted bpcov sum over transcript exons (gene_abundance bpcov contribution).
     /// Set to 0.0 when bpcov is unavailable. Used in write_gene_abundance to approximate per-base coverage.
     pub bpcov_cov: f64,
+    /// Per-base ALL-STRAND bpcov average over transcript exons (i.e. sum of
+    /// `+` and `-` strand bpcov, no strand-weighting). Mirrors ST's `bpcov[1]`
+    /// semantic — what ST's predord rules see for `pred->cov` at antisense-
+    /// overlap loci. Used by `cross_strand_predcluster` for ST-faithful
+    /// cov-ratio thresholds. Set to 0.0 when not yet computed.
+    pub all_strand_cov: f64,
     /// Forced transcript_id for GTF output. When set (eonly zero-cov guides), bypasses STRG.X.Y
     /// auto-numbering and uses the original guide transcript ID (guides[i]->getID()).
     pub transcript_id: Option<String>,
@@ -749,6 +755,7 @@ impl Transcript {
             is_longread: pred.tlen < 0 || pred.longcov > 0.0,
             longcov: pred.longcov,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: pred.t_eq.clone(),
@@ -1226,6 +1233,7 @@ pub fn extract_rawreads_transcripts(
             is_longread: config.long_reads,
             longcov: 0.0,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -1361,6 +1369,7 @@ pub fn extract_shortread_transcripts(
             is_longread: false,
             longcov: 0.0,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -7910,6 +7919,7 @@ pub fn extract_transcripts(
             is_longread: long_read_mode,
             longcov: read_count_snapshot, // pre-depletion read mass: stable, comparable to the original algorithm's longcov
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -8663,6 +8673,7 @@ pub fn extract_transcripts(
                     is_longread: long_read_mode,
                     longcov: transfrags[t].abundance, // 
                     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: None,
@@ -9615,6 +9626,7 @@ pub fn hybrid_path_reexplore(
             is_longread: true,
             longcov: cand.est_cov,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,

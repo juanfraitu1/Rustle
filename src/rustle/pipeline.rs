@@ -383,6 +383,7 @@ fn append_missed_oracle_direct_emit(
             is_longread: true,
             longcov: cov,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: Some(tid.to_string()),
@@ -2508,6 +2509,7 @@ fn add_contained_isoforms(
                     is_longread: tx.is_longread,
                     longcov: tx.longcov,
                     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: None,
@@ -2698,6 +2700,7 @@ fn emit_junction_paths(
             is_longread: config.long_reads,
             longcov,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -2982,6 +2985,7 @@ fn emit_chain_from_graph(
         is_longread,
         longcov: cov,
         bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
         transcript_id: None,
         gene_id: None,
         ref_transcript_id,
@@ -3112,6 +3116,7 @@ fn emit_reference_chains(
                     is_longread: config.long_reads,
                     longcov: cov,
                     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: Some(ref_tx.id.clone()),
@@ -3245,6 +3250,7 @@ fn emit_reference_chains(
                         is_longread: config.long_reads,
                         longcov: cov,
                         bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                         transcript_id: None,
                         gene_id: None,
                         ref_transcript_id: Some(ref_tx.id.clone()),
@@ -3338,6 +3344,7 @@ fn emit_reference_chains(
             is_longread: config.long_reads,
             longcov: cov,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: Some(ref_tx.id.clone()),
@@ -5833,6 +5840,11 @@ fn extract_bundle_transcripts_for_graph(
     for tx in txs.iter_mut() {
         tx.bpcov_cov = compute_transcript_bpcov(tx, bpcov_stranded);
         tx.intron_low = crate::gene_abundance::compute_transcript_intron_low(tx, bpcov_stranded);
+        // ST-faithful all-strand per-base cov for cross_strand_predcluster.
+        // Mirrors ST's `bpcov[1]` (rlink.cpp:533-535), inflated at antisense-
+        // overlap loci where the same genomic position has reads on both strands.
+        tx.all_strand_cov =
+            crate::gene_abundance::compute_transcript_all_strand_cov(tx, bpcov_stranded);
         // IMPORTANT: do not overwrite `tx.coverage` (flow-derived) by default.
         // the pred->cov flow value is flow-derived; using raw bpcov makes cov wildly larger on deep loci
         // (e.g. STRG.27.3: ~31 vs the expected ~6) and breaks isofrac/pairwise decisions.
@@ -6278,6 +6290,7 @@ fn extract_bundle_transcripts_for_graph(
                 is_longread: true,
                 longcov: est_cov,
                 bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                 transcript_id: None,
                 gene_id: None,
                 ref_transcript_id: None,
@@ -6407,6 +6420,7 @@ fn extract_bundle_transcripts_for_graph(
                     is_longread: true,
                     longcov: best_support as f64,
                     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: Some(ref_tid.clone()),
@@ -6622,6 +6636,7 @@ fn extract_bundle_transcripts_for_graph(
                 is_longread: true,
                 longcov: support as f64,
                 bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                 transcript_id: None,
                 gene_id: None,
                 ref_transcript_id: None,
@@ -6753,6 +6768,7 @@ fn extract_bundle_transcripts_for_graph(
                     is_longread: true,
                     longcov: est_cov,
                     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: None,
@@ -7758,6 +7774,7 @@ fn emit_stranded_single_exon_candidates(
             is_longread: true,
             longcov: avg_cov,
             bpcov_cov: avg_cov,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -7888,6 +7905,7 @@ fn emit_terminal_exon_se_candidates(
             is_longread: true,
             longcov: avg_cov,
             bpcov_cov: avg_cov,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
@@ -7969,7 +7987,8 @@ fn create_single_exon_predictions_from_bundle(
                         source: None,
                         is_longread: true,
                         longcov: avg_cov,   // per-base for longcov
-                        bpcov_cov: avg_cov, // per-base for bpcov_cov
+                        bpcov_cov: avg_cov,
+            all_strand_cov: 0.0, // per-base for bpcov_cov
                         transcript_id: None,
                         gene_id: None,
                         ref_transcript_id: None,
@@ -8009,7 +8028,8 @@ fn create_single_exon_predictions_from_bundle(
                     source: None,
                     is_longread: true,
                     longcov: avg_cov,   // per-base for longcov
-                    bpcov_cov: avg_cov, // per-base for bpcov_cov
+                    bpcov_cov: avg_cov,
+            all_strand_cov: 0.0, // per-base for bpcov_cov
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: None,
@@ -14054,6 +14074,7 @@ pub fn run<P: AsRef<Path>>(
                 is_longread: config.long_reads,
                 longcov: recovered_cov,
                 bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                 transcript_id: Some(guide.id.clone()),
                 gene_id: None,
                 ref_transcript_id: Some(guide.id.clone()),
@@ -14596,6 +14617,7 @@ pub fn run<P: AsRef<Path>>(
                     is_longread: true,
                     longcov: cov_default,
                     bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
                     transcript_id: None,
                     gene_id: None,
                     ref_transcript_id: Some(tid.clone()),

@@ -423,6 +423,7 @@ fn merge_transfrags_to_predictions(
             is_longread: false,
             longcov: 0.0,
             bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
             transcript_id: None,
             gene_id: None,
             ref_transcript_id: None,
