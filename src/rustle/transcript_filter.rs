@@ -5003,6 +5003,13 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
         bpcov.get_cov_range(s_idx, e_idx)
     };
 
+    let debug = std::env::var_os("RUSTLE_LOWINTRON_DEBUG").is_some()
+        && tx.coverage > 10.0
+        && tx
+            .exons
+            .first()
+            .map(|e| e.0 > 44_000_000 && e.0 < 45_000_000)
+            .unwrap_or(false);
     for j in 1..n_exons {
         // Rustle exon (s, e) is 0-based half-open [s, e); ST exon (s, e) is
         // 1-based inclusive [s, e]. Numerically e_rustle == e_st (rustle's
@@ -5020,10 +5027,21 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
         let introncov = intron_sum / (intron_len as f64).max(1.0);
 
         if introncov == 0.0 {
-            // ST: only sets low if introncov non-zero. Mirror that.
+            if debug {
+                eprintln!(
+                    "[LI] tx_cov={:.2} intron[{}]={}..{} len={} introncov=0 -> SKIP",
+                    tx.coverage, j - 1, donor_end, acc_start, intron_len
+                );
+            }
             continue;
         }
         if introncov < 1.0 {
+            if debug {
+                eprintln!(
+                    "[LI] tx_cov={:.2} intron[{}]={}..{} introncov={:.4} <1 -> LOW",
+                    tx.coverage, j - 1, donor_end, acc_start, introncov
+                );
+            }
             lowintron[j - 1] = true;
             continue;
         }
@@ -5034,6 +5052,14 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
         let next_sum = cov_range(tx.exons[j].0, tx.exons[j].1);
         let exoncov = (prev_sum + next_sum) / ((prev_len + next_len) as f64);
         if introncov < exoncov * intronfrac {
+            if debug {
+                eprintln!(
+                    "[LI] tx_cov={:.2} intron[{}]={}..{} introncov={:.4} \
+                     exoncov={:.4} ratio={:.4} <intronfrac={} -> LOW",
+                    tx.coverage, j - 1, donor_end, acc_start, introncov,
+                    exoncov, introncov / exoncov.max(0.001), intronfrac
+                );
+            }
             lowintron[j - 1] = true;
             continue;
         }
@@ -5043,6 +5069,12 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
         let l_e = cov_range(l_e_start, donor_end);
         let l_i = cov_range(donor_end, donor_end + LONG_INTRON_ANCHOR);
         if l_i < l_e * intronfrac {
+            if debug {
+                eprintln!(
+                    "[LI] tx_cov={:.2} intron[{}]={}..{} L: l_i={:.2} l_e={:.2} -> LOW",
+                    tx.coverage, j - 1, donor_end, acc_start, l_i, l_e
+                );
+            }
             lowintron[j - 1] = true;
             continue;
         }
@@ -5053,7 +5085,20 @@ fn compute_lowintron(tx: &Transcript, bpcov: &Bpcov) -> Vec<bool> {
         );
         let r_e = cov_range(acc_start, acc_start + LONG_INTRON_ANCHOR);
         if r_i < r_e * intronfrac {
+            if debug {
+                eprintln!(
+                    "[LI] tx_cov={:.2} intron[{}]={}..{} R: r_i={:.2} r_e={:.2} -> LOW",
+                    tx.coverage, j - 1, donor_end, acc_start, r_i, r_e
+                );
+            }
             lowintron[j - 1] = true;
+        } else if debug {
+            eprintln!(
+                "[LI] tx_cov={:.2} intron[{}]={}..{} introncov={:.4} \
+                 exoncov={:.4} L_i/L_e={:.2}/{:.2} R_i/R_e={:.2}/{:.2} -> not_low",
+                tx.coverage, j - 1, donor_end, acc_start, introncov, exoncov,
+                l_i, l_e, r_i, r_e
+            );
         }
     }
     lowintron
@@ -5163,9 +5208,14 @@ pub fn kill_retained_intron_variants(
             }
             let t1 = &transcripts[n1];
             let t2 = &transcripts[n2];
-            if t1.chrom != t2.chrom || t1.strand != t2.strand {
+            if t1.chrom != t2.chrom {
                 continue;
             }
+            // ST does NOT strand-guard retainedintron (rlink.cpp:18994 is
+            // INSIDE the `if(!pred[n2]->t_eq)` block but BEFORE the strand
+            // check at line 18980). Cross-strand kills are intentional —
+            // a low-cov antisense whose exon reads through a dominant
+            // sense transcript's intron is likely noise.
             if t2.ref_transcript_id.is_some() {
                 continue;
             }
