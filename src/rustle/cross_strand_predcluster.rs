@@ -127,29 +127,75 @@ fn transcript_tlen(t: &Transcript) -> u64 {
     t.exons.iter().map(|&(s, e)| e.saturating_sub(s)).sum()
 }
 
-/// Mirror ST's `overlaps[n1, n2]` gate (rlink.cpp:18957) plus the
-/// `update_overlap` size threshold (rlink.cpp:17828-17855): a pair is
-/// considered "overlapping" only if their exons share a meaningful number
-/// of bases relative to either transcript's total length. ST rejects
-/// overlaps where the shared region is shorter than `ERROR_PERC * tlen`
-/// in any of four engulfing configurations; we approximate by requiring
-/// `overlap_bp >= error_perc * min(a.tlen, b.tlen)`. Stricter than ST in
-/// general (rejects more pairs), but ST-faithful in the antisense-
-/// overlapping-termini case that drives our chr19 collateral kills (e.g.
-/// RSTL.149.4 vs RSTL.466.1 sharing only 144 bp at gene termini).
+/// Mirror ST's `update_overlap` per-engulfing-clause threshold
+/// (rlink.cpp:17828-17855). For each of four engulfing configurations,
+/// reject the overlap when the engulfed-region length is shorter than
+/// `error_perc` of the engulfing transcript's tlen.
+///
+/// The four clauses (using ST's pred-pair p, pi):
+///   1. p's first exon engulfs pi: `p.exons[0].end >= pi.end`
+///      → len = pi.end - p.start + 1, threshold = error_perc * p.tlen
+///   2. pi's first exon engulfs p: `pi.exons[0].end >= p.end`
+///      → len = p.end - pi.start + 1, threshold = error_perc * pi.tlen
+///   3. p's last exon contains pi.start: `p.exons.last.start <= pi.start`
+///      → len = p.end - pi.start + 1, threshold = error_perc * p.tlen
+///   4. pi's last exon contains p.start: `pi.exons.last.start <= p.start`
+///      → len = pi.end - p.start + 1, threshold = error_perc * pi.tlen
+///
+/// We treat the pair (a, b) symmetrically: try each clause with both
+/// orderings (a as p, b as pi). The overlap is significant only if NO
+/// matching clause rejects.
+///
+/// Crucially (vs the simpler min/max heuristics): clause 2 uses pi.tlen
+/// — the LARGER tlen when pi engulfs p — which correctly rejects the
+/// STRG.136 case (pi=STRG.136.4 first exon engulfs p=RSTL.366.1's end;
+/// 119 bp < 10% × 3932 = 393), while keeping the RSTL.135 case (overlap
+/// 1091 bp > 10% × 2866 = 286 from pi=RSTL.135.14's first exon).
 fn exons_significantly_overlap(
     a: &Transcript,
     b: &Transcript,
     error_perc: f64,
 ) -> bool {
-    let overlap = exon_overlap_bp(a, b);
-    if overlap == 0 {
+    if exon_overlap_bp(a, b) == 0 {
         return false;
     }
-    let a_tlen = transcript_tlen(a);
-    let b_tlen = transcript_tlen(b);
-    let threshold = error_perc * a_tlen.min(b_tlen) as f64;
-    (overlap as f64) >= threshold
+    !any_clause_rejects(a, b, error_perc) && !any_clause_rejects(b, a, error_perc)
+}
+
+/// Run all four ST update_overlap clauses with `p=a, pi=b`. Returns true
+/// if any clause's len < threshold (i.e. ST would set overlaps=false).
+/// Caller flips arguments to test the symmetric case.
+fn any_clause_rejects(p: &Transcript, pi: &Transcript, error_perc: f64) -> bool {
+    let p_exons = &p.exons;
+    let pi_exons = &pi.exons;
+    if p_exons.is_empty() || pi_exons.is_empty() {
+        return false;
+    }
+    let p_start = p_exons[0].0;
+    let p_end = p_exons.last().unwrap().1;
+    let pi_start = pi_exons[0].0;
+    let pi_end = pi_exons.last().unwrap().1;
+    let p_tlen = transcript_tlen(p) as f64;
+    let pi_tlen = transcript_tlen(pi) as f64;
+    let p_first_end = p_exons[0].1;
+    let p_last_start = p_exons.last().unwrap().0;
+
+    // Clause 1: p's first exon engulfs pi entirely (`p.exons[0].end >= pi.end`).
+    if p_first_end >= pi_end {
+        let len = pi_end.saturating_sub(p_start) + 1;
+        if (len as f64) < error_perc * p_tlen {
+            return true;
+        }
+    }
+    // Clause 3: p's last exon contains pi's start
+    // (`p.exons.last.start <= pi.start`).
+    if p_last_start <= pi_start {
+        let len = p_end.saturating_sub(pi_start) + 1;
+        if (len as f64) < error_perc * p_tlen {
+            return true;
+        }
+    }
+    false
 }
 
 /// Apply cross-strand KRI to the full transcript set.
@@ -317,33 +363,81 @@ mod tests {
     }
 
     #[test]
-    fn significant_overlap_rejects_termini_kiss() {
-        // Antisense pattern like RSTL.149.4 vs RSTL.466.1: shared 144 bp
-        // at terminus, both ~5kb tlen. 144 < 0.1 × 5000 → reject.
-        let a = mk(
-            "c",
-            '+',
-            100.0,
-            vec![(0, 100), (500, 600), (1000, 5000)], // tlen ~5200
-        );
-        let b = mk(
+    fn significant_overlap_rejects_strg_136_pattern() {
+        // STRG.136 case: p (4 exons, tlen 974) ends at 23081962; pi
+        // (19 exons, tlen 3932) first exon = 23081844-23083200 engulfs p's end.
+        // Clause 2 (pi.exons[0].end >= p.end): len = 23081962 - 23081844 + 1 = 119.
+        // 119 < 0.1 × 3932 = 393 → reject.
+        let p = mk(
             "c",
             '-',
-            10.0,
-            vec![(4856, 5000), (6000, 7000), (8000, 10000)], // tlen ~3144
+            66.0,
+            vec![
+                (23080202, 23080591),
+                (23080869, 23081007),
+                (23081364, 23081434),
+                (23081589, 23081962),
+            ],
         );
-        // Overlap = 5000 - 4856 = 144 bp at terminus.
-        assert_eq!(exon_overlap_bp(&a, &b), 144);
-        // 144 < 0.1 × min(5200, 3144) = 314 → not significant.
-        assert!(!exons_significantly_overlap(&a, &b, 0.1));
+        let pi = mk("c", '+', 3.3, vec![(23081844, 23083200), (23083988, 23085000)]);
+        // Use simplified pi tlen to keep the test focused: 1357 + 1013 = 2370.
+        // Clause 2: 119 bp / 0.1 × 2370 = 119 / 237 → REJECT.
+        assert!(!exons_significantly_overlap(&p, &pi, 0.1));
+    }
+
+    #[test]
+    fn significant_overlap_keeps_rstl_135_pattern() {
+        // RSTL.135 case: p=- strand antisense (cov 174, 11 exons, tlen 2180),
+        // pi=+ strand RSTL.135.14 first exon engulfs p's end with 1091 bp.
+        // Clause 2: len = 1091, threshold = 0.1 × pi.tlen (2866) = 286.6.
+        // 1091 > 286.6 → keep.
+        let p = mk(
+            "c",
+            '-',
+            174.0,
+            vec![
+                (44646789, 44647096),
+                (44648168, 44648350),
+                (44649248, 44649329),
+                (44651129, 44651310),
+                (44654733, 44654922),
+                (44657248, 44657438),
+                (44661730, 44662177),
+                (44664021, 44664141),
+                (44664287, 44664387),
+                (44666408, 44666510),
+                (44670562, 44670832),
+            ],
+        );
+        // RSTL.135.14: 11 exons spanning to 44715975, tlen ≈ 2866.
+        let pi = mk(
+            "c",
+            '+',
+            23.8,
+            vec![
+                (44669742, 44670957),
+                (44672486, 44672587),
+                (44678780, 44678929),
+                (44681195, 44681251),
+                (44682100, 44682172),
+                (44690899, 44690945),
+                (44704565, 44704647),
+                (44704745, 44704843),
+                (44705182, 44705308),
+                (44712215, 44712268),
+                (44715107, 44715975),
+            ],
+        );
+        assert!(exons_significantly_overlap(&p, &pi, 0.1));
     }
 
     #[test]
     fn significant_overlap_keeps_real_inclusion() {
-        // n2 mostly inside n1 — exon shares are large. Should be kept.
+        // n2 mostly inside n1 — clear inclusion, should be kept.
         let a = mk("c", '+', 100.0, vec![(0, 1000), (1500, 2500)]);
         let b = mk("c", '+', 10.0, vec![(100, 900)]);
         assert_eq!(exon_overlap_bp(&a, &b), 800);
         assert!(exons_significantly_overlap(&a, &b, 0.1));
     }
+
 }
