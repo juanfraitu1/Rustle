@@ -942,6 +942,35 @@ fn read_graph_compatibility(
     (matched_exons as f64 / total_exons as f64) * (1.0 + 0.1 * node_bonus)
 }
 
+/// Per-alignment identity proxy from edit distance and soft-clip rate.
+///
+/// Each (fam_pos, ri) carries its own NM and clip lengths from minimap2's
+/// alignment to that paralog's locus. At medium identity (30–70%) NM diverges
+/// across paralogs even when intron boundaries are conserved, providing the
+/// per-paralog discrimination that intron-match alone cannot.
+///
+/// Returns a value in [0, 1]: 1.0 = perfect match, 0.0 = many edits + heavy
+/// soft-clipping. Single-exon reads still get a meaningful score.
+fn read_alignment_identity_score(read: &BundleRead) -> f64 {
+    let aligned_bp: u64 = read.exons.iter().map(|&(s, e)| e.saturating_sub(s)).sum();
+    if aligned_bp == 0 {
+        return 0.0;
+    }
+    let nm_rate = (read.nm as f64 / aligned_bp as f64).min(1.0);
+    let clip_total = (read.clip_left + read.clip_right) as f64;
+    let clip_rate = if let Some(qlen) = read.query_length {
+        if qlen > 0 {
+            (clip_total / qlen as f64).min(1.0)
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+    // Equal-weighted NM + clip penalty, both in [0, 1].
+    (1.0 - 0.5 * nm_rate - 0.5 * clip_rate).max(0.0)
+}
+
 /// Run EM reweighting across all copies in a family group.
 ///
 /// Modifies `BundleRead.weight` in each bundle's reads to reflect the
@@ -1834,6 +1863,30 @@ fn run_pre_assembly_em_inner(
 
         let mut result = EmResult::default();
 
+        // Optional Direction-A signal: per-alignment identity proxy (NM + soft-clip).
+        // junction_compatibility above is structural-only and saturates near 1.0
+        // across paralogs that share intron structure, leaving multi-mappers
+        // undiscriminated. NM differs per paralog because each minimap2 alignment
+        // carries its own edit distance, providing the medium-identity-band
+        // discrimination that intron boundaries alone cannot.
+        //
+        // Two combination modes:
+        //   - additive:       score = (compat + α·id + 0.01) · ln(context)
+        //   - multiplicative: score = (compat + 0.01) · ln(context) · id^k
+        //
+        // The multiplicative form sharpens small identity differences when k is
+        // large (e.g. 0.97^20 ≈ 0.54 vs 1.00^20 = 1.00 → 46% relative gap, vs
+        // ~3% saturation for additive at any α). Set IDENTITY_K > 0 to enable.
+        let use_intron_assign = std::env::var_os("RUSTLE_VG_INTRON_ASSIGN").is_some();
+        let identity_alpha: f64 = std::env::var("RUSTLE_VG_IDENTITY_ALPHA")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(1.0);
+        let identity_k: f64 = std::env::var("RUSTLE_VG_IDENTITY_K")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.0);
+
         for iter in 0..max_iter {
             let mut max_delta: f64 = 0.0;
 
@@ -1850,6 +1903,16 @@ fn run_pre_assembly_em_inner(
                     let read = &bundles[global_bi].reads[ri];
                     let bundle = &bundles[global_bi];
                     let compat = junction_compatibility(read, bundle);
+                    let id_score = if use_intron_assign {
+                        read_alignment_identity_score(read)
+                    } else {
+                        1.0
+                    };
+                    let identity_bonus = if use_intron_assign && identity_k <= 0.0 {
+                        identity_alpha * id_score
+                    } else {
+                        0.0
+                    };
                     // Context: total junction support at this bundle (higher = more expressed copy).
                     let context: f64 = bundle
                         .junction_stats
@@ -1857,7 +1920,10 @@ fn run_pre_assembly_em_inner(
                         .map(|(_, st)| st.nreads_good)
                         .sum::<f64>()
                         .max(1.0);
-                    let mut score = (compat + 0.01) * context.ln().max(1.0);
+                    let mut score = (compat + identity_bonus + 0.01) * context.ln().max(1.0);
+                    if use_intron_assign && identity_k > 0.0 {
+                        score *= id_score.powf(identity_k);
+                    }
                     // SNP bonus: precomputed cache (static across iterations).
                     if !snp_cache.is_empty() {
                         score *= snp_cache[ei][li];
