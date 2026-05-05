@@ -7715,6 +7715,35 @@ fn emit_stranded_single_exon_candidates(
         let mut med_end = *ends.iter().max().unwrap();
         // bpcov-walk: extend boundaries outward while strand-specific cov
         // stays above singlethr (captures TSS/TTS past individual read endpoints).
+        // Stop the walk if we encounter a position with a TSS cluster
+        // (many reads starting there, signaling a downstream transcript) or
+        // a TTS cluster (many reads ending there). This mirrors ST's behavior
+        // where graph nodes split at hardstart positions and SE transcripts
+        // can't cross them. Without this stop the walk extends through the
+        // antisense neighbor's TSS region (e.g. STRG.160.1's SE extending
+        // 3.5 kb past STRG.161.1's TSS at 25188395).
+        //
+        // RUSTLE_SE_BOUNDARY_TSS_THRESHOLD: minimum read-start cov at a
+        // position to count as a TSS-stop (default 5.0).
+        let tss_stop_thr: f64 = std::env::var("RUSTLE_SE_BOUNDARY_TSS_THRESHOLD")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5.0);
+        // Build read-start and read-end position counts (any strand: TSS
+        // boundaries on opposite strand still indicate a transcript boundary
+        // we shouldn't cross).
+        let mut start_counts: std::collections::HashMap<u64, f64> = Default::default();
+        let mut end_counts: std::collections::HashMap<u64, f64> = Default::default();
+        for r in &bundle.reads {
+            let w = r.weight;
+            if let Some(&(s, _)) = r.exons.first() {
+                *start_counts.entry(s).or_insert(0.0) += w;
+            }
+            if let Some(&(_, e)) = r.exons.last() {
+                let last_base = e.saturating_sub(1);
+                *end_counts.entry(last_base).or_insert(0.0) += w;
+            }
+        }
         if let Some(bps) = bpcov_stranded {
             let cov_vec = if bundle.strand == '+' { &bps.plus.cov } else { &bps.minus.cov };
             let bs = bps.plus.bundle_start.min(bps.minus.bundle_start);
@@ -7722,17 +7751,28 @@ fn emit_stranded_single_exon_candidates(
             let walk_thr = (singlethr * 0.5).max(1.0);
             // Walk start backward
             while med_start > bs {
-                let idx = (med_start - 1 - bs) as usize;
+                let next = med_start - 1;
+                let idx = (next - bs) as usize;
                 if idx >= cov_vec.len() { break; }
                 if cov_vec[idx] < walk_thr { break; }
-                med_start -= 1;
+                // Stop at upstream TTS cluster (many reads ending there).
+                if end_counts.get(&next).copied().unwrap_or(0.0) >= tss_stop_thr {
+                    break;
+                }
+                med_start = next;
             }
             // Walk end forward
             while med_end + 1 <= be {
-                let idx = (med_end + 1 - bs) as usize;
+                let next = med_end + 1;
+                let idx = (next - bs) as usize;
                 if idx >= cov_vec.len() { break; }
                 if cov_vec[idx] < walk_thr { break; }
-                med_end += 1;
+                // Stop at downstream TSS cluster (many reads starting there).
+                // The new transcript would be a separate gene's start.
+                if start_counts.get(&next).copied().unwrap_or(0.0) >= tss_stop_thr {
+                    break;
+                }
+                med_end = next;
             }
         }
         if med_end <= med_start {
@@ -7787,6 +7827,30 @@ fn emit_stranded_single_exon_candidates(
             vg_family_size: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
         });
+    }
+    // Dedup overlapping SE candidates emitted from the same bundle.
+    // Multiple sub-clusters at the same gene can produce slightly different
+    // boundary variants (different read-end cluster centers + bpcov-walk
+    // endpoints). Keep only the highest-cov representative per overlap
+    // group. Mirrors ST's single-exon-per-node behavior in path extraction.
+    if out.len() > 1 {
+        out.sort_by(|a, b| {
+            b.coverage
+                .partial_cmp(&a.coverage)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let mut kept: Vec<Transcript> = Vec::with_capacity(out.len());
+        for cand in out {
+            let (cs, ce) = cand.exons[0];
+            let overlaps_kept = kept.iter().any(|k| {
+                let (ks, ke) = k.exons[0];
+                cs < ke && ks < ce
+            });
+            if !overlaps_kept {
+                kept.push(cand);
+            }
+        }
+        return kept;
     }
     out
 }
