@@ -6096,8 +6096,13 @@ fn extract_bundle_transcripts_for_graph(
     // class where a small gene's junction (12 reads) is overshadowed by a
     // bridging junction (1354 reads) and gets absorbed.
     //
-    // Default on; RUSTLE_ORPHAN_JUNC_RESCUE_OFF=1 to disable.
-    if std::env::var_os("RUSTLE_ORPHAN_JUNC_RESCUE_OFF").is_none() && !txs.is_empty() {
+    // 2026-05-05 parity_decisions audit: on GGO_19 chr19, orphan_junc_rescue
+    // emits 13 paths and ALL are FPs (no ref match). ST has no equivalent
+    // pass and naturally avoids these paths. Disabling on GGO_19 gives
+    // F1 +0.28pp (Pr 88.1→88.7) with zero TP loss. Flipping default OFF;
+    // re-enable for datasets where the gene-inside-intron pattern is real
+    // (likely tissue/species-specific) via RUSTLE_ORPHAN_JUNC_RESCUE=1.
+    if std::env::var_os("RUSTLE_ORPHAN_JUNC_RESCUE").is_some() && !txs.is_empty() {
         let min_reads: f64 = std::env::var("RUSTLE_ORPHAN_JUNC_MIN_READS")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(10.0);
         let max_walk: usize = std::env::var("RUSTLE_ORPHAN_JUNC_MAX_WALK")
