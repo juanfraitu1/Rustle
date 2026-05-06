@@ -2515,6 +2515,18 @@ pub fn run_pre_assembly_em_hmm(
         }
 
         let mut result = EmResult::default();
+
+        // Score-gap rule (advisor's primary-vs-secondary threshold): only
+        // redistribute a read's weight when the best-paralog log-score is at
+        // least `gap_threshold` log-units above the next-best. When the gap
+        // is smaller, the EM is uncertain — leave the read's weight at its
+        // initial 1/NH (BAM-aligner's call) rather than risk flipping it the
+        // wrong way. Default 10.0 log-units (per advisor); set 0 to disable.
+        let gap_threshold: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(10.0);
+
         for iter in 0..max_iter {
             // M-step: per-copy weight totals → log-priors with floor.
             let mut copy_total = vec![0.0_f64; n_copies];
@@ -2539,6 +2551,21 @@ pub fn run_pre_assembly_em_hmm(
                 }
                 let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                 if !max_lp.is_finite() { continue; }
+
+                // Confidence gate: skip update if best vs second-best gap is
+                // below threshold.
+                if gap_threshold > 0.0 && n >= 2 {
+                    let mut best = f64::NEG_INFINITY;
+                    let mut second = f64::NEG_INFINITY;
+                    for &v in &log_post {
+                        if v > best { second = best; best = v; }
+                        else if v > second { second = v; }
+                    }
+                    if best.is_finite() && second.is_finite() && (best - second) < gap_threshold {
+                        continue;
+                    }
+                }
+
                 let mut total = 0.0_f64;
                 let mut exps = vec![0.0_f64; n];
                 for i in 0..n {
