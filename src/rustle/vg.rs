@@ -971,6 +971,35 @@ fn read_alignment_identity_score(read: &BundleRead) -> f64 {
     (1.0 - 0.5 * nm_rate - 0.5 * clip_rate).max(0.0)
 }
 
+/// Fraction of the bundle's bundlenodes covered by any read exon.
+///
+/// Discriminates lost-exon paralogs: a read covering 4 exons at a 5-exon paralog
+/// graph scores 0.8 there but 1.0 at a 4-exon paralog (exon truly missing). The
+/// existing `junction_compatibility` is symmetric in junctions and saturates
+/// once shared boundaries match; this metric is asymmetric on the paralog side
+/// and rewards graph-side completeness.
+fn read_bundle_exon_coverage(read: &BundleRead, bundle: &Bundle) -> f64 {
+    let Some(ref head) = bundle.bundlenodes else {
+        return 0.0;
+    };
+    let mut total = 0usize;
+    let mut covered = 0usize;
+    let mut node: Option<&CBundlenode> = Some(head);
+    while let Some(n) = node {
+        total += 1;
+        let any = read.exons.iter().any(|&(rs, re)| rs < n.end && n.start < re);
+        if any {
+            covered += 1;
+        }
+        node = n.next.as_deref();
+    }
+    if total == 0 {
+        0.0
+    } else {
+        covered as f64 / total as f64
+    }
+}
+
 /// Run EM reweighting across all copies in a family group.
 ///
 /// Modifies `BundleRead.weight` in each bundle's reads to reflect the
@@ -1886,6 +1915,15 @@ fn run_pre_assembly_em_inner(
             .ok()
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(0.0);
+        // Optional exon-coverage signal: fraction of bundlenodes covered by the
+        // read. Discriminates lost-exon paralogs (4-exon paralog beats 5-exon
+        // paralog when the read covers 4 exons that match both). Independent
+        // gate so it can be tested without other Direction-A signals.
+        let use_exon_cov = std::env::var_os("RUSTLE_VG_EXON_COV").is_some();
+        let exon_cov_alpha: f64 = std::env::var("RUSTLE_VG_EXON_COV_ALPHA")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(1.0);
 
         for iter in 0..max_iter {
             let mut max_delta: f64 = 0.0;
@@ -1913,6 +1951,11 @@ fn run_pre_assembly_em_inner(
                     } else {
                         0.0
                     };
+                    let exon_cov_bonus = if use_exon_cov {
+                        exon_cov_alpha * read_bundle_exon_coverage(read, bundle)
+                    } else {
+                        0.0
+                    };
                     // Context: total junction support at this bundle (higher = more expressed copy).
                     let context: f64 = bundle
                         .junction_stats
@@ -1920,7 +1963,7 @@ fn run_pre_assembly_em_inner(
                         .map(|(_, st)| st.nreads_good)
                         .sum::<f64>()
                         .max(1.0);
-                    let mut score = (compat + identity_bonus + 0.01) * context.ln().max(1.0);
+                    let mut score = (compat + identity_bonus + exon_cov_bonus + 0.01) * context.ln().max(1.0);
                     if use_intron_assign && identity_k > 0.0 {
                         score *= id_score.powf(identity_k);
                     }
