@@ -2149,6 +2149,18 @@ fn run_pre_assembly_em_inner(
             .ok()
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(1.0);
+        // Score-gap rule for heuristic EM: only redistribute when
+        // log(best_score / second_best_score) >= gap_threshold. Heuristic
+        // scores are linear (0..~30 typical), so we work with log-ratio.
+        // Empirical: NBPF/LOC101133271 case showed best≈second (both paralogs
+        // have matching junctions); without gating, EM splits weight ~50/50,
+        // halves the transfrag abundance, and the transcript drops below the
+        // path-extraction threshold. Default 1.0 = require best/second ≥ e^1
+        // ≈ 2.7x. Set 0 to disable.
+        let heur_gap_threshold: f64 = std::env::var("RUSTLE_VG_EM_HEUR_SCORE_GAP")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(1.0);
 
         for iter in 0..max_iter {
             let mut max_delta: f64 = 0.0;
@@ -2202,6 +2214,25 @@ fn run_pre_assembly_em_inner(
                 let total: f64 = scores.iter().sum();
                 if total <= 0.0 {
                     continue;
+                }
+
+                // Score-gap gate: skip update if log(best/second) is below
+                // threshold (low-confidence redistribution would dilute the
+                // primary paralog's abundance below the path-extraction
+                // threshold — see NBPF/LOC101133271 trace).
+                if heur_gap_threshold > 0.0 && scores.len() >= 2 {
+                    let mut best = f64::NEG_INFINITY;
+                    let mut second = f64::NEG_INFINITY;
+                    for &v in &scores {
+                        if v > best { second = best; best = v; }
+                        else if v > second { second = v; }
+                    }
+                    if best > 0.0 && second > 0.0 {
+                        let log_gap = best.ln() - second.ln();
+                        if log_gap < heur_gap_threshold {
+                            continue;
+                        }
+                    }
                 }
 
                 // Normalize.
