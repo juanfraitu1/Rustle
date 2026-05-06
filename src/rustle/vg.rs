@@ -585,6 +585,231 @@ pub fn filter_by_graph_kmer_jaccard(
     kept
 }
 
+/// POA-aligned mean pairwise %-identity over family-graph nodes.
+///
+/// More sensitive than `compute_family_graph_kmer_jaccard` at moderate
+/// divergence: rather than matching exact 21-mers (which saturates fast as
+/// paralogs drift), this aligns per-copy node sequences with POA and counts
+/// matches per aligned column. Stays DNA-side, no protein translation.
+///
+/// Strategy:
+///   1. Build the same family graph (single-strand, ≥2 copies)
+///   2. For each node, POA-align per-copy sequences to obtain an MSA
+///   3. Per node, compute mean pairwise %-identity over aligned columns
+///      (gap-vs-gap doesn't count; gap-vs-base counts as mismatch)
+///   4. Aggregate across nodes weighted by total aligned column count
+///
+/// Min-hash prescreen: before running expensive POA, build a 128-element
+/// min-hash signature of 21-mers per copy and estimate Jaccard. If even the
+/// loose prescreen says identity is hopeless (< 0.1), short-circuit and
+/// return the prescreen estimate so the caller can drop the family.
+///
+/// Returns (identity, skip_reason) — same shape as the kmer-Jaccard variant.
+pub fn compute_family_graph_poa_identity_diag(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    genome: &crate::genome::GenomeIndex,
+) -> (Option<f64>, Option<&'static str>) {
+    let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+    let largest = match sub_families.into_iter()
+        .filter(|f| f.bundle_indices.len() >= 2)
+        .max_by_key(|f| f.bundle_indices.len())
+    {
+        Some(f) => f,
+        None => return (None, Some("no_substrand_with_2_copies")),
+    };
+    let fg = match crate::vg_hmm::family_graph::build_family_graph(
+        &largest, bundles, Some(genome), 0.30, 0.30,
+    ) {
+        Ok(g) => g,
+        Err(_) => return (None, Some("graph_build_err")),
+    };
+    if fg.nodes.is_empty() {
+        return (None, Some("graph_empty"));
+    }
+
+    // Min-hash prescreen on 21-mers per copy across all nodes — cheap upper
+    // bound on identity. If even the loose Jaccard estimate is hopeless, no
+    // need to spend POA cycles.
+    const SKETCH_SIZE: usize = 128;
+    const KMER_K: usize = 21;
+    let n_copies = largest.bundle_indices.len();
+    let prescreen = minhash_jaccard_estimate(&fg, n_copies, KMER_K, SKETCH_SIZE);
+    if let Some(j) = prescreen {
+        if j < 0.10 {
+            // Hopeless — return the estimate so the caller drops it cheaply.
+            return (Some(j), None);
+        }
+    }
+
+    // Full POA-aligned identity per node, weighted by aligned-column count.
+    let mut total_match = 0u64;
+    let mut total_compared = 0u64;
+    for node in &fg.nodes {
+        let seqs: Vec<Vec<u8>> = node.per_copy_sequences.iter().map(|(_, s)| s.clone()).collect();
+        if seqs.len() < 2 { continue; }
+        // Skip nodes where any copy is empty/too short to align meaningfully.
+        if seqs.iter().any(|s| s.len() < 10) { continue; }
+        let msa = match crate::vg_hmm::profile::poa_msa(&seqs) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if msa.is_empty() { continue; }
+        let n_col = msa[0].len();
+        let n_row = msa.len();
+        // Per-pair counting per column.
+        for c in 0..n_col {
+            // Count matches/mismatches over pairs i<j where neither side is gap-vs-gap.
+            for i in 0..n_row {
+                for j in (i + 1)..n_row {
+                    let a = msa[i][c];
+                    let b = msa[j][c];
+                    if a == b'-' && b == b'-' { continue; }
+                    total_compared += 1;
+                    if a == b { total_match += 1; }
+                }
+            }
+        }
+    }
+    if total_compared == 0 {
+        return (None, Some("no_aligned_columns"));
+    }
+    (Some(total_match as f64 / total_compared as f64), None)
+}
+
+/// Min-hash Jaccard estimate over family-graph node k-mers, per pair-mean.
+///
+/// Cheap O(SKETCH × N_COPIES) prescreen for the POA-identity filter. Returns
+/// a Jaccard estimate in [0, 1] or None if there are < 2 copies with k-mers.
+fn minhash_jaccard_estimate(
+    fg: &crate::vg_hmm::family_graph::FamilyGraph,
+    n_copies: usize,
+    kmer_len: usize,
+    sketch_size: usize,
+) -> Option<f64> {
+    // sketch[copy][hash_idx] = min hash seen so far (u64::MAX = unseen).
+    let mut sketch: Vec<Vec<u64>> = (0..n_copies)
+        .map(|_| vec![u64::MAX; sketch_size])
+        .collect();
+    let mut have_kmers = vec![false; n_copies];
+
+    for node in &fg.nodes {
+        for (cid, seq) in &node.per_copy_sequences {
+            if *cid >= n_copies || seq.len() < kmer_len { continue; }
+            for window in seq.windows(kmer_len) {
+                if !window.iter().all(|&b| matches!(b, b'A'|b'C'|b'G'|b'T')) { continue; }
+                let base = fnv1a_64(window);
+                // Apply `sketch_size` hash permutations (xor with i × golden ratio prime).
+                for i in 0..sketch_size {
+                    let h = base ^ (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
+                    if h < sketch[*cid][i] { sketch[*cid][i] = h; }
+                }
+                have_kmers[*cid] = true;
+            }
+        }
+    }
+    let with_kmers: Vec<usize> = (0..n_copies).filter(|&c| have_kmers[c]).collect();
+    if with_kmers.len() < 2 { return None; }
+    let mut sum = 0.0_f64;
+    let mut pairs = 0usize;
+    for i in 0..with_kmers.len() {
+        for j in (i + 1)..with_kmers.len() {
+            let a = &sketch[with_kmers[i]];
+            let b = &sketch[with_kmers[j]];
+            let eq = a.iter().zip(b.iter()).filter(|(x, y)| x == y && **x != u64::MAX).count();
+            sum += eq as f64 / sketch_size as f64;
+            pairs += 1;
+        }
+    }
+    if pairs == 0 { None } else { Some(sum / pairs as f64) }
+}
+
+#[inline]
+fn fnv1a_64(window: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in window {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Parallel POA-identity filter (sibling of `filter_by_graph_kmer_jaccard`).
+///
+/// Uses rayon to compute identity per family in parallel. Each family's POA
+/// alignment is independent so this is embarrassingly parallel. Returns the
+/// kept families plus emits a summary line with kept/dropped identities.
+pub fn filter_by_graph_poa_identity(
+    families: Vec<FamilyGroup>,
+    bundles: &[Bundle],
+    genome: Option<&crate::genome::GenomeIndex>,
+    min_identity: f64,
+) -> Vec<FamilyGroup> {
+    if min_identity <= 0.0 {
+        return families;
+    }
+    let g = match genome {
+        Some(g) => g,
+        None => {
+            eprintln!("[VG] graph-POA-identity filter requested but no genome available — skipping");
+            return families;
+        }
+    };
+    let n_in = families.len();
+    use rayon::prelude::*;
+    let scored: Vec<(FamilyGroup, Option<f64>, Option<&'static str>)> = families
+        .into_par_iter()
+        .map(|fam| {
+            let (j, reason) = compute_family_graph_poa_identity_diag(&fam, bundles, g);
+            (fam, j, reason)
+        })
+        .collect();
+
+    let mut kept: Vec<FamilyGroup> = Vec::new();
+    let mut n_dropped = 0usize;
+    let mut n_skipped_signal = 0usize;
+    let mut skip_reasons: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    let mut kept_ids: Vec<f64> = Vec::new();
+    let mut dropped_ids: Vec<f64> = Vec::new();
+    for (fam, j_opt, reason) in scored {
+        match j_opt {
+            Some(j) => {
+                if j < min_identity {
+                    n_dropped += 1;
+                    dropped_ids.push(j);
+                } else {
+                    kept_ids.push(j);
+                    kept.push(fam);
+                }
+            }
+            None => {
+                n_skipped_signal += 1;
+                if let Some(r) = reason { *skip_reasons.entry(r).or_insert(0) += 1; }
+                kept.push(fam);
+            }
+        }
+    }
+    if n_dropped > 0 || n_skipped_signal > 0 {
+        eprintln!(
+            "[VG] graph-POA-identity filter: {} → {} families ({} dropped by low_identity < {:.2}, {} skipped — graph build failed)",
+            n_in, kept.len(), n_dropped, min_identity, n_skipped_signal
+        );
+        if !skip_reasons.is_empty() {
+            eprintln!("[VG]   skip reasons: {:?}", skip_reasons);
+        }
+        if !kept_ids.is_empty() {
+            let s: Vec<String> = kept_ids.iter().map(|j| format!("{:.3}", j)).collect();
+            eprintln!("[VG]   kept identities: [{}]", s.join(", "));
+        }
+        if !dropped_ids.is_empty() {
+            let s: Vec<String> = dropped_ids.iter().map(|j| format!("{:.3}", j)).collect();
+            eprintln!("[VG]   dropped identities: [{}]", s.join(", "));
+        }
+    }
+    kept
+}
+
 /// Quality-filter discovered families to keep only those that look like
 /// real multi-copy gene paralogs (vs noise, mtDNA, repetitive megafamilies,
 /// TE-bridge spurious merges).

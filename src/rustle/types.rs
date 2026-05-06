@@ -958,6 +958,14 @@ pub struct RunConfig {
     /// graph, so skipped when --genome-fasta is not provided. Set to 0
     /// (default) to disable this signal.
     pub vg_family_min_kmer_jaccard: f64,
+
+    /// POA-aligned mean pairwise %-identity threshold for the family-quality
+    /// filter. More sensitive than k-mer Jaccard at moderate divergence: aligns
+    /// per-copy node sequences with POA and counts matches per aligned column.
+    /// Min-hash-prescreens then runs full POA only on families that pass a
+    /// loose Jaccard prefilter. Default 0 (disabled). Stays DNA-side; requires
+    /// --genome-fasta. Recommended starting threshold: 0.30.
+    pub vg_family_min_poa_identity: f64,
 }
 
 impl RunConfig {
@@ -1201,6 +1209,7 @@ impl Default for RunConfig {
             vg_family_max_exon_cv: 1.5,
             vg_family_min_primitive_jaccard: 0.20,
             vg_family_min_kmer_jaccard: 0.05,  // bimodal split on full GGO; no-op without --genome-fasta
+            vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
         }
     }
 }

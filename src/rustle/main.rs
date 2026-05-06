@@ -424,6 +424,15 @@ struct Args {
     #[arg(long, default_value_t = 0.05)]
     vg_family_min_kmer_jaccard: f64,
 
+    /// POA-aligned mean pairwise %-identity threshold for the family-quality
+    /// filter. More sensitive than k-mer Jaccard at moderate divergence:
+    /// aligns per-copy node sequences with POA and counts matches per aligned
+    /// column. Min-hash-prescreens to skip full POA on obvious negatives.
+    /// Default 0 (disabled). Stays DNA-side; requires --genome-fasta.
+    /// Recommended starting threshold: 0.30.
+    #[arg(long, default_value_t = 0.0)]
+    vg_family_min_poa_identity: f64,
+
     /// Maximum EM iterations for multi-mapping resolution [default: 20]
     #[arg(long, default_value = "20")]
     vg_em_iter: usize,
@@ -716,6 +725,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_max_exon_cv: args.vg_family_max_exon_cv,
         vg_family_min_primitive_jaccard: args.vg_family_min_primitive_jaccard,
         vg_family_min_kmer_jaccard: args.vg_family_min_kmer_jaccard,
+        vg_family_min_poa_identity: args.vg_family_min_poa_identity,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {
