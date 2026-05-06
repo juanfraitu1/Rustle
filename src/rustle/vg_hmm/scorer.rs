@@ -348,6 +348,16 @@ pub fn forward_against_path_for_copy(
 
     let mut boundary = vec![NEG_INF; l + 1];
     boundary[0] = 0.0;
+    // Optional length normalization: when paralog paths differ in total match
+    // columns, longer paths inherently score more negative (more terms in
+    // log-space), biasing HMM-EM toward shorter paths regardless of fit. With
+    // RUSTLE_VG_HMM_LENGTH_NORM=1, divide the final forward log-prob by the
+    // total match-column count along this path. The result is "average
+    // per-position log-fit". Note: the gap-rule threshold should be set
+    // proportionally lower (e.g., RUSTLE_VG_EM_SCORE_GAP=0.01) when this is
+    // enabled — per-position log-units are ~0.01-0.1 vs absolute ~1-10.
+    let length_norm = std::env::var_os("RUSTLE_VG_HMM_LENGTH_NORM").is_some();
+    let mut total_match_cols: usize = 0;
 
     for &nidx in path {
         if nidx.0 >= fg.nodes.len() { return NEG_INF; }
@@ -360,13 +370,21 @@ pub fn forward_against_path_for_copy(
             .or(node.profile.as_ref());
         match profile_opt {
             Some(profile) => {
+                if length_norm {
+                    total_match_cols += profile.match_emit.len();
+                }
                 boundary = profile_forward_with_boundary(profile, read, &boundary);
             }
             None => return NEG_INF,
         }
     }
 
-    boundary[l]
+    let raw = boundary[l];
+    if length_norm && total_match_cols > 0 && raw.is_finite() {
+        raw / total_match_cols as f64
+    } else {
+        raw
+    }
 }
 
 /// Constrained Viterbi over a single path through the family graph.
