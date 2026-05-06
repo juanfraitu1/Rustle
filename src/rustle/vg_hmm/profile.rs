@@ -74,6 +74,79 @@ impl ProfileHmm {
         p
     }
 
+    /// Per-copy MSA-smoothed profile. Match columns blend the target copy's
+    /// observed base (singleton-like) with the MSA's column-wise base
+    /// composition across all copies. `tilt_alpha` controls the blend:
+    ///   - 1.0 → pure singleton (this copy's 1-hot)
+    ///   - 0.0 → pure shared MSA profile (ignores target identity)
+    ///   - default 0.7 → mostly singleton with some smoothing toward column observations
+    ///
+    /// Used in HMM-EM to mitigate the singleton's harsh per-error penalty
+    /// (~6.9 log-units) that can flip per-paralog assignments confidently
+    /// the wrong way on noisy reads. With smoothed singletons, error penalties
+    /// drop to ~3-4 log-units, the gap rule fires more often, and the EM is
+    /// less prone to confidently-wrong redistributions.
+    ///
+    /// Falls back to `from_singleton(target_seq)` if MSA target row index
+    /// is out of range or rows are unequal-length.
+    pub fn from_per_copy_msa_smoothed(
+        target_seq: &[u8],
+        msa_rows: &[Vec<u8>],
+        target_row_idx: usize,
+        tilt_alpha: f64,
+    ) -> Self {
+        if target_row_idx >= msa_rows.len() || msa_rows.is_empty() {
+            return Self::from_singleton(target_seq);
+        }
+        let n_col = msa_rows[0].len();
+        if !msa_rows.iter().all(|r| r.len() == n_col) {
+            return Self::from_singleton(target_seq);
+        }
+        let target_msa = &msa_rows[target_row_idx];
+
+        // Match columns: target's row has a non-gap base.
+        let mut is_match: Vec<bool> = vec![false; n_col];
+        for c in 0..n_col {
+            is_match[c] = target_msa[c] != b'-';
+        }
+        let match_cols: Vec<usize> = (0..n_col).filter(|&c| is_match[c]).collect();
+        let n_match = match_cols.len();
+        if n_match != target_seq.iter().filter(|&&b| b != b'-').count() {
+            // Mismatch between MSA target row and seq — fall back.
+            return Self::from_singleton(target_seq);
+        }
+
+        let mut p = Self::empty(n_match);
+        let alpha = tilt_alpha.clamp(0.0, 1.0);
+
+        for (mi, &c) in match_cols.iter().enumerate() {
+            let target_base = target_msa[c];
+            // Column observed counts across all copies (excluding gaps).
+            let mut counts = [0u32; 4];
+            let mut observed = 0u32;
+            for r in msa_rows {
+                if let Some(k) = idx(r[c]) { counts[k] += 1; observed += 1; }
+            }
+            let obs = observed.max(1) as f64;
+            let mut row_p = [0.0_f64; 4];
+            // Blend δ(target_base) with the column's empirical distribution.
+            let target_k = idx(target_base);
+            for k in 0..4 {
+                let emp = counts[k] as f64 / obs;
+                let delta = if Some(k) == target_k { 1.0 } else { 0.0 };
+                row_p[k] = (alpha * delta + (1.0 - alpha) * emp).max(SMOOTH_FLOOR);
+            }
+            // Renormalize and log.
+            let z: f64 = row_p.iter().sum();
+            p.match_emit[mi] = [
+                (row_p[0] / z).ln(), (row_p[1] / z).ln(),
+                (row_p[2] / z).ln(), (row_p[3] / z).ln(),
+            ];
+        }
+        p.n_seed_copies = msa_rows.len();
+        p
+    }
+
     /// Build a profile HMM from an equal-length MSA (rows = sequences,
     /// columns = aligned positions, b'-' for gaps).
     pub fn from_msa(rows: &[Vec<u8>]) -> Result<Self> {

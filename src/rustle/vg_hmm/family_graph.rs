@@ -426,6 +426,27 @@ pub fn build_family_graph(
 use crate::vg_hmm::profile::ProfileHmm;
 
 pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
+    // Facultative POA-MSA-smoothed per-copy profiles. When triggered (≥3
+    // copies, mean pairwise identity ≥ 0.50), build the POA-MSA once per
+    // node and use it to produce per-copy profiles that blend each copy's
+    // singleton signal with the column-wise MSA composition. This softens
+    // the harsh per-error penalty of pure singleton 1-hot emissions
+    // (~6.9 log-units → ~3 log-units), letting the gap rule mute
+    // confidently-wrong assignments on noisy reads.
+    //
+    // Tunable via env vars:
+    //   - RUSTLE_VG_HMM_PERCOPY_TILT (default 0.7): blend weight for target
+    //     copy's base vs column observations. 1.0 = pure singleton, 0.0 =
+    //     pure shared MSA. Empirical default 0.7 keeps strong per-paralog
+    //     discrimination while softening errors.
+    //   - RUSTLE_VG_HMM_PERCOPY_MIN_IDENTITY (default 0.50): threshold to
+    //     trigger the smoothed path. Below it, copies are too divergent for
+    //     POA-MSA to be meaningful — fall back to plain singleton.
+    let tilt: f64 = std::env::var("RUSTLE_VG_HMM_PERCOPY_TILT")
+        .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.7);
+    let min_id: f64 = std::env::var("RUSTLE_VG_HMM_PERCOPY_MIN_IDENTITY")
+        .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.50);
+
     for node in &mut fg.nodes {
         let seqs: Vec<Vec<u8>> = node.per_copy_sequences.iter().map(|(_, s)| s.clone()).collect();
         // Shared profile (used by family-level scoring: forward_against_family,
@@ -446,20 +467,63 @@ pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
                 ProfileHmm::from_msa(&msa).unwrap_or_else(|_| ProfileHmm::from_singleton(&seqs[0]))
             }
         });
+
         // Per-copy profiles (used by forward_against_path_for_copy in HMM-EM).
-        // Each copy gets its own singleton profile from its exact genomic
-        // sequence — preserves SNPs, donor/acceptor microshifts, and small
-        // per-copy indels that the shared MSA averages away.
-        node.per_copy_profiles = node.per_copy_sequences.iter()
-            .map(|(cid, seq)| {
-                let p = if seq.is_empty() {
-                    ProfileHmm::empty(0)
-                } else {
-                    ProfileHmm::from_singleton(seq)
-                };
-                (*cid, p)
-            })
-            .collect();
+        // Three regimes:
+        //   1. ≥2 copies + mean identity ≥ min_id: facultative POA-MSA-smoothed
+        //      per-copy profiles. Each copy's profile blends singleton 1-hot
+        //      with column-wise MSA observation. For 2-copy families, MSA is
+        //      pairwise; for 3+ it's POA. The smoothing softens singleton's
+        //      6.9-log-unit per-error penalty to ~1.7 (2-copy at tilt=0.7).
+        //   2. <2 copies (singleton families) or low identity: plain singleton.
+        //   3. POA fails: fall back to singleton.
+        let use_msa_smoothed = seqs.len() >= 2
+            && tilt < 1.0
+            && mean_pairwise_identity(&seqs) >= min_id;
+
+        if use_msa_smoothed {
+            match crate::vg_hmm::profile::poa_msa(&seqs) {
+                Ok(msa) => {
+                    node.per_copy_profiles = node.per_copy_sequences.iter().enumerate()
+                        .map(|(idx_in_msa, (cid, seq))| {
+                            let p = if seq.is_empty() {
+                                ProfileHmm::empty(0)
+                            } else {
+                                ProfileHmm::from_per_copy_msa_smoothed(
+                                    seq, &msa, idx_in_msa, tilt
+                                )
+                            };
+                            (*cid, p)
+                        })
+                        .collect();
+                }
+                Err(_) => {
+                    // POA failed; fall back to plain singletons.
+                    node.per_copy_profiles = node.per_copy_sequences.iter()
+                        .map(|(cid, seq)| {
+                            let p = if seq.is_empty() {
+                                ProfileHmm::empty(0)
+                            } else {
+                                ProfileHmm::from_singleton(seq)
+                            };
+                            (*cid, p)
+                        })
+                        .collect();
+                }
+            }
+        } else {
+            // Plain singleton per-copy profiles.
+            node.per_copy_profiles = node.per_copy_sequences.iter()
+                .map(|(cid, seq)| {
+                    let p = if seq.is_empty() {
+                        ProfileHmm::empty(0)
+                    } else {
+                        ProfileHmm::from_singleton(seq)
+                    };
+                    (*cid, p)
+                })
+                .collect();
+        }
     }
     Ok(())
 }
