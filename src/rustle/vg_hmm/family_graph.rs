@@ -28,7 +28,18 @@ pub struct ExonClass {
     /// True iff exactly one copy contributes — i.e. a bubble branch.
     pub copy_specific: bool,
     /// Per-exon profile HMM. None until fit_profiles_in_place is called.
+    /// This is the SHARED profile (built from POA-MSA of all copies) used by
+    /// family-level scoring functions (`forward_against_family`,
+    /// `viterbi_against_family`). For per-paralog scoring (HMM-EM E-step),
+    /// `per_copy_profiles` below is the right field — it preserves SNPs and
+    /// per-copy sequence drift that the shared MSA pools away.
     pub profile: Option<crate::vg_hmm::profile::ProfileHmm>,
+    /// One profile per copy that contributes to this node, fitted as a
+    /// singleton from that copy's exact genomic sequence at this exon. Lets
+    /// `forward_against_path_for_copy` score reads against each paralog's
+    /// actual sequence rather than the family-wide consensus. Empty until
+    /// `fit_profiles_in_place` is called.
+    pub per_copy_profiles: Vec<(CopyId, crate::vg_hmm::profile::ProfileHmm)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -378,6 +389,7 @@ pub fn build_family_graph(
                 per_copy_spans,
                 copy_specific: cids.len() == 1,
                 profile: None,
+                per_copy_profiles: Vec::new(),
             });
         }
     }
@@ -416,13 +428,13 @@ use crate::vg_hmm::profile::ProfileHmm;
 pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
     for node in &mut fg.nodes {
         let seqs: Vec<Vec<u8>> = node.per_copy_sequences.iter().map(|(_, s)| s.clone()).collect();
+        // Shared profile (used by family-level scoring: forward_against_family,
+        // viterbi_against_family). Same logic as before.
         node.profile = Some(if seqs.is_empty() {
             ProfileHmm::empty(0)
         } else if seqs.len() == 1 {
             ProfileHmm::from_singleton(&seqs[0])
         } else {
-            // Mean pairwise identity gate (spec §12 risk mitigation): if too divergent,
-            // fall back to per-copy singletons by collapsing to the first one.
             let id = mean_pairwise_identity(&seqs);
             if id < 0.60 {
                 ProfileHmm::from_singleton(&seqs[0])
@@ -434,6 +446,20 @@ pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
                 ProfileHmm::from_msa(&msa).unwrap_or_else(|_| ProfileHmm::from_singleton(&seqs[0]))
             }
         });
+        // Per-copy profiles (used by forward_against_path_for_copy in HMM-EM).
+        // Each copy gets its own singleton profile from its exact genomic
+        // sequence — preserves SNPs, donor/acceptor microshifts, and small
+        // per-copy indels that the shared MSA averages away.
+        node.per_copy_profiles = node.per_copy_sequences.iter()
+            .map(|(cid, seq)| {
+                let p = if seq.is_empty() {
+                    ProfileHmm::empty(0)
+                } else {
+                    ProfileHmm::from_singleton(seq)
+                };
+                (*cid, p)
+            })
+            .collect();
     }
     Ok(())
 }

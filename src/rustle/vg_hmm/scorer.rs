@@ -322,6 +322,53 @@ pub fn forward_against_path(fg: &FamilyGraph, read: &[u8], path: &[NodeIdx]) -> 
     boundary[l]
 }
 
+/// Per-copy variant of `forward_against_path`: scores a read against a
+/// specific paralog by using that paralog's per-copy profile at each node
+/// instead of the shared (POA-MSA-derived) profile.
+///
+/// This is the scoring function HMM-EM should call for paralog assignment:
+/// it preserves SNPs, donor/acceptor microshifts within shared exon-classes,
+/// and per-copy small indels that the shared profile averages away.
+///
+/// Per-node lookup picks the profile entry where `cid == copy_id`. If a node
+/// has no entry for that copy (the copy doesn't contribute there — this
+/// shouldn't happen if `path` came from `recover_paralog_path(copy_id)`,
+/// but is handled defensively), falls back to the shared profile.
+///
+/// Returns `NEG_INF` if `path` is empty, contains an out-of-range NodeIdx,
+/// or any node lacks both per-copy and shared profiles.
+pub fn forward_against_path_for_copy(
+    fg: &FamilyGraph,
+    read: &[u8],
+    path: &[NodeIdx],
+    copy_id: crate::vg_hmm::family_graph::CopyId,
+) -> f64 {
+    if path.is_empty() { return NEG_INF; }
+    let l = read.len();
+
+    let mut boundary = vec![NEG_INF; l + 1];
+    boundary[0] = 0.0;
+
+    for &nidx in path {
+        if nidx.0 >= fg.nodes.len() { return NEG_INF; }
+        let node = &fg.nodes[nidx.0];
+        // Prefer the per-copy profile; fall back to shared if absent.
+        let profile_opt = node.per_copy_profiles
+            .iter()
+            .find(|(c, _)| *c == copy_id)
+            .map(|(_, p)| p)
+            .or(node.profile.as_ref());
+        match profile_opt {
+            Some(profile) => {
+                boundary = profile_forward_with_boundary(profile, read, &boundary);
+            }
+            None => return NEG_INF,
+        }
+    }
+
+    boundary[l]
+}
+
 /// Constrained Viterbi over a single path through the family graph.
 ///
 /// Returns `(read_spans, score)` where:

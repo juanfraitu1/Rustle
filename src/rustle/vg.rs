@@ -1441,7 +1441,7 @@ pub fn run_em_reweighting_hmm(
     max_iter: usize,
     convergence_thr: f64,
 ) -> EmResult {
-    use crate::vg_hmm::scorer::forward_against_path;
+    use crate::vg_hmm::scorer::forward_against_path_for_copy;
 
     let n_copies = family.bundle_indices.len();
     if n_copies < 2 || family.multimap_reads.is_empty() {
@@ -1498,7 +1498,7 @@ pub fn run_em_reweighting_hmm(
                 let score = if path.is_empty() {
                     f64::NEG_INFINITY
                 } else {
-                    forward_against_path(family_graph, item.seq, path)
+                    forward_against_path_for_copy(family_graph, item.seq, path, fam_pos)
                 };
                 entry_locs.push((fam_pos, global_bi, ri));
                 log_scores.push(score);
@@ -2360,7 +2360,7 @@ pub fn run_pre_assembly_em_hmm(
     max_iter: usize,
     use_snps: bool,
 ) -> Vec<EmResult> {
-    use crate::vg_hmm::scorer::forward_against_path;
+    use crate::vg_hmm::scorer::forward_against_path_for_copy;
     let mut results = Vec::with_capacity(families.len());
     let convergence_thr = 0.001;
     let t_em_start = std::time::Instant::now();
@@ -2476,7 +2476,9 @@ pub fn run_pre_assembly_em_hmm(
                     let score = if path.is_empty() {
                         f64::NEG_INFINITY
                     } else {
-                        forward_against_path(fg, item.seq, path)
+                        // Use per-copy profiles: each paralog scored against
+                        // its own genomic sequence, not the family consensus.
+                        forward_against_path_for_copy(fg, item.seq, path, fam_pos)
                     };
                     let snp_log = if let Some(ref diag) = diagnostic {
                         if ri < bundles[global_bi].reads.len() {
