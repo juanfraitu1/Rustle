@@ -2133,6 +2133,7 @@ pub fn run_pre_assembly_em_hmm(
     family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
     sequences: &HashMap<u64, Vec<u8>>,
     max_iter: usize,
+    use_snps: bool,
 ) -> Vec<EmResult> {
     use crate::vg_hmm::scorer::forward_against_path;
     let mut results = Vec::with_capacity(families.len());
@@ -2164,10 +2165,21 @@ pub fn run_pre_assembly_em_hmm(
             .map(|cid| fg.recover_paralog_path(cid))
             .collect();
 
+        // Build per-family diagnostic SNPs if SNP-aware HMM is enabled. The
+        // SNP signal is constant across EM iterations and per-(read, copy)
+        // independent of forward score, so cache log(snp_compat) per
+        // placement once and add it into the posterior.
+        let diagnostic = if use_snps {
+            Some(build_diagnostic_snps(family, bundles))
+        } else {
+            None
+        };
+
         // Build entries with pre-computed log-likelihoods (constant across EM iters).
         struct Entry {
             locs: Vec<(usize, usize)>,
             log_scores: Vec<f64>,
+            log_snp: Vec<f64>,
             weights: Vec<f64>,
             fam_pos: Vec<usize>,
         }
@@ -2231,6 +2243,7 @@ pub fn run_pre_assembly_em_hmm(
             .filter_map(|item| {
                 let mut entry_locs = Vec::with_capacity(item.placements.len());
                 let mut log_scores = Vec::with_capacity(item.placements.len());
+                let mut log_snp    = Vec::with_capacity(item.placements.len());
                 let mut weights   = Vec::with_capacity(item.placements.len());
                 let mut fp_vec    = Vec::with_capacity(item.placements.len());
                 for &(fam_pos, global_bi, ri, w) in &item.placements {
@@ -2240,14 +2253,25 @@ pub fn run_pre_assembly_em_hmm(
                     } else {
                         forward_against_path(fg, item.seq, path)
                     };
+                    let snp_log = if let Some(ref diag) = diagnostic {
+                        if ri < bundles[global_bi].reads.len() {
+                            let read = &bundles[global_bi].reads[ri];
+                            snp_compatibility(read, fam_pos, diag).ln()
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        0.0
+                    };
                     entry_locs.push((global_bi, ri));
                     log_scores.push(score);
+                    log_snp.push(snp_log);
                     weights.push(w);
                     fp_vec.push(fam_pos);
                 }
                 if entry_locs.len() < 2 { return None; }
                 if !log_scores.iter().any(|s| s.is_finite()) { return None; }
-                Some(Entry { locs: entry_locs, log_scores, weights, fam_pos: fp_vec })
+                Some(Entry { locs: entry_locs, log_scores, log_snp, weights, fam_pos: fp_vec })
             })
             .collect();
         let mut entries = scored;
@@ -2284,7 +2308,7 @@ pub fn run_pre_assembly_em_hmm(
                 for i in 0..n {
                     let s = entry.log_scores[i];
                     if !s.is_finite() { continue; }
-                    log_post[i] = s + log_priors[entry.fam_pos[i]];
+                    log_post[i] = s + log_priors[entry.fam_pos[i]] + entry.log_snp[i];
                 }
                 let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                 if !max_lp.is_finite() { continue; }
@@ -2339,7 +2363,8 @@ pub fn run_pre_assembly_em_hmm(
 
     let total_reweighted: usize = results.iter().map(|r| r.reads_reweighted).sum();
     eprintln!(
-        "[VG-HMM-EM] HMM-EM reweighting complete: {} reads adjusted across {} families in {:.1}s",
+        "[VG-HMM-EM] HMM-EM{} reweighting complete: {} reads adjusted across {} families in {:.1}s",
+        if use_snps { " (SNP-aware)" } else { "" },
         total_reweighted,
         results.iter().filter(|r| r.reads_reweighted > 0).count(),
         t_em_start.elapsed().as_secs_f64(),

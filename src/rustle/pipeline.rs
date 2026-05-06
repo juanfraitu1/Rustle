@@ -8726,6 +8726,7 @@ pub fn run<P: AsRef<Path>>(
                         &family_graphs,
                         &config.vg_multimap_sequences,
                         config.vg_em_max_iter,
+                        config.vg_snp,
                     )
                 }
             }
@@ -8829,6 +8830,7 @@ pub fn run<P: AsRef<Path>>(
                         &family_graphs,
                         &config.vg_multimap_sequences,
                         config.vg_em_max_iter,
+                        config.vg_snp,
                     );
                     em_results.append(&mut hmm_results);
                 } else if !hmm_families.is_empty() {
