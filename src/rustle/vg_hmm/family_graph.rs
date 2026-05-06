@@ -447,88 +447,89 @@ pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
     let min_id: f64 = std::env::var("RUSTLE_VG_HMM_PERCOPY_MIN_IDENTITY")
         .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.50);
 
-    for node in &mut fg.nodes {
-        let seqs: Vec<Vec<u8>> = node.per_copy_sequences.iter().map(|(_, s)| s.clone()).collect();
-        // Shared profile (used by family-level scoring: forward_against_family,
-        // viterbi_against_family). Same logic as before.
-        node.profile = Some(if seqs.is_empty() {
-            ProfileHmm::empty(0)
-        } else if seqs.len() == 1 {
-            ProfileHmm::from_singleton(&seqs[0])
-        } else {
-            let id = mean_pairwise_identity(&seqs);
-            if id < 0.60 {
-                ProfileHmm::from_singleton(&seqs[0])
+    // Process nodes in parallel — fit_profiles is independent across nodes
+    // and POA dominates per-node cost. Each node also locally deduplicates
+    // POA work: shared and per-copy profiles share the same MSA.
+    use rayon::prelude::*;
+    let updated: Vec<(Option<ProfileHmm>, bool, Vec<(CopyId, ProfileHmm)>)> =
+        fg.nodes.par_iter()
+        .map(|node| {
+            let seqs: Vec<&[u8]> = node.per_copy_sequences.iter().map(|(_, s)| s.as_slice()).collect();
+            // Decide whether MSA is needed at all (shared OR per-copy).
+            let mut copy_specific = node.copy_specific;
+            let mean_id_opt = if seqs.len() >= 2 { Some(mean_pairwise_identity_refs(&seqs)) } else { None };
+            let needs_shared_msa = seqs.len() >= 2 && mean_id_opt.unwrap_or(0.0) >= 0.60;
+            let needs_percopy_msa = seqs.len() >= 2 && tilt < 1.0
+                && mean_id_opt.unwrap_or(0.0) >= min_id;
+
+            // Run POA at most ONCE per node. Re-used by shared and per-copy paths.
+            let msa_opt: Option<Vec<Vec<u8>>> = if needs_shared_msa || needs_percopy_msa {
+                let owned: Vec<Vec<u8>> = seqs.iter().map(|s| s.to_vec()).collect();
+                match crate::vg_hmm::profile::poa_msa(&owned) {
+                    Ok(m) => Some(m),
+                    Err(_) => {
+                        copy_specific = true;
+                        None
+                    }
+                }
             } else {
-                let msa = match crate::vg_hmm::profile::poa_msa(&seqs) {
-                    Ok(m) => m,
-                    Err(_) => { node.copy_specific = true; vec![seqs[0].clone()] }
-                };
-                ProfileHmm::from_msa(&msa).unwrap_or_else(|_| ProfileHmm::from_singleton(&seqs[0]))
-            }
-        });
+                None
+            };
 
-        // Per-copy profiles (used by forward_against_path_for_copy in HMM-EM).
-        // Three regimes:
-        //   1. ≥2 copies + mean identity ≥ min_id: facultative POA-MSA-smoothed
-        //      per-copy profiles. Each copy's profile blends singleton 1-hot
-        //      with column-wise MSA observation. For 2-copy families, MSA is
-        //      pairwise; for 3+ it's POA. The smoothing softens singleton's
-        //      6.9-log-unit per-error penalty to ~1.7 (2-copy at tilt=0.7).
-        //   2. <2 copies (singleton families) or low identity: plain singleton.
-        //   3. POA fails: fall back to singleton.
-        let use_msa_smoothed = seqs.len() >= 2
-            && tilt < 1.0
-            && mean_pairwise_identity(&seqs) >= min_id;
+            // Shared profile.
+            let shared = if seqs.is_empty() {
+                ProfileHmm::empty(0)
+            } else if seqs.len() == 1 {
+                ProfileHmm::from_singleton(seqs[0])
+            } else if !needs_shared_msa {
+                ProfileHmm::from_singleton(seqs[0])
+            } else if let Some(ref msa) = msa_opt {
+                ProfileHmm::from_msa(msa).unwrap_or_else(|_| ProfileHmm::from_singleton(seqs[0]))
+            } else {
+                ProfileHmm::from_singleton(seqs[0])
+            };
 
-        if use_msa_smoothed {
-            match crate::vg_hmm::profile::poa_msa(&seqs) {
-                Ok(msa) => {
-                    node.per_copy_profiles = node.per_copy_sequences.iter().enumerate()
-                        .map(|(idx_in_msa, (cid, seq))| {
-                            let p = if seq.is_empty() {
-                                ProfileHmm::empty(0)
-                            } else {
-                                ProfileHmm::from_per_copy_msa_smoothed(
-                                    seq, &msa, idx_in_msa, tilt
-                                )
-                            };
-                            (*cid, p)
-                        })
-                        .collect();
-                }
-                Err(_) => {
-                    // POA failed; fall back to plain singletons.
-                    node.per_copy_profiles = node.per_copy_sequences.iter()
-                        .map(|(cid, seq)| {
-                            let p = if seq.is_empty() {
-                                ProfileHmm::empty(0)
-                            } else {
-                                ProfileHmm::from_singleton(seq)
-                            };
-                            (*cid, p)
-                        })
-                        .collect();
-                }
-            }
-        } else {
-            // Plain singleton per-copy profiles.
-            node.per_copy_profiles = node.per_copy_sequences.iter()
-                .map(|(cid, seq)| {
-                    let p = if seq.is_empty() {
-                        ProfileHmm::empty(0)
-                    } else {
-                        ProfileHmm::from_singleton(seq)
-                    };
-                    (*cid, p)
-                })
-                .collect();
-        }
+            // Per-copy profiles.
+            let per_copy: Vec<(CopyId, ProfileHmm)> = if needs_percopy_msa && msa_opt.is_some() {
+                let msa = msa_opt.as_ref().unwrap();
+                node.per_copy_sequences.iter().enumerate()
+                    .map(|(idx_in_msa, (cid, seq))| {
+                        let p = if seq.is_empty() {
+                            ProfileHmm::empty(0)
+                        } else {
+                            ProfileHmm::from_per_copy_msa_smoothed(seq, msa, idx_in_msa, tilt)
+                        };
+                        (*cid, p)
+                    })
+                    .collect()
+            } else {
+                node.per_copy_sequences.iter()
+                    .map(|(cid, seq)| {
+                        let p = if seq.is_empty() {
+                            ProfileHmm::empty(0)
+                        } else {
+                            ProfileHmm::from_singleton(seq)
+                        };
+                        (*cid, p)
+                    })
+                    .collect()
+            };
+
+            (Some(shared), copy_specific, per_copy)
+        })
+        .collect();
+
+    for (node, (shared, copy_specific, per_copy)) in fg.nodes.iter_mut().zip(updated.into_iter()) {
+        node.profile = shared;
+        node.copy_specific = copy_specific;
+        node.per_copy_profiles = per_copy;
     }
     Ok(())
 }
 
-fn mean_pairwise_identity(seqs: &[Vec<u8>]) -> f64 {
+/// Mean pairwise identity over slice references — same math as
+/// `mean_pairwise_identity` (m / max_len normalization) but avoids cloning.
+fn mean_pairwise_identity_refs(seqs: &[&[u8]]) -> f64 {
     let n = seqs.len();
     if n < 2 { return 1.0; }
     let mut total = 0.0_f64; let mut pairs = 0u32;
@@ -544,3 +545,4 @@ fn mean_pairwise_identity(seqs: &[Vec<u8>]) -> f64 {
     }
     total / pairs.max(1) as f64
 }
+

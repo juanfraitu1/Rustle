@@ -2,6 +2,7 @@
 //!
 //! Task 3.2 (single-DP boundary threading) + Task 3.3 (Viterbi best-path).
 
+use std::cell::RefCell;
 use crate::vg_hmm::profile::ProfileHmm;
 
 #[inline]
@@ -10,6 +11,45 @@ fn idx(b: u8) -> Option<usize> {
 }
 
 const NEG_INF: f64 = f64::NEG_INFINITY;
+
+/// Reusable scratch buffers for profile forward DP. Avoids the 6
+/// `vec![NEG_INF; l+1]` allocations per call (per node, per read) — which
+/// dominate runtime on multi-copy families during HMM-EM.
+///
+/// `ensure(l)` resizes & resets all buffers to the right length filled with
+/// NEG_INF in O(l). Re-use across calls with the same or larger l avoids
+/// re-allocation; smaller l is also free (extra capacity ignored).
+#[derive(Default)]
+struct ForwardScratch {
+    prev_m: Vec<f64>,
+    prev_i: Vec<f64>,
+    prev_d: Vec<f64>,
+    cur_m: Vec<f64>,
+    cur_i: Vec<f64>,
+    cur_d: Vec<f64>,
+}
+
+impl ForwardScratch {
+    /// Resize and reset all buffers to length `len` with NEG_INF.
+    /// Cheap on warm cache: just memsets up to `len`.
+    fn ensure(&mut self, len: usize) {
+        for buf in [
+            &mut self.prev_m, &mut self.prev_i, &mut self.prev_d,
+            &mut self.cur_m, &mut self.cur_i, &mut self.cur_d,
+        ] {
+            if buf.len() < len {
+                buf.resize(len, NEG_INF);
+            }
+            for v in buf.iter_mut().take(len) {
+                *v = NEG_INF;
+            }
+        }
+    }
+}
+
+thread_local! {
+    static FORWARD_SCRATCH: RefCell<ForwardScratch> = RefCell::new(ForwardScratch::default());
+}
 
 /// Banding width for profile forward DP. Set to 0 to disable banding
 /// (for tests / debugging). 100 is sufficient for biological reads
@@ -90,17 +130,44 @@ pub fn profile_forward_with_boundary_banded(
     boundary_in: &[f64],
     bandwidth: usize,
 ) -> Vec<f64> {
+    let mut out = vec![NEG_INF; read.len() + 1];
+    FORWARD_SCRATCH.with(|s| {
+        profile_forward_with_boundary_banded_into(
+            p, read, boundary_in, bandwidth, &mut s.borrow_mut(), &mut out,
+        );
+    });
+    out
+}
+
+/// Allocation-free variant of `profile_forward_with_boundary_banded`.
+///
+/// Writes the boundary-out vector into `out` (resized to `read.len() + 1` and
+/// filled). Uses the supplied `scratch` for the rolling row buffers so a
+/// caller chaining many profile DP calls (e.g. `forward_against_path_for_copy`)
+/// pays for buffer growth once instead of 6 vec allocs per node-per-read.
+fn profile_forward_with_boundary_banded_into(
+    p: &ProfileHmm,
+    read: &[u8],
+    boundary_in: &[f64],
+    bandwidth: usize,
+    scratch: &mut ForwardScratch,
+    out: &mut Vec<f64>,
+) {
     let m = p.n_columns;
     let l = read.len();
     assert_eq!(boundary_in.len(), l + 1, "boundary_in length mismatch");
 
-    if m == 0 {
-        return vec![NEG_INF; l + 1];
+    if out.len() != l + 1 {
+        out.clear();
+        out.resize(l + 1, NEG_INF);
+    } else {
+        for v in out.iter_mut() { *v = NEG_INF; }
     }
 
-    // For banding: find the range of active read positions in boundary_in.
-    // The diagonal for entry r at column j is i = r + j.
-    // The allowed i-range at column j is [r_min + j - W, r_max + j + W].
+    if m == 0 {
+        return;
+    }
+
     let (r_min, r_max) = if bandwidth == 0 {
         (0usize, l)
     } else {
@@ -113,28 +180,16 @@ pub fn profile_forward_with_boundary_banded(
             }
         }
         if lo > hi {
-            // No active entries — entire output is NEG_INF.
-            return vec![NEG_INF; l + 1];
+            return;
         }
         (lo, hi)
     };
 
-    // Rolling 2-row buffers: prev_m/i/d = row j-1, cur_m/i/d = row j.
-    // Size is l+1 (full read length) to allow direct indexing by i.
-    // We fill only the band cells; the rest stay NEG_INF.
-    let mut prev_m: Vec<f64> = boundary_in.to_vec(); // row 0 = boundary_in
-    let mut prev_i: Vec<f64> = vec![NEG_INF; l + 1];
-    let mut prev_d: Vec<f64> = vec![NEG_INF; l + 1];
-    let mut cur_m:  Vec<f64> = vec![NEG_INF; l + 1];
-    let mut cur_i:  Vec<f64> = vec![NEG_INF; l + 1];
-    let mut cur_d:  Vec<f64> = vec![NEG_INF; l + 1];
-
-    // We need the final row (j == m) in full to build boundary_out.
-    // With rolling buffers we naturally have the last row in cur_{m,i,d} after the loop.
+    scratch.ensure(l + 1);
+    // Row 0 (entry) = boundary_in; insert/delete rows are NEG_INF.
+    scratch.prev_m[..l + 1].copy_from_slice(boundary_in);
 
     for j in 1..=m {
-        // Reset cur row to NEG_INF only over the band we're about to write.
-        // (Previous iterations may have written to adjacent bands; clear them.)
         let prev_col_lo = if bandwidth == 0 {
             0
         } else {
@@ -151,65 +206,55 @@ pub fn profile_forward_with_boundary_banded(
             (r_max + j + bandwidth).min(l)
         };
 
-        // Clear current column buffer for the range we'll write.
+        // Clear current column over the band we're about to write.
         for i in col_lo..=col_hi {
-            cur_m[i] = NEG_INF;
-            cur_i[i] = NEG_INF;
-            cur_d[i] = NEG_INF;
+            scratch.cur_m[i] = NEG_INF;
+            scratch.cur_i[i] = NEG_INF;
+            scratch.cur_d[i] = NEG_INF;
         }
 
         for i in col_lo..=col_hi {
-            // ── Match state ──────────────────────────────────────────────────
             let emit_m = if i > 0 {
                 idx(read[i - 1]).map(|k| p.match_emit[j - 1][k]).unwrap_or(NEG_INF)
             } else { NEG_INF };
-            let pm_prev = if i > 0 { prev_m[i - 1] } else { NEG_INF };
-            let pi_prev = if i > 0 { prev_i[i - 1] } else { NEG_INF };
-            let pd_prev = if i > 0 { prev_d[i - 1] } else { NEG_INF };
+            let pm_prev = if i > 0 { scratch.prev_m[i - 1] } else { NEG_INF };
+            let pi_prev = if i > 0 { scratch.prev_i[i - 1] } else { NEG_INF };
+            let pd_prev = if i > 0 { scratch.prev_d[i - 1] } else { NEG_INF };
             let from_m = if pm_prev > NEG_INF { pm_prev + p.trans[j - 1].mm + emit_m } else { NEG_INF };
             let from_i = if pi_prev > NEG_INF { pi_prev + p.trans[j - 1].im + emit_m } else { NEG_INF };
             let from_d = if pd_prev > NEG_INF { pd_prev + p.trans[j - 1].dm + emit_m } else { NEG_INF };
-            cur_m[i] = logsumexp(logsumexp(from_m, from_i), from_d);
+            scratch.cur_m[i] = logsumexp(logsumexp(from_m, from_i), from_d);
 
-            // ── Insert state ─────────────────────────────────────────────────
             let emit_i = if i > 0 {
                 idx(read[i - 1]).map(|k| p.insert_emit[j][k]).unwrap_or(NEG_INF)
             } else { NEG_INF };
-            let i_from_m = if i > 0 && cur_m[i - 1] > NEG_INF { cur_m[i - 1] + p.trans[j].mi + emit_i } else { NEG_INF };
-            let i_from_i = if i > 0 && cur_i[i - 1] > NEG_INF { cur_i[i - 1] + p.trans[j].ii + emit_i } else { NEG_INF };
-            cur_i[i] = logsumexp(i_from_m, i_from_i);
+            let i_from_m = if i > 0 && scratch.cur_m[i - 1] > NEG_INF { scratch.cur_m[i - 1] + p.trans[j].mi + emit_i } else { NEG_INF };
+            let i_from_i = if i > 0 && scratch.cur_i[i - 1] > NEG_INF { scratch.cur_i[i - 1] + p.trans[j].ii + emit_i } else { NEG_INF };
+            scratch.cur_i[i] = logsumexp(i_from_m, i_from_i);
 
-            // ── Delete state ─────────────────────────────────────────────────
-            let d_from_m = if prev_m[i] > NEG_INF { prev_m[i] + p.trans[j - 1].md } else { NEG_INF };
-            let d_from_d = if prev_d[i] > NEG_INF { prev_d[i] + p.trans[j - 1].dd } else { NEG_INF };
-            cur_d[i] = logsumexp(d_from_m, d_from_d);
+            let d_from_m = if scratch.prev_m[i] > NEG_INF { scratch.prev_m[i] + p.trans[j - 1].md } else { NEG_INF };
+            let d_from_d = if scratch.prev_d[i] > NEG_INF { scratch.prev_d[i] + p.trans[j - 1].dd } else { NEG_INF };
+            scratch.cur_d[i] = logsumexp(d_from_m, d_from_d);
         }
 
-        // Clear the previous band cells so stale data doesn't affect future columns.
-        // (Only cells not covered by the new band need clearing, and only in [0, l].)
         if bandwidth > 0 {
             let clear_lo = prev_col_lo.min(l);
             let clear_hi = col_lo.min(l);
             for i in clear_lo..clear_hi {
-                prev_m[i] = NEG_INF;
-                prev_i[i] = NEG_INF;
-                prev_d[i] = NEG_INF;
+                scratch.prev_m[i] = NEG_INF;
+                scratch.prev_i[i] = NEG_INF;
+                scratch.prev_d[i] = NEG_INF;
             }
         }
 
-        // Swap rolling buffers: cur → prev for next column.
-        std::mem::swap(&mut prev_m, &mut cur_m);
-        std::mem::swap(&mut prev_i, &mut cur_i);
-        std::mem::swap(&mut prev_d, &mut cur_d);
+        std::mem::swap(&mut scratch.prev_m, &mut scratch.cur_m);
+        std::mem::swap(&mut scratch.prev_i, &mut scratch.cur_i);
+        std::mem::swap(&mut scratch.prev_d, &mut scratch.cur_d);
     }
 
-    // After the loop, prev_* holds row m (the last column).
-    // boundary_out[r] = log P exiting after consuming read[0..r] total.
-    let mut out = vec![NEG_INF; l + 1];
     for r in 0..=l {
-        out[r] = logsumexp(logsumexp(prev_m[r], prev_i[r]), prev_d[r]);
+        out[r] = logsumexp(logsumexp(scratch.prev_m[r], scratch.prev_i[r]), scratch.prev_d[r]);
     }
-    out
 }
 
 // ── Public API: single-profile forward (backward-compatible wrapper) ──────────
@@ -302,24 +347,28 @@ pub fn forward_against_path(fg: &FamilyGraph, read: &[u8], path: &[NodeIdx]) -> 
     if path.is_empty() { return NEG_INF; }
     let l = read.len();
 
-    let mut boundary = vec![NEG_INF; l + 1];
-    boundary[0] = 0.0;
+    let mut boundary_in = vec![NEG_INF; l + 1];
+    let mut boundary_out = vec![NEG_INF; l + 1];
+    boundary_in[0] = 0.0;
 
-    for &nidx in path {
-        if nidx.0 >= fg.nodes.len() { return NEG_INF; }
-        let node = &fg.nodes[nidx.0];
-        match &node.profile {
-            Some(profile) => {
-                boundary = profile_forward_with_boundary(profile, read, &boundary);
+    FORWARD_SCRATCH.with(|s| {
+        let mut scratch = s.borrow_mut();
+        for &nidx in path {
+            if nidx.0 >= fg.nodes.len() { return NEG_INF; }
+            let node = &fg.nodes[nidx.0];
+            match &node.profile {
+                Some(profile) => {
+                    profile_forward_with_boundary_banded_into(
+                        profile, read, &boundary_in, FORWARD_BANDWIDTH,
+                        &mut scratch, &mut boundary_out,
+                    );
+                    std::mem::swap(&mut boundary_in, &mut boundary_out);
+                }
+                None => return NEG_INF,
             }
-            None => return NEG_INF,
         }
-        // No edge log-probability is added: the path is given (deterministic
-        // topology). Including edge weight here would double-count the path
-        // identity, which the caller has already chosen.
-    }
-
-    boundary[l]
+        boundary_in[l]
+    })
 }
 
 /// Per-copy variant of `forward_against_path`: scores a read against a
@@ -343,48 +392,91 @@ pub fn forward_against_path_for_copy(
     path: &[NodeIdx],
     copy_id: crate::vg_hmm::family_graph::CopyId,
 ) -> f64 {
+    forward_against_path_for_copy_with_norm(fg, read, path, copy_id, None)
+}
+
+/// Variant that accepts a pre-computed `total_match_cols` (sum of profile
+/// match-column counts along this path for this copy). Avoids re-summing
+/// across every read when the caller batch-scores many reads against the
+/// same set of paralog paths (e.g. `run_pre_assembly_em_hmm`).
+///
+/// `precomputed_match_cols = None` falls back to summing internally (only
+/// used when `RUSTLE_VG_HMM_LENGTH_NORM` is set).
+pub fn forward_against_path_for_copy_with_norm(
+    fg: &FamilyGraph,
+    read: &[u8],
+    path: &[NodeIdx],
+    copy_id: crate::vg_hmm::family_graph::CopyId,
+    precomputed_match_cols: Option<usize>,
+) -> f64 {
     if path.is_empty() { return NEG_INF; }
     let l = read.len();
 
-    let mut boundary = vec![NEG_INF; l + 1];
-    boundary[0] = 0.0;
-    // Optional length normalization: when paralog paths differ in total match
-    // columns, longer paths inherently score more negative (more terms in
-    // log-space), biasing HMM-EM toward shorter paths regardless of fit. With
-    // RUSTLE_VG_HMM_LENGTH_NORM=1, divide the final forward log-prob by the
-    // total match-column count along this path. The result is "average
-    // per-position log-fit". Note: the gap-rule threshold should be set
-    // proportionally lower (e.g., RUSTLE_VG_EM_SCORE_GAP=0.01) when this is
-    // enabled — per-position log-units are ~0.01-0.1 vs absolute ~1-10.
+    let mut boundary_in = vec![NEG_INF; l + 1];
+    let mut boundary_out = vec![NEG_INF; l + 1];
+    boundary_in[0] = 0.0;
+
     let length_norm = std::env::var_os("RUSTLE_VG_HMM_LENGTH_NORM").is_some();
     let mut total_match_cols: usize = 0;
+    let need_local_match_cols = length_norm && precomputed_match_cols.is_none();
 
+    let raw = FORWARD_SCRATCH.with(|s| -> f64 {
+        let mut scratch = s.borrow_mut();
+        for &nidx in path {
+            if nidx.0 >= fg.nodes.len() { return NEG_INF; }
+            let node = &fg.nodes[nidx.0];
+            // Prefer the per-copy profile; fall back to shared if absent.
+            let profile_opt = node.per_copy_profiles
+                .iter()
+                .find(|(c, _)| *c == copy_id)
+                .map(|(_, p)| p)
+                .or(node.profile.as_ref());
+            match profile_opt {
+                Some(profile) => {
+                    if need_local_match_cols {
+                        total_match_cols += profile.match_emit.len();
+                    }
+                    profile_forward_with_boundary_banded_into(
+                        profile, read, &boundary_in, FORWARD_BANDWIDTH,
+                        &mut scratch, &mut boundary_out,
+                    );
+                    std::mem::swap(&mut boundary_in, &mut boundary_out);
+                }
+                None => return NEG_INF,
+            }
+        }
+        boundary_in[l]
+    });
+
+    if !length_norm || !raw.is_finite() {
+        return raw;
+    }
+    let cols = precomputed_match_cols.unwrap_or(total_match_cols);
+    if cols == 0 { raw } else { raw / cols as f64 }
+}
+
+/// Sum of profile `match_emit.len()` along `path` for `copy_id`. Use to
+/// pre-compute the length-norm denominator once per (family, copy) before
+/// scoring many reads.
+pub fn path_match_cols_for_copy(
+    fg: &FamilyGraph,
+    path: &[NodeIdx],
+    copy_id: crate::vg_hmm::family_graph::CopyId,
+) -> usize {
+    let mut total: usize = 0;
     for &nidx in path {
-        if nidx.0 >= fg.nodes.len() { return NEG_INF; }
+        if nidx.0 >= fg.nodes.len() { return 0; }
         let node = &fg.nodes[nidx.0];
-        // Prefer the per-copy profile; fall back to shared if absent.
         let profile_opt = node.per_copy_profiles
             .iter()
             .find(|(c, _)| *c == copy_id)
             .map(|(_, p)| p)
             .or(node.profile.as_ref());
-        match profile_opt {
-            Some(profile) => {
-                if length_norm {
-                    total_match_cols += profile.match_emit.len();
-                }
-                boundary = profile_forward_with_boundary(profile, read, &boundary);
-            }
-            None => return NEG_INF,
+        if let Some(p) = profile_opt {
+            total += p.match_emit.len();
         }
     }
-
-    let raw = boundary[l];
-    if length_norm && total_match_cols > 0 && raw.is_finite() {
-        raw / total_match_cols as f64
-    } else {
-        raw
-    }
+    total
 }
 
 /// Constrained Viterbi over a single path through the family graph.
@@ -690,13 +782,13 @@ mod tests {
                 idx: NodeIdx(0), chrom: "x".into(), span: (0, 4), strand: '+',
                 per_copy_sequences: vec![(0, b"ACGT".to_vec())],
                 per_copy_spans: vec![(0, (0, 4))],
-                copy_specific: true, profile: Some(p1),
+                copy_specific: true, profile: Some(p1), per_copy_profiles: vec![],
             },
             ExonClass {
                 idx: NodeIdx(1), chrom: "x".into(), span: (10, 14), strand: '+',
                 per_copy_sequences: vec![(0, b"TGCA".to_vec())],
                 per_copy_spans: vec![(0, (10, 14))],
-                copy_specific: true, profile: Some(p2),
+                copy_specific: true, profile: Some(p2), per_copy_profiles: vec![],
             },
         ];
         let edges = vec![JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 1, strand: '+' }];

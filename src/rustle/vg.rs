@@ -372,20 +372,21 @@ pub fn discover_family_groups(
         .filter(|(_, v)| v.len() > 1)
         .enumerate()
     {
-        // Build the per-family multimap read index.
-        let bundle_set: std::collections::HashSet<usize> =
-            bundle_indices.iter().copied().collect();
+        // Build a {global_bi -> position_in_family} map once. Replaces the
+        // O(n) `bundle_indices.iter().position()` linear scan that ran per
+        // matched read, and also handles the membership check via Option.
+        let bi_to_pos: crate::types::DetHashMap<usize, usize> = bundle_indices
+            .iter().copied().enumerate()
+            .map(|(pos, bi)| (bi, pos))
+            .collect();
         let mut family_reads: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
         for (&rnh, locs) in &multimap_index {
-            let family_locs: Vec<(usize, usize)> = locs
-                .iter()
-                .filter(|(bi, _)| bundle_set.contains(bi))
-                .map(|(bi, ri)| {
-                    // Map global bundle index to position within bundle_indices.
-                    let pos = bundle_indices.iter().position(|&x| x == *bi).unwrap();
-                    (pos, *ri)
-                })
-                .collect();
+            let mut family_locs: Vec<(usize, usize)> = Vec::with_capacity(locs.len());
+            for (bi, ri) in locs {
+                if let Some(&pos) = bi_to_pos.get(bi) {
+                    family_locs.push((pos, *ri));
+                }
+            }
             if family_locs.len() > 1 {
                 family_reads.insert(rnh, family_locs);
             }
@@ -1031,95 +1032,103 @@ fn discover_sequence_similar_bundles(
     let min_jaccard = 0.20; // 20% k-mer overlap = gene family member.
     let min_kmers = 50; // Skip bundles with too few exonic k-mers.
     let max_bundles_to_compare = 5000; // Skip if too many bundles (O(n²) comparison).
+    // Min-hash sketch size. 128 mins gives ~9% std-error on Jaccard; cheaper
+    // than full HashSet&lt;u64&gt; comparison (each min-hash slot is u64, 128*8=1KB
+    // per bundle vs 200KB+ for a full kmer set). Pair compare is also O(SKETCH)
+    // not O(set.len()).
+    const SKETCH_SIZE: usize = 128;
 
     if bundles.len() > max_bundles_to_compare {
         return Vec::new();
     }
 
-    // Build exonic k-mer sets per bundle.
-    let mut bundle_kmers: Vec<(usize, std::collections::HashSet<u64>)> = Vec::new();
-    for (bi, bundle) in bundles.iter().enumerate() {
-        // Extract exonic regions from junction stats.
-        let mut exon_regions: Vec<(u64, u64)> = Vec::new();
-        let mut introns: Vec<(u64, u64)> = bundle
-            .junction_stats
-            .iter()
-            .map(|(j, _)| (j.donor, j.acceptor))
-            .collect();
-        introns.sort_by_key(|&(s, _)| s);
+    // Build per-bundle min-hash sketches in parallel.
+    use rayon::prelude::*;
+    struct BundleSketch {
+        bi: usize,
+        sketch: [u64; SKETCH_SIZE],
+    }
+    let bundle_sketches: Vec<BundleSketch> = bundles.par_iter().enumerate()
+        .filter_map(|(bi, bundle)| {
+            // Extract exonic regions from junction stats.
+            let mut exon_regions: Vec<(u64, u64)> = Vec::new();
+            let mut introns: Vec<(u64, u64)> = bundle
+                .junction_stats
+                .iter()
+                .map(|(j, _)| (j.donor, j.acceptor))
+                .collect();
+            introns.sort_by_key(|&(s, _)| s);
 
-        if introns.is_empty() {
-            // Single-exon bundle: use full span but cap at 10kb.
-            let capped_end = bundle.end.min(bundle.start + 10000);
-            exon_regions.push((bundle.start, capped_end));
-        } else {
-            // First exon.
-            let first_intron_start = introns[0].0;
-            if first_intron_start > bundle.start {
-                exon_regions.push((
-                    first_intron_start.saturating_sub(500).max(bundle.start),
-                    first_intron_start,
-                ));
-            }
-            // Internal exons.
-            for i in 0..introns.len().saturating_sub(1) {
-                let es = introns[i].1;
-                let ee = introns[i + 1].0;
-                if ee > es {
-                    exon_regions.push((es, ee));
+            if introns.is_empty() {
+                let capped_end = bundle.end.min(bundle.start + 10000);
+                exon_regions.push((bundle.start, capped_end));
+            } else {
+                let first_intron_start = introns[0].0;
+                if first_intron_start > bundle.start {
+                    exon_regions.push((
+                        first_intron_start.saturating_sub(500).max(bundle.start),
+                        first_intron_start,
+                    ));
                 }
+                for i in 0..introns.len().saturating_sub(1) {
+                    let es = introns[i].1;
+                    let ee = introns[i + 1].0;
+                    if ee > es {
+                        exon_regions.push((es, ee));
+                    }
+                }
+                let last_intron_end = introns.last().unwrap().1;
+                exon_regions.push((last_intron_end, last_intron_end.saturating_add(500).min(bundle.end)));
             }
-            // Last exon.
-            let last_intron_end = introns.last().unwrap().1;
-            exon_regions.push((last_intron_end, last_intron_end.saturating_add(500).min(bundle.end)));
-        }
 
-        let mut kmers = std::collections::HashSet::new();
-        for (es, ee) in &exon_regions {
-            if let Some(seq) = genome.fetch_sequence(&bundle.chrom, *es, *ee) {
-                for window in seq.windows(kmer_len) {
-                    if window.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
-                        kmers.insert(kmer_hash(window));
+            let mut sketch = [u64::MAX; SKETCH_SIZE];
+            let mut n_kmers: u32 = 0;
+            for (es, ee) in &exon_regions {
+                if let Some(seq) = genome.fetch_sequence(&bundle.chrom, *es, *ee) {
+                    for window in seq.windows(kmer_len) {
+                        if window.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
+                            let base = kmer_hash(window);
+                            for i in 0..SKETCH_SIZE {
+                                let h = base ^ (i as u64).wrapping_mul(0x9E3779B97F4A7C15);
+                                if h < sketch[i] { sketch[i] = h; }
+                            }
+                            n_kmers = n_kmers.saturating_add(1);
+                        }
                     }
                 }
             }
-        }
 
-        if kmers.len() >= min_kmers {
-            bundle_kmers.push((bi, kmers));
-        }
-    }
-
-    // Pairwise comparison (only same-chromosome bundles within 10Mb).
-    let mut links: Vec<(usize, usize)> = Vec::new();
-    for i in 0..bundle_kmers.len() {
-        let (bi, ref ki) = bundle_kmers[i];
-        for j in (i + 1)..bundle_kmers.len() {
-            let (bj, ref kj) = bundle_kmers[j];
-            // Same chromosome check.
-            if bundles[bi].chrom != bundles[bj].chrom {
-                continue;
+            if (n_kmers as usize) >= min_kmers {
+                Some(BundleSketch { bi, sketch })
+            } else {
+                None
             }
-            // Skip if bundles overlap (same region, different strand).
+        })
+        .collect();
+
+    // Pairwise comparison: O(SKETCH_SIZE) per pair instead of O(|kmer set|).
+    let mut links: Vec<(usize, usize)> = Vec::new();
+    for i in 0..bundle_sketches.len() {
+        let bi = bundle_sketches[i].bi;
+        for j in (i + 1)..bundle_sketches.len() {
+            let bj = bundle_sketches[j].bi;
+            if bundles[bi].chrom != bundles[bj].chrom { continue; }
             if bundles[bi].start < bundles[bj].end && bundles[bj].start < bundles[bi].end {
                 continue;
             }
-            // Distance cap: within 10Mb.
             let dist = if bundles[bi].start > bundles[bj].end {
                 bundles[bi].start - bundles[bj].end
             } else {
                 bundles[bj].start - bundles[bi].end
             };
-            if dist > 10_000_000 {
-                continue;
-            }
-            // Jaccard similarity.
-            let intersection = ki.iter().filter(|k| kj.contains(k)).count();
-            let union_size = ki.len() + kj.len() - intersection;
-            if union_size == 0 {
-                continue;
-            }
-            let jaccard = intersection as f64 / union_size as f64;
+            if dist > 10_000_000 { continue; }
+
+            // Min-hash Jaccard estimate.
+            let a = &bundle_sketches[i].sketch;
+            let b = &bundle_sketches[j].sketch;
+            let eq = a.iter().zip(b.iter())
+                .filter(|(x, y)| **x != u64::MAX && x == y).count();
+            let jaccard = eq as f64 / SKETCH_SIZE as f64;
             if jaccard >= min_jaccard {
                 links.push((bi, bj));
             }
@@ -1128,9 +1137,8 @@ fn discover_sequence_similar_bundles(
 
     if !links.is_empty() {
         eprintln!(
-            "[VG] Sequence similarity: found {} bundle pairs with ≥{:.0}% exonic k-mer overlap",
-            links.len(),
-            min_jaccard * 100.0,
+            "[VG] Sequence similarity: found {} bundle pairs with ≥{:.0}% min-hash k-mer overlap (sketch={})",
+            links.len(), min_jaccard * 100.0, SKETCH_SIZE,
         );
     }
 
@@ -1441,7 +1449,7 @@ pub fn run_em_reweighting_hmm(
     max_iter: usize,
     convergence_thr: f64,
 ) -> EmResult {
-    use crate::vg_hmm::scorer::forward_against_path_for_copy;
+    use crate::vg_hmm::scorer::forward_against_path_for_copy_with_norm;
 
     let n_copies = family.bundle_indices.len();
     if n_copies < 2 || family.multimap_reads.is_empty() {
@@ -1451,6 +1459,12 @@ pub fn run_em_reweighting_hmm(
     // Pre-compute per-paralog paths through the family graph.
     let paralog_paths: Vec<Vec<crate::vg_hmm::family_graph::NodeIdx>> = (0..n_copies)
         .map(|cid| family_graph.recover_paralog_path(cid))
+        .collect();
+
+    // Pre-compute total match-column count per paralog path (length-norm
+    // denominator) once — constant across all reads.
+    let path_match_cols: Vec<usize> = (0..n_copies)
+        .map(|cid| crate::vg_hmm::scorer::path_match_cols_for_copy(family_graph, &paralog_paths[cid], cid))
         .collect();
 
     // Filter family.multimap_reads to entries where we have the read sequence
@@ -1498,7 +1512,9 @@ pub fn run_em_reweighting_hmm(
                 let score = if path.is_empty() {
                     f64::NEG_INFINITY
                 } else {
-                    forward_against_path_for_copy(family_graph, item.seq, path, fam_pos)
+                    forward_against_path_for_copy_with_norm(
+                        family_graph, item.seq, path, fam_pos, Some(path_match_cols[fam_pos]),
+                    )
                 };
                 entry_locs.push((fam_pos, global_bi, ri));
                 log_scores.push(score);
@@ -2391,7 +2407,7 @@ pub fn run_pre_assembly_em_hmm(
     max_iter: usize,
     use_snps: bool,
 ) -> Vec<EmResult> {
-    use crate::vg_hmm::scorer::forward_against_path_for_copy;
+    use crate::vg_hmm::scorer::forward_against_path_for_copy_with_norm;
     let mut results = Vec::with_capacity(families.len());
     let convergence_thr = 0.001;
     let t_em_start = std::time::Instant::now();
@@ -2419,6 +2435,13 @@ pub fn run_pre_assembly_em_hmm(
         // Pre-compute per-paralog paths.
         let paralog_paths: Vec<Vec<crate::vg_hmm::family_graph::NodeIdx>> = (0..n_copies)
             .map(|cid| fg.recover_paralog_path(cid))
+            .collect();
+
+        // Pre-compute total match-column count per paralog path. This is the
+        // length-norm denominator and is constant across all reads — sum it
+        // once here instead of recomputing inside every per-read forward call.
+        let path_match_cols: Vec<usize> = (0..n_copies)
+            .map(|cid| crate::vg_hmm::scorer::path_match_cols_for_copy(fg, &paralog_paths[cid], cid))
             .collect();
 
         // Build per-family diagnostic SNPs if SNP-aware HMM is enabled. The
@@ -2509,7 +2532,10 @@ pub fn run_pre_assembly_em_hmm(
                     } else {
                         // Use per-copy profiles: each paralog scored against
                         // its own genomic sequence, not the family consensus.
-                        forward_against_path_for_copy(fg, item.seq, path, fam_pos)
+                        // Pre-computed match-cols avoids re-summing per read.
+                        forward_against_path_for_copy_with_norm(
+                            fg, item.seq, path, fam_pos, Some(path_match_cols[fam_pos]),
+                        )
                     };
                     let snp_log = if let Some(ref diag) = diagnostic {
                         if ri < bundles[global_bi].reads.len() {
@@ -2929,7 +2955,10 @@ fn discover_novel_copies_kmer(
     bundles: &[Bundle],
     config: &crate::types::RunConfig,
 ) -> Vec<NovelCandidate> {
-    use std::collections::HashSet as StdHashSet;
+    // FxHash via DetHashSet — k-mer set is hot in the unmapped-read scan loop
+    // (n_reads × n_families × n_kmers_per_read lookups) and SipHash dominates
+    // there. Same membership semantics, ~3-5x faster lookups.
+    type KmerSet = crate::types::DetHashSet<u64>;
 
     if families.is_empty() {
         return Vec::new();
@@ -2954,9 +2983,9 @@ fn discover_novel_copies_kmer(
         }
     };
 
-    let mut family_kmers: Vec<StdHashSet<u64>> = Vec::with_capacity(families.len());
+    let mut family_kmers: Vec<KmerSet> = Vec::with_capacity(families.len());
     for family in families {
-        let mut kmers = StdHashSet::new();
+        let mut kmers = KmerSet::default();
         for &bi in &family.bundle_indices {
             let bundle = &bundles[bi];
             // Extract EXONIC k-mers only (not the full bundle span which includes introns).
@@ -3151,7 +3180,7 @@ fn discover_novel_copies_kmer(
         candidates
             .iter()
             .map(|c| c.family_id)
-            .collect::<StdHashSet<_>>()
+            .collect::<crate::types::DetHashSet<_>>()
             .len(),
     );
 
