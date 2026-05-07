@@ -6383,7 +6383,7 @@ pub fn extract_transcripts(
             // ST-port comparison harness: snapshot inputs before rustle's call.
             // Snapshot when EITHER comparison or gate is active.
             let pa_active = crate::parse_trflong_st::comparison_active()
-                || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some();
+                || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none();
             let pa_snapshot_before = if pa_active {
                 Some((
                     path.clone(),
@@ -6435,8 +6435,8 @@ pub fn extract_transcripts(
                     maxp,
                 );
                 crate::parse_trflong_st::emit_diff_if_diverges(&r, &st, "back", idx, maxi);
-                // ST soft gate (back direction): same idea as fwd gate below.
-                if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some()
+                // ST soft gate (back direction): default ON; disable via RUSTLE_PARSE_TRFLONG_ST_GATE_OFF=1.
+                if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none()
                     && back_ok
                     && !st.returned_true
                 {
@@ -6475,7 +6475,7 @@ pub fn extract_transcripts(
                 path.push(source_id);
                 path.reverse();
                 let pa_fwd_active = crate::parse_trflong_st::comparison_active()
-                    || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some();
+                    || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none();
                 let pa_fwd_snapshot = if pa_fwd_active {
                     Some((
                         path.clone(),
@@ -6525,8 +6525,8 @@ pub fn extract_transcripts(
                     // path as failed so it routes to checktrf rescue. ST's
                     // give-up signals over-extension via weak/inconsistent
                     // transfrags — exactly the k-class artifact pattern.
-                    // Default off; enable via RUSTLE_PARSE_TRFLONG_ST_GATE=1.
-                    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE").is_some()
+                    // Default ON; disable via RUSTLE_PARSE_TRFLONG_ST_GATE_OFF=1.
+                    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none()
                         && fwd_ok
                         && !st.returned_true
                     {
