@@ -1,6 +1,6 @@
 # Per-copy HMM-EM for paralog read assignment — meeting notes (2026-05-06)
 
-Ten slide-ready PNGs in this directory. Suggested order + a few sentences each.
+Eleven slide-ready PNGs in this directory. Suggested order + a few sentences each.
 The narrative arc directly answers four advisor concerns:
 
 1. *"The VG just averages information across copies — paralogs collapse."* → Slides 2, 3, 4 show explicitly that we keep one profile per copy, never a single consensus.
@@ -8,7 +8,7 @@ The narrative arc directly answers four advisor concerns:
 3. *"Where do the priors come from?"* → Slide 6 walks through every step of the EM math (initialization, M-step, E-step, score-gap rule, convergence) with the exact formulas and code line numbers.
 4. *"This will only work for near-identical paralogs."* → Slide 9 shows recovery at jaccard 0.52 (squarely in the medium-similarity band).
 
-Plus slide 8 addresses the FLNC misunderstanding directly, and slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery.
+Plus slide 8 addresses the FLNC misunderstanding directly, slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery, and slide 11 is a didactic walk-through showing how each variant type (SNP, indel, alt-donor, alt-acceptor, UTR, exon-skipping) maps to a specific feature of the M/I/D trellis or graph topology.
 
 ---
 
@@ -215,6 +215,36 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 
 ---
 
+## Slide 11 — `11_hmm_positional_info.png` *(didactic — variant-type to HMM-feature map)*
+
+**One-line:** the HMM's M/I/D trellis is a position-aware ruler. State index = column index in the exon-class profile, regardless of read length. Every variant type maps to a specific feature of that ruler — none of them lose the position anchor.
+
+**Why this slide exists:** the advisor has asked "but what about indels? alt splicing? UTR?" — and rather than handwave, this slide shows the literal HMM-state translation for each common variant. It's the most fundamental "how does the math handle X" slide in the deck.
+
+**Reading the slide:**
+
+- **Top reference panel** — one paralog's exon-class profile drawn as a chain of 10 match-states M_1…M_10. Each circle owns a `P(base | column)` distribution (slide 4's per-copy emission). The state index is the position anchor. Everything below the reference panel shows what each variant does to *this* picture.
+
+- **Six variant panels (3 cols × 2 rows):**
+
+  | # | Variant | What changes in the trellis / graph |
+  |---|---|---|
+  | 1 | **SNP at one column** | Same M_5 state for both paralogs; per-copy emission distribution differs: `e_M(b\|5)` for A favors A, for B favors G. Position preserved; SNP signal lives in emission. |
+  | 2 | **Insertion / deletion** | Insertion → one or more I-states between M-cols (the `gat` example shows 3× I_4 emitting between M_4 and M_5). Deletion → silent D-states (D_5, D_6, D_7 advance the column without consuming a base). M-column anchors stay fixed. |
+  | 3 | **Alt 5' splice donor** | Each paralog's exon-class node has its OWN length (per-copy profile from slide 3). Boundary threading exits at col 6 vs col 9. Different junction edges leave each copy. |
+  | 4 | **Alt 3' splice acceptor** | Mirror of donor — per-copy profile starts at a different effective entry column. Equivalent: graph carries paralog-specific entry edges into the same exon-class node. |
+  | 5 | **UTR variation** | UTR is its own exon-class node (not collapsed into the CDS exon). Each paralog gets its own per-copy profile of paralog-specific length. Reads are not required to span the UTR — partial coverage is allowed (slide 8). |
+  | 6 | **Cassette exon / exon skipping** | Same M/I/D trellis inside every node. Different paralogs traverse different EDGES through the family graph: `forward_against_path_for_copy` chains the trellises along *each copy's* path. Skipping is a graph-topology change, not a trellis change. |
+
+**Key didactic move:** the slide separates "what's preserved" (the M-state index = position anchor) from "what differs" (which feature absorbs the variant). Five of the six variants leave the trellis structure untouched — only the cassette case changes which nodes the path visits, and even then the per-node trellis is identical.
+
+**Talking-track for the advisor:**
+> "Each panel here is the literal answer to 'how does the HMM handle X?'. SNPs sit in the emission. Indels live in I and D states — that's textbook profile-HMM, exactly Krogh '94. Alt splicing changes the per-copy profile length and the graph edges — boundary threading from slide 5 already handles that with no new equations. UTR is just another node. Cassette exons = same trellis, different graph traversal. We didn't invent anything new for any of these; they all fall out of the standard profile-HMM-on-a-graph framework."
+
+**Code anchors:** `forward_against_path_for_copy` and `profile_forward_with_boundary_banded` in `src/rustle/vg_hmm/scorer.rs` (the M/I/D recurrences) — same functions that handle every variant type above. The graph-topology cases are handled at the `path_c` level inside `family_graph.rs`.
+
+---
+
 ## Closing pitch
 
 > The advisor's worries map cleanly onto specific slides:
@@ -227,6 +257,7 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 > | "FLNC = full transcript?" | slide 8 (no — partial reads work because scoring is local) |
 > | "only works for near-identical?" | slide 9 (jaccard 0.52 recovery) |
 > | "what about really diverged paralogs (jaccard < 0.30)?" | slide 10 (additive extension — same HMM, graph-Viterbi assignment, POC passing) |
+> | "how does it handle indels / alt splicing / UTR?" | slide 11 (each variant maps to a specific M/I/D state or graph edge) |
 >
 > Every step of the math corresponds to a specific function and line range in
 > `src/rustle/vg_hmm/scorer.rs` and `src/rustle/vg.rs`. There is no
