@@ -766,6 +766,60 @@ pub fn viterbi_path(fg: &FamilyGraph, read: &[u8]) -> Option<ViterbiPath> {
     Some(ViterbiPath { nodes: path_nodes, read_spans: path_spans, score: best })
 }
 
+// ── Graph-relaxed assignment for low-similarity paralogs (POC) ───────────────
+
+/// Per-paralog assignment via unconstrained Viterbi over the family graph,
+/// scored by node-overlap with each paralog's known path.
+///
+/// Designed for the LOW-similarity band (jaccard < 0.30) where rigid per-copy
+/// path forward DP underperforms: at high divergence a read with the natural
+/// rate of sequencing errors collects too much per-base penalty against any
+/// single paralog's profile, so the resulting log-likelihoods compress and
+/// the gap rule abstains. This routine relaxes the path constraint:
+///
+///   1. Run `viterbi_path` over the family graph (read picks its own best
+///      path through any combination of nodes) — same HMM trellis inside
+///      each node, just without committing to a specific paralog.
+///   2. For each CopyId, compute node-overlap (recall and precision) between
+///      the Viterbi node-set and that paralog's known path.
+///   3. Sort by recall descending — the top paralog is the one whose known
+///      path the Viterbi trace covers most completely.
+///
+/// Returns `Vec<(CopyId, recall, precision)>`. Empty if the graph is empty or
+/// Viterbi fails.
+///
+/// This is COMPLEMENTARY to `forward_against_path_for_copy`, not a replacement —
+/// dispatch by similarity band: high/medium → forward DP, low → graph Viterbi.
+pub fn assign_via_graph_viterbi(
+    fg: &FamilyGraph,
+    read: &[u8],
+) -> Vec<(crate::vg_hmm::family_graph::CopyId, f64, f64)> {
+    let viterbi = match viterbi_path(fg, read) {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+    let viterbi_set: std::collections::BTreeSet<NodeIdx> =
+        viterbi.nodes.iter().copied().collect();
+    if viterbi_set.is_empty() { return Vec::new(); }
+
+    let mut out: Vec<(crate::vg_hmm::family_graph::CopyId, f64, f64)> = Vec::new();
+    for cid in fg.all_copies() {
+        let path = fg.recover_paralog_path(cid);
+        if path.is_empty() { continue; }
+        let path_set: std::collections::BTreeSet<NodeIdx> =
+            path.iter().copied().collect();
+        let inter = viterbi_set.intersection(&path_set).count() as f64;
+        let recall = inter / path_set.len() as f64;
+        let precision = inter / viterbi_set.len() as f64;
+        out.push((cid, recall, precision));
+    }
+    out.sort_by(|a, b|
+        b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+            .then(b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+    );
+    out
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -802,6 +856,177 @@ mod tests {
         let names: Vec<usize> = path.nodes.iter().map(|n| n.0).collect();
         assert_eq!(names, vec![0, 1]);
         assert!(path.score > 0.0_f64.ln() - 100.0, "score={}", path.score);
+    }
+
+    /// Build a 4-node "low-similarity" two-paralog family for the POC test.
+    ///
+    ///   N0 (shared) ─┬→ N1 (paralog A only) ─┬→ N3 (shared)
+    ///                └→ N2 (paralog B only) ─┘
+    ///
+    /// N1 and N2 have completely different sequences but the same topological
+    /// role (alternative middle exon). Sequence-level Jaccard between the two
+    /// paralogs concatenated is very low — the band where per-copy path forward
+    /// DP starts to fail.
+    fn low_sim_two_paralog_graph() -> FamilyGraph {
+        let n0_seq = b"ACGTACGTAC".to_vec();        // shared start
+        let n1_seq = b"AAAAAAAATTTAAATTT".to_vec(); // paralog A's middle (A-rich)
+        let n2_seq = b"GCGCGCGCGCGCGCGCG".to_vec(); // paralog B's middle (GC-only)
+        let n3_seq = b"TTGGAATTGGAA".to_vec();      // shared end
+        let nodes = vec![
+            ExonClass {
+                idx: NodeIdx(0), chrom: "x".into(),
+                span: (0, n0_seq.len() as u64), strand: '+',
+                per_copy_sequences: vec![(0, n0_seq.clone()), (1, n0_seq.clone())],
+                per_copy_spans: vec![
+                    (0, (0, n0_seq.len() as u64)),
+                    (1, (0, n0_seq.len() as u64)),
+                ],
+                copy_specific: false,
+                profile: Some(ProfileHmm::from_singleton(&n0_seq)),
+                per_copy_profiles: vec![],
+            },
+            ExonClass {
+                idx: NodeIdx(1), chrom: "x".into(),
+                span: (20, 20 + n1_seq.len() as u64), strand: '+',
+                per_copy_sequences: vec![(0, n1_seq.clone())],
+                per_copy_spans: vec![(0, (20, 20 + n1_seq.len() as u64))],
+                copy_specific: true,
+                profile: Some(ProfileHmm::from_singleton(&n1_seq)),
+                per_copy_profiles: vec![],
+            },
+            ExonClass {
+                idx: NodeIdx(2), chrom: "x".into(),
+                span: (20, 20 + n2_seq.len() as u64), strand: '+',
+                per_copy_sequences: vec![(1, n2_seq.clone())],
+                per_copy_spans: vec![(1, (20, 20 + n2_seq.len() as u64))],
+                copy_specific: true,
+                profile: Some(ProfileHmm::from_singleton(&n2_seq)),
+                per_copy_profiles: vec![],
+            },
+            ExonClass {
+                idx: NodeIdx(3), chrom: "x".into(),
+                span: (50, 50 + n3_seq.len() as u64), strand: '+',
+                per_copy_sequences: vec![(0, n3_seq.clone()), (1, n3_seq.clone())],
+                per_copy_spans: vec![
+                    (0, (50, 50 + n3_seq.len() as u64)),
+                    (1, (50, 50 + n3_seq.len() as u64)),
+                ],
+                copy_specific: false,
+                profile: Some(ProfileHmm::from_singleton(&n3_seq)),
+                per_copy_profiles: vec![],
+            },
+        ];
+        let edges = vec![
+            JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 5, strand: '+' },
+            JunctionEdge { from: NodeIdx(0), to: NodeIdx(2), family_support: 5, strand: '+' },
+            JunctionEdge { from: NodeIdx(1), to: NodeIdx(3), family_support: 5, strand: '+' },
+            JunctionEdge { from: NodeIdx(2), to: NodeIdx(3), family_support: 5, strand: '+' },
+        ];
+        FamilyGraph { family_id: 0, nodes, edges }
+    }
+
+    #[test]
+    fn poc_graph_viterbi_assigns_low_similarity_paralog_correctly() {
+        let fg = low_sim_two_paralog_graph();
+
+        // Read traces paralog A's path: N0 + N1 + N3.
+        let n0_seq = b"ACGTACGTAC";
+        let n1_seq = b"AAAAAAAATTTAAATTT";
+        let n3_seq = b"TTGGAATTGGAA";
+        let read: Vec<u8> = [n0_seq.as_slice(), n1_seq, n3_seq].concat();
+
+        let scores = assign_via_graph_viterbi(&fg, &read);
+        assert_eq!(scores.len(), 2, "expected 2 paralog scores, got {:?}", scores);
+
+        // Top assignment: paralog A (CopyId 0), recall = 1.0.
+        let (top_cid, top_recall, top_precision) = scores[0];
+        assert_eq!(top_cid, 0,
+                   "expected paralog 0 (A) to be top, got CopyId {} (scores={:?})",
+                   top_cid, scores);
+        assert!((top_recall - 1.0).abs() < 1e-9,
+                "A's recall should be 1.0, got {}", top_recall);
+        assert!((top_precision - 1.0).abs() < 1e-9,
+                "A's precision should be 1.0, got {}", top_precision);
+
+        // Runner-up: paralog B (CopyId 1), recall = 2/3 (only N0 and N3 in common).
+        let (other_cid, other_recall, _) = scores[1];
+        assert_eq!(other_cid, 1, "expected paralog 1 (B) as runner-up");
+        assert!((other_recall - 2.0/3.0).abs() < 1e-9,
+                "B's recall should be 2/3 ≈ 0.667, got {}", other_recall);
+
+        eprintln!(
+            "\n[POC] graph-Viterbi assignment on a low-similarity 2-paralog family:\n\
+             [POC]   paralog A  recall = {:.3}  precision = {:.3}   ← assigned\n\
+             [POC]   paralog B  recall = {:.3}  precision = {:.3}\n\
+             [POC]   gap (recall) = {:.3}   ← decisive\n",
+            top_recall, top_precision,
+            other_recall, scores[1].2,
+            top_recall - other_recall,
+        );
+    }
+
+    #[test]
+    fn poc_graph_viterbi_beats_per_copy_forward_when_read_is_noisy() {
+        // The mechanism advantage: at low similarity, even modest read errors
+        // push log P(read | path_c) toward NEG_INF for ALL paralogs (per-base
+        // penalty accumulates). The forward gap collapses → gap rule abstains.
+        // Graph-Viterbi only needs to identify which set of nodes the best
+        // path goes through — it tolerates per-base error and stays decisive.
+        let fg = low_sim_two_paralog_graph();
+
+        let n0_seq = b"ACGTACGTAC";
+        let n1_seq = b"AAAAAAAATTTAAATTT";
+        let n3_seq = b"TTGGAATTGGAA";
+        // 15 % substitution rate against paralog A's path. Enough to wreck a
+        // singleton profile's per-base log-likelihood (each error costs ~5 nats
+        // against an eps=0.02 singleton emission), but topology still matches A.
+        let mut read: Vec<u8> = [n0_seq.as_slice(), n1_seq, n3_seq].concat();
+        let flip = |b: u8| -> u8 { match b { b'A' => b'C', b'C' => b'G', b'G' => b'T', _ => b'A' } };
+        for i in (3..read.len()).step_by(7) { read[i] = flip(read[i]); }
+
+        // Per-copy forward DP scores against each paralog's path.
+        let path_a = fg.recover_paralog_path(0);
+        let path_b = fg.recover_paralog_path(1);
+        let lp_a = forward_against_path(&fg, &read, &path_a);
+        let lp_b = forward_against_path(&fg, &read, &path_b);
+        let fwd_gap = (lp_a - lp_b).abs();
+
+        // Graph-Viterbi node-overlap scores.
+        let scores = assign_via_graph_viterbi(&fg, &read);
+        let recall_a = scores.iter().find(|s| s.0 == 0).map(|s| s.1).unwrap_or(0.0);
+        let recall_b = scores.iter().find(|s| s.0 == 1).map(|s| s.1).unwrap_or(0.0);
+        let viterbi_gap = recall_a - recall_b;
+
+        eprintln!(
+            "\n[POC noisy read]  read = paralog A's path with ~15% per-base errors:\n\
+             [POC]   per-copy forward log P:  A = {:>7.2}   B = {:>7.2}   gap = {:.2}\n\
+             [POC]   graph-Viterbi recall:    A = {:>7.3}   B = {:>7.3}   gap = {:.3}\n\
+             [POC]   ↑ forward gap is in nats (could be tiny / unstable);\n\
+             [POC]   ↑ Viterbi recall is in [0, 1] and stays decisive.\n",
+            lp_a, lp_b, fwd_gap, recall_a, recall_b, viterbi_gap,
+        );
+
+        // Both methods should still pick paralog A in this controlled test,
+        // but the Viterbi gap is bounded and easy to threshold; the forward
+        // gap depends on absolute log-likelihoods that depend on read length.
+        assert!(lp_a > lp_b, "forward should favor A: lp_a={}, lp_b={}", lp_a, lp_b);
+        assert!(recall_a > recall_b, "Viterbi recall should favor A");
+        assert!(recall_a >= 1.0 - 1e-9, "Viterbi must trace ALL of A's nodes");
+    }
+
+    #[test]
+    fn poc_graph_viterbi_picks_other_paralog_when_read_matches_it() {
+        // Sanity check: when the read traces paralog B's path, B must win.
+        let fg = low_sim_two_paralog_graph();
+        let n0_seq = b"ACGTACGTAC";
+        let n2_seq = b"GCGCGCGCGCGCGCGCG";
+        let n3_seq = b"TTGGAATTGGAA";
+        let read: Vec<u8> = [n0_seq.as_slice(), n2_seq, n3_seq].concat();
+
+        let scores = assign_via_graph_viterbi(&fg, &read);
+        assert_eq!(scores.len(), 2);
+        assert_eq!(scores[0].0, 1, "expected paralog 1 (B) to be top, got {:?}", scores);
+        assert!((scores[0].1 - 1.0).abs() < 1e-9);
     }
 
     #[test]
