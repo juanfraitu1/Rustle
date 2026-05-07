@@ -5443,12 +5443,21 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
         })
         .map(|(i, _)| i)
         .collect();
-    // StringTie-parity sort: DESC by abundance, then DESC by node count.
-    // Matches StringTie's PARITY_TF ordering (t=0 is highest-abund longest,
-    // etc.). When enabled, this changes SEED PRIORITY — the first seed
-    // dominates flow depletion and downstream matched/rescue status.
-    // Opt-in via RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT=1.
-    if std::env::var_os("RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT").is_some() {
+    // StringTie's parse_trflong builds trflong sorted DESC (highest abund first)
+    // then iterates it IN REVERSE → effective processing order is ASC (lowest first).
+    // RUSTLE_PARSE_TRFLONG_ST_ORDER=1: match ST's ASC processing order.
+    // RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT=1: legacy DESC (opposite of ST, regresses).
+    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_ORDER").is_some() {
+        seeded.sort_by(|&a, &b| {
+            let ta = &transfrags[a];
+            let tb = &transfrags[b];
+            // ASC: lowest abundance first (matches ST's effective order)
+            match ta.abundance.partial_cmp(&tb.abundance).unwrap_or(std::cmp::Ordering::Equal) {
+                std::cmp::Ordering::Equal => ta.node_ids.len().cmp(&tb.node_ids.len()),
+                other => other,
+            }
+        });
+    } else if std::env::var_os("RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT").is_some() {
         seeded.sort_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
