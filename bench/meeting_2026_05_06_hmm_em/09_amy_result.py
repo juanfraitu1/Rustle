@@ -72,6 +72,6 @@ ax.set_title("Per-paralog recovery — HMM-EM rescues a medium-similarity paralo
              fontsize=15, fontweight='bold', pad=20)
 
 plt.tight_layout()
-plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/07_amy_result.png',
+plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/09_amy_result.png',
             dpi=160, bbox_inches='tight')
-print("07_amy_result.png written")
+print("09_amy_result.png written")

@@ -98,6 +98,6 @@ ax.text(7, 0.40,
         fontsize=9.5, ha='center', color='#7a5500')
 
 plt.tight_layout()
-plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/05_forward_dp_and_gap.png',
+plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/07_forward_dp_and_gap.png',
             dpi=160, bbox_inches='tight')
-print("05_forward_dp_and_gap.png written")
+print("07_forward_dp_and_gap.png written")

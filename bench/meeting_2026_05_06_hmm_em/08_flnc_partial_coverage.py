@@ -137,6 +137,6 @@ ax.text(7.5, 0.30,
         fontsize=10, ha='center', color='#225522', fontstyle='italic')
 
 plt.tight_layout()
-plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/06_flnc_partial_coverage.png',
+plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/08_flnc_partial_coverage.png',
             dpi=160, bbox_inches='tight')
-print("06_flnc_partial_coverage.png written")
+print("08_flnc_partial_coverage.png written")
