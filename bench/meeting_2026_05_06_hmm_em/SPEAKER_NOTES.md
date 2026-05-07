@@ -1,6 +1,6 @@
 # Per-copy HMM-EM for paralog read assignment — meeting notes (2026-05-06)
 
-Nine slide-ready PNGs in this directory. Suggested order + a few sentences each.
+Ten slide-ready PNGs in this directory. Suggested order + a few sentences each.
 The narrative arc directly answers four advisor concerns:
 
 1. *"The VG just averages information across copies — paralogs collapse."* → Slides 2, 3, 4 show explicitly that we keep one profile per copy, never a single consensus.
@@ -8,7 +8,7 @@ The narrative arc directly answers four advisor concerns:
 3. *"Where do the priors come from?"* → Slide 6 walks through every step of the EM math (initialization, M-step, E-step, score-gap rule, convergence) with the exact formulas and code line numbers.
 4. *"This will only work for near-identical paralogs."* → Slide 9 shows recovery at jaccard 0.52 (squarely in the medium-similarity band).
 
-Plus slide 8 addresses the FLNC misunderstanding directly.
+Plus slide 8 addresses the FLNC misunderstanding directly, and slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery.
 
 ---
 
@@ -125,6 +125,11 @@ Plus slide 8 addresses the FLNC misunderstanding directly.
 
 The advisor's concern was *"is this just a heuristic with EM in the name?"* — no. Every step is the standard mixture-model EM, the only non-standard pieces are (a) using HMM forward as the data likelihood, (b) the score-gap abstention. Both are spelled out.
 
+**"What is a nat?" inset (bottom of slide).** Every log-space quantity on slides 5–7 is in nats (natural-log, not log₂) because the forward DP's logsumexp is cleanest in that base. Useful conversions to have ready when the advisor asks about Δ = 10:
+- 1 nat ≈ 1.44 bits.
+- `e^10 ≈ 22,000` → a 10-nat gap means one hypothesis is ~22,000× more likely than the runner-up.
+- One unambiguous SNP at a profile-match column is worth ≈ 2.5 nats of evidence, so Δ = 10 ≈ 4 unambiguous SNPs of separation. That's the intuition for why the default isn't aggressive — it's exactly the sort of evidence threshold a careful biologist would want before flipping a copy assignment.
+
 ---
 
 ## Slide 7 — `07_forward_dp_and_gap.png` *(intuition, picture form)*
@@ -177,6 +182,39 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 
 ---
 
+## Slide 10 — `10_low_similarity_extension.png` *(forward look — extending into the low-similarity band)*
+
+**One-line:** for paralogs that are too diverged for the existing k-mer linker to even put them in the same family (jaccard < 0.30), an additive two-pronged extension reuses the same HMM trellis without overriding any of slides 5–7. Nothing existing changes.
+
+**Why this slide exists:** the natural follow-up to slide 9 — "you've shown 0.52, what about 0.20?". The answer isn't "throw away the HMM" — it's "use the HMM differently, and only when the band warrants it."
+
+**Two prongs (left/right boxes on the slide):**
+
+1. **Family-discovery side.** The existing k-mer Jaccard linker (default ≥ 0.30) won't link two paralogs that share < 30% of their k-mers, so they never even meet inside a family graph. Add a complementary signal that survives sequence drift:
+   - **splice-site Jaccard** — donor/acceptor positions stay conserved long after sequence does.
+   - **conserved-domain anchors** — short Pfam / InterPro motifs identifiable directly from genomic k-mers.
+
+   Two bundles enter the same family if EITHER signal fires. Gated by `--vg-low-sim-link` (off by default) so the production AMY/NBPF path is untouched.
+
+2. **Scoring side.** The existing per-copy `forward_against_path_for_copy` is rigid — it forces the read to fit ONE paralog's exact path. At low similarity that's exactly what hurts: a normal-error read collects penalty against any one path. Swap it for `assign_via_graph_viterbi`:
+   - Run `viterbi_path(fg, read)` — same M/I/D trellis from slide 5, no per-paralog path constraint. The read picks its own best path through the graph.
+   - For each known paralog c, score by **node-overlap** with the Viterbi trace:
+     `recall(c) = |viterbi ∩ path_c| / |path_c|`
+     `precision(c) = |viterbi ∩ path_c| / |viterbi|`
+   - Sort by recall descending. Top paralog = the assignment.
+
+**Dispatch (bottom of slide):** auto-solver routes per family by similarity band. High/medium → existing path-forward. Low → graph-Viterbi. Near-identical → existing `--vg-snp` SNP-aware E-step. The M-step (priors) and gap rule are unchanged — only the per-(read, copy) score in the E-step differs.
+
+**Generalized gap rule:** for graph-Viterbi the score-gap analogue uses recall (which is bounded in [0, 1] across families, unlike nats which scale with read length). Proposed default: abstain if `top.recall − second.recall < δ_recall` with `δ_recall = 0.20`.
+
+**POC status (talking point — the slide footers say "POC, 3 tests passing"):**
+- New function `assign_via_graph_viterbi` lives in `src/rustle/vg_hmm/scorer.rs`.
+- Three unit tests on a synthetic 4-node, 2-paralog graph (paralog-specific middle nodes, deliberately low DNA-Jaccard between A and B) — all passing.
+- Test 3 specifically shows: on a noisy read (~15% per-base error), forward log P gap = 61.42 nats but Viterbi recall gap = 0.333. Both methods agree on the assignment, but recall is bounded and portable across families; nats are not.
+- **Honest caveat to lead with:** this is a mechanism POC, not yet a benchmark. The end-to-end test needs (1) above — the family-discovery side has to land first, otherwise the two paralogs never enter the same FamilyGraph in the first place. Source: `bench/low_similarity_poc/POC.md`.
+
+---
+
 ## Closing pitch
 
 > The advisor's worries map cleanly onto specific slides:
@@ -188,6 +226,7 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 > | "where do the priors come from?" | slide 6 (mixture-model EM, code-tied) |
 > | "FLNC = full transcript?" | slide 8 (no — partial reads work because scoring is local) |
 > | "only works for near-identical?" | slide 9 (jaccard 0.52 recovery) |
+> | "what about really diverged paralogs (jaccard < 0.30)?" | slide 10 (additive extension — same HMM, graph-Viterbi assignment, POC passing) |
 >
 > Every step of the math corresponds to a specific function and line range in
 > `src/rustle/vg_hmm/scorer.rs` and `src/rustle/vg.rs`. There is no

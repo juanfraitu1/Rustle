@@ -10,9 +10,9 @@ import matplotlib.patches as patches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import numpy as np
 
-fig, ax = plt.subplots(figsize=(15.5, 9.8))
+fig, ax = plt.subplots(figsize=(15.5, 11.3))
 ax.set_xlim(0, 15.5)
-ax.set_ylim(0, 11)
+ax.set_ylim(-1.85, 11)
 ax.axis('off')
 
 ax.text(7.75, 10.55, "Where do the priors come from?  (standard EM, exactly)",
@@ -115,6 +115,21 @@ ax.add_patch(loop_arrow)
 ax.text(15.35, 6.3, "loop t → t+1",
         fontsize=9, color='#7a5500', fontweight='bold',
         ha='left', va='center', rotation=90)
+
+# ── Inset: what is a nat? ────────────────────────────────────────────────────
+# All log-space quantities in slides 5–7 are natural log → unit is the "nat".
+nat_inset = FancyBboxPatch((0.4, -1.65), 14.7, 1.50,
+                           boxstyle="round,pad=0.10",
+                           facecolor='#fafaf2', edgecolor='#888', lw=1.0)
+ax.add_patch(nat_inset)
+ax.text(0.6, -0.30,
+        "What is a nat?  (the unit of every log-space quantity above)",
+        fontsize=11.5, fontweight='bold', color='#444', va='top')
+ax.text(0.6, -0.70,
+        "Natural-log unit of information. We use ln (not log₂) because the forward DP's logsumexp is cleanest in that base.\n"
+        "  •  1 nat  ≈  1.44 bits           •  e^10 ≈ 22,000   →   a 10-nat gap means one hypothesis is ~22,000× more likely\n"
+        "  •  one unambiguous SNP at a profile match column ≈ 2.5 nats of evidence  →  default Δ = 10 nats ≈ 4 unambiguous SNPs",
+        fontsize=9.5, va='top', family='monospace', color='#222')
 
 plt.tight_layout()
 plt.savefig('/scratch/jxi21/Assembler/Rustle/bench/meeting_2026_05_06_hmm_em/06_em_math.png',
