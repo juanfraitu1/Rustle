@@ -61,11 +61,18 @@ python3 tools/parity_decisions/diff.py /tmp/p_rustle.jsonl /tmp/p_stringtie.json
 `step` and `tool` mandatory. `chrom` optional. `start`/`end`/`strand` are conventional;
 `payload` is step-specific.
 
-## Wired-up steps (initial scaffold)
+## Wired-up steps
 
 | step | rustle site | stringtie site |
 |---|---|---|
-| `junction_accept` | `graph_build.rs::filter_junctions_for_bundle` | `rlink.cpp` post-checkfeat loop |
+| `junction_accept` | `graph_build.rs::filter_junctions_for_bundle` | `rlink.cpp:14441` post-checkfeat loop |
+| `bundle_define` | `pipeline.rs` | `rlink.cpp:15557` |
+| `transfrag_define` | `pipeline.rs` after `process_transfrags` | `rlink.cpp:16003` |
+| `transfrag_seed` | `pipeline.rs` — same loop as `transfrag_define`, `tf.trflong_seed==true` | `rlink.cpp` — after each `trflong.Add()` in `process_transfrags` |
+| `seed_reject` | `path_extract.rs` — `reject_seed!` macro at early-exit gates in `extract_transcripts` | (rustle-only for now) |
+| `pred_filter_stage` | `transcript_filter.rs` | `rlink.cpp:18609,18613,...` |
+| `pred_kill` | (stringtie-only for now) | `rlink.cpp:18964` |
+| `path_emit` | `gtf.rs:209` | `rlink.cpp:19681` |
 
 ## Adding new decision points
 
@@ -75,11 +82,8 @@ python3 tools/parity_decisions/diff.py /tmp/p_rustle.jsonl /tmp/p_stringtie.json
 
 ## Suggested next steps to wire
 
-- `node_create` — when graph builder creates a new node (start, end, hardstart/hardend flags)
-- `edge_create` — parent → child with abundance
-- `transfrag_seed` — when a long-read becomes a trflong_seed (abund, node list)
-- `seed_reject` — when a seed is dropped pre-flow (reason)
-- `path_emit` — when a final path is output (cov, longcov, exon list)
+- `node_create` — when graph builder creates a primary node (start, end, hardstart/hardend flags)
+- `edge_create` — parent → child with abundance (junction edges only)
 
 ## Known divergences surfaced
 

@@ -11572,6 +11572,25 @@ pub fn run<P: AsRef<Path>>(
                             graph_bundle.strand,
                             &payload,
                         );
+                        // transfrag_seed: separate event for transfrags that
+                        // will serve as long-read path seeds (trflong).
+                        if tf.trflong_seed {
+                            let seed_payload = format!(
+                                r#""abund":{:.4},"guide":{},"n_introns":{},"introns":"{}""#,
+                                tf.abundance,
+                                if tf.guide { "true" } else { "false" },
+                                introns.len(),
+                                intron_str,
+                            );
+                            crate::parity_decisions::emit(
+                                "transfrag_seed",
+                                Some(&graph_bundle.chrom),
+                                span_start + 1,
+                                span_end,
+                                graph_bundle.strand,
+                                &seed_payload,
+                            );
+                        }
                     }
                 }
                 // Option A (graph segmentation refactor): coalesce seed
@@ -14858,6 +14877,18 @@ pub fn run<P: AsRef<Path>>(
                 removed, final_cov_floor, sub_floor, longcov_min
             );
         }
+    }
+
+    // Data-driven incomplete chain suppression: suppress paths whose intron chain
+    // is a proper subset of another assembled path at the same chrom/strand.
+    // Opt-in: RUSTLE_DEDUP_SUBSET_COV_RATIO=<f> (drop subset when cov_j > cov_i*f)
+    // or RUSTLE_DEDUP_SUBSET_UNCONDITIONAL=1 (always drop — note: hurts recall
+    // because ST also emits genuine short isoforms that look like subsets).
+    if std::env::var_os("RUSTLE_DEDUP_SUBSET_COV_RATIO").is_some()
+        || std::env::var_os("RUSTLE_DEDUP_SUBSET_UNCONDITIONAL").is_some()
+    {
+        all_transcripts = crate::transcript_filter::dedup_subset_intron_chains(
+            all_transcripts, config.verbose);
     }
 
     let mut f = std::fs::File::create(output_gtf.as_ref())?;

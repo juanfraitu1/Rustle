@@ -4141,43 +4141,26 @@ pub fn dedup_subset_intron_chains(transcripts: Vec<Transcript>, verbose: bool) -
                 continue;
             }
             
-            // Check if i is a subset of j
             if !junction_chain_is_subset(&chains[i], &chains[j]) {
                 continue;
             }
-            
+
             let cov_i = t1.coverage;
             let cov_j = t2.coverage;
 
-            // A larger transcript (j) is preferred over a subset (i) if:
-            // 1. It has higher coverage.
-            // 2. It has comparable coverage (>= 50% of subset) AND better boundary support.
-
-            let score_i = (if t1.hardstart { 1 } else { 0 }) + (if t1.hardend { 1 } else { 0 });
-            let score_j = (if t2.hardstart { 1 } else { 0 }) + (if t2.hardend { 1 } else { 0 });
-
-            // StringTie-parity default: subset intron chains represent
-            // distinct biological isoforms (minor isoforms, RI variants,
-            // alt-5' splits). Do not drop a subset solely because
-            // cov_j > cov_i.
-            //
-            // Cov-ratio drop is opt-in via RUSTLE_DEDUP_SUBSET_COV_RATIO=<f>.
-            //
-            // Boundary-score drop empirically kills legitimate RI variants
-            // across 8 loci on GGO_19 (STRG.101.12, STRG.278.3, STRG.34.2,
-            // STRG.398.8, STRG.413.4, STRG.413.5, STRG.488.5, STRG.53.8).
-            // Now OFF by default; opt-in via RUSTLE_DEDUP_SUBSET_BOUNDARY_ON=1.
+            // Default: only suppress when the containing chain has substantially
+            // higher coverage (opt-in via RUSTLE_DEDUP_SUBSET_COV_RATIO=<ratio>).
+            // Data-driven pure subset suppression (no ratio threshold) is available
+            // via RUSTLE_DEDUP_SUBSET_UNCONDITIONAL=1 — note it hurts recall because
+            // ST also emits genuine short isoforms whose chains are proper subsets of
+            // longer isoforms at the same locus.
+            let unconditional =
+                std::env::var_os("RUSTLE_DEDUP_SUBSET_UNCONDITIONAL").is_some();
             let cov_ratio: Option<f64> = std::env::var("RUSTLE_DEDUP_SUBSET_COV_RATIO")
                 .ok().and_then(|v| v.parse().ok());
-            let boundary_on =
-                std::env::var_os("RUSTLE_DEDUP_SUBSET_BOUNDARY_ON").is_some();
             let cov_drop = cov_ratio.map_or(false, |r| cov_j > cov_i * r);
-            let boundary_drop = boundary_on
-                && cov_j >= cov_i * 0.5
-                && score_j > score_i;
-            let prefer_j = cov_drop || boundary_drop;
-                
-            if prefer_j {
+
+            if unconditional || cov_drop {
                 drop.insert_grow(i);
             }
         }

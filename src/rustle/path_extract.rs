@@ -5510,6 +5510,26 @@ pub fn extract_transcripts(
             }
         };
     }
+    // Helper macro: record_outcome + emit seed_reject parity event for trflong seeds.
+    macro_rules! reject_seed {
+        ($idx:expr, $outcome:expr, $reason:expr) => {
+            record_outcome!($idx, $outcome);
+            if crate::parity_decisions::is_enabled() && transfrags[$idx].trflong_seed {
+                let first_real = transfrags[$idx].node_ids.iter()
+                    .find(|&&n| n != graph.source_id && n != graph.sink_id)
+                    .and_then(|&n| graph.nodes.get(n));
+                let last_real = transfrags[$idx].node_ids.iter().rev()
+                    .find(|&&n| n != graph.source_id && n != graph.sink_id)
+                    .and_then(|&n| graph.nodes.get(n));
+                let s = first_real.map(|n| n.start + 1).unwrap_or(0);
+                let e = last_real.map(|n| n.end).unwrap_or(0);
+                let rp = format!(r#""reason":"{}","abund":{:.4}"#,
+                    $reason, transfrags[$idx].abundance);
+                crate::parity_decisions::emit(
+                    "seed_reject", Some(bundle_chrom), s, e, bundle_strand, &rp);
+            }
+        };
+    }
     let audit_zero_flux = std::env::var_os("RUSTLE_AUDIT_ZERO_FLUX").is_some();
     let depletion_diag = std::env::var_os("RUSTLE_DEPLETION_DIAG").is_some();
     let plumb_debug = std::env::var_os("RUSTLE_PLUMB_DEBUG").is_some();
@@ -6058,7 +6078,7 @@ pub fn extract_transcripts(
             }
         }
         if transfrags[idx].node_ids.is_empty() {
-            record_outcome!(idx, SeedOutcome::Skipped("empty"));
+            reject_seed!(idx, SeedOutcome::Skipped("empty"), "empty");
             continue;
         }
         if transfrags[idx].weak != 0
@@ -6068,7 +6088,7 @@ pub fn extract_transcripts(
                 && !transfrags[idx].killed_junction_orphan
                 && !transfrags[idx].coverage_weak)
         {
-            record_outcome!(idx, SeedOutcome::Skipped("weak"));
+            reject_seed!(idx, SeedOutcome::Skipped("weak"), "weak");
             continue;
         }
         if !mixed_mode && long_read_mode && !config.max_sensitivity && !transfrags[idx].trflong_seed
@@ -6100,7 +6120,7 @@ pub fn extract_transcripts(
         // parse_trflong does not apply readthr/singlethr as an early gate in long/mixed
         // long-read parsing; it defers low-support handling to flux/checktrf stages.
         if !long_read_mode && effective_support < thresh {
-            record_outcome!(idx, SeedOutcome::Skipped("low_support"));
+            reject_seed!(idx, SeedOutcome::Skipped("low_support"), "low_support");
             continue;
         }
 
@@ -6111,7 +6131,7 @@ pub fn extract_transcripts(
             .filter(|&n| n != source_id && n != sink_id)
             .collect();
         if base_real_nodes.is_empty() {
-            record_outcome!(idx, SeedOutcome::Skipped("no_real_nodes"));
+            reject_seed!(idx, SeedOutcome::Skipped("no_real_nodes"), "no_real_nodes");
             continue;
         }
         let real_nodes: Vec<usize> = if long_read_mode && transfrags[idx].longread {
@@ -6125,7 +6145,7 @@ pub fn extract_transcripts(
             base_real_nodes.clone()
         };
         if real_nodes.is_empty() {
-            record_outcome!(idx, SeedOutcome::Skipped("materialized_empty"));
+            reject_seed!(idx, SeedOutcome::Skipped("materialized_empty"), "materialized_empty");
             continue;
         }
         // single-node non-guide transfrags in long-read mode are never
@@ -6830,9 +6850,9 @@ pub fn extract_transcripts(
                     "longrec_fail_checktrf"
                 );
                 if !debug_back_ok {
-                    record_outcome!(idx, SeedOutcome::BackToSourceFail);
+                    reject_seed!(idx, SeedOutcome::BackToSourceFail, "back_to_source_fail");
                 } else {
-                    record_outcome!(idx, SeedOutcome::FwdToSinkFail);
+                    reject_seed!(idx, SeedOutcome::FwdToSinkFail, "fwd_to_sink_fail");
                 }
                 continue;
             }
@@ -6859,7 +6879,7 @@ pub fn extract_transcripts(
         let startnode = 1usize;
         let lastnode = path.len().saturating_sub(2);
         if lastnode < startnode || lastnode >= path.len() {
-            record_outcome!(idx, SeedOutcome::Skipped("path_too_short"));
+            reject_seed!(idx, SeedOutcome::Skipped("path_too_short"), "path_too_short");
             continue;
         }
 
@@ -6869,7 +6889,7 @@ pub fn extract_transcripts(
         let mut use_start = 1usize;
         let mut use_last = use_path.len().saturating_sub(2);
         if use_last < use_start || use_last >= use_path.len() {
-            record_outcome!(idx, SeedOutcome::Skipped("path_too_short"));
+            reject_seed!(idx, SeedOutcome::Skipped("path_too_short"), "path_too_short");
             continue;
         }
 
