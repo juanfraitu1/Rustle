@@ -1,14 +1,15 @@
 # Per-copy HMM-EM for paralog read assignment — meeting notes (2026-05-06)
 
-Twelve slide-ready PNGs in this directory. Suggested order + a few sentences each.
+Thirteen slide-ready PNGs in this directory. Suggested order + a few sentences each.
 The narrative arc directly answers four advisor concerns:
 
 1. *"The VG just averages information across copies — paralogs collapse."* → Slides 2, 3, 4 show explicitly that we keep one profile per copy, never a single consensus.
 2. *"Does it still use a real HMM trellis or some shortcut?"* → Slide 5 shows the actual M/I/D forward DP, with the recurrence written out, and explains the boundary-threading graph extension that adds **no new equations**.
 3. *"Where do the priors come from?"* → Slide 6 walks through every step of the EM math (initialization, M-step, E-step, score-gap rule, convergence) with the exact formulas and code line numbers. **Slide 12 then plugs concrete numbers into every step** — a 3-paralog, 4-read worked example that converges in two iterations and can be verified by hand.
+3a. *"But the per-paralog likelihoods themselves look unsolvable to derive"* → Slide 13 shows that we're NOT deriving them — every probability is an observed frequency from the multi-copy MSA, and `log P(r | c)` is a chain of lookups + additions. Worked example shows one SNP giving a 4-nat gap.
 4. *"This will only work for near-identical paralogs."* → Slide 9 shows recovery at jaccard 0.52 (squarely in the medium-similarity band).
 
-Plus slide 8 addresses the FLNC misunderstanding directly, slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery, slide 11 is a didactic walk-through showing how each variant type (SNP, indel, alt-donor, alt-acceptor, UTR, exon-skipping) maps to a specific feature of the M/I/D trellis or graph topology, and slide 12 is the *numerical proof slide* — one concrete EM run, every arithmetic step laid out, no hand-waving.
+Plus slide 8 addresses the FLNC misunderstanding directly, slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery, slide 11 is a didactic walk-through showing how each variant type (SNP, indel, alt-donor, alt-acceptor, UTR, exon-skipping) maps to a specific feature of the M/I/D trellis or graph topology, slide 12 is the *numerical proof* of the EM update loop, and slide 13 is the *numerical proof* of where the per-paralog likelihoods themselves come from (observed MSA → log-lookup → sum).
 
 ---
 
@@ -301,6 +302,85 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 
 ---
 
+## Slide 13 — `13_likelihood_origin.png` *(the deepest proof — where log P(r | c) actually comes from)*
+
+**One-line:** *we are not deriving the per-paralog likelihoods.* Every probability is an observed frequency from the multi-copy MSA, and `log P(r | c)` is a chain of log-lookups summed along the read's alignment path. No analytical derivation, no MCMC, no closed-form integral.
+
+**Why this slide exists:** the advisor's deepest skepticism is not about EM, the trellis, or the priors — it's about whether the per-paralog *likelihoods themselves* can even be computed. That sounds like a hard inference problem if you don't know where the numbers come from. This slide shows exactly where they come from. Numerically. The likelihood is just **observed frequency tables + addition**.
+
+**Four steps walked through on the slide:**
+
+### Step A — Where the emission distributions come from (observed MSA)
+
+The multi-copy MSA at one exon-class node lays out the observed copies of each paralog row-by-row, aligned to the same column indices:
+
+```
+                           col 1   col 2   col 3   col 4   col 5   col 6   col 7
+   paralog A, copy 1:        A       T       G       C       A       G       T
+   paralog A, copy 2:        A       T       G       C       A       G       T
+   paralog A, copy 3:        A       T       G       C       A       G       T
+   paralog B, copy 1:        A       T       G       C       G       G       T     ← col 5 differs
+   paralog B, copy 2:        A       T       G       C       G       G       T
+```
+
+Per-copy emission at column 5 (with α = 0.7 tilt and ε = 0.02 pseudocount, slide 4):
+- `e_M(b | col 5, paralog A) = (A=0.95, C=0.02, G=0.02, T=0.01)` — from observing 3/3 'A' in paralog A's instances
+- `e_M(b | col 5, paralog B) = (A=0.02, C=0.02, G=0.95, T=0.01)` — from observing 2/2 'G' in paralog B's instances
+
+Cols 1-4 and 6-7 are consensus columns (all 5 copies agree) — same emission distribution for both paralogs.
+
+### Step B — Where the per-base column assignments come from (BAM + family graph)
+
+The read's BAM placement gives genomic coordinates. The family graph maps each genomic position to a `(node, column)` tuple. **This is data, not computation** — the aligner already did the work.
+
+```
+   Read r:    A   T   G   C   A   G   T          (7 bases, no indels)
+              │   │   │   │   │   │   │
+              ▼   ▼   ▼   ▼   ▼   ▼   ▼
+   Column:    1   2   3   4   5   6   7          (in node E2 of paralog A's path)
+                                  ↑
+                              discriminating
+```
+
+### Step C — Sum log-emissions → log P(r | c)
+
+For each base, look up the log of the per-copy emission at the corresponding column, and sum.
+
+```
+log P(r | A) = Σ_j log e_M(r[j] | col j, A)        log P(r | B) = Σ_j log e_M(r[j] | col j, B)
+
+  log e_M(A | col 1, A) = log(0.95) = -0.051        log e_M(A | col 1, B) = log(0.95) = -0.051
+  log e_M(T | col 2, A) = log(0.94) = -0.062        log e_M(T | col 2, B) = log(0.94) = -0.062
+  log e_M(G | col 3, A) = log(0.94) = -0.062        log e_M(G | col 3, B) = log(0.94) = -0.062
+  log e_M(C | col 4, A) = log(0.94) = -0.062        log e_M(C | col 4, B) = log(0.94) = -0.062
+  log e_M(A | col 5, A) = log(0.95) = -0.051  ✓     log e_M(A | col 5, B) = log(0.02) = -3.912  ✗
+  log e_M(G | col 6, A) = log(0.94) = -0.062        log e_M(G | col 6, B) = log(0.94) = -0.062
+  log e_M(T | col 7, A) = log(0.94) = -0.062        log e_M(T | col 7, B) = log(0.94) = -0.062
+                                  ─────────                                          ─────────
+  log P(r | A) =                  −0.412            log P(r | B) =                   −4.273
+```
+
+Gap: `log P(r | A) − log P(r | B) = +3.861 nats` — one SNP delivers ~4 nats. With 3-4 paralog-distinguishing SNPs in a read, the gap reaches Δ ≥ 10 (the score-gap threshold) and EM updates decisively.
+
+### Step D — Same arithmetic for indels (transition probabilities also from MSA)
+
+Insertion of `k` bases between cols j-1 and j: add `log a_MI + Σ log e_I(b) + (k−1)·log a_II + log a_IM`.
+Deletion of `k` consecutive cols: add `log a_MD + (k−1)·log a_DD + log a_DM`.
+
+The transition probabilities `a_MM`, `a_MI`, `a_MD`, … are **also observed** — counted from indel events in the MSA. `e_I(b)` is typically uniform 0.25 (insertions are noise-driven). Same lookup-table strategy; no new inference.
+
+### Talking-track for the advisor
+
+> "Your concern is that deriving the likelihoods looks like an unsolvable problem. You're right — if I had to *derive* them, it would be hard. But I don't. The MSA gives me observed base frequencies at every column for every paralog. That's the emission distribution `e_M(b | col j, c)` — one lookup. The aligner gives me which column each read base lands at — also a lookup. The likelihood is just the sum of seven log-numbers. One paralog-distinguishing SNP gives me 4 nats. Three SNPs give me 12 nats — past the score-gap threshold. There is no inference problem here that I'm secretly waving away. The forward DP only matters when there's ambiguity in the alignment path (insertions, deletions); the emission lookups themselves are just frequencies."
+
+### Where this connects upstream
+
+- The numbers `log P(r | c) = -100, -103, -105, -95, ...` on slide 12 are computed exactly this way — slide 13 is the recipe behind the slide 12 inputs.
+- This slide is also the answer to "are you sure you didn't sneak in some Bayesian prior?" — every prior is an observed frequency, with a small ε pseudocount that we declare openly (slide 6).
+- Code: `family_graph.rs::fit_profiles_in_place` builds the per-copy emission tables from the MSA. `scorer.rs::profile_forward_with_boundary_banded` does the per-base log-lookup-and-sum.
+
+---
+
 ## Closing pitch
 
 > The advisor's worries map cleanly onto specific slides:
@@ -310,6 +390,7 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 > | "VG collapses paralog info" | slides 2, 3, 4 (per-copy profiles) |
 > | "is it really an HMM?" | slide 5 (M/I/D forward trellis) |
 > | "where do the priors come from?" | slide 6 (mixture-model EM, code-tied) + slide 12 (worked numerical example) |
+> | "but where do the LIKELIHOODS log P(r\|c) come from? — surely deriving them is unsolvable?" | slide 13 (observed MSA frequencies + log-lookup + sum; one SNP = 4 nats) |
 > | "FLNC = full transcript?" | slide 8 (no — partial reads work because scoring is local) |
 > | "only works for near-identical?" | slide 9 (jaccard 0.52 recovery) |
 > | "what about really diverged paralogs (jaccard < 0.30)?" | slide 10 (additive extension — same HMM, graph-Viterbi assignment, POC passing) |
