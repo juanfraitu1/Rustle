@@ -6393,7 +6393,9 @@ pub fn extract_transcripts(
             // Snapshot when EITHER comparison or gate is active.
             let pa_active = crate::parse_trflong_st::comparison_active()
                 || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none();
-            let pa_snapshot_before = if pa_active {
+            // Canonical mode: use ST-faithful back/fwd directly as path builders.
+            let canonical = crate::parse_trflong_st::canonical_active();
+            let pa_snapshot_before = if pa_active && !canonical {
                 Some((
                     path.clone(),
                     pathpat.clone(),
@@ -6403,27 +6405,40 @@ pub fn extract_transcripts(
             } else {
                 None
             };
-            let mut back_ok = back_to_source_fast_long(
-                idx,
-                maxi,
-                &mut path,
-                &mut minp,
-                &mut maxp,
-                &mut pathpat,
-                transfrags,
-                graph,
-                &local_nodecov,
-                true,
-                // Keep strict the original algorithm-style selection; we only apply a narrow internal override
-                // when a contiguous exon-extension parent exists (see back_to_source_fast_long).
-                // Never prefer non-source parents. Always let back_to_source stop
-                // at source when available. This prevents over-extension that
-                // consumes flow budget from other isoforms.
-                std::env::var_os("RUSTLE_BACK_PREFER_NON_SOURCE").is_some(),
-                &mut diag,
-                &mut visited_back,
-                &mut weak_cache,
-            );
+            let mut back_ok = if canonical {
+                crate::parse_trflong_st::back_to_source_fast_long_st(
+                    graph,
+                    transfrags,
+                    &local_nodecov,
+                    &mut pathpat,
+                    &mut path,
+                    &mut minp,
+                    &mut maxp,
+                    maxi,
+                )
+            } else {
+                back_to_source_fast_long(
+                    idx,
+                    maxi,
+                    &mut path,
+                    &mut minp,
+                    &mut maxp,
+                    &mut pathpat,
+                    transfrags,
+                    graph,
+                    &local_nodecov,
+                    true,
+                    // Keep strict the original algorithm-style selection; we only apply a narrow internal override
+                    // when a contiguous exon-extension parent exists (see back_to_source_fast_long).
+                    // Never prefer non-source parents. Always let back_to_source stop
+                    // at source when available. This prevents over-extension that
+                    // consumes flow budget from other isoforms.
+                    std::env::var_os("RUSTLE_BACK_PREFER_NON_SOURCE").is_some(),
+                    &mut diag,
+                    &mut visited_back,
+                    &mut weak_cache,
+                )
+            };
             // ST-port comparison: run ST-faithful on snapshot, diff outcomes.
             if let Some((path_pre, pp_pre, minp_pre, maxp_pre)) = pa_snapshot_before {
                 let st = crate::parse_trflong_st::run_back_to_source_st_on_clone(
@@ -6485,7 +6500,7 @@ pub fn extract_transcripts(
                 path.reverse();
                 let pa_fwd_active = crate::parse_trflong_st::comparison_active()
                     || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none();
-                let pa_fwd_snapshot = if pa_fwd_active {
+                let pa_fwd_snapshot = if pa_fwd_active && !canonical {
                     Some((
                         path.clone(),
                         pathpat.clone(),
@@ -6495,21 +6510,34 @@ pub fn extract_transcripts(
                 } else {
                     None
                 };
-                fwd_ok = fwd_to_sink_fast_long(
-                    idx,
-                    maxi,
-                    &mut path,
-                    &mut minp,
-                    &mut maxp,
-                    &mut pathpat,
-                    transfrags,
-                    graph,
-                    &local_nodecov,
-                    true,
-                    &mut diag,
-                    &mut visited_fwd,
-                    &mut weak_cache,
-                );
+                fwd_ok = if canonical {
+                    crate::parse_trflong_st::fwd_to_sink_fast_long_st(
+                        graph,
+                        transfrags,
+                        &local_nodecov,
+                        &mut pathpat,
+                        &mut path,
+                        &mut minp,
+                        &mut maxp,
+                        maxi,
+                    )
+                } else {
+                    fwd_to_sink_fast_long(
+                        idx,
+                        maxi,
+                        &mut path,
+                        &mut minp,
+                        &mut maxp,
+                        &mut pathpat,
+                        transfrags,
+                        graph,
+                        &local_nodecov,
+                        true,
+                        &mut diag,
+                        &mut visited_fwd,
+                        &mut weak_cache,
+                    )
+                };
                 if let Some((path_pre, pp_pre, minp_pre, maxp_pre)) = pa_fwd_snapshot {
                     let st = crate::parse_trflong_st::run_fwd_to_sink_st_on_clone(
                         graph,

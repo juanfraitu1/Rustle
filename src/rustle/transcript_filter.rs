@@ -769,6 +769,21 @@ pub fn filter_contained_transcripts(
             removed
         );
     }
+    if crate::parity_decisions::is_enabled() {
+        for (i, tx) in transcripts.iter().enumerate() {
+            if drop.contains(i) {
+                let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                let pk_e = tx.exons.last().map(|(_, e)| *e).unwrap_or(0);
+                let pk_p = format!(
+                    r#""reason":"contained","cov":{:.4},"nexons":{},"stage":"contained""#,
+                    tx.coverage, tx.exons.len()
+                );
+                crate::parity_decisions::emit(
+                    "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
+                );
+            }
+        }
+    }
     transcripts
         .into_iter()
         .enumerate()
@@ -3021,6 +3036,21 @@ pub fn retained_intron_filter(
             total_removed
         );
     }
+    if crate::parity_decisions::is_enabled() {
+        for (i, tx) in sorted.iter().enumerate() {
+            if remove_set.contains(&i) {
+                let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                let pk_e = tx.exons.last().map(|(_, e)| *e).unwrap_or(0);
+                let pk_p = format!(
+                    r#""reason":"retained_intron_filter","cov":{:.4},"nexons":{},"stage":"retained_intron_filter""#,
+                    tx.coverage, tx.exons.len()
+                );
+                crate::parity_decisions::emit(
+                    "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
+                );
+            }
+        }
+    }
     sorted
         .into_iter()
         .enumerate()
@@ -4300,6 +4330,21 @@ pub fn collapse_near_equal_intron_chains(
         }
     }
 
+    if crate::parity_decisions::is_enabled() {
+        for (i, tx) in txs.iter().enumerate() {
+            if dead.contains(i) {
+                let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                let pk_e = tx.exons.last().map(|(_, e)| *e).unwrap_or(0);
+                let pk_p = format!(
+                    r#""reason":"collapse_near_equal","cov":{:.4},"nexons":{},"stage":"pre_pairwise_dedup""#,
+                    tx.coverage, tx.exons.len()
+                );
+                crate::parity_decisions::emit(
+                    "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
+                );
+            }
+        }
+    }
     let out: Vec<Transcript> = txs
         .into_iter()
         .enumerate()
@@ -4365,6 +4410,21 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
             "    Exact intron-chain dedup: removed {} duplicate transcript(s)",
             removed
         );
+    }
+    if crate::parity_decisions::is_enabled() {
+        for (i, tx) in transcripts.iter().enumerate() {
+            if drop.contains(i) {
+                let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                let pk_e = tx.exons.last().map(|(_, e)| *e).unwrap_or(0);
+                let pk_p = format!(
+                    r#""reason":"dedup_exact_chain","cov":{:.4},"nexons":{},"stage":"pre_pairwise_dedup""#,
+                    tx.coverage, tx.exons.len()
+                );
+                crate::parity_decisions::emit(
+                    "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
+                );
+            }
+        }
     }
     transcripts
         .into_iter()
@@ -6200,7 +6260,7 @@ pub fn print_predcluster_with_summary_multi(
         }
     }
 
-    let before_readthr = if fate_trace { txs.clone() } else { Vec::new() };
+    let before_readthr = if fate_trace || crate::parity_decisions::is_enabled() { txs.clone() } else { Vec::new() };
     let before = txs.len();
     // readthr gate applies to ALL predictions
     // Long-read transcripts are NOT exempt — low-coverage paths must be filtered.
@@ -6284,6 +6344,29 @@ pub fn print_predcluster_with_summary_multi(
             base_threshold,
             config.singlethr
         );
+    }
+    if crate::parity_decisions::is_enabled() {
+        let after_keys: std::collections::HashSet<(u64, u64, usize, u64)> = txs.iter()
+            .map(|t| (t.exons.first().map(|e| e.0).unwrap_or(0),
+                      t.exons.last().map(|e| e.1).unwrap_or(0),
+                      t.exons.len(),
+                      t.coverage.to_bits()))
+            .collect();
+        for t in &before_readthr {
+            let k = (t.exons.first().map(|e| e.0).unwrap_or(0),
+                     t.exons.last().map(|e| e.1).unwrap_or(0),
+                     t.exons.len(),
+                     t.coverage.to_bits());
+            if !after_keys.contains(&k) {
+                let pk_s = t.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                let pk_e = t.exons.last().map(|(_, e)| *e).unwrap_or(0);
+                let pk_p = format!(
+                    r#""reason":"readthr","cov":{:.4},"longcov":{:.1},"nexons":{},"stage":"readthr""#,
+                    t.coverage, t.longcov, t.exons.len()
+                );
+                crate::parity_decisions::emit("pred_kill", Some(&t.chrom), pk_s, pk_e, t.strand, &pk_p);
+            }
+        }
     }
     emit_fate("readthr_gate", &before_readthr, &txs);
     trace_stage("predcluster.readthr_gate", &txs);

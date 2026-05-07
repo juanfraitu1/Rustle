@@ -1124,6 +1124,19 @@ pub fn comparison_active() -> bool {
     std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_COMPARE").is_some()
 }
 
+/// Canonical mode: use ST-faithful back_to_source + fwd_to_sink as the
+/// actual path builders (not just as a gate/comparator).
+///
+/// When active, path_extract.rs skips rustle's own back/fwd calls entirely
+/// and calls back_to_source_fast_long_st / fwd_to_sink_fast_long_st on the
+/// real pathpat+path. This fixes same-seed-wrong-path cases where both tools
+/// extend successfully but pick different branches.
+///
+/// Enable: `RUSTLE_PARSE_TRFLONG_ST_CANONICAL=1`
+pub fn canonical_active() -> bool {
+    std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_CANONICAL").is_some()
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Tests for the ported helpers
 // ───────────────────────────────────────────────────────────────────────────
