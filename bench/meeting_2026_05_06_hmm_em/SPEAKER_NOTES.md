@@ -1,14 +1,14 @@
 # Per-copy HMM-EM for paralog read assignment — meeting notes (2026-05-06)
 
-Eleven slide-ready PNGs in this directory. Suggested order + a few sentences each.
+Twelve slide-ready PNGs in this directory. Suggested order + a few sentences each.
 The narrative arc directly answers four advisor concerns:
 
 1. *"The VG just averages information across copies — paralogs collapse."* → Slides 2, 3, 4 show explicitly that we keep one profile per copy, never a single consensus.
 2. *"Does it still use a real HMM trellis or some shortcut?"* → Slide 5 shows the actual M/I/D forward DP, with the recurrence written out, and explains the boundary-threading graph extension that adds **no new equations**.
-3. *"Where do the priors come from?"* → Slide 6 walks through every step of the EM math (initialization, M-step, E-step, score-gap rule, convergence) with the exact formulas and code line numbers.
+3. *"Where do the priors come from?"* → Slide 6 walks through every step of the EM math (initialization, M-step, E-step, score-gap rule, convergence) with the exact formulas and code line numbers. **Slide 12 then plugs concrete numbers into every step** — a 3-paralog, 4-read worked example that converges in two iterations and can be verified by hand.
 4. *"This will only work for near-identical paralogs."* → Slide 9 shows recovery at jaccard 0.52 (squarely in the medium-similarity band).
 
-Plus slide 8 addresses the FLNC misunderstanding directly, slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery, and slide 11 is a didactic walk-through showing how each variant type (SNP, indel, alt-donor, alt-acceptor, UTR, exon-skipping) maps to a specific feature of the M/I/D trellis or graph topology.
+Plus slide 8 addresses the FLNC misunderstanding directly, slide 10 sketches an additive extension to the low-similarity band (jaccard < 0.30) that reuses the existing HMM trellis without overriding any of the medium/high-similarity machinery, slide 11 is a didactic walk-through showing how each variant type (SNP, indel, alt-donor, alt-acceptor, UTR, exon-skipping) maps to a specific feature of the M/I/D trellis or graph topology, and slide 12 is the *numerical proof slide* — one concrete EM run, every arithmetic step laid out, no hand-waving.
 
 ---
 
@@ -245,6 +245,62 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 
 ---
 
+## Slide 12 — `12_em_worked_example.png` *(numbers all the way down — the proof slide)*
+
+**One-line:** if slide 6 didn't convince him, this one will. A 3-paralog, 4-read example with **every arithmetic step plugged in** — initialization, M-step (n_c and π_c), E-step (log Q, max-subtraction, softmax), score-gap abstention, and convergence — runs end-to-end in two iterations.
+
+**Why this slide exists:** the most direct response to "show me the numbers". Slide 6 explains the formulas; slide 12 plugs them in. The advisor can recompute every line on a piece of paper.
+
+**The setup (top of slide):** four reads with their placement sets and per-paralog forward log-likelihoods:
+
+| Read | Placements | log P(r\|A) | log P(r\|B) | log P(r\|C) | gap = best − 2nd |
+|---|---|---|---|---|---|
+| r1 | {A, B, C}  | −100 | −103 | −105 |  3 (`< Δ` → ABSTAIN) |
+| r2 | {A, B}     |  −95 | −120 |  —   | 25 |
+| r3 | {A, C}     | −110 |  —   |  −95 | 15 |
+| r4 | {A, B, C}  | −118 | −100 | −125 | 18 |
+
+**Walk-through summary:**
+
+1. **Init (t = 0):** `w_{r,c}^(0) = 1/|P_r|` (the BAM aligner's 1/NH).
+   - r1 → (1/3, 1/3, 1/3); r2 → (1/2, 1/2, —); r3 → (1/2, —, 1/2); r4 → (1/3, 1/3, 1/3).
+
+2. **M-step at t = 1:** sum w^(0) per copy:
+   - n_A = 0.333 + 0.500 + 0.500 + 0.333 = 1.667
+   - n_B = 0.333 + 0.500 + 0 + 0.333 = 1.167
+   - n_C = 0.333 + 0 + 0.500 + 0.333 = 1.167
+   - π = (1.667/4, 1.167/4, 1.167/4) + ε = **(0.417, 0.292, 0.292)**.
+   - log π = (−0.875, −1.232, −1.232).
+
+3. **E-step at t = 1:** apply gap rule, then softmax.
+   - r1: gap = 3 < 10 → **ABSTAIN**, w_{1,*}^(1) stays at (1/3, 1/3, 1/3).
+   - r2: gap = 25 ≥ 10 → log Q_{2,*} = (−95.875, −121.232). After max-subtract: (0, −25.357). Softmax → **w_{2,*}^(1) ≈ (1.000, 0.000)**.
+   - r3: gap = 15 → **w_{3,*}^(1) ≈ (0.000, —, 1.000)**.
+   - r4: gap = 18 → **w_{4,*}^(1) ≈ (0, 1, 0)**.
+
+4. **Convergence at t = 1:** Δ_1 = max |w^(1) − w^(0)| = 0.667 (driven by r4: |1.000 − 0.333|). Far above 0.001 → continue.
+
+5. **M-step at t = 2:** the new sums are all 1.333 (each non-abstained read votes for one copy; r1's frozen weights add 1/3 to each). π^(2) = **(0.334, 0.334, 0.334)** — uniform.
+
+6. **E-step at t = 2:** since log π is now equal across copies, it cancels in the softmax difference. The forward log P values haven't changed (they're constant). Same gaps → same w as t = 1.
+
+7. **Convergence at t = 2:** Δ_2 ≈ 0 < 0.001 → **STOP**.
+
+**Final result table (bottom of slide):**
+
+| Read | w_A | w_B | w_C | Outcome |
+|---|---|---|---|---|
+| r1 | 0.333 | 0.333 | 0.333 | abstained — keep BAM 1/NH |
+| r2 | 1.000 | 0.000 |  —    | → A (gap = 25 nats) |
+| r3 | 0.000 |  —    | 1.000 | → C (gap = 15 nats) |
+| r4 | 0.000 | 1.000 | 0.000 | → B (gap = 18 nats) |
+
+**One subtle but useful point to flag:** the priors *equilibrate* to uniform here — that's not a bug, it's a feature of this small symmetric example. Each non-abstained read votes for a different copy, so the weight totals are equal. With biased data (one paralog truly more expressed than another), the priors converge to non-uniform values and feed back into the next E-step's softmax. Slide 9's AMY result is the real-data instance of that.
+
+**Talking-track:** *"Here are real numbers. Take any line and recompute it. n_A is just summing four weights. π_A is dividing by the total. log Q is one addition. The softmax for a 25-nat gap collapses to a hard 1/0 because e^−25 is roughly 10^−11. The score-gap rule is the only special move — it just says 'if the HMM can't tell the paralogs apart cleanly, don't update; keep what BAM gave you'. Two iterations, converged. No magic."*
+
+---
+
 ## Closing pitch
 
 > The advisor's worries map cleanly onto specific slides:
@@ -253,7 +309,7 @@ The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` 
 > |---|---|
 > | "VG collapses paralog info" | slides 2, 3, 4 (per-copy profiles) |
 > | "is it really an HMM?" | slide 5 (M/I/D forward trellis) |
-> | "where do the priors come from?" | slide 6 (mixture-model EM, code-tied) |
+> | "where do the priors come from?" | slide 6 (mixture-model EM, code-tied) + slide 12 (worked numerical example) |
 > | "FLNC = full transcript?" | slide 8 (no — partial reads work because scoring is local) |
 > | "only works for near-identical?" | slide 9 (jaccard 0.52 recovery) |
 > | "what about really diverged paralogs (jaccard < 0.30)?" | slide 10 (additive extension — same HMM, graph-Viterbi assignment, POC passing) |
