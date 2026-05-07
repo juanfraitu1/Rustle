@@ -29,10 +29,12 @@ Plus slide 8 addresses the FLNC misunderstanding directly.
 
 **One-line:** a single shared profile averages SNP signal away — per-copy profiles preserve it.
 
+**Reading the chart:** each "bar group" at a profile column is an emission distribution `P(base | column)` — one bar per nucleotide A/C/G/T (color-coded). Bar heights at a column sum to 1. Left panel has ONE bar group per column (the consensus profile, paralogs collapsed). Right panel has THREE bar groups per column (one per paralog — A, B, C — labelled above its mini-distribution).
+
 **Key points:**
-- Toy MSA: 3 paralogs A/B/C, 4 columns; column 2 is a paralog-distinguishing SNP (A=C, B=G, C=G).
-- **Left, BAD:** consensus emission at column 2 is uniform-ish (≈2/3 G, 1/3 C) for every paralog. A read with G at col 2 scores the same against A, B, C — no discrimination.
-- **Right, GOOD:** per-copy emission gives A=0.02 for G, B=0.98, C=0.98. The SNP signal is preserved, EM has something to work with.
+- Toy MSA: 3 paralogs A/B/C, 4 columns; column 2 (yellow band) is a paralog-distinguishing SNP — A has 'C', B and C both have 'G'.
+- **Left, BAD:** consensus emission at column 2 is `P(C)=0.33, P(G)=0.67` — same distribution for every paralog. A read with G at col 2 scores `0.67` against A, B, AND C → no discrimination.
+- **Right, GOOD:** per-copy singleton emission gives `P(G | A) = 0.02`, `P(G | B) = 0.98`, `P(G | C) = 0.98`. The SNP signal is preserved at the per-paralog level, EM has something to work with.
 - This is the answer to "the VG averages everything." We made it not.
 
 ---
@@ -156,10 +158,21 @@ The advisor's concern was *"is this just a heuristic with EM in the name?"* — 
 
 **One-line:** on the medium-similarity demo, HMM-EM uniquely recovers AMY/LOC101133335 at jaccard 0.52 — squarely in the regime the advisor was worried about.
 
+**What is "the band"?** The jaccard-similarity scale at the top of the slide segments paralog pairs into four named regions, each with a different mechanistic story:
+
+| Band | Jaccard | What it means | Difficulty |
+|---|---|---|---|
+| low-similarity | 0.00 – 0.30 | different gene families (incidentally co-multi-mapping) | should be filtered, not assigned |
+| **medium-similarity** | **0.30 – 0.60** | paralogs with substantial divergence — many SNPs, indels, exon turnover | **per-copy profiles needed** |
+| high-similarity | 0.60 – 0.90 | paralogs with mostly conserved sequence (SNP density much lower) | per-copy or heuristic both work |
+| near-identical | 0.90 – 1.00 | recent duplicates — SNPs sparse, mostly identical | the VG primitive shines here |
+
+The "k-mer Jaccard" axis is `|kmers(P) ∩ kmers(Q)| / |kmers(P) ∪ kmers(Q)|` between a paralog and its nearest sibling — a single number summarizing how much sequence is literally shared at the k-mer level.
+
 **Key points:**
-- Per-paralog gffcompare exact-match (`=`) recovery on AMY + NBPF subset BAMs.
-- LOC101133335 (jaccard 0.52, medium-similarity band) is missed by StringTie AND by heuristic junction-EM. Only the per-copy-profile HMM-EM gets it.
-- The other three paralogs (AMY2B, LOC101133271, LOC115933275) are recovered by the gap rule + HMM-EM combination too — no regressions vs StringTie.
+- All four paralogs in this demo land in the **medium-similarity** band (red ticks on the scale at the top). This is the band the advisor was specifically worried about.
+- LOC101133335 (jaccard 0.52, dead-center medium-sim) is missed by StringTie AND by heuristic junction-EM. Only the per-copy-profile HMM-EM gets it.
+- The other three paralogs (AMY2B 0.59, LOC101133271 0.50, LOC115933275 0.44) are recovered by the gap rule + HMM-EM combination too — no regressions vs StringTie.
 - Source: `bench/medium_similarity_demo/DEMO.md`, commit `0ac3475`.
 
 ---
