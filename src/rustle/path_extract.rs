@@ -8055,6 +8055,34 @@ pub fn extract_transcripts(
         }
         // DEBUG: emit SEED_DECISION for stored transcripts
         emit_debug_seed_decision!(idx, 1, "STORED", flow_flux, coverage, exons.len());
+        // parity_decisions: emit path_extracted before predcluster filtering so we
+        // can tell whether a miss is an assembly divergence or a filter divergence.
+        if crate::parity_decisions::is_enabled() {
+            let pe_start = exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+            let pe_end = exons.last().map(|(_, e)| *e).unwrap_or(0);
+            let pe_introns: String = exons.windows(2)
+                .filter(|w| w[1].0 > w[0].1)
+                .map(|w| format!("{}-{}", w[0].1 + 1, w[1].0))
+                .collect::<Vec<_>>()
+                .join(",");
+            let pe_src = gtf_source_long_flow(&transfrags[idx].guide_tid);
+            let pe_payload = format!(
+                r#""source":"{}","cov":{:.4},"longcov":{:.4},"nexons":{},"introns":"{}""#,
+                pe_src.as_deref().unwrap_or(""),
+                coverage,
+                read_count_snapshot,
+                exons.len(),
+                pe_introns,
+            );
+            crate::parity_decisions::emit(
+                "path_extracted",
+                Some(bundle_chrom),
+                pe_start,
+                pe_end,
+                bundle_strand,
+                &pe_payload,
+            );
+        }
         out.push(Transcript {
             chrom: bundle_chrom.to_string(),
             strand: bundle_strand,

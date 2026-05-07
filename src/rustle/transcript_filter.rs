@@ -2483,6 +2483,19 @@ pub fn pairwise_overlap_filter_with_summary(
                     }
                     classify_pairwise_reason($reason, &mut pairwise_summary);
                     *reason_counts.entry($reason).or_insert(0) += 1;
+                    // parity_decisions: per-path kill reason, mirroring StringTie's pred_kill event.
+                    if crate::parity_decisions::is_enabled() {
+                        let vtx = &txs[$idx];
+                        let pk_s = vtx.exons.first().map(|(s,_)| *s + 1).unwrap_or(0);
+                        let pk_e = vtx.exons.last().map(|(_,e)| *e).unwrap_or(0);
+                        let pk_p = format!(
+                            r#""reason":"{}","cov":{:.4},"nexons":{},"stage":"pairwise""#,
+                            $reason, vtx.coverage, vtx.exons.len()
+                        );
+                        crate::parity_decisions::emit(
+                            "pred_kill", Some(&vtx.chrom), pk_s, pk_e, vtx.strand, &pk_p
+                        );
+                    }
                 };
             }
 
