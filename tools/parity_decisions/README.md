@@ -70,8 +70,9 @@ python3 tools/parity_decisions/diff.py /tmp/p_rustle.jsonl /tmp/p_stringtie.json
 | `transfrag_define` | `pipeline.rs` after `process_transfrags` | `rlink.cpp:16003` |
 | `transfrag_seed` | `pipeline.rs` — same loop as `transfrag_define`, `tf.trflong_seed==true` | `rlink.cpp` — after each `trflong.Add()` in `process_transfrags` |
 | `seed_reject` | `path_extract.rs` — `reject_seed!` macro at early-exit gates in `extract_transcripts` | (rustle-only for now) |
+| `path_extracted` | `path_extract.rs` — before `out.push(Transcript{..})` in `extract_transcripts` | `rlink.cpp` — after each `parse_trflong` block in `get_trf_long` and `get_trf_long_mix` |
 | `pred_filter_stage` | `transcript_filter.rs` | `rlink.cpp:18609,18613,...` |
-| `pred_kill` | (stringtie-only for now) | `rlink.cpp:18964` |
+| `pred_kill` | `transcript_filter.rs` — inside `kill!` macro in `pairwise_overlap_filter_with_summary`, `stage:"pairwise"` | `rlink.cpp:18964` |
 | `path_emit` | `gtf.rs:209` | `rlink.cpp:19681` |
 
 ## Adding new decision points
@@ -84,6 +85,22 @@ python3 tools/parity_decisions/diff.py /tmp/p_rustle.jsonl /tmp/p_stringtie.json
 
 - `node_create` — when graph builder creates a primary node (start, end, hardstart/hardend flags)
 - `edge_create` — parent → child with abundance (junction edges only)
+
+## How to use path_extracted vs path_emit
+
+`path_extracted` fires when the path is assembled, before predcluster filtering.
+`path_emit` fires when the path is written to GTF, after all filtering.
+
+To classify a stringtie-only miss:
+1. Check `path_extracted` — if present in stringtie but absent in rustle, the divergence is in assembly (path-building) not filtering.
+2. Check `path_emit` — if absent in both but the ref produces it, the transcript was lost at filtering on both sides.
+3. Check `pred_kill` on the rustle side with `stage:"pairwise"` — shows what pairwise_overlap_filter eliminated.
+
+```bash
+# Example: trace a specific intron chain
+python3 tools/parity_decisions/diff.py /tmp/r.jsonl /tmp/st.jsonl \
+    --step path_extracted --range 22140000-22155000
+```
 
 ## Known divergences surfaced
 
