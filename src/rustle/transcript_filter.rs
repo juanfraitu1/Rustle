@@ -2133,6 +2133,18 @@ fn isofrac_with_summary(
                 dead.insert_grow(k);
                 removed += 1;
                 summary.longunder_kill += 1;
+                if crate::parity_decisions::is_enabled() {
+                    let vtx = &txs[k];
+                    let pk_s = vtx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                    let pk_e = vtx.exons.last().map(|(_, e)| *e).unwrap_or(0);
+                    let pk_p = format!(
+                        r#""reason":"isofrac","cov":{:.4},"usedcov":{:.4},"multicov":{:.4},"isofraclong":{:.6},"nexons":{},"stage":"isofrac""#,
+                        cov, usedcov[sidx], multicov[sidx], isofraclong, vtx.exons.len()
+                    );
+                    crate::parity_decisions::emit(
+                        "pred_kill", Some(&vtx.chrom), pk_s, pk_e, vtx.strand, &pk_p,
+                    );
+                }
             } else {
                 usedcov[sidx] += cov;
                 if txs[k].exons.len() > 1 {
