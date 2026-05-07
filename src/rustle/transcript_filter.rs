@@ -4942,8 +4942,36 @@ pub fn alt_terminal_rescue(
 /// fewer-exon `n1` when `n1.cov < n2.cov + singlethr` and `n1` is
 /// structurally included in `n2`. Targets truncated j-class predictions.
 /// `n1` at predord index 0 (the global top-cov pred) is immune (`n1 &&`).
+/// Compute the total overlapping bases between two transcripts' exon sets.
+/// Used by update_cov_after_kill to weight the coverage redistribution.
+fn exon_overlap_bp(t1: &Transcript, t2: &Transcript) -> u64 {
+    let mut total = 0u64;
+    for &(s1, e1) in &t1.exons {
+        for &(s2, e2) in &t2.exons {
+            let ols = s1.max(s2);
+            let ole = e1.min(e2);
+            if ole > ols {
+                total += (ole - ols) as u64;
+            }
+        }
+    }
+    total
+}
+
+/// Mirror of ST's update_cov (rlink.cpp:17852): when small is absorbed into
+/// big, boost big's coverage by the overlap-weighted contribution of small's
+/// coverage.  Formula: big_cov = (big_tlen·big_cov + overlap·small_cov) / big_tlen
+fn update_cov_after_kill(big: &mut Transcript, small_cov: f64, overlap_bp: u64) {
+    let big_tlen: u64 = big.exons.iter().map(|&(s, e)| (e - s) as u64).sum();
+    if big_tlen == 0 {
+        return;
+    }
+    let tlen_f = big_tlen as f64;
+    big.coverage = (tlen_f * big.coverage + overlap_bp as f64 * small_cov) / tlen_f;
+}
+
 pub fn kill_included_variants(
-    transcripts: Vec<Transcript>,
+    mut transcripts: Vec<Transcript>,
     drop: f64,
     bpcov: Option<&Bpcov>,
     enable_reverse: bool,
@@ -4976,28 +5004,49 @@ pub fn kill_included_variants(
             if dead.contains(n2) {
                 continue;
             }
-            let t1 = &transcripts[n1];
-            let t2 = &transcripts[n2];
-            if t1.chrom != t2.chrom || t1.strand != t2.strand {
+
+            // Hoist decision data out of borrows so we can mutate transcripts later.
+            let (same_locus, t2_no_ref, t2_nexons_le, rule_a_cov, rule_b_cov_ok) = {
+                let t1 = &transcripts[n1];
+                let t2 = &transcripts[n2];
+                let same = t1.chrom == t2.chrom && t1.strand == t2.strand;
+                let t2_no_ref = t2.ref_transcript_id.is_none();
+                let t2_nexons_le = t2.exons.len() <= t1.exons.len();
+                let rule_a_cov = t1.coverage > t2.coverage * drop;
+                let t1_no_ref = t1.ref_transcript_id.is_none();
+                let t1_nexons_lt = t1.exons.len() < t2.exons.len();
+                let rule_b_cov = enable_reverse
+                    && ii > 0
+                    && t1_no_ref
+                    && t1_nexons_lt
+                    && (t2.coverage > SINGLETHR || t1.coverage < SINGLETHR)
+                    && t1.coverage < t2.coverage + SINGLETHR;
+                (same, t2_no_ref, t2_nexons_le, rule_a_cov, rule_b_cov)
+            };
+            if !same_locus {
                 continue;
             }
 
-            // Rule A (rlink.cpp:19024-19029): kill n2 when n2 has weakly
+            // Rule A (rlink.cpp:19155-19161): kill n2 when n2 has weakly
             // fewer exons, n1.cov dominates, and n2 is included in n1.
             // Guide-pinned n2 immune.
-            if t2.ref_transcript_id.is_none()
-                && t2.exons.len() <= t1.exons.len()
-                && t1.coverage > t2.coverage * drop
+            if t2_no_ref
+                && t2_nexons_le
+                && rule_a_cov
                 && included_pred(
                     &transcripts, n1, n2, true, bpcov, SINGLETHR, 0.1, true,
                 )
             {
+                // update_cov: redistribute n2's coverage into n1 (big=n1, small=n2).
+                let overlap_bp = exon_overlap_bp(&transcripts[n1], &transcripts[n2]);
+                let small_cov = transcripts[n2].coverage;
+                update_cov_after_kill(&mut transcripts[n1], small_cov, overlap_bp);
                 dead.insert_grow(n2);
                 killed_a += 1;
                 continue;
             }
 
-            // Rule B (rlink.cpp:19030-19036): kill n1 when n1 has STRICTLY
+            // Rule B (rlink.cpp:19162-19168): kill n1 when n1 has STRICTLY
             // fewer exons than n2 and is included in n2. Long-read mode
             // collapses ST's first || branch (requires n1.tlen>0); we use
             // only the second branch:
@@ -5005,16 +5054,15 @@ pub fn kill_included_variants(
             //   && n1.cov < n2.cov + singlethr
             // ST's `n1 &&` guard protects the global top-cov predord[0]
             // — translate to `ii > 0`.
-            if enable_reverse
-                && ii > 0
-                && t1.ref_transcript_id.is_none()
-                && t1.exons.len() < t2.exons.len()
-                && (t2.coverage > SINGLETHR || t1.coverage < SINGLETHR)
-                && t1.coverage < t2.coverage + SINGLETHR
+            if rule_b_cov_ok
                 && included_pred(
                     &transcripts, n2, n1, true, bpcov, SINGLETHR, 0.1, true,
                 )
             {
+                // update_cov: redistribute n1's coverage into n2 (big=n2, small=n1).
+                let overlap_bp = exon_overlap_bp(&transcripts[n2], &transcripts[n1]);
+                let small_cov = transcripts[n1].coverage;
+                update_cov_after_kill(&mut transcripts[n2], small_cov, overlap_bp);
                 dead.insert_grow(n1);
                 killed_b += 1;
                 break; // n1 dead — exit inner loop
