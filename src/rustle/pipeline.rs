@@ -6207,6 +6207,14 @@ fn extract_bundle_transcripts_for_graph(
                 );
                 trace_stage("filter_retained_intron_isoforms", &txs);
 
+                // Zero-novel proper-subset filter: kill end-truncated and contained
+                // transcripts whose intron chain is a strict subset of a single reference
+                // transcript and have no novel junctions.
+                txs = crate::transcript_filter::filter_zero_novel_proper_subset(
+                    txs, &ref_idx, &ref_chain_map, &ref_exact_chains, config.verbose,
+                );
+                trace_stage("filter_zero_novel_proper_subset", &txs);
+
                 // Singleton novel junction filter: kill transcripts whose novel introns
                 // are each used by only this one transcript, mirroring StringTie's
                 // good_junc() fractionation check (nreads >= 0.01 * exon_coverage).

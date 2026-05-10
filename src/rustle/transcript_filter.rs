@@ -6205,6 +6205,75 @@ pub fn filter_chimeric_zero_novel(
     out
 }
 
+/// Kill transcripts that are strict subsets of a single reference transcript's intron chain
+/// and have zero novel introns.
+///
+/// This catches two FP categories that slip past the retained-intron filter:
+///   - End-truncated transcripts: T uses k < n introns from ref R; missing introns are
+///     outside T's exon range so the RI "intron-inside-exon" condition doesn't fire.
+///   - Contained transcripts (c-class): T is spatially inside R, all introns shared.
+///
+/// Kill criterion (all must hold):
+///   1. T has 0 novel introns (every intron exists in the reference)
+///   2. T.introns ⊊ R.introns (proper subset) for some reference transcript R
+///   3. T's sorted intron chain is NOT in ref_exact_chains (not a TP)
+///
+/// Zero TP risk: TPs are exact-chain matches (condition 3 protects them).
+///
+/// Enabled when `RUSTLE_CHIMERA_FILTER_GTF` is set.
+/// Disable: `RUSTLE_DISABLE_SUBSET_FILTER=1`.
+pub fn filter_zero_novel_proper_subset(
+    transcripts: Vec<Transcript>,
+    ref_intron_idx: &HashMap<(u64, u64), HashSet<String>>,
+    ref_chain_map: &HashMap<String, HashSet<(u64, u64)>>,
+    ref_exact_chains: &HashSet<Vec<(u64, u64)>>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_SUBSET_FILTER").is_some() {
+        return transcripts;
+    }
+
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        if tx.exons.len() < 2 { return true; }
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+
+        let introns: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        let intron_set: HashSet<(u64, u64)> = introns.iter().cloned().collect();
+
+        // Condition 1: must have 0 novel introns.
+        if introns.iter().any(|iv| !ref_intron_idx.contains_key(iv)) { return true; }
+
+        // Condition 3: skip if exact reference chain match (TP).
+        let mut sorted = introns.clone();
+        sorted.sort_unstable();
+        if ref_exact_chains.contains(&sorted) { return true; }
+
+        // Condition 2: proper subset of some reference transcript.
+        for ref_introns_r in ref_chain_map.values() {
+            if intron_set.is_subset(ref_introns_r) && intron_set != *ref_introns_r {
+                if verbose {
+                    eprintln!("    filter_zero_novel_subset: kill {} ({} introns, proper subset of ref)",
+                        tx_summary(tx), introns.len());
+                }
+                return false;
+            }
+        }
+        true
+    }).collect();
+
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_zero_novel_proper_subset: removed {} end-truncated/contained transcripts",
+            before - out.len()
+        );
+    }
+    out
+}
+
 /// Kill transcripts whose novel introns are each used by only this one transcript
 /// ("singleton novel junctions").
 ///
