@@ -6206,6 +6206,14 @@ fn extract_bundle_transcripts_for_graph(
                     txs, &ref_chain_map, &ref_exact_chains, config.verbose,
                 );
                 trace_stage("filter_retained_intron_isoforms", &txs);
+
+                // Singleton novel junction filter: kill transcripts whose novel introns
+                // are each used by only this one transcript, mirroring StringTie's
+                // good_junc() fractionation check (nreads >= 0.01 * exon_coverage).
+                txs = crate::transcript_filter::filter_singleton_novel_junctions(
+                    txs, &ref_idx, &ref_exact_chains, config.verbose,
+                );
+                trace_stage("filter_singleton_novel_junctions", &txs);
             }
         }
         // Isofrac longunder filter is disabled by default (opt-in: RUSTLE_ENABLE_ISOFRAC_LONGUNDER=1).

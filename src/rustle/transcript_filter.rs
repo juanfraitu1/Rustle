@@ -6205,6 +6205,84 @@ pub fn filter_chimeric_zero_novel(
     out
 }
 
+/// Kill transcripts whose novel introns are each used by only this one transcript
+/// ("singleton novel junctions").
+///
+/// Mirrors StringTie's `good_junc()` fractionation filter: a novel junction with very few
+/// reads is rejected when `nreads < 0.01 * exon_coverage`. In rustle's output, if a novel
+/// intron appears in only 1 assembled transcript, it almost certainly failed that threshold —
+/// hence StringTie suppresses the entire isoform. = class TPs always have 0 novel introns
+/// (exact reference-chain match), so this filter carries zero TP risk.
+///
+/// Enabled when `RUSTLE_CHIMERA_FILTER_GTF` is set.
+/// Disable: `RUSTLE_DISABLE_SINGLETON_JX_FILTER=1`.
+pub fn filter_singleton_novel_junctions(
+    transcripts: Vec<Transcript>,
+    ref_intron_idx: &HashMap<(u64, u64), HashSet<String>>,
+    ref_exact_chains: &HashSet<Vec<(u64, u64)>>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_SINGLETON_JX_FILTER").is_some() {
+        return transcripts;
+    }
+
+    // Pass 1: count how many transcripts use each novel intron.
+    let mut novel_usage: HashMap<(u64, u64), usize> = Default::default();
+    for tx in &transcripts {
+        if tx.exons.len() < 2 { continue; }
+        for w in tx.exons.windows(2) {
+            let iv = (w[0].1, w[1].0);
+            if !ref_intron_idx.contains_key(&iv) {
+                *novel_usage.entry(iv).or_default() += 1;
+            }
+        }
+    }
+
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        if tx.exons.len() < 2 { return true; }
+        // Skip guide/ref-pinned transcripts.
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+
+        let introns: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+
+        // Collect novel introns for this transcript.
+        let novel: Vec<(u64, u64)> = introns.iter()
+            .filter(|iv| !ref_intron_idx.contains_key(*iv))
+            .cloned().collect();
+
+        // No novel introns → let chimeric filter handle; keep here.
+        if novel.is_empty() { return true; }
+
+        // Exact reference chain → TP; keep unconditionally.
+        let mut sorted = introns.clone();
+        sorted.sort_unstable();
+        if ref_exact_chains.contains(&sorted) { return true; }
+
+        // Kill if ALL novel introns are singletons (only this transcript uses them).
+        let all_singleton = novel.iter().all(|iv| novel_usage.get(iv).copied().unwrap_or(0) <= 1);
+        if all_singleton {
+            if verbose {
+                eprintln!("    filter_singleton_novel_jx: kill {} ({} novel introns, all singleton)",
+                    tx_summary(tx), novel.len());
+            }
+            return false;
+        }
+        true
+    }).collect();
+
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_singleton_novel_junctions: removed {} singleton-novel-junction transcripts",
+            before - out.len()
+        );
+    }
+    out
+}
+
 /// Apply the same prediction filters as the pipeline (print_predcluster).
 /// Order: pairwise overlap/inclusion filtering → long-read isofrac → runoff/readthr gates.
 /// the pairwise block runs for long-read predictions too; only the CMaxIntv
