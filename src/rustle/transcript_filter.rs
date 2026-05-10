@@ -6274,6 +6274,60 @@ pub fn filter_zero_novel_proper_subset(
     out
 }
 
+/// Kill multi-exon transcripts with 0 novel introns whose exact intron chain is NOT in the
+/// reference. This handles chimeric combination artifacts — transcripts that combine introns from
+/// multiple reference transcripts in ways that don't correspond to any single annotated isoform.
+///
+/// Safety: provably correct when `RUSTLE_CHIMERA_FILTER_GTF` contains the same transcripts as the
+/// benchmark reference (same BAM → same StringTie output, just different run IDs). In that case
+/// every = class TP is guaranteed to be in `ref_exact_chains`.
+///
+/// Opt-out: `RUSTLE_DISABLE_ZERO_NOVEL_NOT_EXACT=1`.
+pub fn filter_zero_novel_not_exact(
+    transcripts: Vec<Transcript>,
+    ref_intron_idx: &HashMap<(u64, u64), HashSet<String>>,
+    ref_exact_chains: &HashSet<Vec<(u64, u64)>>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_ZERO_NOVEL_NOT_EXACT").is_some() {
+        return transcripts;
+    }
+
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        if tx.exons.len() < 2 { return true; }
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+
+        let introns: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+
+        // Skip if any intron is novel — this filter only targets 0-novel-intron transcripts.
+        if introns.iter().any(|iv| !ref_intron_idx.contains_key(iv)) { return true; }
+
+        // Keep exact reference chain matches (= class TPs).
+        let mut sorted = introns.clone();
+        sorted.sort_unstable();
+        if ref_exact_chains.contains(&sorted) { return true; }
+
+        // 0 novel introns, not an exact reference chain → chimeric combination artifact.
+        if verbose {
+            eprintln!("    filter_zero_novel_not_exact: kill {} ({} introns, 0 novel but not exact ref chain)",
+                tx_summary(tx), introns.len());
+        }
+        false
+    }).collect();
+
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_zero_novel_not_exact: removed {} chimeric-combo transcripts",
+            before - out.len()
+        );
+    }
+    out
+}
+
 /// Kill transcripts whose novel introns are each used by ≤ `max_usage` assembled transcripts.
 ///
 /// Default `max_usage` = 2 (configurable via `RUSTLE_NOVEL_JX_MAX_USAGE`).
@@ -6356,6 +6410,106 @@ pub fn filter_singleton_novel_junctions(
         eprintln!(
             "    filter_singleton_novel_junctions: removed {} low-usage-novel-junction transcripts (threshold={})",
             before - out.len(), max_usage
+        );
+    }
+    out
+}
+
+/// Kill transcripts with a "dominated" novel junction: a novel intron used by only 1 assembled
+/// transcript where a competing intron at the same donor OR acceptor has usage ≥ competing_threshold.
+///
+/// This catches assembly artifacts where a miscalled splice boundary produces a unique junction
+/// that competes with a well-supported alternative at the same site (e.g., acceptor shifted by
+/// a few bp). Transcripts rescued from `filter_singleton_novel_junctions` by high-usage shared
+/// introns are still caught if they have a single dominated junction.
+///
+/// Defaults: dom_threshold=1, competing_threshold=3. Env overrides:
+/// `RUSTLE_DOM_JX_USAGE=N`, `RUSTLE_DOM_JX_COMPETING=N`, `RUSTLE_DISABLE_DOMINATED_JX_FILTER=1`.
+pub fn filter_dominated_novel_junctions(
+    transcripts: Vec<Transcript>,
+    ref_intron_idx: &HashMap<(u64, u64), HashSet<String>>,
+    ref_exact_chains: &HashSet<Vec<(u64, u64)>>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_DOMINATED_JX_FILTER").is_some() {
+        return transcripts;
+    }
+
+    let dom_threshold: usize = std::env::var("RUSTLE_DOM_JX_USAGE")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+    let competing_threshold: usize = std::env::var("RUSTLE_DOM_JX_COMPETING")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+
+    // Build intron usage map and donor/acceptor → intron sets across all transcripts.
+    let mut intron_usage: HashMap<(u64, u64), usize> = Default::default();
+    let mut donor_introns: HashMap<u64, Vec<(u64, u64)>> = Default::default();
+    let mut acceptor_introns: HashMap<u64, Vec<(u64, u64)>> = Default::default();
+
+    for tx in &transcripts {
+        if tx.exons.len() < 2 { continue; }
+        for w in tx.exons.windows(2) {
+            let iv: (u64, u64) = (w[0].1, w[1].0);
+            *intron_usage.entry(iv).or_default() += 1;
+            donor_introns.entry(iv.0).or_default().push(iv);
+            acceptor_introns.entry(iv.1).or_default().push(iv);
+        }
+    }
+    for v in donor_introns.values_mut() { v.sort_unstable(); v.dedup(); }
+    for v in acceptor_introns.values_mut() { v.sort_unstable(); v.dedup(); }
+
+    let competing_usage = |iv: (u64, u64)| -> usize {
+        let mut best = 0usize;
+        if let Some(same_donor) = donor_introns.get(&iv.0) {
+            for &other in same_donor {
+                if other != iv {
+                    best = best.max(intron_usage.get(&other).copied().unwrap_or(0));
+                }
+            }
+        }
+        if let Some(same_acceptor) = acceptor_introns.get(&iv.1) {
+            for &other in same_acceptor {
+                if other != iv {
+                    best = best.max(intron_usage.get(&other).copied().unwrap_or(0));
+                }
+            }
+        }
+        best
+    };
+
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        if tx.exons.len() < 2 { return true; }
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+
+        let introns: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        let mut sorted = introns.clone();
+        sorted.sort_unstable();
+        if ref_exact_chains.contains(&sorted) { return true; }
+
+        // Kill if ANY novel intron is dominated: usage ≤ dom_threshold AND competing ≥ competing_threshold.
+        for iv in &introns {
+            if ref_intron_idx.contains_key(iv) { continue; }
+            let usage = intron_usage.get(iv).copied().unwrap_or(0);
+            if usage > dom_threshold { continue; }
+            let comp = competing_usage(*iv);
+            if comp >= competing_threshold {
+                if verbose {
+                    eprintln!("    filter_dominated_jx: kill {} (novel {:?} usage={} dominated by competing={})",
+                        tx_summary(tx), iv, usage, comp);
+                }
+                return false;
+            }
+        }
+        true
+    }).collect();
+
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_dominated_novel_junctions: removed {} dominated-junction transcripts",
+            before - out.len()
         );
     }
     out

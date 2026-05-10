@@ -6215,6 +6215,14 @@ fn extract_bundle_transcripts_for_graph(
                 );
                 trace_stage("filter_zero_novel_proper_subset", &txs);
 
+                // Zero-novel not-exact filter: kill 0-novel-intron transcripts that are NOT
+                // exact reference chain matches (chimeric combinations that borrow introns
+                // from multiple reference transcripts).
+                txs = crate::transcript_filter::filter_zero_novel_not_exact(
+                    txs, &ref_idx, &ref_exact_chains, config.verbose,
+                );
+                trace_stage("filter_zero_novel_not_exact", &txs);
+
                 // Singleton novel junction filter: kill transcripts whose novel introns
                 // are each used by only this one transcript, mirroring StringTie's
                 // good_junc() fractionation check (nreads >= 0.01 * exon_coverage).
@@ -6222,6 +6230,11 @@ fn extract_bundle_transcripts_for_graph(
                     txs, &ref_idx, &ref_exact_chains, config.verbose,
                 );
                 trace_stage("filter_singleton_novel_junctions", &txs);
+
+                txs = crate::transcript_filter::filter_dominated_novel_junctions(
+                    txs, &ref_idx, &ref_exact_chains, config.verbose,
+                );
+                trace_stage("filter_dominated_novel_junctions", &txs);
             }
         }
         // Isofrac longunder filter is disabled by default (opt-in: RUSTLE_ENABLE_ISOFRAC_LONGUNDER=1).
