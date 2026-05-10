@@ -56,40 +56,39 @@ See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) 
 
 ### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
 
-Rustle is benchmarked **against StringTie's output as the reference** (gffcompare with StringTie GTF as `-r`). By that definition StringTie has 100% sensitivity/precision against itself — so the comparison is asymmetric on purpose: we're measuring how close Rustle gets to StringTie's output on the shared single-copy-assembly task while being faster and exposing the internal graphs.
+Rustle is benchmarked **against StringTie's output as the reference** (gffcompare with StringTie GTF as `-r`). By that definition StringTie has 100% sensitivity/precision against itself — so the comparison is asymmetric on purpose: we're measuring how close Rustle gets to StringTie's output on the shared single-copy-assembly task while exposing the internal graphs.
 
-| Metric | Rustle | StringTie (reference) | Notes |
-|--------|--------|-----------------------|-------|
-| Transcripts assembled | 1,708 | 1,839 | |
-| Matching transcripts (gffcompare `=`) | 1,708 / 1,839 | 1,839 / 1,839 | |
-| Transcript sensitivity | **92.9%** | 100% (by definition) | |
-| Transcript precision | **100.0%** | 100% (by definition) | zero FPs |
-| Intron-chain sensitivity | 94.2% | 100% | |
-| Intron-chain precision | **100.0%** | 100% | |
-| Intron-level sensitivity | 98.4% | 100% | |
-| Intron-level precision | **100.0%** | 100% | 0 novel introns |
-| Locus-level sensitivity | 97.6% | 100% | |
-| Locus-level precision | **100.0%** | 100% | 0 novel loci |
-| Novel exons emitted | **0** | — | |
-| Novel introns emitted | **0** | — | |
-| Wall-clock time | **36 s** | ~35 s | single-threaded chr19 |
-| Language | Rust | C++ | |
-| Exposes graph-level internals | **yes** | no | see "Why not just use StringTie?" below |
+Three modes are shown to be transparent about what each input contributes:
 
+| Metric | Rustle (no reference) | Rustle (`-G`) | Rustle (post-filter†) | StringTie |
+|--------|----------------------|---------------|----------------------|-----------|
+| Transcripts assembled | 1,923 | 1,918 | 1,708 | 1,839 |
+| Matching (gffcompare `=`) | 1,707 / 1,839 | 1,778 / 1,839 | 1,708 / 1,839 | 1,839 / 1,839 |
+| Transcript sensitivity | 92.8% | **96.7%** | 92.9% | 100% |
+| Transcript precision | 88.8% | 92.7% | **100%**† | 100% |
+| Intron-chain precision | 88.8% | 95.4% | **100%**† | 100% |
+| Intron-level precision | 96.8% | 98.3% | **100%**† | 100% |
+| Locus-level precision | 93.3% | 97.0% | **100%**† | 100% |
+| Wall-clock time | **36 s** | **38 s** | **36 s** | ~35 s |
+| Language | Rust | Rust | Rust | C++ |
+| Exposes graph-level internals | **yes** | **yes** | **yes** | no |
+
+> † **Post-filter note:** `RUSTLE_CHIMERA_FILTER_GTF` uses the same StringTie GTF that
+> gffcompare scores against, making the 100% precision result partially circular — any
+> 0-novel-intron transcript not in that GTF is killed by the filter. In production, point this
+> flag at a standard annotation (Ensembl/RefSeq) to get FP reduction without circularity;
+> precision will improve but not necessarily reach 100%.
+>
+> **De novo mode** (`no reference`) is the honest apples-to-apples comparison: Rustle assembles
+> with no annotation input and achieves 92.8% Sn / 88.8% Pr. The 7% precision gap is dominated
+> by chimeric combinations and low-usage novel junctions that the post-filter eliminates.
+>
+> **`-G` guided mode** uses the StringTie GTF to inject reference paths during assembly (+4pp Sn)
+> but does not post-filter, so precision reflects de novo assembly quality of novel paths.
+>
 > Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci,
-> single thread). Rustle's base algorithm is a faithful port of StringTie's splice-graph +
-> max-flow pipeline, modernized in Rust. Reference-guided post-assembly filters
-> (`RUSTLE_CHIMERA_FILTER_GTF`, `RUSTLE_NOVEL_JX_MAX_USAGE=3`) eliminate chimeric
-> combinations, retained-intron artifacts, proper-subset truncations, and low-usage novel
-> junction assemblies — achieving **zero false positives** with no sensitivity loss.
->
-> The 7.1% missed sensitivity gap (131 references) is almost entirely due to isoform diversity
-> at high-complexity loci (5+ assembled transcripts); the assembly conservatively emits fewer
-> isoforms than StringTie at these loci.
->
-> VG mode features (multi-mapping resolution, novel copy discovery) are *not* reflected in
-> this single-chromosome benchmark — they apply when assembling multi-copy gene families
-> genome-wide.
+> single thread). VG mode features (multi-mapping resolution, novel copy discovery) are *not*
+> reflected here — they apply when assembling multi-copy gene families genome-wide.
 
 ### Why not just use StringTie?
 
