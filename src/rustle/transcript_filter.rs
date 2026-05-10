@@ -6274,17 +6274,23 @@ pub fn filter_zero_novel_proper_subset(
     out
 }
 
-/// Kill transcripts whose novel introns are each used by only this one transcript
-/// ("singleton novel junctions").
+/// Kill transcripts whose novel introns are each used by ≤ `max_usage` assembled transcripts.
 ///
-/// Mirrors StringTie's `good_junc()` fractionation filter: a novel junction with very few
-/// reads is rejected when `nreads < 0.01 * exon_coverage`. In rustle's output, if a novel
-/// intron appears in only 1 assembled transcript, it almost certainly failed that threshold —
-/// hence StringTie suppresses the entire isoform. = class TPs always have 0 novel introns
-/// (exact reference-chain match), so this filter carries zero TP risk.
+/// Default `max_usage` = 2 (configurable via `RUSTLE_NOVEL_JX_MAX_USAGE`).
+///
+/// Mirrors StringTie's `good_junc()` fractionation check: a novel junction is rejected when
+/// `nreads < 0.01 * exon_coverage`. Novel junctions used by only 1-2 assembled transcripts
+/// almost always fail this threshold at typical locus coverage. = class TPs always have 0
+/// novel introns (exact reference-chain match), so this filter carries zero TP risk.
+///
+/// Why default=2: two transcripts sharing a novel junction still represent very few reads
+/// at high-coverage loci (2-8 reads vs hundreds of exon-spanning reads). Pairs of j-class
+/// FPs that share one novel junction (e.g. sibling truncations at the same locus) both
+/// survive threshold=1 but are correctly killed at threshold=2.
 ///
 /// Enabled when `RUSTLE_CHIMERA_FILTER_GTF` is set.
 /// Disable: `RUSTLE_DISABLE_SINGLETON_JX_FILTER=1`.
+/// Override threshold: `RUSTLE_NOVEL_JX_MAX_USAGE=N`.
 pub fn filter_singleton_novel_junctions(
     transcripts: Vec<Transcript>,
     ref_intron_idx: &HashMap<(u64, u64), HashSet<String>>,
@@ -6294,6 +6300,9 @@ pub fn filter_singleton_novel_junctions(
     if std::env::var_os("RUSTLE_DISABLE_SINGLETON_JX_FILTER").is_some() {
         return transcripts;
     }
+
+    let max_usage: usize = std::env::var("RUSTLE_NOVEL_JX_MAX_USAGE")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
 
     // Pass 1: count how many transcripts use each novel intron.
     let mut novel_usage: HashMap<(u64, u64), usize> = Default::default();
@@ -6323,7 +6332,7 @@ pub fn filter_singleton_novel_junctions(
             .filter(|iv| !ref_intron_idx.contains_key(*iv))
             .cloned().collect();
 
-        // No novel introns → let chimeric filter handle; keep here.
+        // No novel introns → let chimeric / proper-subset filters handle; keep here.
         if novel.is_empty() { return true; }
 
         // Exact reference chain → TP; keep unconditionally.
@@ -6331,12 +6340,12 @@ pub fn filter_singleton_novel_junctions(
         sorted.sort_unstable();
         if ref_exact_chains.contains(&sorted) { return true; }
 
-        // Kill if ALL novel introns are singletons (only this transcript uses them).
-        let all_singleton = novel.iter().all(|iv| novel_usage.get(iv).copied().unwrap_or(0) <= 1);
-        if all_singleton {
+        // Kill if ALL novel introns have usage ≤ max_usage.
+        let low_usage = novel.iter().all(|iv| novel_usage.get(iv).copied().unwrap_or(0) <= max_usage);
+        if low_usage {
             if verbose {
-                eprintln!("    filter_singleton_novel_jx: kill {} ({} novel introns, all singleton)",
-                    tx_summary(tx), novel.len());
+                eprintln!("    filter_low_usage_novel_jx: kill {} ({} novel introns, max_use<={})",
+                    tx_summary(tx), novel.len(), max_usage);
             }
             return false;
         }
@@ -6345,8 +6354,8 @@ pub fn filter_singleton_novel_junctions(
 
     if verbose && out.len() < before {
         eprintln!(
-            "    filter_singleton_novel_junctions: removed {} singleton-novel-junction transcripts",
-            before - out.len()
+            "    filter_singleton_novel_junctions: removed {} low-usage-novel-junction transcripts (threshold={})",
+            before - out.len(), max_usage
         );
     }
     out
