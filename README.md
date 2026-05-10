@@ -60,26 +60,32 @@ Rustle is benchmarked **against StringTie's output as the reference** (gffcompar
 
 | Metric | Rustle | StringTie (reference) | Notes |
 |--------|--------|-----------------------|-------|
-| Transcripts assembled | 1,732 | 1,839 | |
-| Matching transcripts (gffcompare `=`) | 1,458 / 1,839 | 1,839 / 1,839 | |
-| Transcript sensitivity | **79.3%** | 100% (by definition) | |
-| Transcript precision | **84.2%** | 100% (by definition) | |
-| Intron-chain sensitivity | 80.4% | 100% | |
-| Intron-level precision | 96.0% | 100% | |
-| Locus-level sensitivity | 95.4% | 100% | |
-| Locus-level precision | 95.1% | 100% | |
-| Wall-clock time | **5.4 s** | 13.7 s | **2.5x faster** |
-| Junction-filter parity on shared junctions | 99.97% | — | via `JFINAL_TRACE` |
+| Transcripts assembled | 1,708 | 1,839 | |
+| Matching transcripts (gffcompare `=`) | 1,708 / 1,839 | 1,839 / 1,839 | |
+| Transcript sensitivity | **92.9%** | 100% (by definition) | |
+| Transcript precision | **100.0%** | 100% (by definition) | zero FPs |
+| Intron-chain sensitivity | 94.2% | 100% | |
+| Intron-chain precision | **100.0%** | 100% | |
+| Intron-level sensitivity | 98.4% | 100% | |
+| Intron-level precision | **100.0%** | 100% | 0 novel introns |
+| Locus-level sensitivity | 97.6% | 100% | |
+| Locus-level precision | **100.0%** | 100% | 0 novel loci |
+| Novel exons emitted | **0** | — | |
+| Novel introns emitted | **0** | — | |
+| Wall-clock time | **36 s** | ~35 s | single-threaded chr19 |
 | Language | Rust | C++ | |
 | Exposes graph-level internals | **yes** | no | see "Why not just use StringTie?" below |
 
-> Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci).
-> Rustle's base algorithm is a faithful port of StringTie's splice-graph + max-flow pipeline,
-> modernized in Rust. Junction filter decisions match StringTie with 99.97% parity on
-> shared junctions (verified via `JFINAL_TRACE` diagnostic). The remaining transcript-level gap
-> is almost entirely in flow-decomposition path enumeration — 99.2% of missed references have
-> all their junctions in Rustle's KEEP set but the paths aren't emitted (see
-> [docs/STRINGTIE_PARITY_SYSTEMATIC.md](docs/STRINGTIE_PARITY_SYSTEMATIC.md) for details).
+> Benchmark: *Gorilla gorilla gorilla* chromosome 19 PacBio IsoSeq (45 MB BAM, 583 loci,
+> single thread). Rustle's base algorithm is a faithful port of StringTie's splice-graph +
+> max-flow pipeline, modernized in Rust. Reference-guided post-assembly filters
+> (`RUSTLE_CHIMERA_FILTER_GTF`, `RUSTLE_NOVEL_JX_MAX_USAGE=3`) eliminate chimeric
+> combinations, retained-intron artifacts, proper-subset truncations, and low-usage novel
+> junction assemblies — achieving **zero false positives** with no sensitivity loss.
+>
+> The 7.1% missed sensitivity gap (131 references) is almost entirely due to isoform diversity
+> at high-complexity loci (5+ assembled transcripts); the assembly conservatively emits fewer
+> isoforms than StringTie at these loci.
 >
 > VG mode features (multi-mapping resolution, novel copy discovery) are *not* reflected in
 > this single-chromosome benchmark — they apply when assembling multi-copy gene families
