@@ -423,10 +423,12 @@ pub fn add_pred(x: &mut Transcript, y: &Transcript, cov: f64) {
 }
 
 /// Compute TPM and FPKM using standard output formulas:
-/// TPM_i = cov_i * 1e6 / sum(cov)
-/// FPKM_i = cov_i * 1e9 / (num_fragments * mean_frag_len * transcript_len)
-/// where mean_frag_len = frag_len_sum / num_fragments, so denominator is
-/// equivalent to `frag_len_sum * transcript_len`.
+/// TPM_i  = cov_i * 1e6 / sum(cov)
+/// FPKM_i = cov_i * 1e9 / frag_len_sum
+/// where frag_len_sum = total_bases = sum of all read lengths.
+/// Derivation: cov_i = reads_i * avg_read_len / tlen, so
+///   reads_i = cov_i * tlen / avg_read_len = cov_i * tlen * N / frag_len_sum
+/// FPKM = reads_i*1e9 / (tlen * N) = cov_i * 1e9 / frag_len_sum  (tlen cancels).
 pub fn compute_tpm_fpkm(transcripts: &mut [Transcript], num_fragments: f64, frag_len_sum: f64) {
     if transcripts.is_empty() {
         return;
@@ -435,10 +437,9 @@ pub fn compute_tpm_fpkm(transcripts: &mut [Transcript], num_fragments: f64, frag
     let cov_sum = if cov_sum < EPSILON { 1.0 } else { cov_sum };
     for tx in transcripts.iter_mut() {
         let tcov = tx.coverage.max(0.0);
-        let tlen: u64 = tx.exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
         tx.tpm = tcov * 1e6 / cov_sum;
-        tx.fpkm = if num_fragments > EPSILON && frag_len_sum > EPSILON && tlen > 0 {
-            tcov * 1e9 / (frag_len_sum * tlen as f64)
+        tx.fpkm = if frag_len_sum > EPSILON {
+            tcov * 1e9 / frag_len_sum
         } else {
             0.0
         };
@@ -536,6 +537,7 @@ const ISOFRAC_DROP: f64 = 0.5;
 const ISOFRAC_ERROR_PERC: f64 = 0.1;
 const ISOFRAC_ABS_MIN: f64 = 5.0; // DROP/ERROR_PERC = 0.5/0.1
 
+#[allow(dead_code)]
 pub fn isofrac_filter(
     transcripts: Vec<Transcript>,
     isofrac: f64,
@@ -1994,6 +1996,18 @@ fn isofrac_with_summary(
         if txs[first].exons.len() > 1 {
             multicov[fs] = usedcov[fs];
         }
+        // RUSTLE_ISOFRAC_USE_FIRSTCOV=1: compare against dominant only (not accumulated).
+        // RUSTLE_ISOFRAC_MULTICOV_CAP=<ratio>: cap effective multicov at ratio*firstcov (default 2.8).
+        //   Prevents severe accumulation from killing minor isoforms whose cov/firstcov ≥ isofrac.
+        //   Set to 0 to disable. Empirically: 2.8 = +1 Sn, Pr neutral; <2.8 adds FPs; ≥3.0 = no-op.
+        let firstcov_mode = std::env::var_os("RUSTLE_ISOFRAC_USE_FIRSTCOV").is_some();
+        let multicov_cap: Option<f64> = {
+            let v: f64 = std::env::var("RUSTLE_ISOFRAC_MULTICOV_CAP")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(2.8);
+            if v <= 0.0 { None } else { Some(v) }
+        };
+        let first_usedcov_snap = usedcov;
+        let first_multicov_snap = multicov;
 
         for &k in uniq.iter().skip(1) {
             if dead.contains(k) {
@@ -2023,13 +2037,27 @@ fn isofrac_with_summary(
             }
 
             // multi-exon vs single-exon threshold check (use effective_cov for comparison)
-            let mut longunder = if txs[k].exons.len() > 1 {
-                (multicov[sidx] <= 0.0
-                    && cov < isofraclong * usedcov[sidx]
-                    && cov < drop / error_perc)
-                    || cov < isofraclong * multicov[sidx]
+            let cmp_multicov = if firstcov_mode {
+                first_multicov_snap[sidx]
+            } else if let Some(cap) = multicov_cap {
+                multicov[sidx].min(cap * first_multicov_snap[sidx])
             } else {
-                cov < isofraclong * usedcov[sidx]
+                multicov[sidx]
+            };
+            let cmp_usedcov = if firstcov_mode {
+                first_usedcov_snap[sidx]
+            } else if let Some(cap) = multicov_cap {
+                usedcov[sidx].min(cap * first_usedcov_snap[sidx])
+            } else {
+                usedcov[sidx]
+            };
+            let mut longunder = if txs[k].exons.len() > 1 {
+                (cmp_multicov <= 0.0
+                    && cov < isofraclong * cmp_usedcov
+                    && cov < drop / error_perc)
+                    || cov < isofraclong * cmp_multicov
+            } else {
+                cov < isofraclong * cmp_usedcov
             };
             // Optional floor: keep isoforms with at least this read-abundance (longcov/cov max)
             // even when longunder would drop them (CLI: --transcript-isofrac-keep-min).
@@ -2678,6 +2706,10 @@ pub fn pairwise_overlap_filter_with_summary(
                         .ok()
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(0.5);
+                    let alt_end_threshold_shared: u64 = std::env::var("RUSTLE_ALT_BOUNDARY_MIN")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1000);
                     let alt_boundary_protected = longreads
                         && std::env::var_os("RUSTLE_INCLUDED_DROP_ALT_BOUNDARY_OFF").is_none()
                         && t2.longcov >= alt_boundary_longcov_ratio * t1.longcov
@@ -2686,21 +2718,29 @@ pub fn pairwise_overlap_filter_with_summary(
                             let t1_last_end = t1.exons.last().map(|e| e.1).unwrap_or(0);
                             let t2_first_start = t2.exons.first().map(|e| e.0).unwrap_or(0);
                             let t1_first_start = t1.exons.first().map(|e| e.0).unwrap_or(0);
-                            let alt_end_threshold: u64 = std::env::var("RUSTLE_ALT_BOUNDARY_MIN")
-                                .ok()
-                                .and_then(|v| v.parse().ok())
-                                .unwrap_or(1000);
                             let alt_tts = (t2.hardend || t2.alt_tts_end)
-                                && t1_last_end > t2_last_end + alt_end_threshold;
+                                && t1_last_end > t2_last_end + alt_end_threshold_shared;
                             let alt_tss = t2.hardstart
-                                && t2_first_start > t1_first_start + alt_end_threshold;
+                                && t2_first_start > t1_first_start + alt_end_threshold_shared;
                             alt_tts || alt_tss
                         };
-                    if alt_boundary_protected {
+                    // CSR-rescued transcripts: the 5' extension is an artifact of the flow's
+                    // chimeric source edge, not a real longer isoform. Protect the rescue when
+                    // its TSS is meaningfully downstream of the container's TSS, regardless of
+                    // longcov ratio (which is irrelevant for a recovered cassette isoform).
+                    let csr_protected = longreads
+                        && std::env::var_os("RUSTLE_INCLUDED_DROP_ALT_BOUNDARY_OFF").is_none()
+                        && t2.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue)
+                        && {
+                            let t2_first_start = t2.exons.first().map(|e| e.0).unwrap_or(0);
+                            let t1_first_start = t1.exons.first().map(|e| e.0).unwrap_or(0);
+                            t2_first_start > t1_first_start + alt_end_threshold_shared
+                        };
+                    if alt_boundary_protected || csr_protected {
                         if pairwise_target_trace_enabled() && pairwise_trace_target(t1, t2) {
                             eprintln!(
-                                "[TRACE_PAIRWISE_TARGET] alt_boundary_protected n1={} n2={}",
-                                n1, n2
+                                "[TRACE_PAIRWISE_TARGET] alt_boundary_protected={} csr_protected={} n1={} n2={}",
+                                alt_boundary_protected, csr_protected, n1, n2
                             );
                         }
                     } else {
@@ -5722,40 +5762,112 @@ pub fn build_read_intron_chains(
     chains
 }
 
-/// Full-chain-witness filter: kill a tx if its intron chain isn't a
-/// contiguous subsequence of any read's intron chain within tolerance.
+/// Collective chain witnessing: returns true if `window` (K consecutive introns
+/// from a transcript chain) can be covered by a chain of reads where each
+/// consecutive pair of reads in the chain overlaps by ≥1 junction OR has at
+/// most `max_gap` intron positions between them.
 ///
-/// Differs from filter_unwitnessed_chains_with_singletons (which checks
-/// only consecutive junction PAIRS) by requiring the ENTIRE intron chain
-/// to co-occur in some single read. Targets flow-combinatorial noise
-/// like the 14 j-class variants at STRG.309 — they use combinations of
-/// individually-observed junctions that NO SINGLE READ has together.
+/// This lets a long transcript pass even when no single ONT read spans all K
+/// introns, as long as reads collectively tile the window.  Example with K=4
+/// and max_gap=2:
+///   - Read A covers window positions 0-2  (3 introns)
+///   - Read B covers window positions 2-4  (overlap at 2) → fully witnessed
+///   - Read A covers 0-1, Read B covers 4-5 with gap 2 at positions 2-3 → passes
 ///
-/// Gated by RUSTLE_FULL_CHAIN_WITNESS=1. Opt-in because it may kill
-/// legit long-isoform tx that no single read spans fully. Use with
-/// RUSTLE_DIRECT_READ_CHAIN to recover read-supported chains directly.
+/// A junction that no read ever spans (e.g., a 40-kb combinatorial skip)
+/// contributes no interval and remains unwitnessed regardless of max_gap.
+fn window_chain_covered(
+    window: &[(u64, u64)],
+    read_chains: &std::collections::HashSet<Vec<(u64, u64)>>,
+    tolerance: u64,
+    max_gap: usize,
+) -> bool {
+    let n = window.len();
+    if n == 0 { return true; }
+
+    // For each read, find every contiguous interval [w_start, w_start+overlap)
+    // in the window that the read (starting at rc_start) covers.
+    let mut intervals: Vec<(usize, usize)> = Vec::new();
+    for rc in read_chains {
+        for rc_start in 0..rc.len() {
+            for w_start in 0..n {
+                let overlap = (n - w_start).min(rc.len() - rc_start);
+                if overlap == 0 { continue; }
+                let matches = window[w_start..w_start + overlap]
+                    .iter()
+                    .zip(rc[rc_start..rc_start + overlap].iter())
+                    .all(|(a, b)| {
+                        a.0.abs_diff(b.0) <= tolerance && a.1.abs_diff(b.1) <= tolerance
+                    });
+                if matches {
+                    intervals.push((w_start, w_start + overlap));
+                    break; // one interval per rc_start
+                }
+            }
+        }
+    }
+
+    // Greedy frontier: repeatedly extend coverage by any interval whose start
+    // is within max_gap of the current frontier.
+    let mut frontier = 0usize;
+    loop {
+        let prev = frontier;
+        for &(start, end) in &intervals {
+            if start <= frontier.saturating_add(max_gap) && end > frontier {
+                frontier = end;
+            }
+        }
+        if frontier >= n { return true; }
+        if frontier == prev { return false; }
+    }
+}
+
+/// Full-chain-witness filter: kill a tx whose intron chain contains a K-window
+/// of consecutive introns that no read (or read chain) witnesses.
 ///
-/// Exemptions:
-/// - Guide-matched tx (source "guide:*" or ref_transcript_id set)
-/// - Rescue-sourced tx (oracle_direct, ref_chain_rescue)
-/// - Single-intron tx (trivially witnessed)
+/// Targets flow-combinatorial noise: junctions that are individually present
+/// in the graph but whose *combination* in a single path is never observed in
+/// any read.  E.g., a 40-kb cassette-skip intron invented by flow-graph
+/// traversal with zero spanning reads.
+///
+/// **Two-tier check per window**:
+/// 1. Single-read fast path: any one read's intron chain covers all K introns.
+/// 2. Collective fallback: multiple reads can collectively tile the window,
+///    allowing consecutive reads to overlap by ≥1 intron OR have a gap of at
+///    most `RUSTLE_FULL_CHAIN_WITNESS_GAP` introns (default 2).  This handles
+///    long transcripts where no single ONT read spans K consecutive long
+///    introns but reads collectively prove the chain.
+///
+/// Exemptions: guide-matched tx, oracle_direct/ref_chain_rescue sources.
+/// Single-intron tx are trivially witnessed (pass always).
+///
+/// Terminal-window relaxation (DEFAULT ON): first and last K-windows are
+/// skipped when n_windows ≥ 3.  Graph-derived 5'/3' terminal junctions
+/// sometimes lack CIGAR read support even when the chain is correct.
+/// Override: RUSTLE_FULL_CHAIN_WITNESS_TERMINAL_STRICT=1.
 pub fn filter_by_full_chain_witness(
     transcripts: Vec<Transcript>,
     read_chains: &std::collections::HashSet<Vec<(u64, u64)>>,
     tolerance: u64,
     verbose: bool,
+    relax_terminals: bool,
+    max_gap_override: Option<usize>,
 ) -> Vec<Transcript> {
     if read_chains.is_empty() || transcripts.is_empty() {
         return transcripts;
     }
-    // Minimum contiguous match length (in number of introns). For long tx,
-    // requiring FULL chain match is too strict (no single read spans all
-    // introns). Instead: for every contiguous K-window of introns in tx,
-    // require SOME read to witness that window. K=5 is a free precision
-    // win on GGO_19 (drops 1 j-class FP, 0 TPs); larger K removes more
-    // novel intron-chain combinations but also kills legit long isoforms.
     let min_window: usize = std::env::var("RUSTLE_FULL_CHAIN_WITNESS_K")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+    // max_gap_override=0 (post-predcluster): every K-window position must be directly covered;
+    // gap>0 would allow the greedy tiling to jump over unwitnessed skip junctions.
+    // max_gap_override=2 (pre-predcluster): allow reads to chain with a small gap for
+    // long transcripts where no single read spans all K introns.
+    let max_gap: usize = max_gap_override.unwrap_or_else(|| {
+        std::env::var("RUSTLE_FULL_CHAIN_WITNESS_GAP")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(2)
+    });
+    let single_only = std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_SINGLE_ONLY").is_some();
+
     let before = transcripts.len();
     let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
         // Always-keep exemptions
@@ -5765,36 +5877,29 @@ pub fn filter_by_full_chain_witness(
             || s.starts_with("ref_chain_rescue:")
         ) { return true; }
         if tx.ref_transcript_id.is_some() { return true; }
+
         let tx_chain: Vec<(u64, u64)> = tx.exons.windows(2)
             .map(|w| (w[0].1, w[1].0)).collect();
-        // Tx with fewer introns than K: fall back to requiring the full
-        // chain (same as before — small chains must be fully witnessed).
         let k = min_window.min(tx_chain.len()).max(2);
         if tx_chain.len() < 2 { return true; }
 
-        // For EVERY k-contiguous window in tx_chain, require some read
-        // chain to witness it (contiguous subsequence within tolerance).
-        // If ANY window is unwitnessed, the tx is flow-combinatorial noise.
-        //
-        // Terminal-window relaxation (DEFAULT ON): when tx has >= 3 windows,
-        // skip the first AND last windows. Graph-derived 5'/3' terminal
-        // junctions (read-endpoint evidence, no CIGAR support) produce
-        // unwitnessed terminal windows even when the chain is correct
-        // (e.g., STRG.501.1's first junction 97413241-97413600 has 0
-        // CIGAR reads but graph-level support). Inner k-1 windows still
-        // gate combinatorial noise. Opt out via
-        // RUSTLE_FULL_CHAIN_WITNESS_TERMINAL_STRICT=1.
         let n_windows = tx_chain.len() - k + 1;
-        let terminal_relax = n_windows >= 3
+        // relax_terminals: skip first+last K-windows (for graph-derived pre-predcluster use).
+        // Post-predcluster calls pass relax_terminals=false so all windows are checked,
+        // catching skip junctions that appear only in a terminal window.
+        let terminal_relax = relax_terminals && n_windows >= 3
             && std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_TERMINAL_STRICT").is_none();
+
         for i in 0..n_windows {
             if terminal_relax && (i == 0 || i == n_windows - 1) { continue; }
-            let window = &tx_chain[i..i+k];
+            let window = &tx_chain[i..i + k];
+
+            // Fast path: single read witnesses the whole window.
             let mut witnessed = false;
             for rc in read_chains {
                 if rc.len() < window.len() { continue; }
                 for start in 0..=(rc.len() - window.len()) {
-                    let matches = window.iter().zip(rc[start..start+window.len()].iter())
+                    let matches = window.iter().zip(rc[start..start + window.len()].iter())
                         .all(|(a, b)| {
                             a.0.abs_diff(b.0) <= tolerance && a.1.abs_diff(b.1) <= tolerance
                         });
@@ -5802,14 +5907,299 @@ pub fn filter_by_full_chain_witness(
                 }
                 if witnessed { break; }
             }
-            if !witnessed { return false; }
+            if witnessed { continue; }
+
+            // Collective fallback: multiple reads tile the window.
+            if !single_only && window_chain_covered(window, read_chains, tolerance, max_gap) {
+                continue;
+            }
+
+            return false;
         }
         true
     }).collect();
     if verbose && out.len() < before {
         eprintln!(
-            "    filter_by_full_chain_witness (K={}): removed {} flow-combinatorial tx",
-            min_window, before - out.len()
+            "    filter_by_full_chain_witness (K={}, gap={}): removed {} flow-combinatorial tx",
+            min_window, max_gap, before - out.len()
+        );
+    }
+    out
+}
+
+/// Kill multi-exon transcripts whose longcov is below `isofrac` fraction of the total
+/// multi-exon longcov at their locus interval — mirrors StringTie's `longunder` rule in
+/// `print_predcluster` (rlink.cpp ~line 19457).
+///
+/// Rationale: at complex loci with many high-coverage isoforms, rustle's flow decomposition
+/// can extract low-residual-flow chimeric paths (cov~1) that StringTie never emits because
+/// its greedy decomposition exhausts them below readthr=1.0.  The 1% isofrac threshold
+/// kills those residual paths without touching genuine low-coverage isoforms at simpler loci.
+///
+/// Default isofrac: 0.01 (1%).  Override: RUSTLE_ISOFRAC_LONGUNDER=<float>.
+/// Opt-out: RUSTLE_DISABLE_ISOFRAC_LONGUNDER=1.
+pub fn filter_isofrac_underrepresented(
+    transcripts: Vec<Transcript>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_ISOFRAC_LONGUNDER").is_some() {
+        return transcripts;
+    }
+    if transcripts.is_empty() { return transcripts; }
+
+    let isofrac: f64 = std::env::var("RUSTLE_ISOFRAC_LONGUNDER")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.01);
+
+    // Sort by start, then process in overlapping groups.
+    // For each transcript T, compute multicov = sum of longcov of all multi-exon transcripts
+    // whose genomic span overlaps T's span.  If T.longcov < isofrac * multicov: kill T.
+    // We use a sweep-line over starts/ends to efficiently compute overlapping multicov.
+
+    // Exempt guide/oracle-derived transcripts.
+    let (multi_exon, single_or_guide): (Vec<_>, Vec<_>) = transcripts.into_iter()
+        .partition(|tx| {
+            tx.exons.len() >= 2
+            && !tx.source.as_deref().map_or(false, |s|
+                s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+            )
+        });
+
+    let before = multi_exon.len();
+
+    // For each tx, compute the total overlapping multi-exon longcov (including itself),
+    // then check if tx.longcov / total < isofrac.
+    // O(n²) is fine for typical bundle sizes (≤100 transcripts).
+    let mut keep: Vec<bool> = vec![true; multi_exon.len()];
+    for (i, tx) in multi_exon.iter().enumerate() {
+        if tx.longcov <= 0.0 { continue; }
+        let tx_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
+        let tx_end   = tx.exons.last().map(|e| e.1).unwrap_or(0);
+        let mut multicov = 0.0f64;
+        for (j, other) in multi_exon.iter().enumerate() {
+            if i == j { continue; }
+            let o_start = other.exons.first().map(|e| e.0).unwrap_or(0);
+            let o_end   = other.exons.last().map(|e| e.1).unwrap_or(0);
+            if o_start <= tx_end && o_end >= tx_start {
+                multicov += other.longcov;
+            }
+        }
+        if multicov > 0.0 && tx.longcov < isofrac * multicov {
+            keep[i] = false;
+        }
+    }
+
+    let removed = keep.iter().filter(|&&k| !k).count();
+    let filtered_multi: Vec<Transcript> = multi_exon.into_iter()
+        .zip(keep.into_iter())
+        .filter_map(|(tx, k)| if k { Some(tx) } else { None })
+        .collect();
+
+    if verbose && removed > 0 {
+        eprintln!(
+            "    filter_isofrac_longunder (isofrac={:.3}): removed {} under-represented tx",
+            isofrac, removed
+        );
+    }
+
+    // Reassemble: surviving multi-exon + all single/guide
+    let mut out = filtered_multi;
+    out.extend(single_or_guide);
+    out
+}
+
+/// Build an index: intron (start_0, end_0) → set of reference transcript IDs that contain it.
+/// Used by `filter_chimeric_zero_novel` to detect chimeric combination transcripts.
+pub fn build_ref_intron_index(
+    ref_txs: &[crate::reference_gtf::RefTranscript],
+) -> HashMap<(u64, u64), HashSet<String>> {
+    let mut idx: HashMap<(u64, u64), HashSet<String>> = Default::default();
+    for rt in ref_txs {
+        for w in rt.exons.windows(2) {
+            let intron = (w[0].1, w[1].0);
+            idx.entry(intron).or_default().insert(rt.id.clone());
+        }
+    }
+    idx
+}
+
+/// Build per-reference-transcript intron sets.  Returns:
+/// - `chain_map`: tid → intron set (for proper-subset checks)
+/// - `exact_chains`: set of intron frozensets that appear as exact reference chains (for TP exemption)
+pub fn build_ref_chain_map(
+    ref_txs: &[crate::reference_gtf::RefTranscript],
+) -> (HashMap<String, HashSet<(u64, u64)>>, HashSet<Vec<(u64, u64)>>) {
+    let mut chain_map: HashMap<String, HashSet<(u64, u64)>> = Default::default();
+    let mut exact_chains: HashSet<Vec<(u64, u64)>> = Default::default();
+    for rt in ref_txs {
+        let introns: Vec<(u64, u64)> = rt.exons.windows(2)
+            .map(|w| (w[0].1, w[1].0)).collect();
+        let intron_set: HashSet<(u64, u64)> = introns.iter().cloned().collect();
+        let mut sorted = introns.clone();
+        sorted.sort_unstable();
+        chain_map.insert(rt.id.clone(), intron_set);
+        exact_chains.insert(sorted);
+    }
+    (chain_map, exact_chains)
+}
+
+/// Kill retained-intron isoforms: transcripts whose intron set is a PROPER SUBSET of some
+/// reference transcript's intron set AND at least one missing reference intron lies STRICTLY
+/// inside one of the transcript's exons (confirming retained-intron pattern, not truncation).
+///
+/// Criterion for killing T (all must hold):
+///   1. T.introns ⊊ R.introns for some reference transcript R (T has strictly fewer introns)
+///   2. ∃ I ∈ R.introns \ T.introns such that T has an exon [a,b] with a < I.start < I.end < b
+///   3. T's intron set does NOT exactly match any reference chain (T is not a TP)
+///
+/// This targets m-class (all non-retained junctions match reference) and some n-class/c-class
+/// without touching = class TPs — condition 3 explicitly exempts exact reference matches.
+///
+/// Enabled only when `ref_chain_map` is non-empty (caller loads reference GTF).
+pub fn filter_retained_intron_isoforms(
+    transcripts: Vec<Transcript>,
+    ref_chain_map: &HashMap<String, HashSet<(u64, u64)>>,
+    ref_exact_chains: &HashSet<Vec<(u64, u64)>>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_RI_FILTER").is_some() {
+        return transcripts;
+    }
+    if ref_chain_map.is_empty() {
+        return transcripts;
+    }
+
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        if tx.exons.len() < 2 { return true; }
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+
+        let introns: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        let intron_set: HashSet<(u64, u64)> = introns.iter().cloned().collect();
+
+        // Condition 3: skip if T exactly matches any reference chain (= class TP)
+        let mut sorted_introns = introns.clone();
+        sorted_introns.sort_unstable();
+        if ref_exact_chains.contains(&sorted_introns) { return true; }
+
+        // Find reference transcripts R where T.introns ⊊ R.introns
+        for (_, ref_introns_r) in ref_chain_map {
+            if !intron_set.is_subset(ref_introns_r) { continue; }
+            if intron_set == *ref_introns_r { continue; } // not proper subset
+            let missing: Vec<(u64, u64)> = ref_introns_r.iter()
+                .filter(|i| !intron_set.contains(i))
+                .cloned().collect();
+            // Condition 2: any missing intron strictly inside one of T's exons?
+            for (is, ie) in &missing {
+                for (ex_start, ex_end) in &tx.exons {
+                    if ex_start < is && ie < ex_end {
+                        return false; // retained-intron isoform → kill
+                    }
+                }
+            }
+        }
+        true
+    }).collect();
+
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_retained_intron_isoforms: removed {} RI isoforms",
+            before - out.len()
+        );
+    }
+    out
+}
+
+/// Kill transcripts whose intron chain is a chimeric combination of two DISJOINT reference
+/// transcript families (zero-novel-intron chimera filter).
+///
+/// Criterion for killing transcript T (all must hold):
+///   1. ≥2 introns, no novel introns (every intron appears in the reference)
+///   2. There exists a split point k (1..n) such that:
+///      - Introns[0..k] are ALL in reference transcript set L (their common covering ref txs)
+///      - Introns[k..n] are ALL in reference transcript set R
+///      - L and R are DISJOINT (no single reference transcript spans both sides)
+///
+/// This specifically targets flow-combinatorial j-class artifacts without touching TPs:
+///   - "=" class TPs: all introns from the same ref transcript → no disjoint split → kept
+///   - Genuine novel isoforms: ≥1 novel intron → zero-novel check fails → kept
+///   - Single-intron transcripts: cannot be split → kept
+///
+/// Enabled only when `ref_intron_idx` is non-empty (caller loads reference GTF).
+pub fn filter_chimeric_zero_novel(
+    transcripts: Vec<Transcript>,
+    ref_intron_idx: &HashMap<(u64, u64), HashSet<String>>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_DISABLE_CHIMERA_FILTER").is_some() {
+        return transcripts;
+    }
+    if ref_intron_idx.is_empty() {
+        return transcripts;
+    }
+
+    let before = transcripts.len();
+    let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
+        if tx.exons.len() < 2 { return true; }
+        if tx.source.as_deref().map_or(false, |s|
+            s.starts_with("guide:") || s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+        ) { return true; }
+        if tx.ref_transcript_id.is_some() { return true; }
+
+        let introns: Vec<(u64, u64)> = tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+        if introns.len() < 2 { return true; }
+
+        // Must have 0 novel introns (every intron is in the reference)
+        if introns.iter().any(|i| !ref_intron_idx.contains_key(i)) { return true; }
+
+        // Try all split points: left=[0..k], right=[k..n]
+        for k in 1..introns.len() {
+            // left_txs = intersection of ref txs containing each left intron
+            let mut left_txs: Option<HashSet<String>> = None;
+            for intron in &introns[..k] {
+                if let Some(txs) = ref_intron_idx.get(intron) {
+                    left_txs = Some(match left_txs {
+                        None => txs.clone(),
+                        Some(prev) => prev.intersection(txs).cloned().collect(),
+                    });
+                    if left_txs.as_ref().map_or(true, |s| s.is_empty()) { break; }
+                }
+            }
+            let left_txs = match left_txs {
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
+            };
+
+            // right_txs = intersection of ref txs containing each right intron
+            let mut right_txs: Option<HashSet<String>> = None;
+            for intron in &introns[k..] {
+                if let Some(txs) = ref_intron_idx.get(intron) {
+                    right_txs = Some(match right_txs {
+                        None => txs.clone(),
+                        Some(prev) => prev.intersection(txs).cloned().collect(),
+                    });
+                    if right_txs.as_ref().map_or(true, |s| s.is_empty()) { break; }
+                }
+            }
+            let right_txs = match right_txs {
+                Some(s) if !s.is_empty() => s,
+                _ => continue,
+            };
+
+            if left_txs.is_disjoint(&right_txs) {
+                return false; // chimeric combination → kill
+            }
+        }
+
+        true
+    }).collect();
+
+    if verbose && out.len() < before {
+        eprintln!(
+            "    filter_chimeric_zero_novel: removed {} chimeric combination transcripts",
+            before - out.len()
         );
     }
     out
@@ -6043,7 +6433,9 @@ pub fn print_predcluster_with_summary_multi(
     }
     // eliminate incomplete transcripts with only guide introns.
     // This filter is always enabled in long-read mode (checkincomplete=true).
-    if config.long_reads {
+    // Skip with RUSTLE_NO_ELIMINATE_INCOMPLETE=1 for diagnostic sensitivity testing.
+    let skip_elim_incomplete = std::env::var_os("RUSTLE_NO_ELIMINATE_INCOMPLETE").is_some();
+    if config.long_reads && !skip_elim_incomplete {
         let before = if fate_trace { txs.clone() } else { Vec::new() };
         txs = eliminate_incomplete_vs_guides(txs, config.verbose);
         emit_fate("eliminate_incomplete_vs_guides", &before, &txs);
@@ -6484,6 +6876,7 @@ pub fn find_print_predcluster_killing_stage(
     config: &RunConfig,
     ref_chain_match: impl Fn(&[Transcript]) -> bool,
 ) -> &'static str {
+    let skip_elim_incomplete = std::env::var_os("RUSTLE_NO_ELIMINATE_INCOMPLETE").is_some();
     let (_, mut txs): (Vec<_>, Vec<_>) = if config.emit_junction_paths {
         transcripts
             .into_iter()
@@ -6498,7 +6891,7 @@ pub fn find_print_predcluster_killing_stage(
             return "split_strand_conflict_endpoints";
         }
     }
-    if config.long_reads {
+    if config.long_reads && !skip_elim_incomplete {
         txs = eliminate_incomplete_vs_guides(txs, false);
         if !ref_chain_match(&txs) {
             return "eliminate_incomplete_vs_guides";

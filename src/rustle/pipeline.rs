@@ -4996,6 +4996,71 @@ fn micro_exon_insertion_rescue(
     added
 }
 
+/// For each long CSR-rescued transcript (≥ `MIN_LONG` exons), generate shorter
+/// "late-start sibling" variants if any other CSR transcript in `txs` starts
+/// within `TSS_SLOP` bp of an internal exon boundary of the long rescue.
+///
+/// Motivation: a seed like t=44 (starts at node 29, has both cassette exons, correct
+/// last intron) may produce a rescue starting upstream of the true short-isoform TSS.
+/// A separate shorter-starting seed (with different last-intron path) provides TSS
+/// evidence. Pairing the two gives the correct 22-intron isoform.
+fn generate_csr_suffix_siblings(txs: &mut Vec<Transcript>) {
+    const MIN_LONG: usize = 5;        // long rescue must have ≥ 5 exons
+    const MIN_SIBLING: usize = 3;     // sibling must have ≥ 3 exons
+    const TSS_SLOP: u64 = 150;        // match threshold in bp
+    const MAX_SKIP: usize = 6;        // trim at most 6 leading exons
+    use crate::vg_hmm::diagnostic::RescueClass;
+
+    if std::env::var_os("RUSTLE_DISABLE_CSR_SUFFIX_SIBLINGS").is_some() {
+        return;
+    }
+
+    // Collect all CSR-rescued transcripts' (first_exon_start) as TSS evidence set.
+    let csr_starts: Vec<u64> = txs.iter()
+        .filter(|t| t.rescue_class == Some(RescueClass::ChimericSuffixRescue))
+        .map(|t| t.exons.first().map(|e| e.0).unwrap_or(0))
+        .collect();
+
+    // Build set of (intron_chain_hash, nexons) already present to avoid exact duplicates.
+    let existing_chains: std::collections::HashSet<Vec<(u64, u64)>> = txs.iter()
+        .map(|t| t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect::<Vec<_>>())
+        .collect();
+
+    let mut siblings: Vec<Transcript> = Vec::new();
+
+    for t in txs.iter() {
+        if t.rescue_class != Some(RescueClass::ChimericSuffixRescue) { continue; }
+        if t.exons.len() < MIN_LONG { continue; }
+
+        // Check each potential "skip" level (trim first `skip` exons).
+        for skip in 1..MAX_SKIP.min(t.exons.len().saturating_sub(MIN_SIBLING)) {
+            let candidate_start = t.exons[skip].0;
+            let has_evidence = csr_starts.iter().any(|&p| {
+                let diff = if p >= candidate_start { p - candidate_start } else { candidate_start - p };
+                diff <= TSS_SLOP && p != t.exons.first().map(|e| e.0).unwrap_or(0)
+            });
+            if !has_evidence { continue; }
+
+            let sibling_exons: Vec<(u64, u64)> = t.exons[skip..].to_vec();
+            if sibling_exons.len() < MIN_SIBLING { continue; }
+            let chain: Vec<(u64, u64)> = sibling_exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+            if existing_chains.contains(&chain) { continue; }
+
+            let sibling_exon_cov: Vec<f64> = if t.exon_cov.len() == t.exons.len() {
+                t.exon_cov[skip..].to_vec()
+            } else {
+                vec![t.coverage; sibling_exons.len()]
+            };
+            let mut sibling = t.clone();
+            sibling.exons = sibling_exons;
+            sibling.exon_cov = sibling_exon_cov;
+            sibling.rescue_class = Some(RescueClass::ChimericSuffixRescue);
+            siblings.push(sibling);
+        }
+    }
+    txs.extend(siblings);
+}
+
 fn apply_terminal_boundary_evidence_to_longread_txs(
     txs: &mut [Transcript],
     graph: &Graph,
@@ -5533,6 +5598,31 @@ fn extract_bundle_transcripts_for_graph(
 
     let mut seed_outcomes_buf: Vec<(usize, crate::path_extract::SeedOutcome)> = Vec::new();
     let mut longrec_summary = LongRecSummary::default();
+
+    // Greedy supplement / competing-jx supplement: save transfrag abundances
+    // before baseline extraction so we can restore and run afterward.
+    let run_greedy_supplement = config.long_reads
+        && !config.rawreads
+        && std::env::var_os("RUSTLE_GREEDY_SUPPLEMENT").is_some()
+        && std::env::var_os("RUSTLE_GREEDY_DECOMPOSE").is_none()
+        && std::env::var_os("RUSTLE_READCHAIN").is_none();
+    let run_competing_jx = config.long_reads
+        && !config.rawreads
+        && std::env::var_os("RUSTLE_COMPETING_JX_SUPPLEMENT").is_some()
+        && std::env::var_os("RUSTLE_GREEDY_DECOMPOSE").is_none()
+        && std::env::var_os("RUSTLE_READCHAIN").is_none();
+    let run_readchain_supplement = config.long_reads
+        && !config.rawreads
+        && std::env::var_os("RUSTLE_READCHAIN_SUPPLEMENT").is_some()
+        && std::env::var_os("RUSTLE_GREEDY_DECOMPOSE").is_none()
+        && std::env::var_os("RUSTLE_READCHAIN").is_none();
+    let supplement_saved: Vec<f64> =
+        if run_greedy_supplement || run_competing_jx || run_readchain_supplement {
+            transfrags.iter().map(|t| t.abundance).collect()
+        } else {
+            Vec::new()
+        };
+
     // Direct-emit oracle: before extract_transcripts, record which ref tx
     // to inject. After, we compare per-tx with emitted output to classify
     // PATH_EXTRACT_BLOCK (if forced emission matches and default doesn't)
@@ -5555,6 +5645,22 @@ fn extract_bundle_transcripts_for_graph(
             &format!("{}:{}-{}", bundle.chrom, bundle.start, bundle.end),
             config,
         )
+    } else if std::env::var_os("RUSTLE_READCHAIN").is_some() {
+        crate::global_flow::extract_transcripts_readchain(
+            graph_mut,
+            transfrags,
+            &bundle.chrom,
+            bundle.strand,
+            config,
+        )
+    } else if std::env::var_os("RUSTLE_GREEDY_DECOMPOSE").is_some() {
+        crate::global_flow::extract_transcripts_greedy_decompose(
+            graph_mut,
+            transfrags,
+            &bundle.chrom,
+            bundle.strand,
+            config,
+        )
     } else {
         extract_transcripts(
             graph_mut,
@@ -5575,6 +5681,64 @@ fn extract_bundle_transcripts_for_graph(
             Some(&mut longrec_summary),
         )
     };
+    // Post-baseline supplements: restore full transfrag abundances, run each
+    // supplement on fresh flow, then restore the depleted state so downstream
+    // steps (alt_acceptor_rescue, emit_junction_paths, etc.) see depleted flow.
+    if !supplement_saved.is_empty()
+        && (run_greedy_supplement || run_competing_jx || run_readchain_supplement)
+    {
+        let post_extract: Vec<f64> = transfrags.iter().map(|t| t.abundance).collect();
+        for (tf, &saved) in transfrags.iter_mut().zip(supplement_saved.iter()) {
+            tf.abundance = saved;
+        }
+
+        if run_greedy_supplement {
+            let extra = crate::global_flow::greedy_supplement(
+                graph_mut,
+                transfrags,
+                &txs,
+                &bundle.chrom,
+                bundle.strand,
+                config,
+            );
+            if !extra.is_empty() {
+                txs.extend(extra);
+            }
+        }
+
+        if run_competing_jx {
+            let extra = crate::global_flow::competing_junction_supplement(
+                graph_mut,
+                transfrags,
+                &txs,
+                &bundle.chrom,
+                bundle.strand,
+                config,
+            );
+            if !extra.is_empty() {
+                txs.extend(extra);
+            }
+        }
+
+        if run_readchain_supplement {
+            let extra = crate::global_flow::readchain_supplement(
+                graph_mut,
+                transfrags,
+                &txs,
+                &bundle.chrom,
+                bundle.strand,
+                config,
+            );
+            if !extra.is_empty() {
+                txs.extend(extra);
+            }
+        }
+
+        for (tf, saved) in transfrags.iter_mut().zip(post_extract.iter()) {
+            tf.abundance = *saved;
+        }
+    }
+
     // Propagate Bundle.synthetic → Transcript.synthetic so that downstream
     // filter exemptions (isofrac, cross-bundle pairwise-contained) actually
     // fire for VG-HMM rescued bundles.  Every extractor hardcodes
@@ -5688,6 +5852,9 @@ fn extract_bundle_transcripts_for_graph(
             0
         };
         apply_terminal_boundary_evidence_to_longread_txs(&mut txs, graph_mut, transfrags);
+        if config.long_reads {
+            generate_csr_suffix_siblings(&mut txs);
+        }
         if added > 0 && config.verbose {
             eprintln!(
                 "    terminal_alt_acceptor_rescue: +{} transcript(s) (bundle={}:{}-{})",
@@ -5857,7 +6024,6 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
-    // print_predcluster filtering blocks (keep active in strict mode).
     txs = correct_two_exon_split_errors(txs, bpcov, config.verbose);
     trace_stage("correct_two_exon_split_errors", &txs);
     txs = collapse_covered_microintrons(txs, bpcov, config.verbose);
@@ -5943,6 +6109,8 @@ fn extract_bundle_transcripts_for_graph(
             let read_chains = crate::transcript_filter::build_read_intron_chains(&bundle.reads);
             txs = crate::transcript_filter::filter_by_full_chain_witness(
                 txs, &read_chains, config.junction_correction_window, config.verbose,
+                true,    // relax_terminals: graph-derived boundaries may lack terminal read support
+                Some(2), // max_gap: allow reads to chain with a small gap pre-predcluster
             );
         }
         if config.verbose && txs.len() < before_pre {
@@ -5994,6 +6162,58 @@ fn extract_bundle_transcripts_for_graph(
     );
     let junction_support_removed = before_junction_support.saturating_sub(txs.len());
     trace_stage("filter_unsupported_junctions", &txs);
+
+    // Collective chain-witness filter (DEFAULT ON for long reads): kill tx
+    // whose intron chain contains a K-window that no read (or read chain)
+    // witnesses.  Catches flow-combinatorial paths — e.g., a 40-kb cassette-
+    // skip intron invented by graph traversal with zero spanning reads — that
+    // slip past filter_unsupported_junctions because longcov > 1 exempts them.
+    // Uses collective tiling mode by default: multiple reads may jointly cover
+    // the K-window (consecutive reads must overlap by ≥1 intron or have at
+    // most RUSTLE_FULL_CHAIN_WITNESS_GAP introns between them, default 2).
+    // Opt-out: RUSTLE_FULL_CHAIN_WITNESS_OFF=1.
+    if config.long_reads
+        && std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_OFF").is_none()
+    {
+        let read_chains = crate::transcript_filter::build_read_intron_chains(&bundle.reads);
+        txs = crate::transcript_filter::filter_by_full_chain_witness(
+            txs, &read_chains, config.junction_correction_window, config.verbose,
+            false, // relax_terminals=false: check all K-windows including terminal skip junctions
+            Some(0), // max_gap=0: every position must be directly covered; gap>0 lets greedy tiling skip unwitnessed positions
+        );
+        trace_stage("filter_by_full_chain_witness", &txs);
+    }
+
+    // Reference-guided post-filters (chimeric + retained-intron): both require
+    // RUSTLE_CHIMERA_FILTER_GTF=/path/to/reference.gtf.  Parse the reference once
+    // and apply both filters in sequence.
+    // Opt-out: RUSTLE_DISABLE_CHIMERA_FILTER=1 / RUSTLE_DISABLE_RI_FILTER=1.
+    if config.long_reads {
+        if let Ok(ref_path) = std::env::var("RUSTLE_CHIMERA_FILTER_GTF") {
+            if let Ok(ref_txs) = crate::reference_gtf::parse_reference_gtf(&ref_path) {
+                // Chimeric zero-novel-intron filter
+                let ref_idx = crate::transcript_filter::build_ref_intron_index(&ref_txs);
+                txs = crate::transcript_filter::filter_chimeric_zero_novel(
+                    txs, &ref_idx, config.verbose,
+                );
+                trace_stage("filter_chimeric_zero_novel", &txs);
+
+                // Retained-intron isoform filter: kill RI variants where the spliced reference
+                // transcript exists and the retained intron lies strictly inside T's exon.
+                let (ref_chain_map, ref_exact_chains) =
+                    crate::transcript_filter::build_ref_chain_map(&ref_txs);
+                txs = crate::transcript_filter::filter_retained_intron_isoforms(
+                    txs, &ref_chain_map, &ref_exact_chains, config.verbose,
+                );
+                trace_stage("filter_retained_intron_isoforms", &txs);
+            }
+        }
+        // Isofrac longunder filter is disabled by default (opt-in: RUSTLE_ENABLE_ISOFRAC_LONGUNDER=1).
+        if std::env::var_os("RUSTLE_ENABLE_ISOFRAC_LONGUNDER").is_some() {
+            txs = crate::transcript_filter::filter_isofrac_underrepresented(txs, config.verbose);
+            trace_stage("filter_isofrac_longunder", &txs);
+        }
+    }
 
     // Per-junction read-support gate: suppress minor-isoform transcripts whose
     // weakest junction has fewer than N reads. Catches j-class artifacts where
@@ -11865,6 +12085,8 @@ pub fn run<P: AsRef<Path>>(
                         let tol = config.junction_correction_window;
                         filtered = crate::transcript_filter::filter_by_full_chain_witness(
                             filtered, &read_chains, tol, config.verbose,
+                            false, // post-predcluster: check all K-windows
+                            Some(0), // max_gap=0: strict coverage, no jumping over unwitnessed positions
                         );
                         crate::trace_reference::debug_target_ref_stage(
                             "post_bundle_after_full_chain_witness", graph_bundle, &ref_transcripts, &filtered,
@@ -13836,12 +14058,13 @@ pub fn run<P: AsRef<Path>>(
     phase_timer!("assembly_done");
     let mut all_transcripts = all_transcripts_mutex.into_inner().unwrap();
 
-    // Cross-strand predcluster pass (gated; default off). Runs subtractive
+    // Cross-strand predcluster pass (default ON). Runs subtractive
     // KRI across both strands at overlapping spans — replicates the
     // antisense-neighbor LEADING-return-1 kill that ST's cross-strand
     // bundles produce naturally but rustle's per-strand bundles miss.
+    // Disable with RUSTLE_DISABLE_CROSS_STRAND_KRI=1.
     // See `cross_strand_predcluster.rs` for the audit and rationale.
-    if std::env::var_os("RUSTLE_CROSS_STRAND_KRI").is_some() {
+    if std::env::var_os("RUSTLE_DISABLE_CROSS_STRAND_KRI").is_none() {
         let (filtered, n_killed, n_would_fire) =
             crate::cross_strand_predcluster::cross_strand_kri_filter(
                 all_transcripts,
