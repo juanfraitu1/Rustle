@@ -152,7 +152,7 @@ pub fn seed_order_st(transfrags: &[GraphTransfrag]) -> Option<Vec<usize>> {
 //   - `back_to_source_fast_long_st`: not yet started.
 //   - Comparison harness: not yet wired.
 
-use crate::bitvec::GBitVec;
+use crate::util::bitvec::GBitVec;
 use std::cell::RefCell;
 
 thread_local! {
@@ -296,8 +296,13 @@ pub fn fwd_to_sink_fast_long_st(
         let mut nextnode: usize = 0;
         let mut reach = *maxpath <= i;
 
-        // ST line 8081: pathpat[i+1] short-circuit
-        if i + 1 < graph.nodes.len() && pathpat.contains(i + 1) {
+        // ST line 8081: pathpat[i+1] short-circuit.
+        // Guard i+1 <= *maxpath: if back OR planted a bit for a node beyond
+        // maxpath (e.g., a stub that the seed can't reach), this fast-path
+        // would route to that unreachable node and stall. When i+1 > maxpath,
+        // reach is already true (maxpath <= i), so the children loop's direct
+        // sink shortcut handles the terminal step correctly.
+        if i + 1 < graph.nodes.len() && i + 1 <= *maxpath && pathpat.contains(i + 1) {
             maxc = (i + 1) as i64;
             tmax = -1;
             reach = true;
@@ -314,6 +319,17 @@ pub fn fwd_to_sink_fast_long_st(
                         reach = true;
                         break;
                     }
+                }
+
+                // Direct sink shortcut: when reach is already satisfied (*maxpath <= i)
+                // and the only next step is the sink, proceed directly without requiring
+                // a transfrag. In ST, artificial sink transfrags always enable this, but
+                // they can be depleted in rustle's flow model. This preserves parity.
+                if c == sink_id && *maxpath <= i {
+                    maxc = c as i64;
+                    tmax = -1;
+                    reach = true;
+                    break;
                 }
 
                 // ST line 8101: reachability check via nextnode
@@ -392,8 +408,24 @@ pub fn fwd_to_sink_fast_long_st(
                             continue; // ST line 8150: nodes[0] != 0 (= not source)
                         }
                         if c == sink_id {
-                            // child is sink: only accept transfrags ending at i
-                            if tf_first == i && *maxpath <= i {
+                            // ST exact: accept transfrags starting exactly at i.
+                            // Relaxed: also accept when tf_first < i but onpath_long
+                            // confirms the transfrag is compatible with the actual path
+                            // (handles exonic extension nodes with no reads starting there).
+                            let accepted_exact = tf_first == i && *maxpath <= i;
+                            let accepted_onpath = !accepted_exact
+                                && tf_first < i
+                                && *maxpath <= i
+                                && tf_last >= sink_id
+                                && crate::path_extract::onpath_long_pub(
+                                    &transfrags[t].pattern,
+                                    &transfrags[t].node_ids,
+                                    pathpat,
+                                    *minpath,
+                                    i,
+                                    graph,
+                                );
+                            if accepted_exact || accepted_onpath {
                                 childcov += abund;
                                 if tchild == -1
                                     || abund > transfrags[tchild as usize].abundance
@@ -747,7 +779,7 @@ pub fn back_to_source_fast_long_st(
                                 &transfrags[t].node_ids,
                                 pathpat,
                                 startpath,
-                                *maxpath,
+                                i,
                                 graph,
                             )
                         {
@@ -840,7 +872,7 @@ pub fn back_to_source_fast_long_st(
                             &transfrags[t].node_ids,
                             pathpat,
                             startpath,
-                            *maxpath,
+                            i,           // was *maxpath; match StringTie's `i` upper bound
                             graph,
                         )
                     {
@@ -1091,7 +1123,7 @@ pub fn emit_diff_if_diverges(
     if rustle == st {
         return;
     }
-    if !crate::parity_decisions::is_enabled() {
+    if !crate::parity::decisions::is_enabled() {
         return;
     }
     let r_last = rustle.path_last.map(|x| x as i64).unwrap_or(-1);
@@ -1114,7 +1146,7 @@ pub fn emit_diff_if_diverges(
         rustle.pathpat_hash,
         st.pathpat_hash,
     );
-    crate::parity_decisions::emit("path_extend_diff", None, 0, 0, '.', &payload);
+    crate::parity::decisions::emit("path_extend_diff", None, 0, 0, '.', &payload);
 }
 
 /// Whether the comparison harness is enabled. Off by default; set

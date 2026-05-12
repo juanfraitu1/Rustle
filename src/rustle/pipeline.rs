@@ -11,7 +11,7 @@ use crate::assembly_mode::LONGINTRONANCHOR;
 use crate::assembly_mode::{use_coverage_trim, use_longtrim};
 use crate::ballgown::write_ballgown;
 use crate::bam::junctions_from_exons;
-use crate::bitset::NodeSet;
+use crate::util::bitset::NodeSet;
 use crate::bpcov::{Bpcov, BpcovStranded, BPCOV_STRAND_ALL, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
 use crate::bundle::{
     build_bundlenodes_and_readgroups_from_cgroups,
@@ -19,7 +19,7 @@ use crate::bundle::{
 };
 use crate::bundle_builder::build_sub_bundles;
 
-use crate::coord::len_half_open;
+use crate::util::coord::len_half_open;
 use crate::coverage_trim::apply_coverage_trim;
 use crate::futuretr::{
     apply_prune_redirects, collect_from_transfrags, materialize_links, normalize_links, FutureLink,
@@ -49,10 +49,10 @@ use crate::path_extract::{
     extract_rawreads_transcripts, extract_shortread_transcripts, extract_transcripts,
     LongRecSummary, Transcript,
 };
-use crate::parity_junction_dump;
-use crate::parity_partition_dump;
-use crate::parity_trace_dump;
-use crate::parity_shadow;
+use crate::parity::junction_dump;
+use crate::parity::partition_dump;
+use crate::parity::trace_dump;
+use crate::parity::shadow;
 use crate::read_boundaries::collect_read_boundaries_with_cpas;
 use crate::reference_gtf::{
     find_guide_pat, parse_reference_gtf, process_refguides, GuideInfo, RefTranscript,
@@ -60,7 +60,7 @@ use crate::reference_gtf::{
 use crate::snapshot;
 use crate::snapshot::SnapshotDetail;
 use crate::stringtie_parity::stringtie_exact;
-use crate::trace_reference::{
+use crate::tracing::reference::{
     debug_target_ref_stage, drop_resolved_blockers_by_final_matches, find_traced_ref_in_bundle,
     ref_overlaps_bundle, trace_refs_in_bundles, write_blocker_report,
 };
@@ -978,7 +978,7 @@ fn trace_graph_numeric_state(stage: &str, graph: &Graph, transfrags: &[GraphTran
     }
     // Keep TRACE_METRICS usable by scoping output to the requested trace locus when present.
     // Without this, a full-chromosome run can produce an overwhelming amount of numeric state.
-    if let Some((lo, hi)) = crate::trace_events::parse_trace_locus() {
+    if let Some((lo, hi)) = crate::tracing::events::parse_trace_locus() {
         let mut any_overlap = false;
         for node in &graph.nodes {
             if node.end > lo && node.start < hi {
@@ -1365,6 +1365,18 @@ fn merge_region_outer_bundles(
                 _ => read_other += 1,
             }
         }
+        // DEBUG: check if reads contain target junction before stats computed
+        if let Ok(dbg_jx) = std::env::var("RUSTLE_DEBUG_JX") {
+            let parts: Vec<u64> = dbg_jx.split(':').filter_map(|p| p.parse().ok()).collect();
+            if parts.len() == 2 {
+                let (d, a) = (parts[0], parts[1]);
+                if start <= d && d <= end {
+                    let n_reads_with_jx = reads.iter().filter(|r| r.junctions.iter().any(|j| j.donor == d && j.acceptor == a)).count();
+                    let n_reads_with_jx_raw = reads.iter().filter(|r| r.junctions_raw.iter().any(|j| j.donor == d && j.acceptor == a)).count();
+                    eprintln!("[DEBUG_JX_READS] {}:{}-{} reads_with_jx={} reads_with_jx_raw={} total_reads={}", chrom, start, end, n_reads_with_jx, n_reads_with_jx_raw, reads.len());
+                }
+            }
+        }
         let junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
         if debug_stage::is_enabled() {
             debug_stage::emit(
@@ -1396,7 +1408,7 @@ fn merge_region_outer_bundles(
                 ),
             );
         }
-        parity_shadow::emit_counts(
+        shadow::emit_counts(
             "layer0_region_merge",
             &chrom,
             start,
@@ -3662,7 +3674,7 @@ fn collect_guide_boundary_sets_for_bundle(
 use crate::transcript_filter::{
     add_pred, alt_donor_acceptor_rescue, apply_global_cross_strand_filter,
     collapse_equal_predictions, compute_tpm_fpkm, filter_unsupported_junctions,
-    print_predcluster_with_summary, suppress_near_duplicate_chains, PredclusterStageSummary,
+    suppress_near_duplicate_chains, PredclusterStageSummary,
 };
 use crate::transfrag_process::{
     chain_subsequence_offset, exons_intron_length_chain, process_transfrags,
@@ -4693,7 +4705,7 @@ fn terminal_alt_acceptor_rescue(
         return 0;
     }
     use std::collections::hash_map::Entry;
-    const EPS: f64 = crate::constants::FLOW_EPSILON;
+    const EPS: f64 = crate::util::constants::FLOW_EPSILON;
 
     // Map donor -> acceptor_start -> (acceptor_end, max_support)
     //
@@ -4832,7 +4844,7 @@ fn micro_exon_insertion_rescue(
     if std::env::var_os("RUSTLE_DISABLE_MICRO_EXON_RESCUE").is_some() {
         return 0;
     }
-    const EPS: f64 = crate::constants::FLOW_EPSILON;
+    const EPS: f64 = crate::util::constants::FLOW_EPSILON;
     const MAX_MICRO_EXON_LEN: u64 = 50;
 
     // Map (direct_donor, direct_acceptor) -> best-supported micro exon (start,end,support).
@@ -5194,6 +5206,12 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
             if let Some(last_nid) = find_node_containing(probe) {
                 // Extend across collinear child chain (parse_trflong terminal exon extension).
                 let mut cur = last_nid;
+                // checktrf_rescue transcripts have their last exon end set via
+                // longend clipping; traversing into contiguous child nodes would
+                // undo that clip and produce a spuriously long terminal exon.
+                let skip_child_extend = tx.source.as_deref()
+                    .map_or(false, |s| s == "checktrf_rescue");
+                if !skip_child_extend {
                 loop {
                     let cur_node = match graph.nodes.get(cur) {
                         Some(n) => n,
@@ -5231,6 +5249,7 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
                         }
                     }
                     cur = c;
+                }
                 }
 
                 if let Some(node) = graph.nodes.get(cur) {
@@ -6125,7 +6144,7 @@ fn extract_bundle_transcripts_for_graph(
     // Canonical post-extraction ordering mirroring print_predcluster flow.
     // Collect any additional batch-traced refs that overlap this bundle so
     // predcluster substages emit per-ref TRACE_REF lines (RUSTLE_TRACE_REF_LIST).
-    let extra_trace_refs: Vec<&RefTranscript> = crate::trace_reference::collect_batch_overlapping_refs(bundle, ref_transcripts);
+    let extra_trace_refs: Vec<&RefTranscript> = crate::tracing::reference::collect_batch_overlapping_refs(bundle, ref_transcripts);
     let (predcluster_txs, predcluster_summary) =
         crate::transcript_filter::print_predcluster_with_summary_multi(
             txs, config, Some(bpcov), traced_ref, &extra_trace_refs,
@@ -8449,10 +8468,10 @@ pub fn run<P: AsRef<Path>>(
         }
     }
     debug_stage::init(diag_tsv_resolved.as_deref())?;
-    parity_junction_dump::init()?;
-    parity_partition_dump::init()?;
-    parity_trace_dump::init()?;
-    parity_shadow::init(output_gtf.as_ref())?;
+    junction_dump::init()?;
+    partition_dump::init()?;
+    trace_dump::init()?;
+    shadow::init(output_gtf.as_ref())?;
     let snapshot_writer = std::sync::Arc::new(std::sync::Mutex::new(snapshot::SnapshotWriter::new(config.snapshot_jsonl.as_deref())?));
     let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
     let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
@@ -8477,9 +8496,9 @@ pub fn run<P: AsRef<Path>>(
         chrom_filter,
         vg_snp_genome.as_ref(),
     )?;
-    if crate::trace_pipeline::active() {
+    if crate::tracing::pipeline::active() {
         for b in &bundles {
-            crate::trace_pipeline::dump_bundle(
+            crate::tracing::pipeline::dump_bundle(
                 &b.chrom, b.start, b.end, b.strand, b.reads.len(),
             );
         }
@@ -8845,12 +8864,12 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: multi-mapping read resolution ──────────────────────
-    // For VgSolver::EmHmm or VgSolver::Auto (which may dispatch families to
-    // HMM), collect raw read sequences for multi-mappers via a dedicated
-    // BAM scan (one pass; primary alignments only — secondaries share
-    // read_name with their primary so we get the same sequence).
+    // For VgSolver::On (HMM-EM dispatch), collect raw read sequences for
+    // multi-mappers via a dedicated BAM scan (one pass; primary alignments
+    // only — secondaries share read_name with their primary so we get the
+    // same sequence).
     if config.vg_mode
-        && matches!(config.vg_solver, crate::types::VgSolver::EmHmm | crate::types::VgSolver::Auto)
+        && config.vg_solver == crate::types::VgSolver::On
         && !vg_families.is_empty()
     {
         let needed_hashes: std::collections::HashSet<u64> = vg_families.iter()
@@ -8879,180 +8898,50 @@ pub fn run<P: AsRef<Path>>(
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
         match config.vg_solver {
-            VgSolver::None => {
-                eprintln!("[VG] Discovery only — no multi-mapping resolution (use --vg-solver em to enable)");
+            VgSolver::Off => {
+                eprintln!("[VG] discovery only — no multi-mapping resolution (pass --vg-solver on to enable)");
                 Vec::new()
             }
-            VgSolver::Em => {
-                if config.vg_snp {
-                    eprintln!("[VG] Using EM solver with SNP-based copy assignment");
-                    crate::vg::run_pre_assembly_em_with_snps(
-                        &vg_families,
-                        &mut bundles,
-                        config.vg_em_max_iter,
-                    )
-                } else {
-                    eprintln!("[VG] Using EM solver for multi-mapping resolution");
-                    crate::vg::run_pre_assembly_em(
-                        &vg_families,
-                        &mut bundles,
-                        config.vg_em_max_iter,
-                    )
-                }
-            }
-            VgSolver::EmHmm => {
-                // HMM-based EM: per-paralog forward log-likelihood replaces
-                // the heuristic junction_compatibility × log_context score.
-                // Requires (a) read sequences for multi-mappers (collected at
-                // BAM parse — see config.vg_collected_sequences) and (b) a
-                // family-graph HMM per family (built here on demand).
-                eprintln!("[VG] Using HMM-based EM solver (sequence-aware copy assignment)");
-                let n_with_seq = config.vg_multimap_sequences.len();
-                if n_with_seq == 0 {
-                    eprintln!(
-                        "[VG] WARNING: --vg-solver em-hmm but no multi-mapper sequences collected. \
-                         Falling back to junction-based EM. Re-run with --vg --vg-solver em-hmm to \
-                         collect sequences (sequence collection runs only when this solver is selected)."
-                    );
-                    crate::vg::run_pre_assembly_em(
-                        &vg_families,
-                        &mut bundles,
-                        config.vg_em_max_iter,
-                    )
-                } else {
-                    eprintln!("[VG-HMM-EM] {} multi-mapper sequences available", n_with_seq);
-                    // Genome FASTA is required to fit profiles. Reuse the snp
-                    // genome if loaded; otherwise load it now (one-time cost).
-                    let em_hmm_genome: Option<crate::genome::GenomeIndex> = if vg_snp_genome.is_some() {
-                        None  // we'll borrow vg_snp_genome below
-                    } else if let Some(p) = config.genome_fasta.as_ref() {
-                        eprintln!("[VG-HMM-EM] Loading genome FASTA for profile fitting: {}", p);
-                        crate::genome::GenomeIndex::from_fasta(p).ok()
-                    } else {
-                        None
-                    };
-                    let genome_ref: Option<&crate::genome::GenomeIndex> = em_hmm_genome
-                        .as_ref()
-                        .or(vg_snp_genome.as_ref());
-                    if genome_ref.is_none() {
-                        eprintln!(
-                            "[VG-HMM-EM] WARNING: no genome FASTA available — falling back to junction-based EM. \
-                             Pass --genome <fasta> for HMM-EM."
-                        );
-                    }
-                    // Partition mixed-strand families into single-strand sub-families
-                    // (build_family_graph requires single-strand input). Remaps multimap_reads
-                    // to the partition's bundle_indices and drops cross-strand placements.
-                    let mut em_families: Vec<crate::vg::FamilyGroup> = Vec::new();
-                    for fam in vg_families.iter() {
-                        let partitions = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
-                        em_families.extend(partitions);
-                    }
-                    let n_part = em_families.len();
-                    if n_part > vg_families.len() {
-                        eprintln!(
-                            "[VG-HMM-EM] Strand partitioning split {} families → {} single-strand sub-families",
-                            vg_families.len(), n_part
-                        );
-                    }
-                    // Build family graphs per partition (parallel — each call only
-                    // reads &bundles + &genome_ref, owns its own FamilyGraph mutation).
-                    use rayon::prelude::*;
-                    let t_fg_start = std::time::Instant::now();
-                    let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
-                        em_families.par_iter()
-                            .map(|fam| {
-                                if genome_ref.is_none() { return None; }
-                                match crate::vg_hmm::family_graph::build_family_graph(fam, &bundles, genome_ref, 0.30, 0.30) {
-                                    Ok(mut fg) => {
-                                        if crate::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).is_err() {
-                                            eprintln!("[VG-HMM-EM] family {} profile fit failed; skipping", fam.family_id);
-                                            return None;
-                                        }
-                                        Some(fg)
-                                    }
-                                    Err(e) => {
-                                        eprintln!("[VG-HMM-EM] family {} graph build failed: {}", fam.family_id, e);
-                                        None
-                                    }
-                                }
-                            })
-                            .collect();
-                    let n_built = family_graphs.iter().filter(|g| g.is_some()).count();
-                    eprintln!(
-                        "[VG-HMM-EM] Built {}/{} family graphs in {:.1}s",
-                        n_built, em_families.len(), t_fg_start.elapsed().as_secs_f64()
-                    );
-                    crate::vg::run_pre_assembly_em_hmm(
-                        &em_families,
-                        &mut bundles,
-                        &family_graphs,
-                        &config.vg_multimap_sequences,
-                        config.vg_em_max_iter,
-                        config.vg_snp,
-                    )
-                }
-            }
-            VgSolver::Auto => {
-                // Per-family dispatch. See vg.rs::classify_family_for_em
-                // and project_novel_copy_rescue.md for the empirical
-                // basis of these routing thresholds.
+            VgSolver::On => {
+                // Compact dispatch: one probabilistic solver, two triviality
+                // escape hatches (singletons / oversized / intronless). HMM-EM
+                // is the universal target — for divergent copies the forward
+                // DP converges in 1–2 iterations to essentially-hard γ
+                // assignments, so it subsumes the legacy heuristic-EM routing.
+                // The heuristic path stays only as a graceful fallback when
+                // HMM prerequisites (--genome-fasta + collected sequences)
+                // are unavailable.
                 let has_genome = config.genome_fasta.is_some();
-                let mut hmm_families: Vec<crate::vg::FamilyGroup> = Vec::new();
-                let mut heuristic_families: Vec<crate::vg::FamilyGroup> = Vec::new();
+                let mut families_for_em: Vec<crate::vg::FamilyGroup> = Vec::new();
                 let mut skip_counts: std::collections::BTreeMap<&str, usize> =
                     std::collections::BTreeMap::new();
                 for fam in &vg_families {
                     match crate::vg::classify_family_for_em(
                         fam, &bundles,
                         config.vg_em_max_copies,
-                        config.vg_em_hmm_max_copies,
+                        config.vg_em_max_work,
                         config.vg_em_skip_intronless,
-                        has_genome,
                     ) {
                         crate::vg::EmRoute::Skip(reason) => {
                             *skip_counts.entry(reason).or_insert(0) += 1;
                         }
-                        crate::vg::EmRoute::Heuristic => heuristic_families.push(fam.clone()),
-                        crate::vg::EmRoute::Hmm => hmm_families.push(fam.clone()),
+                        crate::vg::EmRoute::Hmm => families_for_em.push(fam.clone()),
                     }
                 }
+
+                let hmm_ok = has_genome && !config.vg_multimap_sequences.is_empty();
                 eprintln!(
-                    "[VG] auto-solver: {} families → heuristic, {} → HMM, {} skipped {:?}",
-                    heuristic_families.len(), hmm_families.len(),
+                    "[VG] {} families → {}, {} skipped {:?}",
+                    families_for_em.len(),
+                    if hmm_ok { "HMM-EM" } else { "heuristic-EM (HMM prereqs missing)" },
                     skip_counts.values().sum::<usize>(),
                     skip_counts,
                 );
 
-                // Run heuristic EM on the larger / high-similarity bucket.
-                // When --vg-snp is set, use the SNP-aware variant — diagnostic
-                // SNVs separate near-identical paralogs that junctions can't.
-                let mut em_results: Vec<crate::vg::EmResult> = if !heuristic_families.is_empty() {
-                    if config.vg_snp {
-                        eprintln!("[VG] auto: heuristic bucket using SNP-aware EM");
-                        crate::vg::run_pre_assembly_em_with_snps(
-                            &heuristic_families,
-                            &mut bundles,
-                            config.vg_em_max_iter,
-                        )
-                    } else {
-                        crate::vg::run_pre_assembly_em(
-                            &heuristic_families,
-                            &mut bundles,
-                            config.vg_em_max_iter,
-                        )
-                    }
-                } else {
+                if families_for_em.is_empty() {
                     Vec::new()
-                };
-
-                // Run HMM-EM on medium-divergence bucket (only if genome available
-                // and sequences were collected — same prerequisites as the explicit
-                // em-hmm solver).
-                if !hmm_families.is_empty() && has_genome
-                    && !config.vg_multimap_sequences.is_empty()
-                {
-                    // Mirror the EmHmm branch's strand partitioning + family-graph build.
+                } else if hmm_ok {
+                    // HMM-EM path: strand-partition, build family graphs, run forward-DP EM.
                     let em_hmm_genome: Option<crate::genome::GenomeIndex> =
                         if vg_snp_genome.is_some() {
                             None
@@ -9065,7 +8954,7 @@ pub fn run<P: AsRef<Path>>(
                         .as_ref()
                         .or(vg_snp_genome.as_ref());
                     let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
-                    for fam in hmm_families.iter() {
+                    for fam in families_for_em.iter() {
                         let parts = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
                         em_hmm_partitions.extend(parts);
                     }
@@ -9087,47 +8976,27 @@ pub fn run<P: AsRef<Path>>(
                                 }
                             })
                             .collect();
-                    let mut hmm_results = crate::vg::run_pre_assembly_em_hmm(
+                    crate::vg::run_pre_assembly_em_hmm(
                         &em_hmm_partitions,
                         &mut bundles,
                         &family_graphs,
                         &config.vg_multimap_sequences,
                         config.vg_em_max_iter,
                         config.vg_snp,
-                    );
-                    em_results.append(&mut hmm_results);
-                } else if !hmm_families.is_empty() {
-                    eprintln!(
-                        "[VG] auto: HMM bucket has {} families but {}; falling back to heuristic{}",
-                        hmm_families.len(),
-                        if !has_genome { "no --genome-fasta" }
-                        else { "no multi-mapper sequences collected" },
-                        if config.vg_snp { " (SNP-aware)" } else { "" }
-                    );
-                    let mut fallback = if config.vg_snp {
+                        config.vg_junction_bonus,
+                        config.vg_em_uniform_prior,
+                        config.vg_exon_len_penalty,
+                    )
+                } else {
+                    // Heuristic fallback (SNP-aware if --vg-snp set).
+                    if config.vg_snp {
                         crate::vg::run_pre_assembly_em_with_snps(
-                            &hmm_families, &mut bundles, config.vg_em_max_iter)
+                            &families_for_em, &mut bundles, config.vg_em_max_iter)
                     } else {
                         crate::vg::run_pre_assembly_em(
-                            &hmm_families, &mut bundles, config.vg_em_max_iter)
-                    };
-                    em_results.append(&mut fallback);
+                            &families_for_em, &mut bundles, config.vg_em_max_iter)
+                    }
                 }
-                em_results
-            }
-            VgSolver::Flow => {
-                // Flow-based redistribution requires two-pass assembly.
-                // First pass: run with uniform weights (handled by normal pipeline below).
-                // Second pass: redistribute based on assembled transcript coverage.
-                // For now, use EM as first pass, flow redistribution in future.
-                eprintln!("[VG] Using flow-based solver (first pass: EM, then flow redistribution)");
-                crate::vg::run_pre_assembly_em(
-                    &vg_families,
-                    &mut bundles,
-                    config.vg_em_max_iter,
-                )
-                // TODO: After main assembly loop, collect per-family transcripts,
-                // compute flow-based weights, and re-run assembly for family bundles.
             }
         }
     } else {
@@ -9182,7 +9051,7 @@ pub fn run<P: AsRef<Path>>(
     let single_exon_predictions_mutex = std::sync::Mutex::new(Vec::<Transcript>::new());
     let trace_pass_id = std::sync::atomic::AtomicUsize::new(0);
     let shadow_strict_3strand =
-        std::env::var_os("RUSTLE_SHADOW_STRICT_3STRAND").is_some() || parity_shadow::enabled();
+        std::env::var_os("RUSTLE_SHADOW_STRICT_3STRAND").is_some() || shadow::enabled();
     let focus_loci = parse_focus_loci_env();
     let shadow_bundle_diags_mutex = std::sync::Mutex::new(Vec::<ShadowStrictBundleDiag>::new());
 
@@ -9704,6 +9573,18 @@ pub fn run<P: AsRef<Path>>(
         // 3. Apply guide-based snap correction (long-read, guide present)
         // 4. Gate with good_junc, then repair reads from killed + redirect maps
         let mut junction_stats_corr = bundle.junction_stats.clone();
+        // DEBUG: trace specific junction
+        if let Ok(dbg_jx) = std::env::var("RUSTLE_DEBUG_JX") {
+            let parts: Vec<u64> = dbg_jx.split(':').filter_map(|p| p.parse().ok()).collect();
+            if parts.len() == 2 {
+                let (d, a) = (parts[0], parts[1]);
+                if junction_stats_corr.iter().any(|(j, _)| j.donor == d && j.acceptor == a) ||
+                   (bundle.start <= d && d <= bundle.end) {
+                    let mc = junction_stats_corr.iter().find(|(j,_)| j.donor==d && j.acceptor==a).map(|(_, s)| s.mrcount).unwrap_or(-1.0);
+                    eprintln!("[DEBUG_JX_BUNDLE] {}:{}-{} strand={} bundle_junction_stats has jx: {} mrcount={}", bundle.chrom, bundle.start, bundle.end, bundle.strand, junction_stats_corr.iter().any(|(j,_)| j.donor==d && j.acceptor==a), mc);
+                }
+            }
+        }
         let mut junction_redirect_map: HashMap<Junction, Junction> = Default::default();
 
         // Recompute support from adjusted segments (count_good_junctions)
@@ -9726,6 +9607,21 @@ pub fn run<P: AsRef<Path>>(
             &bundle.chrom,
             &chrom_junction_strand_evidence,
         );
+        // DEBUG after count_good_junctions
+        {
+            let _dbg_check = |stats: &crate::types::JunctionStats, label: &str| {
+                if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+                    let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+                    if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                        let found = stats.iter().any(|(j, _)| j.donor == p[0] && j.acceptor == p[1]);
+                        let mm_v = stats.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.mm).unwrap_or(f64::NAN);
+                        let mc = stats.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+                        eprintln!("[DEBUG_JX_PIPE] {} present={} mrcount={} mm={}", label, found, mc, mm_v);
+                    }
+                }
+            };
+            _dbg_check(&junction_stats_corr, "after_count_good_junctions");
+        }
         if stage_debug {
             eprintln!(
                 "[EARLY_DEBUG] post_count_good {}:{}-{} count={}",
@@ -9935,13 +9831,42 @@ pub fn run<P: AsRef<Path>>(
                 }
             }
         }
+        // DEBUG after good_junc (using CJunction)
+        if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+            let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+            if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                let found = cjunctions.iter().find(|c| c.start == p[0] && c.end == p[1]);
+                match found {
+                    Some(c) => eprintln!("[DEBUG_JX_PIPE] after_good_junc present=true nreads={} mm={} strand={}", c.nreads, c.mm, c.strand),
+                    None => eprintln!("[DEBUG_JX_PIPE] after_good_junc present=false"),
+                }
+            }
+        }
         junction_stats_corr = crate::types::cjunctions_to_junction_stats(&cjunctions);
+        // DEBUG after cjunctions_to_junction_stats
+        if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+            let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+            if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                let found = junction_stats_corr.iter().any(|(j, _)| j.donor == p[0] && j.acceptor == p[1]);
+                let mc = junction_stats_corr.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+                eprintln!("[DEBUG_JX_PIPE] after_cjunctions_to_jstats present={} mrcount={}", found, mc);
+            }
+        }
         apply_bad_mm_neg_stage(
             &mut junction_stats_corr,
             &bpcov_stranded,
             bundle.start,
             config.min_junction_reads,
         );
+        // DEBUG after apply_bad_mm_neg_stage
+        if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+            let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+            if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                let found = junction_stats_corr.iter().any(|(j, _)| j.donor == p[0] && j.acceptor == p[1]);
+                let mc = junction_stats_corr.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+                eprintln!("[DEBUG_JX_PIPE] after_apply_bad_mm_neg present={} mrcount={}", found, mc);
+            }
+        }
         if stage_debug {
             eprintln!(
                 "[EARLY_DEBUG] post_cjunction_to_map {}:{}-{} count={}",
@@ -10013,19 +9938,19 @@ pub fn run<P: AsRef<Path>>(
                 &junction_stats_corr,
             );
         }
-        if parity_junction_dump::enabled() {
+        if junction_dump::enabled() {
             let read_juncs: crate::types::DetHashSet<crate::types::Junction> = bundle
                 .reads
                 .iter()
                 .flat_map(|r| r.junctions.iter().copied())
                 .collect();
-            parity_junction_dump::emit_row(
+            junction_dump::emit_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
                 bundle.strand,
                 "read_union",
-                &parity_junction_dump::encode_junction_set_sorted(read_juncs.into_iter()),
+                &junction_dump::encode_junction_set_sorted(read_juncs.into_iter()),
             );
         }
         if trace_log_style {
@@ -10083,14 +10008,14 @@ pub fn run<P: AsRef<Path>>(
         }
 
         let junction_stats_corr_final = junction_stats_corr.clone();
-        if parity_junction_dump::enabled() {
-            parity_junction_dump::emit_row(
+        if junction_dump::enabled() {
+            junction_dump::emit_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
                 bundle.strand,
                 "pre_canonical",
-                &parity_junction_dump::encode_stats_graphlike(
+                &junction_dump::encode_stats_graphlike(
                     &junction_stats_corr_final,
                     config.min_junction_reads,
                 ),
@@ -10102,7 +10027,7 @@ pub fn run<P: AsRef<Path>>(
         let keep_precanonical_junctions =
             std::env::var_os("RUSTLE_KEEP_PRECANONICAL_JUNCTIONS").is_some();
         if keep_precanonical_junctions {
-            parity_trace_dump::emit_event_row(
+            trace_dump::emit_event_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10111,6 +10036,15 @@ pub fn run<P: AsRef<Path>>(
                 2,
                 "mode=keep_precanonical_for_graph_input",
             );
+        }
+        // DEBUG: check junction right before apply_junction_filters_and_canonicalize
+        if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+            let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+            if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                let found = junction_stats_corr.iter().any(|(j, _)| j.donor == p[0] && j.acceptor == p[1]);
+                let mc = junction_stats_corr.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+                eprintln!("[DEBUG_JX_BEFORE_FILTER] {}:{}-{} present={} mrcount={} n_total={}", bundle.chrom, bundle.start, bundle.end, found, mc, junction_stats_corr.len());
+            }
         }
         let junction_stats = if keep_precanonical_junctions {
             junction_stats_corr_final.clone()
@@ -10123,7 +10057,26 @@ pub fn run<P: AsRef<Path>>(
                 config.verbose,
             )
         };
+        // DEBUG: check junction after apply_junction_filters_and_canonicalize
+        if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+            let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+            if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                let found = junction_stats.iter().any(|(j, _)| j.donor == p[0] && j.acceptor == p[1]);
+                let mc = junction_stats.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+                let ng = junction_stats.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.nreads_good).unwrap_or(0.0);
+                let st = junction_stats.iter().find(|(j, _)| j.donor == p[0] && j.acceptor == p[1]).map(|(_, s)| s.strand).unwrap_or(None);
+                eprintln!("[DEBUG_JX_AFTER_FILTER] {}:{}-{} present={} mrcount={} nreads_good={} strand={:?}", bundle.chrom, bundle.start, bundle.end, found, mc, ng, st);
+            }
+        }
         let mut junctions = filter_junctions(&junction_stats, config.min_junction_reads);
+        // DEBUG: check if junction in final junctions vec
+        if let Ok(dv) = std::env::var("RUSTLE_DEBUG_JX") {
+            let p: Vec<u64> = dv.split(':').filter_map(|x| x.parse().ok()).collect();
+            if p.len() == 2 && bundle.start <= p[0] && p[0] <= bundle.end {
+                let in_jvec = junctions.iter().any(|j| j.donor == p[0] && j.acceptor == p[1]);
+                eprintln!("[DEBUG_JX_FINAL_JX_VEC] {}:{}-{} in_junctions_vec={} n_total={}", bundle.chrom, bundle.start, bundle.end, in_jvec, junctions.len());
+            }
+        }
         let forced_keep_junctions =
             parity_forced_keep_junctions(&bundle.chrom, bundle.start, bundle.end);
         let forced_drop_junctions =
@@ -10136,7 +10089,7 @@ pub fn run<P: AsRef<Path>>(
                     added += 1;
                 }
             }
-            parity_trace_dump::emit_event_row(
+            trace_dump::emit_event_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10151,7 +10104,7 @@ pub fn run<P: AsRef<Path>>(
             let drop_set: HashSet<Junction> = forced_drop_junctions.iter().copied().collect();
             junctions.retain(|j| !drop_set.contains(j));
             let removed = before.saturating_sub(junctions.len());
-            parity_trace_dump::emit_event_row(
+            trace_dump::emit_event_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10161,14 +10114,14 @@ pub fn run<P: AsRef<Path>>(
                 &format!("requested={};removed={}", forced_drop_junctions.len(), removed),
             );
         }
-        if parity_junction_dump::enabled() {
-            parity_junction_dump::emit_row(
+        if junction_dump::enabled() {
+            junction_dump::emit_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
                 bundle.strand,
                 "graph_input",
-                &parity_junction_dump::encode_junction_set_sorted(junctions.iter().copied()),
+                &junction_dump::encode_junction_set_sorted(junctions.iter().copied()),
             );
         }
         if trace_log_style {
@@ -10307,7 +10260,7 @@ pub fn run<P: AsRef<Path>>(
             for j in &forced_keep_junctions {
                 good_junctions_set.insert(*j);
             }
-            parity_trace_dump::emit_event_row(
+            trace_dump::emit_event_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10323,7 +10276,7 @@ pub fn run<P: AsRef<Path>>(
                 good_junctions_set.remove(j);
             }
             let removed = before.saturating_sub(good_junctions_set.len());
-            parity_trace_dump::emit_event_row(
+            trace_dump::emit_event_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10376,14 +10329,14 @@ pub fn run<P: AsRef<Path>>(
             }
         }
 
-        if parity_junction_dump::enabled() {
-            parity_junction_dump::emit_row(
+        if junction_dump::enabled() {
+            junction_dump::emit_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
                 bundle.strand,
                 "cgroup_feed",
-                &parity_junction_dump::encode_junction_set_sorted(good_junctions_set.iter().copied()),
+                &junction_dump::encode_junction_set_sorted(good_junctions_set.iter().copied()),
             );
         }
 
@@ -10547,8 +10500,8 @@ pub fn run<P: AsRef<Path>>(
                         let changelr_valid = newstart >= seg_start
                             && newend <= seg_end
                             && newstart <= newend;
-                        if parity_trace_dump::enabled() {
-                            parity_trace_dump::emit_event_row(
+                        if trace_dump::enabled() {
+                            trace_dump::emit_event_row(
                                 &bundle.chrom,
                                 bundle.start,
                                 bundle.end,
@@ -10783,7 +10736,7 @@ pub fn run<P: AsRef<Path>>(
             let n_junctions: usize = bundle.reads.iter().map(|r| r.junctions.len()).sum();
             let assigned_reads = cgroup_read_bnodes.iter().filter(|v| !v.is_empty()).count();
             let (shadow_bnodes, shadow_groups, shadow_assigned) =
-                if parity_shadow::enabled() {
+                if shadow::enabled() {
                     let (s_bn, s_rb, s_bc) = build_bundlenodes_and_readgroups_from_cgroups(
                         cgroup_reads,
                         &good_junctions_set,
@@ -10833,7 +10786,7 @@ pub fn run<P: AsRef<Path>>(
                 detail,
                 &partition_note,
             );
-            parity_shadow::emit_counts(
+            shadow::emit_counts(
                 "layer1_bundle_partition",
                 &bundle.chrom,
                 bundle.start,
@@ -10848,7 +10801,7 @@ pub fn run<P: AsRef<Path>>(
                 partition_mode,
             );
         }
-        let parity_need_sub_bundles = parity_partition_dump::enabled() || parity_trace_dump::enabled();
+        let parity_need_sub_bundles = partition_dump::enabled() || trace_dump::enabled();
         // Mirror the (color_good, color_killed) composition used by the final build_sub_bundles
         // call so the partition TSV reflects the same junction sets as the actual assembly.
         let cached_color_good: HashSet<crate::types::Junction> = {
@@ -10883,7 +10836,7 @@ pub fn run<P: AsRef<Path>>(
                 None
             };
 
-        if parity_partition_dump::enabled() {
+        if partition_dump::enabled() {
             // StringTie emits one chain per `CBundle` (linked-list walk). The merged 3-strand
             // `bundlenodes` list plus color components collapses many ST chains into one; rebuild
             // from `build_sub_bundles` for parity TSV only (graph still uses `bundlenodes`).
@@ -10896,18 +10849,18 @@ pub fn run<P: AsRef<Path>>(
                         .into_iter()
                         .map(|comp| comp.into_iter().map(|(_, s, e, _)| (s, e)).collect())
                         .collect();
-                parity_partition_dump::encode_partition_signature(&geom)
+                partition_dump::encode_partition_signature(&geom)
             } else if let Some(ref subs) = cached_sub_bundles {
-                parity_partition_dump::encode_partition_signature_sub_bundle_walk(subs)
+                partition_dump::encode_partition_signature_sub_bundle_walk(subs)
             } else {
                 let geom: Vec<Vec<(u64, u64)>> =
                     bundlenode_components_by_color(bundlenodes.as_ref(), &bnode_colors)
                         .into_iter()
                         .map(|comp| comp.into_iter().map(|(_, s, e, _)| (s, e)).collect())
                         .collect();
-                parity_partition_dump::encode_partition_signature(&geom)
+                partition_dump::encode_partition_signature(&geom)
             };
-            parity_trace_dump::emit_event_row(
+            trace_dump::emit_event_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10916,7 +10869,7 @@ pub fn run<P: AsRef<Path>>(
                 2,
                 &format!("mode={}", partition_sig_mode),
             );
-            parity_partition_dump::emit_rustle_row(
+            partition_dump::emit_rustle_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10976,12 +10929,12 @@ pub fn run<P: AsRef<Path>>(
             }
         }
 
-        if parity_trace_dump::enabled() {
+        if trace_dump::enabled() {
             let sub_n = cached_sub_bundles.as_ref().map(|s| s.len()).unwrap_or(0);
             let bnodes_n = count_bnodes(bundlenodes.as_ref());
             let roots_n = unique_color_roots(&bnode_colors);
             let assigned_n = count_assigned_reads(&cgroup_read_bnodes, &cgroup_read_scales);
-            parity_trace_dump::emit_cgroup_row(
+            trace_dump::emit_cgroup_row(
                 &bundle.chrom,
                 bundle.start,
                 bundle.end,
@@ -10991,7 +10944,7 @@ pub fn run<P: AsRef<Path>>(
                 roots_n,
                 assigned_n,
             );
-            if parity_trace_dump::chain_detail_enabled() {
+            if trace_dump::chain_detail_enabled() {
                 if let Some(ref subs) = cached_sub_bundles {
                     for (ci, sb) in subs.iter().enumerate() {
                         let mut segs: Vec<String> = Vec::new();
@@ -11000,7 +10953,7 @@ pub fn run<P: AsRef<Path>>(
                             segs.push(format!("{}-{}", n.start, n.end.saturating_sub(1)));
                             cur = n.next.as_deref();
                         }
-                        parity_trace_dump::emit_partition_chain_row(
+                        trace_dump::emit_partition_chain_row(
                             &bundle.chrom,
                             bundle.start,
                             bundle.end,
@@ -11018,7 +10971,7 @@ pub fn run<P: AsRef<Path>>(
                         .map(|(_, s, e, _)| format!("{}-{}", s, e.saturating_sub(1)))
                         .collect::<Vec<_>>()
                         .join("+");
-                    parity_trace_dump::emit_partition_chain_row(
+                    trace_dump::emit_partition_chain_row(
                         &bundle.chrom,
                         bundle.start,
                         bundle.end,
@@ -11029,10 +10982,10 @@ pub fn run<P: AsRef<Path>>(
                     );
                 }
             }
-            if parity_trace_dump::read_exons_enabled() {
+            if trace_dump::read_exons_enabled() {
                 for (ri, r) in cgroup_reads.iter().enumerate() {
-                    let chain = parity_trace_dump::format_read_exon_chain(&r.exons);
-                    parity_trace_dump::emit_read_exon_row(
+                    let chain = trace_dump::format_read_exon_chain(&r.exons);
+                    trace_dump::emit_read_exon_row(
                         &bundle.chrom,
                         bundle.start,
                         bundle.end,
@@ -11058,7 +11011,7 @@ pub fn run<P: AsRef<Path>>(
              good_junctions_local: &HashSet<(u64, u64)>,
              killed_junction_pairs_local: &HashSet<Junction>,
              run_tag: &str| {
-                parity_trace_dump::emit_event_row(
+                trace_dump::emit_event_row(
                     &bundle.chrom,
                     bundle.start,
                     bundle.end,
@@ -11203,7 +11156,7 @@ pub fn run<P: AsRef<Path>>(
                 // Partition / junction parity keys use the parent pipeline bundle. Sub-slices
                 // (`graph_bundle` for per-subbundle graphs) use different coordinates; trace rows
                 // must repeat the parent key so `disambiguate_parity_bundles.py` can join rows.
-                parity_trace_dump::emit_graph_row(
+                trace_dump::emit_graph_row(
                     &bundle.chrom,
                     bundle.start,
                     bundle.end,
@@ -11318,7 +11271,7 @@ pub fn run<P: AsRef<Path>>(
                 let freeze_pre_read_map_graph = crate::stringtie_parity::stringtie_exact()
                     || std::env::var_os("RUSTLE_FREEZE_GRAPH_PRE_READ_MAP").is_some();
                 if freeze_pre_read_map_graph {
-                    parity_trace_dump::emit_event_row(
+                    trace_dump::emit_event_row(
                         &bundle.chrom,
                         bundle.start,
                         bundle.end,
@@ -11481,7 +11434,7 @@ pub fn run<P: AsRef<Path>>(
                         reads.len()
                     );
                 }
-                parity_trace_dump::emit_graph_row(
+                trace_dump::emit_graph_row(
                     &bundle.chrom,
                     bundle.start,
                     bundle.end,
@@ -11520,7 +11473,7 @@ pub fn run<P: AsRef<Path>>(
                     )
                 };
                 tag_transfrags_origin_if_missing(&mut transfrags, "read_map");
-                parity_trace_dump::emit_read_map_summary_row(
+                trace_dump::emit_read_map_summary_row(
                     &bundle.chrom,
                     bundle.start,
                     bundle.end,
@@ -11547,7 +11500,7 @@ pub fn run<P: AsRef<Path>>(
                     debug_stage::graph_detail(&graph_mut, &transfrags),
                     "after_map_reads",
                 );
-                parity_shadow::emit_counts(
+                shadow::emit_counts(
                     "layer2_graph",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -11562,7 +11515,7 @@ pub fn run<P: AsRef<Path>>(
                     "after_map_reads",
                 );
                 trace_graph_numeric_state("graph:after_map_reads", &graph_mut, &transfrags);
-                parity_trace_dump::emit_event_row(
+                trace_dump::emit_event_row(
                     &bundle.chrom,
                     bundle.start,
                     bundle.end,
@@ -11813,7 +11766,7 @@ pub fn run<P: AsRef<Path>>(
                             introns.len(),
                             intron_str,
                         );
-                        crate::parity_decisions::emit(
+                        crate::parity::decisions::emit(
                             "transfrag_define",
                             Some(&graph_bundle.chrom),
                             span_start + 1, // 0-based → 1-based
@@ -11831,7 +11784,7 @@ pub fn run<P: AsRef<Path>>(
                                 introns.len(),
                                 intron_str,
                             );
-                            crate::parity_decisions::emit(
+                            crate::parity::decisions::emit(
                                 "transfrag_seed",
                                 Some(&graph_bundle.chrom),
                                 span_start + 1,
@@ -11890,7 +11843,7 @@ pub fn run<P: AsRef<Path>>(
                     &graph_mut,
                     &transfrags,
                 );
-                parity_shadow::emit_counts(
+                shadow::emit_counts(
                     "layer3_transfrag",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -11904,7 +11857,7 @@ pub fn run<P: AsRef<Path>>(
                     -1,
                     "after_process_transfrags",
                 );
-                if crate::trace_pipeline::active() {
+                if crate::tracing::pipeline::active() {
                     let src = graph_mut.source_id;
                     let snk = graph_mut.sink_id;
                     for from in 0..graph_mut.nodes.len() {
@@ -11916,7 +11869,7 @@ pub fn run<P: AsRef<Path>>(
                             if c == src || c == snk { continue; }
                             let ts = graph_mut.nodes[c].start;
                             let te = graph_mut.nodes[c].end;
-                            crate::trace_pipeline::dump_graph_edge(
+                            crate::tracing::pipeline::dump_graph_edge(
                                 &graph_bundle.chrom,
                                 graph_bundle.start,
                                 graph_bundle.end,
@@ -12088,7 +12041,7 @@ pub fn run<P: AsRef<Path>>(
                     let read_singles = crate::transcript_filter::build_read_junction_singletons(reads);
                     let read_junc_counts = crate::transcript_filter::build_read_junction_counts(reads);
                     // POST_BUNDLE_TRACE: log STRG.1.5-style targeted ref before this stage
-                    crate::trace_reference::debug_target_ref_stage(
+                    crate::tracing::reference::debug_target_ref_stage(
                         "post_bundle_pre_unwitnessed", graph_bundle, &ref_transcripts, &txs,
                     );
                     let mut filtered = crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
@@ -12099,7 +12052,7 @@ pub fn run<P: AsRef<Path>>(
                         config.junction_correction_window,
                         config.verbose,
                     );
-                    crate::trace_reference::debug_target_ref_stage(
+                    crate::tracing::reference::debug_target_ref_stage(
                         "post_bundle_after_unwitnessed", graph_bundle, &ref_transcripts, &filtered,
                     );
                     // Full-chain-witness filter (DEFAULT-ON): kill tx where
@@ -12117,7 +12070,7 @@ pub fn run<P: AsRef<Path>>(
                             false, // post-predcluster: check all K-windows
                             Some(0), // max_gap=0: strict coverage, no jumping over unwitnessed positions
                         );
-                        crate::trace_reference::debug_target_ref_stage(
+                        crate::tracing::reference::debug_target_ref_stage(
                             "post_bundle_after_full_chain_witness", graph_bundle, &ref_transcripts, &filtered,
                         );
                     }
@@ -12206,7 +12159,7 @@ pub fn run<P: AsRef<Path>>(
                     );
                 if focus_hit {
                     let layer_suffix = if run_tag == "shadow" { "shadow" } else { "base" };
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_pairwise_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12220,7 +12173,7 @@ pub fn run<P: AsRef<Path>>(
                         -1,
                         "after_pairwise/removed/seed_stored",
                     );
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_pairwise_reason_a_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12234,7 +12187,7 @@ pub fn run<P: AsRef<Path>>(
                         -1,
                         "included/secontained/intronic",
                     );
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_pairwise_reason_b_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12256,7 +12209,7 @@ pub fn run<P: AsRef<Path>>(
                         if *cnt == 0 {
                             continue;
                         }
-                        parity_shadow::emit_counts(
+                        shadow::emit_counts(
                             &format!("focus_pairwise_detail_{}", layer_suffix),
                             &graph_bundle.chrom,
                             graph_bundle.start,
@@ -12271,7 +12224,7 @@ pub fn run<P: AsRef<Path>>(
                             reason.as_str(),
                         );
                     }
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_isofrac_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12285,7 +12238,7 @@ pub fn run<P: AsRef<Path>>(
                         -1,
                         "after_isofrac/removed/longunder_kill",
                     );
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_runoff_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12299,7 +12252,7 @@ pub fn run<P: AsRef<Path>>(
                         -1,
                         "after_runoff/runoff_removed/polymerase_runoff_removed",
                     );
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_readthr_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12313,7 +12266,7 @@ pub fn run<P: AsRef<Path>>(
                         -1,
                         "after_readthr/readthr_removed/junction_support_removed",
                     );
-                    parity_shadow::emit_counts(
+                    shadow::emit_counts(
                         &format!("focus_final_{}", layer_suffix),
                         &graph_bundle.chrom,
                         graph_bundle.start,
@@ -12622,7 +12575,7 @@ pub fn run<P: AsRef<Path>>(
                     },
                     &format!("pre_filter={}", pre_filter_count),
                 );
-                parity_shadow::emit_counts(
+                shadow::emit_counts(
                     "layer4_transcript",
                     &graph_bundle.chrom,
                     graph_bundle.start,
@@ -12636,7 +12589,7 @@ pub fn run<P: AsRef<Path>>(
                     -1,
                     "txs/pre_filter/seeds_total",
                 );
-                parity_trace_dump::emit_event_row(
+                trace_dump::emit_event_row(
                     &bundle.chrom,
                     bundle.start,
                     bundle.end,
@@ -12789,7 +12742,7 @@ pub fn run<P: AsRef<Path>>(
                     r#""n_bnodes":{},"n_reads":{}"#,
                     n_bnodes, n_reads
                 );
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "bundle_define",
                     Some(&bundle.chrom),
                     sbr.start + 1,
@@ -13955,7 +13908,7 @@ pub fn run<P: AsRef<Path>>(
                 strict_pre_filter_total += pre_filter.as_ref().map(|v| v.len()).unwrap_or(0);
                 accumulate_seed_outcomes(&mut strict_seed_summary, &seed_outcomes);
             }
-            parity_shadow::emit_counts(
+            shadow::emit_counts(
                 "layer2_graph_shadow",
                 &bundle.chrom,
                 bundle.start,
@@ -13969,7 +13922,7 @@ pub fn run<P: AsRef<Path>>(
                 strict_assigned as i64,
                 "bnodes/components/assigned",
             );
-            parity_shadow::emit_counts(
+            shadow::emit_counts(
                 "layer3_transfrag_shadow",
                 &bundle.chrom,
                 bundle.start,
@@ -13983,7 +13936,7 @@ pub fn run<P: AsRef<Path>>(
                 strict_seed_summary.checktrf_total as i64,
                 "seed_total/seed_stored/checktrf_total",
             );
-            parity_shadow::emit_counts(
+            shadow::emit_counts(
                 "layer4_transcript_shadow",
                 &bundle.chrom,
                 bundle.start,
@@ -14180,9 +14133,9 @@ pub fn run<P: AsRef<Path>>(
     // print_predcluster processes both strands of a locus together; single-exon
     // transcripts on the minority strand are eliminated by higher-scored opposite-strand
     // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
-    crate::trace_reference::debug_target_ref_global_stage("global_pre_cross_strand", &ref_transcripts, &all_transcripts);
+    crate::tracing::reference::debug_target_ref_global_stage("global_pre_cross_strand", &ref_transcripts, &all_transcripts);
     all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
-    crate::trace_reference::debug_target_ref_global_stage("global_after_cross_strand", &ref_transcripts, &all_transcripts);
+    crate::tracing::reference::debug_target_ref_global_stage("global_after_cross_strand", &ref_transcripts, &all_transcripts);
 
     // Near-duplicate chain suppression (opt-in via RUSTLE_SUPPRESS_NEAR_DUP=1):
     // drop low-cov multi-exon transcripts whose intron chain differs from a
@@ -14190,7 +14143,7 @@ pub fn run<P: AsRef<Path>>(
     // These are typical j-class artifacts that inflate tx count without
     // recovering real missed isoforms.
     all_transcripts = suppress_near_duplicate_chains(all_transcripts, config.verbose);
-    crate::trace_reference::debug_target_ref_global_stage("global_after_near_dup", &ref_transcripts, &all_transcripts);
+    crate::tracing::reference::debug_target_ref_global_stage("global_after_near_dup", &ref_transcripts, &all_transcripts);
 
     // Family-extension: for each transcript whose intron chain is a strict
     // contiguous subsequence of a longer transcript's chain (within 5 bp per
@@ -15121,7 +15074,7 @@ pub fn run<P: AsRef<Path>>(
                 || t.transcript_id.is_some() // eonly guide passthrough
                 || t.ref_transcript_id.is_some() // guide-matched
         });
-        crate::trace_reference::debug_target_ref_global_stage("global_after_final_cov_floor", &ref_transcripts, &all_transcripts);
+        crate::tracing::reference::debug_target_ref_global_stage("global_after_final_cov_floor", &ref_transcripts, &all_transcripts);
         let removed = before - all_transcripts.len();
         if removed > 0 && config.verbose {
             eprintln!(
@@ -15164,11 +15117,11 @@ pub fn run<P: AsRef<Path>>(
         "final_gtf",
     );
     debug_stage::flush();
-    parity_junction_dump::flush();
-    parity_partition_dump::flush();
-    parity_trace_dump::flush();
-    parity_shadow::flush();
-    crate::hard_counters::dump();
+    junction_dump::flush();
+    partition_dump::flush();
+    trace_dump::flush();
+    shadow::flush();
+    crate::util::hard_counters::dump();
 
     if let Some(ref ballgown_dir) = config.ballgown_dir {
         write_ballgown(&all_transcripts, ballgown_dir, &config.label)?;

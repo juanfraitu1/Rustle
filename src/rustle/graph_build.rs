@@ -1,13 +1,13 @@
 //! Build splice graph from junctions and bundlenodes (create_graph).
 
-use crate::bitset::NodeSet;
+use crate::util::bitset::NodeSet;
 use crate::bpcov::{Bpcov, BpcovStranded, BPCOV_STRAND_ALL, BPCOV_STRAND_MINUS, BPCOV_STRAND_PLUS};
 use crate::graph::{Graph, GraphTransfrag, NodeRole};
 use crate::longtrim::{
     apply_longtrim_direct, LongtrimBundleSchedule, LongtrimNodeCall, LongtrimStats,
 };
 use crate::read_boundaries::collect_longtrim_boundary_map;
-use crate::trace_events::{
+use crate::tracing::events::{
     create_graph_new_node, create_graph_node_final_end, create_graph_node_shrink_jend,
     create_graph_node_shrink_jstart,
 };
@@ -29,8 +29,8 @@ fn trace_strand_index(bundle_strand: char) -> usize {
     }
 }
 
-fn reachable_from_source(graph: &Graph) -> crate::bitset::SmallBitset {
-    let mut visited = crate::bitset::SmallBitset::with_capacity(graph.n_nodes.min(64));
+fn reachable_from_source(graph: &Graph) -> crate::util::bitset::SmallBitset {
+    let mut visited = crate::util::bitset::SmallBitset::with_capacity(graph.n_nodes.min(64));
     if graph.n_nodes == 0 {
         return visited;
     }
@@ -779,7 +779,7 @@ fn filter_junctions_for_bundle<'a>(
     junction_stats: Option<&JunctionStats>,
 ) -> Vec<&'a Junction> {
     let target_strand = target_bundle_strand(bundle_strand);
-    let parity_on = crate::parity_decisions::is_enabled();
+    let parity_on = crate::parity::decisions::is_enabled();
     let pre: Vec<&'a Junction> = junctions
         .iter()
         .filter(|j| {
@@ -819,7 +819,7 @@ fn filter_junctions_for_bundle<'a>(
                 // matches numerically (0-based exclusive end == 1-based inclusive last base).
                 // Acceptor needs +1 to align (rustle 0-based first base → StringTie 1-based first base).
                 // Junction has no chrom field — emit None and rely on coord match for cross-tool diff.
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "junction_accept",
                     None,
                     j.donor,

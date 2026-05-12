@@ -4,7 +4,7 @@
 //! for coverage drops at intron boundaries. Creates nascent predictions linked to
 //! their parent transcript.
 
-use crate::bitvec::GBitVec;
+use crate::util::bitvec::GBitVec;
 use crate::bpcov::Bpcov;
 use crate::graph::{Graph, GraphTransfrag};
 use crate::path_extract::Transcript;

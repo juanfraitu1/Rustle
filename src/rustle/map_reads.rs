@@ -6,8 +6,8 @@
 //! segments to the right of a killed junction get killed_junction_orphan = true.
 
 use crate::assembly_mode::LONGINTRONANCHOR;
-use crate::bitvec::GBitVec;
-use crate::coord::{overlap_len_half_open, overlaps_half_open};
+use crate::util::bitvec::GBitVec;
+use crate::util::coord::{overlap_len_half_open, overlaps_half_open};
 use crate::graph::{Graph, GraphTransfrag};
 use crate::treepat::TreePatIndex;
 use crate::types::{
@@ -746,7 +746,7 @@ fn split_chimeric_transfrags(
             tf.node_ids.truncate(split_at);
             tf.longend = 0;
             let psize = graph.pattern_size();
-            tf.pattern = crate::bitvec::GBitVec::new(psize);
+            tf.pattern = crate::util::bitvec::GBitVec::new(psize);
             for &nid in &tf.node_ids {
                 tf.pattern.set_bit(nid);
             }

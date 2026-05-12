@@ -13,11 +13,8 @@
 //! 9. **Top-level orchestration** — pipeline, assembly modes
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
-pub mod bitset; // SmallBitset: zero-alloc u64 bitset for ≤64 elements
-pub mod bitvec; // GBitVec type alias → SmallBitset
-pub mod constants; // numeric constants (BSIZE, KMER, FLOW_EPSILON, …)
-pub mod coord;
-pub mod types; // RunConfig, Bundle, all shared data types // coordinate / interval utilities
+pub mod util;  // bitset, bitvec, constants, coord, hard_counters (crate-wide low-level utilities)
+pub mod types; // RunConfig, Bundle, all shared data types
 
 // ── Stage 1: Input ────────────────────────────────────────────────────────────
 pub mod bam; // BAM file parsing and read ingestion
@@ -30,7 +27,6 @@ pub mod bpcov; // base-pair coverage prefix sums
 mod bundle; // Internal bundle implementation (legacy)
 pub mod bundle_builder; // Sub-bundle building (public API)
 pub mod hard_boundaries;
-pub mod hard_counters;
 pub mod junction_correction; // sserror-based junction position correction
 pub mod junctions; // splice junction data structures
 pub mod killed_junctions; // good_junc gate, junction splice aggregation
@@ -47,6 +43,7 @@ pub mod transfrag_process; // transfrag creation and processing
 
 // ── Stage 5: Flow computation ─────────────────────────────────────────────────
 pub mod max_flow; // max-flow seeded path capacity
+pub mod global_flow; // greedy flow decomposition (RUSTLE_GREEDY_DECOMPOSE=1)
 
 // ── Stage 6: Path extraction ──────────────────────────────────────────────────
 pub mod coverage_trim;
@@ -70,18 +67,12 @@ pub mod report_losses; // diagnostic loss reporting
 
 // ── StringTie-parity scaffold ────────────────────────────────────────────────
 pub mod stringtie_parity; // RUSTLE_STRINGTIE_EXACT meta-flag for parallel parity mode
-pub mod parity_shadow; // layer-by-layer shadow parity logging
-pub mod parity_partition_dump; // canonical partition geometry TSV (StringTie vs Rustle)
-pub mod parity_junction_dump; // multi-stage junction-set TSV for parity vs StringTie
-pub mod parity_graph_edges_dump; // splice-graph edges TSV (env-gated, complements GRAPH_TSV)
-pub mod parity_flow_iter_dump; // per-iteration max-flow augmenting-path TSV (env-gated)
-pub mod parity_trace_dump; // cgroup + graph topology + optional read-exon trace TSV
+pub mod parity;           // parity dumps + decision log (consolidated)
 
 // ── Stage 9: Orchestration ────────────────────────────────────────────────────
 pub mod assembly_mode; // assembly mode dispatch
 pub mod merge_mode; // merge mode (multi-sample)
 pub mod debug_stage;
-pub mod parity_decisions; // structured per-decision JSONL log for cross-tool diffing
 pub mod pipeline; // main long-read assembly pipeline
 
 // ── Per-bundlenode graph processing ───────────────────────────────────────────
@@ -96,9 +87,7 @@ pub mod snapshot; // per-bundle JSONL snapshots for 1:1 comparisons
 
 // ── Tracing / diagnostics ─────────────────────────────────────────────────────
 pub mod futuretr;
-pub mod trace_events; // debug trace helpers
-pub mod trace_pipeline; // stage-level TSV dumps for diff-based bisection
-pub mod trace_reference; // per-reference transcript fate tracing // future transcript placeholders (diagnostic)
+pub mod tracing; // events, stage-level TSV dumps, per-reference transcript fate tracing
 
 // ── Public re-exports ─────────────────────────────────────────────────────────
 pub use graph::{CGraphnode, CMTransfrag, CPath, CTransfrag, Graph, GraphNode, GraphTransfrag};

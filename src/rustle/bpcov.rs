@@ -4,7 +4,7 @@
 //! **Strand indexing ( 16925):** sno = (int)strand+1 → bpcov[0]=minus, bpcov[1]=unstranded/all, bpcov[2]=plus.
 //! get_cov_sign(sno, ...) uses bpcov[sno]. We build plus and minus separately; index 1 (all) = plus + minus when needed.
 
-use crate::coord::len_half_open;
+use crate::util::coord::len_half_open;
 use crate::types::BundleRead;
 
 /// Per-base coverage for one strand. Index 0 = bundle_start.

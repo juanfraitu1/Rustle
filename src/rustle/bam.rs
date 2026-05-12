@@ -857,6 +857,10 @@ fn decode_bam_sequence(seq_obj: &noodles_bam::record::Sequence) -> Vec<u8> {
 /// VG HMM-EM to provide per-read sequences for forward-likelihood scoring;
 /// secondaries share read_name with their primary so we only need the
 /// primary-alignment sequence per read.
+///
+/// Uses multi-threaded BGZF decoding (worker count = rayon pool size) — this
+/// scan is otherwise the dominant wall-clock cost (~40 % of the chr19 run)
+/// because BAM decompression is CPU-bound.
 pub fn collect_multimapper_sequences<P: AsRef<Path>>(
     bam_path: P,
     needed_hashes: &std::collections::HashSet<u64>,
@@ -864,8 +868,13 @@ pub fn collect_multimapper_sequences<P: AsRef<Path>>(
     use std::collections::HashMap;
     if needed_hashes.is_empty() { return Ok(HashMap::new()); }
 
-    // Plain (non-indexed) reader — single pass over the whole BAM.
-    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path.as_ref())?;
+    // Multi-threaded BGZF decoder — worker count matches the rayon pool.
+    let file = std::fs::File::open(bam_path.as_ref())?;
+    let buf = io::BufReader::new(file);
+    let n = rayon::current_num_threads().max(1);
+    let worker_count = std::num::NonZeroUsize::new(n).unwrap_or(std::num::NonZeroUsize::MIN);
+    let bgzf = noodles_bgzf::MultithreadedReader::with_worker_count(worker_count, buf);
+    let mut reader = noodles_bam::io::Reader::from(bgzf);
     let _header = reader.read_header()?;
 
     let mut out: HashMap<u64, Vec<u8>> = HashMap::with_capacity(needed_hashes.len());

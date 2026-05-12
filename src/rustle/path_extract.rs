@@ -2,9 +2,9 @@
 //! Path extension via extend_path_left/right (back_to_source_fast_long / fwd_to_sink_fast_long),
 //! LR witness validation, poly-tail trimming, hardstart/hardend enforcement, and Edmonds-Karp flow.
 
-use crate::bitset::NodeSet;
-use crate::bitvec::GBitVec;
-use crate::coord::{
+use crate::util::bitset::NodeSet;
+use crate::util::bitvec::GBitVec;
+use crate::util::coord::{
     contiguous_half_open, len_half_open, overlap_len_half_open, overlaps_half_open,
 };
 use crate::graph::{Graph, GraphTransfrag};
@@ -1392,7 +1392,7 @@ const CHI_THR_BP: i64 = 50;
 /// Constants used by direct long-recursion port.
 const DROP_FACTOR: f64 = 0.5;
 const ERROR_PERC: f64 = 0.1;
-const EPS: f64 = crate::constants::FLOW_EPSILON;
+const EPS: f64 = crate::util::constants::FLOW_EPSILON;
 /// When checktrf rescues a failed transfrag, only redistribute it onto an existing kept path
 /// if the intron chain agrees within this tolerance. This prevents collapsing distinct
 /// alternative splice-site isoforms into a single dominant path.
@@ -1545,6 +1545,17 @@ pub fn collect_path(
             }
         }
         if let Some(le) = longend {
+            // Remove exons that start at or after longend: the read never covered them.
+            // This handles FWD-walk over-extension where the walk followed a dominant
+            // isoform past the seed's actual 3' end (longend). Only skip when
+            // sink-contiguous extension is in play — that mode intentionally extends past
+            // the natural read boundary and should not be truncated here.
+            if std::env::var_os("RUSTLE_SINK_CONTIG_EXTEND").is_none() {
+                exons.retain(|(s, _)| *s < le);
+                if exons.is_empty() {
+                    return exons;
+                }
+            }
             let last_idx = exons.len() - 1;
             let (s, e) = exons[last_idx];
             let right = if sink_extended
@@ -1557,9 +1568,9 @@ pub fn collect_path(
             } else {
                 e.min(le).max(s)
             };
-            if right > s {
-                exons[last_idx].1 = right;
-            }
+            // Unconditionally apply: if right == s, the exon becomes zero-length and
+            // is removed by the retain below.
+            exons[last_idx].1 = right;
         }
     }
     // Filter out any exons that became invalid after trimming
@@ -2356,6 +2367,32 @@ fn has_lr_witness_two_splices(
     false
 }
 
+/// Check whether any single transfrag witnesses the full sequence of splice edges in
+/// `splice_edges` (as node-id pairs) in order, with possible non-splice nodes between them.
+/// Stricter than the consecutive-pair check: requires one read to span ALL junctions.
+fn has_lr_witness_full_chain(
+    transfrags: &[GraphTransfrag],
+    splice_edges: &[(usize, usize)],
+) -> bool {
+    if splice_edges.is_empty() {
+        return true;
+    }
+    for tf in transfrags {
+        let nodes = &tf.node_ids;
+        let mut edge_idx = 0usize;
+        for w in nodes.windows(2) {
+            let (want_la, want_ra) = splice_edges[edge_idx];
+            if w[0] == want_la && w[1] == want_ra {
+                edge_idx += 1;
+                if edge_idx == splice_edges.len() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Build set of individually-witnessed splice junctions for fallback checks.
 /// This is a weaker witness condition than `has_lr_witness_two_splices` and allows stitching
 /// long paths from partial reads as long as each individual splice junction is directly supported.
@@ -2863,7 +2900,59 @@ fn best_trf_match(
 /// immediately redistributing it into the longer sibling. This matches the trace pattern
 /// where same-boundary exon-skip variants are rescued before later low-support leftovers
 /// get absorbed.
-fn prefer_independent_rescue_over_matched_redistribution(
+/// Returns true if the seed is a "chimeric suffix" of the matched kept_path:
+/// the kept_path's nodes end with exactly the seed's nodes (the BACK walk prepended
+/// upstream nodes), the kept_path has >= 15 more nodes, the seed has >= 10 nodes,
+/// and the seed has genuine TSS evidence (longstart within its first real node).
+/// Caller should ALSO redistribute when this returns true (to preserve kept_path coverage)
+/// and then fall through to independent rescue (to emit the shorter-TSS transcript).
+fn is_chimeric_suffix_rescue(
+    tf_nodes: &[usize],
+    tmatch: &[usize],
+    kept_paths: &[(Vec<usize>, f64, bool, usize)],
+    tf_longstart: u64,
+    graph: &Graph,
+) -> bool {
+    if tf_nodes.len() < 10 || tmatch.is_empty() || tf_longstart == 0 {
+        return false;
+    }
+    let tf_first = tf_nodes[0];
+    if !graph.nodes.get(tf_first).map_or(false, |n| tf_longstart >= n.start) {
+        return false;
+    }
+    for &kidx in tmatch {
+        let Some((k_nodes, _, _, _)) = kept_paths.get(kidx) else { continue; };
+        if k_nodes.is_empty() || k_nodes[0] >= tf_first { continue; }
+        // Case 1 (original): tf is an exact suffix of the chimeric kept_path.
+        // The chimeric 5' extension (via longtrim source edge) means the flow
+        // path starts further upstream than the transfrag's true TSS.
+        if k_nodes.len() >= tf_nodes.len() + 15 && k_nodes.ends_with(tf_nodes) {
+            return true;
+        }
+        // Case 2: tf ends at the penultimate contiguous node of the chimeric
+        // kept_path. This occurs when the chimeric path's last two nodes are
+        // physically adjacent (no intron gap) but the transfrag represents a
+        // genuine shorter-3'-end isoform whose reads end before the chimeric
+        // terminal extension. Example: chimeric kept_path [..., 66, 67] where
+        // 66-67 are contiguous; seed tf = [..., 66] is absorbed because its
+        // intron chain is a subset, but its correct 3' boundary is node_66.
+        if k_nodes.len() >= tf_nodes.len() + 16 {
+            let k_inner = &k_nodes[..k_nodes.len() - 1]; // drop last node
+            if k_inner.ends_with(tf_nodes) {
+                let k_last = *k_nodes.last().unwrap();
+                let k_penultimate = k_nodes[k_nodes.len() - 2];
+                if nodes_are_contiguous(graph, k_penultimate, k_last) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Returns true when the same-outer-alt pattern fires: the seed has the same outer
+/// node boundaries as a matched kept_path but different internal structure.
+fn is_same_outer_alt(
     tf_nodes: &[usize],
     tmatch: &[usize],
     kept_paths: &[(Vec<usize>, f64, bool, usize)],
@@ -2873,24 +2962,19 @@ fn prefer_independent_rescue_over_matched_redistribution(
     }
     let tf_first = tf_nodes[0];
     let tf_last = *tf_nodes.last().unwrap_or(&tf_first);
-    let mut saw_same_outer = false;
     for &kidx in tmatch {
-        let Some((k_nodes, _k_cov, _k_guide, _out_idx)) = kept_paths.get(kidx) else {
-            continue;
-        };
-        if k_nodes.is_empty() {
-            continue;
-        }
+        let Some((k_nodes, _, _, _)) = kept_paths.get(kidx) else { continue; };
+        if k_nodes.is_empty() { continue; }
         let k_first = k_nodes[0];
         let k_last = *k_nodes.last().unwrap_or(&k_first);
         if k_first == tf_first && k_last == tf_last {
-            if k_nodes == tf_nodes {
-                return false;
+            if k_nodes.as_slice() == tf_nodes {
+                return false; // identical: no rescue needed
             }
-            saw_same_outer = true;
+            return true;
         }
     }
-    saw_same_outer
+    false
 }
 
 #[inline]
@@ -3333,8 +3417,15 @@ fn onpath_long(
     }
     if edge_bit(pathpattern, graph, maxp, sink) {
         if trnode.len() >= 2 && *trnode.last().unwrap() == sink {
-            if trnode[trnode.len() - 2] != maxp {
-                return false;
+            let penultimate = trnode[trnode.len() - 2];
+            if penultimate != maxp {
+                // Allow when penultimate is contiguous with maxp (adjacent exonic nodes
+                // from the same exon split at a coverage boundary). E.g. path goes
+                // node26→node28→sink but transfrag ends node26→sink because the read
+                // terminates at the node26/node28 boundary.
+                if !nodes_are_contiguous(graph, penultimate, maxp) {
+                    return false;
+                }
             }
         } else {
             // StringTie's onpath_long (rlink.cpp:7979) is strict:
@@ -3368,8 +3459,12 @@ fn onpath_long(
 
     let mut prevp: Option<usize> = None;
     let mut p = minp;
-    // Precompute node starts for coordinate-based comparisons
-    let trnode_starts: Vec<u64> = trnode.iter().map(|n| graph.nodes.get(*n).map(|node| node.start).unwrap_or(0)).collect();
+    // Precompute node starts for coordinate-based comparisons.
+    // The sink has virtual coord 0-0; treat it as u64::MAX so it never
+    // appears as a left-gap relative to any real node.
+    let trnode_starts: Vec<u64> = trnode.iter().map(|&n| {
+        if n == sink { u64::MAX } else { graph.nodes.get(n).map(|node| node.start).unwrap_or(0) }
+    }).collect();
     let p_start = |node_id: usize| graph.nodes.get(node_id).map(|n| n.start).unwrap_or(0);
     loop {
         while j < trnode.len() && trnode_starts[j] < p_start(p) {
@@ -3503,8 +3598,22 @@ fn onpath_long_reason(
     }
     if edge_bit(pathpattern, graph, maxp, sink) {
         if trnode.len() >= 2 && *trnode.last().unwrap() == sink {
-            if trnode[trnode.len() - 2] != maxp {
-                return "fail:sink_edge_wrong_penultimate";
+            let penultimate = trnode[trnode.len() - 2];
+            if penultimate != maxp {
+                let contig = nodes_are_contiguous(graph, penultimate, maxp);
+                if !contig {
+                    if trace_gate {
+                        eprintln!(
+                            "[ONPATH_SINK_PENULT] penultimate={} penult_coord={}-{} maxp={} maxp_coord={}-{} contig={}",
+                            penultimate,
+                            node_start_or_zero(graph, penultimate), node_end_or_zero(graph, penultimate),
+                            maxp,
+                            node_start_or_zero(graph, maxp), node_end_or_zero(graph, maxp),
+                            contig
+                        );
+                    }
+                    return "fail:sink_edge_wrong_penultimate";
+                }
             }
         } else {
             // compare based on genomic coordinates, not node IDs
@@ -3540,8 +3649,12 @@ fn onpath_long_reason(
 
     let mut prevp: Option<usize> = None;
     let mut p = minp;
-    // Precompute node starts for coordinate-based comparisons
-    let trnode_starts: Vec<u64> = trnode.iter().map(|&n| node_start_or_zero(graph, n)).collect();
+    // Precompute node starts for coordinate-based comparisons.
+    // The sink has virtual coord 0-0; treat it as u64::MAX so it never
+    // appears as a left-gap relative to any real node.
+    let trnode_starts: Vec<u64> = trnode.iter().map(|&n| {
+        if n == sink { u64::MAX } else { node_start_or_zero(graph, n) }
+    }).collect();
     let p_start = |node_id: usize| node_start_or_zero(graph, node_id);
     loop {
         while j < trnode.len() && trnode_starts[j] < p_start(p) {
@@ -3834,33 +3947,35 @@ fn fwd_to_sink_fast_long(
         return true;
     }
 
-    // HARDEND guard (symmetric to back_to_source's HARDSTART guard).
-    // Default OFF — IsoSeq read 3' ends are unreliable (internal polyA
-    // priming, truncation), so polyA at read end isn't a reliable TES
-    // signal. On GGO_19 this guard is purely negative (-10 matches,
-    // 0 gained) when default-on. Available as opt-in for future tuning.
-    // Enable via RUSTLE_FWD_HARDEND_GUARD=1. Override thresholds via
-    // RUSTLE_FWD_HARDEND_GUARD_MIN_ABUND (default 2.0) and
-    // RUSTLE_FWD_HARDEND_GUARD_POLYA (default 1 = required).
+    // HARDEND guard: at the seed's last real node, if the node is NOT on any
+    // dominant-path transfrag (i.e. the dominant path forks away before this
+    // node), add a sink edge and terminate fwd here.  This recovers alt-TES
+    // transcripts whose unique terminal exon would otherwise be over-extended
+    // by the tmax of the dominant isoform.
     //
-    // The asymmetry with back-side: read 5' start is the actual TSS
-    // (cap-trapped), so polyA-start + abund≥2 is a reliable TSS signal.
-    // Read 3' ends in IsoSeq are commonly internal-priming artifacts.
+    // Key discriminator — dominant-path check: an alt-TES fork node is
+    // "unique" (no high-abundance transfrag passes through it), whereas a
+    // truncation node is on the main path (dominant transfrags include it).
+    // Threshold: any other transfrag with abundance >= max(seed.abundance, 2.0)
+    // that contains node i counts as "dominant"; if one exists the guard does
+    // not fire, preventing regression on truncated seeds.
+    //
+    // Default ON.  Override via RUSTLE_FWD_HARDEND_GUARD=0 to disable.
+    // Override abundance floor via RUSTLE_FWD_HARDEND_GUARD_MIN_ABUND (default 1.0).
     {
         let guard_enabled = std::env::var("RUSTLE_FWD_HARDEND_GUARD")
             .ok().and_then(|v| v.parse::<u32>().ok())
-            .map(|v| v != 0).unwrap_or(false);
+            .map(|v| v != 0).unwrap_or(true);
         if guard_enabled {
             let min_abund: f64 = std::env::var("RUSTLE_FWD_HARDEND_GUARD_MIN_ABUND")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+            let max_abund: f64 = std::env::var("RUSTLE_FWD_HARDEND_GUARD_MAX_ABUND")
                 .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
-            let require_polya: bool = std::env::var("RUSTLE_FWD_HARDEND_GUARD_POLYA")
-                .ok().and_then(|v| v.parse::<u32>().ok())
-                .map(|v| v != 0).unwrap_or(true);
             if let Some(seed_tf) = transfrags.get(seed_idx) {
                 let qualifies = seed_tf.trflong_seed
                     && seed_tf.longend > 0
                     && seed_tf.abundance >= min_abund
-                    && (!require_polya || (seed_tf.poly_end_unaligned + seed_tf.poly_end_aligned) > 0);
+                    && seed_tf.abundance <= max_abund;
                 if qualifies {
                     let source_id = graph.source_id;
                     // Last real node of the seed (excluding source/sink).
@@ -3871,21 +3986,86 @@ fn fwd_to_sink_fast_long(
                         .copied()
                         .find(|&n| n != source_id && n != sink);
                     if seed_last_real == Some(i) {
-                        // Ensure i→sink edge exists for valid path emission.
-                        if !graph.nodes[i].children.contains(sink) {
-                            graph.add_edge(i, sink);
-                        }
-                        path.push(sink);
-                        pathpat.set_bit(sink);
-                        edge_set(pathpat, graph, i, sink, true);
-                        if trace_fwd || trace_seed_diagnostics(seed_idx) {
+                        // Proximity check: longend must be within MAX_LONGEND_GAP of
+                        // the node's end. Truncated reads end far inside the node;
+                        // genuine alt-TES/TSS reads end near the node boundary.
+                        const MAX_LONGEND_GAP: i64 = 100;
+                        let node_i_end = graph.nodes.get(i).map(|n| n.end as i64).unwrap_or(0);
+                        let longend_i64 = seed_tf.longend as i64;
+                        let gap = node_i_end - longend_i64;
+                        if gap.abs() > MAX_LONGEND_GAP {
+                            if trace_fwd || trace_seed_diagnostics(seed_idx) {
+                                eprintln!(
+                                    "[FWD_HARDEND_GUARD seed={}] skip at i={} (gap={} > MAX_LONGEND_GAP {})",
+                                    seed_idx, i, gap, MAX_LONGEND_GAP
+                                );
+                            }
+                        } else {
+
+                        // Fork-and-minority check: fire only when node i is on
+                        // a minority branch from its parent.
+                        //
+                        // alt-TES case: parent P has children {i, j, ...}; the
+                        // dominant path takes j (high nodecov), leaving i as the
+                        // rare alt-TES terminus.
+                        //
+                        // Truncation/terminal case: parent has only ONE child (i),
+                        // meaning i is the natural continuation — no fork → skip.
+                        //
+                        // Using graph.nodes[*].nodecov (original, unmodified) so
+                        // prior path depletion of local_nodecov doesn't interfere.
+                        let prev_real = seed_tf
+                            .node_ids
+                            .iter()
+                            .rev()
+                            .copied()
+                            .filter(|&n| n != source_id && n != sink)
+                            .nth(1);
+                        let is_minority_fork = if let Some(prev) = prev_real {
+                            let cov_i = graph.nodes.get(i).map(|n| n.nodecov).unwrap_or(0.0);
+                            graph.nodes.get(prev)
+                                .map(|pn| {
+                                    // Must have at least 2 children (fork exists)
+                                    // and one sibling must have at least as much coverage.
+                                    // Using >= (not >) recovers equal-coverage alt-TES cases
+                                    // where two 1-read isoforms diverge at the same fork.
+                                    pn.children.count_ones() > 1
+                                        && pn.children.ones().any(|c| {
+                                            c != i
+                                                && c != sink
+                                                && graph.nodes.get(c)
+                                                    .map(|cn| cn.nodecov >= cov_i)
+                                                    .unwrap_or(false)
+                                        })
+                                })
+                                .unwrap_or(false)
+                        } else {
+                            false // single-exon seed: no parent to check
+                        };
+                        if is_minority_fork {
+                            // Ensure i→sink edge exists for valid path emission.
+                            if !graph.nodes[i].children.contains(sink) {
+                                graph.add_edge(i, sink);
+                            }
+                            path.push(sink);
+                            pathpat.set_bit(sink);
+                            edge_set(pathpat, graph, i, sink, true);
+                            if trace_fwd || trace_seed_diagnostics(seed_idx) {
+                                eprintln!(
+                                    "[FWD_HARDEND_GUARD seed={}] short-circuit at i={} (minority_fork, gap={}, longend={}, abund={:.2}, cov_i={:.2})",
+                                    seed_idx, i, gap, seed_tf.longend, seed_tf.abundance,
+                                    graph.nodes.get(i).map(|n| n.nodecov).unwrap_or(0.0)
+                                );
+                            }
+                            return true;
+                        } else if trace_fwd || trace_seed_diagnostics(seed_idx) {
                             eprintln!(
-                                "[FWD_HARDEND_GUARD seed={}] short-circuit at i={} (seed_last_real, longend={}, abund={:.2}, polyA_end={})",
-                                seed_idx, i, seed_tf.longend, seed_tf.abundance,
-                                seed_tf.poly_end_unaligned + seed_tf.poly_end_aligned
+                                "[FWD_HARDEND_GUARD seed={}] skip at i={} (seed_last_real but not minority_fork, gap={})",
+                                seed_idx, i, gap
                             );
                         }
-                        return true;
+
+                        } // end else (gap within MAX_LONGEND_GAP)
                     }
                 }
             }
@@ -4005,13 +4185,55 @@ fn fwd_to_sink_fast_long(
     // Fast-path, but only if `i+1` is an actual child edge. Node IDs are not guaranteed
     // coordinate-ordered, so we must not select `i+1` unless it is explicitly present in children.
     let next_id = i + 1;
-    if next_id < gno && pathpat.get_bit(next_id) && children.iter().any(|&c| c == next_id) {
+    if next_id < gno && next_id <= *maxpath && pathpat.get_bit(next_id) && children.iter().any(|&c| c == next_id) {
         maxc = Some(next_id);
         reach = true;
         if trace_fwd {
             eprintln!("[TRACE_FWD]   fast-path: i+1={} already on pathpat", next_id);
         }
     } else {
+        // Prefer the seed transfrag's own next junction at node i.
+        // Original behaviour (pre-v8): only fire when the edge was already in pathpat
+        // (set by back_to_source traversal).  That gate caused cassette-exon minority
+        // isoforms to be missed: their cassette junctions are purely downstream and are
+        // never visited by back_to_source, so their edge bits are never set.
+        // v8 (RUSTLE_SEED_GUIDED_EXT, default ON): remove the edge_bit gate so the
+        // seed's own junction always wins over greedy max-coverage.  The safety check
+        // is that `sc` must be a graph child of `i` that has at least one live
+        // (abundance > 0) long-read transfrag — spurious alignment junctions with no
+        // reads collapse here.
+        let seed_guided = std::env::var_os("RUSTLE_NO_SEED_GUIDED_EXT").is_none();
+        let seed_next: Option<usize> = transfrags.get(seed_idx).and_then(|tf| {
+            let pos = tf.node_ids.iter().position(|&n| n == i)?;
+            tf.node_ids.get(pos + 1).copied()
+        });
+        if let Some(sc) = seed_next {
+            let sc_has_live_reads = graph.nodes.get(sc).map(|n| {
+                n.trf_ids.iter().any(|&t| {
+                    transfrags.get(t).map_or(false, |tf| tf.longread && tf.abundance > EPS)
+                })
+            }).unwrap_or(false);
+            let sc_is_child = children.iter().any(|&c| c == sc);
+            // In non-seed-guided mode keep the old edge_bit gate so existing behaviour
+            // is exactly preserved when the env var is set.
+            let prefer_sc = sc_is_child && sc_has_live_reads
+                && (seed_guided || edge_bit(pathpat, graph, i, sc));
+            if sc != sink && prefer_sc {
+                if trace_fwd {
+                    eprintln!(
+                        "[TRACE_FWD]   seed-guided child={} coord={}-{} guided={}",
+                        sc,
+                        graph.nodes.get(sc).map(|n| n.start).unwrap_or(0),
+                        graph.nodes.get(sc).map(|n| n.end).unwrap_or(0),
+                        seed_guided as u8
+                    );
+                }
+                maxc = Some(sc);
+                reach = true;
+                tmax = None;
+            }
+        }
+        if maxc.is_none() {
         for &c in &children {
             let childonpath = pathpat.get_bit(c);
             if edge_bit(pathpat, graph, i, c) {
@@ -4112,10 +4334,19 @@ fn fwd_to_sink_fast_long(
                         continue;
                     }
                     if require_longread && c == sink && is_synthetic_sink_connector(tf) {
-                        if trace_fwd {
-                            eprintln!("[TRACE_FWD_SINK]   tf={} reject=synthetic_sink_connector", t);
+                        // Reject unless reach is already satisfied: synthetic sink
+                        // transfrags (origin_tag="sink_connector") mark hardend nodes
+                        // and carry real abundance, so when maxpath is already covered
+                        // they correctly authorize sink termination — same as ST.
+                        if !reach {
+                            if trace_fwd {
+                                eprintln!("[TRACE_FWD_SINK]   tf={} reject=synthetic_sink_connector (reach=false)", t);
+                            }
+                            continue;
                         }
-                        continue;
+                        if trace_fwd {
+                            eprintln!("[TRACE_FWD_SINK]   tf={} accept=synthetic_sink_connector (reach=true)", t);
+                        }
                     }
                     if tf.node_ids.is_empty() {
                         if trace_fwd && c == sink {
@@ -4135,13 +4366,36 @@ fn fwd_to_sink_fast_long(
                         continue;
                     };
                     if c == sink {
-                        // : For sink connections, accept only
-                        // transfrags that start EXACTLY at current node and the path hasn't
-                        // already extended forward. This prevents transfrags from earlier
-                        // in the graph from inflating sink coverage, which causes
-                        // over-extension (131 cases where Rustle adds extra exons).
-                        let accepted = first == i && *maxpath <= i && last >= c;
+                        // Primary: accept transfrags that start EXACTLY at current node.
+                        // Secondary (long-read only): also accept transfrags with first < i
+                        // when onpath_long confirms the transfrag is compatible with the
+                        // actual path taken. This handles the case where the seed's last
+                        // node is a contiguous exonic extension (e.g. J_LONG seed ending at
+                        // node 28 = 101116247-101117176, a continuation of node 26) and the
+                        // supporting transfrag starts earlier (first=22 on the J_LONG read).
+                        let accepted_exact = first == i && *maxpath <= i && last >= c;
+                        let accepted_onpath = !accepted_exact
+                            && require_longread
+                            && first < i
+                            && *maxpath <= i
+                            && last >= c
+                            && onpath_long(
+                                &tf.pattern,
+                                &tf.node_ids,
+                                pathpat,
+                                *minpath,
+                                i,
+                                graph,
+                            );
+                        let accepted = accepted_exact || accepted_onpath;
                         if trace_fwd {
+                            if !accepted && !accepted_exact && require_longread && first < i && *maxpath <= i && last >= c {
+                                let reason = onpath_long_reason(&tf.pattern, &tf.node_ids, pathpat, *minpath, i, graph);
+                                eprintln!(
+                                    "[TRACE_FWD_SINK_DBG] tf={} !exact={} req_long={} first<i={} maxp<=i={} last>=c={} onpath_reason={}",
+                                    t, !accepted_exact, require_longread, first < i, *maxpath <= i, last >= c, reason
+                                );
+                            }
                             eprintln!(
                                 "[TRACE_FWD_SINK]   tf={} first={} last={} abundance={:.4} maxpath={} i={} accepted={}",
                                 t,
@@ -4349,6 +4603,7 @@ fn fwd_to_sink_fast_long(
                 pathpat.clear_bit(c);
             }
         }
+        } // if maxc.is_none()
     }
     if !reach {
         if trace_fwd {
@@ -4612,9 +4867,14 @@ fn back_to_source_fast_long(
     // otherwise walk n7 ← n6 ← ... ← n1, producing a 7-exon chimera instead
     // of the 2-exon ref-matching transcript).
     // HARDSTART guard: default ON with conservative profile (polyA required,
-    // abund >= 2). Disable via RUSTLE_BACK_HARDSTART_GUARD=0. Override
-    // thresholds via RUSTLE_BACK_HARDSTART_GUARD_MIN_ABUND (default 2.0) and
-    // RUSTLE_BACK_HARDSTART_GUARD_POLYA (default 1 = required, set to 0 to relax).
+    // abund >= 2). A second high-abundance path can fire without poly-A for seeds
+    // with abundance >= RUSTLE_BACK_HARDSTART_GUARD_HIGH_ABUND (default disabled=0.0).
+    // Guard only fires when source→i already exists in the graph: this ensures real
+    // flow capacity at node_i and avoids permanent graph mutation.
+    // Disable via RUSTLE_BACK_HARDSTART_GUARD=0. Override thresholds via
+    // RUSTLE_BACK_HARDSTART_GUARD_MIN_ABUND (default 2.0),
+    // RUSTLE_BACK_HARDSTART_GUARD_POLYA (default 1 = required, set to 0 to relax),
+    // RUSTLE_BACK_HARDSTART_GUARD_HIGH_ABUND (default 0.0 = disabled).
     let guard_enabled = std::env::var("RUSTLE_BACK_HARDSTART_GUARD")
         .ok().and_then(|v| v.parse::<u32>().ok())
         .map(|v| v != 0).unwrap_or(true);
@@ -4624,27 +4884,63 @@ fn back_to_source_fast_long(
         let require_polya: bool = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_POLYA")
             .ok().and_then(|v| v.parse::<u32>().ok())
             .map(|v| v != 0).unwrap_or(true);
+        let high_abund: f64 = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_HIGH_ABUND")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        // Seed-start-fraction path: fire if a large fraction of nodecov[i] comes from
+        // seeds whose first real node is i (indicating a genuine alt-start site even
+        // without poly-A evidence). Default disabled (threshold 0.0 = off).
+        let start_frac_threshold: f64 = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_START_FRAC")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
         if let Some(seed_tf) = transfrags.get(seed_idx) {
-            let qualifies = seed_tf.trflong_seed
-                && seed_tf.longstart > 0
-                && seed_tf.abundance >= min_abund
-                && (!require_polya || (seed_tf.poly_start_unaligned + seed_tf.poly_start_aligned) > 0);
-            if qualifies {
-                let sink_id = graph.sink_id;
-                let seed_first_real = seed_tf
-                    .node_ids
-                    .iter()
-                    .copied()
-                    .find(|&n| n != source && n != sink_id);
-                if seed_first_real == Some(i) {
-                    if !graph.nodes[source].children.contains(i) {
-                        graph.add_edge(source, i);
-                    }
+            let sink_id = graph.sink_id;
+            let polya = seed_tf.poly_start_unaligned + seed_tf.poly_start_aligned;
+            let seed_first_real = seed_tf
+                .node_ids
+                .iter()
+                .copied()
+                .find(|&n| n != source && n != sink_id);
+            if seed_first_real == Some(i) {
+                // Compute the fraction of nodecov[i] that comes from seeds starting here.
+                let node_cov = nodecov.get(i).copied().unwrap_or(0.0);
+                let seed_start_abund: f64 = if start_frac_threshold > 0.0 {
+                    transfrags.iter()
+                        .filter(|tf| tf.trflong_seed)
+                        .filter(|tf| tf.node_ids.iter().copied()
+                            .find(|&n| n != source && n != sink_id) == Some(i))
+                        .map(|tf| tf.abundance)
+                        .sum()
+                } else {
+                    0.0
+                };
+                let start_frac = if start_frac_threshold > 0.0 {
+                    seed_start_abund / node_cov.max(0.01)
+                } else {
+                    0.0
+                };
+                // Only fire if source→i already exists: guarantees real flow
+                // capacity at node_i and avoids permanent graph mutation.
+                let source_is_parent = graph.nodes[source].children.contains(i);
+                let qualifies = source_is_parent
+                    && seed_tf.trflong_seed
+                    && seed_tf.longstart > 0
+                    && (
+                        // Standard path: modest abundance + poly-A support
+                        (seed_tf.abundance >= min_abund
+                            && (!require_polya || polya > 0))
+                        ||
+                        // High-abundance path: bypass poly-A for clear alt-TSS signals
+                        (high_abund > 0.0 && seed_tf.abundance >= high_abund)
+                        ||
+                        // Seed-start-fraction path: many seeds specifically start here
+                        (start_frac_threshold > 0.0 && start_frac >= start_frac_threshold)
+                    );
+                if qualifies {
                     if trace_seed_diagnostics(seed_idx) || trace_locus_active(graph, i) {
                         eprintln!(
-                            "[BACK_HARDSTART_GUARD seed={}] short-circuit at i={} (longstart={}, abund={:.2}, polyA={})",
-                            seed_idx, i, seed_tf.longstart, seed_tf.abundance,
-                            seed_tf.poly_start_unaligned + seed_tf.poly_start_aligned
+                            "[BACK_HARDSTART_GUARD seed={}] short-circuit at i={} (longstart={}, abund={:.2}, polyA={}, high_abund_path={}, start_frac={:.3})",
+                            seed_idx, i, seed_tf.longstart, seed_tf.abundance, polya,
+                            high_abund > 0.0 && seed_tf.abundance >= high_abund,
+                            start_frac
                         );
                     }
                     return true;
@@ -4725,6 +5021,39 @@ fn back_to_source_fast_long(
             eprintln!("[TRACE_BACK]   fast-path: i-1={} already on pathpat", prev_id);
         }
     } else {
+        // Seed-guided parent preference (v8, RUSTLE_SEED_GUIDED_EXT default ON).
+        // When the seed's node_ids has i at position pos > 0, prefer the preceding node
+        // (node_ids[pos-1]) as parent over greedy max-coverage selection.  Symmetric to
+        // fwd seed-guided extension: follows the read's own junction sequence at internal
+        // nodes even when a higher-coverage competing junction exists.
+        if std::env::var_os("RUSTLE_NO_SEED_GUIDED_EXT").is_none() {
+            let seed_prev: Option<usize> = transfrags.get(seed_idx).and_then(|tf| {
+                let pos = tf.node_ids.iter().position(|&n| n == i)?;
+                if pos == 0 { return None; }
+                tf.node_ids.get(pos - 1).copied()
+            });
+            if let Some(sp) = seed_prev {
+                let sp_is_parent = parents.iter().any(|&p| p == sp);
+                let sp_has_live_reads = sp != source && graph.nodes.get(sp).map(|n| {
+                    n.trf_ids.iter().any(|&t| {
+                        transfrags.get(t).map_or(false, |tf| tf.longread && tf.abundance > EPS)
+                    })
+                }).unwrap_or(false);
+                if sp_is_parent && sp_has_live_reads {
+                    if trace_back {
+                        eprintln!(
+                            "[TRACE_BACK]   seed-guided parent={} coord={}-{}",
+                            sp,
+                            graph.nodes.get(sp).map(|n| n.start).unwrap_or(0),
+                            graph.nodes.get(sp).map(|n| n.end).unwrap_or(0)
+                        );
+                    }
+                    maxp = Some(sp);
+                    reach = true;
+                    tmax = None;
+                }
+            }
+        }
         for &p in &parents {
             // In max-sensitivity mode we often want to stitch partial long-read seeds upstream.
             // The code effectively gates source edges (keepsource/keepsink); our port can
@@ -4788,10 +5117,20 @@ fn back_to_source_fast_long(
             };
             let mut parentcov = 0.0;
             let mut tpar: Option<usize> = None;
-            // Match the original algorithm: compatibility is evaluated against the full current path span,
-            // from the earliest node seen so far (minpath or parent) to the current global maxpath.
+            // Compatibility check for backward-extension parent scoring:
+            //   startpath = earliest coord seen so far (min of minpath and parent p)
+            //   endpath   = i (the current back-walk node), NOT the full seed maxpath.
+            //
+            // StringTie's back_to_source_fast_long uses `i` as the upper bound for
+            // onpath_long, not the global maxpath. Using maxpath breaks loci where the
+            // seed uses a minority splice acceptor (e.g. J_long at node 22→25) while
+            // the only live transfrags at the parent use the dominant acceptor (J_short
+            // 22→24). Those transfrags are compatible with the upstream path up to node i
+            // but diverge downstream at node 22 — they should still count as valid parent
+            // support for the backward step p→i. The downstream branch is resolved
+            // independently by fwd_to_sink using the seed's own pathpat.
             let startpath = coord_min_node(graph, *minpath, p);
-            let endpath = coord_max_node(graph, *maxpath, i);
+            let endpath = i;
             // Coverage drop exclusion for back_to_source: same coordinate-based fix
             // as fwd_to_sink. Check adjacency by coordinate, not by node ID.
             if inode_start == pnode.end
@@ -5398,8 +5737,10 @@ fn back_to_source_fast_long(
         // forces fwd_to_sink to target a node the seed never reached, often
         // an artificial stub with no path to sink. Opt-in to skip via
         // RUSTLE_BACK_NO_MAXPATH_BUMP=1 (gated for measurement).
-        let skip_back_maxpath_bump = std::env::var_os("RUSTLE_BACK_NO_MAXPATH_BUMP").is_some();
-        if !skip_back_maxpath_bump {
+        // Never bump maxpath beyond seed's endpoint: seed's last node IS maxpath,
+        // so any tmax extending further would overshoot alt-TES endpoints or stubs.
+        // Opt-in to old bump via RUSTLE_BACK_DO_MAXPATH_BUMP for regression testing.
+        if std::env::var_os("RUSTLE_BACK_DO_MAXPATH_BUMP").is_some() {
             if let Some(&last) = transfrags[t].node_ids.last() {
                 if node_start_or_zero(graph, last) > node_start_or_zero(graph, *maxpath) {
                     *maxpath = last;
@@ -5478,7 +5819,7 @@ fn parse_trf(_graph: &Graph, transfrags: &[GraphTransfrag]) -> Vec<usize> {
     let mut indices: Vec<usize> = transfrags
         .iter()
         .enumerate()
-        .filter(|(_, tf)| tf.srabund > crate::constants::FLOW_EPSILON || !tf.longread)
+        .filter(|(_, tf)| tf.srabund > crate::util::constants::FLOW_EPSILON || !tf.longread)
         .map(|(i, _)| i)
         .collect();
     indices.sort_unstable_by(|&i, &j| {
@@ -5523,7 +5864,7 @@ pub fn extract_transcripts(
     macro_rules! reject_seed {
         ($idx:expr, $outcome:expr, $reason:expr) => {
             record_outcome!($idx, $outcome);
-            if crate::parity_decisions::is_enabled() && transfrags[$idx].trflong_seed {
+            if crate::parity::decisions::is_enabled() && transfrags[$idx].trflong_seed {
                 let first_real = transfrags[$idx].node_ids.iter()
                     .find(|&&n| n != graph.source_id && n != graph.sink_id)
                     .and_then(|&n| graph.nodes.get(n));
@@ -5534,8 +5875,51 @@ pub fn extract_transcripts(
                 let e = last_real.map(|n| n.end).unwrap_or(0);
                 let rp = format!(r#""reason":"{}","abund":{:.4}"#,
                     $reason, transfrags[$idx].abundance);
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "seed_reject", Some(bundle_chrom), s, e, bundle_strand, &rp);
+            }
+        };
+    }
+    // Helper: emit checktrf_enter parity event when a seed is deferred to the checktrf list.
+    macro_rules! emit_checktrf_enter {
+        ($idx:expr, $reason:expr, $nodes:expr) => {
+            if crate::parity::decisions::is_enabled() {
+                let _chain = intron_chain_from_nodes(graph, $nodes);
+                let _introns = _chain.iter()
+                    .map(|(d, a)| format!("{}-{}", d + 1, a))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let _s = $nodes.first()
+                    .and_then(|&n| graph.nodes.get(n)).map(|n| n.start + 1).unwrap_or(0);
+                let _e = $nodes.last()
+                    .and_then(|&n| graph.nodes.get(n)).map(|n| n.end).unwrap_or(0);
+                crate::parity::decisions::emit(
+                    "checktrf_enter", Some(bundle_chrom), _s, _e, bundle_strand,
+                    &format!(r#""reason":"{}","abund":{:.4},"guide":{},"n_introns":{},"introns":"{}""#,
+                        $reason, transfrags[$idx].abundance,
+                        transfrags[$idx].guide as i32, _chain.len(), _introns),
+                );
+            }
+        };
+    }
+    // Helper: emit checktrf_result parity event when checktrf processing reaches an outcome.
+    macro_rules! emit_checktrf_result {
+        ($t:expr, $outcome:expr, $nodes:expr) => {
+            if crate::parity::decisions::is_enabled() {
+                let _chain = intron_chain_from_nodes(graph, $nodes);
+                let _introns = _chain.iter()
+                    .map(|(d, a)| format!("{}-{}", d + 1, a))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let _s = $nodes.first()
+                    .and_then(|&n| graph.nodes.get(n)).map(|n| n.start + 1).unwrap_or(0);
+                let _e = $nodes.last()
+                    .and_then(|&n| graph.nodes.get(n)).map(|n| n.end).unwrap_or(0);
+                crate::parity::decisions::emit(
+                    "checktrf_result", Some(bundle_chrom), _s, _e, bundle_strand,
+                    &format!(r#""outcome":"{}","abund":{:.4},"n_introns":{},"introns":"{}""#,
+                        $outcome, transfrags[$t].abundance, _chain.len(), _introns),
+                );
             }
         };
     }
@@ -5544,7 +5928,7 @@ pub fn extract_transcripts(
     let plumb_debug = std::env::var_os("RUSTLE_PLUMB_DEBUG").is_some();
 
     // Set thread-local bundle context for parity_flow_iter_dump (lives until end of fn).
-    let _flow_iter_ctx = crate::parity_flow_iter_dump::BundleCtxGuard::new(
+    let _flow_iter_ctx = crate::parity::flow_iter_dump::BundleCtxGuard::new(
         bundle_chrom, bundle_strand, bundle_id,
     );
 
@@ -5772,7 +6156,7 @@ pub fn extract_transcripts(
                 }
             }
         }
-        crate::parity_graph_edges_dump::emit(graph, bundle_chrom, bundle_strand, bundle_id);
+        crate::parity::graph_edges_dump::emit(graph, bundle_chrom, bundle_strand, bundle_id);
         if let Ok(tp) = std::env::var("RUSTLE_PARITY_TF_TSV") {
             if !tp.is_empty() {
                 use std::io::Write;
@@ -5873,6 +6257,22 @@ pub fn extract_transcripts(
     // Shared state across all paths in the bundle (nodecov, capacity from transfrag abundances).
     // Each path depletes local_nodecov and (via flow) transfrag abundances; no restore between paths.
     let mut local_nodecov: Vec<f64> = graph.nodes.iter().map(|n| n.nodecov.max(0.0)).collect();
+    // Per-junction edge coverage tracker (RUSTLE_EDGECOV_DEPL=1).
+    // Initialized from transfrag abundances summed over each consecutive node pair.
+    // Dominant-path depletion on edge A→D does not reduce capacity on A→C, preserving
+    // cassette/minority isoforms that share backbone nodes but use different junctions.
+    let use_edgecov = std::env::var_os("RUSTLE_NO_EDGECOV_DEPL").is_none();
+    let mut local_edgecov: HashMap<(usize, usize), f64> = if use_edgecov {
+        let mut m = HashMap::default();
+        for tf in transfrags.iter().filter(|tf| tf.longread && tf.abundance > 0.0) {
+            for win in tf.node_ids.windows(2) {
+                *m.entry((win[0], win[1])).or_insert(0.0) += tf.abundance;
+            }
+        }
+        m
+    } else {
+        HashMap::default()
+    };
     let local_noderate: Vec<f64> = graph
         .nodes
         .iter()
@@ -6275,6 +6675,12 @@ pub fn extract_transcripts(
             // the later materialized terminal-contiguous node expansion.
             for &nid in seed_nodes {
                 pathpat.set_bit(nid);
+            }
+            // Set edge bits for consecutive seed node pairs so fwd_to_sink's
+            // edge_bit fast-path can take the seed's junction (e.g. J_LONG) rather
+            // than the first tmax junction that was OR'd in during back_to_source.
+            for w in seed_nodes.windows(2) {
+                edge_set(&mut pathpat, graph, w[0], w[1], true);
             }
             trace_outgoing_edge_state("seed.after_nodes", idx, maxp, &pathpat, graph);
             // seed helper traversal sets source→minp and
@@ -6874,6 +7280,7 @@ pub fn extract_transcripts(
                     None,
                     None,
                 );
+                emit_checktrf_enter!(idx, "longrec_fail", debug_nodes);
                 checktrf.push(idx);
                 emit_debug_seed_proc!(
                     idx,
@@ -7028,6 +7435,7 @@ pub fn extract_transcripts(
                     None,
                     None,
                 );
+                emit_checktrf_enter!(idx, "hard_boundary_low_abund", debug_nodes);
                 checktrf.push(idx);
                 emit_debug_seed_proc!(
                     idx,
@@ -7057,6 +7465,10 @@ pub fn extract_transcripts(
         // Default changed to ON; disable via RUSTLE_WITNESS_OFF=1.
         let witness_on = !std::env::var_os("RUSTLE_WITNESS_OFF").is_some()
             || std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some();
+        // Full-chain witness: require a single transfrag to span ALL splice junctions
+        // in sequence, rather than each consecutive pair independently. Catches paths
+        // that are witnessed pair-by-pair but never by a single complete read.
+        let full_chain_witness = std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS").is_some();
         if checkpath && long_read_mode && use_last >= use_start && witness_on {
             let mut splice_pos: Vec<usize> = Vec::new();
             for p in use_start..=use_last {
@@ -7070,6 +7482,16 @@ pub fn extract_transcripts(
                 }
             }
             let mut unwitnessed = false;
+            if full_chain_witness && splice_pos.len() >= 2 {
+                // Full-chain: require one transfrag witnessing ALL splice edges in order.
+                let splice_edges: Vec<(usize, usize)> = splice_pos
+                    .iter()
+                    .map(|&p| (use_path[p - 1], use_path[p]))
+                    .collect();
+                if !has_lr_witness_full_chain(transfrags, &splice_edges) {
+                    unwitnessed = true;
+                }
+            } else
             // check consecutive PAIRS of splice edges, not individual edges.
             // For each pair (splice_k, splice_k+1), require one transfrag witnessing both.
             if splice_pos.len() >= 2 {
@@ -7128,6 +7550,7 @@ pub fn extract_transcripts(
                         None,
                         None,
                     );
+                    emit_checktrf_enter!(idx, "unwitnessed", debug_nodes);
                     checktrf.push(idx);
                 }
                 // DEBUG: emit SEED_DECISION for unwitnessed branch
@@ -7744,7 +8167,24 @@ pub fn extract_transcripts(
                         // Match exactly: use nodeflux[k] directly (0 for last node).
                         let raw_nflux = nodeflux[k];
                         // parse_trflong (10381, 10393): cap nodeflux by nodecov, then subtract.
-                        let nflux = raw_nflux.min(local_nodecov[nid].max(0.0));
+                        // With RUSTLE_EDGECOV_DEPL: cap by junction-specific edge coverage so
+                        // that dominant-path depletion on A→D does not consume the budget for
+                        // minority-path junction A→C (they share backbone node A but use
+                        // different outgoing edges).
+                        let nflux = if use_edgecov && p + 1 < use_path.len() {
+                            let next_nid = use_path[p + 1];
+                            let edge_cap = local_edgecov
+                                .get(&(nid, next_nid))
+                                .copied()
+                                .unwrap_or(local_nodecov[nid].max(0.0));
+                            let nf = raw_nflux.min(edge_cap);
+                            if let Some(ec) = local_edgecov.get_mut(&(nid, next_nid)) {
+                                *ec = (*ec - nf).max(0.0);
+                            }
+                            nf
+                        } else {
+                            raw_nflux.min(local_nodecov[nid].max(0.0))
+                        };
                         local_nodecov[nid] = (local_nodecov[nid] - nflux).max(0.0);
                         if local_nodecov[nid] < EPS {
                             local_nodecov[nid] = 0.0;
@@ -7860,6 +8300,7 @@ pub fn extract_transcripts(
                     None,
                     Some(tocheck),
                 );
+                emit_checktrf_enter!(idx, "zero_flux", debug_nodes);
                 checktrf.push(idx);
                 zero_flux_set.insert(idx);
                 zero_flux_candidates += 1;
@@ -7998,6 +8439,7 @@ pub fn extract_transcripts(
                         Some(coverage),
                         Some(tocheck),
                     );
+                    emit_checktrf_enter!(idx, "low_coverage", debug_nodes);
                     checktrf.push(idx);
                 }
             }
@@ -8094,7 +8536,7 @@ pub fn extract_transcripts(
         emit_debug_seed_decision!(idx, 1, "STORED", flow_flux, coverage, exons.len());
         // parity_decisions: emit path_extracted before predcluster filtering so we
         // can tell whether a miss is an assembly divergence or a filter divergence.
-        if crate::parity_decisions::is_enabled() {
+        if crate::parity::decisions::is_enabled() {
             let pe_start = exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
             let pe_end = exons.last().map(|(_, e)| *e).unwrap_or(0);
             let pe_introns: String = exons.windows(2)
@@ -8111,7 +8553,7 @@ pub fn extract_transcripts(
                 exons.len(),
                 pe_introns,
             );
-            crate::parity_decisions::emit(
+            crate::parity::decisions::emit(
                 "path_extracted",
                 Some(bundle_chrom),
                 pe_start,
@@ -8330,6 +8772,11 @@ pub fn extract_transcripts(
                     }
                 }
                 record_outcome!(t, SeedOutcome::ChecktrfReadthr);
+                {
+                    let _rn: Vec<usize> = transfrags[t].node_ids.iter().copied()
+                        .filter(|&n| n != source_id && n != sink_id).collect();
+                    emit_checktrf_result!(t, "readthr_skip", &_rn);
+                }
                 continue;
             }
             if debug_ek {
@@ -8358,6 +8805,7 @@ pub fn extract_transcripts(
             //   `else if(!eonly || guide)` — in non-eonly mode always rescues complete TFs).
             // Shortread / <=1-node: also attempt independent rescue (no prior redistribution).
             let is_shortread_tf = !transfrags[t].longread;
+            let mut csr_triggered = false;
             if !is_shortread_tf && tf_nodes.len() > 1 {
                 let mut tmatch: Vec<usize> = Vec::new();
                 let mut abundancesum = 0.0;
@@ -8372,11 +8820,59 @@ pub fn extract_transcripts(
                     abundancesum = s;
                 }
                 if !tmatch.is_empty() {
-                    if prefer_independent_rescue_over_matched_redistribution(
+                    if std::env::var_os("RUSTLE_DISABLE_CSR").is_none() && is_chimeric_suffix_rescue(
                         &tf_nodes,
                         &tmatch,
                         &kept_paths,
+                        transfrags[t].longstart,
+                        graph,
                     ) {
+                        if let Some((lo, hi)) = trace_locus {
+                            let in_range = transfrags[t].node_ids.iter().any(|&nid| {
+                                graph
+                                    .nodes
+                                    .get(nid)
+                                    .map_or(false, |n| n.start <= hi && n.end >= lo)
+                            });
+                            if in_range {
+                                eprintln!(
+                                    "[TRACE_CHECKTRF] t={} CHIMERIC_SUFFIX → redistribute+rescue kept_paths={:?}",
+                                    t, &tmatch
+                                );
+                            }
+                        }
+                        if std::env::var_os("RUSTLE_TRACE_CHIMERIC_ALL").is_some() {
+                            let tf_first = tf_nodes.first().copied().unwrap_or(0);
+                            let tf_pos = graph.nodes.get(tf_first).map_or(0, |n| n.start);
+                            for &kidx in &tmatch {
+                                if let Some((k_nodes, _, _, _)) = kept_paths.get(kidx) {
+                                    let k_first = k_nodes.first().copied().unwrap_or(0);
+                                    if k_nodes.len() >= tf_nodes.len() + 15 && k_nodes.ends_with(&tf_nodes) {
+                                        eprintln!(
+                                            "[CSR] pos={} tf_first={} k_first={} tf_len={} k_len={} diff={}",
+                                            tf_pos, tf_first, k_first,
+                                            tf_nodes.len(), k_nodes.len(),
+                                            k_nodes.len().saturating_sub(tf_nodes.len())
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        // Redistribute to prevent the longer transcript from dropping below
+                        // readthr coverage threshold, then fall through to independent rescue
+                        // to emit the correct shorter-TSS isoform.
+                        let _ = redistribute_transfrag_to_matches(
+                            t,
+                            &transfrags[t],
+                            &tmatch,
+                            abundancesum,
+                            &kept_paths,
+                            graph,
+                            &mut out,
+                        );
+                        tmatch.clear(); // skip normal redistribution below; go to rescue
+                        csr_triggered = true;
+                    } else if is_same_outer_alt(&tf_nodes, &tmatch, &kept_paths) {
                         if let Some((lo, hi)) = trace_locus {
                             let in_range = transfrags[t].node_ids.iter().any(|&nid| {
                                 graph
@@ -8520,6 +9016,7 @@ pub fn extract_transcripts(
                         // DEBUG: emit DEBUG_CHK for matched outcome
                         emit_debug_chk!(t, transfrags[t].abundance, "matched", tmatch.len(), abundancesum);
                         record_outcome!(t, SeedOutcome::ChecktrfRedistributed);
+                        emit_checktrf_result!(t, "matched", &tf_nodes);
                         continue; // matched: done
                     }
                     }
@@ -8546,6 +9043,7 @@ pub fn extract_transcripts(
                 // in eonly mode, only guide transfrags are independently rescued.
                 if config.eonly && !transfrags[t].guide {
                     record_outcome!(t, SeedOutcome::ChecktrfEonlySkip);
+                    emit_checktrf_result!(t, "eonly_skip", &tf_nodes);
                     continue;
                 }
 
@@ -8604,6 +9102,7 @@ pub fn extract_transcripts(
                     // regardless of rescue success.
                     transfrags[t].abundance = 0.0;
                     record_outcome!(t, SeedOutcome::ChecktrfIncomplete);
+                    emit_checktrf_result!(t, "incomplete", rescue_nodes);
                     continue;
                 }
                 let mut exons: Vec<(u64, u64)> = Vec::new();
@@ -8906,10 +9405,33 @@ pub fn extract_transcripts(
                     hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
                     hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
                     alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    rescue_class: if csr_triggered { Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue) } else { None },
                 });
                 let out_idx = out.len() - 1;
                 record_outcome!(t, SeedOutcome::ChecktrfRescued);
+                // parity_decisions: emit path_extracted for checktrf-rescued predictions.
+                // The main path_extracted emit only covers flow predictions; this closes
+                // the diagnostic gap for the "assembly_miss_neither_extracted" category.
+                if crate::parity::decisions::is_enabled() {
+                    let pe_start = exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
+                    let pe_end = exons.last().map(|(_, e)| *e).unwrap_or(0);
+                    let pe_introns: String = exons.windows(2)
+                        .filter(|w| w[1].0 > w[0].1)
+                        .map(|w| format!("{}-{}", w[0].1 + 1, w[1].0))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let pe_n = exons.len();
+                    let pe_src = gtf_source_checktrf_rescue(&transfrags[t].guide_tid);
+                    crate::parity::decisions::emit(
+                        "path_extracted",
+                        Some(bundle_chrom), pe_start, pe_end, bundle_strand,
+                        &format!(r#""source":"{}","cov":{:.4},"longcov":{:.4},"nexons":{},"introns":"{}""#,
+                            pe_src.as_deref().unwrap_or("checktrf_rescue"),
+                            coverage, transfrags[t].abundance, pe_n, pe_introns),
+                    );
+                }
+                emit_checktrf_result!(t, "rescued", rescue_nodes);
                 if debug_detail {
                     eprint!(
                         "DEBUG_CHK t={} abund={:.4} outcome=rescued cov={:.4} nexons={} exons=",

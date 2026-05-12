@@ -4,12 +4,12 @@
 //! a start/end boundary, and add source/sink + continuity edges.
 
 use crate::bpcov::Bpcov;
-use crate::coord::inclusive_to_half_open;
+use crate::util::coord::inclusive_to_half_open;
 use crate::graph::{Graph, GraphTransfrag};
 use crate::read_boundaries::LongtrimBoundaryMap;
 use crate::reference_gtf::GuideInfo;
 use crate::reference_gtf::RefTranscript;
-use crate::trace_events::{
+use crate::tracing::events::{
     longtrim_bnode, longtrim_bound_end, longtrim_bound_start, longtrim_split,
 };
 use crate::types::ReadBoundary;

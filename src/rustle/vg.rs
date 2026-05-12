@@ -8,7 +8,7 @@
 //! an EM algorithm redistributes read weights based on splice-graph compatibility,
 //! then the standard flow pipeline runs with updated weights.
 
-use crate::coord::overlaps_half_open;
+use crate::util::coord::overlaps_half_open;
 use crate::graph::Graph;
 use crate::map_reads::read_to_path_bundlenodes;
 use crate::types::{Bundle, BundleRead, CBundlenode, Bundle2Graph};
@@ -1743,6 +1743,32 @@ pub fn junction_compatibility(read: &BundleRead, bundle: &Bundle) -> f64 {
     matched as f64 / read.junctions.len() as f64
 }
 
+/// Structural (exon-length) divergence between a read and a candidate paralog
+/// bundle, in bp.  Captures indel-driven divergence between paralogs that the
+/// HMM's per-base emission scoring cannot see (cassette-exon presence/absence,
+/// TE expansions, UTR length differences).
+///
+/// Definition: minimum |Σ read_exon_lens − Σ bundle_read_exon_lens| across all
+/// reads in the candidate bundle.  Picks the closest bundle read by total
+/// spliced length, giving a robust coarse signal that scales with the actual
+/// indel divergence between paralogs.  Returns 0.0 when the candidate bundle
+/// has no reads (degenerate case).
+pub fn exon_length_divergence(read: &BundleRead, bundle: &Bundle) -> f64 {
+    let r_spliced: i64 = read.exons.iter().map(|(a, b)| *b as i64 - *a as i64).sum();
+    if r_spliced == 0 || bundle.reads.is_empty() {
+        return 0.0;
+    }
+    let mut best = i64::MAX;
+    for br in &bundle.reads {
+        let b_spliced: i64 = br.exons.iter().map(|(a, b)| *b as i64 - *a as i64).sum();
+        let d = (r_spliced - b_spliced).abs();
+        if d < best {
+            best = d;
+        }
+    }
+    if best == i64::MAX { 0.0 } else { best as f64 }
+}
+
 // ── SNP-based copy assignment (--vg-snp) ─────────────────────────────────
 
 /// Position → allele frequency per copy: (ref_pos → Vec<(copy_idx, allele_counts)>).
@@ -1769,8 +1795,6 @@ pub fn build_diagnostic_snps(
     family: &FamilyGroup,
     bundles: &[Bundle],
 ) -> DiagnosticSnps {
-    use std::collections::HashSet;
-
     let n_copies = family.bundle_indices.len();
 
     // Per-copy allele counts: ref_pos → copy_idx → base → count.
@@ -1974,46 +1998,52 @@ pub fn run_pre_assembly_em(
     run_pre_assembly_em_inner(families, bundles, max_iter, false)
 }
 
-/// Per-family routing decision used by `--vg-solver auto` and applied as a
-/// noise-filter for the explicit `em` / `em-hmm` solvers. See
-/// `project_novel_copy_rescue.md` and the loo_assembly cross-family results
-/// for the empirical basis of these thresholds.
+/// Per-family routing decision used by `--vg-solver auto`.
+///
+/// Compact dispatch: HMM-EM is the universal target. For divergent copies the
+/// forward DP converges in 1–2 iterations to essentially-hard assignments, so
+/// it subsumes the legacy heuristic-EM routing. The dispatcher in pipeline.rs
+/// owns the heuristic fallback for the case where HMM prerequisites (genome
+/// FASTA, multi-mapper sequences) are not satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmRoute {
-    /// Skip — too noisy or wrong shape for any EM.
+    /// Skip — singleton, too many copies, or intronless. No EM to do.
     Skip(&'static str),
-    /// Use heuristic junction-based EM (fast, good for high-similarity
-    /// paralogs and large families).
-    Heuristic,
-    /// Use HMM-based EM (sequence-aware, good for medium-divergence
-    /// paralogs in 30-90% pairwise-id band).
+    /// Send this family to HMM-EM (the universal solver).
     Hmm,
 }
 
-/// Decide per-family routing.
-///
-/// Skip rules:
-///   - `n_copies > max_copies` (default 20): mtDNA, megafamilies, alignment artifacts.
+/// Decide per-family routing. Triviality filters:
+///   - `n_copies < 2`: singleton, nothing to disambiguate.
+///   - `n_copies > max_copies` (default 40): hard upper bound — even with the
+///     work budget unmet, > 40 paralogs is almost always noise (mtDNA, rRNA,
+///     mega-tandem clusters).
+///   - `work_estimate > max_work` (default 2000): work budget gate. The
+///     dominant cost is the forward DP per (read, copy) placement, so we
+///     estimate as `n_copies × max(n_multimap_reads, 10)`. Rejects mtDNA-class
+///     (1509 copies → ≥ 15090 work) while letting NBPF (25 × 30 = 750) through.
 ///   - `skip_intronless && all bundles have empty junction_stats`: intronless paralogs
 ///     (e.g. olfactory receptors) yield degenerate single-node family graphs.
 ///
-/// Otherwise route to:
-///   - `Hmm` if `n_copies <= hmm_max_copies` and `has_genome` (HMM scoring needs profiles).
-///   - `Heuristic` otherwise (too large for HMM, or no genome — junctions still informative).
+/// Everything else routes to `Hmm`.
 pub fn classify_family_for_em(
     family: &FamilyGroup,
     bundles: &[Bundle],
     max_copies: usize,
-    hmm_max_copies: usize,
+    max_work: usize,
     skip_intronless: bool,
-    has_genome: bool,
 ) -> EmRoute {
     let n_copies = family.bundle_indices.len();
+    if n_copies < 2 {
+        return EmRoute::Skip("singleton");
+    }
     if n_copies > max_copies {
         return EmRoute::Skip("too_many_copies");
     }
-    if n_copies < 2 {
-        return EmRoute::Skip("singleton");
+    let n_reads = family.multimap_reads.len();
+    let work_estimate = n_copies.saturating_mul(n_reads.max(10));
+    if work_estimate > max_work {
+        return EmRoute::Skip("too_much_work");
     }
     if skip_intronless {
         let any_introns = family.bundle_indices.iter()
@@ -2022,11 +2052,7 @@ pub fn classify_family_for_em(
             return EmRoute::Skip("intronless");
         }
     }
-    if n_copies <= hmm_max_copies && has_genome {
-        EmRoute::Hmm
-    } else {
-        EmRoute::Heuristic
-    }
+    EmRoute::Hmm
 }
 
 /// EM with optional SNP integration.
@@ -2406,6 +2432,9 @@ pub fn run_pre_assembly_em_hmm(
     sequences: &HashMap<u64, Vec<u8>>,
     max_iter: usize,
     use_snps: bool,
+    junction_bonus: f64,
+    uniform_prior: bool,
+    exon_len_penalty: f64,
 ) -> Vec<EmResult> {
     use crate::vg_hmm::scorer::forward_against_path_for_copy_with_norm;
     let mut results = Vec::with_capacity(families.len());
@@ -2459,6 +2488,8 @@ pub fn run_pre_assembly_em_hmm(
             locs: Vec<(usize, usize)>,
             log_scores: Vec<f64>,
             log_snp: Vec<f64>,
+            log_jct: Vec<f64>,
+            log_exonlen: Vec<f64>,
             weights: Vec<f64>,
             fam_pos: Vec<usize>,
         }
@@ -2482,6 +2513,19 @@ pub fn run_pre_assembly_em_hmm(
         }
         let mut work: Vec<WorkItem> = Vec::with_capacity(family.multimap_reads.len());
         let mut n_no_seq = 0usize;
+        let mut n_prefiltered = 0usize;
+
+        // Junction-compat pre-filter threshold: drop (read, copy) placements
+        // whose read junctions overlap with the copy's bundle junction_stats
+        // below this fraction. Cheap O(1) per placement; uses the existing
+        // junction_compatibility infrastructure. Default 0.5 — read must have
+        // ≥ 50 % of its CIGAR junctions matched within ±10 bp tolerance.
+        // Single-exon reads (no junctions) return compat = 1.0 and pass through.
+        // Override via RUSTLE_VG_HMM_EM_JCT_PREFILTER (0.0 disables).
+        let jct_prefilter: f64 = std::env::var("RUSTLE_VG_HMM_EM_JCT_PREFILTER")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(0.5);
 
         // Iterate deterministically (HashMap order is unspecified). Sort by rnh so
         // capping is reproducible across runs.
@@ -2503,6 +2547,21 @@ pub fn run_pre_assembly_em_hmm(
                 } else {
                     0.0
                 };
+                // Junction-compat pre-filter: skip this placement entirely
+                // when the read's junctions don't overlap enough with the
+                // copy's expected junctions. Saves a full forward DP per
+                // skipped placement; safe because such a placement would
+                // score very low and contribute negligibly to the posterior.
+                if jct_prefilter > 0.0 && ri < bundles[global_bi].reads.len() {
+                    let read = &bundles[global_bi].reads[ri];
+                    if !read.junctions.is_empty() {
+                        let compat = junction_compatibility(read, &bundles[global_bi]);
+                        if compat < jct_prefilter {
+                            n_prefiltered += 1;
+                            continue;
+                        }
+                    }
+                }
                 placements.push((fam_pos, global_bi, ri, w));
             }
             if placements.len() < 2 { continue; }
@@ -2521,8 +2580,10 @@ pub fn run_pre_assembly_em_hmm(
         let scored: Vec<Entry> = work.par_iter()
             .filter_map(|item| {
                 let mut entry_locs = Vec::with_capacity(item.placements.len());
-                let mut log_scores = Vec::with_capacity(item.placements.len());
-                let mut log_snp    = Vec::with_capacity(item.placements.len());
+                let mut log_scores  = Vec::with_capacity(item.placements.len());
+                let mut log_snp     = Vec::with_capacity(item.placements.len());
+                let mut log_jct     = Vec::with_capacity(item.placements.len());
+                let mut log_exonlen = Vec::with_capacity(item.placements.len());
                 let mut weights   = Vec::with_capacity(item.placements.len());
                 let mut fp_vec    = Vec::with_capacity(item.placements.len());
                 for &(fam_pos, global_bi, ri, w) in &item.placements {
@@ -2547,15 +2608,51 @@ pub fn run_pre_assembly_em_hmm(
                     } else {
                         0.0
                     };
+                    // Structural-mismatch penalty: -bonus × #junctions in the
+                    // read's CIGAR that the copy's expected junction set does
+                    // NOT contain (±10 bp tolerance, via junction_compatibility).
+                    // Independent of nucleotide identity — discriminates copies
+                    // that differ in splice structure even when emissions are
+                    // near-uniform (divergent paralogs).  Zero when bonus = 0.
+                    let jct_log = if junction_bonus > 0.0
+                        && ri < bundles[global_bi].reads.len()
+                    {
+                        let read = &bundles[global_bi].reads[ri];
+                        let total = read.junctions.len() as f64;
+                        if total > 0.0 {
+                            let compat = junction_compatibility(read, &bundles[global_bi]);
+                            let miss = total * (1.0 - compat);
+                            -junction_bonus * miss
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        0.0
+                    };
+                    // Structural exon-length divergence: penalise reads whose
+                    // total spliced length is far from any read in the candidate
+                    // bundle.  Orthogonal to identity — fires on divergent
+                    // paralogs whose copies differ in indel/cassette structure.
+                    let exonlen_log = if exon_len_penalty > 0.0
+                        && ri < bundles[global_bi].reads.len()
+                    {
+                        let read = &bundles[global_bi].reads[ri];
+                        let div = exon_length_divergence(read, &bundles[global_bi]);
+                        -exon_len_penalty * div
+                    } else {
+                        0.0
+                    };
                     entry_locs.push((global_bi, ri));
                     log_scores.push(score);
                     log_snp.push(snp_log);
+                    log_jct.push(jct_log);
+                    log_exonlen.push(exonlen_log);
                     weights.push(w);
                     fp_vec.push(fam_pos);
                 }
                 if entry_locs.len() < 2 { return None; }
                 if !log_scores.iter().any(|s| s.is_finite()) { return None; }
-                Some(Entry { locs: entry_locs, log_scores, log_snp, weights, fam_pos: fp_vec })
+                Some(Entry { locs: entry_locs, log_scores, log_snp, log_jct, log_exonlen, weights, fam_pos: fp_vec })
             })
             .collect();
         let mut entries = scored;
@@ -2586,6 +2683,10 @@ pub fn run_pre_assembly_em_hmm(
 
         for iter in 0..max_iter {
             // M-step: per-copy weight totals → log-priors with floor.
+            // With `uniform_prior`, the M-step is disabled — every copy gets
+            // a flat prior so the per-(read, copy) posterior is driven purely
+            // by the HMM (+ SNP, + junction) log-likelihood.  Used to test
+            // whether EM's iterative prior estimation is doing real work.
             let mut copy_total = vec![0.0_f64; n_copies];
             for entry in &entries {
                 for (i, w) in entry.weights.iter().enumerate() {
@@ -2593,9 +2694,13 @@ pub fn run_pre_assembly_em_hmm(
                 }
             }
             let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
-            let log_priors: Vec<f64> = copy_total.iter()
-                .map(|&t| ((t / total_sum) + 1e-3).ln())
-                .collect();
+            let log_priors: Vec<f64> = if uniform_prior {
+                vec![0.0_f64; n_copies]
+            } else {
+                copy_total.iter()
+                    .map(|&t| ((t / total_sum) + 1e-3).ln())
+                    .collect()
+            };
 
             let mut max_delta: f64 = 0.0;
             for entry in &mut entries {
@@ -2604,7 +2709,11 @@ pub fn run_pre_assembly_em_hmm(
                 for i in 0..n {
                     let s = entry.log_scores[i];
                     if !s.is_finite() { continue; }
-                    log_post[i] = s + log_priors[entry.fam_pos[i]] + entry.log_snp[i];
+                    log_post[i] = s
+                        + log_priors[entry.fam_pos[i]]
+                        + entry.log_snp[i]
+                        + entry.log_jct[i]
+                        + entry.log_exonlen[i];
                 }
                 let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                 if !max_lp.is_finite() { continue; }
@@ -2662,11 +2771,11 @@ pub fn run_pre_assembly_em_hmm(
         }
         result.reads_reweighted = n_reweighted;
 
-        if n_reweighted > 0 || n_no_seq > 0 || n_capped > 0 {
+        if n_reweighted > 0 || n_no_seq > 0 || n_capped > 0 || n_prefiltered > 0 {
             eprintln!(
-                "[VG-HMM-EM] Family {}: HMM-EM converged={} in {} iter (delta={:.6}), reweighted {} reads ({} skipped: no seq, {} capped) across {} copies",
+                "[VG-HMM-EM] Family {}: HMM-EM converged={} in {} iter (delta={:.6}), reweighted {} reads ({} skipped: no seq, {} capped, {} jct-prefiltered) across {} copies",
                 family.family_id, result.converged, result.iterations, result.max_delta,
-                n_reweighted, n_no_seq, n_capped, n_copies,
+                n_reweighted, n_no_seq, n_capped, n_prefiltered, n_copies,
             );
         }
         results.push(result);
@@ -2731,6 +2840,7 @@ pub fn write_family_report_with_em(
                     Some(RescueClass::ReferenceAbsent)      => c.n_ref_absent   += 1,
                     Some(RescueClass::NovelLocusFromScan)
                     | Some(RescueClass::NeedsExternalVerification)
+                    | Some(RescueClass::ChimericSuffixRescue)
                     | None => {}
                 }
             }

@@ -46,6 +46,12 @@ pub enum RescueClass {
     /// signature was detected by `vg_hmm::positional` but no bundle existed
     /// there at family-discovery time.
     NovelLocusFromScan,
+    /// Transfrag was detected as a proper suffix of a chimeric flow-decomposition
+    /// path: the flow's 5' end extends far upstream due to a longtrim-created
+    /// source edge, but the transfrag's own TSS is legitimate. CSR redistributes
+    /// the transfrag's coverage into the chimeric path and then independently
+    /// rescues it with its true shorter 5' boundary.
+    ChimericSuffixRescue,
 }
 
 impl RescueClass {
@@ -59,6 +65,7 @@ impl RescueClass {
             RescueClass::ReferenceAbsent => "reference_absent",
             RescueClass::NeedsExternalVerification => "needs_external_verification",
             RescueClass::NovelLocusFromScan => "novel_locus_from_scan",
+            RescueClass::ChimericSuffixRescue => "chimeric_suffix_rescue",
         }
     }
 }

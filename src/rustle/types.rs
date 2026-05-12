@@ -5,7 +5,7 @@
 //!   Output is only guide-matched transcripts.
 //! - **Long-read** (default): extract_transcripts with long order only (get_trf_long).
 
-use crate::constants::{LONGINTRON, LOWCOV, MISMATCHFRAC, SSERROR};
+use crate::util::constants::{LONGINTRON, LOWCOV, MISMATCHFRAC, SSERROR};
 use std::cmp::Ordering;
 use std::sync::Arc;
 
@@ -665,31 +665,26 @@ impl BundleData {
     }
 }
 
-/// Multi-mapping resolution method for VG mode.
+/// Multi-mapping resolution for VG mode.
+///
+/// Two states only: `Off` (discovery / reporting, no read reweighting) and
+/// `On` (HMM-EM with two triviality skips; falls back to heuristic EM only
+/// when --genome-fasta is missing or multi-mapper sequences weren't collected).
+///
+/// The legacy values `em`, `em-hmm`, `auto`, `flow` are accepted as deprecated
+/// aliases — all map to `On`. The dispatcher itself was collapsed (see
+/// `pipeline.rs` and `project_compact_dispatch.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VgSolver {
-    /// No multi-mapping resolution — discovery/reporting only (default).
-    None,
-    /// Expectation-Maximization with junction-based compatibility (heuristic).
-    Em,
-    /// Expectation-Maximization with HMM-based per-path sequence likelihood
-    /// scoring. Requires read sequences for multi-mappers (collected at BAM
-    /// parse) and a fitted family-graph HMM per family group.
-    EmHmm,
-    /// Per-family dispatch: HMM for medium-divergence multi-copy families
-    /// (2..=10 copies, has junctions, --genome-fasta provided); heuristic
-    /// EM for the rest; skip noise families (n_copies > max, intronless).
-    /// See loo_assembly cross-family results — HMM only pays off in the
-    /// 30-90% pairwise-id band; cheaper for the high-similarity end and
-    /// useless for intronless / extreme-divergence cases.
-    Auto,
-    /// Flow-based redistribution: two-pass assembly, redistribute proportional to transcript coverage.
-    Flow,
+    /// Discovery / reporting only. No read weights are modified.
+    Off,
+    /// HMM-EM with triviality skips (the compact universal solver).
+    On,
 }
 
 impl Default for VgSolver {
     fn default() -> Self {
-        Self::None
+        Self::On
     }
 }
 
@@ -697,12 +692,14 @@ impl std::str::FromStr for VgSolver {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "none" | "off" | "discover" => Ok(Self::None),
-            "em" => Ok(Self::Em),
-            "em-hmm" | "em_hmm" | "emhmm" | "hmm" => Ok(Self::EmHmm),
-            "auto" => Ok(Self::Auto),
-            "flow" => Ok(Self::Flow),
-            _ => Err(format!("unknown VG solver '{}': expected none, em, em-hmm, auto, or flow", s)),
+            "off" | "none" | "discover" => Ok(Self::Off),
+            // Legacy aliases — all behave as `on` post-compaction.
+            "on" | "auto" | "em" | "em-hmm" | "em_hmm" | "emhmm" | "hmm" => Ok(Self::On),
+            "flow" => {
+                eprintln!("[VG] --vg-solver flow was a TODO stub; treating as 'on'");
+                Ok(Self::On)
+            }
+            _ => Err(format!("unknown VG solver '{}': expected 'off' or 'on'", s)),
         }
     }
 }
@@ -710,11 +707,8 @@ impl std::str::FromStr for VgSolver {
 impl std::fmt::Display for VgSolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::None => write!(f, "none"),
-            Self::Em => write!(f, "em"),
-            Self::EmHmm => write!(f, "em-hmm"),
-            Self::Auto => write!(f, "auto"),
-            Self::Flow => write!(f, "flow"),
+            Self::Off => write!(f, "off"),
+            Self::On => write!(f, "on"),
         }
     }
 }
@@ -916,10 +910,37 @@ pub struct RunConfig {
     /// elements, very large gene-family clusters where pairwise-ID is
     /// either ~100% or below useful threshold).
     pub vg_em_max_copies: usize,
-    /// Cap for routing a family to HMM-EM under `--vg-solver auto`.
-    /// Default 10 — HMM scoring scales as O(reads × copies × seq × profile);
-    /// medium families fit, megafamilies don't.
-    pub vg_em_hmm_max_copies: usize,
+    /// HMM-EM compute budget per family: skip if `n_copies × max(n_multimap_reads, 10)`
+    /// exceeds this value.  The per-(read, copy) forward DP is the dominant
+    /// cost, so the work scales with this product.  Replaces the cruder
+    /// `n_copies` cap as the primary gate.  Default 2000 — comfortably allows
+    /// NBPF-class families (25 copies × ~30 reads = 750) while still rejecting
+    /// mtDNA-style runaway cases.  Set via `--vg-em-max-work`.
+    pub vg_em_max_work: usize,
+    /// Additive junction-match bonus added to HMM-EM's per-(read, copy)
+    /// log-likelihood.  `0.0` = off (default behaviour).  Each missing
+    /// junction (a junction observed in the read's CIGAR that the copy's
+    /// expected junctions don't contain, within ±10 bp tolerance) costs
+    /// `vg_junction_bonus` nats — i.e. the *structural* mismatch signal
+    /// the HMM emission scoring can't see for highly divergent paralogs.
+    /// Recommended range: 1.0–3.0 nats per missed junction.  See
+    /// `--vg-junction-bonus`.
+    pub vg_junction_bonus: f64,
+    /// Disable the EM prior term so every iteration uses a *uniform* prior over
+    /// copies — i.e. the per-(read, copy) posterior is driven purely by HMM
+    /// (+ SNP, + junction) log-likelihood, with no cross-read prior inheritance.
+    /// Used to answer the empirical question "does EM's iterative prior
+    /// estimation actually do work on real data, or is the per-read HMM score
+    /// already decisive?".  See `--vg-em-uniform-prior`.  Default false.
+    pub vg_em_uniform_prior: bool,
+    /// Exon-length penalty coefficient added to HMM-EM's per-(read, copy)
+    /// log-likelihood. For each exon a read spans, the contribution is
+    /// `-vg_exon_len_penalty * |len_read_exon − len_copy_exon|`. Targets the
+    /// divergent-paralog failure mode where copies differ primarily in
+    /// indels/cassette structure rather than substitutions (the HMM emission
+    /// can't see this).  `0.0` = off (default).  Suggested range 0.005–0.02
+    /// (in nats per bp of length mismatch).  See `--vg-exon-len-penalty`.
+    pub vg_exon_len_penalty: f64,
     /// Skip intronless families during EM (`--vg-em-skip-intronless`).
     /// Default true — intronless paralogs (e.g. olfactory receptors) yield
     /// degenerate single-node family graphs that are uninformative for
@@ -1191,7 +1212,7 @@ impl Default for RunConfig {
             vg_scan_novel_loci: false,
             vg_candidate_loci: std::collections::HashMap::new(),
             vg_report: None,
-            vg_solver: VgSolver::Em,
+            vg_solver: VgSolver::On,
             vg_snp: false,
             vg_phase: false,
             vg_min_novel_reads: 3,
@@ -1200,8 +1221,11 @@ impl Default for RunConfig {
             vg_rescue_min_loglik: 30.0,
             vg_multimap_sequences: std::collections::HashMap::new(),
             vg_mask_regions: Vec::new(),
-            vg_em_max_copies: 20,
-            vg_em_hmm_max_copies: 10,
+            vg_em_max_copies: 40,
+            vg_em_max_work: 2000,
+            vg_junction_bonus: 0.0,
+            vg_em_uniform_prior: false,
+            vg_exon_len_penalty: 0.0,
             vg_em_skip_intronless: true,
             vg_family_min_shared: 10,
             vg_family_max_copies: 30,

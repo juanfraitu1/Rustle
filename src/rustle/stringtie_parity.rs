@@ -47,7 +47,7 @@
 //! ```
 //!
 //! Each segment’s **right** coordinate in the signature uses the same `-1` as StringTie’s
-//! `parity_partition_emit_stringtie` (`cur->end - 1`); see `parity_partition_dump::encode_partition_signature`.
+//! `parity_partition_emit_stringtie` (`cur->end - 1`); see `parity::partition_dump::encode_partition_signature`.
 //! Chains are built **one per `SubBundleResult` linked list** (StringTie: one per `CBundle` walk),
 //! not from the post-merge color component split, so `RUSTLE_PARITY_PARTITION_TSV` matches
 //! `PARITY_PARTITION_TSV` bundle geometry on the same BAM (remaining diffs are mostly ±few bp

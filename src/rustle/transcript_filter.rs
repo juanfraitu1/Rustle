@@ -7,19 +7,19 @@
 //! - Short terminal exon: header SMALL_EXON 35 (10090, 14846).
 
 use crate::assembly_mode::LONGINTRONANCHOR;
-use crate::bitset::SmallBitset;
+use crate::util::bitset::SmallBitset;
 use crate::bpcov::Bpcov;
-use crate::coord::{len_half_open, overlaps_half_open};
+use crate::util::coord::{len_half_open, overlaps_half_open};
 use crate::path_extract::Transcript;
 use crate::reference_gtf::RefTranscript;
-use crate::trace_reference::debug_ref_stage;
+use crate::tracing::reference::debug_ref_stage;
 use crate::types::{
     CExon, CMaxIntv, CPrediction, DetHashMap as HashMap, DetHashSet as HashSet, JunctionStats,
     RunConfig,
 };
 use std::sync::OnceLock;
 
-const EPSILON: f64 = crate::constants::FLOW_EPSILON;
+const EPSILON: f64 = crate::util::constants::FLOW_EPSILON;
 
 fn predcluster_trace_enabled() -> bool {
     std::env::var_os("RUSTLE_TRACE_PREDCLUSTER").is_some()
@@ -771,7 +771,7 @@ pub fn filter_contained_transcripts(
             removed
         );
     }
-    if crate::parity_decisions::is_enabled() {
+    if crate::parity::decisions::is_enabled() {
         for (i, tx) in transcripts.iter().enumerate() {
             if drop.contains(i) {
                 let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
@@ -780,7 +780,7 @@ pub fn filter_contained_transcripts(
                     r#""reason":"contained","cov":{:.4},"nexons":{},"stage":"contained""#,
                     tx.coverage, tx.exons.len()
                 );
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
                 );
             }
@@ -1427,7 +1427,7 @@ fn build_significant_overlap_adj_cpred(preds: &[CPrediction], error_perc: f64) -
     adj
 }
 
-fn overlap_matrix_to_adj(overlaps: &[crate::bitset::SmallBitset]) -> Vec<Vec<usize>> {
+fn overlap_matrix_to_adj(overlaps: &[crate::util::bitset::SmallBitset]) -> Vec<Vec<usize>> {
     let n = overlaps.len();
     let mut adj = vec![Vec::<usize>::new(); n];
     for i in 0..n {
@@ -1745,10 +1745,10 @@ fn significant_overlap_pair(
 fn build_significant_overlap_matrix(
     txs: &[Transcript],
     error_perc: f64,
-) -> Vec<crate::bitset::SmallBitset> {
+) -> Vec<crate::util::bitset::SmallBitset> {
     let n = txs.len();
-    let mut ov: Vec<crate::bitset::SmallBitset> = (0..n)
-        .map(|_| crate::bitset::SmallBitset::with_capacity(n.min(64)))
+    let mut ov: Vec<crate::util::bitset::SmallBitset> = (0..n)
+        .map(|_| crate::util::bitset::SmallBitset::with_capacity(n.min(64)))
         .collect();
     for i in 0..n {
         ov[i].insert_grow(i);
@@ -1947,7 +1947,7 @@ fn isofrac_with_summary(
     let mut breakpoints: Vec<u64> = starts.keys().chain(ends.keys()).copied().collect();
     breakpoints.sort_unstable();
     breakpoints.dedup();
-    let mut active = crate::bitset::SmallBitset::with_capacity(n.min(64));
+    let mut active = crate::util::bitset::SmallBitset::with_capacity(n.min(64));
     let mut removed = 0usize;
     for w in breakpoints.windows(2) {
         let pos = w[0];
@@ -2176,7 +2176,7 @@ fn isofrac_with_summary(
                 dead.insert_grow(k);
                 removed += 1;
                 summary.longunder_kill += 1;
-                if crate::parity_decisions::is_enabled() {
+                if crate::parity::decisions::is_enabled() {
                     let vtx = &txs[k];
                     let pk_s = vtx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
                     let pk_e = vtx.exons.last().map(|(_, e)| *e).unwrap_or(0);
@@ -2184,7 +2184,7 @@ fn isofrac_with_summary(
                         r#""reason":"isofrac","cov":{:.4},"usedcov":{:.4},"multicov":{:.4},"isofraclong":{:.6},"nexons":{},"stage":"isofrac""#,
                         cov, usedcov[sidx], multicov[sidx], isofraclong, vtx.exons.len()
                     );
-                    crate::parity_decisions::emit(
+                    crate::parity::decisions::emit(
                         "pred_kill", Some(&vtx.chrom), pk_s, pk_e, vtx.strand, &pk_p,
                     );
                 }
@@ -2539,7 +2539,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     classify_pairwise_reason($reason, &mut pairwise_summary);
                     *reason_counts.entry($reason).or_insert(0) += 1;
                     // parity_decisions: per-path kill reason, mirroring StringTie's pred_kill event.
-                    if crate::parity_decisions::is_enabled() {
+                    if crate::parity::decisions::is_enabled() {
                         let vtx = &txs[$idx];
                         let pk_s = vtx.exons.first().map(|(s,_)| *s + 1).unwrap_or(0);
                         let pk_e = vtx.exons.last().map(|(_,e)| *e).unwrap_or(0);
@@ -2547,7 +2547,7 @@ pub fn pairwise_overlap_filter_with_summary(
                             r#""reason":"{}","cov":{:.4},"nexons":{},"stage":"pairwise""#,
                             $reason, vtx.coverage, vtx.exons.len()
                         );
-                        crate::parity_decisions::emit(
+                        crate::parity::decisions::emit(
                             "pred_kill", Some(&vtx.chrom), pk_s, pk_e, vtx.strand, &pk_p
                         );
                     }
@@ -3076,7 +3076,7 @@ pub fn retained_intron_filter(
             total_removed
         );
     }
-    if crate::parity_decisions::is_enabled() {
+    if crate::parity::decisions::is_enabled() {
         for (i, tx) in sorted.iter().enumerate() {
             if remove_set.contains(&i) {
                 let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
@@ -3085,7 +3085,7 @@ pub fn retained_intron_filter(
                     r#""reason":"retained_intron_filter","cov":{:.4},"nexons":{},"stage":"retained_intron_filter""#,
                     tx.coverage, tx.exons.len()
                 );
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
                 );
             }
@@ -4370,7 +4370,7 @@ pub fn collapse_near_equal_intron_chains(
         }
     }
 
-    if crate::parity_decisions::is_enabled() {
+    if crate::parity::decisions::is_enabled() {
         for (i, tx) in txs.iter().enumerate() {
             if dead.contains(i) {
                 let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
@@ -4379,7 +4379,7 @@ pub fn collapse_near_equal_intron_chains(
                     r#""reason":"collapse_near_equal","cov":{:.4},"nexons":{},"stage":"pre_pairwise_dedup""#,
                     tx.coverage, tx.exons.len()
                 );
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
                 );
             }
@@ -4451,7 +4451,7 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
             removed
         );
     }
-    if crate::parity_decisions::is_enabled() {
+    if crate::parity::decisions::is_enabled() {
         for (i, tx) in transcripts.iter().enumerate() {
             if drop.contains(i) {
                 let pk_s = tx.exons.first().map(|(s, _)| *s + 1).unwrap_or(0);
@@ -4460,7 +4460,7 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
                     r#""reason":"dedup_exact_chain","cov":{:.4},"nexons":{},"stage":"pre_pairwise_dedup""#,
                     tx.coverage, tx.exons.len()
                 );
-                crate::parity_decisions::emit(
+                crate::parity::decisions::emit(
                     "pred_kill", Some(&tx.chrom), pk_s, pk_e, tx.strand, &pk_p,
                 );
             }
@@ -6706,7 +6706,7 @@ pub fn print_predcluster_with_summary_multi(
                 n_introns,
                 introns_str,
             );
-            crate::parity_decisions::emit(
+            crate::parity::decisions::emit(
                 "pred_filter_stage",
                 Some(&t.chrom),
                 span_start + 1, // 0-based → 1-based
@@ -7010,7 +7010,7 @@ pub fn print_predcluster_with_summary_multi(
         }
     }
 
-    let before_readthr = if fate_trace || crate::parity_decisions::is_enabled() { txs.clone() } else { Vec::new() };
+    let before_readthr = if fate_trace || crate::parity::decisions::is_enabled() { txs.clone() } else { Vec::new() };
     let before = txs.len();
     // readthr gate applies to ALL predictions
     // Long-read transcripts are NOT exempt — low-coverage paths must be filtered.
@@ -7095,7 +7095,7 @@ pub fn print_predcluster_with_summary_multi(
             config.singlethr
         );
     }
-    if crate::parity_decisions::is_enabled() {
+    if crate::parity::decisions::is_enabled() {
         let after_keys: std::collections::HashSet<(u64, u64, usize, u64)> = txs.iter()
             .map(|t| (t.exons.first().map(|e| e.0).unwrap_or(0),
                       t.exons.last().map(|e| e.1).unwrap_or(0),
@@ -7114,7 +7114,7 @@ pub fn print_predcluster_with_summary_multi(
                     r#""reason":"readthr","cov":{:.4},"longcov":{:.1},"nexons":{},"stage":"readthr""#,
                     t.coverage, t.longcov, t.exons.len()
                 );
-                crate::parity_decisions::emit("pred_kill", Some(&t.chrom), pk_s, pk_e, t.strand, &pk_p);
+                crate::parity::decisions::emit("pred_kill", Some(&t.chrom), pk_s, pk_e, t.strand, &pk_p);
             }
         }
     }

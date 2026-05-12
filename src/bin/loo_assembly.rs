@@ -265,7 +265,6 @@ fn decode_seq(seq_obj: &noodles_bam::record::Sequence) -> Vec<u8> {
 
 fn exons_from_record(rec: &noodles_bam::Record) -> anyhow::Result<Vec<(u64, u64)>> {
     use noodles_sam::alignment::record::cigar::op::Kind;
-    use noodles_sam::alignment::record::Cigar as _;
     let aln_start_1b: u64 = match rec.alignment_start() {
         Some(Ok(p)) => p.get() as u64,
         _ => return Ok(Vec::new()),

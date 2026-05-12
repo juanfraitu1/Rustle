@@ -37,6 +37,6 @@ pub fn dump() {
 macro_rules! bump_hs {
     ($label:expr) => {{
         static C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        $crate::hard_counters::bump($label, &C);
+        $crate::util::hard_counters::bump($label, &C);
     }};
 }

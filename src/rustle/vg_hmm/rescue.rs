@@ -1,6 +1,6 @@
 //! Rescue pipeline: read prefilter → HMM scoring → clustering → synthetic bundle emission.
 
-use crate::types::{Bundle, BundleRead, DetHashMap, DetHashSet, JunctionStats, RunConfig};
+use crate::types::{Bundle, BundleRead, DetHashSet, JunctionStats, RunConfig};
 use crate::vg::{FamilyGroup, NovelCandidate};
 use crate::vg_hmm::diagnostic::{classify_internal, RescueClass};
 use crate::vg_hmm::family_graph::{FamilyGraph, NodeIdx};

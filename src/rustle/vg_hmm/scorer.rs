@@ -562,6 +562,11 @@ pub struct ViterbiPath {
 /// profile at some position ≤ r and exiting at r.
 ///
 /// boundary_in.len() must equal read.len() + 1.
+///
+/// DEAD CODE: HMM-EM uses the Forward variant (`profile_forward_with_boundary`);
+/// Viterbi is preserved here for diagnostic best-path extraction if/when
+/// per-read traceback is needed.
+#[allow(dead_code)]
 fn profile_viterbi_with_boundary(
     p: &ProfileHmm,
     read: &[u8],

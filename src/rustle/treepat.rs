@@ -79,7 +79,7 @@ impl TreePatIndex {
         &self,
         graph: &Graph,
         node_ids: &[usize],
-        pattern: &crate::bitvec::GBitVec,
+        pattern: &crate::util::bitvec::GBitVec,
     ) -> Option<usize> {
         if node_ids.is_empty() {
             return None;
@@ -102,7 +102,7 @@ impl TreePatIndex {
         &mut self,
         graph: &Graph,
         node_ids: &[usize],
-        pattern: &crate::bitvec::GBitVec,
+        pattern: &crate::util::bitvec::GBitVec,
         tr_idx: usize,
     ) -> bool {
         if node_ids.is_empty() {

@@ -8,13 +8,15 @@ A long-read transcript assembler written in Rust, with a **variation graph (VG) 
 
 Rustle assembles transcripts from long-read RNA-seq alignments (PacBio, ONT) using a **splice-graph + max-flow decomposition** pipeline. It adds a **variation graph (VG) mode** that links paralogous gene copies via multi-mapping reads and jointly resolves read assignments across the family — including reads that didn't map to any reference copy.
 
-### Why network flow for transcript assembly
+### How network flow assembles transcripts
 
-A splice graph is a DAG where nodes are exon segments and edges are splice junctions (or contiguous exon boundaries). Every transcript is a path from a source to a sink through this graph. If we treat each read as one unit of mass flowing along its splice pattern, then **the max-flow from source to sink equals the total assembly evidence**, and decomposing that flow into paths recovers individual transcripts with their per-transcript abundance.
+Build a directed graph where the nodes are contiguous exonic stretches and the edges represent either a splice junction (when an intron is spliced out) or a continuation between adjacent exon segments. Add two virtual nodes: a **source** before every transcript start site and a **sink** after every transcript end site. Every transcript is then a path source → ... → sink through this graph.
 
-This isn't just a computational trick — it's a **mechanistic model of read production**: conservation of flow at every node holds because every read that enters an exon must leave it via exactly one of the outgoing edges (a splice or contiguous choice). The math mirrors the biology.
+Each read deposits its read mass along the edges its alignment uses. Per-edge capacities accumulate as the sum of read mass that traversed each edge. At every internal node, **the read mass arriving equals the read mass leaving** — a read that enters an exon must exit it via exactly one outgoing edge (continue along the exon, or splice out). This is conservation of flow, and it holds by construction of the graph.
 
-See [ALGORITHMS §3](docs/ALGORITHMS.md#3-network-flow-formulation-and-why-it-works) for the full formulation.
+**Max-flow** (Edmonds-Karp) finds the largest total mass that can travel source → sink without exceeding any edge's capacity. That number is the total assembly evidence the locus supports. **Path extraction** then decomposes that flow back into individual paths by repeatedly picking the source → sink path with the highest residual capacity, recording it as one transcript, subtracting its flow from the graph, and repeating until no more flow remains. Each extracted path is one assembled transcript; the flow it carried is its abundance estimate (reported as `cov` in the output GTF).
+
+The math mirrors the biology: each observed read came from one molecule, so any decomposition of the read flow into paths corresponds to a hypothesis about which molecules existed in the sample. The honest limitation is that flow decomposition is not unique when alternative paths share edges — multiple isoform combinations can explain the same observed flow. The path-extraction heuristics (long-read-seeded, highest-residual-first) and the post-extraction filters resolve those ambiguities. See [ALGORITHMS §3](docs/ALGORITHMS.md#3-network-flow-formulation-and-why-it-works) for the full formulation and [§3.4](docs/ALGORITHMS.md#34-the-honest-limitation) for the non-uniqueness caveat.
 
 ### Why variation graphs for paralogs
 
@@ -24,10 +26,10 @@ Any copy-to-copy difference becomes a *bubble* in the VG with shared flanking no
 
 | Copy-to-copy difference | VG representation | Current Rustle support |
 |---|---|---|
-| SNP | single-base bubble | ✅ `--vg-snp` (diagnostic-allele detection) |
-| Indel (insertion / deletion) | asymmetric bubble | ⚠️ parsed into reads, not yet used as diagnostic feature |
-| Copy-specific exon | exon-scale bubble | ✅ implicit (each copy's splice graph differs) |
-| Copy-specific splice site | bubble at donor/acceptor | ✅ implicit (junction compatibility in EM) |
+| SNP | single-base bubble | ✅ continuous per-base scoring via `--vg-solver em-hmm`; discrete diagnostic-allele rule via `--vg-snp` |
+| Indel (insertion / deletion) | asymmetric bubble | ⚠️ parsed; coarse signal via `--vg-exon-len-penalty` |
+| Copy-specific exon | exon-scale bubble | ✅ implicit per-copy splice graph; profile-HMM scoring under `em-hmm` |
+| Copy-specific splice site | bubble at donor/acceptor | ✅ junction compatibility in EM |
 | Tandem-repeated exon | repeated node with multiplicity | ⚠️ detected at bundle level, not modelled as repeats |
 | Whole copy-specific segment | branched sub-path | ✅ implicit |
 
@@ -47,12 +49,24 @@ See [ALGORITHMS §5](docs/ALGORITHMS.md#5-variation-graphs-for-gene-families) (w
 
 A read aligning equally well to *N* copies genuinely might come from any of them. Standard assemblers either discard such reads or split them uniformly (`1/NH`). Neither answer is right when copies have different expression levels. **Expectation-Maximization** iteratively refines the fractional assignment using *junction compatibility* as likelihood:
 
-- E-step: compute posterior probability that read *r* came from copy *k*, given current estimates of copy expression θ and junction-match likelihood P(r | k).
+- E-step: compute posterior probability that read *r* came from copy *k*, given current estimates of copy expression θ and a per-read, per-copy likelihood P(r | k).
 - M-step: update θ from the posterior weights.
 
 Both steps have closed forms. EM provably non-decreases the likelihood each iteration (Jensen's inequality). Convergence in 10-20 iterations on biological data. The honest answer for a read that fits two expressed copies equally is a *probabilistic split* — EM produces it; winner-take-all methods can't.
 
 See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) for the derivation.
+
+### How HMMs model SNPs and copy-specific exons
+
+The `em` solver scores P(r | k) by a coarse junction-compatibility rule (how many of the read's splice junctions are also in copy *k*'s junction set). The `em-hmm` solver replaces that with a **profile HMM** built from each copy's expected reference path, which gives a per-read, per-copy log-likelihood that's sensitive to SNPs and to structural (exon-level) differences.
+
+**The HMM in one paragraph.** Each paralog has its own chain of HMM states, one per position along its expected transcript path. At each state, the model emits the expected reference base with high probability (1−ε) and any other base with low probability (ε/3). Transitions move sequentially along the chain; a splice junction in the read corresponds to a long jump along the path that skips an intron. Given a read sequence, the **forward algorithm** sums over all alignment paths the read could take through the HMM and returns `log P(read | paralog)`. EM uses these log-likelihoods as the per-(read, copy) score in the E-step.
+
+**How SNPs land in the score.** Suppose at one position paralog A has reference base `A` and paralog B has reference base `T`. Paralog A's HMM state at that position emits `A` with probability 1−ε and `T` with probability ε/3 (≈ 0.001 with ε=0.003). A read carrying `A` at that position contributes ≈ `log(1−ε)` to the forward likelihood under A and ≈ `log(ε/3)` under B — a several-nats gap per discriminating SNP. With many such positions in a read, the gaps accumulate into a decisive separation between paralogs. The `--vg-snp` flag is a complementary discrete rule that explicitly flags fixed-allele-difference positions and applies a hard per-position match score; the HMM is the continuous-evidence form of the same idea.
+
+**How copy-specific exons land in the score.** A paralog that contains a cassette exon has additional HMM states for the inserted region. A read spanning that exon traverses those states with high emission probability under the paralog that has the exon, contributing a long stretch of `log(1−ε)` terms. Under a paralog that lacks the exon, the same read either has to traverse junction-skip states that don't model the inserted sequence well, or its non-aligning bases score against an unrelated state, contributing many `log(ε/3)` terms. The forward likelihood reflects that gap. The `--vg-exon-len-penalty` flag adds an additional structural penalty that scales linearly with the difference between the read's total spliced length and each candidate copy's typical spliced length — a coarse signal that complements the HMM's per-base scoring for highly divergent paralogs.
+
+See [ALGORITHMS §8](docs/ALGORITHMS.md#8-em-solver-derivation-and-convergence) for the EM derivation and [§11](docs/ALGORITHMS.md#11-snp-based-copy-assignment) for the SNP rule.
 
 ### Benchmark: Rustle vs StringTie (GGO chr19, PacBio IsoSeq)
 
@@ -90,31 +104,13 @@ Three modes are shown to be transparent about what each input contributes:
 > single thread). VG mode features (multi-mapping resolution, novel copy discovery) are *not*
 > reflected here — they apply when assembling multi-copy gene families genome-wide.
 
-### Why not just use StringTie?
+### Relation to StringTie
 
-StringTie is an excellent single-locus transcript assembler and Rustle's core follows its algorithm faithfully. But StringTie treats its internal data structures as private: from outside, you get reads in, transcripts out, and with `-v` some bundle-level log messages. Everything between — the splice graphs, the transfrag set, the flow decomposition, the redistribution choices in `checktrf`, the per-node coverage attribution — lives in C++ globals that aren't accessible without patching source and recompiling.
+Rustle's single-locus assembly is a faithful port of StringTie's algorithm: the same splice-graph construction, the same Edmonds-Karp max-flow, the same `checktrf` redistribution semantics, the same long-read-aware heuristics for poly-A handling and junction correction. The benchmark in the previous section measures how close that port stays to StringTie's output on the shared task.
 
-That opacity is fine for single-locus assembly. It becomes a blocker the moment you want to do anything *across* loci:
+The reason to do the port at all — rather than wrap or modify StringTie directly — is that the variation-graph layer needs programmatic access to per-locus intermediates that aren't exposed across loci: splice graphs, junction state, per-read weights, and the ability to inject synthetic bundles for novel paralogs back into the assembly loop. Re-deriving the core in Rust gave us a substrate where those operations are first-class, which made it possible to build the family-level layer (multi-mapping resolution, SNP-based copy assignment, novel-copy discovery) on top of a familiar single-locus algorithm.
 
-| What VG-mode assembly needs | What StringTie exposes | Rustle exposes |
-|---|---|---|
-| Per-locus splice graph (nodes, junctions, coverage) | internal globals | `GNODE_TRACE`, in-memory `Graph` struct |
-| Per-junction decision state (KEEP/KILL + reason) | internal debug `fprintf` | `JFINAL_TRACE` with canonical format |
-| Per-seed path extraction outcome (stored / redistributed / rescued / rescue-failed / readthr / etc.) | none | `RUSTLE_SEED_STATS` |
-| Multi-mapping read linkages across bundles | none (reads are processed per-bundle) | `build_multimap_index_with_supplementary` |
-| Per-read MD-tag mismatches for SNP analysis | parsed but discarded | stored on `BundleRead.mismatches` |
-| Read weights after cross-locus rebalancing | not applicable | writeable by `run_em_reweighting` before assembly |
-| Novel-copy bundle creation from unmapped reads | not applicable | `discover_novel_copies` → synthetic `Bundle` fed back into pipeline |
-| Clean integration point to add a third solver | would require C++ edits | add a variant to `VgSolver` enum |
-
-The gap isn't StringTie's fault — it was built for a different task. Porting its algorithm to Rust gives us a platform where every intermediate is inspectable, modifiable, and composable with a family-level layer. That's the practical reason to have Rustle and not just a StringTie wrapper:
-
-1. **Multi-mapping resolution across loci** (EM, Flow) needs to read per-bundle junction sets, rewrite per-read weights, and re-run per-bundle assembly with the new weights. StringTie doesn't have a hook for any of those three.
-2. **Novel-copy discovery** needs to manufacture a synthetic bundle from unmapped reads and inject it into the assembly loop as a first-class citizen. StringTie has no synthetic-bundle concept.
-3. **Diagnostic parity work** (the work that brought Rustle to 99.97% junction-decision parity) required emitting per-junction KEEP/KILL traces from both tools and diffing them. StringTie's `fprintf` output exists but has no stable format; Rustle's `JFINAL_TRACE` is a tool-level contract we can diff against.
-4. **Future algorithmic swaps** (e.g., graph alignment for read-to-copy assignment, hierarchical family-wide max-flow, a fourth solver) are feature flags here, source forks there.
-
-In short: StringTie is a transcript assembler. Rustle is a *programmable* transcript assembler plus a gene-family layer built on that programmability.
+For single-locus assembly, StringTie is mature, fast, and well-validated, and remains the right tool. Rustle's contribution is the gene-family layer above the same algorithmic core.
 
 ## Features
 
@@ -281,7 +277,10 @@ The `--vg` flag enables variation graph mode for multi-copy gene families. A gen
 - [§11 SNP-based assignment](docs/ALGORITHMS.md#11-snp-based-copy-assignment)
 
 ```bash
-# EM solver (default) — junction-based compatibility scoring
+# HMM-EM solver (default) — per-base profile-HMM scoring for SNP and exon-level differences
+./target/release/rustle -L --vg --vg-solver em-hmm --genome-fasta genome.fa -o output.gtf input.bam
+
+# EM solver — junction-compatibility scoring (lighter, no genome required)
 ./target/release/rustle -L --vg --vg-solver em -o output.gtf input.bam
 
 # Flow solver — two-pass assembly with coverage-based redistribution
@@ -457,7 +456,7 @@ flowchart TD
 | `-c <F>` | Minimum coverage per bp | 1.0 |
 | `--genome-fasta <FA>` | Genome for splice consensus | — |
 | `--vg` | Enable variation graph mode | off |
-| `--vg-solver {em,flow}` | Multi-mapping solver | em |
+| `--vg-solver {em,em-hmm,flow,auto}` | Multi-mapping solver | em-hmm |
 | `--vg-snp` | SNP-based copy assignment | off |
 | `--vg-phase` | Phased assembly (HP tags) | off |
 | `--vg-discover-novel` | Find novel gene copies | off |

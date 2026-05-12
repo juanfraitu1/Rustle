@@ -4,11 +4,11 @@ use std::collections::VecDeque;
 
 use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
 
-use crate::bitvec::GBitVec;
-use crate::bitset::NodeSet;
+use crate::util::bitvec::GBitVec;
+use crate::util::bitset::NodeSet;
 use crate::graph::{Graph, GraphTransfrag};
 
-const EPSILON: f64 = crate::constants::FLOW_EPSILON;
+const EPSILON: f64 = crate::util::constants::FLOW_EPSILON;
 const DBL_ERROR: f64 = 0.01;
 
 thread_local! {
@@ -1240,7 +1240,7 @@ fn long_max_flow_direct(
     let mut flux = 0.0f64;
     let mut bfs_iters = 0usize;
     let debug_flow = std::env::var_os("RUSTLE_DEBUG_FLOW").is_some();
-    let __flow_run_id = crate::parity_flow_iter_dump::next_run_id();
+    let __flow_run_id = crate::parity::flow_iter_dump::next_run_id();
     let mut __flow_iter: usize = 0;
     let mut __flow_total: f64 = 0.0;
     while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, false) {
@@ -1297,7 +1297,7 @@ fn long_max_flow_direct(
             __path.reverse();
             __flow_iter += 1;
             __flow_total += increment;
-            crate::parity_flow_iter_dump::emit(
+            crate::parity::flow_iter_dump::emit(
                 __flow_run_id,
                 __flow_iter,
                 &__path,
@@ -1355,7 +1355,7 @@ fn long_max_flow_direct(
             }
         }
         flux = 0.0;
-        let __flow_run_id_retry = crate::parity_flow_iter_dump::next_run_id();
+        let __flow_run_id_retry = crate::parity::flow_iter_dump::next_run_id();
         let mut __flow_iter_retry: usize = 0;
         let mut __flow_total_retry: f64 = 0.0;
         while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, false) {
@@ -1408,7 +1408,7 @@ fn long_max_flow_direct(
                 __path.reverse();
                 __flow_iter_retry += 1;
                 __flow_total_retry += increment;
-                crate::parity_flow_iter_dump::emit(
+                crate::parity::flow_iter_dump::emit(
                     __flow_run_id_retry,
                     __flow_iter_retry,
                     &__path,
@@ -2112,7 +2112,7 @@ pub fn edmonds_karp(
     {
         eprintln!("LOOP_max_flow: entering bfs loop n={}", n);
     }
-    let __flow_run_id_ek = crate::parity_flow_iter_dump::next_run_id();
+    let __flow_run_id_ek = crate::parity::flow_iter_dump::next_run_id();
     let mut __flow_iter_ek: usize = 0;
     let mut __flow_total_ek: f64 = 0.0;
     while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, weighted_node_cap) {
@@ -2166,7 +2166,7 @@ pub fn edmonds_karp(
             __path.reverse();
             __flow_iter_ek += 1;
             __flow_total_ek += increment;
-            crate::parity_flow_iter_dump::emit(
+            crate::parity::flow_iter_dump::emit(
                 __flow_run_id_ek,
                 __flow_iter_ek,
                 &__path,
@@ -2212,7 +2212,7 @@ pub fn edmonds_karp(
             }
         }
         flux = 0.0;
-        let __flow_run_id_ek_retry = crate::parity_flow_iter_dump::next_run_id();
+        let __flow_run_id_ek_retry = crate::parity::flow_iter_dump::next_run_id();
         let mut __flow_iter_ek_retry: usize = 0;
         let mut __flow_total_ek_retry: f64 = 0.0;
         while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, weighted_node_cap) {
@@ -2266,7 +2266,7 @@ pub fn edmonds_karp(
                 __path.reverse();
                 __flow_iter_ek_retry += 1;
                 __flow_total_ek_retry += increment;
-                crate::parity_flow_iter_dump::emit(
+                crate::parity::flow_iter_dump::emit(
                     __flow_run_id_ek_retry,
                     __flow_iter_ek_retry,
                     &__path,

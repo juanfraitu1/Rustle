@@ -4,7 +4,6 @@
 
 use anyhow::{anyhow, Context, Result};
 use noodles_bam as bam;
-use noodles_bgzf as bgzf;
 use noodles_core::Position;
 use noodles_csi::binning_index::{
     index::reference_sequence::bin::Chunk,

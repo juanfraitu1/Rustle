@@ -453,14 +453,12 @@ struct Args {
     #[arg(long)]
     vg_report: Option<String>,
 
-    /// Multi-mapping resolution method: none (discover only), em, em-hmm, or flow [default: em].
-    /// `em` replaces the default 1/NH weighting on multi-mappers with evidence-based
-    /// (junction-compatibility + context) weights. `em-hmm` replaces the heuristic
-    /// E-step with HMM-based per-paralog forward log-likelihood scoring (sequence-aware;
-    /// requires a `--genome` FASTA and triggers a one-pass BAM scan to collect read
-    /// sequences for multi-mappers). Use `none` to disable redistribution and keep
-    /// StringTie-equivalent 1/NH behaviour.
-    #[arg(long, default_value = "em")]
+    /// Multi-mapping resolution: `on` (default) runs HMM-EM with two
+    /// triviality skips (singletons, oversized, intronless); `off` disables
+    /// resolution and keeps StringTie-equivalent 1/NH behaviour. Legacy
+    /// values (`em`, `em-hmm`, `auto`, `flow`, `none`) are accepted as
+    /// deprecated aliases.
+    #[arg(long, default_value = "on")]
     vg_solver: String,
 
     /// Use SNPs (from MD tag) for copy assignment in VG mode
@@ -495,17 +493,48 @@ struct Args {
     #[arg(long = "vg-mask-region", value_name = "CHROM:START-END")]
     vg_mask_region: Vec<String>,
 
-    /// Skip EM on families with more than N copies. Default 20 — bigger
-    /// groups are typically noise (mtDNA, megafamilies) where EM is either
-    /// uninformative or computationally infeasible.
-    #[arg(long = "vg-em-max-copies", default_value_t = 20)]
+    /// Hard cap on copies-per-family for HMM-EM.  Default 40 — permissive
+    /// enough for NBPF-class tandem clusters (~25 paralogs).  The dominant
+    /// gate is now `--vg-em-max-work`; this remains as an upper bound to
+    /// avoid runaway cases the work budget can't predict.
+    #[arg(long = "vg-em-max-copies", default_value_t = 40)]
     vg_em_max_copies: usize,
 
-    /// Cap for routing a family to HMM-EM under `--vg-solver auto`.
-    /// Default 10 — HMM scoring scales as O(reads × copies × seq × profile);
-    /// above this, fall back to heuristic EM for the family.
-    #[arg(long = "vg-em-hmm-max-copies", default_value_t = 10)]
-    vg_em_hmm_max_copies: usize,
+    /// Work budget per family: skip if `n_copies × max(n_multimap_reads, 10)`
+    /// exceeds this value.  HMM-EM cost scales with this product (forward DP
+    /// per (read, copy) placement).  Default 2000 — allows NBPF-class
+    /// families (≈ 750 work) while rejecting mtDNA-class (≈ 15 000 work).
+    #[arg(long = "vg-em-max-work", default_value_t = 2000)]
+    vg_em_max_work: usize,
+
+    /// Additive structural-mismatch penalty for HMM-EM, in nats per missed
+    /// junction.  `0.0` (default) → unchanged behaviour.  Positive values
+    /// penalise copies whose expected junction set doesn't include junctions
+    /// observed in the read's CIGAR.  Useful for highly divergent paralogs
+    /// where the per-base emissions are near-uniform but structure still
+    /// discriminates.  Recommended starting value: `2.0`.
+    #[arg(long = "vg-junction-bonus", default_value_t = 0.0)]
+    vg_junction_bonus: f64,
+
+    /// Force EM to use a uniform prior over copies — disables the
+    /// iterative M-step's prior update so the per-(read, copy) posterior
+    /// is driven purely by HMM (+ SNP, + junction) log-likelihood.  Use to
+    /// empirically test whether EM iteration is doing real work on your
+    /// data: if `--vg-em-uniform-prior` produces the same gffcompare
+    /// numbers as the default, the cross-read prior inheritance isn't
+    /// load-bearing for this dataset.  Off by default.
+    #[arg(long = "vg-em-uniform-prior")]
+    vg_em_uniform_prior: bool,
+
+    /// Exon-length penalty (nats per bp of length mismatch) added to
+    /// HMM-EM's per-(read, copy) log-likelihood.  `0.0` (default) →
+    /// unchanged behaviour.  For each exon the read spans, contributes
+    /// `−μ·|len_read_exon − len_copy_exon|`.  Targets divergent paralogs
+    /// that differ mainly in indels (cassette exons, TE expansions, UTR
+    /// length) — a structural signal orthogonal to nucleotide identity.
+    /// Recommended range: 0.005–0.02.
+    #[arg(long = "vg-exon-len-penalty", default_value_t = 0.0)]
+    vg_exon_len_penalty: f64,
 
     /// Skip EM on intronless families (default true). Single-exon paralogs
     /// (olfactory receptors etc.) yield degenerate family graphs.
@@ -543,7 +572,7 @@ pub fn run_cli() -> anyhow::Result<()> {
     rustle::stringtie_parity::maybe_emit_banner();
 
     // Initialize parity-decision JSONL log if RUSTLE_PARITY_LOG is set.
-    rustle::parity_decisions::init_from_env();
+    rustle::parity::decisions::init_from_env();
 
     let output = args
         .output
@@ -667,10 +696,10 @@ pub fn run_cli() -> anyhow::Result<()> {
         isnascent: args.isnascent,
         allowed_graph_nodes: args.allowed_graph_nodes,
         use_prune_by_junction: args.use_prune_by_junction,
-        longintron: rustle::constants::LONGINTRON,
-        mismatchfrac: rustle::constants::MISMATCHFRAC,
-        lowcov: rustle::constants::LOWCOV,
-        sserror: rustle::constants::SSERROR,
+        longintron: rustle::util::constants::LONGINTRON,
+        mismatchfrac: rustle::util::constants::MISMATCHFRAC,
+        lowcov: rustle::util::constants::LOWCOV,
+        sserror: rustle::util::constants::SSERROR,
         genome_fasta: args.genome_fasta.clone().or(args.cram_ref.clone()),
         merge_bam_compat: args.merge_bam_compat,
         use_graph_merge: !args.no_graph_merge,
@@ -689,7 +718,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_scan_novel_loci: args.vg_scan_novel_loci,
         vg_candidate_loci: std::collections::HashMap::new(),
         vg_report: args.vg_report.map(std::path::PathBuf::from),
-        vg_solver: args.vg_solver.parse().unwrap_or(rustle::types::VgSolver::Em),
+        vg_solver: args.vg_solver.parse().unwrap_or(rustle::types::VgSolver::On),
         vg_snp: args.vg_snp,
         vg_phase: args.vg_phase,
         vg_min_novel_reads: args.vg_min_novel_reads,
@@ -717,7 +746,10 @@ pub fn run_cli() -> anyhow::Result<()> {
             out
         },
         vg_em_max_copies: args.vg_em_max_copies,
-        vg_em_hmm_max_copies: args.vg_em_hmm_max_copies,
+        vg_em_max_work: args.vg_em_max_work,
+        vg_junction_bonus: args.vg_junction_bonus,
+        vg_em_uniform_prior: args.vg_em_uniform_prior,
+        vg_exon_len_penalty: args.vg_exon_len_penalty,
         vg_em_skip_intronless: !args.vg_em_no_skip_intronless,
         vg_family_min_shared: args.vg_family_min_shared,
         vg_family_max_copies: args.vg_family_max_copies,
@@ -784,7 +816,7 @@ pub fn run_cli() -> anyhow::Result<()> {
     )?;
 
     // Explicit flush of parity log (BufWriter inside static OnceLock doesn't auto-flush).
-    rustle::parity_decisions::flush();
+    rustle::parity::decisions::flush();
     Ok(())
 }
 

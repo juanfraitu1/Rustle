@@ -116,6 +116,7 @@ fn parse_debug_bundle_target(config: &RunConfig) -> Option<DebugBundleTarget> {
 }
 
 #[inline]
+
 fn intervals_overlap(start_a: u64, end_a: u64, start_b: u64, end_b: u64) -> bool {
     start_a <= end_b && start_b <= end_a
 }
@@ -888,7 +889,7 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups(
     // RUSTLE_DEBUG_BUNDLE: detailed CGroup/bundlenode state for comparison
     let debug_detail = std::env::var_os("RUSTLE_DEBUG_DETAIL").is_some();
     if debug_detail || debug_bundle {
-        let mut color_set = crate::bitset::SmallBitset::with_capacity(canonical.len().min(64));
+        let mut color_set = crate::util::bitset::SmallBitset::with_capacity(canonical.len().min(64));
         for &(_, _, _, _, col) in &canonical {
             color_set.insert_grow(col);
         }
@@ -2211,6 +2212,11 @@ pub fn recompute_junction_stats(bundle: &mut Bundle, config: &RunConfig) {
 /// dropped entirely. Used in --vg mode AFTER family discovery to clean
 /// cross-mapping junction noise from non-family bundles where secondaries
 /// have no useful role.
+///
+/// DEAD CODE: superseded by `recompute_junction_stats_for_vg_filter` which
+/// has the same effect; preserved as a thin alias in case a caller wants
+/// the simpler signature.
+#[allow(dead_code)]
 pub fn recompute_junction_stats_primary_only(bundle: &mut Bundle, config: &RunConfig) {
     recompute_junction_stats_inner(bundle, config, /*primary_only*/ true);
 }

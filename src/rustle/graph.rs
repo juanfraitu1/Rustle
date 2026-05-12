@@ -1,8 +1,8 @@
 //! Splice graph: nodes = exon segments, edges = collinear + junction edges.
 
-use crate::bitset::NodeSet;
-use crate::bitvec::GBitVec;
-use crate::coord::len_half_open;
+use crate::util::bitset::NodeSet;
+use crate::util::bitvec::GBitVec;
+use crate::util::coord::len_half_open;
 use crate::types::{AssemblyMode, DetHashMap as HashMap, DetHashSet as HashSet};
 
 /// Role classification for a splice-graph node.
@@ -123,8 +123,8 @@ pub struct GraphNode {
     ///
     /// It is intentionally not the bundlenode's aggregate coverage estimate.
     pub coverage: f64,
-    pub children: crate::bitset::SmallBitset,
-    pub parents: crate::bitset::SmallBitset,
+    pub children: crate::util::bitset::SmallBitset,
+    pub parents: crate::util::bitset::SmallBitset,
     pub hardstart: bool,
     pub hardend: bool,
     /// Read-signal alt-TTS signal (terminal-read cluster at junction-donor
@@ -151,8 +151,8 @@ pub struct GraphNode {
     /// `noderate = coverage / nodecov` (bp-weight / abundance).
     pub noderate: f64,
     pub trf_ids: Vec<usize>,
-    pub childpat: Option<crate::bitset::SmallBitset>,
-    pub parentpat: Option<crate::bitset::SmallBitset>,
+    pub childpat: Option<crate::util::bitset::SmallBitset>,
+    pub parentpat: Option<crate::util::bitset::SmallBitset>,
     /// Coverage-drop contrast at a longtrim split point.
     /// Set on both sides of a longtrim split (the hardend upstream node carries
     /// this value on its .longtrim_cov, and the hardstart downstream node does too).
@@ -175,8 +175,8 @@ impl GraphNode {
             end,
             source_bnode: None,
             coverage: 0.0,
-            children: crate::bitset::SmallBitset::empty(),
-            parents: crate::bitset::SmallBitset::empty(),
+            children: crate::util::bitset::SmallBitset::empty(),
+            parents: crate::util::bitset::SmallBitset::empty(),
             hardstart: false,
             hardend: false,
             alt_tts_end: false,
@@ -1019,7 +1019,7 @@ impl Graph {
         fn fill_childpat(
             i: usize,
             graph: &Graph,
-            reachable: &crate::bitset::SmallBitset,
+            reachable: &crate::util::bitset::SmallBitset,
             children: &[Vec<usize>],
             state: &mut [u8],
             memo: &mut [HashSet<usize>],
@@ -1050,7 +1050,7 @@ impl Graph {
         fn fill_parentpat(
             i: usize,
             graph: &Graph,
-            reachable: &crate::bitset::SmallBitset,
+            reachable: &crate::util::bitset::SmallBitset,
             parents: &[Vec<usize>],
             state: &mut [u8],
             memo: &mut [HashSet<usize>],
@@ -1111,11 +1111,11 @@ impl Graph {
             if reachable.contains(i) {
                 let cm = std::mem::take(&mut child_memo[i]);
                 let pm = std::mem::take(&mut parent_memo[i]);
-                let mut cbs = crate::bitset::SmallBitset::empty();
+                let mut cbs = crate::util::bitset::SmallBitset::empty();
                 for id in cm {
                     cbs.insert_grow(id);
                 }
-                let mut pbs = crate::bitset::SmallBitset::empty();
+                let mut pbs = crate::util::bitset::SmallBitset::empty();
                 for id in pm {
                     pbs.insert_grow(id);
                 }
@@ -1257,8 +1257,8 @@ impl Graph {
     }
 
     #[inline]
-    fn source_reachable_mask(&self) -> crate::bitset::SmallBitset {
-        let mut visited = crate::bitset::SmallBitset::with_capacity(self.nodes.len().min(64));
+    fn source_reachable_mask(&self) -> crate::util::bitset::SmallBitset {
+        let mut visited = crate::util::bitset::SmallBitset::with_capacity(self.nodes.len().min(64));
         if self.source_id >= self.n_nodes {
             return visited;
         }

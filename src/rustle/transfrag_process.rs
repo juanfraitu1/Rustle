@@ -28,7 +28,7 @@
 //! - `DROP` = 0.5: for ret=1, tf must have abundance > DROP * kept.abundance to replace.
 //! - `MAX_NODE`: unset lens[1]/lens[3] sentinel so they fail the ssdist check.
 
-use crate::bitset::NodeSet;
+use crate::util::bitset::NodeSet;
 use crate::graph::{FlowBranch, Graph, GraphNode, GraphTransfrag};
 use crate::types::{DetHashMap as HashMap, DetHashSet as HashSet};
 use std::fs::OpenOptions;
@@ -2900,6 +2900,20 @@ pub fn process_transfrags(
         let total = trflong_insert.len();
         for (i, rid) in trflong_insert.iter().copied().enumerate() {
             transfrags[rid].usepath = (total.saturating_sub(1) - i) as i32;
+        }
+    }
+    // Allow TRACE_INTRON to fire at keeptrf_final without requiring TRACE_LOCUS.
+    if let Some(target) = trace_intron {
+        for &rid in &trflong_insert {
+            if rid >= transfrags.len() { continue; }
+            let tf = &transfrags[rid];
+            if let Some((a, b)) = tf_find_intron(tf, graph, target) {
+                let (tf_s, tf_e) = tf_span_graph(tf, graph);
+                eprintln!(
+                    "[TRACE_INTRON_TF] stage=keeptrf_final_intron idx={} intron={}-{} edge={}=>{} usepath={} seed={} span={}-{}",
+                    rid, target.0, target.1, a, b, tf.usepath, tf.trflong_seed, tf_s, tf_e
+                );
+            }
         }
     }
     if trace_locus.is_some() {

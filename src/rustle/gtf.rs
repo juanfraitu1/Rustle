@@ -206,7 +206,7 @@ pub fn write_gtf<W: Write>(
             tx.source.as_deref().unwrap_or(""),
             exons_csv,
         );
-        crate::parity_decisions::emit(
+        crate::parity::decisions::emit(
             "path_emit",
             Some(&tx.chrom),
             t_start,

@@ -1470,6 +1470,15 @@ pub fn apply_higherr_demotions(
     // i++)` because `junction[0]` is a GList sentinel (start=0,end=0,strand=0,
     // everything zero); i=1 is the first REAL junction. Rustle's cjunctions has no
     // sentinel, so we iterate from 0 to len — i=0 here is the first real junction.
+    // For long reads, every junction has nm≈nreads (all reads count as mismatches), making
+    // every non-guide junction an "unreliable" candidate. The unreliable-candidate demotion
+    // branch then redirects genuine alt-splice sites (e.g., 37-read donor 2bp from a 371-read
+    // dominant) to the stronger junction. RUSTLE_HIGHERR_UNRELIABLE_FLOOR=N prevents demotion
+    // to unreliable candidates when the minor junction has >= N reads. Unlike RUSTLE_HIGHERR_MIN_READS
+    // (which blocks all higherr processing), this floor only affects the unreliable-candidate
+    // branch — reliable candidates (guide_match or nm<nreads) can still demote any junction.
+    let unreliable_floor: f64 = std::env::var("RUSTLE_HIGHERR_UNRELIABLE_FLOOR")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     for ord_i in 0..cjunctions.len() {
         // ---- donor body (StringTie junction[i] branch) ----
         'donor: {
@@ -1629,6 +1638,7 @@ pub fn apply_higherr_demotions(
                     && cur.start.saturating_sub(cand.start) < sserror
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
+                    && (unreliable_floor <= 0.0 || cur.nreads < unreliable_floor)
                 {
                     if cj_watch_match(&cur) {
                         eprintln!(
@@ -1704,6 +1714,7 @@ pub fn apply_higherr_demotions(
                     && d < sserror as i64
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
+                    && (unreliable_floor <= 0.0 || cur.nreads < unreliable_floor)
                 {
                     if cj_watch_match(&cur) {
                         eprintln!(
@@ -1880,6 +1891,7 @@ pub fn apply_higherr_demotions(
                     && cur.end.saturating_sub(cand.end) < sserror
                     && cand.rightsupport * tolerance > cur.rightsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
+                    && (unreliable_floor <= 0.0 || cur.nreads < unreliable_floor)
                     && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE_OFF").is_none()
                         && {
                             let d_up = cur.end.saturating_sub(cand.end);
@@ -1887,6 +1899,15 @@ pub fn apply_higherr_demotions(
                                 .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(25.0);
                             d_up >= 4 && d_up < 9 && cur.nreads >= min_r
                         })
+                    // Guard: a junction with many reads AND a very different donor from the
+                    // candidate is likely a genuine alternative splice event (e.g., cassette-exon
+                    // skip sharing the same acceptor as normal splicing), not alignment noise.
+                    // Single-read noise junctions (the common case) pass through freely.
+                    // Disable with RUSTLE_HIGHERR_ACCEPTOR_DONOR_GUARD_OFF.
+                    && (std::env::var_os("RUSTLE_HIGHERR_ACCEPTOR_DONOR_GUARD_OFF").is_some()
+                        || cur.nreads < std::env::var("RUSTLE_HIGHERR_ACCEPTOR_DONOR_GUARD_MIN_READS")
+                            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(25.0)
+                        || (cand.start as i64 - cur.start as i64).unsigned_abs() <= sserror)
                 {
                     if cj_watch_match(&cur) {
                         eprintln!(
@@ -1964,9 +1985,16 @@ pub fn apply_higherr_demotions(
                 } else if ((!reliable
                     && cand.rightsupport > support
                     && d < sserror as i64
-                    && cand.rightsupport * tolerance > cur.rightsupport)
+                    && cand.rightsupport * tolerance > cur.rightsupport
+                    // Guard: a junction with many reads AND a very different donor from the
+                    // candidate is likely a genuine alternative splice event, not alignment noise.
+                    && (std::env::var_os("RUSTLE_HIGHERR_ACCEPTOR_DONOR_GUARD_OFF").is_some()
+                        || cur.nreads < std::env::var("RUSTLE_HIGHERR_ACCEPTOR_DONOR_GUARD_MIN_READS")
+                            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(25.0)
+                        || (cand.start as i64 - cur.start as i64).unsigned_abs() <= sserror))
                     || (d < dist && cj_reliable(&cand)))
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
+                    && (unreliable_floor <= 0.0 || !(!reliable && cur.nreads >= unreliable_floor))
                     && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE_OFF").is_none()
                         && d >= 4
                         && d < 9

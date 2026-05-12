@@ -74,3 +74,9 @@
 !/test_data/vg_hmm/
 !/test_data/vg_hmm/**
 *.log
+
+# 8. Large external dataset dumps (over GitHub's 100 MB push limit, or
+#    transient external downloads). Re-fetch instructions live in the
+#    corresponding README.md.
+*.tsv.gz
+*.gtf.gz

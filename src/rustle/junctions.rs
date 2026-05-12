@@ -573,15 +573,48 @@ pub fn apply_junction_filters_and_canonicalize(
         return stats;
     }
 
-    let mut stats = coalesce_junctions(stats, canonical_tolerance, verbose);
+    let debug_jx = std::env::var("RUSTLE_DEBUG_JX").ok().and_then(|v| {
+        let parts: Vec<u64> = v.split(':').filter_map(|p| p.parse().ok()).collect();
+        if parts.len() == 2 { Some((parts[0], parts[1])) } else { None }
+    });
+    let jx_present = |stats: &JunctionStats, label: &str| {
+        if let Some((d, a)) = debug_jx {
+            let found = stats.iter().any(|(j, s)| j.donor == d && j.acceptor == a);
+            let mrcount = stats.iter().find(|(j, _)| j.donor == d && j.acceptor == a).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+            eprintln!("[DEBUG_JX] {}: donor={} acceptor={} present={} mrcount={}", label, d, a, found, mrcount);
+        }
+    };
+    // Allow overriding coalesce tolerance independently of canonicalize tolerance.
+    // Lower values recover valid alt-junctions that differ by a few bp from dominant
+    // (e.g., STRG.238.2: 39-read alt-donor 2bp from 371-read dominant). 0 disables coalescing.
+    let coalesce_tol: u64 = std::env::var("RUSTLE_COALESCE_TOLERANCE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(canonical_tolerance);
+    jx_present(&stats, "input");
+    let mut stats = coalesce_junctions(stats, coalesce_tol, verbose);
+    jx_present(&stats, "after_coalesce");
     stats = apply_junction_filters(stats, min_junction_reads, verbose);
+    jx_present(&stats, "after_apply_filters");
     if per_splice_site_isofrac > 0.0 {
         let to_remove = filter_per_splice_site_isofrac(&stats, per_splice_site_isofrac, verbose);
+        jx_present(&stats, "before_isofrac_remove");
+        if let Some((d, a)) = debug_jx {
+            let in_remove = to_remove.iter().any(|j| j.donor == d && j.acceptor == a);
+            eprintln!("[DEBUG_JX] isofrac_would_remove: {}", in_remove);
+            if in_remove {
+                let total_donor: f64 = stats.iter().filter(|(j, _)| j.donor == d).map(|(_, s)| s.mrcount).sum();
+                let our_count = stats.iter().find(|(j, _)| j.donor == d && j.acceptor == a).map(|(_, s)| s.mrcount).unwrap_or(0.0);
+                eprintln!("[DEBUG_JX] donor_total={} our_mrcount={} fraction={:.3}% threshold={}%", total_donor, our_count, 100.0*our_count/total_donor, per_splice_site_isofrac);
+            }
+        }
         for j in to_remove {
             stats.remove(&j);
         }
     }
-    canonicalize_junctions(&stats, canonical_tolerance, verbose)
+    let result = canonicalize_junctions(&stats, canonical_tolerance, verbose);
+    jx_present(&result, "after_canonicalize");
+    result
 }
 
 /// Run correction-only stage and return correction map.
