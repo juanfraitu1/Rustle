@@ -100,6 +100,23 @@ fn assumed_lowintron(n1: &Transcript, min_lowintron_cov: f64) -> Vec<bool> {
         vec![false; n_introns]
     }
 }
+/// Check if any of n2's exons geometrically overlaps any of n1's low introns.
+fn n2_exons_overlap_n1_low_introns(n1: &Transcript, n2: &Transcript, lowintron: &[bool]) -> bool {
+    for i in 1..n1.exons.len() {
+        if !lowintron.get(i - 1).copied().unwrap_or(false) {
+            continue;
+        }
+        let intron_start = n1.exons[i - 1].1;
+        let intron_end = n1.exons[i].0;
+        for &(s2, e2) in &n2.exons {
+            if s2 < intron_end && e2 > intron_start {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 
 /// Total number of bases shared between exons of `a` and `b`.
 fn exon_overlap_bp(a: &Transcript, b: &Transcript) -> u64 {
@@ -230,10 +247,19 @@ pub fn cross_strand_kri_filter(
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Precompute lowintron heuristic per cluster member (cheap).
+        // Precompute lowintron per cluster member.
+        // Prefer the transcript's actual intron_low (computed from bpcov during
+        // bundle assembly) over the crude assumed_lowintron heuristic.
         let lowintron: Vec<Vec<bool>> = order
             .iter()
-            .map(|&i| assumed_lowintron(&transcripts[i], min_cov))
+            .map(|&i| {
+                let tx = &transcripts[i];
+                if !tx.intron_low.is_empty() {
+                    tx.intron_low.clone()
+                } else {
+                    assumed_lowintron(tx, min_cov)
+                }
+            })
             .collect();
 
         for ii in 0..order.len() {
@@ -299,6 +325,13 @@ pub fn cross_strand_kri_filter(
                 } else {
                     t2.coverage
                 };
+                // Geometric pre-check: n2's exons must actually overlap n1's low
+                // introns. Without this, the j==0 shortcut in
+                // retained_intron_score_with_covs fires for every low intron of n1
+                // even when n2's exons are entirely in n1's exonic regions.
+                if !n2_exons_overlap_n1_low_introns(t1, t2, &lowintron[ii]) {
+                    continue;
+                }
                 let score = retained_intron_score_with_covs(
                     t1,
                     t2,
