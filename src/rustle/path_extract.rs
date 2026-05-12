@@ -6655,6 +6655,8 @@ pub fn extract_transcripts(
         let try_direct_longrec = long_read_mode && config.strict_longrec_port && !mixed_mode;
         let mut used_direct = false;
         let watched_tfs = parse_trace_tf_ids();
+        // Canonical mode: use ST-faithful back/fwd directly as path builders.
+        let canonical = crate::parse_trflong_st::canonical_active();
         if try_direct_longrec {
             longrec_attempted += 1;
             let mut diag = LongRecDiag::default();
@@ -6799,8 +6801,6 @@ pub fn extract_transcripts(
             // Snapshot when EITHER comparison or gate is active.
             let pa_active = crate::parse_trflong_st::comparison_active()
                 || std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none();
-            // Canonical mode: use ST-faithful back/fwd directly as path builders.
-            let canonical = crate::parse_trflong_st::canonical_active();
             let pa_snapshot_before = if pa_active && !canonical {
                 Some((
                     path.clone(),
@@ -7963,14 +7963,25 @@ pub fn extract_transcripts(
                 // No Rust-specific retry/capping branch.
                 // long_max_flow: pass no_subtract=false so transfrag abundances
                 // are depleted by used flow while nodecov is also depleted downstream.
-                let (lf, lfpath, lused) = long_max_flow_seeded_with_used_pathpat(
-                    &use_path,
-                    transfrags,
-                    graph,
-                    false,
-                    Some(idx),
-                    flow_pathpat.as_ref(),
-                );
+                let (lf, lfpath, lused) = if canonical {
+                    crate::parse_trflong_st::long_max_flow_st(
+                        &use_path,
+                        transfrags,
+                        graph,
+                        false,
+                        Some(idx),
+                        flow_pathpat.as_ref(),
+                    )
+                } else {
+                    long_max_flow_seeded_with_used_pathpat(
+                        &use_path,
+                        transfrags,
+                        graph,
+                        false,
+                        Some(idx),
+                        flow_pathpat.as_ref(),
+                    )
+                };
                 flow_used = lused.ones().collect();
                 if debug_cov {
                     eprintln!("  [COV_DEBUG] long_flux={:.4} nodeflux={:?}", lf, &lfpath);

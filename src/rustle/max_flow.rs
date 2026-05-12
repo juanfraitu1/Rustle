@@ -11,6 +11,17 @@ use crate::graph::{Graph, GraphTransfrag};
 const EPSILON: f64 = crate::util::constants::FLOW_EPSILON;
 const DBL_ERROR: f64 = 0.01;
 
+/// CHI_WIN for StringTie is 100 (rlink.h). Rustle historically uses 2000 to accommodate
+/// graph-segmentation differences, but exact parity mode needs the original value.
+#[inline]
+fn chi_win_for_mode() -> u64 {
+    if crate::stringtie_parity::stringtie_exact() {
+        100
+    } else {
+        2000
+    }
+}
+
 thread_local! {
     /// Thread-local seed context used by trace_tf_deplete. Set by the outer
     /// seed loop in path_extract.rs to carry the seed tf index into max_flow
@@ -42,11 +53,7 @@ pub(crate) fn trace_tf_deplete(idx: usize, site: &str, before: f64) {
 // Empirically, `100` was too strict for the current graph segmentation and caused many
 // valid long-read transfrags to be dropped from the capacity network, producing
 // `zero_flux` even when a connected solution exists (e.g. STRG.319 panel locus).
-/// Maximum gap in path (bp) that a transfrag can skip while still contributing to flow
-/// capacity. uses CHI_WIN=100. A larger value lets transfrags
-/// with internal gaps add capacity to edges they don't truly support, inflating flow
-/// and creating spurious predictions. Previously 2000 — changed to 100.
-const CHI_WIN: u64 = 2000;
+// CHI_WIN is now provided by chi_win_for_mode() depending on stringtie_exact mode.
 
 fn trace_seed_idx() -> Option<usize> {
     std::env::var("RUSTLE_TRACE_SEED_IDX")
@@ -174,9 +181,9 @@ fn build_pathpat(path: &[usize], graph: &Graph) -> GBitVec {
 }
 
 /// long_max_flow keeptr gap test:
-/// when starting from path index `pi`, allow unmatched path span up to CHI_WIN before
+/// when starting from path index `pi`, allow unmatched path span up to `chi_win` before
 /// reaching the next transfrag node on path.
-fn keeptr_gap_ok(tf: &GraphTransfrag, path: &[usize], pi: usize, graph: &Graph) -> bool {
+fn keeptr_gap_ok(tf: &GraphTransfrag, path: &[usize], pi: usize, graph: &Graph, chi_win: u64) -> bool {
     if pi == 0 {
         return true;
     }
@@ -198,7 +205,7 @@ fn keeptr_gap_ok(tf: &GraphTransfrag, path: &[usize], pi: usize, graph: &Graph) 
             if let Some(n) = graph.nodes.get(path[pj]) {
                 lenp = lenp.saturating_add(n.length());
             }
-            if lenp > CHI_WIN {
+            if lenp > chi_win {
                 return false;
             }
         } else {
@@ -476,7 +483,7 @@ pub fn push_max_flow_seeded_full(
                 }
             } else if tstart == path[i] && pathpat.contains_pattern(&transfrags[t].pattern) {
                 keeptr = true;
-                if longreads_mode && !keeptr_gap_ok(&transfrags[t], path, i, graph) {
+                if longreads_mode && !keeptr_gap_ok(&transfrags[t], path, i, graph, chi_win_for_mode()) {
                     keeptr = false;
                 }
                 if keeptr && !full {
@@ -1033,7 +1040,9 @@ fn long_max_flow_direct(
     seed_tf: Option<usize>,
     max_fl_override: Option<f64>,
     pathpat_override: Option<&GBitVec>,
+    st_exact: bool,
 ) -> (f64, Vec<f64>, NodeSet) {
+    let exact = st_exact || crate::stringtie_parity::stringtie_exact();
     let n = path.len();
     if n < 3 {
         return (0.0, vec![], NodeSet::default());
@@ -1120,7 +1129,7 @@ fn long_max_flow_direct(
                     max_fl = tf.abundance;
                     true
                 } else {
-                    keeptr_gap_ok(tf, path, i, graph)
+                    keeptr_gap_ok(tf, path, i, graph, chi_win_for_mode())
                 }
             } else {
                 false
@@ -1142,7 +1151,12 @@ fn long_max_flow_direct(
             // depletion. Targets the STRG.309 over-emission: 14 j-class
             // variants are alt-splice combos of the current path, their
             // seeds should be depleted by the canonical seed's flow.
-            if i > 0
+            //
+            // DISABLED in stringtie_exact mode: StringTie does not have this
+            // protection; adding it changes which transfrags contribute to
+            // capacity and therefore changes flow depletion patterns.
+            if !exact
+                && i > 0
                 && tf.trflong_seed
                 && !istranscript.contains(t_idx)
                 && Some(t_idx) != seed_tf
@@ -1342,7 +1356,8 @@ fn long_max_flow_direct(
     // Fallback: if we get `flux=0`, retry once after adding *micro-exon targeted* synthetic
     // start-at-node edges. This is a portability guard for cases where graph segmentation does
     // not yield start-at-node transfrags for tiny internal exons (common in backward traces).
-    if flux < EPSILON {
+    // DISABLED in stringtie_exact mode: StringTie does not have this fallback.
+    if flux < EPSILON && !exact {
         add_microexon_start_edges_if_disconnected(&mut capacity, &mut link, path, graph);
         for nbrs in &mut link {
             nbrs.sort_unstable();
@@ -1519,7 +1534,7 @@ fn long_max_flow_direct(
                 let on_path = pathpat.contains_pattern(&tf.pattern);
                 if on_path && source_start_ok {
                     n_on_path += 1;
-                    if keeptr_gap_ok(tf, path, i, graph) {
+                    if keeptr_gap_ok(tf, path, i, graph, chi_win_for_mode()) {
                         n_keeptr_gap_ok += 1;
                     }
                 }
@@ -1540,7 +1555,7 @@ fn long_max_flow_direct(
                         en,
                         end_pi,
                         (on_path && source_start_ok) as u8,
-                        keeptr_gap_ok(tf, path, i, graph) as u8
+                        keeptr_gap_ok(tf, path, i, graph, chi_win_for_mode()) as u8
                     );
                     shown += 1;
                 }
@@ -1616,7 +1631,11 @@ fn long_max_flow_direct(
                     // protection wins +4 matches — it keeps minor-isoform
                     // seeds alive for later extraction. Disable with
                     // RUSTLE_NO_ALTSPLICE_PROTECT=1 for strict parity.
-                    if std::env::var_os("RUSTLE_NO_ALTSPLICE_PROTECT").is_none()
+                    //
+                    // DISABLED in stringtie_exact mode: StringTie does not
+                    // have this protection.
+                    if !exact
+                        && std::env::var_os("RUSTLE_NO_ALTSPLICE_PROTECT").is_none()
                         && transfrags[t_idx].node_ids.len() >= 2
                         && i + 1 < path.len()
                     {
@@ -1903,7 +1922,7 @@ fn build_capacity_network(
                 }
                 continue;
             }
-            if !keeptr_gap_ok(tf, path, pi, graph) {
+            if !keeptr_gap_ok(tf, path, pi, graph, chi_win_for_mode()) {
                 if debug_ek {
                     eprintln!("[RUST_EK_SKIP] tf={} reason=gap", t_idx);
                 }
@@ -2199,7 +2218,8 @@ pub fn edmonds_karp(
     // If we ended up with zero flux in long-only mode, the most common reason (empirically) is
     // a disconnected capacity network due to micro-exon start gaps (no start-at-node transfrags
     // for a tiny internal node). Retry once with micro-exon targeted synthetic start edges.
-    if flux <= 0.0 && long_only {
+    // DISABLED in stringtie_exact mode: StringTie does not have this fallback.
+    if flux <= 0.0 && long_only && !crate::stringtie_parity::stringtie_exact() {
         add_microexon_start_edges_if_disconnected(&mut capacity, &mut link, path, graph);
         for nbrs in &mut link {
             nbrs.sort_unstable();
@@ -2473,7 +2493,7 @@ pub fn long_max_flow_seeded(
     seed_tf: Option<usize>,
 ) -> (f64, Vec<f64>) {
     let (flux, nodecap, _) =
-        long_max_flow_direct(path, transfrags, graph, no_subtract, seed_tf, None, None);
+        long_max_flow_direct(path, transfrags, graph, no_subtract, seed_tf, None, None, false);
     (flux, nodecap)
 }
 
@@ -2508,6 +2528,32 @@ pub fn long_max_flow_seeded_with_used_pathpat(
         seed_tf,
         None,
         pathpat_override,
+        false,
+    );
+    CURRENT_SEED_TF.with(|c| c.set(None));
+    result
+}
+
+/// ST-exact variant: forces CHI_WIN=100 and disables rustle-specific protections
+/// regardless of the global `stringtie_exact()` setting.
+pub fn long_max_flow_seeded_with_used_pathpat_st(
+    path: &[usize],
+    transfrags: &mut [GraphTransfrag],
+    graph: &Graph,
+    no_subtract: bool,
+    seed_tf: Option<usize>,
+    pathpat_override: Option<&GBitVec>,
+) -> (f64, Vec<f64>, NodeSet) {
+    CURRENT_SEED_TF.with(|c| c.set(seed_tf));
+    let result = long_max_flow_direct(
+        path,
+        transfrags,
+        graph,
+        no_subtract,
+        seed_tf,
+        None,
+        pathpat_override,
+        true,
     );
     CURRENT_SEED_TF.with(|c| c.set(None));
     result
@@ -2530,6 +2576,7 @@ pub fn long_max_flow_seeded_with_nodecov_limit(
         seed_tf,
         Some(max_fl_limit),
         None,
+        false,
     );
     (flux, nodecap)
 }

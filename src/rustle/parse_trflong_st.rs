@@ -941,7 +941,29 @@ pub fn back_to_source_fast_long_st(
 // is what makes subsequent seeds compete for diminishing capacity. The
 // rustle equivalent is in `path_extract.rs` flow_flux + nodecov updates.
 
-// stubs intentionally elided until slice 3 begins
+/// ST-faithful `long_max_flow` wrapper.
+///
+/// Forces CHI_WIN=100 and disables rustle-specific protections (seed-chord,
+/// alt-splice, micro-exon fallback) regardless of the global exact mode.
+/// The underlying implementation is shared with rustle's `long_max_flow_direct`
+/// to avoid code drift; this wrapper just pins the configuration.
+pub fn long_max_flow_st(
+    path: &[usize],
+    transfrags: &mut [crate::graph::GraphTransfrag],
+    graph: &crate::graph::Graph,
+    no_subtract: bool,
+    seed_tf: Option<usize>,
+    pathpat_override: Option<&crate::util::bitvec::GBitVec>,
+) -> (f64, Vec<f64>, crate::util::bitset::NodeSet) {
+    crate::max_flow::long_max_flow_seeded_with_used_pathpat_st(
+        path,
+        transfrags,
+        graph,
+        no_subtract,
+        seed_tf,
+        pathpat_override,
+    )
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Slice 4: update_abundance node-trim + accumulate
@@ -960,7 +982,60 @@ pub fn back_to_source_fast_long_st(
 // `path_extract.rs`. A faithful port would centralize the trim + lookup
 // logic here.
 
-// stubs intentionally elided until slice 4 begins
+/// ST-faithful `update_abundance` stub.
+///
+/// StringTie's `update_abundance` (rlink.cpp:4681) trims long-read transfrag
+/// nodes when the read start/end falls inside a flanking node with coverage
+/// drop, then looks up the node sequence in `tr2no` to merge or create.
+///
+/// Rustle's equivalent is scattered across `transfrag_process.rs`. A full
+/// port would require threading this through the read-to-transfrag pipeline.
+/// For now this is a documented placeholder; the trim logic is approximated
+/// by rustle's existing boundary handling.
+pub fn update_abundance_st(
+    _node_ids: &mut Vec<usize>,
+    _pattern: &mut crate::util::bitvec::GBitVec,
+    _abundance: f64,
+    _graph: &crate::graph::Graph,
+    _rstart: u64,
+    _rend: u64,
+    _is_lr: bool,
+) -> Option<usize> {
+    // TODO: full port of rlink.cpp:4681 trim + tr2no lookup.
+    // Returning None signals "create new transfrag".
+    None
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Slice 5: parse_trflong top-level loop
+// ───────────────────────────────────────────────────────────────────────────
+//
+// ST's `parse_trflong` (rlink.cpp:10080–10518) is the outer seed loop.
+// It iterates `trflong` in reverse abundance order, runs back/fwd/flow,
+// builds exons, and emits predictions. The rustle equivalent is
+// `extract_transcripts` in `path_extract.rs`.
+//
+// Key differences already aligned:
+//   - back/fwd: `back_to_source_fast_long_st` / `fwd_to_sink_fast_long_st`
+//   - flow: `long_max_flow_st`
+//   - witness: `has_lr_witness_two_splices` (already in rustle)
+//   - hard boundary: already in rustle's path validation
+//
+// Remaining differences (deferred to future work):
+//   - Seed ordering: ST = reverse trflong (ASC abund); rustle = usepath.
+//     Changing default to ASC caused -41 matches; kept as usepath.
+//   - Checktrf rescue: rustle has CSR/redistribution heuristics ST lacks.
+//     Gating them was net-negative in prior experiments.
+//   - update_abundance node trimming: deep in transfrag_process.rs.
+
+/// ST-faithful `parse_trflong` top-level loop stub.
+///
+/// A full port would replicate rlink.cpp:10080–10518 here. The existing
+/// rustle `extract_transcripts` already uses the ST-faithful back/fwd/flow
+/// when `stringtie_exact()` is true, so this is a documented placeholder.
+pub fn parse_trflong_st() {
+    // TODO: full port if needed for side-by-side comparison harness.
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Comparison harness: run BOTH the existing rustle path-extension fns and
