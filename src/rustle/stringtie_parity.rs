@@ -166,12 +166,16 @@
 //! and pass `--stringtie-trace st_trace.tsv` / `--rustle-trace ru_trace.tsv` to the
 //! disambiguation script.
 
-/// Returns true when the caller has opted into the full StringTie-exact mode.
-/// Individual sites can still have their own finer-grained opt-out flags —
-/// this is the meta-flag that enables everything in sync.
+/// Returns true by default (StringTie-exact mode is the default).
+/// Set `RUSTLE_STRINGTIE_EXACT=0` to opt out and enable Rustle-specific relaxations.
+/// Individual sites can still have their own finer-grained opt-out flags.
 #[inline]
 pub fn stringtie_exact() -> bool {
-    std::env::var_os("RUSTLE_STRINGTIE_EXACT").is_some()
+    match std::env::var("RUSTLE_STRINGTIE_EXACT") {
+        Ok(v) if v == "0" => false,
+        Ok(_) => true,
+        Err(_) => true, // default ON
+    }
 }
 
 /// Returns true if StringTie-exact mode is active OR the site's specific
@@ -183,15 +187,20 @@ pub fn parity_requested(specific_env_var: &str) -> bool {
 }
 
 /// One-time startup banner. Call from the top of the main pipeline entry
-/// when stringtie_exact is active, so runs are clearly labeled.
+/// so runs are clearly labeled.
 pub fn maybe_emit_banner() {
     if stringtie_exact() {
         eprintln!(
-            "[STRINGTIE_EXACT] RUSTLE_STRINGTIE_EXACT=1 — disabling Rustle-specific relaxations. \
+            "[STRINGTIE_EXACT] Default mode: StringTie-exact (disable with RUSTLE_STRINGTIE_EXACT=0). \
              Gated sites: junction post-good_junc merge filters, alt-junction demotion, \
              fwd_to_sink past_seed gate, onpath_long reach relaxation, novel_splice_rescue; \
              RunConfig: junction_canonical_tolerance forced to 0 after compat preset. \
              See src/rustle/stringtie_parity.rs for details."
+        );
+    } else {
+        eprintln!(
+            "[STRINGTIE_EXACT] Rustle-relaxed mode enabled (RUSTLE_STRINGTIE_EXACT=0). \
+             Rustle-specific relaxations are active."
         );
     }
 }
