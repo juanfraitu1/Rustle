@@ -17,6 +17,7 @@
 !/Cargo.lock
 !/Cargo.toml
 !/README.md
+!/AGENTS.md
 !/analyze_missed_patterns.py
 !/find_missed_loci.py
 !/analyze_novel.py
