@@ -11702,6 +11702,18 @@ pub fn run<P: AsRef<Path>>(
                     config.keeptrf_usepath_tsv.as_deref(),
                 );
 
+                // Post-process: inject source/sink edges for real transfrags that lack
+                // terminal connectivity (alternative TSS/TTS inside high-coverage exons).
+                // Mirrors StringTie's futuretr materialization. Opt-in via
+                // RUSTLE_TERMINAL_EDGE_INJECT=1.
+                let terminal_synth = crate::transfrag_process::inject_terminal_edges_for_real_transfrags(
+                    &mut graph_mut,
+                    &transfrags,
+                );
+                if !terminal_synth.is_empty() {
+                    transfrags.extend(terminal_synth);
+                }
+
                 // parity_decisions Layer 2: emit one event per finalized
                 // transfrag at this bundle. Span is the genomic span (first
                 // node start → last node end). Payload includes the intron

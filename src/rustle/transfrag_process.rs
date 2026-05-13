@@ -1582,6 +1582,88 @@ pub fn eliminate_transfrags_under_thr(
     current
 }
 
+/// Inject source/sink edges for real transfrags whose endpoints lack terminal connectivity.
+///
+/// After `process_transfrags`, some real transfrags may start at nodes that have no source edge
+/// (alternative TSS inside a high-coverage exon) or end at nodes with no sink edge.
+/// StringTie's `futuretr` materialization adds these edges unconditionally for real transfrags;
+/// Rustle's `add_coverage_source_sink_edges` misses them when the coverage contrast threshold
+/// fails (e.g. minor isoform starting inside a dominant isoform's exon).
+///
+/// This pass scans all `real=true` transfrags and adds missing source/sink edges plus
+/// synthetic two-node transfrags so downstream flow decomposition can extract them.
+/// Gated by `RUSTLE_TERMINAL_EDGE_INJECT=1` (opt-in).
+pub fn inject_terminal_edges_for_real_transfrags(
+    graph: &mut Graph,
+    transfrags: &[GraphTransfrag],
+) -> Vec<GraphTransfrag> {
+    if std::env::var_os("RUSTLE_TERMINAL_EDGE_INJECT").is_none() {
+        return Vec::new();
+    }
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let psize = graph.pattern_size();
+    let mut synth: Vec<GraphTransfrag> = Vec::new();
+    let mut seen_source: HashSet<usize> = HashSet::default();
+    let mut seen_sink: HashSet<usize> = HashSet::default();
+
+    for tf in transfrags.iter() {
+        if !tf.real || tf.node_ids.is_empty() {
+            continue;
+        }
+        // Only inject for trflong_seed transfrags (these are the ones that
+        // drive transcript extraction; non-seed injection just adds spurious
+        // graph edges that hurt precision).
+        if !tf.trflong_seed {
+            continue;
+        }
+        // Count real nodes
+        let real_nodes: Vec<usize> = tf.node_ids.iter().copied()
+            .filter(|&n| n != source_id && n != sink_id).collect();
+        if real_nodes.len() < 2 {
+            continue; // Require at least 2 real nodes (multi-exon)
+        }
+        // Require minimum support
+        if tf.read_count < 2.0 {
+            continue;
+        }
+        let first = real_nodes[0];
+        let last = *real_nodes.last().unwrap();
+
+        // Source edge injection
+        let has_source = graph.nodes.get(first)
+            .map(|n| n.parents.contains(source_id))
+            .unwrap_or(false);
+        if !has_source && seen_source.insert(first) {
+            graph.add_edge(source_id, first);
+            let mut stf = GraphTransfrag::new(vec![source_id, first], psize);
+            graph.set_pattern_edges_for_path(&mut stf.pattern, &stf.node_ids);
+            stf.abundance = 1.0;
+            stf.read_count = 1.0;
+            stf.longread = true;
+            stf.origin_tag = Some("terminal_edge_inject_source".to_string());
+            synth.push(stf);
+        }
+
+        // Sink edge injection
+        let has_sink = graph.nodes.get(last)
+            .map(|n| n.children.contains(sink_id))
+            .unwrap_or(false);
+        if !has_sink && seen_sink.insert(last) {
+            graph.add_edge(last, sink_id);
+            let mut stf = GraphTransfrag::new(vec![last, sink_id], psize);
+            graph.set_pattern_edges_for_path(&mut stf.pattern, &stf.node_ids);
+            stf.abundance = 1.0;
+            stf.read_count = 1.0;
+            stf.longread = true;
+            stf.origin_tag = Some("terminal_edge_inject_sink".to_string());
+            synth.push(stf);
+        }
+    }
+
+    synth
+}
+
 /// Process transfrags: merge compatible (ret=1,2,3), zero absorbed, update representative abundance.
 /// Returns updated transfrags (same vec, abundances modified). No guide mode.
 pub fn process_transfrags(

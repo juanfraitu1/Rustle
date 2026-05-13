@@ -4883,7 +4883,7 @@ fn back_to_source_fast_long(
             .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
         let require_polya: bool = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_POLYA")
             .ok().and_then(|v| v.parse::<u32>().ok())
-            .map(|v| v != 0).unwrap_or(true);
+            .map(|v| v != 0).unwrap_or(false);
         let high_abund: f64 = std::env::var("RUSTLE_BACK_HARDSTART_GUARD_HIGH_ABUND")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
         // Seed-start-fraction path: fire if a large fraction of nodecov[i] comes from
