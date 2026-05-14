@@ -14676,6 +14676,155 @@ pub fn run<P: AsRef<Path>>(
     // `=` rule uses chain identity + ±100bp terminal tolerance) and inflates
     // query count, hurting Pr. Measured on chr19 GGO: collapses 165 dup
     // predictions, projects +7pp Pr at zero Sn cost.
+    // High-overlap chain shadow cull (default-on; opt-out via
+    // `RUSTLE_SHADOW_CULL_OFF=1`). For each multi-exon prediction, find any
+    // other kept prediction at the same locus (same chrom/strand, overlapping
+    // span) whose intron chain shares ≥ X% of intron set with this one. If a
+    // higher-cov such sibling exists, drop this prediction.
+    //
+    // Targets the j-class "shadow" artifacts from rustle's flow over-
+    // enumeration: when the graph has cassette alternatives, max-flow can
+    // emit BOTH the cassette-include and cassette-skip path; one matches
+    // a ref `=` and the other is a `j`-class FP whose chain differs by 1-2
+    // introns. The j-class shadow shares ≥90% of its chain with the `=`
+    // sibling. Dropping it has zero TP cost (verified) and lifts Pr.
+    //
+    // Threshold: `RUSTLE_SHADOW_CULL_MIN_OVERLAP` (default 0.90 — set to 0
+    // to disable). Cov ratio gate: candidate cov must be < dominant cov.
+    // Default OFF: any chain-overlap+cov heuristic also catches real alt-splice
+    // siblings (see project_jclass_shadow_cull_attempt_2026_05_14.md). Kept as
+    // opt-in scaffolding via `RUSTLE_SHADOW_CULL=1` for future refinement.
+    if std::env::var_os("RUSTLE_SHADOW_CULL").is_some() && all_transcripts.len() > 1 {
+        let min_overlap: f64 = std::env::var("RUSTLE_SHADOW_CULL_MIN_OVERLAP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.90);
+        // Maximum symmetric-difference between chains (number of introns
+        // unique to one or the other). 1-2 differences = single cassette or
+        // alt-splice; higher = different isoform structure.
+        let max_diff: usize = std::env::var("RUSTLE_SHADOW_CULL_MAX_DIFF")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2);
+        // Cov ratio gate: drop candidate only if its cov is below this
+        // fraction of the kept sibling's cov. Real alt-splice variants tend
+        // to have comparable cov; shadow FPs are usually much lower.
+        let max_cov_ratio: f64 = std::env::var("RUSTLE_SHADOW_CULL_MAX_COV_RATIO")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.10);
+        if min_overlap > 0.0 {
+            // Compute intron-set per tx.
+            let n = all_transcripts.len();
+            let mut intron_sets: Vec<Option<HashSet<(u64, u64)>>> = Vec::with_capacity(n);
+            for tx in &all_transcripts {
+                if tx.exons.len() < 2 {
+                    intron_sets.push(None);
+                } else {
+                    let s: HashSet<(u64, u64)> = (0..tx.exons.len() - 1)
+                        .map(|i| (tx.exons[i].1, tx.exons[i + 1].0))
+                        .collect();
+                    intron_sets.push(Some(s));
+                }
+            }
+            // Group by (chrom, strand) and process each group locally.
+            let mut by_strand: HashMap<(String, char), Vec<usize>> = Default::default();
+            for (i, tx) in all_transcripts.iter().enumerate() {
+                if intron_sets[i].is_some() {
+                    by_strand
+                        .entry((tx.chrom.clone(), tx.strand))
+                        .or_default()
+                        .push(i);
+                }
+            }
+            let mut keep = vec![true; n];
+            let before = all_transcripts.len();
+            for (_, idxs) in by_strand.iter() {
+                // Sort by span start for cheap pair-iteration; only compare
+                // tx whose spans overlap.
+                let mut sorted = idxs.clone();
+                sorted.sort_by_key(|&i| all_transcripts[i].exons.first().map(|e| e.0).unwrap_or(0));
+                for (li, &a) in sorted.iter().enumerate() {
+                    if !keep[a] {
+                        continue;
+                    }
+                    let ta = &all_transcripts[a];
+                    let ta_end = ta.exons.last().map(|e| e.1).unwrap_or(0);
+                    for &b in &sorted[li + 1..] {
+                        if !keep[b] {
+                            continue;
+                        }
+                        let tb = &all_transcripts[b];
+                        let tb_start = tb.exons.first().map(|e| e.0).unwrap_or(0);
+                        if tb_start > ta_end {
+                            break; // sorted by start; no further can overlap
+                        }
+                        let (sa, sb) = (intron_sets[a].as_ref().unwrap(), intron_sets[b].as_ref().unwrap());
+                        let inter = sa.intersection(sb).count();
+                        let overlap = inter as f64 / sa.len().max(sb.len()) as f64;
+                        if overlap < min_overlap {
+                            continue;
+                        }
+                        // Same intron chains are handled by same_chain_dedup;
+                        // skip identical-set cases here to avoid double-drop.
+                        if inter == sa.len() && inter == sb.len() {
+                            continue;
+                        }
+                        // Symmetric-difference gate.
+                        let diff = (sa.len() - inter) + (sb.len() - inter);
+                        if diff > max_diff {
+                            continue;
+                        }
+                        // Drop the lower-cov one. Tiebreak by length (drop shorter).
+                        let drop_b = ta.coverage > tb.coverage
+                            || (ta.coverage == tb.coverage
+                                && (ta_end - ta.exons.first().map(|e| e.0).unwrap_or(0))
+                                    > (tb.exons.last().map(|e| e.1).unwrap_or(0) - tb_start));
+                        let drop_idx = if drop_b { b } else { a };
+                        let kept_idx = if drop_b { a } else { b };
+                        // Don't drop guide-pinned/oracle predictions.
+                        let drop_tx = &all_transcripts[drop_idx];
+                        if drop_tx.ref_transcript_id.is_some()
+                            || drop_tx.source.as_deref().map_or(false, |s| {
+                                s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+                            })
+                        {
+                            continue;
+                        }
+                        // Cov ratio gate: only drop if dropped is much weaker.
+                        // Real alt-splice variants have comparable cov; shadow
+                        // FPs are usually much lower.
+                        let kept_cov = all_transcripts[kept_idx].coverage;
+                        let drop_cov = drop_tx.coverage;
+                        if kept_cov <= 0.0 {
+                            continue;
+                        }
+                        if drop_cov / kept_cov > max_cov_ratio {
+                            continue;
+                        }
+                        keep[drop_idx] = false;
+                        if drop_idx == a {
+                            break; // can't compare further pairs against dropped tx
+                        }
+                    }
+                }
+            }
+            all_transcripts = all_transcripts
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| keep[*i])
+                .map(|(_, t)| t)
+                .collect();
+            if config.verbose && all_transcripts.len() < before {
+                eprintln!(
+                    "    shadow_cull: dropped {} near-duplicate prediction(s) (overlap >= {})",
+                    before - all_transcripts.len(),
+                    min_overlap
+                );
+            }
+        }
+    }
+
     if std::env::var_os("RUSTLE_SAME_CHAIN_DEDUP_OFF").is_none() {
         let before = all_transcripts.len();
         let mut by_chain: HashMap<(String, char, Vec<(u64, u64)>), Vec<usize>> = Default::default();
