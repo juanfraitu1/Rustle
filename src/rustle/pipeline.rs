@@ -5307,6 +5307,180 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
     }
 }
 
+/// Emit retained-intron variants for terminal introns with strong unspliced
+/// read support.
+///
+/// For each multi-exon transcript, examine its FIRST and LAST internal intron.
+/// Count: (a) reads that splice through it (`spliced`), and (b) reads that
+/// span the intron region without splicing (`unspliced`). If unspliced reads
+/// are abundant relative to spliced (controlled by env vars), emit a duplicate
+/// transcript with the two flanking exons merged through the intron.
+///
+/// Targets refs like STRG.172.3 (chr19 GGO): rustle correctly emits the spliced
+/// last-intron variant (RSTL.78.2, 3 exons) but misses the retained-intron
+/// alt isoform (2 exons, intron 23852028-23852986 retained — 15 unspliced
+/// reads vs 28 spliced).
+///
+/// Opt-in via `RUSTLE_TERMINAL_RI_EMIT=1`. Tunables:
+///   `RUSTLE_TERMINAL_RI_MIN_UNSPLICED` (default 5): minimum unspliced reads.
+///   `RUSTLE_TERMINAL_RI_MIN_RATIO`    (default 0.2): unspliced / (unspliced+spliced).
+///   `RUSTLE_TERMINAL_RI_MAX_LEN`      (default 5000): cap intron length to
+///       avoid emitting RI variants across long alt-TSS gaps (not real RI).
+fn emit_terminal_ri_variants(
+    txs: &mut Vec<Transcript>,
+    bundle: &crate::types::Bundle,
+) -> usize {
+    if std::env::var_os("RUSTLE_TERMINAL_RI_EMIT").is_none() {
+        return 0;
+    }
+    let min_unspliced: u64 = std::env::var("RUSTLE_TERMINAL_RI_MIN_UNSPLICED")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let min_ratio: f64 = std::env::var("RUSTLE_TERMINAL_RI_MIN_RATIO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.2);
+    let max_len: u64 = std::env::var("RUSTLE_TERMINAL_RI_MAX_LEN")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5000);
+    let debug = std::env::var_os("RUSTLE_DEBUG_TERMINAL_RI").is_some();
+
+    let initial_n = txs.len();
+    // Dedup by (chrom, strand, intron-chain) so a merged-RI variant that already
+    // exists as a separately-extracted tx with the same chain is suppressed.
+    fn ic(t: &Transcript) -> Vec<(u64, u64)> {
+        let mut ex = t.exons.clone();
+        ex.sort();
+        (0..ex.len().saturating_sub(1))
+            .map(|i| (ex[i].1, ex[i + 1].0))
+            .collect()
+    }
+    let mut existing: HashSet<(String, char, Vec<(u64, u64)>)> = txs
+        .iter()
+        .map(|t| (t.chrom.clone(), t.strand, ic(t)))
+        .collect();
+    let mut added = Vec::<Transcript>::new();
+
+    let count_reads_at_intron = |intron_donor: u64, intron_acceptor: u64| -> (u64, u64) {
+        // intron interval (open-exon half-open) — donor is last-base-of-exon (inclusive),
+        // acceptor is first-base-of-next-exon. Intron occupies (donor, acceptor) exclusive
+        // of the two endpoints. For read-spanning test we need the read to extend across
+        // BOTH flanking exons.
+        let intron_lo = intron_donor + 1; // first base inside intron
+        let intron_hi = intron_acceptor - 1; // last base inside intron (inclusive)
+        if intron_hi <= intron_lo {
+            return (0, 0);
+        }
+        let mut spliced: u64 = 0;
+        let mut unspliced: u64 = 0;
+        for r in &bundle.reads {
+            // Read must span the intron's flanking regions.
+            // Require at least 10 bp flanking on each side to be a meaningful span.
+            if r.ref_start + 10 > intron_donor || r.ref_end < intron_acceptor + 10 {
+                continue;
+            }
+            // Does the read have a junction at this intron?
+            let mut has_jct = false;
+            for j in &r.junctions {
+                // Approximate match (±5 bp tolerance for soft boundaries).
+                let djd = (j.donor as i64 - intron_donor as i64).abs();
+                let dja = (j.acceptor as i64 - intron_acceptor as i64).abs();
+                if djd <= 5 && dja <= 5 {
+                    has_jct = true;
+                    break;
+                }
+            }
+            if has_jct {
+                spliced += 1;
+                continue;
+            }
+            // No junction at this intron, and ref_start/ref_end span across it
+            // with ≥10bp flanking on both sides (checked above). That's the
+            // retained-intron signal — the read aligned through the intron
+            // region without splicing.
+            unspliced += 1;
+        }
+        (spliced, unspliced)
+    };
+
+    for tx in txs.iter() {
+        if tx.exons.len() < 2 {
+            continue;
+        }
+        // Try merging first intron (exons[0] + exons[1]) and/or last intron.
+        for which in &["first", "last"] {
+            let (i, j) = if *which == "first" {
+                (0usize, 1usize)
+            } else {
+                (tx.exons.len() - 2, tx.exons.len() - 1)
+            };
+            let donor = tx.exons[i].1;
+            let acceptor = tx.exons[j].0;
+            if acceptor <= donor {
+                continue;
+            }
+            let intron_len = acceptor - donor - 1;
+            if intron_len > max_len {
+                continue;
+            }
+            let (spliced, unspliced) = count_reads_at_intron(donor, acceptor);
+            let total = spliced + unspliced;
+            if unspliced < min_unspliced || total == 0 {
+                continue;
+            }
+            let ratio = unspliced as f64 / total as f64;
+            if ratio < min_ratio {
+                continue;
+            }
+            // Build the merged-exon transcript.
+            let mut new_exons = Vec::with_capacity(tx.exons.len() - 1);
+            for k in 0..tx.exons.len() {
+                if k == i {
+                    new_exons.push((tx.exons[i].0, tx.exons[j].1));
+                } else if k == j {
+                    continue;
+                } else {
+                    new_exons.push(tx.exons[k]);
+                }
+            }
+            let new_chain: Vec<(u64, u64)> = (0..new_exons.len().saturating_sub(1))
+                .map(|k| (new_exons[k].1, new_exons[k + 1].0))
+                .collect();
+            let key = (tx.chrom.clone(), tx.strand, new_chain);
+            if existing.contains(&key) {
+                continue;
+            }
+            existing.insert(key);
+            let mut new_tx = tx.clone();
+            new_tx.exons = new_exons;
+            new_tx.source = Some("terminal_ri_variant".to_string());
+            new_tx.transcript_id = None;
+            new_tx.gene_id = None;
+            new_tx.ref_transcript_id = None;
+            new_tx.ref_gene_id = None;
+            new_tx.exon_cov = vec![tx.coverage; new_tx.exons.len()];
+            new_tx.synthetic = false;
+            if debug {
+                eprintln!(
+                    "[TERMINAL_RI] emit chrom={} strand={} {}-{} {}_intron={}-{} len={} unspliced={} spliced={} ratio={:.2}",
+                    new_tx.chrom, new_tx.strand,
+                    new_tx.exons.first().map(|e| e.0).unwrap_or(0),
+                    new_tx.exons.last().map(|e| e.1).unwrap_or(0),
+                    which, donor, acceptor, intron_len, unspliced, spliced, ratio
+                );
+            }
+            added.push(new_tx);
+        }
+    }
+
+    let n_added = added.len();
+    txs.extend(added);
+    let _ = initial_n;
+    n_added
+}
+
 fn rescue_internal_terminal_stop_variants(
     txs: &mut Vec<Transcript>,
     extra_support: &[Transcript],
@@ -6240,6 +6414,28 @@ fn extract_bundle_transcripts_for_graph(
             Some(0), // max_gap=0: every position must be directly covered; gap>0 lets greedy tiling skip unwitnessed positions
         );
         trace_stage("filter_by_full_chain_witness", &txs);
+    }
+
+    // Terminal retained-intron variant emission (opt-in via
+    // RUSTLE_TERMINAL_RI_EMIT=1). For each multi-exon tx, if reads strongly
+    // support a retained-intron alt isoform at the first or last intron,
+    // emit a duplicate tx with those flanking exons merged. Targets refs like
+    // STRG.172.3 where the spliced isoform is correctly emitted but the
+    // unspliced (RI) alt isoform is missing.
+    if config.long_reads {
+        let n_added = emit_terminal_ri_variants(&mut txs, bundle);
+        if n_added > 0 && config.verbose {
+            eprintln!(
+                "    terminal_ri_variants: +{} transcript(s) (bundle={}:{}-{})",
+                n_added,
+                bundle.chrom,
+                bundle.start + 1,
+                bundle.end
+            );
+        }
+        if n_added > 0 {
+            trace_stage("terminal_ri_variants", &txs);
+        }
     }
 
     // Reference-guided post-filters (chimeric + retained-intron): both require
