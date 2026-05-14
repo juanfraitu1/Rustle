@@ -7567,7 +7567,21 @@ pub fn extract_transcripts(
                 // Enable via RUSTLE_UNWITNESSED_CHECKTRF_ALL=1.
                 let enqueue_all_unwitnessed =
                     std::env::var_os("RUSTLE_UNWITNESSED_CHECKTRF_ALL").is_some();
-                if (thardstart && thardend) || config.max_sensitivity || enqueue_all_unwitnessed {
+                // Opt-in (default 0 = disabled): enqueue unwitnessed seeds to
+                // checktrf when intron count ≥ N. Targets the STRG.136-class
+                // silent-drop: multi-intron low-abund seeds (e.g., 4-intron
+                // abund=1) that ST routes to checktrf via `tocheck_fallthrough`
+                // but rustle's narrower `longrec_fail` gate misses. Multi-
+                // intron requirement filters out single-exon and 1-intron
+                // noise that would otherwise surface as FPs.
+                // Tunable via RUSTLE_UNWITNESSED_CHECKTRF_MIN_INTRONS=N.
+                let multi_intron_min: usize = std::env::var("RUSTLE_UNWITNESSED_CHECKTRF_MIN_INTRONS")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let enqueue_by_multi_intron = multi_intron_min > 0 && {
+                    let chain = intron_chain_from_nodes(graph, debug_nodes);
+                    chain.len() >= multi_intron_min
+                };
+                if (thardstart && thardend) || config.max_sensitivity || enqueue_all_unwitnessed || enqueue_by_multi_intron {
                     trace_checktrf_enqueue(
                         idx,
                         "unwitnessed",
