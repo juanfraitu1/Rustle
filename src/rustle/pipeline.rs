@@ -5481,6 +5481,233 @@ fn emit_terminal_ri_variants(
     n_added
 }
 
+/// Per-read enumeration of *novel combinations of known junctions*.
+///
+/// After all bundle filters have run, examine raw reads for intron chains
+/// that:
+///   1. consist entirely of junctions already used by some kept tx (no novel
+///      junctions added),
+///   2. are NOT identical to any kept tx's intron chain (would be a new
+///      combination of existing junctions, e.g., cassette-skip variants),
+///   3. are corroborated by at least N reads (default 2), and
+///   4. contain at least M introns (default 3 — i.e., ≥4-exon transcripts).
+///
+/// Each qualifying chain is emitted as a new transcript with `source =
+/// "per_read_combo"`. This targets the cassette/alt-splice combinatorial
+/// gap where rustle's max-flow decomposition produces dominant paths but
+/// misses minor isoforms whose junctions are individually well-supported.
+///
+/// Opt-in via `RUSTLE_PER_READ_COMBOS=1`. Tunables:
+///   `RUSTLE_PER_READ_COMBOS_MIN_READS` (default 2): minimum reads sharing
+///       an exact intron chain.
+///   `RUSTLE_PER_READ_COMBOS_MIN_INTRONS` (default 3): minimum introns
+///       (≥4-exon transcripts only).
+///   `RUSTLE_PER_READ_COMBOS_TOL` (default 5): coordinate tolerance for
+///       matching read junctions to kept-tx junctions.
+fn emit_per_read_alt_combos(
+    txs: &mut Vec<Transcript>,
+    bundle: &crate::types::Bundle,
+) -> usize {
+    if std::env::var_os("RUSTLE_PER_READ_COMBOS").is_none() {
+        return 0;
+    }
+    let min_reads: u64 = std::env::var("RUSTLE_PER_READ_COMBOS_MIN_READS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let min_introns: usize = std::env::var("RUSTLE_PER_READ_COMBOS_MIN_INTRONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let tol: u64 = std::env::var("RUSTLE_PER_READ_COMBOS_TOL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    // Maximum number of intron differences allowed between the candidate
+    // chain and the closest kept-tx chain. Reduces FPs by requiring the
+    // candidate to be a "near-twin" of an established transcript (alt-splice
+    // variant) rather than a completely novel chain.
+    let max_diff: usize = std::env::var("RUSTLE_PER_READ_COMBOS_MAX_DIFF")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let debug = std::env::var_os("RUSTLE_DEBUG_PER_READ_COMBOS").is_some();
+
+    // Collect all junctions used in kept transcripts (bucketed by donor for
+    // tolerance-aware lookup).
+    let mut kept_jcts_by_donor: HashMap<u64, Vec<u64>> = Default::default();
+    for tx in txs.iter() {
+        for i in 0..tx.exons.len().saturating_sub(1) {
+            let d = tx.exons[i].1;
+            let a = tx.exons[i + 1].0;
+            kept_jcts_by_donor.entry(d).or_default().push(a);
+        }
+    }
+    let jct_known = |donor: u64, acceptor: u64| -> Option<(u64, u64)> {
+        // Find a kept (d, a) within ±tol of (donor, acceptor).
+        for d in donor.saturating_sub(tol)..=donor.saturating_add(tol) {
+            if let Some(accs) = kept_jcts_by_donor.get(&d) {
+                for &a in accs {
+                    if (a as i64 - acceptor as i64).abs() as u64 <= tol {
+                        return Some((d, a));
+                    }
+                }
+            }
+        }
+        None
+    };
+
+    // Collect kept intron chains for dedup (per chrom/strand).
+    let mut kept_chains: HashSet<(char, Vec<(u64, u64)>)> = Default::default();
+    for tx in txs.iter() {
+        if tx.exons.len() < 2 {
+            continue;
+        }
+        let chain: Vec<(u64, u64)> = (0..tx.exons.len() - 1)
+            .map(|i| (tx.exons[i].1, tx.exons[i + 1].0))
+            .collect();
+        kept_chains.insert((tx.strand, chain));
+    }
+
+    // Group reads by (strand, canonical chain).
+    let mut chain_groups: HashMap<(char, Vec<(u64, u64)>), (u64, u64, u64, f64)> = Default::default();
+    for r in &bundle.reads {
+        if r.junctions.len() < min_introns {
+            continue;
+        }
+        // Canonicalize each read junction to its kept-set neighbor (or reject).
+        let mut canon: Vec<(u64, u64)> = Vec::with_capacity(r.junctions.len());
+        let mut all_known = true;
+        for j in &r.junctions {
+            if let Some(kj) = jct_known(j.donor, j.acceptor) {
+                canon.push(kj);
+            } else {
+                all_known = false;
+                break;
+            }
+        }
+        if !all_known {
+            continue;
+        }
+        let strand = r.strand;
+        let key = (strand, canon);
+        let entry = chain_groups.entry(key).or_insert((0, u64::MAX, 0, 0.0));
+        entry.0 += 1;
+        if r.ref_start < entry.1 {
+            entry.1 = r.ref_start;
+        }
+        if r.ref_end > entry.2 {
+            entry.2 = r.ref_end;
+        }
+        entry.3 += r.weight.max(1.0);
+    }
+
+    // Build per-strand kept-chain lookup for near-twin matching.
+    let mut kept_chains_by_strand: HashMap<char, Vec<Vec<(u64, u64)>>> = Default::default();
+    for tx in txs.iter() {
+        if tx.exons.len() < 2 {
+            continue;
+        }
+        let chain: Vec<(u64, u64)> = (0..tx.exons.len() - 1)
+            .map(|i| (tx.exons[i].1, tx.exons[i + 1].0))
+            .collect();
+        kept_chains_by_strand
+            .entry(tx.strand)
+            .or_default()
+            .push(chain);
+    }
+    // Symmetric set-difference distance between two intron chains.
+    let chain_diff = |a: &Vec<(u64, u64)>, b: &Vec<(u64, u64)>| -> usize {
+        let a_set: HashSet<&(u64, u64)> = a.iter().collect();
+        let b_set: HashSet<&(u64, u64)> = b.iter().collect();
+        let only_a = a_set.difference(&b_set).count();
+        let only_b = b_set.difference(&a_set).count();
+        only_a + only_b
+    };
+
+    // Emit qualifying chains.
+    let mut added: Vec<Transcript> = Vec::new();
+    for ((strand, chain), (count, min_s, max_e, weight)) in chain_groups {
+        if count < min_reads {
+            continue;
+        }
+        if kept_chains.contains(&(strand, chain.clone())) {
+            continue;
+        }
+        // Near-twin check: require the candidate to differ from some kept tx
+        // by at most `max_diff` introns. Suppresses fully novel chains.
+        if max_diff < usize::MAX {
+            let mut close_to_kept = false;
+            if let Some(kc_list) = kept_chains_by_strand.get(&strand) {
+                for kc in kc_list {
+                    if chain_diff(&chain, kc) <= max_diff {
+                        close_to_kept = true;
+                        break;
+                    }
+                }
+            }
+            if !close_to_kept {
+                continue;
+            }
+        }
+        // Build exons from chain + span. Use min_s..first donor, then each
+        // intron's acceptor..next donor, ending at last acceptor..max_e.
+        let mut exons: Vec<(u64, u64)> = Vec::with_capacity(chain.len() + 1);
+        exons.push((min_s, chain[0].0));
+        for i in 1..chain.len() {
+            exons.push((chain[i - 1].1, chain[i].0));
+        }
+        exons.push((chain.last().unwrap().1, max_e));
+        if exons.iter().any(|(s, e)| e <= s) {
+            continue;
+        }
+        if debug {
+            eprintln!(
+                "[PER_READ_COMBO] emit strand={} chain_len={} reads={} weight={:.1} span={}-{}",
+                strand,
+                chain.len(),
+                count,
+                weight,
+                exons.first().unwrap().0,
+                exons.last().unwrap().1
+            );
+        }
+        let cov = weight; // approximate; downstream gates use longcov
+        let n_exons = exons.len();
+        added.push(Transcript {
+            chrom: bundle.chrom.clone(),
+            strand,
+            exons,
+            coverage: cov,
+            exon_cov: vec![cov; n_exons],
+            tpm: 0.0,
+            fpkm: 0.0,
+            source: Some("per_read_combo".to_string()),
+            is_longread: true,
+            longcov: weight,
+            bpcov_cov: 0.0,
+            all_strand_cov: 0.0,
+            transcript_id: None,
+            gene_id: None,
+            ref_transcript_id: None,
+            ref_gene_id: None,
+            hardstart: false,
+            hardend: false,
+            alt_tts_end: false,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
+            synthetic: false,
+            rescue_class: None,
+        });
+    }
+
+    let n_added = added.len();
+    txs.extend(added);
+    n_added
+}
+
 fn rescue_internal_terminal_stop_variants(
     txs: &mut Vec<Transcript>,
     extra_support: &[Transcript],
@@ -6435,6 +6662,29 @@ fn extract_bundle_transcripts_for_graph(
         }
         if n_added > 0 {
             trace_stage("terminal_ri_variants", &txs);
+        }
+    }
+
+    // Per-read enumeration of novel combinations of known junctions
+    // (opt-in via RUSTLE_PER_READ_COMBOS=1). Targets cassette/alt-splice
+    // misses where flow decomposition produced dominant paths but missed
+    // minor isoforms whose junctions are individually well-supported in
+    // some kept tx. Each emitted chain consists entirely of junctions
+    // already used in `txs`, must be corroborated by ≥N reads, and must
+    // differ from every kept tx's chain.
+    if config.long_reads {
+        let n_added = emit_per_read_alt_combos(&mut txs, bundle);
+        if n_added > 0 && config.verbose {
+            eprintln!(
+                "    per_read_combos: +{} transcript(s) (bundle={}:{}-{})",
+                n_added,
+                bundle.chrom,
+                bundle.start + 1,
+                bundle.end
+            );
+        }
+        if n_added > 0 {
+            trace_stage("per_read_combos", &txs);
         }
     }
 
