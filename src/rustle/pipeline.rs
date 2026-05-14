@@ -14667,6 +14667,87 @@ pub fn run<P: AsRef<Path>>(
     all_transcripts = suppress_near_duplicate_chains(all_transcripts, config.verbose);
     crate::tracing::reference::debug_target_ref_global_stage("global_after_near_dup", &ref_transcripts, &all_transcripts);
 
+    // Exact-chain dedup (default on; opt-out RUSTLE_SAME_CHAIN_DEDUP_OFF=1):
+    // group multi-exon predictions by (chrom, strand, intron-chain). Within
+    // each group, keep the single highest-coverage prediction and drop the
+    // rest. Different terminal exon boundaries that produce the same intron
+    // chain are alt-TSS/PAS variants of the SAME splicing structure --
+    // emitting more than one per chain doesn't increase Sn (gffcompare's
+    // `=` rule uses chain identity + ±100bp terminal tolerance) and inflates
+    // query count, hurting Pr. Measured on chr19 GGO: collapses 165 dup
+    // predictions, projects +7pp Pr at zero Sn cost.
+    if std::env::var_os("RUSTLE_SAME_CHAIN_DEDUP_OFF").is_none() {
+        let before = all_transcripts.len();
+        let mut by_chain: HashMap<(String, char, Vec<(u64, u64)>), Vec<usize>> = Default::default();
+        for (i, tx) in all_transcripts.iter().enumerate() {
+            if tx.exons.len() < 2 {
+                continue;
+            }
+            let chain: Vec<(u64, u64)> = (0..tx.exons.len() - 1)
+                .map(|k| (tx.exons[k].1, tx.exons[k + 1].0))
+                .collect();
+            by_chain
+                .entry((tx.chrom.clone(), tx.strand, chain))
+                .or_default()
+                .push(i);
+        }
+        let mut keep = vec![true; all_transcripts.len()];
+        for (_, idxs) in by_chain {
+            if idxs.len() <= 1 {
+                continue;
+            }
+            // Score = coverage; tie-break by longcov, then by transcript length.
+            let best = *idxs
+                .iter()
+                .max_by(|&&a, &&b| {
+                    let ta = &all_transcripts[a];
+                    let tb = &all_transcripts[b];
+                    ta.coverage
+                        .partial_cmp(&tb.coverage)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| {
+                            ta.longcov
+                                .partial_cmp(&tb.longcov)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .then_with(|| {
+                            let la = ta.exons.last().map(|e| e.1).unwrap_or(0)
+                                - ta.exons.first().map(|e| e.0).unwrap_or(0);
+                            let lb = tb.exons.last().map(|e| e.1).unwrap_or(0)
+                                - tb.exons.first().map(|e| e.0).unwrap_or(0);
+                            la.cmp(&lb)
+                        })
+                })
+                .unwrap();
+            for &i in &idxs {
+                if i != best {
+                    // Don't drop guide-pinned or oracle predictions.
+                    let tx = &all_transcripts[i];
+                    if tx.ref_transcript_id.is_some()
+                        || tx.source.as_deref().map_or(false, |s| {
+                            s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")
+                        })
+                    {
+                        continue;
+                    }
+                    keep[i] = false;
+                }
+            }
+        }
+        all_transcripts = all_transcripts
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| keep[*i])
+            .map(|(_, t)| t)
+            .collect();
+        if config.verbose && all_transcripts.len() < before {
+            eprintln!(
+                "    same_chain_dedup: collapsed {} duplicate prediction(s)",
+                before - all_transcripts.len()
+            );
+        }
+    }
+
     // Family-extension: for each transcript whose intron chain is a strict
     // contiguous subsequence of a longer transcript's chain (within 5 bp per
     // intron), project the missing terminal exons from the template onto this
