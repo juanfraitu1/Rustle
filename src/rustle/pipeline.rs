@@ -5082,6 +5082,13 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
     // `longstart/longend` share coordinate space with graph nodes (0-based half-open).
     let mut min_longstart_by_first: HashMap<usize, u64> = Default::default();
     let mut max_longend_by_last: HashMap<usize, u64> = Default::default();
+    // Per-node total read mass for transfrags whose first/last node is this node
+    // (i.e. reads that enter/exit the transcript HERE, regardless of exact longstart
+    // position within the node). Uses `tf.read_count` because `tf.abundance` is
+    // already depleted by flow extraction by the time this function runs.
+    // See `project_unwitnessed_cascade_2026_05_13.md` for the STRG.136 motivating case.
+    let mut reads_start_at_node: HashMap<usize, f64> = Default::default();
+    let mut reads_end_at_node: HashMap<usize, f64> = Default::default();
     for tf in transfrags {
         if !tf.longread || tf.node_ids.len() < 2 {
             continue;
@@ -5093,6 +5100,9 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
                     .and_modify(|v| *v = (*v).min(tf.longstart))
                     .or_insert(tf.longstart);
             }
+            if first != graph.source_id && first != graph.sink_id {
+                *reads_start_at_node.entry(first).or_insert(0.0) += tf.read_count.max(1.0);
+            }
         }
         if let Some(&last) = tf.node_ids.last() {
             if tf.longend > 0 {
@@ -5101,8 +5111,17 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
                     .and_modify(|v| *v = (*v).max(tf.longend))
                     .or_insert(tf.longend);
             }
+            if last != graph.source_id && last != graph.sink_id {
+                *reads_end_at_node.entry(last).or_insert(0.0) += tf.read_count.max(1.0);
+            }
         }
     }
+    // Minimum supporting-read count to treat a non-hardstart node as an alt-TSS
+    // (or non-hardend node as an alt-PAS) and bail out of the contiguous-parent
+    // walk. Default 3. Opt-out by setting RUSTLE_TERMINAL_ALT_TSS_MIN=0
+    // (restores the "stop only at hardstart" behavior).
+    let alt_tss_min: f64 = std::env::var("RUSTLE_TERMINAL_ALT_TSS_MIN")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(3.0);
     if min_longstart_by_first.is_empty() && max_longend_by_last.is_empty() {
         return;
     }
@@ -5146,6 +5165,18 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
                     // Stop when we already have a hard boundary on the current terminal node.
                     if cur_node.hardstart {
                         break;
+                    }
+                    // Stop when the current node has strong read-start evidence
+                    // (alt-TSS cluster that didn't pass the hardstart-detection
+                    // threshold). Without this gate, extension absorbs upstream
+                    // contigs and produces class-`j` over-extensions (e.g.
+                    // STRG.136.1: ref starts 22704346, but extension reaches
+                    // 22703070). Disabled when MIN=0.
+                    if alt_tss_min > 0.0 {
+                        let cur_reads = reads_start_at_node.get(&cur).copied().unwrap_or(0.0);
+                        if cur_reads >= alt_tss_min {
+                            break;
+                        }
                     }
                     let parents: Vec<usize> = cur_node
                         .parents
@@ -5219,6 +5250,14 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
                     };
                     if cur_node.hardend {
                         break;
+                    }
+                    // Symmetric to 5' alt-TSS gate: stop when current node has
+                    // strong read-end evidence (alt-PAS cluster).
+                    if alt_tss_min > 0.0 {
+                        let cur_reads = reads_end_at_node.get(&cur).copied().unwrap_or(0.0);
+                        if cur_reads >= alt_tss_min {
+                            break;
+                        }
                     }
                     let children: Vec<usize> = cur_node
                         .children
@@ -7104,7 +7143,6 @@ fn extract_bundle_transcripts_for_graph(
             }
         }
     }
-
     (
         txs,
         pre_filter,
@@ -13551,6 +13589,14 @@ pub fn run<P: AsRef<Path>>(
                 if !term_se.is_empty() {
                     single_exon_predictions_mutex.lock().unwrap().extend(term_se);
                 }
+                let pileup_se = crate::single_exon_pileup::detect(
+                    &sub_bundle,
+                    &txs,
+                    config.long_reads,
+                );
+                if !pileup_se.is_empty() {
+                    single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
+                }
                 bundle_txs.extend(txs);
             } // end for color_group (cgi)
             } // end for sbr_idx
@@ -13616,6 +13662,14 @@ pub fn run<P: AsRef<Path>>(
             );
             if !term_se.is_empty() {
                 single_exon_predictions_mutex.lock().unwrap().extend(term_se);
+            }
+            let pileup_se = crate::single_exon_pileup::detect(
+                &bundle,
+                &bundle_txs,
+                config.long_reads,
+            );
+            if !pileup_se.is_empty() {
+                single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
             }
             all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
             return Ok(());
@@ -14045,6 +14099,16 @@ pub fn run<P: AsRef<Path>>(
         if !term_se.is_empty() {
             single_exon_predictions_mutex.lock().unwrap().extend(term_se);
         }
+        // Standalone polyA-driven SE detector (opt-in via RUSTLE_SE_PILEUP=1).
+        // Operates entirely on bundle reads, no graph/flow dependency.
+        let pileup_se = crate::single_exon_pileup::detect(
+            &bundle,
+            &bundle_txs,
+            config.long_reads,
+        );
+        if !pileup_se.is_empty() {
+            single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
+        }
         all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
         Ok(())
     })?;
@@ -14245,6 +14309,75 @@ pub fn run<P: AsRef<Path>>(
             );
         }
         all_transcripts.extend(filtered);
+    }
+
+    // ST-parity SE cross-bundle filter (default ON; opt-out
+    // RUSTLE_SE_CROSS_BUNDLE_FILTER_OFF=1): main-pipeline SE outputs from
+    // extract_transcripts() go directly into all_transcripts and only receive
+    // per-bundle `collapse_single_exon_runoff` filtering, which can miss SE
+    // that is intronic to or antisense-contained by a multi-exon in a
+    // DIFFERENT bundle. Apply the same intron-containment / antisense /
+    // exon-containment kills used for `single_exon_predictions` above to
+    // all SE in `all_transcripts`. Targets the 51 class-`i` SE FPs that
+    // survive per-bundle filtering at NODE_SKIP_OFF settings.
+    if std::env::var_os("RUSTLE_SE_CROSS_BUNDLE_FILTER_OFF").is_none() {
+        let mut multi_spans2: Vec<(String, char, Vec<(u64, u64)>)> = all_transcripts
+            .iter()
+            .filter(|t| t.exons.len() >= 2)
+            .map(|t| (t.chrom.clone(), t.strand, t.exons.clone()))
+            .collect();
+        multi_spans2.sort_by(|a, b| a.0.cmp(&b.0).then(
+            a.2.first().map(|e| e.0).unwrap_or(0)
+                .cmp(&b.2.first().map(|e| e.0).unwrap_or(0))));
+        let n_before = all_transcripts.len();
+        all_transcripts.retain(|tx| {
+            if tx.exons.len() != 1 { return true; }
+            // Don't filter guide-pinned predictions.
+            if tx.ref_transcript_id.is_some() { return true; }
+            // Terminal-exon-derived SE are exempt from intron-containment kill
+            // (same exemption as single_exon_predictions filter above).
+            let is_terminal_src = matches!(
+                tx.source.as_deref(), Some("terminal_exon_se")
+            );
+            let se_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
+            let se_end = tx.exons.last().map(|e| e.1).unwrap_or(0);
+            for (chrom, strand, exons) in &multi_spans2 {
+                if chrom != &tx.chrom { continue; }
+                let me_start = exons.first().map(|e| e.0).unwrap_or(0);
+                let me_end = exons.last().map(|e| e.1).unwrap_or(0);
+                if se_end < me_start { continue; }
+                if se_start > me_end { continue; }
+                // Antisense overlap kill
+                if *strand != tx.strand && *strand != '.' && tx.strand != '.' {
+                    return false;
+                }
+                if *strand == tx.strand && !is_terminal_src {
+                    // Intron containment kill (i/n/m class)
+                    if exons.len() >= 2 {
+                        for w in exons.windows(2) {
+                            let intron_s = w[0].1;
+                            let intron_e = w[1].0;
+                            if se_start >= intron_s && se_end <= intron_e {
+                                return false;
+                            }
+                        }
+                    }
+                    // Exon-containment kill (c class)
+                    for &(es, ee) in exons {
+                        if es <= se_start && se_end <= ee {
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
+        });
+        if config.verbose && n_before > all_transcripts.len() {
+            eprintln!(
+                "    SE cross-bundle filter: killed {} SE in all_transcripts (intron-contained / antisense / exon-contained)",
+                n_before - all_transcripts.len()
+            );
+        }
     }
 
     // Guided mode recovery: after global filtering, harmonize remaining chain-equivalent
@@ -14857,11 +14990,28 @@ pub fn run<P: AsRef<Path>>(
                             .fold(0.0f64, f64::max)
                     };
                     let thr = max_cov * alpha;
+                    // Longcov exemption (opt-in via RUSTLE_INTRA_GENE_LONGCOV_MIN).
+                    // Spare multi-exon tx whose pre-flow longcov supports them
+                    // even when flow-distributed cov falls below the alpha
+                    // threshold. Defaults: longcov >= 1 AND exons >= 5
+                    // (read-witnessed multi-intron paths). Set MIN to 0 to disable.
+                    let lc_min: f64 = std::env::var("RUSTLE_INTRA_GENE_LONGCOV_MIN")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                    let lc_min_exons: usize = std::env::var("RUSTLE_INTRA_GENE_LONGCOV_MIN_EXONS")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
                     for &k in &cluster {
                         let tk = &all_transcripts[k];
                         if tk.coverage >= thr { continue; }
                         // oracle_direct diagnostic tx are never killed here.
                         if tk.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
+                            continue;
+                        }
+                        // Longcov-based exemption: read-witnessed multi-exon paths
+                        // survive the cov-fraction kill even at low flow-cov.
+                        if lc_min > 0.0
+                            && tk.exons.len() >= lc_min_exons
+                            && tk.longcov >= lc_min
+                        {
                             continue;
                         }
                         // Check exemption: is tk entirely inside an intron

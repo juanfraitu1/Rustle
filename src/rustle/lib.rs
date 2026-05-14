@@ -56,6 +56,7 @@ pub mod exon_merge; // exon boundary merging
 pub mod polya; // poly-A site detection
 pub mod transcript_filter; // isofrac, pairwise, runoff, dedup, merge, lowintron
 pub mod cross_strand_predcluster; // post-pipeline cross-strand KRI (gated, default off)
+pub mod single_exon_pileup; // polyA-driven SE detector (gated, opt-in)
 pub mod parallel_predprune; // post-pipeline m/k-class pruning (gated, default off)
 pub mod parse_trflong_st; // byte-faithful port of ST's parse_trflong + update_abundance (scaffold)
 pub mod tss_tts; // TSS / TTS refinement

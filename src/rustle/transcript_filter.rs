@@ -1607,13 +1607,49 @@ fn retainedintron_like(
             j += 1;
         }
         if j == 0 && b.coverage < frac * a.coverage {
-            if trace_ri {
-                eprintln!("[RI_RESULT] n1={} n2={} result=1 reason=first_exon j=0", n1, n2);
+            // Opt-in: require victim's first exon to actually overlap killer's
+            // intron i (b.exons[0].0 < a.exons[i].0). Without this, victims
+            // whose first exon is entirely downstream of killer's intron i
+            // get killed spuriously. Recovers STRG.300.6-style alt-splice
+            // misses but is F1-negative at default (-1.9pp on chr19 GGO)
+            // because many legitimate truncation kills also get protected.
+            // Enable via RUSTLE_RI_FIRST_EXON_OVERLAP_REQUIRE=1.
+            let first_exon_overlap_check = std::env::var_os(
+                "RUSTLE_RI_FIRST_EXON_OVERLAP_REQUIRE").is_some();
+            let overlaps_intron = b.exons.get(0)
+                .map(|e0| e0.0 < a.exons[i].0)
+                .unwrap_or(true);
+            if !first_exon_overlap_check || overlaps_intron {
+                if trace_ri {
+                    eprintln!("[RI_RESULT] n1={} n2={} result=1 reason=first_exon j=0", n1, n2);
+                }
+                return true;
+            } else if trace_ri {
+                eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=first_exon_no_overlap b0={} a_intron_end={}",
+                    n1, n2, b.exons[0].0, a.exons[i].0);
             }
-            return true;
         }
         if j < b.exons.len() && b.exons[j].0 < a.exons[i - 1].1 {
             if j > 0 && j < b.exons.len() - 1 {
+                // Alt-donor/alt-acceptor protection (default ON; opt-out via
+                // `RUSTLE_RI_ALT_SPLICE_PROTECT_OFF=1`):
+                // a MIDDLE exon of n2 (not first, not last) partially overlaps
+                // n1's intron. If n2's exon ENDS within n1's intron (doesn't
+                // span across to n1's next exon), this is an alt-donor:
+                // n2 has additional exons after via a real splice junction.
+                // Don't kill; let it survive. STRG.300.6 motivating case
+                // (project_parity_decisions_strg300_2026_05_14.md). Only
+                // applies to mid-victim exons since end-exon partial overlap
+                // is polyA runoff and the kill at the next block handles it.
+                let alt_splice_protect = std::env::var_os(
+                    "RUSTLE_RI_ALT_SPLICE_PROTECT_OFF").is_none();
+                if alt_splice_protect && b.exons[j].1 < a.exons[i].0 {
+                    if trace_ri {
+                        eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=alt_splice_mid_exon i={} j={} b.end={} a.next_start={}",
+                            n1, n2, i, j, b.exons[j].1, a.exons[i].0);
+                    }
+                    continue;
+                }
                 if trace_ri {
                     eprintln!("[RI_RESULT] n1={} n2={} result=2 reason=middle_exon i={} j={}", n1, n2, i, j);
                 }
@@ -2543,9 +2579,20 @@ pub fn pairwise_overlap_filter_with_summary(
                         let vtx = &txs[$idx];
                         let pk_s = vtx.exons.first().map(|(s,_)| *s + 1).unwrap_or(0);
                         let pk_e = vtx.exons.last().map(|(_,e)| *e).unwrap_or(0);
+                        let (k_s, k_e, k_cov, k_nex) = if $killer < txs.len() {
+                            let ktx = &txs[$killer];
+                            (
+                                ktx.exons.first().map(|(s,_)| *s + 1).unwrap_or(0),
+                                ktx.exons.last().map(|(_,e)| *e).unwrap_or(0),
+                                ktx.coverage,
+                                ktx.exons.len(),
+                            )
+                        } else {
+                            (0, 0, 0.0, 0)
+                        };
                         let pk_p = format!(
-                            r#""reason":"{}","cov":{:.4},"nexons":{},"stage":"pairwise""#,
-                            $reason, vtx.coverage, vtx.exons.len()
+                            r#""reason":"{}","cov":{:.4},"nexons":{},"stage":"pairwise","killer_cov":{:.4},"killer_nexons":{},"killer_start":{},"killer_end":{}"#,
+                            $reason, vtx.coverage, vtx.exons.len(), k_cov, k_nex, k_s, k_e
                         );
                         crate::parity::decisions::emit(
                             "pred_kill", Some(&vtx.chrom), pk_s, pk_e, vtx.strand, &pk_p
@@ -2609,6 +2656,22 @@ pub fn pairwise_overlap_filter_with_summary(
                         error_perc,
                     )
                 {
+                    if crate::parity::decisions::is_enabled() {
+                        let ktx = &txs[n1];
+                        let vtx = &txs[n2];
+                        let pk_p = format!(
+                            r#""killer_cov":{:.4},"killer_nexons":{},"victim_cov":{:.4},"victim_nexons":{},"frac":{:.4}"#,
+                            ktx.coverage, ktx.exons.len(), vtx.coverage, vtx.exons.len(), error_perc
+                        );
+                        crate::parity::decisions::emit(
+                            "retained_intron_check",
+                            Some(&ktx.chrom),
+                            ktx.exons.first().map(|(s,_)| *s + 1).unwrap_or(0),
+                            ktx.exons.last().map(|(_,e)| *e).unwrap_or(0),
+                            ktx.strand,
+                            &pk_p,
+                        );
+                    }
                     kill!(n2, n1, "retained_intron");
                     continue;
                 }
@@ -4006,7 +4069,11 @@ pub fn collapse_single_exon_runoff(
     const ERROR_PERC: f64 = 0.1;
 
     // Per-strand multi-exon spans for the no-overlap check; only computed when needed.
-    let suppress_multi_overlap = std::env::var_os("RUSTLE_SINGLE_EXON_NO_MULTI_OVERLAP").is_some();
+    // Default ON (opt-out RUSTLE_SINGLE_EXON_NO_MULTI_OVERLAP_OFF=1): reject
+    // single-exon non-guide tx that overlaps a surviving multi-exon on same
+    // strand. Reference single-exons live at distinct loci — overlap signals
+    // retained-intron / runoff noise.
+    let suppress_multi_overlap = std::env::var_os("RUSTLE_SINGLE_EXON_NO_MULTI_OVERLAP_OFF").is_none();
     let multi_spans: Vec<(u64, u64, char)> = if suppress_multi_overlap {
         txs.iter()
             .filter(|t| t.exons.len() > 1)
@@ -4074,7 +4141,12 @@ pub fn collapse_single_exon_runoff(
         // a multi-exon tx — the structural FP suppressor that this gate's prior
         // doc-comment called for). On GGO_19 with all three set + N=60, recovers
         // STRG.183.1 + STRG.575.1 (locus matches 566→568) at F1 unchanged.
-        let use_correct_cov = std::env::var_os("RUSTLE_SINGLE_EXON_COV_FIX").is_some();
+        // Default ON (opt-out RUSTLE_SINGLE_EXON_COV_FIX_OFF=1): use the
+        // mathematically correct per-base coverage (txs[i].coverage). The legacy
+        // path divided by tx_len a second time, producing reads/bp² and almost
+        // always failing the singlethr threshold — effectively suppressing all
+        // non-guide single-exon emission.
+        let use_correct_cov = std::env::var_os("RUSTLE_SINGLE_EXON_COV_FIX_OFF").is_none();
         let cov_value = if use_correct_cov {
             txs[i].coverage
         } else {
@@ -4420,6 +4492,10 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
     // Key: (chrom, strand, intron_chain). Value: index of the best representative so far.
     let mut best: HashMap<(String, char, Vec<Junction>), usize> = HashMap::new();
     let mut drop = SmallBitset::with_capacity(transcripts.len().min(64));
+    let min_terminal_diff: u64 = std::env::var("RUSTLE_DEDUP_MIN_TERMINAL_DIFF")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(50); // bp difference to keep as a real TSS/TTS variant
     for (i, tx) in transcripts.iter().enumerate() {
         if tx.exons.len() < 2 {
             continue; // mono-exon: no intron chain to deduplicate on
@@ -4434,8 +4510,19 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
                 best.insert(key, i);
             }
             Some(&prev) => {
-                // Keep the one with higher coverage; ties go to the earlier index.
-                if transcripts[i].coverage > transcripts[prev].coverage {
+                let ti = &transcripts[i];
+                let tp = &transcripts[prev];
+                let start_diff = ti.exons.first().map(|(s, _)| *s).unwrap_or(0)
+                    .abs_diff(tp.exons.first().map(|(s, _)| *s).unwrap_or(0));
+                let end_diff = ti.exons.last().map(|(_, e)| *e).unwrap_or(0)
+                    .abs_diff(tp.exons.last().map(|(_, e)| *e).unwrap_or(0));
+                let real_variant = start_diff >= min_terminal_diff || end_diff >= min_terminal_diff;
+                if real_variant {
+                    // Keep both — real TSS/TTS variant.
+                    if ti.coverage > tp.coverage {
+                        *best.get_mut(&key).unwrap() = i;
+                    }
+                } else if ti.coverage > tp.coverage {
                     drop.insert_grow(prev);
                     *best.get_mut(&key).unwrap() = i;
                 } else {
@@ -5319,10 +5406,26 @@ pub(crate) fn retained_intron_score_with_covs(
             j += 1;
         }
         if j == 0 && n2_cov < frac * n1_cov {
-            return 1;
+            // Opt-in: require victim's first exon to overlap killer's intron.
+            // See `retainedintron_like` for tradeoffs.
+            let first_exon_overlap_check = std::env::var_os(
+                "RUSTLE_RI_FIRST_EXON_OVERLAP_REQUIRE").is_some();
+            let overlaps_intron = n2_exons.get(0)
+                .map(|e0| e0.0 < n1_exons[i].0)
+                .unwrap_or(true);
+            if !first_exon_overlap_check || overlaps_intron {
+                return 1;
+            }
         }
         if j < n2_exons.len() && n2_exons[j].0 < n1_exons[i - 1].1 {
             if j > 0 && j < n2_exons.len() - 1 {
+                // Alt-donor protection: mid-victim exon ending within intron
+                // is alt-donor (victim continues via splice), not RI.
+                let alt_splice_protect = std::env::var_os(
+                    "RUSTLE_RI_ALT_SPLICE_PROTECT_OFF").is_none();
+                if alt_splice_protect && n2_exons[j].1 < n1_exons[i].0 {
+                    continue;
+                }
                 return 2; // middle exon spans n1's low intron — strong kill
             } else if n2_cov < frac * n1_cov {
                 return 1;
@@ -5393,6 +5496,20 @@ pub fn kill_retained_intron_variants(
             }
             let score = retained_intron_score(t1, t2, &lowintrons[n1]);
             if score > 0 {
+                if crate::parity::decisions::is_enabled() {
+                    let pk_p = format!(
+                        r#""killer_cov":{:.4},"killer_nexons":{},"victim_cov":{:.4},"victim_nexons":{},"score":{},"frac":{:.4}"#,
+                        t1.coverage, t1.exons.len(), t2.coverage, t2.exons.len(), score, 0.1
+                    );
+                    crate::parity::decisions::emit(
+                        "retained_intron_check",
+                        Some(&t1.chrom),
+                        t1.exons.first().map(|(s,_)| *s + 1).unwrap_or(0),
+                        t1.exons.last().map(|(_,e)| *e).unwrap_or(0),
+                        t1.strand,
+                        &pk_p,
+                    );
+                }
                 if std::env::var_os("RUSTLE_KRI_DEBUG").is_some() {
                     eprintln!(
                         "[KRI] kill n2={}:{}-{} cov={:.2} nex={} \

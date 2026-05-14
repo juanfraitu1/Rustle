@@ -640,6 +640,36 @@ pub fn push_max_flow_seeded_full(
                 Some(v) => v,
                 None => continue,
             };
+            // Flow-combinatorics protection (opt-in via
+            // RUSTLE_FLOW_SUBSEQ_PROTECT=1):
+            // The original logic subtracts transfrag t's full abundance when
+            // its first and last nodes are in the path. But if t has a UNIQUE
+            // intron chain (e.g., skip-cassette while the path uses cassette),
+            // its abundance shouldn't be consumed by this path. STRG.92.2 case:
+            // skip-cassette transfrag (abund=16) gets fully drained by the
+            // dominant cassette path (abund=213) even though they share no
+            // splice junctions in the divergent region.
+            // Check: every consecutive node pair in t's node_ids must be at
+            // CONSECUTIVE positions in the path. If any pair skips, t has a
+            // structural variant — don't drain it.
+            if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT").is_some() {
+                let mut is_subseq = true;
+                for w in transfrags[t].node_ids.windows(2) {
+                    let p_a = node2path.get(&w[0]).copied();
+                    let p_b = node2path.get(&w[1]).copied();
+                    match (p_a, p_b) {
+                        (Some(a), Some(b)) if a + 1 == b => {},
+                        _ => { is_subseq = false; break; }
+                    }
+                }
+                if !is_subseq {
+                    if std::env::var_os("RUSTLE_DEBUG_FLOW_SUBSEQ").is_some() {
+                        eprintln!("[FLOW_SUBSEQ] skip tf={} n_nodes={} abund={:.2}",
+                            t, transfrags[t].node_ids.len(), transfrags[t].abundance);
+                    }
+                    continue;
+                }
+            }
             if capacityright[i] > trabundance {
                 capacityright[i] = capacityright[i] - trabundance;
                 for v in capacityright.iter_mut().take(n2).skip(i + 1) {
@@ -962,6 +992,26 @@ pub fn guide_push_flow(
             };
             if transfrags[t].node_ids.first().copied() != Some(path[i]) {
                 continue;
+            }
+            // Flow-combinatorics protection — see push_max_flow_seeded.
+            // Skip transfrag whose intron chain isn't a subsequence of path.
+            if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT").is_some() {
+                let mut is_subseq = true;
+                for w in transfrags[t].node_ids.windows(2) {
+                    let p_a = node2path.get(&w[0]).copied();
+                    let p_b = node2path.get(&w[1]).copied();
+                    match (p_a, p_b) {
+                        (Some(a), Some(b)) if a + 1 == b => {},
+                        _ => { is_subseq = false; break; }
+                    }
+                }
+                if !is_subseq {
+                    if std::env::var_os("RUSTLE_DEBUG_FLOW_SUBSEQ").is_some() {
+                        eprintln!("[FLOW_SUBSEQ] skip tf={} n_nodes={} abund={:.2}",
+                            t, transfrags[t].node_ids.len(), transfrags[t].abundance);
+                    }
+                    continue;
+                }
             }
             if capacityright[i] > trabundance {
                 capacityright[i] = capacityright[i] - trabundance;
@@ -1645,6 +1695,40 @@ fn long_max_flow_direct(
                             && tf_next != graph.sink_id
                             && path_next != graph.sink_id
                         {
+                            continue;
+                        }
+                    }
+                    // Flow-subseq protection (opt-in
+                    // RUSTLE_FLOW_SUBSEQ_PROTECT=1): if any consecutive
+                    // pair (a,b) in tf.node_ids is NOT at consecutive positions
+                    // in path, tf has a structural variant (e.g., skip-cassette
+                    // while path uses cassette). STRG.92.2 case: shares
+                    // first+last nodes with STRG.92.1's path but skips middle
+                    // cassette. Without this, STRG.92.2's abundance gets
+                    // drained by STRG.92.1's flow even though they diverge.
+                    // Independent of exact mode so it applies in default config.
+                    if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT").is_some()
+                        && transfrags[t_idx].node_ids.len() >= 2
+                    {
+                        let mut is_subseq = true;
+                        for w in transfrags[t_idx].node_ids.windows(2) {
+                            let p_a = node2path.get(&w[0]).copied();
+                            let p_b = node2path.get(&w[1]).copied();
+                            match (p_a, p_b) {
+                                (Some(a), Some(b)) if a + 1 == b => {},
+                                _ => { is_subseq = false; break; }
+                            }
+                        }
+                        if !is_subseq {
+                            if std::env::var_os("RUSTLE_DEBUG_FLOW_SUBSEQ").is_some() {
+                                eprintln!(
+                                    "[FLOW_SUBSEQ_LMF] seed={:?} tf={} n_nodes={} abund={:.2}",
+                                    seed_tf,
+                                    t_idx,
+                                    transfrags[t_idx].node_ids.len(),
+                                    transfrags[t_idx].abundance
+                                );
+                            }
                             continue;
                         }
                     }

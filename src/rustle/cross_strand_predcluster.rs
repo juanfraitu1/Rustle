@@ -284,6 +284,34 @@ pub fn cross_strand_kri_filter(
                 if t2.ref_transcript_id.is_some() {
                     continue;
                 }
+                // Default ON: spare victims with read-cluster-attested TSS
+                // (`hardstart=true`). Recovers STRG.31.1-class alt-TSS isoforms
+                // antisense to dominant strand without losing CSKRI's
+                // precision wins on the bulk of cross-strand chimera cases.
+                // Opt-out via `RUSTLE_CSKRI_SPARE_HARDSTART_OFF=1`.
+                if std::env::var_os("RUSTLE_CSKRI_SPARE_HARDSTART_OFF").is_none()
+                    && t2.hardstart
+                {
+                    continue;
+                }
+                // Opt-in: spare victims whose coverage exceeds threshold —
+                // high-cov antisense transcripts are unlikely chimera artifacts.
+                if let Ok(min_v) = std::env::var("RUSTLE_CSKRI_SPARE_MIN_COV") {
+                    if let Ok(t) = min_v.parse::<f64>() {
+                        if t2.coverage >= t {
+                            continue;
+                        }
+                    }
+                }
+                // Opt-in: spare victims with many exons — long multi-exon
+                // structures are less plausibly chimera artifacts.
+                if let Ok(min_n) = std::env::var("RUSTLE_CSKRI_SPARE_MIN_NEX") {
+                    if let Ok(n) = min_n.parse::<usize>() {
+                        if t2.exons.len() >= n {
+                            continue;
+                        }
+                    }
+                }
                 // ST's `overlaps[n1, n2]` gate (rlink.cpp:18957) plus the
                 // `update_overlap` size-threshold rejection
                 // (rlink.cpp:17828-17855). Skips antisense-overlapping-
@@ -341,9 +369,23 @@ pub fn cross_strand_kri_filter(
                 );
                 if score > 0 {
                     n_would_fire += 1;
+                    if crate::parity::decisions::is_enabled() {
+                        let pk_p = format!(
+                            r#""killer_cov":{:.4},"killer_nexons":{},"victim_cov":{:.4},"victim_nexons":{},"score":{},"frac":{:.4}"#,
+                            t1.coverage, t1.exons.len(), t2.coverage, t2.exons.len(), score, 0.1
+                        );
+                        crate::parity::decisions::emit(
+                            "retained_intron_check",
+                            Some(&t1.chrom),
+                            t1.exons.first().map(|(s,_)| *s + 1).unwrap_or(0),
+                            t1.exons.last().map(|(_,e)| *e).unwrap_or(0),
+                            t1.strand,
+                            &pk_p,
+                        );
+                    }
                     if debug {
                         eprintln!(
-                            "[XSKRI] {} n2={}:{}-{}({}) cov={:.2}(eff={:.2}) nex={} \
+                            "[XSKRI] {} n2={}:{}-{}({}) cov={:.2}(eff={:.2}) nex={} hs={}/{} \
                              by n1={}:{}-{}({}) cov={:.2}(eff={:.2}) nex={} score={}",
                             if dry_run { "would_kill" } else { "KILL" },
                             t2.chrom,
@@ -353,6 +395,7 @@ pub fn cross_strand_kri_filter(
                             t2.coverage,
                             n2_eff_cov,
                             t2.exons.len(),
+                            t2.hardstart, t2.hardend,
                             t1.chrom,
                             t1.exons.first().map(|e| e.0).unwrap_or(0),
                             t1.exons.last().map(|e| e.1).unwrap_or(0),

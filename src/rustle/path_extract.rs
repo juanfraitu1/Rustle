@@ -5200,7 +5200,8 @@ fn back_to_source_fast_long(
                         continue;
                     }
                     // Skip chimeric tfs that extend past seed's original maxpath
-                    // during back_to_source (opt-in RUSTLE_BACK_SKIP_PAST_SEED_MAX=1).
+                    // during back_to_source (default ON; opt-out via
+                    // RUSTLE_BACK_SKIP_PAST_SEED_MAX_OFF=1).
                     // Target: STRG.398 pattern where a single-read chimeric tf
                     // (tf=42, 15 nodes, abund=1) spans from pre-seed node 10 to
                     // node 48 past seed's maxp=46. Absorbing it in back_tmax extends
@@ -5209,7 +5210,7 @@ fn back_to_source_fast_long(
                     let Some((first, last)) = first_last_raw(tf) else {
                         continue;
                     };
-                    if std::env::var_os("RUSTLE_BACK_SKIP_PAST_SEED_MAX").is_some() {
+                    if std::env::var_os("RUSTLE_BACK_SKIP_PAST_SEED_MAX_OFF").is_none() {
                         if let Some(seed_tf) = transfrags.get(seed_idx) {
                             if let Some(&seed_last) = seed_tf.node_ids.last() {
                                 let seed_last_start =
@@ -5519,11 +5520,12 @@ fn back_to_source_fast_long(
                 let Some((first, last)) = first_last_raw(tf) else {
                     continue;
                 };
-                // Mirror gate from the primary back loop (RUSTLE_BACK_SKIP_PAST_SEED_MAX=1):
+                // Mirror gate from the primary back loop (default ON; opt-out via
+                // RUSTLE_BACK_SKIP_PAST_SEED_MAX_OFF=1):
                 // skip transfrags whose last node extends past the seed's true maxp.
                 // Without this the exclude-fallback selects a long-spanning chimeric tf
                 // (RSTL.182.3 case), polluting pathpat and bumping *maxpath to a stub.
-                if std::env::var_os("RUSTLE_BACK_SKIP_PAST_SEED_MAX").is_some() {
+                if std::env::var_os("RUSTLE_BACK_SKIP_PAST_SEED_MAX_OFF").is_none() {
                     if let Some(seed_tf) = transfrags.get(seed_idx) {
                         if let Some(&seed_last) = seed_tf.node_ids.last() {
                             let seed_last_start = node_start_or_zero(graph, seed_last);
@@ -5810,6 +5812,23 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
     } else {
         // Default (Rustle historical): sort by usepath (insertion order).
         seeded.sort_unstable_by_key(|&i| transfrags[i].usepath);
+    }
+    // ST-parity SE split (default ON; opt-out via RUSTLE_SE_SEEDS_INTERLEAVE=1):
+    // Process single-node (SE-only) seeds AFTER all multi-node seeds. This
+    // gives multi-exon paths first claim on shared-node flow capacity so SE
+    // emission doesn't starve multi-exon TPs. With this split in place, the
+    // SE early-skip gate can be relaxed safely toward ST's `cov >= singlethr`
+    // semantic (see `single_exon_min` block above).
+    if std::env::var_os("RUSTLE_SE_SEEDS_INTERLEAVE").is_none() {
+        seeded.sort_by(|&a, &b| {
+            let a_single = transfrags[a].node_ids.len() == 1;
+            let b_single = transfrags[b].node_ids.len() == 1;
+            match (a_single, b_single) {
+                (false, true) => std::cmp::Ordering::Less,
+                (true, false) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
     }
     seeded
 }
@@ -6564,17 +6583,30 @@ pub fn extract_transcripts(
         // depletion — this is the #1 precision/sensitivity fix, recovering ~500 TPs.
         // Set RUSTLE_SINGLE_NODE_LR_OFF=1 to disable this skip for audit purposes.
         let single_node_lr_skip = std::env::var_os("RUSTLE_SINGLE_NODE_LR_OFF").is_none();
-        // RUSTLE_SINGLE_EXON_MIN_READS=N: when set, allow single-node LR seeds with
-        // abundance ≥ N to bypass the early-skip and reach path extension. The later
-        // single-exon emission gate at the bottom of this function applies the same
-        // threshold to the resulting transcript. Targets recovery of high-confidence
-        // single-exon refs (GGO_19 has 25 such, most with longcov ≥ 5).
+        // ST-parity SE gate: ST emits single-exon predictions whose per-bp
+        // coverage >= singlethr (default 4.75). Rustle's pipeline differs:
+        // single-node seeds compete with multi-node seeds in the same flow
+        // extraction, and admitting them all without protection starves
+        // multi-exon TPs. To approximate ST while avoiding this depletion,
+        // `parse_trflong` orders single-node seeds LAST in the seed list
+        // (see `seeded.sort_by` SE-split block) so multi-exon paths get
+        // first claim on flow capacity. With the split active, the SE
+        // count gate can be dropped (`RUSTLE_SINGLE_NODE_SKIP_OFF=1`) and
+        // `collapse_single_exon_runoff`'s `cov >= singlethr` becomes the
+        // sole emission criterion — matching ST exactly.
+        //
+        // Default `RUSTLE_SINGLE_EXON_MIN_READS=60` still applied as
+        // belt-and-suspenders flow-depletion protection.
+        let skip_se_off = std::env::var_os("RUSTLE_SINGLE_NODE_SKIP_OFF").is_some();
         let single_exon_min: f64 = std::env::var("RUSTLE_SINGLE_EXON_MIN_READS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(0.0);
-        if single_node_lr_skip && long_read_mode && real_nodes.len() == 1 && !transfrags[idx].guide
-            && (single_exon_min <= 0.0 || transfrags[idx].abundance < single_exon_min)
+            .unwrap_or(60.0);
+        let count_gate_fails = single_exon_min <= 0.0
+            || transfrags[idx].abundance < single_exon_min;
+        if !skip_se_off
+            && single_node_lr_skip && long_read_mode && real_nodes.len() == 1
+            && !transfrags[idx].guide && count_gate_fails
         {
             transfrags[idx].abundance = 0.0;
             record_outcome!(idx, SeedOutcome::Skipped("single_node_lr"));
@@ -7722,18 +7754,19 @@ pub fn extract_transcripts(
             continue;
         }
         if long_read_mode && exons.len() == 1 && !transfrags[idx].guide {
-            // Single-exon non-guide prediction: skip in LR mode by default
-            // ("removes ~2376 FPs at no Sn cost" per comment in apply_compat_preset).
-            //
-            // RUSTLE_SINGLE_EXON_MIN_READS=N (default 0 = always skip): when set,
-            // ALLOW the single-exon prediction through if transfrag abundance
-            // (= supporting long-read count for single-node seeds) ≥ N.
-            // Targets the 25 single-exon refs in GGO_19 (most have longcov ≥ 5).
+            // Mirrors the early gate; same `RUSTLE_SINGLE_NODE_SKIP_OFF=1`
+            // override available. With the SE-seed split in `parse_trflong`
+            // active (default), and SKIP_OFF set, this gate becomes a no-op
+            // and `collapse_single_exon_runoff`'s `cov >= singlethr` is the
+            // sole emission criterion — ST-parity.
+            let skip_se_off = std::env::var_os("RUSTLE_SINGLE_NODE_SKIP_OFF").is_some();
             let single_exon_min: f64 = std::env::var("RUSTLE_SINGLE_EXON_MIN_READS")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(0.0);
-            if single_exon_min <= 0.0 || transfrags[idx].abundance < single_exon_min {
+                .unwrap_or(60.0);
+            let count_gate_fails = single_exon_min <= 0.0
+                || transfrags[idx].abundance < single_exon_min;
+            if !skip_se_off && count_gate_fails {
                 transfrags[idx].abundance = 0.0;
                 record_outcome!(idx, SeedOutcome::Skipped("single_exon_lr"));
                 continue;
@@ -7961,14 +7994,25 @@ pub fn extract_transcripts(
             } else if long_read_mode {
                 // Strict: one long_max_flow call per seed path.
                 // No Rust-specific retry/capping branch.
-                // long_max_flow: pass no_subtract=false so transfrag abundances
-                // are depleted by used flow while nodecov is also depleted downstream.
+                // long_max_flow: normally pass no_subtract=false so transfrag
+                // abundances are depleted by used flow.
+                //
+                // ST-parity SE: when this seed is single-node (SE-only path,
+                // ordered LAST by parse_trflong's SE split), pass
+                // no_subtract=true so the SE extraction does NOT deplete
+                // shared multi-exon transfrag abundances. Without this guard,
+                // SE seeds drain abundance below readthr for transfrags at the
+                // same node, starving checktrf_rescue at e.g. STRG.56.4/6/7.
+                // Opt-out: RUSTLE_SE_NO_SUBTRACT_OFF=1.
+                let se_no_subtract = real_nodes.len() == 1
+                    && !transfrags[idx].guide
+                    && std::env::var_os("RUSTLE_SE_NO_SUBTRACT_OFF").is_none();
                 let (lf, lfpath, lused) = if canonical {
                     crate::parse_trflong_st::long_max_flow_st(
                         &use_path,
                         transfrags,
                         graph,
-                        false,
+                        se_no_subtract,
                         Some(idx),
                         flow_pathpat.as_ref(),
                     )
@@ -7977,7 +8021,7 @@ pub fn extract_transcripts(
                         &use_path,
                         transfrags,
                         graph,
-                        false,
+                        se_no_subtract,
                         Some(idx),
                         flow_pathpat.as_ref(),
                     )
@@ -8683,6 +8727,27 @@ pub fn extract_transcripts(
     // 1) try to reassign skipped transfrag support to best kept paths
     // 2) if unmatched, store direct complete transfrag as an independent transcript
     let checktrf_enabled = std::env::var_os("RUSTLE_DISABLE_CHECKTRF").is_none();
+    // Per-node read-entering / read-exiting count (pre-depletion). Used to
+    // detect alt-TSS / alt-PAS nodes so the longstart/longend clip below
+    // doesn't pull exons[0].0 / exons[-1].1 INWARD off a real alt-boundary.
+    // See `project_bugB_terminal_alt_tss_2026_05_13.md` for chr19 GGO context.
+    let mut reads_start_at_node_ck: HashMap<usize, f64> = Default::default();
+    let mut reads_end_at_node_ck: HashMap<usize, f64> = Default::default();
+    for tf in transfrags.iter() {
+        if !tf.longread || tf.node_ids.len() < 2 { continue; }
+        if let Some(&first) = tf.node_ids.first() {
+            if first != source_id && first != sink_id {
+                *reads_start_at_node_ck.entry(first).or_insert(0.0) += tf.read_count.max(1.0);
+            }
+        }
+        if let Some(&last) = tf.node_ids.last() {
+            if last != source_id && last != sink_id {
+                *reads_end_at_node_ck.entry(last).or_insert(0.0) += tf.read_count.max(1.0);
+            }
+        }
+    }
+    let ck_alt_tss_min: f64 = std::env::var("RUSTLE_CHECKTRF_ALT_TSS_MIN")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(3.0);
     if long_read_mode && !checktrf.is_empty() && checktrf_enabled {
         // Dedup while preserving insertion order.
         let mut seen: HashSet<usize> = Default::default();
@@ -9305,15 +9370,31 @@ pub fn extract_transcripts(
 
                 // Clip terminal exons to longstart/longend (read boundaries)
                 // AFTER gates have been applied on the full span.
+                //
+                // Skip the start-clip when the first rescue node has strong
+                // read-entering evidence (alt-TSS): IsoSeq reads commonly
+                // 5'-truncate mid-node, but the canonical exon start is the
+                // node boundary. Clipping to longstart in that case pushes
+                // the exon start away from the ref (e.g. STRG.136.1: ref
+                // 22704346, clip would force 22704696). Symmetric on 3' end.
+                // Opt-out: RUSTLE_CHECKTRF_ALT_TSS_MIN=0.
                 {
                     let longstart = transfrags[t].longstart;
                     let longend = transfrags[t].longend;
-                    if longstart > 0 && !exons.is_empty() {
+                    let first_rescue_node = rescue_nodes.first().copied().unwrap_or(0);
+                    let last_rescue_node = rescue_nodes.last().copied().unwrap_or(0);
+                    let skip_start_clip = ck_alt_tss_min > 0.0
+                        && reads_start_at_node_ck.get(&first_rescue_node)
+                            .copied().unwrap_or(0.0) >= ck_alt_tss_min;
+                    let skip_end_clip = ck_alt_tss_min > 0.0
+                        && reads_end_at_node_ck.get(&last_rescue_node)
+                            .copied().unwrap_or(0.0) >= ck_alt_tss_min;
+                    if !skip_start_clip && longstart > 0 && !exons.is_empty() {
                         if longstart > exons[0].0 && longstart <= exons[0].1 {
                             exons[0].0 = longstart;
                         }
                     }
-                    if longend > 0 && !exons.is_empty() {
+                    if !skip_end_clip && longend > 0 && !exons.is_empty() {
                         let li = exons.len() - 1;
                         if longend >= exons[li].0 && longend < exons[li].1 {
                             exons[li].1 = longend;
