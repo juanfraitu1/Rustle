@@ -1109,6 +1109,7 @@ mod tests {
             vg_copy_id: None,
             vg_family_size: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            raw_flow_sum: 0.0,
         }
     }
 
@@ -1619,14 +1620,58 @@ fn retainedintron_like(
             let overlaps_intron = b.exons.get(0)
                 .map(|e0| e0.0 < a.exons[i].0)
                 .unwrap_or(true);
-            if !first_exon_overlap_check || overlaps_intron {
+            // Parity refinement: ST's `cov` scales ~2× longcov; rustle's ~1.3×.
+            // At STRG.300.6, rustle's victim cov 6.35 < 11 (kill); ST's cov 11.7 ≥ 11
+            // (survives). Underlying longcov is the same (5 vs 6 reads). Gating on
+            // longcov ratio instead of cov ratio is parity-equivalent across
+            // pipelines and discriminates true-read-support victims. Opt-in:
+            // RUSTLE_RI_LONGCOV_SPARE_RATIO=R (default off). Spare kill when
+            // victim.longcov/killer.longcov >= R AND first exon doesn't overlap.
+            let longcov_spare_ratio: f64 = std::env::var("RUSTLE_RI_LONGCOV_SPARE_RATIO")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+            let longcov_spare = longcov_spare_ratio > 0.0
+                && !overlaps_intron
+                && a.longcov > 0.0
+                && b.longcov / a.longcov >= longcov_spare_ratio;
+            // ST-parity raw cov gate (opt-in, RUSTLE_RI_USE_RAW_FLOW=1):
+            // compare ratio of raw flow sums (Σ nodeflux × per-path noderate)
+            // which mirrors ST's pre-/tlen cov scale at rlink.cpp:10475. Spare
+            // when victim.raw_flow_sum/killer.raw_flow_sum >= frac (same 0.1
+            // threshold). Bypasses length-normalization that makes rustle's
+            // victim cov drop below threshold while ST's stays above.
+            let raw_flow_spare = std::env::var_os("RUSTLE_RI_USE_RAW_FLOW").is_some()
+                && a.raw_flow_sum > 0.0
+                && b.raw_flow_sum > 0.0
+                && b.raw_flow_sum >= frac * a.raw_flow_sum;
+            // Unique-intron spare (default ON; opt-out RUSTLE_RI_J0_UNIQUE_INTRON_OFF=1):
+            // when victim starts within killer's exon (!overlaps_intron), spare the
+            // kill if victim has at least one intron not present in killer's intron
+            // set AND sufficient raw read support. A victim with novel junctions and
+            // longcov >= threshold is a genuine alt-transcript (e.g. STRG.300.6:
+            // cassette exon, longcov=5), not a truncated fragment. Without the
+            // longcov gate (default 5.0) the spare is too permissive (-3.8pp Pr);
+            // with it, the combination of FSP (default ON) + unique-intron spare
+            // yields net +0.01pp F1 vs the pre-FSP baseline. Tune longcov threshold
+            // via RUSTLE_RI_J0_MIN_LONGCOV (default 5.0; 0 = disable gate).
+            let j0_min_longcov: f64 = std::env::var("RUSTLE_RI_J0_MIN_LONGCOV")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(5.0);
+            let unique_intron_spare = std::env::var_os("RUSTLE_RI_J0_UNIQUE_INTRON_OFF").is_none()
+                && !overlaps_intron
+                && b.exons.len() >= 2
+                && (j0_min_longcov <= 0.0 || b.longcov >= j0_min_longcov)
+                && {
+                    let killer_introns: std::collections::HashSet<(u64, u64)> =
+                        a.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                    b.exons.windows(2).any(|w| !killer_introns.contains(&(w[0].1, w[1].0)))
+                };
+            if (!first_exon_overlap_check || overlaps_intron) && !longcov_spare && !raw_flow_spare && !unique_intron_spare {
                 if trace_ri {
                     eprintln!("[RI_RESULT] n1={} n2={} result=1 reason=first_exon j=0", n1, n2);
                 }
                 return true;
             } else if trace_ri {
-                eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=first_exon_no_overlap b0={} a_intron_end={}",
-                    n1, n2, b.exons[0].0, a.exons[i].0);
+                eprintln!("[RI_RESULT] n1={} n2={} result=0 reason=first_exon_spared b0={} a_intron_end={} longcov_spare={}",
+                    n1, n2, b.exons[0].0, a.exons[i].0, longcov_spare);
             }
         }
         if j < b.exons.len() && b.exons[j].0 < a.exons[i - 1].1 {
@@ -5413,7 +5458,13 @@ pub(crate) fn retained_intron_score_with_covs(
             let overlaps_intron = n2_exons.get(0)
                 .map(|e0| e0.0 < n1_exons[i].0)
                 .unwrap_or(true);
-            if !first_exon_overlap_check || overlaps_intron {
+            // ST-parity raw cov gate (opt-in, RUSTLE_RI_USE_RAW_FLOW=1).
+            // See `retainedintron_like` for rationale.
+            let raw_flow_spare = std::env::var_os("RUSTLE_RI_USE_RAW_FLOW").is_some()
+                && n1.raw_flow_sum > 0.0
+                && n2.raw_flow_sum > 0.0
+                && n2.raw_flow_sum >= frac * n1.raw_flow_sum;
+            if (!first_exon_overlap_check || overlaps_intron) && !raw_flow_spare {
                 return 1;
             }
         }
@@ -5706,6 +5757,16 @@ pub fn filter_unwitnessed_chains_with_singletons_and_counts(
         std::env::var_os("RUSTLE_WITNESS_SINGLETON_RELAX").is_some();
     let min_junc_reads: usize = std::env::var("RUSTLE_WITNESS_SINGLETON_MIN_READS")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+    // Longcov-gated exemption (default 1.0 = on): a multi-exon tx whose
+    // longcov ≥ threshold has real long-read support for the full chain even
+    // if no single read co-observes every consecutive K-pair (cassette-class
+    // misses STRG.112.1/.208.2/.438.4/.453.4 die here). Mirrors the checktrf
+    // fwd-extend philosophy: trust strong long-read evidence over the strict
+    // co-witness requirement. Chr19 GGO sweep: thr=1.0 gives +5 matching
+    // (1741→1746), 0 TP lost, +2 FP, F1 92.116→92.21 (+0.094pp). thr=2 only
+    // +1. Set to 0 to disable. Tunable via RUSTLE_WITNESS_LONGCOV_EXEMPT.
+    let witness_longcov_exempt: f64 = std::env::var("RUSTLE_WITNESS_LONGCOV_EXEMPT")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
     let before = transcripts.len();
     let out: Vec<Transcript> = transcripts
         .into_iter()
@@ -5721,6 +5782,11 @@ pub fn filter_unwitnessed_chains_with_singletons_and_counts(
             let introns = exons_to_junction_chain(&tx.exons);
             if introns.len() < 2 {
                 return true; // Single-intron transcripts always pass.
+            }
+            // Longcov-gated exemption: strong long-read support bypasses the
+            // strict co-witness requirement.
+            if witness_longcov_exempt > 0.0 && tx.longcov >= witness_longcov_exempt {
+                return true;
             }
             // Flow-sourced transcripts are eligible for singleton relaxation.
             let flow_sourced = matches!(tx.source.as_deref(), Some("flow"));
@@ -5984,6 +6050,12 @@ pub fn filter_by_full_chain_witness(
             .ok().and_then(|v| v.parse().ok()).unwrap_or(2)
     });
     let single_only = std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_SINGLE_ONLY").is_some();
+    // Longcov-gated exemption (default 1.0 = on): shared knob with
+    // filter_unwitnessed_chains_with_singletons_and_counts. Strong long-read
+    // support bypasses the strict K-window co-witness requirement. Set to 0
+    // to disable. See that function for the chr19 GGO sweep results.
+    let witness_longcov_exempt: f64 = std::env::var("RUSTLE_WITNESS_LONGCOV_EXEMPT")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
 
     let before = transcripts.len();
     let out: Vec<Transcript> = transcripts.into_iter().filter(|tx| {
@@ -5994,6 +6066,9 @@ pub fn filter_by_full_chain_witness(
             || s.starts_with("ref_chain_rescue:")
         ) { return true; }
         if tx.ref_transcript_id.is_some() { return true; }
+        if witness_longcov_exempt > 0.0 && tx.longcov >= witness_longcov_exempt {
+            return true;
+        }
 
         let tx_chain: Vec<(u64, u64)> = tx.exons.windows(2)
             .map(|w| (w[0].1, w[1].0)).collect();
@@ -7181,6 +7256,73 @@ pub fn print_predcluster_with_summary_multi(
         .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
     let readthr_longcov_subfloor: f64 = std::env::var("RUSTLE_READTHR_LONGCOV_SUBFLOOR")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
+    // Cassette-shaped structural exemption: admit a multi-intron tx with
+    // longcov ≥ 1 if it differs from another kept tx at the same locus by
+    // EXACTLY one cassette swap — i.e. one of the txs has two consecutive
+    // introns (Ia, Ib) where the other has a single intron (Ia.start, Ib.end)
+    // spanning across an exon between them. All OTHER introns must match exactly.
+    // Targets cassette-arbitration misses (STRG.194.7, STRG.247.14, STRG.440.5,
+    // STRG.530.11) without admitting broader j/m/n alt-splice noise.
+    //
+    // Gates: (1) ≥4 exons (≥3 introns) on both candidate and sibling;
+    // (2) longcov ≥ STRUCT_LONGCOV_MIN (default 1.0);
+    // (3) coverage ≥ STRUCT_SUBFLOOR (default 0.30);
+    // (4) exists another kept tx S such that {candidate.introns} and {S.introns}
+    //     differ by EXACTLY a single cassette-shaped swap:
+    //       candidate = ..., (a,b),       (c,d), ...
+    //       sibling   = ..., (a,d) [or candidate has the merged, sibling the split].
+    //
+    // Default OFF (admitted only +1-3 TPs at >10 FP cost vs StringTie-denovo
+    // reference); enable with RUSTLE_READTHR_STRUCT_EXEMPT=1 for sensitivity-
+    // first workflows. Kept as opt-in for guided/known-ref scenarios where
+    // recovering rare cassette isoforms is worth the precision drop.
+    let struct_exempt =
+        std::env::var_os("RUSTLE_READTHR_STRUCT_EXEMPT").is_some();
+    let struct_longcov_min: f64 = std::env::var("RUSTLE_READTHR_STRUCT_LONGCOV_MIN")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+    let struct_subfloor: f64 = std::env::var("RUSTLE_READTHR_STRUCT_SUBFLOOR")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.30);
+    let struct_min_exons: usize = std::env::var("RUSTLE_READTHR_STRUCT_MIN_EXONS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+    let struct_min_sib_cov: f64 = std::env::var("RUSTLE_READTHR_STRUCT_MIN_SIB_COV")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(4.0);
+    let struct_max_cass_bp: u64 = std::env::var("RUSTLE_READTHR_STRUCT_MAX_CASS_BP")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(150);
+    // Per-(chrom,strand) chains + their cov for cassette-swap detection.
+    let mut chains_by_locus: HashMap<(String, char), Vec<(Vec<(u64, u64)>, f64)>> = Default::default();
+    if struct_exempt {
+        for t in txs.iter() {
+            if t.exons.len() < struct_min_exons { continue; }
+            let chain: Vec<(u64, u64)> = t.exons.windows(2)
+                .map(|w| (w[0].1, w[1].0))
+                .collect();
+            chains_by_locus.entry((t.chrom.clone(), t.strand))
+                .or_default()
+                .push((chain, t.coverage));
+        }
+    }
+    // Helper: does `cand` differ from `sib` by exactly one cassette swap,
+    // with cassette exon size ≤ `max_cass_bp`?
+    let cassette_swap = |cand: &[(u64,u64)], sib: &[(u64,u64)], max_cass_bp: u64| -> bool {
+        if (cand.len() as i64 - sib.len() as i64).abs() != 1 { return false; }
+        let (longer, shorter) = if cand.len() > sib.len() { (cand, sib) } else { (sib, cand) };
+        let mut i = 0usize;
+        while i < shorter.len() && shorter[i] == longer[i] { i += 1; }
+        if i >= shorter.len() { return false; }
+        if i + 1 >= longer.len() { return false; }
+        let merged = shorter[i];
+        let split_a = longer[i];
+        let split_b = longer[i + 1];
+        if merged.0 != split_a.0 || merged.1 != split_b.1 { return false; }
+        if split_a.1 + 1 >= split_b.0 { return false; }
+        // Cassette exon size constraint.
+        let cass_bp = split_b.0 - split_a.1 - 1;
+        if cass_bp > max_cass_bp { return false; }
+        for j in (i + 1)..shorter.len() {
+            if shorter[j] != longer[j + 1] { return false; }
+        }
+        true
+    };
     txs.retain(|t| {
         if is_guide_pair(t) {
             return true;
@@ -7200,6 +7342,28 @@ pub fn print_predcluster_with_summary_multi(
             && t.coverage >= readthr_longcov_subfloor
         {
             return true;
+        }
+        // Cassette-shaped structural exemption: differs from a kept sibling
+        // by exactly one cassette-shape intron swap, with cassette size and
+        // sibling-cov gates to filter j/m-class noise.
+        if struct_exempt
+            && t.exons.len() >= struct_min_exons
+            && t.longcov >= struct_longcov_min
+            && t.coverage >= struct_subfloor
+        {
+            let cand_chain: Vec<(u64, u64)> = t.exons.windows(2)
+                .map(|w| (w[0].1, w[1].0))
+                .collect();
+            if let Some(siblings) = chains_by_locus.get(&(t.chrom.clone(), t.strand)) {
+                for (sib, sib_cov) in siblings {
+                    if std::ptr::eq(sib.as_slice(), cand_chain.as_slice()) { continue; }
+                    if sib.len() < struct_min_exons.saturating_sub(1) { continue; }
+                    if *sib_cov < struct_min_sib_cov { continue; }
+                    if cassette_swap(&cand_chain, sib, struct_max_cass_bp) {
+                        return true;
+                    }
+                }
+            }
         }
         false
     });

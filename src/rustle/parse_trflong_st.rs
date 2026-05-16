@@ -954,7 +954,7 @@ pub fn long_max_flow_st(
     no_subtract: bool,
     seed_tf: Option<usize>,
     pathpat_override: Option<&crate::util::bitvec::GBitVec>,
-) -> (f64, Vec<f64>, crate::util::bitset::NodeSet) {
+) -> (f64, Vec<f64>, crate::util::bitset::NodeSet, Vec<f64>) {
     crate::max_flow::long_max_flow_seeded_with_used_pathpat_st(
         path,
         transfrags,

@@ -640,8 +640,8 @@ pub fn push_max_flow_seeded_full(
                 Some(v) => v,
                 None => continue,
             };
-            // Flow-combinatorics protection (opt-in via
-            // RUSTLE_FLOW_SUBSEQ_PROTECT=1):
+            // Flow-combinatorics protection (default ON; opt-out via
+            // RUSTLE_FLOW_SUBSEQ_PROTECT_OFF=1):
             // The original logic subtracts transfrag t's full abundance when
             // its first and last nodes are in the path. But if t has a UNIQUE
             // intron chain (e.g., skip-cassette while the path uses cassette),
@@ -652,7 +652,7 @@ pub fn push_max_flow_seeded_full(
             // Check: every consecutive node pair in t's node_ids must be at
             // CONSECUTIVE positions in the path. If any pair skips, t has a
             // structural variant — don't drain it.
-            if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT").is_some() {
+            if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT_OFF").is_none() {
                 let mut is_subseq = true;
                 for w in transfrags[t].node_ids.windows(2) {
                     let p_a = node2path.get(&w[0]).copied();
@@ -993,9 +993,9 @@ pub fn guide_push_flow(
             if transfrags[t].node_ids.first().copied() != Some(path[i]) {
                 continue;
             }
-            // Flow-combinatorics protection — see push_max_flow_seeded.
+            // Flow-subseq protection (default ON; opt-out RUSTLE_FLOW_SUBSEQ_PROTECT_OFF=1).
             // Skip transfrag whose intron chain isn't a subsequence of path.
-            if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT").is_some() {
+            if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT_OFF").is_none() {
                 let mut is_subseq = true;
                 for w in transfrags[t].node_ids.windows(2) {
                     let p_a = node2path.get(&w[0]).copied();
@@ -1091,11 +1091,11 @@ fn long_max_flow_direct(
     max_fl_override: Option<f64>,
     pathpat_override: Option<&GBitVec>,
     st_exact: bool,
-) -> (f64, Vec<f64>, NodeSet) {
+) -> (f64, Vec<f64>, NodeSet, Vec<f64>) {
     let exact = st_exact || crate::stringtie_parity::stringtie_exact();
     let n = path.len();
     if n < 3 {
-        return (0.0, vec![], NodeSet::default());
+        return (0.0, vec![], NodeSet::default(), vec![]);
     }
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
@@ -1105,7 +1105,7 @@ fn long_max_flow_direct(
         .filter(|&nid| nid != source_id && nid != sink_id)
         .collect();
     if real_path.is_empty() {
-        return (0.0, vec![], NodeSet::default());
+        return (0.0, vec![], NodeSet::default(), vec![]);
     }
     let pathpat = pathpat_override
         .cloned()
@@ -1305,6 +1305,61 @@ fn long_max_flow_direct(
     let mut bfs_iters = 0usize;
     let debug_flow = std::env::var_os("RUSTLE_DEBUG_FLOW").is_some();
     let __flow_run_id = crate::parity::flow_iter_dump::next_run_id();
+    {
+        // Per-run seed tag: intron chain of the full seed path (real nodes only),
+        // for cross-tool run alignment. Convention: donor_end+1 - acceptor_start-1.
+        let mut sc = String::new();
+        let mut prev: Option<usize> = None;
+        let (mut lo, mut hi) = (u64::MAX, 0u64);
+        for &nid in path.iter() {
+            let Some(nd) = graph.nodes.get(nid) else { continue };
+            if nid == graph.source_id || nid == graph.sink_id {
+                continue;
+            }
+            lo = lo.min(nd.start);
+            hi = hi.max(nd.end);
+            if let Some(p) = prev {
+                if let Some(pn) = graph.nodes.get(p) {
+                    // rustle graph nodes: donor = pn.end+1; acceptor uses
+                    // rustle's 0-based next-exon-start which equals the
+                    // 1-based intron last base (ST/GTF convention) directly
+                    // (the documented acceptor off-by-one — see parity README).
+                    if nd.start > pn.end + 1 {
+                        if !sc.is_empty() {
+                            sc.push(',');
+                        }
+                        sc.push_str(&format!("{}-{}", pn.end + 1, nd.start));
+                    }
+                }
+            }
+            prev = Some(nid);
+        }
+        crate::parity::flow_iter_dump::emit_seed(
+            __flow_run_id,
+            if lo == u64::MAX { 0 } else { lo },
+            hi,
+            &sc,
+        );
+        if let Ok(cp) = std::env::var("RUSTLE_FLOW_CAP_TSV") {
+            if !cp.is_empty() {
+                use std::io::Write as _;
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true).append(true).open(&cp)
+                {
+                    for ii in 0..n {
+                        for jj in 0..n {
+                            if capacity[ii][jj].abs() > 1e-9 {
+                                let _ = writeln!(
+                                    f, "rustle\t{}\t{}\t{}\t{:.4}",
+                                    __flow_run_id, ii, jj, capacity[ii][jj]
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     let mut __flow_iter: usize = 0;
     let mut __flow_total: f64 = 0.0;
     while bfs_augmenting_path(n, &capacity, &flow_mat, &link, &mut pred, false) {
@@ -1350,15 +1405,18 @@ fn long_max_flow_direct(
 
         // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
         {
-            let mut __path: Vec<usize> = Vec::new();
+            let mut __mat_path: Vec<usize> = Vec::new();
             let mut __tu = n - 1;
-            __path.push(__tu);
+            __mat_path.push(__tu);
             while pred[__tu] >= 0 {
                 let __ppu = pred[__tu] as usize;
-                __path.push(__ppu);
+                __mat_path.push(__ppu);
                 __tu = __ppu;
             }
-            __path.reverse();
+            __mat_path.reverse();
+            // Translate matrix indices → graph node IDs so path_nodes align with
+            // graph_edges_dump (and with ST's emitter which already uses node IDs).
+            let __path: Vec<usize> = __mat_path.iter().map(|&mi| path[mi]).collect();
             __flow_iter += 1;
             __flow_total += increment;
             crate::parity::flow_iter_dump::emit(
@@ -1462,15 +1520,16 @@ fn long_max_flow_direct(
 
             // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
             {
-                let mut __path: Vec<usize> = Vec::new();
+                let mut __mat_path: Vec<usize> = Vec::new();
                 let mut __tu = n - 1;
-                __path.push(__tu);
+                __mat_path.push(__tu);
                 while pred[__tu] >= 0 {
                     let __ppu = pred[__tu] as usize;
-                    __path.push(__ppu);
+                    __mat_path.push(__ppu);
                     __tu = __ppu;
                 }
-                __path.reverse();
+                __mat_path.reverse();
+                let __path: Vec<usize> = __mat_path.iter().map(|&mi| path[mi]).collect();
                 __flow_iter_retry += 1;
                 __flow_total_retry += increment;
                 crate::parity::flow_iter_dump::emit(
@@ -1698,16 +1757,15 @@ fn long_max_flow_direct(
                             continue;
                         }
                     }
-                    // Flow-subseq protection (opt-in
-                    // RUSTLE_FLOW_SUBSEQ_PROTECT=1): if any consecutive
+                    // Flow-subseq protection (default ON; opt-out
+                    // RUSTLE_FLOW_SUBSEQ_PROTECT_OFF=1): if any consecutive
                     // pair (a,b) in tf.node_ids is NOT at consecutive positions
                     // in path, tf has a structural variant (e.g., skip-cassette
                     // while path uses cassette). STRG.92.2 case: shares
                     // first+last nodes with STRG.92.1's path but skips middle
                     // cassette. Without this, STRG.92.2's abundance gets
                     // drained by STRG.92.1's flow even though they diverge.
-                    // Independent of exact mode so it applies in default config.
-                    if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT").is_some()
+                    if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT_OFF").is_none()
                         && transfrags[t_idx].node_ids.len() >= 2
                     {
                         let mut is_subseq = true;
@@ -1837,7 +1895,17 @@ fn long_max_flow_direct(
         .filter(|(_, &nid)| nid != source_id && nid != sink_id)
         .map(|(pi, _)| nodecapacity[pi])
         .collect();
-    (flux, real_nodecap, istranscript)
+    // Per-path noderate (parallel to real_nodecap). Mirrors ST's `noderate[]` at
+    // rlink.cpp:9001 — needed by the caller's cov accumulator (ecov = nodeflux *
+    // noderate). Using the global `n.noderate` here gives wrong cov scaling for
+    // long-read transcripts.
+    let real_noderate: Vec<f64> = path
+        .iter()
+        .enumerate()
+        .filter(|(_, &nid)| nid != source_id && nid != sink_id)
+        .map(|(pi, _)| noderate[pi])
+        .collect();
+    (flux, real_nodecap, istranscript, real_noderate)
 }
 
 /// Prior guide support used by guide_push_flow to emulate CNodeGuide node-level guide competition.
@@ -2258,15 +2326,16 @@ pub fn edmonds_karp(
 
         // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
         {
-            let mut __path: Vec<usize> = Vec::new();
+            let mut __mat_path: Vec<usize> = Vec::new();
             let mut __tu = n - 1;
-            __path.push(__tu);
+            __mat_path.push(__tu);
             while pred[__tu] >= 0 {
                 let __ppu = pred[__tu] as usize;
-                __path.push(__ppu);
+                __mat_path.push(__ppu);
                 __tu = __ppu;
             }
-            __path.reverse();
+            __mat_path.reverse();
+            let __path: Vec<usize> = __mat_path.iter().map(|&mi| path[mi]).collect();
             __flow_iter_ek += 1;
             __flow_total_ek += increment;
             crate::parity::flow_iter_dump::emit(
@@ -2359,15 +2428,16 @@ pub fn edmonds_karp(
 
             // Emit per-iter flow row (env-gated). Reconstruct path source->sink from pred.
             {
-                let mut __path: Vec<usize> = Vec::new();
+                let mut __mat_path: Vec<usize> = Vec::new();
                 let mut __tu = n - 1;
-                __path.push(__tu);
+                __mat_path.push(__tu);
                 while pred[__tu] >= 0 {
                     let __ppu = pred[__tu] as usize;
-                    __path.push(__ppu);
+                    __mat_path.push(__ppu);
                     __tu = __ppu;
                 }
-                __path.reverse();
+                __mat_path.reverse();
+                let __path: Vec<usize> = __mat_path.iter().map(|&mi| path[mi]).collect();
                 __flow_iter_ek_retry += 1;
                 __flow_total_ek_retry += increment;
                 crate::parity::flow_iter_dump::emit(
@@ -2576,7 +2646,7 @@ pub fn long_max_flow_seeded(
     no_subtract: bool,
     seed_tf: Option<usize>,
 ) -> (f64, Vec<f64>) {
-    let (flux, nodecap, _) =
+    let (flux, nodecap, _, _) =
         long_max_flow_direct(path, transfrags, graph, no_subtract, seed_tf, None, None, false);
     (flux, nodecap)
 }
@@ -2589,12 +2659,17 @@ pub fn long_max_flow_seeded_with_used(
     no_subtract: bool,
     seed_tf: Option<usize>,
 ) -> (f64, Vec<f64>, NodeSet) {
-    long_max_flow_seeded_with_used_pathpat(path, transfrags, graph, no_subtract, seed_tf, None)
+    let (flux, nodecap, ist, _) =
+        long_max_flow_seeded_with_used_pathpat(path, transfrags, graph, no_subtract, seed_tf, None);
+    (flux, nodecap, ist)
 }
 
 /// Long-read max flow with an explicit parse_trflong pathpat override.
 /// This mirrors  where parse_trflong passes its accumulated pathpat directly into
 /// long_max_flow instead of rebuilding it from the concrete path vector.
+/// 4th tuple element is the per-path `noderate` for real nodes (parallel to
+/// `nodecap`), needed by the caller's cov accumulator to match ST's
+/// `ecov = nodeflux * noderate` formula at rlink.cpp:10454.
 pub fn long_max_flow_seeded_with_used_pathpat(
     path: &[usize],
     transfrags: &mut [GraphTransfrag],
@@ -2602,7 +2677,7 @@ pub fn long_max_flow_seeded_with_used_pathpat(
     no_subtract: bool,
     seed_tf: Option<usize>,
     pathpat_override: Option<&GBitVec>,
-) -> (f64, Vec<f64>, NodeSet) {
+) -> (f64, Vec<f64>, NodeSet, Vec<f64>) {
     CURRENT_SEED_TF.with(|c| c.set(seed_tf));
     let result = long_max_flow_direct(
         path,
@@ -2627,7 +2702,7 @@ pub fn long_max_flow_seeded_with_used_pathpat_st(
     no_subtract: bool,
     seed_tf: Option<usize>,
     pathpat_override: Option<&GBitVec>,
-) -> (f64, Vec<f64>, NodeSet) {
+) -> (f64, Vec<f64>, NodeSet, Vec<f64>) {
     CURRENT_SEED_TF.with(|c| c.set(seed_tf));
     let result = long_max_flow_direct(
         path,
@@ -2652,7 +2727,7 @@ pub fn long_max_flow_seeded_with_nodecov_limit(
     seed_tf: Option<usize>,
     max_fl_limit: f64,
 ) -> (f64, Vec<f64>) {
-    let (flux, nodecap, _) = long_max_flow_direct(
+    let (flux, nodecap, _, _) = long_max_flow_direct(
         path,
         transfrags,
         graph,

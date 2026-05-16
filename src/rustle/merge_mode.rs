@@ -307,6 +307,7 @@ pub fn run_merge<P: AsRef<Path>>(
             hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
         }));
     }
 

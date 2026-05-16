@@ -395,6 +395,7 @@ fn append_missed_oracle_direct_emit(
             vg_copy_id: None,
             vg_family_size: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            raw_flow_sum: 0.0,
         };
         txs.push(tx);
         if debug {
@@ -700,6 +701,92 @@ fn intron_chain_from_exons_0based(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
         out.push((exons[i].1, exons[i + 1].0));
     }
     out
+}
+
+/// Emit `pred_kill` parity events for transcripts present in `before` but not in `after`,
+/// tagging them with the given filter `stage` name. Used to instrument the silent
+/// post-predcluster filters (which would otherwise drop tx without leaving a parity trail).
+/// No-op when parity_decisions is disabled.
+fn emit_post_pred_kills(
+    stage: &str,
+    before: &[crate::path_extract::Transcript],
+    after: &[crate::path_extract::Transcript],
+) {
+    if !crate::parity::decisions::is_enabled() {
+        return;
+    }
+    // Key on (chrom, strand, exons) — covers TSS/TES variants of same chain as distinct entries.
+    let after_keys: std::collections::HashSet<(String, char, Vec<(u64, u64)>)> = after
+        .iter()
+        .map(|t| (t.chrom.clone(), t.strand, t.exons.clone()))
+        .collect();
+    for t in before {
+        let key = (t.chrom.clone(), t.strand, t.exons.clone());
+        if after_keys.contains(&key) {
+            continue;
+        }
+        let span_start = t.exons.first().map(|e| e.0).unwrap_or(0);
+        let span_end = t.exons.last().map(|e| e.1).unwrap_or(0);
+        let mut introns_str = String::new();
+        let mut n_introns = 0usize;
+        for w in t.exons.windows(2) {
+            if w[1].0 > w[0].1 {
+                if n_introns > 0 {
+                    introns_str.push(',');
+                }
+                introns_str.push_str(&format!("{}-{}", w[0].1 + 1, w[1].0));
+                n_introns += 1;
+            }
+        }
+        let payload = format!(
+            r#""reason":"post_pred_kill","stage":"{}","cov":{:.4},"longcov":{:.1},"n_exons":{},"n_introns":{},"introns":"{}""#,
+            stage,
+            t.coverage,
+            t.longcov,
+            t.exons.len(),
+            n_introns,
+            introns_str,
+        );
+        crate::parity::decisions::emit(
+            "pred_kill",
+            Some(&t.chrom),
+            span_start + 1,
+            span_end,
+            t.strand,
+            &payload,
+        );
+    }
+}
+
+/// Snapshot of `txs` for use with `emit_post_pred_kills`. Returns empty when parity
+/// is disabled so the clone cost is paid only during parity_decisions runs.
+fn pre_filter_snapshot(
+    txs: &[crate::path_extract::Transcript],
+) -> Vec<crate::path_extract::Transcript> {
+    if crate::parity::decisions::is_enabled() {
+        txs.to_vec()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Debug probe: count `txs` containing a target intron (parsed from
+/// `RUSTLE_TRACE_CHAIN_INTRON` env var, format "donor_end+1-acceptor_start").
+/// Emits an eprintln at the given `stage`. No-op when env var unset.
+fn trace_chain_intron_probe(stage: &str, txs: &[crate::path_extract::Transcript]) {
+    static TARGET: std::sync::OnceLock<Option<(u64, u64)>> = std::sync::OnceLock::new();
+    let target = TARGET.get_or_init(|| {
+        std::env::var("RUSTLE_TRACE_CHAIN_INTRON").ok().and_then(|s| {
+            let mut it = s.split('-');
+            Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+        })
+    });
+    if let Some(target) = target {
+        let n = txs.iter().filter(|t| {
+            t.exons.windows(2).any(|w| (w[0].1 + 1, w[1].0) == *target)
+        }).count();
+        eprintln!("[TRACE_CHAIN_INTRON] stage={} count_with_target_intron={}", stage, n);
+    }
 }
 
 fn outcome_label(outcome: &crate::path_extract::SeedOutcome) -> &'static str {
@@ -1462,7 +1549,8 @@ fn merge_region_outer_bundles(
             bnode_colors: None,
             synthetic: any_synthetic,
             rescue_class: merged_rescue_class,
-        });
+
+});
     }
 
     merged
@@ -2530,6 +2618,7 @@ fn add_contained_isoforms(
                     hardend: tx.hardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                 });
                 added += 1;
             }
@@ -2721,6 +2810,7 @@ fn emit_junction_paths(
             hardend,
             alt_tts_end,
             vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            raw_flow_sum: 0.0,
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -3006,6 +3096,7 @@ fn emit_chain_from_graph(
         hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
     })
 }
 
@@ -3137,6 +3228,7 @@ fn emit_reference_chains(
                     hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -3271,6 +3363,7 @@ fn emit_reference_chains(
                         hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -3365,6 +3458,7 @@ fn emit_reference_chains(
             hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
         });
         added += 1;
         emitted_cnt += 1;
@@ -5700,9 +5794,205 @@ fn emit_per_read_alt_combos(
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
-        });
+            raw_flow_sum: 0.0,
+
+});
     }
 
+    let n_added = added.len();
+    txs.extend(added);
+    n_added
+}
+
+/// Internal retained-intron sibling spawn.
+///
+/// Targets the COMBINATORIAL no_seed class: rustle's flow extracts a path that
+/// is the reference chain plus one (or more) extra *internal* splice junctions,
+/// and never enumerates the retained-intron variant because the dominant read
+/// signal is spliced. StringTie spins off the minority retained isoform as a
+/// separate transcript; rustle's flow does not. No single read carries the full
+/// retained chain (verified), so per_read_combos cannot recover these — but a
+/// kept extracted path can be used as the scaffold, removing one internal
+/// junction (merging its two flanking exons) when local reads support that
+/// junction being retained.
+///
+/// Precision gate is per-junction, NOT transcript-level cov ratio (the prior
+/// `collapse_high_overlap_variants` sweep concluded transcript-level ratios
+/// can't distinguish noise from real alt-isoforms; per-junction support is the
+/// untried lever).
+///
+/// Opt-in via `RUSTLE_RI_SIBLING=1`. Tunables:
+///   `RUSTLE_RI_SIBLING_MIN_RETAINED` (default 5): min reads spanning the
+///       junction's flanks contiguously (no overlapping splice).
+///   `RUSTLE_RI_SIBLING_MIN_RATIO` (default 0.15): retained / (retained+spliced).
+///   `RUSTLE_RI_SIBLING_MAX_INTRON` (default 5000): cap retained intron length.
+///   `RUSTLE_RI_SIBLING_MARGIN` (default 10): bp a read must extend past each
+///       flank to count as spanning.
+///   `RUSTLE_RI_SIBLING_TOL` (default 6): coord tolerance matching a read
+///       junction to the candidate junction (spliced-read test).
+///   `RUSTLE_RI_SIBLING_MAX_PER_TX` (default 2): max siblings spawned per tx.
+fn emit_internal_ri_siblings(
+    txs: &mut Vec<Transcript>,
+    bundle: &crate::types::Bundle,
+) -> usize {
+    if std::env::var_os("RUSTLE_RI_SIBLING").is_none() {
+        return 0;
+    }
+    let min_retained: u64 = std::env::var("RUSTLE_RI_SIBLING_MIN_RETAINED")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let min_ratio: f64 = std::env::var("RUSTLE_RI_SIBLING_MIN_RATIO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.15);
+    let max_intron: u64 = std::env::var("RUSTLE_RI_SIBLING_MAX_INTRON")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5000);
+    let margin: u64 = std::env::var("RUSTLE_RI_SIBLING_MARGIN")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    let tol: i64 = std::env::var("RUSTLE_RI_SIBLING_TOL")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6);
+    let max_per_tx: usize = std::env::var("RUSTLE_RI_SIBLING_MAX_PER_TX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let debug = std::env::var_os("RUSTLE_DEBUG_RI_SIBLING").is_some();
+
+    // Existing chains for dedup (chrom, strand, exons).
+    let mut kept_exons: HashSet<(char, Vec<(u64, u64)>)> = txs
+        .iter()
+        .filter(|t| t.exons.len() >= 2)
+        .map(|t| (t.strand, t.exons.clone()))
+        .collect();
+
+    let n = txs.len();
+    let mut added: Vec<Transcript> = Vec::new();
+    for ti in 0..n {
+        let t = &txs[ti];
+        if !t.is_longread || is_guide_tx(t) || t.exons.len() < 4 {
+            continue;
+        }
+        let mut spawned = 0usize;
+        // Internal junctions only: between exon i and i+1, with 1 <= i <= len-3
+        // (skip first junction i=0 and last junction i=len-2 — terminal RI is
+        // handled by emit_terminal_ri_variants).
+        for i in 1..t.exons.len().saturating_sub(2) {
+            if spawned >= max_per_tx {
+                break;
+            }
+            let donor = t.exons[i].1; // last base of upstream exon
+            let acceptor = t.exons[i + 1].0; // first base of downstream exon
+            if acceptor <= donor {
+                continue;
+            }
+            let intron_len = acceptor - donor;
+            if intron_len > max_intron {
+                continue;
+            }
+            // Count reads that RETAIN this intron (span both flanks
+            // contiguously, no junction overlapping the intron) vs reads that
+            // SPLICE it (junction within tol of (donor, acceptor)).
+            let mut retained: u64 = 0;
+            let mut spliced: u64 = 0;
+            for r in &bundle.reads {
+                if r.strand != t.strand {
+                    continue;
+                }
+                if r.ref_start > donor.saturating_sub(margin)
+                    || r.ref_end < acceptor + margin
+                {
+                    continue;
+                }
+                let mut has_overlap = false;
+                let mut has_exact = false;
+                for j in &r.junctions {
+                    // overlap of read junction with the retained intron span
+                    if j.donor < acceptor && j.acceptor > donor {
+                        has_overlap = true;
+                    }
+                    if (j.donor as i64 - donor as i64).abs() <= tol
+                        && (j.acceptor as i64 - acceptor as i64).abs() <= tol
+                    {
+                        has_exact = true;
+                    }
+                }
+                if has_exact {
+                    spliced += 1;
+                } else if !has_overlap {
+                    retained += 1;
+                }
+            }
+            if retained < min_retained {
+                continue;
+            }
+            let denom = (retained + spliced) as f64;
+            if denom > 0.0 && (retained as f64 / denom) < min_ratio {
+                continue;
+            }
+            // Build candidate exons: merge exon i and i+1 into one.
+            let mut exons: Vec<(u64, u64)> = Vec::with_capacity(t.exons.len() - 1);
+            exons.extend_from_slice(&t.exons[..i]);
+            exons.push((t.exons[i].0, t.exons[i + 1].1));
+            exons.extend_from_slice(&t.exons[i + 2..]);
+            if exons.len() < 2 || exons.iter().any(|(s, e)| e <= s) {
+                continue;
+            }
+            if !kept_exons.insert((t.strand, exons.clone())) {
+                continue; // already present (kept or just spawned)
+            }
+            if debug {
+                eprintln!(
+                    "[RI_SIBLING] from {} drop_jct {}-{} retained={} spliced={} \
+                     span={}-{} nx={}",
+                    t.transcript_id.as_deref().unwrap_or("?"),
+                    donor,
+                    acceptor,
+                    retained,
+                    spliced,
+                    exons.first().unwrap().0,
+                    exons.last().unwrap().1,
+                    exons.len()
+                );
+            }
+            let cov = retained as f64;
+            let n_exons = exons.len();
+            added.push(Transcript {
+                chrom: bundle.chrom.clone(),
+                strand: t.strand,
+                exons,
+                coverage: cov,
+                exon_cov: vec![cov; n_exons],
+                tpm: 0.0,
+                fpkm: 0.0,
+                source: Some("ri_sibling".to_string()),
+                is_longread: true,
+                longcov: retained as f64,
+                bpcov_cov: 0.0,
+                all_strand_cov: 0.0,
+                transcript_id: None,
+                gene_id: None,
+                ref_transcript_id: None,
+                ref_gene_id: None,
+                hardstart: false,
+                hardend: false,
+                alt_tts_end: false,
+                vg_family_id: None,
+                vg_copy_id: None,
+                vg_family_size: None,
+                intron_low: Vec::new(),
+                synthetic: false,
+                rescue_class: None,
+                raw_flow_sum: 0.0,
+            });
+            spawned += 1;
+        }
+    }
     let n_added = added.len();
     txs.extend(added);
     n_added
@@ -6081,6 +6371,14 @@ fn extract_bundle_transcripts_for_graph(
         } else {
             Vec::new()
         };
+    // FRS SE candidates are collected inside extract_transcripts separately from
+    // multi-exon predictions to avoid interactions with pairwise/isofrac filters.
+    let frs_mode = config.long_reads
+        && !config.rawreads
+        && std::env::var_os("RUSTLE_FLOW_RESIDUAL_SE").is_some()
+        && std::env::var_os("RUSTLE_READCHAIN").is_none()
+        && std::env::var_os("RUSTLE_GREEDY_DECOMPOSE").is_none();
+    let mut frs_se_buf: Vec<crate::path_extract::Transcript> = Vec::new();
 
     // Direct-emit oracle: before extract_transcripts, record which ref tx
     // to inject. After, we compare per-tx with emitted output to classify
@@ -6138,8 +6436,15 @@ fn extract_bundle_transcripts_for_graph(
                 None
             },
             Some(&mut longrec_summary),
+            if frs_mode { Some(&mut frs_se_buf) } else { None },
         )
     };
+    // Flow-residual SE: single-node transfrags still carrying abundance ≥ singlethr
+    // after multi-exon extraction are SE candidates (StringTie's SE_CREATE_GRAPH
+    // mechanism). Only runs in the main long-read extract path.
+    // Opt-in: RUSTLE_FLOW_RESIDUAL_SE=1
+    // FRS SE candidates are collected inside extract_transcripts (via frs_se_out)
+    // and added to all_transcripts after multi-exon pipeline filters below.
     // Post-baseline supplements: restore full transfrag abundances, run each
     // supplement on fresh flow, then restore the depleted state so downstream
     // steps (alt_acceptor_rescue, emit_junction_paths, etc.) see depleted flow.
@@ -6523,6 +6828,7 @@ fn extract_bundle_transcripts_for_graph(
             true,
             None,
             None,
+            None,
         );
         txs.extend(nascent_txs);
         trace_stage("isnascent_extend", &txs);
@@ -6591,10 +6897,14 @@ fn extract_bundle_transcripts_for_graph(
         );
     txs = predcluster_txs;
     trace_stage("print_predcluster", &txs);
+    trace_chain_intron_probe("bundle_after_predcluster", &txs);
 
     if rescue_post {
+        let _before = pre_filter_snapshot(&txs);
         txs = alt_donor_acceptor_rescue(txs, &bundle.junction_stats, config.verbose);
+        emit_post_pred_kills("post_alt_donor_acceptor_rescue", &_before, &txs);
         trace_stage("alt_donor_acceptor_rescue_post", &txs);
+        trace_chain_intron_probe("bundle_after_alt_donor_acceptor_rescue", &txs);
     }
 
     // Alt-TSS/TTS rescue via read-endpoint clustering. Additive — emits
@@ -6604,23 +6914,29 @@ fn extract_bundle_transcripts_for_graph(
     // Gated by RUSTLE_ALT_TERMINAL_RESCUE=1; runs after predcluster so
     // alt variants bypass pairwise-overlap dedup but still face
     // junction-support and witness filters.
+    let _before_alt_term = pre_filter_snapshot(&txs);
     txs = crate::transcript_filter::alt_terminal_rescue(
         txs,
         &bundle.reads,
         config.verbose,
     );
+    emit_post_pred_kills("post_alt_terminal_rescue", &_before_alt_term, &txs);
     trace_stage("alt_terminal_rescue", &txs);
+    trace_chain_intron_probe("bundle_after_alt_terminal_rescue", &txs);
 
     // Remove transcripts with unsupported junctions.
     let before_junction_support = txs.len();
+    let _before_juncsup = pre_filter_snapshot(&txs);
     txs = filter_unsupported_junctions(
         txs,
         good_junctions,
         config.junction_correction_window,
         config.verbose,
     );
+    emit_post_pred_kills("post_filter_unsupported_junctions", &_before_juncsup, &txs);
     let junction_support_removed = before_junction_support.saturating_sub(txs.len());
     trace_stage("filter_unsupported_junctions", &txs);
+    trace_chain_intron_probe("bundle_after_filter_unsupported_junctions", &txs);
 
     // Collective chain-witness filter (DEFAULT ON for long reads): kill tx
     // whose intron chain contains a K-window that no read (or read chain)
@@ -6635,12 +6951,15 @@ fn extract_bundle_transcripts_for_graph(
         && std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_OFF").is_none()
     {
         let read_chains = crate::transcript_filter::build_read_intron_chains(&bundle.reads);
+        let _before_fcw = pre_filter_snapshot(&txs);
         txs = crate::transcript_filter::filter_by_full_chain_witness(
             txs, &read_chains, config.junction_correction_window, config.verbose,
             false, // relax_terminals=false: check all K-windows including terminal skip junctions
             Some(0), // max_gap=0: every position must be directly covered; gap>0 lets greedy tiling skip unwitnessed positions
         );
+        emit_post_pred_kills("post_filter_by_full_chain_witness", &_before_fcw, &txs);
         trace_stage("filter_by_full_chain_witness", &txs);
+        trace_chain_intron_probe("bundle_after_full_chain_witness", &txs);
     }
 
     // Terminal retained-intron variant emission (opt-in via
@@ -6688,6 +7007,26 @@ fn extract_bundle_transcripts_for_graph(
         }
     }
 
+    // Internal retained-intron sibling spawn (opt-in via RUSTLE_RI_SIBLING=1).
+    // Targets COMBINATORIAL no_seed refs: rustle's flow extracts ref-chain +1
+    // extra internal splice; spawn the retained-intron variant from the kept
+    // path when per-junction read evidence supports retention.
+    if config.long_reads {
+        let n_added = emit_internal_ri_siblings(&mut txs, bundle);
+        if n_added > 0 && config.verbose {
+            eprintln!(
+                "    ri_siblings: +{} transcript(s) (bundle={}:{}-{})",
+                n_added,
+                bundle.chrom,
+                bundle.start + 1,
+                bundle.end
+            );
+        }
+        if n_added > 0 {
+            trace_stage("ri_siblings", &txs);
+        }
+    }
+
     // Reference-guided post-filters (chimeric + retained-intron): both require
     // RUSTLE_CHIMERA_FILTER_GTF=/path/to/reference.gtf.  Parse the reference once
     // and apply both filters in sequence.
@@ -6697,54 +7036,70 @@ fn extract_bundle_transcripts_for_graph(
             if let Ok(ref_txs) = crate::reference_gtf::parse_reference_gtf(&ref_path) {
                 // Chimeric zero-novel-intron filter
                 let ref_idx = crate::transcript_filter::build_ref_intron_index(&ref_txs);
+                let _before = pre_filter_snapshot(&txs);
                 txs = crate::transcript_filter::filter_chimeric_zero_novel(
                     txs, &ref_idx, config.verbose,
                 );
+                emit_post_pred_kills("post_filter_chimeric_zero_novel", &_before, &txs);
                 trace_stage("filter_chimeric_zero_novel", &txs);
 
                 // Retained-intron isoform filter: kill RI variants where the spliced reference
                 // transcript exists and the retained intron lies strictly inside T's exon.
                 let (ref_chain_map, ref_exact_chains) =
                     crate::transcript_filter::build_ref_chain_map(&ref_txs);
+                let _before = pre_filter_snapshot(&txs);
                 txs = crate::transcript_filter::filter_retained_intron_isoforms(
                     txs, &ref_chain_map, &ref_exact_chains, config.verbose,
                 );
+                emit_post_pred_kills("post_filter_retained_intron_isoforms", &_before, &txs);
                 trace_stage("filter_retained_intron_isoforms", &txs);
 
                 // Zero-novel proper-subset filter: kill end-truncated and contained
                 // transcripts whose intron chain is a strict subset of a single reference
                 // transcript and have no novel junctions.
+                let _before = pre_filter_snapshot(&txs);
                 txs = crate::transcript_filter::filter_zero_novel_proper_subset(
                     txs, &ref_idx, &ref_chain_map, &ref_exact_chains, config.verbose,
                 );
+                emit_post_pred_kills("post_filter_zero_novel_proper_subset", &_before, &txs);
                 trace_stage("filter_zero_novel_proper_subset", &txs);
 
                 // Zero-novel not-exact filter: kill 0-novel-intron transcripts that are NOT
                 // exact reference chain matches (chimeric combinations that borrow introns
                 // from multiple reference transcripts).
+                let _before = pre_filter_snapshot(&txs);
                 txs = crate::transcript_filter::filter_zero_novel_not_exact(
                     txs, &ref_idx, &ref_exact_chains, config.verbose,
                 );
+                emit_post_pred_kills("post_filter_zero_novel_not_exact", &_before, &txs);
                 trace_stage("filter_zero_novel_not_exact", &txs);
 
                 // Singleton novel junction filter: kill transcripts whose novel introns
                 // are each used by only this one transcript, mirroring StringTie's
                 // good_junc() fractionation check (nreads >= 0.01 * exon_coverage).
+                let _before = pre_filter_snapshot(&txs);
                 txs = crate::transcript_filter::filter_singleton_novel_junctions(
                     txs, &ref_idx, &ref_exact_chains, config.verbose,
                 );
+                emit_post_pred_kills("post_filter_singleton_novel_junctions", &_before, &txs);
                 trace_stage("filter_singleton_novel_junctions", &txs);
 
+                let _before = pre_filter_snapshot(&txs);
                 txs = crate::transcript_filter::filter_dominated_novel_junctions(
                     txs, &ref_idx, &ref_exact_chains, config.verbose,
                 );
+                emit_post_pred_kills("post_filter_dominated_novel_junctions", &_before, &txs);
                 trace_stage("filter_dominated_novel_junctions", &txs);
+                trace_chain_intron_probe("bundle_after_guided_filters", &txs);
             }
         }
         // Isofrac longunder filter is disabled by default (opt-in: RUSTLE_ENABLE_ISOFRAC_LONGUNDER=1).
         if std::env::var_os("RUSTLE_ENABLE_ISOFRAC_LONGUNDER").is_some() {
+            let _before = pre_filter_snapshot(&txs);
             txs = crate::transcript_filter::filter_isofrac_underrepresented(txs, config.verbose);
+            emit_post_pred_kills("post_filter_isofrac_underrepresented", &_before, &txs);
             trace_stage("filter_isofrac_longunder", &txs);
+            trace_chain_intron_probe("bundle_after_isofrac_longunder", &txs);
         }
     }
 
@@ -6762,6 +7117,7 @@ fn extract_bundle_transcripts_for_graph(
             .ok()
             .and_then(|v| v.parse::<f64>().ok())
             .unwrap_or(10.0);
+        let _before = pre_filter_snapshot(&txs);
         txs = crate::transcript_filter::filter_by_min_junction_support(
             txs,
             &bundle.junction_stats,
@@ -6770,7 +7126,9 @@ fn extract_bundle_transcripts_for_graph(
             config.junction_correction_window,
             config.verbose,
         );
+        emit_post_pred_kills("post_filter_by_min_junction_support", &_before, &txs);
         trace_stage("filter_by_min_junction_support", &txs);
+        trace_chain_intron_probe("bundle_after_min_junction_support", &txs);
     }
 
     // StringTie-like TSS/TTS anchor filter (opt-in).
@@ -6826,6 +7184,7 @@ fn extract_bundle_transcripts_for_graph(
         let min_frac: f64 = std::env::var("RUSTLE_ANCHOR_TRIM_MIN_FRAC")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.20);
         let before = txs.len();
+        let _before_snap = pre_filter_snapshot(&txs);
         txs.retain(|t| {
             if t.exons.len() < 2 { return true; }
             if t.coverage >= max_cov { return true; }
@@ -6838,6 +7197,8 @@ fn extract_bundle_transcripts_for_graph(
             let need = min_endpoints.max((min_frac * t.longcov).round() as usize);
             n5 >= need || n3 >= need
         });
+        emit_post_pred_kills("post_anchor_trim", &_before_snap, &txs);
+        trace_chain_intron_probe("bundle_after_anchor_trim", &txs);
         if config.verbose && txs.len() < before {
             eprintln!("rustle: anchor_trim removed {} unanchored low-cov tx", before - txs.len());
         }
@@ -7060,6 +7421,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_copy_id: None,
                 vg_family_size: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                raw_flow_sum: 0.0,
             });
         }
 
@@ -7190,6 +7552,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_copy_id: None,
                     vg_family_size: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                 };
                 rescued.push(tx);
                 if debug {
@@ -7406,6 +7769,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_copy_id: None,
                 vg_family_size: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                raw_flow_sum: 0.0,
             });
             added += 1;
         }
@@ -7538,6 +7902,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_copy_id: None,
                     vg_family_size: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                 });
             }
         }
@@ -7589,6 +7954,12 @@ fn extract_bundle_transcripts_for_graph(
             }
         }
     }
+    // Append flow-residual SE candidates after all multi-exon pipeline filters.
+    // They bypass pairwise-containment and isofrac to avoid killing multi-exon TPs.
+    if !frs_se_buf.is_empty() {
+        txs.extend(frs_se_buf);
+    }
+    trace_chain_intron_probe("bundle_extract_fn_return", &txs);
     (
         txs,
         pre_filter,
@@ -8389,7 +8760,118 @@ fn apply_guide_reflink_absorption(
     out
 }
 
-/// Emit single-exon predictions from STRANDED bundles where dense clusters of
+/// Collect flow-residual single-exon transcript candidates from depleted transfrags.
+///
+/// After `extract_transcripts` depletes multi-exon path flow, single-node transfrags
+/// with remaining `abundance ≥ singlethr` become SE candidates. This mirrors
+/// StringTie's SE_CREATE_GRAPH mechanism: residual single-node graph flow → SE.
+///
+/// Kept as diagnostic reference; active FRS emission happens in the skip gate in
+/// `path_extract::extract_transcripts` (before zeroing, before ME flow runs).
+/// Opt-in: `RUSTLE_FLOW_RESIDUAL_SE=1` (default off).
+#[allow(dead_code)]
+fn collect_flow_residual_se(
+    graph: &Graph,
+    transfrags: &[GraphTransfrag],
+    chrom: &str,
+    strand: char,
+    singlethr: f64,
+) -> Vec<Transcript> {
+    let debug = std::env::var_os("RUSTLE_FLOW_RESIDUAL_SE_DEBUG").is_some();
+    let source_id = graph.source_id;
+    let sink_id = graph.sink_id;
+    let mut out = Vec::new();
+    if debug {
+        let total = transfrags.len();
+        let nonzero = transfrags.iter().filter(|t| t.abundance > 0.0).count();
+        let above_thr = transfrags.iter().filter(|t| t.abundance >= singlethr).count();
+        let single_real: usize = transfrags.iter().filter(|t| {
+            let mut real_node: Option<usize> = None;
+            let mut multi = false;
+            for &n in &t.node_ids {
+                if n == source_id || n == sink_id { continue; }
+                if real_node.is_some() { multi = true; break; }
+                real_node = Some(n);
+            }
+            !multi && real_node.is_some()
+        }).count();
+        eprintln!(
+            "[FRS-DEBUG] {}:{} total={} nonzero={} above_singlethr({:.1})={} single_real_node={}",
+            chrom, strand, total, nonzero, singlethr, above_thr, single_real
+        );
+        // Show top single-real-node transfrags by abundance
+        let mut candidates: Vec<(f64, usize, Vec<usize>)> = transfrags.iter().filter_map(|t| {
+            let mut real_node: Option<usize> = None;
+            let mut multi = false;
+            for &n in &t.node_ids {
+                if n == source_id || n == sink_id { continue; }
+                if real_node.is_some() { multi = true; break; }
+                real_node = Some(n);
+            }
+            if multi || real_node.is_none() { return None; }
+            Some((t.abundance, real_node.unwrap(), t.node_ids.clone()))
+        }).collect();
+        candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        for (abund, nid, nids) in candidates.iter().take(10) {
+            let node = graph.nodes.get(*nid);
+            let (ns, ne) = node.map(|n| (n.start, n.end)).unwrap_or((0, 0));
+            eprintln!("  abund={:.2} node={} [{}-{}] node_ids={:?}", abund, nid, ns, ne, nids);
+        }
+    }
+    for tf in transfrags {
+        if tf.abundance < singlethr { continue; }
+        // Identify exactly one real (non-source, non-sink) node.
+        let mut real_node: Option<usize> = None;
+        let mut multi = false;
+        for &n in &tf.node_ids {
+            if n == source_id || n == sink_id { continue; }
+            if real_node.is_some() { multi = true; break; }
+            real_node = Some(n);
+        }
+        if multi { continue; }
+        let node_id = match real_node {
+            Some(id) => id,
+            None => continue,
+        };
+        if node_id >= graph.nodes.len() { continue; }
+        let node = &graph.nodes[node_id];
+        // Prefer transfrag read-boundary coords over full node extent.
+        let start = if tf.longstart > 0 { tf.longstart } else { node.start };
+        let end = if tf.longend > tf.longstart && tf.longend > 0 { tf.longend } else { node.end };
+        if end <= start { continue; }
+        let avg_cov = tf.abundance;
+        out.push(Transcript {
+            chrom: chrom.to_string(),
+            strand,
+            exons: vec![(start, end)],
+            coverage: avg_cov,
+            exon_cov: vec![avg_cov],
+            tpm: 0.0,
+            fpkm: 0.0,
+            source: Some("flow_residual_se".to_string()),
+            is_longread: true,
+            longcov: avg_cov,
+            bpcov_cov: avg_cov,
+            all_strand_cov: 0.0,
+            transcript_id: None,
+            gene_id: None,
+            ref_transcript_id: None,
+            ref_gene_id: None,
+            hardstart: node.hardstart,
+            hardend: node.hardend,
+            alt_tts_end: node.alt_tts_end,
+            vg_family_id: None,
+            vg_copy_id: None,
+            vg_family_size: None,
+            intron_low: Vec::new(),
+            synthetic: false,
+            rescue_class: None,
+            raw_flow_sum: 0.0,
+        });
+    }
+    out
+}
+
 /// mono-exon reads represent nested minor isoforms (alternative TSS/polyA
 /// within a larger exon). Targets the STRG.521.3 pattern.
 ///
@@ -8402,6 +8884,7 @@ fn emit_stranded_single_exon_candidates(
     bpcov_stranded: Option<&BpcovStranded>,
     min_transcript_length: u64,
     singlethr: f64,
+    good_junctions: &HashSet<(u64, u64)>,
 ) -> Vec<Transcript> {
     // Default OFF: emitted tx boundaries (raw read endpoints) don't align with
     // StringTie's bpcov-based boundaries → gffcompare `c` not `=`. Needs a
@@ -8506,9 +8989,14 @@ fn emit_stranded_single_exon_candidates(
             let bs = bps.plus.bundle_start.min(bps.minus.bundle_start);
             let be = bps.plus.bundle_end.max(bps.minus.bundle_end);
             let walk_thr = (singlethr * 0.5).max(1.0);
-            // Walk start backward
+            // Precompute junction acceptors and donors for boundary stops.
+            let junc_acceptors: HashSet<u64> = good_junctions.iter().map(|&(_, a)| a).collect();
+            let junc_donors: HashSet<u64> = good_junctions.iter().map(|&(d, _)| d).collect();
+            // Walk start backward — stop at junction acceptors (exon starts from splicing).
             while med_start > bs {
                 let next = med_start - 1;
+                // Stop if `med_start` is a junction acceptor (entering the intron going left).
+                if junc_acceptors.contains(&med_start) { break; }
                 let idx = (next - bs) as usize;
                 if idx >= cov_vec.len() { break; }
                 if cov_vec[idx] < walk_thr { break; }
@@ -8518,9 +9006,11 @@ fn emit_stranded_single_exon_candidates(
                 }
                 med_start = next;
             }
-            // Walk end forward
+            // Walk end forward — stop at junction donors (exon ends from splicing).
             while med_end + 1 <= be {
                 let next = med_end + 1;
+                // Stop if `med_end` is a junction donor (entering the intron going right).
+                if junc_donors.contains(&med_end) { break; }
                 let idx = (next - bs) as usize;
                 if idx >= cov_vec.len() { break; }
                 if cov_vec[idx] < walk_thr { break; }
@@ -8583,6 +9073,7 @@ fn emit_stranded_single_exon_candidates(
             vg_copy_id: None,
             vg_family_size: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            raw_flow_sum: 0.0,
         });
     }
     // Dedup overlapping SE candidates emitted from the same bundle.
@@ -8738,6 +9229,7 @@ fn emit_terminal_exon_se_candidates(
             vg_copy_id: None,
             vg_family_size: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            raw_flow_sum: 0.0,
         });
     }
     out
@@ -8818,6 +9310,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                     };
                     predictions.push(tx);
                 }
@@ -8859,6 +9352,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                 };
                 predictions.push(tx);
             }
@@ -9306,7 +9800,8 @@ pub fn run<P: AsRef<Path>>(
                 bnode_colors: None,
                 synthetic: false,
                 rescue_class: None,
-            })
+
+})
             .collect()
     } else {
         Vec::new()
@@ -12255,11 +12750,23 @@ pub fn run<P: AsRef<Path>>(
                             .map(|(d, ac)| format!("{}-{}", d, ac))
                             .collect::<Vec<_>>()
                             .join(",");
+                        // Seed-eligibility fields: when a transfrag is defined
+                        // but never becomes a seed (no transfrag_seed event),
+                        // these explain why. `trflong_seed` is the gate;
+                        // `weak`/`usepath`/`n_nodes` feed downstream seed
+                        // checks (path_extract.rs:5797, :6107). Lets
+                        // no_seed_analysis.py classify the
+                        // EXACT_CHAIN_IN_TF (seeding-gate drop) sub-class.
                         let payload = format!(
-                            r#""abund":{:.4},"longread":{},"n_introns":{},"introns":"{}""#,
+                            r#""abund":{:.4},"longread":{},"n_introns":{},"trflong_seed":{},"weak":{},"usepath":{},"n_nodes":{},"guide":{},"introns":"{}""#,
                             tf.abundance,
                             if tf.longread { "true" } else { "false" },
                             introns.len(),
+                            if tf.trflong_seed { "true" } else { "false" },
+                            tf.weak,
+                            tf.usepath,
+                            tf.node_ids.len(),
+                            if tf.guide { "true" } else { "false" },
                             intron_str,
                         );
                         crate::parity::decisions::emit(
@@ -12540,6 +13047,8 @@ pub fn run<P: AsRef<Path>>(
                     crate::tracing::reference::debug_target_ref_stage(
                         "post_bundle_pre_unwitnessed", graph_bundle, &ref_transcripts, &txs,
                     );
+                    trace_chain_intron_probe("caller_before_unwitnessed", &txs);
+                    let _before_unwit = pre_filter_snapshot(&txs);
                     let mut filtered = crate::transcript_filter::filter_unwitnessed_chains_with_singletons_and_counts(
                         txs,
                         &read_pairs,
@@ -12548,6 +13057,8 @@ pub fn run<P: AsRef<Path>>(
                         config.junction_correction_window,
                         config.verbose,
                     );
+                    emit_post_pred_kills("post_filter_unwitnessed_chains", &_before_unwit, &filtered);
+                    trace_chain_intron_probe("caller_after_unwitnessed", &filtered);
                     crate::tracing::reference::debug_target_ref_stage(
                         "post_bundle_after_unwitnessed", graph_bundle, &ref_transcripts, &filtered,
                     );
@@ -12561,11 +13072,14 @@ pub fn run<P: AsRef<Path>>(
                     if std::env::var_os("RUSTLE_FULL_CHAIN_WITNESS_OFF").is_none() {
                         let read_chains = crate::transcript_filter::build_read_intron_chains(reads);
                         let tol = config.junction_correction_window;
+                        let _before_fcw2 = pre_filter_snapshot(&filtered);
                         filtered = crate::transcript_filter::filter_by_full_chain_witness(
                             filtered, &read_chains, tol, config.verbose,
                             false, // post-predcluster: check all K-windows
                             Some(0), // max_gap=0: strict coverage, no jumping over unwitnessed positions
                         );
+                        emit_post_pred_kills("post_filter_full_chain_witness_caller", &_before_fcw2, &filtered);
+                        trace_chain_intron_probe("caller_after_full_chain_witness", &filtered);
                         crate::tracing::reference::debug_target_ref_stage(
                             "post_bundle_after_full_chain_witness", graph_bundle, &ref_transcripts, &filtered,
                         );
@@ -13402,7 +13916,8 @@ pub fn run<P: AsRef<Path>>(
                     // marked `copy_status "novel"` in the GTF.
                     synthetic: bundle.synthetic,
                     rescue_class: bundle.rescue_class,
-                };
+
+};
 
                 // DEBUG_BUNDLE: emit bundle summary matching expected format.
                 if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
@@ -14022,6 +14537,7 @@ pub fn run<P: AsRef<Path>>(
                     Some(&sub_bpcov_stranded),
                     config.min_transcript_length,
                     config.singlethr,
+                    &sub_good_junctions,
                 );
                 if !stranded_se.is_empty() {
                     single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
@@ -14043,6 +14559,7 @@ pub fn run<P: AsRef<Path>>(
                 if !pileup_se.is_empty() {
                     single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
                 }
+                trace_chain_intron_probe("bundle_before_extend_bundle_txs_subbundle", &txs);
                 bundle_txs.extend(txs);
             } // end for color_group (cgi)
             } // end for sbr_idx
@@ -14053,6 +14570,7 @@ pub fn run<P: AsRef<Path>>(
             // components.
             if per_bnode_mode && bundle_txs.len() > 1 {
                 let pre_dedup = bundle_txs.len();
+                let _before_dedup = pre_filter_snapshot(&bundle_txs);
                 let mut seen: std::collections::HashMap<Vec<(u64, u64)>, usize> =
                     std::collections::HashMap::new();
                 let mut keep = vec![true; bundle_txs.len()];
@@ -14080,6 +14598,7 @@ pub fn run<P: AsRef<Path>>(
                     );
                 }
                 bundle_txs = deduped;
+                emit_post_pred_kills("post_per_bnode_dedup", &_before_dedup, &bundle_txs);
             }
 
             if trace_log_style {
@@ -14096,6 +14615,7 @@ pub fn run<P: AsRef<Path>>(
                 Some(&bpcov_stranded),
                 config.min_transcript_length,
                 config.singlethr,
+                &good_junctions,
             );
             if !stranded_se.is_empty() {
                 single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
@@ -14117,6 +14637,7 @@ pub fn run<P: AsRef<Path>>(
             if !pileup_se.is_empty() {
                 single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
             }
+            trace_chain_intron_probe("bundle_before_extend_all_transcripts_pernode", &bundle_txs);
             all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
             return Ok(());
         }
@@ -14532,6 +15053,7 @@ pub fn run<P: AsRef<Path>>(
             Some(&bpcov_stranded),
             config.min_transcript_length,
             config.singlethr,
+            &good_junctions,
         );
         if !stranded_se.is_empty() {
             single_exon_predictions_mutex.lock().unwrap().extend(stranded_se);
@@ -14555,12 +15077,14 @@ pub fn run<P: AsRef<Path>>(
         if !pileup_se.is_empty() {
             single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
         }
+        trace_chain_intron_probe("bundle_before_extend_all_transcripts_final", &bundle_txs);
         all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
         Ok(())
     })?;
 
     phase_timer!("assembly_done");
     let mut all_transcripts = all_transcripts_mutex.into_inner().unwrap();
+    trace_chain_intron_probe("ENTER_global", &all_transcripts);
 
     // Cross-strand predcluster pass (default ON). Runs subtractive
     // KRI across both strands at overlapping spans — replicates the
@@ -14569,12 +15093,15 @@ pub fn run<P: AsRef<Path>>(
     // Disable with RUSTLE_DISABLE_CROSS_STRAND_KRI=1.
     // See `cross_strand_predcluster.rs` for the audit and rationale.
     if std::env::var_os("RUSTLE_DISABLE_CROSS_STRAND_KRI").is_none() {
+        let _before = pre_filter_snapshot(&all_transcripts);
         let (filtered, n_killed, n_would_fire) =
             crate::cross_strand_predcluster::cross_strand_kri_filter(
                 all_transcripts,
                 config.verbose,
             );
         all_transcripts = filtered;
+        emit_post_pred_kills("global_cross_strand_kri", &_before, &all_transcripts);
+        trace_chain_intron_probe("after_cross_strand_kri", &all_transcripts);
         if config.verbose {
             eprintln!(
                 "[XSKRI] cross-strand pass: would_fire={} killed={}",
@@ -14583,9 +15110,11 @@ pub fn run<P: AsRef<Path>>(
         }
     }
     if std::env::var_os("RUSTLE_PARALLEL_PRUNE").is_some() {
+        let _before = pre_filter_snapshot(&all_transcripts);
         let (filtered, n_m, n_kf, n_kl) =
             crate::parallel_predprune::parallel_prune(all_transcripts, config.verbose);
         all_transcripts = filtered;
+        emit_post_pred_kills("global_parallel_prune", &_before, &all_transcripts);
         if config.verbose {
             eprintln!(
                 "[PARALLEL_PRUNE] m_killed={} k_first={} k_last={}",
@@ -14656,7 +15185,10 @@ pub fn run<P: AsRef<Path>>(
     // transcripts on the minority strand are eliminated by higher-scored opposite-strand
     // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
     crate::tracing::reference::debug_target_ref_global_stage("global_pre_cross_strand", &ref_transcripts, &all_transcripts);
+    let _before_xstrand = pre_filter_snapshot(&all_transcripts);
     all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
+    emit_post_pred_kills("global_cross_strand_filter", &_before_xstrand, &all_transcripts);
+    trace_chain_intron_probe("after_apply_global_cross_strand_filter", &all_transcripts);
     crate::tracing::reference::debug_target_ref_global_stage("global_after_cross_strand", &ref_transcripts, &all_transcripts);
 
     // Near-duplicate chain suppression (opt-in via RUSTLE_SUPPRESS_NEAR_DUP=1):
@@ -14664,7 +15196,10 @@ pub fn run<P: AsRef<Path>>(
     // higher-cov sibling's by <=2 small-shift alt-donor/acceptor introns.
     // These are typical j-class artifacts that inflate tx count without
     // recovering real missed isoforms.
+    let _before_neardup = pre_filter_snapshot(&all_transcripts);
     all_transcripts = suppress_near_duplicate_chains(all_transcripts, config.verbose);
+    emit_post_pred_kills("global_suppress_near_dup", &_before_neardup, &all_transcripts);
+    trace_chain_intron_probe("after_suppress_near_dup", &all_transcripts);
     crate::tracing::reference::debug_target_ref_global_stage("global_after_near_dup", &ref_transcripts, &all_transcripts);
 
     // Exact-chain dedup (default on; opt-out RUSTLE_SAME_CHAIN_DEDUP_OFF=1):
@@ -14809,12 +15344,14 @@ pub fn run<P: AsRef<Path>>(
                     }
                 }
             }
+            let _before_shadow = pre_filter_snapshot(&all_transcripts);
             all_transcripts = all_transcripts
                 .into_iter()
                 .enumerate()
                 .filter(|(i, _)| keep[*i])
                 .map(|(_, t)| t)
                 .collect();
+            emit_post_pred_kills("global_shadow_cull", &_before_shadow, &all_transcripts);
             if config.verbose && all_transcripts.len() < before {
                 eprintln!(
                     "    shadow_cull: dropped {} near-duplicate prediction(s) (overlap >= {})",
@@ -14825,8 +15362,49 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // 5' micro-exon merge (default-on; opt-out RUSTLE_MICRO_EXON_MERGE_OFF=1):
+    // When a transcript's first exon is very short (<=50bp) and the gap to the second
+    // exon is also very short (<=100bp), emit an additional merged variant where the two
+    // exons are fused. This recovers isoforms where most reads span the micro-intron
+    // without splicing while a minority carry the split — both forms are real.
+    if std::env::var_os("RUSTLE_MICRO_EXON_MERGE_OFF").is_none() {
+        const MAX_MICRO_EXON_LEN: u64 = 50;
+        const MAX_MICRO_INTRON_LEN: u64 = 100;
+        let mut merged_variants: Vec<crate::path_extract::Transcript> = Vec::new();
+        for tx in &all_transcripts {
+            if tx.exons.len() < 2 {
+                continue;
+            }
+            let first_len = tx.exons[0].1.saturating_sub(tx.exons[0].0);
+            let first_gap = tx.exons[1].0.saturating_sub(tx.exons[0].1);
+            if first_len <= MAX_MICRO_EXON_LEN && first_gap <= MAX_MICRO_INTRON_LEN {
+                let mut merged = tx.clone();
+                // Extend second exon leftward to cover the micro-exon
+                merged.exons[1].0 = merged.exons[0].0;
+                merged.exons.remove(0);
+                if !merged.exon_cov.is_empty() {
+                    merged.exon_cov.remove(0);
+                }
+                if let Some(s) = &merged.source {
+                    merged.source = Some(format!("{}_micro5merge", s));
+                } else {
+                    merged.source = Some("micro5merge".to_string());
+                }
+                merged_variants.push(merged);
+            }
+        }
+        if !merged_variants.is_empty() && config.verbose {
+            eprintln!(
+                "    micro_exon_merge: emitting {} 5'-merged variant(s)",
+                merged_variants.len()
+            );
+        }
+        all_transcripts.extend(merged_variants);
+    }
+
     if std::env::var_os("RUSTLE_SAME_CHAIN_DEDUP_OFF").is_none() {
         let before = all_transcripts.len();
+        let _before_scd = pre_filter_snapshot(&all_transcripts);
         let mut by_chain: HashMap<(String, char, Vec<(u64, u64)>), Vec<usize>> = Default::default();
         for (i, tx) in all_transcripts.iter().enumerate() {
             if tx.exons.len() < 2 {
@@ -14889,6 +15467,7 @@ pub fn run<P: AsRef<Path>>(
             .filter(|(i, _)| keep[*i])
             .map(|(_, t)| t)
             .collect();
+        emit_post_pred_kills("global_same_chain_dedup", &_before_scd, &all_transcripts);
         if config.verbose && all_transcripts.len() < before {
             eprintln!(
                 "    same_chain_dedup: collapsed {} duplicate prediction(s)",
@@ -14896,6 +15475,7 @@ pub fn run<P: AsRef<Path>>(
             );
         }
     }
+    trace_chain_intron_probe("after_same_chain_dedup", &all_transcripts);
 
     // Family-extension: for each transcript whose intron chain is a strict
     // contiguous subsequence of a longer transcript's chain (within 5 bp per
@@ -14918,10 +15498,16 @@ pub fn run<P: AsRef<Path>>(
         // gene's intron) or x/e (antisense overlap with a multi-exon gene).
         // Filter against the FULL multi-exon set (not just same-bundle) since
         // a bundle-local check misses cross-bundle or unstranded interactions.
-        let mut multi_spans: Vec<(String, char, Vec<(u64, u64)>)> = all_transcripts
+        // ST-parity: exon-containment kill is coverage-conditional. SE survives
+        // containment within a multi-exon exon if se_longcov >= sibling_longcov
+        // * ratio (mirrors ST's line 19616: kill SE only when cov < usedcov).
+        // Default ratio=1.0 (ST-exact). RUSTLE_SE_EXON_CONTAIN_RATIO=0 disables.
+        let se_exon_contain_ratio: f64 = std::env::var("RUSTLE_SE_EXON_CONTAIN_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+        let mut multi_spans: Vec<(String, char, Vec<(u64, u64)>, f64)> = all_transcripts
             .iter()
             .filter(|t| t.exons.len() >= 2)
-            .map(|t| (t.chrom.clone(), t.strand, t.exons.clone()))
+            .map(|t| (t.chrom.clone(), t.strand, t.exons.clone(), t.longcov))
             .collect();
         multi_spans.sort_by(|a, b| a.0.cmp(&b.0).then(
             a.2.first().map(|e| e.0).unwrap_or(0)
@@ -14941,7 +15527,7 @@ pub fn run<P: AsRef<Path>>(
                 );
                 let se_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
                 let se_end = tx.exons.last().map(|e| e.1).unwrap_or(0);
-                for (chrom, strand, exons) in &multi_spans {
+                for (chrom, strand, exons, sib_longcov) in &multi_spans {
                     if chrom != &tx.chrom { continue; }
                     let me_start = exons.first().map(|e| e.0).unwrap_or(0);
                     let me_end = exons.last().map(|e| e.1).unwrap_or(0);
@@ -14952,23 +15538,26 @@ pub fn run<P: AsRef<Path>>(
                         return false;
                     }
                     if *strand == tx.strand && !is_terminal_src {
-                        // Kill if inside an intron (i/n/m-class).
+                        // ST-parity intron-containment kill (i/n/m-class):
+                        // coverage-conditional — SE in intron is killed only when
+                        // se_longcov < sibling_longcov * ratio. A high-coverage
+                        // unspliced island in a gene's intron (e.g. STRG.284.1,
+                        // a different gene embedded in RSTL.435's intron) has
+                        // far more reads than the spliced sibling → survives.
                         if exons.len() >= 2 {
                             for w in exons.windows(2) {
                                 let intron_s = w[0].1;
                                 let intron_e = w[1].0;
-                                if se_start >= intron_s && se_end <= intron_e {
+                                if se_start >= intron_s && se_end <= intron_e
+                                    && tx.longcov < sib_longcov * se_exon_contain_ratio {
                                     return false;
                                 }
                             }
                         }
-                        // Kill if SE is fully contained in a multi-exon's exon
-                        // (c-class): these are intra-exon read-cluster noise,
-                        // not independent SE genes. The real SE refs we want
-                        // to recover (STRG.3.1, STRG.183.1, etc.) live in
-                        // their OWN loci, not nested inside a larger gene.
+                        // ST-parity exon-containment kill: same coverage gate.
                         for &(es, ee) in exons {
-                            if es <= se_start && se_end <= ee {
+                            if es <= se_start && se_end <= ee
+                                && tx.longcov < sib_longcov * se_exon_contain_ratio {
                                 return false;
                             }
                         }
@@ -14997,14 +15586,27 @@ pub fn run<P: AsRef<Path>>(
     // all SE in `all_transcripts`. Targets the 51 class-`i` SE FPs that
     // survive per-bundle filtering at NODE_SKIP_OFF settings.
     if std::env::var_os("RUSTLE_SE_CROSS_BUNDLE_FILTER_OFF").is_none() {
-        let mut multi_spans2: Vec<(String, char, Vec<(u64, u64)>)> = all_transcripts
+        let se_exon_contain_ratio2: f64 = std::env::var("RUSTLE_SE_EXON_CONTAIN_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+        let mut multi_spans2: Vec<(String, char, Vec<(u64, u64)>, f64)> = all_transcripts
             .iter()
             .filter(|t| t.exons.len() >= 2)
-            .map(|t| (t.chrom.clone(), t.strand, t.exons.clone()))
+            .map(|t| (t.chrom.clone(), t.strand, t.exons.clone(), t.longcov))
             .collect();
         multi_spans2.sort_by(|a, b| a.0.cmp(&b.0).then(
             a.2.first().map(|e| e.0).unwrap_or(0)
                 .cmp(&b.2.first().map(|e| e.0).unwrap_or(0))));
+        // Gene-context kill: stranded_single_exon candidates not overlapping any
+        // same-strand multi-exon transcript are isolated SE clusters — almost
+        // certainly FPs (polymerase run-on, background). Kill unless they're
+        // adjacent to a multi-exon transcript's boundary AND have enough
+        // coverage relative to that neighbor (mirrors ST's flow-graph behavior).
+        // adj_tol: max gap between SE start and nearest multi-exon end (+ strand).
+        // adj_ratio: SE longcov must be ≥ ratio × neighbor longcov.
+        let se_gene_ctx_adj_tol: u64 = std::env::var("RUSTLE_SE_ADJ_TOL")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(600u64);
+        let se_gene_ctx_adj_ratio: f64 = std::env::var("RUSTLE_SE_ADJ_RATIO")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.1f64);
         let n_before = all_transcripts.len();
         all_transcripts.retain(|tx| {
             if tx.exons.len() != 1 { return true; }
@@ -15017,7 +15619,92 @@ pub fn run<P: AsRef<Path>>(
             );
             let se_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
             let se_end = tx.exons.last().map(|e| e.1).unwrap_or(0);
-            for (chrom, strand, exons) in &multi_spans2 {
+            // Gene-context check for stranded_single_exon: require overlap OR
+            // adjacency with a same-strand multi-exon transcript.
+            let is_stranded_src = matches!(
+                tx.source.as_deref(), Some("stranded_single_exon")
+            );
+            let is_frs_src = matches!(
+                tx.source.as_deref(), Some("flow_residual_se")
+            );
+            if is_stranded_src || is_frs_src {
+                let has_overlap = multi_spans2.iter().any(|(chrom2, strand2, exons2, _)| {
+                    *chrom2 == tx.chrom && *strand2 == tx.strand
+                        && exons2.iter().any(|&(es2, ee2)| es2 <= se_end && ee2 >= se_start)
+                });
+                if !has_overlap {
+                    // Allow adjacency: SE starts within adj_tol of a same-strand
+                    // multi-exon's terminal boundary, with sufficient relative cov.
+                    let has_adjacency = multi_spans2.iter().any(|(chrom2, strand2, exons2, sib_lc2)| {
+                        if *chrom2 != tx.chrom || *strand2 != tx.strand { return false; }
+                        if tx.strand == '+' {
+                            let me_end = exons2.last().map(|e| e.1).unwrap_or(0);
+                            se_start > me_end
+                                && se_start <= me_end + se_gene_ctx_adj_tol
+                                && tx.longcov >= sib_lc2 * se_gene_ctx_adj_ratio
+                        } else {
+                            let me_start = exons2.first().map(|e| e.0).unwrap_or(0);
+                            se_end < me_start
+                                && se_end + se_gene_ctx_adj_tol >= me_start
+                                && tx.longcov >= sib_lc2 * se_gene_ctx_adj_ratio
+                        }
+                    });
+                    if !has_adjacency {
+                        return false;
+                    }
+                }
+            }
+            // Internal-exon kill + terminal-count kill for both stranded_single_exon
+            // and flow_residual_se: definite ME-exon noise if SE overlaps an internal
+            // exon; too many terminal colocations also signal ME noise.
+            if is_stranded_src || is_frs_src {
+                let se_terminal_max: usize = std::env::var("RUSTLE_SE_TERMINAL_MAX")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(4usize);
+                let mut terminal_me_tx_count: usize = 0;
+                for (chrom2, strand2, exons2, _) in &multi_spans2 {
+                    if *chrom2 != tx.chrom || *strand2 != tx.strand { continue; }
+                    let n = exons2.len();
+                    let me_s = exons2[0].0;
+                    let me_e = exons2[n - 1].1;
+                    if me_s > se_end || me_e < se_start { continue; }
+                    let mut this_tx_terminal = false;
+                    for (i, &(es, ee)) in exons2.iter().enumerate() {
+                        if es > se_end || ee < se_start { continue; }
+                        if i > 0 && i < n - 1 {
+                            return false;  // overlaps internal exon → kill
+                        } else {
+                            this_tx_terminal = true;
+                        }
+                    }
+                    if this_tx_terminal {
+                        terminal_me_tx_count += 1;
+                    }
+                }
+                if terminal_me_tx_count > se_terminal_max {
+                    return false;
+                }
+            }
+            // Terminal-exon containment kill (FRS only): kill if the SE is fully
+            // contained within a terminal exon of any same-strand rustle ME transcript
+            // with longcov ≥ RUSTLE_SE_TERM_CONTAIN_MIN_COV (default 2). Kills "c"
+            // class ME-exon-noise FPs; threshold protects TPs whose sole containing ME
+            // has cov ≈ 1 (a barely-expressed isoform artifact, not a real ME locus).
+            if is_frs_src {
+                let term_contain_min_cov: f64 = std::env::var("RUSTLE_SE_TERM_CONTAIN_MIN_COV")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0f64);
+                for (chrom2, strand2, exons2, me_lc2) in &multi_spans2 {
+                    if *chrom2 != tx.chrom || *strand2 != tx.strand { continue; }
+                    if *me_lc2 < term_contain_min_cov { continue; }
+                    let n = exons2.len();
+                    for i in [0, n - 1] {
+                        let (es, ee) = exons2[i];
+                        if es <= se_start && ee >= se_end {
+                            return false;  // SE fully within ME terminal exon
+                        }
+                    }
+                }
+            }
+            for (chrom, strand, exons, sib_longcov2) in &multi_spans2 {
                 if chrom != &tx.chrom { continue; }
                 let me_start = exons.first().map(|e| e.0).unwrap_or(0);
                 let me_end = exons.last().map(|e| e.1).unwrap_or(0);
@@ -15028,19 +15715,22 @@ pub fn run<P: AsRef<Path>>(
                     return false;
                 }
                 if *strand == tx.strand && !is_terminal_src {
-                    // Intron containment kill (i/n/m class)
+                    // ST-parity intron-containment kill (i/n/m class): coverage-
+                    // conditional — mirrors the same gate in single_exon_predictions.
                     if exons.len() >= 2 {
                         for w in exons.windows(2) {
                             let intron_s = w[0].1;
                             let intron_e = w[1].0;
-                            if se_start >= intron_s && se_end <= intron_e {
+                            if se_start >= intron_s && se_end <= intron_e
+                                && tx.longcov < sib_longcov2 * se_exon_contain_ratio2 {
                                 return false;
                             }
                         }
                     }
-                    // Exon-containment kill (c class)
+                    // ST-parity exon-containment kill (c class): same gate.
                     for &(es, ee) in exons {
-                        if es <= se_start && se_end <= ee {
+                        if es <= se_start && se_end <= ee
+                            && tx.longcov < sib_longcov2 * se_exon_contain_ratio2 {
                             return false;
                         }
                     }
@@ -15224,6 +15914,7 @@ pub fn run<P: AsRef<Path>>(
                 hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {
@@ -15247,8 +15938,10 @@ pub fn run<P: AsRef<Path>>(
     // Output loop — delete non-guide predictions shorter than mintranscriptlen.
     if config.min_transcript_length > 0 {
         let before = all_transcripts.len();
+        let _before_minlen = pre_filter_snapshot(&all_transcripts);
         all_transcripts
             .retain(|t| is_guide_tx(t) || tx_exonic_len(t) >= config.min_transcript_length);
+        emit_post_pred_kills("global_min_transcript_length", &_before_minlen, &all_transcripts);
         if config.verbose && all_transcripts.len() < before {
             eprintln!(
                 "rustle: final mintranscriptlen filter: removed {} transcript(s) (len < {})",
@@ -15257,6 +15950,7 @@ pub fn run<P: AsRef<Path>>(
             );
         }
     }
+    trace_chain_intron_probe("after_min_transcript_length", &all_transcripts);
 
     // Precision cleanup B (EXPERIMENTAL, OPT-IN, regresses −260 matches):
     // Drop tx whose exons strictly contain a smaller sibling's exons. The
@@ -15265,6 +15959,7 @@ pub fn run<P: AsRef<Path>>(
     // sibling is often a Rustle truncation artifact. Kept gated; needs
     // redesign (boundary-evidence-based trimming, not whole-tx drop).
     if std::env::var_os("RUSTLE_CONTAINED_SIBLING_ON").is_some() {
+        let _before_contsib = pre_filter_snapshot(&all_transcripts);
         let beta: f64 = std::env::var("RUSTLE_CONTAINED_SIBLING_COV_FRAC")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.5);
         let mut idx: Vec<usize> = (0..all_transcripts.len()).collect();
@@ -15336,6 +16031,7 @@ pub fn run<P: AsRef<Path>>(
             eprintln!("rustle: contained_sibling filter (beta={}) removed {} tx", beta, before - kept.len());
         }
         all_transcripts = kept;
+        emit_post_pred_kills("global_contained_sibling", &_before_contsib, &all_transcripts);
     }
 
     // Focused TSS/TTS trim: only emit alt-form for SHORT first/last exon
@@ -15512,12 +16208,14 @@ pub fn run<P: AsRef<Path>>(
         let max_cov: f64 = std::env::var("RUSTLE_WEAK_BOUNDARY_MAX_COV")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
         let before = all_transcripts.len();
+        let _before_wbt = pre_filter_snapshot(&all_transcripts);
         all_transcripts.retain(|t| {
             if t.exons.len() < 2 { return true; }
             if t.hardstart || t.hardend { return true; }
             if t.coverage >= max_cov { return true; }
             false
         });
+        emit_post_pred_kills("global_weak_boundary_trim", &_before_wbt, &all_transcripts);
         if config.verbose && all_transcripts.len() < before {
             eprintln!("rustle: weak_boundary_trim removed {} tx", before - all_transcripts.len());
         }
@@ -15534,6 +16232,7 @@ pub fn run<P: AsRef<Path>>(
         let topk: usize = std::env::var("RUSTLE_SAME_SPAN_TOPK")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0);
         if topk > 0 {
+        let _before_topk = pre_filter_snapshot(&all_transcripts);
         use std::collections::HashMap;
         let mut groups: HashMap<(String, char, u64, u64), Vec<usize>> = Default::default();
         for (i, t) in all_transcripts.iter().enumerate() {
@@ -15573,6 +16272,7 @@ pub fn run<P: AsRef<Path>>(
             );
         }
         all_transcripts = kept;
+        emit_post_pred_kills("global_same_span_topk", &_before_topk, &all_transcripts);
         } // end if topk > 0
     }
 
@@ -15586,6 +16286,7 @@ pub fn run<P: AsRef<Path>>(
         let alpha: f64 = std::env::var("RUSTLE_INTRA_GENE_COV_FRAC")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.010);
         if alpha > 0.0 && !all_transcripts.is_empty() {
+            let _before_intra = pre_filter_snapshot(&all_transcripts);
             let n = all_transcripts.len();
             let mut keep = vec![true; n];
 
@@ -15713,8 +16414,10 @@ pub fn run<P: AsRef<Path>>(
                 eprintln!("rustle: intra_gene_cov_frac (alpha={}) removed {} tx", alpha, before - kept.len());
             }
             all_transcripts = kept;
+            emit_post_pred_kills("global_intra_gene_cov_frac", &_before_intra, &all_transcripts);
         }
     }
+    trace_chain_intron_probe("after_intra_gene_cov_frac", &all_transcripts);
 
     // Post-global gap-fill oracle (RUSTLE_ORACLE_GAP_FILL=path.gtf):
     // After all natural emission and filtering, for each ref tx in the
@@ -15786,6 +16489,7 @@ pub fn run<P: AsRef<Path>>(
                     alt_tts_end: true,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
                 });
                 *added += 1;
                 if debug {
@@ -15838,8 +16542,10 @@ pub fn run<P: AsRef<Path>>(
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(config.pairwise_error_perc);
+        let _before = pre_filter_snapshot(&all_transcripts);
         all_transcripts =
             crate::transcript_filter::cross_strand_retained_intron_cleanup(all_transcripts, frac, config.verbose);
+        emit_post_pred_kills("global_cross_strand_ri", &_before, &all_transcripts);
     }
 
     // Opposite-strand dominance filter: kill thin minor-strand predictions
@@ -15848,8 +16554,10 @@ pub fn run<P: AsRef<Path>>(
         let opp_ratio: f64 = std::env::var("RUSTLE_OPP_STRAND_KILL_RATIO")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
         if opp_ratio > 0.0 {
+            let _before = pre_filter_snapshot(&all_transcripts);
             all_transcripts = crate::transcript_filter::opp_strand_dominance_filter(
                 all_transcripts, opp_ratio, config.verbose);
+            emit_post_pred_kills("global_opp_strand_dominance", &_before, &all_transcripts);
         }
     }
 
@@ -15904,6 +16612,7 @@ pub fn run<P: AsRef<Path>>(
         let sub_floor: f64 = std::env::var("RUSTLE_FINAL_COV_FLOOR_SUB")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(final_cov_floor);
         let before = all_transcripts.len();
+        let _before_fcf = pre_filter_snapshot(&all_transcripts);
         all_transcripts.retain(|t| {
             t.coverage >= final_cov_floor
                 || (longcov_min > 0.0
@@ -15912,6 +16621,8 @@ pub fn run<P: AsRef<Path>>(
                 || t.transcript_id.is_some() // eonly guide passthrough
                 || t.ref_transcript_id.is_some() // guide-matched
         });
+        emit_post_pred_kills("global_final_cov_floor", &_before_fcf, &all_transcripts);
+        trace_chain_intron_probe("after_final_cov_floor", &all_transcripts);
         crate::tracing::reference::debug_target_ref_global_stage("global_after_final_cov_floor", &ref_transcripts, &all_transcripts);
         let removed = before - all_transcripts.len();
         if removed > 0 && config.verbose {
@@ -15930,8 +16641,42 @@ pub fn run<P: AsRef<Path>>(
     if std::env::var_os("RUSTLE_DEDUP_SUBSET_COV_RATIO").is_some()
         || std::env::var_os("RUSTLE_DEDUP_SUBSET_UNCONDITIONAL").is_some()
     {
+        let _before = pre_filter_snapshot(&all_transcripts);
         all_transcripts = crate::transcript_filter::dedup_subset_intron_chains(
             all_transcripts, config.verbose);
+        emit_post_pred_kills("global_dedup_subset_intron_chains", &_before, &all_transcripts);
+    }
+
+    // Emit a final `path_emit_pre_write` parity event for every tx that survives
+    // to GTF write. Combined with FINAL pred_filter events, this lets diagnostic
+    // tools cross-check whether a chain that reached predcluster FINAL also reaches
+    // GTF emission (or was silently killed/mutated between them).
+    if crate::parity::decisions::is_enabled() {
+        for t in &all_transcripts {
+            let span_start = t.exons.first().map(|e| e.0).unwrap_or(0);
+            let span_end = t.exons.last().map(|e| e.1).unwrap_or(0);
+            let mut introns_str = String::new();
+            let mut n_introns = 0usize;
+            for w in t.exons.windows(2) {
+                if w[1].0 > w[0].1 {
+                    if n_introns > 0 { introns_str.push(','); }
+                    introns_str.push_str(&format!("{}-{}", w[0].1 + 1, w[1].0));
+                    n_introns += 1;
+                }
+            }
+            let payload = format!(
+                r#""cov":{:.4},"longcov":{:.1},"n_exons":{},"n_introns":{},"introns":"{}""#,
+                t.coverage, t.longcov, t.exons.len(), n_introns, introns_str,
+            );
+            crate::parity::decisions::emit(
+                "path_emit_pre_write",
+                Some(&t.chrom),
+                span_start + 1,
+                span_end,
+                t.strand,
+                &payload,
+            );
+        }
     }
 
     let mut f = std::fs::File::create(output_gtf.as_ref())?;

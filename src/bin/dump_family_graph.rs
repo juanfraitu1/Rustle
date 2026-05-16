@@ -137,7 +137,8 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         bnode_colors: None,
         synthetic: false,
         rescue_class: None,
-    }
+
+}
 }
 
 /// Decode a noodles BAM 4-bit-encoded sequence to ASCII bytes.

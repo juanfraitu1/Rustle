@@ -1065,7 +1065,8 @@ fn synthesize_bundles_at_candidate_loci(
             bnode_colors: None,
             synthetic: true,
             rescue_class: Some(RescueClass::NovelLocusFromScan),
-        });
+
+});
         emitted += 1;
     }
     emitted
@@ -1195,7 +1196,8 @@ fn synthesize_bundles_from_original_alignments(
                 bnode_colors: None,
                 synthetic: true,
                 rescue_class: Some(RescueClass::NeedsExternalVerification),
-            });
+
+});
             emitted += 1;
         }
     }
@@ -1344,7 +1346,8 @@ pub fn synthesize_bundles(
             bnode_colors: None,
             synthetic: true,
             rescue_class: rc,
-        });
+
+});
     }
 
     out
@@ -1540,7 +1543,8 @@ pub fn synthesize_bundles_refined(
             bnode_colors: None,
             synthetic: true,
             rescue_class: rc,
-        });
+
+});
     }
 
     out

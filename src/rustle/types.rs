@@ -661,7 +661,8 @@ impl BundleData {
             bnode_colors: None,
             synthetic: false,
             rescue_class: None,
-        }
+
+}
     }
 }
 

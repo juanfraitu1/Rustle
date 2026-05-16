@@ -356,6 +356,40 @@ fn tf_has_novel_junction_vs_keeptrf(
     tf_chain.iter().any(|j| !kept_junctions.contains(j))
 }
 
+/// True when `tf_chain` is NOT a contiguous subsequence of ANY keeptrf
+/// representative's junction chain. Distinguishes the cassette/combinatorial
+/// case (STRG.59.7): every individual junction appears in some rep, so
+/// `tf_has_novel_junction_vs_keeptrf` returns false, yet the exact
+/// junction-chain (the unique COMBINATION) exists in no rep — absorbing it
+/// loses the distinct isoform forever (no seed → no path).
+fn tf_chain_not_subchain_of_keeptrf(
+    tf_chain: &[(u64, u64)],
+    keeptrf: &[(usize, Vec<usize>, f64)],
+    transfrags: &[GraphTransfrag],
+    graph: &Graph,
+    source_id: usize,
+    sink_id: usize,
+) -> bool {
+    if tf_chain.len() < 2 {
+        return false;
+    }
+    for (rep_idx, _, _) in keeptrf {
+        let Some(rep) = transfrags.get(*rep_idx) else {
+            continue;
+        };
+        let rc = tf_junction_chain_coords(rep, graph, source_id, sink_id);
+        if rc.len() < tf_chain.len() {
+            continue;
+        }
+        for start in 0..=(rc.len() - tf_chain.len()) {
+            if rc[start..start + tf_chain.len()] == *tf_chain {
+                return false; // exact contiguous sub-chain of this rep
+            }
+        }
+    }
+    true
+}
+
 fn write_keeptrf_usepath_tsv(
     path: &str,
     keeptrf: &[(usize, Vec<usize>, f64)],
@@ -2277,7 +2311,48 @@ pub fn process_transfrags(
         //
         // StringTie's rlink.cpp process_transfrags has no equivalent — contained tfs are
         // strictly marked weak=1. Disabled in RUSTLE_STRINGTIE_EXACT mode for parity.
-        let novel_splice_rescue = !crate::stringtie_parity::stringtie_exact()
+        // Longcov-gated exemption: novel_splice_rescue is normally OFF in
+        // StringTie-exact mode (ST's rlink.cpp strictly marks contained tfs
+        // weak=1). But a contained long-read transfrag that (a) carries a
+        // junction NO keeptrf representative has and (b) has boundary
+        // evidence is a genuine distinct isoform whose distinguishing
+        // junction would otherwise be lost forever (no seed → no path).
+        // STRG.59.7 class. Mirrors the witness-longcov-exempt philosophy:
+        // strong-enough long-read support overrides the strict ST gate.
+        // Default 0 = off; tunable via RUSTLE_NOVEL_SPLICE_RESCUE_MIN_LONGCOV.
+        let nsr_min_longcov: f64 = std::env::var("RUSTLE_NOVEL_SPLICE_RESCUE_MIN_LONGCOV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let nsr_exempt = nsr_min_longcov > 0.0 && tf.abundance >= nsr_min_longcov;
+        // Distinct-chain rescue: gated by RUSTLE_NSR_DISTINCT_CHAIN_MIN_LONGCOV
+        // (default 0 = off). Catches the cassette/combinatorial case where no
+        // single junction is novel but the exact junction-COMBINATION exists
+        // in no keeptrf rep (STRG.59.7). Requires boundary evidence + the
+        // chain to be ≥ this many introns (avoid short noise) + abundance.
+        let nsr_dc_min_longcov: f64 = std::env::var("RUSTLE_NSR_DISTINCT_CHAIN_MIN_LONGCOV")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let nsr_dc_min_introns: usize = std::env::var("RUSTLE_NSR_DISTINCT_CHAIN_MIN_INTRONS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(4);
+        // NOTE: deliberately does NOT require `included` — STRG.59.7's
+        // exact-chain transfrag has included=false (no boundary anchor) and
+        // would otherwise be weak-marked at the !included branch. The rescue
+        // must work regardless of containment status; setting
+        // novel_splice_rescue=true below routes it to keeptrf.push.
+        let nsr_distinct_chain = nsr_dc_min_longcov > 0.0
+            && tf.abundance >= nsr_dc_min_longcov
+            && long_mode
+            && !tf.guide
+            && (tf.longstart != 0 || tf.longend != 0)
+            && tf_junction_chain.len() >= nsr_dc_min_introns
+            && tf_chain_not_subchain_of_keeptrf(
+                &tf_junction_chain,
+                &keeptrf,
+                &transfrags,
+                graph,
+                source_id,
+                sink_id,
+            );
+        let novel_splice_rescue = nsr_distinct_chain
+            || ((!crate::stringtie_parity::stringtie_exact() || nsr_exempt)
             && included
             && !included_via_group
             && long_mode
@@ -2290,7 +2365,7 @@ pub fn process_transfrags(
                 graph,
                 source_id,
                 sink_id,
-            );
+            ));
         if novel_splice_rescue {
             included = false;
         }

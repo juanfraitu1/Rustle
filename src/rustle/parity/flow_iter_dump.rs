@@ -98,6 +98,40 @@ pub fn next_run_id() -> u64 {
     *g
 }
 
+static SEED_WR: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
+static SEED_HDR: OnceLock<Mutex<bool>> = OnceLock::new();
+
+/// Emit a per-run seed tag: `bundle_run -> seed-path intron chain + span`.
+/// Lets cross-tool analysis align a specific max-flow run (e.g. STRG.15.1)
+/// across rustle/StringTie by the seed path's exact intron chain.
+/// Enable with `RUSTLE_FLOW_SEED_TSV=/path/seed.tsv`.
+pub fn emit_seed(bundle_run: u64, span_lo: u64, span_hi: u64, introns: &str) {
+    let gp = match std::env::var("RUSTLE_FLOW_SEED_TSV") {
+        Ok(p) if !p.is_empty() => p,
+        _ => return,
+    };
+    let wr = SEED_WR.get_or_init(|| {
+        Mutex::new(
+            std::fs::OpenOptions::new()
+                .create(true).append(true).open(&gp).ok(),
+        )
+    });
+    let hdr = SEED_HDR.get_or_init(|| Mutex::new(false));
+    if let (Ok(mut f_opt), Ok(mut hdr_w)) = (wr.lock(), hdr.lock()) {
+        if let Some(f) = f_opt.as_mut() {
+            if !*hdr_w {
+                let _ = writeln!(f, "source\tbundle_run\tspan_lo\tspan_hi\tn_introns\tintrons");
+                *hdr_w = true;
+            }
+            let n_int = if introns.is_empty() { 0 } else { introns.matches(',').count() + 1 };
+            let _ = writeln!(
+                f, "rustle\t{}\t{}\t{}\t{}\t{}",
+                bundle_run, span_lo, span_hi, n_int, introns,
+            );
+        }
+    }
+}
+
 /// Emit one row for a single Edmonds-Karp augmenting-path iteration.
 ///
 /// Bundle metadata (chrom/strand/bundle_id) is read from the thread-local

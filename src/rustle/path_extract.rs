@@ -664,6 +664,12 @@ pub struct Transcript {
     /// Diagnostic classification bucket propagated from the source Bundle.
     /// `None` for transcripts assembled from real (non-synthetic) bundles.
     pub rescue_class: Option<crate::vg_hmm::diagnostic::RescueClass>,
+    /// ST-parity raw cov: `Σ (nodeflux × per-path noderate)` over path nodes,
+    /// before any `/tlen` normalization. Mirrors ST's `cov` at rlink.cpp:10541
+    /// (the raw sum before pred->cov/=abs(tlen)). Set in long-read flow path
+    /// only; 0.0 otherwise. Consumed by RI filter when
+    /// `RUSTLE_RI_USE_RAW_FLOW=1` to compare ratios in ST-equivalent units.
+    pub raw_flow_sum: f64,
 }
 
 #[inline]
@@ -764,6 +770,7 @@ impl Transcript {
             hardend: pred.hardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
         }
     }
 }
@@ -1242,6 +1249,7 @@ pub fn extract_rawreads_transcripts(
             hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
         });
     }
     out
@@ -1268,6 +1276,7 @@ pub fn extract_eonly_transcripts(
         bundle_id,
         config,
         false,
+        None,
         None,
         None,
     )
@@ -1378,6 +1387,7 @@ pub fn extract_shortread_transcripts(
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
             alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: 0.0,
         });
     }
 
@@ -2691,6 +2701,8 @@ fn best_trf_match(
     }
     let trace_btm =
         trace_tf.is_some() && tf_nodes.iter().any(|&nid| trace_locus_active(graph, nid));
+    // Probe for STRG.300.6 canonical-donor matching divergence.
+    // Fires when this transfrag spans the canonical-donor exon (44073569-44073858, 1-based).
     let tf_id_nonmono = tf_nodes.windows(2).any(|w| w[1] < w[0]);
     if trace_btm {
         eprintln!(
@@ -5813,6 +5825,113 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
         // Default (Rustle historical): sort by usepath (insertion order).
         seeded.sort_unstable_by_key(|&i| transfrags[i].usepath);
     }
+    // TSS boundary seed split: targeted promotion of "same-tail sibling" seeds.
+    //
+    // Seeds A and B are same-tail siblings when they share an identical downstream
+    // junction chain (real_nodes[1..] equal) but have different first exons.
+    // If B's first real node is a direct graph-parent of A's first real node,
+    // and B is a genuine mid-gene TSS candidate (longstart within b_first's
+    // coordinate range, no existing source→b_first graph edge), then B should
+    // be processed before A.  This gives B's shorter path first claim on the
+    // shared downstream junction capacity, preventing A's flow extraction from
+    // depleting it via back_to_source BFS shortcut edges.
+    //
+    // Example: tf=29 (node9→node15→cassette) and tf=24 (node10→node15→cassette)
+    // share tail {node15, cassette}, node9 is a parent of node10 (contiguous),
+    // and tf=29.longstart==node9.start — so tf=29 is promoted before tf=24.
+    //
+    // Enabled by RUSTLE_TSS_SEED_SPLIT=1.  O(n²) per bundle but only touches
+    // same-tail sibling pairs; unrelated seeds keep their usepath order.
+    if std::env::var_os("RUSTLE_TSS_SEED_SPLIT").is_some() {
+        let source = _graph.source_id;
+        let sink = _graph.sink_id;
+        // Precompute real-node vectors (source/sink excluded) keyed by transfrag index.
+        let max_tf_idx = seeded.iter().copied().max().map(|m| m + 1).unwrap_or(0);
+        let mut real_nodes_of: Vec<Vec<usize>> = vec![vec![]; max_tf_idx];
+        for &idx in &seeded {
+            real_nodes_of[idx] = transfrags[idx]
+                .node_ids
+                .iter()
+                .copied()
+                .filter(|&n| n != source && n != sink)
+                .collect();
+        }
+        // Single-pass insertion: for each position i find the nearest j > i that
+        // is a valid TSS-sibling of seeded[i] and promote it to i.
+        let mut i = 0;
+        while i < seeded.len() {
+            let ai = seeded[i];
+            let a_real = real_nodes_of[ai].clone();
+            // Need at least 2 real nodes (first exon + ≥1 downstream exon).
+            if a_real.len() < 2 {
+                i += 1;
+                continue;
+            }
+            let a_first = a_real[0];
+            let mut promote_j: Option<usize> = None;
+            'search: for j in (i + 1)..seeded.len() {
+                let bj = seeded[j];
+                let b_real = &real_nodes_of[bj];
+                if b_real.len() < 2 {
+                    continue;
+                }
+                let b_first = b_real[0];
+                if b_first == a_first {
+                    continue;
+                }
+                // B must be strictly longer than A and end with A's exact node chain.
+                // This handles the case where B = A + one upstream exon prepended:
+                // e.g. tf=29 = [9,10,12,14,15,26,30] ends with tf=24 = [10,12,14,15,26,30].
+                if b_real.len() <= a_real.len()
+                    || !b_real.ends_with(a_real.as_slice())
+                {
+                    continue;
+                }
+                // B's first node must be a direct graph-parent of A's first node.
+                if !_graph
+                    .nodes
+                    .get(a_first)
+                    .map(|n| n.parents.contains(b_first))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                // B must be a genuine TSS candidate: longstart falls within b_first's range.
+                let b_longstart = transfrags[bj].longstart;
+                let (b_ns, b_ne) = _graph
+                    .nodes
+                    .get(b_first)
+                    .map(|n| (n.start, n.end))
+                    .unwrap_or((u64::MAX, 0));
+                if b_longstart == 0 || b_longstart < b_ns || b_longstart > b_ne {
+                    continue;
+                }
+                // B's first node must not already have a source→b_first edge: if one
+                // already exists, the HARDSTART guard fires for B independently and
+                // produces a clean transcript from b_first without needing reorder.
+                // Omitting this guard produces 640 swaps on chr19 GGO but is
+                // F1-negative (0 new TPs, -0.4pp Pr) because upstream seeds with
+                // smaller usepath still deplete the shared downstream flow first.
+                if _graph
+                    .nodes
+                    .get(source)
+                    .map(|n| n.children.contains(b_first))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                promote_j = Some(j);
+                break 'search;
+            }
+            if let Some(j) = promote_j {
+                let bi = seeded.remove(j);
+                seeded.insert(i, bi);
+                // Re-examine position i: bi may itself have a TSS-sibling further down.
+            } else {
+                i += 1;
+            }
+        }
+    }
     // ST-parity SE split (default ON; opt-out via RUSTLE_SE_SEEDS_INTERLEAVE=1):
     // Process single-node (SE-only) seeds AFTER all multi-node seeds. This
     // gives multi-exon paths first claim on shared-node flow capacity so SE
@@ -5870,6 +5989,7 @@ pub fn extract_transcripts(
     nascent: bool,
     mut seed_outcomes: Option<&mut Vec<(usize, SeedOutcome)>>,
     longrec_summary: Option<&mut LongRecSummary>,
+    mut frs_se_out: Option<&mut Vec<Transcript>>,
 ) -> Vec<Transcript> {
     // Helper macro to record seed outcome when tracing is active.
     macro_rules! record_outcome {
@@ -6276,6 +6396,14 @@ pub fn extract_transcripts(
     // Shared state across all paths in the bundle (nodecov, capacity from transfrag abundances).
     // Each path depletes local_nodecov and (via flow) transfrag abundances; no restore between paths.
     let mut local_nodecov: Vec<f64> = graph.nodes.iter().map(|n| n.nodecov.max(0.0)).collect();
+    // ST-parity (rlink.cpp:11200, passes `nodecovall` to keeptrf store_transcript):
+    // keep an UNDEPLETED snapshot for the keeptrf second pass cov formula.
+    let original_nodecov: Vec<f64> = local_nodecov.clone();
+    // Snapshot transfrag abundances BEFORE parse_trflong's flow extraction.
+    // ST's checktrf rescue uses original (non-depleted) abundances; rustle's
+    // long_max_flow over-depletes leaving 0 abundance at checktrf time.
+    // Opt-in: RUSTLE_CHECKTRF_RESTORE_ABUND=1 restores snapshot before checktrf.
+    let original_abundances: Vec<f64> = transfrags.iter().map(|t| t.abundance).collect();
     // Per-junction edge coverage tracker (RUSTLE_EDGECOV_DEPL=1).
     // Initialized from transfrag abundances summed over each consecutive node pair.
     // Dominant-path depletion on edge A→D does not reduce capacity on A→C, preserving
@@ -6412,6 +6540,7 @@ pub fn extract_transcripts(
 
     let ntrflong = transfrags.iter().filter(|tf| tf.trflong_seed).count();
     let parity_seed_trace = std::env::var_os("RUSTLE_PARITY_SEED_TRACE").is_some();
+    let flow_residual_se = std::env::var_os("RUSTLE_FLOW_RESIDUAL_SE").is_some();
     for (loop_pos, idx) in order.into_iter().enumerate() {
         // Snapshot entry-time abundance for bisect dump (matches ST's longcov).
         seed_entry_abund.insert(idx, transfrags[idx].abundance);
@@ -6608,6 +6737,78 @@ pub fn extract_transcripts(
             && single_node_lr_skip && long_read_mode && real_nodes.len() == 1
             && !transfrags[idx].guide && count_gate_fails
         {
+            // Flow-residual SE: emit before zeroing so multi-exon flow extraction
+            // remains byte-identical to baseline (abundance=0 → invisible to flow).
+            // We use the original (pre-zero) abundance as the SE coverage — this is
+            // equivalent to STRANDED_SINGLE_EXON's bpcov-based approach but uses
+            // the graph-level clustering directly.
+            if flow_residual_se
+                && transfrags[idx].longread
+                && transfrags[idx].abundance >= config.singlethr
+            {
+                let node_id = real_nodes[0];
+                if let Some(node) = graph.nodes.get(node_id) {
+                    // Only emit FRS SE if the node is truly terminal (sink-facing).
+                    // A node with real children has downstream graph edges → its reads
+                    // route into ME paths in StringTie's flow → emitting an SE here is
+                    // a structural FP (the reads are the first exon of an ME transcript).
+                    let has_real_children = node.children.ones().any(|c| {
+                        c != graph.sink_id && c != graph.source_id
+                    });
+                    if has_real_children {
+                        // skip emission; zero happens unconditionally below
+                    } else {
+                    let start = if transfrags[idx].longstart > 0 {
+                        transfrags[idx].longstart
+                    } else {
+                        node.start
+                    };
+                    let end = if transfrags[idx].longend > transfrags[idx].longstart
+                        && transfrags[idx].longend > 0
+                    {
+                        transfrags[idx].longend
+                    } else {
+                        node.end
+                    };
+                    if end > start {
+                        let avg_cov = transfrags[idx].abundance;
+                        let se_target: &mut Vec<Transcript> = if let Some(ref mut buf) = frs_se_out {
+                            buf
+                        } else {
+                            &mut out
+                        };
+                        se_target.push(Transcript {
+                            chrom: bundle_chrom.to_string(),
+                            strand: bundle_strand,
+                            exons: vec![(start, end)],
+                            coverage: avg_cov,
+                            exon_cov: vec![avg_cov],
+                            tpm: 0.0,
+                            fpkm: 0.0,
+                            source: Some("flow_residual_se".to_string()),
+                            is_longread: true,
+                            longcov: avg_cov,
+                            bpcov_cov: avg_cov,
+                            all_strand_cov: 0.0,
+                            transcript_id: None,
+                            gene_id: None,
+                            ref_transcript_id: None,
+                            ref_gene_id: None,
+                            hardstart: node.hardstart,
+                            hardend: node.hardend,
+                            alt_tts_end: node.alt_tts_end,
+                            vg_family_id: None,
+                            vg_copy_id: None,
+                            vg_family_size: None,
+                            intron_low: Vec::new(),
+                            synthetic: false,
+                            rescue_class: None,
+                            raw_flow_sum: 0.0,
+                        });
+                    }
+                    } // else !has_real_children
+                }
+            }
             transfrags[idx].abundance = 0.0;
             record_outcome!(idx, SeedOutcome::Skipped("single_node_lr"));
             continue;
@@ -6755,6 +6956,35 @@ pub fn extract_transcripts(
                 .get(minp)
                 .map(|n| n.parents.contains(source_id))
                 .unwrap_or(false);
+            // TSS boundary cap: when RUSTLE_TSS_BOUNDARY_CAP=<f64> is set and the
+            // seed's longstart falls within minp's coordinate range (i.e. reads
+            // genuinely start at this node), permanently wire source→minp into the
+            // graph so back_to_source_fast_long's hardstart guard fires here instead
+            // of extending upstream. This prevents the back-extension from inserting
+            // a BFS shortcut that bypasses lower-abundance downstream junctions.
+            static TSS_CAP_MIN: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+            let tss_cap_min = *TSS_CAP_MIN.get_or_init(|| {
+                std::env::var("RUSTLE_TSS_BOUNDARY_CAP")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0.0)
+            });
+            let tss_boundary_cap = tss_cap_min > 0.0
+                && !transfrags[idx].guide
+                && transfrags[idx].longstart > 0
+                && transfrags[idx].abundance >= tss_cap_min
+                && graph
+                    .nodes
+                    .get(minp)
+                    .map(|n| {
+                        transfrags[idx].longstart >= n.start
+                            && transfrags[idx].longstart <= n.end
+                    })
+                    .unwrap_or(false)
+                && !minp_has_source_parent;
+            if tss_boundary_cap {
+                graph.add_edge(source_id, minp);
+            }
             let _minp_has_contig_parent = !minp_has_source_parent
                 && graph
                     .nodes
@@ -6775,7 +7005,10 @@ pub fn extract_transcripts(
                 .get(maxp)
                 .map(|n| n.children.ones().any(|c| c != sink_id))
                 .unwrap_or(false);
-            if transfrags[idx].guide || (minp_hardstart && !minp_has_non_source_parent) {
+            if transfrags[idx].guide
+                || (minp_hardstart && !minp_has_non_source_parent)
+                || tss_boundary_cap
+            {
                 edge_set(&mut pathpat, graph, source_id, minp, true);
             }
             if transfrags[idx].guide || (maxp_hardend && !maxp_has_non_sink_child) {
@@ -7878,9 +8111,15 @@ pub fn extract_transcripts(
             );
         }
 
+        let mut raw_flow_sum_out: f64 = 0.0;
         let coverage = {
             let mut flow_used: HashSet<usize> = Default::default();
             let mut nodeflux_is_proportion = false;
+            // Per-path noderate from max_flow (parallel to nodeflux). When empty,
+            // the caller falls back to global `local_noderate[nid]`. Populated
+            // by long-read max_flow paths to match ST's per-path noderate (ST
+            // rlink.cpp:10454: ecov = nodeflux[j] * noderate[path[j]]).
+            let mut path_noderate: Vec<f64> = Vec::new();
             let (flux, nodeflux) = if guided_mode
                 && transfrags[idx].guide
                 && long_read_mode
@@ -7980,7 +8219,7 @@ pub fn extract_transcripts(
                 }
             } else if mixed_mode {
                 if transfrags[idx].longread {
-                    let (lf, lfpath, lused) = long_max_flow_seeded_with_used_pathpat(
+                    let (lf, lfpath, lused, lf_noderate) = long_max_flow_seeded_with_used_pathpat(
                         &use_path,
                         transfrags,
                         graph,
@@ -7994,8 +8233,10 @@ pub fn extract_transcripts(
                     if sf > lf {
                         nodeflux_is_proportion = true;
                         let _ = sfull;
+                        let _ = lf_noderate;
                         (sf, sfpath)
                     } else {
+                        path_noderate = lf_noderate;
                         (lf, lfpath)
                     }
                 } else {
@@ -8021,7 +8262,7 @@ pub fn extract_transcripts(
                 let se_no_subtract = real_nodes.len() == 1
                     && !transfrags[idx].guide
                     && std::env::var_os("RUSTLE_SE_NO_SUBTRACT_OFF").is_none();
-                let (lf, lfpath, lused) = if canonical {
+                let (lf, lfpath, lused, lf_noderate) = if canonical {
                     crate::parse_trflong_st::long_max_flow_st(
                         &use_path,
                         transfrags,
@@ -8041,6 +8282,7 @@ pub fn extract_transcripts(
                     )
                 };
                 flow_used = lused.ones().collect();
+                path_noderate = lf_noderate;
                 if debug_cov {
                     eprintln!("  [COV_DEBUG] long_flux={:.4} nodeflux={:?}", lf, &lfpath);
                 }
@@ -8222,6 +8464,7 @@ pub fn extract_transcripts(
                     // So: ecov = abs_flow * (bpcov / nodecov) = per-base coverage contribution.
                     let mut cov_total = 0.0f64;
                     let mut lr_exoncov = vec![0.0f64; exons.len()];
+                    let mut raw_flow_sum_acc: f64 = 0.0;
                     let mut k = 0usize;
                     for p in use_start..=use_last {
                         let nid = use_path[p];
@@ -8259,11 +8502,19 @@ pub fn extract_transcripts(
                             local_nodecov[nid] = 0.0;
                         }
                         let ecov = nflux * local_noderate[nid];
+                        // ST-parity raw cov accumulator: uses per-path noderate
+                        // (sumright/sumleft) instead of rustle's global bpcov/nodecov.
+                        // This mirrors ST's `cov` at rlink.cpp:10475 (raw sum, no /tlen).
+                        // Stored on Transcript.raw_flow_sum for opt-in use by RI filter
+                        // (see RUSTLE_RI_USE_RAW_FLOW).
+                        let st_rate = path_noderate.get(k).copied().unwrap_or(1.0);
+                        let st_ecov = nflux * st_rate;
+                        raw_flow_sum_acc += st_ecov;
                         if debug_cov {
                             let bpcov = graph.nodes.get(nid).map(|n| n.coverage).unwrap_or(0.0);
-                            eprintln!("  [COV_DEBUG] node[{}] {}..{} nc_before={:.4} nodeflux_raw={:.4} nflux={:.4} rate={:.6} bpcov={:.4} contrib={:.6}",
+                            eprintln!("  [COV_DEBUG] node[{}] {}..{} nc_before={:.4} nodeflux_raw={:.4} nflux={:.4} rate={:.6} st_rate={:.4} st_ecov={:.4} bpcov={:.4} contrib={:.6}",
                                 nid, graph.nodes[nid].start, graph.nodes[nid].end,
-                                nc_before, nodeflux[k], nflux, local_noderate[nid], bpcov, ecov);
+                                nc_before, nodeflux[k], nflux, local_noderate[nid], st_rate, st_ecov, bpcov, ecov);
                         }
                         cov_total += ecov;
                         // Distribute per-node ecov to overlapping exons
@@ -8287,14 +8538,15 @@ pub fn extract_transcripts(
                     if lr_exoncov.iter().any(|v| *v > 0.0) {
                         out_exoncov = lr_exoncov;
                     }
+                    raw_flow_sum_out = raw_flow_sum_acc;
                     if debug_cov {
                         let computed = if cov_total > 0.0 && length > 0 {
                             cov_total / length as f64
                         } else {
                             0.0
                         };
-                        eprintln!("[COV_DEBUG] RESULT cov_total={:.6} length={} cov={:.6} long_read_nodecov_mode={}",
-                            cov_total, length, computed, long_read_nodecov_mode);
+                        eprintln!("[COV_DEBUG] RESULT cov_total={:.6} length={} cov={:.6} raw_flow_sum={:.6} long_read_nodecov_mode={}",
+                            cov_total, length, computed, raw_flow_sum_acc, long_read_nodecov_mode);
                     }
                     let mut computed_cov = if cov_total > 0.0 && length > 0 {
                         cov_total / length as f64 // per-base: pred->cov /= abs(tlen) at 
@@ -8615,11 +8867,14 @@ pub fn extract_transcripts(
                 .join(",");
             let pe_src = gtf_source_long_flow(&transfrags[idx].guide_tid);
             let pe_payload = format!(
-                r#""source":"{}","cov":{:.4},"longcov":{:.4},"nexons":{},"introns":"{}""#,
+                r#""source":"{}","cov":{:.4},"longcov":{:.4},"nexons":{},"seed_tf":{},"flux":{:.4},"raw_flow":{:.4},"introns":"{}""#,
                 pe_src.as_deref().unwrap_or(""),
                 coverage,
                 read_count_snapshot,
                 exons.len(),
+                idx,
+                flow_flux,
+                raw_flow_sum_out,
                 pe_introns,
             );
             crate::parity::decisions::emit(
@@ -8656,6 +8911,7 @@ pub fn extract_transcripts(
             hardend: thardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    raw_flow_sum: raw_flow_sum_out,
         });
         if debug_flow {
             let exons_str = exons
@@ -8741,6 +8997,17 @@ pub fn extract_transcripts(
     // 1) try to reassign skipped transfrag support to best kept paths
     // 2) if unmatched, store direct complete transfrag as an independent transcript
     let checktrf_enabled = std::env::var_os("RUSTLE_DISABLE_CHECKTRF").is_none();
+    // Restore transfrag abundances from the pre-extraction snapshot if the
+    // opt-in flag is set. Mirrors ST's behavior where checktrf transfrags
+    // retain their abundance (ST observed cumulative abund=28 at matched
+    // checktrf vs rustle's 0). See project_checktrf_abundance_zero_2026_05_14.md.
+    if std::env::var_os("RUSTLE_CHECKTRF_RESTORE_ABUND").is_some() {
+        for (t_idx, tf) in transfrags.iter_mut().enumerate() {
+            if t_idx < original_abundances.len() {
+                tf.abundance = original_abundances[t_idx];
+            }
+        }
+    }
     // Per-node read-entering / read-exiting count (pre-depletion). Used to
     // detect alt-TSS / alt-PAS nodes so the longstart/longend clip below
     // doesn't pull exons[0].0 / exons[-1].1 INWARD off a real alt-boundary.
@@ -9187,6 +9454,64 @@ pub fn extract_transcripts(
                         break;
                     }
                 }
+                // Forward-extend the rescue path when the seed's last node is an
+                // alt-TES artifact (hardend=true) but a much-higher-cov kept_path
+                // passes through INTERIOR to its chain. Targets cassette-arbitration
+                // misses (e.g. STRG.440.5): the seed's read terminates at the
+                // canonical penultimate exon (which has hardend=true from other
+                // truncated reads), but a sibling isoform extends to the proper TES.
+                // By appending that sibling's tail we recover the full chain. The
+                // truncated rescue would otherwise die at the retained_intron filter.
+                //
+                // Gates: (1) seed's last node has hardend=true; (2) at least one
+                // kept_path passes through this node with pos+1 < len AND cov ≥
+                // FWD_EXT_COV_RATIO×rescue's transfrag abundance (default 15×);
+                // (3) every appended edge is a real graph edge.
+                //
+                // Default ON; disable via RUSTLE_CHECKTRF_FWD_EXTEND_OFF=1.
+                // Tunable: RUSTLE_CHECKTRF_FWD_EXTEND_COV_RATIO (default 15.0).
+                let fwd_extend_buf: Vec<usize>;
+                let mut rescue_nodes: &[usize] = rescue_nodes;
+                let do_fwd_extend =
+                    std::env::var_os("RUSTLE_CHECKTRF_FWD_EXTEND_OFF").is_none();
+                if complete && do_fwd_extend && rescue_nodes.len() >= 3 {
+                    let last_node = *rescue_nodes.last().unwrap();
+                    let last_is_hardend = graph.nodes.get(last_node)
+                        .map(|n| n.hardend).unwrap_or(false);
+                    let has_real_child = graph.nodes.get(last_node)
+                        .map(|n| n.children.ones().any(|c| c != sink_id && c != source_id))
+                        .unwrap_or(false);
+                    if last_is_hardend && has_real_child {
+                        let cov_ratio: f64 = std::env::var("RUSTLE_CHECKTRF_FWD_EXTEND_COV_RATIO")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(15.0);
+                        let min_kp_cov = cov_ratio * transfrags[t].abundance.max(1e-6);
+                        let mut best_tail: Vec<usize> = Vec::new();
+                        let mut best_cov: f64 = 0.0;
+                        for (kp_nodes, kp_cov, _, _) in &kept_paths {
+                            if *kp_cov < min_kp_cov { continue; }
+                            if let Some(pos) = kp_nodes.iter().position(|&n| n == last_node) {
+                                if pos + 1 < kp_nodes.len() && *kp_cov > best_cov {
+                                    let tail: Vec<usize> = kp_nodes[pos + 1..].iter().copied()
+                                        .filter(|&n| n != source_id && n != sink_id)
+                                        .collect();
+                                    if tail.is_empty() { continue; }
+                                    let first_step_ok = graph.nodes.get(last_node)
+                                        .map(|n| n.children.contains(tail[0]))
+                                        .unwrap_or(false);
+                                    if !first_step_ok { continue; }
+                                    best_tail = tail;
+                                    best_cov = *kp_cov;
+                                }
+                            }
+                        }
+                        if !best_tail.is_empty() {
+                            let mut extended: Vec<usize> = rescue_nodes.to_vec();
+                            extended.extend_from_slice(&best_tail);
+                            fwd_extend_buf = extended;
+                            rescue_nodes = &fwd_extend_buf;
+                        }
+                    }
+                }
                 if !complete {
                     // else-branch candidates are consumed
                     // regardless of rescue success.
@@ -9513,7 +9838,9 @@ pub fn extract_transcripts(
                     alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
                     rescue_class: if csr_triggered { Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue) } else { None },
-                });
+                    raw_flow_sum: 0.0,
+
+});
                 let out_idx = out.len() - 1;
                 record_outcome!(t, SeedOutcome::ChecktrfRescued);
                 // parity_decisions: emit path_extracted for checktrf-rescued predictions.
@@ -9674,8 +10001,12 @@ pub fn extract_transcripts(
 
     // keeptrf second pass re-estimate coverage using push_max_flow
     // on short-read transfrags. If new coverage > original, update the prediction.
-    // DISABLED for long-read mode: causes coverage inflation due to incorrect formula
-    if false && long_read_mode && !kept_paths.is_empty() {
+    // ST PARITY: rlink.cpp:11186-11221 — `flux = push_max_flow(...)` + `store_transcript(...)`
+    // creates a NEW prediction with potentially different (higher) longcov for the
+    // same path; if new cov > existing weak pred cov, ST updates the weak pred's cov.
+    // Opt-in: RUSTLE_KEEPTRF_SECOND_PASS=1.
+    let keeptrf_second_pass_enabled = std::env::var_os("RUSTLE_KEEPTRF_SECOND_PASS").is_some();
+    if keeptrf_second_pass_enabled && long_read_mode && !kept_paths.is_empty() {
         // Sort kept_paths indices by longtrCmp: guides first, then abundance desc, then node count desc
         let mut keeptrf_order: Vec<usize> = (0..kept_paths.len()).collect();
         keeptrf_order.sort_unstable_by(|&a, &b| {
@@ -9727,35 +10058,41 @@ pub fn extract_transcripts(
             let last_idx = full_path.len() - 1;
             graph.add_edge(full_path[last_idx - 1], full_path[last_idx]);
 
-            // Run push_max_flow on this path (uses remaining short-read transfrags)
+            // ST parity: rlink.cpp:11186 calls push_max_flow on the kept path.
+            // Uses sumleft/right + capacityleft/right with permissive transfrag
+            // admission (source/sink anchoring + on-path + CHI_WIN gap), different
+            // from long_max_flow_seeded which more strictly tracks per-seed flow.
             let (flux, nodeflux, _full) =
-                push_max_flow_seeded_full(&full_path, transfrags, graph, false, None);
+                push_max_flow_seeded_full(&full_path, transfrags, graph, true, None);
 
             if flux <= EPS {
                 continue;
             }
 
-            // Compute coverage from nodeflux and local_nodecov (store_transcript)
+            // ST formula at rlink.cpp:9774:
+            //   usedcov = nodecov[path[i]] * nodeflux[i] * (node.end - node.start + 1)
+            //   cov = Σ usedcov; pred->cov = cov / abs(tlen)
+            // nodecov here is `nodecovall` — the UNDEPLETED pre-extraction snapshot.
             let mut cov_total = 0.0f64;
             let mut len_total = 0u64;
-            for (pi, &nid) in full_path.iter().enumerate() {
-                if nid == source_id || nid == sink_id || nid >= local_nodecov.len() {
+            let mut k = 0usize;
+            for &nid in &full_path {
+                if nid == source_id || nid == sink_id || nid >= original_nodecov.len() {
                     continue;
                 }
                 let Some(node) = graph.nodes.get(nid) else {
+                    k += 1;
                     continue;
                 };
-                let node_len = node.end.saturating_sub(node.start) as f64; // uses end-start+1 (1-based)
-                let nflux = if pi < nodeflux.len() {
-                    nodeflux[pi]
+                let nflux = if k < nodeflux.len() {
+                    nodeflux[k]
                 } else {
                     0.0
                 };
-                let usedcov = local_nodecov[nid] * nflux * node_len;
-                cov_total += usedcov;
+                let node_len = node.end.saturating_sub(node.start) as f64;
+                cov_total += original_nodecov[nid] * nflux * node_len;
                 len_total += node.end.saturating_sub(node.start);
-                // Deplete local_nodecov
-                local_nodecov[nid] = (local_nodecov[nid] * (1.0 - nflux)).max(0.0);
+                k += 1;
             }
 
             if len_total == 0 || cov_total <= 0.0 {
@@ -9766,17 +10103,10 @@ pub fn extract_transcripts(
             // if new coverage > original, update prediction
             let orig_cov = out[out_idx].coverage;
             if new_cov > orig_cov {
-                let orig_len = out[out_idx].exons.iter().map(|(s, e)| e - s).sum::<u64>();
-                let new_len = len_total;
-                if new_len < orig_len && orig_len > 0 {
-                    // scale by length ratio
-                    out[out_idx].coverage = new_cov * new_len as f64 / orig_len as f64;
-                } else {
-                    out[out_idx].coverage = new_cov;
-                }
+                out[out_idx].coverage = new_cov;
                 // Update exon_cov proportionally
                 if orig_cov > 0.0 {
-                    let ratio = out[out_idx].coverage / orig_cov;
+                    let ratio = new_cov / orig_cov;
                     for ec in out[out_idx].exon_cov.iter_mut() {
                         *ec *= ratio;
                     }
@@ -10491,6 +10821,7 @@ pub fn hybrid_path_reexplore(
             vg_copy_id: None,
             vg_family_size: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            raw_flow_sum: 0.0,
         });
     }
 
