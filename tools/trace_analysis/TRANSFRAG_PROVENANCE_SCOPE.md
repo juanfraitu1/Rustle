@@ -95,8 +95,29 @@ Output: per ST_ONLY transfrag a one-line verdict
   handling vs eliminate-under-thr threshold) for the eventual — still
   multi-session, maximal-blast-radius — construction rewrite.
 
-## Status
+## Status — IMPLEMENTED & VALIDATED (2026-05-16)
 
-SCOPE ONLY. No code changed. The fix itself remains the documented deferred
-rewrite; this layer only makes the divergence step-attributable so that
-rewrite can be targeted and verified against 1746/1948.
+All 3 additions landed both tools (env-gated, default byte-identical
+1746/1948 verified):
+- rustle `transfrag_define_pre` (pipeline.rs post-`tag_transfrags_origin_if_missing`),
+  payload enriched (`origin`/`read_count`/`real`) on PRE+POST,
+  `transfrag_drop` in `eliminate_transfrags_under_thr` (reason
+  under_thr/max_trf_cap).
+- StringTie mirror: `transfrag_define_pre` before `process_transfrags`,
+  payload enriched (origin = guide/read_long/real/other classifier;
+  read_count = abundance proxy), `transfrag_drop` in ST
+  `eliminate_transfrags_under_thr` (no2gnode threaded in). Local only
+  (gpertea upstream).
+- `transfrag_construction_diff.py --pre`: 3-way PRE/POST/ST join → per
+  ST_ONLY verdict.
+
+**Decisive validated result (STRG.15.1, NC_073243.2:16598646-16622552):**
+all **9 ST_ONLY = NEVER_CONSTRUCTED** (origin read_long, absent from rustle
+transfrag_define_pre). **0 DROPPED_IN_PROCESS.** → the divergence is NOT
+`eliminate_transfrags_under_thr` / keeptrf; it is **rustle's read→transfrag
+mapping (`map_reads_to_graph[_bundlenodes]`, map_reads.rs) never building
+these long-range interior-start spanning transfrags**. That is the precise
+fix locus for the (still deferred, maximal-blast-radius) construction
+rewrite — junction-correction window / long_read_min_len / exon→node
+mapping in the read→transfrag step. Verify any change with this tool's
+--pre mode + the 1746/1948 regression gate.

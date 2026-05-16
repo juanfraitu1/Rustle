@@ -12452,6 +12452,71 @@ pub fn run<P: AsRef<Path>>(
                     )
                 };
                 tag_transfrags_origin_if_missing(&mut transfrags, "read_map");
+                // Provenance layer: transfrag_define_pre — every transfrag as
+                // built by read→graph mapping, BEFORE process_transfrags
+                // (eliminate-under-thr / keeptrf). 3-way joined against the
+                // POST transfrag_define + StringTie by the construction-diff
+                // tool to classify ST_ONLY transfrags as NEVER_CONSTRUCTED
+                // (absent here too) vs DROPPED_IN_PROCESS (here, gone POST).
+                // Parity-only; no-op when parity decisions disabled.
+                if crate::parity::decisions::is_enabled() {
+                    let src = graph_mut.source_id;
+                    let snk = graph_mut.sink_id;
+                    for tf in transfrags.iter() {
+                        let real_nodes: Vec<usize> = tf
+                            .node_ids
+                            .iter()
+                            .copied()
+                            .filter(|&n| n != src && n != snk)
+                            .collect();
+                        if real_nodes.is_empty() {
+                            continue;
+                        }
+                        let fn0 = real_nodes.first().copied().unwrap();
+                        let ln0 = real_nodes.last().copied().unwrap();
+                        let span_start =
+                            graph_mut.nodes.get(fn0).map(|n| n.start).unwrap_or(0);
+                        let span_end =
+                            graph_mut.nodes.get(ln0).map(|n| n.end).unwrap_or(0);
+                        let mut introns: Vec<(u64, u64)> = Vec::new();
+                        for w in real_nodes.windows(2) {
+                            let a = &graph_mut.nodes[w[0]];
+                            let b = &graph_mut.nodes[w[1]];
+                            if b.start > a.end {
+                                introns.push((a.end + 1, b.start));
+                            }
+                        }
+                        let intron_str: String = introns
+                            .iter()
+                            .map(|(d, ac)| format!("{}-{}", d, ac))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let origin = tf
+                            .origin_tag
+                            .as_deref()
+                            .unwrap_or("none");
+                        let payload = format!(
+                            r#""abund":{:.4},"longread":{},"n_introns":{},"n_nodes":{},"origin":"{}","read_count":{:.4},"real":{},"guide":{},"introns":"{}""#,
+                            tf.abundance,
+                            if tf.longread { "true" } else { "false" },
+                            introns.len(),
+                            tf.node_ids.len(),
+                            origin,
+                            tf.read_count,
+                            if tf.real { "true" } else { "false" },
+                            if tf.guide { "true" } else { "false" },
+                            intron_str,
+                        );
+                        crate::parity::decisions::emit(
+                            "transfrag_define_pre",
+                            Some(&graph_bundle.chrom),
+                            span_start + 1,
+                            span_end,
+                            graph_bundle.strand,
+                            &payload,
+                        );
+                    }
+                }
                 trace_dump::emit_read_map_summary_row(
                     &bundle.chrom,
                     bundle.start,
@@ -12757,8 +12822,9 @@ pub fn run<P: AsRef<Path>>(
                         // checks (path_extract.rs:5797, :6107). Lets
                         // no_seed_analysis.py classify the
                         // EXACT_CHAIN_IN_TF (seeding-gate drop) sub-class.
+                        let origin = tf.origin_tag.as_deref().unwrap_or("none");
                         let payload = format!(
-                            r#""abund":{:.4},"longread":{},"n_introns":{},"trflong_seed":{},"weak":{},"usepath":{},"n_nodes":{},"guide":{},"introns":"{}""#,
+                            r#""abund":{:.4},"longread":{},"n_introns":{},"trflong_seed":{},"weak":{},"usepath":{},"n_nodes":{},"guide":{},"origin":"{}","read_count":{:.4},"real":{},"introns":"{}""#,
                             tf.abundance,
                             if tf.longread { "true" } else { "false" },
                             introns.len(),
@@ -12767,6 +12833,9 @@ pub fn run<P: AsRef<Path>>(
                             tf.usepath,
                             tf.node_ids.len(),
                             if tf.guide { "true" } else { "false" },
+                            origin,
+                            tf.read_count,
+                            if tf.real { "true" } else { "false" },
                             intron_str,
                         );
                         crate::parity::decisions::emit(

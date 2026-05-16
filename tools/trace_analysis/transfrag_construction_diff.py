@@ -39,9 +39,10 @@ import argparse, json, sys
 from collections import defaultdict, Counter
 
 
-def load(path):
+def load(path, step='transfrag_define'):
     """Return dict keyed (strand, introns) -> list of records.
-    Each record: dict(span_lo, span_hi, abund, n_introns, n_nodes, longread)."""
+    Each record: dict(span_lo, span_hi, abund, n_introns, n_nodes, longread).
+    `step` selects which parity event to load (default transfrag_define)."""
     out = defaultdict(list)
     with open(path) as f:
         for line in f:
@@ -49,7 +50,7 @@ def load(path):
                 ev = json.loads(line)
             except Exception:
                 continue
-            if ev.get('step') != 'transfrag_define':
+            if ev.get('step') != step:
                 continue
             p = ev.get('payload', {})
             introns = p.get('introns', '')
@@ -61,7 +62,30 @@ def load(path):
                 n_introns=int(p.get('n_introns', 0)),
                 n_nodes=int(p.get('n_nodes', 0)) if p.get('n_nodes') is not None else -1,
                 longread=p.get('longread'),
+                origin=p.get('origin', '?'),
+                read_count=p.get('read_count'),
             ))
+    return out
+
+
+def load_drops(path):
+    """rustle transfrag_drop events -> {introns: (reason, abund, thr)}.
+    Keyed by intron-chain only (coord-aligned; strand may be '.')."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            if ev.get('step') != 'transfrag_drop':
+                continue
+            p = ev.get('payload', {})
+            out[p.get('introns', '')] = (
+                p.get('reason', '?'),
+                float(p.get('abund', 0.0)),
+                float(p.get('thr', 0.0)),
+            )
     return out
 
 
@@ -91,12 +115,70 @@ def main():
                          '0 includes single-exon)')
     ap.add_argument('--abund-tol', type=float, default=0.5)
     ap.add_argument('--top', type=int, default=40)
+    ap.add_argument('--pre', action='store_true',
+                    help='3-way mode: classify each ST_ONLY transfrag as '
+                         'NEVER_CONSTRUCTED (absent from rustle '
+                         'transfrag_define_pre too) vs DROPPED_IN_PROCESS '
+                         '(present pre, gone post; reason from transfrag_drop)')
     args = ap.parse_args()
 
     rng = None
     if args.range:
         a, b = args.range.split('-')
         rng = (int(a), int(b))
+
+    if args.pre:
+        r_post = load(args.rustle, 'transfrag_define')
+        r_pre = load(args.rustle, 'transfrag_define_pre')
+        s_post = load(args.stringtie, 'transfrag_define')
+        drops = load_drops(args.rustle)
+        st_only = []
+        for k in s_post:
+            if k in r_post:
+                continue
+            strand, introns = k
+            sa = agg(s_post[k])
+            ni, lo, hi = sa[3], sa[1], sa[2]
+            if ni < args.min_introns or not in_range(lo, hi, rng):
+                continue
+            st_only.append((k, sa))
+        cls = Counter()
+        rows = []
+        for (k, sa) in st_only:
+            strand, introns = k
+            tot_ab, lo, hi, ni, nn, cnt = sa
+            st_origin = s_post[k][0].get('origin', '?')
+            if k in r_pre:
+                pre_ab = agg(r_pre[k])[0]
+                if introns in drops:
+                    reason, dab, thr = drops[introns]
+                    verdict = f'DROPPED_IN_PROCESS reason={reason} ' \
+                              f'pre_abund={pre_ab:.3f} drop_thr={thr:.2f}'
+                    cls[f'DROPPED:{reason}'] += 1
+                else:
+                    verdict = f'DROPPED_IN_PROCESS reason=keeptrf/other ' \
+                              f'pre_abund={pre_ab:.3f}'
+                    cls['DROPPED:keeptrf/other'] += 1
+            else:
+                verdict = 'NEVER_CONSTRUCTED (read→transfrag map diverged)'
+                cls['NEVER_CONSTRUCTED'] += 1
+            rows.append((hi - lo, k, sa, st_origin, verdict))
+        rows.sort(key=lambda x: -x[0])
+        print(f"3-way transfrag-construction classification "
+              f"(range={args.range or 'all'}, min_introns={args.min_introns})")
+        print(f"  ST_ONLY transfrags: {len(st_only)}")
+        for kk, vv in cls.most_common():
+            print(f"    {vv:4d}  {kk}")
+        print()
+        print(f"  {'span':25} {'nI':>3} {'nN':>3} {'st_ab':>7} "
+              f"{'st_origin':10} verdict")
+        for (_, k, sa, st_origin, verdict) in rows[:args.top]:
+            strand, introns = k
+            tot_ab, lo, hi, ni, nn, cnt = sa
+            print(f"  {f'{lo}-{hi}':25} {ni:>3} {nn:>3} {tot_ab:>7.3f} "
+                  f"{st_origin:10} {verdict}")
+            print(f"      introns[:70]: {introns[:70]}")
+        return
 
     R = load(args.rustle)
     S = load(args.stringtie)

@@ -1602,6 +1602,59 @@ pub fn eliminate_transfrags_under_thr(
             continue;
         }
         let remove_set: HashSet<usize> = to_remove.into_iter().collect();
+        // Provenance: emit transfrag_drop for each removed transfrag so the
+        // construction-diff tool can attribute DROPPED_IN_PROCESS reasons.
+        // `thr > threshold` means the threshold was escalated by the
+        // MAX_TRF_NUMBER cap, not the configured min-abundance.
+        if crate::parity::decisions::is_enabled() {
+            let reason = if thr > threshold { "max_trf_cap" } else { "under_thr" };
+            for (i, tf) in current.iter().enumerate() {
+                if !remove_set.contains(&i) {
+                    continue;
+                }
+                let real_nodes: Vec<usize> = tf
+                    .node_ids
+                    .iter()
+                    .copied()
+                    .filter(|&n| n != source_id && n != sink_id)
+                    .collect();
+                if real_nodes.is_empty() {
+                    continue;
+                }
+                let mut introns: Vec<(u64, u64)> = Vec::new();
+                for w in real_nodes.windows(2) {
+                    if let (Some(a), Some(b)) =
+                        (graph.nodes.get(w[0]), graph.nodes.get(w[1]))
+                    {
+                        if b.start > a.end {
+                            introns.push((a.end + 1, b.start));
+                        }
+                    }
+                }
+                let intron_str: String = introns
+                    .iter()
+                    .map(|(d, ac)| format!("{}-{}", d, ac))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let s = graph
+                    .nodes
+                    .get(real_nodes[0])
+                    .map(|n| n.start + 1)
+                    .unwrap_or(0);
+                let e = graph
+                    .nodes
+                    .get(*real_nodes.last().unwrap())
+                    .map(|n| n.end)
+                    .unwrap_or(0);
+                let payload = format!(
+                    r#""reason":"{}","abund":{:.4},"thr":{:.4},"n_introns":{},"introns":"{}""#,
+                    reason, tf.abundance, thr, introns.len(), intron_str
+                );
+                crate::parity::decisions::emit(
+                    "transfrag_drop", None, s, e, '.', &payload,
+                );
+            }
+        }
         current = current
             .into_iter()
             .enumerate()
