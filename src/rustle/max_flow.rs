@@ -1136,6 +1136,19 @@ fn long_max_flow_direct(
         node2path.insert(nid, i);
     }
 
+    // Per-transfrag keeptr-decision recorder (env RUSTLE_KEEPTR_TSV).
+    // (i, t, n0_coord, nlast_coord, abund, outcome). Flushed after run id.
+    let keeptr_dbg_on = std::env::var_os("RUSTLE_KEEPTR_TSV").is_some();
+    let mut keeptr_dbg: Vec<(usize, usize, u64, u64, f64, &'static str)> = Vec::new();
+    macro_rules! kdbg {
+        ($i:expr,$t:expr,$tf:expr,$why:expr) => {
+            if keeptr_dbg_on {
+                let n0 = $tf.node_ids.first().and_then(|&x| graph.nodes.get(x)).map(|g| g.start).unwrap_or(0);
+                let nl = $tf.node_ids.last().and_then(|&x| graph.nodes.get(x)).map(|g| g.end).unwrap_or(0);
+                keeptr_dbg.push(($i, $t, n0, nl, $tf.abundance, $why));
+            }
+        };
+    }
     for (i, &nid) in path.iter().enumerate() {
         let Some(node_obj) = graph.nodes.get(nid) else {
             continue;
@@ -1174,17 +1187,22 @@ fn long_max_flow_direct(
             let source_start_ok = tf.node_ids[0] != source_id
                 || (path.len() > 1 && tf.node_ids.get(1) == Some(&path[1]));
             let on_path = pathpat.contains_pattern(&tf.pattern);
-            let keeptr = if istranscript.contains(t_idx) || (on_path && source_start_ok) {
-                if i == 0 {
-                    max_fl = tf.abundance;
-                    true
-                } else {
-                    keeptr_gap_ok(tf, path, i, graph, chi_win_for_mode())
-                }
-            } else {
+            let cond_on_path = istranscript.contains(t_idx) || (on_path && source_start_ok);
+            let gap_ok = if !cond_on_path {
                 false
+            } else if i == 0 {
+                max_fl = tf.abundance;
+                true
+            } else {
+                keeptr_gap_ok(tf, path, i, graph, chi_win_for_mode())
             };
+            let keeptr = cond_on_path && gap_ok;
             if !keeptr {
+                if !cond_on_path {
+                    kdbg!(i, t_idx, tf, "reject_notonpath");
+                } else {
+                    kdbg!(i, t_idx, tf, "reject_keeptr");
+                }
                 continue;
             }
 
@@ -1218,18 +1236,22 @@ fn long_max_flow_direct(
                     // pathpat (different biological isoform). Allow depletion
                     // if pattern fully within pathpat (alt-splice variant).
                     if !pathpat.contains_pattern(&tf.pattern) {
+                        kdbg!(i, t_idx, tf, "skip_seedchord_smart");
                         continue;
                     }
                     // Fall through: count capacity (allow depletion)
                 } else {
+                    kdbg!(i, t_idx, tf, "skip_seedchord");
                     continue; // legacy: always protect
                 }
             }
 
             istranscript.insert_grow(t_idx);
             let Some(&end_idx) = tf.node_ids.last().and_then(|nid| node2path.get(nid)) else {
+                kdbg!(i, t_idx, tf, "no_end_idx");
                 continue;
             };
+            kdbg!(i, t_idx, tf, "included");
 
             if !link_set[i].contains(&end_idx) {
                 link[i].push(end_idx);
@@ -1354,6 +1376,23 @@ fn long_max_flow_direct(
                                     __flow_run_id, ii, jj, capacity[ii][jj]
                                 );
                             }
+                        }
+                    }
+                }
+            }
+        }
+        if keeptr_dbg_on {
+            if let Ok(kp) = std::env::var("RUSTLE_KEEPTR_TSV") {
+                if !kp.is_empty() {
+                    use std::io::Write as _;
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true).append(true).open(&kp)
+                    {
+                        for (i, t, n0, nl, ab, why) in &keeptr_dbg {
+                            let _ = writeln!(
+                                f, "rustle\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
+                                __flow_run_id, i, t, n0, nl, ab, why
+                            );
                         }
                     }
                 }
