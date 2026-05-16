@@ -81,10 +81,45 @@ Decisive instrumentation already in place: `transfrag_construction_diff.py
 --pre` (NEVER_CONSTRUCTED count is the direct readout), plus the 1746/1948
 regression gate. No code changed by this scope doc.
 
+## Option A IMPLEMENTED + FALSIFIED (2026-05-16)
+
+`RUSTLE_NO_SPLIT_VALID_LONG_CHAIN=1` landed (env-gated, default-off) in
+`split_read_segments` (map_reads.rs ~1048): when set and the read's entire
+unique-node chain is accepted graph edges (`a.end==b.start ||
+a.children.contains(b)`) and `chain_len >= K+1`
+(`RUSTLE_NO_SPLIT_VALID_LONG_CHAIN_MIN_INTRONS`, default K=4), the
+killed-junction split is suppressed (`suppress_killed_split`).
+
+**Result: empirically falsified — the killed-junction split is NOT the
+read→transfrag divergence mechanism.**
+
+- Default (env unset): byte-identical **1746/1948 F1=92.21%** (verified).
+- Opt-in ON, STRG.15.1 `transfrag_construction_diff.py --pre`: ST_ONLY
+  **9 → 12 (WORSE)**, all still NEVER_CONSTRUCTED. Suppressing the split
+  did not construct the missing long-range interior-start transfrags — it
+  produced *fewer* matching ones (different fragmentation, not whole
+  reads).
+- Full chr19 F1 sweep, opt-in ON, all **F1-NEGATIVE** vs 92.21:
+  - K=4  → 1732/1958  F1=91.230
+  - K=8  → 1731/1951  F1=91.346
+  - K=15 → 1738/1957  F1=91.570
+
+Conclusion: the divergence is **upstream of the split**, in rustle's
+read→node mapping itself (`collect_read_nodes_exact` / junction-correction
+window / node granularity), not in `split_read_segments`. Suppressing the
+split cannot recover a transfrag whose node chain was never assembled
+whole in the first place. Per the scope plan ("If F1-negative → keep
+opt-in, document, option C remains the only path"): opt-in stays
+env-gated default-off; the full read→transfrag reconciliation against
+StringTie `get_read_pattern` (option C) is now the only path.
+
 ## Status
 
-SCOPE ONLY. The two fragmentation sites (`split_read_segments`
-map_reads.rs:1048; `split_chimeric_transfrags` map_reads.rs:947) are the
-exact fix locus. Option A is the smallest testable step; the full
-read→transfrag reconciliation stays the deferred maximal-blast-radius
-rewrite. Practical cov-gated ceiling unchanged: **1746/1948 F1=92.21%**.
+Option A FALSIFIED (above). Redirected fix locus: rustle read→node
+mapping (`collect_read_nodes_exact` / junction-correction), upstream of
+both fragmentation sites. `split_chimeric_transfrags` (map_reads.rs:947)
+untested but lower-priority given the split-suppression null result.
+Option C (full read→transfrag reconciliation, one transfrag per long-read
+pattern) is the deferred maximal-blast-radius rewrite and now the only
+remaining path. Practical cov-gated ceiling unchanged: **1746/1948
+F1=92.21%**.

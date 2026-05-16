@@ -1088,6 +1088,32 @@ fn split_read_segments(
     let mut next_segment_orphan = false;
     let mut junc_idx = 0usize;
 
+    // Opt-in (RUSTLE_NO_SPLIT_VALID_LONG_CHAIN=1, default off): suppress the
+    // killed-junction read split for a long multi-exon read whose ENTIRE
+    // node chain is already valid graph edges (contiguous or accepted
+    // child edge). Such a read is StringTie's full-length `longtr`; rustle
+    // fragmenting it is the NEVER_CONSTRUCTED root cause (see
+    // READ_TO_TRANSFRAG_DIVERGENCE.md). Other split causes (unitig,
+    // single-node skip, chimeric) are untouched.
+    let no_split_valid_long =
+        std::env::var_os("RUSTLE_NO_SPLIT_VALID_LONG_CHAIN").is_some();
+    let nsvlc_min_introns: usize =
+        std::env::var("RUSTLE_NO_SPLIT_VALID_LONG_CHAIN_MIN_INTRONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(4);
+    let whole_chain_graph_valid = no_split_valid_long
+        && unique_nodes.len() >= nsvlc_min_introns + 1
+        && unique_nodes.windows(2).all(|w| {
+            match (graph.nodes.get(w[0]), graph.nodes.get(w[1])) {
+                (Some(a), Some(b)) => {
+                    a.end == b.start || a.children.contains(w[1])
+                }
+                _ => false,
+            }
+        });
+    let suppress_killed_split = no_split_valid_long && whole_chain_graph_valid;
+
     for j in 1..unique_nodes.len() {
         let prev_nid = unique_nodes[j - 1];
         let curr_nid = unique_nodes[j];
@@ -1210,7 +1236,7 @@ fn split_read_segments(
                                 })
                             })
                             .unwrap_or(false);
-                        if !has_nearby_good {
+                        if !has_nearby_good && !suppress_killed_split {
                             split_here = true;
                             orphan_right = killed;
                         }
