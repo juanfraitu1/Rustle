@@ -757,13 +757,13 @@ pub fn good_junc_stats(
         }
 
         // good_junc step 4: local coverage witness at donor/acceptor.
-        // Parity lever (see step-5 note): drop rustle's extra long-read
-        // amplification to mirror StringTie's good_junc witness threshold.
+        // Parity lever: rustle's default now matches StringTie's witness threshold (10x).
+        // Old aggressive behavior (100x) can be restored via RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL_OFF=1
         let mut mult = 1.0 / ERROR_PERC;
         if longreads
-            && std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL").is_none()
+            && std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL_OFF").is_some()
         {
-            mult /= ERROR_PERC;
+            mult /= ERROR_PERC;  // restore old aggressive behavior
         }
         let bw = 5u64;
         let sno = if strand > 0 {
