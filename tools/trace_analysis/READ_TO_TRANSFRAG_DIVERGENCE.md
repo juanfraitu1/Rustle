@@ -115,11 +115,14 @@ StringTie `get_read_pattern` (option C) is now the only path.
 
 ## Status
 
-Option A FALSIFIED (above). Redirected fix locus: rustle read→node
-mapping (`collect_read_nodes_exact` / junction-correction), upstream of
-both fragmentation sites. `split_chimeric_transfrags` (map_reads.rs:947)
-untested but lower-priority given the split-suppression null result.
-Option C (full read→transfrag reconciliation, one transfrag per long-read
-pattern) is the deferred maximal-blast-radius rewrite and now the only
-remaining path. Practical cov-gated ceiling unchanged: **1746/1948
-F1=92.21%**.
+Option A FALSIFIED. Option C Stage 0 (full fragmentation bypass,
+`RUSTLE_ST_READ_PATTERN`) also FALSIFIED as the lever — see
+`OPTION_C_READ_PATTERN_PORT.md` "Stage 0 IMPLEMENTED + measured":
+removing ALL transfrag fragmentation gives ST_ONLY 9→15, F1 89.19
+(negative). The `[BUNDLEMAP]` dump proves rustle assembles the correct
+long interior chain; it differs from ST only by an **extra 5′
+leading node that ST's `update_abundance` trims**. **Real divergence =
+leading/trailing-node trim reconciliation** (rustle
+`trim_longread_path_for_update_abundance` map_reads.rs:1647 vs ST
+rlink.cpp:4693-4809), NOT fragmentation, NOT junction-correction.
+Practical cov-gated ceiling unchanged: **1746/1948 F1=92.21%**.

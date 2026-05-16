@@ -549,6 +549,9 @@ pub fn map_reads_to_graph(
     let mut pattern_map: HbHashMap<TransfragKey, usize> =
         HbHashMap::with_capacity(reads.len());
     let mut tr_index = TreePatIndex::new(graph.n_nodes);
+    // Option C Stage 0 (see map_reads_to_graph_bundlenodes for rationale).
+    let st_read_pattern =
+        std::env::var_os("RUSTLE_ST_READ_PATTERN").is_some();
 
     for (read_idx, read) in reads.iter().enumerate() {
         let is_long = true; // long-read only mode
@@ -568,14 +571,25 @@ pub fn map_reads_to_graph(
             killed_junction_pairs,
         );
 
-        let segments = split_read_segments(
-            read,
-            graph,
-            &unique_nodes,
-            junction_correction_window,
-            killed_junction_pairs,
-            Some(read_idx),
-        );
+        let segments = if st_read_pattern && is_long {
+            if unique_nodes.len() <= 1 {
+                Vec::new()
+            } else {
+                vec![ReadPathSegment {
+                    path: unique_nodes.clone(),
+                    orphan: false,
+                }]
+            }
+        } else {
+            split_read_segments(
+                read,
+                graph,
+                &unique_nodes,
+                junction_correction_window,
+                killed_junction_pairs,
+                Some(read_idx),
+            )
+        };
 
         if segments.is_empty() {
             continue;
@@ -650,7 +664,11 @@ pub fn map_reads_to_graph(
     // where coverage drops sharply, the transfrag likely spans two separate genes via
     // an intergenic bridging region. Split it into two independent transfrags.
     // This matches StringTie's coverage-drop exclusion (rlink.cpp:8262-8266).
-    transfrags = split_chimeric_transfrags(transfrags, graph);
+    // Skipped under RUSTLE_ST_READ_PATTERN (StringTie has no coverage-valley
+    // split for long reads).
+    if !st_read_pattern {
+        transfrags = split_chimeric_transfrags(transfrags, graph);
+    }
 
     for (tf_idx, tf) in transfrags.iter().enumerate() {
         if tf.node_ids.len() <= 1 {
@@ -800,6 +818,13 @@ pub fn map_reads_to_graph_bundlenodes(
         Some((s, e))
     });
     let mut dump_hits = 0usize;
+    // Option C Stage 0: faithful StringTie read→transfrag — one transfrag per
+    // long-read pattern, no fragmentation (skip split_read_segments +
+    // single-node-fragment skip + split_chimeric_transfrags). Precision is
+    // carried by graph-edge absence (ensure_edges_for_read_path refuses
+    // killed-junction edges), exactly as StringTie does. Default off.
+    let st_read_pattern =
+        std::env::var_os("RUSTLE_ST_READ_PATTERN").is_some();
 
     for (read_idx, read) in reads.iter().enumerate() {
         let is_long = true; // long-read only mode
@@ -870,14 +895,30 @@ pub fn map_reads_to_graph_bundlenodes(
             killed_junction_pairs,
         );
 
-        let segments = split_read_segments(
-            read,
-            graph,
-            &unique_nodes,
-            junction_correction_window,
-            killed_junction_pairs,
-            Some(read_idx),
-        );
+        let segments = if st_read_pattern && is_long {
+            // One transfrag per long-read pattern (StringTie get_read_pattern):
+            // the full node chain, never fragmented. A degenerate single-node
+            // read is dropped (StringTie update_abundance returns NULL,
+            // rlink.cpp:4812). Trimming into intron/source/sink still happens
+            // in add_or_update_transfrag.
+            if unique_nodes.len() <= 1 {
+                Vec::new()
+            } else {
+                vec![ReadPathSegment {
+                    path: unique_nodes.clone(),
+                    orphan: false,
+                }]
+            }
+        } else {
+            split_read_segments(
+                read,
+                graph,
+                &unique_nodes,
+                junction_correction_window,
+                killed_junction_pairs,
+                Some(read_idx),
+            )
+        };
         if segments.is_empty() {
             continue;
         }
@@ -943,8 +984,12 @@ pub fn map_reads_to_graph_bundlenodes(
         }
     }
 
-    // Split chimeric transfrags at coverage valleys (same as map_reads_to_graph)
-    transfrags = split_chimeric_transfrags(transfrags, graph);
+    // Split chimeric transfrags at coverage valleys (same as map_reads_to_graph).
+    // Skipped under RUSTLE_ST_READ_PATTERN: StringTie never splits a long read
+    // at a coverage valley (no such concept in get_read_pattern).
+    if !st_read_pattern {
+        transfrags = split_chimeric_transfrags(transfrags, graph);
+    }
 
     for (tf_idx, tf) in transfrags.iter().enumerate() {
         if tf.node_ids.len() <= 1 {
