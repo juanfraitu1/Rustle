@@ -1181,6 +1181,16 @@ fn long_max_flow_direct(
                 }
             }
             if !tf.longread || tf.node_ids.first().copied() != Some(nid) || tf.abundance <= 0.0 {
+                if keeptr_dbg_on {
+                    let why = if !tf.longread {
+                        "gate_not_longread"
+                    } else if tf.node_ids.first().copied() != Some(nid) {
+                        "gate_first_ne_nid"
+                    } else {
+                        "gate_abund_le0"
+                    };
+                    kdbg!(i, t_idx, tf, why);
+                }
                 continue;
             }
 
@@ -1394,6 +1404,53 @@ fn long_max_flow_direct(
                                 __flow_run_id, i, t, n0, nl, ab, why
                             );
                         }
+                    }
+                }
+            }
+        }
+        // Run-entry transfrag inventory: every transfrag whose node span
+        // overlaps the seed path span, with run-entry abundance + flags.
+        // Decisive for "absent" transfrags: distinguishes depleted (abund<=0)
+        // vs not-node-linked vs not-longread vs pattern-mismatch.
+        if let Ok(ip) = std::env::var("RUSTLE_TF_INV_TSV") {
+            if !ip.is_empty() {
+                use std::io::Write as _;
+                let (slo, shi) = {
+                    let mut a = u64::MAX;
+                    let mut b = 0u64;
+                    for &nid in path.iter() {
+                        if nid == graph.source_id || nid == graph.sink_id {
+                            continue;
+                        }
+                        if let Some(g) = graph.nodes.get(nid) {
+                            a = a.min(g.start);
+                            b = b.max(g.end);
+                        }
+                    }
+                    (a, b)
+                };
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true).append(true).open(&ip)
+                {
+                    for (t, tf) in transfrags.iter().enumerate() {
+                        let Some(&f0) = tf.node_ids.first() else { continue };
+                        let Some(&fl) = tf.node_ids.last() else { continue };
+                        let n0 = graph.nodes.get(f0).map(|g| g.start).unwrap_or(0);
+                        let nl = graph.nodes.get(fl).map(|g| g.end).unwrap_or(0);
+                        if nl < slo || n0 > shi {
+                            continue;
+                        }
+                        let in_pp = pathpat.contains_pattern(&tf.pattern);
+                        let in_trf = path.iter().any(|&nid| {
+                            graph.nodes.get(nid)
+                                .map(|g| g.trf_ids.contains(&t))
+                                .unwrap_or(false)
+                        });
+                        let _ = writeln!(
+                            f, "rustle\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}\t{}",
+                            __flow_run_id, t, n0, nl, tf.abundance,
+                            tf.longread as u8, in_pp as u8, in_trf as u8
+                        );
                     }
                 }
             }
