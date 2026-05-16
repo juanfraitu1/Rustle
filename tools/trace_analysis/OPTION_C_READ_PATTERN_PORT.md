@@ -218,14 +218,53 @@ strongly F1-negative). The recovered signal here is ~1 read on one
 transfrag; the change perturbs node IDs and junction sets across all
 586 loci. Not a tunable-knob fix; not worth the precision blast radius.
 
+## Paired-experiment premise FALSIFIED (2026-05-16) — no incremental on-ramp
+
+Strategic question tested: "mirror StringTie's junction acceptance now
+(sacrificing precision) and recover precision later via the existing
+FP-filter pipeline." Decisive because the gffcompare reference IS
+StringTie-on-GGO_19 → a StringTie FP is, by this metric, ground truth →
+faithful mirroring is structurally the F1-max direction.
+
+Three independent bounded "mirror StringTie junctions" levers, all on
+the STRG.15.1 nI18 / 16601773→16601927 case:
+
+1. `RUSTLE_COALESCE_TOLERANCE=0` (disable near-junction merge): full
+   chr19 **byte-identical 1746/1948 F1=92.210**.
+2. `RUSTLE_STRINGTIE_EXACT=1` (skips coalesce + nearby-weak +
+   donor-isofrac + canonicalize; keeps only strand-kill +
+   `min_junction_reads`=1, the StringTie post-`good_junc` hygiene):
+   full chr19 **byte-identical 1746/1948 F1=92.210**.
+3. `correct_bundle_junctions_higherr` (window 25, the only remaining
+   redirect): **provably does not touch it** — `is_bad` requires
+   `intron_len > 100 000` (this intron = 154 bp) so the redirect is
+   never even evaluated.
+
+→ rustle's junction *post-processing is ALREADY StringTie-faithful*.
+The 1-read alt-junction divergence originates at **read-level
+CIGAR→junction extraction / genome-aware splice-site placement** — the
+single most blast-radius-heavy stage (every read × every junction ×
+every locus), with **no env-gated lever**.
+
+**Therefore the paired experiment cannot even be started incrementally.**
+There is no junction-mirror flag to pair with FP filters; the premise
+("sacrifice precision now") has no bounded on-ramp. Mirroring StringTie's
+junction set = reimplementing its read-level junction placement, which
+(per the co-dependency analysis) must land *together* with the faithful
+flow + prediction-filter port — one atomic maximal-blast-radius
+reimplementation with no incremental validation path. The
+"recover-precision-later" mechanism is real (it is StringTie's own
+downstream culling) but is inseparable from the same rewrite.
+
 ## Status
 
-Stage 0 FALSIFIED; trim-reconciliation (#104) FALSIFIED; TRUE root cause
-pinned to graph-node-granularity = **global retention of 1-read
-micro-shifted alt-junctions**; fix ATTEMPTED via the existing
-`RUSTLE_COALESCE_TOLERANCE` lever → byte-identical (not knob-tunable;
-collapse is upstream at read-level junction extraction). Confirmed: this
-is the StringTie precision-sacrificing behavior rustle deliberately does
-not replicate. Scaffold `RUSTLE_ST_READ_PATTERN` retained env-gated
-default-off, byte-identical 1746/1948. **1746/1948 F1=92.21% is the
-forensically-confirmed practical ceiling; closing the Option-C arc.**
+Stage 0 FALSIFIED; trim-reconciliation (#104) FALSIFIED; root cause =
+global retention of 1-read micro-shifted alt-junctions, originating at
+read-level junction extraction. Paired-experiment premise FALSIFIED: all
+three bounded junction-mirror levers byte-identical → no incremental
+on-ramp; only path is the atomic read→junction→graph→flow→filter
+faithful port (a project, not a tuning exercise). Scaffold
+`RUSTLE_ST_READ_PATTERN` retained env-gated default-off, byte-identical
+1746/1948. **1746/1948 F1=92.21% is the evidence-confirmed ceiling under
+the current (non-rewrite) architecture. Option-C arc closed; decision
+escalated: full faithful port vs. accept ceiling.**
