@@ -12,6 +12,7 @@ use crate::max_flow::{
     guide_push_flow, long_max_flow_seeded_with_used_pathpat, push_guide_max_flow,
     push_max_flow_seeded_full, GuideFlowPriorRef,
 };
+use crate::stringtie_parity::stringtie_exact;
 use crate::types::{CPrediction, DetHashMap as HashMap, DetHashSet as HashSet, RunConfig};
 
 #[inline]
@@ -8219,14 +8220,25 @@ pub fn extract_transcripts(
                 }
             } else if mixed_mode {
                 if transfrags[idx].longread {
-                    let (lf, lfpath, lused, lf_noderate) = long_max_flow_seeded_with_used_pathpat(
-                        &use_path,
-                        transfrags,
-                        graph,
-                        false,
-                        Some(idx),
-                        flow_pathpat.as_ref(),
-                    );
+                    let (lf, lfpath, lused, lf_noderate) = if stringtie_exact() {
+                        crate::parse_trflong_st::long_max_flow_st(
+                            &use_path,
+                            transfrags,
+                            graph,
+                            false,
+                            Some(idx),
+                            flow_pathpat.as_ref(),
+                        )
+                    } else {
+                        long_max_flow_seeded_with_used_pathpat(
+                            &use_path,
+                            transfrags,
+                            graph,
+                            false,
+                            Some(idx),
+                            flow_pathpat.as_ref(),
+                        )
+                    };
                     flow_used = lused.ones().collect();
                     let (sf, sfpath, sfull) =
                         push_max_flow_seeded_full(&use_path, transfrags, graph, true, Some(idx));
@@ -8262,7 +8274,7 @@ pub fn extract_transcripts(
                 let se_no_subtract = real_nodes.len() == 1
                     && !transfrags[idx].guide
                     && std::env::var_os("RUSTLE_SE_NO_SUBTRACT_OFF").is_none();
-                let (lf, lfpath, lused, lf_noderate) = if canonical {
+                let (lf, lfpath, lused, lf_noderate) = if canonical || stringtie_exact() {
                     crate::parse_trflong_st::long_max_flow_st(
                         &use_path,
                         transfrags,
