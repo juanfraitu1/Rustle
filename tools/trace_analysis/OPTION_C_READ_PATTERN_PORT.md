@@ -183,9 +183,49 @@ deferred maximal-blast-radius rewrite proper — touches every locus.
 **Not attempted; F1 ceiling 1746/1948=92.21% confirmed as the practical
 cov-gated wall.** Task #104 is closed as falsified.
 
+## Fix ATTEMPTED (2026-05-16) — mechanism = 1-read micro-shifted alt-junction
+
+Drilled the graph-node-granularity cause to its exact origin via the
+rustle vs ST `junction_accept` parity logs at the STRG.15.1 locus:
+
+- rustle accepts ONLY `16601787→16601927` (mm=362).
+- StringTie accepts that **plus a 1-read micro-shifted alt-donor
+  `16601773→16601927`** (14 bp from dominant) and sees a rejected
+  `16601787→16601928`. That single alt-donor read is what gives ST a
+  distinct node boundary → the nI18 ST_ONLY transfrag (ab≈1). rustle
+  folds the read onto the dominant junction → no distinct transfrag.
+
+So the graph-granularity divergence reduces to: **StringTie retains
+1-read, ~14 bp-shifted alt-splice junctions; rustle collapses/snaps them
+onto the dominant junction.**
+
+Bounded fix attempt with the existing parameterized lever:
+
+- `min_junction_reads` default is already **1.0** (== ST `junctionthr=1`)
+  — not the dropper.
+- `RUSTLE_COALESCE_TOLERANCE=0` (disables near-junction merge): full
+  chr19 **byte-identical 1746/1948 F1=92.210** — no recovery, no
+  regression. The collapse is therefore NOT the post-stats coalesce; it
+  happens earlier (read-level CIGAR→junction extraction /
+  `canonicalize_junctions` snapping the 14 bp-shifted donor before stats,
+  junctions.rs:615).
+
+→ The only "fix" is to retain 1-read, ~14 bp-shifted alt-splice
+junctions **globally**, which is precisely the documented
+precision-catastrophic wall (cf. MEMORY: ABSENT_JUNC "micro-shifted
+2-4 bp, not a bug"; every junction-loosening lever across the arc is
+strongly F1-negative). The recovered signal here is ~1 read on one
+transfrag; the change perturbs node IDs and junction sets across all
+586 loci. Not a tunable-knob fix; not worth the precision blast radius.
+
 ## Status
 
-Stage 0 FALSIFIED; trim-reconciliation (#104) FALSIFIED by forensics;
-TRUE root cause pinned to graph-node-granularity (above). Scaffold
-`RUSTLE_ST_READ_PATTERN` retained env-gated default-off, byte-identical
-1746/1948. Baseline / practical ceiling: **1746/1948 F1=92.21%**.
+Stage 0 FALSIFIED; trim-reconciliation (#104) FALSIFIED; TRUE root cause
+pinned to graph-node-granularity = **global retention of 1-read
+micro-shifted alt-junctions**; fix ATTEMPTED via the existing
+`RUSTLE_COALESCE_TOLERANCE` lever → byte-identical (not knob-tunable;
+collapse is upstream at read-level junction extraction). Confirmed: this
+is the StringTie precision-sacrificing behavior rustle deliberately does
+not replicate. Scaffold `RUSTLE_ST_READ_PATTERN` retained env-gated
+default-off, byte-identical 1746/1948. **1746/1948 F1=92.21% is the
+forensically-confirmed practical ceiling; closing the Option-C arc.**
