@@ -138,22 +138,54 @@ Different first node → different canonical intron-chain key →
 `transfrag_construction_diff.py` buckets it ST_ONLY / NEVER_CONSTRUCTED
 even though it is essentially the same read's chain.
 
-**Real Option C locus = leading/trailing-node TRIM reconciliation**
-(rustle `trim_longread_path_for_update_abundance` map_reads.rs:1647 vs ST
-`update_abundance` rlink.cpp:4693-4809), and secondarily the candidate
-node-set scoping (`ordered_nodes_from_readgroup`). NOT Stage 2
-(edge-absence precision). Stage 3 is promoted to **Stage 1 of the real
-work**: make rustle's boundary trim byte-faithful to ST
-(`longintronanchor=25`, `CHI_WIN=100`, `DROP=0.5`,
-hardstart/hardend-skip), then re-key STRG.15.1 `--pre`.
+## TRUE root cause PINNED (2026-05-16) — graph-node-granularity, not trim
 
-Stage-0 fragmentation-bypass is kept env-gated **default-off** (it is
-F1-negative and now known not to be the lever) — useful only as the
-isolation harness that produced this redirect.
+The trim-reconciliation hypothesis (task #104) is itself **falsified by
+direct ST-code + log forensics** on the single decisive ST_ONLY chain
+`16601927-16612061 nI18` (origin `read_long`, ab 1.0, present in ST
+`transfrag_define_pre` → genuine read→transfrag product; absent from
+rustle pre AND post):
+
+1. No read in the BAM starts at ~16601926 (`samtools` 16601900-16602050
+   → 0 reads). So it is not an interior-start read.
+2. ST `update_abundance` source-trim (rlink.cpp:4756-4809) **provably
+   cannot fire** on rustle's graph here: its `while` guard is
+   `no2gnode[node[i]]->end+1==no2gnode[node[i+1]]->start` (CONTIGUOUS,
+   no intron). Rustle's analogue (`trim_longread_path_for_update_abundance`
+   map_reads.rs:1826 `if curn.end != nextn.start { break }`) is already
+   structurally faithful — it correctly does nothing because the leading
+   node is intron-separated.
+3. ST already carries the "extra" leading intron `16601788-16601926` in
+   **67** `transfrag_define` *and* 67 pre (not a read-cleaning drop).
+4. `junction_accept` (ST): dominant `16601787→16601927` nreads=**362**,
+   PLUS a minor 1-read `16601773→16601927` and a rejected
+   `16601787→16601928`.
+
+→ The minor/edge junctions give **ST's graph an extra node boundary in
+the 16601788-16601926 interval**, so that region is a *contiguous node
+run* (`end+1==start`) in ST's graph. ST's `update_abundance` source-trim
+can then walk that contiguous run and shorten the one divergent read's
+chain to start at node 16601926 → the nI18 transfrag. **Rustle's graph
+represents 16601788-16601926 as a pure intron EDGE (no node)**, so the
+same trim hits `curn.end != nextn.start` and breaks immediately — rustle
+*cannot* produce that chain no matter how faithful the trim is.
+
+**TRUE root cause = graph-node construction / node-granularity
+divergence (minor-junction-induced node splitting), UPSTREAM of
+read→transfrag, manifesting THROUGH the already-faithful trim.** This is
+why every read→transfrag-level lever failed in sequence: Option A
+(killed-junction split), Stage 0 (all fragmentation), and task #104
+(trim reconciliation) are all downstream of the actual divergence.
+
+Fix locus: rustle graph build (where junctions become node boundaries
+vs. edges; minor/low-read junctions near a dominant one). This is the
+deferred maximal-blast-radius rewrite proper — touches every locus.
+**Not attempted; F1 ceiling 1746/1948=92.21% confirmed as the practical
+cov-gated wall.** Task #104 is closed as falsified.
 
 ## Status
 
-Stage 0 FALSIFIED as the lever; redirected to boundary-trim
-reconciliation (above). Scaffold `RUSTLE_ST_READ_PATTERN` retained
-env-gated default-off, byte-identical 1746/1948. Baseline to beat:
-**1746/1948 F1=92.21%**.
+Stage 0 FALSIFIED; trim-reconciliation (#104) FALSIFIED by forensics;
+TRUE root cause pinned to graph-node-granularity (above). Scaffold
+`RUSTLE_ST_READ_PATTERN` retained env-gated default-off, byte-identical
+1746/1948. Baseline / practical ceiling: **1746/1948 F1=92.21%**.

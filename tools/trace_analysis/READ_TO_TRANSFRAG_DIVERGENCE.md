@@ -119,10 +119,17 @@ Option A FALSIFIED. Option C Stage 0 (full fragmentation bypass,
 `RUSTLE_ST_READ_PATTERN`) also FALSIFIED as the lever — see
 `OPTION_C_READ_PATTERN_PORT.md` "Stage 0 IMPLEMENTED + measured":
 removing ALL transfrag fragmentation gives ST_ONLY 9→15, F1 89.19
-(negative). The `[BUNDLEMAP]` dump proves rustle assembles the correct
-long interior chain; it differs from ST only by an **extra 5′
-leading node that ST's `update_abundance` trims**. **Real divergence =
-leading/trailing-node trim reconciliation** (rustle
-`trim_longread_path_for_update_abundance` map_reads.rs:1647 vs ST
-rlink.cpp:4693-4809), NOT fragmentation, NOT junction-correction.
-Practical cov-gated ceiling unchanged: **1746/1948 F1=92.21%**.
+(negative). Trim-reconciliation ALSO falsified by forensics — see
+`OPTION_C_READ_PATTERN_PORT.md` "TRUE root cause PINNED". The divergent
+ST_ONLY chain is a genuine read→transfrag product in ST's pre log, but
+ST's `update_abundance` trim can only produce it because **ST's graph
+has an extra node boundary in the 16601788-16601926 interval** (from a
+minor 1-read junction `16601773→16601927` + rejected `16601787→16601928`
+alongside the dominant 362-read `16601787→16601927`), making that region
+a contiguous node run the trim can walk. Rustle represents the same
+interval as a pure intron edge, so its (already-faithful) trim is a
+no-op there. **TRUE root cause = graph-node-granularity divergence
+upstream of read→transfrag** — NOT fragmentation, NOT junction-
+correction, NOT trim constants. It is the deferred maximal-blast-radius
+graph-build rewrite. Practical cov-gated ceiling confirmed: **1746/1948
+F1=92.21%**.
