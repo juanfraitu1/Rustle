@@ -689,8 +689,14 @@ pub fn good_junc_stats(
             // Compute donor-side bpcov to determine if this is "really" noise
             // (high cov but tiny junction support) vs a legit low-cov splice site
             // (low cov on both sides).
+            // Parity lever: rustle amplifies the long-read witness threshold
+            // by an extra 1/ERROR_PERC vs StringTie's good_junc, killing the
+            // 1-read alt-junctions StringTie keeps (mm=1.0). With
+            // RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL=1 use ST-equivalent mult.
+            let lr_witness_faithful =
+                std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL").is_some();
             let mut mult_pre = 1.0 / ERROR_PERC;
-            if longreads { mult_pre /= ERROR_PERC; }
+            if longreads && !lr_witness_faithful { mult_pre /= ERROR_PERC; }
             let bw_pre = 5u64;
             let sno_pre = if strand > 0 { BPCOV_STRAND_PLUS } else { BPCOV_STRAND_MINUS };
             let j_pre = jn.donor.saturating_sub(refstart) as i64;
@@ -751,8 +757,12 @@ pub fn good_junc_stats(
         }
 
         // good_junc step 4: local coverage witness at donor/acceptor.
+        // Parity lever (see step-5 note): drop rustle's extra long-read
+        // amplification to mirror StringTie's good_junc witness threshold.
         let mut mult = 1.0 / ERROR_PERC;
-        if longreads {
+        if longreads
+            && std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL").is_none()
+        {
             mult /= ERROR_PERC;
         }
         let bw = 5u64;
@@ -1261,7 +1271,9 @@ pub fn good_junc(
         }
 
         let mut mult = 1.0 / ERROR_PERC;
-        if longreads {
+        if longreads
+            && std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL").is_none()
+        {
             mult /= ERROR_PERC;
         }
         let bw = 5u64;

@@ -256,6 +256,38 @@ reimplementation with no incremental validation path. The
 "recover-precision-later" mechanism is real (it is StringTie's own
 downstream culling) but is inseparable from the same rewrite.
 
+## Deepest parity lever TESTED (good_junc) — 2026-05-16
+
+"Is there any more parity lever to make this deterministic?" → The
+behavior is *already deterministic* on both sides; the question is
+co-divergence. Located + tested the deepest one: rustle's `good_junc`
+(killed_junctions.rs `good_junc_stats` steps 4–5) amplifies the
+long-read coverage-witness threshold by an extra `1/ERROR_PERC` vs
+StringTie (`if longreads { mult /= ERROR_PERC }`, lines 693/762/1275),
+killing the 1-read alt-junctions StringTie keeps (ST log: mm=1.0,
+accepted). Added `RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL=1` (default off):
+use ST-equivalent `mult` for long reads.
+
+- Default (unset): **byte-identical 1746/1948 F1=92.210**.
+- Lever ON, full chr19: **1745/1945 F1=92.230** (−1 TP, −3 query;
+  +0.02 F1 = within noise — NOT the precision collapse, but no gain).
+- Lever ON, STRG.15.1 `--pre`: **ST_ONLY still 9, all
+  NEVER_CONSTRUCTED** — the nI18 transfrag is STILL not built.
+
+→ Even the deepest, correctly-located parity lever (good_junc itself)
+neither recovers the missing construction nor moves F1. Confirms the
+co-dependency conclusion empirically: no *single* parity lever closes
+the gap because the divergence is distributed across the whole
+read→junction→graph→flow spine (retaining the junction does not, by
+itself, produce ST's node-granularity / pattern / flux). The lever is a
+legitimate faithful-port correction (rustle's extra long-read
+amplification was a non-StringTie divergence) so it is **kept,
+env-gated default-off** (F1-neutral; baseline preserved byte-identical).
+
+**Final answer: there is no remaining single parity lever that makes
+this close. Levers are co-dependent; only an atomic faithful port of the
+full spine would. 1746/1948 F1=92.21% is the architecture ceiling.**
+
 ## Status
 
 Stage 0 FALSIFIED; trim-reconciliation (#104) FALSIFIED; root cause =
