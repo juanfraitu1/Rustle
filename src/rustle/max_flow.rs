@@ -1140,6 +1140,12 @@ fn long_max_flow_direct(
     // (i, t, n0_coord, nlast_coord, abund, outcome). Flushed after run id.
     let keeptr_dbg_on = std::env::var_os("RUSTLE_KEEPTR_TSV").is_some();
     let mut keeptr_dbg: Vec<(usize, usize, u64, u64, f64, &'static str)> = Vec::new();
+    // Position-keyed per-edge contribution recorder (RUSTLE_CAPEDGE_TSV):
+    // (i, end_idx, t, abund) at each capacity[i][end_idx] += tf.abundance.
+    // Matrix positions are coord-immune (correspond across tools when seed
+    // chains match) — avoids the 0/1-based off-by-one artifact.
+    let capedge_on = std::env::var_os("RUSTLE_CAPEDGE_TSV").is_some();
+    let mut cap_edges: Vec<(usize, usize, usize, f64)> = Vec::new();
     macro_rules! kdbg {
         ($i:expr,$t:expr,$tf:expr,$why:expr) => {
             if keeptr_dbg_on {
@@ -1272,6 +1278,9 @@ fn long_max_flow_direct(
                 link_set[end_idx].insert(i);
             }
             capacity[i][end_idx] += tf.abundance;
+            if capedge_on {
+                cap_edges.push((i, end_idx, t_idx, tf.abundance));
+            }
 
             if n >= 2 {
                 if !link_set[0].contains(&1) {
@@ -1402,6 +1411,23 @@ fn long_max_flow_direct(
                             let _ = writeln!(
                                 f, "rustle\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
                                 __flow_run_id, i, t, n0, nl, ab, why
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        if capedge_on {
+            if let Ok(ep) = std::env::var("RUSTLE_CAPEDGE_TSV") {
+                if !ep.is_empty() {
+                    use std::io::Write as _;
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true).append(true).open(&ep)
+                    {
+                        for (i, j, t, ab) in &cap_edges {
+                            let _ = writeln!(
+                                f, "rustle\t{}\t{}\t{}\t{}\t{:.4}",
+                                __flow_run_id, i, j, t, ab
                             );
                         }
                     }
