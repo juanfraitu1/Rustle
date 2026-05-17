@@ -9548,7 +9548,7 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: discover gene family groups ────────────────────────
-    let vg_families = if config.vg_mode {
+    let vg_families = if config.vg_mode && !config.single_copy_mode {
         // Sequence-similarity family discovery is opt-in: only when --vg-discover-novel
         // is active (not triggered by --vg-snp or --genome-fasta alone, to avoid false links).
         let vg_genome_for_discovery = if config.vg_discover_novel {

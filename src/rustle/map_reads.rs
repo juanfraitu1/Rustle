@@ -1456,7 +1456,12 @@ fn add_or_update_transfrag(
     let mut trim_variants: Vec<Vec<usize>> = Vec::new();
 
     if is_long && std::env::var_os("RUSTLE_DISABLE_LR_PATH_TRIM").is_none() {
-        trim_longread_path_for_update_abundance(graph, &mut key, ref_start, ref_end);
+        if std::env::var_os("RUSTLE_ST_TRIM").is_some() {
+            // StringTie-exact trim mode
+            trim_path_stringtie_mode(graph, &mut key, ref_start, ref_end);
+        } else {
+            trim_longread_path_for_update_abundance(graph, &mut key, ref_start, ref_end);
+        }
 
         // Multi-level trimming: collect intermediate trim levels to create interior-start variants.
         // When trim_longread_path_for_update_abundance trims by removing leading/trailing nodes,
@@ -1946,6 +1951,109 @@ fn trim_longread_path_for_update_abundance(
                         trim_type, cur, nxt, dist, nextn.coverage, curn.coverage, nextn.hardstart
                     );
                 }
+                path.drain(0..=i);
+                break;
+            }
+            i += 1;
+        }
+    }
+}
+
+/// StringTie-exact trim: ports rlink.cpp:4757-4810 (is_source block) and 4702-4754 (is_sink block).
+/// Gate: RUSTLE_ST_TRIM=1
+fn trim_path_stringtie_mode(
+    graph: &Graph,
+    path: &mut Vec<usize>,
+    read_start: u64,
+    read_end: u64,
+) {
+    if path.len() <= 1 {
+        return;
+    }
+    let first = path[0];
+    let last = *path.last().unwrap();
+
+    // Sink-side trim (mirrors is_sink block)
+    let can_sink_trim = graph
+        .nodes
+        .get(last)
+        .map(|n| read_end <= n.end && !n.hardend)
+        .unwrap_or(false);
+    if can_sink_trim {
+        let mut i = path.len() - 1;
+        while i > 0 {
+            let prev = path[i - 1];
+            let cur = path[i];
+            let prevn = &graph.nodes[prev];
+            let curn = &graph.nodes[cur];
+            if prevn.end != curn.start {
+                break;
+            } // not contiguous (half-open)
+            let dist = read_end.saturating_sub(prevn.end);
+            let sig_drop = prevn.hardend
+                || cov_drop_significant(
+                    prevn.coverage,
+                    prevn.length(),
+                    curn.coverage,
+                    curn.length(),
+                );
+            if !sig_drop {
+                break;
+            }
+            let trim = if dist < LONGINTRONANCHOR {
+                // ST: trim if child[j] != cur (any child != cur, same as parent side)
+                prevn.children.ones().any(|c| c != cur) // includes sink_id (ST includes virtual sink)
+            } else if dist < CHI_WIN {
+                // ST: trim if child[j] == gno-1 (sink link exists)
+                prevn.children.contains(graph.sink_id)
+            } else {
+                false
+            };
+            if trim {
+                path.truncate(i);
+                break;
+            }
+            i -= 1;
+        }
+    }
+
+    // Source-side trim (mirrors is_source block)
+    let can_source_trim = graph
+        .nodes
+        .get(first)
+        .map(|n| read_start >= n.start && !n.hardstart)
+        .unwrap_or(false);
+    if can_source_trim {
+        let mut i = 0usize;
+        while i + 1 < path.len() {
+            let cur = path[i];
+            let nxt = path[i + 1];
+            let curn = &graph.nodes[cur];
+            let nextn = &graph.nodes[nxt];
+            if curn.end != nextn.start {
+                break;
+            } // not contiguous (half-open)
+            let dist = nextn.start.saturating_sub(read_start);
+            let sig_drop = nextn.hardstart
+                || cov_drop_significant(
+                    nextn.coverage,
+                    nextn.length(),
+                    curn.coverage,
+                    curn.length(),
+                );
+            if !sig_drop {
+                break;
+            }
+            let trim = if dist < LONGINTRONANCHOR {
+                // ST near: any parent != cur (includes source=0)
+                nextn.parents.ones().any(|p| p != cur)
+            } else if dist < CHI_WIN {
+                // ST outer: source is among parents (regardless of other parents)
+                nextn.parents.contains(graph.source_id)
+            } else {
+                false
+            };
+            if trim {
                 path.drain(0..=i);
                 break;
             }

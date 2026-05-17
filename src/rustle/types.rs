@@ -866,6 +866,9 @@ pub struct RunConfig {
     // ── Variation graph (gene family) mode ───────────────────────────────────
     /// Enable variation graph mode for gene family assembly (--vg).
     pub vg_mode: bool,
+    /// Single-copy assembly mode: skip VG family discovery, process each bundle independently (--single-copy-mode).
+    /// Mutually exclusive with vg_mode.
+    pub single_copy_mode: bool,
     /// Minimum shared multi-mapping reads to link bundles into a family group [default: 3].
     pub vg_min_shared_reads: usize,
     /// Maximum EM iterations for multi-mapping resolution [default: 20].
@@ -1207,6 +1210,7 @@ impl Default for RunConfig {
             trace_reference: false,
             ref_junction_witness: false,
             vg_mode: false,
+            single_copy_mode: false,
             vg_min_shared_reads: 3,
             vg_em_max_iter: 20,
             vg_discover_novel: false,

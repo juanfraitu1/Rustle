@@ -2173,6 +2173,10 @@ pub fn process_transfrags(
             if guided_mode && !tf.guide && tf_weight(tf) < singlethr {
                 included = true;
             }
+            // StringTie-style stricter single-exon filtering (singlethr/DROP = 2.375)
+            if tf.node_ids.len() == 1 && tf_weight(tf) < singlethr * DROP {
+                included = true;
+            }
             if included {
                 continue;
             }

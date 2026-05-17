@@ -469,6 +469,13 @@ struct Args {
     #[arg(long)]
     vg_phase: bool,
 
+    /// Single-copy assembly mode: process each bundle independently without VG family discovery.
+    /// Produces per-bundle transcripts; useful for baseline comparison to --vg mode.
+    /// Equivalent to running rustle on each copy's BAM separately, but in a single pass.
+    /// Mutually exclusive with --vg.
+    #[arg(long)]
+    single_copy_mode: bool,
+
     /// Minimum reads to create a novel copy bundle [default: 3]
     #[arg(long, default_value = "3")]
     vg_min_novel_reads: usize,
@@ -621,6 +628,12 @@ pub fn run_cli() -> anyhow::Result<()> {
         None
     };
 
+    // Validate mutually exclusive flags
+    if args.vg && args.single_copy_mode {
+        eprintln!("error: --vg and --single-copy-mode are mutually exclusive");
+        std::process::exit(1);
+    }
+
     // the original algorithm -a is "minimum anchor length" for junction support around splice sites.
     // In this codebase, `junction_support` has historically been used as the anchor threshold
     // (including `mismatch_anchor` and the left/right anchor witnesses), while `min_anchor_length`
@@ -712,6 +725,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         trace_reference: args.trace_reference.is_some(),
         ref_junction_witness: args.ref_junction_witness,
         vg_mode: args.vg,
+        single_copy_mode: args.single_copy_mode,
         vg_min_shared_reads: args.vg_min_shared,
         vg_em_max_iter: args.vg_em_iter,
         vg_discover_novel: args.vg_discover_novel,
