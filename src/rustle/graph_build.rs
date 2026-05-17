@@ -77,7 +77,13 @@ pub fn add_coverage_source_sink_edges(
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
     let n_nodes = graph.n_nodes;
-    let threshold_frac = ERROR_PERC * DROP; // 0.05
+    // Threshold for adding source/sink edges. Default 0.05 (5%) matches StringTie (ERROR_PERC * DROP).
+    // Loosen to 0.50 (50%) with RUSTLE_COVLINK_THRESHOLD_LOOSE=1 to catch more interior-node cases.
+    let threshold_frac = if std::env::var_os("RUSTLE_COVLINK_THRESHOLD_LOOSE").is_some() {
+        0.50 // 50%: parent coverage < 50% of node coverage
+    } else {
+        ERROR_PERC * DROP // 0.05: parent coverage < 5% of node coverage
+    };
 
     // Precompute per-node average coverage
     let mut node_avg_cov: Vec<f64> = Vec::with_capacity(n_nodes);
@@ -207,6 +213,40 @@ pub fn add_coverage_source_sink_edges(
     let mut synth_transfrags: Vec<GraphTransfrag> = Vec::new();
 
     let trace = std::env::var_os("RUSTLE_TRACE_COVLINKS").is_some();
+    let verbose = std::env::var_os("RUSTLE_COVLINK_VERBOSE").is_some();
+
+    if verbose {
+        eprintln!("[COVLINK_VERBOSE] total_nodes={} threshold={:.4} threshold_loose={}", n_nodes, threshold_frac,
+            std::env::var_os("RUSTLE_COVLINK_THRESHOLD_LOOSE").is_some());
+        for i in 0..n_nodes {
+            if i == source_id || i == sink_id {
+                continue;
+            }
+            let icov = node_avg_cov[i];
+            let parents: Vec<usize> = graph.nodes[i].parents.ones().collect();
+            let skip_source_check = i <= 1;
+            let has_source_parent = parents.contains(&source_id);
+
+            if skip_source_check {
+                eprintln!("[COVLINK_VERBOSE] nid={} SKIP i<=1", i);
+            } else if icov <= 0.0 {
+                eprintln!("[COVLINK_VERBOSE] nid={} SKIP icov<=0", i);
+            } else if parents.is_empty() {
+                eprintln!("[COVLINK_VERBOSE] nid={} SKIP no_parents", i);
+            } else if has_source_parent {
+                eprintln!("[COVLINK_VERBOSE] nid={} SKIP has_source_parent", i);
+            } else {
+                let mut parcov = 0.0;
+                for &p in &parents {
+                    parcov += node_avg_cov.get(p).copied().unwrap_or(0.0);
+                }
+                let passes = parcov < icov * threshold_frac;
+                eprintln!("[COVLINK_VERBOSE] nid={} icov={:.3} parcov={:.3} parcov_pct={:.1}% PASSES={}",
+                    i, icov, parcov, if icov > 0.0 { (parcov/icov)*100.0 } else { 0.0 }, passes);
+            }
+        }
+    }
+
     for (nid, abundance) in add_source_edges {
         if trace {
             let n = &graph.nodes[nid];

@@ -12247,8 +12247,9 @@ pub fn run<P: AsRef<Path>>(
                 // from coverage/terminal edge synthesis so topology diffs can be attributed
                 // to earlier cgroup/junction stages first. Opt-in for non-exact runs via
                 // RUSTLE_FREEZE_GRAPH_PRE_READ_MAP=1.
-                let freeze_pre_read_map_graph = crate::stringtie_parity::stringtie_exact()
-                    || std::env::var_os("RUSTLE_FREEZE_GRAPH_PRE_READ_MAP").is_some();
+                // Coverage edges are now enabled by default (StringTie uses them).
+                // Disable with RUSTLE_DISABLE_COVERAGE_SYNTH=1 if needed.
+                let freeze_pre_read_map_graph = std::env::var_os("RUSTLE_FREEZE_GRAPH_PRE_READ_MAP").is_some();
                 if freeze_pre_read_map_graph {
                     trace_dump::emit_event_row(
                         &bundle.chrom,
@@ -12268,7 +12269,7 @@ pub fn run<P: AsRef<Path>>(
                     '+' => BPCOV_STRAND_PLUS,
                     _ => BPCOV_STRAND_ALL,
                 };
-                let coverage_synth = if freeze_pre_read_map_graph {
+                let coverage_synth = if freeze_pre_read_map_graph || std::env::var_os("RUSTLE_DISABLE_COVERAGE_SYNTH").is_some() {
                     Vec::new()
                 } else {
                     crate::graph_build::add_coverage_source_sink_edges(
