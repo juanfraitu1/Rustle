@@ -1453,16 +1453,45 @@ fn add_or_update_transfrag(
             );
         }
     }
+    let mut trim_variants: Vec<Vec<usize>> = Vec::new();
+
     if is_long && std::env::var_os("RUSTLE_DISABLE_LR_PATH_TRIM").is_none() {
         trim_longread_path_for_update_abundance(graph, &mut key, ref_start, ref_end);
+
+        // Multi-level trimming: collect intermediate trim levels to create interior-start variants.
+        // When trim_longread_path_for_update_abundance trims by removing leading/trailing nodes,
+        // we can create additional transfrags at earlier trim points.
+        // Gate: RUSTLE_MULTI_TRIM_INTERIOR=1 to enable; RUSTLE_MULTI_TRIM_MAX_LEVELS controls depth.
+        let enable_multi_trim = std::env::var_os("RUSTLE_MULTI_TRIM_INTERIOR").is_some();
+        if enable_multi_trim && raw_key.len() > key.len() && key.len() >= 2 {
+            // Trim happened: raw_key is longer than key.
+            // Generate interior variants by starting the path at each intermediate node.
+            let max_levels: usize = std::env::var("RUSTLE_MULTI_TRIM_MAX_LEVELS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(3);
+
+            // Find the nodes that were trimmed from the source (leading nodes removed).
+            let trimmed_from_front = raw_key.len() - key.len();
+            for level in 1..=max_levels.min(trimmed_from_front) {
+                let variant_start = level;
+                if variant_start < raw_key.len() {
+                    let variant_path: Vec<usize> = raw_key[variant_start..].to_vec();
+                    if variant_path.len() >= 2 {
+                        trim_variants.push(variant_path);
+                    }
+                }
+            }
+        }
+
         if let Ok(s) = std::env::var("RUSTLE_TRACE_NODE_MAP") {
             let set: std::collections::HashSet<usize> =
                 s.split(':').filter_map(|x| x.parse::<usize>().ok()).collect();
             if !set.is_empty() && (raw_key.iter().any(|n| set.contains(n)) || key.iter().any(|n| set.contains(n))) {
                 if raw_key != key {
                     eprintln!(
-                        "[TRACE_NODE_MAP] add_or_update_after_trim raw_key={:?} key_after_trim={:?}",
-                        raw_key, key
+                        "[TRACE_NODE_MAP] add_or_update_after_trim raw_key={:?} key_after_trim={:?} variants={} (multi_trim enabled={})",
+                        raw_key, key, trim_variants.len(), enable_multi_trim
                     );
                 }
             }
@@ -1679,6 +1708,39 @@ fn add_or_update_transfrag(
         transfrags.push(tf);
         pattern_map.insert(key_sig, idx);
         tr_index.insert(graph, &key, &pattern, idx);
+    }
+
+    // Multi-level trimming: create transfrags for interior-start variants collected earlier.
+    // These represent the same read at different trim levels, creating transfrags that
+    // start from interior nodes like StringTie's update_abundance does.
+    if !trim_variants.is_empty() {
+        let variant_weight = weight / (trim_variants.len() as f64 + 1.0); // Distribute weight across variants + main
+        for variant_path in trim_variants {
+            if variant_path.is_empty() || variant_path.len() < 2 {
+                continue;
+            }
+            // Recursively create transfrag for this interior-start path.
+            add_or_update_transfrag(
+                &variant_path,
+                graph,
+                transfrags,
+                pattern_map,
+                tr_index,
+                psize,
+                is_long,
+                _mode,
+                junction_correction_window,
+                variant_weight,
+                ref_start,
+                ref_end,
+                has_poly_start_un,
+                has_poly_end_un,
+                has_poly_start_al,
+                has_poly_end_al,
+                killed_junction_orphan,
+                junctions,
+            );
+        }
     }
 }
 
