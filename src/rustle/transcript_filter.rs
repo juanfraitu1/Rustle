@@ -29,6 +29,31 @@ fn relax_guide_lowcov_lr() -> bool {
     std::env::var_os("RUSTLE_RELAX_GUIDE_LOWCOV_LR").is_some()
 }
 
+/// Phase 3D: Filter tracing for bottleneck identification
+fn filter_trace_enabled() -> bool {
+    std::env::var_os("RUSTLE_TRACE_FILTERS").is_some()
+}
+
+fn should_trace_transcript(tx_id: &str) -> bool {
+    if !filter_trace_enabled() {
+        return false;
+    }
+
+    // Check if this transcript is a target
+    if let Ok(targets_str) = std::env::var("RUSTLE_TRACE_TRANSCRIPTS") {
+        targets_str.split(';').any(|t| t.trim() == tx_id)
+    } else {
+        false
+    }
+}
+
+fn log_filter_decision(tx_id: &str, filter_name: &str, passed: bool) {
+    if should_trace_transcript(tx_id) {
+        let status = if passed { "PASS" } else { "FAIL" };
+        eprintln!("[FILTER-TRACE] {} @ {}: {}", tx_id, filter_name, status);
+    }
+}
+
 fn relax_pairwise_guide_equiv() -> bool {
     std::env::var_os("RUSTLE_RELAX_PAIRWISE_GUIDE_EQUIV").is_some()
 }
