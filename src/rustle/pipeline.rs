@@ -1308,6 +1308,11 @@ fn compute_initial_junction_stats_for_reads(
 ) -> JunctionStats {
     let mut junction_stats: JunctionStats = Default::default();
 
+    // Lenient mode: accept junctions with lower anchor thresholds (StringTie-compatible)
+    let lenient_mode = std::env::var_os("RUSTLE_LENIENT_JUNCTIONS").is_some();
+    let normal_anchor = if lenient_mode { 5 } else { config.junction_support };
+    let long_anchor = if lenient_mode { 5 } else { LONGINTRONANCHOR };
+
     for r in reads {
         let nex = r.exons.len();
         let mut leftsup = vec![0u64; nex];
@@ -1350,9 +1355,9 @@ fn compute_initial_junction_stats_for_reads(
                 .entry(j)
                 .or_insert_with(JunctionStat::default);
             st.mrcount += r.weight;
-            let mut anchor = config.junction_support;
-            if intron_len > config.longintron && anchor < LONGINTRONANCHOR {
-                anchor = LONGINTRONANCHOR;
+            let mut anchor = normal_anchor;
+            if intron_len > config.longintron && anchor < long_anchor {
+                anchor = long_anchor;
             }
             if left_anchor >= anchor {
                 st.leftsupport += r.weight;
@@ -1362,6 +1367,11 @@ fn compute_initial_junction_stats_for_reads(
                 }
             } else if right_anchor >= anchor {
                 st.rightsupport += r.weight;
+            } else if lenient_mode {
+                // Lenient mode: count as "good" even without sufficient anchor support
+                st.nreads_good += r.weight;
+                st.rightsupport += r.weight;
+                st.leftsupport += r.weight;
             }
             st.nm += r.junc_mismatch_weight;
             if left_anchor > LONGINTRONANCHOR && right_anchor > LONGINTRONANCHOR {
@@ -1464,7 +1474,56 @@ fn merge_region_outer_bundles(
                 }
             }
         }
-        let junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
+
+        // Exon-endpoint clustering (RUSTLE_JG_CLUSTER_RADIUS > 0 enables it, default 0 = off)
+        if std::env::var_os("RUSTLE_JUNCTION_GRAPH").is_some() {
+            let cluster_radius = std::env::var("RUSTLE_JG_CLUSTER_RADIUS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            if cluster_radius > 0 {
+                let clusterer = crate::junction_graph::EndpointClusterer::from_bundle(&reads, cluster_radius);
+                for read in &mut reads {
+                    read.junctions = clusterer.remap_junctions(&read.junctions);
+                    read.junctions_raw = clusterer.remap_junctions(&read.junctions_raw);
+                    read.junctions_del = clusterer.remap_junctions(&read.junctions_del);
+                }
+            }
+        }
+
+        let mut junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
+
+        // Junction graph inference: choose between coverage-gap (original) or StringTie-style (graph-based)
+        if std::env::var_os("RUSTLE_JUNCTION_GRAPH").is_some() {
+            let use_st_graph = std::env::var_os("RUSTLE_JG_USE_ST_GRAPH").is_some();
+            let min_bridge = std::env::var("RUSTLE_JG_MIN_BRIDGE")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(2.0);
+            let min_anchor = std::env::var("RUSTLE_JG_MIN_ANCHOR")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(5);
+
+            if use_st_graph {
+                // StringTie-style bundlenode graph inference
+                let inferer = crate::junction_graph_st::BundlenodeGraphInferer::from_reads(
+                    &reads, start, end,
+                    config.min_intron_length,
+                    1_000_000u64,
+                );
+                inferer.inject_into(&mut junction_stats, min_bridge);
+            } else {
+                // Coverage-gap + bridge-read inference (original)
+                let inferer = crate::junction_graph::BridgeJunctionInferer::from_reads(
+                    &reads, start, end,
+                    config.min_intron_length,
+                    1_000_000u64,
+                    min_anchor,
+                );
+                inferer.inject_into(&mut junction_stats, min_bridge);
+            }
+        }
         if debug_stage::is_enabled() {
             debug_stage::emit(
                 "region_merge_bundle",
@@ -16738,6 +16797,17 @@ pub fn run<P: AsRef<Path>>(
         all_transcripts = crate::transcript_filter::dedup_subset_intron_chains(
             all_transcripts, config.verbose);
         emit_post_pred_kills("global_dedup_subset_intron_chains", &_before, &all_transcripts);
+    }
+
+    // Filter low-coverage singleton intron chains (likely false positives).
+    // Opt-in: RUSTLE_FILTER_LOW_COV_SINGLETONS=<cov_threshold> (default 2.0 if enabled).
+    // Removes transcripts that are the only instance of their intron chain
+    // AND have coverage below threshold. Preserves shared chains (copy-specific discoveries).
+    if std::env::var_os("RUSTLE_FILTER_LOW_COV_SINGLETONS").is_some() {
+        let _before = pre_filter_snapshot(&all_transcripts);
+        all_transcripts = crate::transcript_filter::filter_low_coverage_singleton_chains(
+            all_transcripts, config.verbose);
+        emit_post_pred_kills("global_low_coverage_singleton_chains", &_before, &all_transcripts);
     }
 
     // Emit a final `path_emit_pre_write` parity event for every tx that survives

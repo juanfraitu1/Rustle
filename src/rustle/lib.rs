@@ -28,7 +28,9 @@ mod bundle; // Internal bundle implementation (legacy)
 pub mod bundle_builder; // Sub-bundle building (public API)
 pub mod hard_boundaries;
 pub mod junction_correction; // sserror-based junction position correction
+pub mod junction_graph; // exon-endpoint clustering for junction normalization
 pub mod junctions; // splice junction data structures
+pub mod junction_graph_st; // StringTie-style bundlenode graph inference
 pub mod killed_junctions; // good_junc gate, junction splice aggregation
 pub mod read_boundaries; // read boundary inference // hard bundle boundary detection
 

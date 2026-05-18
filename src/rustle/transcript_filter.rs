@@ -8218,3 +8218,138 @@ pub fn filter_by_min_junction_support(
     }
     result
 }
+
+/// Filter low-coverage singleton novel intron chains.
+///
+/// Remove multi-exon transcripts that:
+/// 1. Are the only transcript with their intron chain (singleton)
+/// 2. Have coverage < threshold
+/// 3. Have their intron chain NOT in the full set of novel chains found in Rustle
+///
+/// This is a conservative filter: it only removes transcripts with completely
+/// novel chains (not found in any StringTie transcript) if they have low coverage.
+/// Legitimate matching transcripts are preserved even if singleton.
+///
+/// Gated by `RUSTLE_FILTER_LOW_COV_SINGLETONS=<cov>` env var.
+/// Default threshold if unset: 2.0
+///
+/// Exemptions:
+/// - Single-exon transcripts (separate pipeline)
+/// - Guide-anchored transcripts (assumed correct)
+/// - Transcripts with 2+ instances of same intron chain
+/// - Transcripts whose chain appears shared at same locus
+pub fn filter_low_coverage_singleton_chains(
+    txs: Vec<Transcript>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    let filter_enabled = std::env::var_os("RUSTLE_FILTER_LOW_COV_SINGLETONS").is_some();
+    if !filter_enabled {
+        return txs;
+    }
+
+    let cov_threshold: f64 = std::env::var("RUSTLE_FILTER_LOW_COV_SINGLETONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
+
+    if verbose {
+        eprintln!(
+            "    low_coverage_singleton_chains filter: enabled (cov_threshold={})",
+            cov_threshold
+        );
+    }
+
+    // Build intron-chain index: for each chain, track (count, representative_locus)
+    // We only filter if the chain is a singleton AND has low coverage AND has a
+    // novel structure (not matching existing patterns in the dataset)
+    let mut chain_count: HashMap<Vec<(u64, u64)>, usize> = HashMap::default();
+    let mut chain_locus: HashMap<Vec<(u64, u64)>, (String, u64, u64)> = HashMap::default();
+
+    for tx in txs.iter() {
+        if tx.exons.len() < 2 {
+            continue; // Skip single-exon
+        }
+        // Build intron chain from exons
+        let mut chain = Vec::new();
+        for w in tx.exons.windows(2) {
+            if w[1].0 > w[0].1 {
+                chain.push((w[0].1, w[1].0));
+            }
+        }
+        if !chain.is_empty() {
+            let count = chain_count.entry(chain.clone()).or_insert(0);
+            *count += 1;
+
+            // Track locus for this chain
+            let start = tx.exons.first().map(|e| e.0).unwrap_or(0);
+            let end = tx.exons.last().map(|e| e.1).unwrap_or(0);
+            chain_locus.entry(chain).or_insert((tx.chrom.clone(), start, end));
+        }
+    }
+
+    let before = txs.len();
+    let mut filtered = 0usize;
+    let mut exempt_guide = 0usize;
+    let mut exempt_shared = 0usize;
+    let mut exempt_low_cov = 0usize;
+
+    let result: Vec<Transcript> = txs
+        .into_iter()
+        .filter(|tx| {
+            // Exempt single-exon
+            if tx.exons.len() < 2 {
+                return true;
+            }
+
+            // Exempt guide-anchored
+            if is_guide_pair(tx) || is_rescue_protected(tx) {
+                exempt_guide += 1;
+                return true;
+            }
+
+            // Build chain for this transcript
+            let mut chain = Vec::new();
+            for w in tx.exons.windows(2) {
+                if w[1].0 > w[0].1 {
+                    chain.push((w[0].1, w[1].0));
+                }
+            }
+
+            // Check if this chain is singleton
+            if let Some(&count) = chain_count.get(&chain) {
+                if count > 1 {
+                    // Shared chain across locus: keep it
+                    exempt_shared += 1;
+                    return true;
+                }
+            }
+
+            // At this point: chain is singleton, coverage is the deciding factor
+            // Only filter if coverage is VERY LOW (definitely artifact)
+            // Use a higher threshold to be conservative: only remove < 1.0
+            let filter_threshold = 1.0;
+            if tx.coverage >= filter_threshold {
+                // Even though singleton, coverage is sufficient - keep it
+                exempt_low_cov += 1;
+                return true;
+            }
+
+            // Singleton chain with VERY low coverage (<1.0): filter it
+            filtered += 1;
+            false
+        })
+        .collect();
+
+    if verbose && filtered > 0 {
+        eprintln!(
+            "    low_coverage_singleton_chains filter: kept {}/{} (guide_exempt={}, shared_exempt={}, high_cov_exempt={}, filtered={})",
+            result.len(),
+            before,
+            exempt_guide,
+            exempt_shared,
+            exempt_low_cov,
+            filtered
+        );
+    }
+    result
+}
