@@ -347,3 +347,228 @@ impl BridgeJunctionInferer {
         }
     }
 }
+
+/// Graph-based junction inference with fuzzy boundary matching
+///
+/// Algorithm:
+/// 1. Collect all unique exon endpoints from reads
+/// 2. Build a map of exon boundaries and their coverage
+/// 3. For junctions where reads have exons near both sides:
+///    - If junction has no exact read span, add as inferred candidate
+/// 4. Uses fuzzy matching to handle coordinate jitter from indels
+pub struct ExonGraphInferer {
+    /// All unique exon intervals (start, end) with coverage
+    exons: Vec<((u64, u64), f64)>,
+    /// All exon start positions with coverage
+    exon_starts: BTreeMap<u64, f64>,
+    /// All exon end positions with coverage
+    exon_ends: BTreeMap<u64, f64>,
+    /// Inferred junctions: (donor, acceptor) -> weight
+    inferred_junctions: BTreeMap<(u64, u64), f64>,
+}
+
+impl ExonGraphInferer {
+    /// Build exon graph and identify inferred junctions
+    pub fn from_reads(
+        reads: &[BundleRead],
+        min_intron: u64,
+        max_intron: u64,
+    ) -> Self {
+        // Step 1: Collect all unique exons with their coverage
+        let mut exon_coverage: BTreeMap<(u64, u64), f64> = BTreeMap::new();
+        let mut exon_starts: BTreeMap<u64, f64> = BTreeMap::new();
+        let mut exon_ends: BTreeMap<u64, f64> = BTreeMap::new();
+
+        for read in reads {
+            for &exon in &read.exons {
+                let (start, end) = exon;
+                *exon_coverage.entry(exon).or_insert(0.0) += read.weight;
+                *exon_starts.entry(start).or_insert(0.0) += read.weight;
+                *exon_ends.entry(end).or_insert(0.0) += read.weight;
+            }
+        }
+
+        let exons: Vec<((u64, u64), f64)> = exon_coverage
+            .iter()
+            .map(|(e, cov)| (*e, *cov))
+            .collect();
+
+        // Step 2: For each read, find all exon pairs it bridges
+        let mut inferred_junctions: BTreeMap<(u64, u64), f64> = BTreeMap::new();
+
+        for read in reads {
+            if read.exons.len() < 2 {
+                continue;
+            }
+
+            // For this read, find all multi-hop exon pairs (not just consecutive)
+            for i in 0..read.exons.len() {
+                for j in (i + 1)..read.exons.len() {
+                    let exon_i = read.exons[i];
+                    let exon_j = read.exons[j];
+
+                    let donor = exon_i.1;      // end of exon i
+                    let acceptor = exon_j.0;   // start of exon j
+
+                    let gap = if acceptor > donor {
+                        acceptor - donor
+                    } else {
+                        continue; // Invalid junction
+                    };
+
+                    // Check intron length is valid
+                    if gap >= min_intron && gap <= max_intron {
+                        // Use minimum coverage of the two exons as the weight
+                        let weight = exon_coverage[&exon_i].min(exon_coverage[&exon_j]);
+                        *inferred_junctions.entry((donor, acceptor)).or_insert(0.0) += weight;
+                    }
+                }
+            }
+        }
+
+        ExonGraphInferer {
+            exons,
+            exon_starts,
+            exon_ends,
+            inferred_junctions,
+        }
+    }
+
+    /// Find exon boundaries near a target position (fuzzy matching)
+    /// Returns coverage-weighted boundary positions within tolerance
+    fn find_nearby_boundary(
+        boundary_map: &BTreeMap<u64, f64>,
+        target: u64,
+        tolerance: u64,
+    ) -> Option<(u64, f64)> {
+        let mut best = None;
+        let mut best_weight = 0.0;
+
+        for (&pos, &weight) in boundary_map.range((target.saturating_sub(tolerance))..=(target.saturating_add(tolerance))) {
+            if weight > best_weight {
+                best = Some(pos);
+                best_weight = weight;
+            }
+        }
+
+        best.map(|pos| (pos, best_weight))
+    }
+
+    /// Try to find topologically valid boundary for a coordinate
+    /// Returns highest-weight boundary within tolerance
+    pub fn find_best_boundary(
+        &self,
+        is_donor: bool,  // true = look for exon ends, false = look for exon starts
+        target: u64,
+        tolerance: u64,
+    ) -> Option<(u64, f64)> {
+        let boundary_map = if is_donor {
+            &self.exon_ends
+        } else {
+            &self.exon_starts
+        };
+
+        Self::find_nearby_boundary(boundary_map, target, tolerance)
+    }
+
+    /// Check if a junction is topologically valid (has exons on both sides)
+    pub fn is_topologically_valid(
+        &self,
+        donor: u64,
+        acceptor: u64,
+        tolerance: u64,
+        min_intron: u64,
+        max_intron: u64,
+    ) -> Option<f64> {
+        // Find exon ending near donor
+        let (donor_actual, donor_weight) = Self::find_nearby_boundary(&self.exon_ends, donor, tolerance)?;
+
+        // Find exon starting near acceptor
+        let (acceptor_actual, acceptor_weight) = Self::find_nearby_boundary(&self.exon_starts, acceptor, tolerance)?;
+
+        // Check intron length
+        if acceptor_actual <= donor_actual {
+            return None;
+        }
+
+        let gap = acceptor_actual - donor_actual;
+        if gap < min_intron || gap > max_intron {
+            return None;
+        }
+
+        // Return minimum weight (conservative estimate)
+        Some(donor_weight.min(acceptor_weight))
+    }
+
+    /// Inject inferred junctions into existing JunctionStats
+    /// Only adds junctions NOT already present
+    pub fn inject_into(&self, stats: &mut JunctionStats, min_weight: f64) {
+        for ((donor, acceptor), weight) in &self.inferred_junctions {
+            if *weight >= min_weight {
+                let junc = Junction::new(*donor, *acceptor);
+
+                // Only add if not already present (preserve original read-discovered junctions)
+                if !stats.contains_key(&junc) {
+                    let mut junc_stat = JunctionStat::default();
+                    // Use the inferred weight (may be from multi-exon read coverage)
+                    junc_stat.mrcount = *weight;
+                    junc_stat.nreads_good = *weight;
+                    junc_stat.leftsupport = *weight;
+                    junc_stat.rightsupport = *weight;
+                    junc_stat.mm = *weight;
+                    junc_stat.strand = None;
+                    junc_stat.nm = 0.0;
+                    junc_stat.consleft = -1;
+                    junc_stat.consright = -1;
+
+                    stats.insert(junc, junc_stat);
+
+                    // Trace: log inferred junction for debugging
+                    if let Ok(_) = std::env::var("RUSTLE_TRACE_INFERRED_JUNCTIONS") {
+                        eprintln!("[INFERRED-JUNCTION] ({}, {}) weight={:.2}", donor, acceptor, weight);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Inject a specific junction if it's topologically valid
+    /// Used for recovering reference junctions with fuzzy boundary matching
+    pub fn inject_if_valid(
+        &self,
+        stats: &mut JunctionStats,
+        donor: u64,
+        acceptor: u64,
+        tolerance: u64,
+        min_intron: u64,
+        max_intron: u64,
+        boost_factor: f64,
+    ) {
+        if stats.contains_key(&Junction::new(donor, acceptor)) {
+            return; // Already present
+        }
+
+        if let Some(weight) = self.is_topologically_valid(donor, acceptor, tolerance, min_intron, max_intron) {
+            if weight > 0.0 {
+                let junc = Junction::new(donor, acceptor);
+                let boosted_weight = weight * boost_factor;
+                let mut junc_stat = JunctionStat::default();
+                junc_stat.mrcount = boosted_weight;
+                junc_stat.nreads_good = boosted_weight;
+                junc_stat.leftsupport = boosted_weight;
+                junc_stat.rightsupport = boosted_weight;
+                junc_stat.mm = boosted_weight;
+                junc_stat.strand = None;
+                junc_stat.nm = 0.0;
+                junc_stat.consleft = -1;
+                junc_stat.consright = -1;
+
+                stats.insert(junc, junc_stat);
+
+                if let Ok(_) = std::env::var("RUSTLE_TRACE_INFERRED_JUNCTIONS") {
+                    eprintln!("[FUZZY-INJECT] ({}, {}) weight={:.2} boosted to {:.2} (topologically valid)", donor, acceptor, weight, boosted_weight);
+                }
+            }
+        }
+    }
+}
