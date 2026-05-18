@@ -34,23 +34,34 @@ fn filter_trace_enabled() -> bool {
     std::env::var_os("RUSTLE_TRACE_FILTERS").is_some()
 }
 
-fn should_trace_transcript(tx_id: &str) -> bool {
+fn get_tx_display_id(tx: &Transcript) -> String {
+    // Try to use transcript_id if set, otherwise use chrom:strand
+    tx.transcript_id.as_deref()
+        .or_else(|| tx.ref_transcript_id.as_deref())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("{}:{}", tx.chrom, tx.strand))
+}
+
+fn should_trace_transcript(tx: &Transcript) -> bool {
     if !filter_trace_enabled() {
         return false;
     }
 
+    let display_id = get_tx_display_id(tx);
+
     // Check if this transcript is a target
     if let Ok(targets_str) = std::env::var("RUSTLE_TRACE_TRANSCRIPTS") {
-        targets_str.split(';').any(|t| t.trim() == tx_id)
+        targets_str.split(';').any(|t| t.trim() == display_id)
     } else {
         false
     }
 }
 
-fn log_filter_decision(tx_id: &str, filter_name: &str, passed: bool) {
-    if should_trace_transcript(tx_id) {
+fn log_filter_decision(tx: &Transcript, filter_name: &str, passed: bool) {
+    if should_trace_transcript(tx) {
         let status = if passed { "PASS" } else { "FAIL" };
-        eprintln!("[FILTER-TRACE] {} @ {}: {}", tx_id, filter_name, status);
+        let display_id = get_tx_display_id(tx);
+        eprintln!("[FILTER-TRACE] {} @ {}: {}", display_id, filter_name, status);
     }
 }
 
@@ -633,7 +644,16 @@ pub fn isofrac_filter(
 
                 if is_single {
                     // Single-exon: filter if cov < effective_frac * locus_max (19050)
-                    if tx.coverage >= effective_frac * max_cov {
+                    let passes = tx.coverage >= effective_frac * max_cov;
+                    if should_trace_transcript(&tx) {
+                        log_filter_decision(&tx, "isofrac_filter", passes);
+                        if !passes {
+                            let display_id = get_tx_display_id(&tx);
+                            eprintln!("[FILTER-DETAIL] {} @ isofrac_filter: cov={:.4} threshold={:.4} (single-exon, frac={:.4})",
+                                      display_id, tx.coverage, effective_frac * max_cov, effective_frac);
+                        }
+                    }
+                    if passes {
                         out.push(tx);
                     }
                 } else {
@@ -645,6 +665,20 @@ pub fn isofrac_filter(
                     } else {
                         tx.coverage < effective_frac * multi_max_cov
                     };
+                    let passes = !longunder;
+                    if should_trace_transcript(&tx) {
+                        log_filter_decision(&tx, "isofrac_filter", passes);
+                        if !passes {
+                            let threshold = if multi_max_cov <= 0.0 {
+                                (effective_frac * max_cov).min(ISOFRAC_ABS_MIN)
+                            } else {
+                                effective_frac * multi_max_cov
+                            };
+                            let display_id = get_tx_display_id(&tx);
+                            eprintln!("[FILTER-DETAIL] {} @ isofrac_filter: cov={:.4} threshold={:.4} (multi-exon, frac={:.4})",
+                                      display_id, tx.coverage, threshold, effective_frac);
+                        }
+                    }
                     if !longunder {
                         out.push(tx);
                     }
@@ -743,6 +777,12 @@ pub fn filter_min_transcript_length(
     for t in transcripts {
         let length: u64 = t.exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
         if length < min_length {
+            if should_trace_transcript(&t) {
+                log_filter_decision(&t, "filter_min_transcript_length", false);
+                let tx_id = get_tx_display_id(&t);
+                eprintln!("[FILTER-DETAIL] {} @ filter_min_transcript_length: len={} < {}",
+                          tx_id, length, min_length);
+            }
             removed += 1;
         } else {
             kept.push(t);
@@ -785,6 +825,13 @@ pub fn filter_contained_transcripts(
             }
             if transcript_contained_in(a, b) && b.coverage >= a.coverage {
                 drop.insert_grow(i);
+                if should_trace_transcript(a) {
+                    log_filter_decision(a, "filter_contained", false);
+                    let a_id = get_tx_display_id(a);
+                    let b_id = get_tx_display_id(b);
+                    eprintln!("[FILTER-DETAIL] {} @ filter_contained: contained_in {} (cov {:.4} <= {:.4})",
+                              a_id, b_id, a.coverage, b.coverage);
+                }
                 break;
             }
         }
@@ -2598,6 +2645,15 @@ pub fn pairwise_overlap_filter_with_summary(
                 ($idx:expr, $killer:expr, $reason:expr) => {
                     dead.insert_grow($idx);
                     let vtx = &txs[$idx];
+                    // Phase 3D: Filter tracing for bottleneck identification
+                    if should_trace_transcript(vtx) {
+                        log_filter_decision(vtx, "pairwise_overlap_filter", false);
+                        let killer_tx = if $killer < txs.len() { &txs[$killer] } else { vtx };
+                        let vtx_id = get_tx_display_id(vtx);
+                        let killer_id = get_tx_display_id(killer_tx);
+                        eprintln!("[FILTER-DETAIL] {} @ pairwise_overlap_filter: killed_by {} reason={}",
+                                  vtx_id, killer_id, $reason);
+                    }
                     // Bundle tracing: log killed transcripts
                     if tx_in_trace_locus(vtx) {
                         let extra = format!("KILLED_BY={} REASON={}", $killer, $reason);
@@ -3186,6 +3242,13 @@ pub fn retained_intron_filter(
                         // Full containment: n2 exon completely spans n1's intron.
                         // intron_donor = prev_exon.end, intron_acceptor = next_exon.start
                         if exon_start <= intron_donor && exon_end >= intron_acceptor {
+                            if should_trace_transcript(&sorted[j]) {
+                                log_filter_decision(&sorted[j], "retained_intron_filter", false);
+                                let j_id = get_tx_display_id(&sorted[j]);
+                                let i_id = get_tx_display_id(&sorted[i]);
+                                eprintln!("[FILTER-DETAIL] {} @ retained_intron_filter: spans_intron_of {} (cov {:.4} < {:.4}*frac)",
+                                          j_id, i_id, n2_cov, n1_cov);
+                            }
                             remove_set.insert(j);
                             break;
                         }
@@ -3637,6 +3700,12 @@ pub fn polymerase_runoff_filter(
                     prev.coverage
                 };
                 if tx_cov < prev_cov + singlethr {
+                    if should_trace_transcript(&sorted[i]) {
+                        log_filter_decision(&sorted[i], "polymerase_runoff_filter", false);
+                        let tx_id = get_tx_display_id(&sorted[i]);
+                        eprintln!("[FILTER-DETAIL] {} @ polymerase_runoff_filter: near_prev (cov {:.4} < {:.4}+{:.4})",
+                                  tx_id, tx_cov, prev_cov, singlethr);
+                    }
                     dead.insert_grow(i);
                     total_removed += 1;
                     continue;
@@ -3660,6 +3729,12 @@ pub fn polymerase_runoff_filter(
                     next.coverage
                 };
                 if tx_cov < next_cov + singlethr {
+                    if should_trace_transcript(&sorted[i]) {
+                        log_filter_decision(&sorted[i], "polymerase_runoff_filter", false);
+                        let tx_id = get_tx_display_id(&sorted[i]);
+                        eprintln!("[FILTER-DETAIL] {} @ polymerase_runoff_filter: near_next (cov {:.4} < {:.4}+{:.4})",
+                                  tx_id, tx_cov, next_cov, singlethr);
+                    }
                     dead.insert_grow(i);
                     total_removed += 1;
                 }
