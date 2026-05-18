@@ -93,6 +93,7 @@ pub mod snapshot; // per-bundle JSONL snapshots for 1:1 comparisons
 // ── Tracing / diagnostics ─────────────────────────────────────────────────────
 pub mod futuretr;
 pub mod tracing; // events, stage-level TSV dumps, per-reference transcript fate tracing
+pub mod junction_trace; // Per-junction pipeline tracing for bottleneck diagnosis
 
 // ── Public re-exports ─────────────────────────────────────────────────────────
 pub use graph::{CGraphnode, CMTransfrag, CPath, CTransfrag, Graph, GraphNode, GraphTransfrag};

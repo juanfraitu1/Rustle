@@ -1524,6 +1524,35 @@ fn merge_region_outer_bundles(
                 inferer.inject_into(&mut junction_stats, min_bridge);
             }
         }
+
+        // Phase 1 tracing: track target junctions through pipeline stages
+        if let Ok(targets_str) = std::env::var("RUSTLE_TRACE_TARGETS") {
+            let targets = crate::junction_trace::parse_target_junctions("RUSTLE_TRACE_TARGETS");
+            for (donor, acceptor) in targets {
+                let mut trace = crate::junction_trace::JunctionTrace::new(donor, acceptor);
+
+                // Stage 1: Check read support
+                trace.check_read_support(&reads);
+
+                // Stage 2: Check bundle bounds
+                trace.in_bundle = true;
+                trace.bundle_start = Some(start);
+                trace.bundle_end = Some(end);
+
+                // Stage 3: Check if in junction stats
+                let junction = crate::types::Junction::new(donor, acceptor);
+                if let Some(stat) = junction_stats.get(&junction) {
+                    trace.mark_in_stats(stat.mrcount, stat.nreads_good, stat.leftsupport + stat.rightsupport);
+                } else if trace.in_read_junctions {
+                    trace.mark_not_in_stats();
+                }
+
+                eprintln!("[TRACE-START] {}", targets_str);
+                trace.print_report();
+                eprintln!("[TRACE-END] Junction ({}, {})", donor, acceptor);
+            }
+        }
+
         if debug_stage::is_enabled() {
             debug_stage::emit(
                 "region_merge_bundle",
