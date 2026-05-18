@@ -572,3 +572,110 @@ impl ExonGraphInferer {
         }
     }
 }
+
+/// Guide junction injector: injects missing reference junctions with synthetic evidence.
+/// When using -G guide mode, this recovers reference junctions not discovered from reads.
+pub struct GuideJunctionInjector {
+    /// Missing junctions: (donor, acceptor) -> weight
+    missing: BTreeMap<(u64, u64), f64>,
+}
+
+impl GuideJunctionInjector {
+    /// Extract junctions from a GTF file and find those missing from current stats.
+    pub fn from_guide_gtf(
+        gtf_path: &str,
+        start: u64,
+        end: u64,
+        stats: &JunctionStats,
+    ) -> anyhow::Result<Self> {
+        let mut ref_junctions: BTreeMap<(u64, u64), f64> = BTreeMap::new();
+
+        // Parse reference GTF and extract junctions in this bundle region
+        let file = std::fs::File::open(gtf_path)?;
+        let reader = std::io::BufReader::new(file);
+        use std::io::BufRead;
+
+        let mut transcripts: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+
+        for line in reader.lines() {
+            let line = line?;
+            if line.starts_with('#') || line.trim().is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() < 9 || parts[2] != "exon" {
+                continue;
+            }
+
+            let exon_start = parts[3].parse::<u64>().unwrap_or(0) - 1; // Convert to 0-based
+            let exon_end = parts[4].parse::<u64>().unwrap_or(0);
+
+            // Only process exons overlapping this bundle
+            if exon_end < start || exon_start > end {
+                continue;
+            }
+
+            // Extract transcript_id
+            let attrs = parts[8];
+            if let Some(tx_id_start) = attrs.find("transcript_id \"") {
+                let tx_start = tx_id_start + 14;
+                if let Some(tx_end) = attrs[tx_start..].find('"') {
+                    let tx_id = attrs[tx_start..tx_start + tx_end].to_string();
+                    transcripts.entry(tx_id).or_insert_with(Vec::new).push((exon_start, exon_end));
+                }
+            }
+        }
+
+        // Extract junctions from transcripts
+        for exons in transcripts.values_mut() {
+            exons.sort();
+            for i in 0..exons.len() - 1 {
+                let donor = exons[i].1;
+                let acceptor = exons[i + 1].0;
+                *ref_junctions.entry((donor, acceptor)).or_insert(0.0) += 1.0;
+            }
+        }
+
+        // Find junctions in reference but not in current stats
+        let mut missing = BTreeMap::new();
+        for (junction, count) in ref_junctions {
+            let junc = Junction::new(junction.0, junction.1);
+            if !stats.contains_key(&junc) {
+                missing.insert(junction, count);
+            }
+        }
+
+        Ok(GuideJunctionInjector { missing })
+    }
+
+    /// Inject missing junctions into stats with synthetic evidence.
+    pub fn inject_into(&self, stats: &mut JunctionStats, min_weight: f64) {
+        // Get synthetic evidence boost from environment (default 2.0x)
+        let boost = std::env::var("RUSTLE_INJECT_BOOST")
+            .ok()
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(2.0);
+
+        for ((donor, acceptor), weight) in &self.missing {
+            if *weight >= min_weight {
+                let junc = Junction::new(*donor, *acceptor);
+                if !stats.contains_key(&junc) {
+                    // Use boosted synthetic evidence to make these junctions viable for assembly
+                    let synthetic_count = (*weight).max(1.0) * boost;
+                    let mut junc_stat = JunctionStat::default();
+                    junc_stat.mrcount = synthetic_count;
+                    junc_stat.nreads_good = synthetic_count;
+                    junc_stat.leftsupport = synthetic_count;
+                    junc_stat.rightsupport = synthetic_count;
+                    junc_stat.mm = synthetic_count;
+                    junc_stat.strand = None;
+                    junc_stat.nm = 0.0;
+                    junc_stat.consleft = -1;
+                    junc_stat.consright = -1;
+                    stats.insert(junc, junc_stat);
+                }
+            }
+        }
+    }
+}

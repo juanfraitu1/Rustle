@@ -1493,6 +1493,22 @@ fn merge_region_outer_bundles(
 
         let mut junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
 
+        // Guide junction injection: inject missing reference junctions with synthetic evidence
+        if let Ok(guide_gtf) = std::env::var("RUSTLE_INJECT_GUIDE_JUNCTIONS") {
+            let min_weight = std::env::var("RUSTLE_INJECT_MIN_WEIGHT")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.5);
+            if let Ok(injector) = crate::junction_graph::GuideJunctionInjector::from_guide_gtf(
+                &guide_gtf,
+                start,
+                end,
+                &junction_stats,
+            ) {
+                injector.inject_into(&mut junction_stats, min_weight);
+            }
+        }
+
         // Junction graph inference: choose between coverage-gap (original) or StringTie-style (graph-based)
         if std::env::var_os("RUSTLE_JUNCTION_GRAPH").is_some() {
             let use_st_graph = std::env::var_os("RUSTLE_JG_USE_ST_GRAPH").is_some();
@@ -12447,6 +12463,28 @@ pub fn run<P: AsRef<Path>>(
                         config.verbose,
                     )
                 };
+
+                // Verify and fix guide transcript paths in guided mode
+                // Ensures all guide transcripts can be traversed through the graph
+                if !guide_transcripts.is_empty() && std::env::var_os("RUSTLE_FIX_GUIDE_PATHS").is_some() {
+                    let (found, fixed, _new_junctions) = crate::guide_path_fixer::verify_and_fix_guide_paths(
+                        &mut graph_mut,
+                        &guide_transcripts,
+                        graph_bundle.start,
+                        graph_bundle.end,
+                        25,
+                        config.verbose,
+                    );
+
+                    if config.verbose && fixed > 0 {
+                        eprintln!(
+                            "    guide paths verified: {}/{} found, {} fixed",
+                            found,
+                            guide_transcripts.len(),
+                            fixed
+                        );
+                    }
+                }
 
                 // Patch A: when chasing StringTie parity, freeze pre-read-map graph mutation
                 // from coverage/terminal edge synthesis so topology diffs can be attributed

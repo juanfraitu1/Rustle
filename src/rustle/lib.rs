@@ -37,6 +37,7 @@ pub mod read_boundaries; // read boundary inference // hard bundle boundary dete
 // ── Stage 3: Graph construction ───────────────────────────────────────────────
 pub mod graph; // GraphNode, Graph, adjacency, reachability
 pub mod graph_build; // build graph from bundle nodes
+pub mod guide_path_fixer; // verify and reconstruct guide transcript paths
 pub mod nodecov; // node coverage accumulation (nodecov, longcov)
 
 // ── Stage 4: Read mapping ─────────────────────────────────────────────────────
