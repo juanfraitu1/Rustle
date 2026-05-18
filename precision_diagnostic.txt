@@ -1,0 +1,60 @@
+Loading reference GTF...
+Loading Rustle GTF...
+================================================================================
+PRECISION ANALYSIS: False Positive Characterization
+================================================================================
+
+Reference structures: 1839
+Rustle structures: 1944
+Exact matches: 1312
+False positive structures: 632
+Precision: 67.5%
+
+Analyzing 632 false positive structures...
+
+False positives by coverage (lowest first):
+ Rank TX_ID                 Exons   Coverage       Span
+------------------------------------------------------------
+    1 RSTL.326.1                4       0.01       6725
+    2 RSTL.435.6                5       0.03      35757
+    3 RSTL.326.2                5       0.12       6725
+    4 RSTL.414.1               14       0.12      97656
+    5 RSTL.112.7               25       0.12     187611
+    6 RSTL.413.1               12       0.19      51010
+    7 RSTL.326.8                3       0.21       6527
+    8 RSTL.524.2               52       0.22     145144
+    9 RSTL.366.4               17       0.22       7194
+   10 RSTL.185.5               15       0.25      53747
+   11 RSTL.187.4               40       0.31     135794
+   12 RSTL.413.2               14       0.31      51010
+   13 RSTL.440.3                8       0.32      23078
+   14 RSTL.471.3               21       0.40      82871
+   15 RSTL.346.1                5       0.44       2699
+   16 RSTL.243.3                3       0.45      11467
+   17 RSTL.345.1               21       0.49      29157
+   18 RSTL.140.2               11       0.51      69837
+   19 RSTL.140.3               10       0.58      69837
+   20 RSTL.137.4               12       0.58      17832
+
+False positive categorization:
+  Single-exon: 1/632 (0.2%)
+  Low coverage (<1.0): 58/632 (9.2%)
+  Few exons (<3): 32/632 (5.1%)
+  Short span (<1kb): 0/632 (0.0%)
+
+Partial overlaps with reference:
+  FP 16 exons shares 15 with ref 17 exons
+  FP 3 exons shares 1 with ref 3 exons
+  FP 40 exons shares 39 with ref 40 exons
+  FP 11 exons shares 9 with ref 11 exons
+  FP 15 exons shares 13 with ref 15 exons
+  FP 9 exons shares 7 with ref 9 exons
+  FP 12 exons shares 5 with ref 7 exons
+  FP 4 exons shares 2 with ref 6 exons
+  FP 18 exons shares 17 with ref 18 exons
+
+Recommendations:
+1. Lower min_transcript_length threshold
+2. Raise readthr_gate (min coverage requirement)
+3. Add single-exon specificity filters
+4. Review coverage calculation (may be inflated)
