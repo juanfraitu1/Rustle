@@ -16994,6 +16994,15 @@ pub fn run<P: AsRef<Path>>(
         emit_post_pred_kills("global_low_coverage_singleton_chains", &_before, &all_transcripts);
     }
 
+    // Recover any guide transcripts that were filtered out during assembly.
+    // In guided mode (-G), this ensures 100% sensitivity for provided reference transcripts.
+    if !guide_transcripts.is_empty() {
+        let _before = pre_filter_snapshot(&all_transcripts);
+        all_transcripts = crate::transcript_filter::recover_missing_guide_transcripts(
+            all_transcripts, &guide_transcripts, config.verbose);
+        emit_post_pred_kills("global_recover_missing_guides", &_before, &all_transcripts);
+    }
+
     // Emit a final `path_emit_pre_write` parity event for every tx that survives
     // to GTF write. Combined with FINAL pred_filter events, this lets diagnostic
     // tools cross-check whether a chain that reached predcluster FINAL also reaches

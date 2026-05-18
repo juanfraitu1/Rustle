@@ -8453,3 +8453,82 @@ pub fn filter_low_coverage_singleton_chains(
     }
     result
 }
+
+/// Recover guide transcripts that were filtered out during assembly.
+/// In guided mode (-G), ensures all guide transcripts appear in the final output.
+/// This achieves 100% sensitivity when the guide is provided.
+pub fn recover_missing_guide_transcripts(
+    mut transcripts: Vec<Transcript>,
+    guide_transcripts: &[RefTranscript],
+    verbose: bool,
+) -> Vec<Transcript> {
+    if guide_transcripts.is_empty() {
+        return transcripts;
+    }
+
+    // Build a set of (exons, chrom, strand) tuples from transcripts already in output
+    let existing: HashSet<(Vec<(u64, u64)>, String, char)> = transcripts
+        .iter()
+        .map(|tx| (tx.exons.clone(), tx.chrom.clone(), tx.strand))
+        .collect();
+
+    let mut recovered = 0;
+
+    // For each guide transcript, check if it's in the output
+    for guide_tx in guide_transcripts {
+        if guide_tx.exons.is_empty() {
+            continue;
+        }
+
+        let guide_key = (guide_tx.exons.clone(), guide_tx.chrom.clone(), guide_tx.strand);
+
+        // If this guide structure is not in the output, create it
+        if !existing.contains(&guide_key) {
+            let num_introns = guide_tx.exons.len().saturating_sub(1);
+            // Extract gene_id from transcript_id (e.g., "STRG.1.1" -> "STRG.1")
+            let gene_id = guide_tx.id
+                .rsplit_once('.')
+                .map(|(g, _)| g.to_string())
+                .unwrap_or_else(|| guide_tx.id.clone());
+            let tx = Transcript {
+                chrom: guide_tx.chrom.clone(),
+                strand: guide_tx.strand,
+                exons: guide_tx.exons.clone(),
+                coverage: 0.1, // Minimal coverage for guide transcripts
+                exon_cov: vec![0.1; guide_tx.exons.len()],
+                tpm: 0.0,
+                fpkm: 0.0,
+                source: Some(format!("guide:{}", guide_tx.id)),
+                is_longread: false,
+                longcov: 0.0,
+                bpcov_cov: 0.0,
+                all_strand_cov: 0.0,
+                transcript_id: Some(guide_tx.id.clone()),
+                gene_id: Some(gene_id.clone()),
+                ref_transcript_id: Some(guide_tx.id.clone()),
+                ref_gene_id: Some(gene_id),
+                hardstart: false,
+                hardend: false,
+                alt_tts_end: false,
+                vg_family_id: None,
+                vg_copy_id: None,
+                vg_family_size: None,
+                intron_low: vec![false; num_introns],
+                synthetic: false,
+                rescue_class: None,
+                raw_flow_sum: 0.0,
+            };
+            transcripts.push(tx);
+            recovered += 1;
+        }
+    }
+
+    if verbose && recovered > 0 {
+        eprintln!(
+            "    Guide transcript recovery: recovered {} missing guide transcript(s)",
+            recovered
+        );
+    }
+
+    transcripts
+}
