@@ -1,0 +1,3 @@
+[submodule "tools/stringtie"]
+	path = tools/stringtie
+	url = ../stringtie
