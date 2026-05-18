@@ -9608,8 +9608,7 @@ pub fn run<P: AsRef<Path>>(
 
     // ── Variation graph: discover gene family groups ────────────────────────
     let vg_families = if config.vg_mode && !config.single_copy_mode {
-        // Sequence-similarity family discovery is opt-in: only when --vg-discover-novel
-        // is active (not triggered by --vg-snp or --genome-fasta alone, to avoid false links).
+        // Load genome once for all VG operations (discovery, filtering, etc.)
         let vg_genome_for_discovery = if config.vg_discover_novel {
             config.genome_fasta.as_ref().and_then(|p| {
                 eprintln!("[VG] Loading genome for sequence-similarity family discovery...");
@@ -9618,15 +9617,11 @@ pub fn run<P: AsRef<Path>>(
         } else {
             None
         };
-        // Separately: load genome for the graph-k-mer-Jaccard 6th signal
-        // (decoupled from discovery so enabling k-mer filter doesn't change
-        // the discovery output). Reuse vg_genome_for_discovery if already
-        // loaded, otherwise load fresh.
         let vg_genome_for_kmer_filter = if config.vg_family_min_kmer_jaccard > 0.0
             || config.vg_family_min_poa_identity > 0.0
         {
             if let Some(g) = vg_genome_for_discovery.as_ref() {
-                Some(g.clone())  // fall back to cheap clone if Send/Sync allows; otherwise load fresh
+                Some(g.clone())
             } else {
                 config.genome_fasta.as_ref().and_then(|p| {
                     eprintln!("[VG] Loading genome FASTA for graph-similarity family filter: {}", p);
@@ -9636,12 +9631,51 @@ pub fn run<P: AsRef<Path>>(
         } else {
             None
         };
-        let raw_families = crate::vg::discover_family_groups(
-            &bundles,
-            config.vg_min_shared_reads,
-            Some(bam_path.as_ref()),
-            vg_genome_for_discovery.as_ref(),
-        );
+
+        // GTF ingestion mode or standard discovery
+        let raw_families = if let Some(gtf_path) = &config.ingress_gtf {
+            // GTF ingestion mode: parse templates and link to existing bundles
+            let grouping_strategy = match config.ingress_grouping.as_str() {
+                "ByOverlap" => crate::vg_ingestion::FamilyGroupingStrategy::ByOverlap,
+                _ => crate::vg_ingestion::FamilyGroupingStrategy::ByGene,
+            };
+
+            match crate::vg_ingestion::ingest_gtf_families(
+                gtf_path,
+                grouping_strategy,
+                &bundles,
+                vg_genome_for_discovery.as_ref(),
+            ) {
+                Ok(template_families) => {
+                    if config.verbose {
+                        eprintln!(
+                            "[VG-Ingestion] Created {} template families from {}",
+                            template_families.len(),
+                            gtf_path.display()
+                        );
+                    }
+                    template_families
+                }
+                Err(e) => {
+                    eprintln!("[VG-Ingestion] Error: {}", e);
+                    eprintln!("[VG-Ingestion] Falling back to standard discovery");
+                    crate::vg::discover_family_groups(
+                        &bundles,
+                        config.vg_min_shared_reads,
+                        Some(bam_path.as_ref()),
+                        vg_genome_for_discovery.as_ref(),
+                    )
+                }
+            }
+        } else {
+            // Standard discovery from multi-mapped reads
+            crate::vg::discover_family_groups(
+                &bundles,
+                config.vg_min_shared_reads,
+                Some(bam_path.as_ref()),
+                vg_genome_for_discovery.as_ref(),
+            )
+        };
         // Capture the union of bundle indices across ALL raw (pre-filter)
         // families. Used below as the secondary-strip exemption set: a
         // bundle that participated in family discovery — even if its

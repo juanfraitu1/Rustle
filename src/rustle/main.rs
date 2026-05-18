@@ -365,6 +365,19 @@ struct Args {
     #[arg(long)]
     vg: bool,
 
+    /// GTF/GFF file for template-based family assembly (GTF ingestion mode).
+    /// When provided, Rustle parses transcripts from this file and uses them
+    /// as templates for discovering new isoforms or family members via
+    /// multi-mapped read reassignment. Requires --vg to be enabled.
+    /// Useful for enriching StringTie output with multi-copy paralogs.
+    #[arg(long)]
+    ingress_gtf: Option<std::path::PathBuf>,
+
+    /// Grouping strategy for GTF ingestion mode [default: ByGene].
+    /// Options: ByGene (group by gene_id attribute) or ByOverlap (group overlapping transcripts).
+    #[arg(long, default_value = "ByGene")]
+    ingress_grouping: String,
+
     /// Minimum shared multi-mapping reads to link two bundles into the same
     /// family group at discovery time [default: 3]. The post-discovery
     /// quality filter (--vg-family-min-shared) imposes a separate threshold
@@ -727,6 +740,8 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_mode: args.vg,
         single_copy_mode: args.single_copy_mode,
         vg_min_shared_reads: args.vg_min_shared,
+        ingress_gtf: args.ingress_gtf.clone(),
+        ingress_grouping: args.ingress_grouping.clone(),
         vg_em_max_iter: args.vg_em_iter,
         vg_discover_novel: args.vg_discover_novel,
         vg_scan_novel_loci: args.vg_scan_novel_loci,

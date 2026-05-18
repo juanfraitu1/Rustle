@@ -871,6 +871,10 @@ pub struct RunConfig {
     pub single_copy_mode: bool,
     /// Minimum shared multi-mapping reads to link bundles into a family group [default: 3].
     pub vg_min_shared_reads: usize,
+    /// GTF/GFF file for template-based family assembly (GTF ingestion mode).
+    pub ingress_gtf: Option<std::path::PathBuf>,
+    /// Grouping strategy for GTF ingestion: "ByGene" or "ByOverlap" [default: ByGene].
+    pub ingress_grouping: String,
     /// Maximum EM iterations for multi-mapping resolution [default: 20].
     pub vg_em_max_iter: usize,
     /// Discover novel gene copies from poorly-mapped/unmapped reads (--vg-discover-novel).
@@ -1212,6 +1216,8 @@ impl Default for RunConfig {
             vg_mode: false,
             single_copy_mode: false,
             vg_min_shared_reads: 3,
+            ingress_gtf: None,
+            ingress_grouping: "ByGene".to_string(),
             vg_em_max_iter: 20,
             vg_discover_novel: false,
             vg_scan_novel_loci: false,

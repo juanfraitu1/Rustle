@@ -83,6 +83,7 @@ pub mod per_bnode_graph; // junction-expanded per-bundlenode graphs
 
 // ── Variation graph (gene family) mode ───────────────────────────────────────
 pub mod vg; // family group discovery, EM reweighting
+pub mod vg_ingestion; // GTF/GFF ingestion mode for template-based family assembly
 pub mod vg_hmm; // Family-aware HMM rescue for novel gene copies (see docs/superpowers/specs/2026-04-28-vg-novel-copy-hmm-design.md)
 
 // ── JSON snapshots (debug) ────────────────────────────────────────────────────
