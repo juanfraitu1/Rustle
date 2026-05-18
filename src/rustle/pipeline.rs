@@ -41,7 +41,7 @@ use crate::killed_junctions::{
     demote_runthrough_junctions,
     good_junc,
 };
-use crate::map_reads::{map_reads_to_graph, map_reads_to_graph_bundlenodes};
+use crate::map_reads::{map_reads_to_graph, map_reads_to_graph_bundlenodes, map_reads_to_graph_per_read};
 use crate::nodecov::compute_nodecov;
 use crate::debug_stage;
 use crate::debug_stage::StageDetail;
@@ -12441,7 +12441,21 @@ pub fn run<P: AsRef<Path>>(
                         Some(&bundle2graph),
                         read_bundles,
                     )
+                } else if std::env::var_os("RUSTLE_PER_READ_PROCESSING").is_some() {
+                    // Parallel per-read processing (StringTie-aligned, for research/comparison)
+                    // Note: This processes reads without segmentation, similar to StringTie's architecture.
+                    // When bundlenodes mapping is available, it takes precedence (provides precision filtering).
+                    map_reads_to_graph_per_read(
+                        reads,
+                        &mut graph_mut,
+                        mode,
+                        config.long_read_min_len,
+                        config.junction_correction_window,
+                        Some(killed_junction_pairs_local),
+                        None,
+                    )
                 } else {
+                    // Standard segment-based processing (default, tested baseline)
                     map_reads_to_graph(
                         reads,
                         &mut graph_mut,
@@ -12733,6 +12747,15 @@ pub fn run<P: AsRef<Path>>(
                             graph_bundle.start, graph_bundle.end, added_sink, added_src);
                     }
                 }
+
+                // Phase 3c: Create synthetic topological transfrags (source→node, node→sink)
+                // via DFS traversal (StringTie's traverse_dfs equivalent).
+                // Gate: RUSTLE_TOPOLOGICAL_ENUMERATION=1
+                crate::transfrag_process::enumerate_topological_transfrags(
+                    &graph_mut,
+                    &mut transfrags,
+                    graph_mut.pattern_size(),
+                );
 
                 transfrags = process_transfrags(
                     transfrags,

@@ -3609,3 +3609,170 @@ pub fn coalesce_alt_junc_seed_transfrags(
     }
     (before_count, before_count - merged_count)
 }
+
+/// Phase 3c: Create synthetic topological transfrags (source→node, node→sink)
+/// via DFS traversal, similar to StringTie's traverse_dfs.
+///
+/// Gate: RUSTLE_TOPOLOGICAL_ENUMERATION=1
+///
+/// Creates synthetic edge transfrags that don't have read support initially,
+/// but can be selected by max-flow if they're part of the best path.
+pub fn enumerate_topological_transfrags(
+    graph: &crate::Graph,
+    transfrags: &mut Vec<crate::GraphTransfrag>,
+    psize: usize,
+) {
+    if std::env::var_os("RUSTLE_TOPOLOGICAL_ENUMERATION").is_none() {
+        return;
+    }
+
+    // Build set of existing transfrag paths to avoid duplicates
+    let existing_paths: std::collections::HashSet<Vec<usize>> =
+        transfrags.iter().map(|tf| tf.node_ids.clone()).collect();
+
+    let mut visited = vec![false; graph.nodes.len()];
+    let mut synth_count = 0usize;
+
+    // DFS from source, creating synthetic edge transfrags
+    traverse_and_create_edge_transfrags(
+        graph,
+        graph.source_id,
+        &mut visited,
+        transfrags,
+        &existing_paths,
+        psize,
+        &mut synth_count,
+    );
+
+    if std::env::var_os("RUSTLE_LOG_TOPOLOGICAL").is_some() {
+        eprintln!("TOPOLOGICAL: created {} synthetic transfrags", synth_count);
+        // Diagnostic: count nodes by parent/child degree
+        let mut source_only_count = 0usize;
+        let mut terminal_count = 0usize;
+        for (nid, node) in graph.nodes.iter().enumerate() {
+            if nid == graph.source_id || nid == graph.sink_id { continue; }
+            let parent_count: usize = node.parents.ones().count();
+            let child_count: usize = node.children.ones().count();
+            if parent_count == 1 && node.parents.contains(graph.source_id) {
+                source_only_count += 1;
+            }
+            if child_count == 0 {
+                terminal_count += 1;
+            }
+        }
+        eprintln!("TOPOLOGICAL_DIAG: bundle_nodes={} source_only={} terminal={}",
+                  graph.nodes.len(), source_only_count, terminal_count);
+    }
+}
+
+/// DFS traversal creating source→node and node→sink synthetic transfrags.
+fn traverse_and_create_edge_transfrags(
+    graph: &crate::Graph,
+    node_id: usize,
+    visited: &mut [bool],
+    transfrags: &mut Vec<crate::GraphTransfrag>,
+    existing_paths: &std::collections::HashSet<Vec<usize>>,
+    psize: usize,
+    synth_count: &mut usize,
+) {
+    use crate::graph::TransfragType;
+
+    if visited[node_id] {
+        return;
+    }
+    visited[node_id] = true;
+
+    let node = &graph.nodes[node_id];
+
+    // 1. SOURCE→NODE: create if node only has source as parent
+    let parent_count: usize = node.parents.ones().count();
+    if parent_count == 1 && node.parents.contains(graph.source_id) && node_id != graph.source_id {
+        let tf_path = vec![graph.source_id, node_id];
+
+        // Skip if this path already exists from read-based transfrags
+        if !existing_paths.contains(&tf_path) {
+            if std::env::var_os("RUSTLE_LOG_TOPOLOGICAL").is_some() {
+                eprintln!("TOPOLOGICAL_TRACE: Creating [source→{}]", node_id);
+            }
+            let tf = create_synthetic_transfrag(
+                tf_path,
+                graph,
+                psize,
+                TransfragType::SourceToNode,
+            );
+            transfrags.push(tf);
+            *synth_count += 1;
+        } else if std::env::var_os("RUSTLE_LOG_TOPOLOGICAL").is_some() {
+            eprintln!("TOPOLOGICAL_TRACE: Skipped [source→{}] (already exists)", node_id);
+        }
+    }
+
+    // 2. NODE→SINK: create if node is terminal (no children)
+    if node.children.ones().next().is_none() && node_id != graph.sink_id {
+        let tf_path = vec![node_id, graph.sink_id];
+
+        // Skip if this path already exists
+        if !existing_paths.contains(&tf_path) {
+            let tf = create_synthetic_transfrag(
+                tf_path,
+                graph,
+                psize,
+                TransfragType::NodeToSink,
+            );
+            transfrags.push(tf);
+            *synth_count += 1;
+        }
+    }
+
+    // 3. Recursively traverse children
+    let children: Vec<usize> = node.children.ones().collect();
+    for child_id in children {
+        traverse_and_create_edge_transfrags(
+            graph,
+            child_id,
+            visited,
+            transfrags,
+            existing_paths,
+            psize,
+            synth_count,
+        );
+    }
+}
+
+/// Create a synthetic transfrag with zero initial abundance.
+fn create_synthetic_transfrag(
+    node_ids: Vec<usize>,
+    graph: &crate::Graph,
+    psize: usize,
+    tf_type: crate::graph::TransfragType,
+) -> crate::GraphTransfrag {
+    use crate::graph::TransfragType;
+
+    let mut tf = crate::GraphTransfrag::new(node_ids.clone(), psize);
+
+    // Mark as synthetic (no read support initially)
+    tf.synthetic = true;
+    tf.transfrag_type = Some(tf_type);
+
+    // Synthetic TFs start with zero abundance
+    // They gain abundance only if reads actually use them or flow algorithm selects them
+    tf.abundance = 0.0;
+    tf.read_count = 0.0;
+
+    // Copy coordinate info from graph nodes
+    if let Some(first_node) = node_ids.first().and_then(|&nid| graph.nodes.get(nid)) {
+        tf.longstart = first_node.start;
+    }
+    if let Some(last_node) = node_ids.last().and_then(|&nid| graph.nodes.get(nid)) {
+        tf.longend = last_node.end;
+    }
+
+    // Mark as synthetic for diagnostics
+    if tf_type == TransfragType::SourceToNode {
+        tf.origin_tag = Some("synth_source_to_node".to_string());
+    } else if tf_type == TransfragType::NodeToSink {
+        tf.origin_tag = Some("synth_node_to_sink".to_string());
+    }
+
+    tf
+}

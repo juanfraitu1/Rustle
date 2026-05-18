@@ -273,6 +273,18 @@ pub struct GraphTransfrag {
     pub nascent: bool,
     /// Lightweight provenance tag for seed-inventory tracing.
     pub origin_tag: Option<String>,
+    /// Phase 3c: Synthetic transfrag created by topological enumeration (not from reads).
+    pub synthetic: bool,
+    /// Phase 3c: Type of transfrag (read-based vs synthetic source→node vs node→sink).
+    pub transfrag_type: Option<TransfragType>,
+}
+
+/// Phase 3c: Transfrag creation source type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransfragType {
+    ReadBased,
+    SourceToNode,
+    NodeToSink,
 }
 
 impl GraphTransfrag {
@@ -313,6 +325,8 @@ impl GraphTransfrag {
             flow_path_idx: -1,
             nascent: false,
             origin_tag: None,
+            synthetic: false,
+            transfrag_type: None,
         }
     }
 

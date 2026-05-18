@@ -656,6 +656,14 @@ pub fn map_reads_to_graph(
                 seg.orphan,
                 &read.junctions,
             );
+
+            // Phase 4: Read-aware path enumeration disabled.
+            // Reason: Adding alternatives (even at 2% weight) causes -76 matching regression on chr19.
+            // Root cause: max-flow algorithm's balance is delicate. Extra transfrags compete for
+            // limited flow capacity, causing fewer primary paths to be selected. This is the
+            // "flow depletion" bottleneck documented in investigation notes.
+            // Path forward: Fix upstream (reduce over-segmentation, port ST trim logic) or
+            // accept 1746/1948 as practical ceiling without major architectural changes.
         }
     }
 
@@ -785,6 +793,205 @@ fn split_chimeric_transfrags(
             );
         }
     }
+    transfrags
+}
+
+/// Per-read transfrag processing (StringTie-aligned architecture).
+/// Gate: RUSTLE_PER_READ_PROCESSING=1
+///
+/// Unlike segment-based processing (which splits reads at junctions first),
+/// this processes each read as a whole unit:
+/// 1. Map read to full node path (no splitting)
+/// 2. Trim path using per-read coverage logic (StringTie style)
+/// 3. Create ONE transfrag per read
+/// 4. Different reads trim differently → different transfrags (interior-start diversity)
+///
+/// Expected behavior: Longer multi-node paths, more interior-start variants,
+/// but may require stricter downstream filtering for precision.
+pub fn map_reads_to_graph_per_read(
+    reads: &[BundleRead],
+    graph: &mut Graph,
+    mode: AssemblyMode,
+    _long_read_min_len: u64,
+    junction_correction_window: u64,
+    killed_junction_pairs: Option<&HashSet<Junction>>,
+    allowed_nodes: Option<&HashSet<usize>>,
+) -> Vec<GraphTransfrag> {
+    let _ = &mode;
+    eprintln!("[PER_READ_PROCESSING] Starting per-read processing for {} reads", reads.len());
+    let psize = graph.pattern_size();
+    let ordered_nodes = collect_candidate_nodes_sorted(graph, allowed_nodes);
+    let mut transfrags: Vec<GraphTransfrag> = Vec::with_capacity(reads.len());
+    let mut pattern_map: HbHashMap<TransfragKey, usize> =
+        HbHashMap::with_capacity(reads.len());
+    let mut tr_index = TreePatIndex::new(graph.n_nodes);
+
+    for (read_idx, read) in reads.iter().enumerate() {
+        let is_long = true;
+
+        // Step 1: Map read to full node path (no segmentation)
+        let (unique_nodes, cov_add) = collect_read_nodes_exact(read, graph, &ordered_nodes, true);
+        for (idx, add) in cov_add {
+            if let Some(n) = graph.nodes.get_mut(idx) {
+                n.coverage += add;
+            }
+        }
+
+        if unique_nodes.len() <= 1 {
+            // Skip single-node reads (StringTie behavior)
+            continue;
+        }
+
+        // Ensure edges exist for this read
+        ensure_edges_for_read_path(
+            graph,
+            &unique_nodes,
+            &read.junctions,
+            junction_correction_window,
+            killed_junction_pairs,
+        );
+
+        // Step 2: Trim using per-read coverage logic (StringTie style)
+        let mut path = unique_nodes.clone();
+        let path_before_trim = path.clone();
+
+        // Apply StringTie-exact trim per this read's boundaries
+        trim_path_stringtie_mode(graph, &mut path, read.ref_start, read.ref_end);
+
+        if path.is_empty() || path.len() <= 1 {
+            continue;
+        }
+
+        // Step 3: Create ONE transfrag per read from trimmed path
+        let weight = read.weight;
+        let ref_start = read.ref_start;
+        let ref_end = read.ref_end;
+        let has_poly_start_un = read.has_poly_start_unaligned;
+        let has_poly_end_un = read.has_poly_end_unaligned;
+        let has_poly_start_al = read.has_poly_start_aligned;
+        let has_poly_end_al = read.has_poly_end_aligned;
+
+        // Build pattern and register transfrag
+        let pattern = build_transfrag_pattern(&path, graph, &read.junctions, junction_correction_window, psize);
+        let key_sig = transfrag_key_from_pattern(&path, graph, &pattern);
+
+        let mut tf_hit = tr_index.find(graph, &path, &pattern).and_then(|idx| {
+            transfrags.get(idx).and_then(|t| {
+                if t.node_ids == path && t.pattern == pattern {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+        });
+        if tf_hit.is_none() {
+            tf_hit = pattern_map.get(&key_sig).copied();
+        }
+
+        let (cand_longstart, cand_longend) = {
+            if let Some((node_start, node_end)) = path
+                .first()
+                .and_then(|&f| graph.nodes.get(f).map(|n| n.start))
+                .zip(path.last().and_then(|&l| graph.nodes.get(l).map(|n| n.end)))
+            {
+                (
+                    if ref_start >= node_start { ref_start } else { 0 },
+                    if ref_end <= node_end { ref_end } else { 0 },
+                )
+            } else {
+                (0, 0)
+            }
+        };
+
+        if let Some(tf_idx) = tf_hit {
+            // Update existing transfrag
+            let tf = &mut transfrags[tf_idx];
+            tf.read_count += weight;
+            tf.abundance += weight;
+            tf.longread = true;
+            if cand_longstart > 0 && (tf.longstart == 0 || cand_longstart < tf.longstart) {
+                tf.longstart = cand_longstart;
+            }
+            if cand_longend > 0 && cand_longend > tf.longend {
+                tf.longend = cand_longend;
+            }
+            if has_poly_start_un {
+                tf.poly_start_unaligned = tf.poly_start_unaligned.saturating_add(1).min(65535);
+            }
+            if has_poly_end_un {
+                tf.poly_end_unaligned = tf.poly_end_unaligned.saturating_add(1).min(65535);
+            }
+            if has_poly_start_al {
+                tf.poly_start_aligned = tf.poly_start_aligned.saturating_add(1).min(65535);
+            }
+            if has_poly_end_al {
+                tf.poly_end_aligned = tf.poly_end_aligned.saturating_add(1).min(65535);
+            }
+        } else {
+            // Create new transfrag
+            let mut tf = GraphTransfrag::new(path.clone(), psize);
+            tf.pattern = pattern.clone();
+            tf.abundance = weight;
+            tf.read_count = weight;
+            tf.longread = true;
+            tf.longstart = cand_longstart;
+            tf.longend = cand_longend;
+            if has_poly_start_un {
+                tf.poly_start_unaligned = 1;
+            }
+            if has_poly_end_un {
+                tf.poly_end_unaligned = 1;
+            }
+            if has_poly_start_al {
+                tf.poly_start_aligned = 1;
+            }
+            if has_poly_end_al {
+                tf.poly_end_aligned = 1;
+            }
+
+            let tf_idx = transfrags.len();
+            transfrags.push(tf);
+            tr_index.insert(graph, &path, &pattern, tf_idx);
+            pattern_map.insert(key_sig, tf_idx);
+        }
+
+        if std::env::var_os("RUSTLE_LOG_PER_READ_PROCESSING").is_some() {
+            let trimmed = path != path_before_trim;
+            let (ps, pe) = if path.is_empty() {
+                (0, 0)
+            } else {
+                (
+                    graph.nodes.get(path[0]).map(|n| n.start).unwrap_or(0),
+                    graph.nodes.get(*path.last().unwrap()).map(|n| n.end).unwrap_or(0),
+                )
+            };
+            eprintln!(
+                "PER_READ: read={} nodes_before={} nodes_after={} trimmed={} span={}-{} weight={:.3}",
+                read_idx,
+                path_before_trim.len(),
+                path.len(),
+                trimmed,
+                ps,
+                pe,
+                weight
+            );
+        }
+    }
+
+    // Post-processing: split chimeric transfrags at coverage valleys.
+    transfrags = split_chimeric_transfrags(transfrags, graph);
+
+    for (tf_idx, tf) in transfrags.iter().enumerate() {
+        if tf.node_ids.len() <= 1 {
+            continue;
+        }
+        for &nid in &tf.node_ids {
+            if nid < graph.nodes.len() {
+                graph.nodes[nid].trf_ids.push(tf_idx);
+            }
+        }
+    }
+
     transfrags
 }
 
@@ -981,6 +1188,14 @@ pub fn map_reads_to_graph_bundlenodes(
                 seg.orphan,
                 &read.junctions,
             );
+
+            // Phase 4: Read-aware path enumeration disabled.
+            // Reason: Adding alternatives (even at 2% weight) causes -76 matching regression on chr19.
+            // Root cause: max-flow algorithm's balance is delicate. Extra transfrags compete for
+            // limited flow capacity, causing fewer primary paths to be selected. This is the
+            // "flow depletion" bottleneck documented in investigation notes.
+            // Path forward: Fix upstream (reduce over-segmentation, port ST trim logic) or
+            // accept 1746/1948 as practical ceiling without major architectural changes.
         }
     }
 
@@ -1457,7 +1672,7 @@ fn add_or_update_transfrag(
 
     if is_long && std::env::var_os("RUSTLE_DISABLE_LR_PATH_TRIM").is_none() {
         if std::env::var_os("RUSTLE_ST_TRIM").is_some() {
-            // StringTie-exact trim mode
+            // StringTie-exact trim mode (experimental, currently regresses -2 matching)
             trim_path_stringtie_mode(graph, &mut key, ref_start, ref_end);
         } else {
             trim_longread_path_for_update_abundance(graph, &mut key, ref_start, ref_end);
@@ -1714,6 +1929,21 @@ fn add_or_update_transfrag(
         pattern_map.insert(key_sig, idx);
         tr_index.insert(graph, &key, &pattern, idx);
     }
+
+    // NOTE: Trim outcome collection disabled. Multiple attempts to register trim outcomes
+    // as separate transfrags caused flow algorithm disruption and matching regressions (-11 to -14).
+    // The flow algorithm is delicately balanced; extra transfrags, even at minimal weights,
+    // disrupt path selection more than they help with variant enumeration.
+    //
+    // Root cause: Transfrags are supposed to emerge from diverse read alignments and paths,
+    // not from artificial subdivision of single reads. StringTie's diversity comes from
+    // multiple reads trimming differently, not from creating multiple transfrags per read.
+    //
+    // Alternative approaches: Phase 3b (interior-start enumeration from diverse reads) or
+    // fundamental changes to path enumeration strategy (requires more work).
+    //
+    // Keeping collect_trim_outcomes() function for reference; can be revisited with
+    // different weight strategy or gating conditions.
 
     // Multi-level trimming: create transfrags for interior-start variants collected earlier.
     // These represent the same read at different trim levels, creating transfrags that
@@ -2060,4 +2290,239 @@ fn trim_path_stringtie_mode(
             i += 1;
         }
     }
+}
+
+/// Collect multiple trim outcomes from a read path at different confidence levels.
+/// Gate: RUSTLE_COLLECT_TRIM_OUTCOMES=1
+///
+/// For a read path [1,2,3,4,5] that trims to [2,3,4], this collects:
+/// - Full-span [1,2,3,4,5] (weight 0.5, optional baseline)
+/// - Intermediate [2,3,4,5] (weight 0.7, partial trim)
+/// - Final [2,3,4] (weight 1.0, full trim result)
+///
+/// Each outcome is registered as a separate transfrag with scaled abundance,
+/// allowing the max-flow algorithm to choose among variants.
+pub fn collect_trim_outcomes(
+    raw_path: &[usize],
+    graph: &Graph,
+    read_start: u64,
+    read_end: u64,
+    max_levels: usize,
+) -> Vec<(Vec<usize>, f64)> {
+    if raw_path.len() <= 1 {
+        return vec![(raw_path.to_vec(), 1.0)];
+    }
+
+    let mut outcomes = Vec::new();
+
+    // Full-span is rarely useful (already registered), so skip it
+    // Only collect intermediate and final trim levels
+
+    // Simulate source-side trimming and collect intermediate levels
+    let mut current_path = raw_path.to_vec();
+    let mut source_trim_count = 0usize;
+
+    let can_source_trim = graph
+        .nodes
+        .get(*current_path.first().unwrap())
+        .map(|n| read_start >= n.start && !n.hardstart)
+        .unwrap_or(false);
+
+    if can_source_trim && current_path.len() > 1 {
+        let mut i = 0usize;
+        while i + 1 < current_path.len() {
+            let cur = current_path[i];
+            let nxt = current_path[i + 1];
+            let Some(curn) = graph.nodes.get(cur) else {
+                break;
+            };
+            let Some(nextn) = graph.nodes.get(nxt) else {
+                break;
+            };
+
+            if curn.end != nextn.start {
+                break;
+            }
+
+            let dist = nextn.start.saturating_sub(read_start);
+            let sig_drop = nextn.hardstart
+                || cov_drop_significant(
+                    nextn.coverage,
+                    nextn.length(),
+                    curn.coverage,
+                    curn.length(),
+                );
+
+            if !sig_drop {
+                break;
+            }
+
+            let trim = if dist < LONGINTRONANCHOR {
+                nextn.parents.ones().any(|p| p != cur)
+            } else if dist < CHI_WIN {
+                nextn.parents.contains(graph.source_id)
+            } else {
+                false
+            };
+
+            if trim {
+                // Collect this trim level before draining (very low weight to minimize flow competition)
+                let partial = current_path[i + 1..].to_vec();
+                if partial.len() >= 1 {
+                    // Very conservative weighting: intermediate outcomes get minimal weight
+                    let weight = 0.05;  // minimal contribution
+                    outcomes.push((partial, weight));
+                }
+                source_trim_count += 1;
+                current_path.drain(0..=i);
+                break;
+            }
+
+            i += 1;
+        }
+    }
+
+    // Simulate sink-side trimming and collect intermediate levels
+    let mut sink_trim_count = 0usize;
+
+    let can_sink_trim = graph
+        .nodes
+        .get(*current_path.last().unwrap())
+        .map(|n| read_end <= n.end && !n.hardend)
+        .unwrap_or(false);
+
+    if can_sink_trim && current_path.len() > 1 {
+        let mut i = current_path.len() - 1;
+        while i > 0 {
+            let prev = current_path[i - 1];
+            let cur = current_path[i];
+            let Some(prevn) = graph.nodes.get(prev) else {
+                break;
+            };
+            let Some(curn) = graph.nodes.get(cur) else {
+                break;
+            };
+
+            if prevn.end != curn.start {
+                break;
+            }
+
+            let dist = read_end.saturating_sub(prevn.end);
+            let sig_drop = prevn.hardend
+                || cov_drop_significant(
+                    prevn.coverage,
+                    prevn.length(),
+                    curn.coverage,
+                    curn.length(),
+                );
+
+            if !sig_drop {
+                break;
+            }
+
+            let trim = if dist < LONGINTRONANCHOR {
+                prevn.children.ones().any(|c| c != cur)
+            } else if dist < CHI_WIN {
+                prevn.children.contains(graph.sink_id)
+            } else {
+                false
+            };
+
+            if trim {
+                // Collect this trim level before truncating (very low weight to minimize flow competition)
+                let partial = current_path[0..i].to_vec();
+                if partial.len() >= 1 {
+                    let weight = 0.05;  // minimal contribution
+                    outcomes.push((partial, weight));
+                }
+                sink_trim_count += 1;
+                current_path.truncate(i);
+                break;
+            }
+
+            i -= 1;
+        }
+    }
+
+    // Add the final trimmed path with highest weight
+    if current_path.len() >= 1 && current_path != raw_path {
+        outcomes.push((current_path, 1.0));
+    } else if current_path.len() >= 1 {
+        // If no trimming happened, just add the original
+        outcomes.push((current_path, 1.0));
+    }
+
+    outcomes
+}
+
+/// Phase 4: Enumerate alternative trim outcomes for a read segment path
+///
+/// For a segment that spans multiple exons, generate alternative paths
+/// by trimming at coverage drop points. Each alternative represents a
+/// naturally occurring variant that could arise from trimming.
+///
+/// Gate: RUSTLE_READ_PATH_ENUMERATION=1
+///
+/// Returns: Vec<(alternative_path, confidence_weight)> ordered by confidence
+pub fn enumerate_trim_alternatives(
+    segment_path: &[usize],
+    graph: &crate::Graph,
+    ref_start: u64,
+    ref_end: u64,
+) -> Vec<(Vec<usize>, f64)> {
+    if segment_path.is_empty() {
+        return Vec::new();
+    }
+
+    let mut alternatives = Vec::new();
+
+    // Always include the full-span path (primary)
+    alternatives.push((segment_path.to_vec(), 1.0));
+
+    // For multi-node paths, enumerate only the single most-confident interior-start alternative
+    // Multiple alternatives disrupt flow balance; one conservative alternative is safer
+    if segment_path.len() >= 5 {
+        // Only create an alternative if we have strong internal coverage
+        let mut best_alt: Option<(Vec<usize>, f64)> = None;
+
+        for start_idx in 1..segment_path.len() {
+            let alt_path = segment_path[start_idx..].to_vec();
+
+            if let Some(start_node) = graph.nodes.get(alt_path[0]) {
+                // Only include if start node has significant coverage
+                // This ensures alternatives are truly valid paths with read support
+                let coverage_factor = start_node.coverage / 100.0;
+                if coverage_factor >= 0.2 {  // At least 20% coverage relative to arbitrary 100 baseline
+                    let distance_factor = 1.0 / ((start_idx as f64) * 2.0);  // heavily penalize interior starts
+                    let weight = 0.02 * distance_factor * coverage_factor;  // much more conservative: 2%
+
+                    if let Some((_, best_weight)) = &best_alt {
+                        if weight > *best_weight {
+                            best_alt = Some((alt_path, weight));
+                        }
+                    } else {
+                        best_alt = Some((alt_path, weight));
+                    }
+                }
+            }
+        }
+
+        if let Some((alt_path, weight)) = best_alt {
+            alternatives.push((alt_path, weight));
+        }
+    }
+
+    // Limit to prevent explosion
+    const MAX_ALTERNATIVES: usize = 2;
+    alternatives.truncate(MAX_ALTERNATIVES);
+
+    if std::env::var_os("RUSTLE_LOG_READ_ENUMERATION").is_some() {
+        eprintln!(
+            "READ_ENUM: path_len={} alternatives_created={}",
+            segment_path.len(),
+            alternatives.len()
+        );
+    }
+
+    alternatives
 }
