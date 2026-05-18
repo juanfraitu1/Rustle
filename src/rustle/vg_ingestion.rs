@@ -357,3 +357,140 @@ pub fn ingest_gtf_families(
 
     Ok(family_groups)
 }
+
+// ── Family-Based Naming for Discovered Transcripts ────────────────────────
+
+/// Map of annotated families keyed by (chrom, strand) for fast lookup.
+pub type FamilyIndex = HashMap<(String, char), Vec<TemplateFamily>>;
+
+/// Build an index of families from template transcripts for fast lookup.
+pub fn build_family_index(families: Vec<TemplateFamily>) -> FamilyIndex {
+    let mut idx: FamilyIndex = HashMap::new();
+    for fam in families {
+        let key = (fam.chrom.clone(), fam.strand);
+        idx.entry(key).or_insert_with(Vec::new).push(fam);
+    }
+    idx
+}
+
+/// Check if a discovered transcript's junctions match a family template.
+/// Returns (family_name, match_quality) if found.
+fn match_transcript_to_family(
+    tx_exons: &[(u64, u64)],
+    families: &[TemplateFamily],
+) -> Option<(String, f64)> {
+    if tx_exons.is_empty() {
+        return None;
+    }
+
+    let mut best_match: Option<(String, f64)> = None;
+
+    for fam in families {
+        // Score based on junction overlap with family transcripts
+        for template_tx in &fam.transcripts {
+            // Build junction set from discovered transcript
+            let tx_junctions: std::collections::HashSet<_> = (0..tx_exons.len() - 1)
+                .map(|i| (tx_exons[i].1, tx_exons[i + 1].0))
+                .collect();
+
+            // Build junction set from template
+            let template_junctions: std::collections::HashSet<_> = (0..template_tx.exons.len() - 1)
+                .map(|i| (template_tx.exons[i].1, template_tx.exons[i + 1].0))
+                .collect();
+
+            // Count matches
+            let matching_junctions = tx_junctions.intersection(&template_junctions).count();
+            let total_junctions = tx_junctions.union(&template_junctions).count();
+
+            if total_junctions > 0 {
+                let jaccard = matching_junctions as f64 / total_junctions as f64;
+                // Lower threshold to catch partial isoforms and variants
+                if jaccard > 0.3 {
+                    // Match found: use gene_id if available, else family_id
+                    let family_name = fam
+                        .gene_id
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or_else(|| format!("FAMILY_{}", fam.family_id));
+
+                    if best_match.is_none() || jaccard > best_match.as_ref().unwrap().1 {
+                        best_match = Some((family_name, jaccard));
+                    }
+                }
+            }
+        }
+    }
+
+    best_match
+}
+
+/// Apply family-based naming to discovered transcripts.
+/// Renames transcripts that match annotated families with a "-like" suffix.
+pub fn apply_family_based_naming(
+    transcripts: &mut [crate::path_extract::Transcript],
+    gtf_path: &Path,
+    grouping_strategy: FamilyGroupingStrategy,
+) -> Result<()> {
+    eprintln!("[Family-Naming] Loading reference families from: {:?}", gtf_path);
+
+    // Parse reference transcripts
+    let ref_transcripts = parse_gtf_transcripts(gtf_path)?;
+    eprintln!("[Family-Naming] Parsed {} reference transcripts", ref_transcripts.len());
+    let families = group_transcripts_into_families(ref_transcripts, grouping_strategy);
+    let family_index = build_family_index(families.clone());
+
+    eprintln!("[Family-Naming] Loaded {} families", family_index.len());
+    for ((chrom, strand), fams) in family_index.iter() {
+        eprintln!("  - {}:{}: {} families", chrom, strand, fams.len());
+    }
+
+    let mut renamed = 0;
+    let mut isoform_counters: HashMap<String, usize> = HashMap::new();
+    let mut checked = 0;
+    let mut matched_families = HashMap::new();
+
+    for tx in transcripts.iter_mut() {
+        // Skip transcripts that already have forced IDs
+        if tx.transcript_id.is_some() || tx.gene_id.is_some() {
+            continue;
+        }
+
+        checked += 1;
+
+        // Look for families on the same chromosome and strand
+        let key = (tx.chrom.clone(), tx.strand);
+        if let Some(families_on_locus) = family_index.get(&key) {
+            if let Some((family_name, quality)) = match_transcript_to_family(&tx.exons, families_on_locus)
+            {
+                // Assign family-based name with isoform number
+                let isoform_num = isoform_counters
+                    .entry(family_name.clone())
+                    .and_modify(|c| *c += 1)
+                    .or_insert(1);
+
+                let new_gene_id = format!("{}-like", family_name);
+                let new_tx_id = format!("{}-like.{}", family_name, isoform_num);
+
+                eprintln!(
+                    "[Family-Naming] Renamed transcript to {} (Jaccard = {:.3})",
+                    new_tx_id, quality
+                );
+
+                tx.gene_id = Some(new_gene_id);
+                tx.transcript_id = Some(new_tx_id);
+                renamed += 1;
+
+                *matched_families.entry(family_name).or_insert(0) += 1;
+            }
+        } else if checked <= 10 {
+            // Log first few chromosomes with no families for debugging
+            eprintln!("[Family-Naming] No families found on {}:{}", tx.chrom, tx.strand);
+        }
+    }
+
+    eprintln!("[Family-Naming] Checked {} discovered transcripts, renamed {} based on family membership", checked, renamed);
+    for (fam_name, count) in matched_families.iter() {
+        eprintln!("  - {}: {} transcripts", fam_name, count);
+    }
+    Ok(())
+}

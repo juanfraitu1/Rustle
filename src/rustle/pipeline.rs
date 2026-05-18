@@ -16876,6 +16876,21 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // Apply family-based naming to newly discovered transcripts if GTF ingestion was used
+    if let Some(gtf_path) = &config.ingress_gtf {
+        let grouping_strategy = match config.ingress_grouping.as_str() {
+            "ByOverlap" => crate::vg_ingestion::FamilyGroupingStrategy::ByOverlap,
+            _ => crate::vg_ingestion::FamilyGroupingStrategy::ByGene,
+        };
+        if let Err(e) = crate::vg_ingestion::apply_family_based_naming(
+            &mut all_transcripts,
+            gtf_path,
+            grouping_strategy,
+        ) {
+            eprintln!("[Warning] Family-based naming failed: {}", e);
+        }
+    }
+
     let mut f = std::fs::File::create(output_gtf.as_ref())?;
     write_gtf(&all_transcripts, &mut f, &config.label)?;
     let (emit_start, emit_end) = debug_stage::transcript_span(&all_transcripts).unwrap_or((0, 0));
