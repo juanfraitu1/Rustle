@@ -10558,6 +10558,27 @@ pub fn run<P: AsRef<Path>>(
     let total_subbundles = std::sync::atomic::AtomicUsize::new(0);
 
 
+    // Collect junctions for optional graph comparison (before bundles are moved)
+    let initial_discovery_junctions: crate::types::JunctionStats = if std::env::var_os("RUSTLE_GRAPH_COMPARISON").is_some() {
+        let mut merged = crate::types::JunctionStats::default();
+        for bundle in &bundles {
+            for (junction, stat) in &bundle.junction_stats {
+                merged
+                    .entry(*junction)
+                    .and_modify(|s| {
+                        s.mrcount += stat.mrcount;
+                        s.nreads_good += stat.nreads_good;
+                        s.leftsupport = s.leftsupport.max(stat.leftsupport);
+                        s.rightsupport = s.rightsupport.max(stat.rightsupport);
+                    })
+                    .or_insert_with(|| stat.clone());
+            }
+        }
+        merged
+    } else {
+        Default::default()
+    };
+
     let snapshot_all = std::env::var_os("RUSTLE_SNAPSHOT_ALL").is_some();
     use rayon::prelude::*;
     let bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
@@ -16888,6 +16909,67 @@ pub fn run<P: AsRef<Path>>(
             grouping_strategy,
         ) {
             eprintln!("[Warning] Family-based naming failed: {}", e);
+        }
+    }
+
+    // Optional: Compare de novo discovery against reference GTF for diagnosis
+    if std::env::var_os("RUSTLE_GRAPH_COMPARISON").is_some() {
+        if let Ok(reference_gtf) = std::env::var("RUSTLE_REFERENCE_GTF") {
+            eprintln!("\n[Graph-Comparison] Running diagnostic comparison...");
+
+            // Load reference structure and compare against initial discovery
+            match crate::graph_comparison::ReferenceGraphStructure::from_gtf(
+                std::path::Path::new(&reference_gtf),
+            ) {
+                Ok(ref_graph) => {
+                    let comparison = ref_graph.compare_junctions(&initial_discovery_junctions);
+                    ref_graph.print_report(&comparison);
+
+                    // Write detailed diagnosis to file if requested
+                    if let Ok(diag_file) = std::env::var("RUSTLE_GRAPH_COMPARISON_OUT") {
+                        let mut diag_content = String::new();
+                        diag_content.push_str(&format!(
+                            "# Graph Comparison Report\n# Reference: {}\n\n",
+                            reference_gtf
+                        ));
+                        diag_content.push_str(&format!(
+                            "## Summary\n\
+                             - Total reference junctions: {}\n\
+                             - Found in discovered: {} ({:.1}%)\n\
+                             - Missing: {}\n\
+                             - Sensitivity: {:.1}%\n\
+                             - Specificity: {:.1}%\n\n",
+                            comparison.metrics.total_reference,
+                            comparison.metrics.found_count,
+                            (comparison.metrics.found_count as f64
+                                / comparison.metrics.total_reference as f64)
+                                * 100.0,
+                            comparison.metrics.missing_count,
+                            comparison.metrics.sensitivity * 100.0,
+                            comparison.metrics.specificity * 100.0
+                        ));
+
+                        diag_content.push_str("## Missing Junctions\n");
+                        for detail in &comparison.missing_details {
+                            diag_content.push_str(&format!(
+                                "- ({}, {}): {} transcripts {}\n",
+                                detail.donor,
+                                detail.acceptor,
+                                detail.reference_transcripts.len(),
+                                detail.reference_transcripts.join(", ")
+                            ));
+                        }
+
+                        let _ = std::fs::write(&diag_file, diag_content);
+                        eprintln!("[Graph-Comparison] Detailed report written to: {}", diag_file);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[Graph-Comparison] Error loading reference: {}", e);
+                }
+            }
+        } else {
+            eprintln!("[Graph-Comparison] RUSTLE_REFERENCE_GTF not set. Comparison disabled.");
         }
     }
 
