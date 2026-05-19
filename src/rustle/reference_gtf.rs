@@ -188,7 +188,6 @@ pub fn find_guide_pat(
         let inode = &graph.nodes[i];
         let ex_end = guide.exons[j].1; // guide exon end (exclusive, 0-based)
         let end_diff = inode.end.abs_diff(ex_end);
-
         if ex_end + ssdist < inode.end {
             // Guide exon ends before node ends — guide exon is contained in this node.
             //: if last exon, create transfrag and return.
@@ -388,9 +387,7 @@ pub fn process_refguides(
 ) -> Vec<GuideInfo> {
     let mut mapped = Vec::new();
     for (gi, guide) in guides.iter().enumerate() {
-        if let Some(node_ids) =
-            find_guide_pat(guide, graph, bundle_start, bundle_end, strand, ssdist)
-        {
+        if let Some(node_ids) = find_guide_pat(guide, graph, bundle_start, bundle_end, strand, ssdist) {
             let first_nid = *node_ids.first().unwrap_or(&0);
             let last_nid = *node_ids.last().unwrap_or(&0);
             if first_nid < graph.nodes.len() {

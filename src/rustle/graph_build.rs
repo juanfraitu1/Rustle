@@ -1460,6 +1460,7 @@ fn create_graph_inner(
         // compute boundaries per-bundlenode when longtrim is active
         // and no external boundaries were provided. External boundaries come from
         // CPAS/poly-A evidence; when absent, use coverage-derivative detection.
+        let is_last_bundlenode = bn.next.is_none();
         let bnode_span = endbundle.saturating_sub(currentstart);
         let min_lt_span = 2 * (100 + 50) + 50; // 2*(CHI_WIN+CHI_THR) + margin = 350
         if lstart.is_empty() && lend.is_empty()
@@ -1488,7 +1489,7 @@ fn create_graph_inner(
                         bpc.clone()
                     };
                     let (ls, le) = crate::read_boundaries::collect_longtrim_boundaries_in_span(
-                        &strand_bpc, currentstart, endbundle, &[], &[],
+                        &strand_bpc, currentstart, endbundle, &[], &[], is_last_bundlenode,
                     );
                     bnode_lstart_owned = ls;
                     bnode_lend_owned = le;
@@ -1805,18 +1806,37 @@ fn create_graph_inner(
         }
 
         // call longtrim for remaining events up to endbundle.
-        if has_longtrim && !completed {
+        // Only process lend events in the "terminal detection window" —
+        // positions within TERMINAL_DETECTION_WINDOW bp of the bundlenode end.
+        // These are drops that the original scan (limited to endbundle minus
+        // CHI_THR+LONGINTRONANCHOR) couldn't see.  Internal drops (further
+        // from the end) were already processed by the within-event-loop
+        // longtrim; re-processing them here would create spurious extra splits.
+        let terminal_threshold =
+            endbundle.saturating_sub(crate::read_boundaries::TERMINAL_DETECTION_WINDOW);
+        let terminal_lend_owned: Vec<crate::types::ReadBoundary> = effective_lend
+            .iter()
+            .filter(|b| b.pos > terminal_threshold)
+            .copied()
+            .collect();
+        let graphnode_id_before_lt = graphnode_id;
+        if is_last_bundlenode && !terminal_lend_owned.is_empty() && !completed {
             if let Some(bpc) = bpcov {
-                longtrim_inline(
-                    &mut graph, &mut graphnode_id, &mut nls, &mut nle,
-                    lstart, lend, bpc, bpcov_stranded, bundle_strand,
-                    _bundle_start, bundle_end, bundle_chrom, endbundle,
-                    true, true, source_bid,
-                    &mut sink_parents,
-                    sink_futuretr,
-                );
+                let node_start = graph.nodes[graphnode_id].start;
+                if let Some(corrected) = find_terminal_drop_pos(
+                    bpc, bpcov_stranded, bundle_strand,
+                    _bundle_start, node_start, endbundle,
+                    &terminal_lend_owned,
+                ) {
+                    graph.terminal_corrected_end = Some(corrected);
+                }
             }
         }
+        // If longtrim_inline split the node at the end boundary, graphnode_id
+        // now points to the right-half overhang (past the coverage drop). Don't
+        // connect that overhang to sink — the left half (hardend) is already a
+        // sink parent (added by longtrim_inline itself).
+        let longtrim_split_at_end = graphnode_id != graphnode_id_before_lt;
 
         if !completed {
             // Set final graphnode end to endbundle
@@ -1828,7 +1848,9 @@ fn create_graph_inner(
                 graph.nodes[graphnode_id].start,
                 endbundle,
             );
-            sink_parents.push(graphnode_id);
+            if !longtrim_split_at_end {
+                sink_parents.push(graphnode_id);
+            }
             // In pure-overlap mode, all parallels share this bundle-end
             // terminus; each must also be a sink parent so downstream
             // bundlenodes can link to any of them via ends[].
@@ -2161,6 +2183,96 @@ fn apply_iterative_longtrim_splits(
 /// Inline longtrim: process lstart/lend events within the current graphnode
 /// up to `nodeend`. Matches longtrim() (-2740).
 ///
+/// Compute the corrected 3'-end position from terminal lend events without
+/// modifying the graph. Replicates the bpcov-contrast logic from longtrim_inline
+/// (lend branch) in dry-run mode: returns `Some(pos + 1)` for the first lend
+/// event that would have triggered a hardend split, or `None` if no such event
+/// passes the threshold.
+///
+/// Used by the terminal longtrim block to store the drop position on
+/// `graph.terminal_corrected_end` so that transcript ends can be post-processed
+/// after path_extract without the hardend-bottleneck effect.
+pub(crate) fn find_terminal_drop_pos(
+    bpcov: &Bpcov,
+    bpcov_stranded: Option<&BpcovStranded>,
+    bundle_strand: char,
+    bundle_start: u64,
+    node_start: u64,
+    node_end: u64,
+    lend: &[ReadBoundary],
+) -> Option<u64> {
+    const CHI_THR: i64 = 50;
+    const DROP: f64 = 0.5;
+    const ERROR_PERC: f64 = 0.1;
+    const LONGINTRONANCHOR: u64 = 25;
+
+    let strict_lend = std::env::var_os("RUSTLE_LONGTRIM_STRICT_LEND").is_some();
+    let min_boundary_reads: f64 = if strict_lend {
+        std::env::var("RUSTLE_LONGTRIM_STRICT_MIN_READS")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0)
+    } else {
+        3.0
+    };
+    let min_tmpcov: f64 = if strict_lend {
+        std::env::var("RUSTLE_LONGTRIM_STRICT_MIN_TMPCOV")
+            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(20.0)
+    } else {
+        std::env::var("RUSTLE_LONGTRIM_MIN_TMPCOV")
+            .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(25.0)
+    };
+
+    let bpcov_len = bpcov.cov.len();
+    let get_cov = |s: i64, e: i64| -> f64 {
+        if s < 0 || e < s || s as usize >= bpcov_len { return 0.0; }
+        let su = s as usize;
+        let eu = (e as usize).min(bpcov_len - 1);
+        if let Some(bps) = bpcov_stranded {
+            let total = bps.get_cov_range(BPCOV_STRAND_ALL, su, eu);
+            let opposite = match bundle_strand {
+                '-' => bps.get_cov_range(BPCOV_STRAND_PLUS, su, eu),
+                '+' => bps.get_cov_range(BPCOV_STRAND_MINUS, su, eu),
+                _ => 0.0,
+            };
+            (total - opposite).max(0.0)
+        } else {
+            bpcov.get_cov_range(su, eu)
+        }
+    };
+
+    for rb in lend {
+        let pos = rb.pos;
+        let boundary_cov = rb.cov;
+
+        if boundary_cov.abs() < min_boundary_reads {
+            continue;
+        }
+
+        // startcov=true, endcov=true (mirrors terminal longtrim_inline call)
+        let start_ok = pos > node_start + LONGINTRONANCHOR;
+        let end_ok = pos < node_end + LONGINTRONANCHOR;
+
+        let mut tmpcov = 0.0;
+        if start_ok && end_ok && pos > node_start {
+            let endpos = (pos - bundle_start) as i64;
+            let winstart = (endpos - CHI_THR + 1).max(0);
+            let winend = (endpos + CHI_THR).min(bpcov_len as i64 - 1);
+            tmpcov = (get_cov(winstart, endpos) - get_cov(endpos + 1, winend))
+                / (DROP * CHI_THR as f64);
+        }
+        if tmpcov <= 0.0 && boundary_cov < 0.0 {
+            tmpcov = ERROR_PERC;
+        }
+
+        if tmpcov > min_tmpcov {
+            let split = pos + 1;
+            if split > node_start && split < node_end {
+                return Some(split);
+            }
+        }
+    }
+    None
+}
+
 /// Splits the current graphnode at validated read boundary positions.
 /// - lstart events: split at pos, new node gets source edge + hardstart.
 /// - lend events: split at pos+1, left half gets sink edge + hardend.

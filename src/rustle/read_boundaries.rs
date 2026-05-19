@@ -12,6 +12,11 @@ const CHI_WIN: u64 = 100;
 const ERROR_PERC: f64 = 0.1;
 const LONGINTRONANCHOR: u64 = 25;
 
+/// Positions within this many bp of the bundlenode end are in the "new"
+/// terminal detection window — detectable only with the covend extension.
+/// Used by graph_build to filter effective_lend for the terminal longtrim call.
+pub const TERMINAL_DETECTION_WINDOW: u64 = CHI_THR + LONGINTRONANCHOR; // 75
+
 fn collect_raw_boundaries(
     reads: &[BundleRead],
 ) -> (
@@ -94,6 +99,7 @@ pub fn collect_longtrim_boundaries_in_span(
     span_end: u64,
     start_features: &[ReadBoundary],
     end_features: &[ReadBoundary],
+    extend_terminal: bool,
 ) -> (Vec<ReadBoundary>, Vec<ReadBoundary>) {
     let mut lstart: Vec<ReadBoundary> = start_features
         .iter()
@@ -167,8 +173,22 @@ pub fn collect_longtrim_boundaries_in_span(
         lastcov = icov;
     }
 
-    let max_cov_pos = bpcov.bundle_end.saturating_sub(1);
-    let covend = endbundle.min(max_cov_pos).saturating_sub(LONGINTRONANCHOR);
+    // For the last bundlenode only, extend covend past span_end so the sliding
+    // window can detect drops whose statistical signal falls inside the last
+    // CHI_THR positions of the bundlenode (e.g. STRG.225, drop 39 bp before end).
+    // cov_at() returns 0.0 for out-of-range positions (zero-padding).
+    // Extend by exactly CHI_THR (not CHI_THR+1): the scan runs to covend-1,
+    // so the zero-padding boundary at span_end requires pos = span_end+CHI_THR,
+    // which lands just past the scan end — avoiding a spurious lend there.
+    // For intermediate bundlenodes keep the old conservative formula
+    // (span_end - LONGINTRONANCHOR) so that the regular event-loop longtrim
+    // does not fire on near-end drops that are already handled by the junction
+    // event logic, which would create spurious extra splits in the gene body.
+    let covend = if extend_terminal {
+        span_end.saturating_add(CHI_THR)
+    } else {
+        span_end.saturating_sub(LONGINTRONANCHOR)
+    };
     let start_scan = span_start.saturating_add(CHI_WIN + LONGINTRONANCHOR);
     if covend <= start_scan {
         return (lstart, lend);
@@ -251,6 +271,7 @@ pub fn collect_longtrim_boundary_map(
             .filter(keep)
             .filter(|b| b.pos >= bn.start && b.pos < bn.end)
             .collect();
+        let is_last = bn.next.is_none();
         out.insert(
             bn.bid,
             collect_longtrim_boundaries_in_span(
@@ -259,6 +280,7 @@ pub fn collect_longtrim_boundary_map(
                 bn.end,
                 &start_features,
                 &end_features,
+                is_last,
             ),
         );
         cur = bn.next.as_deref();

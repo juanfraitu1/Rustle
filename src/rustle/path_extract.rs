@@ -1490,6 +1490,22 @@ pub fn collect_path(
         }
         if let Some(last) = exons.last() {
             if node_start <= last.1 {
+                // Longtrim hardend guard: if the previous real node had a
+                // longtrim hardend boundary AND the current node starts exactly
+                // there AND the current node is fully isolated (no outgoing
+                // edges — not even to sink), it's a terminal overhang — stop.
+                // Legitimate terminal exons connect to sink; isolated overhangs
+                // created by longtrim_split_at_end have children.is_empty().
+                if let Some(pn) = prev_real_nid.and_then(|p| graph.nodes.get(p)) {
+                    if pn.hardend && node_start == last.1 {
+                        let is_isolated = graph.nodes.get(nid)
+                            .map(|n| n.children.is_empty())
+                            .unwrap_or(false);
+                        if is_isolated {
+                            break;
+                        }
+                    }
+                }
                 let last = exons.last_mut().unwrap();
                 last.1 = last.1.max(node_end);
                 prev_real_end = Some(last.1);
@@ -2338,9 +2354,18 @@ fn materialize_longread_seed_nodes(
             if last_node.end >= longend {
                 break;
             }
+            // Longtrim hardend guard: if this node is a hardend boundary and
+            // the only available child is fully isolated (no outgoing edges —
+            // not even to sink), that child is a terminal overhang — stop.
+            // Legitimate next exons (ALT_TTS case) connect to sink and pass.
             let Some(child) = select_contiguous_child_for_longend(graph, last, longend) else {
                 break;
             };
+            if last_node.hardend
+                && graph.nodes.get(child).map(|n| n.children.is_empty()).unwrap_or(true)
+            {
+                break;
+            }
             if out.last().copied() == Some(child) {
                 break;
             }
@@ -7914,6 +7939,23 @@ pub fn extract_transcripts(
                 if next_nid < graph.nodes.len()
                     && nodes_are_contiguous(graph, use_path[j], next_nid)
                 {
+                    // Longtrim hardend guard: don't merge into an isolated
+                    // terminal overhang. Only stop when the hardend node is
+                    // followed by a node with no outgoing edges at all (not
+                    // even to sink) — those are longtrim_split_at_end fragments.
+                    // ALT_TTS hardend nodes may be followed by legitimate
+                    // terminal exons that connect to sink; those must pass.
+                    let cur_hardend = graph.nodes.get(use_path[j])
+                        .map(|n| n.hardend)
+                        .unwrap_or(false);
+                    if cur_hardend {
+                        let next_is_isolated = graph.nodes.get(next_nid)
+                            .map(|n| n.children.is_empty())
+                            .unwrap_or(false);
+                        if next_is_isolated {
+                            break;
+                        }
+                    }
                     last_merged_start = graph.nodes[next_nid].start;
                     last_merged_end = graph.nodes[next_nid].end;
                     j += 1;

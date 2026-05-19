@@ -366,6 +366,11 @@ pub struct Graph {
     pub edgeno: usize,
     /// Track the next available edge ID to avoid O(|E|) scans.
     next_edge_id: usize,
+    /// When the terminal longtrim detects a coverage drop near the bundle end,
+    /// stores the corrected 3'-end position (pos+1 of the drop). Set during
+    /// graph construction; used post-extraction to truncate transcript ends
+    /// without modifying the graph structure (avoids hardend-bottleneck removal).
+    pub terminal_corrected_end: Option<u64>,
 }
 
 impl Graph {
@@ -378,6 +383,7 @@ impl Graph {
             gpos: Default::default(),
             edgeno: 0,
             next_edge_id: 0,
+            terminal_corrected_end: None,
         }
     }
 

@@ -1727,10 +1727,20 @@ fn retainedintron_like(
             // via RUSTLE_RI_J0_MIN_LONGCOV (default 5.0; 0 = disable gate).
             let j0_min_longcov: f64 = std::env::var("RUSTLE_RI_J0_MIN_LONGCOV")
                 .ok().and_then(|s| s.parse().ok()).unwrap_or(5.0);
+            // Victim's first exon must NOT fall entirely within any killer intron.
+            // If it does, the "unique junction" is a spurious donor within the intron
+            // (retained-intron artifact, e.g. RSTL.452.9) rather than a legitimate
+            // alt-TSS cassette exon (e.g. STRG.300.6 whose first exon starts within
+            // a killer exon).
+            let first_exon_not_in_killer_intron = b.exons.len() >= 1 && !a.exons.windows(2).any(|w| {
+                b.exons[0].0 >= w[0].1 && b.exons[0].1 <= w[1].0
+            });
             let unique_intron_spare = std::env::var_os("RUSTLE_RI_J0_UNIQUE_INTRON_OFF").is_none()
                 && !overlaps_intron
+                && first_exon_not_in_killer_intron
                 && b.exons.len() >= 2
                 && (j0_min_longcov <= 0.0 || b.longcov >= j0_min_longcov)
+                && a.strand == b.strand
                 && {
                     let killer_introns: std::collections::HashSet<(u64, u64)> =
                         a.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
@@ -2161,6 +2171,8 @@ fn isofrac_with_summary(
         };
         let first_usedcov_snap = usedcov;
         let first_multicov_snap = multicov;
+        // Dominant's sorted exons — used to detect skip-exon rescue candidates.
+        let dom_exons: &[(u64, u64)] = &txs[first].exons;
 
         for &k in uniq.iter().skip(1) {
             if dead.contains(k) {
@@ -2170,7 +2182,57 @@ fn isofrac_with_summary(
             let cov = txs[k].coverage;
 
             // skip isofrac check for guide-matched transcripts (pred->t_eq) and synthetic bundles
-            if is_guide_pair(&txs[k]) || is_rescue_protected(&txs[k]) || txs[k].synthetic {
+            // Exception: if a rescue-protected transcript has an intron that SPANS an exon of the
+            // dominant (i.e., it is a skip-exon artifact), withdraw rescue protection so the normal
+            // longunder threshold applies.  This removes the filter bypass that was letting
+            // hardstart&&hardend skip-exon variants (which inherit shared endpoint nodes from the
+            // dominant) escape the isofrac filter.  Guide-paired and synthetic transcripts are
+            // never subject to this check.
+            let is_skip_exon_candidate = if is_rescue_protected(&txs[k])
+                && !is_guide_pair(&txs[k])
+                && !txs[k].synthetic
+                && txs[k].exons.len() >= 2
+            {
+                txs[k].exons.windows(2).any(|w| {
+                    let (intron_start, intron_end) = (w[0].1, w[1].0);
+                    if intron_start >= intron_end { return false; }
+                    dom_exons.iter().any(|&(de_s, de_e)| de_s >= intron_start && de_e <= intron_end)
+                })
+            } else {
+                false
+            };
+            // ST does not protect flow transcripts from isofrac based on boundary confidence
+            // (hardstart/hardend). Only guide-matched, source-protected, and synthetic transcripts
+            // are exempt. Excluding hardstart+hardend here fixes 52 j-class FPs that survive
+            // only because their graph-node-inherited boundaries bypass the isofrac threshold.
+            let is_rescue_protected_for_isofrac = {
+                let src = txs[k].source.as_deref().unwrap_or("");
+                src.starts_with("oracle_direct:")
+                    || src.starts_with("ref_chain_rescue:")
+                    || matches!(
+                        src,
+                        "terminal_alt_acceptor" | "micro_exon_rescue" | "terminal_stop_variant"
+                    )
+                    || (std::env::var_os("RUSTLE_ALT_SPLICE_PROTECT_OFF").is_none()
+                        && src == "alt_splice_rescue")
+            };
+            let rescued = !is_skip_exon_candidate
+                && (is_guide_pair(&txs[k]) || is_rescue_protected_for_isofrac || txs[k].synthetic);
+            if std::env::var_os("RUSTLE_ISOFRAC_DEBUG").is_some() {
+                if let Some((lo, hi)) = parse_trace_locus() {
+                    let ts = txs[k].exons.first().map(|e| e.0).unwrap_or(0);
+                    let te = txs[k].exons.last().map(|e| e.1).unwrap_or(0);
+                    if ts < hi && te > lo {
+                        eprintln!("[ISOFRAC_DEBUG] k={} {}-{} exons={} cov={:.4} longcov={:.4} guide={} rescue_prot={} synthetic={} hardstart={} hardend={} src={:?} multicov={:.4}",
+                            k, ts, te, txs[k].exons.len(), cov, txs[k].longcov,
+                            is_guide_pair(&txs[k]), is_rescue_protected(&txs[k]), txs[k].synthetic,
+                            txs[k].hardstart, txs[k].hardend,
+                            txs[k].source.as_deref().unwrap_or(""),
+                            multicov[sidx]);
+                    }
+                }
+            }
+            if rescued {
                 usedcov[sidx] += cov;
                 if txs[k].exons.len() > 1 {
                     multicov[sidx] += cov;
@@ -4702,6 +4764,137 @@ pub fn dedup_exact_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
         .into_iter()
         .enumerate()
         .filter(|(i, _)| !drop.contains(*i))
+        .map(|(_, t)| t)
+        .collect()
+}
+
+/// Suppress weakly-supported exon-skip variants.
+///
+/// An exon-skip variant is a transcript T where all its exons appear verbatim
+/// in a longer transcript T', AND T' has additional exons BETWEEN at least one
+/// pair of consecutive T exons (an internal gap). This distinguishes true
+/// exon-skipping from alt-TSS/TTS variants (which only differ at the ends).
+///
+/// Only transcripts with `longcov <= max_longcov` (env RUSTLE_SKIP_SUPPRESS_MAX_LONGCOV,
+/// default 2) are candidates for suppression. Disable via RUSTLE_NO_SKIP_SUPPRESS=1.
+pub fn suppress_exon_skip_variants(
+    transcripts: Vec<Transcript>,
+    verbose: bool,
+) -> Vec<Transcript> {
+    if std::env::var_os("RUSTLE_NO_SKIP_SUPPRESS").is_some() {
+        return transcripts;
+    }
+    if transcripts.len() < 2 {
+        return transcripts;
+    }
+    let max_longcov: f64 = std::env::var("RUSTLE_SKIP_SUPPRESS_MAX_LONGCOV")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
+
+    let n = transcripts.len();
+    let mut suppress = vec![false; n];
+
+    // Build per-transcript sorted exon lists and exon-to-position maps.
+    // Exons are sorted by start coordinate; positions are 0-based indices.
+    let sorted_exons: Vec<Vec<(u64, u64)>> = transcripts
+        .iter()
+        .map(|t| {
+            let mut v = t.exons.clone();
+            v.sort_unstable_by_key(|e| e.0);
+            v
+        })
+        .collect();
+    let exon_to_pos: Vec<std::collections::HashMap<(u64, u64), usize>> = sorted_exons
+        .iter()
+        .map(|exons| exons.iter().enumerate().map(|(i, &e)| (e, i)).collect())
+        .collect();
+
+    for i in 0..n {
+        let ti = &transcripts[i];
+        if ti.longcov > max_longcov {
+            continue;
+        }
+        if ti.exons.len() < 2 {
+            continue;
+        }
+        let ti_sorted = &sorted_exons[i];
+
+        // Look for a superset transcript with an internal gap.
+        'outer: for j in 0..n {
+            if i == j || suppress[j] {
+                continue;
+            }
+            let tj = &transcripts[j];
+            if ti.chrom != tj.chrom || ti.strand != tj.strand {
+                continue;
+            }
+            if tj.exons.len() <= ti.exons.len() {
+                continue;
+            }
+            if tj.longcov <= ti.longcov {
+                continue;
+            }
+            // All of T's exons must appear verbatim in T'.
+            let map_j = &exon_to_pos[j];
+            let mut positions: Vec<usize> = Vec::with_capacity(ti_sorted.len());
+            for e in ti_sorted {
+                match map_j.get(e) {
+                    Some(&p) => positions.push(p),
+                    None => continue 'outer, // exon not in T'
+                }
+            }
+            // Check for an internal gap: T' has exons between some consecutive
+            // pair of T's exon positions that are not at the very first or last
+            // position pair in T. This distinguishes exon-skips from alt-TSS/TTS.
+            let has_internal_gap = positions.windows(2).enumerate().any(|(k, w)| {
+                let gap = w[1].saturating_sub(w[0]);
+                // gap > 1 means T' has exons between T's exons at indices k and k+1.
+                // An alt-TSS can only have gaps at the start (k==0) and alt-TTS only
+                // at the last pair (k == positions.len()-2). Any other internal gap
+                // is a true exon-skip.
+                //
+                // We suppress if there is ANY internal gap (not purely at terminal ends).
+                // Terminal-only gaps are: first pair only (prefix missing) OR last pair only
+                // (suffix missing). If BOTH OR a middle pair has a gap, it's an exon-skip.
+                let _ = k;
+                gap > 1
+            });
+            let all_terminal = {
+                // True iff the only gaps are at the very first and/or very last pair.
+                let np = positions.len();
+                positions.windows(2).enumerate().all(|(k, w)| {
+                    w[1].saturating_sub(w[0]) == 1
+                        || k == 0              // first pair: alt-TSS prefix gap OK
+                        || k == np - 2         // last pair: alt-TTS suffix gap OK
+                })
+            };
+            if has_internal_gap && !all_terminal {
+                suppress[i] = true;
+                if verbose {
+                    let s = ti.exons.first().map(|e| e.0).unwrap_or(0);
+                    let e = ti.exons.last().map(|e| e.1).unwrap_or(0);
+                    eprintln!(
+                        "  suppress_exon_skip: killed {}:{}-{}{} nexons={} longcov={:.0} (superset has {} exons longcov={:.0})",
+                        ti.chrom, s, e, ti.strand,
+                        ti.exons.len(), ti.longcov,
+                        tj.exons.len(), tj.longcov,
+                    );
+                }
+                break;
+            }
+        }
+    }
+
+    let removed: usize = suppress.iter().filter(|&&s| s).count();
+    if verbose && removed > 0 {
+        eprintln!("  suppress_exon_skip_variants: removed {} transcript(s)", removed);
+    }
+
+    transcripts
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !suppress[*i])
         .map(|(_, t)| t)
         .collect()
 }
