@@ -119,4 +119,17 @@ if (sys.nframe() == 0L) {
           "  copy-specific: ", sum(golga_vg$nodes$node_type == "copy_specific"))
   message("  is_multicopy_family: ", is_multicopy_family(golga_vg))
   saveRDS(golga_vg, file.path(DATA_DIR, "golga_vg.rds"))
+
+  npip <- readRDS(file.path(DATA_DIR, "npip_family.rds"))
+  if (length(unique(npip$exon_df$gene_id)) >= 2L) {
+    message("Building NPIP variation graph...")
+    npip_vg <- build_variation_graph(npip$exon_df)
+    message("  nodes: ", nrow(npip_vg$nodes),
+            "  shared: ", sum(npip_vg$nodes$node_type == "shared"),
+            "  copy-specific: ", sum(npip_vg$nodes$node_type == "copy_specific"))
+    message("  is_multicopy_family: ", is_multicopy_family(npip_vg))
+    saveRDS(npip_vg, file.path(DATA_DIR, "npip_vg.rds"))
+  } else {
+    message("NPIP: fewer than 2 genes found, skipping graph build")
+  }
 }

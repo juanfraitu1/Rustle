@@ -73,3 +73,7 @@ saveRDS(amy, file.path(DATA_DIR, "amy_family.rds"))
 message("=== GOLGA family ===")
 golga <- parse_family(gff, "golgin")
 saveRDS(golga, file.path(DATA_DIR, "golga_family.rds"))
+
+message("=== NPIP family ===")
+npip <- parse_family(gff, "nuclear pore.*interact|NPIP")
+saveRDS(npip, file.path(DATA_DIR, "npip_family.rds"))
