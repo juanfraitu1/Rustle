@@ -67,7 +67,7 @@ parse_family <- function(gff, description_pattern) {
 }
 
 message("=== AMY family ===")
-amy <- parse_family(gff, "amylase")
+amy <- parse_family(gff, "alpha-amylase|amylase alpha")
 saveRDS(amy, file.path(DATA_DIR, "amy_family.rds"))
 
 message("=== GOLGA family ===")
@@ -77,3 +77,7 @@ saveRDS(golga, file.path(DATA_DIR, "golga_family.rds"))
 message("=== NPIP family ===")
 npip <- parse_family(gff, "nuclear pore.*interact|NPIP")
 saveRDS(npip, file.path(DATA_DIR, "npip_family.rds"))
+
+message("=== RBMY family ===")
+rbmy <- parse_family(gff, "RNA-binding motif protein, Y chromosome")
+saveRDS(rbmy, file.path(DATA_DIR, "rbmy_family.rds"))
