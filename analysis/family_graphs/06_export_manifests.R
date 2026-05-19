@@ -1,7 +1,6 @@
 source("02_build_graphs.R")
 
 DATA_DIR <- "data"
-GENOME_FA <- "/mnt/c/Users/jfris/Desktop/GGO.fasta"
 
 rbmy_vg <- readRDS(file.path(DATA_DIR, "rbmy_vg_seq.rds"))
 export_family_manifest(rbmy_vg$exon_df, "RBMY",
