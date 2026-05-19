@@ -5558,7 +5558,8 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
                     }
                 }
                 if let Some(&lend) = max_longend_by_last.get(&cur) {
-                    if lend > tx.exons[last_idx].1 {
+                    let at_hardend = graph.nodes.get(cur).map(|n| n.hardend).unwrap_or(false);
+                    if !at_hardend && lend > tx.exons[last_idx].1 {
                         tx.exons[last_idx].1 = lend;
                     }
                 }
@@ -9739,8 +9740,37 @@ pub fn run<P: AsRef<Path>>(
             None
         };
 
-        // GTF ingestion mode or standard discovery
-        let raw_families = if let Some(gtf_path) = &config.ingress_gtf {
+        // Family ingestion: manifest > GTF > multi-mapper discovery
+        let raw_families = if let Some(manifest_path) = &config.family_manifest {
+            // Manifest ingestion mode: use R-exported locus coordinates
+            match crate::family_manifest::parse_family_manifest(manifest_path) {
+                Ok(loci) => {
+                    let groups = crate::family_manifest::create_family_groups_from_manifest(
+                        &loci,
+                        &bundles,
+                    );
+                    if config.verbose {
+                        eprintln!(
+                            "[VG-Manifest] Created {} family groups from {} loci in {}",
+                            groups.len(),
+                            loci.len(),
+                            manifest_path.display()
+                        );
+                    }
+                    groups
+                }
+                Err(e) => {
+                    eprintln!("[VG-Manifest] Error reading manifest: {}", e);
+                    eprintln!("[VG-Manifest] Falling back to standard discovery");
+                    crate::vg::discover_family_groups(
+                        &bundles,
+                        config.vg_min_shared_reads,
+                        Some(bam_path.as_ref()),
+                        vg_genome_for_discovery.as_ref(),
+                    )
+                }
+            }
+        } else if let Some(gtf_path) = &config.ingress_gtf {
             // GTF ingestion mode: parse templates and link to existing bundles
             let grouping_strategy = match config.ingress_grouping.as_str() {
                 "ByOverlap" => crate::vg_ingestion::FamilyGroupingStrategy::ByOverlap,
@@ -13438,6 +13468,22 @@ pub fn run<P: AsRef<Path>>(
                     txs
                 };
 
+                // Post-process: truncate last exon to the terminal coverage-drop
+                // position stored by graph_build's terminal longtrim dry-run.
+                // This avoids creating a hardend node in the graph (which would
+                // remove the natural bottleneck that suppresses j-class extras),
+                // while still correcting the 3'-end of surviving transcripts.
+                let mut txs = txs;
+                if let Some(corrected_end) = graph_mut.terminal_corrected_end {
+                    for tx in &mut txs {
+                        if let Some(last_exon) = tx.exons.last_mut() {
+                            if last_exon.1 == graph_bundle.end && corrected_end > last_exon.0 {
+                                last_exon.1 = corrected_end;
+                            }
+                        }
+                    }
+                }
+
                 if snapshot_enabled && (snapshot_full || snapshot_this) {
                     let key = snapshot::bundle_key(bundle_idx, graph_bundle);
                     let summary = snapshot::summarize_transcripts(&txs);
@@ -16995,8 +17041,12 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // Recover any guide transcripts that were filtered out during assembly.
-    // In guided mode (-G), this ensures 100% sensitivity for provided reference transcripts.
-    if !guide_transcripts.is_empty() {
+    // Opt-in via RUSTLE_RECOVER_MISSING_GUIDES=1. Default OFF so `-G` numbers
+    // reflect actual algorithmic behavior; the recovery synthesizes guide
+    // transcripts at cov=0.1 and masks real assembly failures from gffcompare.
+    if !guide_transcripts.is_empty()
+        && std::env::var_os("RUSTLE_RECOVER_MISSING_GUIDES").is_some()
+    {
         let _before = pre_filter_snapshot(&all_transcripts);
         all_transcripts = crate::transcript_filter::recover_missing_guide_transcripts(
             all_transcripts, &guide_transcripts, config.verbose);

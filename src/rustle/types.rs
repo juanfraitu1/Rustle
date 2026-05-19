@@ -875,6 +875,10 @@ pub struct RunConfig {
     pub ingress_gtf: Option<std::path::PathBuf>,
     /// Grouping strategy for GTF ingestion: "ByGene" or "ByOverlap" [default: ByGene].
     pub ingress_grouping: String,
+    /// TSV manifest from R's export_family_manifest(): one row per gene locus in a family.
+    /// When set, Rustle uses manifest-defined loci to group bundles into FamilyGroups instead
+    /// of multi-mapper discovery or GTF ingestion. Requires --vg.
+    pub family_manifest: Option<std::path::PathBuf>,
     /// Maximum EM iterations for multi-mapping resolution [default: 20].
     pub vg_em_max_iter: usize,
     /// Discover novel gene copies from poorly-mapped/unmapped reads (--vg-discover-novel).
@@ -1218,6 +1222,7 @@ impl Default for RunConfig {
             vg_min_shared_reads: 3,
             ingress_gtf: None,
             ingress_grouping: "ByGene".to_string(),
+            family_manifest: None,
             vg_em_max_iter: 20,
             vg_discover_novel: false,
             vg_scan_novel_loci: false,

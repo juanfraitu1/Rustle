@@ -378,6 +378,13 @@ struct Args {
     #[arg(long, default_value = "ByGene")]
     ingress_grouping: String,
 
+    /// TSV manifest produced by R's export_family_manifest() listing multi-copy gene family loci.
+    /// Each row: family_id<TAB>gene_id<TAB>chrom<TAB>start<TAB>end<TAB>strand.
+    /// When provided with --vg, Rustle groups bundles into families by coordinate overlap
+    /// with the listed loci instead of multi-mapper discovery. Requires --vg.
+    #[arg(long)]
+    family_manifest: Option<std::path::PathBuf>,
+
     /// Minimum shared multi-mapping reads to link two bundles into the same
     /// family group at discovery time [default: 3]. The post-discovery
     /// quality filter (--vg-family-min-shared) imposes a separate threshold
@@ -742,6 +749,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_min_shared_reads: args.vg_min_shared,
         ingress_gtf: args.ingress_gtf.clone(),
         ingress_grouping: args.ingress_grouping.clone(),
+        family_manifest: args.family_manifest.clone(),
         vg_em_max_iter: args.vg_em_iter,
         vg_discover_novel: args.vg_discover_novel,
         vg_scan_novel_loci: args.vg_scan_novel_loci,
