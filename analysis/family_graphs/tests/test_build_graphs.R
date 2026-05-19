@@ -59,3 +59,30 @@ test_that("is_multicopy_family() returns FALSE for two unrelated genes (no share
   vg <- build_variation_graph(no_share)
   expect_false(is_multicopy_family(vg))
 })
+
+test_that("is_multicopy_family() returns TRUE for valid family", {
+  vg <- build_variation_graph(make_fixture())
+  expect_true(is_multicopy_family(vg))
+})
+
+test_that("graph is a DAG", {
+  vg <- build_variation_graph(make_fixture())
+  expect_true(igraph::is_dag(vg$graph))
+})
+
+test_that("minus-strand edges run in transcription order (3prime-to-5prime genomic)", {
+  minus_df <- data.frame(
+    gene_id = c("gA","gA","gB","gB"),
+    tx_id   = c("tA","tA","tB","tB"),
+    chrom   = rep("chr1", 4),
+    start   = c(100L, 300L, 100L, 500L),
+    end     = c(200L, 400L, 200L, 600L),
+    strand  = rep("-", 4),
+    stringsAsFactors = FALSE
+  )
+  vg <- build_variation_graph(minus_df)
+  # For minus strand, path should go from high node_id to low (genomic 3'->5')
+  # meaning edges in paths go from higher to lower node_id
+  path_a <- vg$paths[["gA"]]
+  expect_true(path_a[1] > path_a[length(path_a)])
+})

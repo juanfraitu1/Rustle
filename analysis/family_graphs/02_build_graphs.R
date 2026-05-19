@@ -1,7 +1,6 @@
 suppressPackageStartupMessages({
   library(GenomicRanges)
   library(igraph)
-  library(dplyr)
 })
 
 # Returns list(graph, nodes, edges, paths, exon_df)
@@ -36,22 +35,27 @@ build_variation_graph <- function(exon_df) {
   node_df$strand <- as.character(strand(segs))
 
   # -- 3. Build edges: consecutive segments within each transcript --
-  edge_list <- list()
+  # Pre-collect all edges as two integer vectors, then cbind once
+  from_vec <- integer(0)
+  to_vec   <- integer(0)
+
   for (tx in unique(exon_df$tx_id)) {
-    tx_rows  <- exon_df[exon_df$tx_id == tx, ]
-    tx_gr    <- makeGRangesFromDataFrame(tx_rows)
-    ov       <- findOverlaps(tx_gr, segs)
-    seg_ids  <- sort(unique(mcols(segs)$node_id[subjectHits(ov)]))
+    tx_rows   <- exon_df[exon_df$tx_id == tx, ]
+    tx_gr     <- makeGRangesFromDataFrame(tx_rows)
+    ov        <- findOverlaps(tx_gr, segs)
+    seg_ids   <- sort(unique(mcols(segs)$node_id[subjectHits(ov)]))
+    tx_strand <- unique(tx_rows$strand)
+    if (length(tx_strand) == 1L && tx_strand == "-") seg_ids <- rev(seg_ids)
     if (length(seg_ids) >= 2L) {
-      for (i in seq_len(length(seg_ids) - 1L)) {
-        edge_list <- c(edge_list, list(c(seg_ids[i], seg_ids[i + 1L])))
-      }
+      from_vec <- c(from_vec, seg_ids[-length(seg_ids)])
+      to_vec   <- c(to_vec,   seg_ids[-1])
     }
   }
-  if (length(edge_list) == 0L) {
+
+  if (length(from_vec) == 0L) {
     edge_df <- matrix(integer(0), nrow = 0L, ncol = 2L)
   } else {
-    edge_df <- unique(do.call(rbind, edge_list))
+    edge_df <- unique(cbind(from = from_vec, to = to_vec))
   }
   colnames(edge_df) <- c("from", "to")
 
@@ -63,19 +67,32 @@ build_variation_graph <- function(exon_df) {
     directed = TRUE
   )
 
-  # -- 5. Copy paths --
+  # -- 5. Copy paths: use canonical (most-exons) transcript per gene --
   paths <- list()
   for (gene in unique(exon_df$gene_id)) {
-    gene_rows <- exon_df[exon_df$gene_id == gene, ]
-    gene_gr   <- makeGRangesFromDataFrame(gene_rows)
-    ov        <- findOverlaps(gene_gr, segs)
-    paths[[gene]] <- sort(unique(mcols(segs)$node_id[subjectHits(ov)]))
+    gene_txs <- unique(exon_df$tx_id[exon_df$gene_id == gene])
+    # pick transcript with most exons
+    tx_exon_counts <- sapply(gene_txs, function(tx) sum(exon_df$tx_id == tx))
+    canonical_tx   <- gene_txs[which.max(tx_exon_counts)]
+
+    tx_rows  <- exon_df[exon_df$tx_id == canonical_tx, ]
+    tx_gr    <- makeGRangesFromDataFrame(tx_rows)
+    ov       <- findOverlaps(tx_gr, segs)
+    seg_ids  <- sort(unique(mcols(segs)$node_id[subjectHits(ov)]))
+    tx_strand <- unique(tx_rows$strand)
+    if (length(tx_strand) == 1L && tx_strand == "-") seg_ids <- rev(seg_ids)
+    paths[[gene]] <- seg_ids
   }
 
   list(graph = g, nodes = node_df, edges = as.data.frame(edge_df),
        paths = paths, exon_df = exon_df)
 }
 
+# Returns TRUE if the family has both shared exons (structural homology) AND
+# copy-specific exons (sequence divergence between paralogs).
+# A family where all copies are 100% identical would return FALSE — treated as
+# one locus. This is conservative but appropriate for the variation-graph
+# formulation (copies must be distinguishable by their paths).
 is_multicopy_family <- function(vg) {
   n_genes    <- length(unique(vg$exon_df$gene_id))
   has_shared <- any(vg$nodes$node_type == "shared")
