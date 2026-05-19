@@ -3,6 +3,7 @@
 
 # 2. Allow directory structures (non-recursive allow of the directory itself)
 !/.cargo/
+!/analysis/
 !/bench/
 !/docs/
 !/figures/
@@ -24,6 +25,7 @@
 
 # 4. Recursively allow content in these directories
 !/.cargo/**
+!/analysis/**
 !/bench/**
 !/docs/**
 !/figures/**
