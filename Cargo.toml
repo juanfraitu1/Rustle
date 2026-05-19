@@ -149,5 +149,9 @@ path = "tests/regression/vg_hmm_synthetic_ground_truth.rs"
 name = "vg_hmm_negative_control"
 path = "tests/regression/vg_hmm_negative_control.rs"
 
+[[test]]
+name = "vg_family_manifest"
+path = "tests/regression/vg_family_manifest.rs"
+
 [dev-dependencies]
 tempfile = "3"
