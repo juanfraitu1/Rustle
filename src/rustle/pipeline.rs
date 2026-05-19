@@ -9741,6 +9741,9 @@ pub fn run<P: AsRef<Path>>(
         };
 
         // Family ingestion: manifest > GTF > multi-mapper discovery
+        if config.family_manifest.is_some() && config.ingress_gtf.is_some() {
+            eprintln!("[VG-Manifest] Warning: --ingress-gtf is ignored because --family-manifest takes priority");
+        }
         let raw_families = if let Some(manifest_path) = &config.family_manifest {
             // Manifest ingestion mode: use R-exported locus coordinates
             match crate::family_manifest::parse_family_manifest(manifest_path) {

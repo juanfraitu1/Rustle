@@ -104,6 +104,8 @@ pub fn create_family_groups_from_manifest(
         let mut bundle_indices: Vec<usize> = Vec::new();
 
         for (bi, bundle) in bundles.iter().enumerate() {
+            // Strand is intentionally not checked: bundles are already strand-separated
+            // by the bundler, so chrom + coordinate overlap is sufficient.
             let overlaps_any = fam_loci.iter().any(|loc| {
                 bundle.chrom == loc.chrom
                     && overlaps_half_open(bundle.start, bundle.end, loc.start, loc.end)
