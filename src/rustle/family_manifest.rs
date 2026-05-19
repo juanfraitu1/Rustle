@@ -3,6 +3,7 @@
 
 use crate::vg::FamilyGroup;
 use crate::types::Bundle;
+use crate::util::coord::overlaps_half_open;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
@@ -41,10 +42,10 @@ pub fn parse_family_manifest<P: AsRef<Path>>(path: P) -> Result<Vec<FamilyLocus>
             continue; // skip header row
         }
 
-        let cols: Vec<&str> = line.splitn(6, '\t').collect();
-        if cols.len() < 6 {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() != 6 {
             return Err(anyhow!(
-                "family manifest line {}: expected 6 tab-separated columns, got {}: {:?}",
+                "family manifest line {}: expected exactly 6 tab-separated columns, got {}: {:?}",
                 lineno + 1, cols.len(), line
             ));
         }
@@ -53,7 +54,13 @@ pub fn parse_family_manifest<P: AsRef<Path>>(path: P) -> Result<Vec<FamilyLocus>
             .with_context(|| format!("manifest line {}: bad start {:?}", lineno + 1, cols[3]))?;
         let end: u64 = cols[4].parse()
             .with_context(|| format!("manifest line {}: bad end {:?}", lineno + 1, cols[4]))?;
-        let strand_char = cols[5].chars().next().unwrap_or('+');
+        let strand_str = cols[5].trim();
+        let strand_char = match strand_str {
+            "+" | "-" | "." => strand_str.chars().next().unwrap(),
+            other => return Err(anyhow!(
+                "manifest line {}: invalid strand {:?}", lineno + 1, other
+            )),
+        };
 
         loci.push(FamilyLocus {
             family_id: cols[0].to_string(),
@@ -73,6 +80,10 @@ pub fn parse_family_manifest<P: AsRef<Path>>(path: P) -> Result<Vec<FamilyLocus>
 /// For each distinct `family_id`, collects every bundle whose `[start, end)` half-open
 /// range overlaps any locus belonging to that family. The resulting `FamilyGroup`
 /// has `multimap_reads` left empty — the HMM-EM pipeline populates it from the BAM.
+///
+/// A bundle may appear in more than one family group if it overlaps loci from multiple
+/// distinct families. Each family's HMM-EM runs independently, so this does not cause
+/// double-counting within a family.
 pub fn create_family_groups_from_manifest(
     loci: &[FamilyLocus],
     bundles: &[Bundle],
@@ -95,8 +106,7 @@ pub fn create_family_groups_from_manifest(
         for (bi, bundle) in bundles.iter().enumerate() {
             let overlaps_any = fam_loci.iter().any(|loc| {
                 bundle.chrom == loc.chrom
-                    && bundle.end   > loc.start   // half-open overlap
-                    && bundle.start < loc.end
+                    && overlaps_half_open(bundle.start, bundle.end, loc.start, loc.end)
             });
             if overlaps_any {
                 bundle_indices.push(bi);
