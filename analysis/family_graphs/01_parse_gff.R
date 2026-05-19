@@ -69,3 +69,7 @@ parse_family <- function(gff, description_pattern) {
 message("=== AMY family ===")
 amy <- parse_family(gff, "amylase")
 saveRDS(amy, file.path(DATA_DIR, "amy_family.rds"))
+
+message("=== GOLGA family ===")
+golga <- parse_family(gff, "golgin")
+saveRDS(golga, file.path(DATA_DIR, "golga_family.rds"))

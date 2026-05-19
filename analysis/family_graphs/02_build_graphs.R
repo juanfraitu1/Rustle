@@ -110,4 +110,13 @@ if (sys.nframe() == 0L) {
           "  copy-specific: ", sum(amy_vg$nodes$node_type == "copy_specific"))
   message("  is_multicopy_family: ", is_multicopy_family(amy_vg))
   saveRDS(amy_vg, file.path(DATA_DIR, "amy_vg.rds"))
+
+  golga <- readRDS(file.path(DATA_DIR, "golga_family.rds"))
+  message("Building GOLGA variation graph...")
+  golga_vg <- build_variation_graph(golga$exon_df)
+  message("  nodes: ", nrow(golga_vg$nodes),
+          "  shared: ", sum(golga_vg$nodes$node_type == "shared"),
+          "  copy-specific: ", sum(golga_vg$nodes$node_type == "copy_specific"))
+  message("  is_multicopy_family: ", is_multicopy_family(golga_vg))
+  saveRDS(golga_vg, file.path(DATA_DIR, "golga_vg.rds"))
 }
