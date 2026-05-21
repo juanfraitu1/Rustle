@@ -10109,8 +10109,9 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // Per-bundle VG metadata populated after EM (empty when not in VG mode).
-    // bundle_borrow_cov: (exon_start, exon_end, copy_specific, this_copy_cov, total_fam_cov)
-    let mut bundle_borrow_cov: std::collections::HashMap<usize, Vec<(u64, u64, bool, f64, f64)>> =
+    // Tuple: (ec_start, ec_end, copy_specific, this_cov, total_fam_cov,
+    //         max_sibling_cov, n_copies_total)
+    let mut bundle_borrow_cov: std::collections::HashMap<usize, Vec<(u64, u64, bool, f64, f64, f64, usize)>> =
         std::collections::HashMap::new();
 
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
@@ -12421,24 +12422,48 @@ pub fn run<P: AsRef<Path>>(
                         node.vg_family_id = Some(fam_id);
                         node.vg_copy_id = Some(copy_id);
                     }
-                    // Apply family-level coverage floor to shared-exon nodes
-                    // that have little local evidence. Prevents the flow
-                    // algorithm from pruning exons that have strong support
-                    // from sibling copies but few locally-mapping reads.
-                    // Off by default; enable with RUSTLE_VG_BORROW_FLOOR=1 to
-                    // avoid creating spurious paths via phantom coverage.
-                    if std::env::var_os("RUSTLE_VG_BORROW_FLOOR").is_some() {
-                        if let Some(borrow_entries) = bundle_borrow_cov.get(&bundle_idx) {
-                            for node in graph.nodes.iter_mut() {
-                                for &(ec_start, ec_end, copy_specific, _this_cov, total_fam_cov) in
-                                    borrow_entries
-                                {
-                                    if copy_specific { continue; } // don't boost copy-specific exons
-                                    if ec_start < node.end && ec_end > node.start
-                                        && node.coverage == 0.0
-                                        && total_fam_cov > 0.0
-                                    {
+                    // Structural graph merging: boost shared-exon nodes whose
+                    // coverage in this copy is far below what the family signal
+                    // predicts. Uses ExonClass equivalences (structural signal)
+                    // rather than per-read sequence features (SNPs). Only shared
+                    // exons are eligible; copy-specific bubble branches are skipped.
+                    //
+                    // Condition: this copy's ExonClass-level coverage is below
+                    //   50% of (total_fam_cov / n_copies_total) AND at least one
+                    //   sibling has meaningful coverage (max_sibling_cov > 1.0).
+                    // Amount: 25% of the best sibling's coverage, capped at 4.0.
+                    //   This is enough to let path_extract emit paths without
+                    //   inflating TPM to ST-comparable levels.
+                    //
+                    // Legacy crude floor (RUSTLE_VG_BORROW_FLOOR=1) still works
+                    // as a fallback; structural prior is the default path.
+                    if let Some(borrow_entries) = bundle_borrow_cov.get(&bundle_idx) {
+                        let use_legacy_floor =
+                            std::env::var_os("RUSTLE_VG_BORROW_FLOOR").is_some();
+                        for node in graph.nodes.iter_mut() {
+                            for &(ec_start, ec_end, copy_specific, this_cov,
+                                  total_fam_cov, max_sibling_cov, n_copies_total)
+                                in borrow_entries
+                            {
+                                if copy_specific { continue; }
+                                if !(ec_start < node.end && ec_end > node.start) { continue; }
+                                if use_legacy_floor {
+                                    // Old behaviour: blind 5% floor for dark nodes
+                                    if node.coverage == 0.0 && total_fam_cov > 0.0 {
                                         node.coverage = 1.0_f64.min(total_fam_cov * 0.05);
+                                    }
+                                } else {
+                                    // Structural prior: boost under-represented copies
+                                    let expected = if n_copies_total > 0 {
+                                        total_fam_cov / n_copies_total as f64
+                                    } else {
+                                        total_fam_cov
+                                    };
+                                    if this_cov < expected * 0.5
+                                        && max_sibling_cov > 1.0
+                                    {
+                                        let prior = (max_sibling_cov * 0.25).min(4.0);
+                                        node.coverage = node.coverage.max(prior);
                                     }
                                 }
                             }

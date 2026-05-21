@@ -1459,16 +1459,23 @@ pub fn compute_per_copy_confidence(
 ///
 /// Empty Vec entries mean no family graph was built for that partition (genome
 /// FASTA unavailable). Callers can treat absence as "no borrowing available."
+/// Tuple fields: (ec_start, ec_end, copy_specific, this_cov, total_fam_cov,
+///                max_sibling_cov, n_copies_total)
+/// `max_sibling_cov`: highest per_copy_cov among all OTHER copies in this ExonClass —
+///   used as the calibration reference for structural-prior boosting.
+/// `n_copies_total`: total copies in the family — used to compute per-copy expected
+///   coverage and decide when a copy is under-represented.
 pub fn build_bundle_borrow_coverage(
     partitions: &[FamilyGroup],
     family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
-) -> HashMap<usize, Vec<(u64, u64, bool, f64, f64)>> {
-    let mut out: HashMap<usize, Vec<(u64, u64, bool, f64, f64)>> = HashMap::new();
+) -> HashMap<usize, Vec<(u64, u64, bool, f64, f64, f64, usize)>> {
+    let mut out: HashMap<usize, Vec<(u64, u64, bool, f64, f64, f64, usize)>> = HashMap::new();
     for (pi, fam) in partitions.iter().enumerate() {
         let fg = match family_graphs.get(pi).and_then(|o| o.as_ref()) {
             Some(g) if !g.nodes.is_empty() => g,
             _ => continue,
         };
+        let n_copies_total = fam.bundle_indices.len();
         for ec in &fg.nodes {
             if ec.per_copy_cov.is_empty() { continue; }
             let total_fam_cov: f64 = ec.per_copy_cov.iter().map(|(_, c)| *c).sum();
@@ -1481,8 +1488,13 @@ pub fn build_bundle_borrow_coverage(
                         .find(|(k, _)| *k == copy_id)
                         .map(|(_, c)| *c)
                         .unwrap_or(0.0);
+                    let max_sibling_cov = ec.per_copy_cov.iter()
+                        .filter(|(k, _)| *k != copy_id)
+                        .map(|(_, c)| *c)
+                        .fold(0.0_f64, f64::max);
                     out.entry(bi).or_default()
-                        .push((s, e, ec.copy_specific, this_cov, total_fam_cov));
+                        .push((s, e, ec.copy_specific, this_cov, total_fam_cov,
+                               max_sibling_cov, n_copies_total));
                 }
             }
         }
