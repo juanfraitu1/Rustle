@@ -9052,7 +9052,7 @@ fn collect_flow_residual_se(
 /// mono-exon reads represent nested minor isoforms (alternative TSS/polyA
 /// within a larger exon). Targets the STRG.521.3 pattern.
 ///
-/// Default on; disable with RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
+/// Default off; enable with RUSTLE_STRANDED_SINGLE_EXON_ON=1.
 /// Knobs: RUSTLE_STRANDED_SE_MIN_READS (4), RUSTLE_STRANDED_SE_ENDPOINT_TOL (200),
 ///        RUSTLE_STRANDED_SE_COV_RATIO (2.0).
 fn emit_stranded_single_exon_candidates(
@@ -9063,9 +9063,9 @@ fn emit_stranded_single_exon_candidates(
     singlethr: f64,
     good_junctions: &HashSet<(u64, u64)>,
 ) -> Vec<Transcript> {
-    // Default ON: bpcov-walk boundary refinement aligns emitted boundaries with
-    // StringTie's TSS/TTS positions. Disable with RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
-    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_OFF").is_some() {
+    // Default OFF: SE emission introduces more FPs than TPs in de novo mode
+    // (−0.6pp Sn, +1.1pp Pr, +0.3pp F1 with SE OFF vs ON). Enable with RUSTLE_STRANDED_SINGLE_EXON_ON=1.
+    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_ON").is_none() {
         return Vec::new();
     }
     if std::env::var_os("RUSTLE_TRACE_STRANDED_SE").is_some() {
