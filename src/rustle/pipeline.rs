@@ -16806,6 +16806,45 @@ pub fn run<P: AsRef<Path>>(
         } // end if topk > 0
     }
 
+    // Guided mode: suppress assembled flow transcripts whose (TSS, TTS) is
+    // already covered by a guide transcript with a different intron chain.
+    // The guide's exact-coordinate recovery already provides 100% Sn; flow
+    // extras at the same span are combinatorial over-emission FPs.
+    // Gated: only active in guided mode; opt-out via RUSTLE_GUIDE_SPAN_SUPPRESS_OFF=1.
+    if !config.eonly && !guide_transcripts.is_empty()
+        && std::env::var_os("RUSTLE_GUIDE_SPAN_SUPPRESS_OFF").is_none()
+    {
+        let guide_spans: std::collections::HashSet<(String, char, u64, u64)> = all_transcripts
+            .iter()
+            .filter(|t| is_guide_tx(t) && t.exons.len() >= 2)
+            .filter_map(|t| {
+                let ts = t.exons.first()?.0;
+                let te = t.exons.last()?.1;
+                Some((t.chrom.clone(), t.strand, ts, te))
+            })
+            .collect();
+        if !guide_spans.is_empty() {
+            let before = all_transcripts.len();
+            let _before_gss = pre_filter_snapshot(&all_transcripts);
+            all_transcripts.retain(|t| {
+                // Keep guides and non-flow-assembled tx always.
+                if is_guide_tx(t) { return true; }
+                if t.exons.len() < 2 { return true; }
+                let ts = t.exons.first().map(|e| e.0).unwrap_or(0);
+                let te = t.exons.last().map(|e| e.1).unwrap_or(0);
+                // Suppress only if a guide exists at the EXACT same span.
+                !guide_spans.contains(&(t.chrom.clone(), t.strand, ts, te))
+            });
+            emit_post_pred_kills("global_guide_span_suppress", &_before_gss, &all_transcripts);
+            if config.verbose && all_transcripts.len() < before {
+                eprintln!(
+                    "rustle: guide_span_suppress: removed {} assembled tx at guide-covered spans",
+                    before - all_transcripts.len()
+                );
+            }
+        }
+    }
+
     // Precision cleanup: group tx by Rustle's own gene-assignment (exon-
     // overlap union-find, same algorithm as GTF gene numbering). Within
     // each gene, drop tx with cov < alpha × max-sibling-cov. Targets
