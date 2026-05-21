@@ -137,6 +137,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         bnode_colors: None,
         synthetic: false,
         rescue_class: None,
+        vg_family_id: None,
 
 }
 }

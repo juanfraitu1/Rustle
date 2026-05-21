@@ -917,7 +917,7 @@ pub fn run_rescue_with_bundles(
         .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
     let cluster_window: u64 = 20;
     let mut synthetic_bundles: Vec<Bundle> = Vec::new();
-    for (_family_id, (fg_idx, reads_with_spans)) in &per_family {
+    for (family_id, (fg_idx, reads_with_spans)) in &per_family {
         let fg = &family_graphs[*fg_idx];
         let mut new_bundles = synthesize_bundles_refined(
             fg,
@@ -927,6 +927,9 @@ pub fn run_rescue_with_bundles(
             hard_min_reads,
             cluster_window,
         );
+        for b in new_bundles.iter_mut() {
+            b.vg_family_id = Some(*family_id);
+        }
         synthetic_bundles.append(&mut new_bundles);
     }
 
@@ -1065,6 +1068,7 @@ fn synthesize_bundles_at_candidate_loci(
             bnode_colors: None,
             synthetic: true,
             rescue_class: Some(RescueClass::NovelLocusFromScan),
+            vg_family_id: None,
 
 });
         emitted += 1;
@@ -1196,6 +1200,7 @@ fn synthesize_bundles_from_original_alignments(
                 bnode_colors: None,
                 synthetic: true,
                 rescue_class: Some(RescueClass::NeedsExternalVerification),
+                vg_family_id: None,
 
 });
             emitted += 1;
@@ -1346,6 +1351,7 @@ pub fn synthesize_bundles(
             bnode_colors: None,
             synthetic: true,
             rescue_class: rc,
+            vg_family_id: None,
 
 });
     }
@@ -1543,6 +1549,7 @@ pub fn synthesize_bundles_refined(
             bnode_colors: None,
             synthetic: true,
             rescue_class: rc,
+            vg_family_id: None,
 
 });
     }

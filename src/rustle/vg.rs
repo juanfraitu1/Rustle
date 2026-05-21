@@ -1351,6 +1351,145 @@ pub fn run_em_reweighting(
     result
 }
 
+/// After EM reweighting, populate `ExonClass.per_copy_cov` for every node in
+/// the family graph.
+///
+/// For each exon class and each copy:
+/// - Locates the copy's genomic span for that exon via `per_copy_spans`
+/// - Sums `read.weight * overlap_fraction` over all reads in that copy's bundle
+///   that physically overlap the exon span
+/// - Records `(copy_id, weighted_per_base_coverage)` in `ec.per_copy_cov`
+///
+/// Copies without a span for a given exon class (copy-specific exons from other
+/// copies) get a `(copy_id, 0.0)` sentinel so downstream code can distinguish
+/// "no data" from "absent" without index arithmetic.
+///
+/// Call this after `run_pre_assembly_em_hmm` (or the heuristic-EM variants)
+/// and before the main bundle-assembly loop, so the annotation is available
+/// for diagnostics and future copy-aware path extraction.
+pub fn annotate_per_copy_exon_coverage(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    family_graph: &mut crate::vg_hmm::family_graph::FamilyGraph,
+) {
+    let n_copies = family.bundle_indices.len();
+    for ec in family_graph.nodes.iter_mut() {
+        ec.per_copy_cov = Vec::with_capacity(n_copies);
+        for (copy_id, &bi) in family.bundle_indices.iter().enumerate() {
+            let bundle = &bundles[bi];
+            let span = ec.per_copy_spans.iter()
+                .find(|(cid, _)| *cid == copy_id)
+                .map(|(_, s)| *s);
+            let cov = if let Some((ec_start, ec_end)) = span {
+                let ec_len = (ec_end.saturating_sub(ec_start)).max(1) as f64;
+                let mut weighted_bp = 0.0f64;
+                for read in &bundle.reads {
+                    let r_start = read.ref_start;
+                    let r_end = read.ref_end;
+                    if r_start < ec_end && r_end > ec_start {
+                        let overlap = (ec_end.min(r_end) - ec_start.max(r_start)) as f64;
+                        weighted_bp += read.weight * overlap / ec_len;
+                    }
+                }
+                weighted_bp
+            } else {
+                0.0
+            };
+            ec.per_copy_cov.push((copy_id, cov));
+        }
+    }
+}
+
+/// Compute per-copy assignment confidence after EM reweighting.
+///
+/// For each family copy (bundle), scans all multi-mapper reads and computes
+/// the mean post-EM weight for this copy's placements. Result range [0, 1]:
+/// - 1.0 → all multi-mappers fully assigned to this copy, or no multi-mappers
+/// - ~1/N → evenly split across N copies
+///
+/// Runs in O(total_reads) over family bundles. Call after EM has updated
+/// `BundleRead.weight` and before bundles are consumed by the assembly loop.
+///
+/// Returns `HashMap<bundle_idx, confidence>`. Bundles not in any family are
+/// absent from the map; callers should default to `None` / omit the attribute.
+pub fn compute_per_copy_confidence(
+    families: &[FamilyGroup],
+    bundles: &[Bundle],
+) -> HashMap<usize, f64> {
+    let mut result: HashMap<usize, f64> = HashMap::new();
+    for fam in families {
+        // Build set of read_name_hashes that are multi-mappers in this family.
+        let multimap_set: std::collections::HashSet<u64> =
+            fam.multimap_reads.keys().copied().collect();
+        for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+            if bi >= bundles.len() { continue; }
+            let bundle = &bundles[bi];
+            let mut sum_weight = 0.0f64;
+            let mut n_multimap = 0usize;
+            for read in &bundle.reads {
+                if multimap_set.contains(&read.read_name_hash) {
+                    sum_weight += read.weight;
+                    n_multimap += 1;
+                }
+            }
+            let confidence = if n_multimap == 0 {
+                1.0 // no multi-mappers → assignment is fully certain
+            } else {
+                (sum_weight / n_multimap as f64).min(1.0).max(0.0)
+            };
+            let _ = copy_id; // copy_id used implicitly via bundle_indices iteration
+            result.insert(bi, confidence);
+        }
+    }
+    result
+}
+
+/// Build per-bundle borrowable exon coverage from annotated FamilyGraph nodes.
+///
+/// After `annotate_per_copy_exon_coverage` populates `ExonClass.per_copy_cov`,
+/// this function extracts a compact summary for use in the main assembly loop:
+///
+/// For each exon class, for each copy k with a span in this class:
+///   (span.start, span.end, copy_specific, this_copy_cov, total_family_cov)
+///
+/// `total_family_cov` is the sum across ALL copies — the total EM-weighted
+/// evidence for this exon structure across the whole family. When copy k's own
+/// coverage is much lower than `total_family_cov * (k's EM fraction)`, the
+/// other copies' reads serve as structural evidence that this exon should exist.
+///
+/// Empty Vec entries mean no family graph was built for that partition (genome
+/// FASTA unavailable). Callers can treat absence as "no borrowing available."
+pub fn build_bundle_borrow_coverage(
+    partitions: &[FamilyGroup],
+    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+) -> HashMap<usize, Vec<(u64, u64, bool, f64, f64)>> {
+    let mut out: HashMap<usize, Vec<(u64, u64, bool, f64, f64)>> = HashMap::new();
+    for (pi, fam) in partitions.iter().enumerate() {
+        let fg = match family_graphs.get(pi).and_then(|o| o.as_ref()) {
+            Some(g) if !g.nodes.is_empty() => g,
+            _ => continue,
+        };
+        for ec in &fg.nodes {
+            if ec.per_copy_cov.is_empty() { continue; }
+            let total_fam_cov: f64 = ec.per_copy_cov.iter().map(|(_, c)| *c).sum();
+            for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                let span = ec.per_copy_spans.iter()
+                    .find(|(k, _)| *k == copy_id)
+                    .map(|(_, s)| *s);
+                if let Some((s, e)) = span {
+                    let this_cov = ec.per_copy_cov.iter()
+                        .find(|(k, _)| *k == copy_id)
+                        .map(|(_, c)| *c)
+                        .unwrap_or(0.0);
+                    out.entry(bi).or_default()
+                        .push((s, e, ec.copy_specific, this_cov, total_fam_cov));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Partition a (possibly mixed-strand) family into single-strand sub-families
 /// AND remap each sub-family's `multimap_reads` so `fam_pos` values index into
 /// the new `bundle_indices`. Multi-mapper entries pointing to bundles outside

@@ -40,6 +40,12 @@ pub struct ExonClass {
     /// actual sequence rather than the family-wide consensus. Empty until
     /// `fit_profiles_in_place` is called.
     pub per_copy_profiles: Vec<(CopyId, crate::vg_hmm::profile::ProfileHmm)>,
+    /// Per-copy weighted coverage for this exon class, populated after EM by
+    /// `annotate_per_copy_exon_coverage`. Entry `(k, cov)` gives the
+    /// EM-weighted per-base coverage from copy k's reads. Copies that don't
+    /// contribute to this exon class have cov=0.0 as a sentinel entry.
+    /// Empty until annotation is called.
+    pub per_copy_cov: Vec<(CopyId, f64)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -390,6 +396,7 @@ pub fn build_family_graph(
                 copy_specific: cids.len() == 1,
                 profile: None,
                 per_copy_profiles: Vec::new(),
+                per_copy_cov: Vec::new(),
             });
         }
     }

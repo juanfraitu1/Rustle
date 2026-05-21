@@ -103,6 +103,9 @@ pub struct Bundle {
     /// optionally refined by `classify_external` when
     /// `config.vg_rescue_diagnostic == true`.
     pub rescue_class: Option<crate::vg_hmm::diagnostic::RescueClass>,
+    /// VG family this bundle belongs to (None for non-VG or non-synthetic bundles).
+    /// Populated for synthetic bundles created by vg_hmm rescue.
+    pub vg_family_id: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -661,6 +664,7 @@ impl BundleData {
             bnode_colors: None,
             synthetic: false,
             rescue_class: None,
+            vg_family_id: None,
 
 }
     }

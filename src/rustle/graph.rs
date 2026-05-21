@@ -151,6 +151,12 @@ pub struct GraphNode {
     /// `noderate = coverage / nodecov` (bp-weight / abundance).
     pub noderate: f64,
     pub trf_ids: Vec<usize>,
+    /// VG mode: which gene-family group this node's bundle belongs to.
+    /// None when not in --vg mode or bundle is not part of a family.
+    pub vg_family_id: Option<usize>,
+    /// VG mode: copy index within `vg_family_id` (position in FamilyGroup.bundle_indices).
+    /// Stable across assembly: set at bundle entry, propagated through path_extract.
+    pub vg_copy_id: Option<usize>,
     pub childpat: Option<crate::util::bitset::SmallBitset>,
     pub parentpat: Option<crate::util::bitset::SmallBitset>,
     /// Coverage-drop contrast at a longtrim split point.
@@ -194,6 +200,8 @@ impl GraphNode {
             parentpat: None,
             longtrim_cov: 0.0,
             role: NodeRole::Primary,
+            vg_family_id: None,
+            vg_copy_id: None,
         }
     }
 

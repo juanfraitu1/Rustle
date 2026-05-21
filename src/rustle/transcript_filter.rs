@@ -1180,6 +1180,7 @@ mod tests {
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0,
         }
@@ -5890,6 +5891,102 @@ pub fn kill_retained_intron_variants(
         .collect()
 }
 
+/// Kill assembled transcripts that route through a mini-exon flanked by two
+/// low-support junctions when a high-support "skip" junction spanning the
+/// same region exists in junction_stats.
+///
+/// Pattern: n2 has ... → J1=(D, A') → mini-exon [A',D'') → J2=(D'', A) → ...
+///          and junction_stats contains J_long=(D, A) with
+///          J_long.mm ≥ ratio × max(J1.mm, J2.mm).
+///
+/// Gate: RUSTLE_KILL_SPURIOUS_MINI_EXON=1. Threshold: RUSTLE_KSME_RATIO (default 15.0).
+pub fn kill_spurious_mini_exon_variants(
+    transcripts: Vec<Transcript>,
+    junction_stats: &JunctionStats,
+    verbose: bool,
+) -> Vec<Transcript> {
+    const DEFAULT_RATIO: f64 = 15.0;
+    const MAX_MINI_EXON_LEN: u64 = 400;
+
+    let ratio: f64 = std::env::var("RUSTLE_KSME_RATIO")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_RATIO);
+    let debug = std::env::var_os("RUSTLE_KSME_DEBUG").is_some();
+
+    let mm_of = |donor: u64, acceptor: u64| -> f64 {
+        junction_stats
+            .get(&crate::types::Junction::new(donor, acceptor))
+            .map(|s| s.mm)
+            .unwrap_or(0.0)
+    };
+
+    let mut dead = SmallBitset::with_capacity(transcripts.len().min(64));
+    let mut killed = 0usize;
+
+    'outer: for (idx, tx) in transcripts.iter().enumerate() {
+        if tx.ref_transcript_id.is_some() {
+            continue;
+        }
+        let n_exons = tx.exons.len();
+        if n_exons < 3 {
+            continue;
+        }
+        for i in 1..(n_exons - 1) {
+            let d_long = tx.exons[i - 1].1;   // donor of J_long = donor of J1
+            let a_long = tx.exons[i + 1].0;   // acceptor of J_long = acceptor of J2
+            let a1 = tx.exons[i].0;           // acceptor of J1 = mini-exon start
+            let d2 = tx.exons[i].1;           // donor of J2 = mini-exon end
+            let mini_len = d2.saturating_sub(a1);
+            if mini_len == 0 || mini_len > MAX_MINI_EXON_LEN {
+                continue;
+            }
+            let mm1 = mm_of(d_long, a1);
+            let mm2 = mm_of(d2, a_long);
+            let mm_long = mm_of(d_long, a_long);
+            if mm_long <= 0.0 {
+                continue;
+            }
+            let max_flanking = mm1.max(mm2);
+            if max_flanking <= 0.0 {
+                continue;
+            }
+            if mm_long >= ratio * max_flanking {
+                if debug {
+                    eprintln!(
+                        "[KSME] kill {}:{}-{} cov={:.2} nex={} \
+                         mini=[{},{}) J1={}>{}mm={:.0} J2={}>{}mm={:.0} \
+                         J_long={}>{}mm={:.0} ratio={:.1}x",
+                        tx.chrom,
+                        tx.exons.first().map(|e| e.0).unwrap_or(0),
+                        tx.exons.last().map(|e| e.1).unwrap_or(0),
+                        tx.coverage, n_exons,
+                        a1, d2,
+                        d_long, a1, mm1, d2, a_long, mm2,
+                        d_long, a_long, mm_long,
+                        mm_long / max_flanking,
+                    );
+                }
+                dead.insert_grow(idx);
+                killed += 1;
+                continue 'outer;
+            }
+        }
+    }
+    if verbose && killed > 0 {
+        eprintln!(
+            "    kill_spurious_mini_exon_variants: removed {} transcript(s)",
+            killed
+        );
+    }
+    transcripts
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !dead.contains(*i))
+        .map(|(_, t)| t)
+        .collect()
+}
+
 ///   - B.coverage < A.coverage (weaker variant)
 pub fn collapse_high_overlap_variants(
     transcripts: Vec<Transcript>,
@@ -7035,7 +7132,7 @@ pub fn print_predcluster_with_summary(
     bpcov: Option<&Bpcov>,
     trace_ref: Option<&RefTranscript>,
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
-    print_predcluster_with_summary_multi(transcripts, config, bpcov, trace_ref, &[])
+    print_predcluster_with_summary_multi(transcripts, config, bpcov, trace_ref, &[], None)
 }
 
 /// Same as `print_predcluster_with_summary` but accepts an additional slice of
@@ -7047,6 +7144,7 @@ pub fn print_predcluster_with_summary_multi(
     bpcov: Option<&Bpcov>,
     trace_ref: Option<&RefTranscript>,
     extra_trace_refs: &[&RefTranscript],
+    junction_stats: Option<&JunctionStats>,
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
     let trace_stage = |stage: &str, txs: &[Transcript]| {
         if let Some(ref_tx) = trace_ref {
@@ -7422,6 +7520,19 @@ pub fn print_predcluster_with_summary_multi(
             emit_fate("kill_retained_intron_variants", &before_kri, &txs);
             trace_stage("predcluster.kill_retained_intron_variants", &txs);
             emit_pred_stage("AFTER_kill_retained_intron_variants", &txs);
+        }
+        // Kill assembled transcripts that route through a mini-exon when a
+        // high-support skip junction dominates both flanking junctions.
+        // Default off; enable via RUSTLE_KILL_SPURIOUS_MINI_EXON=1.
+        // Threshold: RUSTLE_KSME_RATIO (default 15.0).
+        if std::env::var_os("RUSTLE_KILL_SPURIOUS_MINI_EXON").is_some() {
+            if let Some(js) = junction_stats {
+                let before_ksme = if fate_trace { txs.clone() } else { Vec::new() };
+                txs = kill_spurious_mini_exon_variants(txs, js, config.verbose);
+                emit_fate("kill_spurious_mini_exon_variants", &before_ksme, &txs);
+                trace_stage("predcluster.kill_spurious_mini_exon_variants", &txs);
+                emit_pred_stage("AFTER_kill_spurious_mini_exon_variants", &txs);
+            }
         }
     } else {
         summary.after_near_equal_chain_collapse = txs.len();
@@ -8706,6 +8817,7 @@ pub fn recover_missing_guide_transcripts(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
+                copy_assignment_confidence: None,
                 intron_low: vec![false; num_introns],
                 synthetic: false,
                 rescue_class: None,

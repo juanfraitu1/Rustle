@@ -88,7 +88,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         reads: vec![read],
         junction_stats: build_junction_stats(exons),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
-        synthetic: false, rescue_class: None,
+        synthetic: false, rescue_class: None, vg_family_id: None,
     }
 }
 

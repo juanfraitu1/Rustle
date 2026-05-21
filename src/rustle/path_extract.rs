@@ -653,6 +653,10 @@ pub struct Transcript {
     pub vg_copy_id: Option<usize>,
     /// Number of copies in the family group.
     pub vg_family_size: Option<usize>,
+    /// Mean EM weight of multi-mapper reads assigned to this copy (range 0–1).
+    /// 1.0 = all multi-mappers fully assigned here (or no multi-mappers).
+    /// ~1/N = equally split across N copies. None for non-VG transcripts.
+    pub copy_assignment_confidence: Option<f64>,
     /// Per-intron low-coverage flag (`lowintron` in StringTie).
     /// len = `exons.len() - 1`; true when bpcov in this intron is below the
     /// threshold used by retainedintron() in StringTie (ERROR_PERC * exon_avg_cov).
@@ -770,7 +774,7 @@ impl Transcript {
             hardstart: pred.hardstart,
             hardend: pred.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
         }
     }
@@ -1249,7 +1253,7 @@ pub fn extract_rawreads_transcripts(
             hardstart: false,
             hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
         });
     }
@@ -1387,7 +1391,7 @@ pub fn extract_shortread_transcripts(
             hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
             alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
         });
     }
@@ -6826,6 +6830,7 @@ pub fn extract_transcripts(
                             vg_family_id: None,
                             vg_copy_id: None,
                             vg_family_size: None,
+                            copy_assignment_confidence: None,
                             intron_low: Vec::new(),
                             synthetic: false,
                             rescue_class: None,
@@ -8964,7 +8969,7 @@ pub fn extract_transcripts(
             hardstart: thardstart,
             hardend: thardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: raw_flow_sum_out,
         });
         if debug_flow {
@@ -9890,7 +9895,7 @@ pub fn extract_transcripts(
                     hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
                     hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
                     alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false,
                     rescue_class: if csr_triggered { Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue) } else { None },
                     raw_flow_sum: 0.0,
 
@@ -10874,6 +10879,7 @@ pub fn hybrid_path_reexplore(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0,
         });

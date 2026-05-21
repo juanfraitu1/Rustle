@@ -175,6 +175,9 @@ pub fn write_gtf<W: Write>(
         if let Some(fam_size) = tx.vg_family_size {
             tx_attrs.push_str(&format!(" family_size \"{}\";", fam_size));
         }
+        if let Some(conf) = tx.copy_assignment_confidence {
+            tx_attrs.push_str(&format!(" copy_confidence \"{:.3}\";", conf));
+        }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
         }
