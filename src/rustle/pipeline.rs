@@ -394,6 +394,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0,
         };
@@ -1715,6 +1716,7 @@ fn merge_region_outer_bundles(
             bnode_colors: None,
             synthetic: any_synthetic,
             rescue_class: merged_rescue_class,
+            vg_family_id: None,
 
 });
     }
@@ -2783,7 +2785,7 @@ fn add_contained_isoforms(
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                 });
                 added += 1;
@@ -2975,7 +2977,7 @@ fn emit_junction_paths(
             hardstart,
             hardend,
             alt_tts_end,
-            vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0,
         });
 
@@ -3261,7 +3263,7 @@ fn emit_chain_from_graph(
         hardstart: true,
         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
     })
 }
@@ -3393,7 +3395,7 @@ fn emit_reference_chains(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                 });
                 added += 1;
@@ -3528,7 +3530,7 @@ fn emit_reference_chains(
                         hardstart: true,
                         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                     });
                     added += 1;
@@ -3623,7 +3625,7 @@ fn emit_reference_chains(
             hardstart: true,
             hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
         });
         added += 1;
@@ -5958,6 +5960,7 @@ fn emit_per_read_alt_combos(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
@@ -6152,6 +6155,7 @@ fn emit_internal_ri_siblings(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
+                copy_assignment_confidence: None,
                 intron_low: Vec::new(),
                 synthetic: false,
                 rescue_class: None,
@@ -7061,6 +7065,7 @@ fn extract_bundle_transcripts_for_graph(
     let (predcluster_txs, predcluster_summary) =
         crate::transcript_filter::print_predcluster_with_summary_multi(
             txs, config, Some(bpcov), traced_ref, &extra_trace_refs,
+            Some(&bundle.junction_stats),
         );
     txs = predcluster_txs;
     trace_stage("print_predcluster", &txs);
@@ -7587,6 +7592,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
+                copy_assignment_confidence: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0,
             });
@@ -7718,6 +7724,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
+                    copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                 };
@@ -7935,6 +7942,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
+                copy_assignment_confidence: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0,
             });
@@ -8068,6 +8076,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
+                    copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                 });
@@ -9030,6 +9039,7 @@ fn collect_flow_residual_se(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
@@ -9053,10 +9063,9 @@ fn emit_stranded_single_exon_candidates(
     singlethr: f64,
     good_junctions: &HashSet<(u64, u64)>,
 ) -> Vec<Transcript> {
-    // Default OFF: emitted tx boundaries (raw read endpoints) don't align with
-    // StringTie's bpcov-based boundaries → gffcompare `c` not `=`. Needs a
-    // bpcov-walk boundary refinement to become a net win.
-    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_ON").is_none() {
+    // Default ON: bpcov-walk boundary refinement aligns emitted boundaries with
+    // StringTie's TSS/TTS positions. Disable with RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
+    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_OFF").is_some() {
         return Vec::new();
     }
     if std::env::var_os("RUSTLE_TRACE_STRANDED_SE").is_some() {
@@ -9156,33 +9165,21 @@ fn emit_stranded_single_exon_candidates(
             let bs = bps.plus.bundle_start.min(bps.minus.bundle_start);
             let be = bps.plus.bundle_end.max(bps.minus.bundle_end);
             let walk_thr = (singlethr * 0.5).max(1.0);
-            // Precompute junction acceptors and donors for boundary stops.
-            let junc_acceptors: HashSet<u64> = good_junctions.iter().map(|&(_, a)| a).collect();
-            let junc_donors: HashSet<u64> = good_junctions.iter().map(|&(d, _)| d).collect();
-            // Walk start backward — stop at junction acceptors (exon starts from splicing).
             while med_start > bs {
                 let next = med_start - 1;
-                // Stop if `med_start` is a junction acceptor (entering the intron going left).
-                if junc_acceptors.contains(&med_start) { break; }
                 let idx = (next - bs) as usize;
                 if idx >= cov_vec.len() { break; }
                 if cov_vec[idx] < walk_thr { break; }
-                // Stop at upstream TTS cluster (many reads ending there).
                 if end_counts.get(&next).copied().unwrap_or(0.0) >= tss_stop_thr {
                     break;
                 }
                 med_start = next;
             }
-            // Walk end forward — stop at junction donors (exon ends from splicing).
             while med_end + 1 <= be {
                 let next = med_end + 1;
-                // Stop if `med_end` is a junction donor (entering the intron going right).
-                if junc_donors.contains(&med_end) { break; }
                 let idx = (next - bs) as usize;
                 if idx >= cov_vec.len() { break; }
                 if cov_vec[idx] < walk_thr { break; }
-                // Stop at downstream TSS cluster (many reads starting there).
-                // The new transcript would be a separate gene's start.
                 if start_counts.get(&next).copied().unwrap_or(0.0) >= tss_stop_thr {
                     break;
                 }
@@ -9202,11 +9199,12 @@ fn emit_stranded_single_exon_candidates(
         }
         // Skip if fully contained in an existing tx exon with comparable cov
         let duplicate = bundle_txs.iter().any(|t| {
-            t.strand == bundle.strand
+            let exon_match = t.strand == bundle.strand
                 && t.exons.iter().any(|&(es, ee)| {
                     es <= med_start + endpoint_tol && ee + endpoint_tol >= med_end
-                })
-                && avg_cov < t.longcov * cov_ratio
+                });
+            let cov_match = avg_cov < t.longcov * cov_ratio;
+            exon_match && cov_match
         });
         if duplicate {
             continue;
@@ -9239,6 +9237,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0,
         });
@@ -9395,6 +9394,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
+            copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0,
         });
@@ -9476,7 +9476,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardstart: false,
                         hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                     };
                     predictions.push(tx);
@@ -9518,7 +9518,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardstart: false,
                     hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                 };
                 predictions.push(tx);
@@ -10033,6 +10033,7 @@ pub fn run<P: AsRef<Path>>(
                 bnode_colors: None,
                 synthetic: false,
                 rescue_class: None,
+                vg_family_id: None,
 
 })
             .collect()
@@ -10107,6 +10108,11 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // Per-bundle VG metadata populated after EM (empty when not in VG mode).
+    // bundle_borrow_cov: (exon_start, exon_end, copy_specific, this_copy_cov, total_fam_cov)
+    let mut bundle_borrow_cov: std::collections::HashMap<usize, Vec<(u64, u64, bool, f64, f64)>> =
+        std::collections::HashMap::new();
+
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
         match config.vg_solver {
@@ -10171,7 +10177,7 @@ pub fn run<P: AsRef<Path>>(
                         em_hmm_partitions.extend(parts);
                     }
                     use rayon::prelude::*;
-                    let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
+                    let mut family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
                         em_hmm_partitions.par_iter()
                             .map(|fam| {
                                 if genome_ref.is_none() { return None; }
@@ -10188,7 +10194,7 @@ pub fn run<P: AsRef<Path>>(
                                 }
                             })
                             .collect();
-                    crate::vg::run_pre_assembly_em_hmm(
+                    let em_res = crate::vg::run_pre_assembly_em_hmm(
                         &em_hmm_partitions,
                         &mut bundles,
                         &family_graphs,
@@ -10198,7 +10204,21 @@ pub fn run<P: AsRef<Path>>(
                         config.vg_junction_bonus,
                         config.vg_em_uniform_prior,
                         config.vg_exon_len_penalty,
-                    )
+                    );
+                    // Annotate per-copy exon coverage on each FamilyGraph now
+                    // that EM weights are final. Populates ExonClass.per_copy_cov
+                    // for diagnostics and future copy-aware path extraction.
+                    for (pi, fam) in em_hmm_partitions.iter().enumerate() {
+                        if let Some(fg) = family_graphs.get_mut(pi).and_then(|o| o.as_mut()) {
+                            crate::vg::annotate_per_copy_exon_coverage(fam, &bundles, fg);
+                        }
+                    }
+                    // Build per-bundle borrow-coverage summary for the assembly loop.
+                    bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
+                        &em_hmm_partitions,
+                        &family_graphs,
+                    );
+                    em_res
                 } else {
                     // Heuristic fallback (SNP-aware if --vg-snp set).
                     if config.vg_snp {
@@ -10214,6 +10234,16 @@ pub fn run<P: AsRef<Path>>(
     } else {
         Vec::new()
     };
+
+    // Per-copy assignment confidence: mean post-EM weight of multi-mapper reads.
+    // Computed here while `bundles` still has post-EM weights; consumed by
+    // the assembly loop for GTF copy_confidence attribute.
+    let bundle_to_confidence: std::collections::HashMap<usize, f64> =
+        if config.vg_mode && !vg_families.is_empty() {
+            crate::vg::compute_per_copy_confidence(&vg_families, &bundles)
+        } else {
+            std::collections::HashMap::new()
+        };
 
     let use_region_bundle_pass = std::env::var_os("RUSTLE_DISABLE_REGION_BUNDLE_PASS").is_none();
     let do_timing = std::env::var_os("RUSTLE_TIMING").is_some();
@@ -10717,6 +10747,19 @@ pub fn run<P: AsRef<Path>>(
         merged
     } else {
         Default::default()
+    };
+
+    // Build bundle→VG-family lookup used to tag assembled transcripts.
+    // Populated only in --vg mode; empty HashMap otherwise (zero overhead).
+    let bundle_to_vg: std::collections::HashMap<usize, (usize, usize, usize)> = {
+        let mut m = std::collections::HashMap::new();
+        for fam in &vg_families {
+            let fam_size = fam.bundle_indices.len();
+            for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                m.insert(bi, (fam.family_id, copy_id, fam_size));
+            }
+        }
+        m
     };
 
     let snapshot_all = std::env::var_os("RUSTLE_SNAPSHOT_ALL").is_some();
@@ -12371,6 +12414,37 @@ pub fn run<P: AsRef<Path>>(
                         lend.len(),
                     );
                 }
+                // Tag every graph node with its VG family/copy IDs so
+                // path_extract can propagate them without a post-hoc lookup.
+                if let Some(&(fam_id, copy_id, _)) = bundle_to_vg.get(&bundle_idx) {
+                    for node in graph.nodes.iter_mut() {
+                        node.vg_family_id = Some(fam_id);
+                        node.vg_copy_id = Some(copy_id);
+                    }
+                    // Apply family-level coverage floor to shared-exon nodes
+                    // that have little local evidence. Prevents the flow
+                    // algorithm from pruning exons that have strong support
+                    // from sibling copies but few locally-mapping reads.
+                    // Off by default; enable with RUSTLE_VG_BORROW_FLOOR=1 to
+                    // avoid creating spurious paths via phantom coverage.
+                    if std::env::var_os("RUSTLE_VG_BORROW_FLOOR").is_some() {
+                        if let Some(borrow_entries) = bundle_borrow_cov.get(&bundle_idx) {
+                            for node in graph.nodes.iter_mut() {
+                                for &(ec_start, ec_end, copy_specific, _this_cov, total_fam_cov) in
+                                    borrow_entries
+                                {
+                                    if copy_specific { continue; } // don't boost copy-specific exons
+                                    if ec_start < node.end && ec_end > node.start
+                                        && node.coverage == 0.0
+                                        && total_fam_cov > 0.0
+                                    {
+                                        node.coverage = 1.0_f64.min(total_fam_cov * 0.05);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 trace_intron_chain_graph(&graph, graph_bundle, &config);
                 if config.allowed_graph_nodes > 0 {
                     let _ =
@@ -13476,12 +13550,25 @@ pub fn run<P: AsRef<Path>>(
                 // This avoids creating a hardend node in the graph (which would
                 // remove the natural bottleneck that suppresses j-class extras),
                 // while still correcting the 3'-end of surviving transcripts.
+                //
+                // Guard: only truncate when the transcript's last exon end is
+                // within TERMINAL_OVERHANG_MAX bp of corrected_end. The drop is
+                // detected within TERMINAL_DETECTION_WINDOW (75 bp) of the last
+                // bundlenode end, so legitimate corrections have a small gap
+                // (≤75 + bundle overhang ≈ 75–150 bp). A large gap (e.g. 2025 bp
+                // at STRG.253) means the drop belongs to an intermediate bundlenode
+                // and truncating would incorrectly cut real exon body.
                 let mut txs = txs;
                 if let Some(corrected_end) = graph_mut.terminal_corrected_end {
+                    let max_overhang: u64 = std::env::var("RUSTLE_TERMINAL_OVERHANG_MAX")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(150u64);
                     for tx in &mut txs {
                         if let Some(last_exon) = tx.exons.last_mut() {
-                            if last_exon.1 == graph_bundle.end && corrected_end > last_exon.0 {
-                                last_exon.1 = corrected_end;
+                            if last_exon.1 > corrected_end {
+                                let gap = last_exon.1 - corrected_end;
+                                if gap <= max_overhang && corrected_end > last_exon.0 {
+                                    last_exon.1 = corrected_end;
+                                }
                             }
                         }
                     }
@@ -14301,6 +14388,7 @@ pub fn run<P: AsRef<Path>>(
                     // marked `copy_status "novel"` in the GTF.
                     synthetic: bundle.synthetic,
                     rescue_class: bundle.rescue_class,
+                    vg_family_id: bundle.vg_family_id,
 
 };
 
@@ -15022,6 +15110,24 @@ pub fn run<P: AsRef<Path>>(
             if !pileup_se.is_empty() {
                 single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
             }
+            if let Some(&(fam_id, copy_id, fam_size)) = bundle_to_vg.get(&bundle_idx) {
+                for tx in bundle_txs.iter_mut() {
+                    tx.vg_family_id = Some(fam_id);
+                    tx.vg_copy_id = Some(copy_id);
+                    tx.vg_family_size = Some(fam_size);
+                    tx.copy_assignment_confidence =
+                        bundle_to_confidence.get(&bundle_idx).copied();
+                }
+            }
+            if bundle.synthetic {
+                for tx in bundle_txs.iter_mut() {
+                    tx.synthetic = true;
+                    tx.rescue_class = bundle.rescue_class;
+                    if tx.vg_family_id.is_none() {
+                        tx.vg_family_id = bundle.vg_family_id;
+                    }
+                }
+            }
             trace_chain_intron_probe("bundle_before_extend_all_transcripts_pernode", &bundle_txs);
             all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
             return Ok(());
@@ -15461,6 +15567,24 @@ pub fn run<P: AsRef<Path>>(
         );
         if !pileup_se.is_empty() {
             single_exon_predictions_mutex.lock().unwrap().extend(pileup_se);
+        }
+        if let Some(&(fam_id, copy_id, fam_size)) = bundle_to_vg.get(&bundle_idx) {
+            for tx in bundle_txs.iter_mut() {
+                tx.vg_family_id = Some(fam_id);
+                tx.vg_copy_id = Some(copy_id);
+                tx.vg_family_size = Some(fam_size);
+                tx.copy_assignment_confidence =
+                    bundle_to_confidence.get(&bundle_idx).copied();
+            }
+        }
+        if bundle.synthetic {
+            for tx in bundle_txs.iter_mut() {
+                tx.synthetic = true;
+                tx.rescue_class = bundle.rescue_class;
+                if tx.vg_family_id.is_none() {
+                    tx.vg_family_id = bundle.vg_family_id;
+                }
+            }
         }
         trace_chain_intron_probe("bundle_before_extend_all_transcripts_final", &bundle_txs);
         all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
@@ -15918,8 +16042,16 @@ pub fn run<P: AsRef<Path>>(
                     let me_end = exons.last().map(|e| e.1).unwrap_or(0);
                     if se_end < me_start { continue; }
                     if se_start > me_end { continue; }
-                    // Antisense overlap kill (x/e-class) — applies to all SE.
-                    if *strand != tx.strand && *strand != '.' && tx.strand != '.' {
+                    // Antisense overlap kill (x/e-class) — applies to all SE
+                    // except stranded_single_exon: those come from stranded
+                    // bundles where the strand is definitive and genuine
+                    // opposite-strand genes routinely share genomic intervals.
+                    let is_stranded_src = matches!(
+                        tx.source.as_deref(), Some("stranded_single_exon")
+                    );
+                    if *strand != tx.strand && *strand != '.' && tx.strand != '.'
+                        && !is_stranded_src
+                    {
                         return false;
                     }
                     if *strand == tx.strand && !is_terminal_src {
@@ -16014,8 +16146,17 @@ pub fn run<P: AsRef<Path>>(
             );
             if is_stranded_src || is_frs_src {
                 let has_overlap = multi_spans2.iter().any(|(chrom2, strand2, exons2, _)| {
-                    *chrom2 == tx.chrom && *strand2 == tx.strand
-                        && exons2.iter().any(|&(es2, ee2)| es2 <= se_end && ee2 >= se_start)
+                    if *chrom2 != tx.chrom || *strand2 != tx.strand { return false; }
+                    // Exon overlap (SE touches a same-strand exon).
+                    if exons2.iter().any(|&(es2, ee2)| es2 <= se_end && ee2 >= se_start) {
+                        return true;
+                    }
+                    // Intronic containment: SE is fully within the host gene's span
+                    // but between exons (embedded gene in host intron). The
+                    // intron-containment kill below handles the coverage gate.
+                    let me_gstart = exons2.first().map(|e| e.0).unwrap_or(u64::MAX);
+                    let me_gend   = exons2.last().map(|e| e.1).unwrap_or(0);
+                    me_gstart <= se_start && me_gend >= se_end
                 });
                 if !has_overlap {
                     // Allow adjacency: SE starts within adj_tol of a same-strand
@@ -16095,8 +16236,12 @@ pub fn run<P: AsRef<Path>>(
                 let me_end = exons.last().map(|e| e.1).unwrap_or(0);
                 if se_end < me_start { continue; }
                 if se_start > me_end { continue; }
-                // Antisense overlap kill
-                if *strand != tx.strand && *strand != '.' && tx.strand != '.' {
+                // Antisense overlap kill — stranded_single_exon is exempt:
+                // those come from definitively-stranded bundles and real
+                // opposite-strand genes routinely share genomic intervals.
+                if *strand != tx.strand && *strand != '.' && tx.strand != '.'
+                    && !is_stranded_src
+                {
                     return false;
                 }
                 if *strand == tx.strand && !is_terminal_src {
@@ -16223,11 +16368,11 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // eonly mode — emit unassembled guide transcripts with cov=0.
-    // Optional guided sensitivity mode: set RUSTLE_GUIDE_FORCE_RECOVER=1 to apply the same
-    // recovery in regular guided runs (not only -e). This prioritizes exact-guide sensitivity.
+    // Guided mode: also recover guide transcripts missed by assembly (matches ST -G behavior).
+    // Disable with RUSTLE_GUIDE_NO_FORCE_RECOVER=1.
     let force_guide_recover = !config.eonly
         && !guide_transcripts.is_empty()
-        && std::env::var_os("RUSTLE_GUIDE_FORCE_RECOVER").is_some();
+        && std::env::var_os("RUSTLE_GUIDE_NO_FORCE_RECOVER").is_none();
     if (config.eonly || force_guide_recover) && !guide_transcripts.is_empty() {
         let assembled_exact_guides: HashSet<(String, char, Vec<(u64, u64)>)> = all_transcripts
             .iter()
@@ -16298,7 +16443,7 @@ pub fn run<P: AsRef<Path>>(
                 hardstart: true,
                 hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
             });
         }
@@ -16764,8 +16909,8 @@ pub fn run<P: AsRef<Path>>(
                     for &k in &cluster {
                         let tk = &all_transcripts[k];
                         if tk.coverage >= thr { continue; }
-                        // oracle_direct diagnostic tx are never killed here.
-                        if tk.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
+                        // oracle_direct, ref_chain_rescue, and guide-recovered tx are never killed here.
+                        if tk.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:") || s.starts_with("guide:")) {
                             continue;
                         }
                         // Longcov-based exemption: read-witnessed multi-exon paths
@@ -16872,7 +17017,7 @@ pub fn run<P: AsRef<Path>>(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0,
                 });

@@ -875,10 +875,27 @@ fn filter_junctions_for_bundle<'a>(
     // graph over-segmentation. Targets the STRG.309 class of j-class
     // over-emission where Rustle explores 2^N combinations of alt-splice
     // shifts. Opt-in via RUSTLE_ALT_JUNC_COALESCE=1.
-    if std::env::var_os("RUSTLE_ALT_JUNC_COALESCE").is_some() && junction_stats.is_some() {
+    let juncs = if std::env::var_os("RUSTLE_ALT_JUNC_COALESCE").is_some() && junction_stats.is_some() {
         coalesce_weak_alt_junctions(pre, junction_stats.unwrap())
     } else {
         pre
+    };
+    // Skip-junction rejection: demote a long-intron junction (D,A) when two
+    // high-support sub-junctions (D,A') and (D'',A) with A'<D'' exist, forming
+    // a mini-exon [A',D'') that the skip junction bypasses. Default-off;
+    // enable with RUSTLE_SKIP_JCT_REJECT=1.
+    let juncs = if junction_stats.is_some() && std::env::var_os("RUSTLE_SKIP_JCT_REJECT").is_some() {
+        reject_mini_exon_skip_junctions(juncs, junction_stats.unwrap())
+    } else {
+        juncs
+    };
+    // Spurious mini-exon rejection: demote low-support sub-junctions (D,A') and (D'',A)
+    // when a high-support long junction (D,A) already spans [A',D''). Default-off;
+    // enable with RUSTLE_SPURIOUS_ME_REJECT=1.
+    if junction_stats.is_some() && std::env::var_os("RUSTLE_SPURIOUS_ME_REJECT").is_some() {
+        reject_spurious_mini_exon_junctions(juncs, junction_stats.unwrap())
+    } else {
+        juncs
     }
 }
 
@@ -998,6 +1015,181 @@ fn coalesce_weak_alt_junctions<'a>(
         eprintln!(
             "ALT_JUNC coalesce: {} → {} ({} demoted, window={}bp ratio={:.2})",
             before, kept.len(), before - kept.len(), window, min_ratio
+        );
+    }
+    kept
+}
+
+/// Demote skip junctions that bypass a mini-exon supported by two high-read junctions.
+///
+/// A skip junction J=(D,A) is demoted when there exist sub-junctions:
+///   J1 = (D, A') with D < A' < A  — same donor, ends at mini-exon start
+///   J2 = (D'', A) with A' < D'' < A — same acceptor, starts at mini-exon end
+///   reads(J1) >= min_ratio * reads(J) AND reads(J2) >= min_ratio * reads(J)
+///
+/// This catches long-intron junctions (10-20 reads) that skip over a mini-exon
+/// (87-148bp) where each sub-junction has 400+ reads — a 27-45x support ratio.
+///
+/// Env vars:
+///   RUSTLE_SKIP_JCT_MIN_RATIO (default 10.0) — sub-junction must have at least
+///                                               this multiple of skip-junction reads
+///   RUSTLE_SKIP_JCT_DEBUG — emit demotion details to stderr
+fn reject_mini_exon_skip_junctions<'a>(
+    juncs: Vec<&'a Junction>,
+    stats: &JunctionStats,
+) -> Vec<&'a Junction> {
+    let min_ratio: f64 = std::env::var("RUSTLE_SKIP_JCT_MIN_RATIO")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(10.0);
+    let debug = std::env::var_os("RUSTLE_SKIP_JCT_DEBUG").is_some();
+
+    let reads_of = |j: &Junction| -> f64 {
+        stats.get(j).map(|s| s.mrcount.max(s.nreads_good)).unwrap_or(0.0)
+    };
+
+    use std::collections::HashMap as StdHashMap;
+    let mut by_donor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    let mut by_acceptor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in &juncs {
+        by_donor.entry(j.donor).or_default().push(j);
+        by_acceptor.entry(j.acceptor).or_default().push(j);
+    }
+
+    let mut demoted: std::collections::HashSet<(u64, u64)> = Default::default();
+    'outer: for &j in &juncs {
+        let mm_j = reads_of(j);
+        if mm_j <= 0.0 { continue; }
+        let threshold = min_ratio * mm_j;
+
+        let Some(same_donor) = by_donor.get(&j.donor) else { continue };
+        let same_acc = by_acceptor.get(&j.acceptor).map(|v| v.as_slice()).unwrap_or(&[]);
+
+        // Look for J1 = (D, A') with D < A' < A (same donor, shorter intron)
+        for &j1 in same_donor {
+            let a_prime = j1.acceptor;
+            if a_prime >= j.acceptor || a_prime <= j.donor { continue; }
+            if reads_of(j1) < threshold { continue; }
+
+            // Look for J2 = (D'', A) with A' < D'' < A (same acceptor, inner donor)
+            for &j2 in same_acc {
+                let d_prime = j2.donor;
+                if d_prime <= a_prime || d_prime >= j.acceptor { continue; }
+                if reads_of(j2) < threshold { continue; }
+
+                demoted.insert((j.donor, j.acceptor));
+                if debug {
+                    eprintln!(
+                        "SKIP_JCT demote ({}-{} mm={:.0}) via ({}-{} mm={:.0})+({}-{} mm={:.0}) mini-exon=[{},{})",
+                        j.donor, j.acceptor, mm_j,
+                        j.donor, a_prime, reads_of(j1),
+                        d_prime, j.acceptor, reads_of(j2),
+                        a_prime, d_prime,
+                    );
+                }
+                continue 'outer;
+            }
+        }
+    }
+
+    let before = juncs.len();
+    let kept: Vec<&Junction> = juncs.into_iter()
+        .filter(|j| !demoted.contains(&(j.donor, j.acceptor)))
+        .collect();
+    if debug {
+        eprintln!(
+            "SKIP_JCT reject: {} → {} ({} demoted, min_ratio={:.1}x)",
+            before, kept.len(), before - kept.len(), min_ratio
+        );
+    }
+    kept
+}
+
+/// Demote spurious sub-junctions that create a false mini-exon when a high-support
+/// long junction already bypasses the same interval.
+///
+/// Given a high-support junction J=(D,A), if low-support sub-junctions
+///   J1 = (D, A') with D < A' < A  — same donor, ends at mini-exon start
+///   J2 = (D'', A) with A' < D'' < A — same acceptor, starts at mini-exon end
+/// exist with reads(J1) < reads(J)/min_ratio AND reads(J2) < reads(J)/min_ratio,
+/// both J1 and J2 are demoted (the spurious mini-exon [A', D'') is erased from the graph).
+///
+/// Env vars:
+///   RUSTLE_SPURIOUS_ME_MIN_RATIO (default 10.0) — long junction must be at least
+///   N× more supported than each sub-junction to trigger demotion
+///   RUSTLE_SPURIOUS_ME_DEBUG — emit demotion details to stderr
+fn reject_spurious_mini_exon_junctions<'a>(
+    juncs: Vec<&'a Junction>,
+    stats: &JunctionStats,
+) -> Vec<&'a Junction> {
+    let min_ratio: f64 = std::env::var("RUSTLE_SPURIOUS_ME_MIN_RATIO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10.0);
+    let debug = std::env::var_os("RUSTLE_SPURIOUS_ME_DEBUG").is_some();
+    let reads_of = |j: &Junction| -> f64 {
+        stats.get(j).map(|s| s.mrcount.max(s.nreads_good)).unwrap_or(0.0)
+    };
+    use std::collections::HashMap as StdHashMap;
+    let mut by_donor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    let mut by_acceptor: StdHashMap<u64, Vec<&Junction>> = StdHashMap::new();
+    for &j in &juncs {
+        by_donor.entry(j.donor).or_default().push(j);
+        by_acceptor.entry(j.acceptor).or_default().push(j);
+    }
+    let mut demoted: std::collections::HashSet<(u64, u64)> = Default::default();
+    for &j in &juncs {
+        let mm_j = reads_of(j);
+        if mm_j <= 0.0 {
+            continue;
+        }
+        let threshold = mm_j / min_ratio;
+        let Some(same_donor) = by_donor.get(&j.donor) else {
+            continue;
+        };
+        let same_acc = by_acceptor.get(&j.acceptor).map(|v| v.as_slice()).unwrap_or(&[]);
+        for &j1 in same_donor {
+            let a_prime = j1.acceptor;
+            if a_prime >= j.acceptor || a_prime <= j.donor {
+                continue;
+            }
+            let mm_j1 = reads_of(j1);
+            if mm_j1 >= threshold {
+                continue;
+            }
+            for &j2 in same_acc {
+                let d_prime = j2.donor;
+                if d_prime <= a_prime || d_prime >= j.acceptor {
+                    continue;
+                }
+                let mm_j2 = reads_of(j2);
+                if mm_j2 >= threshold {
+                    continue;
+                }
+                demoted.insert((j1.donor, j1.acceptor));
+                demoted.insert((j2.donor, j2.acceptor));
+                if debug {
+                    eprintln!(
+                        "SPURIOUS_ME demote ({}-{} mm={:.0}) and ({}-{} mm={:.0}) via long ({}-{} mm={:.0}) mini-exon=[{},{})",
+                        j1.donor, j1.acceptor, mm_j1,
+                        j2.donor, j2.acceptor, mm_j2,
+                        j.donor, j.acceptor, mm_j,
+                        a_prime, d_prime
+                    );
+                }
+            }
+        }
+    }
+    let before = juncs.len();
+    let kept: Vec<&Junction> = juncs
+        .into_iter()
+        .filter(|j| !demoted.contains(&(j.donor, j.acceptor)))
+        .collect();
+    if debug {
+        eprintln!(
+            "SPURIOUS_ME reject: {} → {} ({} demoted, min_ratio={:.1}x)",
+            before,
+            kept.len(),
+            before - kept.len(),
+            min_ratio
         );
     }
     kept
