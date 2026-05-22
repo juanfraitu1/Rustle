@@ -1444,6 +1444,108 @@ pub fn compute_per_copy_confidence(
     result
 }
 
+/// Boost read weights in underpowered family-member bundles.
+///
+/// When a bundle has fewer than `RUSTLE_VG_BOOST_PRIMARY_THR` primary reads
+/// (default 10) but the family's multi-mappers carry significant EM-assigned
+/// weight to that bundle (`RUSTLE_VG_BOOST_MIN_EM_WEIGHT`, default 3.0), read
+/// weights are multiplied so the assembler sees enough effective coverage.
+///
+/// Three cases:
+///   primary=0: all reads boosted uniformly (no primary signal to prefer).
+///   primary∈[1, primary_min): skipped. Boosting 1–2 primaries creates a
+///     coverage spike that can disrupt secondary-driven assembly at bundles
+///     already producing output.
+///   primary∈[primary_min, primary_thr): only primary reads are boosted;
+///     secondaries keep their EM-assigned weights so relative evidence is
+///     preserved. With 3+ primaries the boost is spread across enough reads
+///     that the coverage profile stays balanced.
+///
+/// The boost factor is capped at `RUSTLE_VG_BOOST_MAX` (default 10.0) to
+/// avoid extreme weight imbalances.
+///
+/// Tuning env vars:
+///   RUSTLE_VG_BOOST_PRIMARY_THR  — upper bound (default 5)
+///   RUSTLE_VG_BOOST_PRIMARY_MIN  — lower bound, inclusive (default 3)
+///   RUSTLE_VG_BOOST_MIN_EM_WEIGHT — minimum multi-mapper EM weight (default 3.0)
+///   RUSTLE_VG_BOOST_MAX          — boost cap (default 10.0)
+///
+/// Activated by `RUSTLE_VG_FAMILY_BOOST=1`.
+pub fn apply_family_primary_boosts(families: &[FamilyGroup], bundles: &mut [Bundle]) {
+    let primary_thr: usize = std::env::var("RUSTLE_VG_BOOST_PRIMARY_THR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5);
+    let primary_min: usize = std::env::var("RUSTLE_VG_BOOST_PRIMARY_MIN")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3);
+    let min_em_wt: f64 = std::env::var("RUSTLE_VG_BOOST_MIN_EM_WEIGHT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3.0);
+    let max_boost: f64 = std::env::var("RUSTLE_VG_BOOST_MAX")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10.0_f64);
+
+    for family in families {
+        for (fam_pos, &bi) in family.bundle_indices.iter().enumerate() {
+            if bi >= bundles.len() {
+                continue;
+            }
+            let primary_count = bundles[bi]
+                .reads
+                .iter()
+                .filter(|r| r.is_primary_alignment)
+                .count();
+            // primary=0 → all-reads boost path below.
+            // primary∈[1, primary_min) → skip: too few to spread boost safely.
+            // primary≥primary_thr → already has sufficient unique coverage.
+            if (primary_count >= 1 && primary_count < primary_min)
+                || primary_count >= primary_thr
+            {
+                continue;
+            }
+
+            // Sum EM-assigned weight contributed by multi-mappers landing here.
+            let mut mm_em_weight = 0.0f64;
+            for placements in family.multimap_reads.values() {
+                for &(pos, ri) in placements {
+                    if pos == fam_pos {
+                        if let Some(r) = bundles[bi].reads.get(ri) {
+                            mm_em_weight += r.weight;
+                        }
+                    }
+                }
+            }
+            if mm_em_weight < min_em_wt {
+                continue;
+            }
+
+            let raw_boost = mm_em_weight / primary_count.max(1) as f64;
+            let boost = raw_boost.max(1.0).min(max_boost);
+            eprintln!(
+                "[VG-BOOST] bundle {}:{}-{} primary={} mm_em_weight={:.2} boost={:.2}x{}",
+                bundles[bi].chrom,
+                bundles[bi].start,
+                bundles[bi].end,
+                primary_count,
+                mm_em_weight,
+                boost,
+                if primary_count == 0 { " (all reads)" } else { "" },
+            );
+            for read in &mut bundles[bi].reads {
+                // primary=0: boost all reads so EM-weighted secondaries can drive assembly.
+                // primary>=2: boost only primaries; secondaries keep EM-assigned weights.
+                if primary_count == 0 || read.is_primary_alignment {
+                    read.weight *= boost;
+                }
+            }
+        }
+    }
+}
+
 /// Build per-bundle borrowable exon coverage from annotated FamilyGraph nodes.
 ///
 /// After `annotate_per_copy_exon_coverage` populates `ExonClass.per_copy_cov`,

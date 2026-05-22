@@ -10318,6 +10318,13 @@ pub fn run<P: AsRef<Path>>(
             std::collections::HashMap::new()
         };
 
+    if config.vg_mode
+        && !vg_families.is_empty()
+        && std::env::var_os("RUSTLE_VG_FAMILY_BOOST").is_some()
+    {
+        crate::vg::apply_family_primary_boosts(&vg_families, &mut bundles);
+    }
+
     let use_region_bundle_pass = std::env::var_os("RUSTLE_DISABLE_REGION_BUNDLE_PASS").is_none();
     let do_timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let trace_log_style = trace_log_style_active();
