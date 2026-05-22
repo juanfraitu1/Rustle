@@ -170,6 +170,33 @@ Tested on 9 known multi-copy families (commit 4e8ba80, full GGO.bam):
 | KRABZNF  |  15 |  15 |      15      |  0  |
 | **TOTAL**| 640 |  95 |     114      | **+19** |
 
+## Y-chromosome ampliconic genes (YAGs) — laptop benchmark
+
+Reference: `ref_YAG.gff` (gorilla NC_073248.2, derived from GGO_genomic.gff).
+Families: RBMY (RNA-binding motif Y, 13 copies), TSPY (testis-specific Y, 9 copies),
+DAZ (deleted in azoospermia, 2 copies). Total: 24 ref paralogs.
+
+Run command (commit 125f63a, `--vg-no-hmm` mode):
+```
+rustle ggo_Y.bam --genome-fasta ggo_Y.fasta --vg --vg-no-hmm
+stringtie -L -p 4 ggo_Y.bam
+```
+
+| tool            | DAZ  | RBMY  | TSPY | Total  | runtime |
+|-----------------|------|-------|------|--------|---------|
+| StringTie       | 2/2  | 10/13 | 5/9  | 17/24  | —       |
+| rustle no-HMM   | 2/2  | 13/13 | 6/9  | **21/24** | ~15s  |
+| rustle HMM-EM   | 2/2  | 13/13 | 6/9  | **21/24** | ~420s |
+
+**+4 YAGs over StringTie** (+3 RBMY, +1 TSPY). RBMY fully recovered (13/13).
+HMM-EM and no-HMM give identical locus recovery — `--vg-no-hmm` is 28× faster.
+
+3 TSPY missed by all methods have ≤1 primary read at their loci (truly silent).
+Junction propagation did not fire — missed loci are not in any kept family.
+
+Key mechanism: VG EM redistributes multi-mapping reads across the 13-copy RBMY
+cluster; StringTie collapses cross-mapping reads to the 3 highest-coverage copies.
+
 Highlights:
 - NBPF: rustle catches all 23 ref paralogs (ST: 19), full recovery on a primate-specific neural gene cluster.
 - OR (502 ref olfactory receptors, mostly intronless): rustle +4 paralogs.
