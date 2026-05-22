@@ -44,7 +44,7 @@ fn empty_bundle(chrom: &str) -> Bundle {
         reads: Vec::new(),
         junction_stats: JunctionStats::default(),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
-        synthetic: false, rescue_class: None,
+        synthetic: false, rescue_class: None, vg_family_id: None,
     }
 }
 
@@ -62,12 +62,14 @@ fn two_paralog_disjoint_fg(seq0: &[u8], seq1: &[u8]) -> FamilyGraph {
             per_copy_sequences: vec![(0, seq0.to_vec())],
             per_copy_spans: vec![(0, (0, seq0.len() as u64))],
             copy_specific: true, profile: Some(p0),
+            per_copy_profiles: vec![], per_copy_cov: vec![],
         },
         ExonClass {
             idx: NodeIdx(1), chrom: "x".into(), span: (1000, 1000 + seq1.len() as u64), strand: '+',
             per_copy_sequences: vec![(1, seq1.to_vec())],
             per_copy_spans: vec![(1, (1000, 1000 + seq1.len() as u64))],
             copy_specific: true, profile: Some(p1),
+            per_copy_profiles: vec![], per_copy_cov: vec![],
         },
     ];
     FamilyGraph { family_id: 0, nodes, edges: Vec::new() }

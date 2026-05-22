@@ -17,9 +17,9 @@ fn two_node_chain() -> FamilyGraph {
     let p2 = ProfileHmm::from_singleton(b"TGCA");
     let nodes = vec![
         ExonClass { idx: NodeIdx(0), chrom: "x".into(), span: (0, 4), strand: '+',
-            per_copy_sequences: vec![(0, b"ACGT".to_vec())], per_copy_spans: vec![(0, (0, 4))], copy_specific: true, profile: Some(p1) },
+            per_copy_sequences: vec![(0, b"ACGT".to_vec())], per_copy_spans: vec![(0, (0, 4))], copy_specific: true, profile: Some(p1), per_copy_profiles: vec![], per_copy_cov: vec![] },
         ExonClass { idx: NodeIdx(1), chrom: "x".into(), span: (10, 14), strand: '+',
-            per_copy_sequences: vec![(0, b"TGCA".to_vec())], per_copy_spans: vec![(0, (10, 14))], copy_specific: true, profile: Some(p2) },
+            per_copy_sequences: vec![(0, b"TGCA".to_vec())], per_copy_spans: vec![(0, (10, 14))], copy_specific: true, profile: Some(p2), per_copy_profiles: vec![], per_copy_cov: vec![] },
     ];
     let edges = vec![JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 1, strand: '+' }];
     FamilyGraph { family_id: 0, nodes, edges }
@@ -53,13 +53,13 @@ fn two_paralog_divergent_fg() -> FamilyGraph {
             idx: NodeIdx(0), chrom: "x".into(), span: (0, 4), strand: '+',
             per_copy_sequences: vec![(0, b"ACGT".to_vec()), (1, b"AGCT".to_vec())],
             per_copy_spans: vec![(0, (0, 4)), (1, (0, 4))],
-            copy_specific: false, profile: Some(p1),
+            copy_specific: false, profile: Some(p1), per_copy_profiles: vec![], per_copy_cov: vec![],
         },
         ExonClass {
             idx: NodeIdx(1), chrom: "x".into(), span: (10, 14), strand: '+',
             per_copy_sequences: vec![(0, b"TGCA".to_vec()), (1, b"TCCA".to_vec())],
             per_copy_spans: vec![(0, (10, 14)), (1, (10, 14))],
-            copy_specific: false, profile: Some(p2),
+            copy_specific: false, profile: Some(p2), per_copy_profiles: vec![], per_copy_cov: vec![],
         },
     ];
     let edges = vec![JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 2, strand: '+' }];
@@ -146,13 +146,13 @@ fn recover_paralog_path_excludes_nodes_paralog_doesnt_contribute_to() {
             idx: NodeIdx(0), chrom: "x".into(), span: (0, 4), strand: '+',
             per_copy_sequences: vec![(0, b"ACGT".to_vec())],  // only paralog 0
             per_copy_spans: vec![(0, (0, 4))],
-            copy_specific: true, profile: Some(p1),
+            copy_specific: true, profile: Some(p1), per_copy_profiles: vec![], per_copy_cov: vec![],
         },
         ExonClass {
             idx: NodeIdx(1), chrom: "x".into(), span: (10, 14), strand: '+',
             per_copy_sequences: vec![(1, b"TGCA".to_vec())],  // only paralog 1
             per_copy_spans: vec![(1, (10, 14))],
-            copy_specific: true, profile: Some(p2),
+            copy_specific: true, profile: Some(p2), per_copy_profiles: vec![], per_copy_cov: vec![],
         },
     ];
     let fg = FamilyGraph { family_id: 0, nodes, edges: vec![] };

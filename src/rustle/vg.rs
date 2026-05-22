@@ -2314,6 +2314,186 @@ pub fn snp_compatibility(
     bonus.max(0.1)
 }
 
+// ── ExonFingerprints ──────────────────────────────────────────────────────────
+//
+// Sequence-based variant fingerprints derived from ExonClass.per_copy_sequences.
+//
+// Unlike DiagnosticSnps (reference-coordinate mismatches from BundleRead),
+// ExonFingerprints use exon-relative offsets from the FamilyGraph, so they
+// work for non-overlapping gene copies (RBMY, TSPY, DAZ scattered across
+// chrY) where reference positions are incommensurable across copies.
+//
+// Model: P(read_base | copy) = p_match if genomic_base[copy][pos] == read_base
+//                             else p_mismatch.
+// Log-likelihoods are additive across variant sites; callers exponentiate
+// and normalize to get per-copy posterior weights.
+
+/// One position where ≥ 2 copies have different genomic bases.
+struct ExonVariantSite {
+    /// (copy_id, uppercase genomic base) for every copy that has a sequence
+    /// in this ExonClass. Only covers disagrees where all bases are ACGT.
+    copy_bases: Vec<(usize, u8)>,
+}
+
+/// Fingerprint table for one gene family.
+pub struct ExonFingerprints {
+    sites: Vec<ExonVariantSite>,
+    /// per_copy_site_refs[copy_id] = sorted (site_idx, ref_pos, genomic_base).
+    /// genomic_base is per_copy_sequences[copy_id][exon_rel_pos]: the base
+    /// this copy has at ref_pos so that a read with no mismatch recorded
+    /// (b'=' sentinel in BundleRead.mismatches) can be resolved to the
+    /// actual base the read carries without re-fetching the FASTA.
+    per_copy_site_refs: Vec<Vec<(usize, u64, u8)>>,
+    pub n_copies: usize,
+    pub n_sites: usize,
+}
+
+/// Build an ExonFingerprints table from the per-copy sequences in a FamilyGraph.
+///
+/// For each ExonClass that has ≥ 2 copies, compares their sequences
+/// position-by-position (exon-relative). Every position where at least two
+/// copies carry different ACGT bases becomes a diagnostic site.
+/// Multi-copy ExonClasses whose copies all agree at every position contribute
+/// zero sites (they carry no discriminating information).
+///
+/// The `n_copies` parameter must match `family.bundle_indices.len()` so that
+/// `per_copy_site_refs` is indexed consistently with the family's copy ordering.
+pub fn build_exon_fingerprints(
+    fg: &crate::vg_hmm::family_graph::FamilyGraph,
+    n_copies: usize,
+) -> ExonFingerprints {
+    let mut sites: Vec<ExonVariantSite> = Vec::new();
+    let mut per_copy_refs: Vec<Vec<(usize, u64, u8)>> = (0..n_copies).map(|_| Vec::new()).collect();
+
+    for ec in &fg.nodes {
+        if ec.per_copy_sequences.len() < 2 {
+            continue; // singleton exon — no pairwise comparison possible
+        }
+        let min_len = ec.per_copy_sequences.iter().map(|(_, s)| s.len()).min().unwrap_or(0);
+        if min_len == 0 {
+            continue;
+        }
+
+        for pos in 0..min_len {
+            // Collect the uppercase ACGT base for each copy at this position.
+            let copy_bases: Vec<(usize, u8)> = ec.per_copy_sequences.iter()
+                .filter_map(|(cid, seq)| {
+                    let b = seq[pos].to_ascii_uppercase();
+                    if matches!(b, b'A' | b'C' | b'G' | b'T') { Some((*cid, b)) } else { None }
+                })
+                .collect();
+
+            if copy_bases.len() < 2 {
+                continue;
+            }
+            // Skip positions where all copies agree — not informative.
+            let first = copy_bases[0].1;
+            if copy_bases.iter().all(|(_, b)| *b == first) {
+                continue;
+            }
+
+            let site_idx = sites.len();
+
+            // Record a (site_idx, ref_pos, genomic_base) entry for each copy
+            // that has a per_copy_span here. ref_pos = span_start + pos lets
+            // the scorer intersect with BundleRead.exons at score time.
+            for &(cid, copy_base) in &copy_bases {
+                if cid >= n_copies {
+                    continue;
+                }
+                if let Some((_, (span_start, _))) = ec.per_copy_spans.iter().find(|(k, _)| *k == cid) {
+                    let ref_pos = span_start + pos as u64;
+                    per_copy_refs[cid].push((site_idx, ref_pos, copy_base));
+                }
+            }
+
+            sites.push(ExonVariantSite { copy_bases });
+        }
+    }
+
+    // Sort each copy's site list by ref_pos for binary-search intersection.
+    for refs in &mut per_copy_refs {
+        refs.sort_unstable_by_key(|&(_, ref_pos, _)| ref_pos);
+    }
+
+    let n_sites = sites.len();
+    ExonFingerprints { sites, per_copy_site_refs: per_copy_refs, n_copies, n_sites }
+}
+
+/// Compute log-likelihood scores for each copy given a multi-mapping read.
+///
+/// `copy_idx` is the copy that this `BundleRead` is aligned to — it selects
+/// the reference-position lookup table (`per_copy_site_refs[copy_idx]`) so
+/// diagnostic sites can be intersected with `read.exons`.
+///
+/// The b'=' sentinel in `BundleRead.mismatches` encodes "read matches the
+/// reference at this position." Since the reference IS the copy's genomic
+/// sequence, b'=' maps to `genomic_base` stored in `per_copy_site_refs`,
+/// avoiding a FASTA re-fetch.
+///
+/// Returns a `Vec<f64>` of length `n_copies`. Entries for copies with no
+/// sites covered by this read remain 0.0 (log-prob of 1.0 → neutral).
+/// The caller exponentiates and normalises to get posterior weights.
+pub fn score_read_exon_fingerprint(
+    read: &BundleRead,
+    copy_idx: usize,
+    fp: &ExonFingerprints,
+) -> Vec<f64> {
+    use std::sync::OnceLock;
+    static LOG_PROBS: OnceLock<(f64, f64)> = OnceLock::new();
+    let (log_match, log_mismatch) = *LOG_PROBS.get_or_init(|| {
+        let p_match: f64 = std::env::var("RUSTLE_VG_FP_MATCH")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.90);
+        let p_mm: f64 = std::env::var("RUSTLE_VG_FP_MISMATCH")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.10);
+        (p_match.ln(), p_mm.ln())
+    });
+
+    let mut scores = vec![0.0f64; fp.n_copies];
+
+    let Some(site_refs) = fp.per_copy_site_refs.get(copy_idx) else {
+        return scores;
+    };
+    if site_refs.is_empty() {
+        return scores;
+    }
+
+    // Build mismatch lookup for this read (FxHash for hot-loop performance).
+    let mut mism: crate::types::DetHashMap<u64, u8> =
+        crate::types::DetHashMap::with_capacity_and_hasher(
+            read.mismatches.len(),
+            crate::types::FixedBuild::default(),
+        );
+    for &(p, b) in &read.mismatches {
+        mism.insert(p, b);
+    }
+
+    for &(site_idx, ref_pos, this_copy_base) in site_refs {
+        // Does the read's alignment to copy_idx cover this reference position?
+        if !read.exons.iter().any(|&(s, e)| ref_pos >= s && ref_pos < e) {
+            continue;
+        }
+
+        // Actual base the read carries at ref_pos.
+        // b'=' (no mismatch recorded) → the read matches this copy's genomic
+        // base, which is `this_copy_base`.
+        let read_base = match mism.get(&ref_pos).copied() {
+            Some(b) => b,
+            None => this_copy_base,
+        };
+
+        // Score read_base against every copy's expected base at this site.
+        let site = &fp.sites[site_idx];
+        for &(cid, copy_base) in &site.copy_bases {
+            if cid < fp.n_copies {
+                scores[cid] += if read_base == copy_base { log_match } else { log_mismatch };
+            }
+        }
+    }
+
+    scores
+}
+
 /// Pre-assembly EM: redistribute multi-mapping read weights across family members
 /// using junction-based compatibility (before splice graphs are built).
 ///
@@ -3702,4 +3882,95 @@ pub fn split_bundle_by_phase(bundle: &Bundle) -> Vec<(Bundle, Option<u8>)> {
     );
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vg_hmm::family_graph::{ExonClass, FamilyGraph, NodeIdx};
+
+    fn make_ec(idx: usize, copy_seqs: &[(usize, &[u8])], copy_spans: &[(usize, (u64, u64))]) -> ExonClass {
+        let span = copy_spans.iter().map(|(_, (s, e))| (*s, *e))
+            .fold((u64::MAX, 0u64), |(lo, hi), (s, e)| (lo.min(s), hi.max(e)));
+        ExonClass {
+            idx: NodeIdx(idx),
+            chrom: "chrTest".into(),
+            span,
+            strand: '+',
+            per_copy_sequences: copy_seqs.iter().map(|(c, s)| (*c, s.to_vec())).collect(),
+            per_copy_spans: copy_spans.to_vec(),
+            copy_specific: copy_spans.len() == 1,
+            profile: None,
+            per_copy_profiles: vec![],
+            per_copy_cov: vec![],
+        }
+    }
+
+    fn make_read(exons: Vec<(u64, u64)>, mismatches: Vec<(u64, u8)>) -> BundleRead {
+        BundleRead {
+            read_uid: 0, read_name: "r".into(), read_name_hash: 0,
+            ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+            ref_start: exons.first().map(|(s, _)| *s).unwrap_or(0),
+            ref_end:   exons.last().map(|(_, e)| *e).unwrap_or(0),
+            exons, junctions: vec![], junction_valid: vec![],
+            junctions_raw: vec![], junctions_del: vec![],
+            weight: 1.0, is_reverse: false, strand: '+',
+            has_poly_start: false, has_poly_end: false,
+            has_poly_start_aligned: false, has_poly_start_unaligned: false,
+            has_poly_end_aligned: false, has_poly_end_unaligned: false,
+            unaligned_poly_t: 0, unaligned_poly_a: 0,
+            has_last_exon_polya: false, has_first_exon_polyt: false,
+            query_length: None, clip_left: 0, clip_right: 0,
+            nh: 1, nm: 0, md: None, insertion_sites: vec![],
+            unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
+            countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
+            pair_idx: vec![], pair_count: vec![],
+            mapq: 60, mismatches, hp_tag: None, ps_tag: None,
+            is_primary_alignment: true,
+        }
+    }
+
+    #[test]
+    fn fingerprint_finds_snp_and_scores_correctly() {
+        // Two copies differ at exon position 2: copy0=b'G', copy1=b'C'.
+        // copy0 at ref 100-105, copy1 at ref 500-505 (non-overlapping).
+        let ec = make_ec(
+            0,
+            &[(0, b"ACGTA"), (1, b"ACCTA")],
+            &[(0, (100, 105)), (1, (500, 505))],
+        );
+        let fg = FamilyGraph { family_id: 0, nodes: vec![ec], edges: vec![] };
+        let fp = build_exon_fingerprints(&fg, 2);
+
+        assert_eq!(fp.n_sites, 1, "exactly one variant site");
+        assert_eq!(fp.per_copy_site_refs[0][0].1, 102, "copy0 ref_pos");
+        assert_eq!(fp.per_copy_site_refs[1][0].1, 502, "copy1 ref_pos");
+
+        // Read aligned to copy0, no mismatch at 102 → base = b'G' = copy0's base.
+        let read_a = make_read(vec![(100, 105)], vec![]);
+        let s = score_read_exon_fingerprint(&read_a, 0, &fp);
+        assert!(s[0] > s[1], "read with copy0 base should prefer copy0: {s:?}");
+
+        // Read aligned to copy0, mismatch=b'C' at 102 → base = copy1's base.
+        let read_b = make_read(vec![(100, 105)], vec![(102, b'C')]);
+        let s = score_read_exon_fingerprint(&read_b, 0, &fp);
+        assert!(s[1] > s[0], "read with copy1 base should prefer copy1: {s:?}");
+
+        // Read doesn't cover either copy's site → all scores neutral (0.0).
+        let read_c = make_read(vec![(200, 210)], vec![]);
+        let s = score_read_exon_fingerprint(&read_c, 0, &fp);
+        assert_eq!(s, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn fingerprint_skips_invariant_positions() {
+        let ec = make_ec(
+            0,
+            &[(0, b"ACGT"), (1, b"ACGT")],
+            &[(0, (0, 4)), (1, (100, 104))],
+        );
+        let fg = FamilyGraph { family_id: 0, nodes: vec![ec], edges: vec![] };
+        let fp = build_exon_fingerprints(&fg, 2);
+        assert_eq!(fp.n_sites, 0, "identical copies yield zero variant sites");
+    }
 }

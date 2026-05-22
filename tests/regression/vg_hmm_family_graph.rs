@@ -26,6 +26,7 @@ fn mk_bundle_with_reads(start: u64, end: u64, exons: Vec<(u64, u64)>) -> Bundle 
     Bundle {
         chrom: "chr1".into(), start, end, strand: '+',
         reads: vec![read],
+            vg_family_id: None,
         junction_stats: JunctionStats::default(),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
         synthetic: false, rescue_class: None,
@@ -54,7 +55,7 @@ fn exon_class_carries_per_copy_sequences() {
         per_copy_sequences: vec![(0, b"ACGT".to_vec()), (1, b"ACAT".to_vec())],
         per_copy_spans: vec![(0, (1000, 1500)), (1, (1000, 1500))],
         copy_specific: false,
-        profile: None,
+        profile: None, per_copy_profiles: vec![], per_copy_cov: vec![],
     };
     assert_eq!(cls.per_copy_sequences.len(), 2);
     assert_eq!(cls.per_copy_spans.len(), 2);

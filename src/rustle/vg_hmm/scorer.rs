@@ -841,13 +841,13 @@ mod tests {
                 idx: NodeIdx(0), chrom: "x".into(), span: (0, 4), strand: '+',
                 per_copy_sequences: vec![(0, b"ACGT".to_vec())],
                 per_copy_spans: vec![(0, (0, 4))],
-                copy_specific: true, profile: Some(p1), per_copy_profiles: vec![],
+                copy_specific: true, profile: Some(p1), per_copy_profiles: vec![], per_copy_cov: vec![],
             },
             ExonClass {
                 idx: NodeIdx(1), chrom: "x".into(), span: (10, 14), strand: '+',
                 per_copy_sequences: vec![(0, b"TGCA".to_vec())],
                 per_copy_spans: vec![(0, (10, 14))],
-                copy_specific: true, profile: Some(p2), per_copy_profiles: vec![],
+                copy_specific: true, profile: Some(p2), per_copy_profiles: vec![], per_copy_cov: vec![],
             },
         ];
         let edges = vec![JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 1, strand: '+' }];
@@ -888,7 +888,7 @@ mod tests {
                 ],
                 copy_specific: false,
                 profile: Some(ProfileHmm::from_singleton(&n0_seq)),
-                per_copy_profiles: vec![],
+                per_copy_profiles: vec![], per_copy_cov: vec![],
             },
             ExonClass {
                 idx: NodeIdx(1), chrom: "x".into(),
@@ -897,7 +897,7 @@ mod tests {
                 per_copy_spans: vec![(0, (20, 20 + n1_seq.len() as u64))],
                 copy_specific: true,
                 profile: Some(ProfileHmm::from_singleton(&n1_seq)),
-                per_copy_profiles: vec![],
+                per_copy_profiles: vec![], per_copy_cov: vec![],
             },
             ExonClass {
                 idx: NodeIdx(2), chrom: "x".into(),
@@ -906,7 +906,7 @@ mod tests {
                 per_copy_spans: vec![(1, (20, 20 + n2_seq.len() as u64))],
                 copy_specific: true,
                 profile: Some(ProfileHmm::from_singleton(&n2_seq)),
-                per_copy_profiles: vec![],
+                per_copy_profiles: vec![], per_copy_cov: vec![],
             },
             ExonClass {
                 idx: NodeIdx(3), chrom: "x".into(),
@@ -918,7 +918,7 @@ mod tests {
                 ],
                 copy_specific: false,
                 profile: Some(ProfileHmm::from_singleton(&n3_seq)),
-                per_copy_profiles: vec![],
+                per_copy_profiles: vec![], per_copy_cov: vec![],
             },
         ];
         let edges = vec![

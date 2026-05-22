@@ -43,6 +43,12 @@ fn make_family_graph_for_negative_control() -> FamilyGraph {
                 per_copy_spans: vec![(0, (1000, 1008))],
                 copy_specific: false,
                 profile: Some(p1),
+
+                
+per_copy_profiles: vec![],
+
+                
+per_copy_cov: vec![],
             },
             ExonClass {
                 idx: NodeIdx(1),
@@ -53,6 +59,12 @@ fn make_family_graph_for_negative_control() -> FamilyGraph {
                 per_copy_spans: vec![(0, (2000, 2008))],
                 copy_specific: false,
                 profile: Some(p2),
+
+                
+per_copy_profiles: vec![],
+
+                
+per_copy_cov: vec![],
             },
         ],
         edges: vec![JunctionEdge {

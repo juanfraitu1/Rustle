@@ -34,12 +34,20 @@ fn two_node_fg_with_profiles() -> FamilyGraph {
             per_copy_sequences: vec![(0, b"ACGTACGT".to_vec())],
             per_copy_spans: vec![(0, (1000, 1008))],
             copy_specific: false, profile: Some(p1),
+ 
+per_copy_profiles: vec![],
+ 
+per_copy_cov: vec![],
         },
         ExonClass {
             idx: NodeIdx(1), chrom: "chr1".into(), span: (2000, 2008), strand: '+',
             per_copy_sequences: vec![(0, b"TGCATGCA".to_vec())],
             per_copy_spans: vec![(0, (2000, 2008))],
             copy_specific: false, profile: Some(p2),
+ 
+per_copy_profiles: vec![],
+ 
+per_copy_cov: vec![],
         },
     ];
     let edges = vec![JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 1, strand: '+' }];
@@ -334,19 +342,19 @@ fn three_node_two_copy_fg() -> FamilyGraph {
             idx: NodeIdx(0), chrom: "chr1".into(), span: (1000, 1100), strand: '+',
             per_copy_sequences: vec![(0, b"AAAA".to_vec()), (1, b"AAAA".to_vec())],
             per_copy_spans: vec![(0, (1000, 1100)), (1, (5000, 5100))],
-            copy_specific: false, profile: None,
+            copy_specific: false, profile: None, per_copy_profiles: vec![], per_copy_cov: vec![],
         },
         ExonClass {
             idx: NodeIdx(1), chrom: "chr1".into(), span: (1500, 1600), strand: '+',
             per_copy_sequences: vec![(0, b"CCCC".to_vec())],
             per_copy_spans: vec![(0, (1500, 1600))],
-            copy_specific: true, profile: None,
+            copy_specific: true, profile: None, per_copy_profiles: vec![], per_copy_cov: vec![],
         },
         ExonClass {
             idx: NodeIdx(2), chrom: "chr1".into(), span: (2000, 2100), strand: '+',
             per_copy_sequences: vec![(0, b"GGGG".to_vec()), (1, b"GGGG".to_vec())],
             per_copy_spans: vec![(0, (2000, 2100)), (1, (6000, 6100))],
-            copy_specific: false, profile: None,
+            copy_specific: false, profile: None, per_copy_profiles: vec![], per_copy_cov: vec![],
         },
     ];
     let edges = vec![
