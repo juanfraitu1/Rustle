@@ -1003,6 +1003,14 @@ pub struct RunConfig {
     /// loose Jaccard prefilter. Default 0 (disabled). Stays DNA-side; requires
     /// --genome-fasta. Recommended starting threshold: 0.30.
     pub vg_family_min_poa_identity: f64,
+    /// Skip HMM sequence-profile fitting and forward-DP EM while still
+    /// building the FamilyGraph (ExonClass + JunctionEdges) for structural
+    /// junction propagation.  Falls back to the fast heuristic EM for read
+    /// reweighting.  Requires `--genome-fasta` (for `build_family_graph`);
+    /// does NOT require multi-mapper sequence collection.  Useful on laptops
+    /// or when HMM-EM timing is prohibitive on large datasets.  Enable with
+    /// `--vg-no-hmm`.  Default false.
+    pub vg_no_hmm: bool,
 }
 
 impl RunConfig {
@@ -1254,6 +1262,7 @@ impl Default for RunConfig {
             vg_family_min_primitive_jaccard: 0.20,
             vg_family_min_kmer_jaccard: 0.05,  // bimodal split on full GGO; no-op without --genome-fasta
             vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
+            vg_no_hmm: false,
         }
     }
 }

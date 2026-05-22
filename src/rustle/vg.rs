@@ -1576,6 +1576,11 @@ pub fn build_bundle_borrow_junctions(
             }
         }
     }
+    let total: usize = out.values().map(|v| v.len()).sum();
+    if total > 0 {
+        eprintln!("[VG] Junction propagation: {} synthetic junction(s) across {} bundle(s)",
+                  total, out.len());
+    }
     out
 }
 

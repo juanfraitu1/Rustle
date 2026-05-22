@@ -10084,6 +10084,7 @@ pub fn run<P: AsRef<Path>>(
     if config.vg_mode
         && config.vg_solver == crate::types::VgSolver::On
         && !vg_families.is_empty()
+        && !config.vg_no_hmm
     {
         let needed_hashes: std::collections::HashSet<u64> = vg_families.iter()
             .flat_map(|f| f.multimap_reads.keys().copied())
@@ -10163,10 +10164,24 @@ pub fn run<P: AsRef<Path>>(
 
                 if families_for_em.is_empty() {
                     Vec::new()
-                } else if hmm_ok {
-                    // HMM-EM path: strand-partition, build family graphs, run forward-DP EM.
+                } else {
+                    // Build FamilyGraph when genome is available (needed for
+                    // junction propagation regardless of whether HMM profiles
+                    // are fitted). With --vg-no-hmm, profile fitting is
+                    // skipped and heuristic EM is used instead of HMM-EM.
+                    let build_graph = has_genome;
+                    let do_hmm = hmm_ok && !config.vg_no_hmm;
+
                     let em_hmm_genome: Option<crate::genome::GenomeIndex> =
-                        if vg_snp_genome.is_some() {
+                        if build_graph && !do_hmm {
+                            // Need genome index for graph building but HMM-EM
+                            // hasn't loaded it via vg_snp_genome path.
+                            if let Some(p) = config.genome_fasta.as_ref() {
+                                crate::genome::GenomeIndex::from_fasta(p).ok()
+                            } else {
+                                None
+                            }
+                        } else if vg_snp_genome.is_some() {
                             None
                         } else if let Some(p) = config.genome_fasta.as_ref() {
                             crate::genome::GenomeIndex::from_fasta(p).ok()
@@ -10176,70 +10191,93 @@ pub fn run<P: AsRef<Path>>(
                     let genome_ref: Option<&crate::genome::GenomeIndex> = em_hmm_genome
                         .as_ref()
                         .or(vg_snp_genome.as_ref());
+
                     let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
                     for fam in families_for_em.iter() {
                         let parts = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
                         em_hmm_partitions.extend(parts);
                     }
+
                     use rayon::prelude::*;
                     let mut family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
-                        em_hmm_partitions.par_iter()
-                            .map(|fam| {
-                                if genome_ref.is_none() { return None; }
-                                match crate::vg_hmm::family_graph::build_family_graph(
-                                    fam, &bundles, genome_ref, 0.30, 0.30,
-                                ) {
-                                    Ok(mut fg) => {
-                                        if crate::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).is_err() {
-                                            return None;
+                        if build_graph && genome_ref.is_some() {
+                            em_hmm_partitions.par_iter()
+                                .map(|fam| {
+                                    match crate::vg_hmm::family_graph::build_family_graph(
+                                        fam, &bundles, genome_ref, 0.30, 0.30,
+                                    ) {
+                                        Ok(mut fg) => {
+                                            if do_hmm {
+                                                // Full HMM path: fit sequence profiles.
+                                                if crate::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).is_err() {
+                                                    return None;
+                                                }
+                                            }
+                                            Some(fg)
                                         }
-                                        Some(fg)
+                                        Err(_) => None,
                                     }
-                                    Err(_) => None,
-                                }
-                            })
-                            .collect();
-                    let em_res = crate::vg::run_pre_assembly_em_hmm(
-                        &em_hmm_partitions,
-                        &mut bundles,
-                        &family_graphs,
-                        &config.vg_multimap_sequences,
-                        config.vg_em_max_iter,
-                        config.vg_snp,
-                        config.vg_junction_bonus,
-                        config.vg_em_uniform_prior,
-                        config.vg_exon_len_penalty,
-                    );
-                    // Annotate per-copy exon coverage on each FamilyGraph now
-                    // that EM weights are final. Populates ExonClass.per_copy_cov
-                    // for diagnostics and future copy-aware path extraction.
-                    for (pi, fam) in em_hmm_partitions.iter().enumerate() {
-                        if let Some(fg) = family_graphs.get_mut(pi).and_then(|o| o.as_mut()) {
-                            crate::vg::annotate_per_copy_exon_coverage(fam, &bundles, fg);
+                                })
+                                .collect()
+                        } else {
+                            vec![None; em_hmm_partitions.len()]
+                        };
+
+                    let em_res = if do_hmm {
+                        // Full HMM-EM path.
+                        let res = crate::vg::run_pre_assembly_em_hmm(
+                            &em_hmm_partitions,
+                            &mut bundles,
+                            &family_graphs,
+                            &config.vg_multimap_sequences,
+                            config.vg_em_max_iter,
+                            config.vg_snp,
+                            config.vg_junction_bonus,
+                            config.vg_em_uniform_prior,
+                            config.vg_exon_len_penalty,
+                        );
+                        for (pi, fam) in em_hmm_partitions.iter().enumerate() {
+                            if let Some(fg) = family_graphs.get_mut(pi).and_then(|o| o.as_mut()) {
+                                crate::vg::annotate_per_copy_exon_coverage(fam, &bundles, fg);
+                            }
                         }
-                    }
-                    // Build per-bundle borrow-coverage summary for the assembly loop.
-                    bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
-                        &em_hmm_partitions,
-                        &family_graphs,
-                    );
-                    // Build per-bundle synthetic junction list for structural
-                    // graph merging (junction propagation from sibling copies).
-                    bundle_borrow_junctions = crate::vg::build_bundle_borrow_junctions(
-                        &em_hmm_partitions,
-                        &family_graphs,
-                        &bundles,
-                    );
-                    em_res
-                } else {
-                    // Heuristic fallback (SNP-aware if --vg-snp set).
-                    if config.vg_snp {
-                        crate::vg::run_pre_assembly_em_with_snps(
-                            &families_for_em, &mut bundles, config.vg_em_max_iter)
+                        res
                     } else {
-                        crate::vg::run_pre_assembly_em(
-                            &families_for_em, &mut bundles, config.vg_em_max_iter)
+                        // Graph-EM (--vg-no-hmm) or heuristic fallback:
+                        // FamilyGraph already built above (if genome available);
+                        // annotate per-copy coverage for junction propagation.
+                        if build_graph {
+                            eprintln!("[VG] Graph-EM mode (--vg-no-hmm): FamilyGraph built, HMM profiles skipped");
+                            for (pi, fam) in em_hmm_partitions.iter().enumerate() {
+                                if let Some(fg) = family_graphs.get_mut(pi).and_then(|o| o.as_mut()) {
+                                    crate::vg::annotate_per_copy_exon_coverage(fam, &bundles, fg);
+                                }
+                            }
+                        }
+                        if config.vg_snp {
+                            crate::vg::run_pre_assembly_em_with_snps(
+                                &families_for_em, &mut bundles, config.vg_em_max_iter)
+                        } else {
+                            crate::vg::run_pre_assembly_em(
+                                &families_for_em, &mut bundles, config.vg_em_max_iter)
+                        }
+                    };
+
+                    // Junction propagation and coverage borrowing: available
+                    // whenever FamilyGraph was built (hmm_ok OR --vg-no-hmm
+                    // with --genome-fasta).
+                    if build_graph {
+                        bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
+                            &em_hmm_partitions,
+                            &family_graphs,
+                        );
+                        bundle_borrow_junctions = crate::vg::build_bundle_borrow_junctions(
+                            &em_hmm_partitions,
+                            &family_graphs,
+                            &bundles,
+                        );
                     }
+                    em_res
                 }
             }
         }

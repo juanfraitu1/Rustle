@@ -481,6 +481,13 @@ struct Args {
     #[arg(long, default_value = "on")]
     vg_solver: String,
 
+    /// Skip HMM sequence-profile fitting and forward-DP EM; still builds the
+    /// FamilyGraph (requires --genome-fasta) for structural junction
+    /// propagation and falls back to fast heuristic EM for read reweighting.
+    /// Recommended for laptop/low-CPU runs.
+    #[arg(long)]
+    vg_no_hmm: bool,
+
     /// Use SNPs (from MD tag) for copy assignment in VG mode
     #[arg(long)]
     vg_snp: bool,
@@ -756,6 +763,7 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_candidate_loci: std::collections::HashMap::new(),
         vg_report: args.vg_report.map(std::path::PathBuf::from),
         vg_solver: args.vg_solver.parse().unwrap_or(rustle::types::VgSolver::On),
+        vg_no_hmm: args.vg_no_hmm,
         vg_snp: args.vg_snp,
         vg_phase: args.vg_phase,
         vg_min_novel_reads: args.vg_min_novel_reads,
