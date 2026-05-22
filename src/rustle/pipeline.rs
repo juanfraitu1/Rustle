@@ -10118,6 +10118,11 @@ pub fn run<P: AsRef<Path>>(
     // Tuple: (donor, acceptor, strand, max_sibling_mrcount)
     let mut bundle_borrow_junctions: std::collections::HashMap<usize, Vec<(u64, u64, char, f64)>> =
         std::collections::HashMap::new();
+    // Per-bundle dark exon spans from sibling ExonClass coverage.
+    // Synthetic bundlenodes for these spans are injected before graph construction
+    // so splice graphs can grow paths through zero-coverage exons.
+    let mut bundle_completion_nodes: std::collections::HashMap<usize, Vec<(u64, u64)>> =
+        std::collections::HashMap::new();
 
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
@@ -10276,6 +10281,12 @@ pub fn run<P: AsRef<Path>>(
                             &family_graphs,
                             &bundles,
                         );
+                        if std::env::var_os("RUSTLE_VG_COMPLETION_OFF").is_none() {
+                            bundle_completion_nodes = crate::vg::build_bundle_completion_nodes(
+                                &em_hmm_partitions,
+                                &family_graphs,
+                            );
+                        }
                     }
                     em_res
                 }
@@ -12462,6 +12473,30 @@ pub fn run<P: AsRef<Path>>(
                 let effective_jstats = local_jstats_opt
                     .as_ref()
                     .unwrap_or(&graph_bundle.junction_stats);
+
+                // Graph completion: inject synthetic bundlenodes for dark exons
+                // predicted by sibling copies. Lets the graph grow paths through
+                // zero-coverage regions without requiring EM read reweighting.
+                let bundlenodes = if let Some(spans) = bundle_completion_nodes.get(&bundle_idx) {
+                    if !spans.is_empty() {
+                        let mut items = bundlenodes_to_vec(bundlenodes.as_ref());
+                        let max_bid = items.iter().map(|(bid, _, _, _)| *bid).max().unwrap_or(0);
+                        let mut next_bid = max_bid + 1;
+                        for &(s, e) in spans {
+                            let covered = items.iter().any(|(_, bs, be, _)| *bs <= s && *be >= e);
+                            if !covered {
+                                items.push((next_bid, s, e, 1.0));
+                                next_bid += 1;
+                            }
+                        }
+                        items.sort_unstable_by_key(|(_, s, _, _)| *s);
+                        vec_to_bundlenodes(&items)
+                    } else {
+                        bundlenodes
+                    }
+                } else {
+                    bundlenodes
+                };
 
                 let (mut graph, mut longtrim_synth, longtrim_stats) = create_graph_with_longtrim(
                     &junctions,

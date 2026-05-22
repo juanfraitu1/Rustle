@@ -287,6 +287,93 @@ pub fn refine_by_minimizer_jaccard(
     g.into_values().collect()
 }
 
+/// Augment position clusters by merging singleton exons across copies via
+/// sequence similarity.
+///
+/// Position clusters correctly group overlapping copies (tandem arrays) but
+/// leave non-overlapping copies (e.g. RBMY copies scattered across the Y
+/// chromosome) as singletons. This function:
+///   1. Keeps multi-copy position clusters unchanged.
+///   2. Collects singleton exons (one per cluster).
+///   3. Runs cross-copy minimizer-Jaccard clustering on those singletons.
+///   4. Merges singleton clusters that are sequence-similar.
+///
+/// Same-copy exons are never merged (a copy's exon 3 cannot be in the same
+/// ExonClass as its exon 7, even if they look similar).
+///
+/// Returns the same `Vec<Vec<ExonRef>>` format as `cluster_by_position`.
+pub fn merge_singletons_by_sequence(
+    pos_clusters: Vec<Vec<ExonRef>>,
+    copies: &[(&str, char, Vec<(u64, u64)>)],
+    genome: &crate::genome::GenomeIndex,
+    min_jaccard: f64,
+) -> Vec<Vec<ExonRef>> {
+    use std::collections::BTreeMap;
+
+    // Split into multi-copy clusters (keep as-is) and singleton clusters.
+    let mut multi: Vec<Vec<ExonRef>> = Vec::new();
+    let mut singletons: Vec<ExonRef> = Vec::new(); // one ExonRef per singleton cluster
+    for cluster in pos_clusters {
+        if cluster.len() > 1 {
+            multi.push(cluster);
+        } else if let Some(&er) = cluster.first() {
+            singletons.push(er);
+        }
+    }
+
+    if singletons.is_empty() {
+        // No singletons to merge — early exit (all clusters already multi-copy).
+        multi.extend(singletons.into_iter().map(|er| vec![er]));
+        return multi;
+    }
+
+    // Compute minimizer sets for all singleton exons.
+    let seqs_and_refs: Vec<(ExonRef, Vec<u8>)> = singletons.iter()
+        .map(|&(cid, ei)| {
+            let (chrom, _, exons) = &copies[cid];
+            let (s, e) = exons[ei];
+            let seq = genome.fetch_sequence(chrom, s, e).unwrap_or_default();
+            ((cid, ei), seq)
+        })
+        .collect();
+
+    let n = seqs_and_refs.len();
+    let mins: Vec<HashSet<u64>> = seqs_and_refs.iter()
+        .map(|(_, s)| minimizers(s, 15, 10))
+        .collect();
+
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find_s(p: &mut [usize], x: usize) -> usize {
+        if p[x] == x { x } else { let r = find_s(p, p[x]); p[x] = r; r }
+    }
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let (cid_i, _) = seqs_and_refs[i].0;
+            let (cid_j, _) = seqs_and_refs[j].0;
+            if cid_i == cid_j { continue; } // never merge same-copy exons
+            let inter = mins[i].intersection(&mins[j]).count() as f64;
+            let union_sz = mins[i].union(&mins[j]).count() as f64;
+            if union_sz == 0.0 { continue; }
+            if inter / union_sz >= min_jaccard {
+                let ri = find_s(&mut parent, i);
+                let rj = find_s(&mut parent, j);
+                if ri != rj { parent[ri] = rj; }
+            }
+        }
+    }
+
+    let mut merged: BTreeMap<usize, Vec<ExonRef>> = BTreeMap::new();
+    for i in 0..n {
+        let r = find_s(&mut parent, i);
+        merged.entry(r).or_default().push(seqs_and_refs[i].0);
+    }
+
+    // Combine multi-copy position clusters with the merged singleton groups.
+    let mut result = multi;
+    result.extend(merged.into_values());
+    result
+}
+
 /// A junction observation before binding to graph nodes.
 #[derive(Debug, Clone, Copy)]
 pub struct RawJunction {
@@ -347,10 +434,45 @@ pub fn build_family_graph(
     // 2. Stage 1: position-overlap clusters.
     let pos_clusters = cluster_by_position(&copies, min_pos_recip);
 
+    // Stage 1b: if position clustering produced all singletons (copies don't
+    // overlap genomically, e.g. RBMY / TSPY scattered across a chromosome),
+    // fall back to cross-copy sequence similarity clustering. This groups
+    // structurally equivalent exons from different loci so ExonClasses span
+    // multiple copies — enabling coverage borrowing and graph completion.
+    // Guard: skip if total exons is very large (O(n²) cost).
+    let trace_compl = std::env::var_os("RUSTLE_VG_COMPLETION_TRACE").is_some();
+    // Stage 1b: merge singleton position clusters by sequence similarity.
+    // Extends ExonClass grouping to non-overlapping copies (e.g. RBMY / TSPY
+    // scattered across a chromosome). Multi-copy position clusters are kept
+    // intact; only un-grouped singleton exons are re-clustered by sequence.
+    // Guard: skip if too many exons (O(n²) cost on singletons).
+    let effective_clusters: Vec<Vec<ExonRef>> = {
+        let total_exons: usize = copies.iter().map(|(_, _, e)| e.len()).sum();
+        let n_singletons = pos_clusters.iter().filter(|c| c.len() == 1).count();
+        if trace_compl {
+            eprintln!("[FG] family={} total_exons={} pos_clusters={} singletons={} has_genome={}",
+                family.family_id, total_exons, pos_clusters.len(), n_singletons, genome.is_some());
+        }
+        if n_singletons >= 2 && total_exons <= 2000 {
+            if let Some(g) = genome {
+                let merged = merge_singletons_by_sequence(pos_clusters, &copies, g, min_jaccard);
+                if trace_compl {
+                    let n_multi = merged.iter().filter(|c| c.len() > 1).count();
+                    eprintln!("[FG]   after merge: clusters={} multi-copy={}", merged.len(), n_multi);
+                }
+                merged
+            } else {
+                pos_clusters
+            }
+        } else {
+            pos_clusters
+        }
+    };
+
     // 3. Stage 2: refine by minimizer Jaccard (requires sequences). If no genome,
     //    skip refinement — every position cluster becomes one ExonClass.
     let mut nodes: Vec<ExonClass> = Vec::new();
-    for cluster in &pos_clusters {
+    for cluster in &effective_clusters {
         // Recover sequences (or empty stubs if no genome) and original spans.
         let with_seq: Vec<(CopyId, Vec<u8>)> = cluster.iter().map(|&(cid, ei)| {
             let (chrom, _, exons) = &copies[cid];
@@ -415,15 +537,44 @@ pub fn build_family_graph(
         .collect();
     let raw = collect_family_junctions(&per_copy_juncs);
 
-    // r.donor / r.acceptor are already rounded to nearest 10 bp by
-    // collect_family_junctions (jitter absorption). Round node spans the
-    // same way so junction-to-node binding survives the rounding.
-    let mut edges: Vec<JunctionEdge> = Vec::new();
+    // r.donor / r.acceptor are rounded to nearest 10 bp by collect_family_junctions
+    // (jitter absorption). Search per_copy_spans (not span) so that multi-copy
+    // ExonClasses built by sequence clustering — where span is the union and may
+    // cover the whole chromosome — still bind junctions correctly.
+    // Group by ExonClass pair (f, t) and sum family_support so that
+    // non-overlapping copies at different absolute positions (e.g. RBMY)
+    // contribute to the same structural edge rather than creating N separate
+    // edges each with support=1.
+    use std::collections::HashMap as HMap;
+    let mut edge_map: HMap<(NodeIdx, NodeIdx), (u32, char)> = HMap::new();
     for r in &raw {
-        let from = nodes.iter().find(|n| n.span.1 / 10 * 10 == r.donor || n.span.1 == r.donor).map(|n| n.idx);
-        let to   = nodes.iter().find(|n| n.span.0 / 10 * 10 == r.acceptor || n.span.0 == r.acceptor).map(|n| n.idx);
+        let from = nodes.iter().find(|n| {
+            n.per_copy_spans.iter().any(|(_, (_, e))| {
+                e / 10 * 10 == r.donor || *e == r.donor
+            })
+        }).map(|n| n.idx);
+        let to = nodes.iter().find(|n| {
+            n.per_copy_spans.iter().any(|(_, (s, _))| {
+                s / 10 * 10 == r.acceptor || *s == r.acceptor
+            })
+        }).map(|n| n.idx);
         if let (Some(f), Some(t)) = (from, to) {
-            edges.push(JunctionEdge { from: f, to: t, family_support: r.family_support, strand: r.strand });
+            let e = edge_map.entry((f, t)).or_insert((0, r.strand));
+            e.0 += r.family_support;
+        }
+    }
+    let edges: Vec<JunctionEdge> = edge_map.into_iter()
+        .map(|((f, t), (support, strand))| JunctionEdge {
+            from: f, to: t, family_support: support, strand,
+        })
+        .collect();
+
+    if trace_compl {
+        let multi_edges = edges.iter().filter(|e| e.family_support >= 2).count();
+        eprintln!("[FG] family={} edges={} edges_support>=2={}",
+                  family.family_id, edges.len(), multi_edges);
+        for e in edges.iter().filter(|e| e.family_support >= 2).take(5) {
+            eprintln!("[FG]   edge {:?}->{:?} support={}", e.from, e.to, e.family_support);
         }
     }
 

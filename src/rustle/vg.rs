@@ -1520,13 +1520,25 @@ pub fn build_bundle_borrow_junctions(
     bundles: &[crate::types::Bundle],
 ) -> HashMap<usize, Vec<(u64, u64, char, f64)>> {
     use crate::types::Junction;
+    let trace = std::env::var_os("RUSTLE_VG_COMPLETION_TRACE").is_some();
     let mut out: HashMap<usize, Vec<(u64, u64, char, f64)>> = HashMap::new();
     for (pi, fam) in partitions.iter().enumerate() {
         let fg = match family_graphs.get(pi).and_then(|o| o.as_ref()) {
             Some(g) if !g.edges.is_empty() => g,
-            _ => continue,
+            _ => {
+                if trace {
+                    eprintln!("[VG-JCT] partition {} — no FamilyGraph or no edges", pi);
+                }
+                continue;
+            }
         };
         let n_copies = fam.bundle_indices.len();
+        if trace {
+            let n_multi = fg.edges.iter().filter(|e| e.family_support >= 2).count();
+            eprintln!("[VG-JCT] partition {} fam_id={} n_copies={} edges={} edges_supp>=2={}",
+                      pi, fam.family_id, n_copies, fg.edges.len(), n_multi);
+        }
+        let mut edge_trace_count = 0usize;
         for edge in &fg.edges {
             if edge.family_support < 2 { continue; }
             let from_ec = &fg[edge.from];
@@ -1558,7 +1570,20 @@ pub fn build_bundle_borrow_junctions(
                     copy_info[copy_id] = Some((d, a, local));
                 }
             }
+            if trace && edge_trace_count < 3 {
+                edge_trace_count += 1;
+                let n_found = copy_info.iter().filter(|x| x.is_some()).count();
+                let max_local = copy_info.iter().filter_map(|x| x.as_ref()).map(|(_, _, c)| *c).fold(0.0_f64, f64::max);
+                let min_local = copy_info.iter().filter_map(|x| x.as_ref()).map(|(_, _, c)| *c).fold(f64::MAX, f64::min);
+                eprintln!("[VG-JCT]   edge {:?}->{:?} supp={} copies_with_spans={}/{} max_count={:.2} min_count={:.2}",
+                          edge.from, edge.to, edge.family_support, n_found, n_copies, max_local, min_local);
+            }
             // Propagate to under-represented copies.
+            // Two conditions:
+            // (A) High-coverage case: sibling has ≥2 reads AND this copy has < 50%.
+            // (B) Dark-junction case: this copy has 0 reads but any sibling has ≥0.5.
+            //     Fires for sparse families where all copies have low coverage but
+            //     some copies are missing specific junction evidence entirely.
             for copy_id in 0..n_copies {
                 let bi = fam.bundle_indices[copy_id];
                 if let Some((donor, acceptor, this_count)) = copy_info[copy_id] {
@@ -1568,7 +1593,10 @@ pub fn build_bundle_borrow_junctions(
                         .filter_map(|(_, opt)| opt.as_ref())
                         .map(|(_, _, c)| *c)
                         .fold(0.0_f64, f64::max);
-                    if max_sibling >= 2.0 && this_count < max_sibling * 0.5 {
+                    let propagate =
+                        (max_sibling >= 2.0 && this_count < max_sibling * 0.5) ||
+                        (max_sibling >= 0.5 && this_count < 0.5);
+                    if propagate {
                         out.entry(bi).or_default()
                             .push((donor, acceptor, edge.strand, max_sibling));
                     }
@@ -1580,6 +1608,79 @@ pub fn build_bundle_borrow_junctions(
     if total > 0 {
         eprintln!("[VG] Junction propagation: {} synthetic junction(s) across {} bundle(s)",
                   total, out.len());
+    }
+    out
+}
+
+/// Identify dark exons in sparse copies that siblings predict should exist.
+///
+/// For each ExonClass in the FamilyGraph, checks every copy: if the copy's
+/// `per_copy_cov` is < 1.0 but at least one sibling has ≥ 2.0, the copy's
+/// `per_copy_spans` entry is returned as a completion candidate. Callers inject
+/// synthetic bundlenodes for these spans before graph construction so the splice
+/// graph can grow paths through the dark region without EM read reweighting.
+///
+/// Returns: HashMap<bundle_idx, Vec<(start, end)>>
+pub fn build_bundle_completion_nodes(
+    partitions: &[FamilyGroup],
+    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+) -> HashMap<usize, Vec<(u64, u64)>> {
+    let trace = std::env::var_os("RUSTLE_VG_COMPLETION_TRACE").is_some();
+    let mut out: HashMap<usize, Vec<(u64, u64)>> = HashMap::new();
+    for (pi, fam) in partitions.iter().enumerate() {
+        let fg = match family_graphs.get(pi).and_then(|o| o.as_ref()) {
+            Some(g) if !g.nodes.is_empty() => g,
+            _ => {
+                if trace {
+                    eprintln!("[VG-COMPL] partition {} — no FamilyGraph or empty", pi);
+                }
+                continue;
+            }
+        };
+        let n_copies = fam.bundle_indices.len();
+        if trace {
+            eprintln!("[VG-COMPL] partition {} — {} ExonClasses, {} copies", pi, fg.nodes.len(), n_copies);
+        }
+        for ec in &fg.nodes {
+            if ec.per_copy_cov.is_empty() {
+                if trace {
+                    eprintln!("[VG-COMPL]   ExonClass span={:?} — per_copy_cov empty (not annotated?)", ec.span);
+                }
+                continue;
+            }
+            for copy_id in 0..n_copies {
+                let bi = fam.bundle_indices[copy_id];
+                let span = match ec.per_copy_spans.iter()
+                    .find(|(k, _)| *k == copy_id)
+                    .map(|(_, s)| *s)
+                {
+                    Some(s) => s,
+                    None => continue,
+                };
+                let this_cov = ec.per_copy_cov.iter()
+                    .find(|(k, _)| *k == copy_id)
+                    .map(|(_, c)| *c)
+                    .unwrap_or(0.0);
+                let max_sibling_cov = ec.per_copy_cov.iter()
+                    .filter(|(k, _)| *k != copy_id)
+                    .map(|(_, c)| *c)
+                    .fold(0.0_f64, f64::max);
+                if trace {
+                    eprintln!("[VG-COMPL]   copy_id={} bi={} span={}-{} this_cov={:.2} max_sib={:.2}",
+                              copy_id, bi, span.0, span.1, this_cov, max_sibling_cov);
+                }
+                if this_cov < 1.0 && max_sibling_cov >= 2.0 {
+                    out.entry(bi).or_default().push(span);
+                }
+            }
+        }
+    }
+    if std::env::var_os("RUSTLE_VG_COMPLETION_OFF").is_none() {
+        let total: usize = out.values().map(|v| v.len()).sum();
+        if total > 0 {
+            eprintln!("[VG] Graph completion: {} dark exon(s) across {} bundle(s) → synthetic bundlenodes",
+                      total, out.len());
+        }
     }
     out
 }
