@@ -1502,6 +1502,83 @@ pub fn build_bundle_borrow_coverage(
     out
 }
 
+/// Build per-bundle lists of junctions that should be propagated from
+/// well-covered sibling copies in the same gene family.
+///
+/// For each FamilyGraph edge (from_ec → to_ec, strand), compute the per-copy
+/// junction coordinates from ExonClass.per_copy_spans and compare local
+/// junction read counts against the best-covered sibling. Junctions where
+/// the sibling has ≥2 reads AND this copy has fewer than 50% of the sibling
+/// count are emitted as candidates for synthetic injection before graph
+/// construction — completing sparse splice graphs structurally without
+/// requiring per-nucleotide HMM evidence.
+///
+/// Returns: HashMap<bundle_idx, Vec<(donor, acceptor, strand, max_sibling_count)>>
+pub fn build_bundle_borrow_junctions(
+    partitions: &[FamilyGroup],
+    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    bundles: &[crate::types::Bundle],
+) -> HashMap<usize, Vec<(u64, u64, char, f64)>> {
+    use crate::types::Junction;
+    let mut out: HashMap<usize, Vec<(u64, u64, char, f64)>> = HashMap::new();
+    for (pi, fam) in partitions.iter().enumerate() {
+        let fg = match family_graphs.get(pi).and_then(|o| o.as_ref()) {
+            Some(g) if !g.edges.is_empty() => g,
+            _ => continue,
+        };
+        let n_copies = fam.bundle_indices.len();
+        for edge in &fg.edges {
+            if edge.family_support < 2 { continue; }
+            let from_ec = &fg[edge.from];
+            let to_ec   = &fg[edge.to];
+            // On + strand the junction is (end-of-from-exon, start-of-to-exon);
+            // on - strand the from/to order in the graph is reversed relative to
+            // genomic position, so the intron lies between to_ec.end and from_ec.start.
+            // Unify: left_ec is whichever exon is genomically to the left.
+            let (left_ec, right_ec) = if edge.strand == '-' {
+                (to_ec, from_ec)
+            } else {
+                (from_ec, to_ec)
+            };
+            // Collect per-copy junction counts (donor, acceptor, local_mrcount).
+            let mut copy_info: Vec<Option<(u64, u64, f64)>> = vec![None; n_copies];
+            for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                let donor = left_ec.per_copy_spans.iter()
+                    .find(|(k, _)| *k == copy_id)
+                    .map(|(_, s)| s.1);       // end of left exon
+                let acceptor = right_ec.per_copy_spans.iter()
+                    .find(|(k, _)| *k == copy_id)
+                    .map(|(_, s)| s.0);       // start of right exon
+                if let (Some(d), Some(a)) = (donor, acceptor) {
+                    if d >= a { continue; }   // sanity: donor must be left of acceptor
+                    let local = bundles.get(bi)
+                        .and_then(|b| b.junction_stats.get(&Junction { donor: d, acceptor: a }))
+                        .map(|js| js.mrcount)
+                        .unwrap_or(0.0);
+                    copy_info[copy_id] = Some((d, a, local));
+                }
+            }
+            // Propagate to under-represented copies.
+            for copy_id in 0..n_copies {
+                let bi = fam.bundle_indices[copy_id];
+                if let Some((donor, acceptor, this_count)) = copy_info[copy_id] {
+                    let max_sibling = copy_info.iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != copy_id)
+                        .filter_map(|(_, opt)| opt.as_ref())
+                        .map(|(_, _, c)| *c)
+                        .fold(0.0_f64, f64::max);
+                    if max_sibling >= 2.0 && this_count < max_sibling * 0.5 {
+                        out.entry(bi).or_default()
+                            .push((donor, acceptor, edge.strand, max_sibling));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Partition a (possibly mixed-strand) family into single-strand sub-families
 /// AND remap each sub-family's `multimap_reads` so `fam_pos` values index into
 /// the new `bundle_indices`. Multi-mapper entries pointing to bundles outside

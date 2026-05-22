@@ -10113,6 +10113,10 @@ pub fn run<P: AsRef<Path>>(
     //         max_sibling_cov, n_copies_total)
     let mut bundle_borrow_cov: std::collections::HashMap<usize, Vec<(u64, u64, bool, f64, f64, f64, usize)>> =
         std::collections::HashMap::new();
+    // Per-bundle synthetic junctions from well-covered sibling copies.
+    // Tuple: (donor, acceptor, strand, max_sibling_mrcount)
+    let mut bundle_borrow_junctions: std::collections::HashMap<usize, Vec<(u64, u64, char, f64)>> =
+        std::collections::HashMap::new();
 
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
@@ -10218,6 +10222,13 @@ pub fn run<P: AsRef<Path>>(
                     bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
                         &em_hmm_partitions,
                         &family_graphs,
+                    );
+                    // Build per-bundle synthetic junction list for structural
+                    // graph merging (junction propagation from sibling copies).
+                    bundle_borrow_junctions = crate::vg::build_bundle_borrow_junctions(
+                        &em_hmm_partitions,
+                        &family_graphs,
+                        &bundles,
                     );
                     em_res
                 } else {
@@ -12280,7 +12291,7 @@ pub fn run<P: AsRef<Path>>(
         };
         let process_graph =
             |graph_bundle: &crate::types::Bundle,
-             junctions: Vec<Junction>,
+             mut junctions: Vec<Junction>,
              bundlenodes: Option<CBundlenode>,
              reads: &[BundleRead],
              coverage_reads: &[BundleRead],
@@ -12377,6 +12388,43 @@ pub fn run<P: AsRef<Path>>(
                     }
                 }
 
+                // Structural junction propagation: before building the splice
+                // graph, inject junctions from well-covered sibling copies that
+                // are absent or under-represented in this copy. Uses FamilyGraph
+                // edge equivalences (structural signal) — no per-nucleotide
+                // sequence required. Synthetic junctions have consleft/consright=-1
+                // (unknown) so they survive canonical-site filters.
+                let mut local_jstats_opt: Option<JunctionStats> = None;
+                if let Some(borrow_jcts) = bundle_borrow_junctions.get(&bundle_idx) {
+                    if !borrow_jcts.is_empty() {
+                        let mut local = graph_bundle.junction_stats.clone();
+                        for &(donor, acceptor, strand, sibling_count) in borrow_jcts {
+                            let jct = Junction { donor, acceptor };
+                            local.entry(jct).or_insert_with(|| {
+                                let c = (sibling_count * 0.25).min(5.0);
+                                JunctionStat {
+                                    mrcount: c,
+                                    nreads_good: c,
+                                    rcount: c as u32,
+                                    strand: Some(if strand == '+' { 1i8 } else { -1i8 }),
+                                    nm: c,
+                                    mm: c,
+                                    leftsupport: c,
+                                    rightsupport: c,
+                                    ..JunctionStat::default()
+                                }
+                            });
+                            if !junctions.contains(&jct) {
+                                junctions.push(jct);
+                            }
+                        }
+                        local_jstats_opt = Some(local);
+                    }
+                }
+                let effective_jstats = local_jstats_opt
+                    .as_ref()
+                    .unwrap_or(&graph_bundle.junction_stats);
+
                 let (mut graph, mut longtrim_synth, longtrim_stats) = create_graph_with_longtrim(
                     &junctions,
                     graph_bundle.start,
@@ -12385,7 +12433,7 @@ pub fn run<P: AsRef<Path>>(
                     config.junction_support,
                     Some(reads),
                     graph_bundle.strand,
-                    Some(&graph_bundle.junction_stats),
+                    Some(effective_jstats),
                     &bpcov,
                     Some(&graph_bpcov_stranded),
                     &lstart,
