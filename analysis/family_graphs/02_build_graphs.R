@@ -88,16 +88,294 @@ build_variation_graph <- function(exon_df) {
        paths = paths, exon_df = exon_df)
 }
 
-# Returns TRUE if the family has both shared exons (structural homology) AND
-# copy-specific exons (sequence divergence between paralogs).
-# A family where all copies are 100% identical would return FALSE — treated as
-# one locus. This is conservative but appropriate for the variation-graph
-# formulation (copies must be distinguishable by their paths).
+# ──────────────────────────────────────────────────────────────────────────────
+# Read-equivalence of gene copies (mathematical formulation)
+# ──────────────────────────────────────────────────────────────────────────────
+# Let G = (V, E) be the variation graph for a gene family F.
+# For each gene copy c in F, let T(c) ⊆ Paths(G) be the set of directed paths
+# through G that correspond to c's annotated transcripts (one path per isoform).
+#
+# Two copies c, c' ∈ F are READ-EQUIVALENT (written c ≈ c') iff T(c) = T(c').
+#
+# Properties:
+#   reflexive  : T(c) = T(c)
+#   symmetric  : T(c) = T(c') ⇒ T(c') = T(c)
+#   transitive : T(c)=T(c') ∧ T(c')=T(c'') ⇒ T(c)=T(c'')
+# Hence ≈ is an equivalence relation. The quotient F/≈ is the set of
+# RESOLVABLE EQUIVALENCE CLASSES; each class is the minimum unit at which
+# the family can be quantified using read evidence on G.
+#
+# Resolvability theorem. For any pair c ≈ c', no read whose evidence is a
+# pattern of nodes V ⊆ V and junctions E ⊆ E can distinguish c from c':
+# the read is consistent with c iff it embeds in some path in T(c) = T(c'),
+# which is by hypothesis the same set of paths for c'. □
+#
+# Witness lemma. If c ≁ c', then ∃ a node v or edge e that appears in some
+# path of T(c) but no path of T(c') (or vice versa). v (resp. e) is called a
+# WITNESS for the distinction; any read that maps to v (resp. spans e) can
+# discriminate c from c'.
+#
+# Implementation notes:
+#   • The set T(c) is built from vg$transcript_paths when available (one
+#     ordered node-id sequence per annotated isoform). Falls back to the
+#     single canonical path vg$paths[[c]] only if transcript_paths is absent.
+#   • Two paths are compared by exact sequence equality (DAG paths are
+#     uniquely determined by node sequence, so set-of-paths equality coincides
+#     with set-of-sequences equality).
+#   • Sets are canonicalised by sorting their string representations before
+#     comparison, so signature equality is order-independent within T(c).
+family_equivalence_classes <- function(vg) {
+  copy_ids <- names(vg$paths)
+
+  # Build T(c) for each copy c: set of distinct transcript paths
+  tx_paths_per_copy <- if (!is.null(vg$transcript_paths) &&
+                            length(vg$transcript_paths) > 0L) {
+    # Map tx_id -> gene_id
+    tx_gene <- unique(vg$exon_df[, c("gene_id", "tx_id")])
+    lapply(copy_ids, function(c) {
+      gene_txs <- tx_gene$tx_id[tx_gene$gene_id == c]
+      gene_txs <- gene_txs[gene_txs %in% names(vg$transcript_paths)]
+      paths <- lapply(gene_txs, function(tx) vg$transcript_paths[[tx]])
+      unique(paths)
+    })
+  } else {
+    lapply(copy_ids, function(c) list(vg$paths[[c]]))
+  }
+  names(tx_paths_per_copy) <- copy_ids
+
+  # Canonical signature: sorted unique transcript paths
+  signature <- vapply(tx_paths_per_copy, function(tx_set) {
+    s <- vapply(tx_set, function(p) paste(as.character(p), collapse = ","),
+                character(1))
+    paste(sort(unique(s)), collapse = " | ")
+  }, character(1))
+
+  unique_sigs <- unique(unname(signature))
+  class_names <- paste0("class_", seq_along(unique_sigs))
+  classes <- setNames(
+    lapply(unique_sigs, function(s) copy_ids[signature == s]),
+    class_names
+  )
+
+  # Representative isoform set per class (the first member's T(c))
+  class_isoform_sets <- setNames(
+    lapply(seq_along(unique_sigs), function(i) {
+      rep_copy <- classes[[i]][1]
+      tx_paths_per_copy[[rep_copy]]
+    }),
+    class_names
+  )
+
+  # For convenience: the union of nodes/edges used by each class
+  class_node_set <- setNames(
+    lapply(class_isoform_sets, function(paths) {
+      sort(unique(unlist(paths)))
+    }),
+    class_names
+  )
+  class_edge_set <- setNames(
+    lapply(class_isoform_sets, function(paths) {
+      e <- do.call(rbind, lapply(paths, function(p) {
+        if (length(p) < 2L) return(matrix(integer(0), 0, 2))
+        cbind(p[-length(p)], p[-1L])
+      }))
+      if (is.null(e) || nrow(e) == 0L) return(matrix(integer(0), 0, 2))
+      unique(e)
+    }),
+    class_names
+  )
+
+  list(
+    n_copies        = length(copy_ids),
+    n_classes       = length(unique_sigs),
+    classes         = classes,
+    class_isoforms  = class_isoform_sets,
+    class_nodes     = class_node_set,
+    class_edges     = class_edge_set,
+    fully_resolved  = length(unique_sigs) == length(copy_ids)
+  )
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EXTENDED DEFINITION: multi-component multi-copy gene loci
+# ──────────────────────────────────────────────────────────────────────────────
+# Let L be a set of N copies at clustered genomic positions. The variation
+# graph G(L) decomposes into K ≥ 1 weakly-connected components G_1,...,G_K,
+# where n_k = # copies whose path lies entirely in G_k (so Σ n_k = N).
+#
+# Classification:
+#   K = 1, n_1 ≥ 2  → COHERENT multi-copy family (passes is_multicopy_family)
+#   K > 1, any n_k>1 → MIXED CLUSTER (some sub-families collapse, others don't)
+#   K = N            → FULLY FRAGMENTED CLUSTER (every copy is its own
+#                     component; sequence-level paralogy too diverged for
+#                     ≥85% identity but copies remain genomically clustered)
+#
+# Key property: reads land on nodes ∈ V(G_k) for exactly one k; therefore
+# read-assignment is component-local. Equivalence classes are computed
+# independently within each G_k. The total set of resolvable units is
+# ∐_{k=1..K} (F_k / ≈_k), the disjoint union of per-component quotients.
+#
+# Quantification: any read landing in G_k is assigned to a member of F_k / ≈_k
+# (the equivalence class quotient for that component). Cross-component
+# assignment never occurs by construction.
+analyse_locus_cluster <- function(vg) {
+  g <- vg$graph
+  if (igraph::vcount(g) == 0L) {
+    return(list(type = "empty", n_components = 0L, n_copies = 0L,
+                n_total_classes = 0L, fully_resolved = TRUE,
+                components = data.frame()))
+  }
+
+  comps <- igraph::components(g, mode = "weak")
+  n_comp   <- comps$no
+  n_copies <- length(vg$paths)
+  node_to_comp <- setNames(as.integer(comps$membership), igraph::V(g)$name)
+
+  # Each path lies entirely in one component (DAG paths can't cross components)
+  copy_to_comp <- vapply(vg$paths, function(p) {
+    if (length(p) == 0L) return(NA_integer_)
+    as.integer(unname(node_to_comp[as.character(p[1])]))
+  }, integer(1))
+
+  # Per-component equivalence-class analysis
+  comp_rows <- list()
+  total_classes  <- 0L
+  fully_resolved <- TRUE
+
+  for (k in seq_len(n_comp)) {
+    member_copies <- names(copy_to_comp)[copy_to_comp == k]
+    if (length(member_copies) == 0L) next   # component is exon-only orphan
+
+    sub_paths <- vg$paths[member_copies]
+    sub_exon  <- vg$exon_df[vg$exon_df$gene_id %in% member_copies, ]
+    sub_tx    <- if (!is.null(vg$transcript_paths)) {
+      tx_in_comp <- unique(sub_exon$tx_id)
+      vg$transcript_paths[tx_in_comp[tx_in_comp %in% names(vg$transcript_paths)]]
+    } else NULL
+
+    sub_vg <- list(paths = sub_paths, exon_df = sub_exon,
+                   transcript_paths = sub_tx)
+    eq <- family_equivalence_classes(sub_vg)
+
+    total_classes <- total_classes + eq$n_classes
+    if (!eq$fully_resolved) fully_resolved <- FALSE
+
+    comp_rows[[length(comp_rows) + 1L]] <- data.frame(
+      component       = k,
+      n_nodes         = comps$csize[k],
+      n_copies        = length(member_copies),
+      n_classes       = eq$n_classes,
+      fully_resolved  = eq$fully_resolved,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  comp_df <- if (length(comp_rows) > 0L) do.call(rbind, comp_rows) else data.frame()
+
+  type <- if (n_comp == 1L && n_copies >= 2L) {
+    "coherent_family"
+  } else if (n_comp > 1L && any(comp_df$n_copies >= 2L)) {
+    "mixed_cluster"
+  } else if (n_comp == n_copies && n_copies >= 2L) {
+    "fully_fragmented_cluster"
+  } else if (n_copies == 1L) {
+    "singleton"
+  } else {
+    "empty"
+  }
+
+  list(
+    type            = type,
+    n_components    = n_comp,
+    n_copies        = n_copies,
+    n_total_classes = total_classes,
+    fully_resolved  = fully_resolved,
+    components      = comp_df
+  )
+}
+
+# Broader predicate that accepts multi-component clusters as valid quantification
+# targets. Use this when L is known to be a genomically clustered set of
+# paralogs but may be too diverged for a single coherent VG.
+is_multicopy_locus <- function(vg) {
+  if (is.null(vg) || length(vg$paths) < 2L) return(FALSE)
+  cl <- analyse_locus_cluster(vg)
+  cl$type %in% c("coherent_family", "mixed_cluster", "fully_fragmented_cluster")
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Witness identification: for every pair of distinct classes, return the
+# discriminating nodes and edges (constructive proof of distinctness).
+# A read mapping to a witness node — or spanning a witness edge — can
+# discriminate the two classes.
+# ──────────────────────────────────────────────────────────────────────────────
+class_witnesses <- function(eq) {
+  k <- eq$n_classes
+  if (k < 2L) return(list())
+  pairs <- list()
+  for (i in seq_len(k - 1L)) {
+    for (j in (i + 1L):k) {
+      ni <- eq$class_nodes[[i]]; nj <- eq$class_nodes[[j]]
+      ei <- eq$class_edges[[i]]; ej <- eq$class_edges[[j]]
+      # node-level witnesses
+      nodes_i_only <- setdiff(ni, nj)
+      nodes_j_only <- setdiff(nj, ni)
+      # edge-level witnesses (require row-wise set diff)
+      ei_str <- if (nrow(ei) > 0L) apply(ei, 1, paste, collapse = ">") else character(0)
+      ej_str <- if (nrow(ej) > 0L) apply(ej, 1, paste, collapse = ">") else character(0)
+      edges_i_only <- setdiff(ei_str, ej_str)
+      edges_j_only <- setdiff(ej_str, ei_str)
+      pairs[[paste0(names(eq$classes)[i], "_vs_", names(eq$classes)[j])]] <- list(
+        nodes_i_only = nodes_i_only,
+        nodes_j_only = nodes_j_only,
+        edges_i_only = edges_i_only,
+        edges_j_only = edges_j_only,
+        n_node_witnesses = length(nodes_i_only) + length(nodes_j_only),
+        n_edge_witnesses = length(edges_i_only) + length(edges_j_only)
+      )
+    }
+  }
+  pairs
+}
+
+# Returns TRUE if the variation graph represents a coherent multi-copy family.
+# Tightened criteria (post 2026-05-19 methodology review across AMY/RBMY/GOLGA/
+# NPIP and 5 GOLGA sub-families):
+#   1. At least 2 gene copies
+#   2. Has shared exons (structural homology)
+#   3. Has copy-specific exons (paths must be distinguishable)
+#   4. Single weakly-connected component
+#   5. >= 20% of nodes are shared
+#   6. Max copies sharing a node >= ceiling(n_copies / 2)
+#   7. At least 2 distinct paths through the VG (else copies are all
+#      structurally identical and the family collapses to one effective unit)
+#
+# NOTE: Returning TRUE does NOT imply every copy is individually resolvable.
+# Families like RBMY have 5 distinct paths for 13 copies — they're valid
+# multi-copy families that must be quantified at the equivalence-class level.
+# Use family_equivalence_classes() to check resolvability.
 is_multicopy_family <- function(vg) {
-  n_genes    <- length(unique(vg$exon_df$gene_id))
-  has_shared <- any(vg$nodes$node_type == "shared")
-  has_spec   <- any(vg$nodes$node_type == "copy_specific")
-  n_genes >= 2L && has_shared && has_spec
+  n_genes <- length(vg$paths)
+  if (is.null(n_genes) || n_genes < 2L) return(FALSE)
+
+  nd <- vg$nodes
+  if (sum(nd$node_type == "shared") == 0L) return(FALSE)
+  if (sum(nd$node_type == "copy_specific") == 0L) return(FALSE)
+
+  g <- vg$graph
+  if (igraph::vcount(g) > 0L &&
+      igraph::components(g, mode = "weak")$no > 1L) return(FALSE)
+
+  pct_shared <- sum(nd$node_type == "shared") / nrow(nd)
+  if (pct_shared < 0.20) return(FALSE)
+
+  max_share <- max(nd$n_copies)
+  if (max_share < ceiling(n_genes / 2)) return(FALSE)
+
+  eq <- family_equivalence_classes(vg)
+  if (eq$n_classes < 2L) return(FALSE)
+
+  TRUE
 }
 
 build_variation_graph_seq <- function(exon_df, genome_fa,

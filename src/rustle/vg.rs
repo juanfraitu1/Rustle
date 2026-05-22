@@ -2431,14 +2431,18 @@ pub fn build_exon_fingerprints(
 /// sequence, b'=' maps to `genomic_base` stored in `per_copy_site_refs`,
 /// avoiding a FASTA re-fetch.
 ///
-/// Returns a `Vec<f64>` of length `n_copies`. Entries for copies with no
-/// sites covered by this read remain 0.0 (log-prob of 1.0 → neutral).
-/// The caller exponentiates and normalises to get posterior weights.
+/// Returns `(scores, n_sites_covered)` where:
+/// - `scores`: `Vec<f64>` of length `n_copies`. Entries for copies with no
+///   sites covered by this read remain 0.0 (log-prob of 1.0 → neutral).
+///   The caller exponentiates and normalises to get posterior weights.
+/// - `n_sites_covered`: number of diagnostic sites in `per_copy_site_refs[copy_idx]`
+///   that fall within the read's aligned exon intervals. Longer reads cover more
+///   sites and produce more decisive (larger log-likelihood gap) assignments.
 pub fn score_read_exon_fingerprint(
     read: &BundleRead,
     copy_idx: usize,
     fp: &ExonFingerprints,
-) -> Vec<f64> {
+) -> (Vec<f64>, usize) {
     use std::sync::OnceLock;
     static LOG_PROBS: OnceLock<(f64, f64)> = OnceLock::new();
     let (log_match, log_mismatch) = *LOG_PROBS.get_or_init(|| {
@@ -2450,12 +2454,13 @@ pub fn score_read_exon_fingerprint(
     });
 
     let mut scores = vec![0.0f64; fp.n_copies];
+    let mut n_covered = 0usize;
 
     let Some(site_refs) = fp.per_copy_site_refs.get(copy_idx) else {
-        return scores;
+        return (scores, 0);
     };
     if site_refs.is_empty() {
-        return scores;
+        return (scores, 0);
     }
 
     // Build mismatch lookup for this read (FxHash for hot-loop performance).
@@ -2473,6 +2478,7 @@ pub fn score_read_exon_fingerprint(
         if !read.exons.iter().any(|&(s, e)| ref_pos >= s && ref_pos < e) {
             continue;
         }
+        n_covered += 1;
 
         // Actual base the read carries at ref_pos.
         // b'=' (no mismatch recorded) → the read matches this copy's genomic
@@ -2491,7 +2497,7 @@ pub fn score_read_exon_fingerprint(
         }
     }
 
-    scores
+    (scores, n_covered)
 }
 
 /// Pre-assembly EM: redistribute multi-mapping read weights across family members
@@ -3306,6 +3312,317 @@ pub fn run_pre_assembly_em_hmm(
     results
 }
 
+/// Fingerprint-based EM: redistribute multi-mapping read weights using per-copy
+/// SNP/indel fingerprints built from `ExonClass.per_copy_sequences`.
+///
+/// Unlike `run_pre_assembly_em_hmm`, this does not run a full forward DP.
+/// Instead it accumulates log-likelihood from copy-distinguishing positions
+/// found by pairwise comparison of the family graph's per-copy sequences.
+/// Works for non-overlapping copies (RBMY/TSPY/DAZ on chrY) because positions
+/// are exon-relative, not reference-coordinate.
+///
+/// If a family has no diagnostic sites (indistinguishable copies or no
+/// family graph), returns a default (no-op) EmResult for that family.
+/// Requires `--vg-snp` so that `BundleRead.mismatches` is populated.
+pub fn run_fingerprint_em(
+    families: &[FamilyGroup],
+    bundles: &mut [Bundle],
+    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    max_iter: usize,
+) -> Vec<EmResult> {
+    use rayon::prelude::*;
+    let mut results = Vec::with_capacity(families.len());
+    let convergence_thr = 0.001;
+    let t_start = std::time::Instant::now();
+
+    // Score-gap gate (same as HMM-EM, default 10.0 log-units).
+    let gap_threshold: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(10.0);
+
+    for (fam_idx, family) in families.iter().enumerate() {
+        let n_copies = family.bundle_indices.len();
+        if n_copies < 2 || family.multimap_reads.is_empty() {
+            results.push(EmResult::default());
+            continue;
+        }
+
+        let fg_opt = family_graphs.get(fam_idx).and_then(|f| f.as_ref());
+        let fg = match fg_opt {
+            Some(g) if !g.nodes.is_empty() => g,
+            _ => {
+                eprintln!("[VG-FP-EM] Family {}: no family graph — skipping", family.family_id);
+                results.push(EmResult::default());
+                continue;
+            }
+        };
+
+        let fp = build_exon_fingerprints(fg, n_copies);
+        if fp.n_sites == 0 {
+            eprintln!(
+                "[VG-FP-EM] Family {}: 0 diagnostic sites (copies are sequence-identical) — no EM",
+                family.family_id
+            );
+            results.push(EmResult::default());
+            continue;
+        }
+
+        // PHASE 1 (sequential): collect placement lists, one per multi-mapped read.
+        struct PreEntry {
+            locs: Vec<(usize, usize)>, // (global_bi, ri)
+            fam_pos: Vec<usize>,       // copy index per loc
+            weights: Vec<f64>,         // initial weights
+        }
+
+        let mut keys: Vec<u64> = family.multimap_reads.keys().copied().collect();
+        keys.sort_unstable();
+
+        let mut pre_entries: Vec<PreEntry> = Vec::with_capacity(keys.len());
+        for rnh in &keys {
+            let locs = &family.multimap_reads[rnh];
+            let mut entry_locs: Vec<(usize, usize)> = Vec::with_capacity(locs.len());
+            let mut entry_fp: Vec<usize> = Vec::with_capacity(locs.len());
+            let mut entry_weights: Vec<f64> = Vec::with_capacity(locs.len());
+            for &(fam_pos, ri) in locs {
+                if fam_pos >= n_copies { continue; }
+                let global_bi = family.bundle_indices[fam_pos];
+                let w = if ri < bundles[global_bi].reads.len() {
+                    bundles[global_bi].reads[ri].weight
+                } else {
+                    0.0
+                };
+                entry_locs.push((global_bi, ri));
+                entry_fp.push(fam_pos);
+                entry_weights.push(w);
+            }
+            if entry_locs.len() < 2 { continue; }
+            pre_entries.push(PreEntry { locs: entry_locs, fam_pos: entry_fp, weights: entry_weights });
+        }
+
+        // PHASE 2 (parallel): pre-compute fingerprint log-scores per placement.
+        // score_read_exon_fingerprint is a pure function of (read, copy_idx, fp).
+        // We call it once per placement and take the diagonal: score for THIS copy.
+        // Constant across EM iterations.
+        struct WorkItem {
+            locs: Vec<(usize, usize)>,
+            fam_pos: Vec<usize>,
+            log_scores: Vec<f64>,
+            /// Number of diagnostic sites covered per placement. Longer reads
+            /// cover more sites and produce larger log-likelihood gaps → more
+            /// decisive assignment. Tracked for attribution quality reporting.
+            n_sites_covered: Vec<usize>,
+            weights: Vec<f64>,
+        }
+
+        let mut entries: Vec<WorkItem> = pre_entries
+            .into_par_iter()
+            .map(|pre| {
+                let mut log_scores: Vec<f64> = Vec::with_capacity(pre.locs.len());
+                let mut n_sites_covered: Vec<usize> = Vec::with_capacity(pre.locs.len());
+                for (&(global_bi, ri), &fam_pos) in pre.locs.iter().zip(pre.fam_pos.iter()) {
+                    if ri >= bundles[global_bi].reads.len() {
+                        log_scores.push(f64::NEG_INFINITY);
+                        n_sites_covered.push(0);
+                        continue;
+                    }
+                    let read = &bundles[global_bi].reads[ri];
+                    // score_read_exon_fingerprint uses read.exons (aligned
+                    // to copy fam_pos) to find covered diagnostic sites and
+                    // resolves b'=' via per_copy_site_refs[fam_pos].
+                    // We take fp_scores[fam_pos]: the log P(obs | copy=fam_pos).
+                    let (fp_scores, n_cov) = score_read_exon_fingerprint(read, fam_pos, &fp);
+                    log_scores.push(fp_scores.get(fam_pos).copied().unwrap_or(0.0));
+                    n_sites_covered.push(n_cov);
+                }
+                WorkItem {
+                    locs: pre.locs, fam_pos: pre.fam_pos,
+                    log_scores, n_sites_covered, weights: pre.weights,
+                }
+            })
+            .collect();
+
+        if entries.is_empty() {
+            results.push(EmResult::default());
+            continue;
+        }
+
+        let mut result = EmResult::default();
+
+        for iter in 0..max_iter {
+            // M-step: aggregate current weights into per-copy totals → log-priors.
+            let mut copy_total = vec![0.0_f64; n_copies];
+            for entry in &entries {
+                for (i, &w) in entry.weights.iter().enumerate() {
+                    copy_total[entry.fam_pos[i]] += w;
+                }
+            }
+            let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
+            let log_priors: Vec<f64> = copy_total.iter()
+                .map(|&t| ((t / total_sum) + 1e-3).ln())
+                .collect();
+
+            let mut max_delta: f64 = 0.0;
+            for entry in &mut entries {
+                let n = entry.locs.len();
+
+                // E-step: log-posterior = fingerprint log-score + log-prior.
+                let log_post: Vec<f64> = (0..n)
+                    .map(|i| {
+                        let s = entry.log_scores[i];
+                        if s.is_finite() { s + log_priors[entry.fam_pos[i]] }
+                        else { f64::NEG_INFINITY }
+                    })
+                    .collect();
+
+                let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                if !max_lp.is_finite() { continue; }
+
+                // Score-gap gate: skip uncertain reads.
+                if gap_threshold > 0.0 && n >= 2 {
+                    let mut best = f64::NEG_INFINITY;
+                    let mut second = f64::NEG_INFINITY;
+                    for &v in &log_post {
+                        if v > best { second = best; best = v; }
+                        else if v > second { second = v; }
+                    }
+                    if best.is_finite() && second.is_finite() && (best - second) < gap_threshold {
+                        continue;
+                    }
+                }
+
+                // Log-sum-exp normalization → posterior weights.
+                let mut total = 0.0_f64;
+                let mut exps = vec![0.0_f64; n];
+                for i in 0..n {
+                    if log_post[i].is_finite() {
+                        exps[i] = (log_post[i] - max_lp).exp();
+                        total += exps[i];
+                    }
+                }
+                if total <= 0.0 { continue; }
+                for i in 0..n {
+                    let new_w = exps[i] / total;
+                    let delta = (new_w - entry.weights[i]).abs();
+                    if delta > max_delta { max_delta = delta; }
+                    entry.weights[i] = new_w;
+                }
+            }
+
+            result.iterations = iter + 1;
+            result.max_delta = max_delta;
+            if max_delta < convergence_thr {
+                result.converged = true;
+                break;
+            }
+        }
+
+        // Apply final weights to bundles and collect attribution quality stats.
+        //
+        // Weight conservation: for every multi-mapped read the weights across all
+        // placements sum to exactly 1.0 (log-sum-exp normalisation guarantees this).
+        // Decisive assignment means one copy gets >> 0.5 — the read is not silenced,
+        // it is attributed. Uncertain reads (weight_gap < 0.1) are left near their
+        // initial 1/n_copies prior; the information is retained, not discarded.
+        //
+        // Attribution quality buckets (by weight_gap = max_w - second_max_w):
+        //   decisive  : weight_gap > 0.8  (read effectively assigned to one copy)
+        //   moderate  : 0.5 < gap ≤ 0.8
+        //   uncertain : gap ≤ 0.5         (below score-gap gate or few sites covered)
+        let mut n_reweighted = 0usize;
+        let mut n_decisive = 0usize;   // weight_gap > 0.8
+        let mut n_moderate = 0usize;   // 0.5 < gap ≤ 0.8
+        let mut n_uncertain = 0usize;  // gap ≤ 0.5
+        let mut total_sites_covered = 0usize;
+        let mut n_reads_with_sites = 0usize;
+
+        // Optional per-read TSV dump (RUSTLE_VG_FP_ATTR_TSV=<path>).
+        // Columns: family_id, read_name_hash, placement_copy, n_sites_covered,
+        //          final_weight, weight_gap, weight_sum
+        // One row per (read, placement). Useful for attributing multi-mappers
+        // back to their copy and validating weight conservation per read.
+        let attr_tsv_path: Option<String> = std::env::var("RUSTLE_VG_FP_ATTR_TSV").ok();
+        let mut attr_writer: Option<Box<dyn std::io::Write>> = attr_tsv_path
+            .as_ref()
+            .and_then(|p| {
+                use std::fs::OpenOptions;
+                OpenOptions::new().create(true).append(true).open(p).ok()
+                    .map(|f| -> Box<dyn std::io::Write> { Box::new(std::io::BufWriter::new(f)) })
+            });
+        // Write header only once (check file size).
+        if let (Some(ref p), Some(ref mut w)) = (&attr_tsv_path, &mut attr_writer) {
+            if std::fs::metadata(p).map(|m| m.len()).unwrap_or(1) <= 1 {
+                let _ = writeln!(w, "family_id\tread_name_hash\tplacement_copy\tn_sites_covered\tfinal_weight\tweight_gap\tweight_sum");
+            }
+        }
+
+        for entry in &entries {
+            // Compute weight_gap and weight_sum for this read.
+            let mut best = 0.0_f64;
+            let mut second = 0.0_f64;
+            let mut w_sum = 0.0_f64;
+            for &w in &entry.weights {
+                w_sum += w;
+                if w > best { second = best; best = w; }
+                else if w > second { second = w; }
+            }
+            let gap = best - second;
+            if gap > 0.8 { n_decisive += 1; }
+            else if gap > 0.5 { n_moderate += 1; }
+            else { n_uncertain += 1; }
+
+            // Track sites covered (use max across placements — the read itself
+            // determines this, not which copy it's aligned to).
+            let max_sites: usize = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
+            if max_sites > 0 {
+                total_sites_covered += max_sites;
+                n_reads_with_sites += 1;
+            }
+
+            for (i, &(global_bi, ri)) in entry.locs.iter().enumerate() {
+                if ri >= bundles[global_bi].reads.len() { continue; }
+                let old_w = bundles[global_bi].reads[ri].weight;
+                let new_w = entry.weights[i];
+                if (old_w - new_w).abs() > 1e-9 {
+                    bundles[global_bi].reads[ri].weight = new_w;
+                    n_reweighted += 1;
+                }
+                if let Some(ref mut w) = attr_writer {
+                    let rnh = &bundles[global_bi].reads[ri].read_name_hash;
+                    let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}",
+                        family.family_id, rnh, entry.fam_pos[i],
+                        entry.n_sites_covered[i], new_w, gap, w_sum);
+                }
+            }
+        }
+        result.reads_reweighted = n_reweighted;
+
+        // Attribution quality summary: confirms long reads (more sites) →
+        // decisive assignment, and that no weight is lost (weight_sum ≈ 1.0).
+        let n_total = n_decisive + n_moderate + n_uncertain;
+        let avg_sites = if n_reads_with_sites > 0 {
+            total_sites_covered as f64 / n_reads_with_sites as f64
+        } else { 0.0 };
+        if n_total > 0 || fp.n_sites > 0 {
+            eprintln!(
+                "[VG-FP-EM] Family {}: converged={} in {} iter (delta={:.6}), \
+                 {} diag-sites, {} reads — decisive={} moderate={} uncertain={}, \
+                 avg_sites_covered={:.1}",
+                family.family_id, result.converged, result.iterations, result.max_delta,
+                fp.n_sites, n_total, n_decisive, n_moderate, n_uncertain, avg_sites,
+            );
+        }
+        results.push(result);
+    }
+
+    let total_reweighted: usize = results.iter().map(|r| r.reads_reweighted).sum();
+    eprintln!(
+        "[VG-FP-EM] fingerprint-EM complete: {} reads adjusted across {} families in {:.1}s",
+        total_reweighted,
+        results.iter().filter(|r| r.reads_reweighted > 0).count(),
+        t_start.elapsed().as_secs_f64(),
+    );
+    results
+}
+
 /// Write family report with EM results (uses pre-saved coords since bundles are consumed).
 ///
 /// `transcripts` (optional): when provided, each bundle's reported region is
@@ -3948,18 +4265,21 @@ mod tests {
 
         // Read aligned to copy0, no mismatch at 102 → base = b'G' = copy0's base.
         let read_a = make_read(vec![(100, 105)], vec![]);
-        let s = score_read_exon_fingerprint(&read_a, 0, &fp);
+        let (s, n) = score_read_exon_fingerprint(&read_a, 0, &fp);
         assert!(s[0] > s[1], "read with copy0 base should prefer copy0: {s:?}");
+        assert_eq!(n, 1, "one site covered");
 
         // Read aligned to copy0, mismatch=b'C' at 102 → base = copy1's base.
         let read_b = make_read(vec![(100, 105)], vec![(102, b'C')]);
-        let s = score_read_exon_fingerprint(&read_b, 0, &fp);
+        let (s, n) = score_read_exon_fingerprint(&read_b, 0, &fp);
         assert!(s[1] > s[0], "read with copy1 base should prefer copy1: {s:?}");
+        assert_eq!(n, 1, "one site covered");
 
-        // Read doesn't cover either copy's site → all scores neutral (0.0).
+        // Read doesn't cover either copy's site → all scores neutral (0.0), 0 covered.
         let read_c = make_read(vec![(200, 210)], vec![]);
-        let s = score_read_exon_fingerprint(&read_c, 0, &fp);
+        let (s, n) = score_read_exon_fingerprint(&read_c, 0, &fp);
         assert_eq!(s, vec![0.0, 0.0]);
+        assert_eq!(n, 0, "zero sites covered");
     }
 
     #[test]

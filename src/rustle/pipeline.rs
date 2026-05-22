@@ -10259,7 +10259,19 @@ pub fn run<P: AsRef<Path>>(
                                 }
                             }
                         }
-                        if config.vg_snp {
+                        if build_graph && config.vg_snp {
+                            // Fingerprint-EM: log-likelihood from copy-distinguishing
+                            // SNP/indel positions in ExonClass.per_copy_sequences.
+                            // Works for non-overlapping copies (chrY paralogs); does
+                            // not require HMM profile fitting. Falls back to no-op
+                            // for families with 0 diagnostic sites.
+                            crate::vg::run_fingerprint_em(
+                                &em_hmm_partitions,
+                                &mut bundles,
+                                &family_graphs,
+                                config.vg_em_max_iter,
+                            )
+                        } else if config.vg_snp {
                             crate::vg::run_pre_assembly_em_with_snps(
                                 &families_for_em, &mut bundles, config.vg_em_max_iter)
                         } else {

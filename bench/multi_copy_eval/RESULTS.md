@@ -376,3 +376,49 @@ paralog count tied at 6 (different alternative isoforms found).
   copy a multi-mapper belongs to), not in *discovery* (whether a copy
   appears at all). To see SNP value, we'd need to look at per-copy read
   counts / TPM rather than locus presence.
+
+## Fingerprint EM — Synthetic Ground-truth Benchmark
+
+Fixture: `test_data/synthetic_family/` — two paralogous copies with ~2%
+sequence divergence (7 planted diagnostic SNPs + background divergence),
+28 multi-mapping reads with NH=2, 50 unique copy-A reads, 25 unique
+copy-B reads.  IsoSeq characteristics: poly-A tails, CCS error rate ~0.5%,
+variable TSS (±5 bp jitter for unique reads, deterministic offsets for
+multi-mappers to avoid exon-collapse deduplication).
+
+**How multi-mappers appear in bundles (VG mode mechanics):**
+In `--vg` mode, supplementary alignments (flag=2064) are included in
+bundles alongside primary alignments. A read with primary at copy A and
+supplementary at copy B therefore appears in *both* bundles, giving
+`build_multimap_index` a cross-bundle link without needing the supplementary
+scan. To ensure multi-mappers aren't collapsed into unique reads at the
+same start position (`exonmatch` deduplication), multi-mapper TSS offsets
+are placed at ≥5 bp past the unique-read jitter range.
+
+**Results (fingerprint EM, `--vg --vg-no-hmm --vg-snp`):**
+
+| metric | value |
+|---|---|
+| multi-map reads detected | 28 |
+| family passes quality filter (≥10 shared) | YES (1 family, 2 copies) |
+| EM iterations | 2 |
+| diagnostic sites discovered | 129 |
+| decisive reads (weight_gap ≥ 0.8) | 11 / 28 (39%) |
+| uncertain reads (weight_gap < 0.5) | 17 / 28 (61%) |
+| avg sites covered — decisive | 925 (range 77–1777) |
+| avg sites covered — uncertain | 9 |
+
+**Interpretation:**
+- 11 of 28 multi-mappers are decisively assigned to a single copy.
+  These have 77–1777 diagnostic sites covered — the longer the read's
+  coverage of diagnostic-SNP exons, the sharper the assignment.
+- 17 reads cover only ~9 sites and remain 50/50; these are the
+  multi_r_X group whose TSS offset (75–140 bp) misses the first
+  diagnostic SNP at position 1050/10050, leaving only 6 interior sites.
+- This directly validates the advisor's concern: **long reads gain more
+  credibility** because they cover more diagnostic sites and receive
+  decisive assignments, while shorter coverage leads to uncertainty.
+- Weight conservation is maintained: decisive reads sum to 1.0 across
+  copies; uncertain reads stay at their pre-EM 1/NH weights (0.5 each).
+
+**Attribution TSV:** `bench/multi_copy_eval/synthetic_fp_attribution.tsv`

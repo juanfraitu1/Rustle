@@ -240,36 +240,44 @@ for i in range(25):
     add_read(f"uniq_B1_{i}", 16, exons[0][0] + 1, exons, seq,
              clip_right_seq=polya, nh=1, ts="+")
 
-# ── Multi-mapping reads (primary at A, supplementary at B) ────────────────────
-# These represent reads from a highly similar paralog that the aligner can't
-# confidently assign. They map equally well to both copies.
+# ── Multi-mapping reads ─────────────────────────────────────────────────────
+# Use DETERMINISTIC, EVENLY-SPACED TSS positions to avoid collapsing with:
+#   (a) unique reads (which have TSS at 1000±3 = 997-1003 for copy A, 10000±3 for B)
+#   (b) each other
+# Group A (primary at copy A): TSS at 1005, 1010, ..., 1070 (14 reads, 5-bp steps)
+# Group B (primary at copy B): TSS at 10075, 10080, ..., 10140 (14 reads)
+#   → supplementary at copy A: 1075, 1080, ..., 1140
+# All TES fixed to avoid inter-read exonmatch collapse.
+N_MULTI = 14
 
-for i in range(6):
-    # Primary at copy A
+for i in range(N_MULTI):
+    # Fixed TSS offset: 5 + i*5 from exon 1 start (1000), safely inside exon (1000-1200)
+    tss_offset_a = 5 + i * 5  # 5, 10, 15, ..., 70
+    tes_jitter_a = 0           # fixed TES to avoid exonmatch collapse
+
     exons_a = list(GENE_A_EXONS)
-    exons_a[0] = (jitter_terminal(exons_a[0][0], 2), exons_a[0][1])
-    exons_a[-1] = (exons_a[-1][0], jitter_terminal(exons_a[-1][1], 2))
+    exons_a[0] = (exons_a[0][0] + tss_offset_a, exons_a[0][1])
+    # TES fixed (no jitter) so no two multi-mappers have the same exon structure
     seq_a = add_isoseq_errors(extract_spliced_seq(exons_a), error_rate=0.005)
     polya = make_polya_tail()
 
     add_read(f"multi_{i}", 16, exons_a[0][0] + 1, exons_a, seq_a,
              clip_right_seq=polya, nh=2, ts="+")
 
-    # Supplementary at copy B (same read, different mapping)
+    # Supplementary at copy B: offset by 9000
     exons_b = list(GENE_B_EXONS)
-    exons_b[0] = (exons_a[0][0] + 9000, exons_b[0][1])
-    exons_b[-1] = (exons_b[-1][0], exons_a[-1][1] + 9000)
+    exons_b[0] = (exons_b[0][0] + tss_offset_a, exons_b[0][1])
     seq_b = add_isoseq_errors(extract_spliced_seq(exons_b), error_rate=0.005)
 
     add_read(f"multi_{i}", 2064, exons_b[0][0] + 1, exons_b, seq_b,
              clip_right_seq=polya, nh=2, ts="+")
 
-# ── Multi-mapping reads (primary at B, supplementary at A) ────────────────────
+for i in range(N_MULTI):
+    # TSS offset for group B: 75 + i*5 from exon 1 start, no overlap with group A (5-70)
+    tss_offset_b = 75 + i * 5  # 75, 80, 85, ..., 140
 
-for i in range(4):
     exons_b = list(GENE_B_EXONS)
-    exons_b[0] = (jitter_terminal(exons_b[0][0], 2), exons_b[0][1])
-    exons_b[-1] = (exons_b[-1][0], jitter_terminal(exons_b[-1][1], 2))
+    exons_b[0] = (exons_b[0][0] + tss_offset_b, exons_b[0][1])
     seq_b = add_isoseq_errors(extract_spliced_seq(exons_b), error_rate=0.005)
     polya = make_polya_tail()
 
@@ -277,8 +285,7 @@ for i in range(4):
              clip_right_seq=polya, nh=2, ts="+")
 
     exons_a = list(GENE_A_EXONS)
-    exons_a[0] = (exons_b[0][0] - 9000, exons_a[0][1])
-    exons_a[-1] = (exons_a[-1][0], exons_b[-1][1] - 9000)
+    exons_a[0] = (exons_a[0][0] + tss_offset_b, exons_a[0][1])
     seq_a = add_isoseq_errors(extract_spliced_seq(exons_a), error_rate=0.005)
 
     add_read(f"multi_r_{i}", 2064, exons_a[0][0] + 1, exons_a, seq_a,
@@ -308,4 +315,4 @@ supp = sum(1 for l in sam_lines if "\t2064\t" in l or "\t2048\t" in l)
 print(f"Primary alignments: {primary}, Supplementary: {supp}")
 print(f"Copy A unique: 30 (A1) + 20 (A2) = 50")
 print(f"Copy B unique: 25 (B1)")
-print(f"Multi-mapping: 6 (A→B) + 4 (B→A) = 10 reads, 20 alignments")
+print(f"Multi-mapping: {N_MULTI} (A→B) + {N_MULTI} (B→A) = {2*N_MULTI} reads, {4*N_MULTI} alignments")

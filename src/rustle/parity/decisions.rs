@@ -7,7 +7,7 @@
 //! - `RUSTLE_PARITY_FILTER_STEPS=junction_accept,node_create` — comma-separated whitelist (optional)
 //!
 //! Event format (each line is JSON):
-//! ```
+//! ```text
 //! {"step":"junction_accept","tool":"rustle","chrom":"NC_073243.2","start":15400361,"end":15402062,"strand":"-","payload":{"support":12,"abundance":12.0}}
 //! ```
 //!
