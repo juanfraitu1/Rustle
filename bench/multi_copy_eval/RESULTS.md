@@ -422,3 +422,43 @@ are placed at ≥5 bp past the unique-read jitter range.
   copies; uncertain reads stay at their pre-EM 1/NH weights (0.5 each).
 
 **Attribution TSV:** `bench/multi_copy_eval/synthetic_fp_attribution.tsv`
+
+## Family-guided Coverage Boost — Obj 2 Implementation (commit 479716a)
+
+Addresses the "low-cov assembly gap" class from the failure-mode breakdown above:
+LOC-prefix paralogs with 3–4 primary reads but 20+ EM-assigned multi-mapper
+weight. EM has established the copy is real; the boost concentrates that
+evidence onto the existing primaries so the assembler can emit transcripts.
+
+**Mechanism (`RUSTLE_VG_FAMILY_BOOST=1`):**
+For each family-member bundle:
+- primary=0: all reads boosted uniformly (secondaries carry the only signal)
+- primary=1,2: skipped — too few primaries; coverage spike risk disrupts
+  secondary-driven assembly at bundles already producing output
+- primary∈[3, primary_thr): primary reads × min(mm_em_weight/n_primary, 10)
+
+**GOLGA8 region result (--vg --vg-solver em --vg-snp + FAMILY_BOOST=1):**
+
+| bundle range | primary | mm_em_wt | boost | base tx | boost tx | Δ |
+|---|---|---|---|---|---|---|
+| 29734366–29745940 | 0 | 7.0 | 7.0× (all) | 0 | 3 | +3 |
+| 31095119–31109077 | 3 | 20.0 | 6.67× | 0 | 2 | +2 |
+| 31144438–31220479 | 3,4 | 7.0 | 2.33×,1.75× | 1 | 3 | +2 |
+
+Net: **+7 transcripts** (3218 → 3225), **0 regressions** at existing loci.
+
+The locus at 31156393 (original TSS from insufficient coverage) is replaced
+by a proper 31144439 full-length transcript plus 2 additional short isoforms —
+a transcript-quality improvement, not a regression.
+
+**Primary=2 spike problem (resolved):** Boosting only 1–2 primaries creates a
+geographic coverage imbalance (boosted primaries dominate nodes they cover,
+secondary-covered nodes stay at EM-fractional weights). This causes the
+abundance filter (isofrac) to drop existing paths. Skipping primary=1,2 (and
+capping boost at 10×) eliminates all observed regressions.
+
+**What this enables for Obj 2:** LOC-prefix paralogs that have sufficient
+multi-mapper evidence (≥3.0 EM-weight) but too few primary reads to trigger
+assembly can now be recovered. The grouping into named families was already
+working (multi-mapper union-find); the boost is the bridge from "grouped but
+silent" to "assembled and emitting transcripts."
