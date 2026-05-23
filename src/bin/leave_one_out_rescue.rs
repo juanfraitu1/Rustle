@@ -149,7 +149,7 @@ fn run_loo_for_paralog(
         bundle_indices: (0..bundles.len()).collect(),
         multimap_reads: HashMap::new(),
     };
-    let mut fg = build_family_graph(&family, &bundles, Some(genome), 0.30, 0.30)?;
+    let mut fg = build_family_graph(&family, &bundles, Some(genome), 0.30, 0.30, 0.30)?;
     let n_shared = fg.nodes.iter().filter(|n| !n.copy_specific).count();
     fit_profiles_in_place(&mut fg)?;
 

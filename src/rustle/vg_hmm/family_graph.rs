@@ -412,7 +412,8 @@ pub fn build_family_graph(
     bundles: &[Bundle],
     genome: Option<&GenomeIndex>,
     min_pos_recip: f64,
-    min_jaccard: f64,
+    merge_min_jaccard: f64,
+    refine_min_jaccard: f64,
 ) -> Result<FamilyGraph> {
     // 1. Collect (chrom, strand, exons) per copy.
     let copies: Vec<(&str, char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
@@ -455,7 +456,7 @@ pub fn build_family_graph(
         }
         if n_singletons >= 2 && total_exons <= 2000 {
             if let Some(g) = genome {
-                let merged = merge_singletons_by_sequence(pos_clusters, &copies, g, min_jaccard);
+                let merged = merge_singletons_by_sequence(pos_clusters, &copies, g, merge_min_jaccard);
                 if trace_compl {
                     let n_multi = merged.iter().filter(|c| c.len() > 1).count();
                     eprintln!("[FG]   after merge: clusters={} multi-copy={}", merged.len(), n_multi);
@@ -485,7 +486,7 @@ pub fn build_family_graph(
         }).collect();
         // If we have sequences, refine; otherwise skip.
         let groups: Vec<Vec<CopyId>> = if with_seq.iter().all(|(_, s)| !s.is_empty()) {
-            refine_by_minimizer_jaccard(&with_seq, min_jaccard, 15, 10)
+            refine_by_minimizer_jaccard(&with_seq, refine_min_jaccard, 15, 10)
         } else {
             vec![with_seq.iter().map(|(c, _)| *c).collect()]
         };
@@ -702,5 +703,41 @@ fn mean_pairwise_identity_refs(seqs: &[&[u8]]) -> f64 {
         }
     }
     total / pairs.max(1) as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refine_zero_threshold_keeps_all_merged() {
+        let seq_a: Vec<u8> = b"ATCGATCGATCGATCGATCGATCGATCGATCG"
+            .iter().cycle().take(200).copied().collect();
+        let seq_b: Vec<u8> = b"GCTAGCTAGCTAGCTAGCTAGCTAGCTAGCTA"
+            .iter().cycle().take(200).copied().collect();
+
+        let cluster = vec![(0usize, seq_a.clone()), (1usize, seq_b.clone())];
+
+        let groups_zero = refine_by_minimizer_jaccard(&cluster, 0.0, 15, 10);
+        assert_eq!(groups_zero.len(), 1,
+            "threshold=0.0 should keep all sequences in one ExonClass");
+        assert_eq!(groups_zero[0].len(), 2);
+
+        let groups_high = refine_by_minimizer_jaccard(&cluster, 0.30, 15, 10);
+        assert_eq!(groups_high.len(), 2,
+            "sequences share no k-mers (Jaccard=0.0); any threshold > 0.0 splits them");
+    }
+
+    #[test]
+    fn refine_identical_sequences_always_merged() {
+        let seq: Vec<u8> = b"ATCGATCGATCGATCGATCG".iter().cycle().take(200).copied().collect();
+        let cluster = vec![(0usize, seq.clone()), (1usize, seq.clone())];
+
+        for threshold in [0.0_f64, 0.05, 0.30, 0.99] {
+            let groups = refine_by_minimizer_jaccard(&cluster, threshold, 15, 10);
+            assert_eq!(groups.len(), 1,
+                "identical sequences should always stay merged (threshold={threshold})");
+        }
+    }
 }
 

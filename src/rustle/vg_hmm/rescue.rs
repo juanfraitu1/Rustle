@@ -262,6 +262,7 @@ pub fn run_rescue_with_bundles(
                 genome.as_ref(),
                 0.30,
                 0.30,
+                0.30,
             ) {
                 Ok(g) => g,
                 Err(_) => return None,

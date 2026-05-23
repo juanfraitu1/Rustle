@@ -83,7 +83,7 @@ fn build_family_graph_two_copy_smoke() {
 
     // No genome FASTA available in this test — pass `None`; build should still
     // produce nodes (with empty per-copy sequences) and edges.
-    let fg = build_family_graph(&family, &bundles, None, 0.30, 0.30).unwrap();
+    let fg = build_family_graph(&family, &bundles, None, 0.30, 0.30, 0.30).unwrap();
     assert_eq!(fg.family_id, 7);
     assert_eq!(fg.nodes.len(), 2, "two shared exon classes expected");
     assert!(fg.nodes.iter().all(|n| !n.copy_specific));
@@ -152,7 +152,7 @@ fn build_family_graph_fits_profiles_when_sequences_present() {
     let bundles = vec![mk_bundle_with_reads(0, 100, vec![(0, 50), (60, 100)]),
                        mk_bundle_with_reads(0, 100, vec![(0, 50), (60, 100)])];
     let family = FamilyGroup { family_id: 0, bundle_indices: vec![0, 1], multimap_reads: HashMap::new() };
-    let mut fg = build_family_graph(&family, &bundles, None, 0.30, 0.30).unwrap();
+    let mut fg = build_family_graph(&family, &bundles, None, 0.30, 0.30, 0.30).unwrap();
     // Inject sequences and refit.
     for n in &mut fg.nodes {
         n.per_copy_sequences = vec![(0, b"ACGTACGT".to_vec()), (1, b"ACGAACGT".to_vec())];

@@ -205,7 +205,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("[smoke] genome loaded");
 
     // ── Build family graph WITH sequences ─────────────────────────────────────
-    let mut fg = build_family_graph(&family, &bundles, Some(&genome), 0.30, 0.30)?;
+    let mut fg = build_family_graph(&family, &bundles, Some(&genome), 0.30, 0.30, 0.30)?;
     println!(
         "[smoke] family graph: {} nodes, {} edges",
         fg.n_nodes(),

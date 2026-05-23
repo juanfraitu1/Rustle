@@ -142,7 +142,7 @@ fn run_genome_scan(
                 .filter(|f| f.bundle_indices.len() >= 2)
                 .max_by_key(|f| f.bundle_indices.len())?;
             let fg = match crate::vg_hmm::family_graph::build_family_graph(
-                &largest, bundles, Some(g), 0.30, 0.30,
+                &largest, bundles, Some(g), 0.30, 0.30, 0.30,
             ) { Ok(g) => g, Err(_) => return None };
             if fg.nodes.is_empty() { return None; }
             let mut kmers: crate::types::DetHashSet<u64> = crate::types::DetHashSet::default();
@@ -10209,7 +10209,7 @@ pub fn run<P: AsRef<Path>>(
                             em_hmm_partitions.par_iter()
                                 .map(|fam| {
                                     match crate::vg_hmm::family_graph::build_family_graph(
-                                        fam, &bundles, genome_ref, 0.30, 0.30,
+                                        fam, &bundles, genome_ref, 0.30, 0.05, if do_hmm { 0.30 } else { 0.0 },
                                     ) {
                                         Ok(mut fg) => {
                                             if do_hmm {

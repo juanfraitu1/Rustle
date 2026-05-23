@@ -321,7 +321,7 @@ fn run_native_experiment(family: &Family, genome: &GenomeIndex) -> bool {
         bundle_indices: (0..bundles.len()).collect(),
         multimap_reads: HashMap::new(),
     };
-    let fg = match build_family_graph(&family_group, &bundles, Some(genome), 0.30, 0.30) {
+    let fg = match build_family_graph(&family_group, &bundles, Some(genome), 0.30, 0.30, 0.30) {
         Ok(g) => g,
         Err(e) => { eprintln!("[exp 1] build_family_graph failed: {}", e); return false; }
     };

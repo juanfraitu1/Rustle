@@ -456,7 +456,7 @@ pub fn compute_family_graph_kmer_jaccard_diag(
         None => return (None, Some("no_substrand_with_2_copies")),
     };
     let fg = match crate::vg_hmm::family_graph::build_family_graph(
-        &largest, bundles, Some(genome), 0.30, 0.30,
+        &largest, bundles, Some(genome), 0.30, 0.30, 0.30,
     ) {
         Ok(g) => g,
         Err(_) => return (None, Some("graph_build_err")),
@@ -620,7 +620,7 @@ pub fn compute_family_graph_poa_identity_diag(
         None => return (None, Some("no_substrand_with_2_copies")),
     };
     let fg = match crate::vg_hmm::family_graph::build_family_graph(
-        &largest, bundles, Some(genome), 0.30, 0.30,
+        &largest, bundles, Some(genome), 0.30, 0.30, 0.30,
     ) {
         Ok(g) => g,
         Err(_) => return (None, Some("graph_build_err")),

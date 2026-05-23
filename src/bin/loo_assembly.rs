@@ -383,7 +383,7 @@ fn run_for_paralog(
         bundle_indices: (0..bundles.len()).collect(),
         multimap_reads: HashMap::new(),
     };
-    let mut fg = build_family_graph(&group, &bundles, Some(genome), 0.30, 0.30)?;
+    let mut fg = build_family_graph(&group, &bundles, Some(genome), 0.30, 0.30, 0.30)?;
     fit_profiles_in_place(&mut fg)?;
     println!("  primitive: {} nodes, {} edges; {} reads in region", fg.n_nodes(), fg.n_edges(), pos_reads.len());
 
