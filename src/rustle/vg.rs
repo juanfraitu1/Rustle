@@ -1676,7 +1676,9 @@ pub fn build_bundle_borrow_junctions(
                 edge_trace_count += 1;
                 let n_found = copy_info.iter().filter(|x| x.is_some()).count();
                 let max_local = copy_info.iter().filter_map(|x| x.as_ref()).map(|(_, _, c)| *c).fold(0.0_f64, f64::max);
-                let min_local = copy_info.iter().filter_map(|x| x.as_ref()).map(|(_, _, c)| *c).fold(f64::MAX, f64::min);
+                let min_local = if n_found == 0 { 0.0 } else {
+                    copy_info.iter().filter_map(|x| x.as_ref()).map(|(_, _, c)| *c).fold(f64::MAX, f64::min)
+                };
                 eprintln!("[VG-JCT]   edge {:?}->{:?} supp={} copies_with_spans={}/{} max_count={:.2} min_count={:.2}",
                           edge.from, edge.to, edge.family_support, n_found, n_copies, max_local, min_local);
             }
