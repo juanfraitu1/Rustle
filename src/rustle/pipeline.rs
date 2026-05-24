@@ -10284,15 +10284,17 @@ pub fn run<P: AsRef<Path>>(
                     // whenever FamilyGraph was built (hmm_ok OR --vg-no-hmm
                     // with --genome-fasta).
                     if build_graph {
-                        bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
-                            &em_hmm_partitions,
-                            &family_graphs,
-                        );
-                        bundle_borrow_junctions = crate::vg::build_bundle_borrow_junctions(
-                            &em_hmm_partitions,
-                            &family_graphs,
-                            &bundles,
-                        );
+                        if std::env::var_os("RUSTLE_VG_NO_BORROW").is_none() {
+                            bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
+                                &em_hmm_partitions,
+                                &family_graphs,
+                            );
+                            bundle_borrow_junctions = crate::vg::build_bundle_borrow_junctions(
+                                &em_hmm_partitions,
+                                &family_graphs,
+                                &bundles,
+                            );
+                        }
                         if std::env::var_os("RUSTLE_VG_COMPLETION_OFF").is_none() {
                             bundle_completion_nodes = crate::vg::build_bundle_completion_nodes(
                                 &em_hmm_partitions,
@@ -12469,7 +12471,7 @@ pub fn run<P: AsRef<Path>>(
                         for &(donor, acceptor, strand, sibling_count) in borrow_jcts {
                             let jct = Junction { donor, acceptor };
                             local.entry(jct).or_insert_with(|| {
-                                let c = (sibling_count * 0.25).min(5.0);
+                                let c = sibling_count * 0.5;
                                 JunctionStat {
                                     mrcount: c,
                                     nreads_good: c,
@@ -12562,21 +12564,12 @@ pub fn run<P: AsRef<Path>>(
                         node.vg_family_id = Some(fam_id);
                         node.vg_copy_id = Some(copy_id);
                     }
-                    // Structural graph merging: boost shared-exon nodes whose
-                    // coverage in this copy is far below what the family signal
-                    // predicts. Uses ExonClass equivalences (structural signal)
-                    // rather than per-read sequence features (SNPs). Only shared
-                    // exons are eligible; copy-specific bubble branches are skipped.
-                    //
-                    // Condition: this copy's ExonClass-level coverage is below
-                    //   50% of (total_fam_cov / n_copies_total) AND at least one
-                    //   sibling has meaningful coverage (max_sibling_cov > 1.0).
-                    // Amount: 25% of the best sibling's coverage, capped at 4.0.
-                    //   This is enough to let path_extract emit paths without
-                    //   inflating TPM to ST-comparable levels.
-                    //
-                    // Legacy crude floor (RUSTLE_VG_BORROW_FLOOR=1) still works
-                    // as a fallback; structural prior is the default path.
+                    // Coverage borrowing from sibling copies. Three modes:
+                    //   RUSTLE_VG_BORROW_FLOOR=1  — blind 5% floor (pre-existing)
+                    //   RUSTLE_VG_BORROW_LEGACY=1 — old 25%/cap-4.0 structural prior
+                    //   default                   — per-copy-expected floor
+                    //     (total_fam_cov / n_copies_total), unconditional for shared nodes
+                    // Only non-copy-specific ExonClass nodes are eligible.
                     if let Some(borrow_entries) = bundle_borrow_cov.get(&bundle_idx) {
                         let use_legacy_floor =
                             std::env::var_os("RUSTLE_VG_BORROW_FLOOR").is_some();
@@ -12588,23 +12581,29 @@ pub fn run<P: AsRef<Path>>(
                                 if copy_specific { continue; }
                                 if !(ec_start < node.end && ec_end > node.start) { continue; }
                                 if use_legacy_floor {
-                                    // Old behaviour: blind 5% floor for dark nodes
+                                    // RUSTLE_VG_BORROW_FLOOR=1: original blind 5% floor
                                     if node.coverage == 0.0 && total_fam_cov > 0.0 {
                                         node.coverage = 1.0_f64.min(total_fam_cov * 0.05);
                                     }
-                                } else {
-                                    // Structural prior: boost under-represented copies
+                                } else if std::env::var_os("RUSTLE_VG_BORROW_LEGACY").is_some() {
+                                    // RUSTLE_VG_BORROW_LEGACY=1: old 25%/cap-4.0 structural prior
                                     let expected = if n_copies_total > 0 {
                                         total_fam_cov / n_copies_total as f64
                                     } else {
                                         total_fam_cov
                                     };
-                                    if this_cov < expected * 0.5
-                                        && max_sibling_cov > 1.0
-                                    {
+                                    if this_cov < expected * 0.5 && max_sibling_cov > 1.0 {
                                         let prior = (max_sibling_cov * 0.25).min(4.0);
                                         node.coverage = node.coverage.max(prior);
                                     }
+                                } else {
+                                    // Enhanced (default): per-copy-expected floor for shared nodes
+                                    let expected_per_copy = if n_copies_total > 0 {
+                                        total_fam_cov / n_copies_total as f64
+                                    } else {
+                                        total_fam_cov
+                                    };
+                                    node.coverage = node.coverage.max(expected_per_copy);
                                 }
                             }
                         }
