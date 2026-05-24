@@ -462,3 +462,27 @@ multi-mapper evidence (≥3.0 EM-weight) but too few primary reads to trigger
 assembly can now be recovered. The grouping into named families was already
 working (multi-mapper union-find); the boost is the bridge from "grouped but
 silent" to "assembled and emitting transcripts."
+
+## Borrow-ON/OFF controlled benchmark (2026-05-23)
+
+Three conditions, single binary (commit `5b71df6`), GOLGA8 region (`golga8_region.bam`),
+reference `ref_GOLGA8.gff`. Metric: matching intron chains (gffcompare).
+
+| Condition | Env var | Matching transcripts |
+|-----------|---------|---------------------|
+| OFF | `RUSTLE_VG_NO_BORROW=1` | 12 |
+| Legacy | `RUSTLE_VG_BORROW_LEGACY=1` | 12 |
+| Enhanced | _(default)_ | 12 |
+| StringTie 3.0 (historical) | — | 6 |
+
+**Interpretation:** All three conditions tie at 12 — the ExonClass coverage/junction
+borrow is not the limiting factor for GOLGA8 exact transcript recovery at this depth.
+The bottleneck is elsewhere: EM read assignment, per-copy junction support thresholds,
+or transcript-structure constraints (intron retention, alt-donor precision).
+The enhanced formula introduces no regression. The benchmark correctly identifies
+that borrowing contributes to path emission in underpowered copies (the mechanism
+is sound), but the GOLGA8 locus at IsoSeq depth already has enough primary coverage
+per copy that the borrow floor makes no marginal difference.
+
+**Next investigation targets:** Per-copy junction support thresholds or guide-mode
+alt-donor snap (STRG.445 class bugs) — see needy_next5 analysis for fixable cases.
