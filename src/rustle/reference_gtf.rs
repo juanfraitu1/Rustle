@@ -196,28 +196,58 @@ pub fn find_guide_pat(
             }
             return Some(nodes); // guide fully consumed
         } else if end_diff <= ssdist {
-            // Guide exon end matches node end exactly.
-            //: move to next exon, find child matching next exon start.
-            if j == n_exons - 1 {
-                return Some(nodes);
-            }
-            j += 1;
-            let next_ex_start = guide.exons[j].0;
-            // Find child of current node whose start matches next exon start.
-            let mut found_child = false;
+            // Guide exon end matches node end within ssdist tolerance.
+            // Before accepting this node as the exon boundary, check if a
+            // contiguous child gets us closer to the guide's exon end.
+            // This prefers the exact alt-donor specified by the guide over
+            // a nearby alt-donor that also falls within ssdist.
+            let mut closer_child = None;
             for child_id in inode.children.ones() {
                 if child_id == source_id || child_id == sink_id {
                     continue;
                 }
-                if graph.nodes[child_id].start.abs_diff(next_ex_start) <= ssdist {
-                    nodes.push(child_id);
-                    i = child_id;
-                    found_child = true;
+                let child = &graph.nodes[child_id];
+                if child.start == inode.end && child.end.abs_diff(ex_end) < end_diff {
+                    closer_child = Some(child_id);
                     break;
                 }
             }
-            if !found_child {
-                break;
+            if let Some(child_id) = closer_child {
+                // Walk to the contiguous sub-node that better matches the guide donor.
+                nodes.push(child_id);
+                i = child_id;
+                // j stays the same — still on the same guide exon.
+            } else {
+                //: move to next exon, find child matching next exon start.
+                if j == n_exons - 1 {
+                    return Some(nodes);
+                }
+                j += 1;
+                let next_ex_start = guide.exons[j].0;
+                // Find child of current node whose start matches next exon start.
+                // Prefer exact match over approximate when multiple candidates exist.
+                let mut found_child = None;
+                for child_id in inode.children.ones() {
+                    if child_id == source_id || child_id == sink_id {
+                        continue;
+                    }
+                    let dist = graph.nodes[child_id].start.abs_diff(next_ex_start);
+                    if dist <= ssdist {
+                        match found_child {
+                            None => found_child = Some((child_id, dist)),
+                            Some((_, best_dist)) if dist < best_dist => {
+                                found_child = Some((child_id, dist));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                if let Some((child_id, _)) = found_child {
+                    nodes.push(child_id);
+                    i = child_id;
+                } else {
+                    break;
+                }
             }
         } else {
             // Guide exon end > node end — exon spans beyond this node.
