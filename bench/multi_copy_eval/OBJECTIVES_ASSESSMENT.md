@@ -198,3 +198,18 @@ Numbers for Obj 2 reproduced by: `python3 bench/multi_copy_eval/no_absent_copy_e
 | GGO_19 guided | Transcript Sn/Pr | 100% / 97.6% | — |
 | GGO_19 de novo | Transcript F1 | 0.930 | — |
 
+## Needy Loci Status (2026-05-24 re-evaluation with May-24 binary)
+
+Top-15 needy loci panel: 10 measured. Ranks 1–5 (focus-ref Sn):
+
+| Rank | Locus | Focus Sn | Unmatched | Root cause |
+|------|-------|----------|-----------|------------|
+| 1 | STRG.251 | 83.3% (5/6) | STRG.251.5 | Coverage floor: 27-exon, longcov=1.0; alternative exon inclusions (exons 7+15) unsupported |
+| 2 | STRG.151 | **100% (6/6)** | — | ✓ |
+| 3 | STRG.503 | **100% (5/5)** | — | ✓ (was 80% with May-18 binary) |
+| 4 | STRG.157 | 80% (4/5) | STRG.157.7 | Single-exon transcript; SE mode off by default |
+| 5 | STRG.453 | 75% (3/4) | STRG.453.5 | Coverage floor: 48-exon, longcov=0.75 |
+| 6–10 | STRG.442/445/566/29/440 | **100% each** | — | ✓ All fixed in prior session |
+
+**No fixable code bugs remain in the top-10 needy loci.** Remaining misses are coverage-limited or single-exon (known limitation).
+
