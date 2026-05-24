@@ -1,15 +1,16 @@
-# VG Mode — Research Objectives Assessment (2026-05-23)
+# VG Mode — Research Objectives Assessment (2026-05-24)
 
-Four research objectives drive `--vg` mode development. This document
-assesses the current implementation status and experimental evidence.
+Three primary research objectives drive `--vg` mode development, with one
+architectural capability noted separately. This document assesses the current
+implementation status and experimental evidence.
 
 ---
 
 ## Objective 1: Cross-family information borrowing during assembly
 
-**Status: IMPLEMENTED, not the active bottleneck at IsoSeq depth**
+**Status: ARCHITECTURAL CAPABILITY — not a primary validated claim**
 
-The ExonClass-based coverage/junction borrow mechanism is fully wired:
+The ExonClass-based coverage/junction borrow mechanism is fully implemented:
 `build_bundle_borrow_coverage` and `build_bundle_borrow_junctions` populate
 per-bundle maps from FamilyGraph ExonClass data; consumed in the assembly loop.
 
@@ -22,12 +23,17 @@ GOLGA8 region (golga8_region.bam):
 | Legacy | `RUSTLE_VG_BORROW_LEGACY=1` | 12 |
 | Enhanced | _(default, per-copy expected floor)_ | 12 |
 
-All conditions tie the 12-match baseline. **Interpretation:** at IsoSeq depth
-(10–20 primary reads per GOLGA8 copy), EM already routes enough multi-mapper
-weight to each copy that the coverage floor adds no marginal path support.
-Borrowing is not harmful and the mechanism is in place; the bottleneck for
-the remaining 2 unrecovered GOLGA8 copies is elsewhere (junction chain
-ambiguity in near-identical paralogs).
+All conditions tie the 12-match baseline. At typical IsoSeq depth (10–20
+primary reads per copy), the EM already routes enough multi-mapper weight to
+each copy that the coverage floor adds no marginal path support.
+
+**Framing for paper/advisor:** Cross-family borrowing is an architectural
+feature designed to aid assembly at lower sequencing depths (short-read or
+shallow IsoSeq) where single-copy coverage falls below the path-extraction
+threshold. At the IsoSeq depths used in this evaluation it is not the active
+bottleneck. The mechanism is available and does not harm performance; a
+low-depth simulation would be required to demonstrate the regime where it
+provides measurable benefit. This is deferred to future work.
 
 ---
 
@@ -43,11 +49,13 @@ A *absent copy* = <5 total reads (truly silent in the data). The test asks:
 
 #### GOLGA8 (17 reference paralogs, NC_073240.2)
 
+Numbers reproduced by: `python3 bench/multi_copy_eval/no_absent_copy_eval.py --check`
+
 | Category | Copies | Rustle VG | StringTie 3.0 |
 |----------|--------|-----------|---------------|
-| Primary-rich (≥5 primary reads) | 9 | 8/9 (89%) | 4/9 (44%) |
-| Multi-map only (<5 primary, ≥5 total) | 5 | 4/5 (80%) | 2/5 (40%) |
-| **Total expressed (≥5 reads)** | **14** | **12/14 (86%)** | **6/14 (43%)** |
+| Primary-rich (≥5 primary reads) | 9 | 8/9 (89%) | 7/9 (78%) |
+| Multi-map only (<5 primary, ≥5 total) | 5 | 5/5 (100%) | 3/5 (60%) |
+| **Total expressed (≥5 reads)** | **14** | **13/14 (93%)** | **10/14 (71%)** |
 | Absent (<5 reads) | 3 | 0/3 ✓ | 0/3 ✓ |
 
 #### YAG (24 Y-chromosome ampliconic gene copies)
@@ -61,15 +69,14 @@ A *absent copy* = <5 total reads (truly silent in the data). The test asks:
 | Absent (3 TSPY) | 3/3 | 0/3 ✓ | 0/3 ✓ |
 
 **Key finding:** Rustle VG recovers **100% of expressed YAG paralogs** and
-**86% of expressed GOLGA8 paralogs**. StringTie misses copies whose reads
+**93% of expressed GOLGA8 paralogs**. StringTie misses copies whose reads
 are primarily multi-mappers — these copies appear invisible to StringTie's
 heuristic assignment but are recovered by Rustle's EM.
 
-**Why StringTie misses them:** 3 RBMY and 1 TSPY copies that StringTie
-misses have either 0–1 primary reads or their primary reads are highly
-multi-mapping (NH>1). StringTie collapses multi-mappers to the highest-
-coverage copies. Rustle's multi-mapper EM redistributes reads to their
-correct copies based on junction compatibility and HMM profile scores.
+**Why StringTie misses them:** StringTie collapses multi-mappers to the
+highest-coverage copy. Rustle's mixture-model EM redistributes read weights
+across all placements based on junction compatibility and copy-distinguishing
+sequence fingerprints, enabling assembly at copies with zero primary reads.
 
 **LOC129530242 (RBMY example):** 68 total reads (1 primary, 67 supplementary).
 StringTie: 0 transcripts. Rustle VG: 9 transcripts. This copy is completely
@@ -171,20 +178,22 @@ requires clonally expanded ground truth).
 
 | Objective | Status | Key evidence | Gap |
 |-----------|--------|--------------|-----|
-| **Obj 1**: Cross-family borrowing | ✓ Implemented, tested | Borrow OFF=Legacy=Enhanced (not bottleneck at IsoSeq depth) | Borrowing helps at lower depth; needs low-coverage simulation |
-| **Obj 2**: Copy discovery (absent from reference) | ✓ Validated | 100% YAG expressed (21/21), 86% GOLGA8 expressed (12/14) | 2 GOLGA8 copies unrecovered — near-identical paralog junction ambiguity |
-| **Obj 3**: Novel isoforms per copy | ✓ Validated | LOC129530242: 68 reads, 0 StringTie tx, 9 Rustle tx, unique 5-exon isoform | No formal ground-truth per-copy isoform reference available |
-| **Obj 4**: Read assignment accuracy | ✓ Validated | Synthetic: 11/28 decisive; Real (RBMY): 83 reads adjusted, 49/83 decisive | No unsupervised ground truth for real-data decisive assignments |
+| **Obj 1**: Cross-family borrowing | ⚙ Architectural capability | OFF=Legacy=Enhanced at IsoSeq depth; mechanism is in place | No regime shown where it provides measurable benefit; deferred |
+| **Obj 2**: Copy discovery | ✓ **Validated** | 100% YAG expressed (21/21), 93% GOLGA8 expressed (13/14); automated by `no_absent_copy_eval.py` | 1 GOLGA8 copy unrecovered — near-identical paralog junction ambiguity |
+| **Obj 3**: Novel isoforms per copy | ✓ **Validated (descriptive)** | LOC129530242: 68 reads, 0 StringTie tx, 9 Rustle tx, unique 5-exon isoform | No formal ground-truth per-copy isoform reference; frame as descriptive |
+| **Obj 4**: Read assignment accuracy | ✓ **Validated** | Synthetic: 11/28 decisive (39%); Real RBMY: 49/83 decisive (59%); decisiveness scales with site coverage (automated test) | No unsupervised ground truth for real-data assignments |
 
 ---
 
-## Current Best Numbers (2026-05-23, updated)
+## Current Best Numbers (2026-05-24, updated)
+
+Numbers for Obj 2 reproduced by: `python3 bench/multi_copy_eval/no_absent_copy_eval.py --check`
 
 | Dataset | Metric | Rustle VG | StringTie 3.0 |
 |---------|--------|-----------|---------------|
 | GOLGA8 gorilla chr19 | Exact transcript matches | 12 | 6 |
-| GOLGA8 gorilla chr19 | Expressed copy recovery | 12/14 (86%) | 6/14 (43%) |
-| YAG gorilla chrY | Expressed copy recovery | 21/21 (100%) | 17/21 (81%) |
+| GOLGA8 gorilla chr19 | Expressed copy recovery | **13/14 (93%)** | 10/14 (71%) |
+| YAG gorilla chrY | Expressed copy recovery | **21/21 (100%)** | 17/21 (81%) |
 | YAG RBMY | Copy recovery | 13/13 (100%) | 10/13 (77%) |
 | GGO_19 guided | Transcript Sn/Pr | 100% / 97.6% | — |
 | GGO_19 de novo | Transcript F1 | 0.930 | — |
