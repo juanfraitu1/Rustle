@@ -209,3 +209,53 @@ fn fp_em_gtf_copy_attributes_are_well_formed() {
         );
     }
 }
+
+#[test]
+fn fp_em_decisiveness_scales_with_diagnostic_site_coverage() {
+    // IsoSeq advantage claim: reads that cover more copy-distinguishing
+    // positions (longer reads spanning more diagnostic SNPs) should be
+    // more decisive than reads covering few positions.
+    //
+    // In the synthetic fixture, multi-mapper reads that start before the
+    // first diagnostic SNP in exon 1 cover ~250–1800 sites total across
+    // all placements; reads that start after exon 1's SNP cover only ~9
+    // sites.  The threshold is chosen conservatively to keep this test
+    // resilient to minor fixture regeneration.
+    //
+    // Expected outcome:
+    //   - All reads with max_sites > 50  → decisive (weight_gap > 0.8)
+    //   - All reads with max_sites < 20  → uncertain (weight_gap < 0.5)
+    if !fixture_present() { return; }
+
+    let (_gtf, tsv) = run_fp_em();
+    let rows = parse_tsv(&tsv);
+
+    // Aggregate per read: max sites covered across placements, and the
+    // weight_gap (same for every row of a given read).
+    let mut per_read: HashMap<u64, (usize, f64)> = HashMap::new();
+    for (hash, _copy, sites, _fw, gap, _wsum) in &rows {
+        let entry = per_read.entry(*hash).or_insert((0, *gap));
+        if *sites > entry.0 { entry.0 = *sites; }
+    }
+
+    let high: Vec<_> = per_read.values().filter(|(s, _)| *s > 50).collect();
+    let low:  Vec<_> = per_read.values().filter(|(s, _)| *s < 20).collect();
+
+    assert!(!high.is_empty(), "no high-coverage reads in TSV — fixture may have changed");
+    assert!(!low.is_empty(),  "no low-coverage reads in TSV — fixture may have changed");
+
+    for (sites, gap) in &high {
+        assert!(
+            *gap > 0.8,
+            "read with {} diagnostic sites should be decisive (gap > 0.8), got gap={}",
+            sites, gap
+        );
+    }
+    for (sites, gap) in &low {
+        assert!(
+            *gap < 0.5,
+            "read with {} diagnostic sites should be uncertain (gap < 0.5), got gap={}",
+            sites, gap
+        );
+    }
+}
