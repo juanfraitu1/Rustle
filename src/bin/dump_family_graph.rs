@@ -120,6 +120,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         pair_count: Vec::new(),
         mapq: 0,
         mismatches: Vec::new(),
+        seq: Vec::new(),
         hp_tag: None,
         ps_tag: None,
         is_primary_alignment: true,

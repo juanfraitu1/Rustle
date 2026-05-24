@@ -202,6 +202,10 @@ pub struct BundleRead {
     /// Per-base mismatches extracted from MD tag: (reference_position, query_base).
     /// Only populated when `--vg-snp` is active.
     pub mismatches: Vec<(u64, u8)>,
+    /// Raw read sequence bytes (one u8 per base, uppercase ASCII A/C/G/T/N).
+    /// Populated in VG mode for reference-free pileup-based copy assignment.
+    /// Empty in non-VG runs.
+    pub seq: Vec<u8>,
     /// Haplotype tag (HP:i:1 or HP:i:2) from phased BAMs. None = unphased.
     pub hp_tag: Option<u8>,
     /// Phase set ID (PS tag) for phased BAMs.

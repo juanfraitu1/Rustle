@@ -10259,23 +10259,24 @@ pub fn run<P: AsRef<Path>>(
                                 }
                             }
                         }
-                        if build_graph && config.vg_snp {
+                        if build_graph {
                             // Fingerprint-EM: log-likelihood from copy-distinguishing
-                            // SNP/indel positions in ExonClass.per_copy_sequences.
-                            // Works for non-overlapping copies (chrY paralogs); does
-                            // not require HMM profile fitting. Falls back to no-op
-                            // for families with 0 diagnostic sites.
+                            // positions in ExonClass.per_copy_sequences (built from genome).
+                            // Works for non-overlapping copies (RBMY/TSPY/DAZ on chrY).
+                            // BundleRead.seq (populated at ingest in VG mode) lets
+                            // snp_compatibility score reads without --vg-snp.
+                            // Falls back to no-op for families with 0 diagnostic sites.
                             crate::vg::run_fingerprint_em(
                                 &em_hmm_partitions,
                                 &mut bundles,
                                 &family_graphs,
                                 config.vg_em_max_iter,
                             )
-                        } else if config.vg_snp {
-                            crate::vg::run_pre_assembly_em_with_snps(
-                                &families_for_em, &mut bundles, config.vg_em_max_iter)
                         } else {
-                            crate::vg::run_pre_assembly_em(
+                            // No genome: pileup-based EM from BundleRead.seq.
+                            // Finds 0 diagnostic positions for non-overlapping paralogs
+                            // (different loci have no shared reference positions).
+                            crate::vg::run_pre_assembly_em_with_snps(
                                 &families_for_em, &mut bundles, config.vg_em_max_iter)
                         }
                     };

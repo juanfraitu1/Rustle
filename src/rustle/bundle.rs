@@ -1316,10 +1316,11 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
         }
 
         let is_primary = !record.flags().is_secondary() && !record.flags().is_supplementary();
-        let mut parsed_read = crate::bam::record_to_bundle_read_with_snp(
+        let mut parsed_read = crate::bam::record_to_bundle_read_with_snp_vg(
             &record,
             Some(&name),
             genome,
+            config.vg_mode,
         );
 
         let mut boundary_span: Option<(u64, u64)> = None;

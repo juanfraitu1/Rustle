@@ -1051,7 +1051,7 @@ fn synthesize_bundles_at_candidate_loci(
                 read_count_yc: 0.0, countfrag_len: 0.0, countfrag_num: 0.0,
                 junc_mismatch_weight: 0.0,
                 pair_idx: Vec::new(), pair_count: Vec::new(),
-                mapq: 0, mismatches: Vec::new(),
+                mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
                 hp_tag: None, ps_tag: None,
                 is_primary_alignment: true,
             }
@@ -1183,7 +1183,7 @@ fn synthesize_bundles_from_original_alignments(
                     read_count_yc: 0.0, countfrag_len: 0.0, countfrag_num: 0.0,
                     junc_mismatch_weight: 0.0,
                     pair_idx: Vec::new(), pair_count: Vec::new(),
-                    mapq: 0, mismatches: Vec::new(),
+                    mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
                     hp_tag: None, ps_tag: None,
                     is_primary_alignment: true,
                 }
@@ -1321,6 +1321,7 @@ pub fn synthesize_bundles(
                     pair_count: Vec::new(),
                     mapq: 0,
                     mismatches: Vec::new(),
+                    seq: Vec::new(),
                     hp_tag: None,
                     ps_tag: None,
                     is_primary_alignment: true,
@@ -1526,7 +1527,7 @@ pub fn synthesize_bundles_refined(
                 unitig: false, unitig_cov: 0.0, read_count_yc: 0.0,
                 countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
                 pair_idx: Vec::new(), pair_count: Vec::new(),
-                mapq: 0, mismatches: Vec::new(),
+                mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
                 hp_tag: None, ps_tag: None, is_primary_alignment: true,
             }
         }).collect();

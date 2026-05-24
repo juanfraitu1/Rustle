@@ -20,7 +20,7 @@ fn mk_bundle_with_reads(start: u64, end: u64, exons: Vec<(u64, u64)>) -> Bundle 
         unitig: false, unitig_cov: 0.0, read_count_yc: 0.0,
         countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
         pair_idx: Vec::new(), pair_count: Vec::new(),
-        mapq: 0, mismatches: Vec::new(), hp_tag: None, ps_tag: None,
+        mapq: 0, mismatches: Vec::new(), seq: Vec::new(), hp_tag: None, ps_tag: None,
         is_primary_alignment: true,
     };
     Bundle {

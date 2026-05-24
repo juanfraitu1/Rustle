@@ -913,7 +913,17 @@ pub fn filter_high_confidence_families(
             continue;
         }
         let n_shared = fam.multimap_reads.len();
-        if n_shared < min_shared {
+        // Exemption: if any copy in the family consists entirely of supplementary
+        // reads (0 primary reads at that locus), this is a genuine multi-copy
+        // gene family where reads are shared across copies by definition.
+        // Don't drop it on shared count thresholds — the pileup EM will handle it.
+        let has_supp_only_copy = fam.bundle_indices.iter().any(|&bi| {
+            bundles.get(bi).map(|b| {
+                !b.reads.is_empty()
+                    && b.reads.iter().all(|r| !r.is_primary_alignment)
+            }).unwrap_or(false)
+        });
+        if n_shared < min_shared && !has_supp_only_copy {
             *drops.entry("low_shared").or_insert(0) += 1;
             dump_drop(&mut dump_file, &fam, bundles, "low_shared", -1.0, -1.0);
             continue;
@@ -921,7 +931,7 @@ pub fn filter_high_confidence_families(
         // Sharing density: a 17-copy "family" with 13 shared reads has
         // 0.76 reads/copy — most copies see no cross-mapping evidence at all.
         let shared_per_copy = n_shared as f64 / n_copies as f64;
-        if shared_per_copy < min_shared_per_copy {
+        if shared_per_copy < min_shared_per_copy && !has_supp_only_copy {
             *drops.entry("low_shared_per_copy").or_insert(0) += 1;
             dump_drop(&mut dump_file, &fam, bundles, "low_shared_per_copy", -1.0, -1.0);
             continue;
@@ -2348,6 +2358,125 @@ pub fn build_diagnostic_snps(
     DiagnosticSnps { positions }
 }
 
+/// Extract the read base at a given reference position using exon coordinates.
+/// Uses a CIGAR-free approximation: assumes no indels within exon spans.
+/// Returns None if the position is intronic or outside the read.
+fn seq_base_at_ref_pos(read: &BundleRead, ref_pos: u64) -> Option<u8> {
+    if read.seq.is_empty() {
+        return None;
+    }
+    let mut query_offset: usize = read.clip_left as usize;
+    for &(exon_start, exon_end) in &read.exons {
+        if ref_pos >= exon_start && ref_pos < exon_end {
+            let offset_in_exon = (ref_pos - exon_start) as usize;
+            let qi = query_offset + offset_in_exon;
+            return read.seq.get(qi).copied().map(|b| b.to_ascii_uppercase());
+        }
+        query_offset += (exon_end - exon_start) as usize;
+    }
+    None
+}
+
+/// Build diagnostic positions from pileup of read sequences at each copy.
+/// Reference-free: compares copies to each other, not to a reference genome.
+/// Requires `BundleRead.seq` to be populated (VG mode).
+///
+/// Algorithm:
+///   1. For each copy, for each position in any read's exon span: count allele frequencies.
+///   2. At positions with sufficient coverage in ≥2 copies: compare dominant alleles.
+///   3. Positions where copies disagree (dominant allele differs) are diagnostic.
+pub fn build_pileup_diagnostics(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+) -> DiagnosticSnps {
+    let n_copies = family.bundle_indices.len();
+
+    let min_allele_support: u32 = std::env::var("RUSTLE_VGPILEUP_MIN_ALLELE_READS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+
+    // Cap per-copy read count to avoid pathological O(reads × read_length) blowup.
+    const MAX_READS_PER_COPY: usize = 10_000;
+
+    // Per-copy pileup: copy_idx → ref_pos → base → count
+    let mut copy_pileups: Vec<crate::types::DetHashMap<u64, crate::types::DetHashMap<u8, u32>>> =
+        (0..n_copies).map(|_| crate::types::DetHashMap::default()).collect();
+
+    for (copy_idx, &bi) in family.bundle_indices.iter().enumerate() {
+        let bundle = &bundles[bi];
+        let reads_to_scan = bundle.reads.iter().take(MAX_READS_PER_COPY);
+        for read in reads_to_scan {
+            if read.seq.is_empty() {
+                continue;
+            }
+            let mut query_offset: usize = read.clip_left as usize;
+            for &(exon_start, exon_end) in &read.exons {
+                for i in 0..(exon_end - exon_start) {
+                    let ref_pos = exon_start + i;
+                    let qi = query_offset + i as usize;
+                    if let Some(&base) = read.seq.get(qi) {
+                        let base = base.to_ascii_uppercase();
+                        if matches!(base, b'A' | b'C' | b'G' | b'T') {
+                            *copy_pileups[copy_idx]
+                                .entry(ref_pos)
+                                .or_default()
+                                .entry(base)
+                                .or_insert(0) += 1;
+                        }
+                    }
+                }
+                query_offset += (exon_end - exon_start) as usize;
+            }
+        }
+    }
+
+    // Collect all positions seen in any copy.
+    let all_positions: crate::types::DetHashSet<u64> = copy_pileups
+        .iter()
+        .flat_map(|p| p.keys().copied())
+        .collect();
+
+    // Find diagnostic positions: ≥2 copies with different dominant alleles.
+    let mut positions: crate::types::DetHashMap<u64, Vec<(usize, u8, f64)>> =
+        crate::types::DetHashMap::default();
+
+    for pos in all_positions {
+        let mut copy_dominants: Vec<(usize, u8, f64)> = Vec::new();
+        for (ci, pileup) in copy_pileups.iter().enumerate() {
+            let Some(alleles) = pileup.get(&pos) else { continue };
+            let total: u32 = alleles.values().sum();
+            if total < min_allele_support { continue; }
+            if let Some((&best_base, &best_count)) = alleles.iter().max_by_key(|(_, &c)| c) {
+                let freq = best_count as f64 / total as f64;
+                if freq >= 0.8 {
+                    copy_dominants.push((ci, best_base, freq));
+                }
+            }
+        }
+        // Diagnostic: ≥2 copies with different dominant alleles.
+        if copy_dominants.len() >= 2 {
+            let first_base = copy_dominants[0].1;
+            if copy_dominants.iter().any(|(_, b, _)| *b != first_base) {
+                positions.insert(pos, copy_dominants);
+            }
+        }
+    }
+
+    if std::env::var_os("RUSTLE_TRACE_VGSNP").is_some() {
+        eprintln!(
+            "[VG-PILEUP] Found {} diagnostic positions for family with {} copies (pileup method)",
+            positions.len(), n_copies,
+        );
+    }
+    if !positions.is_empty() {
+        eprintln!(
+            "[VG-PILEUP] {} diagnostic positions for family {} ({} copies)",
+            positions.len(), family.family_id, n_copies,
+        );
+    }
+
+    DiagnosticSnps { positions }
+}
+
 /// Score a read's SNP compatibility with a specific copy.
 /// Returns a bonus factor (1.0 = no info, >1.0 = matches, <1.0 = mismatches).
 ///
@@ -2380,18 +2509,21 @@ pub fn snp_compatibility(
         return 1.0; // No info — neutral.
     }
     let (match_bonus, mismatch_penalty) = snp_weights();
-    // Build mismatch lookup for this read using FxHash (3-5x faster than
-    // std HashMap with SipHash). The map is small (typical PacBio CCS read
-    // has 50-200 mismatches) but this function is in a hot per-(entry,copy)
-    // loop, so the SipHash overhead was real.
-    let mut mism_map: crate::types::DetHashMap<u64, u8> =
-        crate::types::DetHashMap::with_capacity_and_hasher(
+
+    // Build mismatch lookup for legacy path (only when seq is unavailable).
+    let mism_map: crate::types::DetHashMap<u64, u8> = if read.seq.is_empty() {
+        let mut m = crate::types::DetHashMap::with_capacity_and_hasher(
             read.mismatches.len(),
             crate::types::FixedBuild::default(),
         );
-    for &(p, b) in &read.mismatches {
-        mism_map.insert(p, b);
-    }
+        for &(p, b) in &read.mismatches {
+            m.insert(p, b);
+        }
+        m
+    } else {
+        crate::types::DetHashMap::default() // not used in seq path
+    };
+
     let mut matches = 0usize;
     let mut mismatches = 0usize;
     for (&pos, copy_info) in &diagnostic.positions {
@@ -2404,12 +2536,24 @@ pub fn snp_compatibility(
         if !covers {
             continue;
         }
-        let read_base = mism_map.get(&pos).copied().unwrap_or(b'=');
-        if read_base == *diag_base {
-            matches += 1;
+        // Get read base: prefer seq-based pileup, fall back to mismatches.
+        let read_base: Option<u8> = if !read.seq.is_empty() {
+            seq_base_at_ref_pos(read, pos)
         } else {
-            mismatches += 1;
-        }
+            // Legacy: b'=' means matches reference; actual base means mismatch.
+            Some(mism_map.get(&pos).copied().unwrap_or(b'='))
+        };
+        let Some(rb) = read_base else { continue };
+
+        // For pileup diagnostics: diag_base is always A/C/G/T.
+        // For legacy: diag_base may be b'=' (copy matches reference).
+        let is_match = if *diag_base == b'=' {
+            rb == b'='
+        } else {
+            rb == *diag_base
+        };
+
+        if is_match { matches += 1; } else { mismatches += 1; }
     }
     if matches + mismatches == 0 {
         return 1.0;
@@ -2739,11 +2883,19 @@ fn run_pre_assembly_em_inner(
             continue;
         }
 
-        // Build diagnostic SNPs if SNP mode is active.
-        let diagnostic = if use_snps {
-            Some(build_diagnostic_snps(family, bundles))
-        } else {
-            None
+        // Build diagnostic SNPs: prefer reference-free pileup when reads have
+        // seq populated (VG mode), otherwise fall back to MD-tag approach.
+        let diagnostic = {
+            let has_seq = family.bundle_indices.iter().any(|&bi| {
+                bundles.get(bi).map(|b| b.reads.iter().any(|r| !r.seq.is_empty())).unwrap_or(false)
+            });
+            if has_seq {
+                Some(build_pileup_diagnostics(family, bundles))
+            } else if use_snps {
+                Some(build_diagnostic_snps(family, bundles))
+            } else {
+                None
+            }
         };
 
         // Precompute per-entry×copy SNP bonuses ONCE (they don't change across
@@ -3427,7 +3579,8 @@ pub fn run_pre_assembly_em_hmm(
 ///
 /// If a family has no diagnostic sites (indistinguishable copies or no
 /// family graph), returns a default (no-op) EmResult for that family.
-/// Requires `--vg-snp` so that `BundleRead.mismatches` is populated.
+/// Uses BundleRead.seq (always populated in VG mode) via snp_compatibility,
+/// so does not require --vg-snp or BundleRead.mismatches.
 pub fn run_fingerprint_em(
     families: &[FamilyGroup],
     bundles: &mut [Bundle],
@@ -4346,7 +4499,7 @@ mod tests {
             unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
             countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
             pair_idx: vec![], pair_count: vec![],
-            mapq: 60, mismatches, hp_tag: None, ps_tag: None,
+            mapq: 60, mismatches, seq: Vec::new(), hp_tag: None, ps_tag: None,
             is_primary_alignment: true,
         }
     }

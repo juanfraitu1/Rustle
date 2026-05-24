@@ -571,10 +571,21 @@ pub fn record_to_bundle_read(record: &RecordBuf) -> Option<BundleRead> {
 /// mismatches vs the reference FASTA when both `chrom` and `genome` are
 /// provided. Used in VG mode to enable copy-distinguishing SNP scoring
 /// without depending on the MD tag.
+/// When `vg_mode` is true the raw read sequence is stored in `BundleRead.seq`
+/// for reference-free pileup-based copy assignment.
 pub fn record_to_bundle_read_with_snp(
     record: &RecordBuf,
     chrom: Option<&str>,
     genome: Option<&crate::genome::GenomeIndex>,
+) -> Option<BundleRead> {
+    record_to_bundle_read_with_snp_vg(record, chrom, genome, false)
+}
+
+pub fn record_to_bundle_read_with_snp_vg(
+    record: &RecordBuf,
+    chrom: Option<&str>,
+    genome: Option<&crate::genome::GenomeIndex>,
+    vg_mode: bool,
 ) -> Option<BundleRead> {
     if record.flags().is_unmapped() {
         return None;
@@ -769,6 +780,11 @@ pub fn record_to_bundle_read_with_snp(
         _ => Vec::new(),
     };
 
+    // VG pileup: store raw read sequence when in VG mode for reference-free
+    // copy assignment via build_pileup_diagnostics. seq_bytes was already
+    // computed above for poly-A detection, so we reuse it here at no extra cost.
+    let seq: Vec<u8> = if vg_mode { seq_bytes.clone() } else { Vec::new() };
+
     let is_primary_alignment =
         !record.flags().is_secondary() && !record.flags().is_supplementary();
 
@@ -817,6 +833,7 @@ pub fn record_to_bundle_read_with_snp(
         pair_count: Vec::new(),
         mapq: 0, // Not used for filtering (minimap2 assigns MAPQ=0 to all multi-mappers)
         mismatches,
+        seq,
         hp_tag,
         ps_tag,
         is_primary_alignment,
