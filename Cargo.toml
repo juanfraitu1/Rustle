@@ -153,5 +153,9 @@ path = "tests/regression/vg_hmm_negative_control.rs"
 name = "vg_family_manifest"
 path = "tests/regression/vg_family_manifest.rs"
 
+[[test]]
+name = "vg_fingerprint_em_correctness"
+path = "tests/regression/vg_fingerprint_em_correctness.rs"
+
 [dev-dependencies]
 tempfile = "3"
