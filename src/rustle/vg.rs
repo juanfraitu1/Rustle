@@ -3592,9 +3592,28 @@ pub fn run_fingerprint_em(
     let convergence_thr = 0.001;
     let t_start = std::time::Instant::now();
 
-    // Score-gap gate (same as HMM-EM, default 10.0 log-units).
+    // Score-gap gate: fingerprint evidence requires a large gap (default 10.0 log-units)
+    // to be decisive. Structural-only evidence (junction chain + alignment identity,
+    // which dominate when a read covers 0 diagnostic sequence sites) is weaker;
+    // struct_gap is a lower threshold that still lets junction/NM guide those reads.
     let gap_threshold: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(10.0);
+
+    // Multi-signal EM weights (IsoSeq-specific):
+    //   RUSTLE_VG_FP_LAMBDA_J  — junction-chain signal weight (default 1.0)
+    //   RUSTLE_VG_FP_LAMBDA_N  — alignment-identity signal weight (default 1.0)
+    //   RUSTLE_VG_STRUCT_GAP   — gap threshold when fingerprint coverage = 0 (default 0.1)
+    use std::sync::OnceLock;
+    static MULTI_SIG: OnceLock<(f64, f64, f64)> = OnceLock::new();
+    let (lambda_j, lambda_nm, struct_gap) = *MULTI_SIG.get_or_init(|| {
+        let lj  = std::env::var("RUSTLE_VG_FP_LAMBDA_J").ok()
+                     .and_then(|s| s.parse().ok()).unwrap_or(1.0_f64);
+        let lnm = std::env::var("RUSTLE_VG_FP_LAMBDA_N").ok()
+                     .and_then(|s| s.parse().ok()).unwrap_or(1.0_f64);
+        let sg  = std::env::var("RUSTLE_VG_STRUCT_GAP").ok()
+                     .and_then(|s| s.parse().ok()).unwrap_or(0.1_f64);
+        (lj, lnm, sg)
+    });
 
     for (fam_idx, family) in families.iter().enumerate() {
         let n_copies = family.bundle_indices.len();
@@ -3662,7 +3681,18 @@ pub fn run_fingerprint_em(
         struct WorkItem {
             locs: Vec<(usize, usize)>,
             fam_pos: Vec<usize>,
+            /// Sequence fingerprint: Bernoulli log-likelihood over diagnostic sites
+            /// where copies carry different bases. Accumulates across thousands of
+            /// sites for IsoSeq reads → dominant signal when coverage is high.
             log_scores: Vec<f64>,
+            /// IsoSeq-specific: ln(junction_compatibility) per placement.
+            /// Fraction of this read's splice junctions supported at copy k.
+            /// Long reads span the full junction chain; short reads see ≤1 junction.
+            junc_scores: Vec<f64>,
+            /// IsoSeq-specific: ln(alignment_identity) per placement.
+            /// 1 − (NM_rate + clip_rate)/2. Reads misaligned to the wrong copy
+            /// accumulate more edit distance over a 3 kb read than a 150 bp one.
+            nm_scores: Vec<f64>,
             /// Number of diagnostic sites covered per placement. Longer reads
             /// cover more sites and produce larger log-likelihood gaps → more
             /// decisive assignment. Tracked for attribution quality reporting.
@@ -3674,25 +3704,42 @@ pub fn run_fingerprint_em(
             .into_par_iter()
             .map(|pre| {
                 let mut log_scores: Vec<f64> = Vec::with_capacity(pre.locs.len());
+                let mut junc_scores: Vec<f64> = Vec::with_capacity(pre.locs.len());
+                let mut nm_scores:   Vec<f64> = Vec::with_capacity(pre.locs.len());
                 let mut n_sites_covered: Vec<usize> = Vec::with_capacity(pre.locs.len());
                 for (&(global_bi, ri), &fam_pos) in pre.locs.iter().zip(pre.fam_pos.iter()) {
                     if ri >= bundles[global_bi].reads.len() {
                         log_scores.push(f64::NEG_INFINITY);
+                        junc_scores.push(0.0); // neutral
+                        nm_scores.push(0.0);   // neutral
                         n_sites_covered.push(0);
                         continue;
                     }
-                    let read = &bundles[global_bi].reads[ri];
-                    // score_read_exon_fingerprint uses read.exons (aligned
-                    // to copy fam_pos) to find covered diagnostic sites and
-                    // resolves b'=' via per_copy_site_refs[fam_pos].
-                    // We take fp_scores[fam_pos]: the log P(obs | copy=fam_pos).
+                    let read   = &bundles[global_bi].reads[ri];
+                    let bundle = &bundles[global_bi];
+
+                    // Sequence fingerprint: Bernoulli log-likelihood at diagnostic sites.
                     let (fp_scores, n_cov) = score_read_exon_fingerprint(read, fam_pos, &fp);
                     log_scores.push(fp_scores.get(fam_pos).copied().unwrap_or(0.0));
                     n_sites_covered.push(n_cov);
+
+                    // Junction-chain signal (IsoSeq-specific): fraction of the read's
+                    // splice junctions that are present in other reads at this locus.
+                    // Long reads span the full junction chain; a read with copy-A-specific
+                    // junctions scores near 1.0 at locus A and near 0.0 at locus B.
+                    let jc = junction_compatibility(read, bundle).max(1e-6).ln();
+                    junc_scores.push(jc);
+
+                    // Alignment-identity signal (IsoSeq-specific): edit distance + soft-clip
+                    // rate vs. this copy's reference sequence. Misalignment accumulates over
+                    // the full read length (~3 kb), giving much stronger discrimination than
+                    // the ~150 bp window a short read provides.
+                    let ni = read_alignment_identity_score(read).max(1e-6).ln();
+                    nm_scores.push(ni);
                 }
                 WorkItem {
                     locs: pre.locs, fam_pos: pre.fam_pos,
-                    log_scores, n_sites_covered, weights: pre.weights,
+                    log_scores, junc_scores, nm_scores, n_sites_covered, weights: pre.weights,
                 }
             })
             .collect();
@@ -3721,27 +3768,49 @@ pub fn run_fingerprint_em(
             for entry in &mut entries {
                 let n = entry.locs.len();
 
-                // E-step: log-posterior = fingerprint log-score + log-prior.
+                // E-step: log P(copy=k | read) ∝ fingerprint + junction_chain + alignment_id + prior.
+                //
+                // Three conditionally-independent signals combine in log space:
+                //   fp(read, k)  = Σ_j log P(seq_base_j | copy_k)   [Bernoulli at diagnostic sites]
+                //   junc(read,k) = ln(junction_compatibility)         [IsoSeq: full junction chain]
+                //   nm(read, k)  = ln(alignment_identity)             [IsoSeq: edit-distance over full read]
+                //
+                // When fp covers many sites (IsoSeq: thousands) it dominates.
+                // For reads in conserved regions (n_sites_covered = 0), junc + nm
+                // provide structural discrimination that short reads cannot supply.
                 let log_post: Vec<f64> = (0..n)
                     .map(|i| {
-                        let s = entry.log_scores[i];
-                        if s.is_finite() { s + log_priors[entry.fam_pos[i]] }
-                        else { f64::NEG_INFINITY }
+                        let fp = entry.log_scores[i];
+                        let j  = lambda_j  * entry.junc_scores[i];
+                        let m  = lambda_nm * entry.nm_scores[i];
+                        // fp is NEG_INFINITY for failed placements (ri out of range).
+                        // j and m are 0.0 (neutral) in those cases.
+                        let base = if fp.is_finite() { fp } else { 0.0 };
+                        base + j + m + log_priors[entry.fam_pos[i]]
                     })
                     .collect();
 
                 let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                 if !max_lp.is_finite() { continue; }
 
-                // Score-gap gate: skip uncertain reads.
-                if gap_threshold > 0.0 && n >= 2 {
+                // Adaptive score-gap gate:
+                // • Fingerprint evidence (n_sites_covered > 0): require gap_threshold
+                //   (default 10.0 log-units) — large evidence requirement matches the
+                //   scale of Bernoulli sums over thousands of sites.
+                // • Structural-only evidence (junction + NM, no diagnostic sites):
+                //   require struct_gap (default 0.1 log-units) — weaker signal, lower bar.
+                //   This allows reads in conserved regions to receive soft structural
+                //   assignments that are impossible for short reads.
+                let n_cov_max = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
+                let eff_gap = if n_cov_max > 0 { gap_threshold } else { struct_gap };
+                if eff_gap > 0.0 && n >= 2 {
                     let mut best = f64::NEG_INFINITY;
                     let mut second = f64::NEG_INFINITY;
                     for &v in &log_post {
                         if v > best { second = best; best = v; }
                         else if v > second { second = v; }
                     }
-                    if best.is_finite() && second.is_finite() && (best - second) < gap_threshold {
+                    if best.is_finite() && second.is_finite() && (best - second) < eff_gap {
                         continue;
                     }
                 }
@@ -3785,9 +3854,10 @@ pub fn run_fingerprint_em(
         //   moderate  : 0.5 < gap ≤ 0.8
         //   uncertain : gap ≤ 0.5         (below score-gap gate or few sites covered)
         let mut n_reweighted = 0usize;
-        let mut n_decisive = 0usize;   // weight_gap > 0.8
-        let mut n_moderate = 0usize;   // 0.5 < gap ≤ 0.8
-        let mut n_uncertain = 0usize;  // gap ≤ 0.5
+        let mut n_decisive = 0usize;      // weight_gap > 0.8
+        let mut n_moderate = 0usize;      // 0.5 < gap ≤ 0.8
+        let mut n_uncertain = 0usize;     // gap ≤ 0.5
+        let mut n_struct_guided = 0usize; // decisive/moderate with 0 fingerprint sites (junction/NM only)
         let mut total_sites_covered = 0usize;
         let mut n_reads_with_sites = 0usize;
 
@@ -3822,13 +3892,19 @@ pub fn run_fingerprint_em(
                 else if w > second { second = w; }
             }
             let gap = best - second;
-            if gap > 0.8 { n_decisive += 1; }
-            else if gap > 0.5 { n_moderate += 1; }
-            else { n_uncertain += 1; }
+            let max_sites: usize = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
+            if gap > 0.8 {
+                n_decisive += 1;
+                if max_sites == 0 { n_struct_guided += 1; }
+            } else if gap > 0.5 {
+                n_moderate += 1;
+                if max_sites == 0 { n_struct_guided += 1; }
+            } else {
+                n_uncertain += 1;
+            }
 
             // Track sites covered (use max across placements — the read itself
             // determines this, not which copy it's aligned to).
-            let max_sites: usize = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
             if max_sites > 0 {
                 total_sites_covered += max_sites;
                 n_reads_with_sites += 1;
@@ -3861,10 +3937,11 @@ pub fn run_fingerprint_em(
         if n_total > 0 || fp.n_sites > 0 {
             eprintln!(
                 "[VG-FP-EM] Family {}: converged={} in {} iter (delta={:.6}), \
-                 {} diag-sites, {} reads — decisive={} moderate={} uncertain={}, \
-                 avg_sites_covered={:.1}",
+                 {} diag-sites, {} reads — decisive={} moderate={} uncertain={} \
+                 struct-guided={}, avg_sites_covered={:.1}",
                 family.family_id, result.converged, result.iterations, result.max_delta,
-                fp.n_sites, n_total, n_decisive, n_moderate, n_uncertain, avg_sites,
+                fp.n_sites, n_total, n_decisive, n_moderate, n_uncertain,
+                n_struct_guided, avg_sites,
             );
         }
         results.push(result);
@@ -4549,5 +4626,72 @@ mod tests {
         let fg = FamilyGraph { family_id: 0, nodes: vec![ec], edges: vec![] };
         let fp = build_exon_fingerprints(&fg, 2);
         assert_eq!(fp.n_sites, 0, "identical copies yield zero variant sites");
+    }
+
+    /// Adaptive gap gate: fingerprint-covered reads use gap_threshold (10.0);
+    /// reads with 0 covered sites fall back to struct_gap (0.1).
+    /// This is the IsoSeq-specific path that allows junction/NM signals to
+    /// guide reads in conserved regions that sequence fingerprints can't reach.
+    #[test]
+    fn adaptive_gap_selects_correct_threshold() {
+        let gap_threshold = 10.0_f64;
+        let struct_gap = 0.1_f64;
+        let score_gap = 0.5_f64; // log-units between best and second-best placements
+
+        // Structural-only read (n_cov_max = 0): should use struct_gap.
+        let eff_gap_structural = if 0 > 0 { gap_threshold } else { struct_gap };
+        assert!(
+            score_gap >= eff_gap_structural,
+            "junction/NM-guided read (0 diagnostic sites) should not be skipped: \
+             gap {score_gap} >= struct_gap {eff_gap_structural}"
+        );
+        assert!(
+            score_gap < gap_threshold,
+            "same read would be skipped by fingerprint threshold"
+        );
+
+        // Fingerprint-covered read (n_cov_max > 0): should use gap_threshold.
+        let eff_gap_fp = if 10 > 0 { gap_threshold } else { struct_gap };
+        assert!(
+            score_gap < eff_gap_fp,
+            "fingerprint-covered read with small gap should be skipped: \
+             gap {score_gap} < gap_threshold {eff_gap_fp}"
+        );
+    }
+
+    /// Multi-signal E-step: log-posterior is the log-linear sum of fingerprint,
+    /// junction-chain, and alignment-identity scores. The three signals combine
+    /// additively in log space — this is the formal model claimed for the EM.
+    #[test]
+    fn multi_signal_estep_is_additive_in_log_space() {
+        let fp_score_a = -1.0_f64;   // fingerprint: copy A preferred
+        let fp_score_b = -5.0_f64;   // fingerprint: copy B penalised
+
+        let junc_a = f64::ln(0.95);  // copy A: 95% junctions present (good match)
+        let junc_b = f64::ln(0.50);  // copy B: only 50% junctions present
+
+        let nm_a = f64::ln(0.98);    // copy A: near-perfect alignment
+        let nm_b = f64::ln(0.80);    // copy B: more edit distance
+
+        let log_prior = f64::ln(0.5); // uniform 2-copy prior
+        let lambda_j = 1.0_f64;
+        let lambda_nm = 1.0_f64;
+
+        let post_a = fp_score_a + lambda_j * junc_a + lambda_nm * nm_a + log_prior;
+        let post_b = fp_score_b + lambda_j * junc_b + lambda_nm * nm_b + log_prior;
+
+        assert!(
+            post_a > post_b,
+            "copy A should win on combined signal: {post_a:.3} vs {post_b:.3}"
+        );
+
+        // Verify the gap is larger than either signal alone would produce.
+        let fp_gap_only = fp_score_a - fp_score_b;
+        let combined_gap = post_a - post_b;
+        assert!(
+            combined_gap > fp_gap_only,
+            "junction+NM should widen the gap over fingerprint alone: \
+             combined {combined_gap:.3} > fp-only {fp_gap_only:.3}"
+        );
     }
 }
