@@ -1,0 +1,30 @@
+# gffcompare v0.12.10 | Command line was:
+#gffcompare -r bench/multi_copy_eval/ref_GOLGA8.gff bench/multi_copy_eval/stringtie_golga8/out.gtf -o bench/multi_copy_eval/stringtie_golga8/cmp
+#
+
+#= Summary for dataset: bench/multi_copy_eval/stringtie_golga8/out.gtf 
+#     Query mRNAs :    2583 in     648 loci  (2555 multi-exon transcripts)
+#            (415 multi-transcript loci, ~4.0 transcripts per locus)
+# Reference mRNAs :      34 in      17 loci  (34 multi-exon)
+# Super-loci w/ reference transcripts:        8
+#-----------------| Sensitivity | Precision  |
+        Base level:    31.9     |     0.7    |
+        Exon level:    40.6     |     1.4    |
+      Intron level:    44.4     |     1.6    |
+Intron chain level:    17.6     |     0.2    |
+  Transcript level:    17.6     |     0.2    |
+       Locus level:    35.3     |     0.9    |
+
+     Matching intron chains:       6
+       Matching transcripts:       6
+              Matching loci:       6
+
+          Missed exons:     152/298	( 51.0%)
+           Novel exons:    8156/8297	( 98.3%)
+        Missed introns:     141/279	( 50.5%)
+         Novel introns:    7831/7961	( 98.4%)
+           Missed loci:       9/17	( 52.9%)
+            Novel loci:     640/648	( 98.8%)
+
+ Total union super-loci across all input datasets: 648 
+2583 out of 2583 consensus transcripts written in bench/multi_copy_eval/stringtie_golga8/cmp.annotated.gtf (0 discarded as redundant)
