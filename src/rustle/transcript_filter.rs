@@ -2101,6 +2101,23 @@ fn isofrac_with_summary(
     let mut dead = SmallBitset::with_capacity(n.min(64));
     let mut summary = IsofracKillSummary::default();
 
+    // Pre-compute per-chain longcov sums for chain-aggregate rescue.
+    // Maps intron chain → total longcov across all non-guide multi-exon transcripts sharing that chain.
+    let chain_longcov_sums: std::collections::HashMap<Vec<(u64, u64)>, f64> =
+        if std::env::var_os("RUSTLE_CHAIN_AGGREGATE_RESCUE").is_some() {
+            let mut m: std::collections::HashMap<Vec<(u64, u64)>, f64> = Default::default();
+            for t in &txs {
+                if t.exons.len() < 2 || is_guide_pair(t) || t.synthetic { continue; }
+                let chain: Vec<(u64, u64)> = t.exons.windows(2)
+                    .map(|w| (w[0].1, w[1].0))
+                    .collect();
+                *m.entry(chain).or_insert(0.0) += t.longcov;
+            }
+            m
+        } else {
+            Default::default()
+        };
+
     let mut starts: std::collections::BTreeMap<u64, Vec<usize>> = std::collections::BTreeMap::new();
     let mut ends: std::collections::BTreeMap<u64, Vec<usize>> = std::collections::BTreeMap::new();
     for (ti, t) in txs.iter().enumerate() {
@@ -2178,6 +2195,10 @@ fn isofrac_with_summary(
         let first_multicov_snap = multicov;
         // Dominant's sorted exons — used to detect skip-exon rescue candidates.
         let dom_exons: &[(u64, u64)] = &txs[first].exons;
+        // Per-window set: tracks which chains have already used their one chain-aggregate rescue slot.
+        // Prevents multiple fragments of the same chain from all being rescued (which would produce
+        // duplicate transcripts). Reset per window so the rescued fragment keeps passing in later windows.
+        let mut chain_already_rescued: std::collections::HashSet<Vec<(u64, u64)>> = Default::default();
 
         for &k in uniq.iter().skip(1) {
             if dead.contains(k) {
@@ -2362,6 +2383,33 @@ fn isofrac_with_summary(
                             && n_distinct_in_k >= min_distinct
                         {
                             longunder = false;
+                        }
+                    }
+                }
+            }
+
+            // Chain-aggregate rescue (default OFF — F1-negative on GGO_19):
+            // When flow fragmentation splits one isoform into multiple sub-threshold extractions,
+            // their combined longcov may still pass isofrac against the dominant isoform.
+            // Tested on GGO_19 de novo: +0.6pp Sn but −3.3pp Pr at intron-chain level (net −1.6pp F1).
+            // The rescued chains are predominantly boundary variants, not genuine fragmented isoforms.
+            // At most one transcript per intron chain is rescued per window to prevent duplicate outputs.
+            // Enable via RUSTLE_CHAIN_AGGREGATE_RESCUE=1.
+            if longunder
+                && std::env::var_os("RUSTLE_CHAIN_AGGREGATE_RESCUE").is_some()
+                && txs[k].exons.len() >= 2
+                && cov >= 0.5
+                && txs[k].longcov >= 1.0
+            {
+                let chain: Vec<(u64, u64)> = txs[k].exons.windows(2)
+                    .map(|w| (w[0].1, w[1].0))
+                    .collect();
+                if !chain_already_rescued.contains(&chain) {
+                    if let Some(&chain_total) = chain_longcov_sums.get(&chain) {
+                        let dom_longcov = txs[first].longcov;
+                        if dom_longcov > 0.0 && chain_total >= isofraclong * dom_longcov {
+                            longunder = false;
+                            chain_already_rescued.insert(chain);
                         }
                     }
                 }

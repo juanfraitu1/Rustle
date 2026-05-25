@@ -6571,6 +6571,43 @@ pub fn extract_transcripts(
     let ntrflong = transfrags.iter().filter(|tf| tf.trflong_seed).count();
     let parity_seed_trace = std::env::var_os("RUSTLE_PARITY_SEED_TRACE").is_some();
     let flow_residual_se = std::env::var_os("RUSTLE_FLOW_RESIDUAL_SE").is_some();
+
+    // Pre-depletion bundle snapshot: one `transfrag_pre_depl` event per long-read seed
+    // transfrag BEFORE any extraction runs.  Enables post-hoc comparison of total
+    // chain-level evidence (sum of all transfrag_pre_depl events with matching introns)
+    // against the per-extraction flow reported in `path_extracted`.
+    if crate::parity::decisions::is_enabled() {
+        for (tf_idx, tf) in transfrags.iter().enumerate() {
+            if !tf.trflong_seed { continue; }
+            let inner: Vec<usize> = tf.node_ids.iter()
+                .filter(|&&n| n != graph.source_id && n != graph.sink_id)
+                .copied()
+                .collect();
+            let tf_start = inner.first()
+                .and_then(|&n| graph.nodes.get(n))
+                .map(|n| n.start + 1)
+                .unwrap_or(0);
+            let tf_end = inner.last()
+                .and_then(|&n| graph.nodes.get(n))
+                .map(|n| n.end)
+                .unwrap_or(0);
+            let chain = intron_chain_from_nodes(graph, &inner);
+            let introns_str = chain.iter()
+                .map(|(d, a)| format!("{}-{}", d + 1, a))
+                .collect::<Vec<_>>()
+                .join(",");
+            let payload = format!(
+                r#""idx":{},"abund":{:.4},"read_count":{:.4},"n_introns":{},"introns":"{}""#,
+                tf_idx, tf.abundance, tf.read_count, chain.len(), introns_str,
+            );
+            crate::parity::decisions::emit(
+                "transfrag_pre_depl",
+                Some(bundle_chrom), tf_start, tf_end, bundle_strand,
+                &payload,
+            );
+        }
+    }
+
     for (loop_pos, idx) in order.into_iter().enumerate() {
         // Snapshot entry-time abundance for bisect dump (matches ST's longcov).
         seed_entry_abund.insert(idx, transfrags[idx].abundance);
@@ -8925,11 +8962,13 @@ pub fn extract_transcripts(
                 .collect::<Vec<_>>()
                 .join(",");
             let pe_src = gtf_source_long_flow(&transfrags[idx].guide_tid);
+            let pe_entry_abund = seed_entry_abund.get(&idx).copied().unwrap_or(0.0);
             let pe_payload = format!(
-                r#""source":"{}","cov":{:.4},"longcov":{:.4},"nexons":{},"seed_tf":{},"flux":{:.4},"raw_flow":{:.4},"introns":"{}""#,
+                r#""source":"{}","cov":{:.4},"longcov":{:.4},"entry_abund":{:.4},"nexons":{},"seed_tf":{},"flux":{:.4},"raw_flow":{:.4},"introns":"{}""#,
                 pe_src.as_deref().unwrap_or(""),
                 coverage,
                 read_count_snapshot,
+                pe_entry_abund,
                 exons.len(),
                 idx,
                 flow_flux,
@@ -9691,6 +9730,71 @@ pub fn extract_transcripts(
                     emit_checktrf_result!(t, "incomplete", rescue_nodes);
                     continue;
                 }
+                // Junction-Acceptor Bridge (JAB) extension: when the last rescue
+                // node ends at an incoming-junction boundary — its contiguous
+                // child has ≥1 non-contiguous incoming parent (a splice junction
+                // landing there from another path) — the node split is an
+                // artifact of the dominant alternative path, not a true read end.
+                // Extend through contiguous children until a hardend or natural
+                // terminus so the rescued transcript reaches its actual 3' end.
+                //
+                // Example: at RSTL.417 (- strand), junction reads from the 13-
+                // intron dominant path land at 36063555, splitting node
+                // [36062859,36063555) from [36063555,36063659). The 12-intron
+                // rescued transcript's reads end inside the first sub-node, but
+                // the biological exon extends to 36066183. The JAB extension adds
+                // the contiguous tail nodes so the last exon is correct.
+                //
+                // Default ON; disable via RUSTLE_CHECKTRF_JAB_OFF=1.
+                let mut jab_extend_buf: Vec<usize> = Vec::new();
+                let mut jab_extended = false;
+                if std::env::var_os("RUSTLE_CHECKTRF_JAB_OFF").is_none()
+                    && !rescue_nodes.is_empty()
+                {
+                    let last = *rescue_nodes.last().unwrap();
+                    if let Some(last_n) = graph.nodes.get(last) {
+                        if !last_n.hardend {
+                            let cont_child = last_n.children.ones().find(|&c| {
+                                c != source_id
+                                    && c != sink_id
+                                    && nodes_are_contiguous(graph, last, c)
+                            });
+                            if let Some(child) = cont_child {
+                                let is_jab = graph.nodes.get(child).map_or(false, |cn| {
+                                    cn.parents.ones().any(|p| {
+                                        p != source_id
+                                            && p != sink_id
+                                            && !nodes_are_contiguous(graph, p, child)
+                                    })
+                                });
+                                if is_jab {
+                                    let mut ext = rescue_nodes.to_vec();
+                                    let mut cur = child;
+                                    loop {
+                                        if ext.contains(&cur) { break; }
+                                        ext.push(cur);
+                                        let Some(cur_n) = graph.nodes.get(cur) else { break };
+                                        if cur_n.hardend { break; }
+                                        let next = cur_n.children.ones().find(|&c| {
+                                            c != source_id
+                                                && c != sink_id
+                                                && nodes_are_contiguous(graph, cur, c)
+                                        });
+                                        match next {
+                                            Some(n) => cur = n,
+                                            None => break,
+                                        }
+                                    }
+                                    if ext.len() > rescue_nodes.len() {
+                                        jab_extend_buf = ext;
+                                        rescue_nodes = &jab_extend_buf;
+                                        jab_extended = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 let mut exons: Vec<(u64, u64)> = Vec::new();
                 let mut exoncov: Vec<f64> = Vec::new();
                 let mut cov_bp_total = 0.0f64;
@@ -9896,9 +10000,13 @@ pub fn extract_transcripts(
                     let skip_start_clip = ck_alt_tss_min > 0.0
                         && reads_start_at_node_ck.get(&first_rescue_node)
                             .copied().unwrap_or(0.0) >= ck_alt_tss_min;
-                    let skip_end_clip = ck_alt_tss_min > 0.0
-                        && reads_end_at_node_ck.get(&last_rescue_node)
-                            .copied().unwrap_or(0.0) >= ck_alt_tss_min;
+                    let skip_end_clip = jab_extended
+                        || (ck_alt_tss_min > 0.0
+                            && reads_end_at_node_ck
+                                .get(&last_rescue_node)
+                                .copied()
+                                .unwrap_or(0.0)
+                                >= ck_alt_tss_min);
                     if !skip_start_clip && longstart > 0 && !exons.is_empty() {
                         if longstart > exons[0].0 && longstart <= exons[0].1 {
                             exons[0].0 = longstart;
@@ -10027,12 +10135,13 @@ pub fn extract_transcripts(
                         .join(",");
                     let pe_n = exons.len();
                     let pe_src = gtf_source_checktrf_rescue(&transfrags[t].guide_tid);
+                    let pe_checktrf_entry = seed_entry_abund.get(&t).copied().unwrap_or(transfrags[t].abundance);
                     crate::parity::decisions::emit(
                         "path_extracted",
                         Some(bundle_chrom), pe_start, pe_end, bundle_strand,
-                        &format!(r#""source":"{}","cov":{:.4},"longcov":{:.4},"nexons":{},"introns":"{}""#,
+                        &format!(r#""source":"{}","cov":{:.4},"longcov":{:.4},"entry_abund":{:.4},"nexons":{},"introns":"{}""#,
                             pe_src.as_deref().unwrap_or("checktrf_rescue"),
-                            coverage, transfrags[t].abundance, pe_n, pe_introns),
+                            coverage, transfrags[t].abundance, pe_checktrf_entry, pe_n, pe_introns),
                     );
                 }
                 emit_checktrf_result!(t, "rescued", rescue_nodes);
