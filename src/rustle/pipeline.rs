@@ -9052,9 +9052,10 @@ fn collect_flow_residual_se(
 /// mono-exon reads represent nested minor isoforms (alternative TSS/polyA
 /// within a larger exon). Targets the STRG.521.3 pattern.
 ///
-/// Default off; enable with RUSTLE_STRANDED_SINGLE_EXON_ON=1.
+/// Default ON in de novo mode; suppressed when guide transcripts are present in bundle.
+/// Disable entirely with RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
 /// Knobs: RUSTLE_STRANDED_SE_MIN_READS (4), RUSTLE_STRANDED_SE_ENDPOINT_TOL (200),
-///        RUSTLE_STRANDED_SE_COV_RATIO (2.0).
+///        RUSTLE_STRANDED_SE_COV_RATIO (5.0).
 fn emit_stranded_single_exon_candidates(
     bundle: &crate::types::Bundle,
     bundle_txs: &[Transcript],
@@ -9063,9 +9064,13 @@ fn emit_stranded_single_exon_candidates(
     singlethr: f64,
     good_junctions: &HashSet<(u64, u64)>,
 ) -> Vec<Transcript> {
-    // Default OFF: SE emission introduces more FPs than TPs in de novo mode
-    // (−0.6pp Sn, +1.1pp Pr, +0.3pp F1 with SE OFF vs ON). Enable with RUSTLE_STRANDED_SINGLE_EXON_ON=1.
-    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_ON").is_none() {
+    // Disabled if any guide transcript is present in this bundle: in guided mode, multi-exon
+    // guides already cover real loci, and SE candidates at those loci are FPs (−1.8pp guided Pr).
+    // Disabled entirely via RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
+    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_OFF").is_some() {
+        return Vec::new();
+    }
+    if bundle_txs.iter().any(|t| crate::transcript_filter::is_guide_pair_pub(t)) {
         return Vec::new();
     }
     if std::env::var_os("RUSTLE_TRACE_STRANDED_SE").is_some() {
@@ -9082,7 +9087,7 @@ fn emit_stranded_single_exon_candidates(
     let endpoint_tol: u64 = std::env::var("RUSTLE_STRANDED_SE_ENDPOINT_TOL")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(1500);
     let cov_ratio: f64 = std::env::var("RUSTLE_STRANDED_SE_COV_RATIO")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
 
     let mut mono: Vec<(u64, u64)> = bundle
         .reads
