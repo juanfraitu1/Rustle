@@ -235,8 +235,9 @@ All 15 needy loci measured. Full automated summary: `bench/ggo19_needy_top15_bat
 | 14 | STRG.52 | **100% (2/2)** | — | ✓ |
 | 15 | STRG.95 | **100% (2/2)** | — | ✓ |
 
-**Summary:** 12/15 loci reach 100% focus Sn (was 11/15). Remaining misses:
+**Summary:** 11/15 loci reach 100% focus Sn (was 10/15 before SE-ON). Remaining misses:
 1. **Coverage floor** (STRG.251.5, STRG.453.5): low-coverage rare isoforms (longcov <1) not assembled
 2. **SE endpoint truncation** (STRG.210.5): 9.3kb SE candidate, Rustle emits c-class 3.8kb fragment (coverage drops along long SE region)
 3. **5' extension** (STRG.125.6): flow decomposition extends 5' end producing 36-exon superset of 28-exon reference
+4. **STRG.125.6** and **STRG.210.5**: architectural; no filter adjustment can recover without collateral damage
 
