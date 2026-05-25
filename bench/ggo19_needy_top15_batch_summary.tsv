@@ -1,5 +1,5 @@
 locus_run	focus_refs	query_mrnas	focus_matched	focus_sn_qry_pr	trace_notes
-STRG_251	6	10	5/6	83.3% | 80.0%	STRG.251.5:not_extracted:junctions_present
+STRG_251	6	10	5/6	83.3% | 80.0%	STRG.251.5:readthr_gate(flow_cov=0.97_longcov=1.0_zero-flux_artifact;fix_requires_checktrf_keeptrf_read_count_rescue)
 STRG_151	6	8	6/6	100.0% | 57.1%	all_focus_matched
 STRG_503	5	9	5/5	100.0% | 81.8%	all_focus_matched
 STRG_157	5	8	5/5	100.0% | 62.5%	all_focus_matched; STRG.157.7 now recovered via SE-ON
