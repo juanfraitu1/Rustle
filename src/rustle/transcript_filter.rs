@@ -906,6 +906,10 @@ fn is_guide_pair(tx: &Transcript) -> bool {
     guide_equiv_id(tx).is_some()
 }
 
+pub fn is_guide_pair_pub(tx: &Transcript) -> bool {
+    is_guide_pair(tx)
+}
+
 fn guide_id_pair(tx: &Transcript) -> Option<&str> {
     guide_equiv_id(tx)
 }
@@ -7729,6 +7733,15 @@ pub fn print_predcluster_with_summary_multi(
     };
     txs.retain(|t| {
         if is_guide_pair(t) {
+            return true;
+        }
+        // checktrf_rescue back-extend extras: retained-intron keeptrf has longcov=1.0
+        // but the extra TSS variant inherits zero-flux coverage (~0.94); exempt when
+        // longcov >= 1.0 so the correct TSS variant reaches the output.
+        if t.exons.len() > 1
+            && t.longcov >= 1.0
+            && t.source.as_deref().map_or(false, |s| s.starts_with("checktrf_rescue"))
+        {
             return true;
         }
         let threshold = if t.exons.len() == 1 {

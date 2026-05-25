@@ -9527,10 +9527,116 @@ pub fn extract_transcripts(
                 // FWD_EXT_COV_RATIO×rescue's transfrag abundance (default 15×);
                 // (3) every appended edge is a real graph edge.
                 //
+                // Back-extend: if rescue starts mid-transcript (its first node has real
+                // parents), prepend the upstream portion from the best-matching high-coverage
+                // kept_path.  Recovers retained-intron isoforms that share upstream exons
+                // with dominant spliced forms but diverge at the retained-intron site
+                // (e.g. STRG.442.3/.9: retained-intron transfrag starts at node 9 but the
+                // reference transcript starts at node 1/2, reached via the dominant path).
+                // When back-extend fires it also relaxes the fwd-extend hardend gate so the
+                // tail can be completed using a lower-coverage kept_path continuation.
+                //
+                // Default ON; disable via RUSTLE_CHECKTRF_BACK_EXTEND_OFF=1.
+                // Tunable: RUSTLE_CHECKTRF_BACK_EXTEND_COV_RATIO (default 3.0).
+                let original_rescue_nodes_for_extras: &[usize] = rescue_nodes;
+                let mut back_extend_extra_prefixes: Vec<Vec<usize>> = Vec::new();
+                let back_extend_buf: Vec<usize>;
+                let mut rescue_nodes: &[usize] = rescue_nodes;
+                let mut back_extended = false;
+                let back_extend_cov_ratio: f64 =
+                    std::env::var("RUSTLE_CHECKTRF_BACK_EXTEND_COV_RATIO")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(3.0);
+                let do_back_extend =
+                    std::env::var_os("RUSTLE_CHECKTRF_BACK_EXTEND_OFF").is_none();
+                if complete && do_back_extend && rescue_nodes.len() >= 2 {
+                    let first_node = *rescue_nodes.first().unwrap();
+                    let has_real_parent = graph.nodes.get(first_node)
+                        .map(|n| n.parents.ones().any(|p| p != source_id && p != sink_id))
+                        .unwrap_or(false);
+                    if has_real_parent {
+                        let min_kp_cov =
+                            back_extend_cov_ratio * transfrags[t].abundance.max(1e-6);
+                        // Collect best prefix per distinct starting node so that
+                        // alternative TSS variants (e.g. STRG.442.3 needing node-1
+                        // start vs. STRG.442.9 needing node-2) can each be emitted.
+                        let mut by_first: std::collections::HashMap<usize, (Vec<usize>, f64)> =
+                            std::collections::HashMap::new();
+                        for (kp_nodes, kp_cov, _, _) in &kept_paths {
+                            if *kp_cov < min_kp_cov {
+                                continue;
+                            }
+                            if let Some(pos) =
+                                kp_nodes.iter().position(|&n| n == first_node)
+                            {
+                                if pos == 0 {
+                                    continue;
+                                }
+                                let prefix: Vec<usize> = kp_nodes[..pos]
+                                    .iter()
+                                    .copied()
+                                    .filter(|&n| n != source_id && n != sink_id)
+                                    .collect();
+                                if prefix.is_empty() {
+                                    continue;
+                                }
+                                let last_step_ok = graph
+                                    .nodes
+                                    .get(*prefix.last().unwrap())
+                                    .map(|n| n.children.contains(first_node))
+                                    .unwrap_or(false);
+                                if !last_step_ok {
+                                    continue;
+                                }
+                                let fn_ = *prefix.first().unwrap();
+                                let entry = by_first.entry(fn_).or_insert_with(|| (prefix.clone(), 0.0));
+                                if *kp_cov > entry.1 {
+                                    *entry = (prefix, *kp_cov);
+                                }
+                            }
+                        }
+                        // Pick highest-cov prefix as the main back_extend target.
+                        if let Some((&best_fn, _)) = by_first.iter()
+                            .max_by(|a, b| a.1.1.partial_cmp(&b.1.1).unwrap_or(std::cmp::Ordering::Equal))
+                        {
+                            let (best_prefix, _) = by_first.remove(&best_fn).unwrap();
+                            // Remaining entries become alternative TSS variants.
+                            for (_, (prefix, _)) in &by_first {
+                                back_extend_extra_prefixes.push(prefix.clone());
+                            }
+                            let mut extended: Vec<usize> = best_prefix;
+                            extended.extend_from_slice(rescue_nodes);
+                            back_extend_buf = extended;
+                            rescue_nodes = &back_extend_buf;
+                            back_extended = true;
+                        }
+                    }
+                }
+                let mut fwd_tail_for_extras: Vec<usize> = Vec::new();
+                // Forward-extend the rescue path when the seed's last node is an
+                // alt-TES artifact (hardend=true) but a much-higher-cov kept_path
+                // passes through INTERIOR to its chain. Targets cassette-arbitration
+                // misses (e.g. STRG.440.5): the seed's read terminates at the
+                // canonical penultimate exon (which has hardend=true from other
+                // truncated reads), but a sibling isoform extends to the proper TES.
+                // By appending that sibling's tail we recover the full chain. The
+                // truncated rescue would otherwise die at the retained_intron filter.
+                //
+                // When back_extended=true the hardend gate is relaxed so that
+                // stitched retained-intron transcripts whose tail was truncated
+                // (the read stopped mid-transcript) can also be completed from a
+                // lower-coverage kept_path continuation.
+                //
+                // Gates: (1) seed's last node has hardend=true OR back_extend just
+                // fired; (2) at least one kept_path passes through this node with
+                // pos+1 < len AND cov ≥ cov_ratio × rescue's abundance (default 15.0
+                // normal; back_extend_cov_ratio when back-extending); (3) every
+                // appended edge is a real graph edge.
+                //
                 // Default ON; disable via RUSTLE_CHECKTRF_FWD_EXTEND_OFF=1.
                 // Tunable: RUSTLE_CHECKTRF_FWD_EXTEND_COV_RATIO (default 15.0).
                 let fwd_extend_buf: Vec<usize>;
-                let mut rescue_nodes: &[usize] = rescue_nodes;
                 let do_fwd_extend =
                     std::env::var_os("RUSTLE_CHECKTRF_FWD_EXTEND_OFF").is_none();
                 if complete && do_fwd_extend && rescue_nodes.len() >= 3 {
@@ -9540,9 +9646,14 @@ pub fn extract_transcripts(
                     let has_real_child = graph.nodes.get(last_node)
                         .map(|n| n.children.ones().any(|c| c != sink_id && c != source_id))
                         .unwrap_or(false);
-                    if last_is_hardend && has_real_child {
+                    if (last_is_hardend || back_extended) && has_real_child {
+                        let default_cov_ratio = if back_extended {
+                            back_extend_cov_ratio
+                        } else {
+                            15.0
+                        };
                         let cov_ratio: f64 = std::env::var("RUSTLE_CHECKTRF_FWD_EXTEND_COV_RATIO")
-                            .ok().and_then(|v| v.parse().ok()).unwrap_or(15.0);
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(default_cov_ratio);
                         let min_kp_cov = cov_ratio * transfrags[t].abundance.max(1e-6);
                         let mut best_tail: Vec<usize> = Vec::new();
                         let mut best_cov: f64 = 0.0;
@@ -9564,6 +9675,7 @@ pub fn extract_transcripts(
                             }
                         }
                         if !best_tail.is_empty() {
+                            fwd_tail_for_extras = best_tail.clone();
                             let mut extended: Vec<usize> = rescue_nodes.to_vec();
                             extended.extend_from_slice(&best_tail);
                             fwd_extend_buf = extended;
@@ -9952,6 +10064,60 @@ pub fn extract_transcripts(
                     }
                 }
                 kept_paths.push((rescue_nodes.to_vec(), coverage, transfrags[t].guide, out_idx));
+                // Emit alternative TSS variants (e.g. STRG.442.3 node-1 start while
+                // main rescue used the higher-cov node-2 start for STRG.442.9).
+                if !back_extend_extra_prefixes.is_empty() {
+                    let extra_source = gtf_source_checktrf_rescue(&transfrags[t].guide_tid);
+                    for extra_prefix in &back_extend_extra_prefixes {
+                        let variant_nodes: Vec<usize> = extra_prefix.iter().copied()
+                            .chain(original_rescue_nodes_for_extras.iter().copied())
+                            .chain(fwd_tail_for_extras.iter().copied())
+                            .collect();
+                        let mut variant_exons: Vec<(u64, u64)> = Vec::new();
+                        let mut ji = 0usize;
+                        while ji < variant_nodes.len() {
+                            let nid = variant_nodes[ji];
+                            if nid == source_id || nid == sink_id { ji += 1; continue; }
+                            let Some(vnode) = graph.nodes.get(nid) else { ji += 1; continue; };
+                            let vstart = vnode.start;
+                            let mut vend = vnode.end;
+                            while ji + 1 < variant_nodes.len()
+                                && nodes_are_contiguous(graph, variant_nodes[ji], variant_nodes[ji + 1])
+                            {
+                                ji += 1;
+                                if let Some(nn) = graph.nodes.get(variant_nodes[ji]) { vend = nn.end; }
+                            }
+                            variant_exons.push((vstart, vend));
+                            ji += 1;
+                        }
+                        if variant_exons.len() < 2 { continue; }
+                        let vlen: u64 = variant_exons.iter().map(|(s, e)| len_half_open(*s, *e)).sum();
+                        if vlen < config.min_transcript_length { continue; }
+                        let vfirst = variant_nodes.iter().find(|&&n| n != source_id && n != sink_id).copied().unwrap_or(source_id);
+                        let vlast = variant_nodes.iter().rev().find(|&&n| n != source_id && n != sink_id).copied().unwrap_or(vfirst);
+                        out.push(Transcript {
+                            chrom: bundle_chrom.to_string(),
+                            strand: bundle_strand,
+                            exons: variant_exons.clone(),
+                            coverage,
+                            exon_cov: vec![coverage; variant_exons.len()],
+                            tpm: 0.0, fpkm: 0.0,
+                            source: extra_source.clone(),
+                            is_longread: long_read_mode,
+                            longcov: transfrags[t].abundance,
+                            bpcov_cov: 0.0, all_strand_cov: 0.0,
+                            transcript_id: None, gene_id: None,
+                            ref_transcript_id: None, ref_gene_id: None,
+                            hardstart: graph.nodes.get(vfirst).map(|n| n.hardstart).unwrap_or(false),
+                            hardend: graph.nodes.get(vlast).map(|n| n.hardend).unwrap_or(false),
+                            alt_tts_end: graph.nodes.get(vlast).map(|n| n.alt_tts_end).unwrap_or(false),
+                            vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                            copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false,
+                            rescue_class: None,
+                            raw_flow_sum: 0.0,
+                        });
+                    }
+                }
                 trace_abundance_lifecycle(
                     "checktrf_rescued_before_zero",
                     t,
