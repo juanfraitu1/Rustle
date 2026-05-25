@@ -52,6 +52,10 @@ pub enum RescueClass {
     /// the transfrag's coverage into the chimeric path and then independently
     /// rescues it with its true shorter 5' boundary.
     ChimericSuffixRescue,
+    /// Transcript topology transferred from a high-confidence sister paralog
+    /// copy via ExonClass coordinate projection. Exon structure is known but
+    /// direct read evidence at this copy is insufficient for de novo assembly.
+    TopologyBorrow,
 }
 
 impl RescueClass {
@@ -66,6 +70,7 @@ impl RescueClass {
             RescueClass::NeedsExternalVerification => "needs_external_verification",
             RescueClass::NovelLocusFromScan => "novel_locus_from_scan",
             RescueClass::ChimericSuffixRescue => "chimeric_suffix_rescue",
+            RescueClass::TopologyBorrow => "topology_borrow",
         }
     }
 }

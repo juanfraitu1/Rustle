@@ -4006,6 +4006,7 @@ pub fn write_family_report_with_em(
                     Some(RescueClass::NovelLocusFromScan)
                     | Some(RescueClass::NeedsExternalVerification)
                     | Some(RescueClass::ChimericSuffixRescue)
+                    | Some(RescueClass::TopologyBorrow)
                     | None => {}
                 }
             }
@@ -4533,6 +4534,203 @@ pub fn split_bundle_by_phase(bundle: &Bundle) -> Vec<(Bundle, Option<u8>)> {
     );
 
     result
+}
+
+// ── Direction 1: Post-assembly topology transfer ──────────────────────────────
+
+/// State saved from the EM phase to enable post-assembly topology transfer.
+pub struct TopoTransferState {
+    /// FamilyGroup partitions (copy index → bundle index, same ordering as family_graphs).
+    pub partitions: Vec<FamilyGroup>,
+    /// FamilyGraph per partition entry (None if genome was unavailable for that family).
+    pub family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>>,
+    /// Snapshot of bundles at EM time (needed for chrom/strand/reads access after
+    /// `bundles` is consumed by the parallel assembly loop).
+    pub bundles: Vec<crate::types::Bundle>,
+}
+
+/// Transfer assembled isoform junction chains from high-confidence copies to
+/// under-assembled sister copies in the same gene family.
+///
+/// After EM + first-pass assembly, some copies have confident multi-exon
+/// transcripts (`copy_assignment_confidence ≥ min_confidence`) while sisters
+/// may have fewer or no assembled isoforms. This function projects the exon
+/// topology from high-confidence source copies to sisters using
+/// `ExonClass.per_copy_spans` coordinate mapping.
+///
+/// A projected transcript is added only if:
+///   (a) every exon in the source transcript can be mapped to an ExonClass
+///       node that also has a span for the sister copy, and
+///   (b) the sister bundle has at least one read whose alignment overlaps
+///       any projected exon (proves the copy is expressed).
+///
+/// Returns new synthetic `Transcript` objects to append to the assembly.
+/// These carry `synthetic = true`, `rescue_class = TopologyBorrow`, and
+/// `copy_assignment_confidence = source_confidence * 0.5` (confidence-discounted).
+pub fn transfer_assembled_topology(
+    assembled_txs: &[crate::path_extract::Transcript],
+    state: &TopoTransferState,
+    min_confidence: f64,
+) -> Vec<crate::path_extract::Transcript> {
+    const SPAN_TOL: u64 = 50; // exon-end matching tolerance (bp)
+
+    use std::collections::HashMap;
+    let mut result: Vec<crate::path_extract::Transcript> = Vec::new();
+
+    // Build family_id → partition_idx lookup.
+    let mut fam_to_pi: HashMap<usize, usize> = HashMap::new();
+    for (pi, part) in state.partitions.iter().enumerate() {
+        fam_to_pi.insert(part.family_id, pi);
+    }
+
+    // Group source transcripts by (family_id, copy_id).
+    // Only multi-exon txs with sufficient confidence qualify as sources.
+    let mut by_fam_copy: HashMap<(usize, usize), Vec<&crate::path_extract::Transcript>> =
+        HashMap::new();
+    for tx in assembled_txs {
+        if tx.exons.len() < 2 {
+            continue;
+        }
+        let (Some(fam_id), Some(copy_id)) = (tx.vg_family_id, tx.vg_copy_id) else {
+            continue;
+        };
+        let conf = tx.copy_assignment_confidence.unwrap_or(0.0);
+        if conf < min_confidence {
+            continue;
+        }
+        by_fam_copy.entry((fam_id, copy_id)).or_default().push(tx);
+    }
+
+    for ((fam_id, src_copy_id), src_txs) in &by_fam_copy {
+        let pi = match fam_to_pi.get(fam_id) {
+            Some(&i) => i,
+            None => continue,
+        };
+        let fg = match state.family_graphs.get(pi).and_then(|o| o.as_ref()) {
+            Some(g) => g,
+            None => continue,
+        };
+        let part = &state.partitions[pi];
+        let n_copies = part.bundle_indices.len();
+
+        for sister_copy_id in 0..n_copies {
+            if sister_copy_id == *src_copy_id {
+                continue;
+            }
+            let sister_bi = part.bundle_indices[sister_copy_id];
+            let sister_bundle = match state.bundles.get(sister_bi) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            for src_tx in src_txs.iter() {
+                // Project each exon of src_tx from src copy to sister copy.
+                let mut proj_exons: Vec<(u64, u64)> =
+                    Vec::with_capacity(src_tx.exons.len());
+                let mut ok = true;
+
+                for &(ex_s, ex_e) in &src_tx.exons {
+                    // Find the ExonClass node whose per_copy_spans[src_copy] overlaps this exon.
+                    let matched_node = fg.nodes.iter().find(|n| {
+                        n.per_copy_spans.iter().any(|(c, (ns, ne))| {
+                            *c == *src_copy_id
+                                && ns.saturating_sub(SPAN_TOL) <= ex_s
+                                && ex_e <= ne.saturating_add(SPAN_TOL)
+                        })
+                    });
+                    match matched_node {
+                        Some(node) => {
+                            match node
+                                .per_copy_spans
+                                .iter()
+                                .find(|(c, _)| *c == sister_copy_id)
+                            {
+                                Some((_, (ss, se))) => proj_exons.push((*ss, *se)),
+                                None => {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                        None => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+
+                if !ok || proj_exons.is_empty() {
+                    continue;
+                }
+
+                // Validate: sister bundle has at least one read overlapping the projected region.
+                let has_reads = sister_bundle.reads.iter().any(|r| {
+                    proj_exons
+                        .iter()
+                        .any(|&(ps, pe)| r.ref_start < pe && r.ref_end > ps)
+                });
+                if !has_reads {
+                    continue;
+                }
+
+                proj_exons.sort_by_key(|&(s, _)| s);
+
+                let src_conf = src_tx.copy_assignment_confidence.unwrap_or(0.0);
+
+                // Build the synthetic transcript.
+                let synth = build_topology_borrow_transcript(
+                    sister_bundle,
+                    proj_exons,
+                    *fam_id,
+                    sister_copy_id,
+                    n_copies,
+                    src_conf * 0.5,
+                );
+                result.push(synth);
+            }
+        }
+    }
+    result
+}
+
+fn build_topology_borrow_transcript(
+    sister_bundle: &crate::types::Bundle,
+    exons: Vec<(u64, u64)>,
+    family_id: usize,
+    copy_id: usize,
+    family_size: usize,
+    confidence: f64,
+) -> crate::path_extract::Transcript {
+    use crate::path_extract::Transcript;
+    Transcript {
+        chrom: sister_bundle.chrom.clone(),
+        strand: sister_bundle.strand,
+        exons,
+        coverage: 0.0,
+        exon_cov: Vec::new(),
+        tpm: 0.0,
+        fpkm: 0.0,
+        source: Some("topo_borrow".to_string()),
+        is_longread: true,
+        longcov: 0.0,
+        bpcov_cov: 0.0,
+        all_strand_cov: 0.0,
+        transcript_id: None,
+        gene_id: None,
+        ref_transcript_id: None,
+        ref_gene_id: None,
+        hardstart: false,
+        hardend: false,
+        alt_tts_end: false,
+        vg_family_id: Some(family_id),
+        vg_copy_id: Some(copy_id),
+        vg_family_size: Some(family_size),
+        copy_assignment_confidence: Some(confidence),
+        intron_low: Vec::new(),
+        synthetic: true,
+        rescue_class: Some(crate::vg_hmm::diagnostic::RescueClass::TopologyBorrow),
+        raw_flow_sum: 0.0,
+    }
 }
 
 #[cfg(test)]

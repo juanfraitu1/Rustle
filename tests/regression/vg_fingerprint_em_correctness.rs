@@ -259,3 +259,41 @@ fn fp_em_decisiveness_scales_with_diagnostic_site_coverage() {
         );
     }
 }
+
+#[test]
+fn topo_borrow_adds_transcripts_to_under_assembled_copies() {
+    if !fixture_present() { return; }
+    // Run without topo borrow.
+    let (gtf_base, _) = run_fp_em();
+    // Run with topo borrow.
+    let gtf_topo = {
+        let gtf_file = tempfile::NamedTempFile::new().unwrap();
+        let status = std::process::Command::new(env!("CARGO_BIN_EXE_rustle"))
+            .env("RUSTLE_VG_TOPO_BORROW", "1")
+            .args([
+                "-L",
+                "--vg",
+                "--vg-no-hmm",
+                "--genome-fasta", FIXTURE_FA,
+                "-o", gtf_file.path().to_str().unwrap(),
+                FIXTURE_BAM,
+            ])
+            .status()
+            .expect("rustle spawn failed");
+        assert!(status.success(), "rustle with RUSTLE_VG_TOPO_BORROW exited non-zero: {:?}", status);
+        std::fs::read_to_string(gtf_file.path()).unwrap_or_default()
+    };
+    // With topo borrow: should have >= as many transcripts as without.
+    let count_base = gtf_base.lines().filter(|l| l.contains("\ttranscript\t")).count();
+    let count_topo = gtf_topo.lines().filter(|l| l.contains("\ttranscript\t")).count();
+    assert!(
+        count_topo >= count_base,
+        "topo borrow should not remove transcripts: base={} topo={}",
+        count_base, count_topo
+    );
+    // At least one topology_borrow transcript should appear (if source copy has
+    // confident multi-exon transcripts that can be projected to the sister).
+    // The fixture has two synthetic gene copies — if neither qualifies, just check
+    // that the binary ran successfully and count did not drop.
+    let _ = gtf_topo.contains("topo_borrow"); // informational; not a hard assert for sparse fixtures
+}

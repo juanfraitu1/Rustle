@@ -10123,6 +10123,8 @@ pub fn run<P: AsRef<Path>>(
     // so splice graphs can grow paths through zero-coverage exons.
     let mut bundle_completion_nodes: std::collections::HashMap<usize, Vec<(u64, u64)>> =
         std::collections::HashMap::new();
+    // State for post-assembly topology transfer (Direction 1, opt-in via RUSTLE_VG_TOPO_BORROW).
+    let mut vg_topo_state: Option<crate::vg::TopoTransferState> = None;
 
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
@@ -10302,6 +10304,16 @@ pub fn run<P: AsRef<Path>>(
                                 &family_graphs,
                             );
                         }
+                    }
+                    // Save state for post-assembly topology transfer (Direction 1).
+                    // Bundles are cloned here because they are consumed (moved) by the
+                    // parallel assembly loop that runs later.
+                    if build_graph && std::env::var_os("RUSTLE_VG_TOPO_BORROW").is_some() {
+                        vg_topo_state = Some(crate::vg::TopoTransferState {
+                            partitions: em_hmm_partitions.clone(),
+                            family_graphs: family_graphs.iter().map(|o| o.clone()).collect(),
+                            bundles: bundles.clone(),
+                        });
                     }
                     em_res
                 }
@@ -17292,6 +17304,27 @@ pub fn run<P: AsRef<Path>>(
             all_transcripts = crate::transcript_filter::opp_strand_dominance_filter(
                 all_transcripts, opp_ratio, config.verbose);
             emit_post_pred_kills("global_opp_strand_dominance", &_before, &all_transcripts);
+        }
+    }
+
+    // Topology transfer: project high-confidence isoform chains to sister copies.
+    if let Some(ref topo_state) = vg_topo_state {
+        let min_conf = std::env::var("RUSTLE_VG_TOPO_MIN_CONF")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.7_f64);
+        let sister_txs = crate::vg::transfer_assembled_topology(
+            &all_transcripts,
+            topo_state,
+            min_conf,
+        );
+        let n = sister_txs.len();
+        if n > 0 {
+            eprintln!(
+                "[VG-TOPO] topology transfer: +{} synthetic transcripts from sister copies",
+                n
+            );
+            all_transcripts.extend(sister_txs);
         }
     }
 
