@@ -162,6 +162,18 @@ pub fn compute_transcript_intron_low(tx: &Transcript, bpcov: &BpcovStranded) -> 
         let stringtie_mode = std::env::var_os("RUSTLE_INTRON_LOW_STRINGTIE_OFF").is_none();
         let trace_il = std::env::var_os("RUSTLE_INTRON_LOW_TRACE").is_some();
         let intron_full_cov = avg_cov(bpcov.plus.idx(intron_start), bpcov.plus.idx(intron_end));
+        // ST's `if(introncov)` guard: zero-cov introns are not marked low (default stays false).
+        // Only enter the classification block when introncov > 0, matching rlink.cpp:17832.
+        if stringtie_mode && intron_full_cov == 0.0 {
+            if trace_il {
+                eprintln!(
+                    "[IL] intron={}-{} tier=0 full_cov=0 RESULT=NOT_LOW (ST compat)",
+                    intron_start, intron_end
+                );
+            }
+            out.push(false);
+            continue;
+        }
         if stringtie_mode && intron_full_cov < 1.0 {
             if trace_il {
                 eprintln!(
