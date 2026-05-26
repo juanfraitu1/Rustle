@@ -6948,6 +6948,56 @@ fn extract_bundle_transcripts_for_graph(
         // overlap loci where the same genomic position has reads on both strands.
         tx.all_strand_cov =
             crate::gene_abundance::compute_transcript_all_strand_cov(tx, bpcov_stranded);
+        if crate::parity::decisions::is_enabled() && tx.exons.len() >= 2 {
+            let avg_cov_range = |lo: u64, hi: u64| -> f64 {
+                let si = bpcov_stranded.plus.idx(lo);
+                let ei = bpcov_stranded.plus.idx(hi).min(bpcov_stranded.plus.cov.len());
+                if ei <= si {
+                    return 0.0;
+                }
+                let sum: f64 = (si..ei)
+                    .map(|i| {
+                        bpcov_stranded.plus.cov[i] as f64
+                            + bpcov_stranded.minus.cov.get(i).copied().unwrap_or(0.0) as f64
+                    })
+                    .sum();
+                sum / (ei - si) as f64
+            };
+            let exon_covs: Vec<String> = tx
+                .exons
+                .iter()
+                .map(|&(s, e)| format!("{:.4}", avg_cov_range(s, e)))
+                .collect();
+            let intron_covs: Vec<String> = tx
+                .exons
+                .windows(2)
+                .map(|w| format!("{:.4}", avg_cov_range(w[0].1, w[1].0)))
+                .collect();
+            let il_mask: Vec<&str> = tx
+                .intron_low
+                .iter()
+                .map(|&b| if b { "1" } else { "0" })
+                .collect();
+            let start = tx.exons.first().map(|e| e.0).unwrap_or(0);
+            let end = tx.exons.last().map(|e| e.1).unwrap_or(0);
+            let payload = format!(
+                r#""cov":{:.4},"longcov":{:.4},"pileup_cov":{:.4},"intron_low":"{}","intron_covs":"{}","exon_covs":"{}""#,
+                tx.coverage,
+                tx.longcov,
+                tx.all_strand_cov,
+                il_mask.join(","),
+                intron_covs.join(","),
+                exon_covs.join(","),
+            );
+            crate::parity::decisions::emit(
+                "pred_intron_low",
+                Some(&tx.chrom),
+                start,
+                end,
+                tx.strand,
+                &payload,
+            );
+        }
         // IMPORTANT: do not overwrite `tx.coverage` (flow-derived) by default.
         // the pred->cov flow value is flow-derived; using raw bpcov makes cov wildly larger on deep loci
         // (e.g. STRG.27.3: ~31 vs the expected ~6) and breaks isofrac/pairwise decisions.
