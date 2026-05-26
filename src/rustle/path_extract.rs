@@ -10463,6 +10463,92 @@ pub fn extract_transcripts(
             }
         }
     }
+    // Checktrf stitch pass: detect pairs of checktrf-rescued fragments where
+    // A's last-exon end and B's first-exon start form a junction present in good_junctions.
+    // Opt-in (RUSTLE_STITCH_CHECKTRF=1) to create stitched transcripts; parity events
+    // (checktrf_stitch_candidate) are emitted whenever RUSTLE_PARITY_LOG is set.
+    let stitch_checktrf = std::env::var_os("RUSTLE_STITCH_CHECKTRF").is_some();
+    if (stitch_checktrf || crate::parity::decisions::is_enabled()) && !out.is_empty() {
+        if let Some(gj) = good_junctions {
+            let ctrf_indices: Vec<usize> = out.iter().enumerate()
+                .filter(|(_, tx)| matches!(tx.source.as_deref(),
+                    Some(s) if s == "checktrf_rescue" || s.starts_with("guide:")))
+                .map(|(i, _)| i)
+                .collect();
+
+            let mut new_stitched: Vec<Transcript> = Vec::new();
+
+            for &bi in &ctrf_indices {
+                let Some(b_first) = out[bi].exons.first().copied() else { continue };
+                if out[bi].hardstart { continue; }
+                for &ai in &ctrf_indices {
+                    if ai == bi { continue; }
+                    let Some(a_last) = out[ai].exons.last().copied() else { continue };
+                    if out[ai].hardend { continue; }
+                    // A must end strictly before B starts, with a gap (intron)
+                    if a_last.1 >= b_first.0 { continue; }
+                    // Bridge junction must be in good_junctions
+                    if !gj.contains(&(a_last.1, b_first.0)) { continue; }
+
+                    let a_start = out[ai].exons.first().map(|e| e.0 + 1).unwrap_or(0);
+                    let b_end = out[bi].exons.last().map(|e| e.1).unwrap_or(0);
+
+                    if crate::parity::decisions::is_enabled() {
+                        let left_chain: String = out[ai].exons.windows(2)
+                            .filter(|w| w[1].0 > w[0].1)
+                            .map(|w| format!("{}-{}", w[0].1 + 1, w[1].0))
+                            .collect::<Vec<_>>().join(",");
+                        let right_chain: String = out[bi].exons.windows(2)
+                            .filter(|w| w[1].0 > w[0].1)
+                            .map(|w| format!("{}-{}", w[0].1 + 1, w[1].0))
+                            .collect::<Vec<_>>().join(",");
+                        crate::parity::decisions::emit(
+                            "checktrf_stitch_candidate",
+                            Some(bundle_chrom), a_start, b_end, bundle_strand,
+                            &format!(r#""left_introns":"{}","right_introns":"{}","bridge":"{}-{}","left_cov":{:.4},"right_cov":{:.4}"#,
+                                left_chain, right_chain,
+                                a_last.1 + 1, b_first.0,
+                                out[ai].coverage, out[bi].coverage),
+                        );
+                    }
+
+                    if stitch_checktrf {
+                        let mut stitched_exons = out[ai].exons.clone();
+                        stitched_exons.extend_from_slice(&out[bi].exons);
+                        let stitch_cov = (out[ai].coverage + out[bi].coverage) / 2.0;
+                        let stitch_longcov = (out[ai].longcov + out[bi].longcov) / 2.0;
+                        let n_ex = stitched_exons.len();
+                        new_stitched.push(Transcript {
+                            chrom: out[ai].chrom.clone(),
+                            strand: out[ai].strand,
+                            exons: stitched_exons,
+                            coverage: stitch_cov,
+                            exon_cov: vec![stitch_cov; n_ex],
+                            tpm: 0.0, fpkm: 0.0,
+                            source: Some("checktrf_stitched".to_string()),
+                            is_longread: out[ai].is_longread,
+                            longcov: stitch_longcov,
+                            bpcov_cov: 0.0, all_strand_cov: 0.0,
+                            transcript_id: None, gene_id: None,
+                            ref_transcript_id: None, ref_gene_id: None,
+                            hardstart: out[ai].hardstart,
+                            hardend: out[bi].hardend,
+                            alt_tts_end: out[bi].alt_tts_end,
+                            vg_family_id: None, vg_copy_id: None, vg_family_size: None,
+                            copy_assignment_confidence: None,
+                            intron_low: Vec::new(), synthetic: false,
+                            rescue_class: None, raw_flow_sum: 0.0,
+                        });
+                    }
+                }
+            }
+
+            if stitch_checktrf {
+                out.extend(new_stitched);
+            }
+        }
+    }
+
     if config.verbose && longrec_attempted > 0 {
         eprintln!(
             "    strict_longrec_port {}:{}({}) attempted={} succeeded={} fallback={} back_fail={} fwd_fail={} path_invalid={} back_unreachable_minpath={} back_no_reach={} back_no_choice={} back_exclude_no_support={} fwd_unreachable_maxpath={} fwd_no_reach={} fwd_no_choice={} fwd_exclude_no_support={}",

@@ -1523,11 +1523,16 @@ fn merge_region_outer_bundles(
                 .unwrap_or(5);
 
             if use_st_graph {
-                // StringTie-style bundlenode graph inference
-                let inferer = crate::junction_graph_st::BundlenodeGraphInferer::from_reads(
-                    &reads, start, end,
+                // StringTie-style bundlenode graph inference.
+                // Seed the graph with currently-known junctions so nodes split at real
+                // splice boundaries, then let read paths through the graph discover any
+                // additional junction evidence not yet in junction_stats.
+                let known_junctions: Vec<(u64, u64)> = junction_stats.keys()
+                    .map(|j| (j.donor, j.acceptor))
+                    .collect();
+                let inferer = crate::junction_graph_st::BundlenodeGraphInferer::from_reads_and_junctions(
+                    &reads, start, end, &known_junctions,
                     config.min_intron_length,
-                    1_000_000u64,
                 );
                 inferer.inject_into(&mut junction_stats, min_bridge);
             } else {
