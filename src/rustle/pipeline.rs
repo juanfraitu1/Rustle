@@ -17079,6 +17079,66 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
+    // Guided mode: suppress transcripts whose entire span falls within a
+    // single intron of a guide transcript on the same strand. These are
+    // intronic read-overhang assemblies — the annotation explicitly says
+    // the region is intronic, so same-strand novel tx there are artifacts.
+    // SE and multi-exon alike. Opt-out: RUSTLE_GUIDE_INTRON_SUPPRESS_OFF=1.
+    if !config.eonly && !guide_transcripts.is_empty()
+        && std::env::var_os("RUSTLE_GUIDE_INTRON_SUPPRESS_OFF").is_none()
+    {
+        // Build (chrom, strand) → sorted intron intervals from guide tx.
+        let mut guide_introns: std::collections::HashMap<
+            (String, char),
+            Vec<(u64, u64)>,
+        > = std::collections::HashMap::new();
+        for t in all_transcripts.iter().filter(|t| is_guide_tx(t) && t.exons.len() >= 2) {
+            let key = (t.chrom.clone(), t.strand);
+            let entry = guide_introns.entry(key).or_default();
+            for w in t.exons.windows(2) {
+                entry.push((w[0].1, w[1].0)); // (intron_start, intron_end) exclusive
+            }
+        }
+        for v in guide_introns.values_mut() {
+            v.sort_unstable();
+            v.dedup();
+        }
+
+        if !guide_introns.is_empty() {
+            let _before_gis = pre_filter_snapshot(&all_transcripts);
+            let before = all_transcripts.len();
+            all_transcripts.retain(|t| {
+                if is_guide_tx(t) { return true; }
+                let ts = t.exons.first().map(|e| e.0).unwrap_or(0);
+                let te = t.exons.last().map(|e| e.1).unwrap_or(0);
+                let key = (t.chrom.clone(), t.strand);
+                if let Some(introns) = guide_introns.get(&key) {
+                    // Find all introns with intron_start ≤ ts, check if any
+                    // also has intron_end ≥ te (i.e., [ts,te] ⊆ [is,ie]).
+                    // Cannot stop at just introns[pos-1]: a shorter sibling
+                    // intron from another guide tx may sort later than a
+                    // larger containing intron (same start → longer sorts
+                    // after shorter, or overlapping introns from different tx).
+                    let pos = introns.partition_point(|&(is, _)| is <= ts);
+                    for k in (0..pos).rev() {
+                        let (is, ie) = introns[k];
+                        if ts >= is && te <= ie {
+                            return false; // entirely within a guide intron
+                        }
+                    }
+                }
+                true
+            });
+            emit_post_pred_kills("global_guide_intron_suppress", &_before_gis, &all_transcripts);
+            if config.verbose && all_transcripts.len() < before {
+                eprintln!(
+                    "rustle: guide_intron_suppress: removed {} intronic tx",
+                    before - all_transcripts.len()
+                );
+            }
+        }
+    }
+
     // Precision cleanup: group tx by Rustle's own gene-assignment (exon-
     // overlap union-find, same algorithm as GTF gene numbering). Within
     // each gene, drop tx with cov < alpha × max-sibling-cov. Targets
