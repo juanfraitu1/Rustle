@@ -396,7 +396,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
         };
         txs.push(tx);
         if debug {
@@ -1306,8 +1306,9 @@ fn compute_initial_junction_stats_for_reads(
     bundle_start: u64,
     bundle_end: u64,
     config: &RunConfig,
-) -> JunctionStats {
+) -> (JunctionStats, HashMap<(Junction, u64), u32>) {
     let mut junction_stats: JunctionStats = Default::default();
+    let mut pair_stats: HashMap<(Junction, u64), u32> = HashMap::default();
 
     // Lenient mode: accept junctions with lower anchor thresholds (StringTie-compatible)
     let lenient_mode = std::env::var_os("RUSTLE_LENIENT_JUNCTIONS").is_some();
@@ -1390,9 +1391,21 @@ fn compute_initial_junction_stats_for_reads(
                 }
             }
         }
+
+        // Count consecutive junction pairs for pair-witness filter.
+        // Key = (j1, j2.acceptor): dropping j2.donor (middle-exon right boundary) tolerates
+        // the ±few-bp coordinate variation between reads and assembled transcripts.
+        for i in 0..r.junctions.len().saturating_sub(1) {
+            let j1 = r.junctions[i];
+            let j2 = r.junctions[i + 1];
+            if j1.acceptor.saturating_sub(j1.donor) < config.min_intron_length { continue; }
+            if j2.acceptor.saturating_sub(j2.donor) < config.min_intron_length { continue; }
+            if !(j1.donor >= bundle_start && j2.acceptor <= bundle_end) { continue; }
+            *pair_stats.entry((j1, j2.acceptor)).or_insert(0u32) += 1;
+        }
     }
 
-    junction_stats
+    (junction_stats, pair_stats)
 }
 
 fn merge_region_outer_bundles(
@@ -1492,7 +1505,7 @@ fn merge_region_outer_bundles(
             }
         }
 
-        let mut junction_stats = compute_initial_junction_stats_for_reads(&reads, start, end, config);
+        let (mut junction_stats, junction_pair_stats) = compute_initial_junction_stats_for_reads(&reads, start, end, config);
 
         // Guide junction injection: inject missing reference junctions with synthetic evidence
         if let Ok(guide_gtf) = std::env::var("RUSTLE_INJECT_GUIDE_JUNCTIONS") {
@@ -1716,6 +1729,7 @@ fn merge_region_outer_bundles(
             strand: merged_strand,
             reads,
             junction_stats,
+            junction_pair_stats,
             bundlenodes: None,
             read_bnodes: None,
             bnode_colors: None,
@@ -2721,6 +2735,286 @@ fn has_near_miss_chain(existing: &[Transcript], ref_chain: &[(u64, u64)], tol: u
     best >= needed
 }
 
+/// Removes transcripts where any consecutive junction pair (j_k, j_{k+1}) has zero
+/// co-occurrence in the read alignments. Gated by RUSTLE_PAIR_WITNESS=1.
+///
+/// Exemptions: transcripts with <3 exons (<2 consecutive pairs), or longcov > RUSTLE_PW_MAX_LONGCOV.
+///
+/// Known limitations on GGO_19 IsoSeq data (as of 2026-05-26):
+/// - Long-intron transcripts (>10kb introns) fail the filter because individual reads
+///   don't span two consecutive junction pairs across a long intron.
+/// - Exon-boundary coordinate rounding (±5-20bp between reads and assembled consensus)
+///   can cause false rejections despite using (j1, j2.acceptor) key instead of full (j1, j2).
+/// - j-FPs on GGO_19 are "real biology" (flow EM paths consistent with read evidence),
+///   so they pass this filter anyway — net effect is TP removal with no Pr gain.
+/// Opt-in only; not recommended for default use.
+fn filter_unwitnessed_junction_pairs(
+    txs: Vec<Transcript>,
+    bundle: &crate::types::Bundle,
+    config: &RunConfig,
+) -> Vec<Transcript> {
+    let max_longcov: f64 = std::env::var("RUSTLE_PW_MAX_LONGCOV")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f64::MAX);
+    let pair_stats = &bundle.junction_pair_stats;
+    if pair_stats.is_empty() {
+        return txs;
+    }
+    let before = txs.len();
+    let result: Vec<Transcript> = txs
+        .into_iter()
+        .filter(|t| {
+            let n = t.exons.len();
+            if n < 3 { return true; } // <2 junctions → no pairs
+            if t.longcov > max_longcov { return true; }
+            for k in 0..n.saturating_sub(2) {
+                let j1 = crate::types::Junction { donor: t.exons[k].1, acceptor: t.exons[k+1].0 };
+                let j2_acc = t.exons[k+2].0;
+                if pair_stats.get(&(j1, j2_acc)).copied().unwrap_or(0) == 0 {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+    if config.verbose && result.len() < before {
+        eprintln!(
+            "    pair_witness_filter: removed {}/{} (bundle={}:{}-{})",
+            before - result.len(), before,
+            bundle.chrom, bundle.start + 1, bundle.end
+        );
+    }
+    result
+}
+
+/// Pair-wise transcript recombination at complex multi-isoform loci.
+///
+/// At genes with ≥ min_txs assembled transcripts, all combinations of
+/// "T1-prefix + T2-suffix at a shared junction" are tested.  A candidate
+/// path is emitted only when:
+///   1. Its intron chain is not already assembled.
+///   2. Every junction is in bundle.junction_stats with mm ≥ min_mm.
+///
+/// Targets the pattern where the flow EM builds N-1 of N reference isoforms
+/// at a complex locus but misses one specific junction combination even though
+/// all individual junctions are present in the other assembled transcripts.
+/// Gated by RUSTLE_JUNCTION_RECOMBINATION=1.
+fn junction_recombination_supplement(
+    txs: &[Transcript],
+    bundle: &crate::types::Bundle,
+    config: &RunConfig,
+) -> Vec<Transcript> {
+    let min_txs: usize = std::env::var("RUSTLE_JR_MIN_TXS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let min_mm: f64 = std::env::var("RUSTLE_JR_MIN_MM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
+    let min_longcov: f64 = std::env::var("RUSTLE_JR_MIN_LONGCOV")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
+    let max_span_mult: u64 = std::env::var("RUSTLE_JR_MAX_SPAN_MULT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+
+    let multi: Vec<&Transcript> = txs.iter().filter(|t| t.exons.len() >= 2).collect();
+    if multi.len() < min_txs {
+        return Vec::new();
+    }
+
+    // Fingerprint all existing chains for O(1) dedup.
+    let mut seen: HashSet<u64> = multi.iter().map(|t| intron_chain_fingerprint(&t.exons)).collect();
+
+    // Build junction → mm map for junctions with sufficient support.
+    let mut jct_mm: HashMap<(u64, u64), f64> = HashMap::default();
+    for (j, stat) in &bundle.junction_stats {
+        if stat.mm >= min_mm {
+            jct_mm.insert((j.donor, j.acceptor), stat.mm);
+        }
+    }
+
+    let mut added: Vec<Transcript> = Vec::new();
+
+    for i in 0..multi.len() {
+        for j in (i + 1)..multi.len() {
+            let t1 = multi[i];
+            let t2 = multi[j];
+
+            // Collect junctions for each transcript as (donor, acceptor) → exon-index.
+            // t1_jct_idx[k] = index of exon whose .1 == donor of junction k
+            let t1_jcts: HashMap<(u64, u64), usize> = (0..t1.exons.len().saturating_sub(1))
+                .map(|k| ((t1.exons[k].1, t1.exons[k + 1].0), k))
+                .collect();
+            let t2_jcts: HashMap<(u64, u64), usize> = (0..t2.exons.len().saturating_sub(1))
+                .map(|k| ((t2.exons[k].1, t2.exons[k + 1].0), k))
+                .collect();
+
+            // Coverage guard: both parents must be well-supported, not flow EM artifacts.
+            if t1.longcov < min_longcov || t2.longcov < min_longcov {
+                continue;
+            }
+
+            // Span guard: reject cross-gene chimeras.
+            // Recombination A spans T1.start→T2.end; Recombination B spans T2.start→T1.end.
+            let t1_start = t1.exons.first().map_or(0, |e| e.0);
+            let t1_end = t1.exons.last().map_or(0, |e| e.1);
+            let t2_start = t2.exons.first().map_or(0, |e| e.0);
+            let t2_end = t2.exons.last().map_or(0, |e| e.1);
+            let t1_span = t1_end.saturating_sub(t1_start);
+            let t2_span = t2_end.saturating_sub(t2_start);
+            let max_span = t1_span.max(t2_span).max(1);
+            let rec_a_span = t2_end.saturating_sub(t1_start);
+            let rec_b_span = t1_end.saturating_sub(t2_start);
+            let rec_a_ok = rec_a_span <= max_span * max_span_mult;
+            let rec_b_ok = rec_b_span <= max_span * max_span_mult;
+            if !rec_a_ok && !rec_b_ok {
+                continue;
+            }
+
+            // Symmetric-difference guard: pairs differing in >max_sym_diff junctions
+            // cause combinatorial explosion (O(shared_jcts) recombinations per pair).
+            // Pairs with sym_diff≤4 differ in ≤2 junctions → at most 1 new chain per pair.
+            let t1_set: HashSet<(u64, u64)> = t1_jcts.keys().copied().collect();
+            let t2_set: HashSet<(u64, u64)> = t2_jcts.keys().copied().collect();
+            let sym_diff = t1_set.symmetric_difference(&t2_set).count();
+            let max_sym_diff: usize = std::env::var("RUSTLE_JR_MAX_SYM_DIFF")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4);
+            if sym_diff > max_sym_diff {
+                continue;
+            }
+
+            // Iterate over junctions shared by T1 and T2.
+            for (&jct, &t1_split) in &t1_jcts {
+                let Some(&t2_split) = t2_jcts.get(&jct) else { continue };
+                let (donor, acceptor) = jct;
+
+                // Recombination A: T1[0..=t1_split] + T2[t2_split+1..]
+                // "t1_split" is the exon index whose .1 == donor; the next exon (.0 == acceptor)
+                // comes from T2 starting at index t2_split+1.
+                if rec_a_ok {
+                    let mut exons: Vec<(u64, u64)> = Vec::new();
+                    exons.extend_from_slice(&t1.exons[..=t1_split]);
+                    exons.extend_from_slice(&t2.exons[t2_split + 1..]);
+
+                    if exons.len() >= 2 {
+                        let fp = intron_chain_fingerprint(&exons);
+                        if seen.insert(fp) {
+                            // Validate: all junctions must be in the mm≥threshold map.
+                            let min_mm_val = (0..exons.len().saturating_sub(1))
+                                .filter_map(|k| jct_mm.get(&(exons[k].1, exons[k + 1].0)).copied())
+                                .reduce(f64::min);
+                            if let Some(mm_val) = min_mm_val {
+                                let all_valid = (0..exons.len().saturating_sub(1))
+                                    .all(|k| jct_mm.contains_key(&(exons[k].1, exons[k + 1].0)));
+                                if all_valid {
+                                    let lc = mm_val;
+                                    let n = exons.len();
+                                    added.push(Transcript {
+                                        chrom: bundle.chrom.clone(),
+                                        strand: bundle.strand,
+                                        coverage: lc,
+                                        exon_cov: vec![lc; n],
+                                        longcov: lc,
+                                        tpm: 0.0,
+                                        fpkm: 0.0,
+                                        source: Some("flow_recombine".to_string()),
+                                        is_longread: config.long_reads,
+                                        bpcov_cov: 0.0,
+                                        all_strand_cov: 0.0,
+                                        transcript_id: None,
+                                        gene_id: None,
+                                        ref_transcript_id: None,
+                                        ref_gene_id: None,
+                                        hardstart: t1.hardstart,
+                                        hardend: t2.hardend,
+                                        alt_tts_end: t2.alt_tts_end,
+                                        vg_family_id: None,
+                                        vg_copy_id: None,
+                                        vg_family_size: None,
+                                        copy_assignment_confidence: None,
+                                        intron_low: Vec::new(),
+                                        synthetic: false,
+                                        rescue_class: None,
+                                        raw_flow_sum: 0.0,
+                                        min_jct_mm: mm_val,
+                                        exons,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } // end rec_a_ok
+
+                // Recombination B: T2[0..=t2_split] + T1[t1_split+1..]
+                if rec_b_ok {
+                    let mut exons: Vec<(u64, u64)> = Vec::new();
+                    exons.extend_from_slice(&t2.exons[..=t2_split]);
+                    exons.extend_from_slice(&t1.exons[t1_split + 1..]);
+
+                    if exons.len() >= 2 {
+                        let fp = intron_chain_fingerprint(&exons);
+                        if seen.insert(fp) {
+                            let min_mm_val = (0..exons.len().saturating_sub(1))
+                                .filter_map(|k| jct_mm.get(&(exons[k].1, exons[k + 1].0)).copied())
+                                .reduce(f64::min);
+                            if let Some(mm_val) = min_mm_val {
+                                let all_valid = (0..exons.len().saturating_sub(1))
+                                    .all(|k| jct_mm.contains_key(&(exons[k].1, exons[k + 1].0)));
+                                if all_valid {
+                                    let lc = mm_val;
+                                    let n = exons.len();
+                                    added.push(Transcript {
+                                        chrom: bundle.chrom.clone(),
+                                        strand: bundle.strand,
+                                        coverage: lc,
+                                        exon_cov: vec![lc; n],
+                                        longcov: lc,
+                                        tpm: 0.0,
+                                        fpkm: 0.0,
+                                        source: Some("flow_recombine".to_string()),
+                                        is_longread: config.long_reads,
+                                        bpcov_cov: 0.0,
+                                        all_strand_cov: 0.0,
+                                        transcript_id: None,
+                                        gene_id: None,
+                                        ref_transcript_id: None,
+                                        ref_gene_id: None,
+                                        hardstart: t2.hardstart,
+                                        hardend: t1.hardend,
+                                        alt_tts_end: t1.alt_tts_end,
+                                        vg_family_id: None,
+                                        vg_copy_id: None,
+                                        vg_family_size: None,
+                                        copy_assignment_confidence: None,
+                                        intron_low: Vec::new(),
+                                        synthetic: false,
+                                        rescue_class: None,
+                                        raw_flow_sum: 0.0,
+                                        min_jct_mm: mm_val,
+                                        exons,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } // end rec_b_ok
+
+                // Suppress unused-variable warning: donor/acceptor used only for sharing check
+                let _ = (donor, acceptor);
+            }
+        }
+    }
+
+    added
+}
+
 fn add_contained_isoforms(
     txs: Vec<Transcript>,
     junctions: &[Junction],
@@ -2791,7 +3085,7 @@ fn add_contained_isoforms(
                     hardend: tx.hardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                 });
                 added += 1;
             }
@@ -2983,7 +3277,7 @@ fn emit_junction_paths(
             hardend,
             alt_tts_end,
             vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -3269,7 +3563,7 @@ fn emit_chain_from_graph(
         hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
     })
 }
 
@@ -3401,7 +3695,7 @@ fn emit_reference_chains(
                     hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -3536,7 +3830,7 @@ fn emit_reference_chains(
                         hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -3631,7 +3925,7 @@ fn emit_reference_chains(
             hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
         });
         added += 1;
         emitted_cnt += 1;
@@ -5969,7 +6263,7 @@ fn emit_per_read_alt_combos(
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
 
 });
     }
@@ -6164,7 +6458,7 @@ fn emit_internal_ri_siblings(
                 intron_low: Vec::new(),
                 synthetic: false,
                 rescue_class: None,
-                raw_flow_sum: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0,
             });
             spawned += 1;
         }
@@ -6867,6 +7161,35 @@ fn extract_bundle_transcripts_for_graph(
         txs.extend(extra_emitted);
     }
     trace_stage("emit_junction_paths", &txs);
+
+    if std::env::var_os("RUSTLE_PAIR_WITNESS").is_some() && config.long_reads {
+        txs = filter_unwitnessed_junction_pairs(txs, bundle, config);
+        trace_stage("pair_witness_filter", &txs);
+    }
+
+    // Pair-wise transcript recombination at complex multi-isoform loci.
+    // Targets the pattern where flow EM builds N-1 of N reference isoforms at a locus
+    // but the Nth combination (using all junctions already in other transcripts) isn't assembled.
+    // Opt-in: RUSTLE_JUNCTION_RECOMBINATION=1
+    if std::env::var_os("RUSTLE_JUNCTION_RECOMBINATION").is_some()
+        && config.long_reads
+        && !config.eonly
+    {
+        let recombined = junction_recombination_supplement(&txs, bundle, config);
+        if !recombined.is_empty() {
+            if config.verbose {
+                eprintln!(
+                    "    junction_recombination: +{} candidate(s) (bundle={}:{}-{})",
+                    recombined.len(),
+                    bundle.chrom,
+                    bundle.start + 1,
+                    bundle.end
+                );
+            }
+            txs.extend(recombined);
+        }
+    }
+    trace_stage("junction_recombination", &txs);
 
     let added_terminal_stop = rescue_internal_terminal_stop_variants(&mut txs, &extra_evidence);
     if added_terminal_stop > 0 && config.verbose {
@@ -7651,7 +7974,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_size: None,
                 copy_assignment_confidence: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                raw_flow_sum: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0,
             });
         }
 
@@ -7783,7 +8106,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_size: None,
                     copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                 };
                 rescued.push(tx);
                 if debug {
@@ -8001,7 +8324,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_size: None,
                 copy_assignment_confidence: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                raw_flow_sum: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0,
             });
             added += 1;
         }
@@ -8135,7 +8458,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_size: None,
                     copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                 });
             }
         }
@@ -9100,7 +9423,7 @@ fn collect_flow_residual_se(
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
         });
     }
     out
@@ -9301,7 +9624,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
         });
     }
     // Dedup overlapping SE candidates emitted from the same bundle.
@@ -9458,7 +9781,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
         });
     }
     out
@@ -9539,7 +9862,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                     };
                     predictions.push(tx);
                 }
@@ -9581,7 +9904,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                 };
                 predictions.push(tx);
             }
@@ -10090,6 +10413,7 @@ pub fn run<P: AsRef<Path>>(
                 strand: b.strand,
                 reads: Vec::new(), // Don't clone reads — only need junction_stats.
                 junction_stats: b.junction_stats.clone(),
+                junction_pair_stats: Default::default(),
                 bundlenodes: None,
                 read_bnodes: None,
                 bnode_colors: None,
@@ -12462,6 +12786,33 @@ pub fn run<P: AsRef<Path>>(
                         killed_junction_pairs_local.len()
                     ),
                 );
+                // parity_decisions: bundlenode_list — coverage-graph node structure.
+                // Emitted once per process_graph call, before any transfrag construction.
+                // Enables cross-tool comparison of the fundamental graph that everything
+                // downstream (transfrags, EM flow, path extraction) operates on.
+                // Key: (step="bundlenode_list", bundle_start, bundle_end, strand).
+                // Payload: n_nodes + compact "start-end:cov" node list, 1-based inclusive coords.
+                if crate::parity::decisions::is_enabled() {
+                    let mut nodes = String::new();
+                    let mut n_nodes = 0u32;
+                    let mut cur = graph_bundle.bundlenodes.as_ref();
+                    while let Some(bn) = cur {
+                        if !nodes.is_empty() { nodes.push(','); }
+                        use std::fmt::Write as _;
+                        let _ = write!(nodes, "{}-{}:{:.1}", bn.start + 1, bn.end, bn.cov);
+                        n_nodes += 1;
+                        cur = bn.next.as_deref();
+                    }
+                    let payload = format!("\"n_nodes\":{},\"nodes\":\"{}\"", n_nodes, nodes);
+                    crate::parity::decisions::emit(
+                        "bundlenode_list",
+                        Some(&graph_bundle.chrom),
+                        graph_bundle.start + 1,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        &payload,
+                    );
+                }
                 let snapshot_full = snapshot_enabled
                     && (snapshot_detail == SnapshotDetail::Full
                         || snapshot_all
@@ -13345,6 +13696,38 @@ pub fn run<P: AsRef<Path>>(
                     &mut transfrags,
                     graph_mut.pattern_size(),
                 );
+
+                // parity_decisions: graphnode_list — flow-graph nodes after read→node
+                // coverage accumulation, before process_transfrags (EM/flow estimation).
+                // Fills the gap between bundlenode_list (coverage-graph nodes) and
+                // transfrag_pre_depl (assembled paths). Same bundle key as bundlenode_list.
+                if crate::parity::decisions::is_enabled() {
+                    let src = graph_mut.source_id;
+                    let snk = graph_mut.sink_id;
+                    let mut nodes_str = String::new();
+                    let mut n_gnodes = 0u32;
+                    let mut sorted_nodes: Vec<&crate::graph::GraphNode> = graph_mut
+                        .nodes
+                        .iter()
+                        .filter(|n| n.node_id != src && n.node_id != snk)
+                        .collect();
+                    sorted_nodes.sort_by_key(|n| n.start);
+                    for n in &sorted_nodes {
+                        if !nodes_str.is_empty() { nodes_str.push(','); }
+                        use std::fmt::Write as _;
+                        let _ = write!(nodes_str, "{}-{}:{:.1}", n.start + 1, n.end, n.coverage);
+                        n_gnodes += 1;
+                    }
+                    let payload = format!("\"n_nodes\":{},\"nodes\":\"{}\"", n_gnodes, nodes_str);
+                    crate::parity::decisions::emit(
+                        "graphnode_list",
+                        Some(&graph_bundle.chrom),
+                        graph_bundle.start + 1,
+                        graph_bundle.end,
+                        graph_bundle.strand,
+                        &payload,
+                    );
+                }
 
                 transfrags = process_transfrags(
                     transfrags,
@@ -14625,6 +15008,7 @@ pub fn run<P: AsRef<Path>>(
                     // bundle. Sub-bundles produced for VG-HMM rescue bundles
                     // need to carry the flag forward so transcripts get
                     // marked `copy_status "novel"` in the GTF.
+                    junction_pair_stats: bundle.junction_pair_stats.clone(),
                     synthetic: bundle.synthetic,
                     rescue_class: bundle.rescue_class,
                     vg_family_id: bundle.vg_family_id,
@@ -14713,7 +15097,7 @@ pub fn run<P: AsRef<Path>>(
                             sub_bundle.start,
                             sub_bundle.end,
                             &config,
-                        )
+                        ).0
                     };
                 // Inherit bundle-level "killed" flags (mm<0, strand=Some(0),
                 // nreads_good<0, mrcount<0) to sub-bundle stats. This ensures
@@ -16683,7 +17067,7 @@ pub fn run<P: AsRef<Path>>(
                 hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {
@@ -17235,11 +17619,26 @@ pub fn run<P: AsRef<Path>>(
                             .fold(0.0f64, f64::max)
                     };
                     let thr = max_cov * alpha;
-                    // Longcov exemption (opt-in via RUSTLE_INTRA_GENE_LONGCOV_MIN).
+                    // Pre-compute junction usage counts across all cluster members.
+                    // Used by junction-evidence rescue to detect unique junctions.
+                    let cluster_junction_counts: std::collections::HashMap<(u64, u64), usize> =
+                        if std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some() {
+                            let mut m: std::collections::HashMap<(u64, u64), usize> = Default::default();
+                            for &ki in &cluster {
+                                for w in all_transcripts[ki].exons.windows(2) {
+                                    *m.entry((w[0].1, w[1].0)).or_insert(0) += 1;
+                                }
+                            }
+                            m
+                        } else {
+                            Default::default()
+                        };
+                    // Longcov exemption (opt-in via RUSTLE_INTRA_GENE_LONGCOV_MIN=1).
                     // Spare multi-exon tx whose pre-flow longcov supports them
-                    // even when flow-distributed cov falls below the alpha
-                    // threshold. Defaults: longcov >= 1 AND exons >= 5
-                    // (read-witnessed multi-intron paths). Set MIN to 0 to disable.
+                    // even when flow-distributed cov falls below the alpha threshold.
+                    // Default: 0.0 (disabled). GGO_19 IC benchmark: +0.1pp Sn, 0pp Pr.
+                    // NOTE: improves IC Sn but transcript level Sn/Pr both drop because
+                    // rescued minor isoforms have imprecise EM-assigned boundaries.
                     let lc_min: f64 = std::env::var("RUSTLE_INTRA_GENE_LONGCOV_MIN")
                         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
                     let lc_min_exons: usize = std::env::var("RUSTLE_INTRA_GENE_LONGCOV_MIN_EXONS")
@@ -17258,6 +17657,28 @@ pub fn run<P: AsRef<Path>>(
                             && tk.longcov >= lc_min
                         {
                             continue;
+                        }
+                        // Junction-evidence rescue: rescue if min well-anchored read count
+                        // >= alpha * dominant coverage AND the transcript has a unique junction
+                        // (not used by any other transcript in the cluster). The uniqueness gate
+                        // prevents rescuing RI/boundary variants that share all junctions with
+                        // the dominant. Mirrors predcluster isofrac rescue logic.
+                        if std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some()
+                            && tk.exons.len() >= 2
+                            && tk.min_jct_mm >= 2.0
+                            && max_cov > 0.0
+                            && tk.min_jct_mm >= alpha * max_cov
+                        {
+                            let has_unique_jct = tk.exons.windows(2).any(|w| {
+                                cluster_junction_counts
+                                    .get(&(w[0].1, w[1].0))
+                                    .copied()
+                                    .unwrap_or(0)
+                                    == 1
+                            });
+                            if has_unique_jct {
+                                continue;
+                            }
                         }
                         // Check exemption: is tk entirely inside an intron
                         // of some higher-cov cluster member?
@@ -17357,7 +17778,7 @@ pub fn run<P: AsRef<Path>>(
                     alt_tts_end: true,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
                 });
                 *added += 1;
                 if debug {

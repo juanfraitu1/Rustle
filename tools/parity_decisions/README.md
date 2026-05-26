@@ -61,10 +61,69 @@ python3 tools/parity_decisions/diff.py /tmp/p_rustle.jsonl /tmp/p_stringtie.json
 `step` and `tool` mandatory. `chrom` optional. `start`/`end`/`strand` are conventional;
 `payload` is step-specific.
 
+## EM scope note
+
+"EM" has two distinct meanings in this codebase. **Do not conflate them:**
+
+| term | what it is | active by default |
+|---|---|---|
+| **Native flow estimation** | Both tools' built-in flow optimization (min-cost flow in ST, Rustle's own flow EM). Always runs. | **Yes — always active in both tools** |
+| **BundlenodeGraphInferer EM** | Experimental Rust re-implementation of ST's graph/EM pipeline, invoked via `RUSTLE_JUNCTION_GRAPH=1`. | **No — opt-in flag only** |
+
+Parity comparisons run the **native** flow estimation on both sides. The BundlenodeGraphInferer is out of scope until specifically enabled. Pre/post EM snapshots are valuable for debugging when EM is active, but adding those parity events is deferred until the BundlenodeGraphInferer is promoted to default.
+
+## Pipeline stages and parity coverage
+
+```
+bundlenode construction
+    └─ [bundlenode_list] ← wired ✓
+trim-point detection (chi-square) + read→node coverage accumulation
+    └─ [graphnode_list]  ← wired ✓ (2026-05-26)
+flow graph EM (native, always active)
+    └─ [transfrag_pre_depl] ← wired ✓
+depletion / isofrac filtering
+path assembly (get_trf_long / checktrf)
+    └─ [path_extracted] ← wired ✓
+pred filtering
+    └─ [pred_intron_low] ← wired ✓
+GTF emit
+    └─ [path_emit] ← wired ✓
+```
+
+### STRG.334.2 corrected diagnosis (2026-05-26, fully traced)
+
+**All prior diagnoses were wrong.** Full stage-by-stage trace shows:
+
+- `graphnode_list`: **identical** — both tools have the 60bp microexon (52980399-52980458, cov=96884) as a graphnode. Rustle has 1 extra 4bp low-cov island node (52966246-52966249) ST merges away; otherwise identical.
+- `transfrag_pre_depl`: both tools have transfrags through the microexon (`52971296-52980398,52980459-52981544`) AND skip-path transfrags (`52971296-52981544`).
+- `path_extracted`: both tools emit 13-exon paths through the microexon. Both tools emit some 13-exon paths with the correct last intron `53042103-53043292` (ST: 12 such paths; Rustle: 10, including 4 with nexons=13).
+- **Actual divergence point: pred filtering.** Rustle's 13-exon paths with last intron ending at 53043292 are killed by predcluster filtering (isofrac or pairwise_overlap_filter) before GTF emit. ST's equivalent paths survive. The dominant Rustle transcript at this locus uses intron `53042103-53043336` (mm=1924) while the STRG.334.2-matching path uses `53042103-53043292` (mm=85).
+
+**The STRG.334.2 miss is a pred-filter divergence** (likely isofrac: the 53043292-acceptor path has lower abundance than the 53043336 dominant). To further diagnose, use `pred_kill` events on the Rustle side (`stage:"pairwise"` or `stage:"isofrac"`).
+
+### Full GGO_19 chr19 graphnode_list diff (2026-05-26)
+
+```
+3351 common bundles (3405 Rustle / 3430 ST)
+  2865 structurally identical (node coords + cov within 0.5 tolerance)
+   486 cov-only differences (minor fp drift)
+   116 structural n_nodes mismatches
+     109: Rustle has MORE nodes (extra low-cov islands ST merges)
+       7: ST has MORE nodes (ST's chi-square trim-point detection fires; Rustle doesn't split)
+54 only-Rustle / 79 only-ST (bundle boundary divergences — same loci, different start/end)
+```
+
+The 7 cases where ST has more graphnodes are potential MISS_R candidates: ST creates additional
+split points (typically small nodes 2–190bp) via chi-square trim detection that Rustle misses.
+The largest delta is +3 extra ST nodes at locus 44054883-44094254 (-).
+These do NOT include STRG.334.2 — both tools have identical graphnodes there.
+
 ## Wired-up steps
 
 | step | rustle site | stringtie site |
 |---|---|---|
+| `bundlenode_list` | `pipeline.rs` — top of `process_graph` closure (~line 12789) | `rlink.cpp` — top of `create_graph()` (~line 3230) |
+| `graphnode_list` | `pipeline.rs` — after `map_reads_to_graph`, before `process_transfrags` (~line 13700) | `rlink.cpp` — in `build_graphs`, after `process_refguides`, before `process_transfrags` (~line 15401) |
 | `junction_accept` | `graph_build.rs::filter_junctions_for_bundle` | `rlink.cpp:14441` post-checkfeat loop |
 | `bundle_define` | `pipeline.rs` | `rlink.cpp:15557` |
 | `transfrag_define` | `pipeline.rs` after `process_transfrags` | `rlink.cpp:16003` |
@@ -83,7 +142,7 @@ python3 tools/parity_decisions/diff.py /tmp/p_rustle.jsonl /tmp/p_stringtie.json
 
 ## Suggested next steps to wire
 
-- `node_create` — when graph builder creates a primary node (start, end, hardstart/hardend flags)
+- `pred_kill` / `pred_filter_stage` (isofrac side) — currently only captures pairwise kills; adding the isofrac stage kill would let us trace why Rustle's 13-exon / 53043292-acceptor paths at STRG.334.2 (and similar loci) are filtered while ST keeps them
 - `edge_create` — parent → child with abundance (junction edges only)
 
 ## How to use path_extracted vs path_emit
