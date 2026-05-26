@@ -6608,6 +6608,7 @@ fn extract_bundle_transcripts_for_graph(
             },
             Some(&mut longrec_summary),
             if frs_mode { Some(&mut frs_se_buf) } else { None },
+            Some(good_junctions),
         )
     };
     // Flow-residual SE: single-node transfrags still carrying abundance ≥ singlethr
@@ -6997,6 +6998,7 @@ fn extract_bundle_transcripts_for_graph(
             &format!("{}:{}-{}", bundle.chrom, bundle.start, bundle.end),
             config,
             true,
+            None,
             None,
             None,
             None,

@@ -1284,6 +1284,7 @@ pub fn extract_eonly_transcripts(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -6020,6 +6021,7 @@ pub fn extract_transcripts(
     mut seed_outcomes: Option<&mut Vec<(usize, SeedOutcome)>>,
     longrec_summary: Option<&mut LongRecSummary>,
     mut frs_se_out: Option<&mut Vec<Transcript>>,
+    good_junctions: Option<&HashSet<(u64, u64)>>,
 ) -> Vec<Transcript> {
     // Helper macro to record seed outcome when tracing is active.
     macro_rules! record_outcome {
@@ -10027,6 +10029,19 @@ pub fn extract_transcripts(
                 } else {
                     0.0
                 };
+                // Checktrf junction quality gate (opt-in RUSTLE_CHECKTRF_JUNC_GATE=1):
+                // Skip rescued transcripts whose intron chain contains at least one
+                // junction absent from good_junctions — likely artifact or noisy-read
+                // junctions that never accumulated enough support to be accepted.
+                if std::env::var_os("RUSTLE_CHECKTRF_JUNC_GATE").is_some() {
+                    if let Some(gj) = good_junctions {
+                        let chain = intron_chain_from_nodes(graph, &rescue_nodes);
+                        if !chain.is_empty() && !chain.iter().all(|jp| gj.contains(jp)) {
+                            emit_checktrf_result!(t, "bad_junction", rescue_nodes);
+                            continue;
+                        }
+                    }
+                }
                 // Path-enum RI suppression: if THIS rescue's intron chain is
                 // a strict subset of some kept path's chain AND the rescue's
                 // exons strictly contain every missing intron AND the rescue's
