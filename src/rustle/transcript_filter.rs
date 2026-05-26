@@ -375,6 +375,14 @@ fn predcluster_exonic_overlap_len(a: &[(u64, u64)], b: &[(u64, u64)]) -> u64 {
     total
 }
 
+/// Returns the number of base pairs in `a_exons` NOT covered by any exon in `b_exons`.
+/// Equivalent to total_length(a) - overlap(a, b). Both slices are half-open intervals.
+fn unique_exon_bp(a: &[(u64, u64)], b: &[(u64, u64)]) -> u64 {
+    let total_a: u64 = a.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
+    let overlap = predcluster_exonic_overlap_len(a, b);
+    total_a.saturating_sub(overlap)
+}
+
 fn predcluster_trace_dump(stage: &str, ref_tx: &RefTranscript, txs: &[Transcript]) {
     if !predcluster_trace_enabled() {
         return;
@@ -1186,7 +1194,7 @@ mod tests {
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0,
         }
     }
 
@@ -2182,13 +2190,14 @@ fn isofrac_with_summary(
             multicov[fs] = usedcov[fs];
         }
         // RUSTLE_ISOFRAC_USE_FIRSTCOV=1: compare against dominant only (not accumulated).
-        // RUSTLE_ISOFRAC_MULTICOV_CAP=<ratio>: cap effective multicov at ratio*firstcov (default 2.8).
+        // RUSTLE_ISOFRAC_MULTICOV_CAP=<ratio>: cap effective multicov at ratio*firstcov (default 2.5).
         //   Prevents severe accumulation from killing minor isoforms whose cov/firstcov ≥ isofrac.
-        //   Set to 0 to disable. Empirically: 2.8 = +1 Sn, Pr neutral; <2.8 adds FPs; ≥3.0 = no-op.
+        //   Set to 0 to disable. Empirically: 2.5 recovers STRG.334.2 (cov=20, threshold=18.67),
+        //   Pr-neutral; 2.0 starts adding net FPs; ≥2.68 fails to rescue STRG.334.2.
         let firstcov_mode = std::env::var_os("RUSTLE_ISOFRAC_USE_FIRSTCOV").is_some();
         let multicov_cap: Option<f64> = {
             let v: f64 = std::env::var("RUSTLE_ISOFRAC_MULTICOV_CAP")
-                .ok().and_then(|s| s.parse().ok()).unwrap_or(2.8);
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(2.5);
             if v <= 0.0 { None } else { Some(v) }
         };
         let first_usedcov_snap = usedcov;
@@ -2411,6 +2420,95 @@ fn isofrac_with_summary(
                             longunder = false;
                             chain_already_rescued.insert(chain);
                         }
+                    }
+                }
+            }
+
+            // Unique-exon-region rescue: mirrors StringTie's per-maxint first-wins reset.
+            // In StringTie, the highest-scoring transcript in each maxint has t_kill reset
+            // to false. A transcript with exon coverage not shared by ANY other live transcript
+            // would be dominant (sole) in the maxint covering that unique region — StringTie
+            // resets its kill flag there. We replicate by rescuing k when it has >= min_bp of
+            // exon coverage not covered by the union of all other live transcripts in this window.
+            // This is stricter than checking vs dominant only: k must be the SOLE coverage
+            // provider in that region (not just different from the dominant).
+            // Gate: longcov >= 1 filters flow-only noise with no direct read support.
+            // Enable via RUSTLE_UNIQUE_EXON_RESCUE=1. Tunable:
+            //   RUSTLE_UNIQUE_EXON_RESCUE_MIN_BP (default 5)
+            //   RUSTLE_UNIQUE_EXON_RESCUE_MIN_LONGCOV (default 1.0)
+            if longunder
+                && std::env::var_os("RUSTLE_UNIQUE_EXON_RESCUE").is_some()
+                && txs[k].exons.len() >= 2
+            {
+                let min_longcov: f64 = std::env::var("RUSTLE_UNIQUE_EXON_RESCUE_MIN_LONGCOV")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+                let min_bp: u64 = std::env::var("RUSTLE_UNIQUE_EXON_RESCUE_MIN_BP")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+                if txs[k].longcov >= min_longcov {
+                    // Build merged exon union of all other live transcripts in this window.
+                    let mut other_exons: Vec<(u64, u64)> = uniq.iter()
+                        .filter(|&&j| j != k)
+                        .flat_map(|&j| txs[j].exons.iter().copied())
+                        .collect();
+                    other_exons.sort_unstable_by_key(|e| e.0);
+                    let mut merged_others: Vec<(u64, u64)> = Vec::new();
+                    for (s, e) in other_exons {
+                        if let Some(last) = merged_others.last_mut() {
+                            if s <= last.1 { last.1 = last.1.max(e); continue; }
+                        }
+                        merged_others.push((s, e));
+                    }
+                    if unique_exon_bp(&txs[k].exons, &merged_others) >= min_bp {
+                        longunder = false;
+                    }
+                }
+            }
+
+            // Junction-evidence isofrac rescue (RUSTLE_JCT_ISOFRAC_RESCUE=1):
+            // Rescues low-abundance transcripts that have BOTH:
+            //   1. min well-anchored junction reads (mm) >= max(2, isofrac * dominant longcov), AND
+            //   2. at least one junction unique to this transcript in the window (unique splice site), AND
+            //   3. exon coverage not shared by any other live transcript (unique exon region).
+            // Requirements (2) and (3) together mirror StringTie's per-maxint reset: t_kill is reset
+            // only when t dominates at least one maxint — which requires unique exon coverage AND
+            // is caused by a unique splice site. Without both gates:
+            //   - unique-junction-only: adds FPs with different donor/acceptor but overlapping exons
+            //   - unique-exon-only: adds FPs with unusual exon boundaries but shared splice patterns
+            // Example: STRG.68.2 has 26bp unique exon + unique alt-donor junction + mm=2 → rescued.
+            //          RI chain (shared junctions + no unique exon) → not rescued.
+            //          Novel-splice-only (unique junction but exon overlaps dominant) → not rescued.
+            if longunder
+                && std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some()
+                && txs[k].exons.len() >= 2
+                && txs[k].min_jct_mm >= 2.0
+                && txs[first].longcov > 0.0
+                && txs[k].min_jct_mm >= isofraclong * txs[first].longcov
+            {
+                let has_unique_jct = txs[k].exons.windows(2).any(|w| {
+                    let jct = (w[0].1, w[1].0);
+                    !uniq.iter()
+                        .filter(|&&j| j != k)
+                        .any(|&j| txs[j].exons.windows(2).any(|w2| (w2[0].1, w2[1].0) == jct))
+                });
+                if has_unique_jct {
+                    // Also require unique exon coverage: at least min_bp exon bases
+                    // not covered by the union of all other live transcripts in this window.
+                    let min_bp: u64 = std::env::var("RUSTLE_JCT_ISOFRAC_RESCUE_MIN_BP")
+                        .ok().and_then(|v| v.parse().ok()).unwrap_or(5);
+                    let mut other_exons: Vec<(u64, u64)> = uniq.iter()
+                        .filter(|&&j| j != k)
+                        .flat_map(|&j| txs[j].exons.iter().copied())
+                        .collect();
+                    other_exons.sort_unstable_by_key(|e| e.0);
+                    let mut merged_others: Vec<(u64, u64)> = Vec::new();
+                    for (s, e) in other_exons {
+                        if let Some(last) = merged_others.last_mut() {
+                            if s <= last.1 { last.1 = last.1.max(e); continue; }
+                        }
+                        merged_others.push((s, e));
+                    }
+                    if unique_exon_bp(&txs[k].exons, &merged_others) >= min_bp {
+                        longunder = false;
                     }
                 }
             }
@@ -7466,6 +7564,28 @@ pub fn print_predcluster_with_summary_multi(
             trace_tx_detail("AFTER_PAIRWISE", t, None);
         }
     }
+    // Populate min_jct_mm for junction-evidence isofrac rescue (RUSTLE_JCT_ISOFRAC_RESCUE=1).
+    // min_jct_mm = minimum JunctionStat::mm (well-anchored read count) across all introns in path.
+    // Populated here so isofrac_with_summary and global_intra_gene_cov_frac can use it.
+    if std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some() {
+        if let Some(js) = junction_stats {
+            use crate::types::Junction;
+            for tx in &mut txs {
+                if tx.exons.len() < 2 {
+                    tx.min_jct_mm = 0.0;
+                    continue;
+                }
+                let min_mm = tx.exons.windows(2)
+                    .filter_map(|w| {
+                        let jkey = Junction::new(w[0].1, w[1].0);
+                        js.get(&jkey).map(|s| s.mm)
+                    })
+                    .fold(f64::INFINITY, f64::min);
+                tx.min_jct_mm = if min_mm == f64::INFINITY { 0.0 } else { min_mm };
+            }
+        }
+    }
+
     // longunder isofrac filter ( longreads branch).
     // Eliminates low-coverage transcripts relative to the dominant transcript in each interval.
     if config.long_reads {
@@ -8882,7 +9002,7 @@ pub fn recover_missing_guide_transcripts(
                 intron_low: vec![false; num_introns],
                 synthetic: false,
                 rescue_class: None,
-                raw_flow_sum: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0,
             };
             transcripts.push(tx);
             recovered += 1;

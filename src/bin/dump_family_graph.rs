@@ -133,6 +133,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         strand: '+',
         reads: vec![read],
         junction_stats: build_junction_stats(exons),
+        junction_pair_stats: Default::default(),
         bundlenodes: None,
         read_bnodes: None,
         bnode_colors: None,

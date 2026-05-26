@@ -88,6 +88,10 @@ pub struct Bundle {
     /// Read alignments (reference start, reference end, exons as (start,end), weight, is_reverse)
     pub reads: Vec<BundleRead>,
     pub junction_stats: JunctionStats,
+    /// Per-consecutive-junction-pair read count. Key = (j1, j2.acceptor) where j2 immediately
+    /// follows j1 on the same read. Using j2.acceptor (not full j2) tolerates ±few-bp variation
+    /// in the middle exon's right boundary between reads and assembled transcripts.
+    pub junction_pair_stats: DetHashMap<(Junction, u64), u32>,
     /// Pre-computed bundlenodes (e.g., faithful implementation)
     pub bundlenodes: Option<CBundlenode>,
     /// Read-to-bundlenode mappings (indexes into bundlenodes)
@@ -663,6 +667,7 @@ impl BundleData {
             strand: self.strand,
             reads: self.readlist,
             junction_stats: cjunctions_to_junction_stats(&self.junction),
+            junction_pair_stats: Default::default(),
             bundlenodes: None,
             read_bnodes: None,
             bnode_colors: None,

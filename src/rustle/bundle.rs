@@ -2084,6 +2084,7 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
                 strand,
                 reads: strand_reads,
                 junction_stats,
+                junction_pair_stats: Default::default(),
                 bundlenodes: None,
                 read_bnodes: None,
                 bnode_colors: None,
