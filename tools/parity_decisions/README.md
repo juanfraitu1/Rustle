@@ -97,9 +97,13 @@ GTF emit
 - `graphnode_list`: **identical** — both tools have the 60bp microexon (52980399-52980458, cov=96884) as a graphnode. Rustle has 1 extra 4bp low-cov island node (52966246-52966249) ST merges away; otherwise identical.
 - `transfrag_pre_depl`: both tools have transfrags through the microexon (`52971296-52980398,52980459-52981544`) AND skip-path transfrags (`52971296-52981544`).
 - `path_extracted`: both tools emit 13-exon paths through the microexon. Both tools emit some 13-exon paths with the correct last intron `53042103-53043292` (ST: 12 such paths; Rustle: 10, including 4 with nexons=13).
-- **Actual divergence point: pred filtering.** Rustle's 13-exon paths with last intron ending at 53043292 are killed by predcluster filtering (isofrac or pairwise_overlap_filter) before GTF emit. ST's equivalent paths survive. The dominant Rustle transcript at this locus uses intron `53042103-53043336` (mm=1924) while the STRG.334.2-matching path uses `53042103-53043292` (mm=85).
+- **Actual divergence point: pred filtering — confirmed (2026-05-26 path_extracted diff).** All 4 Rustle paths with last intron `53042103-53043292` (nexons=12/13, lc=2–19) are killed. Kill mechanism traced via `pred_kill` events:
+  - Primary kill: `stage=isofrac`, `isofraclong=0.01` (cov ~10–20 / usedcov ~2516 ≈ 0.4–0.8% < 1% threshold)
+  - Secondary kills: `stage=pairwise`, `reason=retained_intron` or `included_drop` (minor-start-variant copies)
+  - Survivor: dominant path `(52954348, 53043514)` nexons=13, cov=365, uses last intron `53042103-53043336`
+- ST path_extracted shows 5 such paths (same coords), but ST's pred-filter keeps them. ST path_emit not instrumented in these logs, but STRG.334.2 is present in StringTie's final GTF.
 
-**The STRG.334.2 miss is a pred-filter divergence** (likely isofrac: the 53043292-acceptor path has lower abundance than the 53043336 dominant). To further diagnose, use `pred_kill` events on the Rustle side (`stage:"pairwise"` or `stage:"isofrac"`).
+**The STRG.334.2 miss is confirmed as an isofrac divergence**: Rustle's 1% isofrac gate kills the minority `53043292`-acceptor paths (cov < 1% of the dominant `53043336`-acceptor cluster). StringTie either applies a lower effective threshold or uses per-cluster (not global) isofrac normalization for these paths.
 
 ### Full GGO_19 chr19 graphnode_list diff (2026-05-26)
 
@@ -113,10 +117,12 @@ GTF emit
 54 only-Rustle / 79 only-ST (bundle boundary divergences — same loci, different start/end)
 ```
 
-The 7 cases where ST has more graphnodes are potential MISS_R candidates: ST creates additional
-split points (typically small nodes 2–190bp) via chi-square trim detection that Rustle misses.
-The largest delta is +3 extra ST nodes at locus 44054883-44094254 (-).
-These do NOT include STRG.334.2 — both tools have identical graphnodes there.
+The 7 cases where ST has more graphnodes were investigated (2026-05-26) and are **not MISS_R sources**.
+All 7 splits fall at terminal exon 3'/5' endpoints, not at intron junctions. Since gffcompare's
+intron-chain matching ignores outermost exon coordinates, Rustle's slightly different terminal
+exon length is invisible to the benchmark: 33/34 reference transcripts at these loci are matched
+by Rustle. The 1 MISS_R (STRG.267.3 at 38791833-38890087) is a path-enumeration miss unrelated
+to the graphnode split. The largest ST-extra case: +3 nodes at 44054883-44094254 (-).
 
 ## Wired-up steps
 
