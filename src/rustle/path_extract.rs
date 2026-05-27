@@ -5968,13 +5968,11 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
             }
         }
     }
-    // ST-parity SE split (default ON; opt-out via RUSTLE_SE_SEEDS_INTERLEAVE=1):
-    // Process single-node (SE-only) seeds AFTER all multi-node seeds. This
-    // gives multi-exon paths first claim on shared-node flow capacity so SE
-    // emission doesn't starve multi-exon TPs. With this split in place, the
-    // SE early-skip gate can be relaxed safely toward ST's `cov >= singlethr`
-    // semantic (see `single_exon_min` block above).
-    if std::env::var_os("RUSTLE_SE_SEEDS_INTERLEAVE").is_none() {
+    // SE seeds are interleaved with multi-exon seeds by default (matching ST behaviour).
+    // Opt-in to SE-last ordering via RUSTLE_SE_SEEDS_LAST=1 (moves node_ids.len()==1
+    // seeds to end; note: real SE seeds have [source,N,sink] so len==3, making this
+    // nearly a no-op in practice).
+    if std::env::var_os("RUSTLE_SE_SEEDS_LAST").is_some() {
         seeded.sort_by(|&a, &b| {
             let a_single = transfrags[a].node_ids.len() == 1;
             let b_single = transfrags[b].node_ids.len() == 1;
