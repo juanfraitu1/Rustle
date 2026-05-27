@@ -1491,6 +1491,15 @@ pub fn apply_higherr_demotions(
     // branch — reliable candidates (guide_match or nm<nreads) can still demote any junction.
     let unreliable_floor: f64 = std::env::var("RUSTLE_HIGHERR_UNRELIABLE_FLOOR")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    // Exempt junctions with a small donor/acceptor shift from a dominant candidate
+    // from HE_DEMOTE when they have enough absolute reads. Primary use case: deletion-
+    // aware junctions where a 1–3 bp shift from the canonical splice site arises from
+    // a deletion at the exon boundary.  Default OFF (floor=0).  Enable by setting
+    // RUSTLE_HE_SMALL_SHIFT_FLOOR=N (e.g., 15) to protect junctions with >= N reads.
+    let small_shift_floor: f64 = std::env::var("RUSTLE_HE_SMALL_SHIFT_FLOOR")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let small_shift_window: u64 = std::env::var("RUSTLE_HE_SMALL_SHIFT_WINDOW")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
     for ord_i in 0..cjunctions.len() {
         // ---- donor body (StringTie junction[i] branch) ----
         'donor: {
@@ -1620,6 +1629,10 @@ pub fn apply_higherr_demotions(
                     }
                     break;
                 } else if cj_reliable(&cand) {
+                    let donor_shift = cur.start.abs_diff(cand.start);
+                    if small_shift_floor > 0.0 && cur.nreads >= small_shift_floor && donor_shift <= small_shift_window {
+                        break 'donor;
+                    }
                     if cand.leftsupport > cur.leftsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
@@ -1651,6 +1664,8 @@ pub fn apply_higherr_demotions(
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     && (unreliable_floor <= 0.0 || cur.nreads < unreliable_floor)
+                    && !(small_shift_floor > 0.0 && cur.nreads >= small_shift_floor
+                        && cur.start.abs_diff(cand.start) <= small_shift_window)
                 {
                     if cj_watch_match(&cur) {
                         eprintln!(
@@ -1697,6 +1712,10 @@ pub fn apply_higherr_demotions(
             }
             if cand.strand == cur.strand && cand.start != cur.start {
                 if cj_reliable(&cand) {
+                    let donor_shift = cur.start.abs_diff(cand.start);
+                    if small_shift_floor > 0.0 && cur.nreads >= small_shift_floor && donor_shift <= small_shift_window {
+                        break 'donor;
+                    }
                     if (d < dist || (d == dist && cand.leftsupport > support))
                         && cand.leftsupport > cur.leftsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
@@ -1727,6 +1746,8 @@ pub fn apply_higherr_demotions(
                     && cand.leftsupport * tolerance > cur.leftsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     && (unreliable_floor <= 0.0 || cur.nreads < unreliable_floor)
+                    && !(small_shift_floor > 0.0 && cur.nreads >= small_shift_floor
+                        && cur.start.abs_diff(cand.start) <= small_shift_window)
                 {
                     if cj_watch_match(&cur) {
                         eprintln!(
@@ -1875,6 +1896,10 @@ pub fn apply_higherr_demotions(
                     }
                     break;
                 } else if cj_reliable(&cand) {
+                    let acc_shift = cur.end.abs_diff(cand.end);
+                    if small_shift_floor > 0.0 && cur.nreads >= small_shift_floor && acc_shift <= small_shift_window {
+                        break 'acceptor;
+                    }
                     if cand.rightsupport > cur.rightsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     {
@@ -1904,6 +1929,8 @@ pub fn apply_higherr_demotions(
                     && cand.rightsupport * tolerance > cur.rightsupport
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     && (unreliable_floor <= 0.0 || cur.nreads < unreliable_floor)
+                    && !(small_shift_floor > 0.0 && cur.nreads >= small_shift_floor
+                        && cur.end.abs_diff(cand.end) <= small_shift_window)
                     && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE_OFF").is_none()
                         && {
                             let d_up = cur.end.saturating_sub(cand.end);
@@ -1970,6 +1997,10 @@ pub fn apply_higherr_demotions(
             }
             if cand.strand == cur.strand && cand.end != cur.end {
                 if cj_reliable(&cand) {
+                    let acc_shift = cur.end.abs_diff(cand.end);
+                    if small_shift_floor > 0.0 && cur.nreads >= small_shift_floor && acc_shift <= small_shift_window {
+                        break 'acceptor;
+                    }
                     if (d < dist || (d == dist && cand.rightsupport > support))
                         && cand.rightsupport > cur.rightsupport * tolerance
                         && cj_ok_to_demote(&cjunctions[idx_i], &cand)
@@ -2007,6 +2038,8 @@ pub fn apply_higherr_demotions(
                     || (d < dist && cj_reliable(&cand)))
                     && cj_ok_to_demote(&cjunctions[idx_i], &cand)
                     && (unreliable_floor <= 0.0 || !(!reliable && cur.nreads >= unreliable_floor))
+                    && !(small_shift_floor > 0.0 && cur.nreads >= small_shift_floor
+                        && d.unsigned_abs() <= small_shift_window)
                     && !(std::env::var_os("RUSTLE_ALT_ACCEPTOR_PRESERVE_OFF").is_none()
                         && d >= 4
                         && d < 9
