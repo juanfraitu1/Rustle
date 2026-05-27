@@ -102,6 +102,19 @@ fn assumed_lowintron(n1: &Transcript, min_lowintron_cov: f64) -> Vec<bool> {
 }
 /// Check if any of n2's exons geometrically overlaps any of n1's low introns.
 fn n2_exons_overlap_n1_low_introns(n1: &Transcript, n2: &Transcript, lowintron: &[bool]) -> bool {
+    // j=0 "late-start" case: ST's retainedintron() j==0 path fires at loop
+    // iteration i=1 when the while-advance can't move j because n2's first exon
+    // ends at or past n1's second exon start.  This happens when n2 starts so
+    // late in n1's body that the while loop condition
+    //   `n2.exons[j].end < n1.exons[1].start`
+    // is false from the outset.  Mirrors rlink.cpp retainedintron() logic.
+    if n1.exons.len() >= 2
+        && !n2.exons.is_empty()
+        && lowintron.get(0).copied().unwrap_or(false)
+        && n2.exons[0].1 >= n1.exons[1].0
+    {
+        return true;
+    }
     for i in 1..n1.exons.len() {
         if !lowintron.get(i - 1).copied().unwrap_or(false) {
             continue;
@@ -282,16 +295,6 @@ pub fn cross_strand_kri_filter(
                 }
                 // Don't kill guide-pinned predictions.
                 if t2.ref_transcript_id.is_some() {
-                    continue;
-                }
-                // Default ON: spare victims with read-cluster-attested TSS
-                // (`hardstart=true`). Recovers STRG.31.1-class alt-TSS isoforms
-                // antisense to dominant strand without losing CSKRI's
-                // precision wins on the bulk of cross-strand chimera cases.
-                // Opt-out via `RUSTLE_CSKRI_SPARE_HARDSTART_OFF=1`.
-                if std::env::var_os("RUSTLE_CSKRI_SPARE_HARDSTART_OFF").is_none()
-                    && t2.hardstart
-                {
                     continue;
                 }
                 // Opt-in: spare victims whose coverage exceeds threshold —
