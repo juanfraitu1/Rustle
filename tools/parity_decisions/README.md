@@ -137,7 +137,8 @@ to the graphnode split. The largest ST-extra case: +3 nodes at 44054883-44094254
 | `seed_reject` | `path_extract.rs` — `reject_seed!` macro at early-exit gates in `extract_transcripts` | (rustle-only for now) |
 | `path_extracted` | `path_extract.rs` — before `out.push(Transcript{..})` in `extract_transcripts` | `rlink.cpp` — after each `parse_trflong` block in `get_trf_long` and `get_trf_long_mix` |
 | `pred_filter_stage` | `transcript_filter.rs` | `rlink.cpp:18609,18613,...` |
-| `pred_kill` | `transcript_filter.rs` — inside `kill!` macro in `pairwise_overlap_filter_with_summary`, `stage:"pairwise"` | `rlink.cpp:18964` |
+| `pred_kill` (pairwise) | `transcript_filter.rs` — `kill!` macro in `pairwise_overlap_filter_with_summary` | `rlink.cpp` — short_first_last_exon (18359), retained_intron (18369), included_drop (18420) — **wired 2026-05-26** |
+| `pred_kill` (isofrac) | `transcript_filter.rs:2550` — isofrac_with_summary loop | `rlink.cpp` — longunder branch at line 18620 — **wired 2026-05-26** |
 | `path_emit` | `gtf.rs:209` | `rlink.cpp:19681` |
 
 ## Adding new decision points
@@ -148,7 +149,7 @@ to the graphnode split. The largest ST-extra case: +3 nodes at 44054883-44094254
 
 ## Suggested next steps to wire
 
-- `pred_kill` / `pred_filter_stage` (isofrac side) — currently only captures pairwise kills; adding the isofrac stage kill would let us trace why Rustle's 13-exon / 53043292-acceptor paths at STRG.334.2 (and similar loci) are filtered while ST keeps them
+- `pred_filter_stage` — per-surviving-transcript events at each filter stage (Rustle already emits these; ST side not yet wired; needed to diff which paths survive the full pred-filter pipeline)
 - `edge_create` — parent → child with abundance (junction edges only)
 
 ## How to use path_extracted vs path_emit
