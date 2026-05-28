@@ -16578,6 +16578,13 @@ pub fn run<P: AsRef<Path>>(
                         })
                 })
                 .unwrap();
+            // The winner inherits the highest longcov from any alt-boundary
+            // duplicate in the group: all duplicates share the same intron chain,
+            // so the read-count signal from the shorter-3'/5'-end variant is
+            // equally valid evidence for the representative.
+            let max_longcov = idxs.iter()
+                .map(|&i| all_transcripts[i].longcov)
+                .fold(0.0_f64, f64::max);
             for &i in &idxs {
                 if i != best {
                     // Don't drop guide-pinned or oracle predictions.
@@ -16592,6 +16599,7 @@ pub fn run<P: AsRef<Path>>(
                     keep[i] = false;
                 }
             }
+            all_transcripts[best].longcov = max_longcov;
         }
         all_transcripts = all_transcripts
             .into_iter()

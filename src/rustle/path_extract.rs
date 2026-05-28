@@ -5980,20 +5980,49 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
             }
         }
     }
-    // SE seeds are interleaved with multi-exon seeds by default (matching ST behaviour).
-    // Opt-in to SE-last ordering via RUSTLE_SE_SEEDS_LAST=1 (moves node_ids.len()==1
-    // seeds to end; note: real SE seeds have [source,N,sink] so len==3, making this
-    // nearly a no-op in practice).
-    if std::env::var_os("RUSTLE_SE_SEEDS_LAST").is_some() {
-        seeded.sort_by(|&a, &b| {
-            let a_single = transfrags[a].node_ids.len() == 1;
-            let b_single = transfrags[b].node_ids.len() == 1;
-            match (a_single, b_single) {
-                (false, true) => std::cmp::Ordering::Less,
-                (true, false) => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            }
-        });
+    // SE seeds must be processed LAST, matching ST's behaviour.
+    // ST builds trflong DESC by abundance; single-node seeds are placed early in
+    // that array (they have high abundance when many reads pile on a single exon)
+    // and therefore execute LAST in ST's reverse iteration.
+    //
+    // Without this ordering, SE seeds with low usepath values run first and
+    // expand via back_to_source to the full dominant multi-exon path (a "ghost
+    // dominant").  This causes three problems:
+    //   1. Depletes nodecov before the actual multi-exon seeds run.
+    //   2. Produces a ghost prediction with lc = SE.abundance (e.g. 1.0) instead
+    //      of the true dominant read count (e.g. 234), corrupting longcov output.
+    //   3. Inflates the isofrac denominator, raising the threshold that minority
+    //      isoforms must clear — killing real alt-splice variants.
+    //
+    // The prior RUSTLE_SE_SEEDS_LAST=1 opt-in was broken: it checked
+    // node_ids.len()==1 but real SE seeds have [source, N, sink] → len==3.
+    //
+    // Set RUSTLE_SE_SEEDS_INTERLEAVED=1 to restore the prior (buggy) behaviour.
+    if std::env::var_os("RUSTLE_SE_SEEDS_INTERLEAVED").is_none() {
+        let source = _graph.source_id;
+        let sink   = _graph.sink_id;
+        // A seed is "single-exon" if its inner nodes (source/sink excluded) form
+        // a contiguous chain with NO intron gaps.  Simply checking node_ids.len()==3
+        // is too strict: a long exon can be split across multiple contiguous graph
+        // nodes, giving len>3 with ni=0.  We must check for actual intron gaps.
+        let is_se_seed = |idx: usize| -> bool {
+            let inner: Vec<usize> = transfrags[idx].node_ids.iter()
+                .filter(|&&n| n != source && n != sink)
+                .copied()
+                .collect();
+            // No inner nodes or a single node → trivially SE.
+            if inner.len() <= 1 { return true; }
+            // Multiple inner nodes: SE only if ALL consecutive pairs are contiguous.
+            inner.windows(2).all(|w| {
+                match (_graph.nodes.get(w[0]), _graph.nodes.get(w[1])) {
+                    (Some(a), Some(b)) => a.end + 1 >= b.start,
+                    _ => false,
+                }
+            })
+        };
+        // Stable sort: non-SE (false < true) comes before SE, preserving the
+        // relative order established by the primary sort within each group.
+        seeded.sort_by(|&a, &b| is_se_seed(a).cmp(&is_se_seed(b)));
     }
     seeded
 }
@@ -6628,6 +6657,37 @@ pub fn extract_transcripts(
     for (loop_pos, idx) in order.into_iter().enumerate() {
         // Snapshot entry-time abundance for bisect dump (matches ST's longcov).
         seed_entry_abund.insert(idx, transfrags[idx].abundance);
+        // parity_decisions: parse_trflong_seed — per-seed entry trace (matches ST's event)
+        if crate::parity::decisions::is_enabled() {
+            let inner: Vec<usize> = transfrags[idx].node_ids.iter()
+                .filter(|&&n| n != graph.source_id && n != graph.sink_id)
+                .copied()
+                .collect();
+            if !inner.is_empty() {
+                let tf_start = graph.nodes.get(*inner.first().unwrap()).map(|n| n.start + 1).unwrap_or(0);
+                let tf_end   = graph.nodes.get(*inner.last().unwrap()).map(|n| n.end).unwrap_or(0);
+                let nodecov_min = inner.iter()
+                    .filter_map(|&n| local_nodecov.get(n).copied())
+                    .fold(f64::INFINITY, f64::min);
+                let chain = intron_chain_from_nodes(graph, &inner);
+                let introns_str = chain.iter()
+                    .map(|(d, a)| format!("{}-{}", d + 1, a))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let payload = format!(
+                    r#""f_idx":{},"t_idx":{},"entry_abund":{:.4},"nodecov_min":{:.4},"n_introns":{},"introns":"{}""#,
+                    loop_pos, idx,
+                    transfrags[idx].abundance,
+                    if nodecov_min == f64::INFINITY { 0.0 } else { nodecov_min },
+                    chain.len(), introns_str,
+                );
+                crate::parity::decisions::emit(
+                    "parse_trflong_seed",
+                    Some(bundle_chrom), tf_start, tf_end, bundle_strand,
+                    &payload,
+                );
+            }
+        }
         if parity_seed_trace {
             // Mirror ST's `[ST_TRACE_SEED]` format from rlink.cpp:10089.
             // f counts "from end" in ST (reverse iter); here we use loop_pos
@@ -6802,8 +6862,8 @@ pub fn extract_transcripts(
         // extraction, and admitting them all without protection starves
         // multi-exon TPs. To approximate ST while avoiding this depletion,
         // `parse_trflong` orders single-node seeds LAST in the seed list
-        // (see `seeded.sort_by` SE-split block) so multi-exon paths get
-        // first claim on flow capacity. With the split active, the SE
+        // (default; override with RUSTLE_SE_SEEDS_INTERLEAVED=1) so multi-exon
+        // paths get first claim on flow capacity. With the split active, the SE
         // count gate can be dropped (`RUSTLE_SINGLE_NODE_SKIP_OFF=1`) and
         // `collapse_single_exon_runoff`'s `cov >= singlethr` becomes the
         // sole emission criterion — matching ST exactly.
