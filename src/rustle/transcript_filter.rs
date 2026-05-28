@@ -2137,7 +2137,25 @@ fn isofrac_with_summary(
             ends.entry(e).or_default().push(ti);
         }
     }
-    let mut breakpoints: Vec<u64> = starts.keys().chain(ends.keys()).copied().collect();
+    // RUSTLE_ISOFRAC_PER_MAXINT: match StringTie's per-maxint semantics — only split
+    // windows at the global dominant's exon boundaries (plus all tx starts so
+    // late-starters are admitted to active). Non-dominant exon ends are NOT used as
+    // breakpoints, so short terminal fragments never get an exclusive window where they
+    // could become dominant and kill longer transcripts. An explicit overlap filter then
+    // excludes stale active-set entries whose exon ends fell inside a coarser window.
+    let per_maxint_mode = std::env::var_os("RUSTLE_ISOFRAC_PER_MAXINT").is_some();
+    let mut breakpoints: Vec<u64> = if per_maxint_mode {
+        let dom_idx = (0..n)
+            .max_by(|&a, &b| tx_score(&txs[a]).partial_cmp(&tx_score(&txs[b]))
+                .unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0);
+        let dom_bounds: Vec<u64> = txs[dom_idx].exons.iter()
+            .flat_map(|&(s, e)| [s, e])
+            .collect();
+        starts.keys().copied().chain(dom_bounds).collect()
+    } else {
+        starts.keys().chain(ends.keys()).copied().collect()
+    };
     breakpoints.sort_unstable();
     breakpoints.dedup();
     let mut active = crate::util::bitset::SmallBitset::with_capacity(n.min(64));
@@ -2166,6 +2184,12 @@ fn isofrac_with_summary(
         }
         let mut uniq: Vec<usize> = active.ones().collect();
         uniq.retain(|&k| !dead.contains(k));
+        if per_maxint_mode {
+            // Stale active entries (transcripts whose exon ends fell between non-breakpoint
+            // positions) must be excluded explicitly; in normal mode the sweep-line handles
+            // this via ends breakpoints.
+            uniq.retain(|&k| txs[k].exons.iter().any(|&(s, e)| s < next && e > pos));
+        }
         if uniq.is_empty() {
             continue;
         }
