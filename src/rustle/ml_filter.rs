@@ -155,12 +155,30 @@ pub fn flush_ml_dump() {
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 /// Returns `true` → keep transcript, `false` → kill (longunder).
-///
-/// **Placeholder**: always keeps all transcripts (equivalent to `-f 0`).
-/// Replace the body with the Rust if-else tree printed by `bench/train_ml_filter.py`
-/// after training on GGO_19 feature dump.
-pub fn ml_predict(_f: &MlFeatures) -> bool {
-    true
+/// Trained on GGO_19 de novo, 2026-05-28, 5-fold CV AUC = 0.737
+pub fn ml_predict(f: &MlFeatures) -> bool {
+    if f.cov_ratio <= 0.016205 {
+        if f.tlen_ratio <= 1.163039 {
+            if f.nexons_k <= 5.500000 {
+                return true; // keep=1.0, kill=0.0
+            }
+                return false; // keep=0.1, kill=0.9
+        }
+            if f.cov_ratio <= 0.010555 {
+                return false; // keep=0.3, kill=0.7
+            }
+                return true; // keep=0.8, kill=0.2
+    }
+        if f.longcov_abs <= 2.500000 {
+            if f.nexons_k <= 15.500000 {
+                return true; // keep=0.6, kill=0.4
+            }
+                return false; // keep=0.4, kill=0.6
+        }
+            if f.cov_ratio <= 0.213482 {
+                return true; // keep=0.7, kill=0.3
+            }
+                return true; // keep=0.9, kill=0.1
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -217,10 +235,21 @@ mod tests {
     }
 
     #[test]
-    fn test_placeholder_predict_always_true() {
-        let k = make_tx(1.0, 1.0, 10.0, 1.0, vec![(0, 100), (200, 300)]);
-        let dom = make_tx(100.0, 100.0, 1000.0, 100.0, vec![(0, 100), (200, 300)]);
+    fn test_trained_predict_kills_noise() {
+        // Extremely low coverage ratio (0.5%), long tlen_ratio (>1.16), zero junction support → should be killed
+        // Triggers kill path: cov_ratio <= 0.016205 && tlen_ratio > 1.163039 && cov_ratio <= 0.010555
+        let k = make_tx(0.5, 1.0, 3.0, 0.0, vec![(0, 1000), (1200, 1800)]);
+        let dom = make_tx(100.0, 100.0, 1000.0, 100.0, vec![(0, 500)]);
         let f = MlFeatures::from_pair(&k, &dom);
-        assert!(ml_predict(&f));
+        assert!(!ml_predict(&f), "noise transcript (0.5% cov, long tlen_ratio, 0 jct support) should be killed");
+    }
+
+    #[test]
+    fn test_trained_predict_keeps_strong() {
+        // 15% coverage ratio, good bpcov, longcov=10 → should survive
+        let k = make_tx(15.0, 10.0, 150.0, 15.0, vec![(0, 500), (700, 1000), (1200, 1500)]);
+        let dom = make_tx(100.0, 80.0, 1000.0, 100.0, vec![(0, 500), (700, 1000)]);
+        let f = MlFeatures::from_pair(&k, &dom);
+        assert!(ml_predict(&f), "well-supported minority isoform should be kept");
     }
 }

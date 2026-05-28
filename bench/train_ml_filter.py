@@ -68,9 +68,9 @@ def parse_gtf_intron_chains(gtf_path: str) -> dict:
         if len(exons) < 2:
             chains[tx_id] = ""
             continue
-        # intron: end_of_exon_i (GTF inclusive) + 1 for 1-based start,
-        # start_of_next_exon (GTF 1-based = 0-based end of intron)
-        parts = [f"{exons[i][1] + 1}-{exons[i+1][0]}" for i in range(len(exons) - 1)]
+        # intron: end_of_exon_i (GTF 1-based inclusive) + 1 = 1-based intron start (donor),
+        # start_of_next_exon (GTF 1-based) - 1 = 0-based intron end (acceptor, matching Rust w[1].0).
+        parts = [f"{exons[i][1] + 1}-{exons[i+1][0] - 1}" for i in range(len(exons) - 1)]
         chains[tx_id] = ",".join(parts)
     return chains
 
@@ -96,12 +96,15 @@ def tree_to_rust(clf: DecisionTreeClassifier, feature_names: list, cv_auc: float
     def node_to_rust(node: int, indent: int) -> str:
         pad = "    " * indent
         if tree.children_left[node] == tree.children_right[node]:
-            # Leaf: majority class
+            # Leaf: majority class via argmax on (possibly weighted) values.
+            # clf.tree_.value stores weighted sample counts when class_weight is set,
+            # so we must use argmax rather than casting to int (which truncates <1 weights to 0).
             values = tree.value[node][0]
-            n_kill, n_keep = int(values[0]), int(values[1])
-            keep = n_keep >= n_kill
+            raw_kill, raw_keep = values[0], values[1]
+            pred_class = int(clf.classes_[values.argmax()])  # 0=kill, 1=keep
+            keep = pred_class == 1
             verdict = "true" if keep else "false"
-            return f"{pad}return {verdict}; // keep={n_keep}, kill={n_kill}\n"
+            return f"{pad}return {verdict}; // keep={raw_keep:.1f}, kill={raw_kill:.1f}\n"
 
         feat = feature_names[tree.feature[node]]
         thresh = tree.threshold[node]
