@@ -32,6 +32,7 @@ A decision tree trained on multiple coverage-related signals (including BAM-dept
 - Cross-strand KRI filter — untouched (net +1.26pp F1, separate mechanism)
 - Transcript extraction / path enumeration — untouched
 - Any change to default behavior (`--filter-mode isofrac` is default)
+- Guided mode (`-G`) — ML filter is de novo only; when a guide GTF is present the isofrac path is always used regardless of `--filter-mode`
 
 ---
 
@@ -190,7 +191,7 @@ pub enum FilterMode {
 pub filter_mode: FilterMode,
 ```
 
-`FilterMode` flows through `RunConfig` → `print_predcluster_with_summary_multi` → `isofrac_with_summary`.
+`FilterMode` flows through `RunConfig` → `print_predcluster_with_summary_multi` → `isofrac_with_summary`. The function also receives an `is_guided: bool` (true when `config.guide_file.is_some()`); when true the ML branch is skipped regardless of `filter_mode`.
 
 ---
 
@@ -210,9 +211,19 @@ let mut longunder = match filter_mode {
             cov < isofraclong * cmp_usedcov * combined_factor
         }
     }
-    FilterMode::Ml => {
+    FilterMode::Ml if !is_guided => {
         let features = MlFeatures::from_pair(&txs[k], &txs[first]);
         !ml_predict(&features)
+    }
+    FilterMode::Ml => {
+        // Guided mode: always fall back to isofrac (model trained on de novo only)
+        if txs[k].exons.len() > 1 {
+            (cmp_multicov <= 0.0 && cov < isofraclong * cmp_usedcov * combined_factor
+                && cov < drop / error_perc)
+                || cov < isofraclong * cmp_multicov * combined_factor
+        } else {
+            cov < isofraclong * cmp_usedcov * combined_factor
+        }
     }
 };
 ```
@@ -225,6 +236,7 @@ let mut longunder = match filter_mode {
 
 - **Placeholder model test**: `rustle --filter-mode ml` with placeholder tree (`ml_predict` always returns true) should produce the same output as `rustle -f 0`. Verify with gffcompare.
 - **After training**: benchmark `--filter-mode ml` on GGO_19 de novo. Target: equal or better F1 vs isofrac baseline (96.1% Sn / 91.0% Pr / 1742 chains). Report Sn, Pr, chain count.
+- **Guided mode guard**: `rustle -G GGO_19.gtf --filter-mode ml` must produce bit-identical output to `rustle -G GGO_19.gtf` (isofrac). Verify with gffcompare.
 - **Regression check**: `--filter-mode isofrac` output must be bit-identical to pre-change output (feature dump is env-gated, no behavior change in default mode).
 - **Unit tests**: `MlFeatures::from_pair` with a synthetic dominant/minority pair; assert clamping behavior for zero-valued denominators.
 
