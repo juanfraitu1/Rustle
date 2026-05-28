@@ -790,7 +790,10 @@ pub struct RunConfig {
     /// Min read-abundance (max of longcov/coverage) to retain through long-read interval isofrac
     /// even when below the dominant isoform fraction (0 = off). Default 1.0 ≈ one supporting read.
     pub transcript_isofrac_keep_min: f64,
+    /// When true, use the ML depth-3 decision tree instead of the isofrac/longunder formula.
+    /// Set by --filter-mode ml. Only applies in de novo mode (guide_mode=false).
     pub use_ml_filter: bool,
+    /// True when a guide GTF was supplied (-G). Used to disable the ML filter in guided mode.
     pub guide_mode: bool,
     /// Low isofrac (header lowisofrac=0.02): keep transcript if cov >= this * neighbor (pairwise filter). Lower = more permissive.
     pub lowisofrac: f64,
