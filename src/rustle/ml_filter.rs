@@ -1,3 +1,7 @@
+//! ML-based isofrac filter: depth-3 decision tree trained on GGO_19 transcript features.
+//! Replaces the longunder gate in isofrac_with_summary when --filter-mode ml is set.
+//! Only active in de novo mode (is_guided=false); guided mode always falls back to isofrac.
+
 use std::io::{BufWriter, Write};
 use std::sync::{Mutex, OnceLock};
 
@@ -28,8 +32,8 @@ impl MlFeatures {
     /// Compute features from a (minority k, dominant dom) transcript pair.
     /// Safe for zero denominators: produces 0.0 ratio rather than panicking.
     pub fn from_pair(k: &Transcript, dom: &Transcript) -> Self {
-        let tlen_k = k.exons.iter().map(|(s, e)| e - s).sum::<u64>().max(1) as f64;
-        let tlen_dom = dom.exons.iter().map(|(s, e)| e - s).sum::<u64>().max(1) as f64;
+        let tlen_k = k.exons.iter().map(|(s, e)| e.saturating_sub(*s)).sum::<u64>().max(1) as f64;
+        let tlen_dom = dom.exons.iter().map(|(s, e)| e.saturating_sub(*s)).sum::<u64>().max(1) as f64;
 
         let cov_ratio = if dom.coverage > 0.0 {
             k.coverage / dom.coverage
