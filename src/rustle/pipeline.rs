@@ -17536,7 +17536,7 @@ pub fn run<P: AsRef<Path>>(
     // larger transcript (zero exon overlap → separate gene group).
     if std::env::var_os("RUSTLE_INTRA_GENE_COV_FRAC_OFF").is_none() {
         let alpha: f64 = std::env::var("RUSTLE_INTRA_GENE_COV_FRAC")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.010);
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.005);
         if alpha > 0.0 && !all_transcripts.is_empty() {
             let _before_intra = pre_filter_snapshot(&all_transcripts);
             let n = all_transcripts.len();
