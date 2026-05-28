@@ -82,10 +82,10 @@ def parse_tmap(tmap_path: str) -> dict:
         next(f)  # skip header
         for line in f:
             parts = line.strip().split("\t")
-            if len(parts) < 3:
+            if len(parts) < 5:
                 continue
-            # columns: ref_id, class_code, qry_id, ...
-            cc[parts[2]] = parts[1]
+            # columns: ref_gene_id, ref_id, class_code, qry_gene_id, qry_id, ...
+            cc[parts[4]] = parts[2]
     return cc
 
 
