@@ -1492,14 +1492,14 @@ pub fn apply_higherr_demotions(
     let unreliable_floor: f64 = std::env::var("RUSTLE_HIGHERR_UNRELIABLE_FLOOR")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     // Exempt junctions with a small donor/acceptor shift from a dominant candidate
-    // from HE_DEMOTE when they have enough absolute reads. Primary use case: deletion-
-    // aware junctions where a 1–3 bp shift from the canonical splice site arises from
-    // a deletion at the exon boundary.  Default OFF (floor=0).  Enable by setting
-    // RUSTLE_HE_SMALL_SHIFT_FLOOR=N (e.g., 15) to protect junctions with >= N reads.
+    // from HE_DEMOTE when they have enough absolute reads. Primary use case: 2 bp
+    // alt-acceptor/donor variants with strong read support that ST keeps but aggressive
+    // HE_DEMOTE would fold into the dominant junction.  Default: floor=15, window=2
+    // (GGO_19 benchmark: +0.4pp Pr / same Sn vs floor=0).  Override via env vars.
     let small_shift_floor: f64 = std::env::var("RUSTLE_HE_SMALL_SHIFT_FLOOR")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(15.0);
     let small_shift_window: u64 = std::env::var("RUSTLE_HE_SMALL_SHIFT_WINDOW")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     for ord_i in 0..cjunctions.len() {
         // ---- donor body (StringTie junction[i] branch) ----
         'donor: {

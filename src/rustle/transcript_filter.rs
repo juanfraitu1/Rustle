@@ -1194,7 +1194,7 @@ mod tests {
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         }
     }
 
@@ -2375,6 +2375,34 @@ fn isofrac_with_summary(
                 && txs[k].chain_witnessed
             {
                 longunder = false;
+            }
+
+            // Skip-junction isofrac rescue (opt-in via RUSTLE_SKIP_JCT_RESCUE=1):
+            // When SPLIT_BADJUNC truncates reads at upstream killed junctions, skip-path
+            // longcov is depleted even though the skip junction itself has strong mm support.
+            // Restricted to 2-exon transcripts (single junction = the skip junction itself)
+            // to avoid rescuing multi-exon j-FPs that contain incidental skip junctions.
+            // Use skip_jct_mm as the effective longcov floor: if mm >= isofrac * dominant_longcov,
+            // the skip junction has proportional read support and the path should survive.
+            // Skip-junction isofrac rescue (opt-in via RUSTLE_SKIP_JCT_RESCUE=1).
+            // F1-NEGATIVE on GGO_19 (2026-05-27): rescuing the STRG.205.4 skip path (mm=30,
+            // longcov=4 < 4.74 threshold) requires floor <= 30, but that floor also rescues ~75
+            // j-FPs (paths with incidental skip junctions in complex loci), net F1-negative.
+            // Root cause: SPLIT_BADJUNC truncates 26/30 skip reads upstream, depleting longcov;
+            // the skip path IS extracted (nexons=23) and survives pairwise, but isofrac kills it.
+            // Left as opt-in for future investigation (e.g., if a stricter discriminant is found).
+            if longunder
+                && txs[k].skip_jct_mm > 0.0
+                && txs[first].longcov > 0.0
+                && std::env::var_os("RUSTLE_SKIP_JCT_RESCUE").is_some()
+            {
+                let skip_mm_floor: f64 = std::env::var("RUSTLE_SKIP_JCT_RESCUE_MIN_MM")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(5.0);
+                if txs[k].skip_jct_mm >= skip_mm_floor
+                    && txs[k].skip_jct_mm >= isofraclong * txs[first].longcov
+                {
+                    longunder = false;
+                }
             }
 
             // Per-locus context rescue (default OFF — see below):
@@ -7688,6 +7716,33 @@ pub fn print_predcluster_with_summary_multi(
         }
     }
 
+    // skip_jct_mm: max mm among skip junctions (junctions (d,a) for which both a left sub-junction
+    // (d,x) and a right sub-junction (y,a) exist in junction_stats, indicating reads that skip an
+    // intermediate exon).  Gated behind RUSTLE_SKIP_JCT_RESCUE (opt-in) because the rescue itself
+    // is F1-negative on GGO_19 (tested 2026-05-27: any mm floor <= 30 rescues STRG.205.4 but also
+    // adds ~75 j-FPs, net F1-negative; see project_future_parity_targets.md).
+    if std::env::var_os("RUSTLE_SKIP_JCT_RESCUE").is_some() {
+        if let Some(js) = junction_stats {
+            use crate::types::Junction;
+            for tx in &mut txs {
+                if tx.exons.len() < 2 { tx.skip_jct_mm = 0.0; continue; }
+                let mut max_skip_mm: f64 = 0.0;
+                for w in tx.exons.windows(2) {
+                    let donor = w[0].1;
+                    let acc = w[1].0;
+                    let has_left = js.keys().any(|k| k.donor == donor && k.acceptor > donor && k.acceptor < acc);
+                    if !has_left { continue; }
+                    let has_right = js.keys().any(|k| k.acceptor == acc && k.donor > donor && k.donor < acc);
+                    if !has_right { continue; }
+                    if let Some(stat) = js.get(&Junction::new(donor, acc)) {
+                        max_skip_mm = max_skip_mm.max(stat.mm);
+                    }
+                }
+                tx.skip_jct_mm = max_skip_mm;
+            }
+        }
+    }
+
     // Pre-isofrac strict chain-witness (gated by RUSTLE_JCT_ISOFRAC_RESCUE=1 + reads available).
     // For each multi-exon tx: check if every consecutive K=2 junction window is spanned by a
     // single read (max_gap=0, no collective fallback). Marks tx.chain_witnessed = true when all
@@ -9153,7 +9208,7 @@ pub fn recover_missing_guide_transcripts(
                 intron_low: vec![false; num_introns],
                 synthetic: false,
                 rescue_class: None,
-                raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             };
             transcripts.push(tx);
             recovered += 1;
