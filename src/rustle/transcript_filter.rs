@@ -7682,6 +7682,22 @@ pub fn print_predcluster_with_summary_multi(
         trace_stage("predcluster.pre_pairwise_dedup", &txs);
         emit_pred_stage("AFTER_pre_pairwise_dedup", &txs);
     }
+    // RUSTLE_COV_RAW_FLOW: replace tx.coverage with raw_flow_sum/exonic_len before all
+    // filter stages (pairwise RI, isofrac, global). raw_flow_sum = Σ(nflux × sumright/sumleft)
+    // computed during flow depletion — the ST-parity accumulator (rlink.cpp:10475). It is
+    // post-EM and path-specific, so tx_score = exonic_len × (raw_flow_sum/exonic_len) =
+    // raw_flow_sum, giving dominance ordering by allocated reads (no length bias). Falls back
+    // to tx.coverage when raw_flow_sum=0 (guides, checktrf rescues, short-read paths).
+    if std::env::var_os("RUSTLE_COV_RAW_FLOW").is_some() {
+        for tx in &mut txs {
+            if tx.raw_flow_sum > 0.0 {
+                let exlen = tx_exonic_len(tx) as f64;
+                if exlen > 0.0 {
+                    tx.coverage = tx.raw_flow_sum / exlen;
+                }
+            }
+        }
+    }
     if !config.max_sensitivity {
         let before_pairwise = if fate_trace { txs.clone() } else { Vec::new() };
         // the readthrough elimination block is commented out,
