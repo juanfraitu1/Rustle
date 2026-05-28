@@ -2132,6 +2132,7 @@ fn isofrac_with_summary(
     //   - Skip-exon isoforms at high-coverage loci (dominant includes low-coverage cassette exon)
     //     → dominant bpcov/tlen slightly diluted → factor < 1 → easier threshold → rescued.
     let use_st_cov = std::env::var_os("RUSTLE_ISOFRAC_ST_COV").is_some();
+    let ml_dump = std::env::var_os("RUSTLE_ML_FEATURE_DUMP").is_some();
 
     // Pre-compute per-chain longcov sums for chain-aggregate rescue.
     // Maps intron chain → total longcov across all non-guide multi-exon transcripts sharing that chain.
@@ -2380,10 +2381,11 @@ fn isofrac_with_summary(
                 1.0
             };
             let combined_factor = isofrac_tlen_factor * isofrac_st_factor;
+            // combined_factor is unused when use_ml_filter=true; computed regardless for simplicity.
             let mut longunder = if use_ml_filter && !is_guided && txs[k].exons.len() > 1 {
                 // ML branch: de novo multi-exon only.
                 let features = MlFeatures::from_pair(&txs[k], &txs[first]);
-                if std::env::var_os("RUSTLE_ML_FEATURE_DUMP").is_some() {
+                if ml_dump {
                     let chain = MlFeatures::intron_chain_str(&txs[k]);
                     emit_ml_candidate(&features, &chain);
                 }
