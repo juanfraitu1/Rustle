@@ -248,7 +248,7 @@ pub fn detect(
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
 
 });
     }

@@ -396,7 +396,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         };
         txs.push(tx);
         if debug {
@@ -2943,7 +2943,7 @@ fn junction_recombination_supplement(
                                         synthetic: false,
                                         rescue_class: None,
                                         raw_flow_sum: 0.0,
-                                        min_jct_mm: mm_val,
+                                        min_jct_mm: mm_val, chain_witnessed: false,
                                         exons,
                                     });
                                 }
@@ -2997,7 +2997,7 @@ fn junction_recombination_supplement(
                                         synthetic: false,
                                         rescue_class: None,
                                         raw_flow_sum: 0.0,
-                                        min_jct_mm: mm_val,
+                                        min_jct_mm: mm_val, chain_witnessed: false,
                                         exons,
                                     });
                                 }
@@ -3085,7 +3085,7 @@ fn add_contained_isoforms(
                     hardend: tx.hardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                 });
                 added += 1;
             }
@@ -3277,7 +3277,7 @@ fn emit_junction_paths(
             hardend,
             alt_tts_end,
             vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -3563,7 +3563,7 @@ fn emit_chain_from_graph(
         hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
     })
 }
 
@@ -3695,7 +3695,7 @@ fn emit_reference_chains(
                     hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -3830,7 +3830,7 @@ fn emit_reference_chains(
                         hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -3925,7 +3925,7 @@ fn emit_reference_chains(
             hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
         added += 1;
         emitted_cnt += 1;
@@ -6263,7 +6263,7 @@ fn emit_per_read_alt_combos(
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
 
 });
     }
@@ -6458,7 +6458,7 @@ fn emit_internal_ri_siblings(
                 intron_low: Vec::new(),
                 synthetic: false,
                 rescue_class: None,
-                raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
             });
             spawned += 1;
         }
@@ -7445,7 +7445,7 @@ fn extract_bundle_transcripts_for_graph(
     let (predcluster_txs, predcluster_summary) =
         crate::transcript_filter::print_predcluster_with_summary_multi(
             txs, config, Some(bpcov), traced_ref, &extra_trace_refs,
-            Some(&bundle.junction_stats),
+            Some(&bundle.junction_stats), Some(&bundle.reads),
         );
     txs = predcluster_txs;
     trace_stage("print_predcluster", &txs);
@@ -7974,7 +7974,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_size: None,
                 copy_assignment_confidence: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
             });
         }
 
@@ -8106,7 +8106,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_size: None,
                     copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                 };
                 rescued.push(tx);
                 if debug {
@@ -8324,7 +8324,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_size: None,
                 copy_assignment_confidence: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
             });
             added += 1;
         }
@@ -8458,7 +8458,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_size: None,
                     copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                 });
             }
         }
@@ -9423,7 +9423,7 @@ fn collect_flow_residual_se(
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
     }
     out
@@ -9624,7 +9624,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
     }
     // Dedup overlapping SE candidates emitted from the same bundle.
@@ -9781,7 +9781,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
     }
     out
@@ -9862,7 +9862,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                     };
                     predictions.push(tx);
                 }
@@ -9904,7 +9904,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                 };
                 predictions.push(tx);
             }
@@ -17067,7 +17067,7 @@ pub fn run<P: AsRef<Path>>(
                 hardend: true,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {
@@ -17778,7 +17778,7 @@ pub fn run<P: AsRef<Path>>(
                     alt_tts_end: true,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                 });
                 *added += 1;
                 if debug {

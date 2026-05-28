@@ -4729,7 +4729,7 @@ fn build_topology_borrow_transcript(
         intron_low: Vec::new(),
         synthetic: true,
         rescue_class: Some(crate::vg_hmm::diagnostic::RescueClass::TopologyBorrow),
-        raw_flow_sum: 0.0, min_jct_mm: 0.0,
+        raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
     }
 }
 

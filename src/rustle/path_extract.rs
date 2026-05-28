@@ -680,6 +680,12 @@ pub struct Transcript {
     /// junction stats are unavailable. Populated in `print_predcluster_with_summary_multi`
     /// before isofrac filtering. Used by junction-evidence isofrac rescue.
     pub min_jct_mm: f64,
+    /// True when this transcript's intron chain passes a strict pre-isofrac
+    /// single-read K=2 chain witness check. Set in `print_predcluster_with_summary_multi`
+    /// when `RUSTLE_JCT_ISOFRAC_RESCUE=1` and reads are available. Used to rescue
+    /// genuine minority isoforms from the longunder filter when flow depletion
+    /// has underestimated their coverage.
+    pub chain_witnessed: bool,
 }
 
 #[inline]
@@ -780,7 +786,7 @@ impl Transcript {
             hardend: pred.hardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         }
     }
 }
@@ -1259,7 +1265,7 @@ pub fn extract_rawreads_transcripts(
             hardend: false,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
     }
     out
@@ -1398,7 +1404,7 @@ pub fn extract_shortread_transcripts(
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
             alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
     }
 
@@ -6876,7 +6882,7 @@ pub fn extract_transcripts(
                             intron_low: Vec::new(),
                             synthetic: false,
                             rescue_class: None,
-                            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                         });
                     }
                     } // else !has_real_children
@@ -9014,7 +9020,7 @@ pub fn extract_transcripts(
             hardend: thardend,
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
-                    raw_flow_sum: raw_flow_sum_out, min_jct_mm: 0.0,
+                    raw_flow_sum: raw_flow_sum_out, min_jct_mm: 0.0, chain_witnessed: false,
         });
         if debug_flow {
             let exons_str = exons
@@ -10135,7 +10141,7 @@ pub fn extract_transcripts(
                     alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false,
                     rescue_class: if csr_triggered { Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue) } else { None },
-                    raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                    raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
 
 });
                 let out_idx = out.len() - 1;
@@ -10241,7 +10247,7 @@ pub fn extract_transcripts(
                             vg_family_id: None, vg_copy_id: None, vg_family_size: None,
                             copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false,
                             rescue_class: None,
-                            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                         });
                     }
                 }
@@ -10540,7 +10546,7 @@ pub fn extract_transcripts(
                             vg_family_id: None, vg_copy_id: None, vg_family_size: None,
                             copy_assignment_confidence: None,
                             intron_low: Vec::new(), synthetic: false,
-                            rescue_class: None, raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                            rescue_class: None, raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
                         });
                     }
                 }
@@ -11260,7 +11266,7 @@ pub fn hybrid_path_reexplore(
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         });
     }
 

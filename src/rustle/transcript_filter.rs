@@ -1194,7 +1194,7 @@ mod tests {
             vg_family_size: None,
             copy_assignment_confidence: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
-            raw_flow_sum: 0.0, min_jct_mm: 0.0,
+            raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
         }
     }
 
@@ -2336,6 +2336,45 @@ fn isofrac_with_summary(
                 {
                     longunder = false;
                 }
+            }
+
+            // Junction-mm rescue (opt-in via RUSTLE_JCT_ISOFRAC_RESCUE=1):
+            // Flow depletion underestimates cov for minority isoforms at shared nodes.
+            // JunctionStat::mm (well-anchored read count) is not distorted by depletion —
+            // it counts directly from the BAM. Use min_jct_mm across the transcript's
+            // intron chain relative to the dominant's as a depletion-resistant coverage proxy.
+            // Threshold: max(RUSTLE_JCT_ISOFRAC_MM * dominant.min_jct_mm, RUSTLE_JCT_ISOFRAC_MM_FLOOR).
+            // Defaults: isofrac_mm=0.01, mm_floor=3.0.
+            // GGO_19 sweep: at floor=3 recovers 13 real minority isoforms (+0.7pp Sn) but
+            // also rescues 86 j-class FPs (+0.7pp Sn costs -3.6pp Pr, F1=-1.6pp). At floor=12
+            // the result is 7 TPs / 44 FPs (F1=-0.83pp). Chimeric j-FPs have the same
+            // min_jct_mm distribution as real minority isoforms (both have one "novel"
+            // junction with mm≈3–10). Net F1-negative at all tested thresholds.
+            // A proper fix requires pre-isofrac strict-chain-witness or improved flow assignment.
+            if longunder
+                && std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some()
+                && txs[k].min_jct_mm > 0.0
+                && txs[first].min_jct_mm > 0.0
+            {
+                let isofrac_mm: f64 = std::env::var("RUSTLE_JCT_ISOFRAC_MM")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(0.01);
+                let mm_floor: f64 = std::env::var("RUSTLE_JCT_ISOFRAC_MM_FLOOR")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(3.0);
+                let threshold = (isofrac_mm * txs[first].min_jct_mm).max(mm_floor);
+                if txs[k].min_jct_mm >= threshold {
+                    longunder = false;
+                }
+            }
+
+            // Strict chain-witness rescue (opt-in via RUSTLE_JCT_ISOFRAC_RESCUE=1):
+            // Rescues minority isoforms whose full intron chain is witnessed by individual
+            // reads (K=2 windows, single-read, max_gap=0). chain_witnessed is set upstream
+            // in print_predcluster_with_summary_multi before isofrac runs.
+            if longunder
+                && std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some()
+                && txs[k].chain_witnessed
+            {
+                longunder = false;
             }
 
             // Per-locus context rescue (default OFF — see below):
@@ -4830,6 +4869,67 @@ pub fn collapse_near_equal_intron_chains(
     out
 }
 
+/// Emit skip-junction variants for transcripts with probable micro-exon contamination.
+///
+/// For each consecutive exon triple (A, B, C): if the skip junction (A.end, C.start) is in
+/// junction_stats AND its read support exceeds both sub-junctions (A→B and B→C) AND the
+/// intermediate exon B is at most `micro_exon_max` bp wide, emit a variant without B.
+///
+/// Variants already present in the input by intron chain are skipped.
+/// Alt-site variants are intentionally omitted: without further targeting, scanning ±N bp
+/// around each junction creates too many chimeric candidates at dense loci.
+fn emit_junction_variants(
+    txs: &[Transcript],
+    js: &JunctionStats,
+    micro_exon_max: u64,
+) -> Vec<Transcript> {
+    use std::collections::HashSet as StdHashSet;
+    let mut variants: Vec<Transcript> = Vec::new();
+    let mut seen: StdHashSet<Vec<Junction>> = txs
+        .iter()
+        .filter(|t| t.exons.len() >= 2)
+        .map(|t| exons_to_junction_chain(&t.exons))
+        .collect();
+
+    for tx in txs {
+        let n = tx.exons.len();
+        if n < 3 {
+            continue;
+        }
+
+        for i in 0..n - 2 {
+            let exon_b = tx.exons[i + 1];
+            let b_len = exon_b.1.saturating_sub(exon_b.0);
+            if b_len > micro_exon_max {
+                continue;
+            }
+
+            let left_key  = crate::types::Junction::new(tx.exons[i].1, exon_b.0);
+            let right_key = crate::types::Junction::new(exon_b.1, tx.exons[i + 2].0);
+            let skip_key  = crate::types::Junction::new(tx.exons[i].1, tx.exons[i + 2].0);
+
+            let skip_stat = match js.get(&skip_key) { Some(s) => s, None => continue };
+            let left_mm  = js.get(&left_key).map_or(0.0, |s| s.mm);
+            let right_mm = js.get(&right_key).map_or(0.0, |s| s.mm);
+
+            // Skip junction must be better-supported than both sub-junctions.
+            if skip_stat.mm <= left_mm || skip_stat.mm <= right_mm {
+                continue;
+            }
+
+            let mut var = tx.clone();
+            var.exons.remove(i + 1);
+            var.chain_witnessed = false;
+            let chain = exons_to_junction_chain(&var.exons);
+            if seen.insert(chain) {
+                variants.push(var);
+            }
+        }
+    }
+
+    variants
+}
+
 /// Deduplicate transcripts that share an identical intron chain (same splice-site coordinates),
 /// keeping the single highest-coverage representative per chain per locus.
 ///
@@ -7282,12 +7382,13 @@ pub fn print_predcluster_with_summary(
     bpcov: Option<&Bpcov>,
     trace_ref: Option<&RefTranscript>,
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
-    print_predcluster_with_summary_multi(transcripts, config, bpcov, trace_ref, &[], None)
+    print_predcluster_with_summary_multi(transcripts, config, bpcov, trace_ref, &[], None, None)
 }
 
 /// Same as `print_predcluster_with_summary` but accepts an additional slice of
 /// reference transcripts for batch tracing (each emits its own [TRACE_REF] line
-/// at every predcluster substage).
+/// at every predcluster substage), optional junction stats, and optional bundle
+/// reads for pre-isofrac strict chain-witness marking.
 pub fn print_predcluster_with_summary_multi(
     transcripts: Vec<Transcript>,
     config: &RunConfig,
@@ -7295,6 +7396,7 @@ pub fn print_predcluster_with_summary_multi(
     trace_ref: Option<&RefTranscript>,
     extra_trace_refs: &[&RefTranscript],
     junction_stats: Option<&JunctionStats>,
+    reads: Option<&[crate::types::BundleRead]>,
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
     let trace_stage = |stage: &str, txs: &[Transcript]| {
         if let Some(ref_tx) = trace_ref {
@@ -7586,6 +7688,42 @@ pub fn print_predcluster_with_summary_multi(
         }
     }
 
+    // Pre-isofrac strict chain-witness (gated by RUSTLE_JCT_ISOFRAC_RESCUE=1 + reads available).
+    // For each multi-exon tx: check if every consecutive K=2 junction window is spanned by a
+    // single read (max_gap=0, no collective fallback). Marks tx.chain_witnessed = true when all
+    // windows pass. Discriminates real minority isoforms from chimeric j-FPs whose chimeric
+    // boundary is not co-spanned by any single read.
+    if std::env::var_os("RUSTLE_JCT_ISOFRAC_RESCUE").is_some() {
+        if let Some(r) = reads {
+            let read_chains = build_read_intron_chains(r);
+            let tol = config.junction_correction_window;
+            let strict_k: usize = std::env::var("RUSTLE_JCT_CHAIN_K")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(2usize);
+            for tx in txs.iter_mut() {
+                if tx.exons.len() < 2 { continue; }
+                let tx_chain: Vec<(u64, u64)> = tx.exons.windows(2)
+                    .map(|w| (w[0].1, w[1].0)).collect();
+                let k = strict_k.min(tx_chain.len());
+                let n_windows = tx_chain.len() - k + 1;
+                let mut all_witnessed = true;
+                'outer: for wi in 0..n_windows {
+                    let window = &tx_chain[wi..wi + k];
+                    for rc in &read_chains {
+                        if rc.len() < window.len() { continue; }
+                        for start in 0..=(rc.len() - window.len()) {
+                            let matches = window.iter().zip(&rc[start..start + window.len()])
+                                .all(|(a, b)| a.0.abs_diff(b.0) <= tol && a.1.abs_diff(b.1) <= tol);
+                            if matches { continue 'outer; }
+                        }
+                    }
+                    all_witnessed = false;
+                    break;
+                }
+                tx.chain_witnessed = all_witnessed;
+            }
+        }
+    }
+
     // longunder isofrac filter ( longreads branch).
     // Eliminates low-coverage transcripts relative to the dominant transcript in each interval.
     if config.long_reads {
@@ -7637,6 +7775,19 @@ pub fn print_predcluster_with_summary_multi(
         emit_fate("dedup_exact_intron_chains", &before_exact, &txs);
         trace_stage("predcluster.dedup_exact_intron_chains", &txs);
         emit_pred_stage("AFTER_dedup_exact_intron_chains", &txs);
+        // Emit micro-exon skip-junction variants (RUSTLE_EMIT_JUNCTION_VARIANTS=1).
+        // Inserted here so originals already survived isofrac/pairwise; variants are purely additive.
+        if std::env::var_os("RUSTLE_EMIT_JUNCTION_VARIANTS").is_some() {
+            if let Some(js) = junction_stats {
+                let micro_max: u64 = std::env::var("RUSTLE_JUNCTION_VARIANT_MICRO_MAX")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(50);
+                let new_vars = emit_junction_variants(&txs, js, micro_max);
+                if config.verbose && !new_vars.is_empty() {
+                    eprintln!("[emit_junction_variants] added {} variants", new_vars.len());
+                }
+                txs.extend(new_vars);
+            }
+        }
         // High-overlap variant collapse: kill transcripts sharing ≥80% of junctions
         // with a higher-coverage transcript (matching StringTie's cascading pairwise kills).
         let before_hov = if fate_trace { txs.clone() } else { Vec::new() };
@@ -9002,7 +9153,7 @@ pub fn recover_missing_guide_transcripts(
                 intron_low: vec![false; num_introns],
                 synthetic: false,
                 rescue_class: None,
-                raw_flow_sum: 0.0, min_jct_mm: 0.0,
+                raw_flow_sum: 0.0, min_jct_mm: 0.0, chain_witnessed: false,
             };
             transcripts.push(tx);
             recovered += 1;
