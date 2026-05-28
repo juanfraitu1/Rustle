@@ -2108,6 +2108,25 @@ fn isofrac_with_summary(
     let n = txs.len();
     let mut dead = SmallBitset::with_capacity(n.min(64));
     let mut summary = IsofracKillSummary::default();
+    // RUSTLE_ISOFRAC_TLEN_NORM: adjust the isofrac threshold by (tlen_k/tlen_dom)^exp
+    // to approximate StringTie's pred->cov = flow*bpcov/tlen^2 normalization.
+    // Longer minority isoforms face a proportionally harder threshold.
+    // Exponent: exp=2 is theoretically exact for retained introns (bpcov ≈ constant);
+    // exp=1 is less aggressive. Set RUSTLE_ISOFRAC_TLEN_EXP=N for different exponents.
+    // GGO_19 benchmark (2026-05-28): exp=1 cuts 0 FPs while removing 19 TPs (F1-negative).
+    // exp=2 worse. Root cause: at these loci the current code already handles coverage
+    // correctly; tlen normalization kills genuine longer minority isoforms alongside FPs.
+    let tlen_norm = std::env::var_os("RUSTLE_ISOFRAC_TLEN_NORM").is_some();
+    // RUSTLE_ISOFRAC_ST_COV: use StringTie's pred->cov = flow * bpcov / tlen^2 for the
+    // isofrac comparison by scaling the threshold by (bpcov_dom/tlen_dom)/(bpcov_k/tlen_k).
+    // Unlike pure tlen normalization, this uses actual per-base BAM coverage:
+    //   - Spurious retained introns have genuinely lower bpcov/tlen (their "exon" is truly
+    //     intronic in the dominant → fewer reads there) → harder threshold → more FPs killed.
+    //   - Genuine longer minority isoforms have similar bpcov/tlen to the dominant → factor ≈ 1
+    //     → NOT penalized the way pure tlen normalization penalizes them.
+    //   - Skip-exon isoforms at high-coverage loci (dominant includes low-coverage cassette exon)
+    //     → dominant bpcov/tlen slightly diluted → factor < 1 → easier threshold → rescued.
+    let use_st_cov = std::env::var_os("RUSTLE_ISOFRAC_ST_COV").is_some();
 
     // Pre-compute per-chain longcov sums for chain-aggregate rescue.
     // Maps intron chain → total longcov across all non-guide multi-exon transcripts sharing that chain.
@@ -2325,13 +2344,44 @@ fn isofrac_with_summary(
             } else {
                 usedcov[sidx]
             };
+            let isofrac_tlen_factor = if tlen_norm {
+                let tlen_k = tx_exonic_len(&txs[k]).max(1) as f64;
+                let tlen_dom = tx_exonic_len(&txs[first]).max(1) as f64;
+                let exp: i32 = std::env::var("RUSTLE_ISOFRAC_TLEN_EXP")
+                    .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+                (tlen_k / tlen_dom).powi(exp)
+            } else {
+                1.0
+            };
+            // ST bpcov factor: (bpcov_dom/tlen_dom) / (bpcov_k/tlen_k).
+            // > 1 → minority has lower per-base coverage than dominant → harder threshold.
+            // < 1 → minority has higher per-base coverage than dominant → easier threshold.
+            // Genuine longer minority isoforms share exon body → bpcov/tlen ≈ same → factor ≈ 1.
+            // Spurious retained introns include genuinely low-coverage "exons" → factor > 1.
+            let isofrac_st_factor = if use_st_cov
+                && txs[k].bpcov_cov > 0.0
+                && txs[first].bpcov_cov > 0.0
+            {
+                let tlen_k = tx_exonic_len(&txs[k]).max(1) as f64;
+                let tlen_dom = tx_exonic_len(&txs[first]).max(1) as f64;
+                let bpcov_k_per_tlen = txs[k].bpcov_cov / tlen_k;
+                let bpcov_dom_per_tlen = txs[first].bpcov_cov / tlen_dom;
+                if bpcov_k_per_tlen > 0.0 {
+                    (bpcov_dom_per_tlen / bpcov_k_per_tlen).clamp(0.1, 10.0)
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+            let combined_factor = isofrac_tlen_factor * isofrac_st_factor;
             let mut longunder = if txs[k].exons.len() > 1 {
                 (cmp_multicov <= 0.0
-                    && cov < isofraclong * cmp_usedcov
+                    && cov < isofraclong * cmp_usedcov * combined_factor
                     && cov < drop / error_perc)
-                    || cov < isofraclong * cmp_multicov
+                    || cov < isofraclong * cmp_multicov * combined_factor
             } else {
-                cov < isofraclong * cmp_usedcov
+                cov < isofraclong * cmp_usedcov * combined_factor
             };
             // Optional floor: keep isoforms with at least this read-abundance (longcov/cov max)
             // even when longunder would drop them (CLI: --transcript-isofrac-keep-min).
