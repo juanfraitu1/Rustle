@@ -11,6 +11,7 @@ use crate::util::bitset::SmallBitset;
 use crate::bpcov::Bpcov;
 use crate::util::coord::{len_half_open, overlaps_half_open};
 use crate::path_extract::Transcript;
+use crate::ml_filter::{emit_ml_candidate, ml_predict, MlFeatures};
 use crate::reference_gtf::RefTranscript;
 use crate::tracing::reference::debug_ref_stage;
 use crate::types::{
@@ -2085,6 +2086,8 @@ fn isofrac(
         _bpcov,
         verbose,
         keep_min_abundance,
+        false,
+        false,
     )
     .0
 }
@@ -2097,6 +2100,8 @@ fn isofrac_with_summary(
     _bpcov: Option<&Bpcov>,
     verbose: bool,
     keep_min_abundance: f64,
+    use_ml_filter: bool,
+    is_guided: bool,
 ) -> (Vec<Transcript>, IsofracKillSummary) {
     if std::env::var_os("RUSTLE_SKIP_UNDERTHRESHOLD").is_some() {
         return (transcripts, IsofracKillSummary::default());
@@ -2375,13 +2380,24 @@ fn isofrac_with_summary(
                 1.0
             };
             let combined_factor = isofrac_tlen_factor * isofrac_st_factor;
-            let mut longunder = if txs[k].exons.len() > 1 {
-                (cmp_multicov <= 0.0
-                    && cov < isofraclong * cmp_usedcov * combined_factor
-                    && cov < drop / error_perc)
-                    || cov < isofraclong * cmp_multicov * combined_factor
+            let mut longunder = if use_ml_filter && !is_guided && txs[k].exons.len() > 1 {
+                // ML branch: de novo multi-exon only.
+                let features = MlFeatures::from_pair(&txs[k], &txs[first]);
+                if std::env::var_os("RUSTLE_ML_FEATURE_DUMP").is_some() {
+                    let chain = MlFeatures::intron_chain_str(&txs[k]);
+                    emit_ml_candidate(&features, &chain);
+                }
+                !ml_predict(&features)
             } else {
-                cov < isofraclong * cmp_usedcov * combined_factor
+                // Isofrac branch: original longunder formula.
+                if txs[k].exons.len() > 1 {
+                    (cmp_multicov <= 0.0
+                        && cov < isofraclong * cmp_usedcov * combined_factor
+                        && cov < drop / error_perc)
+                        || cov < isofraclong * cmp_multicov * combined_factor
+                } else {
+                    cov < isofraclong * cmp_usedcov * combined_factor
+                }
             };
             // Optional floor: keep isoforms with at least this read-abundance (longcov/cov max)
             // even when longunder would drop them (CLI: --transcript-isofrac-keep-min).
@@ -7921,6 +7937,8 @@ pub fn print_predcluster_with_summary_multi(
             bpcov,
             config.verbose,
             config.transcript_isofrac_keep_min,
+            config.use_ml_filter,
+            config.guide_mode,
         );
         txs = txs_after_isofrac;
         summary.isofrac_summary = isofrac_summary;
