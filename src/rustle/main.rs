@@ -1,9 +1,15 @@
 //! Rustle - Long-read transcript assembler (Rust).
 
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use rustle::merge_mode::run_merge;
 use rustle::run;
 use rustle::RunConfig;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
+enum FilterMode {
+    Isofrac,
+    Ml,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -173,6 +179,10 @@ struct Args {
     /// Keep isoforms with read abundance (longcov/cov) >= this through long-read isofrac (0=off) [default: 1]
     #[arg(long, default_value = "1")]
     transcript_isofrac_keep_min: f64,
+
+    /// Transcript filter mode: isofrac (default) or ml (depth-3 decision tree, de novo only)
+    #[arg(long, value_enum, default_value = "isofrac")]
+    filter_mode: FilterMode,
 
     /// Low isofrac: keep in pairwise filter if cov >= this * container (lowisofrac; lower = more permissive) [default: 0.02]
     #[arg(long, default_value = "0.02")]
@@ -803,8 +813,8 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_min_primitive_jaccard: args.vg_family_min_primitive_jaccard,
         vg_family_min_kmer_jaccard: args.vg_family_min_kmer_jaccard,
         vg_family_min_poa_identity: args.vg_family_min_poa_identity,
-        use_ml_filter: false,
-        guide_mode: false,
+        use_ml_filter: args.filter_mode == FilterMode::Ml,
+        guide_mode: args.guide.is_some(),
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {
@@ -864,6 +874,7 @@ pub fn run_cli() -> anyhow::Result<()> {
 
     // Explicit flush of parity log (BufWriter inside static OnceLock doesn't auto-flush).
     rustle::parity::decisions::flush();
+    rustle::ml_filter::flush_ml_dump();
     Ok(())
 }
 
