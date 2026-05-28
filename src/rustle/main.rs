@@ -803,6 +803,8 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_min_primitive_jaccard: args.vg_family_min_primitive_jaccard,
         vg_family_min_kmer_jaccard: args.vg_family_min_kmer_jaccard,
         vg_family_min_poa_identity: args.vg_family_min_poa_identity,
+        use_ml_filter: false,
+        guide_mode: false,
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

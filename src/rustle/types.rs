@@ -790,6 +790,8 @@ pub struct RunConfig {
     /// Min read-abundance (max of longcov/coverage) to retain through long-read interval isofrac
     /// even when below the dominant isoform fraction (0 = off). Default 1.0 ≈ one supporting read.
     pub transcript_isofrac_keep_min: f64,
+    pub use_ml_filter: bool,
+    pub guide_mode: bool,
     /// Low isofrac (header lowisofrac=0.02): keep transcript if cov >= this * neighbor (pairwise filter). Lower = more permissive.
     pub lowisofrac: f64,
     /// Merge consecutive exons when gap <= this (bp); 0 = off.
@@ -1195,6 +1197,8 @@ impl Default for RunConfig {
             filter_contained: false,
             transcript_isofrac: 0.01, // the original algorithm default -f 0.01
             transcript_isofrac_keep_min: 1.0,
+            use_ml_filter: false,
+            guide_mode: false,
             lowisofrac: 0.02, // the original algorithm default lowisofrac=0.02
             merge_micro_intron_max_gap: 0,
             output_tpm: false,
@@ -1273,5 +1277,16 @@ impl Default for RunConfig {
             vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
             vg_no_hmm: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod config_ml_defaults_tests {
+    use super::*;
+    #[test]
+    fn test_runconfig_ml_defaults() {
+        let c = RunConfig::default();
+        assert!(!c.use_ml_filter, "use_ml_filter must default to false");
+        assert!(!c.guide_mode, "guide_mode must default to false");
     }
 }
