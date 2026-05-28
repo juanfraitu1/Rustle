@@ -58,6 +58,7 @@ pub mod treepat; // tree pattern matching for path patterns // coverage-based tr
 pub mod exon_merge; // exon boundary merging
 pub mod polya; // poly-A site detection
 pub mod transcript_filter; // isofrac, pairwise, runoff, dedup, merge, lowintron
+pub mod ml_filter;         // ML-based isofrac alternative (depth-3 decision tree)
 pub mod cross_strand_predcluster; // post-pipeline cross-strand KRI (gated, default off)
 pub mod single_exon_pileup; // polyA-driven SE detector (gated, opt-in)
 pub mod parallel_predprune; // post-pipeline m/k-class pruning (gated, default off)
