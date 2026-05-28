@@ -7819,6 +7819,43 @@ pub fn print_predcluster_with_summary_multi(
         }
     }
 
+    // Novel-junction mm floor filter (guided mode only).
+    // In guided mode (detected by any junction having guide_match=true), kill transcripts
+    // where the weakest novel (guide_match=false) junction has mm ≤ threshold.
+    // Default threshold = 6 (require mm ≥ 7 on every novel junction to survive).
+    // Rationale: all TP chains use only guide-matching junctions (0 novel junctions in
+    // guided mode), so min_novel_jct_mm = 0 for every TP → they are never killed.
+    // GGO_19 guided: threshold=6 eliminates all j-FPs with mm≤6 with zero TP loss;
+    // the surviving j-FP (RSTL.349.2, checktrf path) has mm=522+ and is architectural.
+    // Set RUSTLE_MIN_NOVEL_JCT_MM=0 to disable, or adjust threshold as needed.
+    // No-op in de novo mode (no guide_match=true junctions exist).
+    if let Some(js) = junction_stats {
+        use crate::types::Junction;
+        let any_guide_jct = js.values().any(|s| s.guide_match);
+        if any_guide_jct {
+            let threshold: f64 = std::env::var("RUSTLE_MIN_NOVEL_JCT_MM")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(6.0);
+            if threshold > 0.0 {
+                let before_novel_mm = if fate_trace { txs.clone() } else { Vec::new() };
+                txs.retain(|tx| {
+                    if tx.exons.len() < 2 { return true; }
+                    let min_novel = tx.exons.windows(2)
+                        .filter_map(|w| {
+                            let jkey = Junction::new(w[0].1, w[1].0);
+                            js.get(&jkey).and_then(|s| if !s.guide_match { Some(s.mm) } else { None })
+                        })
+                        .fold(f64::INFINITY, f64::min);
+                    // No novel junctions (all guide-matched) → pass.
+                    // Novel junction mm exceeds threshold → pass.
+                    min_novel == f64::INFINITY || min_novel > threshold
+                });
+                emit_fate("novel_jct_mm_floor", &before_novel_mm, &txs);
+                trace_stage("predcluster.novel_jct_mm_floor", &txs);
+                emit_pred_stage("AFTER_novel_jct_mm_floor", &txs);
+            }
+        }
+    }
+
     // longunder isofrac filter ( longreads branch).
     // Eliminates low-coverage transcripts relative to the dominant transcript in each interval.
     if config.long_reads {
