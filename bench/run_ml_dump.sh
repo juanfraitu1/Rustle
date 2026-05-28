@@ -12,10 +12,10 @@ RUSTLE=./target/release/rustle
 GTF_OUT="${PREFIX}_all_transcripts.gtf"
 CMP_OUT="${PREFIX}_cmp"
 
-echo "[run_ml_dump] Running rustle with -f 0 and feature dump..."
+echo "[run_ml_dump] Running rustle with -f 0 --filter-mode ml and feature dump..."
 RUSTLE_ML_FEATURE_DUMP=1 \
 RUSTLE_ML_FEATURE_DUMP_PATH="${PREFIX}_features.jsonl" \
-"$RUSTLE" -L "$BAM" -f 0 -o "$GTF_OUT" 2>/dev/null
+"$RUSTLE" -L "$BAM" -f 0 --filter-mode ml -o "$GTF_OUT" 2>/dev/null
 
 echo "[run_ml_dump] Running gffcompare..."
 gffcompare -RQ -r "$REF_GTF" "$GTF_OUT" -o "$CMP_OUT" 2>/dev/null
