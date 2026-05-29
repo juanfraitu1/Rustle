@@ -9244,6 +9244,49 @@ pub fn extract_transcripts(
     }
     let ck_alt_tss_min: f64 = std::env::var("RUSTLE_CHECKTRF_ALT_TSS_MIN")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(3.0);
+    // Boundary: kept_paths up to this index are FLOW-origin (pushed at the
+    // flow extraction stage); any kept_paths appended later are checktrf
+    // rescues from the loop below. Captured so the flow-redundancy dedup gate
+    // (RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT) only compares against flow paths.
+    let flow_kept_paths_len = kept_paths.len();
+    // Flow-redundancy dedup (DEFAULT ON; opt-out RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_OFF=1):
+    // Don't re-emit a checktrf rescue whose junction chain is a sub-chain of a
+    // higher-coverage FLOW chain at the same locus — flow already produced the
+    // dominant isoform this fragment belongs to. Verified F1 win on GGO_19
+    // (+0.148pp: -15 FP, -8 TP; Pr +0.68pp vs Sn -0.44pp), deterministic.
+    let ckt_no_flow_redundant =
+        std::env::var_os("RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_OFF").is_none();
+    // Experimental sub-mode (opt-in): only suppress when the rescue chain is
+    // IDENTICAL to a flow chain (not merely a sub-chain). Near-no-op on GGO_19.
+    let ckt_no_flow_redundant_exact =
+        std::env::var_os("RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_EXACT").is_some();
+    let flow_chain_sets: Vec<(std::collections::HashSet<(u64, u64)>, f64)> =
+        if ckt_no_flow_redundant {
+            kept_paths[..flow_kept_paths_len]
+                .iter()
+                .map(|(nodes, cov, _, _)| {
+                    (
+                        intron_chain_from_nodes(graph, nodes)
+                            .into_iter()
+                            .collect::<std::collections::HashSet<_>>(),
+                        *cov,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+    // Dominant-coverage refinement (DEFAULT ON; opt-out
+    // RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_ALLCOV=1): only treat a contained
+    // rescue as redundant when the containing flow chain has STRICTLY HIGHER
+    // coverage — i.e. the rescue is a low-cov sub-fragment of a dominant
+    // isoform flow already produced. Protects genuine lower-abundance alt
+    // isoforms that happen to be sub-chains of a weaker flow path. This
+    // refinement is what makes the dedup a net F1 win (saves ~9 TPs vs the
+    // all-coverage variant while keeping most of the FP removal).
+    let ckt_redundant_dominant_only =
+        std::env::var_os("RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_ALLCOV").is_none()
+            && !ckt_no_flow_redundant_exact;
     if long_read_mode && !checktrf.is_empty() && checktrf_enabled {
         // Dedup while preserving insertion order.
         let mut seen: HashSet<usize> = Default::default();
@@ -9368,6 +9411,47 @@ pub fn extract_transcripts(
                 .collect();
             if tf_nodes.is_empty() {
                 continue;
+            }
+            // Strict admission (RUSTLE_CHECKTRF_STRICT_ADMIT=1): mirror
+            // StringTie's long-read checktrf primary gate (rlink.cpp:10044),
+            // which only accepts transfrags "linked to source and sink" —
+            // i.e. the transfrag's first real node has the source as a parent
+            // AND its last real node has the sink as a child (a complete
+            // bundle-spanning path). Non-spanning fragments are exactly the
+            // partial/internal seeds that inflate checktrf volume vs ST.
+            // Guides are exempt (always recoverable). Opt-in.
+            if std::env::var_os("RUSTLE_CHECKTRF_STRICT_ADMIT").is_some()
+                && !transfrags[t].guide
+            {
+                let first = *tf_nodes.first().unwrap();
+                let last = *tf_nodes.last().unwrap();
+                let src_linked = graph
+                    .nodes
+                    .get(first)
+                    .map(|n| n.parents.contains(source_id))
+                    .unwrap_or(false);
+                let sink_linked = graph
+                    .nodes
+                    .get(last)
+                    .map(|n| n.children.contains(sink_id))
+                    .unwrap_or(false);
+                // Mode 2 (RUSTLE_CHECKTRF_STRICT_ADMIT=2): require only ONE
+                // anchor (source OR sink) — drops purely-internal fragments
+                // but keeps single-end-anchored partial reads. Default (=1):
+                // require BOTH anchors.
+                let one_anchor = std::env::var("RUSTLE_CHECKTRF_STRICT_ADMIT")
+                    .map(|v| v == "2")
+                    .unwrap_or(false);
+                let admit = if one_anchor {
+                    src_linked || sink_linked
+                } else {
+                    src_linked && sink_linked
+                };
+                if !admit {
+                    record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
+                    emit_checktrf_result!(t, "strict_admit_skip", &tf_nodes);
+                    continue;
+                }
             }
             trace_checktrf_seed_snapshot(t, &transfrags[t], &tf_nodes, &kept_paths, graph, &out);
 
@@ -10161,6 +10245,38 @@ pub fn extract_transcripts(
                             emit_checktrf_result!(t, "bad_junction", rescue_nodes);
                             continue;
                         }
+                    }
+                }
+                // Flow-redundancy dedup (DEFAULT ON; see flag setup above):
+                // Suppress this checktrf rescue if every one of its junctions is
+                // already present in some FLOW-origin kept path at this locus
+                // (sub-chain) AND (by default) that flow chain has strictly
+                // higher coverage. Multi-intron only: a rescue with no junctions
+                // (single-exon) is never redundant by this rule.
+                if ckt_no_flow_redundant {
+                    let chain = intron_chain_from_nodes(graph, rescue_nodes);
+                    let redundant = !chain.is_empty()
+                        && flow_chain_sets.iter().any(|(fs, fcov)| {
+                            let chain_match = if ckt_no_flow_redundant_exact {
+                                // identical: same junction set AND same cardinality
+                                fs.len() == chain.len() && chain.iter().all(|j| fs.contains(j))
+                            } else {
+                                // subset/contained
+                                chain.iter().all(|j| fs.contains(j))
+                            };
+                            if !chain_match {
+                                return false;
+                            }
+                            if ckt_redundant_dominant_only {
+                                *fcov > coverage + EPS
+                            } else {
+                                true
+                            }
+                        });
+                    if redundant {
+                        emit_checktrf_result!(t, "flow_redundant", rescue_nodes);
+                        record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
+                        continue;
                     }
                 }
                 // Path-enum RI suppression: if THIS rescue's intron chain is
