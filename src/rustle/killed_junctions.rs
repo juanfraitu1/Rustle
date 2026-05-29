@@ -713,7 +713,7 @@ pub fn good_junc_stats(
                 bpcov_says_noise = llcov > 1.0 / ERROR_PERC
                     && st.leftsupport * mult_pre < ERROR_PERC * llcov;
             }
-            if bpcov_says_noise {
+            if bpcov_says_noise && !crate::stringtie_parity::st_shadow() {
                 if gjd {
                     eprintln!(
                         "GJ_MARK_BAD_MM {}-{} reason=higherr_low_support_bad+bpcov_noise nm={:.1} mrcount={:.1} good={:.1} thr={:.2}",
@@ -761,9 +761,12 @@ pub fn good_junc_stats(
         // Old aggressive behavior (100x) can be restored via RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL_OFF=1
         let mut mult = 1.0 / ERROR_PERC;
         if longreads
-            && std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL_OFF").is_some()
+            && (std::env::var_os("RUSTLE_GOODJUNC_LR_WITNESS_FAITHFUL_OFF").is_some()
+                || crate::stringtie_parity::st_shadow())
         {
-            mult /= ERROR_PERC;  // restore old aggressive behavior
+            // ST's good_junc uses mult=1/ERROR_PERC^2 (100x) for long reads
+            // (rlink.cpp:13744) — a HIGHER tolerance, so FEWER witness kills.
+            mult /= ERROR_PERC;
         }
         let bw = 5u64;
         let sno = if strand > 0 {
@@ -1230,7 +1233,10 @@ pub fn good_junc(
                     }
                 }
             }
-            if !rescued {
+            // Layer 2 shadow: ST's good_junc has NO mm=-1 demotion; on all_bad
+            // it only sets a local `mismatch` flag and kills solely via the long-intron
+            // gate (handled elsewhere). Skip the Rustle-invented demotion under shadow.
+            if !rescued && !crate::stringtie_parity::st_shadow() {
                 cj.mm = -1.0;
                 if gjd {
                     eprintln!(
