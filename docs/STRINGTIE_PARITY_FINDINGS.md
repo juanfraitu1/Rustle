@@ -100,13 +100,23 @@ has **6303 transfrag chains ST doesn't** (over-segmentation) vs 196 ST-only.
    introns** chains ST never creates. Extra distinct chains → extra seeds → extra alt-junction paths
    → the **j-class precision extras**. **This is the F1-relevant divergence.**
 
-**Fix target (located):** the **read→node mapping** (`map_reads.rs::collect_read_nodes_exact` :250,
-`split_read_segments` :1308) producing ~2.4× more distinct chains than ST (Rustle 10490 vs ST 4383
-multi-intron). NOT the trim (ruled out) and NOT `add_or_update` matching (exact). Next session:
-deep-dive why Rustle maps reads to extra distinct node paths (junction-correction / boundary
-snapping / segment splitting) vs ST's `update_abundance` (rlink.cpp:4367). Gate: drive
-`transfrag_parity_diff.py` Rustle-only count → 0. Multi-session, full-metric validation (feeds all
-coverage + path extraction).
+**Over-segmentation magnitude (apples-to-apples, transfrag_pre_depl both sides):** Rustle **7335**
+multi-intron transfrags vs ST **4383** → **3157 Rustle-only** chains, 205 ST-only (the
+`transfrag_define` comparison inflated this to 6303 — use pre_depl both sides, now the diff default).
+
+**Mechanism narrowed by elimination (session 2, 2026-05-28):** deep-dived a Rustle-only 4-intron
+chain (`…15670251-15674428`, abund 1). ST's dominant there is longer (`…15670251-15681376,…`). The
+weak junction `15670250-15674429` (2 reads) is **accepted by BOTH tools** — so NOT a junction-accept
+divergence. Combined with trim ruled out (ST_TRIM no-op) and matching exact, the conclusion is:
+**the same reads produce a different transfrag CHAIN in each tool** — the read→node-path construction
+(`map_reads.rs::collect_read_nodes_exact` :250 / `split_read_segments` :1308) builds different node
+paths per read than ST's `update_abundance` (rlink.cpp:4367). e.g. Rustle ends a chain at acceptor
+15674428 where ST's read continues / forms a different chain.
+
+**Next concrete step:** read-level node-path trace — take one Rustle-only chain's read(s) by name,
+dump Rustle's node path (collect_read_nodes_exact) AND instrument ST's `update_abundance` node list
+for the same read, diff. Gate: drive `transfrag_parity_diff.py` Rustle-only → 0. Multi-session,
+full-metric validation (feeds all coverage + path extraction).
 
 ## 6. Instrumentation toolkit (kept, env-gated; default behavior unchanged)
 

@@ -12,7 +12,9 @@ Inputs: /tmp/ru_tf.jsonl /tmp/st_tf.jsonl (capture with PARITY_FILTER_STEPS=tran
 """
 import json, sys, collections, statistics as st
 
-RU_STEP = sys.argv[1] if len(sys.argv) > 1 else "transfrag_define"
+# Default to transfrag_pre_depl on BOTH sides — apples-to-apples (same stage, same convention).
+# transfrag_define (Rustle graph-build) inflates the Rustle-only count vs ST's pre_depl stage.
+RU_STEP = sys.argv[1] if len(sys.argv) > 1 else "transfrag_pre_depl"
 ST_STEP = sys.argv[2] if len(sys.argv) > 2 else "transfrag_pre_depl"
 
 def load(path, step):
