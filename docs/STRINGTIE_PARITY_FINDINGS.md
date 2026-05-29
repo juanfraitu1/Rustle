@@ -319,6 +319,38 @@ node and read→transfrag layers are interdependent (the project's core premise)
 (true coherent-shadow approach); (b) genome-enabled parity (run both tools with --genome-fasta, wire P1
 consensus). Layer 2.5 left at the safe inert consensus-corrected state (ae17791); no parity gain yet.
 
+## 6e. Shadow Layer 3a — split-removal TESTED & REVERTED; truncations are UPSTREAM (2026-05-29)
+
+Implemented ST's `get_fragment_pattern` split rule under shadow in `split_read_segments`
+(map_reads.rs:1339): suppress Rustle's killed/BADJUNC split + single-node-fragment drop (sites at
+map_reads.rs:652 and :1199), split only at non-contiguous nodes lacking a boundary-matching read junction.
+Default byte-identical (shadow-gated). **Result: transfrag Rustle-only 5756 → 7206 (WORSE, +1450).**
+Decisive breakdown: contiguous-sublist TRUNCATIONS of ST chains barely changed (2780 → 2722, −58) while
+NON-truncation Rustle-only chains exploded (2976 → 4484, +1508); in-both flat (4018 → 4019). **So the
+read SPLIT is NOT the cause of the truncations** — removing it doesn't collapse reads onto ST's full
+chains, it lets them chain through more nodes into new divergent chains. **The truncations originate
+upstream in read→node-path construction (`collect_read_nodes_exact` map_reads.rs:250 — which node set a
+read maps to), not in the split (Layer 3a) nor the node boundaries (Layer 2.5).** Reverted; map_reads.rs
+at committed state, no parity change.
+
+## 6f. ARCHITECTURAL CONCLUSION (Layers 2.5+3) — 2026-05-29
+
+The transfrag over-segmentation (5756 Rustle-only) is rooted in **read→node-path construction**
+(`collect_read_nodes_exact`: the `rnode`/node-membership a read resolves to), which sits BELOW both the
+graph node boundaries and the segment split. Across this effort we tried, each in isolation, and each
+shifted the error mode WITHOUT converging the transfrag gate:
+- Layer 2.5: weak-junction (`nreads<5`) demotion, splice-consensus demotion, `mm<0` boundary suppression.
+- Layer 3a: ST-faithful split + single-node-drop removal.
+Node-construction ↔ read-node-mapping ↔ transfrag chains are **circularly coupled** — the project's
+"layers reinforce only together" premise, manifesting more strongly than hoped: the layers can't even be
+*validated* incrementally because each isolated change moves the metric the wrong way. **The true bottom
+of the stack is `collect_read_nodes_exact` (how a read's alignment becomes a node path) vs ST's
+`get_read_pattern` (rlink.cpp:4041).** Closing transfrag parity requires matching that construction
+(a per-read `rnode` vs `unique_nodes` diff is the entry point; `RUSTLE_TRACE_NODE_MAP` hook exists), and
+likely doing so TOGETHER with the node-set and split as one coherent change measured only on the combined
+transfrag gate. This is a major sub-effort. **Shipped & safe: Layers 1+2 (junction acceptance). Layer 2.5
+inert/safe. No regression to the default (96.5/90.7, ±0.1 nondeterministic).**
+
 ---
 
 ## 7. Superseded documents
