@@ -201,6 +201,45 @@ investigation; all previously-rejected mm<0 junctions are now accepted under sha
 
 ---
 
+## 6b. Shadow Layer 2 — PARTIAL (2026-05-29, commit e6a2a05)
+
+**Goal:** drive the `absent_from_rustle` bucket (junctions ST accepts that Rustle never even
+*evaluates* — killed/demoted before the `junction_accept` emit at graph_build.rs:875) toward 0.
+
+**Root cause (investigation):** the absent junctions are NOT a bundling/extraction/coordinate
+problem — Rustle bundles them, sees the reads, extracts the junction, then kills/demotes them inside
+`good_junc` (`src/rustle/killed_junctions.rs`). The dominant mechanism is a **Rustle-invented `mm=-1`
+"all_bad" demotion** (every carrying read has a mismatch in its splice anchor) that StringTie's
+`good_junc` (rlink.cpp:13700-13803) does NOT have — ST only sets a local `mismatch` flag and kills
+via the long-intron gate. Secondary: Rustle's main witness check defaulted to a 10x long-read
+multiplier vs ST's 100x (rlink.cpp:13744), i.e. Rustle was *more* aggressive at killing.
+
+**Fix (shadow only):** under `st_shadow()`, (1) skip the two `higherr_low_support_bad` `mm=-1`
+demotion sites (killed_junctions.rs ~716 and ~1239); (2) use ST's 100x witness multiplier.
+
+**Effect (of ST-accepted junctions, junction_accept_diff.py):** `absent_from_rustle` **6420 → 4574**,
+`strand_mismatch` **287 → 15**, Rustle-accepted **7303 → 12888**. Layer 1 (`mm_negative`) still 0.
+Default (shadow OFF) unchanged at 96.5/90.7.
+
+**Residual 4574 is NOT a good_junc-layer gap (floor reached for this layer):**
+- ~735 witness (645 left + 90 right) + ~170 bad_long_intron kills are **ST-faithful** — ST's
+  identical checks kill them too; their presence in ST's parity log is a pre-kill candidate /
+  coordinate-strand artifact, irreducible at this layer.
+- ~1222 `low_splice_frac` fire because **Rustle's `leftsupport`/`rightsupport`/`nreads` differ from
+  ST's** (ST's values don't satisfy reason 6, so ST keeps). This is a read→transfrag support-accounting
+  divergence → **Layer 3**, not good_junc. Gating the site-1371 defer was TESTED and REVERTED
+  (net −10, non-monotonic: keeping them alive at good_junc doesn't make them ACCEPTED — they drop in
+  canonicalization downstream).
+- ~2361 die **pre-good_junc** (bundle formation / apply_higherr / isofrac mm=-1 sites at :1582/:1833)
+  — an earlier stage.
+- ~86 `min_support` — a small `nreads_good` accounting divergence (upstream).
+
+**Conclusion:** Layer 2 (good_junc/junction acceptance) is exhausted at 6420→4574. The remaining
+absences belong to Layer 3 (read→transfrag support accounting, the `low_splice_frac` 1222 + the
+no-trace 2361) — consistent with the layered model. Coordinate-snap (29 HE_DEMOTE) deferred.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
