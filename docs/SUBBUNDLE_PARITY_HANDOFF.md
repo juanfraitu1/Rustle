@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED (2026-05-28).** Current StringTie-parity status, gap analysis, oracle-bounded lever ceilings, and conclusions live in [`STRINGTIE_PARITY_FINDINGS.md`](STRINGTIE_PARITY_FINDINGS.md).
+> This file predates the comprehensive diagnosis and is kept for historical context only — its plans/conclusions may be stale.
+
 # Sub-Bundle Architectural Parity — Handoff (sessions 1–7, 2026-04-24)
 
 This document is the practical handoff for any AI agent (or human) continuing

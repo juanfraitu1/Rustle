@@ -28,9 +28,10 @@ These are outside the git tree and have no automatic backup. **Do not delete the
 
 In order:
 
-1. **`docs/CONTINUATION_2026_05_11.md`** — full handoff note: workspace layout, build/run commands, parity instrumentation state, what is still missing for single-locus parity and for the VG approach, interrupted work to resume.
-2. **`README.md`** — user-facing project overview, with theory references into `docs/ALGORITHMS.md`.
-3. **`docs/ALGORITHMS.md`** — derivations (network flow, EM, HMM scoring, variation graphs, SNP rule).
+1. **`docs/STRINGTIE_PARITY_FINDINGS.md`** — **current authority** for StringTie long-read parity: operating point, full gap characterization, oracle-bounded lever ceilings, abundance (longcov/TPM/cov) analysis, and the unifying conclusion (all remaining gaps trace to read-to-isoform assignment). Read before attempting any parity/precision work — it records what is already exhausted. (Supersedes the `PRECISION_*.md` and `docs/STRINGTIE_PARITY_*` / `SUBBUNDLE_PARITY_*` docs.)
+2. **`docs/CONTINUATION_2026_05_11.md`** — full handoff note: workspace layout, build/run commands, parity instrumentation state, what is still missing for single-locus parity and for the VG approach, interrupted work to resume.
+3. **`README.md`** — user-facing project overview, with theory references into `docs/ALGORITHMS.md`.
+4. **`docs/ALGORITHMS.md`** — derivations (network flow, EM, HMM scoring, variation graphs, SNP rule).
 
 If you are Claude Code specifically, **also** read `MEMORY.md` at `~/.claude/projects/-scratch-jxi21-Assembler/memory/MEMORY.md` for the persistent project-specific notes accumulated over many sessions.
 

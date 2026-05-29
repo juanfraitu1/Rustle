@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED (2026-05-28).** Current StringTie-parity status, gap analysis, oracle-bounded lever ceilings, and conclusions live in [`docs/STRINGTIE_PARITY_FINDINGS.md`](docs/STRINGTIE_PARITY_FINDINGS.md).
+> This file predates the comprehensive diagnosis and is kept for historical context only — its plans/conclusions may be stale.
+
 # Precision Diagnostic Findings
 
 **Date**: 2026-05-18  

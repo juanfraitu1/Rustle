@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED (2026-05-28).** Current StringTie-parity status, gap analysis, oracle-bounded lever ceilings, and conclusions live in [`STRINGTIE_PARITY_FINDINGS.md`](STRINGTIE_PARITY_FINDINGS.md).
+> This file predates the comprehensive diagnosis and is kept for historical context only — its plans/conclusions may be stale.
+
 # Systematic StringTie / rlink parity: traces, coverage, and chain selection
 
 This document ties together **trace outputs**, **`rlink.cpp` reasoning**, and **Rustle** so we can separate (a) missing paths StringTie would emit from (b) extra paths StringTie would not emit, with **coverage consistency** as the first-class invariant.

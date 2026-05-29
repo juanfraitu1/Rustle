@@ -1,3 +1,6 @@
+> **⚠️ SUPERSEDED (2026-05-28).** Current StringTie-parity status, gap analysis, oracle-bounded lever ceilings, and conclusions live in [`STRINGTIE_PARITY_FINDINGS.md`](STRINGTIE_PARITY_FINDINGS.md).
+> This file predates the comprehensive diagnosis and is kept for historical context only — its plans/conclusions may be stale.
+
 # StringTie Long-Read Parity Continuation Guide
 
 This guide is a practical handoff for any AI agent (or human) to continue parity work between
