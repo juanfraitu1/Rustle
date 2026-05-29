@@ -9692,8 +9692,13 @@ pub fn extract_transcripts(
                 // When back-extend fires it also relaxes the fwd-extend hardend gate so the
                 // tail can be completed using a lower-coverage kept_path continuation.
                 //
-                // Default ON; disable via RUSTLE_CHECKTRF_BACK_EXTEND_OFF=1.
-                // Tunable: RUSTLE_CHECKTRF_BACK_EXTEND_COV_RATIO (default 3.0).
+                // Default OFF (2026-05-29): on GGO_19 the checktrf back_extend
+                // (esp. its multi-prefix alt-TSS extras) both ADDS false-positive
+                // chains and DISPLACES correct ones. Disabling it is a verified
+                // double-win (+3 TP, -3 FP, F1 93.30->93.46, deterministic over 3 runs).
+                // Re-enable via RUSTLE_CHECKTRF_BACK_EXTEND_ON=1. Legacy opt-out
+                // RUSTLE_CHECKTRF_BACK_EXTEND_OFF is now redundant (off is default).
+                // Tunable when on: RUSTLE_CHECKTRF_BACK_EXTEND_COV_RATIO (default 3.0).
                 let original_rescue_nodes_for_extras: &[usize] = rescue_nodes;
                 let mut back_extend_extra_prefixes: Vec<Vec<usize>> = Vec::new();
                 let back_extend_buf: Vec<usize>;
@@ -9705,7 +9710,8 @@ pub fn extract_transcripts(
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(3.0);
                 let do_back_extend =
-                    std::env::var_os("RUSTLE_CHECKTRF_BACK_EXTEND_OFF").is_none();
+                    std::env::var_os("RUSTLE_CHECKTRF_BACK_EXTEND_ON").is_some()
+                        && std::env::var_os("RUSTLE_CHECKTRF_BACK_EXTEND_OFF").is_none();
                 if complete && do_back_extend && rescue_nodes.len() >= 2 {
                     let first_node = *rescue_nodes.first().unwrap();
                     let has_real_parent = graph.nodes.get(first_node)
