@@ -307,6 +307,18 @@ graph-boundary, not consensus (commit ae17791, predicate corrected):**
   genome.rs:76) is only relevant if BOTH tools are run WITH `--genome-fasta` (../GGO.fasta available) — a
   separate parity-configuration decision.
 
+**mm<0 boundary-suppression TESTED & REVERTED (2026-05-29):** added (under shadow) demotion of mm<0
+junction coords in compute_demoted_alt_coords. Removed 327 extra node intervals (Rustle-extra 2020→1693)
+but bundle gate barely moved (255→249) and transfrag Rustle-only got slightly WORSE (5756→5779, ST-only
+unchanged). So this lever (like the nreads<5 and consensus ones) shifts the node set sideways without
+converting mismatch→match or reducing transfrag over-seg. **CONCLUSION: three localized node-boundary
+levers all fail to converge transfrag parity in isolation.** This is the architecture signal: graph-node
+parity cannot be achieved by localized demotion rules measured against the transfrag gate alone — the
+node and read→transfrag layers are interdependent (the project's core premise). PATH FORWARD options:
+(a) implement Layer 3 (split/trim) AND node changes together, measuring only the combined transfrag gate
+(true coherent-shadow approach); (b) genome-enabled parity (run both tools with --genome-fasta, wire P1
+consensus). Layer 2.5 left at the safe inert consensus-corrected state (ae17791); no parity gain yet.
+
 ---
 
 ## 7. Superseded documents
