@@ -1260,6 +1260,37 @@ fn compute_demoted_alt_coords(
 ) -> (HashSet<u64>, HashSet<u64>) {
     let mut demoted_donors: HashSet<u64> = Default::default();
     let mut demoted_acceptors: HashSet<u64> = Default::default();
+    // Layer 2.5 shadow: StringTie's build_graphs (rlink.cpp:14065) demotes junctions
+    // with nreads_good < DROP/ERROR_PERC (=5) and no guide match (strand=0), so they
+    // never create a graph-node boundary in create_graph. Rustle keeps them (Layer 1),
+    // so under shadow we suppress their node-boundary (edge still routes reads). But a
+    // coord that a SURVIVING (kept) junction also uses still gets a boundary in ST, so
+    // only demote coords no kept junction needs (else we over-merge: MERGE divergence).
+    if crate::stringtie_parity::st_shadow() {
+        let mut kept_coords: HashSet<u64> = Default::default();
+        for &j in filtered_juncs {
+            if let Some(s) = stats.get(j) {
+                if s.guide_match || s.nreads_good >= 5.0 {
+                    kept_coords.insert(j.donor);
+                    kept_coords.insert(j.acceptor);
+                }
+            }
+        }
+        for &j in filtered_juncs {
+            if let Some(s) = stats.get(j) {
+                if !s.guide_match && s.nreads_good < 5.0 {
+                    // ST (rlink.cpp:14065) keeps weak junctions with a canonical splice
+                    // site (leftcons/rightcons), demoting only non-canonical weak ones.
+                    if s.consleft != 1 && !kept_coords.contains(&j.donor) {
+                        demoted_donors.insert(j.donor);
+                    }
+                    if s.consright != 1 && !kept_coords.contains(&j.acceptor) {
+                        demoted_acceptors.insert(j.acceptor);
+                    }
+                }
+            }
+        }
+    }
     if std::env::var_os("RUSTLE_GRAPH_ALT_COALESCE").is_none() {
         return (demoted_donors, demoted_acceptors);
     }
