@@ -126,12 +126,31 @@ others, e.g. sub-bundle pipeline.rs:15352).
 terminal trim (ST_TRIM no-op), add_or_update matching (exact), killed-junction read-split (no-op).
 The positive cause is still in read→node-path construction but unidentified.
 
-**Definitive next step (still pending):** a TRUE per-read node-path trace — instrument BOTH tools to
-dump `(read_name → node path)` (Rustle `collect_read_nodes_exact`; ST `update_abundance`), run on the
-known reads (`/11600654`, `/130747155`), and diff the node lists directly. This is the only way to
-see the positive construction difference; the elimination approach has exhausted the obvious levers.
-Gate: `transfrag_parity_diff.py` Rustle-only → 0. (`RUSTLE_NO_KILLED_SPLIT` left as a confirmed-no-op
-env gate, default off.)
+**Session 4 (2026-05-28) — per-read trace DONE; root found but isolated alignment regresses.**
+Added `RUSTLE_TRACE_READ=<substr>` (map_reads.rs, the DEFAULT `map_reads_to_graph_bundlenodes` path —
+NOT the fallback `map_reads_to_graph`, which is why earlier gates were no-ops) and ST
+`ST_TRACE_READ_START`. Traced read `/11600654`: Rustle splits it into seg0 (`…15674428-15674552`,
+the truncated over-seg chain) + seg1 (orphan) at the `15674552→15681376` junction. That junction
+(`15674526→15681377`, 1 read) is **rejected by Rustle (`mm_negative`) but accepted by ST**
+(nreads=1). Globally Rustle rejects **10542** ST-accepted junctions with reason `mm_negative`
+(graph_build.rs:834: `stat.mm < 0.0`; mm=−1 is a higherr/long-read DEMOTION MARKER, not absence of
+support — junctions.rs:20 even warns this). When a read uses a rejected junction it splits → over-seg.
+
+**BUT both isolated alignments REGRESS (env-gated, default off):**
+- `RUSTLE_NO_KILLED_SPLIT=1` (don't orphan-split at killed junctions, bundlenodes path): Sn 96.5→94.3,
+  Pr 90.7→83.5, j 120→270, over-seg 3157→4109. The orphan flag is PROTECTIVE.
+- `RUSTLE_KEEP_MM_NEG=1` (accept mm<0 junctions with nreads_good>0, like ST): Sn→93.1, Pr→87.8, j→167,
+  over-seg 3157→**3103 (only −54)**. So mm_negative explains only ~54 of the 3157, AND accepting them
+  regresses (extra edges → spurious paths).
+
+**Conclusion:** the per-read trace positively identified a root (mm_negative junction rejection → read
+split), but (a) it explains a small fraction (~54/3157 — the over-seg is multi-causal) and (b) every
+isolated ST-ward change regresses, because Rustle's strict junction filtering is **load-bearing /
+protective** given its other divergences. Same interdependence as the whole effort: the
+read-assignment/junction system can't be aligned piecemeal — only a coherent multi-stage change
+(junction acceptance + flow + downstream filters together) would work, ceiling +1.1 F1 reshape (§3).
+Gates `RUSTLE_NO_KILLED_SPLIT` / `RUSTLE_KEEP_MM_NEG` left as documented-regressive env opt-ins;
+per-read trace `RUSTLE_TRACE_READ` / `ST_TRACE_READ_START` kept.
 
 ## 6. Instrumentation toolkit (kept, env-gated; default behavior unchanged)
 

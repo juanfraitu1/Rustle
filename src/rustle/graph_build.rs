@@ -831,7 +831,16 @@ fn filter_junctions_for_bundle<'a>(
                             reject_reason = Some("strand_mismatch");
                         }
                     }
-                    if reject_reason.is_none() && stat.mm < 0.0 {
+                    // mm<0 is a higherr/long-read DEMOTION MARKER (-1), not absence of support
+                    // (see junctions.rs:20). StringTie accepts these junctions on raw read support
+                    // (nreads_good>0); Rustle rejecting them splits reads at the junction into
+                    // orphan sub-transfrags → the ~3157 over-segmented chains / j-class extras
+                    // (per-read trace 2026-05-28). RUSTLE_KEEP_MM_NEG=1: keep mm<0 junctions that
+                    // still have read support (nreads_good>0), matching ST.
+                    let keep_mm_neg = std::env::var_os("RUSTLE_KEEP_MM_NEG").is_some();
+                    if reject_reason.is_none() && stat.mm < 0.0
+                        && !(keep_mm_neg && stat.nreads_good > 0.0)
+                    {
                         reject_reason = Some("mm_negative");
                     }
                     if reject_reason.is_none() && stat.strand == Some(0) {

@@ -13376,7 +13376,14 @@ pub fn run<P: AsRef<Path>>(
                         mode,
                         config.long_read_min_len,
                         config.junction_correction_window,
-                        Some(killed_junction_pairs_local),
+                        // RUSTLE_NO_KILLED_SPLIT=1: don't split reads at killed junctions into
+                        // orphan sub-transfrags (the DEFAULT bundlenodes path). StringTie has no
+                        // such mechanism; this is the source of the ~3157 over-segmented chains.
+                        if std::env::var_os("RUSTLE_NO_KILLED_SPLIT").is_some() {
+                            None
+                        } else {
+                            Some(killed_junction_pairs_local)
+                        },
                         bundlenodes.as_ref(),
                         Some(&bundle2graph),
                         read_bundles,

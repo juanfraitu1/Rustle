@@ -591,6 +591,22 @@ pub fn map_reads_to_graph(
             )
         };
 
+        if let Ok(target) = std::env::var("RUSTLE_TRACE_READ") {
+            if read.read_name.contains(&target) {
+                let coords = |p: &[usize]| -> String {
+                    p.iter()
+                        .filter(|&&n| n != graph.source_id && n != graph.sink_id)
+                        .filter_map(|&n| graph.nodes.get(n).map(|x| format!("{}-{}", x.start, x.end)))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                };
+                eprintln!("[RU_READ] {} unique_nodes=[{}]", read.read_name, coords(&unique_nodes));
+                for (si, seg) in segments.iter().enumerate() {
+                    eprintln!("[RU_READ]   seg{} orphan={} path=[{}]", si, seg.orphan, coords(&seg.path));
+                }
+            }
+        }
+
         if segments.is_empty() {
             continue;
         }
@@ -1126,6 +1142,21 @@ pub fn map_reads_to_graph_bundlenodes(
                 Some(read_idx),
             )
         };
+        if let Ok(target) = std::env::var("RUSTLE_TRACE_READ") {
+            if read.read_name.contains(&target) {
+                let coords = |p: &[usize]| -> String {
+                    p.iter()
+                        .filter(|&&n| n != graph.source_id && n != graph.sink_id)
+                        .filter_map(|&n| graph.nodes.get(n).map(|x| format!("{}-{}", x.start, x.end)))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                };
+                eprintln!("[RU_READ] {} unique_nodes=[{}]", read.read_name, coords(&unique_nodes));
+                for (si, seg) in segments.iter().enumerate() {
+                    eprintln!("[RU_READ]   seg{} orphan={} path=[{}]", si, seg.orphan, coords(&seg.path));
+                }
+            }
+        }
         if segments.is_empty() {
             continue;
         }
