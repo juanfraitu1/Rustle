@@ -256,6 +256,34 @@ into Rustle's read→node-path construction (`collect_read_nodes_exact` map_read
 could not do in isolation (see [[abundance-value-alignment-longcov-tpm-cov-vs-stringtie]]). Gate:
 transfrag_pre_depl Rustle-only → 0. It is a multi-session effort of its own — scope/plan before coding.
 
+## 6d. Shadow Layer 2.5 — node-boundary divergence characterization (2026-05-29)
+
+**Oracle (bench/node_parity_oracle.py):** within shared bundles under shadow L1+2, node-MATCH
+bundles (1916/2171) carry only 40 Rustle-only transfrag chains vs 2383 in the 255 node-MISMATCH
+bundles — node parity is the gating lever (60x concentration). PROCEED verdict. (Caveat: ~5353
+additional Rustle-only chains live in non-shared *bundles* — a bundle-boundary divergence beneath
+node parity; the real global gate stays transfrag_parity_diff.py Rustle-only.)
+
+**Divergence class (bench/graphnode_diff.py, shadow ON, 255 mismatched shared bundles):**
+- **SPLIT (222 bundles, 575 ST-nodes split) — dominant.** Rustle subdivides one ST node into 2+.
+  Of 1514 internal split coords, **1466 (97%) sit at a coordinate both tools accept as a junction
+  endpoint, but 1410 (93%) are at junctions ST DEMOTES** below its support thresholds (84% are
+  single-read, nreads_good=1).
+- MERGE 4, SHIFT 0, OTHER 33.
+
+**Root cause — Layer 1 over-corrected.** ST's `junction_accept` parity emit (rlink.cpp:16811) runs
+BEFORE a second `build_graphs` junction-cleanup pass (rlink.cpp:14065 `nreads_good < DROP/ERROR_PERC`
+=5 → strand=0; 14232 `nreads_good<1.25*junctionthr` → mm=-1; 14245 coverage-consensus). Demoted
+junctions are skipped in create_graph (rlink.cpp:3577) → no node boundary. Rustle's Layer-1 shadow
+keeps these junctions (matching the *log*), so they create node boundaries ST never makes.
+
+**Fix (Task 4):** in `compute_demoted_alt_coords` (src/rustle/graph_build.rs:1257), under
+`st_shadow()`, add to demoted_donors/demoted_acceptors any junction with `nreads_good < 5.0`
+(DROP/ERROR_PERC) and `!guide_match`. The existing demoted-coord path (graph_build.rs:1228-1235)
+suppresses the node-*boundary* while leaving the edge, so reads aren't orphaned. Expected: 255 → ~70-110.
+**Residual (not addressed by this gate):** MERGE (4), 28 well-supported junctions ST still skips
+(consensus/small-exon rule), 44 no-junction coords, ~40 mixed bundles.
+
 ---
 
 ## 7. Superseded documents
