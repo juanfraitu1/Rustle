@@ -1526,6 +1526,34 @@ fn overlap_matrix_to_adj(overlaps: &[crate::util::bitset::SmallBitset]) -> Vec<V
     adj
 }
 
+// Oracle: ST's lowintron masks keyed by intron-chain string "d-a,d-a,..." (1-based
+// interior, matching phase0 introns()). Loaded once from RUSTLE_LOWINTRON_ORACLE=<file>.
+// Each line: "<strand> <mask> <chain>". Used to measure the upper-bound F1 effect of a
+// perfect (ST-matching) lowintron, isolating the bpcov-undercount divergence (Phase-1 test).
+fn lowintron_oracle() -> Option<&'static std::collections::HashMap<String, Vec<bool>>> {
+    use std::sync::OnceLock;
+    static ORACLE: OnceLock<Option<std::collections::HashMap<String, Vec<bool>>>> = OnceLock::new();
+    ORACLE
+        .get_or_init(|| {
+            let path = std::env::var("RUSTLE_LOWINTRON_ORACLE").ok()?;
+            let txt = std::fs::read_to_string(&path).ok()?;
+            let mut m = std::collections::HashMap::new();
+            for line in txt.lines() {
+                let mut it = line.split_whitespace();
+                let _strand = it.next();
+                let mask = it.next().unwrap_or("");
+                let chain = it.next().unwrap_or("").trim_end_matches(',');
+                if chain.is_empty() {
+                    continue;
+                }
+                let flags: Vec<bool> = mask.chars().map(|c| c == '1').collect();
+                m.insert(chain.to_string(), flags);
+            }
+            Some(m)
+        })
+        .as_ref()
+}
+
 fn build_lowintron_flags(
     txs: &[Transcript],
     bpcov: &Bpcov,
@@ -1534,6 +1562,7 @@ fn build_lowintron_flags(
     error_perc: f64,
     drop: f64,
 ) -> Vec<Vec<bool>> {
+    let oracle = lowintron_oracle();
     let intronfrac = if longreads {
         error_perc
     } else {
@@ -1556,9 +1585,30 @@ fn build_lowintron_flags(
                 continue;
             }
             let introncov = cov_avg_all(bpcov, intr_s, intr_e);
-            // if(introncov) { ... } — zero intron coverage means
-            // no reads in intron, so don't flag as "low intron"
+            // ST `if(introncov)` skips EXACTLY-zero introns. But ST rarely computes exact
+            // zero for a spliced intron — get_cov returns a tiny nonzero (e.g. 0.130) that
+            // then trips ST's Tier-1 (<1) → low. Rustle's bpcov computes exact 0.0 for the
+            // same intron, so the guard wrongly skips it, and retained-intron variants that
+            // span this (clearly spliced) intron escape the kill (Phase-1 finding: ~16 of the
+            // 31 retained_intron extras, e.g. RSTL.293.5). When the intron is empty but the
+            // flanking exons are well-covered, it IS a low/spliced intron — flag it (ST Tier-2
+            // intent). Opt out: RUSTLE_RI_ZERO_INTRON_LOW_OFF=1.
             if introncov == 0.0 {
+                // Opt-in (F1-negative as-is: -0.3 Sn for +2 j-FPs): reinterpreting Rustle's
+                // exact-0 introncov as "spliced/low" over-fires, because the 0.0 is itself an
+                // under-count bug (ST computes tiny-nonzero). Real fix is aligning the intron
+                // bpcov computation, not this guard. Left as RUSTLE_RI_ZERO_INTRON_LOW=1.
+                if std::env::var_os("RUSTLE_RI_ZERO_INTRON_LOW").is_some() {
+                    let left_len = len_half_open(left.0, left.1).max(1) as f64;
+                    let right_len = len_half_open(right.0, right.1).max(1) as f64;
+                    let exoncov = (cov_sum_all(bpcov, left.0, left.1)
+                        + cov_sum_all(bpcov, right.0, right.1))
+                        / (left_len + right_len);
+                    // Empty intron between covered exons → spliced → low.
+                    if exoncov * intronfrac > 0.0 {
+                        flags[j - 1] = true;
+                    }
+                }
                 continue;
             }
             if introncov < 1.0 || (!longreads && introncov < singlethr) {
@@ -1590,6 +1640,22 @@ fn build_lowintron_flags(
             let right_exon_drop = cov_avg_all(bpcov, r0, r1);
             if right_intron_drop < right_exon_drop * intronfrac {
                 flags[j - 1] = true;
+            }
+        }
+        // Oracle override (RUSTLE_LOWINTRON_ORACLE): replace computed flags with ST's
+        // mask when this tx's intron chain matches exactly. Upper-bound test only.
+        if let Some(orc) = oracle {
+            let mut key = String::new();
+            for j in 1..tx.exons.len() {
+                key.push_str(&format!("{}-{}", tx.exons[j - 1].1 + 1, tx.exons[j].0));
+                if j < tx.exons.len() - 1 {
+                    key.push(',');
+                }
+            }
+            if let Some(st_flags) = orc.get(&key) {
+                if st_flags.len() == flags.len() {
+                    flags = st_flags.clone();
+                }
             }
         }
         out.push(flags);
@@ -7844,6 +7910,13 @@ pub fn print_predcluster_with_summary_multi(
                     })
                     .fold(f64::INFINITY, f64::min);
                 tx.min_jct_mm = if min_mm == f64::INFINITY { 0.0 } else { min_mm };
+                if std::env::var_os("RUSTLE_JCTMM_DUMP").is_some() && tx.exons.len() > 1 {
+                    let mut chain = String::new();
+                    for w in tx.exons.windows(2) {
+                        chain.push_str(&format!("{}-{},", w[0].1 + 1, w[1].0 - 1));
+                    }
+                    eprintln!("[JCTMM] {} {:.0} {}", tx.strand, tx.min_jct_mm, chain);
+                }
             }
         }
     }
