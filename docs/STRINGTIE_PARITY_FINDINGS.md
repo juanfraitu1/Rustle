@@ -393,6 +393,40 @@ ST; depends on longstart/longend/hardstart/hardend being set ST-faithfully (vali
 (get_read_pattern via get_fragment_pattern) has no trace hook — algorithm verified by reading + chain-count
 deltas, not the hook.
 
+## 6h. DECISIVE: keeptrf collapse ALREADY EXISTS; shadow is F1-CATASTROPHIC on final output (2026-05-29)
+
+Two corrections to §6g, from reading the Rustle code + measuring FINAL output (not the pre_depl proxy):
+
+1. **Rustle ALREADY has the keeptrf containment-collapse** — `process_transfrags` (transfrag_process.rs
+   ~2050-2280) is a close port of rlink.cpp:5588-5800 (guide handling, compatible_long case 1/2/3,
+   leftdist/rightdist). The `transfrag_pre_depl` emit (path_extract.rs:6662) fires on EVERY `trflong_seed`
+   WITHOUT the `weak==0 && usepath>=0` filter that parse_trflong applies — so it snapshots PRE-collapse
+   seeds, while ST's transfrag_pre_depl is POST-collapse. **The 5756 "Rustle-only" was ~3.8x inflated by
+   this staging mismatch** (collapse removes ~4250). So "port the keeptrf loop" is MOOT — it exists.
+
+2. **FINAL-output measurement (the metric that matters), shadow ON vs ST vs truth:**
+
+   | | transcripts | Rustle-only chains vs ST | Sn/Pr vs truth (GGO_19.gtf) |
+   |---|---|---|---|
+   | Default (shadow OFF) | 1973 | 219 | **96.5 / 90.8** |
+   | Shadow ON (Layers 1+2) | 3049 | 1506 | **85.1 / 62.9** |
+
+   **The shadow path is F1-CATASTROPHIC: precision 90.8 → 62.9.** Layers 1+2 ("ST-faithful junction
+   acceptance") flood the graph with the weak/mm_negative junctions Rustle's default deliberately rejects;
+   the existing keeptrf collapse + flow + filters cannot recover it → ~1100 spurious transcripts.
+
+**CONCLUSION ON THE SHADOW STRATEGY.** The premise was "make every layer ST-faithful together; F1 only at
+the end." We've now shown: (a) the upper layers (junction acceptance) make the FINAL output far WORSE
+(90.8→62.9 Pr), because Rustle's downstream is tuned to Rustle's stricter junction set; (b) the layers do
+NOT converge incrementally (each isolated change shifts the error mode); (c) the pieces we thought were
+missing (keeptrf collapse) already exist. Reaching bit-exact parity would require making the ENTIRE
+pipeline (flow allocation, all filters, abundance) ST-faithful simultaneously — a full reimplementation —
+and the PAYOFF is only "Rustle can reproduce ST" (a proof), NOT better F1: Rustle's DEFAULT already matches
+ST-level precision (90.8). The shadow mode is a research/proof instrument, not an F1 lever. **Shipped &
+safe: Layers 1+2 (default-OFF, junction-acceptance parity proven). Default operating point untouched at
+96.5/90.8. Tooling (junction_accept_diff, graphnode_diff, node_parity_oracle, transfrag_parity_diff) and
+the full layer-by-layer root-cause map are the durable deliverables.**
+
 ---
 
 ## 7. Superseded documents
