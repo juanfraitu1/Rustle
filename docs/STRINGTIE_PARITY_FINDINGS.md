@@ -77,6 +77,28 @@ There is **no cheap filter- or normalization-level lever left**. The only lever 
 is matching StringTie's read-assignment (the flow rewrite), and that is a sensitivity-for-precision
 **reshape**, not a free win — a product decision about which operating point is desired, not a bug fix.
 
+## 5b. Read-to-transfrag assignment — the fix foundation (infrastructure built 2026-05-28)
+
+Since every gap traces to read-to-isoform assignment, the work starts one level down at
+**read-to-transfrag** construction. Infrastructure: `bench/transfrag_parity_diff.py` joins both
+tools' transfrag events (`transfrag_define` / `transfrag_pre_depl`, both carry abund + intron-chain)
+by `(strand, chain)` and reports per-chain abundance divergence.
+
+**What it establishes (full chr19):** 93% of common transfrag chains agree (79% exact). But **159
+long multi-intron chains have Rustle over-attributing read mass** — e.g. abund **1270 vs ST 1**, and
+`ru_read_count == ru_abund` (1270). ST creates a transfrag per read-pattern (few reads span a long
+exact chain → abund 1); **Rustle aggregates partial/spanning reads onto the full chain.** Rustle also
+has **6303 transfrag chains ST doesn't** (over-segmentation) vs 196 ST-only.
+
+**Fix target (located, not yet changed):** the read→transfrag construction + merging —
+`map_reads.rs` (`collect_read_nodes_exact` :250, `split_read_segments` :1308,
+`add_or_update_transfrag` :1635) and `transfrag_process.rs` (`process_transfrags` :1756, the
+merge/representative step that sums abundance). Making Rustle's transfrag construction/merging match
+ST's granularity is the architectural fix; drive `transfrag_parity_diff.py` divergences → 0 as the
+per-step gate (same loop that worked for chain-dedup). This is the entry point for the
+read-assignment rewrite — necessarily a multi-session effort with full-metric validation, since it
+feeds all coverage and all path extraction.
+
 ## 6. Instrumentation toolkit (kept, env-gated; default behavior unchanged)
 
 - **Cross-tool parity diff**: `RUSTLE_PARITY_LOG` / `STRINGTIE_PARITY_LOG` (+ `_FILTER_CHROM/RANGE/STEPS`)
