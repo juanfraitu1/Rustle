@@ -238,6 +238,24 @@ Default (shadow OFF) unchanged at 96.5/90.7.
 absences belong to Layer 3 (read→transfrag support accounting, the `low_splice_frac` 1222 + the
 no-trace 2361) — consistent with the layered model. Coordinate-snap (29 HE_DEMOTE) deferred.
 
+## 6c. Shadow Layer 3 — ENTRY MEASUREMENT (2026-05-29, not yet implemented)
+
+Re-baselined `bench/transfrag_parity_diff.py` (transfrag_pre_depl both sides) on the current build:
+- **Shadow OFF:** Rustle 7335 chains / ST 4383; Rustle-only **3157** (reproduces the prior baseline exactly).
+- **Shadow ON (Layers 1+2):** Rustle 9774 / ST 4383; Rustle-only **5756** (WORSE), in-both 4178→4018.
+
+This is the expected mid-stack regression and validates the shadow-mode premise: Layers 1+2 fixed the
+junction SET (kept ~2600 more junctions), giving Rustle's *unchanged* read→transfrag CONSTRUCTION more
+junctions to build distinct chains from → MORE over-segmentation. **Layer 3 cannot be judged by
+transfrag count until the construction itself is made ST-faithful.** Default (shadow OFF) unchanged.
+
+**Layer 3 scope:** port ST's `update_abundance` (rlink.cpp:4367 — one transfrag per read node-path)
+into Rustle's read→node-path construction (`collect_read_nodes_exact` map_reads.rs:250,
+`split_read_segments` map_reads.rs:1308, `add_or_update_transfrag` map_reads.rs:1635) under
+`st_shadow()`. This is the architectural change the prior 4 read→transfrag sessions identified but
+could not do in isolation (see [[abundance-value-alignment-longcov-tpm-cov-vs-stringtie]]). Gate:
+transfrag_pre_depl Rustle-only → 0. It is a multi-session effort of its own — scope/plan before coding.
+
 ---
 
 ## 7. Superseded documents
