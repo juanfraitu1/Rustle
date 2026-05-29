@@ -837,7 +837,11 @@ fn filter_junctions_for_bundle<'a>(
                     // orphan sub-transfrags → the ~3157 over-segmented chains / j-class extras
                     // (per-read trace 2026-05-28). RUSTLE_KEEP_MM_NEG=1: keep mm<0 junctions that
                     // still have read support (nreads_good>0), matching ST.
-                    let keep_mm_neg = std::env::var_os("RUSTLE_KEEP_MM_NEG").is_some();
+                    // Layer 1 of the StringTie shadow mode: StringTie accepts mm<0
+                    // (demotion-marker) junctions on raw read support; rejecting them
+                    // splits reads -> over-segmentation. st_shadow() implies keep.
+                    let keep_mm_neg = std::env::var_os("RUSTLE_KEEP_MM_NEG").is_some()
+                        || crate::stringtie_parity::st_shadow();
                     if reject_reason.is_none() && stat.mm < 0.0
                         && !(keep_mm_neg && stat.nreads_good > 0.0)
                     {
