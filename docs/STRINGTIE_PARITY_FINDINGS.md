@@ -167,6 +167,40 @@ per-read trace `RUSTLE_TRACE_READ` / `ST_TRACE_READ_START` kept.
   mtimes are flaky so `make` may skip recompiling edited `rlink.cpp`; `touch rlink.cpp` or `make clean`.
   Do NOT use `-o /dev/null` with StringTie (temp-dir error) — use a real path.
 
+## Shadow Layer 1 — DONE (2026-05-29)
+
+**Objective:** drive the `mm_negative` bucket (ST-accepted junctions Rustle rejected due to `mm < 0`)
+to 0 under `RUSTLE_ST_SHADOW=1`.
+
+**Gate mechanism:** `st_shadow()` predicate OR'd into `keep_mm_neg` at
+`src/graph_build.rs` `filter_junctions_for_bundle` (commit f252e96, branch
+`parity/isofrac-chain-dedup`). When shadow mode is on, any junction with `nreads_good > 0` that
+would otherwise be demoted by the `mm < 0` marker is accepted, matching StringTie's behaviour
+(which never uses the demotion marker as a hard reject).
+
+**Results (chrom NC_073243.2, `-L` mode):**
+
+| Condition | `mm_negative` | `absent_from_rustle` | `strand_mismatch` | Rustle accepted |
+|-----------|--------------|---------------------|-------------------|-----------------|
+| Shadow OFF (baseline) | 3355 | 6420 | 399 | 7303 |
+| Shadow ON (`RUSTLE_ST_SHADOW=1`) | **0** | 6420 | 287 | 10770 |
+
+Layer-1 target met: `LAYER-1 GATE (mm_negative bucket): 0 (target 0)`.
+
+No residual `mm_negative` entries remain — the gate is clean (no nreads_good==0 cases needed
+investigation; all previously-rejected mm<0 junctions are now accepted under shadow).
+
+**Deferred to later layers:**
+- `absent_from_rustle` (6420 unchanged) — extra junctions ST has that Rustle never sees; root is
+  graph construction / bundle-boundary differences (Layer 2).
+- `strand_mismatch` (399 → 287, partially improved as a side-effect of accepting more junctions)
+  — strand assignment divergence, also Layer 2.
+
+**F1 note:** F1 is NOT measured mid-stack per the implementation plan spec. Default mode
+(shadow OFF) remains at Sn 96.5% / Pr 90.7%.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
