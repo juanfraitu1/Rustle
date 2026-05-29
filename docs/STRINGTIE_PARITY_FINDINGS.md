@@ -351,6 +351,48 @@ likely doing so TOGETHER with the node-set and split as one coherent change meas
 transfrag gate. This is a major sub-effort. **Shipped & safe: Layers 1+2 (junction acceptance). Layer 2.5
 inert/safe. No regression to the default (96.5/90.7, ±0.1 nondeterministic).**
 
+> **CORRECTION (see §6g): the "root is collect_read_nodes_exact / circularly coupled" conclusion above
+> is WRONG.** A per-read node-map trace proved Rustle's `collect_read_nodes_exact` is EQUIVALENT to ST's
+> `get_read_pattern` (both build full paths). The real root is a single MISSING step — ST's transfrag
+> containment-collapse — described next. It is NOT circular; it is cleanly localized.
+
+## 6g. Shadow Layer 3 — ROOT FOUND: missing transfrag containment-collapse (2026-05-29)
+
+Per-read node-map tracing (collect_read_nodes_exact vs get_read_pattern on truncation cases) DISPROVED the
+node-mapping hypothesis: **both tools build identical, full-length node paths per read.** The truncated
+Rustle-only chains are *real physically-short reads* (genuinely fewer junctions, verified by exact-CIGAR
+match — e.g. 92 reads that truly stop after intron 13 of a 14-intron ST chain). 
+
+**StringTie folds these contained reads into the longer compatible chain BEFORE the transfrag_pre_depl
+snapshot, via the keeptrf containment-collapse loop (rlink.cpp:5588-5800, inside build_graphs):**
+1. `transfrag.Sort(longtrCmp)` (5589) — most abundant/complete first, so full chains enter `keeptrf` first.
+2. For each later transfrag, `compatible_long(t, …)` (5716; defined 5267) returns 1 (t1 has extra intron
+   past t2), 2 (t2 extends past t1 → t1 is a prefix), or 3 (compatible ends).
+3. Prefix `case 2` (5733): if non-guide and end-gaps `len[1]<ssdist && len[3]<ssdist`, set `included=true`,
+   fold mass `keeptrf[t2].cov += abundance; keeptrf[t2].group.Add(t1)` — the prefix is NEVER added to
+   keeptrf/trflong → absent from transfrag_pre_depl.
+4. Guard (5780): a non-included transfrag lacking longstart/longend (not hardstart/hardend) → `weak=1`, dropped.
+
+**Rustle has NO equivalent pre-seed collapse.** `transfrag_pre_depl` (path_extract.rs:6656-6690) emits every
+`trflong_seed` directly; `parse_trflong` (path_extract.rs:5863) only orders/filters by weak/usepath, never
+absorbs contained prefixes. So each distinct read path survives → over-segmentation.
+
+**Truncation shape (confirms containment):** of 2780, 1018 are 5'-only, 1471 3'-only, 291 both-ends, 0
+internal — all strict prefix/suffix/infix of an ST chain, exactly what compatible_long collapses.
+
+**FIX (the real Layer 3): port the keeptrf containment-collapse loop under st_shadow()** into the
+seed-selection stage (path_extract.rs around parse_trflong / the trflong_seed collection feeding
+transfrag_pre_depl). Building blocks EXIST: `compatible_long(tf1,tf2,graph) -> (u8,[i64;4])`
+(transfrag_process.rs:932, ST's exact return convention) + longstart/longend/weak/trflong_seed/usepath
+fields on GraphTransfrag. New code ≈ abundance-sorted (longtrCmp) outer loop + case 1/2/3 absorb + weak
+guard (~150-250 LOC mirroring rlink.cpp:5588-5800). Run BEFORE the transfrag_pre_depl emit and parse_trflong.
+**Risk:** medium — exact longtrCmp tie-break + constants (ssdist/edgedist/DROP/longintronanchor) must match
+ST; depends on longstart/longend/hardstart/hardend being set ST-faithfully (validate alongside).
+**Impact ceiling:** all 2780 truncations (~49% of 5756 Rustle-only) are this ONE mechanism.
+**ST trace note:** ST_TRACE_READ_START only fires in --merge mode (get_read_to_transfrag); the -L path
+(get_read_pattern via get_fragment_pattern) has no trace hook — algorithm verified by reading + chain-count
+deltas, not the hook.
+
 ---
 
 ## 7. Superseded documents
