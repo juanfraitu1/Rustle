@@ -488,6 +488,32 @@ pub fn compute_tpm_fpkm(transcripts: &mut [Transcript], num_fragments: f64, frag
         } else {
             0.0
         };
+
+        // BUG FIX (longcov): for long-read transcripts, `longcov` is seeded from the
+        // extraction seed transfrag's read_count (path_extract.rs). That seed can be a
+        // tiny artifact — a single-read junction-spanning transfrag (read_count=1-2) or
+        // a synthetic source/sink connector seeded at trthr — while the path it seeds
+        // extends through the graph to high coverage. The result is nonsensical values
+        // like longcov=1 at cov=691. In the correctly-quantified population longcov
+        // tracks the (now-finalized) flow coverage almost exactly (longcov/cov median
+        // ~1.0), so when the recorded longcov is implausibly small relative to the
+        // assembled coverage (longcov < 0.2 * cov) we substitute the validated flow
+        // `coverage` — the transcript's real read support, which agrees with StringTie.
+        //
+        // This runs in compute_tpm_fpkm (not at the extraction site) because
+        // `tx.coverage` is mutated by downstream exon-trim / micro-intron-collapse /
+        // split-correction passes after extraction; this is the single point where the
+        // final coverage is settled for every output transcript. Only `longcov` is
+        // touched; cov/FPKM/TPM are unchanged. Investigation note: the buggy seeds are
+        // ordinary read-mapped transfrags with read_count=1-2 (not only the synthetic
+        // source/sink connectors), so the gate is on the longcov/cov ratio rather than
+        // a seed node-id marker. A "max read_count of contained transfrags" proxy was
+        // rejected — short high-read-count fragments shared with higher-coverage
+        // isoforms in the same locus contaminate it and over-correct low-abundance
+        // isoforms.
+        if tx.is_longread && tcov > 0.0 && tx.longcov < 0.2 * tcov {
+            tx.longcov = tcov.max(tx.longcov);
+        }
     }
 }
 
