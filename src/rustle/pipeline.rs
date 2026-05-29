@@ -13402,7 +13402,15 @@ pub fn run<P: AsRef<Path>>(
                         mode,
                         config.long_read_min_len,
                         config.junction_correction_window,
-                        Some(killed_junction_pairs_local),
+                        // RUSTLE_NO_KILLED_SPLIT=1: don't split reads at killed junctions into
+                        // orphan sub-transfrags (StringTie has no such mechanism). Tests whether
+                        // the V99 kill-split is the source of the ~3157 Rustle-only over-segmented
+                        // transfrag chains (see STRINGTIE_PARITY_FINDINGS.md §5b).
+                        if std::env::var_os("RUSTLE_NO_KILLED_SPLIT").is_some() {
+                            None
+                        } else {
+                            Some(killed_junction_pairs_local)
+                        },
                         None,
                     )
                 };

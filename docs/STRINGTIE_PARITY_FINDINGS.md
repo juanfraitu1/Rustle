@@ -113,10 +113,25 @@ divergence. Combined with trim ruled out (ST_TRIM no-op) and matching exact, the
 paths per read than ST's `update_abundance` (rlink.cpp:4367). e.g. Rustle ends a chain at acceptor
 15674428 where ST's read continues / forms a different chain.
 
-**Next concrete step:** read-level node-path trace — take one Rustle-only chain's read(s) by name,
-dump Rustle's node path (collect_read_nodes_exact) AND instrument ST's `update_abundance` node list
-for the same read, diff. Gate: drive `transfrag_parity_diff.py` Rustle-only → 0. Multi-session,
-full-metric validation (feeds all coverage + path extraction).
+**Session 3 (2026-05-28) — kill-split ruled out, mechanism still elusive.** The deep-dive read
+(`m64076…/11600654`) splices through the weak junction AND continues to 15850439, yet Rustle emits a
+truncated sub-chain ending at 15674428 → looked like read-splitting. But StringTie has NO
+kill-and-split-reads-into-orphans logic (no `killed`/`orphan` in rlink.cpp read handling), and
+`RUSTLE_NO_KILLED_SPLIT=1` (pass `None` for killed_junction_pairs at map_reads_to_graph,
+pipeline.rs:13405) is a **no-op**: transfrag over-segmentation stays 7335/3157, F1 unchanged. So the
+V99 kill-split is NOT the cause (or this isn't the call site building these transfrags — there are
+others, e.g. sub-bundle pipeline.rs:15352).
+
+**Four mechanisms now ruled out for the over-segmentation:** junction-acceptance (both accept),
+terminal trim (ST_TRIM no-op), add_or_update matching (exact), killed-junction read-split (no-op).
+The positive cause is still in read→node-path construction but unidentified.
+
+**Definitive next step (still pending):** a TRUE per-read node-path trace — instrument BOTH tools to
+dump `(read_name → node path)` (Rustle `collect_read_nodes_exact`; ST `update_abundance`), run on the
+known reads (`/11600654`, `/130747155`), and diff the node lists directly. This is the only way to
+see the positive construction difference; the elimination approach has exhausted the obvious levers.
+Gate: `transfrag_parity_diff.py` Rustle-only → 0. (`RUSTLE_NO_KILLED_SPLIT` left as a confirmed-no-op
+env gate, default off.)
 
 ## 6. Instrumentation toolkit (kept, env-gated; default behavior unchanged)
 
