@@ -462,6 +462,27 @@ Key files: ST rlink.cpp (parse_trflong 9693, long_max_flow 8471, store gate 9807
 Rustle path_extract.rs (parse_trflong 5863, main loop ~6507, checktrf store 10248, gates 10146/10162),
 global_flow.rs, max_flow.rs.
 
+## 6j. Transfrag-PROVENANCE parity layer ADDED (2026-05-29, Rustle b0d13ed / ST fork 160e5e5)
+
+Closed the provenance instrumentation gap. New default-OFF parity event `transfrag_collapse` emitted by
+BOTH tools at the keeptrf containment-collapse: key (chrom, rep_start, rep_end, strand); payload
+`rep_introns, group_cov, n_members, members="chain:abund;..."` — i.e. for each kept representative, which
+transfrags were folded in and their abundances. Rustle: process_transfrags (transfrag_process.rs, after
+keeptrf finalized; threaded bundle_chrom/strand from pipeline.rs:13747). ST: rlink.cpp:5803 keeptrf→trflong
+loop. Diff tool `bench/transfrag_collapse_diff.py` joins by (strand, rep_introns). ALSO fixed the
+`transfrag_pre_depl` STAGING mismatch (path_extract.rs:6662): now filters `trflong_seed && weak==0 &&
+usepath>=0` so Rustle emits POST-collapse like ST (was pre-collapse — the source of the old 3.8x-inflated
+5756 proxy). Default unchanged 96.5/90.7; additive/gated.
+
+**BASELINE (shadow ON) — provenance divergence now directly visible:** Rustle **9776** keeptrf reps vs ST
+**3792** (2.6x more — Rustle's consolidation is much WEAKER, keeps more distinct seeds); 2409 reps in both
+(chains join byte-identically), 7367 Rustle-only reps, 1383 ST-only. On the 2409 COMMON reps: group_cov
+matches within 5% only **50.1%** (1208), n_members matches **54.2%** — i.e. even where both tools keep the
+same representative chain, they fold in DIFFERENT abundance/members half the time (e.g. ru_cov 585 vs
+st_cov 3 on a 3-intron chain). This is the direct provenance view of the over-extraction: Rustle under-
+consolidates (2.6x reps) AND mis-attributes group abundance. This is the gate for any future read→transfrag
+/ keeptrf-collapse parity work (drive Rustle-only reps → 0 and group_cov/n_members match → 100%).
+
 ---
 
 ## 7. Superseded documents
