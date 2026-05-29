@@ -284,18 +284,28 @@ and coord not used by a surviving junction (kept-coords guard). Default unchange
 the default Intron-chain figure is run-to-run NONDETERMINISTIC ±0.1pp — 90.7↔90.8 — so the regression
 guard must not be over-read at that precision).
 
-**RESULT — localized demotion is directionally right but cannot reach clean node parity:**
-- graphnode bundle-mismatch: shadow OFF **125** (SPLIT 110, MERGE 7) → shadow L1+2 **255** (L1+2 keeping
-  mm_negative junctions *inflated* node divergence) → shadow L1+2+2.5 **211** (SPLIT 108, MERGE 81).
-- transfrag_pre_depl Rustle-only (the real Layer-3 target): L1+2 **5756** → L1+2+2.5 **4486** (−1270),
-  BUT ST-only rose **365 → 821**.
-- So the demotion trades OVER-segmentation (Rustle-only ↓) for UNDER-segmentation (ST-only ↑) — it shifts
-  the error mode rather than closing it. The canonical-splice guard changed nothing (the demoted weak
-  junctions are overwhelmingly already non-canonical). ST keeps some of them via build_graphs conditions
-  beyond (nreads≥5 ∥ canonical): cross-strand misalignment checks (rlink.cpp:14036-14058), per-start-group
-  leftsupport accumulation + consensus (14060-14114), symmetric rightcons. **True node parity requires
-  porting ST's full build_graphs junction-cleanup pass (rlink.cpp:14000-14320), not a localized rule.**
-  This is the architecture/scope inflection: Layer 2.5 is a real sub-port, larger than the one-rule plan.
+**RESULT — consensus is a dead end for the genome-less benchmark; true lever is the mm_negative
+graph-boundary, not consensus (commit ae17791, predicate corrected):**
+- A buggy interim predicate (`consleft != 1`) demoted ALL weak junctions (consleft is always −1 in Rustle
+  — genome consensus never wired into stats), giving graphnode 255→211 and transfrag Rustle-only
+  5756→4486 but ST-only 365→**821** — i.e. it OVER-merged (traded over-seg for under-seg), NOT real parity.
+- Corrected to `consleft == 0` to match ST exactly: ST's `leftcons` is `char` init **−1**, and ST demotes
+  `if(!leftcons && nreads_good<5)` — in C `!(-1)` is FALSE, so ST demotes ONLY when consensus is computed
+  AND non-canonical (consleft==0). **Our parity runs give NEITHER tool a genome** (`stringtie GGO_19.bam -L`,
+  ST has no genome flag → `bdata->gseq` null → leftcons stays −1 → ST never demotes on consensus). So the
+  faithful match is `==0`, which is INERT here (consleft always −1) → reverts to L1+2 (255 / 5756 / ST-only
+  365). No regression; default 96.5/90.7 (ic nondeterministic ±0.1).
+- **The 125→255 SPLIT inflation is NOT consensus.** It is Layer 1's `keep_mm_neg` (graph_build.rs:843)
+  propagating into graph-node creation: Rustle keeps mm_negative junctions and creates a node boundary at
+  each. StringTie marks them `mm=-1` then `strand=0` in build_graphs A5 (rlink.cpp:~14478) BEFORE
+  create_graph, so ST keeps them in the junction_accept LOG (which Layer 1 matched) but EXCLUDES them from
+  node boundaries. **TRUE LAYER-2.5 LEVER (next): under shadow, suppress the graph-node boundary of
+  mm<0 junctions (e.g. add their coords to demoted_donors/acceptors in compute_demoted_alt_coords keyed on
+  stats.mm<0), keeping the edge for read routing.** Open design question: does this conflict with Layer 1's
+  read-split-fix intent? (Layer 1 kept mm_negative to stop reads splitting; boundary-suppression keeps the
+  edge so routing is preserved — needs verification.) Consensus port (P1, wire consleft/consright from
+  genome.rs:76) is only relevant if BOTH tools are run WITH `--genome-fasta` (../GGO.fasta available) — a
+  separate parity-configuration decision.
 
 ---
 
