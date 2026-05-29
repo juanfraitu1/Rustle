@@ -178,12 +178,41 @@ pub fn stringtie_exact() -> bool {
     }
 }
 
+/// Pure helper for `st_shadow()` — testable without process env.
+#[inline]
+pub fn st_shadow_from(v: Option<&str>) -> bool {
+    matches!(v, Some(s) if s != "0")
+}
+
+/// Master predicate for the coherent end-to-end StringTie-faithful SHADOW mode.
+/// Default OFF (distinct from the always-on `stringtie_exact()`). Enable with
+/// `RUSTLE_ST_SHADOW=1`. When on, every wired layer behaves like StringTie *together*
+/// (junction acceptance, graph, read->transfrag, flow, filter, abundance) so behaviors
+/// that regress in isolation reinforce. See docs/STRINGTIE_PARITY_FINDINGS.md.
+#[inline]
+pub fn st_shadow() -> bool {
+    st_shadow_from(std::env::var("RUSTLE_ST_SHADOW").ok().as_deref())
+}
+
 /// Returns true if StringTie-exact mode is active OR the site's specific
 /// opt-out flag is set. Use at each divergence site to check whether the
 /// Rustle-specific relaxation should be disabled.
 #[inline]
 pub fn parity_requested(specific_env_var: &str) -> bool {
     stringtie_exact() || std::env::var_os(specific_env_var).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::st_shadow_from;
+
+    #[test]
+    fn st_shadow_default_off() {
+        assert!(!st_shadow_from(None));        // unset -> OFF (opposite of stringtie_exact)
+        assert!(st_shadow_from(Some("1")));    // =1 -> ON
+        assert!(st_shadow_from(Some("true"))); // any non-"0" -> ON
+        assert!(!st_shadow_from(Some("0")));   // =0 -> OFF
+    }
 }
 
 /// One-time startup banner. Call from the top of the main pipeline entry
