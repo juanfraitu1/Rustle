@@ -1279,12 +1279,15 @@ fn compute_demoted_alt_coords(
         for &j in filtered_juncs {
             if let Some(s) = stats.get(j) {
                 if !s.guide_match && s.nreads_good < 5.0 {
-                    // ST (rlink.cpp:14065) keeps weak junctions with a canonical splice
-                    // site (leftcons/rightcons), demoting only non-canonical weak ones.
-                    if s.consleft != 1 && !kept_coords.contains(&j.donor) {
+                    // ST (rlink.cpp:14065): `if(!leftcons && nreads_good<5) strand=0`.
+                    // leftcons is `char`, init -1; in C `!(-1)` is FALSE, so ST demotes
+                    // ONLY when consensus was computed AND non-canonical (consleft==0).
+                    // With no genome, leftcons stays -1 -> ST does NOT demote. Match that:
+                    // demote only on consleft==0 (treat -1 = unknown/no-genome as keep).
+                    if s.consleft == 0 && !kept_coords.contains(&j.donor) {
                         demoted_donors.insert(j.donor);
                     }
-                    if s.consright != 1 && !kept_coords.contains(&j.acceptor) {
+                    if s.consright == 0 && !kept_coords.contains(&j.acceptor) {
                         demoted_acceptors.insert(j.acceptor);
                     }
                 }

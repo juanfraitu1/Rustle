@@ -277,12 +277,25 @@ BEFORE a second `build_graphs` junction-cleanup pass (rlink.cpp:14065 `nreads_go
 junctions are skipped in create_graph (rlink.cpp:3577) → no node boundary. Rustle's Layer-1 shadow
 keeps these junctions (matching the *log*), so they create node boundaries ST never makes.
 
-**Fix (Task 4):** in `compute_demoted_alt_coords` (src/rustle/graph_build.rs:1257), under
-`st_shadow()`, add to demoted_donors/demoted_acceptors any junction with `nreads_good < 5.0`
-(DROP/ERROR_PERC) and `!guide_match`. The existing demoted-coord path (graph_build.rs:1228-1235)
-suppresses the node-*boundary* while leaving the edge, so reads aren't orphaned. Expected: 255 → ~70-110.
-**Residual (not addressed by this gate):** MERGE (4), 28 well-supported junctions ST still skips
-(consensus/small-exon rule), 44 no-junction coords, ~40 mixed bundles.
+**Fix attempted (Task 4, commit eb9e72f):** in `compute_demoted_alt_coords`
+(src/rustle/graph_build.rs:1257), under `st_shadow()`, suppress the node-boundary of junctions with
+`nreads_good < 5.0` (DROP/ERROR_PERC), `!guide_match`, non-canonical splice (`consleft/consright != 1`),
+and coord not used by a surviving junction (kept-coords guard). Default unchanged (shadow-gated; note
+the default Intron-chain figure is run-to-run NONDETERMINISTIC ±0.1pp — 90.7↔90.8 — so the regression
+guard must not be over-read at that precision).
+
+**RESULT — localized demotion is directionally right but cannot reach clean node parity:**
+- graphnode bundle-mismatch: shadow OFF **125** (SPLIT 110, MERGE 7) → shadow L1+2 **255** (L1+2 keeping
+  mm_negative junctions *inflated* node divergence) → shadow L1+2+2.5 **211** (SPLIT 108, MERGE 81).
+- transfrag_pre_depl Rustle-only (the real Layer-3 target): L1+2 **5756** → L1+2+2.5 **4486** (−1270),
+  BUT ST-only rose **365 → 821**.
+- So the demotion trades OVER-segmentation (Rustle-only ↓) for UNDER-segmentation (ST-only ↑) — it shifts
+  the error mode rather than closing it. The canonical-splice guard changed nothing (the demoted weak
+  junctions are overwhelmingly already non-canonical). ST keeps some of them via build_graphs conditions
+  beyond (nreads≥5 ∥ canonical): cross-strand misalignment checks (rlink.cpp:14036-14058), per-start-group
+  leftsupport accumulation + consensus (14060-14114), symmetric rightcons. **True node parity requires
+  porting ST's full build_graphs junction-cleanup pass (rlink.cpp:14000-14320), not a localized rule.**
+  This is the architecture/scope inflection: Layer 2.5 is a real sub-port, larger than the one-rule plan.
 
 ---
 
