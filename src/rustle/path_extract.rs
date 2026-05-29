@@ -2186,6 +2186,7 @@ fn accumulate_exon_cov_from_path_usage(
     let mut exoncov = vec![0.0f64; exons.len()];
     let mut cov_total = 0.0f64;
     let mut k = 0usize;
+    let trace_cov_nodes = std::env::var_os("RUSTLE_TRACE_COV_NODES").is_some();
     for p in use_start..=use_last {
         let nid = use_path[p];
         if nid == graph.source_id || nid == graph.sink_id || nid >= graph.nodes.len() {
@@ -2208,6 +2209,19 @@ fn accumulate_exon_cov_from_path_usage(
                 .unwrap_or(1.0);
             nodeflux[k] * rate
         };
+        if trace_cov_nodes {
+            let rate = if nodeflux_is_proportion {
+                nodecov_before.get(nid).copied().unwrap_or(0.0)
+            } else {
+                node_rates.and_then(|r| r.get(nid).copied()).unwrap_or(1.0)
+            };
+            eprintln!(
+                "[COVNODE] nid={} {}-{} prop={} nodeflux={:.4} rate={:.4} nodecov_before={:.4} addcov={:.4}",
+                nid, node.start + 1, node.end, nodeflux_is_proportion,
+                nodeflux[k], rate,
+                nodecov_before.get(nid).copied().unwrap_or(0.0), addcov
+            );
+        }
         for (ei, &(es, ee)) in exons.iter().enumerate() {
             if !overlaps_half_open(es, ee, node.start, node.end) {
                 continue;
@@ -2223,6 +2237,15 @@ fn accumulate_exon_cov_from_path_usage(
             }
         }
         k += 1;
+    }
+    if trace_cov_nodes {
+        eprintln!(
+            "[COVTOTAL] start={} end={} nexons={} cov_total={:.4}",
+            exons.first().map(|e| e.0 + 1).unwrap_or(0),
+            exons.last().map(|e| e.1).unwrap_or(0),
+            exons.len(),
+            cov_total
+        );
     }
     (exoncov, cov_total)
 }
@@ -6141,6 +6164,18 @@ pub fn extract_transcripts(
     let audit_zero_flux = std::env::var_os("RUSTLE_AUDIT_ZERO_FLUX").is_some();
     let depletion_diag = std::env::var_os("RUSTLE_DEPLETION_DIAG").is_some();
     let plumb_debug = std::env::var_os("RUSTLE_PLUMB_DEBUG").is_some();
+
+    // Snapshot original transfrag abundances before any flow depletion, for the
+    // ST-parity leftover redistribution at function end. ST's parse_trflong depletes
+    // NODE coverage (not transfrag abundance), so non-seed transfrags retain their
+    // original abundance — that residual is what ST redistributes. Rustle zeroes all
+    // transfrag abundance during extraction, so we capture the originals here.
+    let redist_orig_abund: Vec<f64> =
+        if std::env::var_os("RUSTLE_LEFTOVER_REDIST").is_some() {
+            transfrags.iter().map(|t| t.abundance).collect()
+        } else {
+            Vec::new()
+        };
 
     // Set thread-local bundle context for parity_flow_iter_dump (lives until end of fn).
     let _flow_iter_ctx = crate::parity::flow_iter_dump::BundleCtxGuard::new(
@@ -10839,7 +10874,296 @@ pub fn extract_transcripts(
         }
     }
 
+    // ST-parity leftover-transfrag-abundance redistribution (rlink.cpp:10494-10547).
+    // After flow extraction, long-read transfrags retain residual abundance that ST
+    // redistributes onto the kept predictions whose chain they best match (proportional
+    // to prediction coverage). This is what lifts minor isoforms' coverage above the
+    // isofrac threshold (e.g. STRG.343.2 5.38 -> 29.0). Rustle previously skipped it,
+    // so minor isoforms died at isofrac with raw flow coverage. Opt-in via
+    // RUSTLE_LEFTOVER_REDIST=1 until validated F1-positive on the full benchmark.
+    if std::env::var_os("RUSTLE_LEFTOVER_REDIST").is_some() && long_read_mode {
+        redistribute_leftover_abundance(&mut out, transfrags, &redist_orig_abund, graph, bundle_strand);
+    }
+
     out
+}
+
+/// ST `best_trf_match` (rlink.cpp:9561-9678) ported to node space. Given a leftover
+/// transfrag's real-node chain `t_nodes` (ascending node-id order) and the kept
+/// transcripts' node chains `tx_paths` (parallel to `out`, empty when not a candidate),
+/// returns the indices of the best-matching transcript(s) and the sum of their weights.
+/// Match = max shared exonic bp (`intersect`), tie-break min `internaldist` (skipped bp,
+/// must be <= CHI_THR), then min flank. `weights[k]` = transcript k's coverage snapshot.
+fn best_trf_match_redist(
+    t_nodes: &[usize],
+    tx_paths: &[Vec<usize>],
+    weights: &[f64],
+    graph: &Graph,
+) -> (Vec<usize>, f64) {
+    const CHI_THR: i64 = 50;
+    let node_len = |nid: usize| -> i64 {
+        graph
+            .nodes
+            .get(nid)
+            .map(|n| (n.end.saturating_sub(n.start)) as i64)
+            .unwrap_or(0)
+    };
+    let node_start = |nid: usize| -> i64 { graph.nodes.get(nid).map(|n| n.start as i64).unwrap_or(0) };
+    let node_end = |nid: usize| -> i64 { graph.nodes.get(nid).map(|n| n.end as i64).unwrap_or(0) };
+
+    if t_nodes.is_empty() {
+        return (Vec::new(), 0.0);
+    }
+    let mut tmatch: Vec<usize> = Vec::new();
+    let mut maxintersect: i64 = 0;
+    let mut mininternaldist: i64 = i64::MAX;
+    let mut minflank: i64 = i64::MAX;
+    let mut abundancesum: f64 = 0.0;
+
+    for (k, kpath) in tx_paths.iter().enumerate() {
+        if kpath.is_empty() {
+            continue;
+        }
+        let klen = kpath.len();
+        // Overlap precondition (ST 9569): t.first <= k.last && k.first <= t.last.
+        if !(t_nodes[0] <= kpath[klen - 1] && kpath[0] <= *t_nodes.last().unwrap()) {
+            continue;
+        }
+        let mut i = 0usize; // t index
+        let mut jj = 0usize; // k index (real nodes, no source/sink)
+
+        // Skip k nodes before t start (ST 9575).
+        while jj < klen && t_nodes[i] > kpath[jj] {
+            jj += 1;
+        }
+        let mut leftdist: i64 = 0;
+        let mut internaldist: i64 = 0;
+        // Leftdist accumulation (ST 9581).
+        while i < t_nodes.len() && jj < klen && t_nodes[i] < kpath[jj] {
+            leftdist += node_len(t_nodes[i]);
+            i += 1;
+            if i < t_nodes.len() && node_end(t_nodes[i]) > node_start(t_nodes[i - 1]) + 1 {
+                internaldist = leftdist;
+                leftdist = 0;
+                break;
+            }
+        }
+        if internaldist > CHI_THR {
+            continue;
+        }
+        let mut intersect: i64 = 0;
+        let mut intron = true;
+        let mut rightdist: i64 = 0;
+        while i < t_nodes.len() {
+            if jj == klen {
+                rightdist += node_len(t_nodes[i]);
+                if intron || (i > 0 && node_start(t_nodes[i]) > node_end(t_nodes[i - 1]) + 1) {
+                    internaldist += rightdist;
+                    rightdist = 0;
+                    intron = true;
+                }
+            } else if t_nodes[i] == kpath[jj] {
+                intersect += node_len(t_nodes[i]);
+                internaldist += rightdist;
+                rightdist = 0;
+                intron = false;
+                jj += 1;
+            } else {
+                if !intron {
+                    rightdist += node_len(t_nodes[i]);
+                    if i > 0 && node_start(t_nodes[i]) > node_end(t_nodes[i - 1]) + 1 {
+                        internaldist += rightdist;
+                        rightdist = 0;
+                        intron = true;
+                    }
+                } else {
+                    internaldist += node_len(t_nodes[i]);
+                }
+                if t_nodes[i] > kpath[jj] {
+                    jj += 1;
+                }
+            }
+            i += 1;
+        }
+        if intersect == 0 || internaldist > CHI_THR {
+            continue;
+        }
+        let flank = leftdist + rightdist;
+        if intersect > maxintersect {
+            tmatch.clear();
+            tmatch.push(k);
+            abundancesum = weights[k];
+            mininternaldist = internaldist;
+            maxintersect = intersect;
+            minflank = flank;
+        } else if intersect == maxintersect {
+            if internaldist < mininternaldist {
+                tmatch.clear();
+                tmatch.push(k);
+                mininternaldist = internaldist;
+                abundancesum = weights[k];
+                minflank = flank;
+            } else if flank == minflank {
+                tmatch.push(k);
+                abundancesum += weights[k];
+            } else if flank < minflank {
+                tmatch.clear();
+                tmatch.push(k);
+                abundancesum = weights[k];
+                minflank = flank;
+            }
+        }
+    }
+    (tmatch, abundancesum)
+}
+
+/// ST leftover-abundance redistribution (rlink.cpp:10494-10547). For each long-read
+/// transfrag with residual abundance, find the best-matching kept transcript(s) and add
+/// `nodelen * abundprop` (per-base, /tlen) to their coverage, where
+/// `abundprop = residual_abund * cov_k / abundancesum`. Mutates `out[k].coverage`,
+/// `exon_cov`, and `raw_flow_sum`.
+fn redistribute_leftover_abundance(
+    out: &mut [Transcript],
+    transfrags: &[GraphTransfrag],
+    orig_abund: &[f64],
+    graph: &Graph,
+    bundle_strand: char,
+) {
+    if out.is_empty() {
+        return;
+    }
+    // Per-transcript node chains (real nodes) and pre-redistribution coverage snapshot.
+    // Only multi-exon transcripts on this strand are redistribution targets (ST: keeptrf
+    // multi-node predictions). Single-exon and other-strand transcripts get empty paths
+    // so best_trf_match_redist skips them.
+    let tx_paths: Vec<Vec<usize>> = out
+        .iter()
+        .map(|tx| {
+            if tx.exons.len() > 1 && tx.strand == bundle_strand {
+                tx_to_node_path(graph, tx)
+            } else {
+                Vec::new()
+            }
+        })
+        .collect();
+    let weights: Vec<f64> = out.iter().map(|tx| tx.coverage).collect();
+    let tlens: Vec<f64> = out
+        .iter()
+        .map(|tx| {
+            tx.exons
+                .iter()
+                .map(|(s, e)| len_half_open(*s, *e) as f64)
+                .sum::<f64>()
+                .max(1.0)
+        })
+        .collect();
+
+    // Accumulate added raw coverage per transcript, then renormalize once (ST adds to
+    // raw pred->cov, divides by tlen later). Using snapshot `weights` for abundprop so
+    // the proportionality matches ST's fixed keeptrf abundance (not the running cov).
+    let mut add_raw = vec![0.0f64; out.len()];
+    let mut add_exon: Vec<Vec<f64>> = out.iter().map(|tx| vec![0.0f64; tx.exons.len()]).collect();
+
+    let dbg = std::env::var_os("RUSTLE_LEFTOVER_REDIST_DEBUG").is_some();
+    let mut n_leftover = 0usize;
+    let mut n_matched = 0usize;
+    let ab_of = |i: usize, t: &GraphTransfrag| -> f64 {
+        orig_abund.get(i).copied().unwrap_or(t.abundance)
+    };
+    if dbg {
+        let n_long = transfrags.iter().filter(|t| t.longread).count();
+        let n_long_ab = transfrags.iter().enumerate()
+            .filter(|(i, t)| t.longread && !t.shortread && !t.trflong_seed && ab_of(*i, t) > EPS).count();
+        let maxab = transfrags.iter().enumerate().map(|(i, t)| ab_of(i, t)).fold(0.0f64, f64::max);
+        eprintln!("[REDIST] total_tf={} longread={} nonseed_ab>eps={} max_orig_abund={:.4}",
+            transfrags.len(), n_long, n_long_ab, maxab);
+    }
+    for (ti, t) in transfrags.iter().enumerate() {
+        // ST 10496: long, not short, multi-node, residual abundance, non-source/sink-terminal.
+        // Rustle: non-seed transfrags carry ST's residual mass (seeds' mass is in their
+        // own extracted prediction). Use the pre-extraction abundance snapshot.
+        let t_abund = ab_of(ti, t);
+        if !t.longread || t.shortread || t.trflong_seed || t_abund <= EPS {
+            continue;
+        }
+        // real nodes = node_ids minus source/sink, ascending order (graph node ids are
+        // position-ordered).
+        let t_nodes: Vec<usize> = t
+            .node_ids
+            .iter()
+            .copied()
+            .filter(|&n| n != graph.source_id && n != graph.sink_id)
+            .collect();
+        if t_nodes.len() < 2 {
+            continue;
+        }
+        n_leftover += 1;
+        let (matches, abundancesum) = best_trf_match_redist(&t_nodes, &tx_paths, &weights, graph);
+        if matches.is_empty() {
+            continue;
+        }
+        n_matched += 1;
+        for (mi, &k) in matches.iter().enumerate() {
+            let abundprop = if abundancesum > 0.0 {
+                t_abund * weights[k] / abundancesum
+            } else {
+                if mi > 0 {
+                    break;
+                }
+                t_abund
+            };
+            // Add nodelen * abundprop for each t node contained in transcript k (ST 10521).
+            let kset: std::collections::HashSet<usize> = tx_paths[k].iter().copied().collect();
+            for &nid in &t_nodes {
+                if !kset.contains(&nid) {
+                    continue;
+                }
+                let Some(node) = graph.nodes.get(nid) else { continue };
+                let nodelen = node.end.saturating_sub(node.start) as f64;
+                let addcov = nodelen * abundprop;
+                add_raw[k] += addcov;
+                for (ei, &(es, ee)) in out[k].exons.iter().enumerate() {
+                    if overlaps_half_open(es, ee, node.start, node.end) {
+                        add_exon[k][ei] += addcov;
+                    }
+                }
+            }
+        }
+    }
+
+    if dbg {
+        let n_targets = tx_paths.iter().filter(|p| !p.is_empty()).count();
+        eprintln!(
+            "[REDIST] strand={} out={} targets={} leftover_tf={} matched_tf={}",
+            bundle_strand, out.len(), n_targets, n_leftover, n_matched
+        );
+        for k in 0..out.len() {
+            if add_raw[k] > 0.0 {
+                eprintln!(
+                    "[REDIST]   tx[{}] {}-{} nex={} cov_before={:.4} add_raw={:.1} tlen={:.0} cov_after={:.4}",
+                    k, out[k].exons.first().map(|e| e.0 + 1).unwrap_or(0),
+                    out[k].exons.last().map(|e| e.1).unwrap_or(0), out[k].exons.len(),
+                    out[k].coverage, add_raw[k], tlens[k], out[k].coverage + add_raw[k] / tlens[k]
+                );
+            }
+        }
+    }
+    // Renormalize: coverage += add_raw/tlen; exon_cov[i] += add_exon[i]/exon_len.
+    for k in 0..out.len() {
+        if add_raw[k] <= 0.0 {
+            continue;
+        }
+        out[k].coverage += add_raw[k] / tlens[k];
+        out[k].raw_flow_sum += add_raw[k];
+        if out[k].exon_cov.len() == out[k].exons.len() {
+            for (ei, &(es, ee)) in out[k].exons.iter().enumerate() {
+                let elen = len_half_open(es, ee) as f64;
+                if elen > 0.0 {
+                    out[k].exon_cov[ei] += add_exon[k][ei] / elen;
+                }
+            }
+        }
+    }
 }
 
 /// Map a genomic position (within exons) to a graph node_id.
