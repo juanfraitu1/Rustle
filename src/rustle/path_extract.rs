@@ -10273,6 +10273,33 @@ pub fn extract_transcripts(
                                 true
                             }
                         });
+                    // Independent-boundary spare: a flow-redundant sub-chain that
+                    // nonetheless has its OWN read-supported 5' start (an alt-TSS:
+                    // reads literally begin at the rescue's first node) is a genuine
+                    // shorter isoform, not a spurious truncation fragment of the
+                    // dominant flow chain. The 5' (start) signal is the
+                    // discriminator on GGO_19 — terminal hardstart/hardend graph
+                    // flags do NOT separate these (none of the real shorter
+                    // isoforms carry both), but read-start mass at the first
+                    // rescue node cleanly recovers all of them. Spare such rescues
+                    // from suppression. Tunable; default 4.0 reads (F1-optimal on
+                    // GGO_19; thr=3 recovers all 8 TPs but +2 FPs => lower F1).
+                    // Opt-out: RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_NO_SPARE=1.
+                    let spare_indep_tss = redundant
+                        && std::env::var_os("RUSTLE_CHECKTRF_NO_FLOW_REDUNDANT_NO_SPARE")
+                            .is_none()
+                        && {
+                            let spare_min: f64 = std::env::var(
+                                "RUSTLE_CHECKTRF_FLOW_REDUNDANT_SPARE_MIN",
+                            )
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(4.0);
+                            let first = *rescue_nodes.first().unwrap();
+                            reads_start_at_node_ck.get(&first).copied().unwrap_or(0.0)
+                                >= spare_min
+                        };
+                    let redundant = redundant && !spare_indep_tss;
                     if redundant {
                         emit_checktrf_result!(t, "flow_redundant", rescue_nodes);
                         record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
