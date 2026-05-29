@@ -6659,7 +6659,12 @@ pub fn extract_transcripts(
     // against the per-extraction flow reported in `path_extracted`.
     if crate::parity::decisions::is_enabled() {
         for (tf_idx, tf) in transfrags.iter().enumerate() {
-            if !tf.trflong_seed { continue; }
+            // STAGING FIX: ST's transfrag_pre_depl (parse_trflong over `trflong`) is
+            // POST-collapse — it only includes seeds that survived the keeptrf
+            // containment-collapse. Mirror parse_trflong's survivor predicate
+            // (path_extract.rs:5868, non-mixed branch) instead of the raw
+            // trflong_seed flag so Rustle's event is staged the same as ST's.
+            if !(tf.trflong_seed && tf.weak == 0 && tf.usepath >= 0) { continue; }
             let inner: Vec<usize> = tf.node_ids.iter()
                 .filter(|&&n| n != graph.source_id && n != graph.sink_id)
                 .copied()

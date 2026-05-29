@@ -13755,6 +13755,8 @@ pub fn run<P: AsRef<Path>>(
                     config.verbose,
                     config.eonly,
                     config.keeptrf_usepath_tsv.as_deref(),
+                    &graph_bundle.chrom,
+                    graph_bundle.strand,
                 );
 
                 // Post-process: inject source/sink edges for real transfrags that lack

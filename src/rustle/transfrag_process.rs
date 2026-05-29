@@ -1764,6 +1764,8 @@ pub fn process_transfrags(
     verbose: bool,
     eonly: bool,
     keeptrf_export_path: Option<&str>,
+    bundle_chrom: &str,
+    bundle_strand: char,
 ) -> Vec<GraphTransfrag> {
     if transfrags.is_empty() {
         return transfrags;
@@ -2544,6 +2546,92 @@ pub fn process_transfrags(
         // fallback for absorbed transfrags, not for promoted ones.
         if mark_weak && !tf_is_new_rep {
             transfrags[tf_idx].weak = 1;
+        }
+    }
+
+    // parity_decisions: transfrag_collapse — provenance of the keeptrf
+    // containment-collapse. One event per kept representative, listing the
+    // absorbed member transfrags (intron-chain + abundance) and consolidated
+    // group coverage. Mirrors ST's keeptrf loop (rlink.cpp:5803). Additive /
+    // gated — no effect on the default pipeline.
+    if crate::parity::decisions::is_enabled() {
+        let chain_str = |tf: &GraphTransfrag| -> String {
+            let chain = tf_junction_chain_coords(tf, graph, source_id, sink_id);
+            if chain.is_empty() {
+                "SE".to_string()
+            } else {
+                chain
+                    .iter()
+                    .map(|(d, a)| format!("{}-{}", d + 1, a))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }
+        };
+        for (rep_idx, group, group_cov) in &keeptrf {
+            if *rep_idx >= transfrags.len() {
+                continue;
+            }
+            let rep = &transfrags[*rep_idx];
+            let inner: Vec<usize> = rep
+                .node_ids
+                .iter()
+                .filter(|&&n| n != source_id && n != sink_id)
+                .copied()
+                .collect();
+            if inner.is_empty() {
+                continue;
+            }
+            let rep_start = graph
+                .nodes
+                .get(*inner.first().unwrap())
+                .map(|n| n.start + 1)
+                .unwrap_or(0);
+            let rep_end = graph
+                .nodes
+                .get(*inner.last().unwrap())
+                .map(|n| n.end)
+                .unwrap_or(0);
+            let rep_introns = chain_str(rep);
+            let n_members = group.len();
+            const MEMBER_CAP: usize = 50;
+            let mut members_str = String::new();
+            let mut emitted = 0usize;
+            for &gid in group.iter() {
+                if emitted >= MEMBER_CAP {
+                    break;
+                }
+                if gid >= transfrags.len() {
+                    continue;
+                }
+                let m = &transfrags[gid];
+                if !members_str.is_empty() {
+                    members_str.push(';');
+                }
+                use std::fmt::Write as _;
+                let _ = write!(
+                    members_str,
+                    "{}:{:.4}",
+                    chain_str(m),
+                    m.abundance
+                );
+                emitted += 1;
+            }
+            if n_members > MEMBER_CAP {
+                use std::fmt::Write as _;
+                let _ = write!(members_str, "+{}", n_members - MEMBER_CAP);
+            }
+            let payload = format!(
+                r#""rep_introns":"{}","group_cov":{:.4},"n_members":{},"members":"{}""#,
+                rep_introns, group_cov, n_members, members_str,
+            );
+            crate::parity::decisions::emit(
+                "transfrag_collapse",
+                Some(bundle_chrom),
+                rep_start,
+                rep_end,
+                bundle_strand,
+                &payload,
+            );
         }
     }
 
