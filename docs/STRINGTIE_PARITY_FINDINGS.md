@@ -90,14 +90,23 @@ long multi-intron chains have Rustle over-attributing read mass** — e.g. abund
 exact chain → abund 1); **Rustle aggregates partial/spanning reads onto the full chain.** Rustle also
 has **6303 transfrag chains ST doesn't** (over-segmentation) vs 196 ST-only.
 
-**Fix target (located, not yet changed):** the read→transfrag construction + merging —
-`map_reads.rs` (`collect_read_nodes_exact` :250, `split_read_segments` :1308,
-`add_or_update_transfrag` :1635) and `transfrag_process.rs` (`process_transfrags` :1756, the
-merge/representative step that sums abundance). Making Rustle's transfrag construction/merging match
-ST's granularity is the architectural fix; drive `transfrag_parity_diff.py` divergences → 0 as the
-per-step gate (same loop that worked for chain-dedup). This is the entry point for the
-read-assignment rewrite — necessarily a multi-session effort with full-metric validation, since it
-feeds all coverage and all path extraction.
+**Two distinct divergences (session 1 of the rewrite, 2026-05-28):**
+1. **159 over-attributions** — Rustle abund 1270 vs ST 1 on long chains. `ru_read_count==abund`, and
+   `RUSTLE_ST_TRIM=1` does NOT change it → **not the terminal trim, not loose matching** (Rustle
+   matching is exact: `t.node_ids==key && t.pattern==pattern`, map_reads.rs:~1798). Drives the
+   **longcov** divergence; mostly a *reporting* difference (both tools still make the chain dominant
+   via flow). Lower F1 priority.
+2. **6303 Rustle-only transfrag chains** — mostly **low-abundance (73% ≤1 read, 87% ≤2), median 7
+   introns** chains ST never creates. Extra distinct chains → extra seeds → extra alt-junction paths
+   → the **j-class precision extras**. **This is the F1-relevant divergence.**
+
+**Fix target (located):** the **read→node mapping** (`map_reads.rs::collect_read_nodes_exact` :250,
+`split_read_segments` :1308) producing ~2.4× more distinct chains than ST (Rustle 10490 vs ST 4383
+multi-intron). NOT the trim (ruled out) and NOT `add_or_update` matching (exact). Next session:
+deep-dive why Rustle maps reads to extra distinct node paths (junction-correction / boundary
+snapping / segment splitting) vs ST's `update_abundance` (rlink.cpp:4367). Gate: drive
+`transfrag_parity_diff.py` Rustle-only count → 0. Multi-session, full-metric validation (feeds all
+coverage + path extraction).
 
 ## 6. Instrumentation toolkit (kept, env-gated; default behavior unchanged)
 
