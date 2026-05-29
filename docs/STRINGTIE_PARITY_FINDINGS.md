@@ -173,7 +173,7 @@ per-read trace `RUSTLE_TRACE_READ` / `ST_TRACE_READ_START` kept.
 to 0 under `RUSTLE_ST_SHADOW=1`.
 
 **Gate mechanism:** `st_shadow()` predicate OR'd into `keep_mm_neg` at
-`src/graph_build.rs` `filter_junctions_for_bundle` (commit f252e96, branch
+`src/rustle/graph_build.rs` `filter_junctions_for_bundle` (commit f252e96, branch
 `parity/isofrac-chain-dedup`). When shadow mode is on, any junction with `nreads_good > 0` that
 would otherwise be demoted by the `mm < 0` marker is accepted, matching StringTie's behaviour
 (which never uses the demotion marker as a hard reject).
