@@ -427,6 +427,41 @@ safe: Layers 1+2 (default-OFF, junction-acceptance parity proven). Default opera
 96.5/90.8. Tooling (junction_accept_diff, graphnode_diff, node_parity_oracle, transfrag_parity_diff) and
 the full layer-by-layer root-cause map are the durable deliverables.**
 
+## 6i. Layer 4 (FLOW) localized — the next port for full-pipeline parity (2026-05-29)
+
+Decision: pursue full-pipeline reimplementation ("start as StringTie, then improve"). The HONEST gate is
+final-output chain parity (`bench/gtf_chain_diff.py`): shadow ON = **1506 Rustle-only** final chains
+(target 0). Localized via path_extracted / pred_kill diff:
+
+| category | count | % |
+|---|---|---|
+| **FLOW divergence** (in Rustle path_extracted, ABSENT from ST path_extracted — ST never extracts) | **1387** | **92.1%** |
+| FILTER divergence (in BOTH path_extracted; ST kills via pred_kill: retained_intron 88 / isofrac 42) | 113 | 7.5% |
+| post-extraction | 6 | 0.4% |
+
+**So 92% is FLOW, not filters.** Characterization of the 1506: median cov 1.08 (75% in [1,2) — coverage is
+NOT the lever), 1–53 introns, 785 loci (240 over-enumeration hotspots), 67% alt-variants of an ST locus +
+33% novel. Rustle flow-div = 1077 main-flow + 310 checktrf_rescue.
+
+**Root cause:** ST `long_max_flow` (rlink.cpp:8471) tail (~8634-8665) SUBTRACTS allocated flow from every
+participating transfrag's abundance, clamping to 0 (node-flow conservation). After a dominant path is
+extracted, sibling seeds over shared nodes get flux=0 → fail the store gate (rlink.cpp:9807/9917) → fall to
+checktrf, which in `!mixedMode` long-read mode rarely stores (rlink.cpp:9975). This enforces ~one path per
+coverage unit. **Rustle's per-seed depletion (path_extract.rs main loop ~6507) does NOT reproduce ST's
+flow-conservation strength → siblings keep nonzero flux → get stored; and Rustle's checktrf-rescue store
+gates (path_extract.rs:10146/10162) are default-OFF → +310 ST drops.** (Confirmed not the edgecov toggle:
+RUSTLE_NO_EDGECOV_DEPL=1 moved 1506→1505 — the divergence is the depletion MAGNITUDE / store gate inside
+the flow.)
+
+**NEXT = port Layer 4:** bring Rustle's per-seed flow depletion into agreement with ST's `long_max_flow`
+abundance-subtraction-to-zero (rlink.cpp:8471, tail ~8634-8665) so post-dominant-path siblings return
+flux=0 and demote to checktrf; pair with an ST-restrictive checktrf store gate. Targets the 1387 flow-div
+(92%). The coverage/abundance divergence ("quantification extremely off": ST cov median ~5663 read×len
+scale vs Rustle ~1.0 per-bp) is a SEPARATE Layer-6 concern, implicated only for the 113 filter-div.
+Key files: ST rlink.cpp (parse_trflong 9693, long_max_flow 8471, store gate 9807/9917, checktrf 9975);
+Rustle path_extract.rs (parse_trflong 5863, main loop ~6507, checktrf store 10248, gates 10146/10162),
+global_flow.rs, max_flow.rs.
+
 ---
 
 ## 7. Superseded documents
