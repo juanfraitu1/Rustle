@@ -1887,7 +1887,14 @@ fn long_max_flow_direct(
                     // first+last nodes with STRG.92.1's path but skips middle
                     // cassette. Without this, STRG.92.2's abundance gets
                     // drained by STRG.92.1's flow even though they diverge.
-                    if std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT_OFF").is_none()
+                    // Layer 4 shadow: StringTie's long_max_flow (rlink.cpp:8627-8665)
+                    // has NO subseq protection — it depletes every transfrag with
+                    // flow>0, so sibling/variant transfrags over the path are consumed
+                    // (flux=0 next seed -> not stored). This Rustle guard keeps them
+                    // alive -> over-extraction (1387 ST-never-extracted chains). Skip
+                    // the guard under shadow to run ST's faithful depletion.
+                    if !crate::stringtie_parity::st_shadow()
+                        && std::env::var_os("RUSTLE_FLOW_SUBSEQ_PROTECT_OFF").is_none()
                         && transfrags[t_idx].node_ids.len() >= 2
                     {
                         let mut is_subseq = true;
