@@ -2251,6 +2251,26 @@ fn isofrac_with_summary(
         };
         let first_usedcov_snap = usedcov;
         let first_multicov_snap = multicov;
+        // Stage-2 ST-parity (RUSTLE_ISOFRAC_CHAIN_DEDUP=1): ST collapses dominant 3'-end
+        // variants (same intron chain, different terminal exon) into one prediction before
+        // isofrac, so multicov isn't inflated by near-duplicate dominants. Rustle keeps them
+        // separate until a post-isofrac collapse stage, so multicov double-counts them and
+        // the threshold rises (e.g. STRG.343 multicov 753 vs ST 597), killing minor isoforms.
+        // Counting each unique intron chain once in multicov replicates ST's collapsed dominant.
+        // Default ON (ST-faithful, F1-positive on GGO_19: Sn 96.1->96.5, Pr 91.0->90.7, +12 tx,
+        // recovers STRG.267.3/343.2/15.1); opt out with RUSTLE_ISOFRAC_CHAIN_DEDUP_OFF=1.
+        let chain_dedup_multicov = std::env::var_os("RUSTLE_ISOFRAC_CHAIN_DEDUP_OFF").is_none();
+        let intron_chain = |tx: &Transcript| -> Vec<(u64, u64)> {
+            tx.exons
+                .windows(2)
+                .filter(|w| w[1].0 > w[0].1)
+                .map(|w| (w[0].1, w[1].0))
+                .collect()
+        };
+        let mut mc_chains: std::collections::HashSet<Vec<(u64, u64)>> = Default::default();
+        if chain_dedup_multicov && txs[first].exons.len() > 1 {
+            mc_chains.insert(intron_chain(&txs[first]));
+        }
         // Dominant's sorted exons — used to detect skip-exon rescue candidates.
         let dom_exons: &[(u64, u64)] = &txs[first].exons;
         // Per-window set: tracks which chains have already used their one chain-aggregate rescue slot.
@@ -2318,7 +2338,9 @@ fn isofrac_with_summary(
             }
             if rescued {
                 usedcov[sidx] += cov;
-                if txs[k].exons.len() > 1 {
+                if txs[k].exons.len() > 1
+                    && (!chain_dedup_multicov || mc_chains.insert(intron_chain(&txs[k])))
+                {
                     multicov[sidx] += cov;
                 }
                 continue;
@@ -2715,7 +2737,9 @@ fn isofrac_with_summary(
                 }
             } else {
                 usedcov[sidx] += cov;
-                if txs[k].exons.len() > 1 {
+                if txs[k].exons.len() > 1
+                    && (!chain_dedup_multicov || mc_chains.insert(intron_chain(&txs[k])))
+                {
                     multicov[sidx] += cov;
                 }
             }
