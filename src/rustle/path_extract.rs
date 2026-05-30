@@ -7074,7 +7074,13 @@ pub fn extract_transcripts(
         let mut used_direct = false;
         let watched_tfs = parse_trace_tf_ids();
         // Canonical mode: use ST-faithful back/fwd directly as path builders.
-        let canonical = crate::parse_trflong_st::canonical_active();
+        // RUSTLE_FLOW_ST=1 (default OFF) composes with canonical_active(): when on,
+        // it routes the production extraction through the _st back/fwd path builders
+        // and long_max_flow_st flow, i.e. Rustle USES the _st extraction result in
+        // production rather than running it only as a diff (comparison_active()).
+        // See docs/superpowers/specs/2026-05-30-flow-extraction-parity-design.md.
+        let canonical = crate::parse_trflong_st::canonical_active()
+            || crate::stringtie_parity::st_flow();
         if try_direct_longrec {
             longrec_attempted += 1;
             let mut diag = LongRecDiag::default();

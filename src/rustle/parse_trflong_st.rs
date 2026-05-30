@@ -11,6 +11,47 @@
 //! stubs that fall back to the existing rustle path when not enabled. This
 //! file documents ST's structure so the port can proceed slice-by-slice.
 //!
+//! ## _st scaffold assessment (Task 2, 2026-05-30 — read before Tasks 3-5)
+//!
+//! The header "Scaffold only" is now STALE for the path-tracing slices.
+//! Concrete state of each `_st` entry point:
+//!
+//! - `fwd_to_sink_fast_long_st` (248) and `back_to_source_fast_long_st` (607):
+//!   FULLY IMPLEMENTED, real path-tracing bodies (ST-port of rlink.cpp
+//!   8051/8261). They mutate `path`/`pathpat`/`minpath`/`maxpath` and return a
+//!   real bool (source/sink reached). Drop-in replacements for production's
+//!   `back_to_source_fast_long` (path_extract.rs:4913) / `fwd_to_sink_fast_long`
+//!   (3943). Already used in production under `canonical_active()`.
+//! - `long_max_flow_st` (950): REAL, NOT a stub. Delegates to
+//!   `max_flow::long_max_flow_seeded_with_used_pathpat_st` -> the shared
+//!   `long_max_flow_direct` (max_flow.rs:1085) with the `st=true` config and
+//!   `no_subtract` threaded through. Returns `(flux, nodecap, used NodeSet,
+//!   nodeflux)` and, when `no_subtract=false`, DEPLETES transfrag abundances
+//!   (max_flow.rs:2620). Already the DEFAULT production flow (called at
+//!   path_extract.rs:8479 whenever `canonical || stringtie_exact()`, and
+//!   stringtie_exact() is default-ON). Drop-in for production's
+//!   `long_max_flow_seeded_with_used_pathpat`.
+//! - `update_abundance_st` (995): TRUE STUB — always returns `None` ("create
+//!   new"), no trim / tr2no lookup. The trim+merge logic still lives in
+//!   transfrag_process.rs. THIS is the real remaining port for a future task.
+//! - `parse_trflong_st` (1036): EMPTY placeholder (`{}`). There is no
+//!   self-contained `_st` top-level loop; the production loop in
+//!   path_extract.rs (~6507, seeds from `parse_trflong` at 5863) is the only
+//!   driver and it dispatches into the `_st` back/fwd/flow functions above.
+//! - `comparison_active()` (1230) gates the DIFF-ONLY harness: it snapshots the
+//!   pre-call inputs, runs `run_back_to_source_st_on_clone` /
+//!   `run_fwd_to_sink_st_on_clone` on a CLONE, builds a `PathExtendOutcome`, and
+//!   passes both to `emit_diff_if_diverges` (1191) which logs a
+//!   `path_extend_diff` parity event and then DISCARDS the `_st` result. It does
+//!   not affect production output.
+//!
+//! Implication for Tasks 3-5: the flow + path-tracing `_st` functions are
+//! already real and production-capable; Task 2's `RUSTLE_FLOW_ST` simply routes
+//! production through them (via the `canonical` path at path_extract.rs:7077).
+//! The only genuinely unbuilt slice is `update_abundance_st` (the
+//! trim/tr2no-merge port). `parse_trflong_st` is unnecessary unless a fully
+//! standalone loop is wanted.
+//!
 //! ## ST source map (rlink.cpp)
 //!
 //! | Slice | rlink.cpp range | Lines | Description |

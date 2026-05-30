@@ -208,6 +208,14 @@ pub fn st_predcluster() -> bool {
     st_predcluster_from(std::env::var("RUSTLE_PREDCLUSTER_ST").ok().as_deref())
 }
 
+/// Pure helper for `st_flow()`.
+#[inline]
+pub fn st_flow_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") }
+/// ST-faithful flow extraction (default OFF). Enable RUSTLE_FLOW_ST=1; composes with
+/// st_predcluster(). See docs/superpowers/specs/2026-05-30-flow-extraction-parity-design.md.
+#[inline]
+pub fn st_flow() -> bool { st_flow_from(std::env::var("RUSTLE_FLOW_ST").ok().as_deref()) }
+
 /// Returns true if StringTie-exact mode is active OR the site's specific
 /// opt-out flag is set. Use at each divergence site to check whether the
 /// Rustle-specific relaxation should be disabled.
@@ -234,6 +242,14 @@ mod tests {
         assert!(!st_predcluster_from(None));
         assert!(st_predcluster_from(Some("1")));
         assert!(!st_predcluster_from(Some("0")));
+    }
+
+    #[test]
+    fn st_flow_default_off() {
+        use super::st_flow_from;
+        assert!(!st_flow_from(None));
+        assert!(st_flow_from(Some("1")));
+        assert!(!st_flow_from(Some("0")));
     }
 }
 
