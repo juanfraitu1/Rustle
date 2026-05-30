@@ -939,7 +939,7 @@ fn guide_chain_equivalent_pair(a: &Transcript, b: &Transcript) -> bool {
 
 /// included_pred (coverage-free variant):
 /// checks whether the smaller transcript is structurally included in the larger one.
-fn included_pred(
+pub(crate) fn included_pred(
     txs: &[Transcript],
     n1: usize,
     n2: usize,
@@ -1240,7 +1240,7 @@ mod tests {
 
 }
 
-fn cov_avg_all(bpcov: &Bpcov, start: u64, end: u64) -> f64 {
+pub(crate) fn cov_avg_all(bpcov: &Bpcov, start: u64, end: u64) -> f64 {
     let span = len_half_open(start, end);
     if span == 0 {
         return 0.0;
@@ -1253,7 +1253,7 @@ fn cov_avg_all(bpcov: &Bpcov, start: u64, end: u64) -> f64 {
     bpcov.get_cov_range(i0, i1) / (span as f64)
 }
 
-fn cov_sum_all(bpcov: &Bpcov, start: u64, end: u64) -> f64 {
+pub(crate) fn cov_sum_all(bpcov: &Bpcov, start: u64, end: u64) -> f64 {
     if end <= start {
         return 0.0;
     }
@@ -1554,7 +1554,7 @@ fn lowintron_oracle() -> Option<&'static std::collections::HashMap<String, Vec<b
         .as_ref()
 }
 
-fn build_lowintron_flags(
+pub(crate) fn build_lowintron_flags(
     txs: &[Transcript],
     bpcov: &Bpcov,
     longreads: bool,
@@ -7615,7 +7615,7 @@ pub fn print_predcluster_with_summary_multi(
     // summary is reported with entry/exit counts so downstream stage logging stays sane.
     if crate::stringtie_parity::st_predcluster() {
         let entry_count = transcripts.len();
-        let kept = crate::predcluster_st::select_predictions_st(transcripts);
+        let kept = crate::predcluster_st::select_predictions_st(transcripts, bpcov, config);
         let summary = PredclusterStageSummary {
             entry_count,
             after_pairwise: kept.len(),
