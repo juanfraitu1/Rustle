@@ -10446,6 +10446,92 @@ pub fn extract_transcripts(
                         );
                     }
                 }
+                // Subset-of-cosurvivor truncation suppression (DEFAULT ON;
+                // opt-out RUSTLE_CHECKTRF_SUBSET_COSURVIVOR_OFF=1). Extends the
+                // flow_redundant / trunc_hardend gates: drop a checktrf rescue
+                // whose intron chain is a STRICT SUBSET of ANY higher-coverage
+                // kept chain at this locus (flow OR earlier checktrf), when the
+                // rescue lacks independent boundary support.
+                //
+                // Data-driven discriminator (GGO_19, post flow_redundant +
+                // trunc_hardend gates): of the checktrf chains that are a strict
+                // subset of a higher-cov co-survivor and reach the final GTF,
+                // read-start mass does NOT separate artifact truncations from
+                // real shorter isoforms — the FP and TP read-start distributions
+                // interleave (FP readstart {3,4,8,48,57} vs TP {4,5,7,9,9,11,14,
+                // 20,124}). What DOES separate the remaining artifacts is a graph
+                // `hardstart` terminal 5' flag: the truncation re-uses the
+                // dominant chain's internal coverage-RISE boundary rather than an
+                // independent alt-TSS. By default we therefore require hardstart
+                // (clean: removes 1 final-GTF FP for 0 TP loss on GGO_19,
+                // Pr 91.19 -> 91.24, F1 93.758 -> 93.783, deterministic). The
+                // read-start spare (threshold 4.0, same as the shipped
+                // flow_redundant alt-TSS spare) is still honored so a rescue with
+                // strong independent 5' read evidence is never dropped. Set
+                // RUSTLE_CHECKTRF_SUBSET_COSURVIVOR_ANY=1 to drop ANY un-spared
+                // subset regardless of hardstart (F1-neutral on GGO_19: same -1
+                // FP at spare>=4, costs TPs at higher spare).
+                if std::env::var_os("RUSTLE_CHECKTRF_SUBSET_COSURVIVOR_OFF").is_none()
+                    && !transfrags[t].guide
+                {
+                    let chain = intron_chain_from_nodes(graph, rescue_nodes);
+                    if !chain.is_empty() {
+                        let chain_set: std::collections::HashSet<(u64, u64)> =
+                            chain.iter().copied().collect();
+                        let subset_of_dominant =
+                            kept_paths.iter().any(|(knodes, kcov, kguide, _)| {
+                                if *kguide || *kcov <= coverage + EPS {
+                                    return false;
+                                }
+                                let kchain = intron_chain_from_nodes(graph, knodes);
+                                if kchain.len() <= chain.len() {
+                                    return false;
+                                }
+                                chain_set.iter().all(|j| kchain.contains(j))
+                            });
+                        if subset_of_dominant {
+                            // Independent-boundary spare: read-start mass at the
+                            // rescue's first node (same discriminator/threshold
+                            // as the shipped flow_redundant alt-TSS spare).
+                            let spare_min: f64 = std::env::var(
+                                "RUSTLE_CHECKTRF_SUBSET_COSURVIVOR_SPARE_MIN",
+                            )
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(4.0);
+                            let first = *rescue_nodes.first().unwrap();
+                            let indep_tss = reads_start_at_node_ck
+                                .get(&first)
+                                .copied()
+                                .unwrap_or(0.0)
+                                >= spare_min;
+                            // Terminal hardstart: the rescue's 5' node is a graph
+                            // hardstart (coverage-rise) boundary internal to the
+                            // dominant chain -> spurious truncation start, not an
+                            // independent alt-TSS. Required-condition mode
+                            // (default): only suppress when hardstart is present,
+                            // which cleanly separates the artifacts on GGO_19.
+                            // Opt-out of the hardstart requirement:
+                            // RUSTLE_CHECKTRF_SUBSET_COSURVIVOR_ANY=1 (suppress
+                            // any subset lacking the read-start spare).
+                            let require_hardstart = std::env::var_os(
+                                "RUSTLE_CHECKTRF_SUBSET_COSURVIVOR_ANY",
+                            )
+                            .is_none();
+                            let hardstart = graph
+                                .nodes
+                                .get(first)
+                                .map(|n| n.hardstart)
+                                .unwrap_or(false);
+                            let drop = !indep_tss && (!require_hardstart || hardstart);
+                            if drop {
+                                emit_checktrf_result!(t, "subset_cosurvivor", rescue_nodes);
+                                record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
+                                continue;
+                            }
+                        }
+                    }
+                }
                 let first_node = rescue_nodes[0];
                 let last_node = *rescue_nodes.last().unwrap_or(&first_node);
                 out.push(Transcript {
