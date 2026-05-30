@@ -1,0 +1,349 @@
+[parity_decisions] enabled: log=st_debug2.jsonl chrom=(any) range=0-0 steps=0
+[DBG329-longunder] pred[29] 15877384-15887345 cov=3.44 nexons=3 isofrac=0.0100 multicov=489.28 usedcov=489.28
+[DBG329-longunder] pred[39] 15893795-15918704 cov=3.08 nexons=9 isofrac=0.0100 multicov=513.32 usedcov=513.32
+[DBG329-longunder] pred[41] 15893795-15918704 cov=1.87 nexons=9 isofrac=0.0100 multicov=513.32 usedcov=513.32
+[DBG329-longunder] pred[51] 15918758-15921834 cov=1.27 nexons=3 isofrac=0.0100 multicov=143.50 usedcov=143.50
+[DBG329-longunder] pred[22] 16599290-16625040 cov=3.01 nexons=33 isofrac=0.0100 multicov=309.06 usedcov=309.06
+[DBG329-longunder] pred[24] 16599290-16625040 cov=2.05 nexons=33 isofrac=0.0100 multicov=309.06 usedcov=309.06
+[DBG329-longunder] pred[11] 16598646-16622254 cov=1.15 nexons=32 isofrac=0.0100 multicov=317.15 usedcov=317.15
+[DBG329-longunder] pred[10] 16598646-16623967 cov=1.18 nexons=32 isofrac=0.0100 multicov=317.15 usedcov=317.15
+[DBG329-longunder] pred[12] 16598646-16625040 cov=1.13 nexons=32 isofrac=0.0100 multicov=317.15 usedcov=317.15
+[DBG329-longunder] pred[14] 16598646-16625040 cov=0.98 nexons=32 isofrac=0.0100 multicov=317.15 usedcov=317.15
+[DBG329-longunder] pred[13] 16598646-16628462 cov=1.00 nexons=32 isofrac=0.0100 multicov=317.15 usedcov=317.15
+[DBG329-longunder] pred[37] 16631364-16653468 cov=3.86 nexons=13 isofrac=0.0100 multicov=405.03 usedcov=405.03
+[DBG329-longunder] pred[39] 16631364-16653468 cov=1.94 nexons=14 isofrac=0.0100 multicov=405.03 usedcov=405.03
+[DBG329-longunder] pred[41] 16631364-16653468 cov=1.53 nexons=12 isofrac=0.0100 multicov=405.03 usedcov=405.03
+[DBG329-longunder] pred[3] 17190254-17433819 cov=1.47 nexons=20 isofrac=0.0100 multicov=149.51 usedcov=149.51
+[DBG329-longunder] pred[7] 17191767-17433819 cov=0.94 nexons=20 isofrac=0.0100 multicov=151.49 usedcov=151.49
+[DBG329-longunder] pred[8] 17194325-17433819 cov=0.93 nexons=20 isofrac=0.0100 multicov=151.49 usedcov=151.49
+[DBG329-longunder] pred[9] 17544633-17637597 cov=0.97 nexons=11 isofrac=0.0100 multicov=98.15 usedcov=98.15
+[DBG329-longunder] pred[2] 17720332-17812764 cov=3.68 nexons=13 isofrac=0.0100 multicov=811.78 usedcov=811.78
+[DBG329-longunder] pred[4] 17720332-17810441 cov=3.01 nexons=13 isofrac=0.0100 multicov=811.78 usedcov=811.78
+[DBG329-longunder] pred[17] 18565770-18596240 cov=0.85 nexons=9 isofrac=0.0100 multicov=88.77 usedcov=88.77
+[DBG329-longunder] pred[16] 18565770-18596240 cov=0.85 nexons=10 isofrac=0.0100 multicov=89.84 usedcov=89.84
+[DBG329-longunder] pred[19] 18565770-18596240 cov=0.78 nexons=10 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[18] 18565770-18596240 cov=0.78 nexons=10 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[20] 18565770-18596240 cov=0.75 nexons=10 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[21] 18565770-18596240 cov=0.74 nexons=10 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[23] 18565770-18596240 cov=0.72 nexons=8 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[24] 18565770-18596240 cov=0.71 nexons=8 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[25] 18565770-18596240 cov=0.69 nexons=8 isofrac=0.0100 multicov=92.05 usedcov=92.05
+[DBG329-longunder] pred[19] 18753761-18778664 cov=0.97 nexons=13 isofrac=0.0100 multicov=142.69 usedcov=142.69
+[DBG329-longunder] pred[17] 18927541-18957192 cov=1.86 nexons=12 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[18] 18927541-18957192 cov=1.86 nexons=12 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[8] 18922398-18957192 cov=0.69 nexons=15 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[9] 18922398-18957192 cov=0.44 nexons=14 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[10] 18922398-18957192 cov=0.39 nexons=13 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[19] 18927541-18956744 cov=0.94 nexons=14 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[21] 18927541-18957192 cov=0.91 nexons=13 isofrac=0.0100 multicov=249.66 usedcov=249.66
+[DBG329-longunder] pred[9] 18970754-19000940 cov=1.20 nexons=17 isofrac=0.0100 multicov=148.73 usedcov=148.73
+[DBG329-longunder] pred[8] 18970754-18990540 cov=1.30 nexons=8 isofrac=0.0100 multicov=148.73 usedcov=148.73
+[DBG329-longunder] pred[10] 18970754-19000940 cov=1.09 nexons=16 isofrac=0.0100 multicov=148.73 usedcov=148.73
+[DBG329-longunder] pred[33] 19278014-19377604 cov=1.76 nexons=26 isofrac=0.0100 multicov=196.59 usedcov=196.59
+[DBG329-longunder] pred[49] 19382869-19480685 cov=2.59 nexons=6 isofrac=0.0100 multicov=299.07 usedcov=299.07
+[DBG329-longunder] pred[50] 19382869-19481425 cov=0.86 nexons=6 isofrac=0.0100 multicov=299.07 usedcov=299.07
+[DBG329-longunder] pred[51] 19382869-19480685 cov=0.85 nexons=5 isofrac=0.0100 multicov=299.07 usedcov=299.07
+[DBG329-longunder] pred[11] 19956247-20024480 cov=1.79 nexons=33 isofrac=0.0100 multicov=186.60 usedcov=186.60
+[DBG329-longunder] pred[12] 19956247-20024480 cov=1.06 nexons=33 isofrac=0.0100 multicov=186.60 usedcov=186.60
+[DBG329-longunder] pred[13] 19956247-20024480 cov=1.03 nexons=33 isofrac=0.0100 multicov=186.60 usedcov=186.60
+[DBG329-longunder] pred[22] 20074690-20077341 cov=4.71 nexons=3 isofrac=0.0100 multicov=526.42 usedcov=526.42
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=41 20532687-20568524 cov=13.77 nexons=17 ret=1
+[DBG329] falseflag pred[41] 20532687-20568524 cov=13.77 nexons=17 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=42 20532687-20568095 cov=11.67 nexons=18 ret=1
+[DBG329] falseflag pred[42] 20532687-20568095 cov=11.67 nexons=18 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=43 20532687-20568095 cov=10.96 nexons=18 ret=1
+[DBG329] falseflag pred[43] 20532687-20568095 cov=10.96 nexons=18 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=44 20532687-20568095 cov=9.62 nexons=16 ret=1
+[DBG329] falseflag pred[44] 20532687-20568095 cov=9.62 nexons=16 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=45 20532687-20568095 cov=6.53 nexons=16 ret=1
+[DBG329] falseflag pred[45] 20532687-20568095 cov=6.53 nexons=16 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=46 20532687-20568095 cov=4.61 nexons=16 ret=1
+[DBG329] falseflag pred[46] 20532687-20568095 cov=4.61 nexons=16 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=47 20532687-20568095 cov=1.33 nexons=17 ret=1
+[DBG329] falseflag pred[47] 20532687-20568095 cov=1.33 nexons=17 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=48 20532687-20568095 cov=0.68 nexons=12 ret=1
+[DBG329] falseflag pred[48] 20532687-20568095 cov=0.68 nexons=12 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=49 20532687-20568095 cov=0.65 nexons=17 ret=1
+[DBG329] falseflag pred[49] 20532687-20568095 cov=0.65 nexons=17 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=50 20532687-20568095 cov=0.64 nexons=15 ret=1
+[DBG329] falseflag pred[50] 20532687-20568095 cov=0.64 nexons=15 reason=retained-intron
+[DBG329-ri] n1=24 20429749-20533661 cov=341.76 nexons=18 vs n2=51 20532687-20568524 cov=0.64 nexons=16 ret=1
+[DBG329] falseflag pred[51] 20532687-20568524 cov=0.64 nexons=16 reason=retained-intron
+[DBG329-ri] n1=40 20532687-20568095 cov=246.65 nexons=17 vs n2=56 20541301-20568095 cov=0.90 nexons=10 ret=1
+[DBG329] falseflag pred[56] 20541301-20568095 cov=0.90 nexons=10 reason=retained-intron
+[DBG329-ri] n1=40 20532687-20568095 cov=246.65 nexons=17 vs n2=55 20535751-20568095 cov=1.00 nexons=11 ret=1
+[DBG329] falseflag pred[55] 20535751-20568095 cov=1.00 nexons=11 reason=retained-intron
+[DBG329-ri] n1=40 20532687-20568095 cov=246.65 nexons=17 vs n2=57 20541301-20568524 cov=0.90 nexons=10 ret=1
+[DBG329] falseflag pred[57] 20541301-20568524 cov=0.90 nexons=10 reason=retained-intron
+[DBG329] falseflag pred[53] 20533950-20562930 cov=1.00 nexons=15 reason=included-in-n1-via-DROP
+[DBG329-longunder] pred[30] 20429749-20533661 cov=4.26 nexons=18 isofrac=0.0100 multicov=474.84 usedcov=474.84
+[DBG329-longunder] pred[31] 20429749-20533661 cov=3.95 nexons=17 isofrac=0.0100 multicov=474.84 usedcov=474.84
+[DBG329-longunder] pred[33] 20429749-20533661 cov=2.11 nexons=19 isofrac=0.0100 multicov=474.84 usedcov=474.84
+[DBG329-longunder] pred[35] 20429749-20533661 cov=1.89 nexons=20 isofrac=0.0100 multicov=474.84 usedcov=474.84
+[DBG329-longunder] pred[36] 20429749-20534185 cov=1.20 nexons=17 isofrac=0.0100 multicov=474.84 usedcov=474.84
+[DBG329-longunder] pred[52] 20533950-20568524 cov=1.88 nexons=18 isofrac=0.0100 multicov=246.65 usedcov=246.65
+[DBG329-longunder] pred[54] 20533950-20568095 cov=0.87 nexons=17 isofrac=0.0100 multicov=246.65 usedcov=246.65
+[DBG329-longunder] pred[79] 20591174-20617650 cov=1.01 nexons=11 isofrac=0.0100 multicov=109.80 usedcov=109.80
+[DBG329-longunder] pred[78] 20591174-20617650 cov=1.02 nexons=10 isofrac=0.0100 multicov=109.80 usedcov=109.80
+[DBG329-longunder] pred[88] 20619868-20635436 cov=1.07 nexons=7 isofrac=0.0100 multicov=319.77 usedcov=319.77
+[DBG329-longunder] pred[89] 20619868-20635436 cov=1.04 nexons=6 isofrac=0.0100 multicov=319.77 usedcov=319.77
+[DBG329-end] pred[42] 20532687-20568095 cov=11.67 nexons=18 flag=0 has_mini_exon=1
+[DBG329-end] pred[49] 20532687-20568095 cov=0.65 nexons=17 flag=0 has_mini_exon=1
+[DBG329-longunder] pred[15] 22359958-22365334 cov=4.97 nexons=19 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[14] 22359958-22365334 cov=5.39 nexons=19 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[16] 22359958-22365334 cov=4.75 nexons=18 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[17] 22359958-22365334 cov=4.02 nexons=18 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[22] 22359958-22365334 cov=3.30 nexons=18 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[26] 22359958-22365334 cov=2.00 nexons=18 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[52] 22359958-22365334 cov=1.01 nexons=17 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[54] 22359958-22365334 cov=1.01 nexons=17 isofrac=0.0100 multicov=582.40 usedcov=582.40
+[DBG329-longunder] pred[136] 22391804-22399951 cov=0.75 nexons=7 isofrac=0.0100 multicov=95.18 usedcov=95.18
+[DBG329-longunder] pred[137] 22391804-22399951 cov=0.69 nexons=7 isofrac=0.0100 multicov=95.18 usedcov=95.18
+[DBG329-longunder] pred[6] 22771946-22773619 cov=0.96 nexons=5 isofrac=0.0100 multicov=130.34 usedcov=130.34
+[DBG329-longunder] pred[11] 23081844-23099128 cov=1.00 nexons=19 isofrac=0.0100 multicov=187.22 usedcov=187.22
+[DBG329-longunder] pred[9] 25190098-25474036 cov=1.00 nexons=13 isofrac=0.0100 multicov=216.53 usedcov=216.53
+[DBG329-longunder] pred[8] 25190098-25387561 cov=1.07 nexons=14 isofrac=0.0100 multicov=216.53 usedcov=216.53
+[DBG329-longunder] pred[5] 25958625-25975550 cov=0.80 nexons=6 isofrac=0.0100 multicov=144.24 usedcov=144.24
+[DBG329-longunder] pred[24] 28275088-28300713 cov=3.69 nexons=24 isofrac=0.0100 multicov=755.14 usedcov=755.14
+[DBG329-longunder] pred[27] 28275088-28300713 cov=2.79 nexons=25 isofrac=0.0100 multicov=755.14 usedcov=755.14
+[DBG329-longunder] pred[16] 28274388-28300713 cov=1.11 nexons=23 isofrac=0.0100 multicov=755.14 usedcov=755.14
+[DBG329-longunder] pred[37] 28275088-28300713 cov=0.99 nexons=24 isofrac=0.0100 multicov=755.14 usedcov=755.14
+[DBG329-longunder] pred[36] 28275088-28300713 cov=0.99 nexons=22 isofrac=0.0100 multicov=755.14 usedcov=755.14
+[DBG329-longunder] pred[13] 29353277-29492396 cov=1.00 nexons=8 isofrac=0.0100 multicov=162.57 usedcov=162.57
+[DBG329-longunder] pred[8] 30893035-30941467 cov=2.16 nexons=9 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[0] 30890229-30915681 cov=1.84 nexons=7 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[10] 30893035-30941467 cov=1.50 nexons=12 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[9] 30893035-30941467 cov=1.85 nexons=9 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[18] 30893035-30941467 cov=1.13 nexons=12 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[11] 30893035-30941467 cov=1.48 nexons=10 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[17] 30893035-30941467 cov=1.14 nexons=11 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[12] 30893035-30941467 cov=1.34 nexons=9 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[14] 30893035-30941467 cov=1.24 nexons=11 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[13] 30893035-30941467 cov=1.25 nexons=10 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[16] 30893035-30941467 cov=1.18 nexons=10 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[15] 30893035-30941467 cov=1.18 nexons=9 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[21] 30893035-30941467 cov=0.97 nexons=8 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[19] 30893035-30941467 cov=1.08 nexons=12 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[20] 30893035-30941467 cov=1.00 nexons=8 isofrac=0.0100 multicov=512.65 usedcov=512.65
+[DBG329-longunder] pred[11] 31204353-31278274 cov=1.04 nexons=18 isofrac=0.0100 multicov=168.08 usedcov=168.08
+[DBG329-longunder] pred[17] 31204817-31278274 cov=1.03 nexons=19 isofrac=0.0100 multicov=177.56 usedcov=177.56
+[DBG329-longunder] pred[6] 31615813-31623907 cov=1.62 nexons=8 isofrac=0.0100 multicov=973.37 usedcov=973.37
+[DBG225] bundlenode: start=32074897 end=32079637 refstart=32002928 bpcov_count=312825
+[DBG225] sw lend candidate: i=76136 istart=32079013 diffval[m]=-424.000000 covend=76684
+[DBG225] sw lend candidate: i=76721 istart=32079598 diffval[m]=-64.000000 covend=76684
+[DBG225] sw lend candidate: i=76735 istart=32079612 diffval[m]=-18.000000 covend=76684
+[DBG225]   lstart[0].predno=32078949 cov=585.000000
+[DBG225]   lstart[1].predno=32079255 cov=266.000000
+[DBG225]   lend[0].predno=32079013 cov=424.000000
+[DBG225]   lend[1].predno=32079598 cov=64.000000
+[DBG225]   covend_abs=32079612 max_lend_detect=32079560
+[DBG225] create_graphnode id=36 start=32074897 end=32079637
+[DBG225] longtrim lend SPLIT: node[32079342-32079637] -> hardend at 32079598, new node [32079599-32079637]
+[DBG225] final: graphnode[42] set end=32079637 (endbundle=32079637)
+[DBG225] bundlenode: start=32079824 end=32080047 refstart=32002928 bpcov_count=312825
+[DBG225]   covend_abs=32080022 max_lend_detect=32079970
+[DBG225] create_graphnode id=1 start=32079824 end=32080047
+[DBG225] final: graphnode[1] set end=32080047 (endbundle=32080047)
+[DBG329-longunder] pred[12] 32005068-32079598 cov=4.84 nexons=14 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[10] 32005068-32079598 cov=5.54 nexons=13 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[11] 32005068-32079598 cov=4.90 nexons=13 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[13] 32005068-32079598 cov=3.95 nexons=17 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[15] 32005068-32079598 cov=3.57 nexons=16 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[16] 32005068-32079598 cov=3.10 nexons=15 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[17] 32005068-32079598 cov=2.41 nexons=17 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[18] 32005068-32079598 cov=2.38 nexons=12 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[22] 32005068-32079598 cov=1.96 nexons=17 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[20] 32005068-32079598 cov=2.02 nexons=15 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[21] 32005068-32079598 cov=1.98 nexons=12 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[24] 32005068-32079598 cov=1.73 nexons=11 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[25] 32005068-32079598 cov=1.64 nexons=15 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[23] 32005068-32079598 cov=1.83 nexons=12 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[31] 32005441-32079598 cov=0.96 nexons=15 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[32] 32005441-32079598 cov=0.95 nexons=13 isofrac=0.0100 multicov=565.08 usedcov=565.08
+[DBG329-longunder] pred[24] 32617336-32666128 cov=1.13 nexons=14 isofrac=0.0100 multicov=127.45 usedcov=127.45
+[DBG329-longunder] pred[26] 32617336-32689828 cov=0.99 nexons=15 isofrac=0.0100 multicov=127.45 usedcov=127.45
+[DBG329-longunder] pred[29] 32617336-32689828 cov=0.93 nexons=15 isofrac=0.0100 multicov=127.45 usedcov=127.45
+[DBG329-longunder] pred[27] 32617336-32689828 cov=0.98 nexons=13 isofrac=0.0100 multicov=127.45 usedcov=127.45
+[DBG329-longunder] pred[30] 32617336-32689828 cov=0.92 nexons=14 isofrac=0.0100 multicov=127.45 usedcov=127.45
+[DBG329-longunder] pred[25] 32617336-32666128 cov=1.02 nexons=13 isofrac=0.0100 multicov=127.45 usedcov=127.45
+[DBG329-longunder] pred[8] 34193568-34253898 cov=2.48 nexons=13 isofrac=0.0100 multicov=327.09 usedcov=327.09
+[DBG329-longunder] pred[36] 36014657-36063554 cov=0.84 nexons=14 isofrac=0.0100 multicov=84.24 usedcov=84.24
+[DBG329-longunder] pred[38] 36014657-36063554 cov=0.76 nexons=11 isofrac=0.0100 multicov=84.24 usedcov=84.24
+[DBG329-longunder] pred[44] 36070409-36168065 cov=1.32 nexons=16 isofrac=0.0100 multicov=155.93 usedcov=155.93
+[DBG329-longunder] pred[56] 36080655-36168065 cov=1.61 nexons=13 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[57] 36080655-36168065 cov=1.48 nexons=16 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[58] 36080655-36168065 cov=1.45 nexons=15 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[59] 36080655-36167118 cov=1.24 nexons=15 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[60] 36080655-36168065 cov=1.05 nexons=15 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[61] 36080655-36168065 cov=0.98 nexons=17 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[62] 36080655-36168065 cov=0.88 nexons=14 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[64] 36080655-36168065 cov=0.86 nexons=16 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[63] 36080655-36168065 cov=0.87 nexons=14 isofrac=0.0100 multicov=171.12 usedcov=171.12
+[DBG329-longunder] pred[8] 36839468-36926271 cov=1.03 nexons=13 isofrac=0.0100 multicov=145.05 usedcov=145.05
+[DBG329-longunder] pred[9] 36839468-36926271 cov=1.02 nexons=11 isofrac=0.0100 multicov=145.05 usedcov=145.05
+[DBG329-longunder] pred[29] 36938753-36985259 cov=4.88 nexons=22 isofrac=0.0100 multicov=744.71 usedcov=744.71
+[DBG329-longunder] pred[36] 36938753-36985259 cov=1.24 nexons=21 isofrac=0.0100 multicov=744.71 usedcov=744.71
+[DBG329-longunder] pred[8] 38616443-38751731 cov=1.07 nexons=24 isofrac=0.0100 multicov=125.91 usedcov=125.91
+[DBG329-longunder] pred[2] 38795895-38889524 cov=2.02 nexons=24 isofrac=0.0100 multicov=247.09 usedcov=247.09
+[DBG329-longunder] pred[5] 38797267-38858174 cov=4.98 nexons=24 isofrac=0.0100 multicov=876.43 usedcov=876.43
+[DBG329-longunder] pred[6] 38797267-38858174 cov=3.98 nexons=24 isofrac=0.0100 multicov=876.43 usedcov=876.43
+[DBG329-longunder] pred[7] 38797267-38889657 cov=2.96 nexons=24 isofrac=0.0100 multicov=876.43 usedcov=876.43
+[DBG329-longunder] pred[9] 38797267-38889657 cov=0.99 nexons=24 isofrac=0.0100 multicov=876.43 usedcov=876.43
+[DBG329-longunder] pred[8] 38797267-38858174 cov=1.00 nexons=23 isofrac=0.0100 multicov=876.43 usedcov=876.43
+[DBG329-longunder] pred[7] 39349914-39389152 cov=0.88 nexons=12 isofrac=0.0100 multicov=147.87 usedcov=147.87
+[DBG329-longunder] pred[8] 39349914-39389152 cov=0.87 nexons=11 isofrac=0.0100 multicov=147.87 usedcov=147.87
+[DBG329-longunder] pred[6] 39349914-39388503 cov=1.02 nexons=11 isofrac=0.0100 multicov=147.87 usedcov=147.87
+[DBG329-longunder] pred[9] 39349914-39389152 cov=0.73 nexons=9 isofrac=0.0100 multicov=147.87 usedcov=147.87
+[DBG329-longunder] pred[20] 39388622-39489112 cov=1.93 nexons=12 isofrac=0.0100 multicov=628.88 usedcov=628.88
+[DBG329-longunder] pred[18] 39388622-39489112 cov=6.64 nexons=12 isofrac=0.0100 multicov=731.30 usedcov=731.30
+[DBG329-longunder] pred[5] 40053907-40126701 cov=0.99 nexons=15 isofrac=0.0100 multicov=250.99 usedcov=250.99
+[DBG329-longunder] pred[30] 40203329-40356356 cov=1.99 nexons=20 isofrac=0.0100 multicov=224.59 usedcov=224.59
+[DBG329-longunder] pred[28] 40203329-40255307 cov=2.05 nexons=16 isofrac=0.0100 multicov=224.59 usedcov=224.59
+[DBG329-longunder] pred[22] 40202223-40255307 cov=1.33 nexons=16 isofrac=0.0100 multicov=224.59 usedcov=224.59
+[DBG329-longunder] pred[74] 40686723-40752009 cov=0.68 nexons=9 isofrac=0.0100 multicov=71.51 usedcov=71.51
+[DBG329-longunder] pred[10] 40830314-40875063 cov=4.78 nexons=17 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[9] 40830314-40875063 cov=5.03 nexons=17 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[13] 40830314-40875063 cov=2.50 nexons=20 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[12] 40830314-40875063 cov=2.63 nexons=18 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[15] 40830314-40875063 cov=2.26 nexons=19 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[14] 40830314-40874805 cov=2.38 nexons=18 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[18] 40830314-40875063 cov=1.94 nexons=19 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[16] 40830314-40875063 cov=2.01 nexons=17 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[20] 40830314-40875796 cov=1.15 nexons=19 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[21] 40830314-40875063 cov=1.00 nexons=17 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[22] 40830314-40875796 cov=0.93 nexons=17 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[23] 40830314-40875796 cov=0.93 nexons=17 isofrac=0.0100 multicov=778.69 usedcov=778.69
+[DBG329-longunder] pred[36] 40875540-40893796 cov=0.81 nexons=5 isofrac=0.0100 multicov=218.61 usedcov=218.61
+[DBG329-longunder] pred[37] 40875540-40893796 cov=0.80 nexons=5 isofrac=0.0100 multicov=218.61 usedcov=218.61
+[DBG329-longunder] pred[55] 41071473-41081917 cov=2.92 nexons=9 isofrac=0.0100 multicov=306.53 usedcov=306.53
+[DBG329-longunder] pred[2] 41949471-42033006 cov=3.06 nexons=17 isofrac=0.0100 multicov=450.24 usedcov=450.24
+[DBG329-longunder] pred[8] 41949957-42033006 cov=3.09 nexons=17 isofrac=0.0100 multicov=486.25 usedcov=486.25
+[DBG329-longunder] pred[4] 44056004-44094254 cov=1.01 nexons=13 isofrac=0.0100 multicov=142.85 usedcov=142.85
+[DBG329-longunder] pred[5] 44409602-44509287 cov=0.95 nexons=11 isofrac=0.0100 multicov=186.82 usedcov=186.82
+[DBG329-longunder] pred[19] 44566655-44607934 cov=2.65 nexons=11 isofrac=0.0100 multicov=271.20 usedcov=271.20
+[DBG329-longunder] pred[21] 44566655-44607934 cov=1.96 nexons=14 isofrac=0.0100 multicov=271.20 usedcov=271.20
+[DBG329-longunder] pred[23] 44566655-44607934 cov=0.93 nexons=11 isofrac=0.0100 multicov=271.20 usedcov=271.20
+[DBG329-longunder] pred[28] 44607212-44643633 cov=3.03 nexons=12 isofrac=0.0100 multicov=358.47 usedcov=358.47
+[DBG329-longunder] pred[45] 44646789-44670832 cov=2.06 nexons=12 isofrac=0.0100 multicov=216.21 usedcov=216.21
+[DBG329-longunder] pred[49] 44646789-44670832 cov=1.15 nexons=12 isofrac=0.0100 multicov=219.12 usedcov=219.12
+[DBG329-longunder] pred[5] 47561871-47778502 cov=10.98 nexons=32 isofrac=0.0100 multicov=1243.26 usedcov=1243.26
+[DBG329-longunder] pred[8] 47561871-47778502 cov=2.33 nexons=30 isofrac=0.0100 multicov=1243.26 usedcov=1243.26
+[DBG329-longunder] pred[10] 47561871-47778502 cov=2.13 nexons=30 isofrac=0.0100 multicov=1243.26 usedcov=1243.26
+[DBG329-longunder] pred[13] 47561871-47778502 cov=1.11 nexons=33 isofrac=0.0100 multicov=1243.26 usedcov=1243.26
+[DBG329-longunder] pred[12] 47561871-47778502 cov=1.16 nexons=31 isofrac=0.0100 multicov=1243.26 usedcov=1243.26
+[DBG329-longunder] pred[6] 52953331-53043514 cov=0.90 nexons=11 isofrac=0.0100 multicov=141.13 usedcov=141.13
+[DBG329-longunder] pred[0] 52952768-53043716 cov=15.59 nexons=11 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[14] 52954348-53043716 cov=22.45 nexons=12 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[4] 52953331-53043716 cov=20.02 nexons=11 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[15] 52954348-53043716 cov=16.56 nexons=13 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[16] 52954348-53043514 cov=12.85 nexons=12 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[17] 52954348-53043514 cov=11.59 nexons=12 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[20] 52954348-52980001 cov=2.79 nexons=7 isofrac=0.0100 multicov=2980.60 usedcov=2980.60
+[DBG329-longunder] pred[4] 53269534-53301646 cov=2.76 nexons=13 isofrac=0.0100 multicov=277.62 usedcov=277.62
+[DBG329-longunder] pred[5] 54231429-54285058 cov=4.82 nexons=16 isofrac=0.0100 multicov=633.27 usedcov=633.27
+[DBG329-longunder] pred[8] 54410044-54492915 cov=1.29 nexons=20 isofrac=0.0100 multicov=1212.04 usedcov=1212.04
+[DBG329-longunder] pred[17] 54410044-54492915 cov=0.67 nexons=20 isofrac=0.0100 multicov=1212.04 usedcov=1212.04
+[DBG329-longunder] pred[19] 54410412-54492915 cov=9.38 nexons=21 isofrac=0.0100 multicov=1229.71 usedcov=1229.71
+[DBG329-longunder] pred[23] 54410412-54492915 cov=0.67 nexons=20 isofrac=0.0100 multicov=1229.71 usedcov=1229.71
+[DBG329-longunder] pred[24] 54410412-54492915 cov=0.67 nexons=20 isofrac=0.0100 multicov=1229.71 usedcov=1229.71
+[DBG329-longunder] pred[43] 54517353-54535785 cov=0.79 nexons=5 isofrac=0.0100 multicov=91.11 usedcov=91.11
+[DBG329-longunder] pred[8] 54807994-54924574 cov=6.85 nexons=27 isofrac=0.0100 multicov=1576.54 usedcov=1576.54
+[DBG329-longunder] pred[26] 54924844-54975868 cov=1.28 nexons=26 isofrac=0.0100 multicov=169.65 usedcov=169.65
+[DBG329-longunder] pred[28] 54924844-54975868 cov=1.09 nexons=26 isofrac=0.0100 multicov=169.65 usedcov=169.65
+[DBG329-longunder] pred[3] 55678651-55706099 cov=1.29 nexons=2 isofrac=0.0100 multicov=139.11 usedcov=139.11
+[DBG329-longunder] pred[2] 57274236-57439469 cov=0.87 nexons=28 isofrac=0.0100 multicov=99.51 usedcov=99.51
+[DBG329-longunder] pred[16] 59398665-59575456 cov=1.14 nexons=26 isofrac=0.0100 multicov=114.46 usedcov=114.46
+[DBG329-longunder] pred[17] 59398665-59574870 cov=1.08 nexons=25 isofrac=0.0100 multicov=114.46 usedcov=114.46
+[DBG329-longunder] pred[19] 59398665-59574870 cov=0.90 nexons=26 isofrac=0.0100 multicov=114.46 usedcov=114.46
+[DBG329-longunder] pred[2] 59804125-59852375 cov=1.16 nexons=7 isofrac=0.0100 multicov=141.66 usedcov=141.66
+[DBG329-longunder] pred[6] 68188358-68278734 cov=3.11 nexons=18 isofrac=0.0100 multicov=376.96 usedcov=376.96
+[DBG329-longunder] pred[7] 68188358-68296315 cov=1.98 nexons=23 isofrac=0.0100 multicov=376.96 usedcov=376.96
+[DBG329-longunder] pred[9] 68188358-68296655 cov=0.99 nexons=22 isofrac=0.0100 multicov=376.96 usedcov=376.96
+[DBG329-longunder] pred[10] 68188358-68296315 cov=0.96 nexons=22 isofrac=0.0100 multicov=376.96 usedcov=376.96
+[DBG329-longunder] pred[8] 68188358-68296655 cov=1.02 nexons=23 isofrac=0.0100 multicov=376.96 usedcov=376.96
+[DBG329-longunder] pred[11] 68392216-68420746 cov=1.00 nexons=12 isofrac=0.0100 multicov=155.36 usedcov=155.36
+[DBG329-longunder] pred[14] 68392216-68420746 cov=0.88 nexons=13 isofrac=0.0100 multicov=155.36 usedcov=155.36
+[DBG329-longunder] pred[15] 68392216-68420746 cov=0.85 nexons=12 isofrac=0.0100 multicov=155.36 usedcov=155.36
+[DBG329-longunder] pred[12] 68392216-68420746 cov=0.97 nexons=11 isofrac=0.0100 multicov=155.36 usedcov=155.36
+[DBG329-longunder] pred[13] 68392216-68420746 cov=0.97 nexons=10 isofrac=0.0100 multicov=155.36 usedcov=155.36
+[DBG329-longunder] pred[23] 68422184-68462859 cov=1.14 nexons=2 isofrac=0.0100 multicov=115.70 usedcov=115.70
+[DBG329-longunder] pred[24] 68422184-68462859 cov=0.64 nexons=4 isofrac=0.0100 multicov=115.70 usedcov=115.70
+[DBG329-longunder] pred[34] 68597089-68621797 cov=14.50 nexons=11 isofrac=0.0100 multicov=1911.24 usedcov=1911.24
+[DBG329-longunder] pred[7] 68734769-68789315 cov=1.65 nexons=7 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[9] 68734769-68788864 cov=1.02 nexons=8 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[10] 68734769-68789733 cov=0.96 nexons=8 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[12] 68734769-68789315 cov=0.90 nexons=9 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[8] 68734769-68788864 cov=1.03 nexons=6 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[13] 68734769-68789315 cov=0.88 nexons=9 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[11] 68734769-68789315 cov=0.92 nexons=7 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[15] 68734769-68789315 cov=0.86 nexons=6 isofrac=0.0100 multicov=179.73 usedcov=179.73
+[DBG329-longunder] pred[23] 68735297-68789733 cov=4.66 nexons=9 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[22] 68735297-68789315 cov=4.69 nexons=8 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[24] 68735297-68789733 cov=2.76 nexons=9 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[6] 68734769-68789315 cov=1.92 nexons=9 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[4] 68734769-68788864 cov=2.05 nexons=7 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[25] 68735297-68788864 cov=2.03 nexons=9 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[28] 68735297-68789315 cov=1.79 nexons=8 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[29] 68735297-68789733 cov=1.78 nexons=8 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[31] 68735297-68788864 cov=1.02 nexons=8 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[32] 68735297-68789733 cov=0.95 nexons=10 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[30] 68735297-68788864 cov=1.02 nexons=9 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[33] 68735297-68789733 cov=0.95 nexons=9 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[34] 68735297-68789315 cov=0.92 nexons=6 isofrac=0.0100 multicov=543.83 usedcov=543.83
+[DBG329-longunder] pred[6] 69944085-69960697 cov=0.91 nexons=7 isofrac=0.0100 multicov=119.88 usedcov=119.88
+[DBG329-longunder] pred[9] 69944085-69960697 cov=0.84 nexons=6 isofrac=0.0100 multicov=119.88 usedcov=119.88
+[DBG329-longunder] pred[7] 69944085-69960697 cov=0.87 nexons=6 isofrac=0.0100 multicov=119.88 usedcov=119.88
+[DBG329-longunder] pred[15] 69964018-69981527 cov=1.67 nexons=6 isofrac=0.0100 multicov=248.40 usedcov=248.40
+[DBG329-longunder] pred[24] 70013604-70162280 cov=1.48 nexons=17 isofrac=0.0100 multicov=175.16 usedcov=175.16
+[DBG329-longunder] pred[25] 70013604-70162280 cov=1.32 nexons=16 isofrac=0.0100 multicov=175.16 usedcov=175.16
+[DBG329-longunder] pred[28] 70013604-70162280 cov=0.76 nexons=16 isofrac=0.0100 multicov=175.16 usedcov=175.16
+[DBG329-longunder] pred[31] 70015786-70162280 cov=0.99 nexons=16 isofrac=0.0100 multicov=177.55 usedcov=177.55
+[DBG329-longunder] pred[3] 70637432-70760782 cov=0.82 nexons=19 isofrac=0.0100 multicov=82.60 usedcov=82.60
+[DBG329-longunder] pred[6] 71101765-71185224 cov=2.77 nexons=13 isofrac=0.0100 multicov=346.56 usedcov=346.56
+[DBG329-longunder] pred[7] 71101765-71185224 cov=1.63 nexons=11 isofrac=0.0100 multicov=346.56 usedcov=346.56
+[DBG329-longunder] pred[12] 72477978-72531344 cov=1.28 nexons=15 isofrac=0.0100 multicov=198.86 usedcov=198.86
+[DBG329-longunder] pred[14] 72477978-72531344 cov=1.11 nexons=14 isofrac=0.0100 multicov=198.86 usedcov=198.86
+[DBG329-longunder] pred[13] 72477978-72530306 cov=1.12 nexons=16 isofrac=0.0100 multicov=198.86 usedcov=198.86
+[DBG329-longunder] pred[17] 72477978-72531344 cov=0.80 nexons=17 isofrac=0.0100 multicov=198.86 usedcov=198.86
+[DBG329-longunder] pred[28] 77133857-77159129 cov=2.09 nexons=8 isofrac=0.0100 multicov=351.80 usedcov=351.80
+[DBG329-longunder] pred[2] 77964054-78054508 cov=9.99 nexons=21 isofrac=0.0100 multicov=1048.80 usedcov=1048.80
+[DBG329-longunder] pred[4] 77964054-78054508 cov=1.04 nexons=20 isofrac=0.0100 multicov=1048.80 usedcov=1048.80
+[DBG329-longunder] pred[6] 77965291-78054281 cov=4.99 nexons=20 isofrac=0.0100 multicov=1048.80 usedcov=1048.80
+[DBG329-longunder] pred[5] 80026440-80202626 cov=2.14 nexons=18 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[6] 80026440-80202626 cov=1.09 nexons=19 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[7] 80026440-80202626 cov=0.97 nexons=17 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[12] 80026676-80202626 cov=2.19 nexons=17 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[0] 80025752-80202626 cov=2.11 nexons=17 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[13] 80026676-80202626 cov=1.18 nexons=18 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[1] 80025752-80202626 cov=1.13 nexons=18 isofrac=0.0100 multicov=288.48 usedcov=288.48
+[DBG329-longunder] pred[5] 81969228-82051096 cov=1.06 nexons=10 isofrac=0.0100 multicov=113.16 usedcov=113.16
+[DBG329-longunder] pred[13] 82651666-82733522 cov=2.17 nexons=34 isofrac=0.0100 multicov=233.99 usedcov=233.99
+[DBG329-longunder] pred[14] 82651666-82733522 cov=1.77 nexons=34 isofrac=0.0100 multicov=233.99 usedcov=233.99
+[DBG329-longunder] pred[4] 82649678-82733522 cov=1.43 nexons=37 isofrac=0.0100 multicov=233.99 usedcov=233.99
+[DBG329-longunder] pred[5] 82649678-82733522 cov=0.85 nexons=35 isofrac=0.0100 multicov=233.99 usedcov=233.99
+[DBG329-longunder] pred[10] 101327623-101416121 cov=3.44 nexons=4 isofrac=0.0100 multicov=638.88 usedcov=638.88
+[DBG329-longunder] pred[15] 101659748-101744282 cov=3.19 nexons=24 isofrac=0.0100 multicov=375.31 usedcov=375.31
+[DBG329-longunder] pred[20] 101659748-101722365 cov=0.64 nexons=23 isofrac=0.0100 multicov=375.31 usedcov=375.31
+[DBG329-longunder] pred[19] 101659748-101744282 cov=0.65 nexons=23 isofrac=0.0100 multicov=375.31 usedcov=375.31
+[DBG329-longunder] pred[5] 104197706-104229729 cov=5.00 nexons=14 isofrac=0.0100 multicov=604.90 usedcov=604.90
+[DBG329-longunder] pred[7] 104197706-104229729 cov=4.29 nexons=16 isofrac=0.0100 multicov=604.90 usedcov=604.90
+[DBG329-longunder] pred[15] 104197706-104229729 cov=0.98 nexons=14 isofrac=0.0100 multicov=604.90 usedcov=604.90
+[DBG329-longunder] pred[30] 104229814-104239712 cov=1.15 nexons=8 isofrac=0.0100 multicov=128.78 usedcov=128.78
+[DBG329-longunder] pred[11] 105789939-105796608 cov=1.07 nexons=2 isofrac=0.0100 multicov=117.13 usedcov=117.13
+[DBG329-longunder] pred[4] 110888244-110930143 cov=1.26 nexons=17 isofrac=0.0100 multicov=137.63 usedcov=137.63
+[DBG329-longunder] pred[3] 110888244-110930143 cov=1.30 nexons=16 isofrac=0.0100 multicov=137.63 usedcov=137.63
+[DBG329-longunder] pred[8] 110888642-110930143 cov=1.19 nexons=15 isofrac=0.0100 multicov=137.63 usedcov=137.63
+[DBG329-longunder] pred[5] 110888244-110930143 cov=1.16 nexons=15 isofrac=0.0100 multicov=137.63 usedcov=137.63
+[DBG329-longunder] pred[13] 111287371-111316657 cov=1.54 nexons=16 isofrac=0.0100 multicov=171.69 usedcov=171.69
+[DBG329-longunder] pred[18] 111287622-111316657 cov=1.28 nexons=16 isofrac=0.0100 multicov=173.34 usedcov=173.34
+[DBG329-longunder] pred[19] 111287622-111316657 cov=1.26 nexons=16 isofrac=0.0100 multicov=173.34 usedcov=173.34
+[DBG329-longunder] pred[20] 111287622-111316657 cov=1.20 nexons=16 isofrac=0.0100 multicov=173.34 usedcov=173.34
+[DBG329-longunder] pred[21] 111287622-111316657 cov=1.12 nexons=16 isofrac=0.0100 multicov=173.34 usedcov=173.34
+[DBG329-longunder] pred[6] 111695044-111734611 cov=0.65 nexons=14 isofrac=0.0100 multicov=65.34 usedcov=65.34
+[DBG329-longunder] pred[4] 111871603-111900856 cov=1.21 nexons=17 isofrac=0.0100 multicov=361.70 usedcov=361.70
+[DBG329-longunder] pred[18] 111876597-111902614 cov=1.18 nexons=15 isofrac=0.0100 multicov=361.70 usedcov=361.70
+[DBG329-longunder] pred[5] 111871603-111877162 cov=1.17 nexons=3 isofrac=0.0100 multicov=361.70 usedcov=361.70
+[DBG329-longunder] pred[7] 111874930-111900856 cov=1.20 nexons=14 isofrac=0.0100 multicov=361.70 usedcov=361.70
+[DBG329-longunder] pred[21] 111876597-111902614 cov=0.62 nexons=11 isofrac=0.0100 multicov=361.70 usedcov=361.70
+[DBG329-longunder] pred[22] 111876597-111902614 cov=0.60 nexons=10 isofrac=0.0100 multicov=361.70 usedcov=361.70
+[DBG329-longunder] pred[41] 112027788-112070739 cov=0.96 nexons=6 isofrac=0.0100 multicov=177.86 usedcov=177.86

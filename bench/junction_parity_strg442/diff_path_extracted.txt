@@ -1,0 +1,44 @@
+loaded rustle:        7 unique keys (12 events)
+loaded stringtie:     4 unique keys (10 events)
+
+common keys: 3
+only rustle: 4
+only stringtie: 1
+common w/ equal payload:    0
+common w/ DIFFERING payload: 3
+
+--- 3 DIFFERING-payload events ---
+  ('path_extracted', 80284051, 80298318, '+')
+    cov: rustle=0.7055 stringtie=112780
+    flux: rustle=2.0 stringtie=None
+    introns: rustle=80286015-80288482,80288595-80289947,80289992-80292314,80295071-80295322 stringtie=80286015-80288482,80288595-80289947,80289992-80292314,80292386-80292636,80292687-80292790,80292865-80293096,80293148-80293228,80293331-80294941,80295071-80295322
+    longcov: rustle=4.0 stringtie=39
+    nexons: rustle=5 stringtie=10
+    raw_flow: rustle=43.8047 stringtie=None
+    seed_tf: rustle=11 stringtie=None
+    source: rustle=flow stringtie=None
+    tlen: rustle=None stringtie=-5593
+  ('path_extracted', 80299718, 80328444, '+')
+    cov: rustle=8.3179 stringtie=41344.7
+    flux: rustle=7.0 stringtie=None
+    longcov: rustle=7.0 stringtie=6
+    raw_flow: rustle=133.0 stringtie=None
+    seed_tf: rustle=2 stringtie=None
+    source: rustle=flow stringtie=None
+    tlen: rustle=None stringtie=-5748
+  ('path_extracted', 80300089, 80328444, '+')
+    cov: rustle=16.0221 stringtie=106905
+    flux: rustle=14.0 stringtie=None
+    raw_flow: rustle=209.0 stringtie=None
+    seed_tf: rustle=3 stringtie=None
+    source: rustle=flow stringtie=None
+    tlen: rustle=None stringtie=-5822
+
+--- 4 ONLY in rustle ---
+  ('path_extracted', 80299718, 80322708, '+') :: {'source': 'checktrf_rescue', 'cov': 0.9568, 'longcov': 1.0, 'nexons': 12, 'introns': '80300039-80303915,80304010-80305811,80305936-80306245,80306369-80307427,80307733-80308977,80309130-80310888,80310977-80314660,80314820-80315554,80315598-80319348,80319484-80319971,80320145-80320245'}
+  ('path_extracted', 80300089, 80322708, '+') :: {'source': 'checktrf_rescue', 'cov': 0.9767, 'longcov': 1.0, 'nexons': 11, 'introns': '80300484-80303915,80304010-80305811,80305936-80306245,80306369-80307427,80307733-80308977,80309130-80310888,80310977-80314660,80314820-80315554,80315598-80319971,80320145-80320245'}
+  ('path_extracted', 80306309, 80320144, '+') :: {'source': 'checktrf_rescue', 'cov': 1.0278, 'longcov': 1.0, 'nexons': 6, 'introns': '80306369-80307427,80309130-80310888,80310977-80314660,80314820-80315515,80315598-80319971'}
+  ('path_extracted', 80307428, 80328444, '+') :: {'source': 'checktrf_rescue', 'cov': 1.0, 'longcov': 1.0, 'nexons': 8, 'introns': '80309130-80310888,80310977-80314660,80314820-80315554,80315598-80319348,80319484-80319971,80320145-80323728,80323805-80324354'}
+
+--- 1 ONLY in stringtie ---
+  ('path_extracted', 80324172, 80328444, '+') :: {'cov': 5703.17, 'longcov': 1, 'nexons': 1, 'tlen': -4273, 'introns': ''}

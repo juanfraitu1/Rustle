@@ -1,0 +1,5 @@
+family	n_copies	n_nodes	n_shared	n_spec	pct_spec	full_shared	max_copies_shared	median_n_shared	n_edges	n_components	n_bubbles	is_multicopy
+AMY	3	14	10	4	28.6	10	3	3	13	1	0	TRUE
+GOLGA	46	363	52	311	85.7	0	25	5	430	10	2	TRUE
+NPIP	5	56	8	48	85.7	0	3	2	65	3	1	TRUE
+RBMY	13	19	11	8	42.1	5	13	12	21	1	0	TRUE

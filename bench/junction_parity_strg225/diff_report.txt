@@ -1,0 +1,65 @@
+loaded rustle:        4 unique keys (12 events)
+loaded stringtie:    13 unique keys (557 events)
+
+common keys: 4
+only rustle: 0
+only stringtie: 9
+common w/ equal payload:    0
+common w/ DIFFERING payload: 4
+
+--- 4 DIFFERING-payload events ---
+  ('junction_accept', 32046857, 32049072, '-')
+    bundle_strand: rustle=- stringtie=None
+    guide_match: rustle=None stringtie=0
+    jstrand: rustle=-1 stringtie=None
+    leftsupport: rustle=None stringtie=586
+    nm: rustle=None stringtie=586
+    nreads: rustle=None stringtie=586
+    nreads_good: rustle=None stringtie=586
+    reason: rustle=ok stringtie=None
+    rightsupport: rustle=None stringtie=586
+    strand: rustle=None stringtie=-1
+  ('junction_accept', 32049138, 32050786, '-')
+    bundle_strand: rustle=- stringtie=None
+    guide_match: rustle=None stringtie=0
+    jstrand: rustle=-1 stringtie=None
+    leftsupport: rustle=None stringtie=192
+    nm: rustle=None stringtie=192
+    nreads: rustle=None stringtie=192
+    nreads_good: rustle=None stringtie=192
+    reason: rustle=ok stringtie=None
+    rightsupport: rustle=None stringtie=192
+    strand: rustle=None stringtie=-1
+  ('junction_accept', 32049150, 32050786, '-')
+    bundle_strand: rustle=- stringtie=None
+    guide_match: rustle=None stringtie=0
+    jstrand: rustle=-1 stringtie=None
+    leftsupport: rustle=None stringtie=445
+    nm: rustle=None stringtie=445
+    nreads: rustle=None stringtie=445
+    nreads_good: rustle=None stringtie=445
+    reason: rustle=ok stringtie=None
+    rightsupport: rustle=None stringtie=445
+    strand: rustle=None stringtie=-1
+  ('junction_accept', 32050877, 32051020, '-')
+    bundle_strand: rustle=- stringtie=None
+    guide_match: rustle=None stringtie=0
+    jstrand: rustle=-1 stringtie=None
+    leftsupport: rustle=None stringtie=642
+    nm: rustle=None stringtie=642
+    nreads: rustle=None stringtie=642
+    nreads_good: rustle=None stringtie=642
+    reason: rustle=ok stringtie=None
+    rightsupport: rustle=None stringtie=642
+    strand: rustle=None stringtie=-1
+
+--- 9 ONLY in stringtie ---
+  ('junction_accept', 0, 0, '.') :: {'accepted': False, 'strand': 0, 'mm': 0, 'nreads': 0, 'nreads_good': 0, 'nm': 0, 'leftsupport': 0, 'rightsupport': 0, 'guide_match': 0}
+  ('junction_accept', 32042800, 32050786, '-') :: {'accepted': True, 'strand': -1, 'mm': 0, 'nreads': 1, 'nreads_good': 1, 'nm': 1, 'leftsupport': 1, 'rightsupport': 1, 'guide_match': 0}
+  ('junction_accept', 32043315, 32050786, '-') :: {'accepted': True, 'strand': -1, 'mm': 0, 'nreads': 1, 'nreads_good': 1, 'nm': 1, 'leftsupport': 1, 'rightsupport': 1, 'guide_match': 0}
+  ('junction_accept', 32046857, 32078949, '-') :: {'accepted': True, 'strand': -1, 'mm': 3, 'nreads': 3, 'nreads_good': 3, 'nm': 3, 'leftsupport': 3, 'rightsupport': 3, 'guide_match': 0}
+  ('junction_accept', 32046872, 32050786, '-') :: {'accepted': True, 'strand': -1, 'mm': 4, 'nreads': 4, 'nreads_good': 4, 'nm': 4, 'leftsupport': 4, 'rightsupport': 4, 'guide_match': 0}
+  ('junction_accept', 32049138, 32050782, '-') :: {'accepted': True, 'strand': -1, 'mm': 1, 'nreads': 1, 'nreads_good': 1, 'nm': 1, 'leftsupport': 1, 'rightsupport': 1, 'guide_match': 0}
+  ('junction_accept', 32049150, 32050782, '-') :: {'accepted': True, 'strand': -1, 'mm': 1, 'nreads': 1, 'nreads_good': 1, 'nm': 1, 'leftsupport': 1, 'rightsupport': 1, 'guide_match': 0}
+  ('junction_accept', 32050802, 32068529, '-') :: {'accepted': True, 'strand': -1, 'mm': 0, 'nreads': 1, 'nreads_good': 1, 'nm': 1, 'leftsupport': 1, 'rightsupport': 1, 'guide_match': 0}
+  ('junction_accept', 32050873, 32051020, '-') :: {'accepted': True, 'strand': -1, 'mm': 1, 'nreads': 1, 'nreads_good': 1, 'nm': 1, 'leftsupport': 1, 'rightsupport': 1, 'guide_match': 0}

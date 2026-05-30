@@ -1,0 +1,17 @@
+[STRINGTIE_EXACT] Default mode: StringTie-exact (disable with RUSTLE_STRINGTIE_EXACT=0). Gated sites: junction post-good_junc merge filters, alt-junction demotion, fwd_to_sink past_seed gate, onpath_long reach relaxation, novel_splice_rescue; RunConfig: junction_canonical_tolerance forced to 0 after compat preset. See src/rustle/stringtie_parity.rs for details.
+[VG] Loading genome FASTA for SNP copy assignment: /mnt/c/Users/jfris/Desktop/GGO.fasta
+[VG] Loading genome FASTA for graph-similarity family filter: /mnt/c/Users/jfris/Desktop/GGO.fasta
+[VG] Supplementary scan: 11718 supplementary alignments, 2430 cross-bundle links
+[VG] Discovered 19 gene family group(s) from multi-mapping reads (96 linked bundles, 2137 multi-map reads)
+[VG] family-quality filter: 19 → 12 families (7 dropped: {"low_primitive_jaccard": 2, "low_shared": 5})
+[VG] graph-k-mer-Jaccard filter: 12 → 6 families (6 dropped by low_kmer_jaccard < 0.05, 2 skipped — graph build failed or single-exon)
+[VG]   skip reasons: {"no_substrand_with_2_copies": 2}
+[VG]   kept jaccards: [0.556, 0.092, 0.238, 0.064]
+[VG]   dropped jaccards: [0.006, 0.000, 0.040, 0.005, 0.036, 0.000]
+[VG] 6 family group(s) covering 36 bundles after quality filter
+[VG] Stripped 2294 secondary/supplementary read(s) from 344 bundles (junction_stats rebuilt); preserved secondaries on 60 bundles whose raw family was filter-dropped
+[VG] 4 families → heuristic-EM (HMM prereqs missing), 2 skipped {"too_much_work": 2}
+[VG] Graph-EM mode (--vg-no-hmm): FamilyGraph built, HMM profiles skipped
+[VG-FP-EM] Family 10: converged=true in 2 iter (delta=0.000000), 4857 sites, reweighted 59 reads across 2 copies
+[VG-FP-EM] Family 12: converged=true in 2 iter (delta=0.000000), 23427 sites, reweighted 6 reads across 2 copies
+[VG-FP-EM] fingerprint-EM complete: 65 reads adjusted across 2 families in 0.1s

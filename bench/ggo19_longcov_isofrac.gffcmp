@@ -1,0 +1,30 @@
+# gffcompare v0.12.10 | Command line was:
+#gffcompare -r ../GGO_19.gtf -o bench/ggo19_longcov_isofrac.gffcmp bench/ggo19_longcov_isofrac.gtf
+#
+
+#= Summary for dataset: bench/ggo19_longcov_isofrac.gtf 
+#     Query mRNAs :    1952 in     584 loci  (1915 multi-exon transcripts)
+#            (361 multi-transcript loci, ~3.3 transcripts per locus)
+# Reference mRNAs :    1839 in     583 loci  (1814 multi-exon)
+# Super-loci w/ reference transcripts:      571
+#-----------------| Sensitivity | Precision  |
+        Base level:    97.3     |    94.1    |
+        Exon level:    97.6     |    96.2    |
+      Intron level:    98.6     |    97.9    |
+Intron chain level:    93.8     |    88.9    |
+  Transcript level:    93.2     |    87.8    |
+       Locus level:    98.5     |    97.8    |
+
+     Matching intron chains:    1702
+       Matching transcripts:    1714
+              Matching loci:     574
+
+          Missed exons:      42/6866	(  0.6%)
+           Novel exons:      89/6968	(  1.3%)
+        Missed introns:       8/6396	(  0.1%)
+         Novel introns:      51/6439	(  0.8%)
+           Missed loci:       4/583	(  0.7%)
+            Novel loci:      12/584	(  2.1%)
+
+ Total union super-loci across all input datasets: 583 
+1952 out of 1952 consensus transcripts written in bench/ggo19_longcov_isofrac.gffcmp.annotated.gtf (0 discarded as redundant)

@@ -1,0 +1,30 @@
+# gffcompare v0.12.10 | Command line was:
+#gffcompare -r jfp_study_st_out.gtf jfp_study_denovo.gtf -o jfp_cmp_v301
+#
+
+#= Summary for dataset: jfp_study_denovo.gtf 
+#     Query mRNAs :    1968 in     586 loci  (1929 multi-exon transcripts)
+#            (367 multi-transcript loci, ~3.4 transcripts per locus)
+# Reference mRNAs :    1845 in     584 loci  (1821 multi-exon)
+# Super-loci w/ reference transcripts:      572
+#-----------------| Sensitivity | Precision  |
+        Base level:    96.3     |    93.4    |
+        Exon level:    97.2     |    95.9    |
+      Intron level:    98.4     |    98.0    |
+Intron chain level:    93.6     |    88.4    |
+  Transcript level:    93.1     |    87.2    |
+       Locus level:    97.9     |    97.3    |
+
+     Matching intron chains:    1705
+       Matching transcripts:    1717
+              Matching loci:     572
+
+          Missed exons:      75/6924	(  1.1%)
+           Novel exons:      83/7020	(  1.2%)
+        Missed introns:      48/6456	(  0.7%)
+         Novel introns:      46/6481	(  0.7%)
+           Missed loci:       7/584	(  1.2%)
+            Novel loci:      14/586	(  2.4%)
+
+ Total union super-loci across all input datasets: 586 
+1968 out of 1968 consensus transcripts written in jfp_cmp_v301.annotated.gtf (0 discarded as redundant)

@@ -1,0 +1,25 @@
+qname	read_label	rname	mapq	AS	NM	AS_gap	score_pct	alignment_kind	tied
+R_full	R_full  (full transcript, 5288 bp)	101150678	60	4758	106	0	100	primary	TRUE
+R_full	R_full  (full transcript, 5288 bp)	129527071	0	4685	120	-73	98.4657419083649	secondary	TRUE
+R_full	R_full  (full transcript, 5288 bp)	129527057	0	4587	141	-171	96.40605296343	secondary	TRUE
+R_full	R_full  (full transcript, 5288 bp)	129527170	0	4344	210	-414	91.2988650693569	secondary	FALSE
+R_full	R_full  (full transcript, 5288 bp)	101151050	0	4212	203	-546	88.5245901639344	secondary	FALSE
+R_mid	R_mid   (800 bp, spans bubble of 678)	101150678	50	720	16	0	100	primary	TRUE
+R_mid	R_mid   (800 bp, spans bubble of 678)	129527171	0	702	17	-18	97.5	secondary	TRUE
+R_mid	R_mid   (800 bp, spans bubble of 678)	129527071	0	702	17	-18	97.5	secondary	TRUE
+R_mid	R_mid   (800 bp, spans bubble of 678)	129527057	0	705	19	-15	97.9166666666667	secondary	TRUE
+R_mid	R_mid   (800 bp, spans bubble of 678)	101151050	0	695	21	-25	96.5277777777778	secondary	TRUE
+R_mid	R_mid   (800 bp, spans bubble of 678)	129527170	0	695	21	-25	96.5277777777778	secondary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	129527170	0	360	4	0	100	primary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	101150678	0	360	4	0	100	secondary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	129527071	0	360	4	0	100	secondary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	129527171	0	360	4	0	100	secondary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	129527057	0	360	4	0	100	secondary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	101151050	0	350	5	-10	97.2222222222222	secondary	TRUE
+R_short_conserved	R_short_conserved  (200 bp, fully-shared node 16)	134757232	0	302	10	-58	83.8888888888889	secondary	FALSE
+R_short_variant	R_short_variant  (200 bp, covers some variant SNVs)	101150678	0	360	4	0	100	primary	TRUE
+R_short_variant	R_short_variant  (200 bp, covers some variant SNVs)	129527057	0	360	4	0	100	secondary	TRUE
+R_short_variant	R_short_variant  (200 bp, covers some variant SNVs)	129527171	0	350	5	-10	97.2222222222222	secondary	TRUE
+R_short_variant	R_short_variant  (200 bp, covers some variant SNVs)	129527071	0	350	5	-10	97.2222222222222	secondary	TRUE
+R_short_variant	R_short_variant  (200 bp, covers some variant SNVs)	129527170	0	330	7	-30	91.6666666666667	secondary	FALSE
+R_short_variant	R_short_variant  (200 bp, covers some variant SNVs)	101151050	0	330	7	-30	91.6666666666667	secondary	FALSE

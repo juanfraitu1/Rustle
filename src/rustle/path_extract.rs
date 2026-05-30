@@ -10306,6 +10306,84 @@ pub fn extract_transcripts(
                         continue;
                     }
                 }
+                // Truncated-at-hardend dedup (DEFAULT ON; opt-out
+                // RUSTLE_CHECKTRF_TRUNC_HARDEND_OFF=1):
+                //
+                // Discriminator found by data-driven FP-vs-TP separation on the
+                // remaining checktrf-stored chains (after the flow-redundant
+                // gates). Among checktrf rescues that reach the final GTF and
+                // whose junction chain is a STRICT SUBSET of a higher-coverage
+                // kept chain at the same locus (a "shorter sibling"), the chains
+                // that ALSO terminate at a graph `hardend` node are 8x enriched
+                // for false positives (FP frac 0.379 vs TP 0.164 across all
+                // checktrf finals; within the subset population 8/13 FP carry
+                // hardend vs 2/12 TP). These are spurious 3'-truncations that
+                // simply re-use the dominant chain's internal coverage-drop
+                // boundary — none of them carry independent 3' read-end mass
+                // (poly_end == 0 for every one). The shorter siblings that ARE
+                // real isoforms instead terminate at a novel boundary (no
+                // hardend), so they are spared. The 8x FP enrichment is the
+                // selection signal; applied at store time against the kept
+                // paths visible so far, the gate is conservative and removes
+                // 3 final-GTF FP for 0 TP loss on GGO_19 (Pr 91.05 -> 91.19,
+                // F1 93.68 -> 93.76, Sn flat at 1750 TP), deterministic.
+                if std::env::var_os("RUSTLE_CHECKTRF_TRUNC_HARDEND_OFF").is_none()
+                    && !transfrags[t].guide
+                {
+                    let last_rescue_node = rescue_nodes.last().copied().unwrap_or(usize::MAX);
+                    let ends_at_hardend = graph
+                        .nodes
+                        .get(last_rescue_node)
+                        .map(|n| n.hardend)
+                        .unwrap_or(false);
+                    // Independent 3'-end spare (DEFAULT OFF — threshold 0):
+                    // A genuine shorter isoform would carry its own polyA/TES
+                    // read evidence. We deliberately do NOT spare on bulk
+                    // read-end mass at the last node: a `hardend` node has high
+                    // read-end mass *by construction* (that is why it is a
+                    // hardend), so that signal spares exactly the truncation
+                    // fragments we are trying to drop. Empirically on GGO_19 a
+                    // read-end spare costs FP removals for zero TP benefit, so
+                    // the spare is disabled by default. Opt-in: set
+                    // RUSTLE_CHECKTRF_TRUNC_HARDEND_SPARE_MIN to a read count.
+                    let trunc_spare_min: f64 = std::env::var(
+                        "RUSTLE_CHECKTRF_TRUNC_HARDEND_SPARE_MIN",
+                    )
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0.0);
+                    let has_indep_tes = trunc_spare_min > 0.0
+                        && reads_end_at_node_ck
+                            .get(&last_rescue_node)
+                            .copied()
+                            .unwrap_or(0.0)
+                            >= trunc_spare_min;
+                    if ends_at_hardend && !has_indep_tes {
+                        let chain = intron_chain_from_nodes(graph, rescue_nodes);
+                        if !chain.is_empty() {
+                            let chain_set: std::collections::HashSet<(u64, u64)> =
+                                chain.iter().copied().collect();
+                            // Strict subset of a strictly-higher-coverage kept
+                            // chain at this locus (flow OR earlier checktrf).
+                            let truncated_of_dominant =
+                                kept_paths.iter().any(|(knodes, kcov, _, _)| {
+                                    if *kcov <= coverage + EPS {
+                                        return false;
+                                    }
+                                    let kchain = intron_chain_from_nodes(graph, knodes);
+                                    if kchain.len() <= chain.len() {
+                                        return false;
+                                    }
+                                    chain_set.iter().all(|j| kchain.contains(j))
+                                });
+                            if truncated_of_dominant {
+                                emit_checktrf_result!(t, "trunc_hardend", rescue_nodes);
+                                record_outcome!(t, SeedOutcome::ChecktrfRescueFail);
+                                continue;
+                            }
+                        }
+                    }
+                }
                 // Path-enum RI suppression: if THIS rescue's intron chain is
                 // a strict subset of some kept path's chain AND the rescue's
                 // exons strictly contain every missing intron AND the rescue's

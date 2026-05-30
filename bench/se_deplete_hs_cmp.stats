@@ -1,0 +1,30 @@
+# gffcompare v0.12.10 | Command line was:
+#gffcompare -r /mnt/c/Users/jfris/Desktop/GGO_19.gtf /mnt/c/Users/jfris/Desktop/Rustle/bench/se_deplete_hs.gtf -o /mnt/c/Users/jfris/Desktop/Rustle/bench/se_deplete_hs_cmp
+#
+
+#= Summary for dataset: /mnt/c/Users/jfris/Desktop/Rustle/bench/se_deplete_hs.gtf 
+#     Query mRNAs :    1928 in     582 loci  (1891 multi-exon transcripts)
+#            (363 multi-transcript loci, ~3.3 transcripts per locus)
+# Reference mRNAs :    1839 in     583 loci  (1814 multi-exon)
+# Super-loci w/ reference transcripts:      571
+#-----------------| Sensitivity | Precision  |
+        Base level:    97.1     |    94.3    |
+        Exon level:    97.8     |    96.5    |
+      Intron level:    98.8     |    98.4    |
+Intron chain level:    94.7     |    90.9    |
+  Transcript level:    94.0     |    89.6    |
+       Locus level:    98.3     |    98.1    |
+
+     Matching intron chains:    1718
+       Matching transcripts:    1728
+              Matching loci:     573
+
+          Missed exons:      42/6866	(  0.6%)
+           Novel exons:      68/6962	(  1.0%)
+        Missed introns:      19/6396	(  0.3%)
+         Novel introns:      37/6420	(  0.6%)
+           Missed loci:       6/583	(  1.0%)
+            Novel loci:      11/582	(  1.9%)
+
+ Total union super-loci across all input datasets: 582 
+1928 out of 1928 consensus transcripts written in /mnt/c/Users/jfris/Desktop/Rustle/bench/se_deplete_hs_cmp.annotated.gtf (0 discarded as redundant)
