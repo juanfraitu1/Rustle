@@ -1773,6 +1773,15 @@ pub fn process_transfrags(
     let trace_locus = parse_trace_locus_env();
     let trace_intron = parse_trace_intron_env();
     let trace_srcsink_nodes = parse_trace_srcsink_nodes_env();
+    // keeptrf containment-collapse ret==2 branch (kept extends past tf): match
+    // StringTie's rlink.cpp case 2 exactly (rlink.cpp:5736-5749) by dropping
+    // Rustle's extra non-ST longstart/longend inner guard. ST's case 2 has NO
+    // longstart/longend guard (unlike case 1); it gates only on !guide,
+    // hardstart/hardend same-node, and ssdist (lens[1]/lens[3] < SSDIST), all of
+    // which Rustle already applies. Default ON (matches ST; measured F1 +0.11pp
+    // on GGO_19: Pr 91.24->91.70, Sn 96.47->96.20). Opt out with
+    // RUSTLE_KEEPTRF_RET2_LEGACY=1 to restore the old extra guard.
+    let keeptrf_ret2_st = std::env::var_os("RUSTLE_KEEPTRF_RET2_LEGACY").is_none();
     if std::env::var_os("RUSTLE_PROMOTE_TERMINAL_TAIL_VARIANTS").is_some() {
         promote_terminal_tail_variants(&mut transfrags, graph, trace_locus);
     }
@@ -2333,9 +2342,14 @@ pub fn process_transfrags(
                 if !tf.guide && left_dist < SSDIST && right_dist < SSDIST {
                     let tf_first = &graph.nodes[first_nid];
                     let tf_last = &graph.nodes[last_nid];
-                    if !(tf_first.hardstart || tf.longstart != 0)
-                        && !(tf_last.hardend || tf.longend != 0)
-                    {
+                    // Default (keeptrf_ret2_st): match ST's rlink.cpp case 2 and
+                    // skip Rustle's extra non-ST guard. With RUSTLE_KEEPTRF_RET2_LEGACY
+                    // the old guard returns: refuse to fold any tf with a hard/long
+                    // boundary.
+                    let inner_guard_ok = keeptrf_ret2_st
+                        || (!(tf_first.hardstart || tf.longstart != 0)
+                            && !(tf_last.hardend || tf.longend != 0));
+                    if inner_guard_ok {
                         let start_ok = !tf_first.hardstart || first_nid == kept_tf.node_ids[0];
                         let end_ok = !tf_last.hardend
                             || last_nid == kept_tf.node_ids[kept_tf.node_ids.len() - 1];
