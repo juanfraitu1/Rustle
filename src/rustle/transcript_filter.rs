@@ -7610,9 +7610,11 @@ pub fn print_predcluster_with_summary_multi(
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
     // ── ST-faithful prediction-selection bypass (RUSTLE_PREDCLUSTER_ST=1, default OFF) ──
     // When enabled, route the candidate predictions through the ST-faithful selection
-    // path instead of Rustle's normal predcluster body. The skeleton is a pass-through
-    // (no selection logic yet), so flag-ON deliberately over-produces vs baseline. The
-    // summary is reported with entry/exit counts so downstream stage logging stays sane.
+    // path (predcluster_st: cov gate + lowintron-gated RI + strict included_drop +
+    // per-maxint isofrac) instead of Rustle's normal predcluster body. Opt-in: it
+    // improves Pr but is F1-neutral standalone (the residual Sn gap is coverage-input
+    // divergence — see docs/STRINGTIE_PARITY_FINDINGS.md sub-project 1). The summary is
+    // reported with entry/exit counts so downstream stage logging stays sane.
     if crate::stringtie_parity::st_predcluster() {
         let entry_count = transcripts.len();
         let kept = crate::predcluster_st::select_predictions_st(transcripts, bpcov, config);
