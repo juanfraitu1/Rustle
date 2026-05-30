@@ -485,6 +485,77 @@ consolidates (2.6x reps) AND mis-attributes group abundance. This is the gate fo
 
 ---
 
+## Predcluster selection-parity (sub-project 1) — DONE, opt-in
+
+Status: **DONE (2026-05-30), committed, default OFF.** The capability is the foundation for sub-project 2.
+
+### What was built
+`RUSTLE_PREDCLUSTER_ST=1` (default OFF) swaps Rustle's per-cluster winner selection for an
+ST-faithful selection in `select_predictions_st` (`src/rustle/predcluster_st.rs`), dispatched
+from `transcript_filter.rs::print_predcluster_with_summary_multi` (fully guarded; default-OFF path
+byte-unaffected — the only non-test changes to existing files are the guarded dispatch + a few
+`pub(crate)` visibility bumps). The flag predicate `stringtie_parity::st_predcluster()` is
+unit-tested (`st_predcluster_default_off`), and each sub-stage has its own unit test (9 tests).
+
+The selection runs ST's sub-stages in ST's order:
+1. **Survival/coverage gate** — cov + read-through gate; drops low-cov / too-short chains, guides exempt.
+2. **Pairwise containment** — ST `rlink.cpp:7363-7404` + `has_retained_intron`: contained-no-RI ⇒ kill
+   unconditionally; contained-with-RI ⇒ kill only if `cov_i < cov_j`. Plus **`included_drop`**, which
+   requires ST's **strict `included_pred`** (the coverage-free structural-inclusion variant), not Rustle's
+   looser containment.
+3. **Per-maxint isofrac** — ST `rlink.cpp:18734-18794` `longunder` loop, seeded per maximal-coverage
+   interval; kills `cov < isofraclong·usedcov[s]`, guides exempt.
+4. **Significant-overlap matrix gate** on the pairwise stage (`build_significant_overlap_matrix`,
+   OvlTracker-like sweep) — recovers TPs that unconditional containment over-kills.
+
+### Key findings
+- **ST's predcluster retained-intron handling is lowintron-gated** at `rlink.cpp:18528 → 17117`,
+  **NOT** at the 7363 site. RI demotion only fires for chains flagged low-intron; modeling it at the
+  bare 7363 containment site over-kills.
+- **`included_drop` needs ST's strict `included_pred`** (structural, coverage-free). Using Rustle's
+  looser containment here mis-drops valid alternative chains.
+- The **significant-overlap matrix gate** is load-bearing: without it, unconditional contained-no-RI
+  kills remove true positives that ST keeps because their overlap is not "significant."
+
+### Numbers (chain-level, vs `../GGO_19.gtf`; multi-intron chains keyed (strand, intron-tuple))
+| Config | TP | FN | FP | Sn | Pr | F1 |
+|---|---|---|---|---|---|---|
+| **Baseline (flag OFF, shipped default)** | 1750 | 64 | 168 | 96.5 | 91.2 | **93.78** |
+| **Flag-ON `RUSTLE_PREDCLUSTER_ST=1`** | 1734 | 80 | 155 | 95.7 | 92.1 | **93.65** |
+| **Oracle ceiling (ST winners on matching clusters)** | 1762 | 52 | 123 | 97.0 | 93.5 | **95.27** |
+
+Flag-ON is **deterministic** (3 identical runs, identical chain sets). Default (flag OFF) is unchanged.
+
+### Selection-cluster convergence (candidate-matching clusters only, where Rustle's and ST's
+`path_extracted` candidate sets are identical — selection isolated from extraction divergence;
+495 matching clusters, 1328 reference chains in them):
+| Config | TP | FN | FP | selection errors (FP+FN) |
+|---|---|---|---|---|
+| Baseline | 1306 | 22 | 63 | **85** |
+| Flag-ON | 1295 | 33 | 43 | **76** |
+| Oracle ceiling | 1318 | 10 | 18 | **28** |
+
+Flag-ON drops FP **63 → 43 (−20)** but raises FN **22 → 33 (+11)**, a net **−9 selection errors**
+(85 → 76), closing ~16% of the baseline→oracle gap (85→28). The FP reduction is the genuine selection
+win; the FN rise is coverage-input divergence (below).
+
+### Decision: **opt-in (default OFF).** Per the plan, flip to default-ON only if flag-ON F1 > baseline
+93.78 with Pr up and Sn not hurt. Flag-ON F1 = **93.65 < 93.78** (Pr ↑ 91.2→92.1, FP ↓ 168→155, but Sn
+↓ 96.5→95.7) ⇒ F1-neutral-to-slightly-negative standalone ⇒ **keep `RUSTLE_PREDCLUSTER_ST` opt-in.**
+No default change. The capability is committed and is the foundation for sub-project 2.
+
+### Coupling conclusion (why standalone is F1-neutral)
+The ST selection rules reproduce ST's **OUTPUT** only when fed ST's **COVERAGE INPUTS**. Run on Rustle's
+flow-based coverage, the same rules kill ~42 contested-minority chains because Rustle's flow cov is below
+ST's on those chains (the per-maxint isofrac and cov gate see a different `usedcov`/`cov` ratio than ST
+does). Those 42 residual selection-FN are **coverage divergence**, not selection bugs; another **38 FN are
+never-extracted candidates** (ST extracts them, Rustle's flow never produces them). Both pools are
+**sub-project 2 (candidate-extraction + coverage parity)**. The selection logic is correct (Pr exceeds
+baseline, FP below baseline); realizing the **+1.49pp oracle ceiling (95.27)** requires sub-project 2 to
+give selection ST-equivalent coverage and candidate sets.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
