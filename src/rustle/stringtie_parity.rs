@@ -194,6 +194,20 @@ pub fn st_shadow() -> bool {
     st_shadow_from(std::env::var("RUSTLE_ST_SHADOW").ok().as_deref())
 }
 
+/// Pure helper for `st_predcluster()`.
+#[inline]
+pub fn st_predcluster_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") }
+
+/// ST-faithful prediction SELECTION (predcluster) parity. Default OFF.
+/// Enable with `RUSTLE_PREDCLUSTER_ST=1`. When on, Rustle's per-cluster winner
+/// selection is replaced by `predcluster_st::select_predictions_st`, which runs
+/// StringTie's selection sub-stages in ST's order. See
+/// docs/superpowers/specs/2026-05-30-predcluster-selection-parity-design.md.
+#[inline]
+pub fn st_predcluster() -> bool {
+    st_predcluster_from(std::env::var("RUSTLE_PREDCLUSTER_ST").ok().as_deref())
+}
+
 /// Returns true if StringTie-exact mode is active OR the site's specific
 /// opt-out flag is set. Use at each divergence site to check whether the
 /// Rustle-specific relaxation should be disabled.
@@ -212,6 +226,14 @@ mod tests {
         assert!(st_shadow_from(Some("1")));    // =1 -> ON
         assert!(st_shadow_from(Some("true"))); // any non-"0" -> ON
         assert!(!st_shadow_from(Some("0")));   // =0 -> OFF
+    }
+
+    #[test]
+    fn st_predcluster_default_off() {
+        use super::st_predcluster_from;
+        assert!(!st_predcluster_from(None));
+        assert!(st_predcluster_from(Some("1")));
+        assert!(!st_predcluster_from(Some("0")));
     }
 }
 

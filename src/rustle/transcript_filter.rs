@@ -7608,6 +7608,29 @@ pub fn print_predcluster_with_summary_multi(
     junction_stats: Option<&JunctionStats>,
     reads: Option<&[crate::types::BundleRead]>,
 ) -> (Vec<Transcript>, PredclusterStageSummary) {
+    // ── ST-faithful prediction-selection bypass (RUSTLE_PREDCLUSTER_ST=1, default OFF) ──
+    // When enabled, route the candidate predictions through the ST-faithful selection
+    // path instead of Rustle's normal predcluster body. The skeleton is a pass-through
+    // (no selection logic yet), so flag-ON deliberately over-produces vs baseline. The
+    // summary is reported with entry/exit counts so downstream stage logging stays sane.
+    if crate::stringtie_parity::st_predcluster() {
+        let entry_count = transcripts.len();
+        let kept = crate::predcluster_st::select_predictions_st(transcripts);
+        let summary = PredclusterStageSummary {
+            entry_count,
+            after_pairwise: kept.len(),
+            after_isofrac: kept.len(),
+            after_near_equal_chain_collapse: kept.len(),
+            after_exact_chain_dedup: kept.len(),
+            after_dedup_subset_chain: kept.len(),
+            after_runoff: kept.len(),
+            after_polymerase_runoff: kept.len(),
+            after_polymerase_runon: kept.len(),
+            after_readthr: kept.len(),
+            ..PredclusterStageSummary::default()
+        };
+        return (kept, summary);
+    }
     let trace_stage = |stage: &str, txs: &[Transcript]| {
         if let Some(ref_tx) = trace_ref {
             debug_ref_stage(stage, "predcluster", ref_tx, txs);

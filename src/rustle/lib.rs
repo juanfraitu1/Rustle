@@ -72,6 +72,7 @@ pub mod report_losses; // diagnostic loss reporting
 
 // ── StringTie-parity scaffold ────────────────────────────────────────────────
 pub mod stringtie_parity; // RUSTLE_STRINGTIE_EXACT meta-flag for parallel parity mode
+pub mod predcluster_st;   // RUSTLE_PREDCLUSTER_ST: ST-faithful prediction selection (default OFF)
 pub mod parity;           // parity dumps + decision log (consolidated)
 
 // ── Stage 9: Orchestration ────────────────────────────────────────────────────
