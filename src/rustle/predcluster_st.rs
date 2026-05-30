@@ -97,19 +97,6 @@ fn retainedintron_st(
     false
 }
 
-/// Two transcripts overlap on the genome (same chrom assumed; checked by caller).
-fn spans_overlap(a: &Transcript, b: &Transcript) -> bool {
-    let (as_, ae) = match (a.exons.first(), a.exons.last()) {
-        (Some(f), Some(l)) => (f.0, l.1),
-        _ => return false,
-    };
-    let (bs, be) = match (b.exons.first(), b.exons.last()) {
-        (Some(f), Some(l)) => (f.0, l.1),
-        _ => return false,
-    };
-    as_ <= be && bs <= ae
-}
-
 /// Emit a `pred_kill` parity event matching ST's predcluster payload shape for the
 /// pairwise stage (rlink.cpp:18537/18597): `reason`, `cov`, `nexons`, `stage:"pairwise"`.
 fn emit_pred_kill(t: &Transcript, reason: &str) {
@@ -208,6 +195,23 @@ pub fn select_predictions_st(
             .collect(),
     };
 
+    // ── ST `overlaps` significant-overlap matrix (rlink.cpp:17334 update_overlap) ──
+    // ST gates the ENTIRE pairwise containment block on `overlaps.get(n1,n2)`
+    // (rlink.cpp:18503), which is true only when two predictions share a
+    // *substantial* exon overlap (≥ ERROR_PERC of the smaller prediction's exonic
+    // length; small head/tail touches are demoted to non-overlapping). Rustle's
+    // earlier `spans_overlap` proxy was far coarser, admitting tail-touch pairs ST
+    // rejects. Using the faithful predicate recovers spurious retained_intron kills
+    // on real TPs (10→6 over-killed). The residual included_drop over-fire (≈498 vs
+    // ST 200) and isofrac over-fire (≈328 vs 301) are NOT selection-logic bugs:
+    // ST traces show the same chains carry higher pred->cov in ST (flow-coverage
+    // divergence) and that over-enumerated isoform clouds inflate the contained-pair
+    // set — both upstream (candidate extraction / coverage metric, sub-project 2).
+    let overlap = crate::transcript_filter::build_significant_overlap_matrix(
+        &survivors,
+        config.pairwise_error_perc,
+    );
+
     // ── (B) pairwise containment (lowintron-gated RI + included_drop) ────────
     // Sort by coverage DESC (ST predord: highest coverage first). Stable so equal
     // covs keep input order, matching ST's tie behaviour closely enough for parity.
@@ -241,10 +245,10 @@ pub fn select_predictions_st(
                 continue;
             }
             // ST gates the whole pairwise block on `overlaps.get(n1,n2)`, a
-            // *significant*-overlap test (substantial exonic overlap, not mere
-            // span touching). spans_overlap is a coarse proxy; included_pred and
-            // retainedintron_st below impose the real geometric structure.
-            if !spans_overlap(tj, ti) {
+            // *significant*-exon-overlap test (≥ ERROR_PERC of the smaller pred's
+            // exonic length; small head/tail touches are demoted to false). This is
+            // the faithful predicate, not the coarse span proxy.
+            if !overlap[j].contains(i) {
                 continue;
             }
             // ST pairwise branch chain (same/cross strand, n2 = ti the lower-cov):

@@ -1985,7 +1985,7 @@ fn significant_overlap_pair(
 }
 
 /// Build significant-overlap matrix via active-interval sweep (OvlTracker-like).
-fn build_significant_overlap_matrix(
+pub(crate) fn build_significant_overlap_matrix(
     txs: &[Transcript],
     error_perc: f64,
 ) -> Vec<crate::util::bitset::SmallBitset> {
