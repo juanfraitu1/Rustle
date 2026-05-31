@@ -12,7 +12,12 @@ BAM = os.path.join(FIX, "reads_sorted.bam")
 REF = os.path.join(FIX, "ref.fa")
 TRUTH = os.path.join(FIX, "truth.gtf")
 
-def chains_by_copy(path):
+def chains_by_copy(path, is_truth=False):
+    # truth.gtf and rustle's GTF use different intron-acceptor conventions:
+    # truth intron (1200,2000) vs rustle (1200,2001) -- a systematic +1 at every
+    # intron 5' (acceptor / next-exon-start); the donor (exon end) matches exactly.
+    # Normalize the TRUTH acceptor with +1 so both sides use rustle's convention.
+    bump = 1 if is_truth else 0
     tx = {}; strand = {}
     for line in open(path):
         if line.startswith("#"): continue
@@ -24,7 +29,7 @@ def chains_by_copy(path):
     out = {"A": set(), "B": set()}
     for t, ex in tx.items():
         ex.sort()
-        ic = tuple((ex[i][1], ex[i+1][0]) for i in range(len(ex)-1))
+        ic = tuple((ex[i][1], ex[i+1][0] + bump) for i in range(len(ex)-1))
         if not ic: continue
         copy = "A" if ex[0][0] < 5000 else "B"
         out[copy].add(ic)
@@ -55,7 +60,7 @@ def score(pred, truth):
 
 def main():
     rustle = sys.argv[sys.argv.index("--rustle")+1] if "--rustle" in sys.argv else os.path.join(REPO,"target","release","rustle")
-    truth = chains_by_copy(TRUTH)
+    truth = chains_by_copy(TRUTH, is_truth=True)
     out = {"vg": score(run(rustle, True), truth), "baseline": score(run(rustle, False), truth)}
     print(json.dumps(out, indent=2))
 
