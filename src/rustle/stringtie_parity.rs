@@ -216,6 +216,15 @@ pub fn st_flow_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") 
 #[inline]
 pub fn st_flow() -> bool { st_flow_from(std::env::var("RUSTLE_FLOW_ST").ok().as_deref()) }
 
+/// Pure helper for `st_csr_fold()`.
+#[inline]
+pub fn st_csr_fold_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") }
+/// ST-faithful chimeric-suffix-rescue folding (default OFF). Enable RUSTLE_CSR_FOLD=1.
+/// Suppresses re-extracting a 5'-truncated suffix as a standalone transcript when its
+/// suffix is contained in a kept full-length FLOW path (the case ST folds it into).
+#[inline]
+pub fn st_csr_fold() -> bool { st_csr_fold_from(std::env::var("RUSTLE_CSR_FOLD").ok().as_deref()) }
+
 /// Pure helper for `st_ri_local()`.
 #[inline]
 pub fn st_ri_local_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") }
@@ -287,6 +296,14 @@ mod tests {
         assert!(!st_terminal_from(None));
         assert!(st_terminal_from(Some("1")));
         assert!(!st_terminal_from(Some("0")));
+    }
+
+    #[test]
+    fn st_csr_fold_default_off() {
+        use super::st_csr_fold_from;
+        assert!(!st_csr_fold_from(None));
+        assert!(st_csr_fold_from(Some("1")));
+        assert!(!st_csr_fold_from(Some("0")));
     }
 
     #[test]
