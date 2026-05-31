@@ -718,6 +718,19 @@ intron-chain emit to `pred_kill` + `pred_intron_low` (submodule 1bff461; byte-ve
   contained-exon predicate realize ~+25 at ≤~2 TP, or over-kill?). Tools `bench/retained_intron_prize.py`
   (047e5de), `bench/build_lowintron_oracle.py` (d698d1a). Lesson reaffirmed: 0b ruled OUT flags but the
   "therefore pairing" inference was wrong — the per-locus trace found the true (predicate) cause.
+- **FINAL: SHELVED — the +25 prize is NOT realizable by any RU-side predicate.** Two more oracles bounded
+  the predicate space: (a) contained-exon GEOMETRY (`retained_intron_geometry_oracle.py`, ce8a0c0) →
+  net **−114** (kills 133 real alt-TSS isoforms), captures 5/27 — oracle-first SAVED a catastrophic
+  regression; (b) faithful CHAIN-SUBSET + dominance (`retained_intron_chainsubset_oracle.py`, ff87ebf) →
+  best net **+0** (fires on nothing at dom≥20, or kills 9 TP/1 FP at dom≤5), captures 1-2/27. DECISIVE
+  STRUCTURAL REASON: **18/27 of ST's FP victims have NO chain-superset killer in RU's FINAL transcript
+  set** — ST kills them with predictions that exist only in its PRE-FILTER population and don't survive
+  to RU's final output. The "114.8x dominance" was an ST pre-filter measurement that doesn't transfer.
+  So retained-intron parity needs ST's upstream prediction POPULATION, not a downstream predicate →
+  loops back to the flow/coverage-depletion floor (§6h, `project_coverage_metrics_deviation`). All
+  retained-intron code reverted; flag + bench oracles kept. Lesson: an oracle PRIZE (matching ST's exact
+  final-absent chains) is a CEILING, not proof a downstream fix can realize it — verify the killers
+  exist in RU's population before building.
 
 ---
 
