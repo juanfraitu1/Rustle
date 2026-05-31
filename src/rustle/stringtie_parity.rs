@@ -216,6 +216,13 @@ pub fn st_flow_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") 
 #[inline]
 pub fn st_flow() -> bool { st_flow_from(std::env::var("RUSTLE_FLOW_ST").ok().as_deref()) }
 
+/// Pure helper for `st_ri_local()`.
+#[inline]
+pub fn st_ri_local_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") }
+/// ST-faithful retained-intron local scoring (default OFF). Enable with `RUSTLE_RI_LOCAL=1`.
+#[inline]
+pub fn st_ri_local() -> bool { st_ri_local_from(std::env::var("RUSTLE_RI_LOCAL").ok().as_deref()) }
+
 /// Pure helper for `st_terminal()`.
 #[inline]
 pub fn st_terminal_from(v: Option<&str>) -> bool {
@@ -280,6 +287,14 @@ mod tests {
         assert!(!st_terminal_from(None));
         assert!(st_terminal_from(Some("1")));
         assert!(!st_terminal_from(Some("0")));
+    }
+
+    #[test]
+    fn st_ri_local_default_off() {
+        use super::st_ri_local_from;
+        assert!(!st_ri_local_from(None));
+        assert!(st_ri_local_from(Some("1")));
+        assert!(!st_ri_local_from(Some("0")));
     }
 
     #[test]
