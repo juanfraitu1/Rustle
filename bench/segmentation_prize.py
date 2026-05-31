@@ -56,12 +56,17 @@ def main():
     ref_chains = {(s, ic) for (s, _sp, ic) in ref.values() if ic}
 
     # Find ST envelopes split by RU (>=2 same-strand RU bundles spanning one ST bundle).
+    # True split = ST envelope NOT spanned by any single RU same-strand bundle
+    # (overshoot allowed), AND covered by >=2 MULTI-EXON RU fragments.
     splits = []
     for (s0, s1, sstrand, snodes) in st_gn:
-        ru_inside = [(r0, r1) for (r0, r1, rstrand, _rn) in ru_gn
-                     if rstrand == sstrand and r0 >= s0 - 1 and r1 <= s1 + 1]
-        # true split: >=2 RU bundles, none spanning the whole ST envelope
-        if len(ru_inside) >= 2 and not any(r0 <= s0 + 1 and r1 >= s1 - 1 for (r0, r1) in ru_inside):
+        ru_ov = [(r0, r1, rn) for (r0, r1, rstrand, rn) in ru_gn
+                 if rstrand == sstrand and overlaps(r0, r1, s0, s1)]
+        # spanned: some single RU bundle covers the whole envelope (overshoot allowed)
+        spanned = any(r0 <= s0 + 1 and r1 >= s1 - 1 for (r0, r1, rn) in ru_ov)
+        # multi-exon fragments (>=2 graph nodes) overlapping the envelope
+        frags = [(r0, r1) for (r0, r1, rn) in ru_ov if len(rn) >= 2]
+        if not spanned and len(frags) >= 2:
             splits.append((s0, s1, sstrand))
 
     # Attribute FP: RU final chains inside a split envelope that are NOT in the reference.
