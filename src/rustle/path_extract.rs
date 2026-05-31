@@ -9482,7 +9482,16 @@ pub fn extract_transcripts(
                     abundancesum = s;
                 }
                 if !tmatch.is_empty() {
-                    if std::env::var_os("RUSTLE_DISABLE_CSR").is_none() && is_chimeric_suffix_rescue(
+                    // RUSTLE_CSR_FOLD: ST folds a 5'-truncated suffix into its full-length flow
+                    // parent rather than re-extracting it as a standalone transcript. Suppress the
+                    // rescue when the matched containing path is a kept full-length FLOW path
+                    // (index < flow_kept_paths_len) that was emitted (out_idx valid).
+                    let csr_fold_suppress = crate::stringtie_parity::st_csr_fold()
+                        && tmatch.iter().any(|&kidx| {
+                            kidx < flow_kept_paths_len
+                                && kept_paths.get(kidx).map(|kp| kp.3 < out.len()).unwrap_or(false)
+                        });
+                    if std::env::var_os("RUSTLE_DISABLE_CSR").is_none() && !csr_fold_suppress && is_chimeric_suffix_rescue(
                         &tf_nodes,
                         &tmatch,
                         &kept_paths,
