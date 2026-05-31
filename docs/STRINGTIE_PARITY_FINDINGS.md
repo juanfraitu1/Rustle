@@ -637,10 +637,21 @@ graph substrate before the known flow/transfrag divergence:
   node-construction policy diff — ST materializes intron-interior nodes from opposing-strand
   junctions where RU leaves a gap (42 nodes; bundle 20117101-20120045 adds (20117599,20117788) under
   byte-identical good-junctions). DOWNSTREAM-INERT (identical final tx RSTL.32.1==STRG.76.1).
-- **Graph edges**: NOT directly instrumented (both tools emit only {n_nodes,nodes}); proved by
-  REDUCTION (edges = f(nodes + accepted junctions); only-RU good=0 → RU never has a junction edge ST
-  lacks; identical on the 3226 identical-node bundles). RU has an UN-WIRED emitter
-  (parity/graph_edges_dump.rs); ST's is commented out — wiring both would convert reduced→measured.
+- **Graph edges**: now DIRECTLY MEASURED (2026-05-30) — `graph_edge` parity emit wired in both tools
+  (RU pipeline.rs commit 769149f; ST rlink.cpp submodule b18c4b8; bench/edge_diff.py commit 30e3a77).
+  Edges emitted as node-coordinate-pair tokens (FROM>TO, SRC/SNK for source/sink), comparable
+  cross-tool. RESULT: on the 3226 identical-node shared bundles, edge sets identical on 3037/3226
+  (94.2%). **Junction-spanning connectivity = same standpoint**: RU is missing exactly ONE junction
+  edge vs ST on an identical-node bundle, and it is a CORRECT omission (alt-donor 16912473 absent from
+  reference; ST builds+emits it as non-ref STRG.24.4, RU emits only the correct-donor chains — RU more
+  precise). The other 60 RU-missing + 161 RU-extra junction edges are all on node-mismatched bundles
+  (different decomposition, expected). The real edge-layer divergence is **source/sink (terminal)
+  wiring**: RU has 2708 EXTRA source/sink edges (1308 on identical-node bundles, near-perfect superset,
+  only 1 missing) — same coverage-drop threshold (ERROR_PERC*DROP=0.05) but RU uses a per-node
+  coverage-ratio test + phantom-zero recursion (graph_build.rs:68-272) vs ST's structural-terminal +
+  intra-exon cliff find_trims (rlink.cpp:1500-1601). This is the KNOWN coverage-trim / flow-depletion
+  divergence (more permissive terminal wiring → more path endpoints → feeds over-enumeration), i.e. the
+  edge layer hands off cleanly to exactly the downstream flow stage. NOT a connectivity bug.
 - **Colors**: junction-clean spans identical 1609/1610 (99.94%); 124/125 partition mismatches span an
   only-ST good junction. No independent color-logic divergence (fully reducible to junction floor).
 - **Junctions**: RAW = same standpoint — RU raw observes 6456/6456 ST-final + 6396/6396 reference
