@@ -32,12 +32,24 @@ The recovery did NOT use the intended EM reweighting. VG diagnostics:
 [VG] preserved secondaries on 4 bundles whose raw family was filter-dropped
 ```
 The DAZ family was DISCOVERED but DROPPED by the k-mer-Jaccard family filter (jaccard 0.000) because
-DAZ1/DAZ3 are **inverted** — forward k-mers don't overlap. DAZ3's reads survived only via a
-secondary-preservation fallback, so:
-- **Open #1 (fixable):** the k-mer-Jaccard family filter (`--vg-family-min-kmer-jaccard`, default 0.05;
-  `vg.rs`) must compute reverse-complement k-mers for inverted paralogs, else EM never runs on them.
-- **Open #2:** because EM didn't run, the shared multi-mappers aren't weight-split between DAZ1/DAZ3
-  (the design doc's 53/47) — DAZ3's cov may be inflated. Running EM after the filter fix calibrates it.
+DAZ1/DAZ3 are **inverted** — forward k-mers don't overlap.
+
+### FIXED (2026-05-31): canonical k-mers — EM now runs natively
+`compute_family_graph_kmer_jaccard_diag` (`vg.rs`) now uses **canonical k-mers** (min of a k-mer and
+its reverse-complement) and accumulates per-copy k-mer sets across ALL strand sub-families, so the
+inverted cross-strand pair (DAZ1−/DAZ3+) is scored instead of dropped. At the DEFAULT filter (0.05):
+```
+[VG] 1 family group covering 4 bundles after quality filter   (no longer dropped)
+[VG-HMM-EM] Family 1: HMM-EM converged, reweighted 176 reads across 2 copies (DAZ1/DAZ3)
+DAZ3: 5 isoforms recovered    DAZ1: 9 -> 2 (EM split the shared multi-mappers, de-inflating DAZ1)
+```
+So the EM-driven path now works at default settings — DAZ3 recovered AND DAZ1 de-inflated by the
+weight-split, without the secondary-preservation fallback. VG-mode-only change; default de-novo
+benchmark unaffected (96.2/91.7, 95.6/90.5). Commit on branch parity/isofrac-chain-dedup.
+- **Honest residual:** the *iterative* EM converges trivially (delta=0) — the discriminating signal is
+  the pileup-depth PRIOR (design-doc 53/47), not iterative refinement. So it is "pileup-weighted
+  assignment" in this regime. Validating per-copy expression calibration (the 53/47) end-to-end and
+  genome-wide VG re-validation (the HMM-EM is slow, ~200s for DAZ alone) are follow-ups.
 
 ## Counterexamples / limitations (from prior experiments, docs/experiments/GGO_family_vg.md)
 - **AMY (amylase, chr1):** copies diverged → reads map uniquely (secondaries rare). EM not needed
