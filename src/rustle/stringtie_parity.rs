@@ -216,6 +216,28 @@ pub fn st_flow_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") 
 #[inline]
 pub fn st_flow() -> bool { st_flow_from(std::env::var("RUSTLE_FLOW_ST").ok().as_deref()) }
 
+/// Pure helper for `st_terminal()`.
+#[inline]
+pub fn st_terminal_from(v: Option<&str>) -> bool {
+    matches!(v, Some(s) if s != "0")
+}
+/// ST-faithful terminal-exon handling (default OFF). Enable with `RUSTLE_ST_TERMINAL=1`.
+#[inline]
+pub fn st_terminal() -> bool {
+    st_terminal_from(std::env::var("RUSTLE_ST_TERMINAL").ok().as_deref())
+}
+
+/// Pure helper for `terminal_oracle_path()`. Enabled iff Some and non-empty.
+#[inline]
+pub fn terminal_oracle_path_from(v: Option<String>) -> Option<String> {
+    v.filter(|s| !s.is_empty())
+}
+/// Path to terminal-oracle JSONL file (default None/disabled). Set via `RUSTLE_TERMINAL_ORACLE`.
+#[inline]
+pub fn terminal_oracle_path() -> Option<String> {
+    terminal_oracle_path_from(std::env::var("RUSTLE_TERMINAL_ORACLE").ok())
+}
+
 /// Returns true if StringTie-exact mode is active OR the site's specific
 /// opt-out flag is set. Use at each divergence site to check whether the
 /// Rustle-specific relaxation should be disabled.
@@ -250,6 +272,22 @@ mod tests {
         assert!(!st_flow_from(None));
         assert!(st_flow_from(Some("1")));
         assert!(!st_flow_from(Some("0")));
+    }
+
+    #[test]
+    fn st_terminal_default_off() {
+        use super::st_terminal_from;
+        assert!(!st_terminal_from(None));
+        assert!(st_terminal_from(Some("1")));
+        assert!(!st_terminal_from(Some("0")));
+    }
+
+    #[test]
+    fn terminal_oracle_path_parses() {
+        use super::terminal_oracle_path_from;
+        assert_eq!(terminal_oracle_path_from(None), None);
+        assert_eq!(terminal_oracle_path_from(Some("".to_string())), None);
+        assert_eq!(terminal_oracle_path_from(Some("/tmp/st_edge.jsonl".to_string())), Some("/tmp/st_edge.jsonl".to_string()));
     }
 }
 
