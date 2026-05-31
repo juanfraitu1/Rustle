@@ -732,6 +732,23 @@ intron-chain emit to `pred_kill` + `pred_intron_low` (submodule 1bff461; byte-ve
   final-absent chains) is a CEILING, not proof a downstream fix can realize it — verify the killers
   exist in RU's population before building.
 
+### Lever #2 — donor-snap (2A) + chimeric-suffix-rescue (2B) (2026-05-31)
+
+Trace lever #2 ("transfrag-collapse snap/fold") mechanism-verified into TWO independent sub-levers,
+NEITHER in transfrag-collapse (3rd mechanism mis-attribution caught by grounding): 2A = junction
+higherr donor-snap scope gap (`junction_correction.rs:178`); 2B = chimeric_suffix_rescue extra RU-only
+mechanism (`path_extract.rs:2992/9485`). Spec+plan 2026-05-31-prediction-population-snap-fold.
+- **2B SHIPPED (opt-in, REALIZED):** `RUSTLE_CSR_FOLD` (predicate 49d889f, guard 299afa7) suppresses the
+  rescue when the 5'-truncated suffix is contained in a kept full-length FLOW path (computable via
+  `flow_kept_paths_len` + `out_idx`, no new state). Flag-ON: RU-only FP **158→155**, IC Pr 91.7→**91.8**,
+  Tx Pr 90.5→**90.6**, **Sn flat 95.6, 0 TP cost**. Default OFF byte-faithful (96.2/91.7, 95.6/90.5).
+  csr_classify: 3 CSR-FP / 0 CSR-TP (CSR recovers 0 reference TPs on GGO_19 — purely net-negative here).
+  **FIRST realized over-enum reduction this session** (contrast: retained-intron was an unrealizable
+  ceiling). Recommend default-flip pending approval. Tools `bench/csr_classify.py` (f7f386c).
+- **2A (donor-snap):** oracle next (`bench/donor_snap_prize.py`); narrowed `is_bad` re-enable
+  (`RUSTLE_HIGHERR_SNAP`, canonical+guide+ratio gates) if the prize clears net of the small-exon-
+  regression cost.
+
 ---
 
 ## 7. Superseded documents
