@@ -692,6 +692,22 @@ issue (§6h, `project_coverage_metrics_deviation`), not graph-construction termi
 RU↔ST divergence point is correctness (read-backed endpoints), confirming the foundation substrate is
 sound through to flow. `terminal_oracle.rs` + report tool are committed, default-OFF, reusable.
 
+### Retained-intron scope oracle (2026-05-31) — PROCEED (+25 prize), fix = killer-PAIRING not flags
+
+Needy-loci trace (§ memory `project_needy_loci_decision_trace`) found over-enum FPs are 3 targetable
+hidden ST decisions; lever #1 (retained_intron) tested oracle-first (spec+plan 2026-05-31). Added ST
+intron-chain emit to `pred_kill` + `pred_intron_low` (submodule 1bff461; byte-verified vs RU key).
+- **Phase 0a prize:** of 1572 ST `retained_intron`-killed chains, 29 match RU final chains → 27 RU-only
+  FP + 2 TP-cost → **NET +25**. First gate-clearing prize this session (addresses 27/158 RU-only FPs).
+- **Phase 0b diagnosis:** forcing ST's lowintron FLAGS via the existing `RUSTLE_LOWINTRON_ORACLE`
+  (oracle confirmed fired) → FP-reduction only **2**. ≪ 25 → the under-firing is the **killer-PAIRING
+  scope** (`transcript_filter.rs:3063-3071`), NOT `build_lowintron_flags`. RU pairs victims only against
+  a single full-length killer, not local high-coverage killers.
+- **Gate: PROCEED** to Phase 1 (widen the pairing scope behind `RUSTLE_RI_LOCAL`, default OFF). RISK:
+  pairing changes can perturb other pairwise kills / cost TPs — guard to the retained_intron test only;
+  realized gain likely < the +25 ceiling (standing "local fixes don't move headline" caveat).
+  Tools `bench/retained_intron_prize.py` (047e5de), `bench/build_lowintron_oracle.py` (d698d1a).
+
 ---
 
 ## 7. Superseded documents
