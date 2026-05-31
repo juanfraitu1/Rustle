@@ -703,10 +703,21 @@ intron-chain emit to `pred_kill` + `pred_intron_low` (submodule 1bff461; byte-ve
   (oracle confirmed fired) → FP-reduction only **2**. ≪ 25 → the under-firing is the **killer-PAIRING
   scope** (`transcript_filter.rs:3063-3071`), NOT `build_lowintron_flags`. RU pairs victims only against
   a single full-length killer, not local high-coverage killers.
-- **Gate: PROCEED** to Phase 1 (widen the pairing scope behind `RUSTLE_RI_LOCAL`, default OFF). RISK:
-  pairing changes can perturb other pairwise kills / cost TPs — guard to the retained_intron test only;
-  realized gain likely < the +25 ceiling (standing "local fixes don't move headline" caveat).
-  Tools `bench/retained_intron_prize.py` (047e5de), `bench/build_lowintron_oracle.py` (d698d1a).
+- **Phase 1 (pairing fix) FAILED — diagnosis corrected.** Precise locus trace (RSTL.398.17) showed the
+  real mechanism is NEITHER flags NOR pairing-scope: the local high-cov killers ARE already paired (9 of
+  them) and the lowintron flags ARE correct. The miss is the **`retainedintron_like` PREDICATE
+  GEOMETRY** — victim's first exon lies fully INSIDE the killer's low-cov intron and ENDS BEFORE the
+  killer's next exon (a spurious-donor-within-intron the `j==0` logic skips). The prescribed pairing
+  widening realized only **−3 FP / −4 TP = net-negative** → REVERTED (commit bb871fa; `RUSTLE_RI_LOCAL`
+  predicate kept, reusable). Default restored to 96.2/91.7, 95.6/90.5.
+- **Real fix = a `retainedintron_like` predicate change** (add a `j==0` contained-first-exon kill) — a
+  NEW mechanism beyond this plan, with a real OVER-KILL risk: it fires by geometry, not ST's exact
+  killed list, and the −4 TP collateral in the pairing attempt warns that broadening the kill costs real
+  isoforms. The +25 oracle ceiling (ST's EXACT kills: 27 FP + 2 TP) is the bound; a geometry predicate
+  may kill a broader set → more TP-cost. Needs its own oracle-first sub-experiment (bound: does the
+  contained-exon predicate realize ~+25 at ≤~2 TP, or over-kill?). Tools `bench/retained_intron_prize.py`
+  (047e5de), `bench/build_lowintron_oracle.py` (d698d1a). Lesson reaffirmed: 0b ruled OUT flags but the
+  "therefore pairing" inference was wrong — the per-locus trace found the true (predicate) cause.
 
 ---
 
