@@ -626,6 +626,34 @@ segmentation). The mm_negative junction divergence (10170 only-ST good junctions
 known F1-catastrophic floor (§6h), not a segmentation lever. Phase 0 instrumentation
 (`junction_raw`/`good_junction`) is committed and default-OFF for future use.
 
+### Foundation parity audit (2026-05-30) — "same standpoint as ST?" = YES (4/5 layers measured)
+
+Consolidated multi-agent audit (5 layers + adversarial verify) confirming Rustle starts from ST's
+graph substrate before the known flow/transfrag divergence:
+- **Bundle envelopes**: 3351/3430 exact (98.4% of RU); 25-bundle gap = benign within-locus
+  merge/split reshaping; 10 wholesale-missing bundles all 0-tx / 0-ref. Substrate-equivalent.
+- **Bundlenodes**: 3226/3351 byte-identical (96.3%); 125 mismatched = micro-node spacers + boundary
+  jitter + junction-coupled splits. CAVEAT (adversarial refute): ≥1 GENUINE independent
+  node-construction policy diff — ST materializes intron-interior nodes from opposing-strand
+  junctions where RU leaves a gap (42 nodes; bundle 20117101-20120045 adds (20117599,20117788) under
+  byte-identical good-junctions). DOWNSTREAM-INERT (identical final tx RSTL.32.1==STRG.76.1).
+- **Graph edges**: NOT directly instrumented (both tools emit only {n_nodes,nodes}); proved by
+  REDUCTION (edges = f(nodes + accepted junctions); only-RU good=0 → RU never has a junction edge ST
+  lacks; identical on the 3226 identical-node bundles). RU has an UN-WIRED emitter
+  (parity/graph_edges_dump.rs); ST's is commented out — wiring both would convert reduced→measured.
+- **Colors**: junction-clean spans identical 1609/1610 (99.94%); 124/125 partition mismatches span an
+  only-ST good junction. No independent color-logic divergence (fully reducible to junction floor).
+- **Junctions**: RAW = same standpoint — RU raw observes 6456/6456 ST-final + 6396/6396 reference
+  introns (RU raw is a SUPERSET on the real-intron axis); only-ST raw=1003 are inert off-by-1
+  strandless ghosts (0 in final, 0 in ref). good-set = strict subset (only-RU=0), the known floor.
+
+**Propagation guarantee:** segmentation_prize = 0 true-split / 0 FP / 0 FN; every FN ref-chain has
+all introns in RU good_junction (missing_jx=[]); every FP intron resolves to junctions good in BOTH
+tools. NOT ONE final FP/FN is attributable to any substrate divergence — the problems are genuinely
+downstream (flow / path-enum / transfrag selection) on a shared substrate. Verdict: NEAR_IDENTICAL
+across all five layers (not literally byte-identical only due to the inert node-policy diff + raw
+ghosts + strict-subset good-set). Lone instrumentation gap: graph edges (proved, not measured).
+
 ---
 
 ## 7. Superseded documents
