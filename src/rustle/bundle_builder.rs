@@ -399,7 +399,12 @@ fn get_min_start(
         if let Some(gidx) = currgroup[sno] {
             if gidx < strand_data[sno].groups.len() {
                 let start = strand_data[sno].groups[gidx].start;
-                if start < min_start {
+                // ST `get_min_start` (rlink.cpp:627-668) is a pairwise cascade with
+                // strict `<`, so start-coordinate ties resolve to the HIGHER sno
+                // (0-vs-1 tie -> 1, winner-vs-2 tie -> 2). Iterating sno 0,1,2 with
+                // `<=` reproduces that exactly: on an equal start, the higher sno
+                // replaces the lower. (Using `<` here would prefer the lower sno.)
+                if start <= min_start {
                     min_start = start;
                     min_sno = Some(sno);
                 }

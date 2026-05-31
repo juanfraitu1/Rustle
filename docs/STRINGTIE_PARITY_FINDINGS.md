@@ -556,6 +556,45 @@ give selection ST-equivalent coverage and candidate sets.
 
 ---
 
+## 6j. Mechanism audits + color/CGroup divergence (2026-05-30)
+
+Three byte-level mechanism audits and one shipped fix on branch `parity/isofrac-chain-dedup`.
+
+**SHIPPED (default, inert):** `get_min_start` tie-break `bundle_builder.rs:399` changed `<`→`<=`
+so start-coordinate ties resolve to the higher `sno`, matching ST's pairwise cascade
+(`rlink.cpp:627-668`). Provably inert on GGO_19 (272/272 tied cross-strand pairs overlap; 0
+order-sensitive multi-group patterns). Bench unchanged 95.6/90.5 tx. Pure faithfulness win.
+
+**Audits — all faithful (no reachable -L divergence):**
+- *Three strands* (+/-/`.`): aligned across per-strand graphs, unstranded `neg_prop`
+  dual-placement, junction strand, cross-strand demotion. 0 strand-flipped final chains. One
+  cosmetic gap: Rustle reads only minimap2 `ts` (`bam.rs:333`); ST reads `XS` first
+  (`GSam.cpp:338`) — invisible on minimap2 data, bites only XS-bearing BAMs.
+- *compatible_long* `len[0..3]`: byte-faithful (`transfrag_process.rs:932` vs `rlink.cpp:5267`).
+  Half-open↔inclusive convention (`Rustle.end = ST.end+1`) absorbs every `+1`; gates match
+  (ssdist=25, edgedist=100, DROP=0.5). ret==2 work (febb383) did not desync it.
+- *Color union-find / CGroup*: logic faithful (min-index rep, path compression,
+  eqposcol/eqnegcol, set_strandcol). But output colors are NOT identical — see below.
+
+**Key finding — we do NOT have ST's colors (interrupted colors):**
+- NOT mm_negative (hypothesis refuted): the mm_negative reject (`graph_build.rs:845`) filters the
+  junction from the graph EDGE list but never sets `JunctionStat.strand=0`. All 3467 RU
+  mm_negative junctions keep `jstrand=±1`; zero RU junctions have `jstrand==0`.
+- Real root: production call `pipeline.rs:14819` passes `junction_stats=None`, so the color-break
+  test is `!has_good_left` (`bundle_builder.rs:137`, junction ∉ good_junctions) instead of ST's
+  `strand==0` (`rlink.cpp:1069`). `has_good_left` is strictly narrower → Rustle over-breaks color.
+  2510/2536 RU break sites (99%) land on a junction ST keeps with strand ±1.
+- Impact tempered: union-find re-merges most breaks (only 11 of 125 boundary-mismatch bundles are
+  true splits). Traced FPs: RSTL.103.1 (class p), RSTL.331.2 (class j); a third split benign.
+- Entangled — literal ST-faithful regresses: `RUSTLE_SUBBUNDLE_USE_STATS=1` (ST's strand==0 break)
+  worsens parity (bundles 3405→2569 under-segmenting; mismatches 125→155). The `None`/
+  `!has_good_left` default is a tuned compensation: Rustle over-breaks color AND over-filters
+  mm_negative edges; the two partially cancel. True faithfulness needs BOTH halves aligned, which
+  lands back in the mm_negative floor (§6h, F1-catastrophic). Both-halves experiment scoped
+  separately (design doc 2026-05-30).
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
