@@ -665,6 +665,33 @@ downstream (flow / path-enum / transfrag selection) on a shared substrate. Verdi
 across all five layers (not literally byte-identical only due to the inert node-policy diff + raw
 ghosts + strict-subset good-set). Lone instrumentation gap: graph edges (proved, not measured).
 
+### Source/sink terminal-wiring experiment (2026-05-30) — ABORT, terminal edges are read-backed not FP-causing
+
+The edge audit flagged terminal (source/sink) wiring as the first RU↔ST divergence (RU 2708 extra
+SRC/SNK edges) and the on-ramp to flow. Oracle-first experiment (spec + plan 2026-05-30):
+
+- **Phase 0a free probe:** `RUSTLE_COVLINK_RECURSE_ZERO_OFF=1` (disable RU's phantom-zero recursion)
+  changed NOTHING — extra edges stayed 2708, F1 unchanged. The phantom recursion is inert; the extra
+  edges come from RU's blanket per-node coverage-drop rule, not the recursion.
+- **Phase 0b injection oracle** (`RUSTLE_TERMINAL_ORACLE`, default OFF; `terminal_oracle.rs` +
+  `bench/terminal_oracle_report.py`): on identical-node bundles, override RU terminal edges with ST's
+  captured set. Result: **NET −4 (FP_removed 1 − TP_lost 3 − FP_added 2), F1 93.89→93.78** (Tx
+  95.6/90.5→95.4/90.4). Removing terminal edges to match ST hurt BOTH Sn and Pr → **ABORT**.
+- **Verified robust** (adversarial): the oracle fires correctly (removes 1816 SS edges, 3289/3405
+  bundles, 62 legit skips); only 518 net-dropped because two downstream stages RE-DERIVE terminal
+  connectivity from read evidence after the hook — prune source/sink auto-attach
+  (`graph_build.rs:3466-3483`, +121) and read-to-graph mapping (`map_reads.rs:1015`, +1177). The
+  re-added edges are MORE read-supported (that's why they're re-established), so fuller convergence
+  would lose MORE TPs, never reverse the sign.
+
+**Conclusion:** RU's "extra" terminal edges are **read-backed real-transcript endpoints, not FP
+sources**. Terminal wiring is NOT the over-enumeration lever and is NOT independently fixable —
+terminal connectivity is re-derived from reads at the prune, read-mapping, AND flow
+(`build_lr_edge_capacities`) stages. The FP floor remains the flow-depletion / coverage-divergence
+issue (§6h, `project_coverage_metrics_deviation`), not graph-construction terminal wiring. The first
+RU↔ST divergence point is correctness (read-backed endpoints), confirming the foundation substrate is
+sound through to flow. `terminal_oracle.rs` + report tool are committed, default-OFF, reusable.
+
 ---
 
 ## 7. Superseded documents
