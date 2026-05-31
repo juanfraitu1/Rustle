@@ -13343,6 +13343,23 @@ pub fn run<P: AsRef<Path>>(
                         tf.longread = true;
                     }
                 }
+                // Injection oracle (analysis-only, default OFF via RUSTLE_TERMINAL_ORACLE).
+                // On identical-node bundles, override RU's synthetic source/sink edge set
+                // with StringTie's captured graph_edge set + reconcile synth-transfrag
+                // abundance. Bundle key + strand-char match the graph_edge parity emit.
+                if let Some(oracle_path) = crate::stringtie_parity::terminal_oracle_path() {
+                    let oracle = crate::terminal_oracle::load_oracle(&oracle_path);
+                    let bundle_key =
+                        (graph_bundle.start + 1, graph_bundle.end, graph_bundle.strand);
+                    let _ = crate::terminal_oracle::override_terminal_edges(
+                        &mut graph_mut,
+                        bundle_key,
+                        &mut coverage_synth,
+                        &graph_bpcov_stranded,
+                        covlinks_sno,
+                        oracle,
+                    );
+                }
                 let mut longtrim_synth = longtrim_synth;
                 let mut synthetic = synthetic;
                 let mut post_prune_redirects = Default::default();
