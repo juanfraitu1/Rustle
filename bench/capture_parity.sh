@@ -8,7 +8,7 @@ cd /mnt/c/Users/jfris/Desktop/Rustle
 CHROM=NC_073243.2
 BAM=GGO_19.bam                       # cwd copy (also at ../GGO_19.bam)
 REF=/mnt/c/Users/jfris/Desktop/GGO_19.gtf
-STEPS=graphnode_list,junction_accept,junction_raw,good_junction
+STEPS=graphnode_list,junction_accept,junction_raw,good_junction,graph_edge
 
 # 1) Rustle de novo + parity log
 RUSTLE_PARITY_LOG=/tmp/ru_parity.jsonl \
