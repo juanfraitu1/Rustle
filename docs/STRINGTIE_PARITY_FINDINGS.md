@@ -745,9 +745,21 @@ mechanism (`path_extract.rs:2992/9485`). Spec+plan 2026-05-31-prediction-populat
   csr_classify: 3 CSR-FP / 0 CSR-TP (CSR recovers 0 reference TPs on GGO_19 — purely net-negative here).
   **FIRST realized over-enum reduction this session** (contrast: retained-intron was an unrealizable
   ceiling). Recommend default-flip pending approval. Tools `bench/csr_classify.py` (f7f386c).
-- **2A (donor-snap):** oracle next (`bench/donor_snap_prize.py`); narrowed `is_bad` re-enable
-  (`RUSTLE_HIGHERR_SNAP`, canonical+guide+ratio gates) if the prize clears net of the small-exon-
-  regression cost.
+- **2A (donor-snap) SHELVED — prize = 0** (`bench/donor_snap_prize.py`, 3eb6cb1). Of 158 RU-only FPs,
+  NONE has a weak donor within 25bp of a stronger one using a NON-reference intron. The donors the trace
+  flagged as snappable noise (e.g. 30800990 @ RSTL.398) are REAL reference donors; the FP isoforms
+  (RSTL.398.5/.16) are wrong COMBINATIONS of real introns (chimeric chains), not spurious-donor
+  artifacts. Snapping would destroy 29 real introns (25 isoform-TPs) for 0 prize. ABORT (cost≥prize, and
+  net still negative under the narrowed canonical/guide gate). 4th oracle correction of a trace
+  mechanism claim.
+
+**Lever-#2 net: +3 FP realized (2B opt-in); 2A shelved.** Meta-insight reinforced across all over-enum
+work: RU's FPs are wrong COMBINATIONS of REAL introns (chimeric path enumeration), not spurious building
+blocks — every building-block-level fix (retained-intron predicate, donor-snap) finds 0 realizable prize
+because the introns/donors are all real. The ONE realized win (2B) worked precisely because it suppressed
+an EXTRA RU-only mechanism (the chimeric-suffix rescue) ST lacks — a clean behavioral difference, not a
+population-matching problem. Realizable parity gains live where RU does something EXTRA vs ST (suppress
+it), NOT where RU must reproduce ST's population-dependent path selection (= the flow floor).
 
 ---
 
