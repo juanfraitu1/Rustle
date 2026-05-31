@@ -3760,12 +3760,6 @@ pub fn run_fingerprint_em(
 
         let mut result = EmResult::default();
 
-        // RUSTLE_VG_LL_NORM (default OFF): normalize the fingerprint log-likelihood to a per-site
-        // mean rescaled to the read's max covered-site count, so a copy is not favored merely for
-        // covering FEWER diagnostic sites. Fixes the confident-misassignment bug surfaced by the
-        // multi-copy oracle (true-copy-A multi-mappers assigned to copy B). VG-mode only.
-        let ll_norm = std::env::var_os("RUSTLE_VG_LL_NORM").is_some();
-
         for iter in 0..max_iter {
             // M-step: aggregate current weights into per-copy totals → log-priors.
             let mut copy_total = vec![0.0_f64; n_copies];
@@ -3782,7 +3776,6 @@ pub fn run_fingerprint_em(
             let mut max_delta: f64 = 0.0;
             for entry in &mut entries {
                 let n = entry.locs.len();
-                let n_cov_max = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
 
                 // E-step: log P(copy=k | read) ∝ fingerprint + junction_chain + alignment_id + prior.
                 //
@@ -3796,15 +3789,7 @@ pub fn run_fingerprint_em(
                 // provide structural discrimination that short reads cannot supply.
                 let log_post: Vec<f64> = (0..n)
                     .map(|i| {
-                        let fp_raw = entry.log_scores[i];
-                        // RUSTLE_VG_LL_NORM: rescale to per-site mean × max covered sites so copies
-                        // are compared on equal per-site footing (removes the fewer-sites-wins bias),
-                        // while keeping the score-gap gate's sum-scale calibration intact.
-                        let fp = if ll_norm && fp_raw.is_finite() && entry.n_sites_covered[i] > 0 && n_cov_max > 0 {
-                            fp_raw / entry.n_sites_covered[i] as f64 * n_cov_max as f64
-                        } else {
-                            fp_raw
-                        };
+                        let fp = entry.log_scores[i];
                         let j  = lambda_j  * entry.junc_scores[i];
                         let m  = lambda_nm * entry.nm_scores[i];
                         // fp is NEG_INFINITY for failed placements (ri out of range).
@@ -3825,6 +3810,7 @@ pub fn run_fingerprint_em(
                 //   require struct_gap (default 0.1 log-units) — weaker signal, lower bar.
                 //   This allows reads in conserved regions to receive soft structural
                 //   assignments that are impossible for short reads.
+                let n_cov_max = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
                 let eff_gap = if n_cov_max > 0 { gap_threshold } else { struct_gap };
                 if eff_gap > 0.0 && n >= 2 {
                     let mut best = f64::NEG_INFINITY;
