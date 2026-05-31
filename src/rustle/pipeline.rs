@@ -13782,6 +13782,43 @@ pub fn run<P: AsRef<Path>>(
                         graph_bundle.strand,
                         &payload,
                     );
+
+                    // parity_decisions: graph_edge — flow-graph adjacency (edges) for
+                    // direct cross-tool edge-set diff. Endpoint tokens use the SAME
+                    // node-coordinate convention as the `nodes` field above
+                    // ({start+1}-{end}); the synthetic source/sink become SRC/SNK.
+                    // Edges enumerated via node.children.ones() over all nodes; sorted
+                    // lexicographically so the joined string is order-independent.
+                    {
+                        let node_token = |id: usize| -> String {
+                            if id == src {
+                                "SRC".to_string()
+                            } else if id == snk {
+                                "SNK".to_string()
+                            } else {
+                                let n = &graph_mut.nodes[id];
+                                format!("{}-{}", n.start + 1, n.end)
+                            }
+                        };
+                        let mut edges: Vec<String> = Vec::new();
+                        for n in graph_mut.nodes.iter() {
+                            let from_tok = node_token(n.node_id);
+                            for to_id in n.children.ones() {
+                                edges.push(format!("{}>{}", from_tok, node_token(to_id)));
+                            }
+                        }
+                        edges.sort();
+                        let edges_str = edges.join(",");
+                        let edge_payload = format!("\"edges\":\"{}\"", edges_str);
+                        crate::parity::decisions::emit(
+                            "graph_edge",
+                            Some(&graph_bundle.chrom),
+                            graph_bundle.start + 1,
+                            graph_bundle.end,
+                            graph_bundle.strand,
+                            &edge_payload,
+                        );
+                    }
                 }
 
                 transfrags = process_transfrags(
