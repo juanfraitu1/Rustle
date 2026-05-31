@@ -1507,6 +1507,32 @@ fn merge_region_outer_bundles(
 
         let (mut junction_stats, junction_pair_stats) = compute_initial_junction_stats_for_reads(&reads, start, end, config);
 
+        // Parity: emit every RAW observed junction (pre-filter) for cross-tool junction-set diff.
+        if crate::parity::decisions::is_enabled() {
+            for (j, st) in junction_stats.iter() {
+                let strand_c = match st.strand {
+                    Some(1) => '+',
+                    Some(-1) => '-',
+                    _ => '.',
+                };
+                let payload = format!(
+                    r#""jstrand":{},"mm":{:.4},"nreads_good":{:.2},"mrcount":{:.2}"#,
+                    st.strand.map(|s| s as i64).unwrap_or(-9),
+                    st.mm,
+                    st.nreads_good,
+                    st.mrcount,
+                );
+                crate::parity::decisions::emit(
+                    "junction_raw",
+                    None,
+                    j.donor,
+                    j.acceptor + 1,
+                    strand_c,
+                    &payload,
+                );
+            }
+        }
+
         // Guide junction injection: inject missing reference junctions with synthetic evidence
         if let Ok(guide_gtf) = std::env::var("RUSTLE_INJECT_GUIDE_JUNCTIONS") {
             let min_weight = std::env::var("RUSTLE_INJECT_MIN_WEIGHT")
@@ -12095,6 +12121,20 @@ pub fn run<P: AsRef<Path>>(
                 "cgroup_feed",
                 &junction_dump::encode_junction_set_sorted(good_junctions_set.iter().copied()),
             );
+        }
+
+        // Parity: emit the FINAL good_junctions membership set (what has_good_left queries).
+        if crate::parity::decisions::is_enabled() {
+            for j in good_junctions_set.iter() {
+                crate::parity::decisions::emit(
+                    "good_junction",
+                    None,
+                    j.donor,
+                    j.acceptor + 1,
+                    '.',
+                    "",
+                );
+            }
         }
 
         if std::env::var_os("RUSTLE_DEBUG_BUNDLE").is_some() {
