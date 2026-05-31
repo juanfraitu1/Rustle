@@ -593,6 +593,39 @@ order-sensitive multi-group patterns). Bench unchanged 95.6/90.5 tx. Pure faithf
   lands back in the mm_negative floor (§6h, F1-catastrophic). Both-halves experiment scoped
   separately (design doc 2026-05-30).
 
+### Phase 0 results (2026-05-30) — junction-set parity + segmentation prize-bound → ABORT
+
+The scoped experiment's Phase 0 (analysis-only; new env-gated `junction_raw` + `good_junction`
+emits in both tools, `bench/junction_set_diff.py`, `bench/segmentation_prize.py`) ran. Result:
+**ABORT — Phase 1 (the two-halves color+mm_negative alignment) is shelved as F1-irrelevant.**
+
+**Junction-set parity (the definitive "do we have ST's junctions?" answer):**
+- Layer 1 RAW: shared=17464, only-RU=2, only-ST=1004 — the tools nearly agree on observed junctions
+  (ST sees ~1004 RU never does).
+- Layer 3 good_junction membership: shared=7307, **only-RU=0**, **only-ST=10170**. Rustle's kept set
+  is a STRICT SUBSET of ST's; ST keeps 10170 junctions Rustle drops (and Rustle keeps none ST drops).
+- Divergent (ST keeps, RU drops, both observed) = 10157: `not_in_ru_accept`=6403, `mm_negative`=3355
+  (matches the known shadow Layer-1 figure), `strand_mismatch`=399. This is the support-accounting +
+  mm_negative floor (§6h), not a new mechanism.
+
+**Segmentation prize-bound (the abort gate):** net reachable FP+FN from perfect ST segmentation =
+**0**. The tool first reported 6, but adversarial verification found (a) a load-bearing bug — the
+split detector's containment filter dropped the real spanning RU bundle before the spanning guard
+ran, miscounting single-exon side-bundles (which ST emits too) as fragments → 11 phantom splits; and
+(b) causal prize 0 — every attributed FP is within-bundle over-enumeration (one, RSTL.284.2, is in
+ST's own output) and every FN is alt-splice / splice-precision (e.g. a 4bp acceptor shift), none
+caused by segmentation. After the fix (`bench/segmentation_prize.py`, commit 5801f51): **0 true
+splits, 0 FP, 0 FN.**
+
+**Conclusion:** Rustle's bundle segmentation already MATCHES ST's at every divergent locus — it has a
+spanning bundle there; the "125 mismatched bundles" (graphnode_diff) are single-exon side-bundle
+differences + spanning-overshoot, NOT fragmentation. So aligning colors/mm_negative to ST would fix
+nothing in the final output. The color divergence (§6j) is confirmed **structurally negligible for
+F1**. Residual at those loci is isoform over-enumeration + splice-site precision (orthogonal to
+segmentation). The mm_negative junction divergence (10170 only-ST good junctions) is real but is the
+known F1-catastrophic floor (§6h), not a segmentation lever. Phase 0 instrumentation
+(`junction_raw`/`good_junction`) is committed and default-OFF for future use.
+
 ---
 
 ## 7. Superseded documents
