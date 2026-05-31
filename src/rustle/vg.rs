@@ -442,64 +442,73 @@ pub fn compute_family_graph_kmer_jaccard_diag(
     genome: &crate::genome::GenomeIndex,
     kmer_len: usize,
 ) -> (Option<f64>, Option<&'static str>) {
-    // Mixed-strand families fail build_family_graph, so partition first
-    // (same approach as vg_hmm/rescue.rs uses). For the k-mer Jaccard score
-    // we use the LARGEST single-strand sub-family — this is the "primary"
-    // paralog cluster on one strand. Sub-families with <2 copies are
-    // ignored (no pairs to compute Jaccard over).
-    let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
-    let largest = match sub_families.into_iter()
-        .filter(|f| f.bundle_indices.len() >= 2)
-        .max_by_key(|f| f.bundle_indices.len())
-    {
-        Some(f) => f,
-        None => return (None, Some("no_substrand_with_2_copies")),
-    };
-    let fg = match crate::vg_hmm::family_graph::build_family_graph(
-        &largest, bundles, Some(genome), 0.30, 0.30, 0.30,
-    ) {
-        Ok(g) => g,
-        Err(_) => return (None, Some("graph_build_err")),
-    };
-    if fg.nodes.is_empty() {
-        return (None, Some("graph_empty"));
+    // CANONICAL FNV-1a k-mer hash: min(forward, reverse-complement). A sequence and its
+    // reverse-complement produce identical canonical k-mer sets, so INVERTED homologs
+    // (e.g. DAZ1 on - strand vs DAZ3 on + strand) share k-mers and get a real Jaccard
+    // instead of being dropped at 0.000. True artifacts stay low in both orientations.
+    fn canonical_kmer_hash(window: &[u8]) -> u64 {
+        fn fnv(it: impl Iterator<Item = u8>) -> u64 {
+            let mut h: u64 = 0xcbf29ce484222325;
+            for b in it {
+                h ^= b as u64;
+                h = h.wrapping_mul(0x100000001b3);
+            }
+            h
+        }
+        let fwd = fnv(window.iter().copied());
+        let rc = fnv(window.iter().rev().map(|&b| match b {
+            b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C', other => other,
+        }));
+        fwd.min(rc)
     }
-    let n_copies = largest.bundle_indices.len();
-    let mut kmer_sets: Vec<crate::types::DetHashSet<u64>> =
-        (0..n_copies).map(|_| crate::types::DetHashSet::default()).collect();
-    for node in &fg.nodes {
-        for (cid, seq) in &node.per_copy_sequences {
-            if *cid >= n_copies { continue; }
-            if seq.len() < kmer_len { continue; }
-            for window in seq.windows(kmer_len) {
-                if window.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
-                    let h = {
-                        // Same FNV-1a hash as the rescue prefilter.
-                        let mut h: u64 = 0xcbf29ce484222325;
-                        for &b in window {
-                            h ^= b as u64;
-                            h = h.wrapping_mul(0x100000001b3);
-                        }
-                        h
-                    };
-                    kmer_sets[*cid].insert(h);
+
+    // build_family_graph is single-strand, so partition by strand and accumulate a
+    // canonical-k-mer set per copy across ALL sub-families. This scores the cross-strand
+    // homologous pair (the inverted-paralog case) rather than only the largest same-strand
+    // sub-family (which for inverted families is often unrelated bundles -> jaccard 0).
+    let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+    let mut all_kmer_sets: Vec<crate::types::DetHashSet<u64>> = Vec::new();
+    let mut built_any = false;
+    for sub in &sub_families {
+        if sub.bundle_indices.is_empty() { continue; }
+        let fg = match crate::vg_hmm::family_graph::build_family_graph(
+            sub, bundles, Some(genome), 0.30, 0.30, 0.30,
+        ) {
+            Ok(g) => g,
+            Err(_) => continue,
+        };
+        if fg.nodes.is_empty() { continue; }
+        built_any = true;
+        let n_copies = sub.bundle_indices.len();
+        let mut sets: Vec<crate::types::DetHashSet<u64>> =
+            (0..n_copies).map(|_| crate::types::DetHashSet::default()).collect();
+        for node in &fg.nodes {
+            for (cid, seq) in &node.per_copy_sequences {
+                if *cid >= n_copies { continue; }
+                if seq.len() < kmer_len { continue; }
+                for window in seq.windows(kmer_len) {
+                    if window.iter().all(|&b| matches!(b, b'A' | b'C' | b'G' | b'T')) {
+                        sets[*cid].insert(canonical_kmer_hash(window));
+                    }
                 }
             }
         }
+        for s in sets {
+            if !s.is_empty() { all_kmer_sets.push(s); }
+        }
     }
-    // Mean pairwise Jaccard over copies that have any k-mers.
-    let with_kmers: Vec<&crate::types::DetHashSet<u64>> = kmer_sets.iter()
-        .filter(|s| !s.is_empty())
-        .collect();
-    if with_kmers.len() < 2 {
+    if !built_any {
+        return (None, Some("graph_build_err"));
+    }
+    if all_kmer_sets.len() < 2 {
         return (None, Some("fewer_than_2_copies_with_kmers"));
     }
     let mut sum = 0.0_f64;
     let mut n_pairs = 0usize;
-    for i in 0..with_kmers.len() {
-        for j in (i + 1)..with_kmers.len() {
-            let inter = with_kmers[i].intersection(with_kmers[j]).count();
-            let uni = with_kmers[i].union(with_kmers[j]).count();
+    for i in 0..all_kmer_sets.len() {
+        for j in (i + 1)..all_kmer_sets.len() {
+            let inter = all_kmer_sets[i].intersection(&all_kmer_sets[j]).count();
+            let uni = all_kmer_sets[i].union(&all_kmer_sets[j]).count();
             if uni > 0 {
                 sum += inter as f64 / uni as f64;
                 n_pairs += 1;
