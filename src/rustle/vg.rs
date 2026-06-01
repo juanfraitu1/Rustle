@@ -2711,6 +2711,383 @@ pub fn build_exon_fingerprints(
     ExonFingerprints { sites, per_copy_site_refs: per_copy_refs, n_copies, n_sites }
 }
 
+// ===========================================================================
+// enumerate_diagnostic_sites — find divergent sites by syntenic exon-pair
+// alignment.
+//
+// build_exon_fingerprints compares the per-copy sequences that the k-mer merge
+// happened to group into the SAME ExonClass. For genuinely-divergent copies
+// (5-7% divergence) the homologous exons land in SEPARATE ExonClasses, so they
+// are never compared and the function reports 0 sites. This finder instead
+// matches homologous exons ACROSS copies by genomic synteny + minimizer
+// anchoring, then diffs them base-by-base.
+//
+// Everything stored is in GENOME-FORWARD frame (same frame as BundleRead.exons
+// and BundleRead.mismatches), so the scorer can intersect ref_pos with the
+// read and compare the stored allele directly. To avoid per-base complement
+// bugs, each exon's sequence is materialized genome-forward up front (revcomp
+// when the node strand is '-'); after that, genomic position of offset `o` is
+// always `span.start + o` and the stored allele is always `gf_seq[o]`.
+// ===========================================================================
+
+/// One copy's exon, in genome-forward frame.
+/// `(span_start, span_end, genome_forward_sequence)`.
+struct GfExon {
+    start: u64,
+    /// Genomic end (exclusive). Retained for clarity/debugging; genome-forward
+    /// positions are computed from `start + offset`.
+    #[allow(dead_code)]
+    end: u64,
+    seq: Vec<u8>,
+}
+
+/// Reverse-complement a nucleotide sequence (uppercased ACGT; other bytes
+/// map to 'N' so they never match a real allele).
+fn revcomp(seq: &[u8]) -> Vec<u8> {
+    seq.iter().rev().map(|&b| match b.to_ascii_uppercase() {
+        b'A' => b'T',
+        b'C' => b'G',
+        b'G' => b'C',
+        b'T' => b'A',
+        _ => b'N',
+    }).collect()
+}
+
+#[inline]
+fn is_acgt(b: u8) -> bool {
+    matches!(b, b'A' | b'C' | b'G' | b'T')
+}
+
+/// Jaccard similarity of the two exons' minimizer sets (k=15, w=10).
+///
+/// Returns `None` when neither sequence is long enough to produce any
+/// minimizers (len < k): the pairing cannot be evaluated by minimizers and the
+/// caller must fall back to positional synteny rather than rejecting a possibly
+/// homologous short exon.
+fn minimizer_jaccard(a: &[u8], b: &[u8]) -> Option<f64> {
+    let ma = crate::vg_hmm::family_graph::minimizers(a, 15, 10);
+    let mb = crate::vg_hmm::family_graph::minimizers(b, 15, 10);
+    let union = ma.union(&mb).count();
+    if union == 0 {
+        return None; // too short to evaluate
+    }
+    Some(ma.intersection(&mb).count() as f64 / union as f64)
+}
+
+/// Compare two equal-or-unequal-length genome-forward exon sequences and return
+/// the divergent columns as `(offset_in_a, base_a, offset_in_b, base_b)`.
+/// Equal length → gapless. Unequal length → minimizer-anchored: chain co-linear
+/// shared k-mer anchors, compare gaplessly within equal-length anchor-to-anchor
+/// blocks, and SKIP indel gaps (never emit a site inside an indel).
+fn diff_gf_exons(a: &[u8], b: &[u8]) -> Vec<(usize, u8, usize, u8)> {
+    if a.len() == b.len() {
+        return diff_equal_len(a, 0, b, 0);
+    }
+    diff_anchored(a, b)
+}
+
+/// Gapless diff of two equal-length windows starting at absolute offsets
+/// `(off_a, off_b)` in their parent sequences. `a`/`b` here are the windows.
+fn diff_equal_len(a: &[u8], off_a: usize, b: &[u8], off_b: usize) -> Vec<(usize, u8, usize, u8)> {
+    debug_assert_eq!(a.len(), b.len());
+    let mut out = Vec::new();
+    for o in 0..a.len() {
+        let ba = a[o].to_ascii_uppercase();
+        let bb = b[o].to_ascii_uppercase();
+        if is_acgt(ba) && is_acgt(bb) && ba != bb {
+            out.push((off_a + o, ba, off_b + o, bb));
+        }
+    }
+    out
+}
+
+/// Minimizer-anchored diff for unequal-length exon pairs. Finds shared k-mer
+/// anchors, chains them into a co-linear, strictly-increasing set, then diffs
+/// the equal-length runs between consecutive anchors. Indel gaps (where the two
+/// sides advance by different amounts) emit no sites.
+fn diff_anchored(a: &[u8], b: &[u8]) -> Vec<(usize, u8, usize, u8)> {
+    const K: usize = 12;
+    if a.len() < K || b.len() < K {
+        // Too short to anchor — fall back to a gapless diff over the common
+        // prefix length (safe: only emits sites where both sides have a base).
+        let n = a.len().min(b.len());
+        return diff_equal_len(&a[..n], 0, &b[..n], 0);
+    }
+
+    // Map each k-mer hash in `b` to its FIRST position (left-most), so a unique
+    // k-mer anchors deterministically.
+    let mut b_pos: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+    let mut b_seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut b_dup: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    for i in 0..=(b.len() - K) {
+        let h = fnv1a_kmer(&b[i..i + K]);
+        if b_seen.contains(&h) {
+            b_dup.insert(h);
+        } else {
+            b_seen.insert(h);
+            b_pos.insert(h, i);
+        }
+    }
+
+    // Walk `a`'s k-mers; collect (pos_a, pos_b) anchors for UNIQUE shared k-mers
+    // (skip k-mers that repeat on either side — ambiguous).
+    let mut a_seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut a_dup: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    for i in 0..=(a.len() - K) {
+        let h = fnv1a_kmer(&a[i..i + K]);
+        if a_seen.contains(&h) {
+            a_dup.insert(h);
+        } else {
+            a_seen.insert(h);
+        }
+    }
+    let mut anchors: Vec<(usize, usize)> = Vec::new();
+    for i in 0..=(a.len() - K) {
+        let h = fnv1a_kmer(&a[i..i + K]);
+        if a_dup.contains(&h) || b_dup.contains(&h) {
+            continue;
+        }
+        if let Some(&j) = b_pos.get(&h) {
+            anchors.push((i, j));
+        }
+    }
+    // Chain anchors to a strictly-increasing co-linear set on BOTH axes (LIS on
+    // pos_b after sorting by pos_a). anchors are already sorted by pos_a here
+    // (we walked i ascending), but duplicates of pos_a can't occur for a unique
+    // k-mer, so a simple greedy keep-if-increasing chain on pos_b is enough to
+    // stay co-linear.
+    let mut chained: Vec<(usize, usize)> = Vec::new();
+    let mut last_b: i64 = -1;
+    for &(ia, jb) in &anchors {
+        if (jb as i64) > last_b {
+            chained.push((ia, jb));
+            last_b = jb as i64;
+        }
+    }
+    if chained.is_empty() {
+        let n = a.len().min(b.len());
+        return diff_equal_len(&a[..n], 0, &b[..n], 0);
+    }
+
+    let mut out = Vec::new();
+    // Diff the run BEFORE the first anchor (align right-to-left from the anchor:
+    // compare equal-length suffix that abuts the anchor). To keep it simple and
+    // indel-safe, only diff the leading block if both leading lengths are equal.
+    let (first_a, first_b) = chained[0];
+    if first_a == first_b && first_a > 0 {
+        out.extend(diff_equal_len(&a[..first_a], 0, &b[..first_b], 0));
+    }
+    // Diff equal-length blocks between consecutive anchors; skip indel gaps.
+    for w in chained.windows(2) {
+        let (ia0, jb0) = w[0];
+        let (ia1, jb1) = w[1];
+        // The matched k-mer itself is identical; advance past its first base and
+        // compare the inter-anchor block.
+        let block_a_start = ia0;
+        let block_b_start = jb0;
+        let len_a = ia1 - ia0;
+        let len_b = jb1 - jb0;
+        if len_a == len_b {
+            // No indel between these anchors → gapless diff of the whole block.
+            out.extend(diff_equal_len(
+                &a[block_a_start..ia1],
+                block_a_start,
+                &b[block_b_start..jb1],
+                block_b_start,
+            ));
+        } else {
+            // Indel between anchors. Diff the K-base anchor itself (identical, no
+            // sites) and SKIP the variable-length gap — never emit a site there.
+            // The anchor k-mer guarantees a[ia0..ia0+K] == b[jb0..jb0+K], so no
+            // sites are lost by skipping the gap.
+        }
+    }
+    // Diff the run AFTER the last anchor if both trailing lengths are equal.
+    let (last_a, last_b_pos) = *chained.last().unwrap();
+    let tail_a = a.len() - last_a;
+    let tail_b = b.len() - last_b_pos;
+    if tail_a == tail_b && tail_a > 0 {
+        out.extend(diff_equal_len(
+            &a[last_a..],
+            last_a,
+            &b[last_b_pos..],
+            last_b_pos,
+        ));
+    }
+    // The inter-anchor blocks above start at the anchor's first base, so adjacent
+    // blocks share the anchor base. Dedup by (offset_a) to avoid double-counting
+    // a divergent column that two adjacent equal-length blocks both cover (only
+    // possible at exact anchor boundaries, which are identical so emit nothing,
+    // but dedup defensively).
+    out.sort_unstable_by_key(|&(oa, _, _, _)| oa);
+    out.dedup_by_key(|&mut (oa, _, _, _)| oa);
+    out
+}
+
+/// FNV-1a hash of a k-mer (mirrors family_graph's private fnv1a so anchoring is
+/// deterministic and self-contained).
+fn fnv1a_kmer(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in bytes {
+        h ^= b.to_ascii_uppercase() as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+/// Match homologous exons across two copies (already genome-forward, sorted by
+/// genomic start) by synteny + minimizer overlap. Returns index pairs `(i, j)`
+/// into `ea`/`eb`. Walks both lists in genomic order; validates each candidate
+/// pairing with a minimizer-Jaccard floor and re-syncs (advances the list whose
+/// next exon is the better match) when a positional pairing fails.
+fn syntenic_exon_pairs(ea: &[GfExon], eb: &[GfExon]) -> Vec<(usize, usize)> {
+    const JACCARD_FLOOR: f64 = 0.05;
+    // When minimizers can't be computed (exon too short for k=15) the pairing is
+    // accepted on positional synteny alone — short exons are common and would
+    // otherwise never be diffed.
+    let passes = |a: &[u8], b: &[u8]| -> bool {
+        match minimizer_jaccard(a, b) {
+            Some(j) => j >= JACCARD_FLOOR,
+            None => true, // cannot evaluate → trust genomic synteny
+        }
+    };
+    // Score for the re-sync lookahead: -1.0 means "definitely not homologous"
+    // (evaluable and below floor); short/unevaluable pairings score 0.0 so they
+    // neither strongly attract nor repel the walk.
+    let lookahead = |a: &[u8], b: &[u8]| -> f64 {
+        match minimizer_jaccard(a, b) {
+            Some(j) => j,
+            None => 0.0,
+        }
+    };
+    let mut pairs = Vec::new();
+    let (mut i, mut j) = (0usize, 0usize);
+    while i < ea.len() && j < eb.len() {
+        if passes(&ea[i].seq, &eb[j].seq) {
+            pairs.push((i, j));
+            i += 1;
+            j += 1;
+            continue;
+        }
+        // Not homologous at this positional pairing. Decide which list to
+        // advance: look one ahead on each side and advance toward the better
+        // match. If neither lookahead helps, advance the lower-start exon.
+        let adv_i = if i + 1 < ea.len() {
+            lookahead(&ea[i + 1].seq, &eb[j].seq)
+        } else {
+            -1.0
+        };
+        let adv_j = if j + 1 < eb.len() {
+            lookahead(&ea[i].seq, &eb[j + 1].seq)
+        } else {
+            -1.0
+        };
+        if adv_i >= JACCARD_FLOOR && adv_i >= adv_j {
+            // ea[i] is an unmatched (inserted) exon — skip it.
+            i += 1;
+        } else if adv_j >= JACCARD_FLOOR && adv_j > adv_i {
+            // eb[j] is an unmatched (inserted) exon — skip it.
+            j += 1;
+        } else {
+            // No nearby homolog either way — skip the exon with the lower start
+            // to make monotone progress.
+            if ea[i].start <= eb[j].start {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+    }
+    pairs
+}
+
+/// Enumerate divergent sites between copies by syntenic exon-pair comparison.
+///
+/// Replaces the broken exon-relative inner loop of `build_exon_fingerprints`:
+/// homologous exons may sit in SEPARATE ExonClasses (the k-mer merge fails at
+/// 5-7% divergence), so we match exons across copies by genomic synteny +
+/// minimizer anchoring here, diff them base-by-base, and emit sites in
+/// genome-forward coordinates with strand-correct (genome-forward) alleles —
+/// exactly the frame `score_read_exon_fingerprint` consumes.
+pub fn enumerate_diagnostic_sites(
+    fg: &crate::vg_hmm::family_graph::FamilyGraph,
+    n_copies: usize,
+) -> ExonFingerprints {
+    // 1. Per copy: collect genome-forward exons from every node that has BOTH a
+    //    per_copy_spans entry and a per_copy_sequences entry for the copy. The
+    //    sequence is materialized genome-forward up front (revcomp on '-').
+    let mut exons_by_copy: Vec<Vec<GfExon>> = (0..n_copies).map(|_| Vec::new()).collect();
+    for node in &fg.nodes {
+        for &(cid, (s, e)) in &node.per_copy_spans {
+            if cid >= n_copies {
+                continue;
+            }
+            if let Some((_, seq)) = node.per_copy_sequences.iter().find(|(c, _)| *c == cid) {
+                let gf = if node.strand == '-' {
+                    revcomp(seq)
+                } else {
+                    seq.iter().map(|b| b.to_ascii_uppercase()).collect()
+                };
+                exons_by_copy[cid].push(GfExon { start: s, end: e, seq: gf });
+            }
+        }
+    }
+    for v in &mut exons_by_copy {
+        v.sort_by_key(|x| x.start);
+    }
+
+    let mut sites: Vec<ExonVariantSite> = Vec::new();
+    let mut per_copy_refs: Vec<Vec<(usize, u64, u8)>> = (0..n_copies).map(|_| Vec::new()).collect();
+
+    // 2. For each unordered copy pair, match syntenic exons and diff them.
+    for i in 0..n_copies {
+        for j in (i + 1)..n_copies {
+            if exons_by_copy[i].is_empty() || exons_by_copy[j].is_empty() {
+                continue;
+            }
+            for (ei, ej) in syntenic_exon_pairs(&exons_by_copy[i], &exons_by_copy[j]) {
+                let ex_a = &exons_by_copy[i][ei];
+                let ex_b = &exons_by_copy[j][ej];
+                for (oa, ba, ob, bb) in diff_gf_exons(&ex_a.seq, &ex_b.seq) {
+                    // genome-forward: genomic pos = span.start + offset; allele is
+                    // the genome-forward base already in `seq`.
+                    let pos_i = ex_a.start + oa as u64;
+                    let pos_j = ex_b.start + ob as u64;
+                    let site_idx = sites.len();
+                    per_copy_refs[i].push((site_idx, pos_i, ba));
+                    per_copy_refs[j].push((site_idx, pos_j, bb));
+                    sites.push(ExonVariantSite { copy_bases: vec![(i, ba), (j, bb)] });
+                }
+            }
+        }
+    }
+
+    // 3. Per copy: sort by ref_pos and dedup so a position found in multiple
+    //    pairs collapses to one entry per copy.
+    for refs in &mut per_copy_refs {
+        refs.sort_unstable_by_key(|&(_, p, _)| p);
+        refs.dedup_by_key(|&mut (_, p, _)| p);
+    }
+
+    let n_sites = sites.len();
+
+    if std::env::var_os("RUSTLE_VG_FP_SITE_TRACE").is_some() {
+        eprintln!(
+            "[FP-SITE-TRACE] n_copies={} n_sites={}",
+            n_copies, n_sites
+        );
+        for cid in 0..n_copies {
+            eprintln!(
+                "[FP-SITE-TRACE]   copy {} sites={}",
+                cid,
+                per_copy_refs[cid].len()
+            );
+        }
+    }
+
+    ExonFingerprints { sites, per_copy_site_refs: per_copy_refs, n_copies, n_sites }
+}
+
 /// Compute log-likelihood scores for each copy given a multi-mapping read.
 ///
 /// `copy_idx` is the copy that this `BundleRead` is aligned to — it selects
@@ -4961,5 +5338,206 @@ mod tests {
             "junction+NM should widen the gap over fingerprint alone: \
              combined {combined_gap:.3} > fp-only {fp_gap_only:.3}"
         );
+    }
+}
+
+#[cfg(test)]
+mod vg_phasing_sites {
+    use super::*;
+    use crate::vg_hmm::family_graph::{ExonClass, FamilyGraph, NodeIdx};
+
+    /// Build a single ExonClass node carrying per-copy sequences (on the
+    /// TRANSCRIPT strand) and per-copy genomic spans, with an explicit node
+    /// strand. Used to construct minimal FamilyGraph fixtures for
+    /// enumerate_diagnostic_sites.
+    fn node(
+        idx: usize,
+        strand: char,
+        copies: &[(usize, &[u8], (u64, u64))],
+    ) -> ExonClass {
+        let span = copies.iter().map(|(_, _, (s, e))| (*s, *e))
+            .fold((u64::MAX, 0u64), |(lo, hi), (s, e)| (lo.min(s), hi.max(e)));
+        ExonClass {
+            idx: NodeIdx(idx),
+            chrom: "chrT".into(),
+            span,
+            strand,
+            per_copy_sequences: copies.iter().map(|(c, s, _)| (*c, s.to_vec())).collect(),
+            per_copy_spans: copies.iter().map(|(c, _, sp)| (*c, *sp)).collect(),
+            copy_specific: copies.len() == 1,
+            profile: None,
+            per_copy_profiles: vec![],
+            per_copy_cov: vec![],
+        }
+    }
+
+    fn refs_pos_base(refs: &[(usize, u64, u8)]) -> Vec<(u64, char)> {
+        refs.iter().map(|&(_, p, b)| (p, b as char)).collect()
+    }
+
+    /// Test 1 — forward SNP. copy0 exon @100..105 "ACGTA" (+), copy1 exon
+    /// @500..505 "ACCTA" (+) differ at offset 2 → one site at genomic 102/'G'
+    /// (copy0) and 502/'C' (copy1).
+    #[test]
+    fn forward_snp_genomic_coords() {
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![node(0, '+', &[(0, b"ACGTA", (100, 105)), (1, b"ACCTA", (500, 505))])],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        assert_eq!(fp.n_sites, 1, "one divergent column");
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(102, 'G')]);
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(502, 'C')]);
+    }
+
+    /// Test 2 — two SNPs equal-length. copy0 "ACGTA", copy1 "TCGTT" differ at
+    /// offsets 0 and 4 → two sites at the right genomic coords.
+    #[test]
+    fn two_snps_equal_length() {
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![node(0, '+', &[(0, b"ACGTA", (100, 105)), (1, b"TCGTT", (500, 505))])],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        assert_eq!(fp.n_sites, 2, "two divergent columns");
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(100, 'A'), (104, 'A')]);
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(500, 'T'), (504, 'T')]);
+    }
+
+    /// Test 3 — minus strand. copy0 is a '-' exon at (100,105) whose TRANSCRIPT
+    /// sequence is "ACGTA" → genome-forward = revcomp = "TACGT". copy1 is '+' at
+    /// (500,505) "TAGGT" — genome-forward seqs "TACGT" vs "TAGGT" differ at
+    /// genome-forward offset 2 → divergent site. copy0's genomic pos = 100+2 =
+    /// 102 carrying genome-forward base 'C' (from "TACGT", NOT 'G' from "ACGTA").
+    #[test]
+    fn minus_strand_stores_genome_forward_base() {
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![
+                // transcript "ACGTA" on '-' → genome-forward "TACGT"
+                node(0, '-', &[(0, b"ACGTA", (100, 105))]),
+                node(1, '+', &[(1, b"TAGGT", (500, 505))]),
+            ],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        assert_eq!(fp.n_sites, 1, "one divergent column on genome-forward frame");
+        // copy0 genome-forward "TACGT": offset 2 = 'C' at genomic 102.
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(102, 'C')]);
+        // copy1 genome-forward "TAGGT": offset 2 = 'G' at genomic 502.
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(502, 'G')]);
+    }
+
+    /// Test 4 — inverted pair. copy0 '+' ascending "ACGTA"@(100,105); copy1 '-'
+    /// whose genome-forward seq is "ACCTA" (transcript = revcomp = "TAGGT") at
+    /// (500,505). Both genome-forward seqs homologous, one SNP at offset 2 →
+    /// sites map to correct genomic coords on both copies.
+    #[test]
+    fn inverted_pair_maps_both_copies() {
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![
+                node(0, '+', &[(0, b"ACGTA", (100, 105))]),
+                // genome-forward "ACCTA" → transcript on '-' = revcomp("ACCTA") = "TAGGT"
+                node(1, '-', &[(1, b"TAGGT", (500, 505))]),
+            ],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        assert_eq!(fp.n_sites, 1, "one divergent column");
+        // copy0 genome-forward "ACGTA": offset 2 = 'G' @ 102.
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(102, 'G')]);
+        // copy1 genome-forward "ACCTA": offset 2 = 'C' @ 502.
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(502, 'C')]);
+    }
+
+    /// Test 5 — unequal length / indel. copy1 has a 1-bp insertion upstream of a
+    /// SNP. With the insertion absorbed by anchoring, the downstream SNP maps to
+    /// its correct genomic position and NO spurious site is emitted in the gap.
+    #[test]
+    fn unequal_length_indel_skips_gap() {
+        // copy0: AAAAAAAAAACGTACGTACGTACGTGAAAAAAAAAA  (len 36)
+        // copy1: AAAAAAAAAACGTACGTACGTACGTGTAAAAAAAAAA (len 37) — extra 'T' after the
+        //        long shared prefix; then a SNP further downstream.
+        // Construct: shared anchor prefix, then insertion in copy1, then shared
+        // anchor, then a single SNP, then shared anchor suffix.
+        let pre = b"GACTGACTGACTGACTGACT"; // 20bp shared anchor-rich prefix
+        let mid = b"CACACACACACACACACACA"; // 20bp shared block (post-insertion)
+        let suf = b"TGTGTGTGTGTGTGTGTGTG"; // 20bp shared suffix
+        // copy0: pre + mid + suf, with a SNP planted at a position in `suf`.
+        // copy1: pre + "A"(insertion) + mid + suf' (same SNP region but base differs).
+        let mut c0: Vec<u8> = Vec::new();
+        c0.extend_from_slice(pre);
+        c0.extend_from_slice(mid);
+        c0.extend_from_slice(suf);
+        let snp_off_c0 = pre.len() + mid.len() + 10; // a 'T' in suf at offset 10
+        c0[snp_off_c0] = b'T';
+
+        let mut c1: Vec<u8> = Vec::new();
+        c1.extend_from_slice(pre);
+        c1.push(b'A'); // 1bp insertion
+        c1.extend_from_slice(mid);
+        c1.extend_from_slice(suf);
+        let snp_off_c1 = pre.len() + 1 + mid.len() + 10;
+        c1[snp_off_c1] = b'C'; // divergent base at the homologous position
+
+        let len0 = c0.len() as u64;
+        let len1 = c1.len() as u64;
+        let leaked: &'static [u8] = Box::leak(c0.clone().into_boxed_slice());
+        let leaked1: &'static [u8] = Box::leak(c1.clone().into_boxed_slice());
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![
+                node(0, '+', &[(0, leaked, (100, 100 + len0))]),
+                node(1, '+', &[(1, leaked1, (500, 500 + len1))]),
+            ],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        // Exactly one divergent site (the SNP); the insertion gap emits nothing.
+        assert_eq!(fp.n_sites, 1, "only the SNP, no spurious gap sites: {:?}", fp.per_copy_site_refs);
+        // copy0 SNP genomic position = 100 + snp_off_c0.
+        assert_eq!(
+            refs_pos_base(&fp.per_copy_site_refs[0]),
+            vec![(100 + snp_off_c0 as u64, 'T')]
+        );
+        // copy1 SNP genomic position = 500 + snp_off_c1 (shifted by the insertion).
+        assert_eq!(
+            refs_pos_base(&fp.per_copy_site_refs[1]),
+            vec![(500 + snp_off_c1 as u64, 'C')]
+        );
+    }
+
+    /// Test 6a — single-copy class contributes nothing.
+    #[test]
+    fn single_copy_class_contributes_nothing() {
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![node(0, '+', &[(0, b"ACGTACGTAC", (100, 110))])],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        assert_eq!(fp.n_sites, 0);
+        assert!(fp.per_copy_site_refs[0].is_empty());
+        assert!(fp.per_copy_site_refs[1].is_empty());
+    }
+
+    /// Test 6b — all-identical pair → n_sites == 0.
+    #[test]
+    fn identical_pair_yields_no_sites() {
+        let fg = FamilyGraph {
+            family_id: 0,
+            nodes: vec![node(0, '+', &[
+                (0, b"ACGTACGTAC", (100, 110)),
+                (1, b"ACGTACGTAC", (500, 510)),
+            ])],
+            edges: vec![],
+        };
+        let fp = enumerate_diagnostic_sites(&fg, 2);
+        assert_eq!(fp.n_sites, 0, "identical copies yield zero sites");
+        assert!(fp.per_copy_site_refs[0].is_empty());
+        assert!(fp.per_copy_site_refs[1].is_empty());
     }
 }

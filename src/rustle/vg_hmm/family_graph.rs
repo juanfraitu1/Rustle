@@ -235,7 +235,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     h
 }
 
-fn minimizers(seq: &[u8], k: usize, w: usize) -> HashSet<u64> {
+pub(crate) fn minimizers(seq: &[u8], k: usize, w: usize) -> HashSet<u64> {
     let mut out = HashSet::new();
     if seq.len() < k { return out; }
     let n = seq.len() - k + 1;
