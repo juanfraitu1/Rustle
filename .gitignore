@@ -83,3 +83,4 @@
 #    corresponding README.md.
 *.tsv.gz
 *.gtf.gz
+.superpowers/
