@@ -1618,6 +1618,11 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
             .map(|b| b.reads.iter().any(|r| r.exons.len() >= 2 || !r.junctions.is_empty()))
             .unwrap_or(false)
     };
+    // Scope gate: spec §7 scopes the core definition to spliced families. We use
+    // ANY copy spliced (not ALL): a family with one spliced gene + an intronless
+    // retro/pseudogene sibling is still routed through classification (the spliced
+    // gene is the real assembly target). Only a wholly single-exon family is
+    // SingleExonOutOfScope. This is a deliberate lenient reading of the per-copy wording.
     let any_spliced = (0..n_copies).any(copy_spliced);
 
     let mut owns: Vec<usize> = vec![0; n_copies];
