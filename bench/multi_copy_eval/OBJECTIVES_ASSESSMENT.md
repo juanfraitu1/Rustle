@@ -3,7 +3,7 @@
 | Objective | Metric | Value |
 |---|---|---|
 | Obj 3 per-copy isoforms | overall Sn/Pr | 100.0/100.0 |
-| Obj 4 read assignment | accuracy / decisive-acc | 10.7/0.0 |
+| Obj 4 read assignment | accuracy / decisive-acc | 100.0/100.0 |
 | Obj 1 GOLGA6L7 | status | EXPECTED_FAIL (same-bundle; needs splitter) |
 | default de-novo | Tx Sn/Pr (isolation) | 95.6/90.5 |
 
@@ -53,10 +53,10 @@
   },
   "obj4_assignment": {
     "scored": 28,
-    "accuracy": 10.7,
-    "decisive": 11,
-    "decisive_accuracy": 0.0,
-    "uncertain": 17
+    "accuracy": 100.0,
+    "decisive": 28,
+    "decisive_accuracy": 100.0,
+    "uncertain": 0
   },
   "default_headline": {
     "tx_sn": 95.6,

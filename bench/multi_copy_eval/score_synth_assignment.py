@@ -48,8 +48,17 @@ def copyid_to_locus(gtf):
 def main():
     rustle = sys.argv[sys.argv.index("--rustle")+1] if "--rustle" in sys.argv else os.path.join(REPO,"target","release","rustle")
     attr = "/tmp/synth_assign.attr.tsv"; gtf = "/tmp/synth_assign.gtf"
+    # rustle opens RUSTLE_VG_FP_ATTR_TSV in APPEND mode (multiple families append
+    # within one run). Across runs that accumulates stale rows, so the argmax over
+    # mixed old+new rows is corrupted. Clear it before every invocation.
+    if os.path.exists(attr):
+        os.remove(attr)
     env = dict(os.environ, RUSTLE_VG_FP_ATTR_TSV=attr)
-    subprocess.run([rustle,"--vg","--vg-no-hmm","--genome-fasta",REF,"-L",BAM,"-o",gtf],
+    # --vg-snp threads the genome into BAM ingestion so per-read mismatches vs
+    # reference are extracted (without it read.mismatches is empty and every
+    # placement scores as a perfect self-match -> 0.5/0.5). --vg-no-hmm selects
+    # the fingerprint-EM (which emits RUSTLE_VG_FP_ATTR_TSV). Both are required.
+    subprocess.run([rustle,"--vg","--vg-no-hmm","--vg-snp","--genome-fasta",REF,"-L",BAM,"-o",gtf],
                    env=env, stderr=subprocess.DEVNULL, check=True)
     truth = read_names_truth()
     cid_locus = copyid_to_locus(gtf)

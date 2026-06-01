@@ -48,9 +48,25 @@ Per-copy splice graph built from post-EM reads, so unusual combinations unique t
 ## Obj 4 — Accurate read-to-copy assignment in ambiguous cases
 A hierarchy of signals: (1) junction pattern, (2) diagnostic SNPs/INDELs (`--vg-snp`), (3) exon-length,
 (4) copy-level EM prior; propagate fractional weight for genuinely ambiguous reads.
-- **State:** signals 1–3 implemented; the synthetic fixture (`test_data/synthetic_family/`) validates
-  decisive-vs-uncertain bucketing. **Missing: a per-transcript `copy_assignment_confidence` GTF
-  attribute** (copy_id is set; confidence is not emitted).
+- **State:** signals 1–3 implemented and now **validated end-to-end at 100% decisive accuracy** on the
+  synthetic fixture (`test_data/synthetic_family/`, 28 multi-mappers, oracle Obj 4). Reaching that took
+  fixing three separable blockers found via the oracle (2026-05-31):
+  1. **Site pollution (rustle bug, fixed):** `build_exon_fingerprints` compared *same-copy* read
+     fragments (ragged terminal exons give one copy several variable-length versions) as if they were
+     distinct copies → 132 spurious "diagnostic" sites + 29× multiplicity → assignment collapsed to
+     noise. Fixed by collapsing `per_copy_sequences` to one representative (longest) per *distinct*
+     CopyId and requiring ≥2 distinct copies (132→12 real sites).
+  2. **Genome not threaded without `--vg-snp`:** the fingerprint-EM (`--vg-no-hmm`) needs
+     `read.mismatches`, which are only extracted when the genome reaches BAM ingestion — gated on
+     `--vg-snp`. Without it every placement scored as a perfect self-match → 0.5/0.5. The oracle scorer
+     now passes `--vg-no-hmm --vg-snp` (the design-spec invocation).
+  3. **Over-strict gate:** the gap-gate (`10.0` log-units) is calibrated for reads covering *thousands*
+     of sites; on sparse coverage it silenced correct decisions (a 2-net-site / ~80:1 signal is only
+     ~4.4 log-units). Now **evidence-adaptive**: `eff_gap = min(gap_threshold, per_site_gap·n_sites)`
+     (`RUSTLE_VG_EM_SCORE_GAP_PER_SITE`, default 0.25) — unchanged in the abundant-site regime,
+     proportional when sparse. Isolated to `--vg-no-hmm`; the default HMM-EM (DAZ) is untouched.
+  **Missing: a per-transcript `copy_assignment_confidence` GTF attribute** (copy_id is set; the EM weight
+  gap is computed but not yet emitted as an attribute).
 - **Honest finding (this session):** on DAZ the *iterative* EM converges trivially (delta=0) — the
   discriminating signal is the pileup-depth PRIOR (53/47), not iteration. So in the
   identical-compatibility regime it's "pileup-weighted assignment," and the value is honest uncertainty

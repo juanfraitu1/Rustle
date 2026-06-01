@@ -2626,14 +2626,35 @@ pub fn build_exon_fingerprints(
         if ec.per_copy_sequences.len() < 2 {
             continue; // singleton exon — no pairwise comparison possible
         }
-        let min_len = ec.per_copy_sequences.iter().map(|(_, s)| s.len()).min().unwrap_or(0);
+        // `per_copy_sequences` can hold MULTIPLE fragments for the SAME CopyId:
+        // terminal exons (ragged 5'/3' IsoSeq read ends) yield several
+        // variable-length versions of one copy's exon, and build_family_graph
+        // stores them all. Comparing those same-copy fragments as if they were
+        // distinct copies manufactures spurious "diagnostic" sites — both from
+        // read-to-read jitter and from length-misaligned exon-relative position
+        // comparison (observed: 132 sites + 29x site multiplicity on a clean
+        // 2-copy fixture, flipping read-to-copy assignment to noise). Collapse to
+        // ONE representative — the LONGEST fragment, which best covers the exon —
+        // per DISTINCT CopyId, then require >= 2 distinct copies. Single-copy
+        // ExonClasses carry no cross-copy information and are correctly dropped.
+        let mut rep_seq: Vec<(usize, &[u8])> = Vec::new();
+        for (cid, seq) in &ec.per_copy_sequences {
+            match rep_seq.iter_mut().find(|(c, _)| *c == *cid) {
+                Some((_, best)) => { if seq.len() > best.len() { *best = seq.as_slice(); } }
+                None => rep_seq.push((*cid, seq.as_slice())),
+            }
+        }
+        if rep_seq.len() < 2 {
+            continue; // single distinct copy — no cross-copy diagnostic info
+        }
+        let min_len = rep_seq.iter().map(|(_, s)| s.len()).min().unwrap_or(0);
         if min_len == 0 {
             continue;
         }
 
         for pos in 0..min_len {
-            // Collect the uppercase ACGT base for each copy at this position.
-            let copy_bases: Vec<(usize, u8)> = ec.per_copy_sequences.iter()
+            // Collect the uppercase ACGT base for each distinct copy at this position.
+            let copy_bases: Vec<(usize, u8)> = rep_seq.iter()
                 .filter_map(|(cid, seq)| {
                     let b = seq[pos].to_ascii_uppercase();
                     if matches!(b, b'A' | b'C' | b'G' | b'T') { Some((*cid, b)) } else { None }
@@ -2674,6 +2695,19 @@ pub fn build_exon_fingerprints(
     }
 
     let n_sites = sites.len();
+
+    if std::env::var_os("RUSTLE_VG_FP_SITE_TRACE").is_some() {
+        eprintln!("[FP-TRACE] n_copies={} n_exon_classes={} n_sites={}", n_copies, fg.nodes.len(), n_sites);
+        for cid in 0..n_copies {
+            let refs = &per_copy_refs[cid];
+            let n_distinct = {
+                let mut ps: Vec<u64> = refs.iter().map(|&(_, p, _)| p).collect();
+                ps.sort_unstable(); ps.dedup(); ps.len()
+            };
+            eprintln!("[FP-TRACE]   copy {} site_refs entries={} distinct_ref_pos={}", cid, refs.len(), n_distinct);
+        }
+    }
+
     ExonFingerprints { sites, per_copy_site_refs: per_copy_refs, n_copies, n_sites }
 }
 
@@ -3605,8 +3639,20 @@ pub fn run_fingerprint_em(
     // to be decisive. Structural-only evidence (junction chain + alignment identity,
     // which dominate when a read covers 0 diagnostic sequence sites) is weaker;
     // struct_gap is a lower threshold that still lets junction/NM guide those reads.
+    //
+    // `gap_threshold` is an ABSOLUTE ceiling calibrated for reads covering many
+    // (hundreds–thousands of) diagnostic sites — the real-IsoSeq paralog regime.
+    // For reads covering FEW sites (sparse divergence or short overlap), an
+    // absolute 10.0-log-unit bar suppresses clean but sparse signal: a read that
+    // nets even 2 distinguishing sites carries ~80:1 odds yet only ~4.4 log-units.
+    // `per_site_gap` makes the requirement scale with the evidence actually
+    // available — eff_gap = min(gap_threshold, per_site_gap * n_sites_covered) —
+    // so the abundant-site regime is UNCHANGED (the per-site term saturates the
+    // ceiling) while sparse-coverage reads get an evidence-proportional bar.
     let gap_threshold: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(10.0);
+    let per_site_gap: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP_PER_SITE")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(0.25);
 
     // Multi-signal EM weights (IsoSeq-specific):
     //   RUSTLE_VG_FP_LAMBDA_J  — junction-chain signal weight (default 1.0)
@@ -3803,15 +3849,22 @@ pub fn run_fingerprint_em(
                 if !max_lp.is_finite() { continue; }
 
                 // Adaptive score-gap gate:
-                // • Fingerprint evidence (n_sites_covered > 0): require gap_threshold
-                //   (default 10.0 log-units) — large evidence requirement matches the
-                //   scale of Bernoulli sums over thousands of sites.
+                // • Fingerprint evidence (n_sites_covered > 0): require an
+                //   evidence-proportional gap, min(gap_threshold, per_site_gap *
+                //   n_sites_covered). With many sites this saturates the absolute
+                //   gap_threshold ceiling (default 10.0 log-units, the thousands-of-
+                //   sites Bernoulli scale); with few sites it relaxes to a per-site
+                //   bar so clean sparse signal is honored instead of being silenced.
                 // • Structural-only evidence (junction + NM, no diagnostic sites):
                 //   require struct_gap (default 0.1 log-units) — weaker signal, lower bar.
                 //   This allows reads in conserved regions to receive soft structural
                 //   assignments that are impossible for short reads.
                 let n_cov_max = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
-                let eff_gap = if n_cov_max > 0 { gap_threshold } else { struct_gap };
+                let eff_gap = if n_cov_max > 0 {
+                    (per_site_gap * n_cov_max as f64).min(gap_threshold)
+                } else {
+                    struct_gap
+                };
                 if eff_gap > 0.0 && n >= 2 {
                     let mut best = f64::NEG_INFINITY;
                     let mut second = f64::NEG_INFINITY;
