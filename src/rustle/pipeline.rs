@@ -10037,11 +10037,10 @@ pub fn run<P: AsRef<Path>>(
     // for SNP-based copy scoring. Same genome index is later passed to
     // family discovery and novel-copy scan.
     let vg_snp_genome: Option<crate::genome::GenomeIndex> = if config.vg_mode
-        && config.vg_snp
         && config.genome_fasta.is_some()
     {
         let path = config.genome_fasta.as_ref().unwrap();
-        eprintln!("[VG] Loading genome FASTA for SNP copy assignment: {}", path);
+        eprintln!("[VG] Loading genome FASTA for read-to-copy phasing: {}", path);
         crate::genome::GenomeIndex::from_fasta(path).ok()
     } else {
         None
