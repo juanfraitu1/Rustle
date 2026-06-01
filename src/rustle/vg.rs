@@ -1514,10 +1514,9 @@ pub fn anchor_read(nm_c: u32, alen_c: u64, others: &[(u32, u64)], t: i64, extent
     }
 }
 
-/// Number of identifiability classes among `n_copies`: copies are merged when
-/// they are NON-identifiable (`nonid_pairs`). classes == n_copies -> full;
-/// classes == 1 -> none; otherwise partial.
-pub fn identifiability_partition(n_copies: usize, nonid_pairs: &[(usize, usize)]) -> usize {
+/// Assign each copy a dense identifiability-class label (0..n_classes-1). Copies
+/// are merged into one class when NON-identifiable (`nonid_pairs`, transitive).
+pub fn identifiability_classes(n_copies: usize, nonid_pairs: &[(usize, usize)]) -> Vec<usize> {
     let mut parent: Vec<usize> = (0..n_copies).collect();
     fn find(parent: &mut Vec<usize>, x: usize) -> usize {
         let mut r = x;
@@ -1532,7 +1531,21 @@ pub fn identifiability_partition(n_copies: usize, nonid_pairs: &[(usize, usize)]
             if ra != rb { parent[ra] = rb; }
         }
     }
-    (0..n_copies).filter(|&i| find(&mut parent, i) == i).count()
+    let mut label = std::collections::HashMap::<usize, usize>::new();
+    let mut next = 0usize;
+    let mut out = vec![0usize; n_copies];
+    for i in 0..n_copies {
+        let r = find(&mut parent, i);
+        let l = *label.entry(r).or_insert_with(|| { let v = next; next += 1; v });
+        out[i] = l;
+    }
+    out
+}
+
+/// Number of identifiability classes (full = n_copies, none = 1).
+pub fn identifiability_partition(n_copies: usize, nonid_pairs: &[(usize, usize)]) -> usize {
+    identifiability_classes(n_copies, nonid_pairs)
+        .iter().copied().collect::<std::collections::BTreeSet<usize>>().len()
 }
 
 /// Aligned length of a read in bp: sum of its exon spans (falls back to
@@ -1625,12 +1638,12 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
     // SingleExonOutOfScope. This is a deliberate lenient reading of the per-copy wording.
     let any_spliced = (0..n_copies).any(copy_spliced);
 
-    let mut owns: Vec<usize> = vec![0; n_copies];
+    // Pass 1: per-read placements (kept for pass 2) + pairwise distinguishing + connectivity numerator.
+    let mut reads_pc: Vec<std::collections::HashMap<usize, (u32, u64)>> = Vec::new();
     let mut pair_has_shared = std::collections::HashSet::<(usize, usize)>::new();
     let mut pair_has_distinguishing = std::collections::HashSet::<(usize, usize)>::new();
     let mut n_reads_total = 0usize;
     let mut n_reads_shared = 0usize;
-    let mut n_tie_reads = 0usize;
 
     for placements in family.multimap_reads.values() {
         let mut per_copy: std::collections::HashMap<usize, (u32, u64)> = std::collections::HashMap::new();
@@ -1643,16 +1656,6 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
         n_reads_total += 1;
         if per_copy.len() >= 2 { n_reads_shared += 1; }
         let copies: Vec<usize> = per_copy.keys().copied().collect();
-        let mut read_owns_someone = false;
-        for &c in &copies {
-            let (nm_c, al_c) = per_copy[&c];
-            let others: Vec<(u32, u64)> = copies.iter().filter(|&&o| o != c).map(|&o| per_copy[&o]).collect();
-            if let ReadAnchor::Owns = anchor_read(nm_c, al_c, &others, p.dnm_t, p.extent_frac) {
-                owns[c] += 1;
-                read_owns_someone = true;
-            }
-        }
-        if per_copy.len() >= 2 && !read_owns_someone { n_tie_reads += 1; }
         for i in 0..copies.len() {
             for j in (i + 1)..copies.len() {
                 let (a, b) = (copies[i].min(copies[j]), copies[i].max(copies[j]));
@@ -1661,40 +1664,75 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
                 if dnm.abs() >= p.dnm_t { pair_has_distinguishing.insert((a, b)); }
             }
         }
+        reads_pc.push(per_copy);
     }
-    for c in 0..n_copies {
-        if let Some(&bi) = family.bundle_indices.get(c) {
-            if let Some(bundle) = bundles.get(bi) {
-                let n_unique = bundle.reads.iter()
-                    .filter(|r| !family.multimap_reads.contains_key(&r.read_name_hash)).count();
-                owns[c] += n_unique;
-                n_reads_total += n_unique;
+
+    // Unique reads per copy (in a copy's bundle, not a multimap key). Counted in
+    // the connectivity denominator AND attributed to the copy's class below.
+    let n_unique_per_copy: Vec<usize> = (0..n_copies).map(|c| {
+        family.bundle_indices.get(c).and_then(|&bi| bundles.get(bi))
+            .map(|b| b.reads.iter().filter(|r| !family.multimap_reads.contains_key(&r.read_name_hash)).count())
+            .unwrap_or(0)
+    }).collect();
+    n_reads_total += n_unique_per_copy.iter().sum::<usize>();
+    let connectivity = if n_reads_total > 0 { n_reads_shared as f64 / n_reads_total as f64 } else { 0.0 };
+
+    // Identifiability classes from the non-identifiable pairs.
+    let nonid: Vec<(usize, usize)> = pair_has_shared.iter()
+        .filter(|pr| !pair_has_distinguishing.contains(pr)).copied().collect();
+    let classes = identifiability_classes(n_copies, &nonid);   // class label per copy
+    let n_id_classes = classes.iter().copied().collect::<std::collections::BTreeSet<usize>>().len();
+    let n_class_labels = n_id_classes.max(1);
+
+    // Pass 2: per-CLASS owning reads + cross-class ties. A read OWNS class K* (the
+    // class of its best copy) iff its best copy beats every copy OUTSIDE K* by
+    // dnm >= t (ties WITHIN K* are fine — that is the point of class-level X). A
+    // shared read that beats no other class decisively is a cross-class tie.
+    let mut class_owns: Vec<usize> = vec![0; n_class_labels];
+    let mut n_class_tie = 0usize;
+    for per_copy in &reads_pc {
+        let (cstar, nm_star) = per_copy.iter().map(|(&c, &(nm, _))| (c, nm))
+            .min_by_key(|&(_, nm)| nm).unwrap();   // reads_pc entries are non-empty
+        let kstar = classes[cstar];
+        let outside_min = per_copy.iter().filter(|(&c, _)| classes[c] != kstar)
+            .map(|(_, &(nm, _))| nm).min();
+        match outside_min {
+            None => class_owns[kstar] += 1,        // no competing class present → owns it
+            Some(om) => {
+                if (om as i64 - nm_star as i64) >= p.dnm_t { class_owns[kstar] += 1; }
+                else if per_copy.len() >= 2 { n_class_tie += 1; }
             }
         }
     }
+    for c in 0..n_copies { class_owns[classes[c]] += n_unique_per_copy[c]; }
 
-    let n_expressed = owns.iter().filter(|&&o| o >= p.k_expr).count();
-    let connectivity = if n_reads_total > 0 { n_reads_shared as f64 / n_reads_total as f64 } else { 0.0 };
-    let nonid: Vec<(usize, usize)> = pair_has_shared.iter()
-        .filter(|pr| !pair_has_distinguishing.contains(pr)).copied().collect();
-    let n_id_classes = identifiability_partition(n_copies, &nonid);
-    let tie_frac = if n_reads_shared > 0 { n_tie_reads as f64 / n_reads_shared as f64 } else { 0.0 }; // fraction of shared reads that resolve to NO owner (true ties)
+    // Class sizes (copies per class label) for the n_expressed==1 disambiguation.
+    let mut class_size: Vec<usize> = vec![0; n_class_labels];
+    for c in 0..n_copies { class_size[classes[c]] += 1; }
+
+    // X is now the number of EXPRESSED identifiability CLASSES (a non-identifiable
+    // cluster counts once if it collectively out-anchors the other classes).
+    let n_expressed = class_owns.iter().filter(|&&o| o >= p.k_expr).count();
+    let total_owns: usize = class_owns.iter().sum();
+    let tie_frac = if n_reads_shared > 0 { n_class_tie as f64 / n_reads_shared as f64 } else { 0.0 }; // cross-class ties
     let identifiability = if n_id_classes == n_copies && tie_frac < 0.15 { Identifiability::Full }
         else if n_id_classes <= 1 || tie_frac >= p.tie_none { Identifiability::None }
         else { Identifiability::Partial };
     let locus_rel = locus_relationship(family, bundles);
-    // Total owning reads across all copies. A family with fewer than k_expr
-    // total owning reads is too thinly supported to classify (NotExpressedHere).
-    let total_owns: usize = owns.iter().sum();
+
+    // Size of the single expressed class (when exactly one) — multi-copy → a real
+    // but unresolvable family; single-copy → one gene + unexpressed paralogs.
+    let lone_expressed_size = if n_expressed == 1 {
+        (0..n_class_labels).find(|&k| class_owns[k] >= p.k_expr).map(|k| class_size[k]).unwrap_or(1)
+    } else { 1 };
 
     let class = if n_copies < 2 { FamilyClass::NotConnected }
         else if !any_spliced { FamilyClass::SingleExonOutOfScope }
-        else if total_owns < p.k_expr || owns.iter().all(|&o| o == 0) { FamilyClass::NotExpressedHere }
+        else if total_owns < p.k_expr || class_owns.iter().all(|&o| o == 0) { FamilyClass::NotExpressedHere }
         else if connectivity < p.h_min { FamilyClass::NotConnected }
-        else if n_expressed >= 2 { FamilyClass::Family }
-        else if matches!(identifiability, Identifiability::None) { FamilyClass::FamilyNonIdentifiable }
-        else if n_expressed == 1 { FamilyClass::GenePlusUnexpressedParalog }
-        // n_expressed == 0: owning reads spread too thin across copies / belong to siblings
+        else if n_expressed >= 2 { FamilyClass::Family }                                  // >=2 expressed classes
+        else if n_expressed == 1 && lone_expressed_size >= 2 { FamilyClass::FamilyNonIdentifiable }
+        else if n_expressed == 1 { FamilyClass::GenePlusUnexpressedParalog }              // 1 expressed single-copy class
         else { FamilyClass::Spillover };
 
     FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel }
@@ -6016,6 +6054,62 @@ mod tests {
         assert_eq!(v.n_copies, 2);
         assert!(v.n_expressed >= 2, "n_expressed={}", v.n_expressed);
         assert_eq!(v.identifiability, Identifiability::Full);
+    }
+
+    #[test]
+    fn classify_family_nonid_class_counts_as_expressed() {
+        // 3 copies: A distinct; B,C near-identical (non-identifiable). A expressed via
+        // unique reads; {B,C} expressed as a CLASS (reads beat A but tie B/C). Per-copy
+        // counting would call this gene_plus_unexpressed_paralog (n_expressed=1); the
+        // class-level count yields TWO expressed classes -> Family.
+        let ex_a = vec![(100u64, 200u64), (300, 400)];
+        let ex_b = vec![(5100u64, 5200u64), (5300, 5400)];
+        let ex_c = vec![(9100u64, 9200u64), (9300, 9400)];
+        let mut a_reads = Vec::new();
+        let mut b_reads = Vec::new();
+        let mut c_reads = Vec::new();
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..5u64 { a_reads.push(make_read_full(3000 + i, ex_a.clone(), 2, false)); }   // A unique
+        for i in 0..4u64 {                                                                      // shared: A nm10, B/C nm2 (tie)
+            let rnh = 2000 + i;
+            a_reads.push(make_read_full(rnh, ex_a.clone(), 10, false));   // A index 5+i
+            b_reads.push(make_read_full(rnh, ex_b.clone(), 2, false));    // B index i
+            c_reads.push(make_read_full(rnh, ex_c.clone(), 2, false));    // C index i
+            multimap.insert(rnh, vec![(0, (5 + i) as usize), (1, i as usize), (2, i as usize)]);
+        }
+        let bundles = vec![
+            make_bundle("chr1", '+', a_reads),
+            make_bundle("chr1", '+', b_reads),
+            make_bundle("chr1", '+', c_reads),
+        ];
+        let family = FamilyGroup { family_id: 2, bundle_indices: vec![0, 1, 2], multimap_reads: multimap };
+        let v = classify_family(&family, &bundles, &FamilyParams::default());
+        assert_eq!(v.class, FamilyClass::Family, "B,C non-id class should make this a Family");
+        assert_eq!(v.n_expressed, 2, "two expressed classes (A | BC)");
+        assert_eq!(v.identifiability, Identifiability::Partial);
+    }
+
+    #[test]
+    fn classify_family_fully_nonid_is_nonidentifiable() {
+        // 2 copies, every shared read ties (no distinguishing position) -> one
+        // expressed class of size 2 -> FamilyNonIdentifiable.
+        let ex_b = vec![(100u64, 200u64), (300, 400)];
+        let ex_c = vec![(5100u64, 5200u64), (5300, 5400)];
+        let mut b_reads = Vec::new();
+        let mut c_reads = Vec::new();
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..8u64 {
+            let rnh = 7000 + i;
+            b_reads.push(make_read_full(rnh, ex_b.clone(), 3, false));
+            c_reads.push(make_read_full(rnh, ex_c.clone(), 3, false));
+            multimap.insert(rnh, vec![(0, i as usize), (1, i as usize)]);
+        }
+        let bundles = vec![make_bundle("chr1", '+', b_reads), make_bundle("chr1", '+', c_reads)];
+        let family = FamilyGroup { family_id: 3, bundle_indices: vec![0, 1], multimap_reads: multimap };
+        let v = classify_family(&family, &bundles, &FamilyParams::default());
+        assert_eq!(v.class, FamilyClass::FamilyNonIdentifiable);
+        assert_eq!(v.identifiability, Identifiability::None);
+        assert_eq!(v.n_id_classes, 1);
     }
 }
 
