@@ -183,6 +183,12 @@ pub fn write_gtf<W: Write>(
         if let Some(supp) = tx.copy_independent_support {
             tx_attrs.push_str(&format!(" copy_independent_support \"{:.3}\";", supp));
         }
+        // Multi-copy family classification verdict (--vg only).
+        if let Some(ref v) = tx.family_verdict {
+            tx_attrs.push_str(&format!(
+                " family_verdict \"{}\"; family_identifiability \"{}\"; family_n_copies \"{}\"; family_n_expressed \"{}\"; family_locus_rel \"{}\";",
+                v.class.as_str(), v.identifiability.as_str(), v.n_copies, v.n_expressed, v.locus_rel.as_str()));
+        }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
         }

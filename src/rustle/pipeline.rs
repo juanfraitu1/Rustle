@@ -394,7 +394,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None,
+            copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         };
@@ -2964,7 +2964,7 @@ fn junction_recombination_supplement(
                                         vg_family_id: None,
                                         vg_copy_id: None,
                                         vg_family_size: None,
-                                        copy_assignment_confidence: None, copy_independent_support: None,
+                                        copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                                         intron_low: Vec::new(),
                                         synthetic: false,
                                         rescue_class: None,
@@ -3018,7 +3018,7 @@ fn junction_recombination_supplement(
                                         vg_family_id: None,
                                         vg_copy_id: None,
                                         vg_family_size: None,
-                                        copy_assignment_confidence: None, copy_independent_support: None,
+                                        copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                                         intron_low: Vec::new(),
                                         synthetic: false,
                                         rescue_class: None,
@@ -3110,7 +3110,7 @@ fn add_contained_isoforms(
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
                 added += 1;
@@ -3302,7 +3302,7 @@ fn emit_junction_paths(
             hardstart,
             hardend,
             alt_tts_end,
-            vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
 
@@ -3588,7 +3588,7 @@ fn emit_chain_from_graph(
         hardstart: true,
         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
     })
 }
@@ -3720,7 +3720,7 @@ fn emit_reference_chains(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
                 added += 1;
@@ -3855,7 +3855,7 @@ fn emit_reference_chains(
                         hardstart: true,
                         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                     });
                     added += 1;
@@ -3950,7 +3950,7 @@ fn emit_reference_chains(
             hardstart: true,
             hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
         added += 1;
@@ -6285,7 +6285,7 @@ fn emit_per_read_alt_combos(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None,
+            copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
@@ -6480,7 +6480,7 @@ fn emit_internal_ri_siblings(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None, copy_independent_support: None,
+                copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                 intron_low: Vec::new(),
                 synthetic: false,
                 rescue_class: None,
@@ -7998,7 +7998,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None, copy_independent_support: None,
+                copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             });
@@ -8130,7 +8130,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    copy_assignment_confidence: None, copy_independent_support: None,
+                    copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 };
@@ -8348,7 +8348,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None, copy_independent_support: None,
+                copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             });
@@ -8482,7 +8482,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    copy_assignment_confidence: None, copy_independent_support: None,
+                    copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
@@ -9445,7 +9445,7 @@ fn collect_flow_residual_se(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None,
+            copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
@@ -9648,7 +9648,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None,
+            copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
@@ -9805,7 +9805,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None,
+            copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
@@ -9887,7 +9887,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardstart: false,
                         hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                     };
                     predictions.push(tx);
@@ -9929,7 +9929,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardstart: false,
                     hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 };
                 predictions.push(tx);
@@ -10561,6 +10561,10 @@ pub fn run<P: AsRef<Path>>(
     // `vg_copy_id` on transcripts, so the guard maps copy↔transcript directly.
     let mut vg_copy_support: std::collections::HashMap<(usize, usize), f64> =
         std::collections::HashMap::new();
+    // Multi-copy family classification (spec 2026-06-01). Keyed identically to
+    // vg_copy_support: (family_id, copy_id). VG-gated; annotation only.
+    let mut vg_family_verdict: std::collections::HashMap<(usize, usize), crate::vg::FamilyVerdict> =
+        std::collections::HashMap::new();
 
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
@@ -10747,6 +10751,12 @@ pub fn run<P: AsRef<Path>>(
                                 crate::vg::compute_copy_independent_support(fam, &bundles, margin);
                             for (copy_id, supp) in per_copy {
                                 vg_copy_support.insert((fam.family_id, copy_id), supp);
+                            }
+                            // Family classification verdict (one per family; same key space).
+                            let verdict = crate::vg::classify_family(
+                                fam, &bundles, &crate::vg::FamilyParams::default());
+                            for copy_id in 0..fam.bundle_indices.len() {
+                                vg_family_verdict.insert((fam.family_id, copy_id), verdict.clone());
                             }
                         }
                     }
@@ -17246,7 +17256,7 @@ pub fn run<P: AsRef<Path>>(
                 hardstart: true,
                 hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             });
         }
@@ -17956,7 +17966,7 @@ pub fn run<P: AsRef<Path>>(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, family_verdict: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
@@ -18087,6 +18097,7 @@ pub fn run<P: AsRef<Path>>(
                 if let Some(&supp) = vg_copy_support.get(&(fam_id, copy_id)) {
                     tx.copy_independent_support = Some(supp);
                 }
+                tx.family_verdict = vg_family_verdict.get(&(fam_id, copy_id)).cloned();
             }
         }
         eprintln!(
