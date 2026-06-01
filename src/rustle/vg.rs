@@ -1485,6 +1485,35 @@ pub fn copy_support_fraction(n_unique: usize, multimappers: &[(f64, f64)], margi
     (n_unique + mm_support) as f64 / total as f64
 }
 
+/// Where a multi-mapping read truly belongs, by raw edit-distance margin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadAnchor { Owns, Sibling, Tie }
+
+/// Classify one read's copy assignment from raw edit distance (the count of
+/// distinguishing mismatches — the fingerprint-EM log-likelihood ratio).
+/// `nm_c`/`alen_c`: NM and aligned length of the read's placement at THIS copy.
+/// `others`: (nm, alen) of the read's placements at OTHER copies.
+/// Only placements with `alen >= extent_frac * alen_c` compete (a short partial
+/// hit elsewhere is not a real competitor). `dnm = nm_other_best - nm_c`:
+/// `Owns` if `dnm >= t`, `Sibling` if `dnm <= -t`, else `Tie`. With no
+/// comparable competitor the read uniquely Owns this copy.
+pub fn anchor_read(nm_c: u32, alen_c: u64, others: &[(u32, u64)], t: i64, extent_frac: f64) -> ReadAnchor {
+    if alen_c == 0 { return ReadAnchor::Owns; }
+    let best_other = others.iter()
+        .filter(|&&(_, al)| (al as f64) >= extent_frac * (alen_c as f64))
+        .map(|&(nm, _)| nm)
+        .min();
+    match best_other {
+        None => ReadAnchor::Owns,
+        Some(bo) => {
+            let dnm = bo as i64 - nm_c as i64;
+            if dnm >= t { ReadAnchor::Owns }
+            else if dnm <= -t { ReadAnchor::Sibling }
+            else { ReadAnchor::Tie }
+        }
+    }
+}
+
 /// Aligned length of a read in bp: sum of its exon spans (falls back to
 /// `query_length` if exons are empty). Returns 0 when neither is available.
 fn read_aligned_len(read: &BundleRead) -> u64 {
@@ -5603,6 +5632,40 @@ mod tests {
     #[test]
     fn no_reads_is_zero() {
         assert_eq!(copy_support_fraction(0, &[], 0.01), 0.0);
+    }
+
+    // ── anchor_read (raw-dNM per-read copy anchor) ────────────────────────────
+    #[test]
+    fn anchor_owns_when_dnm_large() {
+        // this copy NM=6, sibling NM=504 over comparable extent -> owns
+        assert_eq!(anchor_read(6, 4600, &[(504, 4145)], 2, 0.7), ReadAnchor::Owns);
+    }
+    #[test]
+    fn anchor_sibling_when_dnm_negative() {
+        // this copy NM=504, sibling NM=6 -> belongs to sibling
+        assert_eq!(anchor_read(504, 4145, &[(6, 4600)], 2, 0.7), ReadAnchor::Sibling);
+    }
+    #[test]
+    fn anchor_tie_when_no_distinguishing_position() {
+        // NM 2 vs 2 -> tie (no distinguishing position)
+        assert_eq!(anchor_read(2, 2900, &[(2, 2900)], 2, 0.7), ReadAnchor::Tie);
+        // NM 14 vs 26 -> 12 distinguishing mismatches -> NOT a tie, owns
+        assert_eq!(anchor_read(14, 4018, &[(26, 3934)], 2, 0.7), ReadAnchor::Owns);
+    }
+    #[test]
+    fn anchor_owns_when_no_comparable_other() {
+        // sibling alignment too short (extent guard) -> not a competitor -> owns
+        assert_eq!(anchor_read(50, 4000, &[(2, 200)], 2, 0.7), ReadAnchor::Owns);
+        // no other placement at all -> owns (uniquely this copy)
+        assert_eq!(anchor_read(50, 4000, &[], 2, 0.7), ReadAnchor::Owns);
+    }
+    #[test]
+    fn anchor_boundary_dnm_equals_t() {
+        // dnm == t -> Owns (>= t); dnm == t-1 -> Tie
+        assert_eq!(anchor_read(0, 100, &[(2, 100)], 2, 0.9), ReadAnchor::Owns);
+        assert_eq!(anchor_read(0, 100, &[(1, 100)], 2, 0.9), ReadAnchor::Tie);
+        // alen_c == 0 guard -> Owns regardless of others
+        assert_eq!(anchor_read(5, 0, &[(0, 100)], 2, 0.7), ReadAnchor::Owns);
     }
 
     // ── compute_copy_independent_support fixture ──────────────────────────────
