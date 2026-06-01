@@ -10575,7 +10575,7 @@ pub fn run<P: AsRef<Path>>(
                 eprintln!(
                     "[VG] {} families → {}, {} skipped {:?}",
                     families_for_em.len(),
-                    if hmm_ok { "HMM-EM" } else { "heuristic-EM (HMM prereqs missing)" },
+                    if has_genome { "phasing-EM" } else { "pileup-EM (no genome)" },
                     skip_counts.values().sum::<usize>(),
                     skip_counts,
                 );
@@ -10588,7 +10588,15 @@ pub fn run<P: AsRef<Path>>(
                     // are fitted). With --vg-no-hmm, profile fitting is
                     // skipped and heuristic EM is used instead of HMM-EM.
                     let build_graph = has_genome;
-                    let do_hmm = hmm_ok && !config.vg_no_hmm;
+                    // HMM-EM is RETIRED: the profile-HMM forward-DP was proven to
+                    // FABRICATE copies (manufactured the phantom "DAZ3" from copy-1's
+                    // reads; inverted fam175's per-copy ratio). The validated default
+                    // is the haplotype-phasing fingerprint-EM (run_fingerprint_em),
+                    // which assigns reads by their alleles at copy-distinguishing
+                    // positions and falls back to the pileup prior when there are none.
+                    // --vg-no-hmm is now the (always-on) default; the flag is a no-op alias.
+                    let do_hmm = false;
+                    let _ = hmm_ok; // kept for the log line below
 
                     let em_hmm_genome: Option<crate::genome::GenomeIndex> =
                         if build_graph && !do_hmm {
