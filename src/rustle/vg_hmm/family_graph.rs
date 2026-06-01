@@ -19,7 +19,8 @@ pub struct ExonClass {
     pub chrom: String,
     pub span: (u64, u64),
     pub strand: char,
-    /// (CopyId, raw genomic exon sequence on the transcript strand).
+    /// (CopyId, raw genome-forward (forward-strand) exon sequence fetched from
+    /// the reference FASTA).
     pub per_copy_sequences: Vec<(CopyId, Vec<u8>)>,
     /// (CopyId, original genomic span) for each contributing copy. The node's
     /// `span` field is the union; `per_copy_spans` preserves the exact

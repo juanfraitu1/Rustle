@@ -2724,10 +2724,12 @@ pub fn build_exon_fingerprints(
 //
 // Everything stored is in GENOME-FORWARD frame (same frame as BundleRead.exons
 // and BundleRead.mismatches), so the scorer can intersect ref_pos with the
-// read and compare the stored allele directly. To avoid per-base complement
-// bugs, each exon's sequence is materialized genome-forward up front (revcomp
-// when the node strand is '-'); after that, genomic position of offset `o` is
-// always `span.start + o` and the stored allele is always `gf_seq[o]`.
+// read and compare the stored allele directly. `per_copy_sequences` is ALREADY
+// genome-forward (fetched directly from the reference FASTA via
+// genome.fetch_sequence with no strand handling), so each exon's sequence is
+// materialized by uppercasing the bytes for BOTH strands — no revcomp. After
+// that, genomic position of offset `o` is always `span.start + o` and the
+// stored allele is always `gf_seq[o]`.
 // ===========================================================================
 
 /// One copy's exon, in genome-forward frame.
@@ -2739,18 +2741,6 @@ struct GfExon {
     #[allow(dead_code)]
     end: u64,
     seq: Vec<u8>,
-}
-
-/// Reverse-complement a nucleotide sequence (uppercased ACGT; other bytes
-/// map to 'N' so they never match a real allele).
-fn revcomp(seq: &[u8]) -> Vec<u8> {
-    seq.iter().rev().map(|&b| match b.to_ascii_uppercase() {
-        b'A' => b'T',
-        b'C' => b'G',
-        b'G' => b'C',
-        b'T' => b'A',
-        _ => b'N',
-    }).collect()
 }
 
 #[inline]
@@ -2888,7 +2878,11 @@ fn diff_anchored(a: &[u8], b: &[u8]) -> Vec<(usize, u8, usize, u8)> {
         let len_a = ia1 - ia0;
         let len_b = jb1 - jb0;
         if len_a == len_b {
-            // No indel between these anchors → gapless diff of the whole block.
+            // No (net) indel between these anchors → gapless diff of the whole
+            // block. LIMITATION: a balanced indel pair (equal-length insertion
+            // + deletion inside one block) would desync this gapless diff; this
+            // is bounded in practice because unique 12-mer anchors keep
+            // inter-anchor blocks short on SNP-divergent paralogs.
             out.extend(diff_equal_len(
                 &a[block_a_start..ia1],
                 block_a_start,
@@ -2942,13 +2936,39 @@ fn fnv1a_kmer(bytes: &[u8]) -> u64 {
 /// next exon is the better match) when a positional pairing fails.
 fn syntenic_exon_pairs(ea: &[GfExon], eb: &[GfExon]) -> Vec<(usize, usize)> {
     const JACCARD_FLOOR: f64 = 0.05;
-    // When minimizers can't be computed (exon too short for k=15) the pairing is
-    // accepted on positional synteny alone — short exons are common and would
-    // otherwise never be diffed.
+    // Length-ratio and base-identity floors for the short-exon fallback below.
+    const SHORT_LEN_RATIO: f64 = 0.8; // shorter/longer must be >= 0.8 (≈ within 20%)
+    const SHORT_IDENT_FLOOR: f64 = 0.5; // gapless base identity over the overlap
+    // When minimizers can't be computed (an exon is shorter than k=15) we cannot
+    // trust positional synteny alone — accepting it could pair two unrelated
+    // short exons and fabricate spurious sites. Instead, fall back to a cheap
+    // direct check: accept only when the two exons are near-equal length AND a
+    // gapless base-identity over their overlap clears a floor.
+    let short_exon_homologous = |a: &[u8], b: &[u8]| -> bool {
+        let (shorter, longer) = (a.len().min(b.len()), a.len().max(b.len()));
+        if longer == 0 {
+            return false;
+        }
+        if (shorter as f64) / (longer as f64) < SHORT_LEN_RATIO {
+            return false; // too different in length to be homologous
+        }
+        let n = shorter;
+        if n == 0 {
+            return false;
+        }
+        let mut matches = 0usize;
+        for o in 0..n {
+            if a[o].to_ascii_uppercase() == b[o].to_ascii_uppercase() {
+                matches += 1;
+            }
+        }
+        (matches as f64) / (n as f64) >= SHORT_IDENT_FLOOR
+    };
     let passes = |a: &[u8], b: &[u8]| -> bool {
         match minimizer_jaccard(a, b) {
             Some(j) => j >= JACCARD_FLOOR,
-            None => true, // cannot evaluate → trust genomic synteny
+            // Unevaluable by minimizers → require near-equal length + base identity.
+            None => short_exon_homologous(a, b),
         }
     };
     // Score for the re-sync lookahead: -1.0 means "definitely not homologous"
@@ -3013,9 +3033,16 @@ pub fn enumerate_diagnostic_sites(
     fg: &crate::vg_hmm::family_graph::FamilyGraph,
     n_copies: usize,
 ) -> ExonFingerprints {
+    // All copies in a FamilyGraph are the SAME strand (build_family_graph requires it;
+    // partition_family_by_strand splits mixed-strand families upstream), so per-copy
+    // exons are co-linear in genomic order and per_copy_sequences are genome-forward —
+    // no strand/inversion handling is needed here.
+
     // 1. Per copy: collect genome-forward exons from every node that has BOTH a
-    //    per_copy_spans entry and a per_copy_sequences entry for the copy. The
-    //    sequence is materialized genome-forward up front (revcomp on '-').
+    //    per_copy_spans entry and a per_copy_sequences entry for the copy.
+    //    per_copy_sequences is ALREADY genome-forward (fetched from the reference
+    //    FASTA with no strand handling), so we just uppercase the bytes for BOTH
+    //    strands — no revcomp.
     let mut exons_by_copy: Vec<Vec<GfExon>> = (0..n_copies).map(|_| Vec::new()).collect();
     for node in &fg.nodes {
         for &(cid, (s, e)) in &node.per_copy_spans {
@@ -3023,11 +3050,8 @@ pub fn enumerate_diagnostic_sites(
                 continue;
             }
             if let Some((_, seq)) = node.per_copy_sequences.iter().find(|(c, _)| *c == cid) {
-                let gf = if node.strand == '-' {
-                    revcomp(seq)
-                } else {
-                    seq.iter().map(|b| b.to_ascii_uppercase()).collect()
-                };
+                // Genome-forward for both strands: uppercase only, no revcomp.
+                let gf: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
                 exons_by_copy[cid].push(GfExon { start: s, end: e, seq: gf });
             }
         }
@@ -5346,9 +5370,9 @@ mod vg_phasing_sites {
     use super::*;
     use crate::vg_hmm::family_graph::{ExonClass, FamilyGraph, NodeIdx};
 
-    /// Build a single ExonClass node carrying per-copy sequences (on the
-    /// TRANSCRIPT strand) and per-copy genomic spans, with an explicit node
-    /// strand. Used to construct minimal FamilyGraph fixtures for
+    /// Build a single ExonClass node carrying per-copy sequences (GENOME-FORWARD,
+    /// as produced by genome.fetch_sequence) and per-copy genomic spans, with an
+    /// explicit node strand. Used to construct minimal FamilyGraph fixtures for
     /// enumerate_diagnostic_sites.
     fn node(
         idx: usize,
@@ -5406,51 +5430,51 @@ mod vg_phasing_sites {
         assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(500, 'T'), (504, 'T')]);
     }
 
-    /// Test 3 — minus strand. copy0 is a '-' exon at (100,105) whose TRANSCRIPT
-    /// sequence is "ACGTA" → genome-forward = revcomp = "TACGT". copy1 is '+' at
-    /// (500,505) "TAGGT" — genome-forward seqs "TACGT" vs "TAGGT" differ at
-    /// genome-forward offset 2 → divergent site. copy0's genomic pos = 100+2 =
-    /// 102 carrying genome-forward base 'C' (from "TACGT", NOT 'G' from "ACGTA").
+    /// Test 3 — minus strand stores the genome-forward base unchanged.
+    /// per_copy_sequences is genome-forward for BOTH strands (fetch_sequence does
+    /// no strand handling), so a '-' node's bytes are NOT revcomp'd. copy0 '-' exon
+    /// @100..105 genome-forward "ACGTA"; copy1 '-' exon @500..505 genome-forward
+    /// "ACCTA" differ at offset 2 → site copy0 (102,'G'), copy1 (502,'C') — the
+    /// SAME coords/alleles as the '+' test in Test 1, proving strand does not change
+    /// the genome-forward mapping. (All copies in a graph are single-strand, so this
+    /// is a same-strand '-' pair, matching production.)
     #[test]
     fn minus_strand_stores_genome_forward_base() {
         let fg = FamilyGraph {
             family_id: 0,
-            nodes: vec![
-                // transcript "ACGTA" on '-' → genome-forward "TACGT"
-                node(0, '-', &[(0, b"ACGTA", (100, 105))]),
-                node(1, '+', &[(1, b"TAGGT", (500, 505))]),
-            ],
+            nodes: vec![node(0, '-', &[
+                (0, b"ACGTA", (100, 105)),
+                (1, b"ACCTA", (500, 505)),
+            ])],
             edges: vec![],
         };
         let fp = enumerate_diagnostic_sites(&fg, 2);
         assert_eq!(fp.n_sites, 1, "one divergent column on genome-forward frame");
-        // copy0 genome-forward "TACGT": offset 2 = 'C' at genomic 102.
-        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(102, 'C')]);
-        // copy1 genome-forward "TAGGT": offset 2 = 'G' at genomic 502.
-        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(502, 'G')]);
+        // copy0 genome-forward "ACGTA": offset 2 = 'G' at genomic 102 (no revcomp).
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(102, 'G')]);
+        // copy1 genome-forward "ACCTA": offset 2 = 'C' at genomic 502.
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(502, 'C')]);
     }
 
-    /// Test 4 — inverted pair. copy0 '+' ascending "ACGTA"@(100,105); copy1 '-'
-    /// whose genome-forward seq is "ACCTA" (transcript = revcomp = "TAGGT") at
-    /// (500,505). Both genome-forward seqs homologous, one SNP at offset 2 →
-    /// sites map to correct genomic coords on both copies.
+    /// Test 4 — same-strand '-' pair (production-realistic). All copies in a
+    /// FamilyGraph are the SAME strand (partition_family_by_strand splits mixed
+    /// strands upstream), so an opposite-strand pair within one graph is impossible.
+    /// Two '-' copies, genome-forward, one SNP → correct genomic coords on both.
     #[test]
-    fn inverted_pair_maps_both_copies() {
+    fn same_strand_minus_pair_maps_both_copies() {
         let fg = FamilyGraph {
             family_id: 0,
-            nodes: vec![
-                node(0, '+', &[(0, b"ACGTA", (100, 105))]),
-                // genome-forward "ACCTA" → transcript on '-' = revcomp("ACCTA") = "TAGGT"
-                node(1, '-', &[(1, b"TAGGT", (500, 505))]),
-            ],
+            nodes: vec![node(0, '-', &[
+                (0, b"GGACGTAACC", (200, 210)),
+                (1, b"GGACATAACC", (700, 710)),
+            ])],
             edges: vec![],
         };
         let fp = enumerate_diagnostic_sites(&fg, 2);
         assert_eq!(fp.n_sites, 1, "one divergent column");
-        // copy0 genome-forward "ACGTA": offset 2 = 'G' @ 102.
-        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(102, 'G')]);
-        // copy1 genome-forward "ACCTA": offset 2 = 'C' @ 502.
-        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(502, 'C')]);
+        // "GGACGTAACC" vs "GGACATAACC" differ at offset 4 ('G' vs 'A').
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[0]), vec![(204, 'G')]);
+        assert_eq!(refs_pos_base(&fp.per_copy_site_refs[1]), vec![(704, 'A')]);
     }
 
     /// Test 5 — unequal length / indel. copy1 has a 1-bp insertion upstream of a
