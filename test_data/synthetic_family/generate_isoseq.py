@@ -36,6 +36,7 @@ random.seed(42)
 REF_PATH = os.path.join(os.path.dirname(__file__), "ref.fa")
 with open(REF_PATH) as f:
     lines = f.readlines()
+REF_HEADER = lines[0].strip()  # ">chr_test"
 REF_SEQ = "".join(l.strip() for l in lines[1:])
 
 # ── Gene coordinates (0-based, half-open) ──────────────────────────────────────
@@ -44,22 +45,68 @@ GENE_A_SKIP  = [(1000, 1200), (2000, 2300), (4000, 4500)]
 GENE_B_EXONS = [(10000, 10200), (11000, 11300), (12000, 12150), (13000, 13500)]
 
 # ── Planted diagnostic SNPs ────────────────────────────────────────────────────
-# Copy B has these substitutions relative to copy A (at corresponding positions).
-# These are at fixed offsets within exons to help test --vg-snp mode.
-# Format: (copy_A_ref_pos, copy_B_ref_pos, ref_base, alt_base)
-DIAGNOSTIC_SNPS = [
+# Copy A and copy B carry DIFFERENT bases at these corresponding exon-relative
+# offsets. This is what makes the two paralog copies distinguishable by the
+# fingerprint-EM: copy A genome base == base_A, copy B genome base == base_B,
+# with base_A != base_B. A read's allele at these sites is therefore diagnostic
+# of its copy of origin.
+#
+# base_A = the existing ref.fa base at copy_A_ref_pos (kept as-is, the "X" allele).
+# base_B = a deterministically-chosen base != base_A (the "Y" allele) that we
+#          plant into the copy-B region of the reference.
+#
+# Format: (copy_A_ref_pos, copy_B_ref_pos, base_A, base_B)  [bases filled below]
+_SNP_POSITIONS = [
     # Exon 1: pos 50 within exon
-    (1050, 10050, None, None),
+    (1050, 10050),
     # Exon 2: pos 100, 200 within exon
-    (2100, 11100, None, None),
-    (2200, 11200, None, None),
+    (2100, 11100),
+    (2200, 11200),
     # Exon 3: pos 75 within exon
-    (3075, 12075, None, None),
+    (3075, 12075),
     # Exon 4: pos 100, 250, 400 within exon
-    (4100, 13100, None, None),
-    (4250, 13250, None, None),
-    (4400, 13400, None, None),
+    (4100, 13100),
+    (4250, 13250),
+    (4400, 13400),
 ]
+
+def _pick_alt_base(base_a):
+    """Deterministically pick copy B's base: the first ACGT base that differs
+    from copy A's base. Guarantees base_A != base_B (a real substitution)."""
+    return next(b for b in "ACGT" if b != base_a)
+
+# Derive base_A (the genome's current base at posA) and base_B (the planted
+# divergent base) for every diagnostic site.
+DIAGNOSTIC_SNPS = []
+for pos_a, pos_b in _SNP_POSITIONS:
+    base_a = REF_SEQ[pos_a].upper()
+    base_b = _pick_alt_base(base_a)
+    DIAGNOSTIC_SNPS.append((pos_a, pos_b, base_a, base_b))
+
+# Plant copy B's divergent allele into the per-copy reference. Copy A keeps its
+# existing base (base_A); copy B's genome position posB now carries base_B.
+# rustle reads ref.fa to build per-copy exon sequences, so this is what makes
+# the fingerprint sites actually diagnostic.
+_ref_list = list(REF_SEQ)
+for pos_a, pos_b, base_a, base_b in DIAGNOSTIC_SNPS:
+    _ref_list[pos_b] = base_b
+REF_SEQ = "".join(_ref_list)
+
+# Per-placement allele maps {ref_pos: base}. A read always carries its TRUE
+# copy's allele at the diagnostic sites, regardless of which copy it is *placed*
+# on. These are keyed by the *placement's* ref positions so apply_snps_to_seq
+# can overwrite the spliced read sequence at the right spliced offset.
+#
+#   A_PLACEMENT_TRUE_A : read placed at copy A, true copy A → carries X at posA
+#   B_PLACEMENT_TRUE_A : read placed at copy B, true copy A → carries X at posB
+#                        (vs copy B's genome Y → a recorded mismatch = signal)
+#   B_PLACEMENT_TRUE_B : read placed at copy B, true copy B → carries Y at posB
+#   A_PLACEMENT_TRUE_B : read placed at copy A, true copy B → carries Y at posA
+#                        (vs copy A's genome X → a recorded mismatch = signal)
+A_PLACEMENT_TRUE_A = {pos_a: base_a for pos_a, _, base_a, _ in DIAGNOSTIC_SNPS}
+B_PLACEMENT_TRUE_A = {pos_b: base_a for _, pos_b, base_a, _ in DIAGNOSTIC_SNPS}
+B_PLACEMENT_TRUE_B = {pos_b: base_b for _, pos_b, _, base_b in DIAGNOSTIC_SNPS}
+A_PLACEMENT_TRUE_B = {pos_a: base_b for pos_a, _, _, base_b in DIAGNOSTIC_SNPS}
 
 def complement(base):
     return {"A": "T", "T": "A", "C": "G", "G": "C", "N": "N"}[base]
@@ -71,18 +118,23 @@ def extract_spliced_seq(exons):
     """Extract concatenated exon sequences from reference."""
     return "".join(REF_SEQ[s:e] for s, e in exons)
 
-def apply_snps_to_seq(seq, exons, snp_positions_in_ref):
-    """Apply diagnostic SNP at reference positions that fall within these exons."""
+def apply_snps_to_seq(seq, exons, allele_map):
+    """Overwrite the read's spliced sequence at diagnostic reference positions
+    with a specific allele.
+
+    `allele_map` is {ref_pos: base}. For every diagnostic ref_pos that falls
+    inside one of `exons`, the corresponding base in the spliced read sequence
+    is set to `base`. This is used to make a multi-mapper carry its TRUE copy's
+    allele at the OTHER copy's placement: e.g. a true-copy-A read placed at copy
+    B carries copy A's base there, which (vs copy B's divergent genome base)
+    becomes a recorded mismatch — exactly the signal the fingerprint scores.
+    """
     seq = list(seq)
     offset = 0
     for s, e in exons:
-        for snp_ref_pos in snp_positions_in_ref:
-            if s <= snp_ref_pos < e:
-                idx = offset + (snp_ref_pos - s)
-                orig = seq[idx]
-                # Deterministic substitution
-                alts = [b for b in "ACGT" if b != orig]
-                seq[idx] = alts[snp_ref_pos % 3]
+        for ref_pos, base in allele_map.items():
+            if s <= ref_pos < e:
+                seq[offset + (ref_pos - s)] = base
         offset += (e - s)
     return "".join(seq)
 
@@ -202,6 +254,9 @@ for i in range(30):
 
     ref_seq_for_read = extract_spliced_seq(exons)
     seq = add_isoseq_errors(ref_seq_for_read, error_rate=0.005)
+    # True copy A, placed at copy A: lock copy A's allele (X) at the diagnostic
+    # sites so CCS error injection can't corrupt the signal.
+    seq = apply_snps_to_seq(seq, exons, A_PLACEMENT_TRUE_A)
 
     # Add poly-A tail (soft-clipped)
     polya = make_polya_tail()
@@ -218,6 +273,8 @@ for i in range(20):
 
     ref_seq_for_read = extract_spliced_seq(exons)
     seq = add_isoseq_errors(ref_seq_for_read, error_rate=0.005)
+    # True copy A, placed at copy A: lock copy A's allele (X).
+    seq = apply_snps_to_seq(seq, exons, A_PLACEMENT_TRUE_A)
 
     polya = make_polya_tail()
     add_read(f"uniq_A2_{i}", 16, exons[0][0] + 1, exons, seq,
@@ -232,9 +289,11 @@ for i in range(25):
     exons[-1] = (exons[-1][0], jitter_terminal(exons[-1][1], 3))
 
     ref_seq_for_read = extract_spliced_seq(exons)
-    # Copy B has diagnostic SNPs already baked into the reference
-    # (the reference itself encodes copy B differently)
+    # Copy B's divergent alleles are baked into REF_SEQ (and ref.fa) above, so
+    # the slice already carries Y. Add CCS errors, then re-lock Y at the
+    # diagnostic sites so errors can't corrupt the signal.
     seq = add_isoseq_errors(ref_seq_for_read, error_rate=0.005)
+    seq = apply_snps_to_seq(seq, exons, B_PLACEMENT_TRUE_B)
 
     polya = make_polya_tail()
     add_read(f"uniq_B1_{i}", 16, exons[0][0] + 1, exons, seq,
@@ -259,6 +318,8 @@ for i in range(N_MULTI):
     exons_a[0] = (exons_a[0][0] + tss_offset_a, exons_a[0][1])
     # TES fixed (no jitter) so no two multi-mappers have the same exon structure
     seq_a = add_isoseq_errors(extract_spliced_seq(exons_a), error_rate=0.005)
+    # TRUE copy A, primary placement at copy A: carry copy A's allele (X).
+    seq_a = apply_snps_to_seq(seq_a, exons_a, A_PLACEMENT_TRUE_A)
     polya = make_polya_tail()
 
     add_read(f"multi_{i}", 16, exons_a[0][0] + 1, exons_a, seq_a,
@@ -268,6 +329,10 @@ for i in range(N_MULTI):
     exons_b = list(GENE_B_EXONS)
     exons_b[0] = (exons_b[0][0] + tss_offset_a, exons_b[0][1])
     seq_b = add_isoseq_errors(extract_spliced_seq(exons_b), error_rate=0.005)
+    # TRUE copy A, but placed at copy B: the read STILL carries copy A's allele
+    # (X) at copy B's diagnostic positions. vs copy B's genome base (Y) this is a
+    # recorded mismatch, so the fingerprint scores X -> matches A, mismatches B.
+    seq_b = apply_snps_to_seq(seq_b, exons_b, B_PLACEMENT_TRUE_A)
 
     add_read(f"multi_{i}", 2064, exons_b[0][0] + 1, exons_b, seq_b,
              clip_right_seq=polya, nh=2, ts="+")
@@ -279,6 +344,8 @@ for i in range(N_MULTI):
     exons_b = list(GENE_B_EXONS)
     exons_b[0] = (exons_b[0][0] + tss_offset_b, exons_b[0][1])
     seq_b = add_isoseq_errors(extract_spliced_seq(exons_b), error_rate=0.005)
+    # TRUE copy B, primary placement at copy B: carry copy B's allele (Y).
+    seq_b = apply_snps_to_seq(seq_b, exons_b, B_PLACEMENT_TRUE_B)
     polya = make_polya_tail()
 
     add_read(f"multi_r_{i}", 16, exons_b[0][0] + 1, exons_b, seq_b,
@@ -287,12 +354,28 @@ for i in range(N_MULTI):
     exons_a = list(GENE_A_EXONS)
     exons_a[0] = (exons_a[0][0] + tss_offset_b, exons_a[0][1])
     seq_a = add_isoseq_errors(extract_spliced_seq(exons_a), error_rate=0.005)
+    # TRUE copy B, but placed at copy A: the read STILL carries copy B's allele
+    # (Y) at copy A's diagnostic positions. vs copy A's genome base (X) this is a
+    # recorded mismatch, so the fingerprint scores Y -> matches B, mismatches A.
+    seq_a = apply_snps_to_seq(seq_a, exons_a, A_PLACEMENT_TRUE_B)
 
     add_read(f"multi_r_{i}", 2064, exons_a[0][0] + 1, exons_a, seq_a,
              clip_right_seq=polya, nh=2, ts="+")
 
-# ── Write SAM and convert to BAM ──────────────────────────────────────────────
+# ── Rewrite reference with the planted copy-B divergence ──────────────────────
+# REF_SEQ now carries copy B's divergent bases (Y) at the posB diagnostic sites
+# while copy A keeps its bases (X). Persist it to ref.fa so rustle's per-copy
+# exon sequences (and therefore the fingerprint sites) actually differ.
 output_dir = os.path.dirname(__file__)
+with open(REF_PATH, "w") as f:
+    f.write(REF_HEADER + "\n")
+    for i in range(0, len(REF_SEQ), 80):
+        f.write(REF_SEQ[i:i+80] + "\n")
+# Rebuild the .fai so coordinates stay authoritative.
+subprocess.run(["samtools", "faidx", REF_PATH], check=True)
+print(f"Rewrote reference with {len(DIAGNOSTIC_SNPS)} planted copy-B SNPs: {REF_PATH}")
+
+# ── Write SAM and convert to BAM ──────────────────────────────────────────────
 sam_path = os.path.join(output_dir, "reads.sam")
 bam_path = os.path.join(output_dir, "reads_sorted.bam")
 
