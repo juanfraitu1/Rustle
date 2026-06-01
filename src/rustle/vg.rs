@@ -1546,6 +1546,171 @@ fn read_aligned_len(read: &BundleRead) -> u64 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FamilyClass {
+    Family, FamilyNonIdentifiable, GenePlusUnexpressedParalog, Spillover,
+    NotConnected, NotExpressedHere, SingleExonOutOfScope,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Identifiability { Full, Partial, None }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocusRel { Tandem, Distal, Trans, Overlapping, Single }
+
+#[derive(Debug, Clone)]
+pub struct FamilyVerdict {
+    pub class: FamilyClass,
+    pub n_copies: usize,
+    pub n_expressed: usize,
+    pub connectivity: f64,
+    pub identifiability: Identifiability,
+    pub n_id_classes: usize,
+    pub locus_rel: LocusRel,
+}
+impl FamilyClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FamilyClass::Family => "family",
+            FamilyClass::FamilyNonIdentifiable => "family_nonidentifiable",
+            FamilyClass::GenePlusUnexpressedParalog => "gene_plus_unexpressed_paralog",
+            FamilyClass::Spillover => "spillover",
+            FamilyClass::NotConnected => "not_connected",
+            FamilyClass::NotExpressedHere => "not_expressed_here",
+            FamilyClass::SingleExonOutOfScope => "single_exon_out_of_scope",
+        }
+    }
+}
+impl Identifiability {
+    pub fn as_str(&self) -> &'static str {
+        match self { Identifiability::Full => "full", Identifiability::Partial => "partial", Identifiability::None => "none" }
+    }
+}
+impl LocusRel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LocusRel::Tandem => "tandem", LocusRel::Distal => "distal",
+            LocusRel::Trans => "trans", LocusRel::Overlapping => "overlapping", LocusRel::Single => "single",
+        }
+    }
+}
+pub struct FamilyParams {
+    pub dnm_t: i64, pub extent_frac: f64, pub k_expr: usize, pub h_min: f64, pub tie_none: f64,
+}
+impl Default for FamilyParams {
+    fn default() -> Self { FamilyParams { dnm_t: 2, extent_frac: 0.7, k_expr: 3, h_min: 0.10, tie_none: 0.60 } }
+}
+
+/// Classify a discovered VG family per the M/H/X/I definition.
+/// Operates on the ORIGINAL FamilyGroup + intact bundles (call at EM time,
+/// like `compute_copy_independent_support`).
+pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParams) -> FamilyVerdict {
+    let n_copies = family.bundle_indices.len();
+    let placement = |fam_pos: usize, ri: usize| -> Option<(u32, u64)> {
+        let bi = *family.bundle_indices.get(fam_pos)?;
+        let bundle = bundles.get(bi)?;
+        let read = bundle.reads.get(ri)?;
+        let alen = read_aligned_len(read);
+        if alen == 0 { return None; }
+        Some((read.nm, alen))
+    };
+    let copy_spliced = |fam_pos: usize| -> bool {
+        family.bundle_indices.get(fam_pos)
+            .and_then(|&bi| bundles.get(bi))
+            .map(|b| b.reads.iter().any(|r| r.exons.len() >= 2 || !r.junctions.is_empty()))
+            .unwrap_or(false)
+    };
+    let any_spliced = (0..n_copies).any(copy_spliced);
+
+    let mut owns: Vec<usize> = vec![0; n_copies];
+    let mut pair_has_shared = std::collections::HashSet::<(usize, usize)>::new();
+    let mut pair_has_distinguishing = std::collections::HashSet::<(usize, usize)>::new();
+    let mut n_reads_total = 0usize;
+    let mut n_reads_shared = 0usize;
+    let mut n_tie_reads = 0usize;
+
+    for placements in family.multimap_reads.values() {
+        let mut per_copy: std::collections::HashMap<usize, (u32, u64)> = std::collections::HashMap::new();
+        for &(fp, ri) in placements {
+            if let Some((nm, al)) = placement(fp, ri) {
+                per_copy.entry(fp).and_modify(|e| { if nm < e.0 { *e = (nm, al); } }).or_insert((nm, al));
+            }
+        }
+        if per_copy.is_empty() { continue; }   // read resolves to no family copy (stale index) — don't count
+        n_reads_total += 1;
+        if per_copy.len() >= 2 { n_reads_shared += 1; }
+        let copies: Vec<usize> = per_copy.keys().copied().collect();
+        let mut read_owns_someone = false;
+        for &c in &copies {
+            let (nm_c, al_c) = per_copy[&c];
+            let others: Vec<(u32, u64)> = copies.iter().filter(|&&o| o != c).map(|&o| per_copy[&o]).collect();
+            if let ReadAnchor::Owns = anchor_read(nm_c, al_c, &others, p.dnm_t, p.extent_frac) {
+                owns[c] += 1;
+                read_owns_someone = true;
+            }
+        }
+        if per_copy.len() >= 2 && !read_owns_someone { n_tie_reads += 1; }
+        for i in 0..copies.len() {
+            for j in (i + 1)..copies.len() {
+                let (a, b) = (copies[i].min(copies[j]), copies[i].max(copies[j]));
+                pair_has_shared.insert((a, b));
+                let dnm = per_copy[&copies[i]].0 as i64 - per_copy[&copies[j]].0 as i64;
+                if dnm.abs() >= p.dnm_t { pair_has_distinguishing.insert((a, b)); }
+            }
+        }
+    }
+    for c in 0..n_copies {
+        if let Some(&bi) = family.bundle_indices.get(c) {
+            if let Some(bundle) = bundles.get(bi) {
+                let n_unique = bundle.reads.iter()
+                    .filter(|r| !family.multimap_reads.contains_key(&r.read_name_hash)).count();
+                owns[c] += n_unique;
+                n_reads_total += n_unique;
+            }
+        }
+    }
+
+    let n_expressed = owns.iter().filter(|&&o| o >= p.k_expr).count();
+    let connectivity = if n_reads_total > 0 { n_reads_shared as f64 / n_reads_total as f64 } else { 0.0 };
+    let nonid: Vec<(usize, usize)> = pair_has_shared.iter()
+        .filter(|pr| !pair_has_distinguishing.contains(pr)).copied().collect();
+    let n_id_classes = identifiability_partition(n_copies, &nonid);
+    let tie_frac = if n_reads_shared > 0 { n_tie_reads as f64 / n_reads_shared as f64 } else { 0.0 }; // fraction of shared reads that resolve to NO owner (true ties)
+    let identifiability = if n_id_classes == n_copies && tie_frac < 0.15 { Identifiability::Full }
+        else if n_id_classes <= 1 || tie_frac >= p.tie_none { Identifiability::None }
+        else { Identifiability::Partial };
+    let locus_rel = locus_relationship(family, bundles);
+    // Total owning reads across all copies. A family with fewer than k_expr
+    // total owning reads is too thinly supported to classify (NotExpressedHere).
+    let total_owns: usize = owns.iter().sum();
+
+    let class = if n_copies < 2 { FamilyClass::NotConnected }
+        else if !any_spliced { FamilyClass::SingleExonOutOfScope }
+        else if total_owns < p.k_expr || owns.iter().all(|&o| o == 0) { FamilyClass::NotExpressedHere }
+        else if connectivity < p.h_min { FamilyClass::NotConnected }
+        else if n_expressed >= 2 { FamilyClass::Family }
+        else if matches!(identifiability, Identifiability::None) { FamilyClass::FamilyNonIdentifiable }
+        else if n_expressed == 1 { FamilyClass::GenePlusUnexpressedParalog }
+        // n_expressed == 0: owning reads spread too thin across copies / belong to siblings
+        else { FamilyClass::Spillover };
+
+    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel }
+}
+
+fn locus_relationship(family: &FamilyGroup, bundles: &[Bundle]) -> LocusRel {
+    let loci: Vec<(&str, u64, u64)> = family.bundle_indices.iter()
+        .filter_map(|&bi| bundles.get(bi)).map(|b| (b.chrom.as_str(), b.start, b.end)).collect();
+    if loci.len() < 2 { return LocusRel::Single; }
+    let same_chrom = loci.iter().all(|l| l.0 == loci[0].0);
+    if !same_chrom { return LocusRel::Trans; }
+    let mut overlap = false; let mut maxgap = 0u64;
+    for i in 0..loci.len() { for j in (i+1)..loci.len() {
+        let (a, b) = (loci[i], loci[j]);
+        if a.1 <= b.2 && b.1 <= a.2 { overlap = true; }
+        let gap = a.1.max(b.1).saturating_sub(a.2.min(b.2));
+        maxgap = maxgap.max(gap);
+    }}
+    if overlap { LocusRel::Overlapping } else if maxgap < 1_000_000 { LocusRel::Tandem } else { LocusRel::Distal }
+}
+
 /// Compute each copy's **independent support** within a family.
 ///
 /// Operates on the ORIGINAL discovered `FamilyGroup` (pre-strand-split), where
@@ -5810,6 +5975,42 @@ mod tests {
         let support = compute_copy_independent_support(&family, &bundles, 0.01);
         assert!(support[&0] > 0.95, "copy A should be kept, got {}", support[&0]);
         assert!(support[&1] > 0.95, "copy B should be kept, got {}", support[&1]);
+    }
+
+    #[test]
+    fn classify_family_smoke() {
+        // 2-copy resolvable family; MULTI-EXON reads so it is in scope.
+        let ex_a = vec![(100u64, 200u64), (300, 400)];     // 2 exons -> spliced, alen=200
+        let ex_b = vec![(5100u64, 5200u64), (5300, 5400)];
+        let mut a_reads = Vec::new();
+        let mut b_reads = Vec::new();
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        // 5 unique reads per copy (own their copy)
+        for i in 0..5u64 {
+            a_reads.push(make_read_full(3000 + i, ex_a.clone(), 2, false));
+            b_reads.push(make_read_full(4000 + i, ex_b.clone(), 2, false));
+        }
+        // 3 shared reads that decisively OWN A (A nm=2, B nm=10)
+        for i in 0..3u64 {
+            let rnh = 2000 + i;
+            a_reads.push(make_read_full(rnh, ex_a.clone(), 2, false));     // A bundle index 5+i
+            b_reads.push(make_read_full(rnh, ex_b.clone(), 10, false));    // B bundle index 5+i
+            multimap.insert(rnh, vec![(0, (5 + i) as usize), (1, (5 + i) as usize)]);
+        }
+        // 3 shared reads that decisively OWN B
+        for i in 0..3u64 {
+            let rnh = 2100 + i;
+            a_reads.push(make_read_full(rnh, ex_a.clone(), 10, false));    // A bundle index 8+i
+            b_reads.push(make_read_full(rnh, ex_b.clone(), 2, false));     // B bundle index 8+i
+            multimap.insert(rnh, vec![(0, (8 + i) as usize), (1, (8 + i) as usize)]);
+        }
+        let bundles = vec![make_bundle("chr1", '+', a_reads), make_bundle("chr1", '+', b_reads)];
+        let family = FamilyGroup { family_id: 1, bundle_indices: vec![0, 1], multimap_reads: multimap };
+        let v = classify_family(&family, &bundles, &FamilyParams::default());
+        assert_eq!(v.class, FamilyClass::Family);
+        assert_eq!(v.n_copies, 2);
+        assert!(v.n_expressed >= 2, "n_expressed={}", v.n_expressed);
+        assert_eq!(v.identifiability, Identifiability::Full);
     }
 }
 
