@@ -38,15 +38,35 @@ Headline (R=100, coverage=30/copy, ε=0.01, 400 trials/point):
 The small (~0.01) certified residual is honest: a single error-corrupted spanning
 read can mislink; requiring ≥2 concordant spanning reads to certify drives it to 0.
 
-## Generalizations (stated, not simulated here)
-- Marks include **splice junctions / exon presence**, not just SNPs: a skip-junction
-  read can bridge `S` by skipping it (changes the cut topology) — structure as a
-  phasing channel.
-- **Unknown copy number** `K`: a cut leaves model order ambiguous, not just phase.
-- On the **variation graph**, `S` is one shared node — simultaneously the
-  information-sharing substrate (reconstruct `S` once, both copies use it) and the
-  cut (which in-branch connects to which out-branch is undetermined without a
-  spanning read). That duality is why the vg is essential.
+On the **variation graph**, `S` is one shared node — simultaneously the
+information-sharing substrate (reconstruct `S` once, both copies use it) and the
+cut (which in-branch connects to which out-branch is undetermined without a
+spanning read). That duality is why the vg is essential.
+
+## Extensions (now simulated — see `boundary_extended.png`, 3 panels)
+
+**Panel A** — the SNP boundary above (greedy phantom 0→~0.5 at `L_S=R`; certified ~0).
+
+**Panel B — structure as a phasing channel.** Copies that differ by *splicing*
+(copy A includes shared exon `S`; copy B uses an `e1→e2` **skip junction**) can be
+resolved even when `e1,e2` are nucleotide-identical. A copy-B read covering the
+skip junction simultaneously (a) **identifies** copy B and (b) **links** the flanks
+on one molecule **without spanning `S`** (it skips `S`). So junction linkage is
+**independent of `L_S`**: identifiability stays at **1.0** exactly where the
+SNP-only channel collapses to **0** (at `L_S > R`). No existing tool uses junctions
+as an *input* linking channel (longcallR tests allele-specific junctions only
+*downstream*, conditioned on a SNP haplotype) — this is the genuinely novel signal.
+
+**Panel C — unknown copy number `K`.** In the cut regime (`L_S > R`), with `K`
+copies you see `K` left and `K` right alleles as marginals but cannot pair them. A
+linkage-blind method commits to one of `K!` pairings; expected correct pairs = 1
+(fixed points of a random permutation), so the **phantom fraction is `(K-1)/K`**,
+rising **0.49 → 0.87** for `K = 2 → 8` (and the copy *count* itself is only
+lower-bounded, not determined). The certified rule abstains → **0** for all `K`,
+reporting "≥`K` copies share `S`; pairing non-identifiable."
+
+Headlines: `structure: P(identifiable | L_S>R) = 0.000 (SNP-only) vs 1.000 (+skip)`;
+`unknown-K: greedy phantom fraction K=2..8 = 0.49..0.87, certified = 0`.
 
 ## Run
 ```
