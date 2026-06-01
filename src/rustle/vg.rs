@@ -3689,12 +3689,20 @@ pub fn run_fingerprint_em(
 
         let fp = build_exon_fingerprints(fg, n_copies);
         if fp.n_sites == 0 {
+            // No diagnostic sites — copies are sequence-identical (e.g. DAZ).
+            // The fingerprint carries no discriminating signal, but SKIPPING the
+            // EM is wrong: shared multi-mappers then stay counted at full weight
+            // in EVERY copy, inflating the non-starved copy (DAZ1: 9 tx / cov 142
+            // instead of HMM-EM's 2 / 8.5). Fall through to the EM with the
+            // fingerprint term neutral (all sites 0): the per-copy pileup-depth
+            // PRIOR (M-step) plus the junction-chain / alignment-identity signals
+            // then split the multi-mappers. This is the simple, explainable
+            // replacement for the HMM-EM, whose forward DP also converges
+            // trivially for identical copies — the prior is the real signal.
             eprintln!(
-                "[VG-FP-EM] Family {}: 0 diagnostic sites (copies are sequence-identical) — no EM",
+                "[VG-FP-EM] Family {}: 0 diagnostic sites — pileup-depth-prior fallback (identical copies)",
                 family.family_id
             );
-            results.push(EmResult::default());
-            continue;
         }
 
         // PHASE 1 (sequential): collect placement lists, one per multi-mapped read.
