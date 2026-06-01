@@ -3009,13 +3009,17 @@ fn syntenic_exon_pairs(ea: &[GfExon], eb: &[GfExon]) -> Vec<(usize, usize)> {
             // eb[j] is an unmatched (inserted) exon — skip it.
             j += 1;
         } else {
-            // No nearby homolog either way — skip the exon with the lower start
-            // to make monotone progress.
-            if ea[i].start <= eb[j].start {
-                i += 1;
-            } else {
-                j += 1;
-            }
+            // No nearby homolog either way — neither one side has a clearly
+            // better lookahead match.  The two exons are positionally co-linear
+            // (same index in their respective copies' exon lists) so treat them
+            // as structurally homologous regardless of Jaccard (highly-divergent
+            // paralogs can share 0 k=15-mers yet still be the same ancestral
+            // exon).  Include the pair so diff_gf_exons can mine their SNP
+            // columns; cross-genomic-region copies advance in lockstep (not by
+            // start-position) to avoid draining one list.
+            pairs.push((i, j));
+            i += 1;
+            j += 1;
         }
     }
     pairs
@@ -3038,26 +3042,41 @@ pub fn enumerate_diagnostic_sites(
     // exons are co-linear in genomic order and per_copy_sequences are genome-forward —
     // no strand/inversion handling is needed here.
 
-    // 1. Per copy: collect genome-forward exons from every node that has BOTH a
-    //    per_copy_spans entry and a per_copy_sequences entry for the copy.
-    //    per_copy_sequences is ALREADY genome-forward (fetched from the reference
-    //    FASTA with no strand handling), so we just uppercase the bytes for BOTH
-    //    strands — no revcomp.
+    // 1. Per copy: collect ONE canonical exon per node via recover_paralog_path.
+    //    Using the canonical path avoids duplicate GfExon entries that arise when
+    //    multiple reads for the same copy have slightly different exon boundaries
+    //    (all stored as separate (cid, span) entries in per_copy_spans).
+    //    per_copy_sequences are genome-forward (fetched directly from the FASTA),
+    //    so we uppercase only — no revcomp.
     let mut exons_by_copy: Vec<Vec<GfExon>> = (0..n_copies).map(|_| Vec::new()).collect();
-    for node in &fg.nodes {
-        for &(cid, (s, e)) in &node.per_copy_spans {
-            if cid >= n_copies {
-                continue;
-            }
-            if let Some((_, seq)) = node.per_copy_sequences.iter().find(|(c, _)| *c == cid) {
-                // Genome-forward for both strands: uppercase only, no revcomp.
-                let gf: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
-                exons_by_copy[cid].push(GfExon { start: s, end: e, seq: gf });
+    let trace = std::env::var_os("RUSTLE_VG_FP_SITE_TRACE").is_some();
+    for cid in 0..n_copies {
+        let path = fg.recover_paralog_path(cid);
+        for nidx in path {
+            let node = &fg[nidx];
+            // Take the FIRST span for this copy in this node (canonical).
+            if let Some(&(_, (s, e))) = node.per_copy_spans.iter().find(|(c, _)| *c == cid) {
+                // Take the FIRST sequence for this copy (same selection policy).
+                if let Some((_, seq)) = node.per_copy_sequences.iter().find(|(c, _)| *c == cid) {
+                    let gf: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
+                    if !gf.is_empty() {
+                        exons_by_copy[cid].push(GfExon { start: s, end: e, seq: gf });
+                    }
+                }
             }
         }
     }
     for v in &mut exons_by_copy {
         v.sort_by_key(|x| x.start);
+        v.dedup_by_key(|x| x.start);
+    }
+    if trace {
+        for cid in 0..n_copies {
+            eprintln!("[FP-SITE-TRACE]   copy {} exon_count={}", cid, exons_by_copy[cid].len());
+            for ex in &exons_by_copy[cid] {
+                eprintln!("[FP-SITE-TRACE]     exon start={} end={} seqlen={}", ex.start, ex.end, ex.seq.len());
+            }
+        }
     }
 
     let mut sites: Vec<ExonVariantSite> = Vec::new();
@@ -4088,7 +4107,7 @@ pub fn run_fingerprint_em(
             }
         };
 
-        let fp = build_exon_fingerprints(fg, n_copies);
+        let fp = enumerate_diagnostic_sites(fg, n_copies);
         if fp.n_sites == 0 {
             // No diagnostic sites — copies are sequence-identical (e.g. DAZ).
             // The fingerprint carries no discriminating signal, but SKIPPING the
@@ -4167,39 +4186,68 @@ pub fn run_fingerprint_em(
         let mut entries: Vec<WorkItem> = pre_entries
             .into_par_iter()
             .map(|pre| {
-                let mut log_scores: Vec<f64> = Vec::with_capacity(pre.locs.len());
-                let mut junc_scores: Vec<f64> = Vec::with_capacity(pre.locs.len());
-                let mut nm_scores:   Vec<f64> = Vec::with_capacity(pre.locs.len());
-                let mut n_sites_covered: Vec<usize> = Vec::with_capacity(pre.locs.len());
+                let np = pre.locs.len();
+                // Pass 1: per-placement full per-copy fp vector + diagnostic-site coverage +
+                // structural signals (junction-chain, alignment-identity — these ARE legitimately
+                // per-placement: a read's junctions/edit-distance to each copy differ by locus).
+                let mut fp_vecs: Vec<Vec<f64>> = Vec::with_capacity(np);
+                let mut ncovs: Vec<usize> = Vec::with_capacity(np);
+                let mut junc_scores: Vec<f64> = Vec::with_capacity(np);
+                let mut nm_scores:   Vec<f64> = Vec::with_capacity(np);
+                let mut valid: Vec<bool> = Vec::with_capacity(np);
                 for (&(global_bi, ri), &fam_pos) in pre.locs.iter().zip(pre.fam_pos.iter()) {
                     if ri >= bundles[global_bi].reads.len() {
-                        log_scores.push(f64::NEG_INFINITY);
-                        junc_scores.push(0.0); // neutral
-                        nm_scores.push(0.0);   // neutral
-                        n_sites_covered.push(0);
+                        fp_vecs.push(Vec::new()); ncovs.push(0);
+                        junc_scores.push(0.0); nm_scores.push(0.0); valid.push(false);
                         continue;
                     }
                     let read   = &bundles[global_bi].reads[ri];
                     let bundle = &bundles[global_bi];
-
-                    // Sequence fingerprint: Bernoulli log-likelihood at diagnostic sites.
                     let (fp_scores, n_cov) = score_read_exon_fingerprint(read, fam_pos, &fp);
-                    log_scores.push(fp_scores.get(fam_pos).copied().unwrap_or(0.0));
-                    n_sites_covered.push(n_cov);
-
-                    // Junction-chain signal (IsoSeq-specific): fraction of the read's
-                    // splice junctions that are present in other reads at this locus.
-                    // Long reads span the full junction chain; a read with copy-A-specific
-                    // junctions scores near 1.0 at locus A and near 0.0 at locus B.
-                    let jc = junction_compatibility(read, bundle).max(1e-6).ln();
-                    junc_scores.push(jc);
-
-                    // Alignment-identity signal (IsoSeq-specific): edit distance + soft-clip
-                    // rate vs. this copy's reference sequence. Misalignment accumulates over
-                    // the full read length (~3 kb), giving much stronger discrimination than
-                    // the ~150 bp window a short read provides.
-                    let ni = read_alignment_identity_score(read).max(1e-6).ln();
-                    nm_scores.push(ni);
+                    if std::env::var_os("RUSTLE_VG_FP_SCORE_TRACE").is_some() {
+                        eprintln!("[FP-SCORE] rnh={} placed_at_copy={} n_cov={} full_scores={:?}",
+                            read.read_name_hash, fam_pos, n_cov, fp_scores);
+                    }
+                    fp_vecs.push(fp_scores);
+                    ncovs.push(n_cov);
+                    junc_scores.push(junction_compatibility(read, bundle).max(1e-6).ln());
+                    nm_scores.push(read_alignment_identity_score(read).max(1e-6).ln());
+                    valid.push(true);
+                }
+                // Fingerprint evidence is a per-READ haplotype property: the read carries its
+                // bases (and so covers diagnostic sites) only at the placement(s) where it is
+                // aligned with sequence — at the OTHER copy it may cover 0 sites (SEQ=* on
+                // secondaries, or the homologous exon falls outside its span). Comparing
+                // per-placement DIAGONAL fp scores is therefore broken: a 0-coverage placement
+                // scores 0.0 and beats a strongly-matched placement whose Bernoulli
+                // log-likelihood is negative (observed: fam175 read covers 137 sites at copy B,
+                // vector [-315(A), -14(B)] => clearly B, but diagonal compared 0@A vs -14@B and
+                // mis-picked A). Fix: take the full per-copy score vector from the read's
+                // MOST-INFORMATIVE placement (max sites covered) and give every placement its
+                // copy's entry from that single vector. Robust to asymmetric coverage AND to
+                // imperfect synteny pairing (at any covered placement the read matches its own
+                // copy's alleles and mismatches the other's, since sites are A!=B by definition).
+                // Informative placement = the read's BEST-matching copy among those covering
+                // diagnostic sites (max alignment identity = minimap2's primary). Only there are
+                // the read's bases its TRUE sequence: a secondary placement may be SEQ=* (then
+                // read_base defaults to the copy's own allele — a spurious self-match) or, in a
+                // chimeric fixture, a different copy's slice. nm_scores = ln(alignment identity).
+                let best = (0..np)
+                    .filter(|&i| valid[i] && ncovs[i] > 0)
+                    .max_by(|&a, &b| nm_scores[a].partial_cmp(&nm_scores[b]).unwrap_or(std::cmp::Ordering::Equal));
+                let mut log_scores: Vec<f64> = Vec::with_capacity(np);
+                let mut n_sites_covered: Vec<usize> = Vec::with_capacity(np);
+                for i in 0..np {
+                    if !valid[i] {
+                        log_scores.push(f64::NEG_INFINITY);
+                        n_sites_covered.push(0);
+                    } else if let Some(b) = best {
+                        log_scores.push(fp_vecs[b].get(pre.fam_pos[i]).copied().unwrap_or(0.0));
+                        n_sites_covered.push(ncovs[b]);
+                    } else {
+                        log_scores.push(0.0); // no fp evidence anywhere; junc/nm/prior decide
+                        n_sites_covered.push(0);
+                    }
                 }
                 WorkItem {
                     locs: pre.locs, fam_pos: pre.fam_pos,
