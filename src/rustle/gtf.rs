@@ -178,6 +178,11 @@ pub fn write_gtf<W: Write>(
         if let Some(conf) = tx.copy_assignment_confidence {
             tx_attrs.push_str(&format!(" copy_confidence \"{:.3}\";", conf));
         }
+        // Certified copy-support fraction (--vg copy-support guard). Only set on
+        // VG transcripts; non-VG transcripts (vg_copy_id None) never carry it.
+        if let Some(supp) = tx.copy_independent_support {
+            tx_attrs.push_str(&format!(" copy_independent_support \"{:.3}\";", supp));
+        }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
         }

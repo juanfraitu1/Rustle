@@ -394,7 +394,7 @@ fn append_missed_oracle_direct_emit(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None,
+            copy_assignment_confidence: None, copy_independent_support: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         };
@@ -2964,7 +2964,7 @@ fn junction_recombination_supplement(
                                         vg_family_id: None,
                                         vg_copy_id: None,
                                         vg_family_size: None,
-                                        copy_assignment_confidence: None,
+                                        copy_assignment_confidence: None, copy_independent_support: None,
                                         intron_low: Vec::new(),
                                         synthetic: false,
                                         rescue_class: None,
@@ -3018,7 +3018,7 @@ fn junction_recombination_supplement(
                                         vg_family_id: None,
                                         vg_copy_id: None,
                                         vg_family_size: None,
-                                        copy_assignment_confidence: None,
+                                        copy_assignment_confidence: None, copy_independent_support: None,
                                         intron_low: Vec::new(),
                                         synthetic: false,
                                         rescue_class: None,
@@ -3110,7 +3110,7 @@ fn add_contained_isoforms(
                     hardstart: tx.hardstart,
                     hardend: tx.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
                 added += 1;
@@ -3302,7 +3302,7 @@ fn emit_junction_paths(
             hardstart,
             hardend,
             alt_tts_end,
-            vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+            vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
 
@@ -3588,7 +3588,7 @@ fn emit_chain_from_graph(
         hardstart: true,
         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
     })
 }
@@ -3720,7 +3720,7 @@ fn emit_reference_chains(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
                 added += 1;
@@ -3855,7 +3855,7 @@ fn emit_reference_chains(
                         hardstart: true,
                         hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                     });
                     added += 1;
@@ -3950,7 +3950,7 @@ fn emit_reference_chains(
             hardstart: true,
             hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
         added += 1;
@@ -6285,7 +6285,7 @@ fn emit_per_read_alt_combos(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None,
+            copy_assignment_confidence: None, copy_independent_support: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
@@ -6480,7 +6480,7 @@ fn emit_internal_ri_siblings(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None,
+                copy_assignment_confidence: None, copy_independent_support: None,
                 intron_low: Vec::new(),
                 synthetic: false,
                 rescue_class: None,
@@ -7998,7 +7998,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None,
+                copy_assignment_confidence: None, copy_independent_support: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             });
@@ -8130,7 +8130,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    copy_assignment_confidence: None,
+                    copy_assignment_confidence: None, copy_independent_support: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 };
@@ -8348,7 +8348,7 @@ fn extract_bundle_transcripts_for_graph(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None,
+                copy_assignment_confidence: None, copy_independent_support: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             });
@@ -8482,7 +8482,7 @@ fn extract_bundle_transcripts_for_graph(
                     vg_family_id: None,
                     vg_copy_id: None,
                     vg_family_size: None,
-                    copy_assignment_confidence: None,
+                    copy_assignment_confidence: None, copy_independent_support: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
@@ -9445,7 +9445,7 @@ fn collect_flow_residual_se(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None,
+            copy_assignment_confidence: None, copy_independent_support: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,
@@ -9648,7 +9648,7 @@ fn emit_stranded_single_exon_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None,
+            copy_assignment_confidence: None, copy_independent_support: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
@@ -9805,7 +9805,7 @@ fn emit_terminal_exon_se_candidates(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None,
+            copy_assignment_confidence: None, copy_independent_support: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
@@ -9887,7 +9887,7 @@ fn create_single_exon_predictions_from_bundle(
                         hardstart: false,
                         hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                     };
                     predictions.push(tx);
@@ -9929,7 +9929,7 @@ fn create_single_exon_predictions_from_bundle(
                     hardstart: false,
                     hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 };
                 predictions.push(tx);
@@ -10748,6 +10748,35 @@ pub fn run<P: AsRef<Path>>(
     let bundle_to_confidence: std::collections::HashMap<usize, f64> =
         if config.vg_mode && !vg_families.is_empty() {
             crate::vg::compute_per_copy_confidence(&vg_families, &bundles)
+        } else {
+            std::collections::HashMap::new()
+        };
+
+    // Certified copy-support guard (--vg): per-copy independent support.
+    //
+    // Computed HERE, on the ORIGINAL discovered families (`vg_families`,
+    // PRE-strand-split) while `bundles` still carries every family read with
+    // its NM. The original family's `multimap_reads` links a phantom copy's
+    // reads to their better-fitting sibling placement EVEN ACROSS STRANDS
+    // (DAZ1−/DAZ3+) — a strand-split sub-family would hide that sibling NM.
+    //
+    // Keyed by `(family_id, copy_id)` where `copy_id` is the fam_pos in
+    // `family.bundle_indices` — the SAME indexing `bundle_to_vg` assigns to
+    // `vg_copy_id` on transcripts, so the guard maps copy↔transcript directly.
+    let vg_copy_support: std::collections::HashMap<(usize, usize), f64> =
+        if config.vg_mode && !vg_families.is_empty() {
+            let margin: f64 = std::env::var("RUSTLE_VG_SUPPORT_NM_MARGIN")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.01);
+            let mut m = std::collections::HashMap::new();
+            for fam in &vg_families {
+                let per_copy = crate::vg::compute_copy_independent_support(fam, &bundles, margin);
+                for (copy_id, supp) in per_copy {
+                    m.insert((fam.family_id, copy_id), supp);
+                }
+            }
+            m
         } else {
             std::collections::HashMap::new()
         };
@@ -17192,7 +17221,7 @@ pub fn run<P: AsRef<Path>>(
                 hardstart: true,
                 hardend: true,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
             });
         }
@@ -17902,7 +17931,7 @@ pub fn run<P: AsRef<Path>>(
                     hardstart: true,
                     hardend: true,
                     alt_tts_end: true,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                 });
@@ -17995,6 +18024,50 @@ pub fn run<P: AsRef<Path>>(
             );
             all_transcripts.extend(sister_txs);
         }
+    }
+
+    // Certified copy-support guard (--vg): suppress phantom copies + annotate.
+    //
+    // A phantom copy (e.g. DAZ3) is assembled entirely from reads that fit a
+    // SIBLING copy far better. `vg_copy_support` (computed pre-strand-split on
+    // the ORIGINAL families) gives each `(vg_family_id, vg_copy_id)` its
+    // independent-support fraction. Drop transcripts whose copy is below TAU;
+    // annotate survivors with the certificate. VG-ONLY: transcripts with
+    // `vg_copy_id == None` are never inspected, so the default de-novo path is
+    // byte-identical.
+    if config.vg_mode && !vg_copy_support.is_empty() {
+        let tau: f64 = std::env::var("RUSTLE_VG_MIN_INDEP_SUPPORT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.10);
+        let before = all_transcripts.len();
+        all_transcripts.retain(|tx| {
+            match (tx.vg_family_id, tx.vg_copy_id) {
+                (Some(fam_id), Some(copy_id)) => {
+                    // If the copy isn't in the support map (e.g. topo-borrow
+                    // sister projection from a copy with no entry), keep it.
+                    match vg_copy_support.get(&(fam_id, copy_id)) {
+                        Some(&supp) => supp >= tau,
+                        None => true,
+                    }
+                }
+                // Non-VG transcript: untouched.
+                _ => true,
+            }
+        });
+        let suppressed = before - all_transcripts.len();
+        // Annotate survivors with their copy's certificate.
+        for tx in all_transcripts.iter_mut() {
+            if let (Some(fam_id), Some(copy_id)) = (tx.vg_family_id, tx.vg_copy_id) {
+                if let Some(&supp) = vg_copy_support.get(&(fam_id, copy_id)) {
+                    tx.copy_independent_support = Some(supp);
+                }
+            }
+        }
+        eprintln!(
+            "[VG] copy-support guard: suppressed {} phantom copies (independent_support < {})",
+            suppressed, tau
+        );
     }
 
     // Compute TPM/FPKM globally across the whole run (standard).

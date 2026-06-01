@@ -1485,6 +1485,113 @@ pub fn copy_support_fraction(n_unique: usize, multimappers: &[(f64, f64)], margi
     (n_unique + mm_support) as f64 / total as f64
 }
 
+/// Aligned length of a read in bp: sum of its exon spans (falls back to
+/// `query_length` if exons are empty). Returns 0 when neither is available.
+fn read_aligned_len(read: &BundleRead) -> u64 {
+    let exon_sum: u64 = read.exons.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
+    if exon_sum > 0 {
+        exon_sum
+    } else {
+        read.query_length.unwrap_or(0)
+    }
+}
+
+/// Compute each copy's **independent support** within a family.
+///
+/// Operates on the ORIGINAL discovered `FamilyGroup` (pre-strand-split), where
+/// `family.multimap_reads` links a read's placement at copy C to its placements
+/// at *all* sibling copies — including cross-strand siblings (DAZ1−/DAZ3+),
+/// which a strand-split sub-family would hide.
+///
+/// For each copy C (= `fam_pos` in `family.bundle_indices`):
+/// - **C-unique reads**: reads in C's bundle whose `read_name_hash` is NOT a key
+///   in `family.multimap_reads` (they only fit C → always support C).
+/// - **C-multimappers**: entries of `family.multimap_reads` that have a placement
+///   at C. For such a read, `rate_C = nm_at_C / aligned_len_at_C`, and
+///   `rate_min_sibling = min over the read's OTHER placements (other fam_pos in
+///   this family) of nm / aligned_len`. A placement with no usable aligned
+///   length is treated as missing data → the read SUPPORTS C (never penalize a
+///   copy for missing data).
+///
+/// Returns `fam_pos -> copy_support_fraction(...)`. The `fam_pos` keys match the
+/// `vg_copy_id` assigned to transcripts (both index into `family.bundle_indices`).
+pub fn compute_copy_independent_support(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    margin: f64,
+) -> HashMap<usize, f64> {
+    let mut out: HashMap<usize, f64> = HashMap::new();
+    let n_copies = family.bundle_indices.len();
+
+    // Per-copy rate at a single placement, or None if aligned length is missing.
+    let placement_rate = |fam_pos: usize, ri: usize| -> Option<f64> {
+        let bi = *family.bundle_indices.get(fam_pos)?;
+        let bundle = bundles.get(bi)?;
+        let read = bundle.reads.get(ri)?;
+        let alen = read_aligned_len(read);
+        if alen == 0 {
+            return None; // missing aligned-length data → no usable rate
+        }
+        Some(read.nm as f64 / alen as f64)
+    };
+
+    for c in 0..n_copies {
+        let bi = match family.bundle_indices.get(c) {
+            Some(&b) if b < bundles.len() => b,
+            _ => {
+                out.insert(c, 0.0);
+                continue;
+            }
+        };
+        let bundle = &bundles[bi];
+
+        // C-unique reads: in C's bundle, read_name_hash NOT a multimap key.
+        let n_unique = bundle
+            .reads
+            .iter()
+            .filter(|r| !family.multimap_reads.contains_key(&r.read_name_hash))
+            .count();
+
+        // C-multimappers: family multimap entries with a placement at C.
+        let mut mm_pairs: Vec<(f64, f64)> = Vec::new();
+        for placements in family.multimap_reads.values() {
+            // The read's placement at THIS copy (if any). A read can in
+            // principle have multiple placements at the same copy; take the
+            // best-fitting (lowest rate) as rate_C.
+            let rate_c: Option<f64> = placements
+                .iter()
+                .filter(|&&(fp, _)| fp == c)
+                .filter_map(|&(fp, ri)| placement_rate(fp, ri))
+                .fold(None, |acc, r| Some(acc.map_or(r, |a: f64| a.min(r))));
+
+            // Does this read place at C at all?
+            let places_at_c = placements.iter().any(|&(fp, _)| fp == c);
+            if !places_at_c {
+                continue;
+            }
+
+            // rate_min over the read's OTHER placements (other fam_pos).
+            let rate_min_sib: Option<f64> = placements
+                .iter()
+                .filter(|&&(fp, _)| fp != c)
+                .filter_map(|&(fp, ri)| placement_rate(fp, ri))
+                .fold(None, |acc, r| Some(acc.map_or(r, |a: f64| a.min(r))));
+
+            match (rate_c, rate_min_sib) {
+                (Some(rc), Some(rs)) => mm_pairs.push((rc, rs)),
+                // Missing data at C or at every sibling → no sibling evidence
+                // to demote this copy → the read SUPPORTS C. Encode as a pair
+                // that always passes the support test (rate_C == rate_sib).
+                _ => mm_pairs.push((0.0, 0.0)),
+            }
+        }
+
+        out.insert(c, copy_support_fraction(n_unique, &mm_pairs, margin));
+    }
+
+    out
+}
+
 /// Boost read weights in underpowered family-member bundles.
 ///
 /// When a bundle has fewer than `RUSTLE_VG_BOOST_PRIMARY_THR` primary reads
@@ -5267,6 +5374,7 @@ fn build_topology_borrow_transcript(
         vg_copy_id: Some(copy_id),
         vg_family_size: Some(family_size),
         copy_assignment_confidence: Some(confidence),
+        copy_independent_support: None,
         intron_low: Vec::new(),
         synthetic: true,
         rescue_class: Some(crate::vg_hmm::diagnostic::RescueClass::TopologyBorrow),
@@ -5469,6 +5577,109 @@ mod tests {
     #[test]
     fn no_reads_is_zero() {
         assert_eq!(copy_support_fraction(0, &[], 0.01), 0.0);
+    }
+
+    // ── compute_copy_independent_support fixture ──────────────────────────────
+    fn make_read_full(rnh: u64, exons: Vec<(u64, u64)>, nm: u32, is_reverse: bool) -> BundleRead {
+        let mut r = make_read(exons, vec![]);
+        r.read_name_hash = rnh;
+        r.nm = nm;
+        r.is_reverse = is_reverse;
+        r.strand = if is_reverse { '-' } else { '+' };
+        r
+    }
+
+    fn make_bundle(chrom: &str, strand: char, reads: Vec<BundleRead>) -> Bundle {
+        let start = reads.iter().map(|r| r.ref_start).min().unwrap_or(0);
+        let end = reads.iter().map(|r| r.ref_end).max().unwrap_or(start);
+        Bundle {
+            chrom: chrom.into(),
+            start,
+            end,
+            strand,
+            reads,
+            junction_stats: Default::default(),
+            junction_pair_stats: Default::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: false,
+            rescue_class: None,
+            vg_family_id: None,
+        }
+    }
+
+    /// Cross-strand DAZ3(+, phantom) ↔ DAZ1(−, real) in the ORIGINAL family.
+    /// Each multimapper places at BOTH copies; DAZ3's NM is ~15x DAZ1's.
+    /// DAZ3 has no unique reads → support ≈ 0 (suppressed); DAZ1 has unique
+    /// reads + multimappers that fit it best → support = 1.0 (kept).
+    #[test]
+    fn extractor_suppresses_cross_strand_phantom() {
+        // aligned_len = 1000 for every read (single 1000-bp exon).
+        // DAZ3 copy = fam_pos 0 (+strand); DAZ1 copy = fam_pos 1 (−strand).
+        // 30 shared reads: at DAZ3 nm=70 (rate .07), at DAZ1 nm=5 (rate .005).
+        let mut daz3_reads = Vec::new(); // copy 0 bundle (the phantom locus)
+        let mut daz1_reads = Vec::new(); // copy 1 bundle (the real locus)
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..30u64 {
+            let rnh = 1000 + i;
+            // placement at DAZ3 (copy 0): bad fit
+            daz3_reads.push(make_read_full(rnh, vec![(42_879_000, 42_880_000)], 70, false));
+            // placement at DAZ1 (copy 1): good fit
+            daz1_reads.push(make_read_full(rnh, vec![(42_780_000, 42_781_000)], 5, true));
+            multimap.insert(rnh, vec![(0, i as usize), (1, i as usize)]);
+        }
+        // DAZ1 also has 167 unique reads (read_name_hash NOT in multimap).
+        for i in 0..167u64 {
+            daz1_reads.push(make_read_full(9000 + i, vec![(42_785_000, 42_786_000)], 3, true));
+        }
+
+        let bundles = vec![
+            make_bundle("chrY", '+', daz3_reads),
+            make_bundle("chrY", '-', daz1_reads),
+        ];
+        let family = FamilyGroup {
+            family_id: 7,
+            bundle_indices: vec![0, 1],
+            multimap_reads: multimap,
+        };
+
+        let support = compute_copy_independent_support(&family, &bundles, 0.01);
+        let daz3 = support[&0];
+        let daz1 = support[&1];
+        assert!(daz3 < 0.05, "DAZ3 (phantom) should have ~0 support, got {daz3}");
+        assert!(daz1 > 0.95, "DAZ1 (real) should have ~1.0 support, got {daz1}");
+    }
+
+    /// Genuinely co-expressed near-identical copies (NM-tie) → both kept.
+    #[test]
+    fn extractor_keeps_co_expressed_ties() {
+        let mut a_reads = Vec::new();
+        let mut b_reads = Vec::new();
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..14u64 {
+            let rnh = 2000 + i;
+            a_reads.push(make_read_full(rnh, vec![(100, 1100)], 4, false));
+            b_reads.push(make_read_full(rnh, vec![(5000, 6000)], 4, false));
+            multimap.insert(rnh, vec![(0, i as usize), (1, i as usize)]);
+        }
+        // each copy has a few unique anchoring reads
+        for i in 0..9u64 {
+            a_reads.push(make_read_full(3000 + i, vec![(200, 1200)], 2, false));
+            b_reads.push(make_read_full(4000 + i, vec![(5200, 6200)], 2, false));
+        }
+        let bundles = vec![
+            make_bundle("chr1", '+', a_reads),
+            make_bundle("chr1", '+', b_reads),
+        ];
+        let family = FamilyGroup {
+            family_id: 1,
+            bundle_indices: vec![0, 1],
+            multimap_reads: multimap,
+        };
+        let support = compute_copy_independent_support(&family, &bundles, 0.01);
+        assert!(support[&0] > 0.95, "copy A should be kept, got {}", support[&0]);
+        assert!(support[&1] > 0.95, "copy B should be kept, got {}", support[&1]);
     }
 }
 
