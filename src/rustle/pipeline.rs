@@ -10537,6 +10537,31 @@ pub fn run<P: AsRef<Path>>(
     // State for post-assembly topology transfer (Direction 1, opt-in via RUSTLE_VG_TOPO_BORROW).
     let mut vg_topo_state: Option<crate::vg::TopoTransferState> = None;
 
+    // Certified copy-support guard (--vg): per-copy independent support.
+    //
+    // CRITICAL TIMING: this map is COMPUTED inside the EM block below (right
+    // after the EM dispatch, where `annotate_per_copy_exon_coverage` runs) and
+    // APPLIED much later, post-assembly, just before the GTF write. It must be
+    // computed HERE — not at the late apply site — because `family.multimap_reads`
+    // stores per-placement read indices (`ri`) into each bundle's `reads` vector
+    // AS IT WAS AT FAMILY DISCOVERY (before any read pruning). At the late apply
+    // site the family bundles' reads have been pruned/consumed, so those `ri`
+    // values are STALE: `bundles[bi].reads.get(ri)` returns None for a phantom
+    // copy whose secondaries were stripped, the metric's missing-data path fires,
+    // and the phantom (e.g. DAZ3) wrongly scores full support and survives. At
+    // EM time the bundles are still intact, so each placement's NM/aligned-len is
+    // read correctly and the phantom's siblings-fit-better evidence is preserved.
+    //
+    // Computed on the ORIGINAL discovered families (`vg_families`, PRE-strand-
+    // split). The original family's `multimap_reads` links a phantom copy's reads
+    // to their better-fitting sibling placement EVEN ACROSS STRANDS (DAZ1−/DAZ3+)
+    // — a strand-split sub-family would hide that sibling NM. Keyed by
+    // `(family_id, copy_id)` where `copy_id` is the fam_pos in
+    // `family.bundle_indices` — the SAME indexing `bundle_to_vg` assigns to
+    // `vg_copy_id` on transcripts, so the guard maps copy↔transcript directly.
+    let mut vg_copy_support: std::collections::HashMap<(usize, usize), f64> =
+        std::collections::HashMap::new();
+
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
         match config.vg_solver {
@@ -10702,6 +10727,30 @@ pub fn run<P: AsRef<Path>>(
                         }
                     };
 
+                    // Certified copy-support guard: compute the per-copy
+                    // independent-support map NOW, while `bundles` is intact
+                    // (the EM only reweighted reads; nothing has pruned them).
+                    // The family `multimap_reads` `ri` indices are still valid
+                    // here, so a phantom copy's secondaries are correctly read
+                    // as fitting a sibling far better. Applied post-assembly,
+                    // pre-GTF. Computed on the ORIGINAL families (`vg_families`),
+                    // NOT the strand-split `em_hmm_partitions`, keyed by
+                    // (family_id, fam_pos) to match transcripts' (vg_family_id,
+                    // vg_copy_id).
+                    {
+                        let margin: f64 = std::env::var("RUSTLE_VG_SUPPORT_NM_MARGIN")
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0.01);
+                        for fam in &vg_families {
+                            let per_copy =
+                                crate::vg::compute_copy_independent_support(fam, &bundles, margin);
+                            for (copy_id, supp) in per_copy {
+                                vg_copy_support.insert((fam.family_id, copy_id), supp);
+                            }
+                        }
+                    }
+
                     // Junction propagation and coverage borrowing: available
                     // whenever FamilyGraph was built (hmm_ok OR --vg-no-hmm
                     // with --genome-fasta).
@@ -10752,34 +10801,10 @@ pub fn run<P: AsRef<Path>>(
             std::collections::HashMap::new()
         };
 
-    // Certified copy-support guard (--vg): per-copy independent support.
-    //
-    // Computed HERE, on the ORIGINAL discovered families (`vg_families`,
-    // PRE-strand-split) while `bundles` still carries every family read with
-    // its NM. The original family's `multimap_reads` links a phantom copy's
-    // reads to their better-fitting sibling placement EVEN ACROSS STRANDS
-    // (DAZ1−/DAZ3+) — a strand-split sub-family would hide that sibling NM.
-    //
-    // Keyed by `(family_id, copy_id)` where `copy_id` is the fam_pos in
-    // `family.bundle_indices` — the SAME indexing `bundle_to_vg` assigns to
-    // `vg_copy_id` on transcripts, so the guard maps copy↔transcript directly.
-    let vg_copy_support: std::collections::HashMap<(usize, usize), f64> =
-        if config.vg_mode && !vg_families.is_empty() {
-            let margin: f64 = std::env::var("RUSTLE_VG_SUPPORT_NM_MARGIN")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(0.01);
-            let mut m = std::collections::HashMap::new();
-            for fam in &vg_families {
-                let per_copy = crate::vg::compute_copy_independent_support(fam, &bundles, margin);
-                for (copy_id, supp) in per_copy {
-                    m.insert((fam.family_id, copy_id), supp);
-                }
-            }
-            m
-        } else {
-            std::collections::HashMap::new()
-        };
+    // NOTE: the certified copy-support map (`vg_copy_support`) is populated
+    // INSIDE the EM block above, while `bundles` is still intact and the family
+    // `multimap_reads` `ri` indices are still valid (see the long comment at the
+    // map's declaration). It is APPLIED post-assembly, just before the GTF write.
 
     if config.vg_mode
         && !vg_families.is_empty()

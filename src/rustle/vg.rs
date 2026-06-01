@@ -1509,9 +1509,18 @@ fn read_aligned_len(read: &BundleRead) -> u64 {
 /// - **C-multimappers**: entries of `family.multimap_reads` that have a placement
 ///   at C. For such a read, `rate_C = nm_at_C / aligned_len_at_C`, and
 ///   `rate_min_sibling = min over the read's OTHER placements (other fam_pos in
-///   this family) of nm / aligned_len`. A placement with no usable aligned
-///   length is treated as missing data → the read SUPPORTS C (never penalize a
-///   copy for missing data).
+///   this family) of nm / aligned_len`. A multimapper whose `rate_C` OR
+///   `rate_min_sibling` is UNAVAILABLE (missing aligned-length, or a stale
+///   read index that no longer resolves to a read) is UNASSESSABLE and is
+///   EXCLUDED from the fraction entirely — neither numerator nor denominator.
+///   We never let missing data *manufacture* support for a copy; it simply
+///   isn't counted. If a copy has zero assessable reads AND zero unique reads,
+///   we default to KEEP (`support = 1.0`) so a copy is never suppressed purely
+///   on absent evidence.
+///
+/// With the map computed at EM time (bundles intact, `ri` indices valid) the
+/// unassessable path almost never fires; it only guards against residual
+/// staleness, and now fails SAFE (exclude) rather than DANGEROUS (support).
 ///
 /// Returns `fam_pos -> copy_support_fraction(...)`. The `fam_pos` keys match the
 /// `vg_copy_id` assigned to transcripts (both index into `family.bundle_indices`).
@@ -1553,7 +1562,11 @@ pub fn compute_copy_independent_support(
             .count();
 
         // C-multimappers: family multimap entries with a placement at C.
+        // `mm_pairs` holds only ASSESSABLE reads (both rate_C and a sibling rate
+        // are available). Unassessable reads are excluded entirely and counted
+        // in `n_unassessable` for the trace — never pushed as fake support.
         let mut mm_pairs: Vec<(f64, f64)> = Vec::new();
+        let mut n_unassessable: usize = 0;
         for placements in family.multimap_reads.values() {
             // The read's placement at THIS copy (if any). A read can in
             // principle have multiple placements at the same copy; take the
@@ -1579,14 +1592,27 @@ pub fn compute_copy_independent_support(
 
             match (rate_c, rate_min_sib) {
                 (Some(rc), Some(rs)) => mm_pairs.push((rc, rs)),
-                // Missing data at C or at every sibling → no sibling evidence
-                // to demote this copy → the read SUPPORTS C. Encode as a pair
-                // that always passes the support test (rate_C == rate_sib).
-                _ => mm_pairs.push((0.0, 0.0)),
+                // Missing data at C or at every sibling → we cannot assess this
+                // read. EXCLUDE it from the fraction (neither numerator nor
+                // denominator). Never let absent evidence manufacture support.
+                _ => n_unassessable += 1,
             }
         }
 
-        out.insert(c, copy_support_fraction(n_unique, &mm_pairs, margin));
+        // Default to KEEP only when there is NO usable evidence at all (no
+        // unique reads and no assessable multimappers) — a copy is never
+        // suppressed purely on missing data.
+        let support = if n_unique == 0 && mm_pairs.is_empty() {
+            1.0
+        } else {
+            copy_support_fraction(n_unique, &mm_pairs, margin)
+        };
+        if std::env::var_os("RUSTLE_VG_SUPPORT_TRACE").is_some() {
+            let sample: Vec<(f64,f64)> = mm_pairs.iter().take(5).copied().collect();
+            eprintln!("[SUPPORT] fam={} copy={} bi={} n_reads_in_bundle={} n_unique={} n_assessable_mm={} n_unassessable_mm={} support={:.3} sample_mm={:?}",
+                family.family_id, c, bi, bundle.reads.len(), n_unique, mm_pairs.len(), n_unassessable, support, sample);
+        }
+        out.insert(c, support);
     }
 
     out
