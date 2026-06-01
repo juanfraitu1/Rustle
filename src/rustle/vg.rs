@@ -1514,6 +1514,27 @@ pub fn anchor_read(nm_c: u32, alen_c: u64, others: &[(u32, u64)], t: i64, extent
     }
 }
 
+/// Number of identifiability classes among `n_copies`: copies are merged when
+/// they are NON-identifiable (`nonid_pairs`). classes == n_copies -> full;
+/// classes == 1 -> none; otherwise partial.
+pub fn identifiability_partition(n_copies: usize, nonid_pairs: &[(usize, usize)]) -> usize {
+    let mut parent: Vec<usize> = (0..n_copies).collect();
+    fn find(parent: &mut Vec<usize>, x: usize) -> usize {
+        let mut r = x;
+        while parent[r] != r { r = parent[r]; }
+        let mut c = x;
+        while parent[c] != c { let n = parent[c]; parent[c] = r; c = n; }
+        r
+    }
+    for &(a, b) in nonid_pairs {
+        if a < n_copies && b < n_copies {
+            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+            if ra != rb { parent[ra] = rb; }
+        }
+    }
+    (0..n_copies).filter(|&i| find(&mut parent, i) == i).count()
+}
+
 /// Aligned length of a read in bp: sum of its exon spans (falls back to
 /// `query_length` if exons are empty). Returns 0 when neither is available.
 fn read_aligned_len(read: &BundleRead) -> u64 {
@@ -5666,6 +5687,26 @@ mod tests {
         assert_eq!(anchor_read(0, 100, &[(1, 100)], 2, 0.9), ReadAnchor::Tie);
         // alen_c == 0 guard -> Owns regardless of others
         assert_eq!(anchor_read(5, 0, &[(0, 100)], 2, 0.7), ReadAnchor::Owns);
+    }
+
+    // ── identifiability_partition (union-find equivalence classes) ────────────
+    #[test]
+    fn partition_full_when_all_pairs_distinguishable() {
+        // 3 copies, every shared pair has a distinguishing read -> 3 classes (full)
+        let nonid_pairs: Vec<(usize, usize)> = vec![];
+        assert_eq!(identifiability_partition(3, &nonid_pairs), 3);
+    }
+    #[test]
+    fn partition_none_when_all_pairs_nonidentifiable() {
+        // 3 identical copies, every pair non-identifiable -> 1 class (none)
+        let nonid_pairs = vec![(0, 1), (1, 2), (0, 2)];
+        assert_eq!(identifiability_partition(3, &nonid_pairs), 1);
+    }
+    #[test]
+    fn partition_partial_when_some_merge() {
+        // copies 0,1 identical; 2 distinct -> 2 classes (partial)
+        let nonid_pairs = vec![(0, 1)];
+        assert_eq!(identifiability_partition(3, &nonid_pairs), 2);
     }
 
     // ── compute_copy_independent_support fixture ──────────────────────────────
