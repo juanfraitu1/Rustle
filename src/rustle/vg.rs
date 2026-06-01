@@ -1463,6 +1463,28 @@ pub fn compute_per_copy_confidence(
     result
 }
 
+/// Fraction of a copy C's reads that fit IT at least as well as any sibling.
+///
+/// `n_unique` reads always support C (they only fit C). A multimapper is given
+/// as `(rate_C, rate_min_sibling)` = (read's NM-rate at THIS copy, read's best
+/// NM-rate at any sibling); it supports C iff `rate_C <= rate_min_sibling +
+/// margin` (NM-ties within `margin` count as supporting — no false suppression
+/// of genuinely-ambiguous co-expressed copies).
+///
+/// Returns `(n_unique + #supporting_multimappers) / total`, or `0.0` if there
+/// are no reads at all.
+pub fn copy_support_fraction(n_unique: usize, multimappers: &[(f64, f64)], margin: f64) -> f64 {
+    let total = n_unique + multimappers.len();
+    if total == 0 {
+        return 0.0;
+    }
+    let mm_support = multimappers
+        .iter()
+        .filter(|&&(rate_c, rate_min_sib)| rate_c <= rate_min_sib + margin)
+        .count();
+    (n_unique + mm_support) as f64 / total as f64
+}
+
 /// Boost read weights in underpowered family-member bundles.
 ///
 /// When a bundle has fewer than `RUSTLE_VG_BOOST_PRIMARY_THR` primary reads
@@ -5410,6 +5432,43 @@ mod tests {
             "junction+NM should widen the gap over fingerprint alone: \
              combined {combined_gap:.3} > fp-only {fp_gap_only:.3}"
         );
+    }
+
+    // ── copy_support_fraction (certified copy-support guard) ──────────────────
+    // rate pairs are (rate_C, rate_min_sibling); n_unique reads always support C.
+    // A multimapper supports C iff rate_C <= rate_min_sibling + margin.
+    #[test]
+    fn daz3_phantom_zero_support() {
+        // 0 unique; all multimappers fit a sibling far better (rate_C 0.07 vs sib 0.005)
+        let mm = vec![(0.07, 0.005); 30];
+        assert!(copy_support_fraction(0, &mm, 0.01) < 0.05);
+    }
+
+    #[test]
+    fn daz1_real_high_support() {
+        // many unique reads + multimappers that fit C best
+        let mm = vec![(0.005, 0.07); 14];
+        assert!(copy_support_fraction(167, &mm, 0.01) > 0.95);
+    }
+
+    #[test]
+    fn co_expressed_tie_supports_both() {
+        // NM-tie multimappers (within margin) count as supporting C (no false suppression)
+        let mm = vec![(0.004, 0.004); 14];
+        assert!(copy_support_fraction(9, &mm, 0.01) > 0.95);
+    }
+
+    #[test]
+    fn margin_boundary() {
+        // 0.015 > 0.004+0.01 -> belongs elsewhere
+        assert_eq!(copy_support_fraction(0, &vec![(0.015, 0.004)], 0.01), 0.0);
+        // 0.013 within margin -> supports
+        assert_eq!(copy_support_fraction(0, &vec![(0.013, 0.004)], 0.01), 1.0);
+    }
+
+    #[test]
+    fn no_reads_is_zero() {
+        assert_eq!(copy_support_fraction(0, &[], 0.01), 0.0);
     }
 }
 
