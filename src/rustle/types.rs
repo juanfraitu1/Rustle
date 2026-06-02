@@ -176,6 +176,8 @@ pub struct BundleRead {
     pub nh: u32,
     /// Edit distance (NM/nM tag when present). Used for per-junction mismatch accumulation.
     pub nm: u32,
+    /// minimap2 gap-compressed per-base divergence (de:f: tag); None if absent.
+    pub de: Option<f32>,
     /// MD tag for mismatch/deletion anchor checks near splice sites.
     pub md: Option<String>,
     /// Reference positions of CIGAR insertions (anchor checks near splice sites).

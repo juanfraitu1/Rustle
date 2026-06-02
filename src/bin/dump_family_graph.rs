@@ -108,6 +108,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         clip_right: 0,
         nh: 1,
         nm: 0,
+        de: None,
         md: None,
         insertion_sites: Vec::new(),
         unitig: false,

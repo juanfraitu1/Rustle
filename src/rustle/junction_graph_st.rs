@@ -1118,7 +1118,7 @@ mod tests {
             unaligned_poly_t: 0, unaligned_poly_a: 0,
             has_last_exon_polya: false, has_first_exon_polyt: false,
             query_length: None, clip_left: 0, clip_right: 0,
-            nh: 1, nm: 0, md: None, insertion_sites: vec![],
+            nh: 1, nm: 0, de: None, md: None, insertion_sites: vec![],
             unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
             countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
             pair_idx: vec![], pair_count: vec![],

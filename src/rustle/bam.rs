@@ -210,6 +210,15 @@ fn get_tag_int(record: &RecordBuf, tag_name: &str) -> Option<u32> {
         .and_then(|v| v.as_int().and_then(|n| u32::try_from(n).ok()))
 }
 
+fn get_tag_float(record: &RecordBuf, tag_name: &str) -> Option<f32> {
+    let tag = parse_tag(tag_name)?;
+    let data = record.data();
+    data.get(&tag).and_then(|v| match v {
+        noodles_sam::alignment::record_buf::data::field::Value::Float(f) => Some(*f),
+        _ => None,
+    })
+}
+
 /// HI tag (alignment hit index), used by the original algorithm to disambiguate mate matching keys.
 fn get_hi(record: &RecordBuf) -> u32 {
     get_tag_int(record, "HI").unwrap_or(0)
@@ -821,6 +830,7 @@ pub fn record_to_bundle_read_with_snp_vg(
         clip_right,
         nh,
         nm,
+        de: get_tag_float(record, "de"),
         md,
         insertion_sites,
         unitig: yk > 0.0,
