@@ -2395,6 +2395,30 @@ pub fn partition_and_remap_family_by_strand(
     out
 }
 
+/// Joint-strand EM input (spec component 1, O1-resolved): return the family
+/// UNSPLIT (both strands together) for the fingerprint-EM placement list +
+/// normalization only. Unlike `partition_and_remap_family_by_strand`, no
+/// strand grouping and no `<2 placements after split` drop happens, so a read
+/// shared only across an inverted pair (e.g. DAZ1(-)/DAZ3(+)) keeps all its
+/// placements and is reweighted to sum to 1.0 across BOTH strands instead of
+/// staying at 1/NH in each. `fam_pos` is preserved as an index into
+/// `bundle_indices`, keeping EM write-back `global_bi/ri` valid.
+///
+/// Returns a single-element `Vec<FamilyGroup>` so it is a drop-in for
+/// `partition_and_remap_family_by_strand`'s return type at the call site.
+/// The family GRAPH is NOT rebuilt on this unsplit group (build_family_graph
+/// bails on mixed strands, family_graph.rs:432); the strand-split graphs are
+/// kept and indexed inside `run_fingerprint_em`, where a missing/empty graph
+/// for a cross-strand group routes to the `fp.n_sites==0` neutral path.
+/// `_bundles` is accepted for signature parity (strand is irrelevant here).
+pub fn family_for_em_input(family: &FamilyGroup, _bundles: &[Bundle]) -> Vec<FamilyGroup> {
+    vec![FamilyGroup {
+        family_id: family.family_id,
+        bundle_indices: family.bundle_indices.clone(),
+        multimap_reads: family.multimap_reads.clone(),
+    }]
+}
+
 // ── HMM-based EM reweighting (sequence-aware copy assignment) ────────────────
 
 /// HMM-based EM reweighting across copies in a family group.
@@ -6260,6 +6284,32 @@ mod tests {
         assert_eq!(v.class, FamilyClass::FamilyNonIdentifiable);
         assert_eq!(v.identifiability, Identifiability::None);
         assert_eq!(v.n_id_classes, 1);
+    }
+
+    /// `family_for_em_input` returns ONE FamilyGroup spanning BOTH strands,
+    /// preserving `fam_pos` indexing into `bundle_indices` and the full
+    /// `multimap_reads` (no per-strand split, no <2-placement drop). Contrast:
+    /// `partition_and_remap_family_by_strand` would split this into two
+    /// single-bundle sub-families and drop the cross-strand read.
+    #[test]
+    fn family_for_em_input_keeps_cross_strand_placements() {
+        // Read 7 maps to copy 0 (would be '-' strand) and copy 1 ('+' strand).
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        multimap.insert(7u64, vec![(0usize, 0usize), (1usize, 0usize)]);
+        let fam = FamilyGroup {
+            family_id: 42,
+            bundle_indices: vec![10, 20],
+            multimap_reads: multimap,
+        };
+        let bundles: Vec<Bundle> = Vec::new();
+        let out = family_for_em_input(&fam, &bundles);
+        assert_eq!(out.len(), 1, "unsplit family yields exactly one group");
+        let g = &out[0];
+        assert_eq!(g.family_id, 42, "family_id preserved (no *10+i remap)");
+        assert_eq!(g.bundle_indices, vec![10, 20], "all copies kept");
+        let locs = g.multimap_reads.get(&7u64)
+            .expect("cross-strand shared read retained in EM input");
+        assert!(locs.len() >= 2, "shared read keeps >=2 placements (got {})", locs.len());
     }
 }
 
