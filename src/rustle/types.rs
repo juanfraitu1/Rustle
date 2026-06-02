@@ -220,6 +220,16 @@ pub struct BundleRead {
     /// Populated at ingest; used in VG mode to filter secondaries out of
     /// non-family bundles after family discovery.
     pub is_primary_alignment: bool,
+    /// VG joint-strand EM: per-read anchoring score gap from `run_fingerprint_em`
+    /// write-back (vg.rs:4823-4866). -1.0 = not yet computed / non-VG run.
+    pub em_weight_gap: f64,
+    /// VG joint-strand EM: number of decisive fingerprint sites backing this
+    /// read's copy assignment. 0 = none / non-VG run.
+    pub em_n_sites: u32,
+    /// VG joint-strand EM: true when this read's mass is anchored (unique read
+    /// or fingerprint-decisive). Default at construction is `nh <= 1`; refined
+    /// in EM write-back. Drives capacity-confidence accumulation.
+    pub em_anchored: bool,
 }
 
 /// `CPred` transport for longtrim boundary points (predno, cov).

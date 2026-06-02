@@ -847,6 +847,9 @@ pub fn record_to_bundle_read_with_snp_vg(
         hp_tag,
         ps_tag,
         is_primary_alignment,
+        em_weight_gap: -1.0,
+        em_n_sites: 0,
+        em_anchored: nh <= 1,
     })
 }
 

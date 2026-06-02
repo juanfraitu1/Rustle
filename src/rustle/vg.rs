@@ -5716,6 +5716,7 @@ mod tests {
             pair_idx: vec![], pair_count: vec![],
             mapq: 60, mismatches, seq: Vec::new(), hp_tag: None, ps_tag: None,
             is_primary_alignment: true,
+            em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
         }
     }
 
