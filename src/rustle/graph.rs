@@ -770,15 +770,18 @@ impl Graph {
             if last_end > self.nodes[head].end {
                 // Transfer coverage/abundance from absorbed nodes to head.
                 let mut added_cov = 0.0f64;
+                let mut added_anchored_cov = 0.0f64;
                 let mut added_longcov = 0.0f64;
                 let mut added_nodecov = 0.0f64;
                 for &pt_id in &pts {
                     added_cov += self.nodes[pt_id].coverage;
+                    added_anchored_cov += self.nodes[pt_id].anchored_coverage;
                     added_longcov += self.nodes[pt_id].longcov;
                     added_nodecov += self.nodes[pt_id].nodecov;
                 }
                 self.nodes[head].end = last_end;
                 self.nodes[head].coverage += added_cov;
+                self.nodes[head].anchored_coverage += added_anchored_cov;
                 self.nodes[head].longcov += added_longcov;
                 self.nodes[head].nodecov += added_nodecov;
 

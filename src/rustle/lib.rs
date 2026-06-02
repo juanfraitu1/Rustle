@@ -80,6 +80,7 @@ pub mod parity;           // parity dumps + decision log (consolidated)
 pub mod assembly_mode; // assembly mode dispatch
 pub mod merge_mode; // merge mode (multi-sample)
 pub mod debug_stage;
+pub mod vg_runtime; // process-global "--vg active" flag for the anchored-coverage channel
 pub mod pipeline; // main long-read assembly pipeline
 
 // ── Per-bundlenode graph processing ───────────────────────────────────────────

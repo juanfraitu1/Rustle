@@ -252,7 +252,7 @@ fn collect_read_nodes_exact(
     graph: &Graph,
     ordered_nodes: &[usize],
     add_coverage: bool,
-) -> (Vec<usize>, Vec<(usize, f64)>) {
+) -> (Vec<usize>, Vec<(usize, f64, f64)>) {
     let mut path = Vec::new();
     let mut cov_add = Vec::new();
     let mut exon_idx = 0usize;
@@ -328,7 +328,17 @@ fn collect_read_nodes_exact(
             if bp > 0 {
                 intersect = true;
                 if add_coverage && !read.unitig {
-                    cov_add.push((nid, read.weight * (bp as f64)));
+                    let cov = read.weight * (bp as f64);
+                    // Parallel anchored-coverage channel. Gated on the
+                    // process-global VG flag so non-VG runs always push 0.0
+                    // here and the default de-novo path is byte-identical.
+                    // anchored <= cov always (factor is weight or 0).
+                    let anchored = if crate::vg_runtime::vg_mode() && read.em_anchored {
+                        cov
+                    } else {
+                        0.0
+                    };
+                    cov_add.push((nid, cov, anchored));
                 }
                 if seg_end <= node.end {
                     exon_idx += 1;
@@ -557,9 +567,10 @@ pub fn map_reads_to_graph(
         let is_long = true; // long-read only mode
 
         let (unique_nodes, cov_add) = collect_read_nodes_exact(read, graph, &ordered_nodes, true);
-        for (idx, add) in cov_add {
+        for (idx, add, anchored_add) in cov_add {
             if let Some(n) = graph.nodes.get_mut(idx) {
                 n.coverage += add;
+                n.anchored_coverage += anchored_add;
             }
         }
 
@@ -847,9 +858,10 @@ pub fn map_reads_to_graph_per_read(
 
         // Step 1: Map read to full node path (no segmentation)
         let (unique_nodes, cov_add) = collect_read_nodes_exact(read, graph, &ordered_nodes, true);
-        for (idx, add) in cov_add {
+        for (idx, add, anchored_add) in cov_add {
             if let Some(n) = graph.nodes.get_mut(idx) {
                 n.coverage += add;
+                n.anchored_coverage += anchored_add;
             }
         }
 
@@ -1078,9 +1090,10 @@ pub fn map_reads_to_graph_bundlenodes(
         if unique_nodes.is_empty() {
             continue;
         }
-        for (nid, add) in cov_add {
+        for (nid, add, anchored_add) in cov_add {
             if let Some(n) = graph.nodes.get_mut(nid) {
                 n.coverage += add;
+                n.anchored_coverage += anchored_add;
             }
         }
         if let Some((rs, re)) = dump_range {
@@ -2556,4 +2569,93 @@ pub fn enumerate_trim_alternatives(
     }
 
     alternatives
+}
+
+#[cfg(test)]
+mod anchored_cov_tests {
+    use super::*;
+    use crate::graph::Graph;
+    use crate::types::BundleRead;
+    use std::sync::Mutex;
+
+    // The VG flag is process-global; serialize these tests so the default
+    // multi-threaded runner can't observe a sibling test's flag mutation.
+    static VG_FLAG_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Full BundleRead literal (mirrors vg.rs::make_read). `em_anchored` toggled
+    /// per case; em_weight_gap/em_n_sites carry their defaults.
+    fn make_read(exons: Vec<(u64, u64)>, weight: f64, em_anchored: bool) -> BundleRead {
+        BundleRead {
+            read_uid: 0, read_name: "r".into(), read_name_hash: 0,
+            ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+            ref_start: exons.first().map(|(s, _)| *s).unwrap_or(0),
+            ref_end:   exons.last().map(|(_, e)| *e).unwrap_or(0),
+            exons, junctions: vec![], junction_valid: vec![],
+            junctions_raw: vec![], junctions_del: vec![],
+            weight, is_reverse: false, strand: '+',
+            has_poly_start: false, has_poly_end: false,
+            has_poly_start_aligned: false, has_poly_start_unaligned: false,
+            has_poly_end_aligned: false, has_poly_end_unaligned: false,
+            unaligned_poly_t: 0, unaligned_poly_a: 0,
+            has_last_exon_polya: false, has_first_exon_polyt: false,
+            query_length: None, clip_left: 0, clip_right: 0,
+            nh: 1, nm: 0, de: None, md: None, insertion_sites: vec![],
+            unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
+            countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
+            pair_idx: vec![], pair_count: vec![],
+            mapq: 60, mismatches: vec![], seq: Vec::new(), hp_tag: None, ps_tag: None,
+            is_primary_alignment: true,
+            em_weight_gap: -1.0, em_n_sites: 0, em_anchored,
+        }
+    }
+
+    /// Two contiguous exon segments → one node covering both.
+    fn one_node_graph() -> Graph {
+        let mut g = Graph::new();
+        g.add_node(100, 200); // node 0: 100..200 (100 bp)
+        g
+    }
+
+    #[test]
+    fn anchored_is_zero_when_not_vg_mode() {
+        let _guard = VG_FLAG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        crate::vg_runtime::set_vg_mode(false);
+        let g = one_node_graph();
+        let ordered: Vec<usize> = (0..g.nodes.len()).collect();
+        let read = make_read(vec![(100, 200)], 1.0, /*em_anchored=*/true);
+        let (_path, cov_add) = collect_read_nodes_exact(&read, &g, &ordered, true);
+        assert!(!cov_add.is_empty(), "read overlaps the node");
+        for (_nid, cov, anchored) in &cov_add {
+            assert!(*cov > 0.0, "coverage accrues regardless of mode");
+            assert_eq!(*anchored, 0.0, "non-vg leaves anchored_coverage == 0");
+        }
+    }
+
+    #[test]
+    fn anchored_le_coverage_and_tracks_em_anchored() {
+        let _guard = VG_FLAG_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        crate::vg_runtime::set_vg_mode(true);
+
+        let g = one_node_graph();
+        let ordered: Vec<usize> = (0..g.nodes.len()).collect();
+
+        // Anchored read: anchored == coverage (full weight*bp).
+        let anchored_read = make_read(vec![(100, 200)], 1.0, true);
+        let (_p, cov_add) = collect_read_nodes_exact(&anchored_read, &g, &ordered, true);
+        for (_nid, cov, anchored) in &cov_add {
+            assert!(*anchored <= *cov, "anchored_coverage <= coverage");
+            assert_eq!(*anchored, *cov, "anchored read contributes full mass");
+        }
+
+        // Ambiguous (non-anchored) read: coverage accrues, anchored is 0.
+        let ambiguous_read = make_read(vec![(100, 200)], 0.5, false);
+        let (_p, cov_add) = collect_read_nodes_exact(&ambiguous_read, &g, &ordered, true);
+        for (_nid, cov, anchored) in &cov_add {
+            assert!(*cov > 0.0, "ambiguous read still adds coverage");
+            assert_eq!(*anchored, 0.0, "non-anchored adds no anchored mass");
+            assert!(*anchored <= *cov, "invariant holds for ambiguous read too");
+        }
+
+        crate::vg_runtime::set_vg_mode(false); // restore for other tests
+    }
 }

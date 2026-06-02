@@ -10024,6 +10024,7 @@ pub fn run<P: AsRef<Path>>(
         }
     }
     debug_stage::init(diag_tsv_resolved.as_deref())?;
+    crate::vg_runtime::set_vg_mode(config.vg_mode);
     junction_dump::init()?;
     partition_dump::init()?;
     trace_dump::init()?;
