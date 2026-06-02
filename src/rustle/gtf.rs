@@ -183,6 +183,16 @@ pub fn write_gtf<W: Write>(
         if let Some(supp) = tx.copy_independent_support {
             tx_attrs.push_str(&format!(" copy_independent_support \"{:.3}\";", supp));
         }
+        // Capacity-confidence channel (--vg flow-apportionment spec 2026-06-01).
+        // Per-transcript anchored/total coverage fraction; only set in VG mode,
+        // so non-VG GTF is byte-identical. Mirrors copy_confidence formatting.
+        if let Some(cc) = tx.capacity_confidence {
+            tx_attrs.push_str(&format!(" capacity_confidence \"{:.3}\";", cc));
+        }
+        // Jointly-feasible lower bound on abundance (coverage * capacity_confidence).
+        if let Some(amin) = tx.abundance_min {
+            tx_attrs.push_str(&format!(" abundance_min \"{:.3}\";", amin));
+        }
         // Multi-copy family classification verdict (--vg only).
         if let Some(ref v) = tx.family_verdict {
             tx_attrs.push_str(&format!(
@@ -256,4 +266,66 @@ pub fn write_gtf<W: Write>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::path_extract::Transcript;
+    use crate::vg::{FamilyClass, FamilyVerdict, Identifiability, LocusRel};
+
+    fn one_exon_tx() -> Transcript {
+        Transcript {
+            chrom: "chrT".to_string(),
+            strand: '+',
+            exons: vec![(100, 200)],
+            coverage: 12.0,
+            ..Default::default()
+        }
+    }
+
+    fn render(tx: Transcript) -> String {
+        let mut buf: Vec<u8> = Vec::new();
+        write_gtf(&[tx], &mut buf, "STRG").unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn capacity_attrs_emitted_when_some() {
+        let mut tx = one_exon_tx();
+        tx.capacity_confidence = Some(0.250);
+        tx.abundance_min = Some(3.000);
+        let out = render(tx);
+        assert!(out.contains("capacity_confidence \"0.250\";"), "missing capacity_confidence in:\n{out}");
+        assert!(out.contains("abundance_min \"3.000\";"), "missing abundance_min in:\n{out}");
+    }
+
+    #[test]
+    fn capacity_attrs_absent_when_none() {
+        let tx = one_exon_tx(); // both fields default to None (non-vg)
+        let out = render(tx);
+        assert!(!out.contains("capacity_confidence"), "capacity_confidence leaked into non-vg GTF:\n{out}");
+        assert!(!out.contains("abundance_min"), "abundance_min leaked into non-vg GTF:\n{out}");
+    }
+
+    #[test]
+    fn abstained_tx_retained_and_tagged() {
+        // Simulate the pipeline abstain tag: a low-cc tx with no prior verdict
+        // gets a synthesized verdict whose identifiability == None. The tx is NOT
+        // dropped, so its coverage survives and the GTF carries the tag.
+        let mut tx = one_exon_tx();
+        tx.capacity_confidence = Some(0.010);
+        tx.family_verdict = Some(FamilyVerdict {
+            class: FamilyClass::Spillover,
+            n_copies: 1,
+            n_expressed: 0,
+            connectivity: 0.0,
+            identifiability: Identifiability::None,
+            n_id_classes: 0,
+            locus_rel: LocusRel::Single,
+        });
+        let out = render(tx);
+        assert!(out.contains("cov \"12.000000\";"), "abstained tx lost its coverage:\n{out}");
+        assert!(out.contains("family_identifiability \"none\";"), "abstain tag missing:\n{out}");
+    }
 }

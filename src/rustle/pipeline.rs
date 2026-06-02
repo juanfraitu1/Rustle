@@ -18139,12 +18139,44 @@ pub fn run<P: AsRef<Path>>(
         });
         let suppressed = before - all_transcripts.len();
         // Annotate survivors with their copy's certificate.
+        // Abstain floor: transcripts whose capacity_confidence falls below this
+        // are TAGGED low-confidence (via family_verdict) but kept — coverage/TPM
+        // and the benchmark transcript set are preserved (spec O5: tag, not drop).
+        let abstain_floor: f64 = std::env::var("RUSTLE_VG_ABSTAIN_FLOOR")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.05);
         for tx in all_transcripts.iter_mut() {
             if let (Some(fam_id), Some(copy_id)) = (tx.vg_family_id, tx.vg_copy_id) {
                 if let Some(&supp) = vg_copy_support.get(&(fam_id, copy_id)) {
                     tx.copy_independent_support = Some(supp);
                 }
                 tx.family_verdict = vg_family_verdict.get(&(fam_id, copy_id)).cloned();
+            }
+            // Low-confidence abstain tag. Applies to ANY VG transcript carrying a
+            // capacity_confidence (Phase C), not just family copies. We mark the
+            // verdict's identifiability as None (surfaced as family_identifiability
+            // "none" in GTF); a tx with no prior verdict gets a minimal synthesized
+            // one so the tag is observable. Coverage is untouched.
+            if let Some(cc) = tx.capacity_confidence {
+                if cc < abstain_floor {
+                    match tx.family_verdict {
+                        Some(ref mut v) => {
+                            v.identifiability = crate::vg::Identifiability::None;
+                        }
+                        None => {
+                            tx.family_verdict = Some(crate::vg::FamilyVerdict {
+                                class: crate::vg::FamilyClass::Spillover,
+                                n_copies: 1,
+                                n_expressed: 0,
+                                connectivity: 0.0,
+                                identifiability: crate::vg::Identifiability::None,
+                                n_id_classes: 0,
+                                locus_rel: crate::vg::LocusRel::Single,
+                            });
+                        }
+                    }
+                }
             }
         }
         eprintln!(
