@@ -4926,6 +4926,33 @@ pub fn run_fingerprint_em(
                         else if v > second { second = v; }
                     }
                     if best.is_finite() && second.is_finite() && (best - second) < eff_gap {
+                        // Conservation hole fix: rather than leaving this read at its
+                        // raw 1/NH weights (which do NOT generally sum to 1.0 across the
+                        // placements kept in this entry), assign the normalized anchored
+                        // prior over this read's placements. Mass-conserving: weights
+                        // sum to exactly 1.0. The prior (log_priors) is the M-step's
+                        // anchored-mass distribution, so gate-silenced reads fall back to
+                        // the family's unambiguous-mass apportionment instead of a stale,
+                        // non-conserving initialization.
+                        let max_lprior = entry.fam_pos.iter()
+                            .map(|&k| log_priors[k])
+                            .fold(f64::NEG_INFINITY, f64::max);
+                        if max_lprior.is_finite() {
+                            let mut psum = 0.0_f64;
+                            let mut pexps = vec![0.0_f64; n];
+                            for i in 0..n {
+                                pexps[i] = (log_priors[entry.fam_pos[i]] - max_lprior).exp();
+                                psum += pexps[i];
+                            }
+                            if psum > 0.0 {
+                                for i in 0..n {
+                                    let new_w = pexps[i] / psum;
+                                    let delta = (new_w - entry.weights[i]).abs();
+                                    if delta > max_delta { max_delta = delta; }
+                                    entry.weights[i] = new_w;
+                                }
+                            }
+                        }
                         continue;
                     }
                 }
@@ -5033,6 +5060,15 @@ pub fn run_fingerprint_em(
                     bundles[global_bi].reads[ri].weight = new_w;
                     n_reweighted += 1;
                 }
+                // Persist per-read EM attribution for the downstream capacity-
+                // confidence channel. was_unique reduces to nh<=1 here (all entries
+                // are multimappers). em_anchored mirrors the spec: decisive gap,
+                // OR fingerprint-covered with a moderate gap, OR a unique read.
+                let was_unique = bundles[global_bi].reads[ri].nh <= 1;
+                bundles[global_bi].reads[ri].em_weight_gap = gap;
+                bundles[global_bi].reads[ri].em_n_sites = entry.n_sites_covered[i] as u32;
+                bundles[global_bi].reads[ri].em_anchored =
+                    (gap > 0.8) || (max_sites > 0 && gap > 0.5) || was_unique;
                 if let Some(ref mut w) = attr_writer {
                     let rnh = &bundles[global_bi].reads[ri].read_name_hash;
                     let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}",
@@ -6469,6 +6505,74 @@ mod tests {
         let locs = g.multimap_reads.get(&7u64)
             .expect("cross-strand shared read retained in EM input");
         assert!(locs.len() >= 2, "shared read keeps >=2 placements (got {})", locs.len());
+    }
+
+    /// Conservation hole closed: when the score-gap gate fires for a read,
+    /// its per-placement weights are set to the normalized anchored prior
+    /// (mass-conserving, sums to 1.0) instead of being left at raw 1/NH,
+    /// and the em_* fields are populated on the BundleRead.
+    #[test]
+    fn gate_fired_read_conserves_mass_and_sets_em_fields() {
+        // Two copies with one diagnostic SNP at exon pos 2: copy0=G, copy1=C.
+        // copy0 at ref 100-105, copy1 at ref 500-505 (non-overlapping loci).
+        let ec = make_ec(
+            0,
+            &[(0, b"ACGTA"), (1, b"ACCTA")],
+            &[(0, (100, 105)), (1, (500, 505))],
+        );
+        let fg = FamilyGraph { family_id: 0, nodes: vec![ec], edges: vec![] };
+        let family_graphs = vec![Some(fg)];
+
+        // One multimapper placed at both copies. At copy0 it covers the SNP
+        // (no mismatch -> base G -> copy0 allele); at copy1 it is the SAME read
+        // span (covers 0 sites there). The diagonal fp scoring is near-tied so
+        // the read trips the gap gate.
+        let mut r0 = make_read(vec![(100, 105)], vec![]);
+        r0.read_name_hash = 42;
+        r0.nh = 2;
+        r0.weight = 0.5;
+        let mut r1 = make_read(vec![(100, 105)], vec![]);
+        r1.read_name_hash = 42;
+        r1.nh = 2;
+        r1.weight = 0.5;
+
+        let bundles_vec = vec![
+            make_bundle("chrTest", '+', vec![r0]),
+            make_bundle("chrTest", '+', vec![r1]),
+        ];
+        let mut bundles = bundles_vec;
+
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        multimap.insert(42, vec![(0, 0), (1, 0)]);
+        let family = FamilyGroup {
+            family_id: 0,
+            bundle_indices: vec![0, 1],
+            multimap_reads: multimap,
+        };
+
+        // Force the gate to ALWAYS fire by setting a huge per-site gap threshold
+        // (any finite score gap < eff_gap -> gate fires for this read).
+        std::env::set_var("RUSTLE_VG_EM_SCORE_GAP", "1000.0");
+        std::env::set_var("RUSTLE_VG_EM_SCORE_GAP_PER_SITE", "1000.0");
+
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 1);
+
+        std::env::remove_var("RUSTLE_VG_EM_SCORE_GAP");
+        std::env::remove_var("RUSTLE_VG_EM_SCORE_GAP_PER_SITE");
+
+        let w0 = bundles[0].reads[0].weight;
+        let w1 = bundles[1].reads[0].weight;
+        // Mass conservation across the read's placements.
+        assert!((w0 + w1 - 1.0).abs() < 1e-6, "gate-fired weights must sum to 1.0: {w0}+{w1}");
+
+        // em_* fields populated in write-back.
+        for bi in 0..2 {
+            let r = &bundles[bi].reads[0];
+            assert!(r.em_weight_gap >= 0.0, "em_weight_gap set, got {}", r.em_weight_gap);
+            assert_eq!(r.em_n_sites, 1, "em_n_sites = best-placement covered sites");
+            // gate-fired read: gap small, max_sites>0 but gap<=0.5, nh>1 -> not anchored.
+            assert!(!r.em_anchored, "gate-fired near-tied read should not be em_anchored");
+        }
     }
 }
 
