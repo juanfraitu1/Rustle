@@ -15,6 +15,26 @@ use crate::max_flow::{
 use crate::stringtie_parity::stringtie_exact;
 use crate::types::{CPrediction, DetHashMap as HashMap, DetHashSet as HashSet, RunConfig};
 
+/// Sum `(anchored_coverage, coverage)` over a transcript path's real nodes.
+///
+/// VG capacity-confidence channel (spec 2026-06-01, Phase C): `capacity_confidence
+/// = sum_anchored / sum_total` over the transcript's path nodes. Source/sink are
+/// excluded by construction because callers pass `real_nodes` (see path_extract
+/// `real_nodes`, which already drops graph.source_id / graph.sink_id). Out-of-range
+/// node ids are skipped. Returns `(0.0, 0.0)` for an empty path; the caller maps
+/// `sum_total == 0.0` to a confidence of `0.0` (never NaN).
+fn path_capacity_confidence(graph: &Graph, real_nodes: &[usize]) -> (f64, f64) {
+    let mut sum_anchored = 0.0_f64;
+    let mut sum_total = 0.0_f64;
+    for &nid in real_nodes {
+        if let Some(node) = graph.nodes.get(nid) {
+            sum_anchored += node.anchored_coverage;
+            sum_total += node.coverage;
+        }
+    }
+    (sum_anchored, sum_total)
+}
+
 #[inline]
 fn node_start_or_zero(graph: &Graph, node_id: usize) -> u64 {
     graph.nodes.get(node_id).map(|n| n.start).unwrap_or(0)
@@ -9128,6 +9148,21 @@ pub fn extract_transcripts(
                 &pe_payload,
             );
         }
+        // VG capacity-confidence channel (spec 2026-06-01, Phase C): annotate the
+        // transcript with the anchored fraction of its path's coverage mass and a
+        // sub-conservative abundance lower bound. VG-gated; None in default mode so
+        // de-novo output is byte-identical and the GTF emitter skips the attrs.
+        let (cap_conf_opt, abund_min_opt): (Option<f64>, Option<f64>) = if config.vg_mode {
+            let (sum_anchored, sum_total) = path_capacity_confidence(graph, &real_nodes);
+            let cc = if sum_total > 0.0 {
+                (sum_anchored / sum_total).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (Some(cc), Some(coverage * cc))
+        } else {
+            (None, None)
+        };
         out.push(Transcript {
             chrom: bundle_chrom.to_string(),
             strand: bundle_strand,
@@ -9152,7 +9187,7 @@ pub fn extract_transcripts(
             hardstart: thardstart,
             hardend: thardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: cap_conf_opt, abundance_min: abund_min_opt, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: raw_flow_sum_out, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
         if debug_flow {
@@ -12015,4 +12050,70 @@ pub fn hybrid_path_reexplore(
     }
 
     hybrids
+}
+
+#[cfg(test)]
+mod capacity_confidence_tests {
+    use super::*;
+    use crate::graph::{Graph, GraphNode};
+
+    fn graph_with(nodes: Vec<(f64, f64)>) -> Graph {
+        // nodes: Vec<(total_coverage, anchored_coverage)>
+        let mut g = Graph::new();
+        for (i, (cov, anch)) in nodes.iter().enumerate() {
+            let mut n = GraphNode::new(i, (i as u64) * 100, (i as u64) * 100 + 50);
+            n.coverage = *cov;
+            n.anchored_coverage = *anch;
+            g.nodes.push(n);
+        }
+        g
+    }
+
+    #[test]
+    fn cc_fully_anchored_is_one() {
+        let g = graph_with(vec![(10.0, 10.0), (20.0, 20.0)]);
+        let (anch, tot) = path_capacity_confidence(&g, &[0, 1]);
+        assert_eq!(tot, 30.0);
+        assert_eq!(anch, 30.0);
+        let cc = (anch / tot).clamp(0.0, 1.0);
+        assert!((cc - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn cc_half_anchored_is_half() {
+        let g = graph_with(vec![(10.0, 5.0), (30.0, 15.0)]);
+        let (anch, tot) = path_capacity_confidence(&g, &[0, 1]);
+        let cc = (anch / tot).clamp(0.0, 1.0);
+        assert!((cc - 0.5).abs() < 1e-9);
+        // abundance_min must never exceed coverage
+        let coverage = 12.5_f64;
+        let abundance_min = coverage * cc;
+        assert!(abundance_min <= coverage);
+        assert!((0.0..=1.0).contains(&cc));
+    }
+
+    #[test]
+    fn cc_zero_total_is_zero_no_nan() {
+        let g = graph_with(vec![(0.0, 0.0)]);
+        let (anch, tot) = path_capacity_confidence(&g, &[0]);
+        assert_eq!(tot, 0.0);
+        assert_eq!(anch, 0.0);
+        // caller convention: tot==0 -> cc 0.0, never NaN
+        let cc = if tot > 0.0 { (anch / tot).clamp(0.0, 1.0) } else { 0.0 };
+        assert_eq!(cc, 0.0);
+    }
+
+    #[test]
+    fn caller_invariants_hold_across_splits() {
+        for &(tot, anch) in &[(0.0, 0.0), (5.0, 0.0), (5.0, 2.5), (5.0, 5.0), (5.0, 7.0)] {
+            // last case (anch>tot) must still clamp to <=1
+            let g = graph_with(vec![(tot, anch)]);
+            let (a, t) = path_capacity_confidence(&g, &[0]);
+            let cc = if t > 0.0 { (a / t).clamp(0.0, 1.0) } else { 0.0 };
+            assert!((0.0..=1.0).contains(&cc), "cc out of range: {cc}");
+            let coverage = 4.0_f64;
+            let abundance_min = coverage * cc;
+            assert!(abundance_min <= coverage + 1e-9, "abundance_min {abundance_min} > coverage {coverage}");
+        }
+    }
 }
