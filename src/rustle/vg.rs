@@ -1514,6 +1514,105 @@ pub fn anchor_read(nm_c: u32, alen_c: u64, others: &[(u32, u64)], t: i64, extent
     }
 }
 
+/// Per-copy anchored read mass (the anchor-first M-step prior source).
+///
+/// For each copy `k` (index = position in `family.bundle_indices`), sums
+/// `read.weight` over reads in copy `k`'s bundle that are EITHER:
+///   * unique — `read.read_name_hash` is not a key in `family.multimap_reads`
+///     (the read only places at this copy), OR
+///   * decisively owned — `anchor_read(nm_k, alen_k, others, t, extent_frac)`
+///     returns `ReadAnchor::Owns`, where `others` are the read's `(nm, alen)` at
+///     the copy's siblings. `Sibling`/`Tie` placements contribute 0 to copy `k`.
+///
+/// Per-placement `(nm, alen)` uses the same calibration as `classify_family`:
+/// `alen = read_aligned_len(read)`; cost = `round(de*alen)` when `de` is present
+/// (HiFi indel-robust), else raw `read.nm`. Calibration constants are passed in
+/// (`t`, `extent_frac`); the project default is raw-dNM `t=2`, `extent_frac=0.8`.
+///
+/// Returns a `Vec<f64>` of length `family.bundle_indices.len()` (zeros for
+/// stale/empty copies). Operates on the ORIGINAL `FamilyGroup` + intact bundles
+/// (call at EM time, like `compute_copy_independent_support`).
+pub fn anchored_mass_per_copy(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    t: i64,
+    extent_frac: f64,
+) -> Vec<f64> {
+    let n_copies = family.bundle_indices.len();
+    let mut mass = vec![0.0_f64; n_copies];
+
+    // Per-read `(nm, alen)` at (fam_pos, read_idx) — same cost model as
+    // classify_family's `placement` closure (de-based, NM fallback).
+    let placement = |fam_pos: usize, ri: usize| -> Option<(u32, u64)> {
+        let bi = *family.bundle_indices.get(fam_pos)?;
+        let read = bundles.get(bi)?.reads.get(ri)?;
+        let alen = read_aligned_len(read);
+        if alen == 0 {
+            return None;
+        }
+        let cost = match read.de {
+            Some(de) => ((de as f64) * (alen as f64)).round() as u32,
+            None => read.nm,
+        };
+        Some((cost, alen))
+    };
+
+    // Build, per multimap read, its best (min-NM) placement per copy. Mirrors
+    // classify_family: dedupes redundant alignments at the same copy by min NM.
+    let mut per_copy_by_read: std::collections::HashMap<u64, std::collections::HashMap<usize, (u32, u64)>> =
+        std::collections::HashMap::with_capacity(family.multimap_reads.len());
+    for (&rnh, placements) in &family.multimap_reads {
+        let mut per_copy: std::collections::HashMap<usize, (u32, u64)> = std::collections::HashMap::new();
+        for &(fp, ri) in placements {
+            if fp >= n_copies {
+                continue;
+            }
+            if let Some((nm, al)) = placement(fp, ri) {
+                per_copy
+                    .entry(fp)
+                    .and_modify(|e| if nm < e.0 { *e = (nm, al); })
+                    .or_insert((nm, al));
+            }
+        }
+        if !per_copy.is_empty() {
+            per_copy_by_read.insert(rnh, per_copy);
+        }
+    }
+
+    for (copy_id, &bi) in family.bundle_indices.iter().enumerate() {
+        let bundle = match bundles.get(bi) {
+            Some(b) => b,
+            None => continue,
+        };
+        for read in &bundle.reads {
+            // Unique reads (not a multimap key) always anchor their copy.
+            if !family.multimap_reads.contains_key(&read.read_name_hash) {
+                mass[copy_id] += read.weight;
+                continue;
+            }
+            // Multimapper: decisive only if it Owns THIS copy by dNM margin.
+            let per_copy = match per_copy_by_read.get(&read.read_name_hash) {
+                Some(pc) => pc,
+                None => continue,
+            };
+            let (nm_c, alen_c) = match per_copy.get(&copy_id) {
+                Some(&v) => v,
+                None => continue, // this read has no placement at this copy
+            };
+            let others: Vec<(u32, u64)> = per_copy
+                .iter()
+                .filter(|(&c, _)| c != copy_id)
+                .map(|(_, &v)| v)
+                .collect();
+            if anchor_read(nm_c, alen_c, &others, t, extent_frac) == ReadAnchor::Owns {
+                mass[copy_id] += read.weight;
+            }
+        }
+    }
+
+    mass
+}
+
 /// Assign each copy a dense identifiability-class label (0..n_classes-1). Copies
 /// are merged into one class when NON-identifiable (`nonid_pairs`, transitive).
 pub fn identifiability_classes(n_copies: usize, nonid_pairs: &[(usize, usize)]) -> Vec<usize> {
@@ -5995,6 +6094,49 @@ mod tests {
         let daz1 = support[&1];
         assert!(daz3 < 0.05, "DAZ3 (phantom) should have ~0 support, got {daz3}");
         assert!(daz1 > 0.95, "DAZ1 (real) should have ~1.0 support, got {daz1}");
+    }
+
+    /// anchored_mass_per_copy: real copy (unique reads + decisively-owned
+    /// multimappers) accumulates clear mass; phantom copy (only bad-fit
+    /// multimappers, no unique reads) accumulates ~0.
+    #[test]
+    fn anchored_mass_real_copy_vs_phantom() {
+        // copy0 = real locus (good fit, has unique reads)
+        // copy1 = phantom locus (bad fit, no unique reads)
+        let mut real_reads = Vec::new();    // copy 0 bundle
+        let mut phantom_reads = Vec::new(); // copy 1 bundle
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..30u64 {
+            let rnh = 2000 + i;
+            // placement at copy 0 (real): good fit, nm=5 over 1000 bp
+            real_reads.push(make_read_full(rnh, vec![(100_000, 101_000)], 5, false));
+            // placement at copy 1 (phantom): bad fit, nm=70 over 1000 bp
+            phantom_reads.push(make_read_full(rnh, vec![(900_000, 901_000)], 70, false));
+            multimap.insert(rnh, vec![(0, i as usize), (1, i as usize)]);
+        }
+        // copy 0 also has 167 UNIQUE reads (read_name_hash NOT in multimap).
+        for i in 0..167u64 {
+            real_reads.push(make_read_full(8000 + i, vec![(100_500, 101_500)], 3, false));
+        }
+
+        let bundles = vec![
+            make_bundle("chrTest", '+', real_reads),
+            make_bundle("chrTest", '+', phantom_reads),
+        ];
+        let family = FamilyGroup {
+            family_id: 11,
+            bundle_indices: vec![0, 1],
+            multimap_reads: multimap,
+        };
+
+        // dnm = 70 - 5 = 65 >= t(2) at copy0 → all 30 multimappers Own copy0.
+        // dnm = 5 - 70 = -65 <= -t at copy1 → Sibling (not counted).
+        let mass = anchored_mass_per_copy(&family, &bundles, 2, 0.8);
+        assert_eq!(mass.len(), 2);
+        // copy0: 167 unique (weight 1.0 each) + 30 owned multimappers = 197.0
+        assert!((mass[0] - 197.0).abs() < 1e-6, "real copy mass should be 197.0, got {}", mass[0]);
+        // copy1: no unique reads, no owned multimappers → ~0
+        assert!(mass[1] < 1e-6, "phantom copy mass should be ~0, got {}", mass[1]);
     }
 
     /// Genuinely co-expressed near-identical copies (NM-tie) → both kept.
