@@ -76,8 +76,10 @@ partition** is these classes, summarized as:
 - **partial** — some classes resolve, others don't (DAZ: 11% ties);
 - **none** — one class; copies indistinguishable over the expressed region (TSPY: 97% ties).
 
-For a non-identifiable class the tool **reports the aggregate abundance and emits a certificate** (the
-polytope of consistent per-copy solutions, à la Hjorleifsson–Pachter) rather than fabricating a split. The
+For a non-identifiable class the tool **reports the combined (aggregate) abundance and flags the copies as
+unresolvable, with the supporting counts**, rather than inventing a per-copy split. The honest answer there is
+a *range* of per-copy splits all equally consistent with the reads — for two tied copies, any split from 0 to
+the total (the non-identifiability analysis of Hjorleifsson–Pachter) — so a single number would be arbitrary. The
 **boundary theorem** states when read-length × divergence yields any distinguishing position; the
 **structural-linkage channel** (copy-specific junctions) is how we push the boundary — and is only available
 because the copies are spliced (§7).
@@ -144,7 +146,7 @@ special case, noted but not handled by the core.
   not_expressed_here, single_exon_out_of_scope}`;
 - `n_copies (M)`, `n_expressed (X)`, `connectivity (H)`;
 - `identifiability_partition` (the equivalence classes) + `identifiability ∈ {full, partial, none}`;
-- per non-identifiable class: `aggregate_abundance` + `certificate`;
+- per non-identifiable class: `aggregate_abundance` + an explicit `unresolvable` flag with its evidence;
 - `locus_rel` (arrangement).
 
 Inputs already in hand: `FamilyGraph` (ExonClass nodes, copy paths), the per-read multi-mapping placements
@@ -169,8 +171,9 @@ full<0.15 / none≥0.6. All env-overridable; calibrated on the gallery.
 
 ## 12. Relation to prior art
 
-Generalizes the **splice graph** (transcript assembly) to paralogous copies; the **non-identifiability
-polytope** (Hjorleifsson–Pachter) is the certificate for non-identifiable classes; the apportionment of
+Generalizes the **splice graph** (transcript assembly) to paralogous copies; the **range of per-copy
+abundances consistent with the reads** for non-identifiable classes is the non-identifiability analysis of
+Hjorleifsson–Pachter (we report that range / abstain rather than pick one point); the apportionment of
 ambiguous reads is the **multimapping-read assignment** problem (the advisor's domain) solved by edit-distance
 likelihood + structural linkage rather than a single diagnostic SNP.
 
