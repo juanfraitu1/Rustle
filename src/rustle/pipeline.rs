@@ -10566,6 +10566,21 @@ pub fn run<P: AsRef<Path>>(
     let mut vg_family_verdict: std::collections::HashMap<(usize, usize), crate::vg::FamilyVerdict> =
         std::collections::HashMap::new();
 
+    // Classify every discovered family (annotation-only), INDEPENDENT of EM
+    // eligibility: families the EM skips for compute reasons (too_many_copies,
+    // too_much_work) — and runs where every family is skipped — still get a
+    // verdict. classify_family needs only bundles + multimap_reads, which the EM
+    // never prunes.
+    if config.vg_mode && !vg_families.is_empty() {
+        let fam_params = crate::vg::FamilyParams::default();
+        for fam in &vg_families {
+            let verdict = crate::vg::classify_family(fam, &bundles, &fam_params);
+            for copy_id in 0..fam.bundle_indices.len() {
+                vg_family_verdict.insert((fam.family_id, copy_id), verdict.clone());
+            }
+        }
+    }
+
     let vg_em_results: Vec<crate::vg::EmResult> = if config.vg_mode && !vg_families.is_empty() {
         use crate::types::VgSolver;
         match config.vg_solver {
@@ -10751,12 +10766,6 @@ pub fn run<P: AsRef<Path>>(
                                 crate::vg::compute_copy_independent_support(fam, &bundles, margin);
                             for (copy_id, supp) in per_copy {
                                 vg_copy_support.insert((fam.family_id, copy_id), supp);
-                            }
-                            // Family classification verdict (one per family; same key space).
-                            let verdict = crate::vg::classify_family(
-                                fam, &bundles, &crate::vg::FamilyParams::default());
-                            for copy_id in 0..fam.bundle_indices.len() {
-                                vg_family_verdict.insert((fam.family_id, copy_id), verdict.clone());
                             }
                         }
                     }
