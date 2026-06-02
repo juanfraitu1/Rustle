@@ -4641,8 +4641,28 @@ pub fn run_fingerprint_em(
         }
 
         let fg_opt = family_graphs.get(fam_idx).and_then(|f| f.as_ref());
-        let fg = match fg_opt {
-            Some(g) if !g.nodes.is_empty() => g,
+        // Joint-strand mode (default ON): a None/empty graph is the mixed-strand
+        // (inverted-pair) case — there is NO valid joint sequence graph, but we
+        // still want to apportion its shared multimappers by junc + nm + the
+        // anchored prior. Build a neutral (0-site) fingerprint and fall through
+        // instead of skipping. With RUSTLE_VG_JOINT_STRAND_EM=0 we keep the exact
+        // legacy skip so the rollback A/B is byte-identical.
+        let joint_strand_em = std::env::var("RUSTLE_VG_JOINT_STRAND_EM")
+            .map(|v| v != "0").unwrap_or(true);
+        let fp = match fg_opt {
+            Some(g) if !g.nodes.is_empty() => enumerate_diagnostic_sites(g, n_copies),
+            _ if joint_strand_em => {
+                eprintln!(
+                    "[VG-FP-EM] Family {}: no joint graph (mixed-strand) — neutral-fp fallthrough (junc+nm+anchored prior)",
+                    family.family_id
+                );
+                ExonFingerprints {
+                    sites: Vec::new(),
+                    per_copy_site_refs: vec![Vec::new(); n_copies],
+                    n_copies,
+                    n_sites: 0,
+                }
+            }
             _ => {
                 eprintln!("[VG-FP-EM] Family {}: no family graph — skipping", family.family_id);
                 results.push(EmResult::default());
@@ -4650,7 +4670,6 @@ pub fn run_fingerprint_em(
             }
         };
 
-        let fp = enumerate_diagnostic_sites(fg, n_copies);
         if fp.n_sites == 0 {
             // No diagnostic sites — copies are sequence-identical (e.g. DAZ).
             // The fingerprint carries no discriminating signal, but SKIPPING the
@@ -4806,18 +4825,52 @@ pub fn run_fingerprint_em(
 
         let mut result = EmResult::default();
 
-        for iter in 0..max_iter {
-            // M-step: aggregate current weights into per-copy totals → log-priors.
-            let mut copy_total = vec![0.0_f64; n_copies];
-            for entry in &entries {
-                for (i, &w) in entry.weights.iter().enumerate() {
-                    copy_total[entry.fam_pos[i]] += w;
-                }
+        // Anchor-first apportionment (default ON in VG): replace the M-step
+        // pileup-depth prior with an anchored prior grounded in UNAMBIGUOUS mass
+        // (unique reads + dNM-decisive Owns reads). This removes the pileup
+        // prior's self-reinforcement of an already-double-counted copy. The
+        // anchored prior is constant, so the E-step runs ONCE (max_iter
+        // effectively 1). Calibration: raw dNM t=2, extent_frac=0.8.
+        let anchor_prior_on = std::env::var("RUSTLE_VG_ANCHOR_PRIOR")
+            .map(|v| v != "0").unwrap_or(true);
+        let fixed_log_priors: Option<Vec<f64>> = if anchor_prior_on {
+            let anchored = anchored_mass_per_copy(family, bundles, 2, 0.8);
+            let total_anchored: f64 = anchored.iter().sum();
+            if total_anchored < 1e-9 {
+                // All-zero-anchor (e.g. every copy is a pure multimapper): no
+                // grounded mass exists. Graceful-degrade to the existing
+                // pileup-depth prior for THIS family only.
+                eprintln!(
+                    "[VG-FP-EM] Family {}: 0 anchored mass — graceful-degrade to pileup-depth prior",
+                    family.family_id
+                );
+                None
+            } else {
+                let total = total_anchored.max(1.0);
+                Some(anchored.iter().map(|&a| ((a / total) + 1e-3).ln()).collect())
             }
-            let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
-            let log_priors: Vec<f64> = copy_total.iter()
-                .map(|&t| ((t / total_sum) + 1e-3).ln())
-                .collect();
+        } else {
+            None
+        };
+        // Under anchor mode with a fixed prior, a single E-step suffices.
+        let effective_max_iter = if fixed_log_priors.is_some() { 1 } else { max_iter };
+
+        for iter in 0..effective_max_iter {
+            // M-step prior: anchored (fixed, computed once) when available,
+            // otherwise the legacy pileup-depth prior recomputed from current
+            // weights (graceful-degrade or RUSTLE_VG_ANCHOR_PRIOR=0).
+            let log_priors: Vec<f64> = if let Some(ref lp) = fixed_log_priors {
+                lp.clone()
+            } else {
+                let mut copy_total = vec![0.0_f64; n_copies];
+                for entry in &entries {
+                    for (i, &w) in entry.weights.iter().enumerate() {
+                        copy_total[entry.fam_pos[i]] += w;
+                    }
+                }
+                let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
+                copy_total.iter().map(|&t| ((t / total_sum) + 1e-3).ln()).collect()
+            };
 
             let mut max_delta: f64 = 0.0;
             for entry in &mut entries {
@@ -6192,6 +6245,112 @@ mod tests {
         let support = compute_copy_independent_support(&family, &bundles, 0.01);
         assert!(support[&0] > 0.95, "copy A should be kept, got {}", support[&0]);
         assert!(support[&1] > 0.95, "copy B should be kept, got {}", support[&1]);
+    }
+
+    /// Anchor-first one-pass: with identical copies (fp.n_sites==0) and a junc/NM
+    /// TIE, a tied multimapper must apportion by the ANCHORED mass ratio (unique +
+    /// Owns reads), not the uniform 1/n. Copy0 has 20 unique anchors, copy1 has 2;
+    /// the shared read should land ~0.91/0.09 (=20/22), and the two placements must
+    /// still sum to 1.0 (mass conservation via the unchanged log-sum-exp).
+    #[test]
+    fn anchored_prior_apportions_tied_read_by_anchor_ratio() {
+        std::env::set_var("RUSTLE_VG_ANCHOR_PRIOR", "1");
+        // Identical single-exon copies → 0 diagnostic sites; copy0 at 100-200, copy1 at 5100-5200.
+        let ec = make_ec(
+            0,
+            &[(0, b"ACGTACGTAC"), (1, b"ACGTACGTAC")],
+            &[(0, (100, 110)), (1, (5100, 5110))],
+        );
+        let fg = FamilyGraph { family_id: 42, nodes: vec![ec], edges: vec![] };
+        let fp = build_exon_fingerprints(&fg, 2);
+        assert_eq!(fp.n_sites, 0, "identical copies → no diagnostic sites (DAZ regime)");
+
+        let mut c0_reads = Vec::new(); // copy 0 bundle
+        let mut c1_reads = Vec::new(); // copy 1 bundle
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+
+        // 20 unique anchors at copy0 (read_name_hash NOT in multimap → unique mass).
+        for i in 0..20u64 {
+            c0_reads.push(make_read_full(3000 + i, vec![(100, 1100)], 2, false));
+        }
+        // 2 unique anchors at copy1.
+        for i in 0..2u64 {
+            c1_reads.push(make_read_full(4000 + i, vec![(5100, 6100)], 2, false));
+        }
+        // ONE shared multimapper: single exon (no junctions → junc tie), equal nm
+        // at both placements (→ identity tie). Only the prior can break the tie.
+        let rnh = 9999u64;
+        c0_reads.push(make_read_full(rnh, vec![(100, 1100)], 2, false));   // copy0 idx 20
+        c1_reads.push(make_read_full(rnh, vec![(5100, 6100)], 2, false));  // copy1 idx 2
+        let c0_idx = c0_reads.len() - 1;
+        let c1_idx = c1_reads.len() - 1;
+        multimap.insert(rnh, vec![(0, c0_idx), (1, c1_idx)]);
+
+        let mut bundles = vec![
+            make_bundle("chr1", '+', c0_reads),
+            make_bundle("chr1", '+', c1_reads),
+        ];
+        let family = FamilyGroup {
+            family_id: 42,
+            bundle_indices: vec![0, 1],
+            multimap_reads: multimap,
+        };
+        let family_graphs = vec![Some(fg)];
+
+        // max_iter is effectively 1 under anchor mode (single E-step with fixed prior).
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5);
+
+        let w0 = bundles[0].reads[c0_idx].weight;
+        let w1 = bundles[1].reads[c1_idx].weight;
+
+        // Mass conservation: the read's two placements sum to 1.0.
+        assert!((w0 + w1 - 1.0).abs() < 1e-6, "mass must sum to 1.0: {w0} + {w1}");
+        // Anchored ratio 20:2 → copy0 gets the lion's share, NOT 0.5/0.5.
+        assert!(w0 > 0.80, "copy0 (20 anchors) should dominate: w0={w0}");
+        assert!(w1 < 0.20, "copy1 (2 anchors) should be down-weighted: w1={w1}");
+        assert!((w0 - 0.5).abs() > 0.30, "must NOT collapse to uniform 1/n: w0={w0}");
+
+        std::env::remove_var("RUSTLE_VG_ANCHOR_PRIOR");
+    }
+
+    /// Mixed-strand DAZ regime: the family has NO joint sequence graph
+    /// (graph = None). The lifted skip (Step 3b) + anchored prior must still
+    /// apportion a tied multimapper by anchored mass (20:2), proving the fix
+    /// reaches the inverted-pair family rather than skipping it.
+    #[test]
+    fn anchored_prior_reaches_mixed_strand_none_graph_family() {
+        std::env::set_var("RUSTLE_VG_ANCHOR_PRIOR", "1");
+        std::env::set_var("RUSTLE_VG_JOINT_STRAND_EM", "1");
+
+        let mut c0_reads = Vec::new();
+        let mut c1_reads = Vec::new();
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..20u64 { c0_reads.push(make_read_full(3000 + i, vec![(100, 1100)], 2, false)); }
+        for i in 0..2u64  { c1_reads.push(make_read_full(4000 + i, vec![(5100, 6100)], 2, false)); }
+        let rnh = 9999u64;
+        c0_reads.push(make_read_full(rnh, vec![(100, 1100)], 2, false));
+        c1_reads.push(make_read_full(rnh, vec![(5100, 6100)], 2, false));
+        let c0_idx = c0_reads.len() - 1;
+        let c1_idx = c1_reads.len() - 1;
+        multimap.insert(rnh, vec![(0, c0_idx), (1, c1_idx)]);
+
+        let mut bundles = vec![
+            make_bundle("chr1", '+', c0_reads),
+            make_bundle("chr1", '-', c1_reads),   // opposite strand = inverted pair
+        ];
+        let family = FamilyGroup { family_id: 77, bundle_indices: vec![0, 1], multimap_reads: multimap };
+        let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> = vec![None];
+
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5);
+
+        let w0 = bundles[0].reads[c0_idx].weight;
+        let w1 = bundles[1].reads[c1_idx].weight;
+        assert!((w0 + w1 - 1.0).abs() < 1e-6, "mass must sum to 1.0: {w0} + {w1}");
+        assert!(w0 > 0.80, "copy0 (20 anchors) should dominate even with None graph: w0={w0}");
+        assert!(w1 < 0.20, "copy1 (2 anchors) down-weighted: w1={w1}");
+
+        std::env::remove_var("RUSTLE_VG_ANCHOR_PRIOR");
+        std::env::remove_var("RUSTLE_VG_JOINT_STRAND_EM");
     }
 
     #[test]
