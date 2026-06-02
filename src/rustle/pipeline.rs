@@ -10663,9 +10663,14 @@ pub fn run<P: AsRef<Path>>(
                         .or(vg_snp_genome.as_ref());
 
                     let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
+                    // Per source family: (start index into em_hmm_partitions, #strand partitions).
+                    let mut em_fam_spans: Vec<(usize, usize)> = Vec::with_capacity(families_for_em.len());
                     for fam in families_for_em.iter() {
+                        let start = em_hmm_partitions.len();
                         let parts = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
+                        let count = parts.len();
                         em_hmm_partitions.extend(parts);
+                        em_fam_spans.push((start, count));
                     }
 
                     use rayon::prelude::*;
@@ -10692,6 +10697,38 @@ pub fn run<P: AsRef<Path>>(
                         } else {
                             vec![None; em_hmm_partitions.len()]
                         };
+
+                    // Joint-strand EM input (spec component 1, O1-resolved): default ON in VG.
+                    // The fingerprint-EM consumes the UNSPLIT family so a read shared only
+                    // across an inverted pair (DAZ1/DAZ3) keeps both placements and is
+                    // reweighted to sum to 1.0 across strands. em_input_graphs is kept
+                    // 1:1 with em_input_partitions: single-strand family -> its (only)
+                    // graph (fp stays valid); mixed-strand family -> None (neutral fp).
+                    let joint_strand_em = std::env::var("RUSTLE_VG_JOINT_STRAND_EM")
+                        .map(|v| v != "0")
+                        .unwrap_or(true);
+                    let (em_input_partitions, em_input_graphs):
+                        (Vec<crate::vg::FamilyGroup>,
+                         Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>>) =
+                    if joint_strand_em {
+                        let mut parts = Vec::with_capacity(families_for_em.len());
+                        let mut graphs = Vec::with_capacity(families_for_em.len());
+                        for (fam, &(start, count)) in families_for_em.iter().zip(em_fam_spans.iter()) {
+                            parts.extend(crate::vg::family_for_em_input(fam, &bundles)); // exactly 1
+                            if count == 1 {
+                                // single-strand: reuse the family's graph (clone; family_graphs
+                                // is read again by the borrow/completion builders below)
+                                graphs.push(family_graphs.get(start).and_then(|o| o.clone()));
+                            } else {
+                                // mixed-strand (e.g. inverted DAZ1/DAZ3): no valid joint graph
+                                graphs.push(None);
+                            }
+                        }
+                        (parts, graphs)
+                    } else {
+                        // exact current behavior: strand-split input + its graphs
+                        (em_hmm_partitions.clone(), family_graphs.clone())
+                    };
 
                     let em_res = if do_hmm {
                         // Full HMM-EM path.
@@ -10732,9 +10769,9 @@ pub fn run<P: AsRef<Path>>(
                             // snp_compatibility score reads without --vg-snp.
                             // Falls back to no-op for families with 0 diagnostic sites.
                             crate::vg::run_fingerprint_em(
-                                &em_hmm_partitions,
+                                &em_input_partitions,
                                 &mut bundles,
-                                &family_graphs,
+                                &em_input_graphs,
                                 config.vg_em_max_iter,
                             )
                         } else {
