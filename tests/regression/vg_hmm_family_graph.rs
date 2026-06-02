@@ -22,12 +22,14 @@ fn mk_bundle_with_reads(start: u64, end: u64, exons: Vec<(u64, u64)>) -> Bundle 
         pair_idx: Vec::new(), pair_count: Vec::new(),
         mapq: 0, mismatches: Vec::new(), seq: Vec::new(), hp_tag: None, ps_tag: None,
         is_primary_alignment: true,
+        de: None, em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
     };
     Bundle {
         chrom: "chr1".into(), start, end, strand: '+',
         reads: vec![read],
             vg_family_id: None,
         junction_stats: JunctionStats::default(),
+        junction_pair_stats: Default::default(),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
         synthetic: false, rescue_class: None,
     }

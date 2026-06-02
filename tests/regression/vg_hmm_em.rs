@@ -34,6 +34,7 @@ fn make_bundle_read(name: &str, name_hash: u64, weight: f64) -> BundleRead {
         pair_idx: Vec::new(), pair_count: Vec::new(),
         mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
         hp_tag: None, ps_tag: None, is_primary_alignment: true,
+        de: None, em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
     }
 }
 
@@ -43,6 +44,7 @@ fn empty_bundle(chrom: &str) -> Bundle {
         start: 0, end: 100, strand: '+',
         reads: Vec::new(),
         junction_stats: JunctionStats::default(),
+        junction_pair_stats: Default::default(),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
         synthetic: false, rescue_class: None, vg_family_id: None,
     }

@@ -10,6 +10,7 @@ fn mk_bundle(chrom: &str, start: u64, end: u64) -> Bundle {
         strand: '+',
         reads: Vec::new(),
         junction_stats: JunctionStats::default(),
+        junction_pair_stats: Default::default(),
         bundlenodes: None,
         read_bnodes: None,
         bnode_colors: None,
