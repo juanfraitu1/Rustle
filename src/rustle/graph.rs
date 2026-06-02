@@ -123,6 +123,13 @@ pub struct GraphNode {
     ///
     /// It is intentionally not the bundlenode's aggregate coverage estimate.
     pub coverage: f64,
+    /// VG capacity-confidence channel: the portion of `coverage` contributed by
+    /// reads classified as anchored (unique, or dNM/fingerprint-decisive) during
+    /// joint-strand fingerprint EM. Accumulated in parallel with `coverage`
+    /// (`+= weight*bp` only when the read is `em_anchored`). NOT consumed by
+    /// max-flow; used only to derive per-transcript `capacity_confidence`.
+    /// 0.0 outside VG mode and before any anchored mass is attributed.
+    pub anchored_coverage: f64,
     pub children: crate::util::bitset::SmallBitset,
     pub parents: crate::util::bitset::SmallBitset,
     pub hardstart: bool,
@@ -181,6 +188,7 @@ impl GraphNode {
             end,
             source_bnode: None,
             coverage: 0.0,
+            anchored_coverage: 0.0,
             children: crate::util::bitset::SmallBitset::empty(),
             parents: crate::util::bitset::SmallBitset::empty(),
             hardstart: false,
