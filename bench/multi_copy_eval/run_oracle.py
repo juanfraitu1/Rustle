@@ -54,7 +54,17 @@ def main():
     if full:
         res["obj2_copy_recovery"] = obj2()
         res["obj_daz"] = obj_daz()
-        res["obj1_golga6l7"] = {"status":"EXPECTED_FAIL","detail":"same-bundle tandem; needs intra-bundle splitter"}
+        # Obj 1 reframed 2026-06-01: GOLGA6L7 is ANTISENSE-SILENT (0 own-strand reads;
+        # its 53+17 reads are all +strand, belonging to overlapping +strand lncRNA
+        # LOC115930831) — correctly emits nothing; the "miss" is a gffcompare locus-
+        # overlap artifact, NOT a tool bug and NOT a same-bundle splitter problem.
+        # Confirmed on 3 genuine same-strand expressed paralog pairs (gap 15bp-3kb):
+        # they fail by bundle REJECTION / partial assembly in SEPARATE bundles, never
+        # merge-collapse — so an intra-bundle splitter has no validated target. The
+        # real gap is depth-aware bundling / family-read stripping of paralog bundles.
+        res["obj1_paralog_assembly"] = {"status":"REFRAMED",
+            "detail":"GOLGA6L7 antisense-silent (not a bug); no validated intra-bundle-splitter target; "
+                     "genuine paralog pairs fail by bundle rejection, not collapse — see THESIS_OBJECTIVES.md O5"}
     print(json.dumps(res, indent=2))
     if check:
         exp = json.load(open(EXP))
@@ -84,7 +94,7 @@ def main():
             md.append(f"| Obj 2 copy recovery | GOLGA8 / YAG % | {o2.get('golga8_pct')}/{o2.get('yag_pct')} |")
         if "obj_daz" in res:
             md.append(f"| Obj 3 DAZ (real) | DAZ3 isoforms / EM-ran | {res['obj_daz'].get('daz3_isoforms')}/{res['obj_daz'].get('em_ran')} |")
-        md.append(f"| Obj 1 GOLGA6L7 | status | EXPECTED_FAIL (same-bundle; needs splitter) |")
+        md.append(f"| Obj 1 paralog assembly | status | REFRAMED (GOLGA6L7 antisense-silent; no splitter target — bundle rejection, not collapse) |")
         md.append(f"| default de-novo | Tx Sn/Pr (isolation) | {res['default_headline'].get('tx_sn')}/{res['default_headline'].get('tx_pr')} |")
         md.append("\n```json\n" + json.dumps(res, indent=2) + "\n```\n")
         open(os.path.join(HERE,"OBJECTIVES_ASSESSMENT.md"),"w").write("\n".join(md))

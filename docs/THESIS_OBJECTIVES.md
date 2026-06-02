@@ -65,9 +65,14 @@ copy-specific *junctions* act as distinguishing positions, adding to ΔNM and re
 cannot (figure B; why DAZ1−/DAZ3+ are resolvable despite near-identical sequence).
 
 - Coverage/junction borrowing implemented in the VG pipeline.
-- **⛔ Blocker:** the **intra-bundle paralog splitter** — tandem copies (e.g. **GOLGA6L7**) collapse into one
-  assembly bundle, so the family is never instantiated. Oracle marks GOLGA6L7 `EXPECTED_FAIL`
-  (same-bundle; needs splitter). This is the one genuine hard blocker remaining.
+- **The "intra-bundle splitter" blocker was a mirage (corrected 2026-06-01).** GOLGA6L7 is **antisense-silent**
+  (0 own-strand reads; its 53+17 reads are +strand, belonging to an overlapping +strand lncRNA) — it correctly
+  emits nothing; the "miss" was a gffcompare overlap artifact, not a tool bug. Checked on 3 genuine same-strand
+  expressed paralog pairs (gap 15 bp–3 kb): they fail by **bundle rejection / partial assembly in separate
+  bundles, never merge-collapse** — so an intra-bundle splitter has **no validated target**.
+- **🔄 Real open gap:** paralog bundles (low-cov, family-secondary-stripped) get **rejected/partially
+  assembled** rather than each copy emitted — a depth-aware-bundling / family-read-handling problem, not a
+  splitter. This is the genuine O5 work item.
 
 ---
 
