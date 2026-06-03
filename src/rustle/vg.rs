@@ -5830,6 +5830,11 @@ pub fn transfer_assembled_topology(
         };
         let part = &state.partitions[pi];
         let n_copies = part.bundle_indices.len();
+        let topo_trace = std::env::var_os("RUSTLE_VG_TOPO_TRACE").is_some();
+        if topo_trace {
+            eprintln!("[VG-TOPO-TRACE] fam={} src_copy={} n_src_txs={} n_copies={} fg_nodes={}",
+                fam_id, src_copy_id, src_txs.len(), n_copies, fg.nodes.len());
+        }
 
         for sister_copy_id in 0..n_copies {
             if sister_copy_id == *src_copy_id {
@@ -5878,6 +5883,10 @@ pub fn transfer_assembled_topology(
                 }
 
                 if !ok || proj_exons.is_empty() {
+                    if topo_trace {
+                        eprintln!("[VG-TOPO-TRACE]   sister={} src_exons={} projected={} -> SKIP (projection miss: an exon mapped to no shared ExonClass with the sister)",
+                            sister_copy_id, src_tx.exons.len(), proj_exons.len());
+                    }
                     continue;
                 }
 
@@ -5888,7 +5897,15 @@ pub fn transfer_assembled_topology(
                         .any(|&(ps, pe)| r.ref_start < pe && r.ref_end > ps)
                 });
                 if !has_reads {
+                    if topo_trace {
+                        eprintln!("[VG-TOPO-TRACE]   sister={} projected={} exons -> SKIP (sister bundle has NO read overlapping the projected spans)",
+                            sister_copy_id, proj_exons.len());
+                    }
                     continue;
+                }
+                if topo_trace {
+                    eprintln!("[VG-TOPO-TRACE]   sister={} -> BORROW {} exons (emitting topology_borrow tx)",
+                        sister_copy_id, proj_exons.len());
                 }
 
                 proj_exons.sort_by_key(|&(s, _)| s);
