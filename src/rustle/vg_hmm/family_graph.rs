@@ -310,15 +310,56 @@ pub fn merge_singletons_by_sequence(
     min_jaccard: f64,
 ) -> Vec<Vec<ExonRef>> {
     use std::collections::BTreeMap;
+    // Env overrides for the cross-copy exon-unification (the lever that gates ALL
+    // structure-sharing: TOPO_BORROW / completion / borrow project via the SHARED
+    // ExonClasses this merge produces). The default 0.30 minimizer-Jaccard bar is
+    // too strict for 95-99%-identical dispersed paralog pairs (k=15 minimizers are
+    // SNP-sensitive; ~9 SNPs in a 300 bp exon push Jaccard to ~0.3), so homologous
+    // exons stay single-copy and the borrow machinery is inert (validated
+    // 2026-06-03). Unrelated exons share ~0 minimizers, so a much lower bar still
+    // cleanly separates homologous from unrelated. `_K`/`_W` retune the minimizer
+    // scheme for robustness; `_JACCARD` overrides the merge bar.
+    let min_jaccard = std::env::var("RUSTLE_VG_FAMILY_MERGE_JACCARD")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(min_jaccard);
+    let mk: usize = std::env::var("RUSTLE_VG_FAMILY_MERGE_K")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(15);
+    let mw: usize = std::env::var("RUSTLE_VG_FAMILY_MERGE_W")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(10);
 
-    // Split into multi-copy clusters (keep as-is) and singleton clusters.
+    // Split into genuinely-multi-COPY clusters (keep as-is) and single-copy
+    // clusters (fed to the cross-copy sequence merge below).
+    //
+    // BUG FIX (RUSTLE_VG_FAMILY_MERGE_SAME_COPY, opt-in): the original code split on
+    // cluster LENGTH (`len > 1` = "multi, keep"). But for DISPERSED paralog copies,
+    // a length>1 cluster is usually SAME-COPY isoform variants grouped by position —
+    // a SINGLE-copy cluster that was wrongly treated as "already unified" and so
+    // bypassed the cross-copy merge. Its homologous core exon then never unified
+    // with the other copies → single-copy ExonClasses → the entire structure-sharing
+    // machinery (TOPO_BORROW / completion / borrow) is inert at moderate identity
+    // (validated 2026-06-03). The fix: route a cluster by the number of distinct
+    // COPIES it spans, not its exon count, so a same-copy variant cluster enters the
+    // merge (represented by one exon) and can unify with homologous clusters in
+    // sibling copies. Default OFF preserves byte-identical behaviour.
+    let route_by_copy = std::env::var_os("RUSTLE_VG_FAMILY_MERGE_SAME_COPY").is_some();
     let mut multi: Vec<Vec<ExonRef>> = Vec::new();
-    let mut singletons: Vec<ExonRef> = Vec::new(); // one ExonRef per singleton cluster
+    let mut singletons: Vec<ExonRef> = Vec::new(); // one representative ExonRef per single-copy cluster
     for cluster in pos_clusters {
-        if cluster.len() > 1 {
+        let n_copies_in: usize = {
+            let mut cs: Vec<usize> = cluster.iter().map(|&(c, _)| c).collect();
+            cs.sort_unstable();
+            cs.dedup();
+            cs.len()
+        };
+        let is_single_copy = if route_by_copy { n_copies_in <= 1 } else { cluster.len() <= 1 };
+        if !is_single_copy {
             multi.push(cluster);
         } else if let Some(&er) = cluster.first() {
+            // Representative exon for the merge; the rest of the cluster's
+            // (same-copy variant) exons travel with it.
             singletons.push(er);
+            for &extra in cluster.iter().skip(1) {
+                multi.push(vec![extra]); // keep variants as their own (copy-private) classes
+            }
         }
     }
 
@@ -340,7 +381,7 @@ pub fn merge_singletons_by_sequence(
 
     let n = seqs_and_refs.len();
     let mins: Vec<HashSet<u64>> = seqs_and_refs.iter()
-        .map(|(_, s)| minimizers(s, 15, 10))
+        .map(|(_, s)| minimizers(s, mk, mw))
         .collect();
 
     let mut parent: Vec<usize> = (0..n).collect();
