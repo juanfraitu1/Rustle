@@ -10948,6 +10948,65 @@ pub fn run<P: AsRef<Path>>(
             std::collections::HashMap::new()
         };
 
+    // ── O5/tandem: weight floor for certified-but-starved tandem copies ──────
+    // A tandem copy can be CERTIFIED by the support guard (high
+    // independent_support — it carries copy-specific evidence, e.g. RBMY1 c4 at
+    // 0.895, NM=35 from its sibling) yet have its EM-apportioned weight claimed
+    // by a dominant near-identical sibling, so it vanishes from assembly. Floor
+    // its OWN primary reads' weight so a certified copy emits (at low
+    // capacity_confidence — the borrowed coverage is unanchored) instead of
+    // being silently absorbed. SCOPED to `TandemCopy` sub-bundles, so DAZ /
+    // dispersed families and the default de-novo path are on different code
+    // paths and are byte-identical (DAZ3 stays suppressed). The support gate
+    // separates a real copy (RBMY1 c4 = 0.895) from a tandem phantom (echo
+    // support ~0.6). Only RAISES under-weighted primaries (`weight < floor`), so
+    // already-emitting copies are untouched. Runs while weights are still post-EM
+    // (above), before assembly. Gated by RUSTLE_VG_TANDEM (sub-bundles only exist
+    // then) + the rescue_class check.
+    if config.vg_mode && !vg_copy_support.is_empty()
+        && crate::vg_hmm::tandem::TandemConfig::from_env().enabled
+    {
+        let t_support: f64 = std::env::var("RUSTLE_VG_TANDEM_SUPPORT_FLOOR")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(0.75);
+        let floor_w: f64 = std::env::var("RUSTLE_VG_TANDEM_WEIGHT_FLOOR")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(0.5);
+        let mut n_floored = 0usize;
+        let mut n_copies = 0usize;
+        for fam in &vg_families {
+            for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                if bundles[bi].rescue_class
+                    != Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy)
+                {
+                    continue;
+                }
+                let supp = vg_copy_support
+                    .get(&(fam.family_id, copy_id))
+                    .copied()
+                    .unwrap_or(0.0);
+                if supp < t_support {
+                    continue;
+                }
+                let mut raised_here = false;
+                for r in bundles[bi].reads.iter_mut() {
+                    if r.is_primary_alignment && r.weight < floor_w {
+                        r.weight = floor_w;
+                        n_floored += 1;
+                        raised_here = true;
+                    }
+                }
+                if raised_here {
+                    n_copies += 1;
+                }
+            }
+        }
+        if n_floored > 0 {
+            eprintln!(
+                "[VG-TANDEM] support-gated weight floor: raised {} primary read(s) across {} certified copy(ies) (support>={}, floor={})",
+                n_floored, n_copies, t_support, floor_w
+            );
+        }
+    }
+
     // NOTE: the certified copy-support map (`vg_copy_support`) is populated
     // INSIDE the EM block above, while `bundles` is still intact and the family
     // `multimap_reads` `ri` indices are still valid (see the long comment at the
