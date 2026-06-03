@@ -61,6 +61,65 @@ pub fn cluster_reads_by_position(
     clusters
 }
 
+use crate::types::Bundle;
+use crate::genome::GenomeIndex;
+
+/// A tandem array detected inside one bundle: the per-copy genomic spans
+/// (genomic-ascending) and, for each copy, the read indices (into `bundle.reads`)
+/// that fall in that copy's span.
+pub struct TandemDecomposition {
+    pub copy_spans: Vec<(u64, u64)>,
+    pub copy_read_idxs: Vec<Vec<usize>>,
+}
+
+/// Detect whether `bundle` is a collapsed tandem array. Requires ≥2 position
+/// clusters that are mutually sequence-similar (≥ `cfg.min_jaccard`). Returns
+/// `None` when disabled, single-cluster, or clusters are dissimilar (a normal
+/// multi-exon gene — must NOT be split).
+pub fn detect_tandem_bundle(
+    bundle: &Bundle,
+    genome: &GenomeIndex,
+    cfg: TandemConfig,
+) -> Option<TandemDecomposition> {
+    if !cfg.enabled {
+        return None;
+    }
+    // Read footprints = (ref_start, ref_end) per read.
+    let ivs: Vec<(u64, u64)> = bundle.reads.iter()
+        .map(|r| (r.ref_start, r.ref_end))
+        .collect();
+    let clusters = cluster_reads_by_position(&ivs, cfg.min_gap);
+    if clusters.len() < 2 {
+        return None;
+    }
+    // Fetch each cluster's reference sequence (the copy's genomic span).
+    let seqs: Vec<Vec<u8>> = clusters.iter()
+        .map(|(_, (s, e))| genome.fetch_sequence(&bundle.chrom, *s, *e).unwrap_or_default())
+        .collect();
+    // Require mutual similarity: every cluster must be ≥min_jaccard to at least
+    // one other (so a lone unrelated cluster doesn't gate, but a single gene with
+    // one weird exon block isn't promoted either).
+    let n = clusters.len();
+    let mut similar_to_any = vec![false; n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if seq_kmer_jaccard(&seqs[i], &seqs[j], cfg.kmer) >= cfg.min_jaccard {
+                similar_to_any[i] = true;
+                similar_to_any[j] = true;
+            }
+        }
+    }
+    // Keep only similar clusters; need ≥2 to call a tandem array.
+    let kept: Vec<usize> = (0..n).filter(|&i| similar_to_any[i]).collect();
+    if kept.len() < 2 {
+        return None;
+    }
+    Some(TandemDecomposition {
+        copy_spans: kept.iter().map(|&i| clusters[i].1).collect(),
+        copy_read_idxs: kept.iter().map(|&i| clusters[i].0.clone()).collect(),
+    })
+}
+
 /// O5/tandem runtime config (env). `enabled` defaults OFF (opt-in prototype).
 #[derive(Debug, Clone, Copy)]
 pub struct TandemConfig {
@@ -296,5 +355,78 @@ mod tests {
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
         assert!((c.min_jaccard - 0.20).abs() < 1e-9, "1.5 > 1.0 must fall back to 0.20; got {}", c.min_jaccard);
+    }
+
+    // ── detect_tandem_bundle None-path tests ───────────────────────────────
+
+    /// Minimal Bundle constructor for tests: empty reads, no junctions.
+    fn make_empty_bundle() -> crate::types::Bundle {
+        crate::types::Bundle {
+            chrom: "chrTest".to_string(),
+            start: 0,
+            end: 0,
+            strand: '+',
+            reads: Vec::new(),
+            junction_stats: Default::default(),
+            junction_pair_stats: Default::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: false,
+            rescue_class: None,
+            vg_family_id: None,
+        }
+    }
+
+    /// `enabled=false` must return `None` immediately without reading the genome.
+    #[test]
+    fn detect_disabled_returns_none() {
+        let cfg = TandemConfig { enabled: false, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
+        let b = make_empty_bundle();
+        let g = crate::genome::GenomeIndex::default();
+        assert!(detect_tandem_bundle(&b, &g, cfg).is_none());
+    }
+
+    /// A bundle with no reads always returns `None` (fewer than 2 clusters).
+    #[test]
+    fn detect_empty_bundle_returns_none() {
+        let cfg = TandemConfig { enabled: true, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
+        let b = make_empty_bundle();
+        let g = crate::genome::GenomeIndex::default();
+        assert!(detect_tandem_bundle(&b, &g, cfg).is_none());
+    }
+
+    /// A bundle whose reads all fall in a single position cluster returns `None`.
+    #[test]
+    fn detect_single_cluster_returns_none() {
+        use std::sync::Arc;
+        let cfg = TandemConfig { enabled: true, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
+        let make_read = |rs: u64, re: u64| crate::types::BundleRead {
+            read_uid: 0, read_name: Arc::from("r"), read_name_hash: 0,
+            ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+            ref_start: rs, ref_end: re,
+            exons: vec![(rs, re)], junctions: vec![], junction_valid: vec![],
+            junctions_raw: vec![], junctions_del: vec![],
+            weight: 1.0, is_reverse: false, strand: '+',
+            has_poly_start: false, has_poly_end: false,
+            has_poly_start_aligned: false, has_poly_start_unaligned: false,
+            has_poly_end_aligned: false, has_poly_end_unaligned: false,
+            unaligned_poly_t: 0, unaligned_poly_a: 0,
+            has_last_exon_polya: false, has_first_exon_polyt: false,
+            query_length: None, clip_left: 0, clip_right: 0,
+            nh: 1, nm: 0, de: None, md: None, insertion_sites: vec![],
+            unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
+            countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
+            pair_idx: vec![], pair_count: vec![],
+            mapq: 60, mismatches: vec![], seq: Vec::new(),
+            hp_tag: None, ps_tag: None,
+            is_primary_alignment: true,
+            em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+        };
+        let mut b = make_empty_bundle();
+        // Two reads within 5kb of each other → single cluster.
+        b.reads = vec![make_read(1000, 14000), make_read(1500, 14500)];
+        let g = crate::genome::GenomeIndex::default();
+        assert!(detect_tandem_bundle(&b, &g, cfg).is_none());
     }
 }
