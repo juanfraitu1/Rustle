@@ -695,12 +695,94 @@ mod tests {
         assert_eq!(fam.family_id, 0);
         // No shared read_name_hash → multimap_reads must be empty.
         assert!(fam.multimap_reads.is_empty(), "no cross-copy reads → multimap_reads empty");
+        // vg_family_id must be set on every sub-bundle (the EM linkage field).
+        assert_eq!(
+            bundles[0].vg_family_id,
+            Some(0),
+            "copy-0 sub-bundle must carry vg_family_id = Some(0)"
+        );
+        assert_eq!(
+            bundles[1].vg_family_id,
+            Some(0),
+            "copy-1 sub-bundle must carry vg_family_id = Some(0)"
+        );
+        // Read identity: copy-0 must contain the two reads from the first position
+        // cluster (ref_start 1000 and 1500), and copy-1 the two from the second
+        // (ref_start 37000 and 37200). A swap of copy_read_idxs assignments would
+        // produce wrong read counts per copy AND wrong ref_start values.
+        assert_eq!(
+            bundles[0].reads[0].ref_start, 1000,
+            "copy-0 read[0] must be the read with ref_start=1000"
+        );
+        assert_eq!(
+            bundles[0].reads[1].ref_start, 1500,
+            "copy-0 read[1] must be the read with ref_start=1500"
+        );
+        assert_eq!(
+            bundles[1].reads[0].ref_start, 37000,
+            "copy-1 read[0] must be the read with ref_start=37000"
+        );
+        assert_eq!(
+            bundles[1].reads[1].ref_start, 37200,
+            "copy-1 read[1] must be the read with ref_start=37200"
+        );
+        // read_name_hash identity cross-check.
+        assert_eq!(bundles[0].reads[0].read_name_hash, 1001);
+        assert_eq!(bundles[0].reads[1].read_name_hash, 1002);
+        assert_eq!(bundles[1].reads[0].read_name_hash, 1003);
+        assert_eq!(bundles[1].reads[1].read_name_hash, 1004);
+    }
+
+    /// Same as `decompose_builds_one_subbundle_per_copy` but `bundles` is
+    /// pre-populated with N sentinel bundles so the returned indices are offset by
+    /// N. This catches an off-by-N bug where `bundle_indices.push(bundles.len())`
+    /// would compute the wrong index if the initial vec size is non-zero.
+    #[test]
+    fn decompose_appends_to_prepopulated_bundles() {
+        let parent = make_bundle_two_copies();
+        let decomp = TandemDecomposition {
+            copy_spans: vec![(1000, 14000), (37000, 50000)],
+            copy_read_idxs: vec![vec![0, 1], vec![2, 3]],
+        };
+        // Pre-populate with 3 sentinel bundles so initial len = 3.
+        let sentinel = make_empty_bundle();
+        let mut bundles: Vec<crate::types::Bundle> = vec![
+            sentinel.clone(),
+            sentinel.clone(),
+            sentinel.clone(),
+        ];
+        let cfg = crate::types::RunConfig::default();
+        let (fam, idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+            &parent, &decomp, &mut bundles, 7, &cfg,
+        );
+        // Two sub-bundles appended after the 3 sentinels → indices 3 and 4.
+        assert_eq!(bundles.len(), 5, "3 sentinels + 2 sub-bundles = 5 total");
+        assert_eq!(idxs.len(), 2, "two copies → two indices");
+        assert_eq!(idxs[0], 3, "first sub-bundle must be at index 3 (after 3 sentinels)");
+        assert_eq!(idxs[1], 4, "second sub-bundle must be at index 4");
+        assert_eq!(fam.bundle_indices, idxs);
+        // Verify the correct sub-bundles are at the expected positions.
+        assert_eq!(bundles[3].start, 1000);
+        assert_eq!(bundles[3].end, 14000);
+        assert_eq!(bundles[4].start, 37000);
+        assert_eq!(bundles[4].end, 50000);
+        // vg_family_id must use the supplied family_id (7), not 0.
+        assert_eq!(bundles[3].vg_family_id, Some(7));
+        assert_eq!(bundles[4].vg_family_id, Some(7));
     }
 
     #[test]
     fn decompose_detects_multimap_reads() {
         // Read at index 0 (copy-0) and index 2 (copy-1) share the same
         // read_name_hash (simulating a secondary alignment spanning both loci).
+        // After decomposition:
+        //   - copy-0 sub-bundle has reads: [parent[0], parent[1]]
+        //     → local indices 0 (shared) and 1 (unique)
+        //   - copy-1 sub-bundle has reads: [parent[2], parent[3]]
+        //     → local indices 0 (shared) and 1 (unique)
+        // The multimap entry for shared_hash must record (copy_pos=0, local_ri=0)
+        // and (copy_pos=1, local_ri=0) — the LOCAL index within each sub-bundle,
+        // NOT the parent read index (0 and 2).
         let mut parent = make_bundle_two_copies();
         let shared_hash = 9999u64;
         parent.reads[0].read_name_hash = shared_hash;
@@ -718,5 +800,21 @@ mod tests {
         assert_eq!(fam.multimap_reads.len(), 1, "one shared hash → one multimap entry");
         let placements = fam.multimap_reads.get(&shared_hash).unwrap();
         assert_eq!(placements.len(), 2, "shared read has placements in 2 copies");
+        // Verify the tuple values: (copy_pos, local_read_idx_in_subbundle).
+        // copy-0: the shared read is the first read in the sub-bundle → local_ri=0.
+        // copy-1: the shared read is also the first read in its sub-bundle → local_ri=0.
+        // Sort by copy_pos to make the assertion order-independent.
+        let mut sorted = placements.clone();
+        sorted.sort_by_key(|&(cp, _)| cp);
+        assert_eq!(
+            sorted[0],
+            (0usize, 0usize),
+            "copy-0 placement: copy_pos=0, local_ri=0 (first read in copy-0 sub-bundle)"
+        );
+        assert_eq!(
+            sorted[1],
+            (1usize, 0usize),
+            "copy-1 placement: copy_pos=1, local_ri=0 (first read in copy-1 sub-bundle)"
+        );
     }
 }
