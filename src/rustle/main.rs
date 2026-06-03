@@ -375,6 +375,18 @@ struct Args {
     #[arg(long)]
     vg: bool,
 
+    /// Read-chain mode: emit a transcript for every distinct splice-junction chain
+    /// observed in the long reads (each output transcript is directly supported by
+    /// >=1 read with matching splice sites). Surfaces low-coverage / rare copies
+    /// that flow assembly drops -- e.g. a tandem-array copy seen by a single
+    /// full-length read. More sensitive, slightly noisier than the default.
+    #[arg(long = "read-chain")]
+    read_chain: bool,
+
+    /// With --read-chain, also emit single-exon reads (grouped by locus midpoint).
+    #[arg(long = "read-chain-single")]
+    read_chain_single: bool,
+
     /// GTF/GFF file for template-based family assembly (GTF ingestion mode).
     /// When provided, Rustle parses transcripts from this file and uses them
     /// as templates for discovering new isoforms or family members via
@@ -669,6 +681,15 @@ pub fn run_cli() -> anyhow::Result<()> {
     if args.vg && args.single_copy_mode {
         eprintln!("error: --vg and --single-copy-mode are mutually exclusive");
         std::process::exit(1);
+    }
+
+    // --read-chain enables the read-chain assembly path (read internally via the
+    // RUSTLE_READCHAIN env switch). --read-chain-single also groups single-exon reads.
+    if args.read_chain || args.read_chain_single {
+        std::env::set_var("RUSTLE_READCHAIN", "1");
+    }
+    if args.read_chain_single {
+        std::env::set_var("RUSTLE_READCHAIN_SINGLE", "1");
     }
 
     // the original algorithm -a is "minimum anchor length" for junction support around splice sites.
