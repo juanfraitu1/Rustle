@@ -73,3 +73,26 @@ bench/tandem_attribution/run_one.sh 0.99 /tmp/attr/id099 1 3 150
 # the full sweep was driven by a Workflow over identity × seed (see git log).
 python3 bench/tandem_attribution/plot_spectrum.py   # regenerate the figure
 ```
+
+## Calibration fix (2026-06-03, commit follows)
+
+The benchmark exposed overconfidence at a single diagnostic site, so the EM's
+decisiveness gate now requires ≥ `RUSTLE_VG_EM_MIN_DECISIVE_SITES` (default 2)
+diagnostic sites: a read on one site must clear the FULL absolute gap (which one
+site cannot supply) and otherwise abstains — a single diagnostic base is flippable
+by one sequencing error. Re-run (default min=2):
+
+| identity | decisive frac (was→now) | decisive acc | abstain (was→now) |
+|---:|---:|---:|---:|
+| 0.999 (1-site regime) | 0.811 → **0.717** | 0.62 | 0.165 → **0.247** |
+| 0.995 (≥2 sites) | 0.979 → 0.969 | 0.95 | 0.000 (unchanged) |
+| 0.99 (≥2 sites) | 0.971 → 0.957 | 0.95 | 0.029 → 0.043 |
+
+So it abstains more at the single-site margin without disturbing the resolvable
+range. **Honest scope:** at 0.999 a full read actually covers ~3 weak single-base
+diagnostics (one per copy), most clearing min=2, so decisive accuracy is largely
+unchanged — the residual difficulty there is inherent near-non-identifiability, not
+a site-count artifact. A sharper fix would be error-aware per-site scoring (weight
+each diagnostic base by its sequencing-error probability), which a count gate can't
+capture. Regression-safe: DAZ byte-identical (0 sites), RBMY tandem c4+c6 retained,
+de-novo sorted-identical.
