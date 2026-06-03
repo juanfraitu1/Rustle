@@ -236,3 +236,29 @@ silence at output is the anti-fabrication guards doing their job.
 `RUSTLE_VG_TOPO_BORROW` path or its own env gate):** find_map projection fix,
 `RUSTLE_VG_TOPO_OFFSET` bootstrap, `RUSTLE_VG_TOPO_FORCE_EMIT` diagnostic (clearly labeled
 as the fabrication-measurement path, NOT a default), MODE/via trace refinement.
+
+### Correction (same session): the offset is synthetic-exact but real-data-IMPRECISE — do not overclaim
+
+Verified the real-data projections by contig (the earlier check used the wrong contig).
+On chrY the source is RSTL.13 / FAM_34 with `family_verdict "not_expressed_here"`,
+`family_n_expressed "0"` — i.e. the sister copy is **genuinely unexpressed**, nothing to
+borrow. The +9.8 Mb median offset projected the sister to ~26.07 M, but the nearest real
+genes on that contig sit at 26.37 M+ — the single median shift landed **~300 kb off**.
+So:
+- The "4287 exons projected on GOLGA8" figure is **inflated and not a capability win**:
+  it is ~163 redundant source transcripts from one copy × their exons, all projected by
+  one crude median offset to coordinates the sister has no reads for, then (correctly)
+  dropped by `has_reads`. A single affine offset cannot model real paralog
+  indels/rearrangements; it is exact only on the colinear synthetic.
+- The honest, durable results are: (1) the **`find_map` correctness fix** (real bug,
+  verified on the synthetic, default-safe), and (2) the **complete characterization of
+  why TOPO_BORROW emits 0 on real data** — the candidate sisters are genuinely
+  unexpressed, and the `has_reads` + phantom-guard layers correctly refuse to fabricate.
+- The offset bootstrap is therefore a **synthetic-only demonstrator**, not a real-data
+  lever. It stays opt-in and clearly labeled; it should NOT be presented as recovering
+  real copies.
+
+Net: TOPO_BORROW's projection path is now correct and *can* fire, but there is **no real
+GOLGA8/chrY beneficiary** because the "starved" sisters are genuinely not expressed. The
+O5 ~0-coverage gap remains structurally non-recoverable without fabrication. No fabricated
+win; the offset's real-data value is honestly ~nil.
