@@ -156,3 +156,16 @@ Implemented (branch `vg/flow-capacity-apportionment`, opt-in `RUSTLE_VG_TANDEM=1
 - GGO_19 de-novo **content-identical** (1943 transcripts, sorted-identical).
 
 Net RBMY1 result with `RUSTLE_VG_TANDEM=1`: the collapsed mega-bundle is resolved into all 6 tandem copies with per-copy attribution; the outlier c6 (was unassemblable) and the core c4 (was EM-absorbed) both recovered, each at a capacity_confidence honestly reflecting its evidence (c6 high 0.956, c4 low 0.220). Feature remains opt-in pending false-split/spillover guards + the pre-existing fixture-test fix.
+
+## False-split / spillover scan + promotion decision (2026-06-03)
+
+**Genome-region spillover scan** — `--vg` baseline vs `--vg RUSTLE_VG_TANDEM=1` on `bench/multi_copy_eval/ggo_Y.bam` (11,333 reads, all on NC_073248.2 / chrY, spanning many multi-copy regions: TSPY ~9 Mb, RBMY ~19 Mb, DAZ ~42 Mb, …) with the chrY genome:
+- **316 transcripts in BOTH runs — identical count, zero regression.**
+- **0 `[VG-TANDEM]` detections, 0 false splits, weight floor never fired** across all 28 discovered families. So tandem mode is **SAFE genome-wide**: it does not spuriously split single genes or perturb non-tandem loci. The false-split guard (min-gap + min-jaccard similarity filter + the `detect_dissimilar_clusters_returns_none` unit test) holds empirically.
+
+**Sensitivity gap (the decisive finding for promotion).** In the *full-chrY* context, tandem did **not** fire on RBMY — yet RBMY is **not** correctly resolved by normal discovery either: all 6 RBMY genes come out tagged `copy_id "3"`, `capacity_confidence 1.000` (the no-apportionment default), swept into an unrelated cross-mapping family (`FAM_16`). Because the pre-pass **skips bundles already in a discovered family** (`discovered.contains(&bi)`), and RBMY's bundles were mis-assigned to FAM_16, the tandem pass never runs where it is needed. So the feature currently fires only when an array collapses to a bundle that escaped (incorrect) family assignment — i.e. on **isolated / region bams** (like the RBMY-only `tspy.bam`), not on whole-chromosome input.
+
+**DECISION: do NOT promote to default-on. Keep `RUSTLE_VG_TANDEM` opt-in.**
+Rationale: the promotion criterion "on a real multi-copy benchmark, adds recovered real copies without adding FPs" is **not met** — on whole-chromosome input the feature doesn't fire (sensitivity gap), and on isolated bams it works but that is not the production path. Promoting now would ship a default-on feature that is inert (or worse, interacts with mis-familying) on real input. It is **safe** (spillover-clean), so shipping it opt-in is correct: it is a validated capability for isolated-array analysis and a research result (per-copy confidence on a tandem testis array), not yet a whole-genome default.
+
+**Path to promotion (future work):** make the tandem pre-pass fire on bundles whose family assignment is a *cross-mapping artifact* (e.g. low within-family junction/sequence concordance, or a bundle that itself spans ≥2 sequence-similar position clusters) rather than blanket-skipping any discovered-family bundle — so RBMY-in-full-genome (mis-familied into FAM_16) is still decomposed. Re-run this spillover scan + a real multi-copy benchmark after that fix; promote only if it then adds real copies without FPs.
