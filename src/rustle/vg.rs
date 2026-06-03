@@ -5061,16 +5061,24 @@ pub fn run_fingerprint_em(
                     n_reweighted += 1;
                 }
                 // Persist per-read EM attribution for the downstream capacity-
-                // confidence channel. Uniqueness MUST come from the read's actual
-                // placement count in this family (entry.locs), NOT BundleRead.nh:
-                // minimap2 emits no NH tag, so nh defaults to 1 and every read would
-                // look "unique" -> em_anchored=true -> capacity_confidence stuck at
-                // 1.000. Every entry here has >=2 placements, so was_unique is false.
+                // confidence channel. Two corrections vs the naive formula:
+                //  (1) Uniqueness MUST come from the read's actual placement count
+                //      (entry.locs), NOT BundleRead.nh: minimap2 emits no NH tag, so
+                //      nh defaults to 1 and every read would look "unique" ->
+                //      em_anchored=true -> capacity_confidence stuck at 1.000.
+                //  (2) Anchoring is PER PLACEMENT: a read counts as anchored for
+                //      THIS copy only if this placement is the read's winner. A read
+                //      decisively assigned to copy A also has a decisive weight_gap
+                //      at its small residual on copy B; without the winner gate that
+                //      residual marks B "anchored" and inflates B's confidence (the
+                //      DAZ3 phantom read 1.000 from 0.055-weight residuals).
                 let was_unique = entry.locs.len() <= 1;
+                let max_w = entry.weights.iter().cloned().fold(f64::MIN, f64::max);
+                let is_winner = entry.weights[i] >= max_w - 1e-9;
                 bundles[global_bi].reads[ri].em_weight_gap = gap;
                 bundles[global_bi].reads[ri].em_n_sites = entry.n_sites_covered[i] as u32;
                 bundles[global_bi].reads[ri].em_anchored =
-                    (gap > 0.8) || (max_sites > 0 && gap > 0.5) || was_unique;
+                    was_unique || (is_winner && ((gap > 0.8) || (max_sites > 0 && gap > 0.5)));
                 if let Some(ref mut w) = attr_writer {
                     let rnh = &bundles[global_bi].reads[ri].read_name_hash;
                     let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}",
@@ -6621,6 +6629,39 @@ mod tests {
             "uncertain multimapper must not be em_anchored when NH tag is absent (nh defaulted to 1)");
         assert!(!bundles[1].reads[0].em_anchored,
             "both placements of the uncertain multimapper must be unanchored");
+    }
+
+    /// Per-placement anchoring: a read decisively apportioned to copy0 (via the
+    /// anchored prior) must mark ONLY its copy0 (winner) placement anchored — not
+    /// its small copy1 residual. Without the winner gate, the minority/phantom
+    /// copy's capacity_confidence is falsely 1.000 (the DAZ3 phantom symptom).
+    #[test]
+    fn em_anchored_is_per_placement_winner_only() {
+        std::env::set_var("RUSTLE_VG_ANCHOR_PRIOR", "1");
+        // identical copies -> 0 diagnostic sites; the anchored prior (copy0 has far
+        // more unique anchors) drives the shared read decisively to copy0.
+        let ec = make_ec(0, &[(0, b"ACGTACGTAC"), (1, b"ACGTACGTAC")],
+                         &[(0, (100, 110)), (1, (5100, 5110))]);
+        let fg = FamilyGraph { family_id: 42, nodes: vec![ec], edges: vec![] };
+        let mut c0 = Vec::new(); let mut c1 = Vec::new();
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        for i in 0..50u64 { c0.push(make_read_full(3000 + i, vec![(100, 1100)], 2, false)); }
+        c1.push(make_read_full(4000, vec![(5100, 6100)], 2, false));
+        let rnh = 9999u64;
+        c0.push(make_read_full(rnh, vec![(100, 1100)], 2, false));
+        c1.push(make_read_full(rnh, vec![(5100, 6100)], 2, false));
+        let c0i = c0.len() - 1; let c1i = c1.len() - 1;
+        multimap.insert(rnh, vec![(0, c0i), (1, c1i)]);
+        let mut bundles = vec![make_bundle("chr1", '+', c0), make_bundle("chr1", '+', c1)];
+        let family = FamilyGroup { family_id: 42, bundle_indices: vec![0, 1], multimap_reads: multimap };
+        let family_graphs = vec![Some(fg)];
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5);
+
+        let w0 = bundles[0].reads[c0i].weight; let w1 = bundles[1].reads[c1i].weight;
+        assert!(w0 > 0.9, "shared read should be decisively copy0: w0={w0} w1={w1}");
+        assert!(bundles[0].reads[c0i].em_anchored, "winning placement (copy0) must be anchored");
+        assert!(!bundles[1].reads[c1i].em_anchored, "losing residual (copy1) must NOT be anchored");
+        std::env::remove_var("RUSTLE_VG_ANCHOR_PRIOR");
     }
 }
 
