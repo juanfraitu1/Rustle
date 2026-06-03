@@ -160,14 +160,29 @@ pub fn detect_mosaic(obs: &[SiteObs], n_copies: usize, eps: f64, p: &MosaicParam
     if d < p.min_decisive_sites {
         return mk(MosaicStatus::LowPower, d);
     }
-    let distinct: std::collections::BTreeSet<usize> = decisive_copy.iter().copied().collect();
+    // Distinct copies among decisive sites, ASCENDING (a dense Vec, not a BTreeSet: avoids a
+    // per-read heap allocation + tree walk in the hot scan below; ascending order preserves the
+    // old tie-break — `max_by_key` keeps the highest copy id among ties).
+    let mut distinct: Vec<usize> = decisive_copy.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
     if distinct.len() <= 1 {
         return mk(MosaicStatus::SingleCopy, d);
     }
 
-    // Best single copy = the copy agreeing with the most decisive sites.
-    let agree_for = |copy: usize, lo: usize, hi: usize| -> usize {
-        decisive_copy[lo..hi].iter().filter(|&&c| c == copy).count()
+    // Prefix counts make a range agreement count O(1): `prefix[c][i]` = #copy-c decisive sites
+    // in `decisive_copy[0..i]`. Replaces the per-(k, copy) linear re-scan
+    // (O(d²·copies) → O(d·copies)); one allocation reused across all k.
+    let ncap = distinct.last().copied().unwrap_or(0) + 1;
+    let mut prefix: Vec<Vec<u32>> = vec![vec![0u32; d + 1]; ncap];
+    for i in 0..d {
+        for c in 0..ncap {
+            prefix[c][i + 1] = prefix[c][i];
+        }
+        prefix[decisive_copy[i]][i + 1] += 1;
+    }
+    let agree_for = |c: usize, lo: usize, hi: usize| -> usize {
+        (prefix[c][hi] - prefix[c][lo]) as usize
     };
     let best_single = distinct.iter().map(|&c| agree_for(c, 0, d)).max().unwrap_or(0);
 
@@ -176,18 +191,16 @@ pub fn detect_mosaic(obs: &[SiteObs], n_copies: usize, eps: f64, p: &MosaicParam
     let mut best_split = best_single;
     let mut best_kab: Option<(usize, usize, usize)> = None;
     for k in 1..d {
-        // best copy on each side
         let a = *distinct.iter().max_by_key(|&&c| agree_for(c, 0, k)).unwrap();
         let b = *distinct.iter().max_by_key(|&&c| agree_for(c, k, d)).unwrap();
         if a == b {
             continue;
         }
         let explained = agree_for(a, 0, k) + agree_for(b, k, d);
+        // First k to reach a new best (or to match the single-copy best) wins the tie.
         if explained > best_split || (explained == best_split && best_kab.is_none()) {
-            if explained >= best_split {
-                best_split = explained;
-                best_kab = Some((k, a, b));
-            }
+            best_split = explained;
+            best_kab = Some((k, a, b));
         }
     }
 

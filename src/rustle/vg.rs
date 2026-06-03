@@ -1703,6 +1703,10 @@ pub struct FamilyVerdict {
     /// are set on the reads). `None` when the EM did not run or the copy had no shared
     /// reads. See `EmCopyConfidence`.
     pub em_confidence: Option<EmCopyConfidence>,
+    /// Segmental-duplication extent / breakpoints (opt-in RUSTLE_VG_SEGDUP_EXTENT).
+    /// `None` unless the segdup pass ran. Surfaces gene+flank duplicated extent and the
+    /// segdup-vs-bare-paralog call. See `detect_and_report_segdups`.
+    pub segdup: Option<crate::vg_hmm::segdup::SegdupExtent>,
 }
 impl FamilyClass {
     pub fn as_str(&self) -> &'static str {
@@ -2014,7 +2018,7 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
     };
     // em_confidence is filled POST-EM by the pipeline (the read em_* fields aren't set
     // yet at classify-time, which runs before run_fingerprint_em).
-    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None }
+    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None, segdup: None }
 }
 
 /// True iff the family has two OPPOSITE-strand bundles that OVERLAP in genomic coords — a
@@ -2034,7 +2038,7 @@ pub fn mixed_strand_copies_overlap(family: &FamilyGroup, bundles: &[Bundle]) -> 
     for i in 0..loci.len() {
         for j in (i + 1)..loci.len() {
             let (a, b) = (loci[i], loci[j]);
-            if a.1 != b.1 && a.0 == b.0 && a.2 <= b.3 && b.2 <= a.3 {
+            if a.1 != b.1 && a.0 == b.0 && a.2 < b.3 && b.2 < a.3 { // strict: book-ended != overlapping (matches vg.rs:1141)
                 return true;
             }
         }
@@ -2096,8 +2100,9 @@ pub fn detect_and_report_segdups(
     families: &[FamilyGroup],
     bundles: &[Bundle],
     genome: &crate::genome::GenomeIndex,
-) {
+) -> crate::types::DetHashMap<usize, crate::vg_hmm::segdup::SegdupExtent> {
     use crate::vg_hmm::segdup::{call_segdup_extent, SegdupExtent, SegdupParams};
+    let mut out: crate::types::DetHashMap<usize, SegdupExtent> = Default::default();
     let params = SegdupParams::from_env();
     let win: u64 = std::env::var("RUSTLE_VG_SEGDUP_FETCH")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(8000);
@@ -2137,8 +2142,10 @@ pub fn detect_and_report_segdups(
                 seg.downstream_extent, seg.total_extent,
                 if seg.is_segdup { "SEGMENTAL DUPLICATION (gene+flanks)" } else { "bare paralog (gene-only homology)" },
             );
+            out.insert(fam.family_id, seg);
         }
     }
+    out
 }
 
 /// Compute each copy's **independent support** within a family.
@@ -4087,7 +4094,7 @@ fn build_read_site_obs(
     for &(p, b) in &read.mismatches {
         mism.insert(p, b);
     }
-    let mut obs: Vec<SiteObs> = Vec::new();
+    let mut obs: Vec<SiteObs> = Vec::with_capacity(site_refs.len());
     for &(site_idx, ref_pos, this_copy_base) in site_refs {
         if !read.exons.iter().any(|&(s, e)| ref_pos >= s && ref_pos < e) {
             continue;
@@ -4133,7 +4140,7 @@ fn detect_and_report_mosaics(
         if fp.per_copy_site_refs.get(copy_idx).map(|s| s.is_empty()).unwrap_or(true) {
             continue;
         }
-        let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut seen: crate::types::DetHashSet<u64> = Default::default();
         let (mut n_prim, mut n_obs, mut hist) = (0usize, 0usize, [0usize; 5]);
         for bundle in bundles.iter() {
             if &bundle.chrom != chrom || bundle.end < *lo || bundle.start > *hi {

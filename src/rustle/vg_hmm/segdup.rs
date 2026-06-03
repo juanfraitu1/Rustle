@@ -23,9 +23,11 @@ pub fn flank_homology_extent(a: &[u8], b: &[u8], window: usize, min_identity: f6
     let mut i = 0usize;
     loop {
         if (matches as f64) / (w as f64) < min_identity {
-            // Window [i, i+w) fell below identity → breakpoint is within it. Report its
-            // center for a less window-biased estimate.
-            return i + w / 2;
+            // Window [i, i+w) fell below identity → breakpoint is within it. Report its center
+            // for a less window-biased estimate — but if the ANCHOR window (i==0) already fails,
+            // there's no flank homology at all; report 0, not a phantom w/2 (bare paralogs would
+            // otherwise show a spurious ~w/2 flank extent).
+            return if i == 0 { 0 } else { i + w / 2 };
         }
         if i + w >= n {
             return n; // homology held to the end of the fetched flank
@@ -45,11 +47,12 @@ pub struct SegdupParams {
     pub window: usize,        // homology window (bp)
     pub min_identity: f64,    // windowed identity floor
     pub min_segdup_flank: u64, // total flank homology to call a segdup vs a bare paralog
+    pub min_each_flank: u64,   // min homology on EACH side (a segdup has two breakpoints)
 }
 
 impl Default for SegdupParams {
     fn default() -> Self {
-        SegdupParams { window: 50, min_identity: 0.70, min_segdup_flank: 500 }
+        SegdupParams { window: 50, min_identity: 0.70, min_segdup_flank: 500, min_each_flank: 50 }
     }
 }
 
@@ -59,6 +62,7 @@ impl SegdupParams {
         if let Some(v) = std::env::var("RUSTLE_VG_SEGDUP_WINDOW").ok().and_then(|s| s.parse().ok()) { p.window = v; }
         if let Some(v) = std::env::var("RUSTLE_VG_SEGDUP_MIN_ID").ok().and_then(|s| s.parse().ok()) { p.min_identity = v; }
         if let Some(v) = std::env::var("RUSTLE_VG_SEGDUP_MIN_FLANK").ok().and_then(|s| s.parse().ok()) { p.min_segdup_flank = v; }
+        if let Some(v) = std::env::var("RUSTLE_VG_SEGDUP_MIN_EACH").ok().and_then(|s| s.parse().ok()) { p.min_each_flank = v; }
         p
     }
 }
@@ -84,13 +88,15 @@ pub fn call_segdup_extent(
 ) -> SegdupExtent {
     let up = flank_homology_extent(up_a, up_b, p.window, p.min_identity) as u64;
     let down = flank_homology_extent(down_a, down_b, p.window, p.min_identity) as u64;
-    let flank_total = up + down;
+    // A true segmental duplication has TWO breakpoints: require genuine homology on BOTH
+    // sides (not one big one-sided match, which is a partial dup or a coincidence).
+    let is_segdup = (up + down) >= p.min_segdup_flank && up.min(down) >= p.min_each_flank;
     SegdupExtent {
         gene_span,
         upstream_extent: up,
         downstream_extent: down,
         total_extent: up + gene_span + down,
-        is_segdup: flank_total >= p.min_segdup_flank,
+        is_segdup,
     }
 }
 

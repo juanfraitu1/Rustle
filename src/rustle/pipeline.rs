@@ -10788,9 +10788,15 @@ pub fn run<P: AsRef<Path>>(
                         .or(vg_snp_genome.as_ref());
 
                     // Segmental-duplication extent / breakpoint pass (opt-in, analysis-only).
+                    // Surfaces the call onto each family's transcripts (family_segdup_* attrs).
                     if std::env::var_os("RUSTLE_VG_SEGDUP_EXTENT").is_some() {
                         if let Some(g) = genome_ref {
-                            crate::vg::detect_and_report_segdups(&vg_families, &bundles, g);
+                            let segdups = crate::vg::detect_and_report_segdups(&vg_families, &bundles, g);
+                            for ((fam_id, _copy), v) in vg_family_verdict.iter_mut() {
+                                if let Some(seg) = segdups.get(fam_id) {
+                                    v.segdup = Some(seg.clone());
+                                }
+                            }
                         }
                     }
 
@@ -18451,7 +18457,7 @@ pub fn run<P: AsRef<Path>>(
                                 n_id_classes: 0,
                                 locus_rel: crate::vg::LocusRel::Single,
                                 depth_copies: None,
-                                em_confidence: None,
+                                em_confidence: None, segdup: None,
                             });
                         }
                     }
