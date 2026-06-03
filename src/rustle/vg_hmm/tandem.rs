@@ -357,7 +357,7 @@ mod tests {
         assert!((c.min_jaccard - 0.20).abs() < 1e-9, "1.5 > 1.0 must fall back to 0.20; got {}", c.min_jaccard);
     }
 
-    // ── detect_tandem_bundle None-path tests ───────────────────────────────
+    // ── detect_tandem_bundle tests ─────────────────────────────────────────
 
     /// Minimal Bundle constructor for tests: empty reads, no junctions.
     fn make_empty_bundle() -> crate::types::Bundle {
@@ -377,6 +377,52 @@ mod tests {
             vg_family_id: None,
         }
     }
+
+    /// Construct a BundleRead with the given ref_start / ref_end; all other
+    /// fields are inert defaults used only to satisfy the struct layout.
+    fn make_read(rs: u64, re: u64) -> crate::types::BundleRead {
+        use std::sync::Arc;
+        crate::types::BundleRead {
+            read_uid: 0, read_name: Arc::from("r"), read_name_hash: 0,
+            ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
+            ref_start: rs, ref_end: re,
+            exons: vec![(rs, re)], junctions: vec![], junction_valid: vec![],
+            junctions_raw: vec![], junctions_del: vec![],
+            weight: 1.0, is_reverse: false, strand: '+',
+            has_poly_start: false, has_poly_end: false,
+            has_poly_start_aligned: false, has_poly_start_unaligned: false,
+            has_poly_end_aligned: false, has_poly_end_unaligned: false,
+            unaligned_poly_t: 0, unaligned_poly_a: 0,
+            has_last_exon_polya: false, has_first_exon_polyt: false,
+            query_length: None, clip_left: 0, clip_right: 0,
+            nh: 1, nm: 0, de: None, md: None, insertion_sites: vec![],
+            unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
+            countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
+            pair_idx: vec![], pair_count: vec![],
+            mapq: 60, mismatches: vec![], seq: Vec::new(),
+            hp_tag: None, ps_tag: None,
+            is_primary_alignment: true,
+            em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+        }
+    }
+
+    /// Build a GenomeIndex with a single contig "chrTest" whose sequence is
+    /// constructed by the caller-supplied builder: `build(buf)` fills `buf` to
+    /// the desired length. Uses a tempfile so the private `seqs` field need not
+    /// be exposed.
+    fn make_genome(build: impl Fn(&mut Vec<u8>)) -> crate::genome::GenomeIndex {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("test.fa");
+        let mut seq: Vec<u8> = Vec::new();
+        build(&mut seq);
+        let mut content = b">chrTest\n".to_vec();
+        content.extend_from_slice(&seq);
+        content.push(b'\n');
+        std::fs::write(&fa, &content).unwrap();
+        crate::genome::GenomeIndex::from_fasta(fa.to_str().unwrap()).unwrap()
+    }
+
+    // ── None-path unit tests ───────────────────────────────────────────────
 
     /// `enabled=false` must return `None` immediately without reading the genome.
     #[test]
@@ -399,34 +445,144 @@ mod tests {
     /// A bundle whose reads all fall in a single position cluster returns `None`.
     #[test]
     fn detect_single_cluster_returns_none() {
-        use std::sync::Arc;
         let cfg = TandemConfig { enabled: true, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
-        let make_read = |rs: u64, re: u64| crate::types::BundleRead {
-            read_uid: 0, read_name: Arc::from("r"), read_name_hash: 0,
-            ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
-            ref_start: rs, ref_end: re,
-            exons: vec![(rs, re)], junctions: vec![], junction_valid: vec![],
-            junctions_raw: vec![], junctions_del: vec![],
-            weight: 1.0, is_reverse: false, strand: '+',
-            has_poly_start: false, has_poly_end: false,
-            has_poly_start_aligned: false, has_poly_start_unaligned: false,
-            has_poly_end_aligned: false, has_poly_end_unaligned: false,
-            unaligned_poly_t: 0, unaligned_poly_a: 0,
-            has_last_exon_polya: false, has_first_exon_polyt: false,
-            query_length: None, clip_left: 0, clip_right: 0,
-            nh: 1, nm: 0, de: None, md: None, insertion_sites: vec![],
-            unitig: false, unitig_cov: 0.0, read_count_yc: 1.0,
-            countfrag_len: 0.0, countfrag_num: 0.0, junc_mismatch_weight: 0.0,
-            pair_idx: vec![], pair_count: vec![],
-            mapq: 60, mismatches: vec![], seq: Vec::new(),
-            hp_tag: None, ps_tag: None,
-            is_primary_alignment: true,
-            em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
-        };
         let mut b = make_empty_bundle();
         // Two reads within 5kb of each other → single cluster.
         b.reads = vec![make_read(1000, 14000), make_read(1500, 14500)];
         let g = crate::genome::GenomeIndex::default();
         assert!(detect_tandem_bundle(&b, &g, cfg).is_none());
+    }
+
+    // ── Dissimilar-clusters None-path (primary false-positive guard) ───────
+    //
+    // A bundle with ≥2 position clusters but dissimilar reference sequences
+    // (a normal multi-exon gene, not a tandem array) must return None.
+    // This is the guard the spec explicitly calls out as "must NOT be split".
+
+    /// Two clusters with completely disjoint k-mer sets (AAAA… vs CCCC…):
+    /// seq_kmer_jaccard = 0.0 < min_jaccard=0.2 → function must return None.
+    #[test]
+    fn detect_dissimilar_clusters_returns_none() {
+        // Genome layout (all ACGT-only so k-mers are valid):
+        //   positions   0.. 100: copy-1 region = ACGT repeated (25×)
+        //   positions 100..5200: filler = A repeated
+        //   positions 5200..5300: copy-2 region = TGCA repeated (25×)
+        // The two 100-base windows share zero 15-mers → Jaccard = 0.0 < 0.2.
+        let genome = make_genome(|buf| {
+            // copy-1 window at 0..100: ACGT×25
+            for _ in 0..25 { buf.extend_from_slice(b"ACGT"); }
+            // filler 100..5200
+            buf.extend(std::iter::repeat(b'A').take(5100));
+            // copy-2 window at 5200..5300: TGCA×25 (zero shared 15-mers with ACGT×25)
+            for _ in 0..25 { buf.extend_from_slice(b"TGCA"); }
+        });
+        let cfg = TandemConfig { enabled: true, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
+        let mut b = make_empty_bundle();
+        // Read 0: cluster 1 (positions 0..100)
+        // Read 1: cluster 2 (positions 5200..5300, gap=5100 > 5000)
+        b.reads = vec![make_read(0, 100), make_read(5200, 5300)];
+        assert!(
+            detect_tandem_bundle(&b, &genome, cfg).is_none(),
+            "dissimilar clusters (multi-exon gene) must return None, not be split"
+        );
+    }
+
+    // ── Some-path: happy path (two similar clusters) ───────────────────────
+
+    /// Two separated clusters with sequence-similar reference windows:
+    /// detect_tandem_bundle must return Some with 2 copy_spans and correct
+    /// copy_read_idxs. This exercises lines 96-121 of detect_tandem_bundle.
+    #[test]
+    fn detect_similar_clusters_returns_some() {
+        // Genome layout:
+        //   positions   0..100: copy-1 window = non-repeating 100-base sequence
+        //   positions 100..5200: filler = A repeated
+        //   positions 5200..5300: copy-2 window = same 100-base sequence with
+        //     one substitution at position 50 (Jaccard ≈ 0.70 >> 0.2 threshold)
+        let base_seq: Vec<u8> = (0u8..100)
+            .map(|i| [b'A',b'C',b'G',b'T',b'G',b'C',b'A',b'T',b'T',b'G'][i as usize % 10])
+            .collect();
+        let mut copy2_seq = base_seq.clone();
+        copy2_seq[50] = if copy2_seq[50] == b'A' { b'C' } else { b'A' };
+
+        let base_seq_clone = base_seq.clone();
+        let copy2_seq_clone = copy2_seq.clone();
+        let genome = make_genome(move |buf| {
+            buf.extend_from_slice(&base_seq_clone);
+            buf.extend(std::iter::repeat(b'A').take(5100));
+            buf.extend_from_slice(&copy2_seq_clone);
+        });
+
+        let cfg = TandemConfig { enabled: true, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
+        let mut b = make_empty_bundle();
+        // Read 0: cluster 1, Read 1: cluster 2 (gap = 5100 > 5000)
+        b.reads = vec![make_read(0, 100), make_read(5200, 5300)];
+
+        let result = detect_tandem_bundle(&b, &genome, cfg);
+        assert!(result.is_some(), "similar clusters must return Some(TandemDecomposition)");
+        let decomp = result.unwrap();
+        assert_eq!(decomp.copy_spans.len(), 2, "must report exactly 2 copy spans");
+        assert_eq!(decomp.copy_read_idxs.len(), 2, "must report exactly 2 copy read-index vecs");
+        // Cluster 0: read index 0; cluster 1: read index 1.
+        assert_eq!(decomp.copy_read_idxs[0], vec![0usize]);
+        assert_eq!(decomp.copy_read_idxs[1], vec![1usize]);
+        // copy_spans must cover the respective cluster genomic spans.
+        assert_eq!(decomp.copy_spans[0], (0, 100));
+        assert_eq!(decomp.copy_spans[1], (5200, 5300));
+    }
+
+    // ── Partial-similarity filter (3 clusters, 2 similar + 1 unrelated) ───
+
+    /// Three position clusters where clusters 0 and 1 are sequence-similar but
+    /// cluster 2 has a completely unrelated sequence. The kept-cluster filter
+    /// should retain only clusters 0 and 1 and return a TandemDecomposition
+    /// with exactly 2 copy_spans (not 3).
+    #[test]
+    fn detect_partial_similarity_drops_dissimilar_cluster() {
+        // Genome layout:
+        //   positions   0..100: copy-1 window = non-repeating sequence
+        //   positions 100..5200: filler = A repeated
+        //   positions 5200..5300: copy-2 window = same sequence, one sub (similar)
+        //   positions 5300..10400: filler = A repeated
+        //   positions 10400..10500: copy-3 window = CCCC×25 (dissimilar to both)
+        let base_seq: Vec<u8> = (0u8..100)
+            .map(|i| [b'A',b'C',b'G',b'T',b'G',b'C',b'A',b'T',b'T',b'G'][i as usize % 10])
+            .collect();
+        let mut copy2_seq = base_seq.clone();
+        copy2_seq[50] = if copy2_seq[50] == b'A' { b'C' } else { b'A' };
+
+        let base_seq_clone = base_seq.clone();
+        let copy2_seq_clone = copy2_seq.clone();
+        let genome = make_genome(move |buf| {
+            buf.extend_from_slice(&base_seq_clone);           // 0..100
+            buf.extend(std::iter::repeat(b'A').take(5100));   // 100..5200
+            buf.extend_from_slice(&copy2_seq_clone);          // 5200..5300
+            buf.extend(std::iter::repeat(b'A').take(5100));   // 5300..10400
+            // cluster 2 window at 10400..10500: CCCC×25 (no shared 15-mers with ACGT-based seqs)
+            buf.extend(std::iter::repeat(b'C').take(100));    // 10400..10500
+        });
+
+        let cfg = TandemConfig { enabled: true, min_gap: 5000, min_jaccard: 0.2, kmer: 15 };
+        let mut b = make_empty_bundle();
+        // Read 0 → cluster 0 (positions 0..100)
+        // Read 1 → cluster 1 (positions 5200..5300, gap=5100 > 5000)
+        // Read 2 → cluster 2 (positions 10400..10500, gap=5100 > 5000)
+        b.reads = vec![make_read(0, 100), make_read(5200, 5300), make_read(10400, 10500)];
+
+        let result = detect_tandem_bundle(&b, &genome, cfg);
+        assert!(result.is_some(), "2 of 3 clusters are similar → should still return Some");
+        let decomp = result.unwrap();
+        assert_eq!(
+            decomp.copy_spans.len(), 2,
+            "the dissimilar cluster must be dropped; expected 2 spans, got {:?}",
+            decomp.copy_spans
+        );
+        assert_eq!(decomp.copy_read_idxs.len(), 2);
+        // The kept spans must be the two similar ones (cluster 0 and cluster 1).
+        assert_eq!(decomp.copy_spans[0], (0, 100), "first kept span must be cluster 0");
+        assert_eq!(decomp.copy_spans[1], (5200, 5300), "second kept span must be cluster 1");
+        // Each kept cluster contributed exactly one read.
+        assert_eq!(decomp.copy_read_idxs[0], vec![0usize]);
+        assert_eq!(decomp.copy_read_idxs[1], vec![1usize]);
     }
 }
