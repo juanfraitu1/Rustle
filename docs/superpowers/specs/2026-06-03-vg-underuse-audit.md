@@ -423,3 +423,38 @@ decisive only for **co-located + sequence-identical + differently-spliced** copi
 configuration in the available data. Don't build; revisit only if such a family is found. (5th
 ground-before-scoping save of the arc: the audit named a real theme, but the signal was already
 consumed and inert.)
+
+## Advisor idea: "VG finds unusual exon combinations" → mosaic/gene-conversion read detection (2026-06-03)
+
+Checked the advisor's suggestion that VG could find unusual exon combinations. Grounded into
+three interpretations; the third is the genuinely-novel, VG-unique, read-grounded one.
+
+1. **Cross-copy chimeric reads (physically combine two loci).** Real but RARE: supplementary-
+   alignment rate is 0.7–0.9% (ggo_Y 52/5549, golga8 983/138352), and confounded with PCR/
+   ligation chimeras. Thin signal.
+2. **Novel exon-combination transcripts (gffcompare class `j`).** Only 7 on GOLGA8, and the
+   class codes are dominated by partial-reference gaps (3101 `u`). Not a strong VG-unique signal
+   (de-novo assembly finds `j` isoforms too).
+3. **Mosaic / gene-conversion reads (per-site fingerprint SWITCH).** ⭐ The real one. A read
+   whose diagnostic-site pattern matches copy-A at some sites and copy-B at others is a
+   gene-conversion recombinant — directly observed, read-grounded (NOT enumeration/fabrication),
+   and VG-unique (needs the per-copy diagnostic-site fingerprint only the family graph provides).
+
+**Feasibility (high) and the gap:** `enumerate_diagnostic_sites` already builds
+`per_copy_site_refs[copy] = (site_idx, ref_pos, expected_base)`, and `score_read_exon_fingerprint`
+(vg.rs:3936) already walks each site comparing the read's base to every copy's expected base —
+but it SUMS into one per-copy log-likelihood, **discarding the per-site pattern** (vg.rs:3955).
+So a mosaic read scores ~equal for A and B and is currently filed as "uncertain"
+(indistinguishable from a non-identifiable read; #2's `em_decisive_frac` flags it as uncertain
+but can't say WHY). Nothing detects mosaicism (grep: zero hits).
+
+**Why this is different from the session's other levers:** TOPO_BORROW/#3/#4/junction-provenance
+were all bounded by the identifiability limit (manufacture info the data lacks, or redundant).
+Mosaic detection DISCOVERS real biology that is DIRECTLY in the reads — it's additive to the
+existing per-site loop, read-grounded, and abstains naturally where there are no diagnostic sites.
+
+**Proposed build (scoped):** retain the per-site best-copy vector per read; flag reads with a
+clean contiguous SWITCH (run of ≥k copy-A sites then ≥k copy-B sites) as gene-conversion
+candidates with a breakpoint; require multi-read agreement on the switch point to reject chimeric
+artifacts; emit as an annotation. Validate on a synthetic with a PLANTED recombinant tract + real
+DAZ. Caveats: needs near-identical-but-divergent copies (diagnostic sites must exist); rare signal.
