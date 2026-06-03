@@ -71,3 +71,14 @@ families as DISPERSED segmental duplications. 4 unit tests; suite 208/0.
 Structural-event map now: inversion = detected+resolved; spatial class (segdup/tandem/trans) =
 classified + de-confounded; gene conversion = detector built. Remaining: breakpoint calling and
 segdup-flanking extent (distinguishing a segdup's duplicated flanks from a bare paralog).
+
+## UPDATE 3: segdup extent / breakpoint calling BUILT (2026-06-03, commit a8113c7)
+Distinguishes true segmental duplication (gene+flanks) from bare paralog and calls the
+duplication breakpoints (where cross-copy GENOME homology ends; mRNA doesn't cover flanks).
+Validated: planted flank 600→600bp / 400→399-401bp exact; bare→~0/not-segdup; real GOLGA8
+5 segdups (multi-kb flanks) vs 4 bare paralogs. Opt-in RUSTLE_VG_SEGDUP_EXTENT, default-off,
+suite 213/0. Doc: 2026-06-03-vg-segdup-extent-breakpoint.md.
+
+STRUCTURAL-EVENT MAP — FINAL: inversion detected+resolved; spatial class classified+de-mirrored;
+gene-conversion mosaic detector built; segdup extent/breakpoints built. The probe's full
+checklist (inversions, segdups, complex copy events) is now addressed end-to-end.
