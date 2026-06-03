@@ -43,3 +43,17 @@ ground truth + the spatial classification exists. The boundary is DETECTION vs R
 - NOT yet built: assembling/flagging the inverted copy (RC-aware unification), de-mirroring the
   real-data spatial class, breakpoint calling, segdup-flanking extent. These are the realizable
   next builds if structural resolution (not just detection) is the goal.
+
+## UPDATE: inversion RESOLUTION fixed (2026-06-03, commit da1f24d)
+The inverted copy now ASSEMBLES (was: detected-only). Grounding corrected the framing — the
+blocker was NOT missing exon unification (the inverted copy assembles cleanly de-novo). It was
+the **joint-strand EM** (the DAZ1−/DAZ3+ same-locus handler) being wrongly engaged on a
+DISPERSED inverted duplication: mixed-strand families have no joint graph, so the joint EM
+apportions the inverted copy's reads onto the forward copies with a neutral fingerprint and
+starves it. Fix: use the joint family only for single-strand + OVERLAPPING inverted pairs;
+use the un-jointed (per-strand) partitions for dispersed inversions (new helper
+`mixed_strand_copies_overlap`; opt-out RUSTLE_VG_INVERSION_JOINT=1). Validated: inversion
+synthetic 100/100 (inverted − strand copy assembles by default); chrY unchanged (DAZ
+overlapping → joint kept); GOLGA8 +3 (real dispersed inverted copies recovered, incl. − strand
+@45.6M); suite 204/0. So of the structural-event boundary, INVERSION moves from "detected" to
+"detected + resolved." Remaining: de-mirror the real-data spatial class; breakpoint/segdup extent.
