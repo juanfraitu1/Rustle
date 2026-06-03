@@ -192,9 +192,109 @@ mod tests {
 
     #[test]
     fn tandemconfig_defaults_off() {
+        // Ensure none of our env vars are set (clean state).
+        std::env::remove_var("RUSTLE_VG_TANDEM");
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_SEP");
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
         let c = TandemConfig::from_env();
         assert!(!c.enabled);
         assert_eq!(c.min_gap, 5_000);
         assert!((c.min_jaccard - 0.20).abs() < 1e-9);
+    }
+
+    /// RUSTLE_VG_TANDEM=1 and the "true"/case-variant spellings must all enable.
+    #[test]
+    fn tandemconfig_enabled_by_one() {
+        std::env::set_var("RUSTLE_VG_TANDEM", "1");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM");
+        assert!(c.enabled, "RUSTLE_VG_TANDEM=1 must set enabled=true");
+    }
+
+    #[test]
+    fn tandemconfig_enabled_by_true_lowercase() {
+        std::env::set_var("RUSTLE_VG_TANDEM", "true");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM");
+        assert!(c.enabled, "RUSTLE_VG_TANDEM=true must set enabled=true");
+    }
+
+    #[test]
+    fn tandemconfig_enabled_by_true_uppercase() {
+        std::env::set_var("RUSTLE_VG_TANDEM", "TRUE");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM");
+        assert!(c.enabled, "RUSTLE_VG_TANDEM=TRUE must set enabled=true");
+    }
+
+    #[test]
+    fn tandemconfig_enabled_by_true_mixed_case() {
+        std::env::set_var("RUSTLE_VG_TANDEM", "True");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM");
+        assert!(c.enabled, "RUSTLE_VG_TANDEM=True must set enabled=true");
+    }
+
+    /// RUSTLE_VG_TANDEM_MIN_SEP: valid integer overrides the 5000 default;
+    /// a non-parseable value falls back to the default.
+    #[test]
+    fn tandemconfig_min_gap_custom_value() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_SEP", "12345");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_SEP");
+        assert_eq!(c.min_gap, 12_345, "valid integer should override the default 5000");
+    }
+
+    #[test]
+    fn tandemconfig_min_gap_fallback_on_bad_value() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_SEP", "not_a_number");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_SEP");
+        assert_eq!(c.min_gap, 5_000, "non-parseable value should fall back to 5000");
+    }
+
+    /// RUSTLE_VG_TANDEM_MIN_JACCARD: valid in-range value overrides the 0.20 default.
+    #[test]
+    fn tandemconfig_min_jaccard_custom_value() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "0.5");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
+        assert!((c.min_jaccard - 0.5).abs() < 1e-9, "0.5 is in (0,1] and must be accepted; got {}", c.min_jaccard);
+    }
+
+    /// Boundary: exactly 1.0 is accepted (<=1.0 branch).
+    #[test]
+    fn tandemconfig_min_jaccard_boundary_one_accepted() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "1.0");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
+        assert!((c.min_jaccard - 1.0).abs() < 1e-9, "1.0 is in (0,1] and must be accepted; got {}", c.min_jaccard);
+    }
+
+    /// Boundary: exactly 0.0 is rejected (>0.0 filter) → falls back to 0.20.
+    #[test]
+    fn tandemconfig_min_jaccard_boundary_zero_rejected() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "0.0");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
+        assert!((c.min_jaccard - 0.20).abs() < 1e-9, "0.0 is not in (0,1] and must fall back to 0.20; got {}", c.min_jaccard);
+    }
+
+    /// Values <= 0.0 (negative): rejected, falls back to 0.20.
+    #[test]
+    fn tandemconfig_min_jaccard_negative_rejected() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "-0.5");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
+        assert!((c.min_jaccard - 0.20).abs() < 1e-9, "-0.5 must fall back to 0.20; got {}", c.min_jaccard);
+    }
+
+    /// Values > 1.0: rejected, falls back to 0.20.
+    #[test]
+    fn tandemconfig_min_jaccard_above_one_rejected() {
+        std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "1.5");
+        let c = TandemConfig::from_env();
+        std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
+        assert!((c.min_jaccard - 0.20).abs() < 1e-9, "1.5 > 1.0 must fall back to 0.20; got {}", c.min_jaccard);
     }
 }
