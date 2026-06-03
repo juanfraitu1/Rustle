@@ -10787,6 +10787,13 @@ pub fn run<P: AsRef<Path>>(
                         .as_ref()
                         .or(vg_snp_genome.as_ref());
 
+                    // Segmental-duplication extent / breakpoint pass (opt-in, analysis-only).
+                    if std::env::var_os("RUSTLE_VG_SEGDUP_EXTENT").is_some() {
+                        if let Some(g) = genome_ref {
+                            crate::vg::detect_and_report_segdups(&vg_families, &bundles, g);
+                        }
+                    }
+
                     let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
                     // Per source family: (start index into em_hmm_partitions, #strand partitions).
                     let mut em_fam_spans: Vec<(usize, usize)> = Vec::with_capacity(families_for_em.len());

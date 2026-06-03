@@ -2087,6 +2087,60 @@ fn classify_physical_loci(mut loci: Vec<(&str, u64, u64)>, n_bundles: usize) -> 
     if maxgap < 1_000_000 { LocusRel::Tandem } else { LocusRel::Distal }
 }
 
+/// Per-family segmental-duplication extent / breakpoint pass (opt-in RUSTLE_VG_SEGDUP_EXTENT).
+/// For each copy pair, fetch the GENOME flanks anchored at the gene and measure how far the
+/// cross-copy homology extends into them (the duplicated-segment breakpoints). Reports the
+/// max-extent pair per family and whether it's a true segdup (gene+flanks) vs a bare paralog
+/// (gene-only homology). Genome-based: mRNA reads don't cover intergenic flanks. Analysis-only.
+pub fn detect_and_report_segdups(
+    families: &[FamilyGroup],
+    bundles: &[Bundle],
+    genome: &crate::genome::GenomeIndex,
+) {
+    use crate::vg_hmm::segdup::{call_segdup_extent, SegdupExtent, SegdupParams};
+    let params = SegdupParams::from_env();
+    let win: u64 = std::env::var("RUSTLE_VG_SEGDUP_FETCH")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(8000);
+    let fetch_rev = |chrom: &str, s: u64, e: u64| -> Vec<u8> {
+        let mut v = genome.fetch_sequence(chrom, s, e).unwrap_or_default();
+        v.reverse(); // index 0 = the gene-proximal end, going outward
+        v
+    };
+    for fam in families {
+        let loci: Vec<(&str, u64, u64)> = fam.bundle_indices.iter()
+            .filter_map(|&bi| bundles.get(bi))
+            .map(|b| (b.chrom.as_str(), b.start, b.end))
+            .collect();
+        if loci.len() < 2 {
+            continue;
+        }
+        let mut best: Option<SegdupExtent> = None;
+        for i in 0..loci.len() {
+            for j in (i + 1)..loci.len() {
+                let (ca, sa, ea) = loci[i];
+                let (cb, sb, eb) = loci[j];
+                let gene_span = ((ea.saturating_sub(sa)) + (eb.saturating_sub(sb))) / 2;
+                let up_a = fetch_rev(ca, sa.saturating_sub(win), sa);
+                let up_b = fetch_rev(cb, sb.saturating_sub(win), sb);
+                let down_a = genome.fetch_sequence(ca, ea, ea + win).unwrap_or_default();
+                let down_b = genome.fetch_sequence(cb, eb, eb + win).unwrap_or_default();
+                let seg = call_segdup_extent(gene_span, &up_a, &up_b, &down_a, &down_b, &params);
+                if best.as_ref().map(|b| seg.total_extent > b.total_extent).unwrap_or(true) {
+                    best = Some(seg);
+                }
+            }
+        }
+        if let Some(seg) = best {
+            eprintln!(
+                "[VG-SEGDUP] family={} copies={} gene~{}bp up_flank={}bp down_flank={}bp duplicated_extent={}bp => {}",
+                fam.family_id, loci.len(), seg.gene_span, seg.upstream_extent,
+                seg.downstream_extent, seg.total_extent,
+                if seg.is_segdup { "SEGMENTAL DUPLICATION (gene+flanks)" } else { "bare paralog (gene-only homology)" },
+            );
+        }
+    }
+}
+
 /// Compute each copy's **independent support** within a family.
 ///
 /// Operates on the ORIGINAL discovered `FamilyGroup` (pre-strand-split), where

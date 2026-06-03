@@ -14,6 +14,7 @@ pub mod diagnostic;
 pub mod positional;
 pub mod tandem;
 pub mod mosaic;
+pub mod segdup;
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use profile::ProfileHmm;                                     // Task 2.1

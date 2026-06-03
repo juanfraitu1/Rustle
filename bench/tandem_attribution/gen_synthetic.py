@@ -63,6 +63,10 @@ def main():
                     help="comma-separated copy indices to place as INVERTED duplications "
                          "(revcomp genomic sequence). Reads from them align to the - strand; "
                          "tests whether VG discovery links an inverted paralog (e.g. DAZ1-/DAZ3+).")
+    ap.add_argument("--segdup-flank", type=int, default=0,
+                    help="bp of SHARED flanking sequence on EACH side of every copy's gene "
+                         "(a true segmental duplication copies gene+flanks). 0 = bare paralog "
+                         "(random, unique flanks). Ground truth for segdup-extent calling.")
     a = ap.parse_args()
     invert_set = set(int(x) for x in a.invert_copies.split(",") if x.strip() != "")
 
@@ -129,16 +133,24 @@ def main():
 
     # Genome = copies laid out at SPACING, separated by random intergenic filler.
     # Each copy starts at c*SPACING (0-based) within the contig.
-    contig_len = (a.copies - 1) * SPACING + gene_len + 5000
+    contig_len = (a.copies - 1) * SPACING + gene_len + 5000 + 2 * a.segdup_flank
     genome = rand_seq(contig_len, rng)        # random intergenic background
+    margin = max(1000, a.segdup_flank + 100)  # left margin must fit the upstream flank
+    # Shared flanking sequence for a segmental duplication (same on every copy, then random).
+    shared_up = rand_seq(a.segdup_flank, rng) if a.segdup_flank > 0 else []
+    shared_down = rand_seq(a.segdup_flank, rng) if a.segdup_flank > 0 else []
     copy_starts = []
     for c in range(a.copies):
-        start = c * SPACING + 1000            # 1000 bp left margin
+        start = c * SPACING + margin
         copy_starts.append(start)
         # Inverted copies: place the REVERSE-COMPLEMENT genomic sequence. The gene's mRNA
         # is unchanged (transcribed from the opposite strand), so its reads align to this
         # locus on the - strand — the inverted-duplication signature.
         genome[start:start + gene_len] = revcomp(copies[c]) if c in invert_set else copies[c]
+        # Segmental duplication: plant SHARED flanks adjacent to the gene on each copy.
+        if a.segdup_flank > 0:
+            genome[start - a.segdup_flank:start] = shared_up
+            genome[start + gene_len:start + gene_len + a.segdup_flank] = shared_down
 
     with open(os.path.join(a.out, "genome.fa"), "w") as fh:
         fh.write(f">{chrom}\n")
