@@ -262,3 +262,37 @@ Net: TOPO_BORROW's projection path is now correct and *can* fire, but there is *
 GOLGA8/chrY beneficiary** because the "starved" sisters are genuinely not expressed. The
 O5 ~0-coverage gap remains structurally non-recoverable without fabrication. No fabricated
 win; the offset's real-data value is honestly ~nil.
+
+## Borrow-beneficiary hunt: NONE found in chrY or GOLGA8-region (2026-06-03)
+
+Asked directly: is there a real paralog family where TOPO_BORROW would *correctly* complete
+an under-assembled-but-genuinely-full-structure copy (a legit beneficiary, not fabrication)?
+Scanned both available multi-copy datasets. **No genuine beneficiary exists**, for a
+structural reason, in two regimes:
+
+- **chrY (ggo_Y.bam):** every discovered family assembles exactly ONE copy; 61/62 VG
+  transcripts report `family_n_expressed 0`. The sister copies are genuinely unexpressed
+  (~0 reads). Nothing to borrow.
+- **GOLGA8-region (golga8_region.bam):** families assemble MANY copies, often
+  over-enumerated (FAM_11 copy 3 = 163 isoforms). The only "thin" copies (FAM_1 copy 0:
+  4 exons, copy 3: 3 exons vs sibling copy 1's 24) are genuinely divergent paralogs, NOT
+  under-assembled colinear copies:
+  - copy 3's locus spans **250 kb with 3 exons** while rich sibling copy 1 is **70 kb with
+    24 exons** — different genomic *scale*, so not a colinear copy.
+  - Read-level: copy 3 = **0.1 reads/kb (14 reads/250 kb)** vs copy 1 = **10.1 reads/kb
+    (682 reads)** — ~100× less coverage; copy 3's reads span up to 189 kb (read-through),
+    not a dense gene fragmented by assembly.
+  Borrowing copy 1's rich 24-exon/70 kb chain onto this sparse 250 kb locus would fabricate.
+
+**Why borrow has no beneficiary (structural).** TOPO_BORROW assumes copies are homologous
+with *identical structure* differing only in coverage. Real paralog families violate this:
+structural/expression divergence is exactly what separates paralog copies. Copies similar
+enough to borrow safely both assemble well (don't need it); copies thin enough to need it
+are genuinely divergent or unexpressed (borrowing fabricates). This is *why* the `has_reads`
+safety correctly yields 0 borrows on real data — it is not a missed opportunity. (Caveat:
+two datasets, not a whole-genome sweep — but the structural argument generalizes, and these
+cover the canonical multi-copy families: DAZ/RBMY/TSPY + GOLGA8/NBPF/TBC1D3/etc.)
+
+**Verdict: retire TOPO_BORROW as an inert demonstrator.** The audit's #1 lever is resolved
+(projection now correct) but has no real-data beneficiary. The genuine VG copy-resolution
+value is elsewhere (copy-number-from-depth, confidence surfacing).
