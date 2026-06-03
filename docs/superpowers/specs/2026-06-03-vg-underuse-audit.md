@@ -296,3 +296,34 @@ cover the canonical multi-copy families: DAZ/RBMY/TSPY + GOLGA8/NBPF/TBC1D3/etc.
 **Verdict: retire TOPO_BORROW as an inert demonstrator.** The audit's #1 lever is resolved
 (projection now correct) but has no real-data beneficiary. The genuine VG copy-resolution
 value is elsewhere (copy-number-from-depth, confidence surfacing).
+
+## Lever #3 BUILT: copy-number-from-depth — a diagnostic, not a hidden-copy oracle (2026-06-03)
+
+Implemented `estimate_copies_from_depth` (pure, 6 unit tests) + `classify_family` wiring +
+`family_depth_copies` GTF attribute, opt-in `RUSTLE_VG_DEPTH_COPYNUM` (default byte-identical,
+commit d7d9123). Per-copy depth is attributed **multimap-aware** — a high-identity family's
+bright copy lives mostly in `family.multimap_reads`, not `bundle.reads`, so each multimap read
+is charged to its best-scoring copy (`reads_pc`) plus each copy's unique reads. Median
+single-copy baseline (truncation-robust); optional `RUSTLE_VG_SINGLE_COPY_DEPTH` external unit.
+
+**Honest validation (the build works; the SIGNAL is limited):**
+- Equal-expression synthetic (1:1:1): **3.13** ✓.
+- Real GOLGA8: largely **tracks the structural count** (FAM_12 2.00, FAM_14 3.89, FAM_6 4.87
+  vs structural 2/4/4) and **flags gross imbalance** (FAM_16 55 vs structural 7).
+- Collapse-detection (a true 2:1:1 where one bundle hides 2 copies): reads **3.20, not 4**.
+  At 97% identity a copy's extra reads can't all be resolved to it (truncated 5′ reads miss
+  diagnostic SNPs), so the estimate flattens toward the structural count.
+
+**Why it can't reveal hidden copies (two fundamental limits):**
+1. **Read-to-copy attribution is imperfect at realistic identity** — the very reads that
+   would reveal a collapsed/dominant copy are the hardest to assign (this is the
+   identifiability boundary the thesis is about). So depth-attribution converges toward the
+   structural count instead of exceeding it.
+2. **Depth conflates copy number with expression** — only equal-per-copy expression makes
+   depth == copy number; real paralogs span ~100× expression.
+
+**Verdict:** ship as an opt-in DIAGNOSTIC. Its real use is the **disagreement signal**:
+`family_depth_copies` ≫ `family_n_copies` flags a dominant copy / possible collapse worth
+human review (e.g. FAM_16). It is NOT a standalone hidden-copy counter. This is the same
+pattern as TOPO_BORROW: clean in theory, bounded by the identifiability limit in practice —
+an honest negative-leaning result, not a fabricated win.
