@@ -18328,8 +18328,17 @@ pub fn run<P: AsRef<Path>>(
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.10);
+        let force_emit_borrow = std::env::var_os("RUSTLE_VG_TOPO_FORCE_EMIT").is_some();
         let before = all_transcripts.len();
         all_transcripts.retain(|tx| {
+            // Diagnostic-only: exempt borrowed copies so we can measure projection
+            // correctness end-to-end. A borrowed copy is, by construction, a
+            // low-independent-support copy — the exact phantom signature this guard
+            // suppresses — so this exemption re-opens the DAZ3 fabrication path and
+            // is NOT a default.
+            if force_emit_borrow && tx.source.as_deref() == Some("topo_borrow") {
+                return true;
+            }
             match (tx.vg_family_id, tx.vg_copy_id) {
                 (Some(fam_id), Some(copy_id)) => {
                     // If the copy isn't in the support map (e.g. topo-borrow

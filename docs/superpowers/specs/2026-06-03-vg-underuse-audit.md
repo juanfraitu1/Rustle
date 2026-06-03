@@ -181,3 +181,58 @@ Pursued the revised #1 lever. The chase went deeper than "lower the merge thresh
 unchanged, RBMY c4/c6 retained, de-novo untouched). The full TOPO_BORROW-fires goal
 needs layer (3) — a well-scoped next step (instrument the per-exon src-side match in
 `transfer_assembled_topology` to see whether boundaries miss within SPAN_TOL).
+
+## Layer 3 RESOLVED + Layer 4 revealed: TOPO_BORROW projection fixed, but emits 0 on real data BY DESIGN (2026-06-03)
+
+Continued the layer-3 debug. Built a controlled starved synthetic (3 dispersed copies
+200 kb apart at 97% exonic identity; copy-0 covered with 40 reads, sisters 1/2 starved
+to 2 reads each, linked by copy-0's secondary alignments) and instrumented the per-exon
+projection in `transfer_assembled_topology` to split the failure modes.
+
+**Two real projection bugs found and fixed:**
+1. **`find` → `find_map` (correctness fix).** The projection used `fg.nodes.iter().find()`
+   to locate the ExonClass containing the source exon, then checked THAT node for a sister
+   span. But a source exon can belong to BOTH a copy-private node and a shared node; `find`
+   stopped at the first (often the private one) and failed (the old "MODE_B"). `find_map`
+   searches on for a node shared with the sister. On the synthetic this alone projected all
+   5 exons. **Only active under `RUSTLE_VG_TOPO_BORROW` (opt-in); default path untouched.**
+2. **Offset bootstrap (`RUSTLE_VG_TOPO_OFFSET`, opt-in).** For exons with genuinely no
+   shared ExonClass (k-mer Jaccard ≈0 for short, divergent exons — threshold-insensitive:
+   merge at 0.05/0.02/0.0 all fail identically), learn the colinear copy-to-copy shift from
+   the exons that DID unify (median of per-class src↔sister start deltas) and project the
+   rest by that shift. On real GOLGA8 this projected **4287 exons** that the class lookup
+   could not — a genuine capability gain over the prior totally-inert state.
+
+**Verified end-to-end on the synthetic:** with the projection fix + a diagnostic
+`RUSTLE_VG_TOPO_FORCE_EMIT` (nominal coverage + phantom-guard exemption), borrowing recovers
+both starved sisters at the exact truth coordinates → **gffcompare 100% Sn / 100% Pr, 3/3
+loci**. So the projection machinery is now correct.
+
+**Layer 4 (the real wall): TOPO_BORROW still emits 0 transcripts on real data — and that is
+CORRECT, not a bug.** Two safety layers, both verified firing on GOLGA8/chrY:
+- **`has_reads` (sister-read-coverage check, upstream of emission).** Of GOLGA8 fam=11's
+  projections, the 3 copy-pairs with a learnable offset projected fully, then ALL failed
+  `has_reads`: the borrowed structure lands where the real sister has no reads, so it
+  refuses to fabricate. `FORCE_EMIT` does NOT resurrect these (it only bypasses the later
+  phantom guard) — GOLGA8 + FORCE_EMIT still emits 0. chrY/DAZ: same (projects 8 exons via
+  offset, then `has_reads`-abstains).
+- **Copy-support phantom guard (post-emission).** A borrowed copy has, by construction,
+  ~0 independent coverage / sub-τ independent support — the exact phantom signature the
+  guard suppresses (DAZ3). On the synthetic this is what removed the +2 until FORCE_EMIT
+  exempted them.
+- Also structural: **9 of 12 GOLGA8 copy-pairs share zero ExonClasses**, so the offset
+  can't even bootstrap (585 exon SKIPs).
+
+**Conclusion (honest, thesis-relevant).** Recovering a starved copy end-to-end only succeeds
+when the starved copy has genuine read coverage over the borrowed structure (the synthetic).
+A truly ~0-read copy can only be emitted by fabrication — forcing past BOTH the `has_reads`
+check and the phantom guard — which is precisely the DAZ3 false-positive mechanism. The O5
+"real gap" (≈0-coverage copies) is therefore structurally non-recoverable without fabrication;
+the identifiability boundary is real, not a missing feature. This vindicates the multi-layer
+safety design. TOPO_BORROW's projection is now correct and fires on real data; its (correct)
+silence at output is the anti-fabrication guards doing their job.
+
+**Shipped (all opt-in, default byte-identical — every change is inside the
+`RUSTLE_VG_TOPO_BORROW` path or its own env gate):** find_map projection fix,
+`RUSTLE_VG_TOPO_OFFSET` bootstrap, `RUSTLE_VG_TOPO_FORCE_EMIT` diagnostic (clearly labeled
+as the fabrication-measurement path, NOT a default), MODE/via trace refinement.

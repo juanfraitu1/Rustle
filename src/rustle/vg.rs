@@ -5846,6 +5846,40 @@ pub fn transfer_assembled_topology(
                 None => continue,
             };
 
+            // Offset bootstrap (opt-in RUSTLE_VG_TOPO_OFFSET): learn the affine
+            // copy-to-copy genomic shift from ExonClasses that DID unify src<->sister,
+            // so exons whose sequence-based unification fails can still project.
+            // Rationale: dispersed paralog copies are colinear shifts, but minimizer
+            // Jaccard collapses to ~0 for short, divergent exons (a 300 bp exon at
+            // 97% identity has a SNP every ~33 bp, leaving no shared 15-mer minimizer)
+            // — so only some exons unify. The unified ones pin the shift; the rest
+            // project by that shift, validated downstream by sister read coverage.
+            let copy_offset: Option<i64> =
+                if std::env::var_os("RUSTLE_VG_TOPO_OFFSET").is_some() {
+                    let mut deltas: Vec<i64> = Vec::new();
+                    for n in &fg.nodes {
+                        let src_s = n.per_copy_spans.iter()
+                            .find(|(c, _)| *c == *src_copy_id).map(|(_, (s, _))| *s);
+                        let sis_s = n.per_copy_spans.iter()
+                            .find(|(c, _)| *c == sister_copy_id).map(|(_, (s, _))| *s);
+                        if let (Some(a), Some(b)) = (src_s, sis_s) {
+                            deltas.push(b as i64 - a as i64);
+                        }
+                    }
+                    if deltas.is_empty() {
+                        None
+                    } else {
+                        deltas.sort_unstable();
+                        Some(deltas[deltas.len() / 2]) // median shift (indel-robust)
+                    }
+                } else {
+                    None
+                };
+            if topo_trace {
+                eprintln!("[VG-TOPO-TRACE]   sister={} copy_offset={:?} (from shared ExonClasses)",
+                    sister_copy_id, copy_offset);
+            }
+
             for src_tx in src_txs.iter() {
                 // Project each exon of src_tx from src copy to sister copy.
                 let mut proj_exons: Vec<(u64, u64)> =
@@ -5853,29 +5887,44 @@ pub fn transfer_assembled_topology(
                 let mut ok = true;
 
                 for &(ex_s, ex_e) in &src_tx.exons {
-                    // Find the ExonClass node whose per_copy_spans[src_copy] overlaps this exon.
-                    let matched_node = fg.nodes.iter().find(|n| {
-                        n.per_copy_spans.iter().any(|(c, (ns, ne))| {
+                    // Primary: an ExonClass that unifies this src exon with the sister
+                    // (sequence/position-derived correspondence — most precise).
+                    let via_class: Option<(u64, u64)> = fg.nodes.iter().find_map(|n| {
+                        let has_src = n.per_copy_spans.iter().any(|(c, (ns, ne))| {
                             *c == *src_copy_id
                                 && ns.saturating_sub(SPAN_TOL) <= ex_s
                                 && ex_e <= ne.saturating_add(SPAN_TOL)
+                        });
+                        if !has_src {
+                            return None;
+                        }
+                        n.per_copy_spans
+                            .iter()
+                            .find(|(c, _)| *c == sister_copy_id)
+                            .map(|(_, (ss, se))| (*ss, *se))
+                    });
+                    // Fallback: project by the bootstrapped colinear copy shift.
+                    let projected = via_class.or_else(|| {
+                        copy_offset.map(|off| {
+                            let ss = (ex_s as i64 + off).max(0) as u64;
+                            let se = (ex_e as i64 + off).max(0) as u64;
+                            (ss, se)
                         })
                     });
-                    match matched_node {
-                        Some(node) => {
-                            match node
-                                .per_copy_spans
-                                .iter()
-                                .find(|(c, _)| *c == sister_copy_id)
-                            {
-                                Some((_, (ss, se))) => proj_exons.push((*ss, *se)),
-                                None => {
-                                    ok = false;
-                                    break;
-                                }
+                    match projected {
+                        Some(span) => {
+                            if topo_trace {
+                                let how = if via_class.is_some() { "via_class" } else { "via_offset" };
+                                eprintln!("[VG-TOPO-TRACE]     exon ({},{}) src_copy={} -> ({},{}) [{}]",
+                                    ex_s, ex_e, src_copy_id, span.0, span.1, how);
                             }
+                            proj_exons.push(span);
                         }
                         None => {
+                            if topo_trace {
+                                eprintln!("[VG-TOPO-TRACE]     exon ({},{}) src_copy={} -> SKIP (no shared ExonClass with sister {} and no copy_offset available)",
+                                    ex_s, ex_e, src_copy_id, sister_copy_id);
+                            }
                             ok = false;
                             break;
                         }
@@ -5937,17 +5986,27 @@ fn build_topology_borrow_transcript(
     confidence: f64,
 ) -> crate::path_extract::Transcript {
     use crate::path_extract::Transcript;
+    // Diagnostic-only (RUSTLE_VG_TOPO_FORCE_EMIT): give the borrowed copy a nominal
+    // coverage so downstream coverage filters don't drop it before the GTF. This
+    // exists to MEASURE the projection's correctness end-to-end, NOT as a default:
+    // a borrowed copy has zero independent coverage by construction, and forcing it
+    // past the coverage/phantom guards is exactly the DAZ3 fabrication path.
+    let nominal_cov: f64 = if std::env::var_os("RUSTLE_VG_TOPO_FORCE_EMIT").is_some() {
+        1.0
+    } else {
+        0.0
+    };
     Transcript {
         chrom: sister_bundle.chrom.clone(),
         strand: sister_bundle.strand,
         exons,
-        coverage: 0.0,
+        coverage: nominal_cov,
         exon_cov: Vec::new(),
         tpm: 0.0,
         fpkm: 0.0,
         source: Some("topo_borrow".to_string()),
         is_longread: true,
-        longcov: 0.0,
+        longcov: nominal_cov,
         bpcov_cov: 0.0,
         all_strand_cov: 0.0,
         transcript_id: None,
