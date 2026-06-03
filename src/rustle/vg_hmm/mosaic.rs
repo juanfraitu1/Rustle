@@ -1,0 +1,438 @@
+//! Gene-conversion mosaic-read detection (audit theme: "VG finds unusual exon combinations").
+//!
+//! A paralog family has near-identical copies that differ at a set of *diagnostic sites*.
+//! For a read, at each diagnostic site it covers we know which copies' expected base it
+//! matches. A GENE-CONVERSION recombinant read's per-site copy pattern SWITCHES from one
+//! copy to another at a contiguous breakpoint (copy A for a run of sites, then copy B) —
+//! an "unusual combination" directly observed in ONE read, not enumerated. This module
+//! detects that switch and rejects the look-alikes: sequencing-error flips, non-identifiable
+//! reads, low-power reads, and (at the family layer) one-off chimeras.
+//!
+//! Design = synthesis of an independent design panel (statistical / algorithmic / biological
+//! lenses). The per-read core `detect_mosaic` is a PURE function over the per-site match
+//! structure; `aggregate_family` confirms a conversion only when the breakpoint RECURS across
+//! independent molecules (the conversion-vs-chimera discriminator). Default-OFF in the
+//! pipeline (RUSTLE_VG_MOSAIC_ON); additive — the existing per-copy EM scoring is untouched.
+
+/// Per-site observation handed to the detector: which copies the read matches at one
+/// diagnostic site. `match_bits[c]` = (read base == copy c's expected base). Sites are in
+/// genomic order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SiteObs {
+    pub ref_pos: u64,
+    pub match_bits: Vec<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MosaicStatus {
+    LowPower,         // too few decisive sites to call anything
+    NonIdentifiable,  // copies tie at too many sites — no per-site signal; abstain
+    SingleCopy,       // all decisive sites point at one copy
+    NoSwitch,         // a switch was scored but failed the gates (error scatter / weak)
+    Mosaic,           // a confident contiguous copy switch
+}
+
+/// Per-read verdict. Abstain/SingleCopy/NoSwitch are all `is_mosaic()==false`; the EM's
+/// existing per-copy scoring is independent of this (additive metadata).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MosaicCall {
+    pub status: MosaicStatus,
+    pub n_sites: usize,
+    pub n_decisive: usize,
+    pub copy_a: Option<usize>,            // 5'-proximal tract copy
+    pub copy_b: Option<usize>,            // 3'-proximal tract copy
+    pub breakpoint_ref: Option<(u64, u64)>, // (last A-site, first B-site) — honest bracket
+    pub tract_a_sites: usize,
+    pub tract_b_sites: usize,
+    pub left_purity: f64,
+    pub right_purity: f64,
+    pub margin: i32,                      // decisive sites the split explains beyond best single
+    pub lr_switch: f64,                   // 2*(two-segment loglik − best single-copy loglik)
+    pub threshold_used: f64,
+    pub score: f64,                       // lr_switch − threshold_used (>0 iff Mosaic)
+}
+
+impl MosaicCall {
+    pub fn is_mosaic(&self) -> bool {
+        self.status == MosaicStatus::Mosaic
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MosaicParams {
+    pub min_decisive_sites: usize, // D below this → LowPower
+    pub min_tract_sites: usize,    // each flank must have ≥ this many agreeing decisive sites
+    pub min_improvement: i32,      // split must explain ≥ this many more decisive sites
+    pub min_seg_purity: f64,       // per-tract agreement fraction on both sides
+    pub max_ambig_frac: f64,       // > this fraction Ambig → NonIdentifiable
+    pub alpha_target: f64,         // target per-read FPR (Bonferroni-corrected internally)
+    pub bic_penalty_coeff: f64,    // coeff on ln(S) in the model-complexity penalty
+    pub eps_floor: f64,            // lower clamp on per-read error rate
+    pub eps_cap: f64,              // upper clamp (and fail-safe when read.de is absent)
+    // family aggregation
+    pub family_min_supporting_reads: usize,
+    pub breakpoint_tol: u64,
+    pub max_breakpoint_dispersion: u64,
+}
+
+impl Default for MosaicParams {
+    fn default() -> Self {
+        MosaicParams {
+            min_decisive_sites: 6,
+            min_tract_sites: 3,
+            min_improvement: 3,
+            min_seg_purity: 0.85,
+            max_ambig_frac: 0.5,
+            alpha_target: 0.01,
+            bic_penalty_coeff: 2.0,
+            eps_floor: 0.005,
+            eps_cap: 0.05,
+            family_min_supporting_reads: 3,
+            breakpoint_tol: 50,
+            max_breakpoint_dispersion: 50,
+        }
+    }
+}
+
+impl MosaicParams {
+    /// Build from RUSTLE_VG_MOSAIC_* env overrides, falling back to defaults.
+    pub fn from_env() -> Self {
+        let mut p = MosaicParams::default();
+        let getf = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<f64>().ok());
+        let getu = |k: &str| std::env::var(k).ok().and_then(|s| s.parse::<usize>().ok());
+        if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_DECISIVE") { p.min_decisive_sites = v; }
+        if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_TRACT") { p.min_tract_sites = v; }
+        if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_IMPROVEMENT") { p.min_improvement = v as i32; }
+        if let Some(v) = getf("RUSTLE_VG_MOSAIC_MIN_PURITY") { p.min_seg_purity = v; }
+        if let Some(v) = getf("RUSTLE_VG_MOSAIC_ALPHA") { p.alpha_target = v; }
+        if let Some(v) = getu("RUSTLE_VG_MOSAIC_MIN_READS") { p.family_min_supporting_reads = v; }
+        p
+    }
+
+    /// Per-read error rate clamped to [eps_floor, eps_cap]; `None` → eps_cap (fail-safe).
+    pub fn eps_for(&self, de: Option<f32>) -> f64 {
+        de.map(|d| (d as f64).clamp(self.eps_floor, self.eps_cap)).unwrap_or(self.eps_cap)
+    }
+}
+
+/// Pure per-read detector. `obs` = ordered per-site match structure; `eps` = per-site error
+/// rate (clamped by the caller). Deterministic, no I/O. With decisive-site agreements the
+/// likelihood-ratio reduces to `2·margin·ln((1−eps)/eps)`, and the χ²(2df) null quantile is
+/// exactly `−2·ln(α)` — so the threshold is closed-form (the spec's bootstrap_reps=0 path).
+pub fn detect_mosaic(obs: &[SiteObs], n_copies: usize, eps: f64, p: &MosaicParams) -> MosaicCall {
+    let s = obs.len();
+    let mk = |status: MosaicStatus, d: usize| MosaicCall {
+        status, n_sites: s, n_decisive: d,
+        copy_a: None, copy_b: None, breakpoint_ref: None,
+        tract_a_sites: 0, tract_b_sites: 0, left_purity: 0.0, right_purity: 0.0,
+        margin: 0, lr_switch: 0.0, threshold_used: 0.0, score: 0.0,
+    };
+
+    // Tokenize: a DECISIVE site has exactly one matching copy; ≥2 = Ambig (non-identifiable
+    // here); 0 = Novel (read base matches no modeled copy) — a wildcard, ignored.
+    let mut decisive_copy: Vec<usize> = Vec::with_capacity(s);
+    let mut decisive_pos: Vec<u64> = Vec::with_capacity(s);
+    let mut n_ambig = 0usize;
+    for o in obs {
+        let mut matched = usize::MAX;
+        let mut n_match = 0usize;
+        for c in 0..n_copies {
+            if o.match_bits.get(c).copied().unwrap_or(false) {
+                n_match += 1;
+                matched = c;
+            }
+        }
+        if n_match == 1 {
+            decisive_copy.push(matched);
+            decisive_pos.push(o.ref_pos);
+        } else if n_match >= 2 {
+            n_ambig += 1;
+        }
+    }
+    let d = decisive_copy.len();
+
+    // Gates (abstain before any switch test). NonIdentifiable takes precedence over
+    // LowPower: a read swamped by ties has no per-site signal even if it covers many sites
+    // (and an all-ambiguous read has d=0, which would otherwise read as LowPower).
+    if s > 0 && (n_ambig as f64) > p.max_ambig_frac * s as f64 {
+        return mk(MosaicStatus::NonIdentifiable, d);
+    }
+    if d < p.min_decisive_sites {
+        return mk(MosaicStatus::LowPower, d);
+    }
+    let distinct: std::collections::BTreeSet<usize> = decisive_copy.iter().copied().collect();
+    if distinct.len() <= 1 {
+        return mk(MosaicStatus::SingleCopy, d);
+    }
+
+    // Best single copy = the copy agreeing with the most decisive sites.
+    let agree_for = |copy: usize, lo: usize, hi: usize| -> usize {
+        decisive_copy[lo..hi].iter().filter(|&&c| c == copy).count()
+    };
+    let best_single = distinct.iter().map(|&c| agree_for(c, 0, d)).max().unwrap_or(0);
+
+    // Exhaustive single-changepoint scan over decisive-site split indices, maximizing the
+    // number of decisive sites explained by (copy a left of k, copy b right of k), a≠b.
+    let mut best_split = best_single;
+    let mut best_kab: Option<(usize, usize, usize)> = None;
+    for k in 1..d {
+        // best copy on each side
+        let a = *distinct.iter().max_by_key(|&&c| agree_for(c, 0, k)).unwrap();
+        let b = *distinct.iter().max_by_key(|&&c| agree_for(c, k, d)).unwrap();
+        if a == b {
+            continue;
+        }
+        let explained = agree_for(a, 0, k) + agree_for(b, k, d);
+        if explained > best_split || (explained == best_split && best_kab.is_none()) {
+            if explained >= best_split {
+                best_split = explained;
+                best_kab = Some((k, a, b));
+            }
+        }
+    }
+
+    let (k, a, b) = match best_kab {
+        Some(x) => x,
+        None => return mk(MosaicStatus::SingleCopy, d), // no a≠b split improves on single copy
+    };
+
+    let tract_a_sites = agree_for(a, 0, k);
+    let tract_b_sites = agree_for(b, k, d);
+    let left_purity = tract_a_sites as f64 / k as f64;
+    let right_purity = tract_b_sites as f64 / (d - k) as f64;
+    let margin = best_split as i32 - best_single as i32;
+
+    // Likelihood-ratio over decisive sites: 2·margin·ln((1−eps)/eps).
+    let lr = 2.0 * margin as f64 * ((1.0 - eps) / eps).ln();
+    // Threshold = BIC complexity penalty + χ²(2df) quantile at the Bonferroni-corrected α.
+    let n_pairs = (n_copies * n_copies.saturating_sub(1) / 2).max(1) as f64;
+    let alpha_corr = (p.alpha_target / (s as f64 * n_pairs)).max(1e-12);
+    let threshold = p.bic_penalty_coeff * (s as f64).ln() + (-2.0 * alpha_corr.ln());
+
+    let mut call = mk(MosaicStatus::NoSwitch, d);
+    call.copy_a = Some(a);
+    call.copy_b = Some(b);
+    call.breakpoint_ref = Some((decisive_pos[k - 1], decisive_pos[k]));
+    call.tract_a_sites = tract_a_sites;
+    call.tract_b_sites = tract_b_sites;
+    call.left_purity = left_purity;
+    call.right_purity = right_purity;
+    call.margin = margin;
+    call.lr_switch = lr;
+    call.threshold_used = threshold;
+    call.score = lr - threshold;
+
+    // Dual gate: calibrated LR AND hard integer/run-length backstops (the backstops hold
+    // even when the i.i.d. error null is violated by correlated/homopolymer error bursts).
+    let pass = a != b
+        && tract_a_sites >= p.min_tract_sites
+        && tract_b_sites >= p.min_tract_sites
+        && margin >= p.min_improvement
+        && left_purity >= p.min_seg_purity
+        && right_purity >= p.min_seg_purity
+        && lr > threshold;
+    if pass {
+        call.status = MosaicStatus::Mosaic;
+    }
+    call
+}
+
+/// A family-level confirmed (or suspected) gene-conversion event.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConversionEvent {
+    pub copy_a: usize,
+    pub copy_b: usize,
+    pub breakpoint_ref: (u64, u64), // consensus bracket (min last-A, max first-B)
+    pub n_supporting_reads: usize,
+    pub breakpoint_dispersion: u64, // spread of per-read breakpoint midpoints
+    pub confirmed: bool,            // false = ChimeraSuspect
+}
+
+/// Family aggregation: a genuine conversion RECURS at a fixed breakpoint across independent
+/// molecules; a one-off chimera does not. Inputs are per-read Mosaic calls (caller dedupes
+/// to distinct molecules first). Clusters by oriented (a→b) pair and breakpoint midpoint
+/// within `breakpoint_tol`; confirms a cluster with ≥ `family_min_supporting_reads` molecules
+/// and tight dispersion.
+pub fn aggregate_family(calls: &[MosaicCall], p: &MosaicParams) -> Vec<ConversionEvent> {
+    let mut mosaics: Vec<(usize, usize, u64, (u64, u64))> = calls
+        .iter()
+        .filter(|c| c.is_mosaic())
+        .filter_map(|c| match (c.copy_a, c.copy_b, c.breakpoint_ref) {
+            (Some(a), Some(b), Some(br)) => Some((a, b, (br.0 + br.1) / 2, br)),
+            _ => None,
+        })
+        .collect();
+    // Stable order by (a, b, midpoint).
+    mosaics.sort_by_key(|&(a, b, mid, _)| (a, b, mid));
+
+    let mut events: Vec<ConversionEvent> = Vec::new();
+    let mut i = 0usize;
+    while i < mosaics.len() {
+        let (a, b, _, _) = mosaics[i];
+        // Greedily grow a cluster of same oriented pair within breakpoint_tol of the running mean.
+        let mut j = i;
+        let mut mids: Vec<u64> = Vec::new();
+        let mut br_lo = u64::MAX;
+        let mut br_hi = 0u64;
+        while j < mosaics.len() {
+            let (aj, bj, midj, brj) = mosaics[j];
+            if aj != a || bj != b {
+                break;
+            }
+            if let Some(&last) = mids.last() {
+                if midj.saturating_sub(last) > p.breakpoint_tol {
+                    break;
+                }
+            }
+            mids.push(midj);
+            br_lo = br_lo.min(brj.0);
+            br_hi = br_hi.max(brj.1);
+            j += 1;
+        }
+        let n = mids.len();
+        let dispersion = mids.last().copied().unwrap_or(0).saturating_sub(mids[0]);
+        let confirmed = n >= p.family_min_supporting_reads && dispersion <= p.max_breakpoint_dispersion;
+        events.push(ConversionEvent {
+            copy_a: a,
+            copy_b: b,
+            breakpoint_ref: (br_lo, br_hi),
+            n_supporting_reads: n,
+            breakpoint_dispersion: dispersion,
+            confirmed,
+        });
+        i = j;
+    }
+    events
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Build per-site obs from a label string where each char is the copy index that the read
+    // uniquely matches; '*' = Ambig (all copies match), '.' = Novel (no copy matches).
+    fn obs_from(labels: &str, n_copies: usize) -> Vec<SiteObs> {
+        labels
+            .chars()
+            .enumerate()
+            .map(|(i, ch)| {
+                let mut match_bits = vec![false; n_copies];
+                match ch {
+                    '*' => match_bits.iter_mut().for_each(|m| *m = true),
+                    '.' => {}
+                    c => {
+                        let idx = c.to_digit(10).unwrap() as usize;
+                        match_bits[idx] = true;
+                    }
+                }
+                SiteObs { ref_pos: 1000 + i as u64 * 10, match_bits }
+            })
+            .collect()
+    }
+
+    fn p() -> MosaicParams { MosaicParams::default() }
+
+    #[test]
+    fn clean_switch_is_mosaic() {
+        let c = detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p());
+        assert_eq!(c.status, MosaicStatus::Mosaic);
+        assert_eq!((c.copy_a, c.copy_b), (Some(0), Some(1)));
+        assert_eq!((c.tract_a_sites, c.tract_b_sites), (3, 3));
+        assert_eq!(c.margin, 3);
+        // breakpoint bracket between the last 0-site and the first 1-site.
+        assert_eq!(c.breakpoint_ref, Some((1000 + 2 * 10, 1000 + 3 * 10)));
+    }
+
+    #[test]
+    fn reversed_switch_records_direction() {
+        let c = detect_mosaic(&obs_from("111000", 2), 2, 0.005, &p());
+        assert!(c.is_mosaic());
+        assert_eq!((c.copy_a, c.copy_b), (Some(1), Some(0)));
+    }
+
+    #[test]
+    fn isolated_error_flip_is_not_mosaic() {
+        // D=8, one interior flip; no a≠b contiguous split improves → margin 0.
+        let c = detect_mosaic(&obs_from("00000100", 2), 2, 0.005, &p());
+        assert!(!c.is_mosaic());
+        assert!(c.margin < p().min_improvement);
+    }
+
+    #[test]
+    fn pure_copy_is_single_copy() {
+        let c = detect_mosaic(&obs_from("000000", 2), 2, 0.005, &p());
+        assert_eq!(c.status, MosaicStatus::SingleCopy);
+        assert!(!c.is_mosaic());
+    }
+
+    #[test]
+    fn all_ambiguous_abstains_nonidentifiable() {
+        let c = detect_mosaic(&obs_from("******", 2), 2, 0.005, &p());
+        assert_eq!(c.status, MosaicStatus::NonIdentifiable);
+    }
+
+    #[test]
+    fn too_few_sites_abstains_lowpower() {
+        let c = detect_mosaic(&obs_from("0011", 2), 2, 0.005, &p());
+        assert_eq!(c.status, MosaicStatus::LowPower);
+    }
+
+    #[test]
+    fn short_right_tract_fails_min_tract() {
+        // D=7, right tract only 2 sites (< min_tract_sites=3) → not Mosaic.
+        let c = detect_mosaic(&obs_from("0000011", 2), 2, 0.005, &p());
+        assert!(!c.is_mosaic());
+        assert!(c.tract_b_sites < p().min_tract_sites);
+    }
+
+    #[test]
+    fn novel_wildcard_does_not_break_tracts() {
+        // '.' (Novel) between clean 3+3 tracts is neutral.
+        let c = detect_mosaic(&obs_from("000.111", 2), 2, 0.005, &p());
+        assert!(c.is_mosaic());
+        assert_eq!((c.tract_a_sites, c.tract_b_sites), (3, 3));
+    }
+
+    #[test]
+    fn ambiguous_sites_are_neutral_in_tracts() {
+        let c = detect_mosaic(&obs_from("00*00111*1", 2), 2, 0.005, &p());
+        assert!(c.is_mosaic());
+        assert_eq!((c.copy_a, c.copy_b), (Some(0), Some(1)));
+    }
+
+    #[test]
+    fn three_copy_family_picks_discriminating_pair() {
+        // copies 0 and 2 are the switching pair in a 3-copy family.
+        let c = detect_mosaic(&obs_from("000222", 3), 3, 0.005, &p());
+        assert!(c.is_mosaic());
+        assert_eq!((c.copy_a, c.copy_b), (Some(0), Some(2)));
+    }
+
+    #[test]
+    fn de_none_uses_wider_eps_is_fail_safe() {
+        // A borderline call must clear a HARDER bar at the larger (fail-safe) eps.
+        let lo = detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p());
+        let hi = detect_mosaic(&obs_from("000111", 2), 2, 0.05, &p());
+        assert!(lo.score > hi.score); // larger eps → smaller LR → smaller margin-over-threshold
+    }
+
+    #[test]
+    fn family_confirms_reproducible_breakpoint() {
+        // 3 independent reads with the SAME switch/breakpoint → Confirmed.
+        let calls: Vec<MosaicCall> = (0..3)
+            .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
+            .collect();
+        let events = aggregate_family(&calls, &p());
+        assert_eq!(events.len(), 1);
+        assert!(events[0].confirmed);
+        assert_eq!(events[0].n_supporting_reads, 3);
+    }
+
+    #[test]
+    fn family_rejects_singleton_as_chimera_suspect() {
+        let calls = vec![detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p())];
+        let events = aggregate_family(&calls, &p());
+        assert_eq!(events.len(), 1);
+        assert!(!events[0].confirmed); // 1 molecule < family_min_supporting_reads
+    }
+}

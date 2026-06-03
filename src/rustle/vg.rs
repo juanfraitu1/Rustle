@@ -3960,6 +3960,125 @@ pub fn score_read_exon_fingerprint(
     (scores, n_covered)
 }
 
+/// Build the per-site cross-copy match structure for ONE read, in `copy_idx`'s coordinate
+/// frame (the read's home/primary copy). Mirrors `score_read_exon_fingerprint`'s per-site
+/// base lookup, but RETAINS each copy's match (`match_bits`) instead of summing — the input
+/// the mosaic detector needs. Sites come out in genomic order (`per_copy_site_refs` is sorted).
+fn build_read_site_obs(
+    read: &crate::types::BundleRead,
+    fp: &ExonFingerprints,
+    copy_idx: usize,
+) -> Vec<crate::vg_hmm::mosaic::SiteObs> {
+    use crate::vg_hmm::mosaic::SiteObs;
+    let Some(site_refs) = fp.per_copy_site_refs.get(copy_idx) else {
+        return Vec::new();
+    };
+    let mut mism: crate::types::DetHashMap<u64, u8> =
+        crate::types::DetHashMap::with_capacity_and_hasher(
+            read.mismatches.len(), crate::types::FixedBuild::default());
+    for &(p, b) in &read.mismatches {
+        mism.insert(p, b);
+    }
+    let mut obs: Vec<SiteObs> = Vec::new();
+    for &(site_idx, ref_pos, this_copy_base) in site_refs {
+        if !read.exons.iter().any(|&(s, e)| ref_pos >= s && ref_pos < e) {
+            continue;
+        }
+        let read_base = mism.get(&ref_pos).copied().unwrap_or(this_copy_base);
+        let site = &fp.sites[site_idx];
+        let mut match_bits = vec![false; fp.n_copies];
+        for &(cid, copy_base) in &site.copy_bases {
+            if cid < fp.n_copies {
+                match_bits[cid] = read_base == copy_base;
+            }
+        }
+        obs.push(SiteObs { ref_pos, match_bits });
+    }
+    obs
+}
+
+/// Per-family mosaic detection pass (opt-in). For each copy's PRIMARY reads (a read's home
+/// copy), build the per-site match structure and run `detect_mosaic`; aggregate per family
+/// and report confirmed gene-conversion events vs chimera-suspects. Pure-analysis: it never
+/// mutates bundles or EM weights.
+fn detect_and_report_mosaics(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    fp: &ExonFingerprints,
+) {
+    use crate::vg_hmm::mosaic::{aggregate_family, detect_mosaic, MosaicParams};
+    use crate::vg_hmm::mosaic::MosaicStatus;
+    let params = MosaicParams::from_env();
+    let n_copies = fp.n_copies;
+    let trace = std::env::var_os("RUSTLE_VG_MOSAIC_TRACE").is_some();
+    let mut calls = Vec::new();
+    // Each copy's locus = (chrom, start, end) of its family bundle. The family bundle is
+    // reduced to ~the multi-mapping reads, but a recombinant is detectable at its PRIMARY
+    // alignment whether or not it multimaps — so scan the FULL bundles array for every
+    // bundle overlapping the locus, deduping reads by name. (Opt-in pass; the cheap overlap
+    // pre-filter keeps cost bounded.)
+    let copy_loci: Vec<Option<(String, u64, u64)>> = family.bundle_indices.iter()
+        .map(|&bi| bundles.get(bi).map(|b| (b.chrom.clone(), b.start, b.end)))
+        .collect();
+    for (copy_idx, locus) in copy_loci.iter().enumerate() {
+        let Some((chrom, lo, hi)) = locus else { continue };
+        if fp.per_copy_site_refs.get(copy_idx).map(|s| s.is_empty()).unwrap_or(true) {
+            continue;
+        }
+        let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let (mut n_prim, mut n_obs, mut hist) = (0usize, 0usize, [0usize; 5]);
+        for bundle in bundles.iter() {
+            if &bundle.chrom != chrom || bundle.end < *lo || bundle.start > *hi {
+                continue;
+            }
+            for read in &bundle.reads {
+                if !read.is_primary_alignment || !seen.insert(read.read_name_hash) {
+                    continue; // home copy = primary alignment; dedupe across overlapping bundles
+                }
+                n_prim += 1;
+                let obs = build_read_site_obs(read, fp, copy_idx);
+                if obs.is_empty() {
+                    continue;
+                }
+                n_obs += 1;
+                let eps = params.eps_for(read.de);
+                let call = detect_mosaic(&obs, n_copies, eps, &params);
+                hist[match call.status {
+                    MosaicStatus::LowPower => 0, MosaicStatus::NonIdentifiable => 1,
+                    MosaicStatus::SingleCopy => 2, MosaicStatus::NoSwitch => 3, MosaicStatus::Mosaic => 4,
+                }] += 1;
+                if trace && matches!(call.status, MosaicStatus::NoSwitch) && call.copy_a != call.copy_b && call.n_decisive >= params.min_decisive_sites {
+                    eprintln!("[VG-MOSAIC-NOSWITCH] family={} home={} {:?}->{:?} D={} margin={} tracts={}/{} lr={:.1}/{:.1}",
+                        family.family_id, copy_idx, call.copy_a, call.copy_b, call.n_decisive, call.margin,
+                        call.tract_a_sites, call.tract_b_sites, call.lr_switch, call.threshold_used);
+                }
+                calls.push(call);
+            }
+        }
+        if trace {
+            eprintln!("[VG-MOSAIC-COPY] family={} copy={} locus={}:{}-{} primary_reads={} with_obs={} status[LP/NI/SC/NS/MO]={:?}",
+                family.family_id, copy_idx, chrom, lo, hi, n_prim, n_obs, hist);
+        }
+    }
+    let n_mosaic = calls.iter().filter(|c| c.is_mosaic()).count();
+    let events = aggregate_family(&calls, &params);
+    let n_conf = events.iter().filter(|e| e.confirmed).count();
+    for ev in &events {
+        eprintln!(
+            "[VG-MOSAIC] family={} {}->{} breakpoint~{:?} molecules={} dispersion={}bp => {}",
+            family.family_id, ev.copy_a, ev.copy_b, ev.breakpoint_ref,
+            ev.n_supporting_reads, ev.breakpoint_dispersion,
+            if ev.confirmed { "CONFIRMED gene-conversion" } else { "chimera-suspect (unreplicated/dispersed)" },
+        );
+    }
+    if n_mosaic > 0 || !events.is_empty() {
+        eprintln!(
+            "[VG-MOSAIC] family={}: {} mosaic read(s), {} event(s), {} confirmed",
+            family.family_id, n_mosaic, events.len(), n_conf,
+        );
+    }
+}
+
 /// Pre-assembly EM: redistribute multi-mapping read weights across family members
 /// using junction-based compatibility (before splice graphs are built).
 ///
@@ -4897,6 +5016,13 @@ pub fn run_fingerprint_em(
                 "[VG-FP-EM] Family {}: 0 diagnostic sites — pileup-depth-prior fallback (identical copies)",
                 family.family_id
             );
+        }
+
+        // Gene-conversion mosaic-read detection (audit theme: "VG finds unusual exon
+        // combinations"). Opt-in RUSTLE_VG_MOSAIC_ON, additive — does NOT touch the EM
+        // weights below; only reports recombinant reads / confirmed conversion events.
+        if fp.n_sites > 0 && std::env::var_os("RUSTLE_VG_MOSAIC_ON").is_some() {
+            detect_and_report_mosaics(family, bundles, &fp);
         }
 
         // PHASE 1 (sequential): collect placement lists, one per multi-mapped read.
