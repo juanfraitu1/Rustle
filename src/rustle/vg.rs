@@ -4633,6 +4633,12 @@ pub fn run_fingerprint_em(
         .ok().and_then(|s| s.parse().ok()).unwrap_or(10.0);
     let per_site_gap: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP_PER_SITE")
         .ok().and_then(|s| s.parse().ok()).unwrap_or(0.25);
+    // Calibration: minimum diagnostic sites a read must cover for the fingerprint
+    // to be allowed to DECIDE its copy. Below this, the read abstains (falls to the
+    // prior) — a single diagnostic base is flippable by one sequencing error.
+    // Default 2; set to 1 to restore the prior (pre-2026-06-03) behaviour.
+    let min_decisive_sites: usize = std::env::var("RUSTLE_VG_EM_MIN_DECISIVE_SITES")
+        .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
 
     // Multi-signal EM weights (IsoSeq-specific):
     //   RUSTLE_VG_FP_LAMBDA_J  — junction-chain signal weight (default 1.0)
@@ -4930,10 +4936,21 @@ pub fn run_fingerprint_em(
                 //   This allows reads in conserved regions to receive soft structural
                 //   assignments that are impossible for short reads.
                 let n_cov_max = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
-                let eff_gap = if n_cov_max > 0 {
-                    (per_site_gap * n_cov_max as f64).min(gap_threshold)
-                } else {
+                let eff_gap = if n_cov_max == 0 {
                     struct_gap
+                } else if n_cov_max < min_decisive_sites {
+                    // Calibration (2026-06-03): a read resting on a SINGLE diagnostic
+                    // site is unreliable — one sequencing error at that base flips the
+                    // call. The attribution benchmark showed the EM was decisive-but-
+                    // overconfident at exactly 1 site (committed on 81% of such reads,
+                    // only 62% correct). Require the FULL absolute gap (which a lone
+                    // site cannot supply, ~2 log-units max) so these reads fall through
+                    // to the prior — they ABSTAIN instead of committing on one base.
+                    // Reads covering 0 sites are unaffected (struct_gap above); reads
+                    // covering >=min_decisive_sites use the evidence-proportional bar.
+                    gap_threshold
+                } else {
+                    (per_site_gap * n_cov_max as f64).min(gap_threshold)
                 };
                 if eff_gap > 0.0 && n >= 2 {
                     let mut best = f64::NEG_INFINITY;
