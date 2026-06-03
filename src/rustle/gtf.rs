@@ -135,6 +135,14 @@ pub fn write_gtf<W: Write>(
     label: &str,
 ) -> std::io::Result<()> {
     let gene_tx_no = assign_gene_tx_numbers(transcripts);
+    // Abstain floor for the capacity-confidence channel (matches the pipeline
+    // RUSTLE_VG_ABSTAIN_FLOOR default). A VG transcript whose capacity_confidence
+    // falls below this is an unreliable (phantom / non-anchored) copy: we emit an
+    // explicit, filterable low_confidence tag (the copy is kept, not dropped).
+    let abstain_floor: f64 = std::env::var("RUSTLE_VG_ABSTAIN_FLOOR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.05);
     for (i, tx) in transcripts.iter().enumerate() {
         let (gno, tno) = gene_tx_no[i];
         let (gid, tid) = if let (Some(ref g), Some(ref t)) = (&tx.gene_id, &tx.transcript_id) {
@@ -188,6 +196,9 @@ pub fn write_gtf<W: Write>(
         // so non-VG GTF is byte-identical. Mirrors copy_confidence formatting.
         if let Some(cc) = tx.capacity_confidence {
             tx_attrs.push_str(&format!(" capacity_confidence \"{:.3}\";", cc));
+            if cc < abstain_floor {
+                tx_attrs.push_str(" low_confidence \"true\";");
+            }
         }
         // Jointly-feasible lower bound on abundance (coverage * capacity_confidence).
         if let Some(amin) = tx.abundance_min {
@@ -306,6 +317,22 @@ mod tests {
         let out = render(tx);
         assert!(!out.contains("capacity_confidence"), "capacity_confidence leaked into non-vg GTF:\n{out}");
         assert!(!out.contains("abundance_min"), "abundance_min leaked into non-vg GTF:\n{out}");
+        assert!(!out.contains("low_confidence"), "low_confidence must not appear in non-vg GTF:\n{out}");
+    }
+
+    #[test]
+    fn low_confidence_tag_below_abstain_floor() {
+        std::env::remove_var("RUSTLE_VG_ABSTAIN_FLOOR"); // default 0.05
+        // capacity_confidence below floor -> low_confidence tag emitted.
+        let mut lo = one_exon_tx(); lo.capacity_confidence = Some(0.000);
+        let out_lo = render(lo);
+        assert!(out_lo.contains("low_confidence \"true\";"),
+            "low cc must emit low_confidence tag:\n{out_lo}");
+        // capacity_confidence above floor -> no tag.
+        let mut hi = one_exon_tx(); hi.capacity_confidence = Some(1.000);
+        let out_hi = render(hi);
+        assert!(!out_hi.contains("low_confidence"),
+            "high cc must NOT emit low_confidence tag:\n{out_hi}");
     }
 
     #[test]
