@@ -7,7 +7,11 @@ use std::collections::HashSet;
 /// Exact k-mer Jaccard between two DNA sequences (ACGT only; other bases
 /// skipped). Returns 0.0 if either has no valid k-mers. Clusters are short
 /// (one copy's exonic sequence), so an exact set is fine — no min-hash needed.
-pub fn cluster_kmer_jaccard(a: &[u8], b: &[u8], k: usize) -> f64 {
+///
+/// Name follows the domain-first, verb-last pattern used in this codebase
+/// (`compute_family_graph_kmer_jaccard`, `minimizer_jaccard`): *seq* is the
+/// domain (two raw sequences), *kmer_jaccard* is the operation.
+pub fn seq_kmer_jaccard(a: &[u8], b: &[u8], k: usize) -> f64 {
     fn kset(s: &[u8], k: usize) -> HashSet<&[u8]> {
         let mut set = HashSet::new();
         if s.len() >= k {
@@ -61,31 +65,74 @@ pub fn cluster_reads_by_position(
 mod tests {
     use super::*;
 
-    // ── cluster_kmer_jaccard tests ──────────────────────────────────────────
+    // ── seq_kmer_jaccard tests ──────────────────────────────────────────────
 
     #[test]
     fn identical_sequences_jaccard_one() {
         let s = b"ACGTACGTACGTACGTACGT";
-        assert!((cluster_kmer_jaccard(s, s, 15) - 1.0).abs() < 1e-9);
+        assert!((seq_kmer_jaccard(s, s, 15) - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn near_identical_high_jaccard() {
-        // 100-base non-repeating sequence: one substitution at position 50 affects
-        // only 15 k-mers out of 86 total, leaving 71 shared → Jaccard ≈ 0.70 > 0.2.
+        // The spec prescribed: let a = b"ACGTACGTACGTACGTACGTACGTACGTACGT" (32
+        // bytes, ACGT-repeating) with one substitution at byte 16 and k=15 → assert
+        // Jaccard > 0.2. That is mathematically broken: a 32-byte ACGT-repeat
+        // produces only 4 distinct 15-mers (the four rotation phases), and flipping
+        // byte 16 adds/removes a few but the Jaccard is ≈ 0.105 < 0.2 — the
+        // assertion would always fail. A non-repeating 100-base sequence is used
+        // instead: one substitution at position 50 displaces 15 k-mers out of 86,
+        // leaving 71 shared → Jaccard ≈ 0.70 > 0.2.
         let a: Vec<u8> = (0u8..100)
             .map(|i| [b'A', b'C', b'G', b'T', b'G', b'C', b'A', b'T', b'T', b'G'][i as usize % 10])
             .collect();
         let mut b = a.clone();
         b[50] = if b[50] == b'A' { b'C' } else { b'A' }; // one substitution
-        assert!(cluster_kmer_jaccard(&a, &b, 15) > 0.2);
+        assert!(seq_kmer_jaccard(&a, &b, 15) > 0.2);
     }
 
     #[test]
     fn disjoint_sequences_jaccard_zero() {
+        // AAAA vs CCCC: both sequences have non-empty k-mer sets (each has exactly
+        // one 15-mer), but the sets are disjoint → inter=0 → Jaccard=0.
+        // NOTE: this does NOT exercise the early-exit guard (sa.is_empty() ||
+        // sb.is_empty()); see the three tests below for guard coverage.
         let a = b"AAAAAAAAAAAAAAAAAAAA";
         let b = b"CCCCCCCCCCCCCCCCCCCC";
-        assert_eq!(cluster_kmer_jaccard(a, b, 15), 0.0);
+        assert_eq!(seq_kmer_jaccard(a, b, 15), 0.0);
+    }
+
+    // ── early-exit guard tests (sa.is_empty() || sb.is_empty()) ────────────
+    //
+    // The docstring promises 0.0 for (i) empty slice, (ii) slice shorter than k,
+    // (iii) all-non-ACGT (e.g. all-N). Each test below hits the guard directly.
+
+    #[test]
+    fn empty_slice_returns_zero() {
+        // An empty slice produces an empty k-mer set → guard fires.
+        let s = b"ACGTACGTACGTACGT";
+        assert_eq!(seq_kmer_jaccard(b"", s, 15), 0.0);
+        assert_eq!(seq_kmer_jaccard(s, b"", 15), 0.0);
+        assert_eq!(seq_kmer_jaccard(b"", b"", 15), 0.0);
+    }
+
+    #[test]
+    fn shorter_than_k_returns_zero() {
+        // A slice with length < k produces an empty k-mer set → guard fires.
+        let short = b"ACGTACGT"; // 8 bytes < k=15
+        let long = b"ACGTACGTACGTACGTACGT";
+        assert_eq!(seq_kmer_jaccard(short, long, 15), 0.0);
+        assert_eq!(seq_kmer_jaccard(long, short, 15), 0.0);
+    }
+
+    #[test]
+    fn all_n_sequence_returns_zero() {
+        // All-N (non-ACGT) sequences: all k-mers are rejected by the ACGT filter,
+        // so the k-mer set is empty → guard fires.
+        let n_seq = b"NNNNNNNNNNNNNNNNNNNN"; // 20 N-bases
+        let acgt = b"ACGTACGTACGTACGTACGT";
+        assert_eq!(seq_kmer_jaccard(n_seq, acgt, 15), 0.0);
+        assert_eq!(seq_kmer_jaccard(acgt, n_seq, 15), 0.0);
     }
 
     // ── cluster_reads_by_position tests ────────────────────────────────────
