@@ -104,13 +104,16 @@ hasn't been built out.
   validated, and boosting a primary=0 copy is the fabrication risk that makes DAZ3 a
   false positive. **Do not enable without first running the never-run precision check.**
 
-## Recommended order
-1. **Validate `RUSTLE_VG_TOPO_BORROW`** on a real same-strand paralog family — built,
-   safe-on-synthetic, aimed exactly at the O5 real gap. Highest leverage, lowest novelty.
-2. **Copy-number-from-depth** (theme B) — VG-unique, modest build, strengthens O1/O2.
-3. **Surface the confidence outputs** (theme F: `em_weight_gap`/decisive breakdown
+## Recommended order  (REVISED after the TOPO_BORROW validation below)
+1. ~~Validate `RUSTLE_VG_TOPO_BORROW`~~ → **DONE; it is INERT** (see validation section).
+   The real lever it exposed: **divergence-robust cross-copy exon unification** in the
+   FamilyGraph (`merge_singletons_by_sequence`, k-mer Jaccard collapses at 95–99%
+   identity → single-copy ExonClasses → all structure-sharing dead). Fixing THIS
+   unlocks TOPO_BORROW + completion + borrow together. **New #1.**
+2. **Surface the confidence outputs** (theme F: `em_weight_gap` / decisive breakdown
    per-transcript) — cheap, makes identifiability legible, complements the benchmark.
-4. **FAMILY_BOOST precision check** (only after #1) — high value, but gated on the DAZ3
+3. **Copy-number-from-depth** (theme B) — VG-unique, modest build, strengthens O1/O2.
+4. **FAMILY_BOOST precision check** — high value, but gated on the DAZ3 fabrication
    risk; never enable without the precision measurement.
 
 ## VALIDATION: RUSTLE_VG_TOPO_BORROW is built but INERT (2026-06-03)
