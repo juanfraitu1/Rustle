@@ -186,10 +186,19 @@ pub fn decompose_tandem_to_family(
         }
     }
 
-    for (copy_pos, read_idxs) in per_copy.iter().enumerate() {
+    for (span_idx, read_idxs) in per_copy.iter().enumerate() {
+        // Skip a copy span that received no reads (zero-evidence copy): emitting
+        // it would inflate `family_size` and report a misleading
+        // capacity_confidence=1.0 for a copy with no support. `copy_pos` is the
+        // position in the FINAL `bundle_indices` (not `span_idx`), which keeps the
+        // `multimap_reads` (copy_pos, local_ri) contract consistent after skips.
+        if read_idxs.is_empty() {
+            continue;
+        }
+        let copy_pos = bundle_indices.len();
         let mut sub = parent.clone();
-        sub.start = spans[copy_pos].0;
-        sub.end = spans[copy_pos].1;
+        sub.start = spans[span_idx].0;
+        sub.end = spans[span_idx].1;
         sub.synthetic = true;
         sub.vg_family_id = Some(family_id);
         sub.reads = read_idxs.iter().map(|&i| parent.reads[i].clone()).collect();
@@ -212,6 +221,10 @@ pub fn decompose_tandem_to_family(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+    // RUSTLE_VG_TANDEM* env vars are process-global; serialize the tests that
+    // mutate them so the multi-threaded runner can't observe a sibling's write.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     // ── seq_kmer_jaccard tests ──────────────────────────────────────────────
 
@@ -317,6 +330,7 @@ mod tests {
 
     #[test]
     fn tandemconfig_defaults_off() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         // Ensure none of our env vars are set (clean state).
         std::env::remove_var("RUSTLE_VG_TANDEM");
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_SEP");
@@ -330,6 +344,7 @@ mod tests {
     /// RUSTLE_VG_TANDEM=1 and the "true"/case-variant spellings must all enable.
     #[test]
     fn tandemconfig_enabled_by_one() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM", "1");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM");
@@ -338,6 +353,7 @@ mod tests {
 
     #[test]
     fn tandemconfig_enabled_by_true_lowercase() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM", "true");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM");
@@ -346,6 +362,7 @@ mod tests {
 
     #[test]
     fn tandemconfig_enabled_by_true_uppercase() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM", "TRUE");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM");
@@ -354,6 +371,7 @@ mod tests {
 
     #[test]
     fn tandemconfig_enabled_by_true_mixed_case() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM", "True");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM");
@@ -364,6 +382,7 @@ mod tests {
     /// a non-parseable value falls back to the default.
     #[test]
     fn tandemconfig_min_gap_custom_value() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_SEP", "12345");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_SEP");
@@ -372,6 +391,7 @@ mod tests {
 
     #[test]
     fn tandemconfig_min_gap_fallback_on_bad_value() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_SEP", "not_a_number");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_SEP");
@@ -381,6 +401,7 @@ mod tests {
     /// RUSTLE_VG_TANDEM_MIN_JACCARD: valid in-range value overrides the 0.20 default.
     #[test]
     fn tandemconfig_min_jaccard_custom_value() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "0.5");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
@@ -390,6 +411,7 @@ mod tests {
     /// Boundary: exactly 1.0 is accepted (<=1.0 branch).
     #[test]
     fn tandemconfig_min_jaccard_boundary_one_accepted() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "1.0");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
@@ -399,6 +421,7 @@ mod tests {
     /// Boundary: exactly 0.0 is rejected (>0.0 filter) → falls back to 0.20.
     #[test]
     fn tandemconfig_min_jaccard_boundary_zero_rejected() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "0.0");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
@@ -408,6 +431,7 @@ mod tests {
     /// Values <= 0.0 (negative): rejected, falls back to 0.20.
     #[test]
     fn tandemconfig_min_jaccard_negative_rejected() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "-0.5");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
@@ -417,6 +441,7 @@ mod tests {
     /// Values > 1.0: rejected, falls back to 0.20.
     #[test]
     fn tandemconfig_min_jaccard_above_one_rejected() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         std::env::set_var("RUSTLE_VG_TANDEM_MIN_JACCARD", "1.5");
         let c = TandemConfig::from_env();
         std::env::remove_var("RUSTLE_VG_TANDEM_MIN_JACCARD");
