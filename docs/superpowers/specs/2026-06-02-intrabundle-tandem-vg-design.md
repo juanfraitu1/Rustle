@@ -138,3 +138,21 @@ Implemented (branch `vg/flow-capacity-apportionment`, opt-in `RUSTLE_VG_TANDEM=1
 - **Mild over-enumeration** (20 vs 16 transcripts) from borrowed sibling structure — same root as c4 absorption; the apportioned-coverage gate should filter copy-absent isoforms more aggressively.
 
 **Remaining validation (not yet run):** full GGO_19 de-novo byte-identical regression (the hard gate — structurally guaranteed but unmeasured here); false-split guard on a single multi-exon gene; genome-wide spillover scan. The feature stays opt-in (`RUSTLE_VG_TANDEM` default OFF) pending these + the c4/over-enum EM refinement.
+
+## c4 fix + regression gates (2026-06-03)
+
+**Regression gates established (the safety net for the EM-adjacent change):**
+- DAZ3-suppression baseline: DAZ resolves as a family with DAZ3 at cov 4.0/1.4 (the validated flow-capacity residual; a DAZ-style phantom copy shows independent_support ~0.6).
+- De-novo reference: GGO_19.bam → 1943 transcripts, 0 tandem/family attrs. (Byte-level diff is unusable on the large bam — rustle's parallel assembly emits transcripts in nondeterministic ORDER; the same binary re-run differs by ~40k lines but is sorted-identical. The correct gate is **sorted-identical content**.)
+- EM regression suite: vg_hmm_em 6/6, vg_hmm_negative_control 3/3, vg_hmm_diagnostic 5/5 green. `vg_fingerprint_em_correctness` has 1 PRE-EXISTING failure (`fp_em_decisiveness_scales_with_diagnostic_site_coverage`, fixture drift on `test_data/synthetic_family` — never touched by the tandem commits; unrelated).
+
+**The c4 problem (grounded):** RBMY1 c4 is genuinely identifiable (NM=35 / de=0.0022 from the dominant c5) and certified (independent_support **0.895**) — NOT a DAZ3-style phantom. Yet it had `this_cov` ~100 (raw) but **0 transcripts**: the fingerprint-EM apportioned its own primary reads to c5 (at the diagnostic sites c4's reads fit c5 marginally better, 0.0021 vs 0.0054), starving c4 of assemblable weight. The support metric cleanly separates the cases — c4 = 0.895, DAZ1 (real) = 0.989, DAZ phantom = 0.596 — so a support gate at 0.75 includes c4 and excludes phantoms.
+
+**Fix:** after `compute_copy_independent_support` populates `vg_copy_support` (pipeline.rs:10894, pre-assembly, weights still post-EM), a **support-gated weight floor**: for each `RescueClass::TandemCopy` sub-bundle whose `independent_support ≥ RUSTLE_VG_TANDEM_SUPPORT_FLOOR` (0.75), raise its OWN primary reads' weight to ≥ `RUSTLE_VG_TANDEM_WEIGHT_FLOOR` (0.5) where it was under that. Only RAISES under-weighted primaries (already-emitting copies untouched). Scoped to TandemCopy sub-bundles → DAZ/dispersed and de-novo are on different code paths.
+
+**Validated (all gates pass):**
+- RBMY1 c4 **recovered**: 0 → 2 transcripts (cov 1.1/1.8) at **capacity_confidence 0.220** — honest abstain-in-place (low cc reflects the contested evidence), not a silent merge or a confident claim. All **6 copies** now emit; c6 retained.
+- DAZ GTF **byte-identical** to baseline (DAZ3 stays cov 4.0/1.4; `[VG-TANDEM] weight floor` never fires — DAZ has no TandemCopy bundles). **No DAZ-regression possible** by construction.
+- GGO_19 de-novo **content-identical** (1943 transcripts, sorted-identical).
+
+Net RBMY1 result with `RUSTLE_VG_TANDEM=1`: the collapsed mega-bundle is resolved into all 6 tandem copies with per-copy attribution; the outlier c6 (was unassemblable) and the core c4 (was EM-absorbed) both recovered, each at a capacity_confidence honestly reflecting its evidence (c6 high 0.956, c4 low 0.220). Feature remains opt-in pending false-split/spillover guards + the pre-existing fixture-test fix.
