@@ -10372,12 +10372,20 @@ pub fn run<P: AsRef<Path>>(
                             bundles[si].rescue_class =
                                 Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy);
                         }
-                        // Neutralize the parent mega-bundle so it does not also
-                        // assemble (the sub-bundles carry its reads). Cleared in
-                        // place — NOT removed — so existing bundle indices stay
-                        // valid.
-                        bundles[bi].reads.clear();
-                        bundles[bi].junction_stats = Default::default();
+                        // Retain in the parent only reads NOT claimed by a tandem
+                        // copy span — e.g. a non-paralogous gene co-bundled with
+                        // the array (its cluster failed the similarity filter). It
+                        // must still assemble; only the tandem copies move to
+                        // sub-bundles. (Reads in a copy span were cloned into the
+                        // sub-bundles; remove them here so they aren't double-
+                        // assembled.) Cleared in place — NOT removed — so existing
+                        // bundle indices stay valid. If nothing is unclaimed the
+                        // parent becomes empty and assembles nothing.
+                        let copy_spans = decomp.copy_spans.clone();
+                        bundles[bi].reads.retain(|r| {
+                            !copy_spans.iter().any(|&(s, e)| r.ref_start >= s && r.ref_start < e)
+                        });
+                        crate::bundle::recompute_junction_stats(&mut bundles[bi], &config);
                         eprintln!(
                             "[VG-TANDEM] bundle {} ({}:{}-{}) → {} copy sub-bundles",
                             bi, parent.chrom, parent.start, parent.end, sub_idxs.len()
