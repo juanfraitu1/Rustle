@@ -2045,17 +2045,46 @@ pub fn mixed_strand_copies_overlap(family: &FamilyGroup, bundles: &[Bundle]) -> 
 fn locus_relationship(family: &FamilyGroup, bundles: &[Bundle]) -> LocusRel {
     let loci: Vec<(&str, u64, u64)> = family.bundle_indices.iter()
         .filter_map(|&bi| bundles.get(bi)).map(|b| (b.chrom.as_str(), b.start, b.end)).collect();
-    if loci.len() < 2 { return LocusRel::Single; }
-    let same_chrom = loci.iter().all(|l| l.0 == loci[0].0);
-    if !same_chrom { return LocusRel::Trans; }
-    let mut overlap = false; let mut maxgap = 0u64;
-    for i in 0..loci.len() { for j in (i+1)..loci.len() {
-        let (a, b) = (loci[i], loci[j]);
-        if a.1 <= b.2 && b.1 <= a.2 { overlap = true; }
-        let gap = a.1.max(b.1).saturating_sub(a.2.min(b.2));
-        maxgap = maxgap.max(gap);
-    }}
-    if overlap { LocusRel::Overlapping } else if maxgap < 1_000_000 { LocusRel::Tandem } else { LocusRel::Distal }
+    classify_physical_loci(loci, family.bundle_indices.len())
+}
+
+/// Spatial classification of a family's copies, DE-MIRRORED. Rustle bundles per strand, so a
+/// single genomic locus carries a `+` and a `−` bundle at the same coords (a strand mirror);
+/// plus a copy may contribute several overlapping isoform bundles. The old check returned
+/// `Overlapping` if ANY two bundles overlapped, so one strand-mirror pair made the WHOLE family
+/// read as Overlapping — masking the true inter-copy relationship (a 13 Mb-spread dispersed
+/// segdup was wrongly Overlapping instead of Distal). Fix: merge overlapping bundle intervals
+/// into DISTINCT PHYSICAL loci first, then classify on those.
+fn classify_physical_loci(mut loci: Vec<(&str, u64, u64)>, n_bundles: usize) -> LocusRel {
+    if loci.is_empty() {
+        return LocusRel::Single;
+    }
+    // Merge overlapping intervals per chromosome → distinct physical loci.
+    loci.sort_by(|a, b| a.0.cmp(b.0).then(a.1.cmp(&b.1)));
+    let mut merged: Vec<(&str, u64, u64)> = Vec::with_capacity(loci.len());
+    for (c, s, e) in loci {
+        match merged.last_mut() {
+            Some(last) if last.0 == c && s <= last.2 => { last.2 = last.2.max(e); }
+            _ => merged.push((c, s, e)),
+        }
+    }
+    if merged.len() < 2 {
+        // One physical locus. ≥2 bundles there = same-locus multi-copy (e.g. an inverted
+        // pair, DAZ1−/DAZ3+) → genuinely Overlapping; a lone bundle → Single.
+        return if n_bundles >= 2 { LocusRel::Overlapping } else { LocusRel::Single };
+    }
+    if !merged.iter().all(|l| l.0 == merged[0].0) {
+        return LocusRel::Trans;
+    }
+    // Distinct loci no longer overlap; classify by the largest inter-locus gap.
+    let mut maxgap = 0u64;
+    for i in 0..merged.len() {
+        for j in (i + 1)..merged.len() {
+            let (a, b) = (merged[i], merged[j]);
+            maxgap = maxgap.max(a.1.max(b.1).saturating_sub(a.2.min(b.2)));
+        }
+    }
+    if maxgap < 1_000_000 { LocusRel::Tandem } else { LocusRel::Distal }
 }
 
 /// Compute each copy's **independent support** within a family.
@@ -6420,6 +6449,42 @@ mod tests {
         // Exactly 0.8 is NOT decisive (gap > 0.8); exactly 0.5 is NOT moderate (gap > 0.5).
         let c = summarize_em_confidence(&[(0.8, 2), (0.5, 2), (0.81, 2)]).unwrap();
         assert_eq!((c.n_decisive, c.n_moderate, c.n_uncertain), (1, 1, 1));
+    }
+
+    #[test]
+    fn locus_rel_demirrors_strand_mirror_pairs() {
+        // Two physical loci 13 Mb apart, each with a +/- strand-mirror pair (4 overlapping
+        // bundles total). Old code: Overlapping (mirrors overlap). De-mirrored: Distal.
+        let loci = vec![
+            ("chr1", 89_000_000, 89_010_000), ("chr1", 89_000_100, 89_010_100), // locus A mirror pair
+            ("chr1", 103_000_000, 103_010_000), ("chr1", 103_000_100, 103_010_100), // locus B mirror pair
+        ];
+        assert_eq!(classify_physical_loci(loci, 4), LocusRel::Distal);
+    }
+
+    #[test]
+    fn locus_rel_tandem_array_after_demirror() {
+        // Three physical loci <1 Mb apart (each a mirror pair) → Tandem.
+        let loci = vec![
+            ("chrY", 1000, 12000), ("chrY", 1100, 12100),
+            ("chrY", 210000, 221000), ("chrY", 210100, 221100),
+            ("chrY", 410000, 421000), ("chrY", 410100, 421100),
+        ];
+        assert_eq!(classify_physical_loci(loci, 6), LocusRel::Tandem);
+    }
+
+    #[test]
+    fn locus_rel_same_locus_inverted_pair_stays_overlapping() {
+        // A genuine same-locus inverted pair (DAZ1-/DAZ3+): one physical locus, 2 bundles.
+        let loci = vec![("chrY", 5_000_000, 5_020_000), ("chrY", 5_000_050, 5_020_050)];
+        assert_eq!(classify_physical_loci(loci, 2), LocusRel::Overlapping);
+    }
+
+    #[test]
+    fn locus_rel_trans_and_single() {
+        assert_eq!(classify_physical_loci(vec![("chr1", 100, 200), ("chr2", 100, 200)], 2), LocusRel::Trans);
+        assert_eq!(classify_physical_loci(vec![("chr1", 100, 200)], 1), LocusRel::Single);
+        assert_eq!(classify_physical_loci(vec![], 0), LocusRel::Single);
     }
 
     #[test]
