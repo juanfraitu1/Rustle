@@ -200,6 +200,11 @@ pub fn write_gtf<W: Write>(
                 tx_attrs.push_str(" low_confidence \"true\";");
             }
         }
+        // O5/tandem provenance flag (--vg only; spec 2026-06-02). VG-only so
+        // non-VG GTF is byte-identical.
+        if tx.tandem_copy == Some(true) {
+            tx_attrs.push_str(" tandem_copy \"true\";");
+        }
         // Jointly-feasible lower bound on abundance (coverage * capacity_confidence).
         if let Some(amin) = tx.abundance_min {
             tx_attrs.push_str(&format!(" abundance_min \"{:.3}\";", amin));
@@ -333,6 +338,28 @@ mod tests {
         let out_hi = render(hi);
         assert!(!out_hi.contains("low_confidence"),
             "high cc must NOT emit low_confidence tag:\n{out_hi}");
+    }
+
+    #[test]
+    fn tandem_copy_attr_emitted_when_some_true() {
+        let mut tx = one_exon_tx();
+        tx.vg_copy_id = Some(0);
+        tx.tandem_copy = Some(true);
+        let out = render(tx);
+        assert!(out.contains("tandem_copy \"true\";"), "missing tandem_copy in:\n{out}");
+    }
+
+    #[test]
+    fn tandem_copy_attr_absent_otherwise() {
+        // None -> absent
+        let tx = one_exon_tx();
+        let out = render(tx);
+        assert!(!out.contains("tandem_copy"), "tandem_copy must not appear when None:\n{out}");
+        // Some(false) -> absent
+        let mut tx2 = one_exon_tx();
+        tx2.tandem_copy = Some(false);
+        let out2 = render(tx2);
+        assert!(!out2.contains("tandem_copy"), "tandem_copy must not appear when Some(false):\n{out2}");
     }
 
     #[test]
