@@ -44,6 +44,11 @@ mod tests {
         assert_eq!(c[1].0.len(), 2);
         assert_eq!(c[0].1, (1000, 14500));
         assert_eq!(c[1].1, (37000, 50200));
+        // Primary contract: returned indices must map back to the original input
+        // slots so callers can recover per-read metadata. A sort permutation that
+        // re-ordered indices incorrectly would break all callers silently.
+        assert_eq!(c[0].0, vec![0, 1], "first cluster must contain original indices 0 and 1");
+        assert_eq!(c[1].0, vec![2, 3], "second cluster must contain original indices 2 and 3");
     }
 
     #[test]
