@@ -65,11 +65,11 @@ use crate::types::Bundle;
 use crate::genome::GenomeIndex;
 
 /// A tandem array detected inside one bundle: the per-copy genomic spans
-/// (genomic-ascending) and, for each copy, the read indices (into `bundle.reads`)
-/// that fall in that copy's span.
+/// (genomic-ascending). Read→copy assignment is done downstream by
+/// `decompose_tandem_to_family` (by start-in-span over ALL alignments), not
+/// here — detection only resolves the copy *loci*.
 pub struct TandemDecomposition {
     pub copy_spans: Vec<(u64, u64)>,
-    pub copy_read_idxs: Vec<Vec<usize>>,
 }
 
 /// Detect whether `bundle` is a collapsed tandem array. Requires ≥2 position
@@ -84,10 +84,19 @@ pub fn detect_tandem_bundle(
     if !cfg.enabled {
         return None;
     }
-    // Read footprints = (ref_start, ref_end) per read.
+    // Cluster PRIMARY read footprints only. Secondary / chimeric alignments of
+    // near-identical tandem copies BRIDGE the copies — single alignments span
+    // tens of kb across several copies (e.g. RBMY1: footprints up to 56 kb),
+    // which fills the intergenic gaps and collapses the gap-clustering into one
+    // cluster. A primary alignment is the single best placement per read (one
+    // copy each), so primary footprints cleanly resolve the copy loci.
     let ivs: Vec<(u64, u64)> = bundle.reads.iter()
+        .filter(|r| r.is_primary_alignment)
         .map(|r| (r.ref_start, r.ref_end))
         .collect();
+    if ivs.len() < 2 {
+        return None;
+    }
     let clusters = cluster_reads_by_position(&ivs, cfg.min_gap);
     if clusters.len() < 2 {
         return None;
@@ -116,7 +125,6 @@ pub fn detect_tandem_bundle(
     }
     Some(TandemDecomposition {
         copy_spans: kept.iter().map(|&i| clusters[i].1).collect(),
-        copy_read_idxs: kept.iter().map(|&i| clusters[i].0.clone()).collect(),
     })
 }
 
@@ -162,12 +170,26 @@ pub fn decompose_tandem_to_family(
     let mut name_to_copies: std::collections::HashMap<u64, Vec<(usize, usize)>> =
         std::collections::HashMap::new();
 
-    for (copy_pos, (span, read_idxs)) in
-        decomp.copy_spans.iter().zip(decomp.copy_read_idxs.iter()).enumerate()
-    {
+    // Assign EVERY alignment (primary AND secondary) to the copy whose span
+    // contains its start. A read whose primary lands in one copy and whose
+    // secondary lands in another therefore appears in BOTH sub-bundles (same
+    // `read_name_hash`) → a multimapper the fingerprint-EM apportions. That is
+    // exactly what lets a read-starved copy borrow sibling STRUCTURE (the
+    // secondaries carry the full gene) while the EM keeps its ABUNDANCE honest
+    // (only its own primary reads anchor it). Alignments starting in an
+    // intergenic gap (no containing span) are dropped as noise.
+    let spans = &decomp.copy_spans;
+    let mut per_copy: Vec<Vec<usize>> = vec![Vec::new(); spans.len()];
+    for (ri, r) in parent.reads.iter().enumerate() {
+        if let Some(cp) = spans.iter().position(|&(s, e)| r.ref_start >= s && r.ref_start < e) {
+            per_copy[cp].push(ri);
+        }
+    }
+
+    for (copy_pos, read_idxs) in per_copy.iter().enumerate() {
         let mut sub = parent.clone();
-        sub.start = span.0;
-        sub.end = span.1;
+        sub.start = spans[copy_pos].0;
+        sub.end = spans[copy_pos].1;
         sub.synthetic = true;
         sub.vg_family_id = Some(family_id);
         sub.reads = read_idxs.iter().map(|&i| parent.reads[i].clone()).collect();
@@ -566,10 +588,6 @@ mod tests {
         assert!(result.is_some(), "similar clusters must return Some(TandemDecomposition)");
         let decomp = result.unwrap();
         assert_eq!(decomp.copy_spans.len(), 2, "must report exactly 2 copy spans");
-        assert_eq!(decomp.copy_read_idxs.len(), 2, "must report exactly 2 copy read-index vecs");
-        // Cluster 0: read index 0; cluster 1: read index 1.
-        assert_eq!(decomp.copy_read_idxs[0], vec![0usize]);
-        assert_eq!(decomp.copy_read_idxs[1], vec![1usize]);
         // copy_spans must cover the respective cluster genomic spans.
         assert_eq!(decomp.copy_spans[0], (0, 100));
         assert_eq!(decomp.copy_spans[1], (5200, 5300));
@@ -621,13 +639,9 @@ mod tests {
             "the dissimilar cluster must be dropped; expected 2 spans, got {:?}",
             decomp.copy_spans
         );
-        assert_eq!(decomp.copy_read_idxs.len(), 2);
         // The kept spans must be the two similar ones (cluster 0 and cluster 1).
         assert_eq!(decomp.copy_spans[0], (0, 100), "first kept span must be cluster 0");
         assert_eq!(decomp.copy_spans[1], (5200, 5300), "second kept span must be cluster 1");
-        // Each kept cluster contributed exactly one read.
-        assert_eq!(decomp.copy_read_idxs[0], vec![0usize]);
-        assert_eq!(decomp.copy_read_idxs[1], vec![1usize]);
     }
 
     // ── decompose_tandem_to_family tests ─────────────────────────────────────
@@ -674,7 +688,6 @@ mod tests {
         let parent = make_bundle_two_copies();
         let decomp = TandemDecomposition {
             copy_spans: vec![(1000, 14000), (37000, 50000)],
-            copy_read_idxs: vec![vec![0, 1], vec![2, 3]],
         };
         let mut bundles: Vec<crate::types::Bundle> = Vec::new();
         let cfg = crate::types::RunConfig::default();
@@ -742,7 +755,6 @@ mod tests {
         let parent = make_bundle_two_copies();
         let decomp = TandemDecomposition {
             copy_spans: vec![(1000, 14000), (37000, 50000)],
-            copy_read_idxs: vec![vec![0, 1], vec![2, 3]],
         };
         // Pre-populate with 3 sentinel bundles so initial len = 3.
         let sentinel = make_empty_bundle();
@@ -790,7 +802,6 @@ mod tests {
 
         let decomp = TandemDecomposition {
             copy_spans: vec![(1000, 14000), (37000, 50000)],
-            copy_read_idxs: vec![vec![0, 1], vec![2, 3]],
         };
         let mut bundles: Vec<crate::types::Bundle> = Vec::new();
         let cfg = crate::types::RunConfig::default();

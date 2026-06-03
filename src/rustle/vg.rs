@@ -5185,6 +5185,7 @@ pub fn write_family_report_with_em(
                     | Some(RescueClass::NeedsExternalVerification)
                     | Some(RescueClass::ChimericSuffixRescue)
                     | Some(RescueClass::TopologyBorrow)
+                    | Some(RescueClass::TandemCopy)
                     | None => {}
                 }
             }

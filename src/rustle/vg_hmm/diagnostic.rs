@@ -56,6 +56,12 @@ pub enum RescueClass {
     /// copy via ExonClass coordinate projection. Exon structure is known but
     /// direct read evidence at this copy is insufficient for de novo assembly.
     TopologyBorrow,
+    /// Synthetic per-copy sub-bundle produced by intra-bundle tandem
+    /// decomposition (spec 2026-06-02): a tandem paralog array collapsed into
+    /// one bundle (secondaries bridge the copies), and VG split it into per-copy
+    /// sub-bundles so the family machinery can resolve them. Transcripts from
+    /// these sub-bundles carry the `tandem_copy` provenance flag.
+    TandemCopy,
 }
 
 impl RescueClass {
@@ -71,6 +77,7 @@ impl RescueClass {
             RescueClass::NovelLocusFromScan => "novel_locus_from_scan",
             RescueClass::ChimericSuffixRescue => "chimeric_suffix_rescue",
             RescueClass::TopologyBorrow => "topology_borrow",
+            RescueClass::TandemCopy => "tandem_copy",
         }
     }
 }

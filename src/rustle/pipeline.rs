@@ -10335,6 +10335,59 @@ pub fn run<P: AsRef<Path>>(
             );
             config.vg_candidate_loci = candidate_map;
         }
+
+        // ── O5/tandem: decompose collapsed tandem arrays (spec 2026-06-02) ──
+        // A tandem paralog array (e.g. RBMY1) collapses into ONE bundle because
+        // near-identical secondaries bridge the copies, so the inter-bundle
+        // `discover_family_groups` above never sees a family. This pass runs
+        // AFTER discovery (so there is no double-discovery — discovery already
+        // saw the mega-bundle as a single locus and found nothing), splits each
+        // qualifying mega-bundle into synthetic per-copy sub-bundles, and
+        // appends a directly-built family that bypasses the inter-bundle quality
+        // filter (it is intra-bundle by construction). Opt-in via
+        // RUSTLE_VG_TANDEM (default OFF) — when off this is a no-op and the VG
+        // output is unchanged.
+        let mut families = families;
+        let tandem_cfg = crate::vg_hmm::tandem::TandemConfig::from_env();
+        if tandem_cfg.enabled {
+            if let Some(genome) = vg_genome_for_discovery.as_ref() {
+                // Don't decompose a bundle already claimed by a discovered
+                // (dispersed) family — those are single-copy loci per bundle.
+                let discovered: std::collections::HashSet<usize> = families
+                    .iter().flat_map(|f| f.bundle_indices.iter().copied()).collect();
+                let mut next_fid = families.iter().map(|f| f.family_id + 1).max().unwrap_or(0);
+                let n_orig = bundles.len();
+                for bi in 0..n_orig {
+                    if discovered.contains(&bi) || bundles[bi].reads.is_empty() {
+                        continue;
+                    }
+                    if let Some(decomp) =
+                        crate::vg_hmm::tandem::detect_tandem_bundle(&bundles[bi], genome, tandem_cfg)
+                    {
+                        let parent = bundles[bi].clone();
+                        let (fam, sub_idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+                            &parent, &decomp, &mut bundles, next_fid, &config,
+                        );
+                        for &si in &sub_idxs {
+                            bundles[si].rescue_class =
+                                Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy);
+                        }
+                        // Neutralize the parent mega-bundle so it does not also
+                        // assemble (the sub-bundles carry its reads). Cleared in
+                        // place — NOT removed — so existing bundle indices stay
+                        // valid.
+                        bundles[bi].reads.clear();
+                        bundles[bi].junction_stats = Default::default();
+                        eprintln!(
+                            "[VG-TANDEM] bundle {} ({}:{}-{}) → {} copy sub-bundles",
+                            bi, parent.chrom, parent.start, parent.end, sub_idxs.len()
+                        );
+                        families.push(fam);
+                        next_fid += 1;
+                    }
+                }
+            }
+        }
         (families, raw_family_bundles)
     } else {
         (Vec::new(), crate::types::DetHashSet::default())
@@ -16020,6 +16073,11 @@ pub fn run<P: AsRef<Path>>(
                     if tx.vg_family_id.is_none() {
                         tx.vg_family_id = bundle.vg_family_id;
                     }
+                    // O5/tandem provenance: transcripts from a tandem-decomposed
+                    // per-copy sub-bundle carry the inferred-copy flag (spec 2026-06-02).
+                    if tx.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy) {
+                        tx.tandem_copy = Some(true);
+                    }
                 }
             }
             trace_chain_intron_probe("bundle_before_extend_all_transcripts_pernode", &bundle_txs);
@@ -16477,6 +16535,11 @@ pub fn run<P: AsRef<Path>>(
                 tx.rescue_class = bundle.rescue_class;
                 if tx.vg_family_id.is_none() {
                     tx.vg_family_id = bundle.vg_family_id;
+                }
+                // O5/tandem provenance: transcripts from a tandem-decomposed
+                // per-copy sub-bundle carry the inferred-copy flag (spec 2026-06-02).
+                if tx.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy) {
+                    tx.tandem_copy = Some(true);
                 }
             }
         }
