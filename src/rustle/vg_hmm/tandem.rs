@@ -61,6 +61,29 @@ pub fn cluster_reads_by_position(
     clusters
 }
 
+/// O5/tandem runtime config (env). `enabled` defaults OFF (opt-in prototype).
+#[derive(Debug, Clone, Copy)]
+pub struct TandemConfig {
+    pub enabled: bool,
+    pub min_gap: u64,       // genomic separation to split copies
+    pub min_jaccard: f64,   // cross-copy sequence-similarity floor
+    pub kmer: usize,
+}
+
+impl TandemConfig {
+    pub fn from_env() -> Self {
+        let enabled = std::env::var("RUSTLE_VG_TANDEM")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let min_gap = std::env::var("RUSTLE_VG_TANDEM_MIN_SEP")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(5_000);
+        let min_jaccard = std::env::var("RUSTLE_VG_TANDEM_MIN_JACCARD")
+            .ok().and_then(|v| v.parse().ok())
+            .filter(|f: &f64| *f > 0.0 && *f <= 1.0).unwrap_or(0.20);
+        TandemConfig { enabled, min_gap, min_jaccard, kmer: 15 }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +186,15 @@ mod tests {
     #[test]
     fn empty_input() {
         assert!(cluster_reads_by_position(&[], 5000).is_empty());
+    }
+
+    // ── TandemConfig tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn tandemconfig_defaults_off() {
+        let c = TandemConfig::from_env();
+        assert!(!c.enabled);
+        assert_eq!(c.min_gap, 5_000);
+        assert!((c.min_jaccard - 0.20).abs() < 1e-9);
     }
 }
