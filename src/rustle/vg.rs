@@ -5061,10 +5061,12 @@ pub fn run_fingerprint_em(
                     n_reweighted += 1;
                 }
                 // Persist per-read EM attribution for the downstream capacity-
-                // confidence channel. was_unique reduces to nh<=1 here (all entries
-                // are multimappers). em_anchored mirrors the spec: decisive gap,
-                // OR fingerprint-covered with a moderate gap, OR a unique read.
-                let was_unique = bundles[global_bi].reads[ri].nh <= 1;
+                // confidence channel. Uniqueness MUST come from the read's actual
+                // placement count in this family (entry.locs), NOT BundleRead.nh:
+                // minimap2 emits no NH tag, so nh defaults to 1 and every read would
+                // look "unique" -> em_anchored=true -> capacity_confidence stuck at
+                // 1.000. Every entry here has >=2 placements, so was_unique is false.
+                let was_unique = entry.locs.len() <= 1;
                 bundles[global_bi].reads[ri].em_weight_gap = gap;
                 bundles[global_bi].reads[ri].em_n_sites = entry.n_sites_covered[i] as u32;
                 bundles[global_bi].reads[ri].em_anchored =
@@ -6573,6 +6575,52 @@ mod tests {
             // gate-fired read: gap small, max_sites>0 but gap<=0.5, nh>1 -> not anchored.
             assert!(!r.em_anchored, "gate-fired near-tied read should not be em_anchored");
         }
+    }
+
+    /// REGRESSION (NH-tag bug): minimap2 emits no NH tag, so BundleRead.nh defaults
+    /// to 1. em_anchored must NOT therefore treat an uncertain MULTIMAPPER as
+    /// "unique/anchored" — that defaulted capacity_confidence to 1.000 on every
+    /// minimap2 BAM (incl. the real DAZ run). Uniqueness must come from the read's
+    /// actual placement count, not the absent tag.
+    #[test]
+    fn em_anchored_uses_placement_count_not_absent_nh_tag() {
+        // Identical copies -> 0 diagnostic sites; single-exon read -> junc/NM tie:
+        // the multimapper is genuinely uncertain.
+        let ec = make_ec(
+            0,
+            &[(0, b"ACGTA"), (1, b"ACGTA")],
+            &[(0, (100, 105)), (1, (500, 505))],
+        );
+        let fg = FamilyGraph { family_id: 0, nodes: vec![ec], edges: vec![] };
+        let family_graphs = vec![Some(fg)];
+
+        // nh is left at the make_read default of 1 -> simulates a BAM with NO NH tag.
+        let mut r0 = make_read(vec![(100, 105)], vec![]);
+        r0.read_name_hash = 99; r0.weight = 0.5;
+        let mut r1 = make_read(vec![(100, 105)], vec![]);
+        r1.read_name_hash = 99; r1.weight = 0.5;
+        assert_eq!(r0.nh, 1, "precondition: read looks 'unique' by the absent-NH default");
+
+        let mut bundles = vec![
+            make_bundle("c", '+', vec![r0]),
+            make_bundle("c", '+', vec![r1]),
+        ];
+        let mut multimap: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+        multimap.insert(99, vec![(0, 0), (1, 0)]);
+        let family = FamilyGroup {
+            family_id: 0,
+            bundle_indices: vec![0, 1],
+            multimap_reads: multimap,
+        };
+
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 1);
+
+        // 2-placement multimapper covering 0 diagnostic sites -> uncertain -> must
+        // NOT be counted as anchored, despite nh==1 (no NH tag).
+        assert!(!bundles[0].reads[0].em_anchored,
+            "uncertain multimapper must not be em_anchored when NH tag is absent (nh defaulted to 1)");
+        assert!(!bundles[1].reads[0].em_anchored,
+            "both placements of the uncertain multimapper must be unanchored");
     }
 }
 
