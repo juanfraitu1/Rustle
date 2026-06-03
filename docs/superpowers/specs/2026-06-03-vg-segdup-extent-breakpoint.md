@@ -36,3 +36,15 @@ family discovery), anchored at the gene the family discovered.
 - A synthetic with IDENTICAL shared flanks ≥ ~700 bp trips the genome-based discovery quality
   filter (extra cross-copy k-mers → family dropped); a real segdup's flanks are at gene-level
   identity, not identical, so this is a synthetic-only artifact (real GOLGA8 segdups detect fine).
+
+## UPDATE: hardened + surfaced to GTF (2026-06-03, commit f004e2f)
+From an adversarial perf/hardening audit (4 auditors → filtered; ~10 premature/churn items rejected):
+- HONESTY: flank_homology_extent returns 0 (not phantom window/2) when the anchor window itself
+  fails — bare paralogs now read up=0/down=0 (was 25/25). The reported bp ARE the deliverable.
+- DEFINITION: is_segdup now requires homology on BOTH flanks (up.min(down) ≥ min_each_flank,
+  default 50; RUSTLE_VG_SEGDUP_MIN_EACH) — a true segdup has two breakpoints. Real GOLGA8
+  reclassifies one one-sided family (up=0/down=520) segdup→bare: now **4 segdup / 5 bare**.
+- GTF: the call is surfaced as family_segdup / family_segdup_extent / family_flank_up /
+  family_flank_down attrs (opt-in; default-off byte-identical).
+- DEFERRED (audit agreed): banded re-anchor for flank indels is a FEATURE, not a hardening
+  fix — the offset-lock limitation stays documented; revisit if needed for indel-rich segdups.
