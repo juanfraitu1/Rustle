@@ -183,3 +183,19 @@ The diagnostic (`RUSTLE_VG_TANDEM_TRACE`) settled the cause: in full-chrY input 
 - DAZ GTF **byte-identical** (dispersed, never fires); GGO_19 de-novo **sorted-identical**; isolated RBMY (`tspy.bam`) still recovers c4 (cc 0.220) + c6.
 
 **Promotion status (updated):** the gap is closed — the feature now fires on whole-chromosome input and resolves all real tandem arrays, safely. It is a **strong promotion candidate**. Remaining before flipping default-on: a **precision/recall benchmark against annotation** to confirm the per-copy resolution (e.g. RBMY 54→29) is more *accurate*, not merely more granular (no ground-truth scoring was available in this environment). Until then it stays opt-in, but now genome-wide-functional rather than isolated-bam-only.
+
+## Benchmark harness (2026-06-03)
+
+`bench/tandem_benchmark.sh <reads.bam> <genome.fa> [annotation.gtf] [region.bed] [out_dir]`
+runs `--vg` ± `RUSTLE_VG_TANDEM=1` and reports (a) structural metrics always
+(transcript counts, arrays decomposed, per-copy cc distribution, per-array deltas)
+and (b) transcript-level Sn/Pr vs a supplied annotation (gffcompare `-R -Q`,
+optionally region-restricted to the arrays). This is the harness for the remaining
+promotion gate. `bench/chrY_tandem_arrays.bed` lists the chrY arrays (RBMY/TSPY/
+25.7 Mb). Validated: structural mode on `ggo_Y.bam` (4 arrays, RBMY 54→29);
+accuracy plumbing confirmed (baseline-vs-self Sn/Pr 100.0). **To run the gate:**
+supply an NCBI/RefSeq GTF covering NC_073248.2 as arg 3. **For per-copy
+ATTRIBUTION accuracy** (did each read go to the right copy — the sharper thesis
+metric), a synthetic with per-read source-copy truth is needed; score the EM's
+max-weight placement (via `RUSTLE_VG_FP_ATTR_TSV`) against truth — a complementary
+harness, not yet built.
