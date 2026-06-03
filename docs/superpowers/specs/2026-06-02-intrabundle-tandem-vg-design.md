@@ -117,3 +117,24 @@ c6's 2 reads form a position cluster → a synthetic copy in the family → the 
 - **Phase C (validation):** RBMY + DAZ + de-novo + false-split + genome-wide.
 
 A separate TDD implementation plan follows once this design is approved. In parallel and independent of approval: **correct the RBMY figures** (option 2) so the validation narrative is honest immediately.
+
+## Validation results (2026-06-03, prototype on RBMY1)
+
+Implemented (branch `vg/flow-capacity-apportionment`, opt-in `RUSTLE_VG_TANDEM=1`). Two integration-driven corrections to the T6/T7 design were required and made:
+1. **detect** clusters PRIMARY-only footprints — secondary/chimeric alignments of near-identical copies bridge the copies (RBMY footprints up to 56 kb), collapsing gap-clustering into one. Primaries (one best placement each) resolve the 6 copy loci cleanly.
+2. **decompose** assigns ALL alignments by start-in-span (not a fixed read→cluster map), so a read's primary+secondary across copies becomes a multimapper the EM apportions — borrowed structure, honest abundance.
+
+**Outcome on RBMY1** (`--vg --genome-fasta <chrY> RUSTLE_VG_TANDEM=1`):
+- `[VG-TANDEM] bundle 0 (NC_073248.2:19,558,214-19,739,408) → 6 copy sub-bundles`; discovered as **1 family / 6 copies**, `family_locus_rel "tandem"`. The full FamilyGraph + fingerprint-EM engaged (4354 diag-sites, 110 reads apportioned, decisive=29/moderate=43/uncertain=38) — none of this ran before (0 families on the collapsed mega-bundle).
+- **c6 (LOC129530242) recovered**: 0 transcripts → 1 transcript at 19,720,060-19,730,933, cov 1.7, **capacity_confidence 0.956**, `tandem_copy "true"`, full `family_id/copy_id/copy_independent_support` attribution. This is the headline result.
+- `capacity_confidence` now *varies per copy* (0.08–0.96) — a real EM signal (vs the pre-feature default 1.000 = no apportionment).
+
+**Gates passed:**
+- **De-novo unaffected**: no `--vg` → identical 16 transcripts, zero tandem/family attrs (all changes are `config.vg_mode`-gated; the `tandem_copy` field defaults None and emits only when `Some(true)`).
+- **DAZ unchanged**: `RUSTLE_VG_TANDEM=1` on DAZ fires **0** `VG-TANDEM` (detect returns None — DAZ is dispersed/inverted, 1 cluster per bundle); DAZ still discovers its 1 dispersed family via the normal path.
+
+**Known limitations (honest, for follow-up — NOT blockers):**
+- **c4 (LOC129530238) absorbed into c5.** Baseline: c4=1 tx, c5=6 tx. Tandem: c4=0 tx, c5=6→9 tx. c4's reads (99.8% identical to the dominant 45-read c5, with no decisive copy-specific sites) are apportioned by the EM to c5. This is *arguably correct* (c4 is non-identifiable from c5) but it loses a copy baseline kept, and inflates c5's isoform set (over-enumeration). The fix is in the **EM apportionment** (flow-capacity territory, not the tandem split): preserve a read's PRIMARY-placement weight as anchoring evidence for its own copy, or abstain-don't-merge (emit c4 at low cc rather than vanish). The tandem decomposition *exposes* this EM behavior; it does not cause it.
+- **Mild over-enumeration** (20 vs 16 transcripts) from borrowed sibling structure — same root as c4 absorption; the apportioned-coverage gate should filter copy-absent isoforms more aggressively.
+
+**Remaining validation (not yet run):** full GGO_19 de-novo byte-identical regression (the hard gate — structurally guaranteed but unmeasured here); false-split guard on a single multi-exon gene; genome-wide spillover scan. The feature stays opt-in (`RUSTLE_VG_TANDEM` default OFF) pending these + the c4/over-enum EM refinement.
