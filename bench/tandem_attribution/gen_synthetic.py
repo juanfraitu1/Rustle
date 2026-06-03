@@ -59,7 +59,16 @@ def main():
                     help="copies A,B for recombinants (5' from A, 3' from B), e.g. '0,1'.")
     ap.add_argument("--recomb-exon", type=int, default=2,
                     help="breakpoint exon index: exons [0,K) from copy A, [K,end) from copy B.")
+    ap.add_argument("--invert-copies", type=str, default="",
+                    help="comma-separated copy indices to place as INVERTED duplications "
+                         "(revcomp genomic sequence). Reads from them align to the - strand; "
+                         "tests whether VG discovery links an inverted paralog (e.g. DAZ1-/DAZ3+).")
     a = ap.parse_args()
+    invert_set = set(int(x) for x in a.invert_copies.split(",") if x.strip() != "")
+
+    def revcomp(seq):
+        comp = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+        return [comp[b] for b in reversed(seq)]
     rng = random.Random(a.seed)
     os.makedirs(a.out, exist_ok=True)
 
@@ -126,7 +135,10 @@ def main():
     for c in range(a.copies):
         start = c * SPACING + 1000            # 1000 bp left margin
         copy_starts.append(start)
-        genome[start:start + gene_len] = copies[c]
+        # Inverted copies: place the REVERSE-COMPLEMENT genomic sequence. The gene's mRNA
+        # is unchanged (transcribed from the opposite strand), so its reads align to this
+        # locus on the - strand — the inverted-duplication signature.
+        genome[start:start + gene_len] = revcomp(copies[c]) if c in invert_set else copies[c]
 
     with open(os.path.join(a.out, "genome.fa"), "w") as fh:
         fh.write(f">{chrom}\n")
@@ -142,11 +154,19 @@ def main():
         for c in range(a.copies):
             cs = copy_starts[c]
             tid = f"copy{c}"
+            inverted = c in invert_set
+            strand = '-' if inverted else '+'
             for (es, ee) in exon_ranges:
-                g0 = cs + es + 1  # GTF is 1-based
-                g1 = cs + ee
+                # Inverted copy: exon at forward gene-offset (es,ee) sits at the
+                # revcomp position (gene_len-ee .. gene_len-es) on the - strand.
+                if inverted:
+                    g0 = cs + (gene_len - ee) + 1
+                    g1 = cs + (gene_len - es)
+                else:
+                    g0 = cs + es + 1  # GTF is 1-based
+                    g1 = cs + ee
                 fh.write(
-                    f'{chrom}\tsynth\texon\t{g0}\t{g1}\t.\t+\t.\t'
+                    f'{chrom}\tsynth\texon\t{g0}\t{g1}\t.\t{strand}\t.\t'
                     f'gene_id "{tid}"; transcript_id "{tid}.1";\n'
                 )
 
