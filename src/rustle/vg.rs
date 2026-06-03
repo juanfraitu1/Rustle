@@ -2175,6 +2175,17 @@ pub fn compute_copy_independent_support(
 /// The boost factor is capped at `RUSTLE_VG_BOOST_MAX` (default 10.0) to
 /// avoid extreme weight imbalances.
 ///
+/// ⚠️ PRECISION CHECK (2026-06-03) — DO NOT ENABLE BY DEFAULT. The `primary=0`
+/// path fabricates phantoms. On real GOLGA8 it fired twice on loci with ZERO
+/// genuine primary reads (pure sibling echoes — the DAZ3 pattern); one was inert,
+/// the other amplified 79 secondary echoes 10× into 2 NEW transcripts (RSTL.373)
+/// at cov 229× with capacity_confidence 1.000 — i.e. it manufactures a
+/// MAXIMALLY-confident-looking copy with no read calling that locus home, defeating
+/// the capacity-confidence guard. Net effect vs no-boost: +2 transcripts, +0
+/// reference matches (no sensitivity gain). A primary=0 copy is non-identifiable
+/// from a phantom, so boosting it produces false positives. Kept OFF by default;
+/// see docs/superpowers/specs/2026-06-03-vg-underuse-audit.md.
+///
 /// Tuning env vars:
 ///   RUSTLE_VG_BOOST_PRIMARY_THR  — upper bound (default 5)
 ///   RUSTLE_VG_BOOST_PRIMARY_MIN  — lower bound, inclusive (default 3)

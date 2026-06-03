@@ -356,3 +356,34 @@ depth-copynum (#3, tracks structural count, expression-confounded) are bounded b
 identifiability limit; #2 is the one that pays off precisely because it reports that limit
 rather than trying to beat it. Audit levers status: #1 TOPO_BORROW resolved/retired, #2
 SHIPPED (value), #3 shipped (diagnostic), #4 FAMILY_BOOST still gated on the DAZ3 precision check.
+
+## Lever #4 PRECISION CHECK: FAMILY_BOOST fabricates — keep OFF (2026-06-03)
+
+Ran the never-run precision check the audit demanded before enabling `RUSTLE_VG_FAMILY_BOOST`.
+Verdict: **it fabricates phantoms; do not enable.**
+
+**Controlled synthetic (phantom copy = 0 genuine reads, sibling echoes only):**
+- Built copy0 (40 reads, real) + copy1 (0 reads, phantom) at 99–99.9% identity → copy1 is
+  primary=0 with 40 secondary echoes (the DAZ3 pattern).
+- The base VG path already fabricates a copy1 transcript at every identity (independent of
+  boost). The `primary=0` boost path did NOT fire here — the `min_em_weight ≥ 3.0` gate plus
+  the EM's pileup/primary-asymmetry apportionment kept copy1's weight below threshold. So the
+  gate sometimes protects.
+
+**Real GOLGA8 (the decision-relevant test):**
+- no-boost: 3142 tx, 12 ref matches. boost: 3144 tx, **still 12 matches** → **+2 tx, +0
+  sensitivity**.
+- The `primary=0` path fired **twice**, both on loci with **0 genuine primary reads**:
+  - `85.69M` (180 bp): boost 6×, produced nothing (inert).
+  - `33.24M` (~24 kb): **42.45 mm_em_weight, boost 10×** → 2 NEW transcripts (RSTL.373.1/.2)
+    that exist ONLY with boost, at a locus with **0 primary reads / 79 secondary echoes / no
+    reference gene**. The boost inflated them to **cov 229× with capacity_confidence 1.000** —
+    manufacturing a *maximally-confident-looking* copy that no read calls home, defeating the
+    capacity-confidence phantom guard.
+
+**Conclusion.** A `primary=0` copy is, by construction, non-identifiable from a phantom (the
+DAZ3 lesson). FAMILY_BOOST's `primary=0` path turns such echoes into high-confidence false
+positives with no sensitivity benefit — the "+N transcripts" headline is a raw count of
+fabricated phantom-pattern copies, never validated recoveries. **Keep default OFF.** Added a
+⚠️ warning to `apply_family_primary_boosts`. Audit levers FINAL: #1 retired, #2 SHIPPED
+(value), #3 shipped (diagnostic), **#4 validated-and-rejected** (fabrication).
