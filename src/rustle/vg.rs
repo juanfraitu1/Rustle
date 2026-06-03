@@ -3716,13 +3716,35 @@ pub fn score_read_exon_fingerprint(
 ) -> (Vec<f64>, usize) {
     use std::sync::OnceLock;
     static LOG_PROBS: OnceLock<(f64, f64)> = OnceLock::new();
-    let (log_match, log_mismatch) = *LOG_PROBS.get_or_init(|| {
-        let p_match: f64 = std::env::var("RUSTLE_VG_FP_MATCH")
-            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.90);
-        let p_mm: f64 = std::env::var("RUSTLE_VG_FP_MISMATCH")
+    static ERROR_AWARE: OnceLock<(bool, f64, f64)> = OnceLock::new();
+    let (ea, ea_lo, ea_hi) = *ERROR_AWARE.get_or_init(|| {
+        let on = std::env::var_os("RUSTLE_VG_FP_ERROR_AWARE").is_some();
+        let lo: f64 = std::env::var("RUSTLE_VG_FP_ERR_FLOOR")
+            .ok().and_then(|v| v.parse().ok()).unwrap_or(0.01);
+        let hi: f64 = std::env::var("RUSTLE_VG_FP_ERR_CAP")
             .ok().and_then(|v| v.parse().ok()).unwrap_or(0.10);
-        (p_match.ln(), p_mm.ln())
+        (on, lo, hi)
     });
+    let (log_match, log_mismatch) = if ea {
+        // Error-aware (opt-in): the mismatch probability at a diagnostic base IS the
+        // read's own per-base error rate (the `de` tag) — clamped to [floor, cap].
+        // The fixed-0.10 default is deliberately conservative (≈9:1 per site) to
+        // avoid single-base overconfidence; but for genuinely low-error IsoSeq reads
+        // that UNDER-trusts real signal. Using the actual error rate sharpens clean
+        // reads (≈99:1) and discounts noisy ones, improving attribution. The single-
+        // site overconfidence this could reintroduce is handled separately by the
+        // min-decisive-sites gate.
+        let p_mm = read.de.map(|d| (d as f64).clamp(ea_lo, ea_hi)).unwrap_or(ea_hi);
+        ((1.0 - p_mm).ln(), p_mm.ln())
+    } else {
+        *LOG_PROBS.get_or_init(|| {
+            let p_match: f64 = std::env::var("RUSTLE_VG_FP_MATCH")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.90);
+            let p_mm: f64 = std::env::var("RUSTLE_VG_FP_MISMATCH")
+                .ok().and_then(|v| v.parse().ok()).unwrap_or(0.10);
+            (p_match.ln(), p_mm.ln())
+        })
+    };
 
     let mut scores = vec![0.0f64; fp.n_copies];
     let mut n_covered = 0usize;
