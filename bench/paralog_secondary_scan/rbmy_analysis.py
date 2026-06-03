@@ -2,6 +2,14 @@
 """Standalone analysis of RBMY1, a 6-copy testis-specific Y ampliconic gene family
 (NC_073248.2:19.60-19.73 Mb), used to validate copy-level read assignment.
 
+⚠️ CORRECTION (2026-06-03): the `capacity_confidence 1.000` this figure shows is
+the DEFAULT (no VG apportionment), NOT a VG result — RBMY collapses to one bundle
+so VG discovers 0 families and never resolves the copies; the per-copy genes are
+ordinary position-based assembly. RBMY is genuinely VG-resolved only with the
+intra-bundle tandem feature (RUSTLE_VG_TANDEM=1), which yields REAL per-copy
+confidence (c6=0.956, c4=0.220, …). See rbmy_analysis.md for the full correction.
+This script must be regenerated from a RUSTLE_VG_TANDEM=1 run before it is cited.
+
 Reads multi-map heavily across the near-identical copies (599 alignments / 87
 reads), yet they resolve: 5/6 copies are assembled, each anchored
 (capacity_confidence 1.000), reads distributing across the array. So the method

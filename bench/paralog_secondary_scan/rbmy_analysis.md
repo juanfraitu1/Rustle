@@ -41,25 +41,55 @@ outlier at ~93–96%. A genuine identity gradient, as expected for a young ampli
 | c5 LOC241 | 45 | 6 | 38.0 | 1.000 |
 | c6 LOC242 | 2 | 0 | 0.0 | — (below threshold) |
 
-**5 of 6 copies are assembled, each anchored (`capacity_confidence 1.000`).** The
-6th (c6) has only 2 reads — below the assembly threshold, not a mis-assignment.
+**5 of 6 copies are assembled.** The 6th (c6) has only 2 reads.
 
-## What it validates
+> ## ⚠️ CORRECTION (2026-06-03) — read before citing this
+>
+> The original framing below ("5/6 copies, each anchored `capacity_confidence
+> 1.000`, the method resolves RBMY") was **wrong**, and the error is instructive.
+>
+> **`capacity_confidence 1.000` here is the DEFAULT, not a VG result.** It is the
+> value emitted when no multimappers were apportioned — i.e. when VG copy-
+> resolution **never ran**. Tracing it (2026-06-03): RBMY's 6 copies are ~23 kb
+> apart, and the near-identical secondaries bridge them, so the whole array
+> **collapses into ONE bundle**. VG family discovery is *inter-bundle* — it needs
+> ≥2 separate bundles sharing reads — so it finds **0 families** for RBMY and the
+> EM/apportionment never engages. The 5 per-copy genes were carved out by
+> **ordinary position-based assembly**, not VG. So this figure did **not**
+> validate copy-assignment; it showed default values. (Contrast DAZ, two distant
+> *dispersed* loci → 2 bundles → 179 cross-bundle links → genuinely VG-resolved.)
+>
+> **What actually resolves RBMY** is the intra-bundle **tandem decomposition**
+> (`RUSTLE_VG_TANDEM=1`, spec `docs/superpowers/specs/2026-06-02-intrabundle-tandem-vg-design.md`):
+> it splits the collapsed mega-bundle into per-copy sub-bundles and runs the
+> family graph + fingerprint-EM. On the isolated array this resolves **all 6
+> copies** with *real* per-copy `capacity_confidence` reflecting each copy's
+> evidence — c6 = **0.956** (the outlier, most distinguishable; recovered from 0
+> transcripts), c4 = **0.220** (a core copy 99.8 %-identical to its dominant
+> sibling; emitted at low confidence, honest abstain-in-place). That is genuine
+> VG resolution — and the per-copy confidence *is* the scientific result.
+>
+> **Caveat (do not overstate):** the tandem feature is **opt-in** and currently
+> fires only when the array collapses to a bundle not already swept into a
+> (cross-mapping) family — i.e. on isolated/region bams. In a full-chromosome run
+> RBMY's bundles get mis-assigned to an unrelated family and the pass skips them,
+> so the 6-copy resolution above is from the RBMY-region bam, not yet a whole-
+> genome result. The honest claim is: *VG can resolve a tandem testis array into
+> per-copy isoforms with calibrated confidence; productionizing it for whole-
+> genome input is in progress.*
 
-1. **No collapse.** A multi-copy testis family is recovered *as* multi-copy —
-   reads spread across the array (8/10/14/7/45/2) rather than piling on one copy.
-   So the method is not systematically mis-assigning everything to a single copy.
+## What this validates (corrected)
 
-2. **Resolution tracks identity, not the tool.** The RBMY core is ~99.8% identical
-   and still resolves (the copies have enough copy-specific positions). Only a
-   *near-perfect* duplicate — DAZ1/DAZ3 at 99.97%, ~10× closer — becomes
-   genuinely non-identifiable, and there the tool **flags** the unanchored copy
-   (`low_confidence`) instead of guessing.
+1. **The identifiability spectrum is real and the confidence tracks it.** With
+   tandem mode, the 6 RBMY copies resolve at confidences that scale with their
+   distinguishability: the divergent c6 (0.956) cleanly, the near-identical core
+   copies lower (c4 = 0.220), and a *near-perfect* inverted duplicate (DAZ1/DAZ3
+   at 99.97 %) stays non-identifiable and is flagged rather than guessed.
+2. **No fabrication.** A copy is recovered only with its own observed reads;
+   contested evidence yields *low* confidence, never a confident false call (the
+   DAZ3 discipline).
+3. **Biologically consistent.** RBMY is testis-specific; per-copy expression
+   across the array is the expected result in a testis sample.
 
-3. **Biologically consistent.** RBMY is testis-specific; recovering 5/6 copies as
-   expressed in a testis sample is the expected result. Combined with DAZL
-   (cov 442) and DAZ1 (cov ~36), the Y/germ-cell gene families are clearly
-   expressed and correctly assigned here.
-
-Figure: `rbmy_analysis.png`. Data: `/tmp/rbmy/` (per-copy stats, identity matrix,
-VG attribution).
+Figure: `rbmy_analysis.png` (**stale — shows the pre-correction default values;
+regenerate from a `RUSTLE_VG_TANDEM=1` run**). Data: `/tmp/rbmy/`.

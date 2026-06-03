@@ -2,6 +2,13 @@
 """Validation that copy-assignment is correct, on a known testis Y-ampliconic
 family: RBMY1 (6-copy tandem array on chrY). Contrast with the DAZ1/DAZ3 case.
 
+⚠️ CORRECTION (2026-06-03): the RBMY `capacity_confidence 1.000` shown here is the
+DEFAULT (no VG apportionment ran) — RBMY collapses to one bundle, VG finds 0
+families, and the copies are resolved by ordinary assembly, not VG. Genuine VG
+copy-resolution of RBMY needs the intra-bundle tandem feature (RUSTLE_VG_TANDEM=1)
+→ real per-copy cc (c6=0.956, c4=0.220). The DAZ panel (dispersed, genuinely
+VG-resolved) stands. See rbmy_analysis.md. Regenerate before citing.
+
 RBMY copies are 95.8-99.8% identical -> reads are distinguishable -> the method
 recovers 5/6 copies as expressed, reads distributing across the array. DAZ1/DAZ3
 are 99.97% identical (inverted near-perfect duplicate) -> reads non-identifiable
