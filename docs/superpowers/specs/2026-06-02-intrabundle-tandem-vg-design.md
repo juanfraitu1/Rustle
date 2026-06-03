@@ -169,3 +169,17 @@ Net RBMY1 result with `RUSTLE_VG_TANDEM=1`: the collapsed mega-bundle is resolve
 Rationale: the promotion criterion "on a real multi-copy benchmark, adds recovered real copies without adding FPs" is **not met** — on whole-chromosome input the feature doesn't fire (sensitivity gap), and on isolated bams it works but that is not the production path. Promoting now would ship a default-on feature that is inert (or worse, interacts with mis-familying) on real input. It is **safe** (spillover-clean), so shipping it opt-in is correct: it is a validated capability for isolated-array analysis and a research result (per-copy confidence on a tandem testis array), not yet a whole-genome default.
 
 **Path to promotion (future work):** make the tandem pre-pass fire on bundles whose family assignment is a *cross-mapping artifact* (e.g. low within-family junction/sequence concordance, or a bundle that itself spans ≥2 sequence-similar position clusters) rather than blanket-skipping any discovered-family bundle — so RBMY-in-full-genome (mis-familied into FAM_16) is still decomposed. Re-run this spillover scan + a real multi-copy benchmark after that fix; promote only if it then adds real copies without FPs.
+
+## Sensitivity gap CLOSED (2026-06-03, commit 8554608)
+
+The diagnostic (`RUSTLE_VG_TANDEM_TRACE`) settled the cause: in full-chrY input RBMY is a single mega-bundle (`bundle 179`, 19,558,214–19,739,408, 530 reads) that `detect_tandem_bundle` correctly fires on (**6 copy spans**) but the pre-pass **skipped** because `in_discovered_family=true`. All **4** chrY ampliconic arrays were detected-but-skipped (RBMY=6, TSPY≈34.7 Mb=5+5, 25.7 Mb=2) — none decomposed.
+
+**Fix:** run detection on EVERY non-empty bundle (drop the blanket discovered-family skip). `detect_tandem_bundle` returns `None` for a genuine dispersed-family member (single position cluster), so this only adds REAL collapsed arrays; dispersed families (DAZ) are untouched. A mis-claimed bundle is neutralized (NOT removed from its family — that would shift the family's `multimap_reads` position indices), so its stale family slot emits nothing and the array's sub-bundles form their own tandem family.
+
+**Validated (chrY `ggo_Y.bam`, all gates pass):**
+- All 4 ampliconic arrays now decompose; RBMY resolves with **real per-copy capacity_confidence** (0.068–0.435; c4 region = 0.220), 41 tandem-copy transcripts (19 honestly flagged cc<0.5), vs the prior all-`copy_id 3`/`cc 1.000` default.
+- **No false splits** — exactly the 4 known ampliconic arrays fired, nothing else.
+- Change is **array-localized**: RBMY 54→29 transcripts (mega-bundle jumble → cleaner per-copy), TSPY count unchanged. Non-array regions differ only within `--vg`'s own run-to-run nondeterminism (two baseline `--vg` runs already differ; count stable 227=227) — no real side-effect.
+- DAZ GTF **byte-identical** (dispersed, never fires); GGO_19 de-novo **sorted-identical**; isolated RBMY (`tspy.bam`) still recovers c4 (cc 0.220) + c6.
+
+**Promotion status (updated):** the gap is closed — the feature now fires on whole-chromosome input and resolves all real tandem arrays, safely. It is a **strong promotion candidate**. Remaining before flipping default-on: a **precision/recall benchmark against annotation** to confirm the per-copy resolution (e.g. RBMY 54→29) is more *accurate*, not merely more granular (no ground-truth scoring was available in this environment). Until then it stays opt-in, but now genome-wide-functional rather than isolated-bam-only.
