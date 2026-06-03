@@ -143,6 +143,50 @@ impl TandemConfig {
     }
 }
 
+use crate::vg::FamilyGroup;
+
+/// Turn a detection into synthetic per-copy sub-bundles (appended to `bundles`)
+/// + a `FamilyGroup` linking them. Each sub-bundle = the parent cloned, with
+/// `reads` restricted to that copy's reads, span set to the copy span, and
+/// `synthetic=true`. `multimap_reads` links reads whose name appears in >1 copy
+/// (the secondaries that caused the collapse — now cross-copy evidence).
+pub fn decompose_tandem_to_family(
+    parent: &Bundle,
+    decomp: &TandemDecomposition,
+    bundles: &mut Vec<Bundle>,
+    family_id: usize,
+    config: &crate::types::RunConfig,
+) -> (FamilyGroup, Vec<usize>) {
+    let mut bundle_indices = Vec::new();
+    // Track read_name_hash -> Vec<(copy_pos, read_idx_in_subbundle)> for multimap.
+    let mut name_to_copies: std::collections::HashMap<u64, Vec<(usize, usize)>> =
+        std::collections::HashMap::new();
+
+    for (copy_pos, (span, read_idxs)) in
+        decomp.copy_spans.iter().zip(decomp.copy_read_idxs.iter()).enumerate()
+    {
+        let mut sub = parent.clone();
+        sub.start = span.0;
+        sub.end = span.1;
+        sub.synthetic = true;
+        sub.vg_family_id = Some(family_id);
+        sub.reads = read_idxs.iter().map(|&i| parent.reads[i].clone()).collect();
+        for (ri, r) in sub.reads.iter().enumerate() {
+            name_to_copies.entry(r.read_name_hash).or_default().push((copy_pos, ri));
+        }
+        crate::bundle::recompute_junction_stats(&mut sub, config);
+        bundle_indices.push(bundles.len());
+        bundles.push(sub);
+    }
+
+    // A read shared across ≥2 copies is a multimapper for the EM.
+    let multimap_reads: std::collections::HashMap<u64, Vec<(usize, usize)>> =
+        name_to_copies.into_iter().filter(|(_, v)| v.len() > 1).collect();
+
+    (FamilyGroup { family_id, bundle_indices: bundle_indices.clone(), multimap_reads },
+     bundle_indices)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,5 +628,95 @@ mod tests {
         // Each kept cluster contributed exactly one read.
         assert_eq!(decomp.copy_read_idxs[0], vec![0usize]);
         assert_eq!(decomp.copy_read_idxs[1], vec![1usize]);
+    }
+
+    // ── decompose_tandem_to_family tests ─────────────────────────────────────
+
+    /// Build a parent bundle with 4 reads: reads 0,1 at copy-0 locus (1000–14000)
+    /// and reads 2,3 at copy-1 locus (37000–50000). All reads have distinct
+    /// read_name_hash values so none are cross-copy multimappers.
+    fn make_bundle_two_copies() -> crate::types::Bundle {
+        use std::sync::Arc;
+        let mut b = make_empty_bundle();
+        b.reads = vec![
+            {
+                let mut r = make_read(1000, 14000);
+                r.read_name_hash = 1001;
+                r.read_name = Arc::from("r1001");
+                r
+            },
+            {
+                let mut r = make_read(1500, 14500);
+                r.read_name_hash = 1002;
+                r.read_name = Arc::from("r1002");
+                r
+            },
+            {
+                let mut r = make_read(37000, 50000);
+                r.read_name_hash = 1003;
+                r.read_name = Arc::from("r1003");
+                r
+            },
+            {
+                let mut r = make_read(37200, 50200);
+                r.read_name_hash = 1004;
+                r.read_name = Arc::from("r1004");
+                r
+            },
+        ];
+        b.start = 1000;
+        b.end = 50200;
+        b
+    }
+
+    #[test]
+    fn decompose_builds_one_subbundle_per_copy() {
+        let parent = make_bundle_two_copies();
+        let decomp = TandemDecomposition {
+            copy_spans: vec![(1000, 14000), (37000, 50000)],
+            copy_read_idxs: vec![vec![0, 1], vec![2, 3]],
+        };
+        let mut bundles: Vec<crate::types::Bundle> = Vec::new();
+        let cfg = crate::types::RunConfig::default();
+        let (fam, idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+            &parent, &decomp, &mut bundles, 0, &cfg,
+        );
+        assert_eq!(idxs.len(), 2, "two copies → two bundle indices");
+        assert_eq!(bundles.len(), 2, "two sub-bundles appended");
+        assert_eq!(bundles[0].reads.len(), 2, "copy-0 sub-bundle has 2 reads");
+        assert_eq!(bundles[1].reads.len(), 2, "copy-1 sub-bundle has 2 reads");
+        assert!(bundles[0].synthetic, "copy-0 sub-bundle must be synthetic");
+        assert!(bundles[1].synthetic, "copy-1 sub-bundle must be synthetic");
+        assert_eq!(bundles[0].start, 1000);
+        assert_eq!(bundles[0].end, 14000);
+        assert_eq!(bundles[1].start, 37000);
+        assert_eq!(bundles[1].end, 50000);
+        assert_eq!(fam.bundle_indices, idxs, "FamilyGroup.bundle_indices matches returned idxs");
+        assert_eq!(fam.family_id, 0);
+        // No shared read_name_hash → multimap_reads must be empty.
+        assert!(fam.multimap_reads.is_empty(), "no cross-copy reads → multimap_reads empty");
+    }
+
+    #[test]
+    fn decompose_detects_multimap_reads() {
+        // Read at index 0 (copy-0) and index 2 (copy-1) share the same
+        // read_name_hash (simulating a secondary alignment spanning both loci).
+        let mut parent = make_bundle_two_copies();
+        let shared_hash = 9999u64;
+        parent.reads[0].read_name_hash = shared_hash;
+        parent.reads[2].read_name_hash = shared_hash;
+
+        let decomp = TandemDecomposition {
+            copy_spans: vec![(1000, 14000), (37000, 50000)],
+            copy_read_idxs: vec![vec![0, 1], vec![2, 3]],
+        };
+        let mut bundles: Vec<crate::types::Bundle> = Vec::new();
+        let cfg = crate::types::RunConfig::default();
+        let (fam, _idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+            &parent, &decomp, &mut bundles, 42, &cfg,
+        );
+        assert_eq!(fam.multimap_reads.len(), 1, "one shared hash → one multimap entry");
+        let placements = fam.multimap_reads.get(&shared_hash).unwrap();
+        assert_eq!(placements.len(), 2, "shared read has placements in 2 copies");
     }
 }
