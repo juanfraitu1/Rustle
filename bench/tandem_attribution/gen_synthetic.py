@@ -85,6 +85,15 @@ def main():
         off += l
     # flat list of exonic genomic positions (within the gene)
     exonic_positions = [pos for (s, e) in exon_ranges for pos in range(s, e)]
+    # Intron ranges (between consecutive exons) + plant canonical GT...AG splice
+    # motifs at every intron boundary. Without them minimap2 places splices ±1 bp
+    # on random sequence, so assembled exon boundaries miss the truth GTF and
+    # gffcompare scores 0. (Real genomes have canonical sites; this matches that.)
+    intron_ranges = [(exon_ranges[i][1], exon_ranges[i + 1][0])
+                     for i in range(len(exon_ranges) - 1)]
+    for (istart, iend) in intron_ranges:
+        ancestor[istart], ancestor[istart + 1] = 'G', 'T'   # donor
+        ancestor[iend - 2], ancestor[iend - 1] = 'A', 'G'   # acceptor
 
     # Make N copies: each is the ancestor with its OWN exonic mutations.
     copies = []
@@ -116,6 +125,22 @@ def main():
         s = "".join(genome)
         for i in range(0, len(s), 70):
             fh.write(s[i:i+70] + "\n")
+
+    # Truth GTF: one full-length transcript per copy (the per-copy isoform), at
+    # genomic coords. This is the ground truth for the annotation harness
+    # (bench/tandem_benchmark.sh) — lets it score transcript-level Sn/Pr of VG
+    # copy resolution on the synthetic, no external annotation needed.
+    with open(os.path.join(a.out, "truth.gtf"), "w") as fh:
+        for c in range(a.copies):
+            cs = copy_starts[c]
+            tid = f"copy{c}"
+            for (es, ee) in exon_ranges:
+                g0 = cs + es + 1  # GTF is 1-based
+                g1 = cs + ee
+                fh.write(
+                    f'{chrom}\tsynth\texon\t{g0}\t{g1}\t.\t+\t.\t'
+                    f'gene_id "{tid}"; transcript_id "{tid}.1";\n'
+                )
 
     # Reads: spliced mRNA from each copy (exons concatenated), with errors.
     def spliced_mrna(copy_seq):
