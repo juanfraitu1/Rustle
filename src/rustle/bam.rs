@@ -867,6 +867,47 @@ pub fn open_bam<P: AsRef<Path>>(
     Ok(reader)
 }
 
+/// Reference contigs that have >=1 mapped read in `bam_path`, read cheaply from
+/// the `.bai` index (no BAM scan). Used to scope the genome FASTA for --vg so a
+/// region-slice BAM (whose header still lists every chromosome) doesn't trigger a
+/// full-genome load. Returns `None` if the index is missing or unreadable, in
+/// which case the caller loads the whole genome (current behavior).
+pub fn mapped_contigs<P: AsRef<Path>>(bam_path: P) -> Option<std::collections::HashSet<String>> {
+    use noodles_csi::binning_index::ReferenceSequence as _; // brings metadata() into scope
+    let p = bam_path.as_ref();
+    let bai = {
+        let mut s = p.as_os_str().to_os_string();
+        s.push(".bai");
+        let direct = std::path::PathBuf::from(s);
+        if direct.exists() {
+            direct
+        } else {
+            p.with_extension("bai")
+        }
+    };
+    if !bai.exists() {
+        return None;
+    }
+    let index = noodles_bam::bai::read(&bai).ok()?;
+    let mut reader = open_bam(p, 1).ok()?;
+    let header = reader.read_header().ok()?;
+    let refs = header.reference_sequences();
+    let mut wanted: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (i, rs) in index.reference_sequences().iter().enumerate() {
+        let mapped: u64 = rs.metadata().map(|m| m.mapped_record_count()).unwrap_or(0);
+        if mapped > 0 {
+            if let Some((name, _)) = refs.get_index(i) {
+                wanted.insert(format!("{}", name));
+            }
+        }
+    }
+    if wanted.is_empty() {
+        None
+    } else {
+        Some(wanted)
+    }
+}
+
 /// Decode a noodles BAM 4-bit-encoded sequence to ASCII bytes.
 fn decode_bam_sequence(seq_obj: &noodles_bam::record::Sequence) -> Vec<u8> {
     let raw = seq_obj.as_ref();

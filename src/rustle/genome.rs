@@ -3,7 +3,7 @@
 use crate::types::DetHashMap as HashMap;
 use anyhow::{Context, Result};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 
 #[derive(Debug, Clone, Default)]
 pub struct GenomeIndex {
@@ -38,6 +38,67 @@ impl GenomeIndex {
                         .map(|c| c.to_ascii_uppercase()),
                 );
             }
+        }
+        Ok(Self { seqs })
+    }
+
+    /// Load ONLY the named contigs, seeking to each via the FASTA `.fai` index so
+    /// the rest of the (possibly multi-GB) genome is never read. This is the fast
+    /// path for region-scoped --vg runs. Falls back to a full `from_fasta` load if
+    /// the `.fai` is missing, is malformed, or none of the wanted contigs are
+    /// indexed — so the result is never worse than loading everything.
+    pub fn from_fasta_contigs(
+        path: &str,
+        wanted: &std::collections::HashSet<String>,
+    ) -> Result<Self> {
+        let fai = match std::fs::read_to_string(format!("{}.fai", path)) {
+            Ok(s) => s,
+            Err(_) => return Self::from_fasta(path),
+        };
+        // .fai columns: name \t length \t offset \t linebases \t linewidth
+        let mut entries: Vec<(String, usize, u64)> = Vec::new();
+        for line in fai.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 5 {
+                continue;
+            }
+            if !wanted.contains(f[0]) {
+                continue;
+            }
+            let length: usize = match f[1].parse() { Ok(v) => v, Err(_) => return Self::from_fasta(path) };
+            let offset: u64 = match f[2].parse() { Ok(v) => v, Err(_) => return Self::from_fasta(path) };
+            if length == 0 {
+                continue;
+            }
+            entries.push((f[0].to_string(), length, offset));
+        }
+        if entries.is_empty() {
+            // Nothing to subset (no overlap) -> safest to load the whole genome.
+            return Self::from_fasta(path);
+        }
+        let mut file = File::open(path).with_context(|| format!("failed to open FASTA: {}", path))?;
+        let mut seqs: HashMap<String, Vec<u8>> = Default::default();
+        for (name, length, offset) in entries {
+            file.seek(SeekFrom::Start(offset))?;
+            let mut reader = BufReader::new(&mut file);
+            let mut seq: Vec<u8> = Vec::with_capacity(length);
+            let mut lbuf = Vec::new();
+            while seq.len() < length {
+                lbuf.clear();
+                let n = reader.read_until(b'\n', &mut lbuf)?;
+                if n == 0 {
+                    break;
+                }
+                for &c in &lbuf {
+                    if !c.is_ascii_whitespace() {
+                        seq.push(c.to_ascii_uppercase());
+                        if seq.len() >= length {
+                            break;
+                        }
+                    }
+                }
+            }
+            seqs.insert(name, seq);
         }
         Ok(Self { seqs })
     }
@@ -102,5 +163,51 @@ impl GenomeIndex {
             Some(-1) => minus_ok,
             _ => plus_ok || minus_ok,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_fasta_contigs_loads_only_wanted_via_fai() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa");
+        // c1: 2 lines (10 + 4 bases); c2: 1 line (10 bases).
+        std::fs::write(&fa, ">c1\nACGTACGTAC\nACGT\n>c2\nTTTTGGGGAA\n").unwrap();
+        // .fai cols: name length offset linebases linewidth
+        //  ">c1\n"=4 -> c1 data @4, 14 bases; c1 data = 11+5 = 16 bytes;
+        //  ">c2\n" @20 -> c2 data @24, 10 bases.
+        std::fs::write(
+            format!("{}.fai", fa.display()),
+            "c1\t14\t4\t10\t11\nc2\t10\t24\t10\t11\n",
+        )
+        .unwrap();
+        let mut wanted = std::collections::HashSet::new();
+        wanted.insert("c1".to_string());
+        let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &wanted).unwrap();
+        assert_eq!(
+            g.fetch_sequence("c1", 0, 14),
+            Some(b"ACGTACGTACACGT".to_vec()),
+            "c1 must load exactly via the .fai offset"
+        );
+        assert!(
+            g.fetch_sequence("c2", 0, 10).is_none(),
+            "c2 must NOT be loaded (not in wanted set)"
+        );
+    }
+
+    #[test]
+    fn from_fasta_contigs_falls_back_to_full_without_fai() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa");
+        std::fs::write(&fa, ">c1\nACGT\n>c2\nTTTT\n").unwrap(); // no .fai written
+        let mut wanted = std::collections::HashSet::new();
+        wanted.insert("c1".to_string());
+        let g = GenomeIndex::from_fasta_contigs(fa.to_str().unwrap(), &wanted).unwrap();
+        // fallback = full load -> both contigs present
+        assert_eq!(g.fetch_sequence("c1", 0, 4), Some(b"ACGT".to_vec()));
+        assert_eq!(g.fetch_sequence("c2", 0, 4), Some(b"TTTT".to_vec()));
     }
 }

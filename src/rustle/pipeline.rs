@@ -9990,6 +9990,33 @@ fn resolve_debug_stage_tsv_path(
     None
 }
 
+/// Load a genome FASTA for a VG operation, scoped to only the contigs that have
+/// mapped reads in the BAM (via the .bai index + .fai seek). On a region-slice BAM
+/// this avoids loading a whole multi-GB genome (DAZ: 3.6GB->66MB, ~6min->1.2s);
+/// genome-wide BAMs load everything as before. Always falls back to a full load if
+/// the index/.fai are unavailable, so behavior is never worse than before.
+fn load_vg_genome_scoped(
+    genome_path: &str,
+    bam_path: &Path,
+    what: &str,
+) -> Option<crate::genome::GenomeIndex> {
+    match crate::bam::mapped_contigs(bam_path) {
+        Some(contigs) => {
+            eprintln!(
+                "[VG] Loading genome FASTA scoped to {} BAM contig(s) for {}: {}",
+                contigs.len(),
+                what,
+                genome_path
+            );
+            crate::genome::GenomeIndex::from_fasta_contigs(genome_path, &contigs).ok()
+        }
+        None => {
+            eprintln!("[VG] Loading genome FASTA for {}: {}", what, genome_path);
+            crate::genome::GenomeIndex::from_fasta(genome_path).ok()
+        }
+    }
+}
+
 /// Run full pipeline: BAM -> bundles -> assemble -> GTF.
 pub fn run<P: AsRef<Path>>(
     bam_path: P,
@@ -10041,8 +10068,7 @@ pub fn run<P: AsRef<Path>>(
         && config.genome_fasta.is_some()
     {
         let path = config.genome_fasta.as_ref().unwrap();
-        eprintln!("[VG] Loading genome FASTA for read-to-copy phasing: {}", path);
-        crate::genome::GenomeIndex::from_fasta(path).ok()
+        load_vg_genome_scoped(path, bam_path.as_ref(), "read-to-copy phasing")
     } else {
         None
     };
@@ -10130,8 +10156,7 @@ pub fn run<P: AsRef<Path>>(
         // Load genome once for all VG operations (discovery, filtering, etc.)
         let vg_genome_for_discovery = if config.vg_discover_novel {
             config.genome_fasta.as_ref().and_then(|p| {
-                eprintln!("[VG] Loading genome for sequence-similarity family discovery...");
-                crate::genome::GenomeIndex::from_fasta(p).ok()
+                load_vg_genome_scoped(p, bam_path.as_ref(), "sequence-similarity family discovery")
             })
         } else {
             None
@@ -10143,8 +10168,7 @@ pub fn run<P: AsRef<Path>>(
                 Some(g.clone())
             } else {
                 config.genome_fasta.as_ref().and_then(|p| {
-                    eprintln!("[VG] Loading genome FASTA for graph-similarity family filter: {}", p);
-                    crate::genome::GenomeIndex::from_fasta(p).ok()
+                    load_vg_genome_scoped(p, bam_path.as_ref(), "graph-similarity family filter")
                 })
             }
         } else {
@@ -10648,14 +10672,14 @@ pub fn run<P: AsRef<Path>>(
                             // Need genome index for graph building but HMM-EM
                             // hasn't loaded it via vg_snp_genome path.
                             if let Some(p) = config.genome_fasta.as_ref() {
-                                crate::genome::GenomeIndex::from_fasta(p).ok()
+                                load_vg_genome_scoped(p, bam_path.as_ref(), "graph-EM build")
                             } else {
                                 None
                             }
                         } else if vg_snp_genome.is_some() {
                             None
                         } else if let Some(p) = config.genome_fasta.as_ref() {
-                            crate::genome::GenomeIndex::from_fasta(p).ok()
+                            load_vg_genome_scoped(p, bam_path.as_ref(), "graph-EM build")
                         } else {
                             None
                         };
@@ -10905,7 +10929,20 @@ pub fn run<P: AsRef<Path>>(
         .map(parse_reference_gtf)
         .transpose()?
         .unwrap_or_default();
-    let genome = genome_fasta.map(GenomeIndex::from_fasta).transpose()?;
+    // Scope the splice/junction-validation genome to the BAM's mapped contigs too
+    // (same .bai + .fai trick as the VG loads). Splice checks only query positions
+    // on read-bearing contigs, so this is result-identical; errors still propagate,
+    // and a missing index falls back to a full load.
+    let genome = match genome_fasta {
+        Some(p) => match crate::bam::mapped_contigs(bam_path.as_ref()) {
+            Some(contigs) => {
+                eprintln!("[genome] Loading FASTA scoped to {} BAM contig(s): {}", contigs.len(), p);
+                Some(GenomeIndex::from_fasta_contigs(p, &contigs)?)
+            }
+            None => Some(GenomeIndex::from_fasta(p)?),
+        },
+        None => None,
+    };
     let mut guide_junction_cache: LruCache<GuideJunctionCacheKey, Arc<Vec<Junction>>> =
         LruCache::new(guide_junction_cache_capacity());
     let raw_for_trace_mutex = std::sync::Mutex::new(if trace_reference.is_some() {
