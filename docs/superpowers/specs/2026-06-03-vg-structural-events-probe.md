@@ -57,3 +57,17 @@ synthetic 100/100 (inverted − strand copy assembles by default); chrY unchange
 overlapping → joint kept); GOLGA8 +3 (real dispersed inverted copies recovered, incl. − strand
 @45.6M); suite 204/0. So of the structural-event boundary, INVERSION moves from "detected" to
 "detected + resolved." Remaining: de-mirror the real-data spatial class; breakpoint/segdup extent.
+
+## UPDATE 2: spatial classification DE-MIRRORED (2026-06-03, commit d0182ee)
+The "Overlapping"-confound is fixed. `family_locus_rel` was dominated by Overlapping (GOLGA8
+262/272, chrY 55/64) because per-strand bundling puts a +/- mirror pair at each locus and the
+old check returned Overlapping if ANY two bundles overlapped — one mirror pair flipped a whole
+13 Mb dispersed segdup to "Overlapping". Fix: `classify_physical_loci` merges overlapping bundle
+intervals into DISTINCT PHYSICAL loci before classifying (genuine same-locus inverted pairs still
+read Overlapping). Result (annotation only): GOLGA8 262 overlapping -> 259 distal (+4 tandem);
+chrY 55 overlapping -> 62 distal. The classification now correctly reads GOLGA8/chrY paralog
+families as DISPERSED segmental duplications. 4 unit tests; suite 208/0.
+
+Structural-event map now: inversion = detected+resolved; spatial class (segdup/tandem/trans) =
+classified + de-confounded; gene conversion = detector built. Remaining: breakpoint calling and
+segdup-flanking extent (distinguishing a segdup's duplicated flanks from a bare paralog).
