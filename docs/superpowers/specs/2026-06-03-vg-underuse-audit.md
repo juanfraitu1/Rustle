@@ -327,3 +327,32 @@ single-copy baseline (truncation-robust); optional `RUSTLE_VG_SINGLE_COPY_DEPTH`
 human review (e.g. FAM_16). It is NOT a standalone hidden-copy counter. This is the same
 pattern as TOPO_BORROW: clean in theory, bounded by the identifiability limit in practice —
 an honest negative-leaning result, not a fabricated win.
+
+## Lever #2 SHIPPED: per-copy EM attribution confidence in the GTF (2026-06-03, commit 0a81fbb)
+
+The cheap lever that DOESN'T fight the identifiability boundary — it measures it. The
+fingerprint-EM already computes per-read `em_weight_gap` (winning weight − runner-up) and
+`em_n_sites`, but only PRINTED a family-level decisive/moderate/uncertain summary. Now
+aggregated per (family, copy) and emitted in the GTF:
+`em_decisive_frac`, `em_n_decisive`, `em_n_moderate`, `em_n_uncertain`, `em_mean_gap`,
+`em_mean_sites`.
+
+- `summarize_em_confidence` (pure, 3 unit tests) buckets gaps with the same 0.8/0.5 cuts as
+  the `[VG-FP-EM]` trace; folded into `FamilyVerdict.em_confidence`, populated POST-EM in the
+  `vg_copy_support` loop (verdict is built pre-EM), aggregating each copy's shared/multimap
+  reads. Emitted alongside `family_verdict` (--vg only; **de-novo byte-identical, verified 0
+  occurrences on a non-VG run**).
+- **Genuine, varying signal on real data** (the value): GOLGA8 per-copy `em_decisive_frac`
+  ranges 0.000–1.000 — FAM_4 c0–c3 = 1.000 (well-resolved) but c4–c6 = 0.000 with 8 uncertain
+  reads each; FAM_0 c3 = 0.013 with 77 uncertain. It surfaces which copies sit near the
+  identifiability boundary — exactly the spec's core signal, now legible per transcript.
+- Honest caveat: where the fingerprint finds 0 diagnostic sites (dispersed paralogs,
+  `mean_sites=0`), decisiveness is prior-driven (depth/junction/NM), not SNP-fingerprint —
+  still a valid apportionment-confidence number.
+- Tests: 191 passed / 0 failed.
+
+**Contrast with the session's other levers:** TOPO_BORROW (resolved-but-inert) and
+depth-copynum (#3, tracks structural count, expression-confounded) are bounded by the
+identifiability limit; #2 is the one that pays off precisely because it reports that limit
+rather than trying to beat it. Audit levers status: #1 TOPO_BORROW resolved/retired, #2
+SHIPPED (value), #3 shipped (diagnostic), #4 FAMILY_BOOST still gated on the DAZ3 precision check.
