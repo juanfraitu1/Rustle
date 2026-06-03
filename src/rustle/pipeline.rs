@@ -10838,14 +10838,49 @@ pub fn run<P: AsRef<Path>>(
                     if joint_strand_em {
                         let mut parts = Vec::with_capacity(families_for_em.len());
                         let mut graphs = Vec::with_capacity(families_for_em.len());
+                        // Per-strand fallback for DISPERSED inverted duplications: joint-strand
+                        // apportionment is correct only for OVERLAPPING opposite-strand copies
+                        // (same-locus ambiguity, DAZ1−/DAZ3+). For an inverted copy at a DISTINCT
+                        // locus, the joint EM's neutral fp apportions its reads to the forward
+                        // copies and starves it (it assembles fine de-novo / per-strand). Detect
+                        // that case and feed the strand-split sub-families instead so each copy
+                        // keeps its reads + valid graph. Opt-out via RUSTLE_VG_INVERSION_JOINT=1.
+                        let force_joint_inv = std::env::var_os("RUSTLE_VG_INVERSION_JOINT").is_some();
+                        let inv_trace = std::env::var_os("RUSTLE_VG_INVERSION_TRACE").is_some();
                         for (fam, &(start, count)) in families_for_em.iter().zip(em_fam_spans.iter()) {
-                            parts.extend(crate::vg::family_for_em_input(fam, &bundles)); // exactly 1
-                            if count == 1 {
-                                // single-strand: reuse the family's graph (clone; family_graphs
-                                // is read again by the borrow/completion builders below)
+                            // A family is a DISPERSED inverted duplication when its copies span
+                            // both strands but no opposite-strand pair OVERLAPS in coords. There
+                            // the joint (cross-strand-unified) family_for_em_input apportions the
+                            // inverted copy's reads onto the forward copies (neutral fp) and
+                            // starves it; the un-jointed partition assembles it cleanly. Use the
+                            // un-jointed em_hmm_partitions for those (what JOINT_STRAND_EM=0 does),
+                            // and keep the joint family for single-strand + OVERLAPPING inverted
+                            // pairs (genuine same-locus ambiguity, DAZ1−/DAZ3+).
+                            let mut strands: Vec<char> = fam.bundle_indices.iter()
+                                .filter_map(|&bi| bundles.get(bi)).map(|b| b.strand).collect();
+                            strands.sort_unstable(); strands.dedup();
+                            let dispersed_inv = strands.len() > 1
+                                && !force_joint_inv
+                                && !crate::vg::mixed_strand_copies_overlap(fam, &bundles);
+                            if inv_trace {
+                                eprintln!("[VG-INV] family={} count={} strands={:?} dispersed_inversion={}",
+                                    fam.family_id, count, strands, dispersed_inv);
+                            }
+                            if dispersed_inv {
+                                // un-jointed: each copy keeps its reads + valid (single-strand) graph.
+                                for i in start..start + count {
+                                    if let Some(p) = em_hmm_partitions.get(i) {
+                                        parts.push(p.clone());
+                                        graphs.push(family_graphs.get(i).and_then(|o| o.clone()));
+                                    }
+                                }
+                            } else if count == 1 {
+                                // single-strand (or forced-joint): the joint family + its graph.
+                                parts.extend(crate::vg::family_for_em_input(fam, &bundles)); // exactly 1
                                 graphs.push(family_graphs.get(start).and_then(|o| o.clone()));
                             } else {
-                                // mixed-strand (e.g. inverted DAZ1/DAZ3): no valid joint graph
+                                // OVERLAPPING inverted pair (DAZ): joint apportionment, no joint graph.
+                                parts.extend(crate::vg::family_for_em_input(fam, &bundles));
                                 graphs.push(None);
                             }
                         }

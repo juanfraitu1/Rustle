@@ -2017,6 +2017,31 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
     FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None }
 }
 
+/// True iff the family has two OPPOSITE-strand bundles that OVERLAP in genomic coords — a
+/// same-locus inverted pair (DAZ1−/DAZ3+), where a shared read genuinely cannot tell the
+/// copies apart and joint-strand EM apportionment across the inversion is correct.
+///
+/// False for a DISPERSED inverted duplication (opposite-strand copies at DISTINCT loci):
+/// there each copy's reads have a clear primary locus, so per-strand EM is right. Joint-EM
+/// on a dispersed inversion uses a neutral fingerprint (mixed-strand families have no joint
+/// graph) and apportions the inverted copy's reads to the forward copies, starving the
+/// inverted copy below the assembly threshold — even though it assembles cleanly de-novo.
+pub fn mixed_strand_copies_overlap(family: &FamilyGroup, bundles: &[Bundle]) -> bool {
+    let loci: Vec<(&str, char, u64, u64)> = family.bundle_indices.iter()
+        .filter_map(|&bi| bundles.get(bi))
+        .map(|b| (b.chrom.as_str(), b.strand, b.start, b.end))
+        .collect();
+    for i in 0..loci.len() {
+        for j in (i + 1)..loci.len() {
+            let (a, b) = (loci[i], loci[j]);
+            if a.1 != b.1 && a.0 == b.0 && a.2 <= b.3 && b.2 <= a.3 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn locus_relationship(family: &FamilyGroup, bundles: &[Bundle]) -> LocusRel {
     let loci: Vec<(&str, u64, u64)> = family.bundle_indices.iter()
         .filter_map(|&bi| bundles.get(bi)).map(|b| (b.chrom.as_str(), b.start, b.end)).collect();
