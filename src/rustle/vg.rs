@@ -5904,7 +5904,7 @@ fn build_topology_borrow_transcript(
         vg_copy_id: Some(copy_id),
         vg_family_size: Some(family_size),
         copy_assignment_confidence: Some(confidence),
-        copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+        copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
         intron_low: Vec::new(),
         synthetic: true,
         rescue_class: Some(crate::vg_hmm::diagnostic::RescueClass::TopologyBorrow),

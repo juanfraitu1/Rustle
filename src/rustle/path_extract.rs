@@ -698,6 +698,12 @@ pub struct Transcript {
     /// Multi-copy family classification verdict (--vg only; spec 2026-06-01).
     /// Emitted as family_verdict/identifiability/n_copies/n_expressed/locus_rel.
     pub family_verdict: Option<crate::vg::FamilyVerdict>,
+    /// O5/tandem VG (spec 2026-06-02): `Some(true)` when this transcript is a
+    /// copy resolved from an intra-bundle tandem decomposition (the array
+    /// collapsed into one bundle; VG split it into synthetic per-copy
+    /// sub-bundles). Provenance flag — pairs with `capacity_confidence` for the
+    /// borrowed/abstained portion. `None` for ordinary transcripts. VG-only.
+    pub tandem_copy: Option<bool>,
     /// Per-intron low-coverage flag (`lowintron` in StringTie).
     /// len = `exons.len() - 1`; true when bpcov in this intron is below the
     /// threshold used by retainedintron() in StringTie (ERROR_PERC * exon_avg_cov).
@@ -832,7 +838,7 @@ impl Transcript {
             hardstart: pred.hardstart,
             hardend: pred.hardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         }
     }
@@ -1311,7 +1317,7 @@ pub fn extract_rawreads_transcripts(
             hardstart: false,
             hardend: false,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
     }
@@ -1450,7 +1456,7 @@ pub fn extract_shortread_transcripts(
             hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
             hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
             alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
     }
@@ -7025,7 +7031,7 @@ pub fn extract_transcripts(
                             vg_family_id: None,
                             vg_copy_id: None,
                             vg_family_size: None,
-                            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+                            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                             intron_low: Vec::new(),
                             synthetic: false,
                             rescue_class: None,
@@ -9187,7 +9193,7 @@ pub fn extract_transcripts(
             hardstart: thardstart,
             hardend: thardend,
                     alt_tts_end: false,
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: cap_conf_opt, abundance_min: abund_min_opt, family_verdict: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: cap_conf_opt, abundance_min: abund_min_opt, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: raw_flow_sum_out, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });
         if debug_flow {
@@ -10629,7 +10635,7 @@ pub fn extract_transcripts(
                     hardstart: graph.nodes.get(first_node).map(|n| n.hardstart).unwrap_or(false),
                     hardend: graph.nodes.get(last_node).map(|n| n.hardend).unwrap_or(false),
                     alt_tts_end: graph.nodes.get(last_node).map(|n| n.alt_tts_end).unwrap_or(false),
-                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, intron_low: Vec::new(), synthetic: false,
+                    vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false,
                     rescue_class: if csr_triggered { Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue) } else { None },
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
 
@@ -10735,7 +10741,7 @@ pub fn extract_transcripts(
                             hardend: graph.nodes.get(vlast).map(|n| n.hardend).unwrap_or(false),
                             alt_tts_end: graph.nodes.get(vlast).map(|n| n.alt_tts_end).unwrap_or(false),
                             vg_family_id: None, vg_copy_id: None, vg_family_size: None,
-                            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, intron_low: Vec::new(), synthetic: false,
+                            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false,
                             rescue_class: None,
                             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                         });
@@ -11034,7 +11040,7 @@ pub fn extract_transcripts(
                             hardend: out[bi].hardend,
                             alt_tts_end: out[bi].alt_tts_end,
                             vg_family_id: None, vg_copy_id: None, vg_family_size: None,
-                            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+                            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                             intron_low: Vec::new(), synthetic: false,
                             rescue_class: None, raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
                         });
@@ -12043,7 +12049,7 @@ pub fn hybrid_path_reexplore(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         });

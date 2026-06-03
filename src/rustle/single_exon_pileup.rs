@@ -244,7 +244,7 @@ pub fn detect(
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(),
             synthetic: false,
             rescue_class: None,

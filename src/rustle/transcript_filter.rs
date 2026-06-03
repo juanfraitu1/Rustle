@@ -1193,7 +1193,7 @@ mod tests {
             vg_family_id: None,
             vg_copy_id: None,
             vg_family_size: None,
-            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+            copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
         }
@@ -9473,7 +9473,7 @@ pub fn recover_missing_guide_transcripts(
                 vg_family_id: None,
                 vg_copy_id: None,
                 vg_family_size: None,
-                copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None,
+                copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                 intron_low: vec![false; num_introns],
                 synthetic: false,
                 rescue_class: None,
