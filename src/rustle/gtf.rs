@@ -214,6 +214,11 @@ pub fn write_gtf<W: Write>(
             tx_attrs.push_str(&format!(
                 " family_verdict \"{}\"; family_identifiability \"{}\"; family_n_copies \"{}\"; family_n_expressed \"{}\"; family_locus_rel \"{}\";",
                 v.class.as_str(), v.identifiability.as_str(), v.n_copies, v.n_expressed, v.locus_rel.as_str()));
+            // Audit lever #3: depth-inferred copy number (only when RUSTLE_VG_DEPTH_COPYNUM
+            // populated it; default runs leave it None, so the GTF is byte-identical).
+            if let Some(dc) = v.depth_copies {
+                tx_attrs.push_str(&format!(" family_depth_copies \"{:.2}\";", dc));
+            }
         }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
@@ -385,6 +390,7 @@ mod tests {
             identifiability: Identifiability::None,
             n_id_classes: 0,
             locus_rel: LocusRel::Single,
+            depth_copies: None,
         });
         let out = render(tx);
         assert!(out.contains("cov \"12.000000\";"), "abstained tx lost its coverage:\n{out}");

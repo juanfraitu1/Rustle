@@ -18388,6 +18388,7 @@ pub fn run<P: AsRef<Path>>(
                                 identifiability: crate::vg::Identifiability::None,
                                 n_id_classes: 0,
                                 locus_rel: crate::vg::LocusRel::Single,
+                                depth_copies: None,
                             });
                         }
                     }

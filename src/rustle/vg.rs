@@ -1694,6 +1694,10 @@ pub struct FamilyVerdict {
     pub identifiability: Identifiability,
     pub n_id_classes: usize,
     pub locus_rel: LocusRel,
+    /// Depth-inferred copy number (audit lever #3, opt-in RUSTLE_VG_DEPTH_COPYNUM).
+    /// `None` unless enabled. Diagnostic only — never overrides `n_copies`. See
+    /// `estimate_copies_from_depth` for the calibration and its honest limitation.
+    pub depth_copies: Option<f64>,
 }
 impl FamilyClass {
     pub fn as_str(&self) -> &'static str {
@@ -1731,6 +1735,69 @@ impl Default for FamilyParams {
 /// Classify a discovered VG family per the M/H/X/I definition.
 /// Operates on the ORIGINAL FamilyGroup + intact bundles (call at EM time,
 /// like `compute_copy_independent_support`).
+/// Depth-based copy-number estimate for a multi-copy family (audit lever #3, O1/O2).
+///
+/// A fully-collapsed tandem array maps N physical copies onto overlapping coordinates,
+/// so the read depth through it is ~N× a single copy's depth — yet only the copies that
+/// ASSEMBLE into distinct bundles are counted by `bundle_indices.len()`. This estimates
+/// copy number from DEPTH instead: calibrate a single-copy depth unit, then express each
+/// resolved copy's depth as a multiple of it. A multiplier ≫ 1 flags a bundle that hides
+/// several collapsed physical copies; `inferred_copies` (total / unit) ≥ the resolved
+/// count then signals genome-structure under-counting.
+///
+/// HONEST LIMITATION: read depth conflates copy number with EXPRESSION — one copy
+/// expressed 2× is indistinguishable, by depth alone, from two collapsed 1× copies. So
+/// this is an *abundance multiplier*; it equals copy number only under equal-per-copy
+/// expression. With no external reference, internal calibration (faintest resolved copy =
+/// 1×) detects only RELATIVE over-representation among resolved copies — a uniformly
+/// collapsed array (every resolved bundle hiding the same N) is invisible without an
+/// external single-copy baseline. Emitted as a diagnostic signal, never overriding the
+/// structural (bundle/footprint) copy count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DepthCopyEstimate {
+    pub single_copy_unit: f64,         // calibrated single-copy depth
+    pub total_depth: f64,              // sum of per-copy depths
+    pub inferred_copies: f64,          // total_depth / single_copy_unit
+    pub per_copy_multiplier: Vec<f64>, // depth_i / single_copy_unit (0 for absent copies)
+}
+
+/// Estimate copy number from per-copy read depth. `depths[i]` = average read depth of
+/// resolved copy i (0 = absent/unassembled). `external_unit`, when known (e.g. a
+/// genome-wide single-copy depth), gives an ABSOLUTE estimate; otherwise the faintest
+/// non-zero resolved copy is taken as the 1× baseline (RELATIVE over-representation).
+/// Returns `None` when no copy has positive depth.
+pub fn estimate_copies_from_depth(depths: &[f64], external_unit: Option<f64>) -> Option<DepthCopyEstimate> {
+    let nonzero: Vec<f64> = depths.iter().copied().filter(|&d| d > 0.0).collect();
+    if nonzero.is_empty() {
+        return None;
+    }
+    let unit = match external_unit {
+        Some(u) if u > 0.0 => u,
+        // Internal calibration: MEDIAN of resolved-copy depths = single-copy baseline.
+        // Median (not min) is robust to per-copy read-count/truncation noise — the high
+        // and low cancel around it, so equal-expression copies calibrate to ~1× cleanly.
+        // Assumes the typical resolved copy is single (holds when most copies are single
+        // and a few are collapsed; fails if the MAJORITY are collapsed — see doc).
+        _ => {
+            let mut s = nonzero.clone();
+            s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let m = s.len() / 2;
+            if s.len() % 2 == 1 { s[m] } else { (s[m - 1] + s[m]) / 2.0 }
+        }
+    };
+    if !(unit > 0.0) {
+        return None;
+    }
+    let total: f64 = nonzero.iter().sum();
+    let per_copy_multiplier: Vec<f64> = depths.iter().map(|&d| d / unit).collect();
+    Some(DepthCopyEstimate {
+        single_copy_unit: unit,
+        total_depth: total,
+        inferred_copies: total / unit,
+        per_copy_multiplier,
+    })
+}
+
 pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParams) -> FamilyVerdict {
     let n_copies = family.bundle_indices.len();
     let placement = |fam_pos: usize, ri: usize| -> Option<(u32, u64)> {
@@ -1858,7 +1925,40 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
         else if n_expressed == 1 { FamilyClass::GenePlusUnexpressedParalog }              // 1 expressed single-copy class
         else { FamilyClass::Spillover };
 
-    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel }
+    // Audit lever #3 (opt-in): depth-inferred copy number. Per-copy depth = total aligned
+    // read bases in the copy's bundle / bundle genomic span (average read depth). Absent
+    // copies contribute 0. An optional external single-copy unit (RUSTLE_VG_SINGLE_COPY_DEPTH)
+    // converts the relative multiplier into an absolute copy count.
+    let depth_copies = if std::env::var_os("RUSTLE_VG_DEPTH_COPYNUM").is_some() {
+        // Per-copy abundance = aligned bases attributed to each copy as its READ HOME.
+        // CRITICAL: for a high-identity family, a bright copy's reads are mostly MULTIMAP
+        // reads (shared, stored in family.multimap_reads), NOT in bundle.reads — so summing
+        // bundle.reads alone undercounts exactly the copies we care about. Attribute each
+        // multimap read to its best-scoring copy (`reads_pc`, already computed above) plus
+        // each copy's unique reads. Total aligned bases, not bases/span (paralog copies are
+        // ~equal length; the multimap-extended bundle span adds variance without signal).
+        let mut depths: Vec<f64> = vec![0.0; n_copies];
+        for per_copy in &reads_pc {
+            // best copy = lowest mismatch cost; add its aligned length there (the read's home)
+            if let Some((&cbest, &(_, alen))) = per_copy.iter().min_by_key(|(_, &(nm, _))| nm) {
+                if cbest < n_copies { depths[cbest] += alen as f64; }
+            }
+        }
+        for c in 0..n_copies {
+            if let Some(b) = family.bundle_indices.get(c).and_then(|&bi| bundles.get(bi)) {
+                for r in &b.reads {
+                    if !family.multimap_reads.contains_key(&r.read_name_hash) {
+                        depths[c] += read_aligned_len(r) as f64;
+                    }
+                }
+            }
+        }
+        let external = std::env::var("RUSTLE_VG_SINGLE_COPY_DEPTH").ok().and_then(|s| s.parse().ok());
+        estimate_copies_from_depth(&depths, external).map(|e| e.inferred_copies)
+    } else {
+        None
+    };
+    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies }
 }
 
 fn locus_relationship(family: &FamilyGroup, bundles: &[Bundle]) -> LocusRel {
@@ -6032,6 +6132,60 @@ fn build_topology_borrow_transcript(
 mod tests {
     use super::*;
     use crate::vg_hmm::family_graph::{ExonClass, FamilyGraph, NodeIdx};
+
+    fn approx(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+
+    #[test]
+    fn depth_copynum_equal_copies_no_collapse() {
+        // Three equally-covered resolved copies -> 3 single copies, no over-representation.
+        let e = estimate_copies_from_depth(&[10.0, 10.0, 10.0], None).unwrap();
+        assert!(approx(e.single_copy_unit, 10.0));
+        assert!(approx(e.inferred_copies, 3.0));
+        assert_eq!(e.per_copy_multiplier, vec![1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn depth_copynum_flags_collapsed_copy() {
+        // Two single copies + one bundle at 3x depth -> that bundle hides ~3 copies,
+        // total inferred 5 vs 3 resolved (genome-structure under-counting).
+        let e = estimate_copies_from_depth(&[10.0, 10.0, 30.0], None).unwrap();
+        assert!(approx(e.single_copy_unit, 10.0));   // faintest = baseline
+        assert!(approx(e.inferred_copies, 5.0));
+        assert_eq!(e.per_copy_multiplier, vec![1.0, 1.0, 3.0]);
+    }
+
+    #[test]
+    fn depth_copynum_absent_copies_ignored_in_unit() {
+        // Absent copies (depth 0) don't poison the median baseline; still counted as 0x.
+        // nonzero=[10,10,30] -> median 10 -> inferred (10+10+30)/10 = 5, third copy 3x.
+        let e = estimate_copies_from_depth(&[0.0, 10.0, 10.0, 30.0], None).unwrap();
+        assert!(approx(e.single_copy_unit, 10.0));
+        assert!(approx(e.inferred_copies, 5.0));
+        assert_eq!(e.per_copy_multiplier, vec![0.0, 1.0, 1.0, 3.0]);
+    }
+
+    #[test]
+    fn depth_copynum_external_unit_gives_absolute() {
+        // With an external single-copy depth of 5, everything is 2x+ (uniform collapse
+        // that internal calibration alone could not see).
+        let e = estimate_copies_from_depth(&[10.0, 10.0, 30.0], Some(5.0)).unwrap();
+        assert!(approx(e.single_copy_unit, 5.0));
+        assert!(approx(e.inferred_copies, 10.0));
+        assert_eq!(e.per_copy_multiplier, vec![2.0, 2.0, 6.0]);
+    }
+
+    #[test]
+    fn depth_copynum_single_copy_cannot_detect_collapse() {
+        // One isolated bundle: no internal reference -> reports 1x (honest limitation).
+        let e = estimate_copies_from_depth(&[60.0], None).unwrap();
+        assert!(approx(e.inferred_copies, 1.0));
+    }
+
+    #[test]
+    fn depth_copynum_empty_or_zero_is_none() {
+        assert!(estimate_copies_from_depth(&[], None).is_none());
+        assert!(estimate_copies_from_depth(&[0.0, 0.0], None).is_none());
+    }
 
     fn make_ec(idx: usize, copy_seqs: &[(usize, &[u8])], copy_spans: &[(usize, (u64, u64))]) -> ExonClass {
         let span = copy_spans.iter().map(|(_, (s, e))| (*s, *e))
