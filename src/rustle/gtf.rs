@@ -219,6 +219,13 @@ pub fn write_gtf<W: Write>(
             if let Some(dc) = v.depth_copies {
                 tx_attrs.push_str(&format!(" family_depth_copies \"{:.2}\";", dc));
             }
+            // Audit lever #2: per-copy EM attribution confidence (decisive_frac is the
+            // headline; the bucket counts + means expose the identifiability detail).
+            if let Some(ref ec) = v.em_confidence {
+                tx_attrs.push_str(&format!(
+                    " em_decisive_frac \"{:.3}\"; em_n_decisive \"{}\"; em_n_moderate \"{}\"; em_n_uncertain \"{}\"; em_mean_gap \"{:.3}\"; em_mean_sites \"{:.1}\";",
+                    ec.decisive_frac(), ec.n_decisive, ec.n_moderate, ec.n_uncertain, ec.mean_gap, ec.mean_sites));
+            }
         }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
@@ -391,6 +398,7 @@ mod tests {
             n_id_classes: 0,
             locus_rel: LocusRel::Single,
             depth_copies: None,
+            em_confidence: None,
         });
         let out = render(tx);
         assert!(out.contains("cov \"12.000000\";"), "abstained tx lost its coverage:\n{out}");

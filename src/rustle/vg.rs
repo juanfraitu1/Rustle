@@ -1698,6 +1698,11 @@ pub struct FamilyVerdict {
     /// `None` unless enabled. Diagnostic only — never overrides `n_copies`. See
     /// `estimate_copies_from_depth` for the calibration and its honest limitation.
     pub depth_copies: Option<f64>,
+    /// Per-copy EM attribution confidence (audit lever #2). Populated POST-EM (the
+    /// verdict is built pre-EM, then this is filled once `em_weight_gap`/`em_n_sites`
+    /// are set on the reads). `None` when the EM did not run or the copy had no shared
+    /// reads. See `EmCopyConfidence`.
+    pub em_confidence: Option<EmCopyConfidence>,
 }
 impl FamilyClass {
     pub fn as_str(&self) -> &'static str {
@@ -1795,6 +1800,55 @@ pub fn estimate_copies_from_depth(depths: &[f64], external_unit: Option<f64>) ->
         total_depth: total,
         inferred_copies: total / unit,
         per_copy_multiplier,
+    })
+}
+
+/// Per-copy EM attribution confidence (audit lever #2): how decisively the fingerprint-EM
+/// resolved a copy's SHARED (multi-mapping) reads. These signals are computed during the EM
+/// (per-read `em_weight_gap` = winning weight − runner-up; `em_n_sites` = diagnostic sites
+/// the read covered) but were only printed to a trace — never surfaced per transcript. A
+/// copy whose shared reads are mostly `decisive` is well-distinguished from its siblings; one
+/// dominated by `uncertain` reads sits near the identifiability boundary (the spec's core
+/// signal). Buckets use the SAME thresholds as the `[VG-FP-EM]` summary (0.8 / 0.5).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmCopyConfidence {
+    pub n_em_reads: usize,   // shared/multimap reads touching this copy that went through EM
+    pub n_decisive: usize,   // weight_gap > 0.8
+    pub n_moderate: usize,   // 0.5 < weight_gap <= 0.8
+    pub n_uncertain: usize,  // weight_gap <= 0.5
+    pub mean_gap: f64,       // mean weight_gap over the EM reads
+    pub mean_sites: f64,     // mean diagnostic sites covered
+}
+impl EmCopyConfidence {
+    /// Fraction of this copy's shared reads the EM resolved decisively — the headline.
+    pub fn decisive_frac(&self) -> f64 {
+        if self.n_em_reads == 0 { 0.0 } else { self.n_decisive as f64 / self.n_em_reads as f64 }
+    }
+}
+
+/// Summarize per-read EM decisiveness for one copy. `reads` = `(weight_gap, n_sites)` for
+/// each shared read touching the copy. Returns `None` when the copy has no EM reads (e.g. a
+/// copy supported only by unique reads, or a family the EM skipped).
+pub fn summarize_em_confidence(reads: &[(f64, u32)]) -> Option<EmCopyConfidence> {
+    if reads.is_empty() {
+        return None;
+    }
+    let (mut nd, mut nm, mut nu) = (0usize, 0usize, 0usize);
+    let mut sum_gap = 0.0f64;
+    let mut sum_sites = 0.0f64;
+    for &(gap, sites) in reads {
+        if gap > 0.8 { nd += 1; } else if gap > 0.5 { nm += 1; } else { nu += 1; }
+        sum_gap += gap;
+        sum_sites += sites as f64;
+    }
+    let n = reads.len();
+    Some(EmCopyConfidence {
+        n_em_reads: n,
+        n_decisive: nd,
+        n_moderate: nm,
+        n_uncertain: nu,
+        mean_gap: sum_gap / n as f64,
+        mean_sites: sum_sites / n as f64,
     })
 }
 
@@ -1958,7 +2012,9 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
     } else {
         None
     };
-    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies }
+    // em_confidence is filled POST-EM by the pipeline (the read em_* fields aren't set
+    // yet at classify-time, which runs before run_fingerprint_em).
+    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None }
 }
 
 fn locus_relationship(family: &FamilyGroup, bundles: &[Bundle]) -> LocusRel {
@@ -6185,6 +6241,30 @@ mod tests {
     fn depth_copynum_empty_or_zero_is_none() {
         assert!(estimate_copies_from_depth(&[], None).is_none());
         assert!(estimate_copies_from_depth(&[0.0, 0.0], None).is_none());
+    }
+
+    #[test]
+    fn em_confidence_buckets_and_means() {
+        // gaps 0.9 (decisive), 0.7 (moderate), 0.3 (uncertain); sites 5,3,1.
+        let c = summarize_em_confidence(&[(0.9, 5), (0.7, 3), (0.3, 1)]).unwrap();
+        assert_eq!((c.n_em_reads, c.n_decisive, c.n_moderate, c.n_uncertain), (3, 1, 1, 1));
+        assert!(approx(c.mean_gap, (0.9 + 0.7 + 0.3) / 3.0));
+        assert!(approx(c.mean_sites, 3.0));
+        assert!(approx(c.decisive_frac(), 1.0 / 3.0));
+    }
+
+    #[test]
+    fn em_confidence_threshold_edges() {
+        // Exactly 0.8 is NOT decisive (gap > 0.8); exactly 0.5 is NOT moderate (gap > 0.5).
+        let c = summarize_em_confidence(&[(0.8, 2), (0.5, 2), (0.81, 2)]).unwrap();
+        assert_eq!((c.n_decisive, c.n_moderate, c.n_uncertain), (1, 1, 1));
+    }
+
+    #[test]
+    fn em_confidence_all_decisive_and_empty() {
+        let c = summarize_em_confidence(&[(0.95, 4), (0.99, 6)]).unwrap();
+        assert!(approx(c.decisive_frac(), 1.0));
+        assert!(summarize_em_confidence(&[]).is_none());
     }
 
     fn make_ec(idx: usize, copy_seqs: &[(usize, &[u8])], copy_spans: &[(usize, (u64, u64))]) -> ExonClass {

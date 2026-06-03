@@ -10932,6 +10932,26 @@ pub fn run<P: AsRef<Path>>(
                         }
                     }
 
+                    // Audit lever #2: surface per-copy EM attribution confidence. The
+                    // read `em_weight_gap`/`em_n_sites` are set by the EM above; aggregate
+                    // them over each copy's SHARED (multimap) reads and fold into the
+                    // verdict built earlier (pre-EM, so it carried em_confidence=None).
+                    // Annotation only — emitted alongside the existing family_verdict.
+                    for fam in &vg_families {
+                        for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                            let Some(b) = bundles.get(bi) else { continue };
+                            let em_reads: Vec<(f64, u32)> = b.reads.iter()
+                                .filter(|r| fam.multimap_reads.contains_key(&r.read_name_hash))
+                                .map(|r| (r.em_weight_gap, r.em_n_sites))
+                                .collect();
+                            if let Some(conf) = crate::vg::summarize_em_confidence(&em_reads) {
+                                if let Some(v) = vg_family_verdict.get_mut(&(fam.family_id, copy_id)) {
+                                    v.em_confidence = Some(conf);
+                                }
+                            }
+                        }
+                    }
+
                     // Junction propagation and coverage borrowing: available
                     // whenever FamilyGraph was built (hmm_ok OR --vg-no-hmm
                     // with --genome-fasta).
@@ -18389,6 +18409,7 @@ pub fn run<P: AsRef<Path>>(
                                 n_id_classes: 0,
                                 locus_rel: crate::vg::LocusRel::Single,
                                 depth_copies: None,
+                                em_confidence: None,
                             });
                         }
                     }
