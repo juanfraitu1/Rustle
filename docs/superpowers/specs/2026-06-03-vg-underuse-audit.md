@@ -112,3 +112,42 @@ hasn't been built out.
    per-transcript) — cheap, makes identifiability legible, complements the benchmark.
 4. **FAMILY_BOOST precision check** (only after #1) — high value, but gated on the DAZ3
    risk; never enable without the precision measurement.
+
+## VALIDATION: RUSTLE_VG_TOPO_BORROW is built but INERT (2026-06-03)
+
+Ran the audit's #1 recommendation — validate TOPO_BORROW on a real paralog family.
+Result: **it fires on nothing.** Tested three ways:
+- chrY `ggo_Y.bam` 28 families (`--vg`): 316=316 transcripts, **0 topology_borrow**, no `[VG-TOPO]`.
+- RBMY tandem family: **0 topology_borrow**.
+- Controlled synthetic — copy 0 fully assembled (`copy_confidence 0.739` ≥ 0.7 → a
+  qualifying source), copy 2 deliberately starved (3 reads → no transcript, the
+  ideal under-assembled sister): **still 0.**
+
+**Definitive root cause** (added `RUSTLE_VG_TOPO_TRACE`, commit 8a5d6e6): the source
+qualifies (`n_src_txs=1, n_copies=3`) but projecting its 5 exons onto each sister
+gives `projected=0` — **the first source exon maps to no ExonClass shared with the
+sister.** Confirmed via COMPLETION_TRACE: **every ExonClass has `max_sib=0.00`** —
+no sibling copy contributes to any exon class. So at 97% identity
+`merge_singletons_by_sequence` (build_family_graph `merge_min_jaccard=0.30`,
+vg.rs:480) **does NOT unify the dispersed copies' homologous exons into shared
+ExonClasses** — `per_copy_spans` stay single-copy. k-mer (k=15) Jaccard collapses
+fast with SNPs (a 3%-divergent 300 bp exon has ~9 SNPs disrupting ~135 of ~285
+15-mers → Jaccard ≈ the 0.30 boundary), so 95–99% paralog pairs fall below the bar.
+
+**This single bottleneck gates the ENTIRE structure-sharing theme.** TOPO_BORROW,
+the completion-node injection, and coverage/junction borrowing ALL project via
+shared `per_copy_spans` / `max_sib`. When the exon-unification fails (moderate
+divergence), all three are inert. It works for RBMY (99.8% → exons merge,
+`max_sib>0`, completion engages — as this session's tandem fix showed) but fails
+for the exact O5 "real gap" case (expressed paralog pairs, 95–99%, dispersed).
+
+**REVISED recommendation.** TOPO_BORROW is NOT the easy validate-and-ship win — it
+is *correct code aimed at a target the FamilyGraph never delivers*. The genuine,
+high-leverage O5 work is **divergence-robust cross-copy exon unification**: replace
+or augment the k-mer-Jaccard singleton merge with an alignment/minimizer-based
+homology merge (or lower/auto-scale `merge_min_jaccard` with a spurious-merge
+guard), so homologous exons across 95–99% copies share an ExonClass. That single
+fix unlocks TOPO_BORROW + completion + borrow simultaneously for the real O5
+paralog-pair case. (This is the same shape as the session-opening lesson: a
+capability that *looks* like the answer but doesn't engage — validate that it
+FIRES, not just that the code is correct.)
