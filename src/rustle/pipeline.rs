@@ -10154,13 +10154,18 @@ pub fn run<P: AsRef<Path>>(
     // ── Variation graph: discover gene family groups ────────────────────────
     let vg_families = if config.vg_mode && !config.single_copy_mode {
         // Load genome once for all VG operations (discovery, filtering, etc.)
-        let vg_genome_for_discovery = if config.vg_discover_novel {
-            config.genome_fasta.as_ref().and_then(|p| {
-                load_vg_genome_scoped(p, bam_path.as_ref(), "sequence-similarity family discovery")
-            })
-        } else {
-            None
-        };
+        // Loaded whenever a genome FASTA is available — NOT gated on
+        // `--vg-discover-novel`. The genome powers `discover_sequence_similar_bundles`,
+        // the fallback that links near-identical TANDEM paralog copies the
+        // supplementary-multimap path misses (tandem copies often share a bundle
+        // or land within-bundle, producing no cross-bundle multimap links). Gating
+        // this on novel-locus discovery meant plain `--vg --genome-fasta` runs
+        // never ran tandem-similarity linking (e.g. the RBMY1 6-copy array was
+        // never discovered as a family). The O(n²) compare is capped at 5000
+        // bundles inside the helper, so on whole-genome inputs it is a no-op.
+        let vg_genome_for_discovery = config.genome_fasta.as_ref().and_then(|p| {
+            load_vg_genome_scoped(p, bam_path.as_ref(), "sequence-similarity family discovery")
+        });
         let vg_genome_for_kmer_filter = if config.vg_family_min_kmer_jaccard > 0.0
             || config.vg_family_min_poa_identity > 0.0
         {

@@ -140,6 +140,8 @@ pub fn build_multimap_index_with_supplementary(
 
     let mut n_supp = 0usize;
     let mut n_linked = 0usize;
+    let mut n_no_target = 0usize;
+    let mut n_no_primary = 0usize;
     for result in reader.records() {
         let record = match result {
             Ok(r) => r,
@@ -179,6 +181,7 @@ pub fn build_multimap_index_with_supplementary(
             .next();
 
         let Some(target_bi) = target_bi else {
+            n_no_target += 1;
             continue;
         };
 
@@ -191,6 +194,7 @@ pub fn build_multimap_index_with_supplementary(
 
         // Find primary alignment's bundle(s) for this read.
         let Some(primaries) = rnh_to_primary.get(&rnh) else {
+            n_no_primary += 1;
             continue;
         };
 
@@ -212,8 +216,9 @@ pub fn build_multimap_index_with_supplementary(
 
     if n_supp > 0 {
         eprintln!(
-            "[VG] Supplementary scan: {} supplementary alignments, {} cross-bundle links",
-            n_supp, n_linked
+            "[VG] Supplementary scan: {} supplementary alignments, {} cross-bundle links \
+             (skipped: {} no-overlapping-bundle, {} primary-not-in-bundle)",
+            n_supp, n_linked, n_no_target, n_no_primary
         );
     }
 
@@ -1126,6 +1131,7 @@ fn discover_sequence_similar_bundles(
         .collect();
 
     // Pairwise comparison: O(SKETCH_SIZE) per pair instead of O(|kmer set|).
+    let pair_trace = std::env::var_os("RUSTLE_VG_DISCOVERY_TRACE").is_some();
     let mut links: Vec<(usize, usize)> = Vec::new();
     for i in 0..bundle_sketches.len() {
         let bi = bundle_sketches[i].bi;
@@ -1133,6 +1139,10 @@ fn discover_sequence_similar_bundles(
             let bj = bundle_sketches[j].bi;
             if bundles[bi].chrom != bundles[bj].chrom { continue; }
             if bundles[bi].start < bundles[bj].end && bundles[bj].start < bundles[bi].end {
+                if pair_trace {
+                    eprintln!("[VG-SEQSIM]   pair bi={} ({}-{}) bj={} ({}-{}) SKIPPED: spans overlap",
+                              bi, bundles[bi].start, bundles[bi].end, bj, bundles[bj].start, bundles[bj].end);
+                }
                 continue;
             }
             let dist = if bundles[bi].start > bundles[bj].end {
@@ -1148,15 +1158,22 @@ fn discover_sequence_similar_bundles(
             let eq = a.iter().zip(b.iter())
                 .filter(|(x, y)| **x != u64::MAX && x == y).count();
             let jaccard = eq as f64 / SKETCH_SIZE as f64;
+            if pair_trace {
+                eprintln!("[VG-SEQSIM]   pair bi={} ({}-{}) bj={} ({}-{}) dist={} jaccard={:.3} {}",
+                          bi, bundles[bi].start, bundles[bi].end, bj, bundles[bj].start, bundles[bj].end,
+                          dist, jaccard, if jaccard >= min_jaccard {"LINK"} else {"below-threshold"});
+            }
             if jaccard >= min_jaccard {
                 links.push((bi, bj));
             }
         }
     }
 
-    if !links.is_empty() {
+    if !links.is_empty() || std::env::var_os("RUSTLE_VG_DISCOVERY_TRACE").is_some() {
         eprintln!(
-            "[VG] Sequence similarity: found {} bundle pairs with ≥{:.0}% min-hash k-mer overlap (sketch={})",
+            "[VG] Sequence similarity: {} bundle(s) sketched (of {} total; need ≥{} exonic k-mers), \
+             found {} pair(s) with ≥{:.0}% min-hash overlap (sketch={})",
+            bundle_sketches.len(), bundles.len(), min_kmers,
             links.len(), min_jaccard * 100.0, SKETCH_SIZE,
         );
     }
