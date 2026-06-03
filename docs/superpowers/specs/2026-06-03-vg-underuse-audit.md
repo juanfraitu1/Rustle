@@ -387,3 +387,39 @@ positives with no sensitivity benefit — the "+N transcripts" headline is a raw
 fabricated phantom-pattern copies, never validated recoveries. **Keep default OFF.** Added a
 ⚠️ warning to `apply_family_primary_boosts`. Audit levers FINAL: #1 retired, #2 SHIPPED
 (value), #3 shipped (diagnostic), **#4 validated-and-rejected** (fabrication).
+
+## Theme D follow-up: copy-specific junction provenance is ALREADY built + currently INERT (2026-06-03)
+
+Investigated the audit's "copy-specific junctions as diagnostic positions / per-copy junction
+provenance under-used." Ground-before-scoping outcome: the signal is **already consumed by the
+EM and is currently redundant**, so there is no realizable win here.
+
+What's actually there:
+- **The EM already scores reads against per-copy junctions.** `junction_compatibility(read,
+  bundle)` (vg.rs:2901) = fraction of the read's junctions present in a copy's bundle,
+  weighted by `lambda_j` (default 1.0) in the E-step. So a read with copy-A's junctions
+  already scores higher for A than for a sister lacking them.
+- **Real paralog copies do differ in junctions** (verified: GOLGA8 FAM_4 copy0 has ~4
+  junctions at 38.06–38.19 M, copy3 has ~6 at 38.96–39.06 M) — so the signal is real and present.
+- **The FamilyGraph `JunctionEdge` does sum away provenance** (`family_support` is a count,
+  not which-copies) — the audit's literal claim is accurate — BUT the EM uses the parallel
+  bundle-junction path above, so the read-to-copy junction signal is NOT unused.
+- **Echo-cleaning exists** (`recompute_junction_stats_primary_supported`, drops junctions with
+  no primary support — a phantom's sibling-echo junctions), gated `RUSTLE_VG_FAMILY_PRIMARY_
+  SUPPORTED_JUNCTIONS` (default OFF).
+
+Why it's a no-op in practice (two measurements):
+- **`lambda_j` ablation (1.0 → 0.0) changes nothing** — `em_decisive_frac` is byte-identical
+  on GOLGA8 and the 97% synthetic. For dispersed paralogs, POSITION already determines the
+  copy (a read aligns to its home locus); where sequence diverges, SNPs dominate. Junctions
+  add no discriminating power beyond signals already deciding the assignment.
+- **The echo-clean flag is inert on the headline**: GOLGA8 with `RUSTLE_VG_FAMILY_PRIMARY_
+  SUPPORTED_JUNCTIONS=1` → +2 tx, +0 ref matches, Sn/Pr unchanged, only 1 bundle cleaned; it
+  did not suppress the #4 phantom (a short single-exon artifact, not echo-junction-driven).
+
+**Verdict:** copy-specific junction provenance is already built (EM `junction_compatibility` +
+`lambda_j`) and currently redundant with position/SNP signals. Junctions would be uniquely
+decisive only for **co-located + sequence-identical + differently-spliced** copies — not a
+configuration in the available data. Don't build; revisit only if such a family is found. (5th
+ground-before-scoping save of the arc: the audit named a real theme, but the signal was already
+consumed and inert.)
