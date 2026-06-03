@@ -10351,19 +10351,53 @@ pub fn run<P: AsRef<Path>>(
         let tandem_cfg = crate::vg_hmm::tandem::TandemConfig::from_env();
         if tandem_cfg.enabled {
             if let Some(genome) = vg_genome_for_discovery.as_ref() {
-                // Don't decompose a bundle already claimed by a discovered
-                // (dispersed) family — those are single-copy loci per bundle.
+                // `discovered` is kept only for the diagnostic trace below.
+                // Detection runs on EVERY non-empty bundle, INCLUDING bundles
+                // already claimed by a discovered family: in whole-genome input a
+                // collapsed tandem array (one mega-bundle) gets swept into a
+                // cross-mapping family that does NOT resolve it (e.g. RBMY1 → all
+                // 6 copies tagged copy_id "3", capacity_confidence 1.000 default).
+                // `detect_tandem_bundle` returns None for a genuine dispersed-
+                // family member (single position cluster), so this only adds REAL
+                // collapsed arrays (≥2 sequence-similar primary clusters) — it does
+                // not disturb dispersed families like DAZ.
                 let discovered: std::collections::HashSet<usize> = families
                     .iter().flat_map(|f| f.bundle_indices.iter().copied()).collect();
                 let mut next_fid = families.iter().map(|f| f.family_id + 1).max().unwrap_or(0);
                 let n_orig = bundles.len();
+                // DIAGNOSTIC (RUSTLE_VG_TANDEM_TRACE): run detect on EVERY non-empty
+                // bundle ignoring the discovered-family skip, to see which tandem
+                // candidates are being suppressed by family membership. Logging only.
+                if std::env::var_os("RUSTLE_VG_TANDEM_TRACE").is_some() {
+                    for bi in 0..n_orig {
+                        if bundles[bi].reads.is_empty() { continue; }
+                        let in_fam = discovered.contains(&bi);
+                        if let Some(d) = crate::vg_hmm::tandem::detect_tandem_bundle(
+                            &bundles[bi], genome, tandem_cfg,
+                        ) {
+                            eprintln!(
+                                "[VG-TANDEM-TRACE] bundle {} ({}:{}-{}) reads={} in_discovered_family={} → DETECT {} copy spans {:?}",
+                                bi, bundles[bi].chrom, bundles[bi].start, bundles[bi].end,
+                                bundles[bi].reads.len(), in_fam, d.copy_spans.len(), d.copy_spans,
+                            );
+                        }
+                    }
+                }
                 for bi in 0..n_orig {
-                    if discovered.contains(&bi) || bundles[bi].reads.is_empty() {
+                    if bundles[bi].reads.is_empty() {
                         continue;
                     }
                     if let Some(decomp) =
                         crate::vg_hmm::tandem::detect_tandem_bundle(&bundles[bi], genome, tandem_cfg)
                     {
+                        // If this bundle was mis-claimed by a cross-mapping family,
+                        // we do NOT edit that family's `bundle_indices` (doing so
+                        // would shift the positions its `multimap_reads` index by).
+                        // Instead the parent is neutralized below (reads retained =
+                        // only the unclaimed ones; for a pure array that is empty),
+                        // so the stale family slot simply produces no transcript and
+                        // the EM skips its now-invalid read indices. The array's
+                        // sub-bundles become their own tandem family.
                         let parent = bundles[bi].clone();
                         let (fam, sub_idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
                             &parent, &decomp, &mut bundles, next_fid, &config,
