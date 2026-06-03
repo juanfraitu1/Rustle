@@ -342,11 +342,19 @@ mod tests {
 
     #[test]
     fn tandem_copy_attr_emitted_when_some_true() {
+        // Emission depends only on tandem_copy == Some(true); vg_copy_id is NOT
+        // consulted by the guard (line 205). Verify both with and without
+        // vg_copy_id so a stray guard would be caught.
         let mut tx = one_exon_tx();
-        tx.vg_copy_id = Some(0);
         tx.tandem_copy = Some(true);
         let out = render(tx);
-        assert!(out.contains("tandem_copy \"true\";"), "missing tandem_copy in:\n{out}");
+        assert!(out.contains("tandem_copy \"true\";"), "missing tandem_copy (vg_copy_id=None):\n{out}");
+
+        let mut tx2 = one_exon_tx();
+        tx2.vg_copy_id = Some(0);
+        tx2.tandem_copy = Some(true);
+        let out2 = render(tx2);
+        assert!(out2.contains("tandem_copy \"true\";"), "missing tandem_copy (vg_copy_id=Some(0)):\n{out2}");
     }
 
     #[test]
