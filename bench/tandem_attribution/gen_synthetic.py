@@ -51,6 +51,14 @@ def main():
     ap.add_argument("--spacing", type=int, default=23000,
                     help="copy-to-copy start distance. Large (e.g. 200000) = dispersed loci "
                          "(separate bundles, normal-discovery family); ~9500 = tandem-collapse.")
+    # Gene-conversion recombinant planting (for the mosaic-read detector ground truth).
+    ap.add_argument("--recomb-reads", type=int, default=0,
+                    help="number of GENE-CONVERSION recombinant reads to plant: 5' exons from "
+                         "copy A, 3' exons from copy B, switching at exon --recomb-exon. 0 = none.")
+    ap.add_argument("--recomb-pair", type=str, default="0,1",
+                    help="copies A,B for recombinants (5' from A, 3' from B), e.g. '0,1'.")
+    ap.add_argument("--recomb-exon", type=int, default=2,
+                    help="breakpoint exon index: exons [0,K) from copy A, [K,end) from copy B.")
     a = ap.parse_args()
     rng = random.Random(a.seed)
     os.makedirs(a.out, exist_ok=True)
@@ -173,7 +181,32 @@ def main():
                     fh.write(seqstr[i:i+70] + "\n")
                 n_reads += 1
 
+        # Gene-conversion recombinants: 5' exons from copy A, 3' exons from copy B,
+        # switching at exon K. Full-length (no truncation) so both halves are observed.
+        # Named recomb_{A}_{B}_e{K}_r{j} so the ground truth (mosaic + breakpoint) is
+        # recoverable. The 5' tract carries A's exonic SNPs, the 3' tract carries B's —
+        # so a read aligned to either copy's locus shows a per-diagnostic-site SWITCH.
+        n_recomb = 0
+        if a.recomb_reads > 0 and a.copies >= 2:
+            ra, rb = (int(x) for x in a.recomb_pair.split(","))
+            K = max(1, min(a.recomb_exon, len(EXONS) - 1))
+            exons_a = spliced_mrna(copies[ra])
+            exons_b = spliced_mrna(copies[rb])
+            for j in range(a.recomb_reads):
+                mrna = [b for ex in exons_a[:K] for b in ex] + \
+                       [b for ex in exons_b[K:] for b in ex]
+                mrna = add_errors(mrna)
+                seqstr = "".join(mrna)
+                fh.write(f">recomb_{ra}_{rb}_e{K}_r{j}\n")
+                for i in range(0, len(seqstr), 70):
+                    fh.write(seqstr[i:i+70] + "\n")
+                n_recomb += 1
+                n_reads += 1
+
     meta = {
+        "recomb_reads": n_recomb,
+        "recomb_pair": a.recomb_pair if n_recomb else None,
+        "recomb_exon": a.recomb_exon if n_recomb else None,
         "identity_target": a.identity,
         "identity_realized_exonic": round(realized_id, 5),
         "copies": a.copies,
