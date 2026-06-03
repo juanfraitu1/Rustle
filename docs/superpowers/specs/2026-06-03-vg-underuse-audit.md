@@ -154,3 +154,30 @@ fix unlocks TOPO_BORROW + completion + borrow simultaneously for the real O5
 paralog-pair case. (This is the same shape as the session-opening lesson: a
 capability that *looks* like the answer but doesn't engage — validate that it
 FIRES, not just that the code is correct.)
+
+## Exon-unification fix attempt (2026-06-03, commit 749a607)
+
+Pursued the revised #1 lever. The chase went deeper than "lower the merge threshold":
+- The minimizer-Jaccard bar (`merge_min_jaccard=0.30`) IS too strict at 95-99%
+  identity, but lowering it (env `RUSTLE_VG_FAMILY_MERGE_JACCARD`, added) only lifted
+  shared ExonClasses 0→6/15 and hit a ceiling — because most exons weren't even
+  reaching the merge.
+- **Real bug found:** `merge_singletons_by_sequence` split clusters by EXON COUNT
+  (`len>1` ⇒ "multi-copy, keep as-is"), but for DISPERSED copies a `len>1` cluster is
+  usually **same-copy isoform variants** grouped by position — a single-copy cluster
+  wrongly treated as already-unified, so its homologous core exon never merged across
+  copies. Fix (`RUSTLE_VG_FAMILY_MERGE_SAME_COPY`, opt-in): route clusters by distinct
+  **copy** count, not exon count. Result on the starved synthetic: **shared
+  ExonClasses 6/15 → 15/27** — cross-copy unification more than doubled.
+- **Still multi-layer:** even with 15/27 shared, TOPO_BORROW emits 0 — a FURTHER
+  projection blocker remains (the assembled-source-exon ↔ family-graph-span match at
+  vg.rs:5852, likely SPAN_TOL / boundary mismatch, before the cross-copy check). So
+  recovering a starved copy end-to-end is genuinely 3 layers: (1) merge threshold,
+  (2) same-copy-cluster routing [both addressed, opt-in], (3) source-exon↔span match
+  [open].
+
+**Status:** the merge fix is a real improvement to FamilyGraph completeness
+(benefits completion/borrow broadly), committed opt-in (default byte-identical: DAZ
+unchanged, RBMY c4/c6 retained, de-novo untouched). The full TOPO_BORROW-fires goal
+needs layer (3) — a well-scoped next step (instrument the per-exon src-side match in
+`transfer_assembled_topology` to see whether boundaries miss within SPAN_TOL).
