@@ -85,6 +85,28 @@ Remaining gap to baseline (Sn 55 vs 65) is NOT the phantom over-enum — it's c0
 class-`n` false positive (separate issues; do NOT promote c6). Next: ≥2 more seeds + a gene-conversion
 case (must stay on the PSV channel, untouched by this junction-level gate) before any default change.
 
+## c0 mis-assembly investigated (2026-06-04) — diagnosed, NOT cleanly fixable by the gate
+After the gate removes the phantom over-enum, the dominant residual is c0 (LOC129530243).
+Diagnosis:
+- **c0 IS genuinely expressed and matches RefSeq**: 4–6 full-length primary reads carry its 9-intron
+  chain, identical to XM_055377108 within ±1 bp. So it is a real mis-assembly, not annotation noise.
+- **The failure is a RETAINED INTRON over 4 consecutive MICRO-EXONS** (89 / 111 / 111 / 115 bp): VG
+  merges 19602756–19606688 into one exon instead of splicing the micro-exons.
+- **It is tandem-specific, NOT a general micro-exon limit**: baseline (primary-only) SPLICES the
+  micro-exons correctly. The tandem sub-bundle retains them because **secondary reads from sibling
+  copies span the micro-exon region UNSPLICED** (their copy lacks the micro-exons) → retained-intron
+  coverage that beats c0's 4–6 spliced primary reads → path_extract retains.
+- The EM anchor-prior makes it worse (sink-collapse starves c0's primaries); **gate + EM-off reaches
+  baseline transcript-Sn parity 65.0** overall, but c0 specifically still isn't recovered.
+
+Attempted fix (drop secondaries that RETAIN a primary-supported intron): it **deletes c0 entirely**
+(over-removal: c0 → 0 tx) rather than recovering it, and achieved "65.0/81.2 = baseline parity" only
+by dropping the hard copy + over-enumerating c2 — a misleading aggregate. **Reverted** (dropping a
+real expressed copy conflicts with the find-copies goal). **No config — including baseline — recovers
+c0's exact chain.** The real lever is to make the tandem sub-bundle assembly emit c0's full-length-read
+chain directly (as baseline's primary-only bundle does) — a deeper tandem-assembly / path_extract
+question (why the sub-bundle assembly diverges from baseline's), out of scope for the junction gate.
+
 ## Proposed direction (original — now prototyped above)
 1. **Junction-admission gate in tandem `path_extract`:** require ≥1 primary read to admit a junction
    into the enumeration graph (or demote 100%-secondary junctions). Removes exactly the 8 phantom
