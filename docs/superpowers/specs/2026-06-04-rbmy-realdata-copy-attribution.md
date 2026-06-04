@@ -94,6 +94,32 @@ it is COVERAGE/flow adequacy, **not** attribution (it can be high on a non-ident
 — read `copy_confidence` for attribution). No regression: DAZ3 4.04/low_conf, obj5 1.0/abstain,
 headline 95.6/90.5, suite 222/0, EM-correctness 5/5. Residual: **#2** (rescue weakly-identifiable copies like c1).
 
+## Mega-bundle: does VG beat baseline in the repetitive region? (2026-06-04) — NO
+Scored baseline (`rustle -L`, primary-only) vs VG+tandem on `/tmp/tspy.bam` against the **real RefSeq
+RBMY annotation** (`../GGO_genomic.gff`, region NC_073248.2:19.60–19.735 Mb, 6 genes / 20 mRNAs):
+
+| level | baseline Sn/Pr | VG+tandem Sn/Pr |
+|---|---|---|
+| Base | 83.2 / 69.4 | **91.8** / 68.0 |
+| Intron | 77.3 / 98.3 | **82.7** / 86.1 |
+| Transcript | **65.0 / 81.2** | 55.0 / 47.8 |
+| Locus | **83.3 / 100.0** | 66.7 / 66.7 |
+
+VG's ONE edge is RECALL: higher base/intron Sn (it uses the cross-mapped secondaries baseline
+discards, and touches all 6 copy loci incl. c6 which baseline misses — missed loci 0/6 vs 1/6). But
+that base-level recall is **fragmented over-enumeration** — VG recovers FEWER *complete* transcripts
+(55 vs 65) at far lower precision (47.8 vs 81.2) and over-enumerates badly (c4 → 9 transcripts vs
+~3 real; 23 tx total vs baseline's 16). A coverage filter does NOT recover a net win: cov≥1.5 →
+55/61, cov≥2.0 → 45/69, cov≥3.0 → 35/78 — Sn collapses because the over-enumeration is entangled
+with the real low-coverage copies (no threshold separates them).
+
+**Conclusion: baseline beats VG+tandem on the mega-bundle on every metric that counts (complete
+transcripts, loci, precision).** This RESOLVES the long-open "is RBMY 54→29 more ACCURATE or just
+granular?" — it is **just granular / less accurate**. The mega-bundle is partly a VG self-inflicted
+artifact (keeping secondaries collapses the bundle; tandem re-splits lossily). VG's genuine value in
+the region is the NEW dimension (copy attribution, now honest after fix #1/#3) — NOT beating baseline
+on the shared transcript metric.
+
 ## Fix #2 investigated (2026-06-04): error-aware FAILS; coherence is the real (future) lever
 The proposed #2 lever — error-aware per-site scoring (`RUSTLE_VG_FP_ERROR_AWARE`, uses the read's
 `de` instead of a fixed 9:1) — does **NOT** rescue c1 and **HURTS** the genuinely-identifiable c0
