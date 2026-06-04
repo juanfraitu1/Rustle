@@ -61,11 +61,23 @@ measurable. The family is controlled and known-real, so the guard is not needed 
 | identity (exonic SNPs) | acc | dec_acc | dec_frac | abstain | reading |
 |---|---|---|---|---|---|
 | 1.0 (0 SNP) | 0.58 | 0.00 | 0.00 | **1.00** | **abstains 100% — fabricates nothing (DAZ limit) ✓** |
-| 0.999 (1 SNP) | 0.55 | **0.44** | **0.75** | 0.25 | **OVERCONFIDENT — 75% decisive at chance-level accuracy ✗** |
+| 0.999 (1–2 SNP) | 0.55 | 0.50 | **0.36** | **0.64** | boundary: mostly abstains after the evidence-gate fix (was 0.75/0.25) |
 | 0.99 (≈9 SNP) | 1.00 | 1.00 | 1.00 | 0.00 | identifiable → correct |
 | 0.97 (≈27 SNP) | 1.00 | 1.00 | 1.00 | 0.00 | identifiable → correct |
 | 0.95 (≈45 SNP) | 1.00 | 1.00 | 1.00 | 0.00 | identifiable (1/5 seeds: family dropped) |
 | 0.90 | — | — | — | — | below ambiguity: reads map uniquely, no family forms (5/5 dropped) |
+
+**Evidence-gate fix applied (2026-06-03).** The EM's reported decisiveness (and `score_attribution.py`)
+now require a read to cover `>= min_decisive_sites` (default 2) diagnostic sites to count as
+decisive — mirroring the M-step `eff_gap` anchoring gate, which the *reporting* path had been
+ignoring (so reads the EM refused to anchor were still tallied "decisive" on their prior-driven
+weight gap). Effect at the 1-SNP boundary: `dec_frac 0.75 → 0.36`, `abstain 0.25 → 0.64`,
+confidently-wrong rate `~42% → ~18%`. The identifiable band (0.95–0.99) and the id=1.0 abstention
+are unchanged; default de-novo and VG transcript output are unchanged (the fix touches only the
+reported confidence buckets, not weights). **Residual:** the 2-site regime is irreducibly marginal
+(two diagnostic sites can vote inconsistently); `RUSTLE_VG_EM_MIN_DECISIVE_SITES=3` abstains it
+entirely, but the default stays 2 (raising it is a real-data conservatism tradeoff, not a benchmark
+knob).
 
 ## Honest findings
 

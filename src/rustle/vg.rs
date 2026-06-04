@@ -5573,7 +5573,18 @@ pub fn run_fingerprint_em(
             }
             let gap = best - second;
             let max_sites: usize = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
-            if gap > 0.8 {
+            // Evidence-gated decisiveness REPORTING (2026-06-03): mirror the M-step
+            // eff_gap gate so the reported buckets reflect EVIDENCE, not the prior. A read
+            // that covers diagnostic sites but FEWER than min_decisive_sites is unreliable
+            // (one sequencing error flips a lone site), so it ABSTAINS here even when its
+            // prior-driven weight gap looks confident — without this, reads the EM refused
+            // to anchor were still counted decisive (the id≈0.999 overconfidence the
+            // attribution benchmark measured: dec_frac 0.75 at dec_acc 0.44). Reads with 0
+            // diagnostic sites keep the structural (junction/NM) path unchanged.
+            let under_evidenced = max_sites > 0 && max_sites < min_decisive_sites;
+            if under_evidenced {
+                n_uncertain += 1;
+            } else if gap > 0.8 {
                 n_decisive += 1;
                 if max_sites == 0 { n_struct_guided += 1; }
             } else if gap > 0.5 {

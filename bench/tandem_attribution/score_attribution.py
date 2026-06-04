@@ -60,6 +60,11 @@ def main():
     ap.add_argument("--reads", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--json", default=None)
+    ap.add_argument("--min-decisive-sites", type=int, default=2,
+                    help="a read must cover >= this many diagnostic sites to count as DECISIVE "
+                         "(matches the EM's RUSTLE_VG_EM_MIN_DECISIVE_SITES gate). A read resting "
+                         "on fewer sites is unreliable — one sequencing error flips a lone site — "
+                         "so it ABSTAINS even if its prior-driven weight gap looks confident.")
     a = ap.parse_args()
 
     meta = json.load(open(a.meta))
@@ -74,19 +79,22 @@ def main():
                 src_by_hash[fnv1a64(name.encode())] = src
                 n_reads_total += 1
 
-    rows, gap_by_hash = defaultdict(list), {}
+    rows, gap_by_hash, sites_by_hash = defaultdict(list), {}, {}
     with open(a.tsv) as fh:
         fh.readline()
         for line in fh:
             c = line.rstrip("\n").split("\t")
             if len(c) < 6:
                 continue
-            h = int(c[1]); copy = int(c[2]); w = float(c[4]); gap = float(c[5])
+            h = int(c[1]); copy = int(c[2]); nsites = int(c[3]); w = float(c[4]); gap = float(c[5])
             rows[h].append((copy, w)); gap_by_hash[h] = gap
+            # max diagnostic sites the read covers across its placements (the read,
+            # not the placement, determines coverage).
+            sites_by_hash[h] = max(sites_by_hash.get(h, 0), nsites)
 
     # confusion over multimapper reads in the TSV
     conf = [[0] * n_copies for _ in range(n_copies)]
-    per_read = []  # (src, pred_copy, gap)
+    per_read = []  # (src, pred_copy, gap, max_sites)
     for h, src in src_by_hash.items():
         if h not in rows:
             continue
@@ -94,19 +102,22 @@ def main():
         if pred >= n_copies:
             continue
         conf[src][pred] += 1
-        per_read.append((src, pred, gap_by_hash.get(h, 0.0)))
+        per_read.append((src, pred, gap_by_hash.get(h, 0.0), sites_by_hash.get(h, 0)))
 
     n_mm = len(per_read)
     copy2src, matched = optimal_bijection(conf)
     acc = matched / n_mm if n_mm else 0.0
 
-    # decisive vs abstain among multimappers, using the resolved mapping
+    # decisive vs abstain among multimappers, using the resolved mapping. A read is
+    # DECISIVE only if its weight gap is large AND it covers >= min_decisive_sites
+    # diagnostic sites — the evidence gate. A confident gap on too-few sites is
+    # prior-driven, not evidence-driven, so it abstains (matches the EM reporting fix).
     n_dec = n_dec_ok = n_abst = 0
-    for src, pred, gap in per_read:
+    for src, pred, gap, nsites in per_read:
         ok = (copy2src.get(pred, -1) == src)
-        if gap > 0.8:
+        if gap > 0.8 and nsites >= a.min_decisive_sites:
             n_dec += 1; n_dec_ok += ok
-        elif gap < 0.5:
+        elif gap < 0.5 or nsites < a.min_decisive_sites:
             n_abst += 1
     dec_acc = n_dec_ok / n_dec if n_dec else 0.0
 
@@ -114,6 +125,7 @@ def main():
         "identity_target": meta["identity_target"],
         "identity_realized_exonic": meta["identity_realized_exonic"],
         "copies": n_copies,
+        "min_decisive_sites": a.min_decisive_sites,
         "n_reads_total": n_reads_total,
         "n_multimapper_reads_scored": n_mm,
         "n_unique_reads": n_reads_total - n_mm,  # trivially-correct (single-copy) reads
