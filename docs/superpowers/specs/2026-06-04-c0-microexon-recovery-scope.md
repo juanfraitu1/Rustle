@@ -52,11 +52,16 @@ Work items:
    reads, already computed for `copy_confidence`) and gate the floor on it (replace/augment the
    `independent_support >= support_floor` gate). Behind the existing `RUSTLE_VG_TANDEM` + a new
    sub-flag; default-off until validated.
-2. **Decide EM-off-for-tandem.** The Sn-65 baseline parity needs the EM anchor-prior OFF (its
-   sink-collapse starves copies). But EM-off loses the copy-attribution channel (#1/#3). Options:
-   (a) keep the EM for attribution but don't let its apportionment drive assembly flow (assemble from
-   floored/unit weights, attribute from EM weights — decouple the two uses of `read.weight`); (b)
-   accept EM-off for tandem assembly. (a) is cleaner but bigger.
+2. **EM-off-for-tandem — DONE (item #2, the scoped anchor-prior).** Grounded: the EM's two roles
+   are SEPARATE writes — `read.weight` apportionment (vg.rs:5630, → assembly flow) vs the attribution
+   fields (5648-5656). And the attribution (`em_ev_decisive`) is the PRE-PRIOR evidence margin (fix
+   #3), so it is BYTE-IDENTICAL with the legacy prior (verified RBMY: c0 1.000, c4 0.026 under EM-on
+   AND EM-off). So the anchor-prior contributes NOTHING to attribution — it is purely the
+   sink-collapse assembly harm. FIX: `anchor_prior_on` (vg.rs:5369) is now ` && !is_tandem_family` —
+   tandem families use the legacy pileup prior (no sink-collapse → c0 assembles), dispersed families
+   (DAZ) keep the anchor-prior (DAZ3 phantom stays suppressed). Result: RBMY vs-RefSeq 60→70 BY
+   DEFAULT (no EM-off flags), c0 still `=`, attribution preserved; DAZ3 4.04, suite 222/0, headline
+   95.6/90.5, obj5 1.0/abstain, tier1 100. Dual-reference verdict: VG >= baseline-real AND finds more.
 3. **Clean up the c0 residual partial** (the extra class-`m` 2-exon tx, Pr 73.7 vs baseline 81.2) — a
    retained-intron partial alongside the exact match; likely the same micro-exon coverage issue.
 

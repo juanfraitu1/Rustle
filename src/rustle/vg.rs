@@ -5366,8 +5366,23 @@ pub fn run_fingerprint_em(
         // prior's self-reinforcement of an already-double-counted copy. The
         // anchored prior is constant, so the E-step runs ONCE (max_iter
         // effectively 1). Calibration: raw dNM t=2, extent_frac=0.8.
+        // Scope the anchor-prior to DISPERSED families only (item #2, 2026-06-04). The anchored
+        // prior prevents the DAZ3 phantom on dispersed inverted pairs by collapsing ambiguous
+        // mass onto the anchored copy — but on a TANDEM ARRAY that same collapse SINKS ambiguous
+        // reads onto the dominant copy and STARVES the others (RBMY: c0's reads pulled to the c4
+        // sink → c0 under-weighted → micro-exons retained / assembly fails). It is purely an
+        // ASSEMBLY-FLOW effect: the attribution channel (em_ev_decisive, copy_confidence) is the
+        // PRE-PRIOR evidence margin (fix #3) and is byte-identical with the legacy prior (verified
+        // RBMY: c0 1.000, c4 0.026 under both). So tandem families use the legacy pileup prior:
+        // better assembly (RBMY vs-RefSeq 60→70, beats baseline) with the SAME attribution.
+        // RUSTLE_VG_ANCHOR_PRIOR=0 still forces legacy everywhere (DAZ A/B).
+        let is_tandem_family = family.bundle_indices.iter().any(|&bi| {
+            bundles.get(bi).and_then(|b| b.rescue_class)
+                == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy)
+        });
         let anchor_prior_on = std::env::var("RUSTLE_VG_ANCHOR_PRIOR")
-            .map(|v| v != "0").unwrap_or(true);
+            .map(|v| v != "0").unwrap_or(true)
+            && !is_tandem_family;
         let fixed_log_priors: Option<Vec<f64>> = if anchor_prior_on {
             let anchored = anchored_mass_per_copy(family, bundles, 2, 0.8);
             let total_anchored: f64 = anchored.iter().sum();
