@@ -11104,6 +11104,50 @@ pub fn run<P: AsRef<Path>>(
             std::collections::HashMap::new()
         };
 
+    // ── PROTOTYPE (opt-in RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS): primary-only structure ──
+    // The RBMY over-enumeration is SECONDARY-READ CONTAMINATION: cross-mapped secondaries
+    // (e.g. a c0-origin read landing on c4) draw splice junctions NO primary read supports
+    // (0/72 novel introns), which the read-driven path_extract enumerates into spurious
+    // transcripts. Filtering junction_stats is bypassed (the graph re-derives junctions from
+    // the reads), so the structural gate must act on the READS: after the EM has used the
+    // secondaries for apportionment + copy_confidence (above), strip them from each TandemCopy
+    // sub-bundle so its splice graph is built from PRIMARY reads only. A genuine novel copy's
+    // reads are PRIMARY at its locus (hidden copy 40 primary reads / compatPrim 29; inversion
+    // compatPrim 40-47), so it survives; only the secondary contamination is removed. Scoped to
+    // TandemCopy → DAZ / dispersed families / de-novo are byte-identical. Refinement (keep
+    // secondaries that CONFIRM primary-supported junctions) deferred. See
+    // docs/superpowers/specs/2026-06-04-over-enumeration-research.md.
+    if config.vg_mode
+        && std::env::var_os("RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS").is_some()
+        && crate::vg_hmm::tandem::TandemConfig::from_env().enabled
+    {
+        let mut n_stripped = 0usize;
+        for bundle in bundles.iter_mut() {
+            if bundle.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy)
+                && bundle.reads.iter().any(|r| !r.is_primary_alignment)
+            {
+                // Primary-supported junction set for this copy: junctions appearing in ≥1
+                // PRIMARY read. Keep all primary reads + only the secondary reads whose ENTIRE
+                // chain is primary-supported (they CONFIRM real junctions → real coverage). Drop
+                // secondary reads carrying any phantom (zero-primary) junction — the contamination
+                // that path_extract enumerates. This is the targeted version: it removes the
+                // phantom-junction transcripts WITHOUT discarding the coverage real low-cov copies
+                // need (the blunt strip-all-secondaries over-corrected: Sn 55→40).
+                let primary_supported: std::collections::HashSet<crate::types::Junction> = bundle
+                    .reads.iter().filter(|r| r.is_primary_alignment)
+                    .flat_map(|r| r.junctions.iter().copied()).collect();
+                let before = bundle.reads.len();
+                bundle.reads.retain(|r| r.is_primary_alignment
+                    || r.junctions.iter().all(|j| primary_supported.contains(j)));
+                n_stripped += before - bundle.reads.len();
+                crate::bundle::recompute_junction_stats(bundle, &config);
+            }
+        }
+        if n_stripped > 0 {
+            eprintln!("[VG-TANDEM-PJ] primary-only structure: stripped {} secondary read(s) from tandem sub-bundles", n_stripped);
+        }
+    }
+
     // ── O5/tandem: weight floor for certified-but-starved tandem copies ──────
     // A tandem copy can be CERTIFIED by the support guard (high
     // independent_support — it carries copy-specific evidence, e.g. RBMY1 c4 at

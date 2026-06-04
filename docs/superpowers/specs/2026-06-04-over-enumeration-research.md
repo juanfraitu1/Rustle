@@ -58,7 +58,34 @@ the transcript's chain — reads that actually carry *this* isoform's junctions.
    demotion** (flag/downweight, not a hard cut), with a guard exempting the **dominant primary chain of
    an otherwise transcript-less locus** so a real-but-mis-assembled copy still yields one transcript.
 
-## Proposed direction (NOT yet implemented)
+## Prototype BUILT + validated (2026-06-04, opt-in `RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS`)
+Architectural finding from the first attempt: filtering `junction_stats` is **bypassed** — VG
+assembly (`path_extract`) is **read-driven** (it re-derives junctions from the reads). So the gate
+must act on the READS. Implemented (pipeline.rs, after the EM has used the secondaries for
+apportionment + `copy_confidence`, scoped to `TandemCopy` sub-bundles): keep all primary reads + only
+the secondary reads whose **entire chain is primary-supported** (they confirm real junctions → real
+coverage); drop secondary reads carrying any **phantom (zero-primary) junction**.
+
+| RBMY mega-bundle | tx | Tx Sn/Pr | Locus Sn/Pr |
+|---|---|---|---|
+| baseline (non-vg) | 16 | 65.0 / 81.2 | 83.3 / 100 |
+| gate OFF | 23 | 55.0 / 47.8 | 66.7 / 66.7 |
+| strip-ALL-secondaries (too blunt) | 8 | 40.0 / 100 | 50.0 / 100 |
+| **gate ON (targeted)** | **15** | **55.0 / 73.3** | 66.7 / 66.7 |
+
+Removes exactly the 8 phantom-junction transcripts → **precision 47.8 → 73.3 with ZERO recall loss**
+(Sn stays 55.0). The blunt "strip all secondaries" over-corrects (Sn 55→40) because it discards the
+coverage real low-cov copies need — the targeted version (drop only phantom-junction secondaries)
+keeps it. **Novelty preserved** (the decisive test): a hidden copy absent from the reference (3 tx →
+3 tx) and an inverted copy (3 tx → 3 tx) both survive the gate unchanged. Regression-safe: opt-in +
+scoped to TandemCopy → gate-OFF unchanged (RBMY 23 tx), DAZ3 4.04, default headline 95.6/90.5, suite
+222/0, obj5 1.0/abstain, tier1 100.
+
+Remaining gap to baseline (Sn 55 vs 65) is NOT the phantom over-enum — it's c0 mis-assembly + the c6
+class-`n` false positive (separate issues; do NOT promote c6). Next: ≥2 more seeds + a gene-conversion
+case (must stay on the PSV channel, untouched by this junction-level gate) before any default change.
+
+## Proposed direction (original — now prototyped above)
 1. **Junction-admission gate in tandem `path_extract`:** require ≥1 primary read to admit a junction
    into the enumeration graph (or demote 100%-secondary junctions). Removes exactly the 8 phantom
    extras; strictly better than the blunt `-F 0x100` strip (which also discards secondaries that
