@@ -72,6 +72,19 @@ def main():
                          "reference genome (their locus is replaced by random). Models a copy "
                          "not in the assembly (collapsed segdup / CNV / private dup). Ground "
                          "truth for detecting copies-not-in-the-genome.")
+    ap.add_argument("--distinct-isoforms", action="store_true",
+                    help="give each copy a STRUCTURALLY DISTINCT isoform via a copy-specific "
+                         "internal-cassette-exon SKIP (copy c skips internal exon 1+(c%%3)). "
+                         "Makes per-copy isoform recovery measurable by intron chain (the O4 "
+                         "discriminator); without it all copies share one chain and gffcompare "
+                         "cannot tell them apart.")
+    ap.add_argument("--starve-copy", type=int, default=-1,
+                    help="copy index to STARVE: it gets few reads (--starve-reads) and EVERY "
+                         "read is 5'-truncated so NO single read spans its full distinct chain. "
+                         "Models the O5 case where a collapsed-bundle copy can only be completed "
+                         "by borrowing structure from a sibling. -1 = none.")
+    ap.add_argument("--starve-reads", type=int, default=5,
+                    help="read count for the starved copy (default 5).")
     a = ap.parse_args()
     invert_set = set(int(x) for x in a.invert_copies.split(",") if x.strip() != "")
     hidden_set = set(int(x) for x in a.hidden_copies.split(",") if x.strip() != "")
@@ -121,6 +134,18 @@ def main():
     for (istart, iend) in intron_ranges:
         ancestor[istart], ancestor[istart + 1] = 'G', 'T'   # donor
         ancestor[iend - 2], ancestor[iend - 1] = 'A', 'G'   # acceptor
+
+    # Per-copy INCLUDED exon indices. With --distinct-isoforms, copy c SKIPS internal
+    # cassette exon (1 + c%3) — a copy-specific alternative splice giving each copy a
+    # distinct intron chain (terminal exons are always kept, so the transcript ends match).
+    # Without the flag every copy is full-length (one shared chain). This is the O4
+    # discriminator: distinct chains make per-copy isoform recovery measurable by gffcompare.
+    n_exons = len(EXONS)
+    def included_exons(c):
+        if not a.distinct_isoforms:
+            return list(range(n_exons))
+        skip = min(1 + (c % 3), n_exons - 2)   # never skip a terminal exon
+        return [i for i in range(n_exons) if i != skip]
 
     # Make N copies: each is the ancestor with its OWN exonic mutations.
     copies = []
@@ -180,7 +205,8 @@ def main():
             tid = f"copy{c}"
             inverted = c in invert_set
             strand = '-' if inverted else '+'
-            for (es, ee) in exon_ranges:
+            for ei in included_exons(c):
+                (es, ee) = exon_ranges[ei]
                 # Inverted copy: exon at forward gene-offset (es,ee) sits at the
                 # revcomp position (gene_len-ee .. gene_len-es) on the - strand.
                 if inverted:
@@ -194,9 +220,9 @@ def main():
                     f'gene_id "{tid}"; transcript_id "{tid}.1";\n'
                 )
 
-    # Reads: spliced mRNA from each copy (exons concatenated), with errors.
-    def spliced_mrna(copy_seq):
-        return [copy_seq[s:e] for (s, e) in exon_ranges]  # list of exon base-lists
+    # Reads: spliced mRNA from each copy (its INCLUDED exons concatenated), with errors.
+    def spliced_mrna(copy_seq, c):
+        return [copy_seq[exon_ranges[i][0]:exon_ranges[i][1]] for i in included_exons(c)]
 
     def add_errors(bases):
         out = []
@@ -211,11 +237,15 @@ def main():
     n_reads = 0
     with open(reads_path, "w") as fh:
         for c in range(a.copies):
-            exons_seq = spliced_mrna(copies[c])
-            for j in range(a.reads_per_copy):
-                # optionally 5'-truncate (drop leading exons) for realism
+            exons_seq = spliced_mrna(copies[c], c)
+            starved = (c == a.starve_copy)
+            rpc = a.starve_reads if starved else a.reads_per_copy
+            for j in range(rpc):
+                # optionally 5'-truncate (drop leading exons) for realism. A STARVED copy
+                # is ALWAYS truncated, so its 5'-most junction is never observed by any read
+                # and its full chain cannot be assembled from its own reads (the O5 case).
                 first_exon = 0
-                if rng.random() < a.trunc_frac and len(exons_seq) > 2:
+                if (starved or rng.random() < a.trunc_frac) and len(exons_seq) > 2:
                     first_exon = rng.randint(1, len(exons_seq) - 2)
                 mrna = [b for ex in exons_seq[first_exon:] for b in ex]
                 mrna = add_errors(mrna)
@@ -234,8 +264,8 @@ def main():
         if a.recomb_reads > 0 and a.copies >= 2:
             ra, rb = (int(x) for x in a.recomb_pair.split(","))
             K = max(1, min(a.recomb_exon, len(EXONS) - 1))
-            exons_a = spliced_mrna(copies[ra])
-            exons_b = spliced_mrna(copies[rb])
+            exons_a = spliced_mrna(copies[ra], ra)
+            exons_b = spliced_mrna(copies[rb], rb)
             for j in range(a.recomb_reads):
                 mrna = [b for ex in exons_a[:K] for b in ex] + \
                        [b for ex in exons_b[K:] for b in ex]
@@ -249,6 +279,11 @@ def main():
 
     meta = {
         "recomb_reads": n_recomb,
+        "distinct_isoforms": bool(a.distinct_isoforms),
+        "skipped_exon_per_copy": ({c: min(1 + (c % 3), n_exons - 2) for c in range(a.copies)}
+                                  if a.distinct_isoforms else None),
+        "starve_copy": a.starve_copy if a.starve_copy >= 0 else None,
+        "starve_reads": a.starve_reads if a.starve_copy >= 0 else None,
         "hidden_copies": sorted(hidden_set) if hidden_set else None,
         "recomb_pair": a.recomb_pair if n_recomb else None,
         "recomb_exon": a.recomb_exon if n_recomb else None,

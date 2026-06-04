@@ -64,11 +64,23 @@ Ties are **apportioned by the prior, never fabricated** — the answer to "a sin
   E/M steps → convergence on DAZ-like numbers → the tie/decisive boundary).
 - **Open:** real-data per-read validation on GGO is thin.
 
-## O4 — Assemble each copy's distinct isoforms / structural variants  ✅ synthetic
+## O4 — Assemble each copy's distinct isoforms / structural variants  ✅ synthetic (capability) · 🔄 real-data
 Per-copy isoform recovery — each copy gets its own source→sink paths through the family splice graph.
 
-- Synthetic oracle: per-copy isoform **Sn/Pr 100/100** (Obj 3), matching the planted truth.
-- **Open:** real-data breadth (per-copy isoform recovery on curated GGO families).
+- Synthetic oracle: per-copy isoform **Sn/Pr 100/100** (Obj 3) — but this fixture is spatially
+  separable, so the non-VG baseline ALSO scores 100/100; it certifies non-regression, not a
+  StringTie-beating capability.
+- **Discriminating benchmark built (2026-06-03):** `bench/tandem_attribution/o4o5_copy_benchmark.sh`
+  (spec `docs/superpowers/specs/2026-06-03-o4o5-copy-resolution-benchmark.md`). Key finding:
+  **gffcompare chain Sn/Pr cannot discriminate** — when copies have full-length reads the baseline
+  always ties or beats VG. The honest discriminator is **copy ATTRIBUTION** (which copy each
+  ambiguous read came from): on a merged-but-separable fixture VG attributes multimappers to their
+  true source copy at **100% (default settings, id 0.97, 5/5 seeds)** while the baseline produces
+  **no copy metric at all** (undefined, not worse). VG **abstains 100% at identical copies** (the
+  DAZ limit — fabricates nothing). Measured calibration gap surfaced: at the **1-SNP boundary VG is
+  overconfident** (dec_acc 0.44 at dec_frac 0.75) — fix-and-remeasure item.
+- **Open:** real-data breadth (per-copy isoform recovery + copy attribution on curated GGO families);
+  the synthetic truth is read-name prefixes.
 
 ## O5 — Share evidence across copies via the graph  🔄 partial · ⛔ one blocker
 Cross-family borrowing (coverage + junction propagation) and the *intended* **structural-linkage channel** —
