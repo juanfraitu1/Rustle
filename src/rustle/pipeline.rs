@@ -10269,6 +10269,18 @@ pub fn run<P: AsRef<Path>>(
             .iter()
             .flat_map(|f| f.bundle_indices.iter().copied())
             .collect();
+        // Bundles in families dropped specifically as MEGAFAMILIES (n_copies >
+        // max_copies — a spurious cross-cluster merge, e.g. chr19-GOLGA8 ↔
+        // chr17-TBC1D3). These are PRESERVED from the dropped-family secondary
+        // strip below so the drop doesn't cascade into losing real paralogs'
+        // assembly. Other drop reasons (low_shared / low_jaccard) ARE stripped —
+        // that removes the secondary-only phantom transcripts. Computed here from
+        // raw_families before the filter consumes it.
+        let megafamily_dropped_bundles: crate::types::DetHashSet<usize> = raw_families
+            .iter()
+            .filter(|f| f.bundle_indices.len() > config.vg_family_max_copies)
+            .flat_map(|f| f.bundle_indices.iter().copied())
+            .collect();
         // Quality-filter discovered families to drop noise (low shared-read
         // count, megafamilies, low junction-overlap pairs). Keeps real
         // multi-copy paralogs while removing alignment artifacts. See
@@ -10430,11 +10442,12 @@ pub fn run<P: AsRef<Path>>(
                 }
             }
         }
-        (families, raw_family_bundles)
+        (families, raw_family_bundles, megafamily_dropped_bundles)
     } else {
-        (Vec::new(), crate::types::DetHashSet::default())
+        (Vec::new(), crate::types::DetHashSet::default(), crate::types::DetHashSet::default())
     };
     let vg_raw_family_bundle_set = vg_families.1;
+    let vg_megafamily_dropped_set = vg_families.2;
     let vg_families = vg_families.0;
     // Build set of bundle indices that belong to a kept family group (for deferred processing).
     // FxHash is ~3-5x faster than SipHash here; the strip loop calls
@@ -10480,11 +10493,18 @@ pub fn run<P: AsRef<Path>>(
         let strip_family = std::env::var_os("RUSTLE_VG_STRIP_FAMILY_SECONDARY").is_some();
         let filter_family_juncs =
             std::env::var_os("RUSTLE_VG_FAMILY_PRIMARY_SUPPORTED_JUNCTIONS").is_some();
-        // Whether to also strip bundles from filter-DROPPED raw families.
-        // Default: skip them (keep secondaries) so a megafamily-drop on
-        // spurious cross-cluster merges (chr19 GOLGA8 ↔ chr17 TBC1D3)
-        // doesn't cascade into losing the chr19 paralogs' assembly.
-        let strip_dropped_family =
+        // Filter-DROPPED raw families (Tier-1 floor, 2026-06-03): a dropped family has
+        // no EM to reconcile cross-mapped reads, so KEEPING its secondaries lets assembly
+        // build the SIBLING's intron chain at this locus from secondary-only support — a
+        // phantom transcript. DEFAULT now STRIPS them (measured +3.2 Pr / +0.4 Sn on
+        // GGO_19 --vg: 87.2→90.4 / 94.3→94.7). EXCEPTION: families dropped as MEGAFAMILIES
+        // (spurious cross-cluster merge) are preserved so the drop doesn't cascade into
+        // losing real paralogs (vg_megafamily_dropped_set).
+        //   RUSTLE_VG_KEEP_DROPPED_FAMILY_SECONDARY=1 → restore old keep-all behavior.
+        //   RUSTLE_VG_STRIP_DROPPED_FAMILY_SECONDARY=1 → also strip megafamily drops.
+        let keep_dropped_family =
+            std::env::var_os("RUSTLE_VG_KEEP_DROPPED_FAMILY_SECONDARY").is_some();
+        let strip_all_dropped =
             std::env::var_os("RUSTLE_VG_STRIP_DROPPED_FAMILY_SECONDARY").is_some();
         let mut stripped_reads = 0usize;
         let mut stripped_bundles = 0usize;
@@ -10502,14 +10522,18 @@ pub fn run<P: AsRef<Path>>(
                 }
                 continue;
             }
-            // Bundle was in a raw (pre-filter) family but its family got
-            // dropped (megafamily / low_shared / etc.). Don't strip — the
-            // secondary reads' multi-mapper evidence is still useful for
-            // assembly, and stripping caused LOC134757307 etc. to fail
-            // path emission on full GGO.bam.
-            if !in_kept_family && in_raw_family && !strip_dropped_family {
-                dropped_family_skipped += 1;
-                continue;
+            // Bundle was in a raw (pre-filter) family but its family got dropped.
+            // Strip its secondaries by default (removes secondary-only phantom
+            // transcripts), EXCEPT megafamily drops (cascade protection) — unless the
+            // env flags override. See the comment block above.
+            if !in_kept_family && in_raw_family {
+                let is_megafamily = vg_megafamily_dropped_set.contains(&bi);
+                let preserve = keep_dropped_family || (is_megafamily && !strip_all_dropped);
+                if preserve {
+                    dropped_family_skipped += 1;
+                    continue;
+                }
+                // else: fall through and strip (the phantom case)
             }
             let before = bundle.reads.len();
             bundle.reads.retain(|r| r.is_primary_alignment);

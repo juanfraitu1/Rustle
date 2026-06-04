@@ -85,6 +85,36 @@ def obj5_copy_attribution():
         "nonid_em_ran": nonid.get("em_ran", False),
     }
 
+def _chain_snpr(truth, pred, tmp):
+    subprocess.run(["gffcompare","-r",truth,pred,"-o",tmp], capture_output=True, text=True)
+    try:
+        m = re.search(r"Transcript level:\s*([\d.]+)\s*\|\s*([\d.]+)", open(tmp+".stats").read())
+        return (float(m.group(1)), float(m.group(2))) if m else (None, None)
+    except Exception:
+        return (None, None)
+
+def obj_tier1_floor():
+    """Tier-1 floor (do-no-harm): VG must not emit secondary-only PHANTOM transcripts that
+    hurt precision vs the StringTie-like baseline. On a merged-bundle fixture whose family is
+    dropped (rpc 40 → low_shared, no EM), keeping secondaries rebuilt the SIBLING's intron chain
+    at the wrong locus (VG chain Pr 50 vs baseline 100). The dropped-family secondary strip
+    (2026-06-03) fixes it. Guard: VG chain Pr must not fall below the baseline's."""
+    gen = os.path.join(TANDEM, "gen_synthetic.py")
+    if not (os.path.exists(gen) and os.path.exists(RUSTLE)): return {"status": "SKIPPED"}
+    out = "/tmp/oracle_tier1"; os.makedirs(out, exist_ok=True)
+    subprocess.run([sys.executable, gen, "--identity", "0.97", "--copies", "2", "--reads-per-copy",
+                    "40", "--spacing", "16000", "--distinct-isoforms", "--seed", "5", "--out", out],
+                   capture_output=True, text=True)
+    bam = os.path.join(out, "r.bam")
+    subprocess.run(f"minimap2 -ax splice:hq -uf -N20 -p0.5 {out}/genome.fa {out}/reads.fa 2>/dev/null "
+                   f"| samtools sort -o {bam} - 2>/dev/null && samtools index {bam}", shell=True)
+    subprocess.run([RUSTLE, "-L", bam, "-o", f"{out}/base.gtf"], capture_output=True, text=True)
+    subprocess.run([RUSTLE, "--vg", "--vg-snp", "--genome-fasta", f"{out}/genome.fa", "-L", bam,
+                    "-o", f"{out}/vg.gtf"], capture_output=True, text=True)
+    bsn, bpr = _chain_snpr(f"{out}/truth.gtf", f"{out}/base.gtf", f"{out}/bc")
+    vsn, vpr = _chain_snpr(f"{out}/truth.gtf", f"{out}/vg.gtf", f"{out}/vc")
+    return {"baseline_sn": bsn, "baseline_pr": bpr, "vg_sn": vsn, "vg_pr": vpr}
+
 def default_headline():
     subprocess.run([RUSTLE,"-L",f"{REPO}/../GGO_19.bam","-o","/tmp/oracle_def.gtf"], stderr=subprocess.DEVNULL)
     subprocess.run(["gffcompare","-r",f"{REPO}/../GGO_19.gtf","/tmp/oracle_def.gtf","-o","/tmp/oracle_def_cmp"], stderr=subprocess.DEVNULL)
@@ -102,6 +132,7 @@ def main():
         res["obj2_copy_recovery"] = obj2()
         res["obj_daz"] = obj_daz()
         res["obj5_copy_attribution"] = obj5_copy_attribution()
+        res["obj_tier1_floor"] = obj_tier1_floor()
         # Obj 1 reframed 2026-06-01: GOLGA6L7 is ANTISENSE-SILENT (0 own-strand reads;
         # its 53+17 reads are all +strand, belonging to overlapping +strand lncRNA
         # LOC115930831) — correctly emits nothing; the "miss" is a gffcompare locus-
@@ -142,6 +173,13 @@ def main():
                 fails.append(f"obj5 copy-attribution below floor ({o5.get('identifiable_acc')} < {exp.get('obj5_copy_attr_min',1.0)})")
             if o5.get("nonid_em_ran") and (o5.get("nonid_decisive_frac") or 0) > exp.get("obj5_id1_max_decisive_frac", 0.0) + 1e-9:
                 fails.append(f"obj5 FABRICATION at identical copies: decisive_frac {o5.get('nonid_decisive_frac')} > {exp.get('obj5_id1_max_decisive_frac',0.0)} (must abstain at the DAZ limit)")
+        # Tier-1 floor: VG chain precision must not fall below baseline (no secondary-only phantom).
+        if full and isinstance(res.get("obj_tier1_floor"), dict):
+            t1 = res["obj_tier1_floor"]
+            if t1.get("vg_pr") is not None and t1.get("baseline_pr") is not None \
+               and t1["vg_pr"] + exp.get("tier1_pr_band", 0.5) < t1["baseline_pr"]:
+                fails.append(f"Tier-1 floor: VG precision {t1['vg_pr']} < baseline {t1['baseline_pr']} "
+                             f"(secondary-only phantom transcript regressed)")
         if fails:
             print("REGRESSION: " + "; ".join(fails)); sys.exit(1)
         print("ALL OBJECTIVES PASS")
@@ -161,6 +199,10 @@ def main():
             o5 = res["obj5_copy_attribution"]
             md.append(f"| Obj 4/5 copy attribution | id0.97 acc / id1.0 decisive-frac (abstain) | "
                       f"{o5.get('identifiable_acc')} / {o5.get('nonid_decisive_frac')} |")
+        if "obj_tier1_floor" in res:
+            t1 = res["obj_tier1_floor"]
+            md.append(f"| Tier-1 floor (no phantom) | VG Pr / baseline Pr | "
+                      f"{t1.get('vg_pr')} / {t1.get('baseline_pr')} |")
         md.append(f"| Obj 1 paralog assembly | status | REFRAMED (GOLGA6L7 antisense-silent; no splitter target — bundle rejection, not collapse) |")
         md.append(f"| default de-novo | Tx Sn/Pr (isolation) | {res['default_headline'].get('tx_sn')}/{res['default_headline'].get('tx_pr')} |")
         md.append("\n```json\n" + json.dumps(res, indent=2) + "\n```\n")
