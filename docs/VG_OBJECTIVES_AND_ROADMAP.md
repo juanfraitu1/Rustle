@@ -35,12 +35,14 @@ If a copy is missing from the reference, its reads have no locus to map to and a
 
 ## Obj 3 — Novel isoforms and structural variants per copy
 Per-copy splice graph built from post-EM reads, so unusual combinations unique to one paralog survive.
-- **State:** the EM-reweighting prerequisite now works (incl. INVERTED families after the 2026-05-31
-  canonical-k-mer fix — DAZ3 recovered as 5 isoforms). Standard `path_extract` assembles per-copy from
-  the reweighted coverage. **Structural variants (inversions, large indels) NOT handled at graph level.**
+- **State:** the EM-reweighting prerequisite now works. Standard `path_extract` assembles per-copy from
+  the reweighted coverage. ⚠️ The earlier "DAZ3 recovered as 5 isoforms" claim is **RETRACTED** — it was a
+  false positive (phantom DAZ1-echo mass, cov ~113); the committed anchored-prior + joint-strand EM now
+  correctly abstains (cov ~4, `low_confidence`). See THESIS_OBJECTIVES.md O2. **Structural variants
+  (inversions, large indels) NOT handled at graph level** (detectors flag, don't assemble — see O4).
 - **Avenues:**
-  1. **Validate per-copy isoform completeness:** for DAZ3 (5 isoforms recovered), confirm against the
-     DAZ repeat-array structure how many isoforms are real vs over-enumerated (needs a curated truth).
+  1. **Validate per-copy isoform completeness on a REAL family that is genuinely multi-expressed** (DAZ3 is
+     near-silent and not a usable case); needs a curated per-copy isoform truth set — none exists yet.
   2. **Structural-variant handling:** parse soft-clips / supplementary alignments per copy to capture
      inversions / tandem expansions / TE-insertion exons. Research-grade; the DAZ inversion is the
      entry example.
@@ -72,10 +74,12 @@ A hierarchy of signals: (1) junction pattern, (2) diagnostic SNPs/INDELs (`--vg-
   identical-compatibility regime it's "pileup-weighted assignment," and the value is honest uncertainty
   quantification, not iterative refinement.
 - **Avenues:**
-  1. **Emit `copy_assignment_confidence`** per transcript (from the EM weight gap / n_sites_covered) —
-     turns "copy recovered" into "copy recovered with quantified confidence." Cheap, high thesis value.
-  2. **Calibrate the per-copy expression split** end-to-end: confirm DAZ1≈53% / DAZ3≈47% materializes in
-     the per-copy coverage, not just the prior. Validates the EM is doing the right thing.
+  1. ~~Emit `copy_assignment_confidence`~~ **DONE** — emitted as the `copy_confidence` GTF attribute
+     (default-on in `--vg`); also `capacity_confidence` / `low_confidence`. (This avenue was stale; the
+     attribute already ships.)
+  2. **Calibrate the per-copy expression split on a genuinely multi-expressed real family.** The former
+     DAZ1≈53% / DAZ3≈47% target is **invalid** — that split was the phantom (DAZ3 ≈ 2–6 genuine reads, see
+     O2); a real two-expressed-copy family with curated abundance truth is needed instead.
 
 ## Cross-cutting enabler — a MEASURABLE multi-copy benchmark (the missing oracle)
 The parity work is measurable (gffcompare vs StringTie). The multi-copy work's whole point is going
@@ -85,7 +89,8 @@ objectives" is currently anecdotal (DAZ, GOLGA6L7). **The foundational avenue is
 - **Synthetic ground-truth** (extend `test_data/synthetic_family/`): planted copies with known
   per-copy isoforms + known read-to-copy truth → measure recovery Sn/Pr AND assignment accuracy per
   objective.
-- **Curated real families** (DAZ1/DAZ3, GOLGA6L7, AMY, a reference-absent case): a small panel with
+- **Curated real families** (DAZ1/DAZ3 — DAZ3 as the *abstention/correctness* case, not a recovery case;
+  GOLGA6L7, AMY, a reference-absent case): a small panel with
   expected outcomes, run on every change. This is the multi-copy analogue of the parity oracles — the
   user-endorsed "oracle for the flow-related steps" direction, applied to the thesis objectives.
 

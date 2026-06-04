@@ -31,17 +31,28 @@ generalization*: nodes = exon-classes carrying per-copy sequence, paths = copy �
 - **Open:** the §9 "report the range of consistent splits" quantification is deferred (shipped behavior:
   label non-identifiable + abstain from splitting); scope gate is `any_spliced` (lenient vs per-copy wording).
 
-## O2 — Recover copies that primary-only assembly misses  ✅ demonstrated · 🔄 quantification
+## O2 — Recover copies that primary-only assembly misses  🔄 capability shown · ⛔ no validated real-data recovery
 Copies whose annotated transcripts are covered overwhelmingly by **secondary** alignments (their primary went
-to a sibling paralog) — StringTie drops them; the VG recovers them.
+to a sibling paralog) — StringTie drops them; the VG *can instantiate a model* for them. No end-to-end run yet
+demonstrates a dropped copy actually recovered on real data.
 
 - Genome-wide scan (`bench/paralog_secondary_scan/`, GGO IsoSeq vs RefSeq): of 846 expressed multi-copy
-  candidates, an edit-distance copy-anchor finds **~93 expressed_real_copy** (NBPF, LRPAP1-like, DAZ3, …)
-  recoverable only via secondaries — and **~89 pure_spillover** loci that naive secondary-use would *fabricate*
-  (the honest counterexamples; SORD/LETM1/CES1 pseudogenes).
-- Showcase: **DAZ3** (LOC129530216) — 164 reads carry its +strand chain, only ~6 with primary at DAZ3;
-  classifies as part of a `family` (n_copies=4, n_expressed=2 classes, identifiability partial).
-- **Open:** the 93/89 adversarial verification workflow stalled and needs re-running to firm the rate.
+  candidates, an edit-distance copy-anchor **classifies** ~93 expressed_real_copy (NBPF, LRPAP1-like, …) vs
+  ~89 pure_spillover loci that naive secondary-use would *fabricate* (the honest counterexamples;
+  SORD/LETM1/CES1 pseudogenes). This is *classification*, not assembly — no run shows `--vg` emitting a
+  expressed_real_copy locus that primary-only output drops.
+- **DAZ3 is a RETRACTED false positive (corrected 2026-06-02), not a recovery showcase.** Of its ~158–164
+  +strand reads, the overwhelming majority are *secondary* alignments of DAZ1's reads (median NM ~6 at DAZ1
+  vs ~88 at DAZ3); only ~2–6 reads genuinely prefer DAZ3. The earlier "5 isoforms at cov ~113" was phantom
+  mass echoed from DAZ1. The committed anchored-prior + joint-strand EM collapses it to **cov 4.04 (2 tx,
+  `low_confidence`, identifiability `none`)** — DAZ3 is real-but-very-lowly-expressed and the tool correctly
+  **abstains**. (The cov-113 result reproduces only with the fix disabled:
+  `RUSTLE_VG_JOINT_STRAND_EM=0 RUSTLE_VG_ANCHOR_PRIOR=0` → 5 tx, top cov 112.77.) DAZ3's value is now a
+  **correctness** example — the EM refuses to fabricate a copy from a sibling's reads — guarded by
+  `daz3_isoforms_max` in the oracle.
+- **Open:** (1) the 93/89 rate is unreproducible from committed state (stalled verification, inputs
+  uncommitted); (2) the decisive recovery test — mask a known copy out of the reference, confirm `--vg`
+  recovers + assembles it — is not done; (3) no validated real-data O2 recovery exists.
 
 ## O3 — Assign ambiguous reads to the right copy (the EM)  ✅ synthetic
 Fingerprint-EM: latent = copy of origin, parameters = per-copy abundance, per-read likelihood from
@@ -60,9 +71,11 @@ Per-copy isoform recovery — each copy gets its own source→sink paths through
 - **Open:** real-data breadth (per-copy isoform recovery on curated GGO families).
 
 ## O5 — Share evidence across copies via the graph  🔄 partial · ⛔ one blocker
-Cross-family borrowing (coverage + junction propagation) and the novel **structural-linkage channel** —
-copy-specific *junctions* act as distinguishing positions, adding to ΔNM and resolving reads that SNPs alone
-cannot (figure B; why DAZ1−/DAZ3+ are resolvable despite near-identical sequence).
+Cross-family borrowing (coverage + junction propagation) and the *intended* **structural-linkage channel** —
+copy-specific *junctions* as distinguishing positions, adding to ΔNM to resolve reads SNPs alone cannot
+(figure B's DAZ1−/DAZ3+ illustration). **Status caveat:** the junction channel (`lambda_j`) is currently
+**inert/redundant** in the EM (ablation is a no-op — see `project_color_cgroup_parity`), and DAZ3 is
+near-silent (~2–6 genuine reads, see O2), so this is the design concept, not a demonstrated resolution.
 
 - Coverage/junction borrowing implemented in the VG pipeline.
 - **The "intra-bundle splitter" blocker was a mirage (corrected 2026-06-01).** GOLGA6L7 is **antisense-silent**
@@ -78,6 +91,7 @@ cannot (figure B; why DAZ1−/DAZ3+ are resolvable despite near-identical sequen
 
 ## Cross-cutting honest gaps
 - Most scores are **synthetic**; real-data per-copy validation (O3/O4 on GGO) is the weakest link.
-- O2's **93/89 rate** is deterministic-only until the adversarial verification finishes.
+- O2's **93/89 rate** is classification-only and unreproducible from committed state; no validated real-data
+  recovery exists, and the former DAZ3 showcase is a retracted false positive (see O2).
 - O5's **GOLGA6L7 splitter** is unsolved.
 - Default de-novo (non-`--vg`) headline held at **95.6 / 90.5** throughout — none of the VG work regressed it.

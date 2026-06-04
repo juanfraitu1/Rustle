@@ -79,6 +79,12 @@ def main():
             fails.append("default Sn out of band (isolation guard)")
         if full and res.get("obj2_copy_recovery",{}).get("exit",0) not in (0,):
             fails.append("obj2 no_absent_copy_eval --check failed")
+        # DAZ3 false-positive regression guard (corrected 2026-06-02): DAZ3 must ABSTAIN,
+        # not fabricate the phantom 5-isoform/cov-113 recovery. Fails if it over-enumerates.
+        if full and "daz3_isoforms" in res.get("obj_daz",{}):
+            d3 = res["obj_daz"]["daz3_isoforms"]
+            if d3 > exp.get("daz3_isoforms_max", 2):
+                fails.append(f"DAZ3 over-enumerated ({d3} > {exp['daz3_isoforms_max']}): phantom recovery regressed (should abstain)")
         if fails:
             print("REGRESSION: " + "; ".join(fails)); sys.exit(1)
         print("ALL OBJECTIVES PASS")
