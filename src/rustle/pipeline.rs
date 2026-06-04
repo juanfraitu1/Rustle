@@ -11170,6 +11170,18 @@ pub fn run<P: AsRef<Path>>(
             .ok().and_then(|s| s.parse().ok()).unwrap_or(0.75);
         let floor_w: f64 = std::env::var("RUSTLE_VG_TANDEM_WEIGHT_FLOOR")
             .ok().and_then(|s| s.parse().ok()).unwrap_or(0.5);
+        // OWN-PRIMARY-READ gate (2026-06-04): floor a tandem copy's under-weighted primaries
+        // only if it has ENOUGH of its OWN primary reads to self-assemble its structure
+        // (min_prim). This recovers a real divergent copy whose reads are under-weighted (RBMY1
+        // c0: 8 own primaries, micro-exons retained → recovered, Sn 65→70) WITHOUT flooring a
+        // sparse copy that can only BORROW its structure from siblings (c6: 2 own reads →
+        // flooring fabricates a borrowed-structure match, the DAZ3 pattern). Grounded: own-read
+        // count is the ONLY signal that separates them — independent_support and copy_confidence
+        // do NOT (c6 has supp 1.0 + 2 evidence-decisive reads yet cannot self-assemble; c0 has
+        // supp 0.68 < the certified gate). REPLACES the support-only gate (which excluded c0 and
+        // floored c6). See docs/superpowers/specs/2026-06-04-c0-microexon-recovery-scope.md.
+        let min_prim: usize = std::env::var("RUSTLE_VG_TANDEM_FLOOR_MIN_PRIM")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(3);
         let mut n_floored = 0usize;
         let mut n_copies = 0usize;
         for fam in &vg_families {
@@ -11183,7 +11195,13 @@ pub fn run<P: AsRef<Path>>(
                     .get(&(fam.family_id, copy_id))
                     .copied()
                     .unwrap_or(0.0);
-                if supp < t_support {
+                let n_prim = bundles[bi].reads.iter().filter(|r| r.is_primary_alignment).count();
+                let _ = (supp, t_support); // retained for the trace below
+                if std::env::var_os("RUSTLE_VG_TANDEM_TRACE").is_some() {
+                    eprintln!("[VG-TANDEM-FLOOR] copy bi={} ({}-{}) supp={:.3} n_prim={} floored={}",
+                        bi, bundles[bi].start, bundles[bi].end, supp, n_prim, n_prim >= min_prim);
+                }
+                if n_prim < min_prim {
                     continue;
                 }
                 let mut raised_here = false;
@@ -11201,8 +11219,8 @@ pub fn run<P: AsRef<Path>>(
         }
         if n_floored > 0 {
             eprintln!(
-                "[VG-TANDEM] support-gated weight floor: raised {} primary read(s) across {} certified copy(ies) (support>={}, floor={})",
-                n_floored, n_copies, t_support, floor_w
+                "[VG-TANDEM] own-primary weight floor: raised {} primary read(s) across {} self-assemblable copy(ies) (n_prim>={}, floor={})",
+                n_floored, n_copies, min_prim, floor_w
             );
         }
     }
