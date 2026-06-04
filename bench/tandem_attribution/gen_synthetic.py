@@ -67,8 +67,14 @@ def main():
                     help="bp of SHARED flanking sequence on EACH side of every copy's gene "
                          "(a true segmental duplication copies gene+flanks). 0 = bare paralog "
                          "(random, unique flanks). Ground truth for segdup-extent calling.")
+    ap.add_argument("--hidden-copies", type=str, default="",
+                    help="comma-separated copy indices PRESENT in the reads but ABSENT from the "
+                         "reference genome (their locus is replaced by random). Models a copy "
+                         "not in the assembly (collapsed segdup / CNV / private dup). Ground "
+                         "truth for detecting copies-not-in-the-genome.")
     a = ap.parse_args()
     invert_set = set(int(x) for x in a.invert_copies.split(",") if x.strip() != "")
+    hidden_set = set(int(x) for x in a.hidden_copies.split(",") if x.strip() != "")
 
     def revcomp(seq):
         comp = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
@@ -143,6 +149,12 @@ def main():
     for c in range(a.copies):
         start = c * SPACING + margin
         copy_starts.append(start)
+        # Hidden copies: PRESENT in the reads (generated below) but ABSENT from the reference —
+        # leave the locus as random intergenic background, so the copy is not in the assembly.
+        # Its reads then mismap to the closest sibling, carrying their private SNPs as an extra
+        # haplotype the reference copies cannot explain (the detect-copies-not-in-genome signal).
+        if c in hidden_set:
+            continue
         # Inverted copies: place the REVERSE-COMPLEMENT genomic sequence. The gene's mRNA
         # is unchanged (transcribed from the opposite strand), so its reads align to this
         # locus on the - strand — the inverted-duplication signature.
@@ -237,6 +249,7 @@ def main():
 
     meta = {
         "recomb_reads": n_recomb,
+        "hidden_copies": sorted(hidden_set) if hidden_set else None,
         "recomb_pair": a.recomb_pair if n_recomb else None,
         "recomb_exon": a.recomb_exon if n_recomb else None,
         "identity_target": a.identity,
