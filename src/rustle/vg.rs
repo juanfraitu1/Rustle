@@ -5557,7 +5557,7 @@ pub fn run_fingerprint_em(
         // Write header only once (check file size).
         if let (Some(ref p), Some(ref mut w)) = (&attr_tsv_path, &mut attr_writer) {
             if std::fs::metadata(p).map(|m| m.len()).unwrap_or(1) <= 1 {
-                let _ = writeln!(w, "family_id\tread_name_hash\tplacement_copy\tn_sites_covered\tfinal_weight\tweight_gap\tweight_sum");
+                let _ = writeln!(w, "family_id\tread_name_hash\tplacement_copy\tn_sites_covered\tfinal_weight\tweight_gap\tweight_sum\tevidence_gap\tev_decisive");
             }
         }
 
@@ -5573,21 +5573,34 @@ pub fn run_fingerprint_em(
             }
             let gap = best - second;
             let max_sites: usize = entry.n_sites_covered.iter().copied().max().unwrap_or(0);
-            // Evidence-gated decisiveness REPORTING (2026-06-03): mirror the M-step
-            // eff_gap gate so the reported buckets reflect EVIDENCE, not the prior. A read
-            // that covers diagnostic sites but FEWER than min_decisive_sites is unreliable
-            // (one sequencing error flips a lone site), so it ABSTAINS here even when its
-            // prior-driven weight gap looks confident — without this, reads the EM refused
-            // to anchor were still counted decisive (the id≈0.999 overconfidence the
-            // attribution benchmark measured: dec_frac 0.75 at dec_acc 0.44). Reads with 0
-            // diagnostic sites keep the structural (junction/NM) path unchanged.
-            let under_evidenced = max_sites > 0 && max_sites < min_decisive_sites;
-            if under_evidenced {
-                n_uncertain += 1;
-            } else if gap > 0.8 {
+            // Pre-prior EVIDENCE margin (fingerprint + junction + NM, EXCLUDING the prior).
+            // The posterior weight `gap` above also reflects the prior — and on a lopsided-
+            // coverage family (real RBMY: one dominant copy) the prior drives ambiguous reads
+            // onto a SINK copy with a confident-looking weight gap even when the diagnostic
+            // evidence is near-flat (the 2026-06-04 RBMY mis-calibration: reported confidence
+            // anti-correlated with real PSV identifiability). Reported confidence MUST reflect
+            // evidence, so the buckets gate on the evidence margin clearing the same eff_gap
+            // bar used for anchoring. This subsumes the earlier min_decisive_sites gate (a
+            // 1-site read's evidence margin can't clear gap_threshold). 0-site (structural /
+            // DAZ mixed-strand) reads keep the prior path unchanged — DAZ byte-identical gate.
+            let ev_gap = {
+                let (mut e1, mut e2) = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+                for i in 0..entry.locs.len() {
+                    let fp = entry.log_scores[i];
+                    let base = if fp.is_finite() { fp } else { 0.0 };
+                    let v = base + lambda_j * entry.junc_scores[i] + lambda_nm * entry.nm_scores[i];
+                    if v > e1 { e2 = e1; e1 = v; } else if v > e2 { e2 = v; }
+                }
+                if e1.is_finite() && e2.is_finite() { e1 - e2 } else { 0.0 }
+            };
+            let eff_gap = if max_sites == 0 { struct_gap }
+                else if max_sites < min_decisive_sites { gap_threshold }
+                else { (per_site_gap * max_sites as f64).min(gap_threshold) };
+            let ev_decisive = max_sites == 0 || ev_gap >= eff_gap;
+            if gap > 0.8 && ev_decisive {
                 n_decisive += 1;
                 if max_sites == 0 { n_struct_guided += 1; }
-            } else if gap > 0.5 {
+            } else if gap > 0.5 && ev_decisive {
                 n_moderate += 1;
                 if max_sites == 0 { n_struct_guided += 1; }
             } else {
@@ -5630,9 +5643,10 @@ pub fn run_fingerprint_em(
                     was_unique || (is_winner && ((gap > 0.8) || (max_sites > 0 && gap > 0.5)));
                 if let Some(ref mut w) = attr_writer {
                     let rnh = &bundles[global_bi].reads[ri].read_name_hash;
-                    let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}",
+                    let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}",
                         family.family_id, rnh, entry.fam_pos[i],
-                        entry.n_sites_covered[i], new_w, gap, w_sum);
+                        entry.n_sites_covered[i], new_w, gap, w_sum,
+                        ev_gap, if ev_decisive { 1 } else { 0 });
                 }
             }
         }

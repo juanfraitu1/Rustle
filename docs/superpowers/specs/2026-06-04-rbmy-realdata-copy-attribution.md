@@ -59,7 +59,27 @@ anti-correlated with the real signal. Any claim of "recovering the starved c5" o
 pool would be the DAZ3 failure mode (confident on non-identifiable data).
 
 This validates the Tier-2 capability as **synthetic-only**; the real-data gap the audit named is now
-characterized, not closed. Concrete next directions (not yet done): (1) the EM should abstain where
-the within-family per-read margin is ≈chance (it currently collapses-with-confidence); (2) error-
-aware per-site scoring may rescue weakly-identifiable copies (c1); (3) `capacity_confidence` must not
-be presented as attribution certainty — a margin-based per-read confidence is needed.
+characterized. Next directions: (1) **DONE — see below**; (2) error-aware per-site scoring may rescue
+weakly-identifiable copies (c1); (3) `capacity_confidence` must not be presented as attribution
+certainty (still open — it's a coverage proxy).
+
+## Fix applied (2026-06-04): evidence-based per-read confidence
+The per-read EM confidence was the **posterior weight gap**, which includes the prior — so a lopsided
+RBMY prior drove ambiguous reads onto a sink with a confident-looking gap. Fixed (`vg.rs`
+`run_fingerprint_em`): the reported decisiveness now gates on the **pre-prior evidence margin**
+(`ev_gap` = fingerprint + junction + NM, EXCLUDING the prior) clearing the same `eff_gap` bar used for
+anchoring; exposed as `evidence_gap` + `ev_decisive` columns in the FP-attr TSV. 0-site (structural /
+DAZ) reads keep the prior path (DAZ byte-identical). Result — the EM's evidence-decisiveness now
+**tracks real PSV identifiability** instead of anti-correlating:
+
+| copy | PSV concordance | EM ev_decisive_frac (after fix) |
+|---|---|---|
+| c0 (identifiable) | 1.00 | **1.000** |
+| c1 / c2 (near-tie) | 0.97 / 0.50 | 0.000 / 0.000 |
+| c4 (non-id, dominant pool) | 0.21 | **0.026** (was the confident sink) |
+
+362/458 RBMY reads now abstain. Validated no regression: DAZ3 unchanged (cov 4.04, low_confidence);
+synthetic benchmark id 0.97 capability 1.0 + id 1.0 abstains; default headline 95.6/90.5; suite 222/0;
+EM-correctness 5/5. (c5 n=2 is statistical noise either way.) **The per-read CONFIDENCE is now honest
+on real data; the residual gaps are #2 (rescue weak copies) and #3 (capacity_confidence ≠ attribution
+certainty).**

@@ -79,7 +79,7 @@ def main():
                 src_by_hash[fnv1a64(name.encode())] = src
                 n_reads_total += 1
 
-    rows, gap_by_hash, sites_by_hash = defaultdict(list), {}, {}
+    rows, gap_by_hash, sites_by_hash, evd_by_hash = defaultdict(list), {}, {}, {}
     with open(a.tsv) as fh:
         fh.readline()
         for line in fh:
@@ -91,10 +91,17 @@ def main():
             # max diagnostic sites the read covers across its placements (the read,
             # not the placement, determines coverage).
             sites_by_hash[h] = max(sites_by_hash.get(h, 0), nsites)
+            # ev_decisive (col 9, present in newer TSVs): the tool's own EVIDENCE-based
+            # decisiveness (pre-prior margin clears eff_gap) — preferred over the prior-
+            # inflated weight_gap when available, so the benchmark measures what the tool
+            # actually reports as confident.
+            if len(c) >= 9:
+                evd_by_hash[h] = max(evd_by_hash.get(h, 0), int(c[8]))
 
     # confusion over multimapper reads in the TSV
     conf = [[0] * n_copies for _ in range(n_copies)]
-    per_read = []  # (src, pred_copy, gap, max_sites)
+    have_evd = bool(evd_by_hash)
+    per_read = []  # (src, pred_copy, decisive_bool, abstain_bool)
     for h, src in src_by_hash.items():
         if h not in rows:
             continue
@@ -102,22 +109,31 @@ def main():
         if pred >= n_copies:
             continue
         conf[src][pred] += 1
-        per_read.append((src, pred, gap_by_hash.get(h, 0.0), sites_by_hash.get(h, 0)))
+        nsites = sites_by_hash.get(h, 0)
+        # DECISIVE: prefer the tool's own evidence decision (ev_decisive) when present —
+        # it gates on the pre-prior evidence margin, so a prior-inflated weight gap on a
+        # non-identifiable read (the RBMY sink) does NOT count. Always require >= min sites
+        # (an ev_decisive 0-site read is structural/DAZ, not a diagnostic attribution).
+        if have_evd:
+            dec = evd_by_hash.get(h, 0) == 1 and nsites >= a.min_decisive_sites
+            abst = not dec
+        else:
+            gap = gap_by_hash.get(h, 0.0)
+            dec = gap > 0.8 and nsites >= a.min_decisive_sites
+            abst = gap < 0.5 or nsites < a.min_decisive_sites
+        per_read.append((src, pred, dec, abst))
 
     n_mm = len(per_read)
     copy2src, matched = optimal_bijection(conf)
     acc = matched / n_mm if n_mm else 0.0
 
-    # decisive vs abstain among multimappers, using the resolved mapping. A read is
-    # DECISIVE only if its weight gap is large AND it covers >= min_decisive_sites
-    # diagnostic sites — the evidence gate. A confident gap on too-few sites is
-    # prior-driven, not evidence-driven, so it abstains (matches the EM reporting fix).
+    # decisive vs abstain among multimappers, using the resolved copy->src mapping.
     n_dec = n_dec_ok = n_abst = 0
-    for src, pred, gap, nsites in per_read:
+    for src, pred, dec, abst in per_read:
         ok = (copy2src.get(pred, -1) == src)
-        if gap > 0.8 and nsites >= a.min_decisive_sites:
+        if dec:
             n_dec += 1; n_dec_ok += ok
-        elif gap < 0.5 or nsites < a.min_decisive_sites:
+        elif abst:
             n_abst += 1
     dec_acc = n_dec_ok / n_dec if n_dec else 0.0
 

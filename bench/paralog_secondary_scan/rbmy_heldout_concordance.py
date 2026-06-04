@@ -169,6 +169,13 @@ def main():
     }
     print(json.dumps(out, indent=2))
     json.dump(out, open(f"{WORK}/heldout_results.json", "w"), indent=2)
+    # per-read dump (read name → PSV best-copy / norm-margin / concordance) for the EM
+    # calibration cross-check (join to em_fp.tsv ev_decisive by read-name hash).
+    with open(f"{WORK}/per_read.tsv", "w") as fh:
+        fh.write("read\tbest\tnorm_margin\tconcordance\tn_disc\n")
+        for r in rows:
+            fh.write(f"{r['read']}\t{r.get('best')}\t{r.get('norm_margin',0)}\t"
+                     f"{r.get('concordance')}\t{r['n_disc']}\n")
 
 if __name__ == "__main__":
     main()
