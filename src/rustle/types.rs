@@ -230,6 +230,11 @@ pub struct BundleRead {
     /// or fingerprint-decisive). Default at construction is `nh <= 1`; refined
     /// in EM write-back. Drives capacity-confidence accumulation.
     pub em_anchored: bool,
+    /// VG fingerprint-EM: true when THIS placement is the read's winner AND the
+    /// read's PRE-PRIOR evidence margin clears eff_gap (the honest attribution
+    /// signal — independent of the coverage prior that drives capacity_confidence).
+    /// Drives the evidence-based per-copy `copy_confidence` attribute. Default false.
+    pub em_ev_decisive: bool,
 }
 
 /// `CPred` transport for longtrim boundary points (predno, cov).

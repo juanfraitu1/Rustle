@@ -850,6 +850,7 @@ pub fn record_to_bundle_read_with_snp_vg(
         em_weight_gap: -1.0,
         em_n_sites: 0,
         em_anchored: nh <= 1,
+        em_ev_decisive: false,
     })
 }
 

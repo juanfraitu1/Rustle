@@ -81,5 +81,16 @@ DAZ) reads keep the prior path (DAZ byte-identical). Result — the EM's evidenc
 362/458 RBMY reads now abstain. Validated no regression: DAZ3 unchanged (cov 4.04, low_confidence);
 synthetic benchmark id 0.97 capability 1.0 + id 1.0 abstains; default headline 95.6/90.5; suite 222/0;
 EM-correctness 5/5. (c5 n=2 is statistical noise either way.) **The per-read CONFIDENCE is now honest
-on real data; the residual gaps are #2 (rescue weak copies) and #3 (capacity_confidence ≠ attribution
-certainty).**
+on real data.**
+
+## Fix #3 applied (2026-06-04): copy_confidence is now evidence-based attribution certainty
+`compute_per_copy_confidence` was the **mean post-EM multimapper weight** — it includes the coverage
+prior, so the sink copy of a lopsided family scored high. Replaced with the **fraction of the copy's
+ambiguous reads that are evidence-decisive winners** (new per-read `em_ev_decisive` flag = winner AND
+pre-prior margin clears eff_gap). The `copy_confidence` GTF attribute is now genuine attribution
+certainty; on RBMY the family copies read **low** (c4 sink 0.011, was prior-inflated) — honest
+abstention, anti-correlation gone. `capacity_confidence` is left as-is but its gtf comment now states
+it is COVERAGE/flow adequacy, **not** attribution (it can be high on a non-identifiable dominant copy
+— read `copy_confidence` for attribution). No regression: DAZ3 4.04/low_conf, obj5 1.0/abstain,
+headline 95.6/90.5, suite 222/0, EM-correctness 5/5. Residual: **#2** (error-aware per-site scoring to
+rescue weakly-identifiable copies like c1, rather than abstain on them).

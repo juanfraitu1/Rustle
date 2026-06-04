@@ -11092,9 +11092,11 @@ pub fn run<P: AsRef<Path>>(
         Vec::new()
     };
 
-    // Per-copy assignment confidence: mean post-EM weight of multi-mapper reads.
-    // Computed here while `bundles` still has post-EM weights; consumed by
-    // the assembly loop for GTF copy_confidence attribute.
+    // Per-copy ATTRIBUTION confidence: fraction of the copy's multi-mapper reads that are
+    // EVIDENCE-decisive winners (em_ev_decisive — pre-prior margin, not the coverage prior).
+    // Computed here while `bundles` still has post-EM state; consumed by the assembly loop
+    // for the GTF copy_confidence attribute. (Was mean post-EM weight, which inflated on the
+    // sink copy of a lopsided family — the RBMY mis-calibration; fix #3 2026-06-04.)
     let bundle_to_confidence: std::collections::HashMap<usize, f64> =
         if config.vg_mode && !vg_families.is_empty() {
             crate::vg::compute_per_copy_confidence(&vg_families, &bundles)

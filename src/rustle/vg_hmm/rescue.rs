@@ -1054,7 +1054,7 @@ fn synthesize_bundles_at_candidate_loci(
                 mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
                 hp_tag: None, ps_tag: None,
                 is_primary_alignment: true,
-                em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+                em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true, em_ev_decisive: false,
             }
         }).collect();
 
@@ -1188,7 +1188,7 @@ fn synthesize_bundles_from_original_alignments(
                     mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
                     hp_tag: None, ps_tag: None,
                     is_primary_alignment: true,
-                    em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+                    em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true, em_ev_decisive: false,
                 }
             }).collect();
 
@@ -1333,6 +1333,7 @@ pub fn synthesize_bundles(
                     em_weight_gap: -1.0,
                     em_n_sites: 0,
                     em_anchored: true,
+                    em_ev_decisive: false,
                 }
             })
             .collect();
@@ -1538,7 +1539,7 @@ pub fn synthesize_bundles_refined(
                 pair_idx: Vec::new(), pair_count: Vec::new(),
                 mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
                 hp_tag: None, ps_tag: None, is_primary_alignment: true,
-                em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+                em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true, em_ev_decisive: false,
             }
         }).collect();
 

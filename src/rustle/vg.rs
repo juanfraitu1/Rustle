@@ -1460,18 +1460,26 @@ pub fn compute_per_copy_confidence(
         for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
             if bi >= bundles.len() { continue; }
             let bundle = &bundles[bi];
-            let mut sum_weight = 0.0f64;
+            // EVIDENCE-based attribution confidence (real-data RBMY fix #3, 2026-06-04):
+            // fraction of THIS copy's ambiguous (multi-mapper) reads whose PRE-PRIOR
+            // evidence margin made them this copy's confident winner (em_ev_decisive).
+            // The previous metric was the mean post-EM weight of multimappers — which
+            // includes the coverage prior, so on a lopsided family the dominant/sink copy
+            // scored HIGH "confidence" even though its reads were non-identifiable (RBMY:
+            // capacity/copy confidence anti-correlated −0.55 with real PSV identifiability).
+            // The evidence fraction tracks real identifiability instead (c0→1.0, c4 sink→~0).
+            let mut n_decisive = 0usize;
             let mut n_multimap = 0usize;
             for read in &bundle.reads {
                 if multimap_set.contains(&read.read_name_hash) {
-                    sum_weight += read.weight;
                     n_multimap += 1;
+                    if read.em_ev_decisive { n_decisive += 1; }
                 }
             }
             let confidence = if n_multimap == 0 {
-                1.0 // no multi-mappers → assignment is fully certain
+                1.0 // no multi-mappers → no ambiguity → assignment is fully certain
             } else {
-                (sum_weight / n_multimap as f64).min(1.0).max(0.0)
+                n_decisive as f64 / n_multimap as f64
             };
             let _ = copy_id; // copy_id used implicitly via bundle_indices iteration
             result.insert(bi, confidence);
@@ -5641,6 +5649,11 @@ pub fn run_fingerprint_em(
                 bundles[global_bi].reads[ri].em_n_sites = entry.n_sites_covered[i] as u32;
                 bundles[global_bi].reads[ri].em_anchored =
                     was_unique || (is_winner && ((gap > 0.8) || (max_sites > 0 && gap > 0.5)));
+                // Evidence-based attribution flag: this placement is the read's winner AND
+                // its pre-prior evidence margin cleared eff_gap. Unlike em_anchored/weight_gap
+                // it is independent of the coverage prior, so it does not inflate on a sink
+                // copy. Drives the evidence-based copy_confidence (real-data RBMY fix #3).
+                bundles[global_bi].reads[ri].em_ev_decisive = is_winner && ev_decisive;
                 if let Some(ref mut w) = attr_writer {
                     let rnh = &bundles[global_bi].reads[ri].read_name_hash;
                     let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}",
@@ -6692,7 +6705,7 @@ mod tests {
             pair_idx: vec![], pair_count: vec![],
             mapq: 60, mismatches, seq: Vec::new(), hp_tag: None, ps_tag: None,
             is_primary_alignment: true,
-            em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+            em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true, em_ev_decisive: false,
         }
     }
 

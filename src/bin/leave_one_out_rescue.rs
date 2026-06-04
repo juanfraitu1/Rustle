@@ -82,7 +82,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         pair_idx: Vec::new(), pair_count: Vec::new(),
         mapq: 0, mismatches: Vec::new(), seq: Vec::new(),
         hp_tag: None, ps_tag: None, is_primary_alignment: true,
-        em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true,
+        em_weight_gap: -1.0, em_n_sites: 0, em_anchored: true, em_ev_decisive: false,
     };
     Bundle {
         chrom: CHROM.to_string(), start, end, strand: '+',

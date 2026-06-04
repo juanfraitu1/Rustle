@@ -128,6 +128,7 @@ fn make_bundle(exons: &[(u64, u64)]) -> Bundle {
         em_weight_gap: -1.0,
         em_n_sites: 0,
         em_anchored: true,
+        em_ev_decisive: false,
     };
 
     Bundle {

@@ -183,6 +183,11 @@ pub fn write_gtf<W: Write>(
         if let Some(fam_size) = tx.vg_family_size {
             tx_attrs.push_str(&format!(" family_size \"{}\";", fam_size));
         }
+        // copy_confidence = ATTRIBUTION certainty: fraction of this copy's ambiguous reads
+        // that are EVIDENCE-decisive winners (pre-prior margin; vg.rs compute_per_copy_confidence).
+        // This is the metric to read for "how sure is the copy assignment". Distinct from
+        // capacity_confidence below, which is COVERAGE/flow adequacy, NOT attribution (it can be
+        // high on a non-identifiable dominant copy — the RBMY mis-calibration).
         if let Some(conf) = tx.copy_assignment_confidence {
             tx_attrs.push_str(&format!(" copy_confidence \"{:.3}\";", conf));
         }
