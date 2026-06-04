@@ -1711,6 +1711,10 @@ pub struct FamilyVerdict {
     /// the mosaic pass found a recombinant. The family's most-supported event (confirmed
     /// preferred). See `detect_and_report_mosaics` / `ConversionEvent`.
     pub conversion: Option<crate::vg_hmm::mosaic::ConversionEvent>,
+    /// Evidence of a copy NOT in the reference genome (opt-in RUSTLE_VG_HIDDEN_COPY). `None`
+    /// unless flagged. Detect-and-flag only — never a fabricated copy. See
+    /// `detect_and_report_hidden_copies` / `HiddenCopyEvidence`.
+    pub hidden_copy: Option<crate::vg_hmm::hidden_copy::HiddenCopyEvidence>,
 }
 impl FamilyClass {
     pub fn as_str(&self) -> &'static str {
@@ -2022,7 +2026,7 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
     };
     // em_confidence is filled POST-EM by the pipeline (the read em_* fields aren't set
     // yet at classify-time, which runs before run_fingerprint_em).
-    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None, segdup: None, conversion: None }
+    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None, segdup: None, conversion: None, hidden_copy: None }
 }
 
 /// True iff the family has two OPPOSITE-strand bundles that OVERLAP in genomic coords — a
@@ -2147,6 +2151,63 @@ pub fn detect_and_report_segdups(
                 if seg.is_segdup { "SEGMENTAL DUPLICATION (gene+flanks)" } else { "bare paralog (gene-only homology)" },
             );
             out.insert(fam.family_id, seg);
+        }
+    }
+    out
+}
+
+/// Per-family pass detecting gene-family copies PRESENT in the reads but ABSENT from the
+/// reference (opt-in RUSTLE_VG_HIDDEN_COPY). For each reference copy locus, scans the FULL
+/// bundles for PRIMARY reads (the paralog-bleed firewall — an in-reference paralog's reads are
+/// primary at ITS locus, secondary here) and runs `detect_hidden_copy` over their mismatch
+/// haplotype. DETECT + FLAG only — reports the discrepancy, never places or fabricates the copy.
+pub fn detect_and_report_hidden_copies(
+    families: &[FamilyGroup],
+    bundles: &[Bundle],
+) -> crate::types::DetHashMap<usize, crate::vg_hmm::hidden_copy::HiddenCopyEvidence> {
+    use crate::vg_hmm::hidden_copy::{detect_hidden_copy, HiddenCopyEvidence, HiddenCopyParams, ReadObs};
+    let params = HiddenCopyParams::from_env();
+    let mut out: crate::types::DetHashMap<usize, HiddenCopyEvidence> = Default::default();
+    for fam in families {
+        let mut best: Option<HiddenCopyEvidence> = None;
+        for &bi in &fam.bundle_indices {
+            let Some(fb) = bundles.get(bi) else { continue };
+            let (chrom, lo, hi) = (fb.chrom.clone(), fb.start, fb.end);
+            let mut seen: crate::types::DetHashSet<u64> = Default::default();
+            let mut reads: Vec<ReadObs> = Vec::new();
+            for bundle in bundles {
+                if bundle.chrom != chrom || bundle.end < lo || bundle.start > hi {
+                    continue;
+                }
+                for r in &bundle.reads {
+                    if !r.is_primary_alignment || r.ref_end < lo || r.ref_start > hi
+                        || !seen.insert(r.read_name_hash)
+                    {
+                        continue;
+                    }
+                    let alts: Vec<u64> = r.mismatches.iter()
+                        .map(|&(p, _)| p).filter(|&p| p >= lo && p <= hi).collect();
+                    reads.push(ReadObs { start: r.ref_start, end: r.ref_end, alts });
+                }
+            }
+            let ev = detect_hidden_copy(&reads, &params);
+            if std::env::var_os("RUSTLE_VG_HIDDEN_TRACE").is_some() {
+                eprintln!("[VG-HIDDEN-TRACE] family={} locus={}:{}-{} primary_reads={} alt_positions={} alt_reads={} flagged={}",
+                    fam.family_id, chrom, lo, hi, ev.n_primary_reads, ev.n_alt_positions, ev.n_alt_reads, ev.flagged);
+            }
+            if ev.flagged {
+                eprintln!(
+                    "[VG-HIDDEN] family={} locus={}:{}-{} primary_reads={} alt_haplotype_positions={} alt_reads={} frac={:.2} => EVIDENCE OF A COPY NOT IN THE REFERENCE (flagged; reference models 1, reads imply >=2; NOT placed/fabricated)",
+                    fam.family_id, chrom, lo, hi, ev.n_primary_reads, ev.n_alt_positions,
+                    ev.n_alt_reads, ev.alt_read_fraction,
+                );
+                if best.as_ref().map(|b| ev.n_alt_positions > b.n_alt_positions).unwrap_or(true) {
+                    best = Some(ev);
+                }
+            }
+        }
+        if let Some(ev) = best {
+            out.insert(fam.family_id, ev);
         }
     }
     out

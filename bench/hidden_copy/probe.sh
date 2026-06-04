@@ -7,8 +7,8 @@
 set -euo pipefail
 GEN=bench/tandem_attribution/gen_synthetic.py
 WORK=${1:-/tmp/hidden_copy_probe}; rm -rf "$WORK"; mkdir -p "$WORK"
-python3 "$GEN" --identity 0.97 --copies 3 --reads-per-copy 30 --hidden-copies "2" --spacing 200000 --seed 8 --out "$WORK/hidden"  >/dev/null
-python3 "$GEN" --identity 0.97 --copies 3 --reads-per-copy 30                       --spacing 200000 --seed 8 --out "$WORK/visible" >/dev/null
+python3 "$GEN" --identity 0.96 --copies 3 --reads-per-copy 60 --hidden-copies "2" --spacing 200000 --seed 8 --out "$WORK/hidden"  >/dev/null
+python3 "$GEN" --identity 0.96 --copies 3 --reads-per-copy 60                       --spacing 200000 --seed 8 --out "$WORK/visible" >/dev/null
 for c in hidden visible; do
   minimap2 -ax splice:hq -uf -N20 -p0.5 "$WORK/$c/genome.fa" "$WORK/$c/reads.fa" 2>/dev/null | samtools sort -o "$WORK/$c/r.bam" - 2>/dev/null
   samtools index "$WORK/$c/r.bam"

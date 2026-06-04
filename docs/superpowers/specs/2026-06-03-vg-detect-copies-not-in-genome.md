@@ -25,3 +25,27 @@ heterozygous SNP (1-2) or sequencing error (0).
 placement.
 
 **Status:** infrastructure built (synthetic + probe), signal PROVEN. Honest detector next.
+
+## Honest detector BUILT (2026-06-03)
+vg_hmm/hidden_copy.rs: pure detect_hidden_copy over PRIMARY reads at a reference-copy locus.
+Design = independent design panel (statistical/algorithmic/honesty lenses) synthesized.
+- PRIMARY-reads-only matrix = the paralog-bleed firewall (an in-reference paralog's reads are
+  primary at ITS locus, secondary here, so excluded). Candidate columns = alt-allele frac in
+  [0.20,0.60] (≫ 0.5% error; below fixed/ref-error). Co-segregation: a hidden copy's alt
+  columns co-occur on ONE read subset (the alt haplotype H). FLAG iff ≥12 candidate columns
+  (het firewall — a het is 1-2) AND ≥5 alt-haplotype reads.
+- 5 unit tests: hidden-copy flagged; the 3 FP negatives REJECTED (sequencing error → 0
+  candidates; heterozygous SNP → <12 positions; fixed difference → above the band); low-depth
+  abstains.
+- Wired per-copy-locus (opt-in RUSTLE_VG_HIDDEN_COPY) → [VG-HIDDEN] trace + GTF attrs
+  hidden_copy_evidence / hidden_copy_alt_positions / hidden_copy_read_frac. Default-off
+  byte-identical.
+- DAZ3 discipline: DETECT + FLAG only ("reference models 1, reads imply ≥2") — NEVER places or
+  fabricates the copy.
+- Validated end-to-end: HIDDEN (copy2 absent from reference) → flagged, 49 alt-haplotype
+  positions, read_frac 0.38; ALL-VISIBLE → 0 positions, not flagged (siblings bleed as
+  secondary, filtered). Suite green.
+- Limitation: the pass sees the family-REDUCED reads (8-13 vs ~60 at the locus), enough to
+  carry the signal here but lower-power; full-read coverage (BAM re-fetch, like the mosaic
+  pass) is the robustness follow-up. The synthesized spec also has further rigor not yet
+  implemented (per-read Poisson error-null, LLR model-comparison, span/concentration checks).

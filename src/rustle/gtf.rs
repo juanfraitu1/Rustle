@@ -240,6 +240,13 @@ pub fn write_gtf<W: Write>(
                     if c.confirmed { "confirmed" } else { "chimera_suspect" },
                     c.copy_a, c.copy_b, c.breakpoint_ref.0, c.breakpoint_ref.1, c.n_supporting_reads));
             }
+            // Hidden-copy evidence (opt-in RUSTLE_VG_HIDDEN_COPY; absent otherwise). A flag that
+            // the reads imply a copy not in the reference — NOT a placed/fabricated copy.
+            if let Some(ref h) = v.hidden_copy {
+                tx_attrs.push_str(&format!(
+                    " hidden_copy_evidence \"true\"; hidden_copy_alt_positions \"{}\"; hidden_copy_read_frac \"{:.2}\";",
+                    h.n_alt_positions, h.alt_read_fraction));
+            }
         }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
@@ -412,7 +419,7 @@ mod tests {
             n_id_classes: 0,
             locus_rel: LocusRel::Single,
             depth_copies: None,
-            em_confidence: None, segdup: None, conversion: None,
+            em_confidence: None, segdup: None, conversion: None, hidden_copy: None,
         });
         let out = render(tx);
         assert!(out.contains("cov \"12.000000\";"), "abstained tx lost its coverage:\n{out}");

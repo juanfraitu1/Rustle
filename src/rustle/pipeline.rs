@@ -10800,6 +10800,17 @@ pub fn run<P: AsRef<Path>>(
                         }
                     }
 
+                    // Hidden-copy detection: flag copies present in reads but ABSENT from the
+                    // reference (opt-in, analysis-only; detect+flag, never fabricate).
+                    if std::env::var_os("RUSTLE_VG_HIDDEN_COPY").is_some() {
+                        let hidden = crate::vg::detect_and_report_hidden_copies(&vg_families, &bundles);
+                        for ((fam_id, _copy), v) in vg_family_verdict.iter_mut() {
+                            if let Some(ev) = hidden.get(fam_id) {
+                                v.hidden_copy = Some(ev.clone());
+                            }
+                        }
+                    }
+
                     let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
                     // Per source family: (start index into em_hmm_partitions, #strand partitions).
                     let mut em_fam_spans: Vec<(usize, usize)> = Vec::with_capacity(families_for_em.len());
@@ -18474,7 +18485,7 @@ pub fn run<P: AsRef<Path>>(
                                 n_id_classes: 0,
                                 locus_rel: crate::vg::LocusRel::Single,
                                 depth_copies: None,
-                                em_confidence: None, segdup: None, conversion: None,
+                                em_confidence: None, segdup: None, conversion: None, hidden_copy: None,
                             });
                         }
                     }
