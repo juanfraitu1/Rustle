@@ -10903,6 +10903,8 @@ pub fn run<P: AsRef<Path>>(
                         (em_hmm_partitions.clone(), family_graphs.clone())
                     };
 
+                    // Collector for gene-conversion (mosaic) events, surfaced to the GTF.
+                    let mut mosaic_events: crate::types::DetHashMap<usize, Vec<crate::vg_hmm::mosaic::ConversionEvent>> = Default::default();
                     let em_res = if do_hmm {
                         // Full HMM-EM path.
                         let res = crate::vg::run_pre_assembly_em_hmm(
@@ -10946,6 +10948,7 @@ pub fn run<P: AsRef<Path>>(
                                 &mut bundles,
                                 &em_input_graphs,
                                 config.vg_em_max_iter,
+                                Some(&mut mosaic_events),
                             )
                         } else {
                             // No genome: pileup-based EM from BundleRead.seq.
@@ -10995,6 +10998,20 @@ pub fn run<P: AsRef<Path>>(
                             if let Some(conf) = crate::vg::summarize_em_confidence(&em_reads) {
                                 if let Some(v) = vg_family_verdict.get_mut(&(fam.family_id, copy_id)) {
                                     v.em_confidence = Some(conf);
+                                }
+                            }
+                        }
+                    }
+
+                    // Surface the best gene-conversion (mosaic) event per family onto its
+                    // transcripts: prefer a confirmed event, then the most-supported one.
+                    for (fam_id, events) in &mosaic_events {
+                        if let Some(best) = events.iter()
+                            .max_by_key(|e| (e.confirmed, e.n_supporting_reads))
+                        {
+                            for ((vf, _copy), v) in vg_family_verdict.iter_mut() {
+                                if vf == fam_id {
+                                    v.conversion = Some(best.clone());
                                 }
                             }
                         }
@@ -18457,7 +18474,7 @@ pub fn run<P: AsRef<Path>>(
                                 n_id_classes: 0,
                                 locus_rel: crate::vg::LocusRel::Single,
                                 depth_copies: None,
-                                em_confidence: None, segdup: None,
+                                em_confidence: None, segdup: None, conversion: None,
                             });
                         }
                     }

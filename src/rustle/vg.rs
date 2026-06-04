@@ -1707,6 +1707,10 @@ pub struct FamilyVerdict {
     /// `None` unless the segdup pass ran. Surfaces gene+flank duplicated extent and the
     /// segdup-vs-bare-paralog call. See `detect_and_report_segdups`.
     pub segdup: Option<crate::vg_hmm::segdup::SegdupExtent>,
+    /// Best gene-conversion event for the family (opt-in RUSTLE_VG_MOSAIC_ON). `None` unless
+    /// the mosaic pass found a recombinant. The family's most-supported event (confirmed
+    /// preferred). See `detect_and_report_mosaics` / `ConversionEvent`.
+    pub conversion: Option<crate::vg_hmm::mosaic::ConversionEvent>,
 }
 impl FamilyClass {
     pub fn as_str(&self) -> &'static str {
@@ -2018,7 +2022,7 @@ pub fn classify_family(family: &FamilyGroup, bundles: &[Bundle], p: &FamilyParam
     };
     // em_confidence is filled POST-EM by the pipeline (the read em_* fields aren't set
     // yet at classify-time, which runs before run_fingerprint_em).
-    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None, segdup: None }
+    FamilyVerdict { class, n_copies, n_expressed, connectivity, identifiability, n_id_classes, locus_rel, depth_copies, em_confidence: None, segdup: None, conversion: None }
 }
 
 /// True iff the family has two OPPOSITE-strand bundles that OVERLAP in genomic coords — a
@@ -4120,7 +4124,7 @@ fn detect_and_report_mosaics(
     family: &FamilyGroup,
     bundles: &[Bundle],
     fp: &ExonFingerprints,
-) {
+) -> Vec<crate::vg_hmm::mosaic::ConversionEvent> {
     use crate::vg_hmm::mosaic::{aggregate_family, detect_mosaic, MosaicParams};
     use crate::vg_hmm::mosaic::MosaicStatus;
     let params = MosaicParams::from_env();
@@ -4192,6 +4196,7 @@ fn detect_and_report_mosaics(
             family.family_id, n_mosaic, events.len(), n_conf,
         );
     }
+    events
 }
 
 /// Pre-assembly EM: redistribute multi-mapping read weights across family members
@@ -5032,6 +5037,9 @@ pub fn run_fingerprint_em(
     bundles: &mut [Bundle],
     family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
     max_iter: usize,
+    // Optional collector for per-family gene-conversion events (mosaic pass), keyed by
+    // family_id, so the pipeline can surface them to the GTF. None for callers that don't need it.
+    mut mosaic_out: Option<&mut crate::types::DetHashMap<usize, Vec<crate::vg_hmm::mosaic::ConversionEvent>>>,
 ) -> Vec<EmResult> {
     use rayon::prelude::*;
     let mut results = Vec::with_capacity(families.len());
@@ -5137,7 +5145,12 @@ pub fn run_fingerprint_em(
         // combinations"). Opt-in RUSTLE_VG_MOSAIC_ON, additive — does NOT touch the EM
         // weights below; only reports recombinant reads / confirmed conversion events.
         if fp.n_sites > 0 && std::env::var_os("RUSTLE_VG_MOSAIC_ON").is_some() {
-            detect_and_report_mosaics(family, bundles, &fp);
+            let ev = detect_and_report_mosaics(family, bundles, &fp);
+            if let Some(m) = mosaic_out.as_deref_mut() {
+                if !ev.is_empty() {
+                    m.entry(family.family_id).or_default().extend(ev);
+                }
+            }
         }
 
         // PHASE 1 (sequential): collect placement lists, one per multi-mapped read.
@@ -6999,7 +7012,7 @@ mod tests {
         let family_graphs = vec![Some(fg)];
 
         // max_iter is effectively 1 under anchor mode (single E-step with fixed prior).
-        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5);
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5, None);
 
         let w0 = bundles[0].reads[c0_idx].weight;
         let w1 = bundles[1].reads[c1_idx].weight;
@@ -7042,7 +7055,7 @@ mod tests {
         let family = FamilyGroup { family_id: 77, bundle_indices: vec![0, 1], multimap_reads: multimap };
         let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> = vec![None];
 
-        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5);
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5, None);
 
         let w0 = bundles[0].reads[c0_idx].weight;
         let w1 = bundles[1].reads[c1_idx].weight;
@@ -7220,7 +7233,7 @@ mod tests {
         std::env::set_var("RUSTLE_VG_EM_SCORE_GAP", "1000.0");
         std::env::set_var("RUSTLE_VG_EM_SCORE_GAP_PER_SITE", "1000.0");
 
-        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 1);
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 1, None);
 
         std::env::remove_var("RUSTLE_VG_EM_SCORE_GAP");
         std::env::remove_var("RUSTLE_VG_EM_SCORE_GAP_PER_SITE");
@@ -7276,7 +7289,7 @@ mod tests {
             multimap_reads: multimap,
         };
 
-        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 1);
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 1, None);
 
         // 2-placement multimapper covering 0 diagnostic sites -> uncertain -> must
         // NOT be counted as anchored, despite nh==1 (no NH tag).
@@ -7310,7 +7323,7 @@ mod tests {
         let mut bundles = vec![make_bundle("chr1", '+', c0), make_bundle("chr1", '+', c1)];
         let family = FamilyGroup { family_id: 42, bundle_indices: vec![0, 1], multimap_reads: multimap };
         let family_graphs = vec![Some(fg)];
-        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5);
+        let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5, None);
 
         let w0 = bundles[0].reads[c0i].weight; let w1 = bundles[1].reads[c1i].weight;
         assert!(w0 > 0.9, "shared read should be decisively copy0: w0={w0} w1={w1}");

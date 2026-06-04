@@ -232,6 +232,14 @@ pub fn write_gtf<W: Write>(
                     " family_segdup \"{}\"; family_segdup_extent \"{}\"; family_flank_up \"{}\"; family_flank_down \"{}\";",
                     if sd.is_segdup { "true" } else { "false" }, sd.total_extent, sd.upstream_extent, sd.downstream_extent));
             }
+            // Gene-conversion event (opt-in RUSTLE_VG_MOSAIC_ON; absent otherwise). Confirmed =
+            // breakpoint recurred across ≥k molecules; otherwise a chimera-suspect candidate.
+            if let Some(ref c) = v.conversion {
+                tx_attrs.push_str(&format!(
+                    " gene_conversion \"{}\"; conversion_copies \"{}>{}\"; conversion_breakpoint \"{}-{}\"; conversion_reads \"{}\";",
+                    if c.confirmed { "confirmed" } else { "chimera_suspect" },
+                    c.copy_a, c.copy_b, c.breakpoint_ref.0, c.breakpoint_ref.1, c.n_supporting_reads));
+            }
         }
         if let Some(rc) = tx.rescue_class {
             tx_attrs.push_str(&format!(" rescue_class \"{}\";", rc));
@@ -404,7 +412,7 @@ mod tests {
             n_id_classes: 0,
             locus_rel: LocusRel::Single,
             depth_copies: None,
-            em_confidence: None, segdup: None,
+            em_confidence: None, segdup: None, conversion: None,
         });
         let out = render(tx);
         assert!(out.contains("cov \"12.000000\";"), "abstained tx lost its coverage:\n{out}");
