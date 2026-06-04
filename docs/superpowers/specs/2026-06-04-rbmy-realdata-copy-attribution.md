@@ -92,5 +92,37 @@ certainty; on RBMY the family copies read **low** (c4 sink 0.011, was prior-infl
 abstention, anti-correlation gone. `capacity_confidence` is left as-is but its gtf comment now states
 it is COVERAGE/flow adequacy, **not** attribution (it can be high on a non-identifiable dominant copy
 — read `copy_confidence` for attribution). No regression: DAZ3 4.04/low_conf, obj5 1.0/abstain,
-headline 95.6/90.5, suite 222/0, EM-correctness 5/5. Residual: **#2** (error-aware per-site scoring to
-rescue weakly-identifiable copies like c1, rather than abstain on them).
+headline 95.6/90.5, suite 222/0, EM-correctness 5/5. Residual: **#2** (rescue weakly-identifiable copies like c1).
+
+## Fix #2 investigated (2026-06-04): error-aware FAILS; coherence is the real (future) lever
+The proposed #2 lever — error-aware per-site scoring (`RUSTLE_VG_FP_ERROR_AWARE`, uses the read's
+`de` instead of a fixed 9:1) — does **NOT** rescue c1 and **HURTS** the genuinely-identifiable c0
+on real RBMY:
+
+| copy | PSV concordance | ev_decisive_frac default | ev_decisive_frac error-aware |
+|---|---|---|---|
+| c0 (identifiable) | 1.00 | 1.000 | **0.250** (worse) |
+| c1 (real-weak) | 0.97 | 0.000 | 0.000 (no rescue) |
+| c4 (non-id pool) | 0.21 | 0.026 | 0.051 (more false confidence) |
+
+RBMY reads are clean (median `de` 0.0016; 90% clamp up to 0.01), so error-aware *strengthens*
+per-site evidence — but it shifts the apportionment (winner), so c0's reads scatter. On synthetic it's
+a saturated no-op (id 0.95/0.99 already 1.0). **Keep error-aware default-off.**
+
+**The real distinguishing signal is within-read PSV COHERENCE, not margin.** Per-read held-out
+concordance cleanly separates the real-weak c1 from the noise c4 *despite identical margins*:
+
+| copy | mean per-read concordance | mean norm-margin |
+|---|---|---|
+| c1 (real-weak) | **0.966** | 0.040 |
+| c4 (noise) | **0.207** | 0.040 |
+
+So c1 carries a real, consistent signal (its few PSVs agree across the read) that the magnitude-based
+`eff_gap` can't credit. A **coherence-gated** decisiveness (reusing `build_read_site_obs`' per-site
+per-copy match bits to compute internal per-read PSV agreement, and crediting weak-but-coherent reads)
+is the genuine lever. **NOT implemented** — c1 has only ~2-3 PSVs, so coherence over so few sites is
+statistically thin and forcing c1 decisive flirts with the DAZ3 over-confidence failure mode. This is
+scoped future research with real calibration risk, not a quick win; abstention on c1 remains the
+conservative-correct default. The grounded recommendation: if pursued, gate on coherence over a
+MINIMUM site count, and validate against the held-out concordance that it rescues c1 without crediting
+c4/c2.
