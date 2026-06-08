@@ -36,7 +36,13 @@ RUSTLE_VG_RAW_ENV="RUSTLE_VG_TANDEM=1 RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS=1"   # 
 
 # ── Thresholds (pinned) ─────────────────────────────────────────────────────
 MIN_IDENTITY="${MIN_IDENTITY:-0.90}"   # U3 paralog identity floor
-MIN_COV_FRAC="${MIN_COV_FRAC:-0.50}"   # U3 alignment length-coverage floor
+MIN_COV_FRAC="${MIN_COV_FRAC:-0.30}"   # U3 aln length-coverage floor. 0.30 (not 0.50):
+                                       # paralog UTRs diverge, so full-mRNA coverage under-
+                                       # measures coding homology. RABL2A/RABL2B are 98.8%
+                                       # identical but align over only 38% of the mRNA;
+                                       # 90% identity over >=30% length is still a strong,
+                                       # conservative paralogy bar (48->62 families on the
+                                       # 2-chrom smoke; no flood).
 GUARD_K="${GUARD_K:-1}"                # U5 min primary reads for authentic
 # Restrict expensive runs to one chrom for smoke tests (empty = whole genome):
 CHROM_SUBSET="${CHROM_SUBSET:-}"

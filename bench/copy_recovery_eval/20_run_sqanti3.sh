@@ -11,9 +11,11 @@ if [ ! -s "$REF_GTF" ]; then
   "$GFFREAD" "$REF_GFF" -T -o "$REF_GTF"
 fi
 
+# SQANTI3 v5.5.x uses named args (--isoforms/--refGTF/--refFasta). GTF input is
+# auto-detected by the .gtf extension.
 mamba run -n "$SQANTI3_ENV" python "$SQANTI3_DIR/sqanti3_qc.py" \
-  "$GTF" "$REF_GTF" "$GENOME_FASTA" \
-  -d "$OUT" -o "$ARM" --report skip --skipORF 2>&1 | tail -5
+  --isoforms "$GTF" --refGTF "$REF_GTF" --refFasta "$GENOME_FASTA" \
+  -d "$OUT" -o "$ARM" --report skip --skipORF 2>&1 | tail -8
 
 ls "$OUT/${ARM}_classification.txt"
 echo "[U2] $ARM classification -> $OUT/${ARM}_classification.txt"
