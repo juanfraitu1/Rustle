@@ -143,6 +143,237 @@ pub fn mec_brute(matrix: &[AlleleRow], n_sites: usize) -> (Vec<bool>, Vec<bool>,
     best.unwrap_or((vec![false; n_sites], vec![false; matrix.len()], 0))
 }
 
+use std::collections::HashMap;
+
+/// Per-column active reads: indices into the matrix whose allele is Some at this site.
+fn active_at(matrix: &[AlleleRow], site: usize, cap: usize) -> Vec<usize> {
+    let mut v: Vec<usize> = (0..matrix.len())
+        .filter(|&r| matrix[r][site].is_some())
+        .collect();
+    v.truncate(cap);
+    v
+}
+
+/// Column cost for a bipartition `bits` (bit i = side of active[i]) at `site`:
+/// min over choosing side-0's allele in {Ref,Alt}.
+fn column_cost(matrix: &[AlleleRow], site: usize, active: &[usize], bits: u32) -> u32 {
+    let mut c_a = 0u32;
+    let mut c_b = 0u32;
+    for (i, &r) in active.iter().enumerate() {
+        let side1 = (bits >> i) & 1 == 1;
+        let av = matrix[r][site].unwrap();
+        // target for side-0 reads when side-0 == Alt(true): side1-reads target Ref(false)
+        let target_a = if side1 { false } else { true };
+        let target_b = if side1 { true } else { false };
+        if av != target_a {
+            c_a += 1;
+        }
+        if av != target_b {
+            c_b += 1;
+        }
+    }
+    c_a.min(c_b)
+}
+
+/// Exact coverage-bounded MEC cost via the column DP.
+///
+/// MEC assigns every read to one of two haplotypes (a global bipartition of the
+/// reads); the cost is the number of (read, covered-site) cells that disagree
+/// with the read's assigned haplotype allele, where each site independently takes
+/// the consensus allele of each haplotype. We sweep columns left to right and
+/// enumerate ALL 2^n bipartitions of the column's active reads (n capped by
+/// `cap` -> <= 2^cap states). Correctness requires that a read keep the SAME side
+/// across ALL columns it covers, not just adjacent ones — so the DP state carries
+/// the chosen side of every read seen so far. (A read can skip a column and
+/// reappear later; constraining only adjacent columns would wrongly decouple it.)
+///
+/// Per-column cost is the cheaper of the two allele orientations (side-0 = Ref or
+/// side-0 = Alt); this is exact because each site's two haplotype alleles are
+/// chosen independently. A free global flip of all sides is symmetric, so no
+/// symmetry-breaking is needed. Provably equivalent to `mec_brute`.
+pub fn mec_dp_cost(matrix: &[AlleleRow], n_sites: usize, cap: usize) -> u32 {
+    if n_sites == 0 || matrix.is_empty() {
+        return 0;
+    }
+
+    // DP state: assignment of every read seen so far to a side.
+    // Key: BTreeMap<read_idx, side> serialized; we use a HashMap keyed by a
+    // canonical Vec of (read_idx, side) sorted by read_idx. To keep it cheap we
+    // store the side-map directly as a sorted Vec<(usize,bool)>.
+    use std::collections::BTreeMap;
+    // map from committed read-side assignment -> min cost
+    let mut dp: HashMap<BTreeMap<usize, bool>, u32> = HashMap::new();
+    dp.insert(BTreeMap::new(), 0);
+
+    for site in 0..n_sites {
+        let active = active_at(matrix, site, cap);
+        let n = active.len();
+        let n_states = 1u32 << n;
+
+        // Precompute column cost for every bipartition of this column's active set.
+        let mut col_cost: Vec<u32> = Vec::with_capacity(n_states as usize);
+        for bits in 0..n_states {
+            col_cost.push(column_cost(matrix, site, &active, bits));
+        }
+
+        let mut next: HashMap<BTreeMap<usize, bool>, u32> = HashMap::new();
+
+        for (assign, &pcost) in &dp {
+            for bits in 0..n_states {
+                // Build candidate assignment, enforcing consistency for any read
+                // already committed to a side.
+                let mut ok = true;
+                let mut new_assign = assign.clone();
+                for (i, &r) in active.iter().enumerate() {
+                    let cur_side = (bits >> i) & 1 == 1;
+                    match new_assign.get(&r) {
+                        Some(&existing) => {
+                            if existing != cur_side {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        None => {
+                            new_assign.insert(r, cur_side);
+                        }
+                    }
+                }
+                if !ok {
+                    continue;
+                }
+                let total = pcost + col_cost[bits as usize];
+                next.entry(new_assign)
+                    .and_modify(|e| {
+                        if total < *e {
+                            *e = total;
+                        }
+                    })
+                    .or_insert(total);
+            }
+        }
+
+        dp = next;
+    }
+
+    dp.values().copied().min().unwrap_or(0)
+}
+
+/// One read's haplotype assignment.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadHaplotype {
+    pub read_name_hash: u64,
+    pub hp: u8,  // 1 or 2
+    pub ps: u32, // phase-set id
+}
+
+pub struct PhasingResult {
+    pub het_sites: Vec<HetSite>,
+    pub assignments: Vec<ReadHaplotype>, // only reads covering >=1 het site
+}
+
+/// Phase a copy's reads. Detects hets, runs MEC, assigns every het-covering read
+/// to a side by best agreement, derives phase sets from read-overlap connectivity,
+/// and applies canonical HP labels (HP1 = larger side; ties -> side with the
+/// smallest read_name_hash). Reads covering 0 het sites are omitted (unphased).
+pub fn phase_reads(reads: &[BundleRead], cfg: &PhasingConfig) -> PhasingResult {
+    let sites = detect_het_sites(reads, cfg);
+    if sites.is_empty() {
+        return PhasingResult { het_sites: sites, assignments: Vec::new() };
+    }
+    let matrix = allele_matrix(reads, &sites);
+    let n_sites = sites.len();
+
+    let hap_a: Vec<bool> = if n_sites <= 20 {
+        mec_brute(&matrix, n_sites).0
+    } else {
+        sites.iter().map(|s| s.n_alt >= s.n_ref).collect()
+    };
+    let hap_b: Vec<bool> = hap_a.iter().map(|&x| !x).collect();
+
+    let mut side: Vec<Option<bool>> = Vec::with_capacity(reads.len()); // false=A,true=B
+    for row in matrix.iter() {
+        if row.iter().all(|a| a.is_none()) {
+            side.push(None);
+            continue;
+        }
+        let ca = row_cost(row, &hap_a);
+        let cb = row_cost(row, &hap_b);
+        side.push(Some(cb < ca));
+    }
+
+    // Phase sets: hets linked iff co-covered by a read. Union-find over sites.
+    let mut parent: Vec<usize> = (0..n_sites).collect();
+    fn find(p: &mut Vec<usize>, x: usize) -> usize {
+        let mut r = x;
+        while p[r] != r { r = p[r]; }
+        let mut c = x;
+        while p[c] != r { let n = p[c]; p[c] = r; c = n; }
+        r
+    }
+    for row in &matrix {
+        let covered: Vec<usize> = row.iter().enumerate().filter_map(|(j, a)| a.map(|_| j)).collect();
+        for w in covered.windows(2) {
+            let (a, b) = (find(&mut parent, w[0]), find(&mut parent, w[1]));
+            if a != b { parent[a] = b; }
+        }
+    }
+    let mut comp_id: HashMap<usize, u32> = HashMap::new();
+    let mut next_ps: u32 = 1;
+    let mut site_ps: Vec<u32> = vec![0; n_sites];
+    for j in 0..n_sites {
+        let root = find(&mut parent, j);
+        let id = *comp_id.entry(root).or_insert_with(|| { let v = next_ps; next_ps += 1; v });
+        site_ps[j] = id;
+    }
+
+    let mut read_ps: Vec<Option<u32>> = vec![None; reads.len()];
+    for (ri, row) in matrix.iter().enumerate() {
+        if let Some(j) = row.iter().position(|a| a.is_some()) {
+            read_ps[ri] = Some(site_ps[j]);
+        }
+    }
+
+    let mut ps_sideA: HashMap<u32, Vec<u64>> = HashMap::new();
+    let mut ps_sideB: HashMap<u32, Vec<u64>> = HashMap::new();
+    for (ri, s) in side.iter().enumerate() {
+        let (Some(sd), Some(ps)) = (s, read_ps[ri]) else { continue };
+        let h = reads[ri].read_name_hash;
+        if *sd { ps_sideB.entry(ps).or_default().push(h); }
+        else   { ps_sideA.entry(ps).or_default().push(h); }
+    }
+    let mut a_is_hp1: HashMap<u32, bool> = HashMap::new();
+    let empty: Vec<u64> = Vec::new();
+    for ps in 1..next_ps {
+        let a = ps_sideA.get(&ps).unwrap_or(&empty);
+        let b = ps_sideB.get(&ps).unwrap_or(&empty);
+        let a_first = a.iter().min().copied();
+        let b_first = b.iter().min().copied();
+        let a_hp1 = if a.len() != b.len() {
+            a.len() > b.len()
+        } else {
+            match (a_first, b_first) {
+                (Some(x), Some(y)) => x <= y,
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (None, None) => true,
+            }
+        };
+        a_is_hp1.insert(ps, a_hp1);
+    }
+
+    let mut assignments: Vec<ReadHaplotype> = Vec::new();
+    for (ri, s) in side.iter().enumerate() {
+        let (Some(sd), Some(ps)) = (s, read_ps[ri]) else { continue };
+        let a_hp1 = *a_is_hp1.get(&ps).unwrap_or(&true);
+        let is_side_a = !*sd;
+        let hp = if is_side_a == a_hp1 { 1u8 } else { 2u8 };
+        assignments.push(ReadHaplotype { read_name_hash: reads[ri].read_name_hash, hp, ps });
+    }
+    assignments.sort_by(|x, y| x.read_name_hash.cmp(&y.read_name_hash));
+
+    PhasingResult { het_sites: sites, assignments }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +500,73 @@ mod tests {
         ];
         let (_hap, _sides, cost) = mec_brute(&matrix, 2);
         assert_eq!(cost, 1);
+    }
+
+    // Deterministic small pseudo-random matrices; DP must match the brute oracle.
+    fn lcg(seed: &mut u64) -> u64 {
+        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *seed >> 33
+    }
+
+    #[test]
+    fn dp_matches_brute_on_random_small() {
+        let mut seed = 0x1234_5678u64;
+        for _ in 0..200 {
+            let n_sites = 1 + (lcg(&mut seed) % 4) as usize; // 1..4 sites
+            let n_reads = 2 + (lcg(&mut seed) % 6) as usize;  // 2..7 reads
+            let mut matrix: Vec<AlleleRow> = Vec::new();
+            for _ in 0..n_reads {
+                let row: AlleleRow = (0..n_sites)
+                    .map(|_| match lcg(&mut seed) % 3 {
+                        0 => None,
+                        1 => Some(false),
+                        _ => Some(true),
+                    })
+                    .collect();
+                matrix.push(row);
+            }
+            let (_, _, brute_cost) = mec_brute(&matrix, n_sites);
+            let dp_cost = mec_dp_cost(&matrix, n_sites, 16);
+            assert_eq!(dp_cost, brute_cost, "matrix={:?}", matrix);
+        }
+    }
+
+    #[test]
+    fn phase_reads_splits_two_haplotypes() {
+        let cfg = PhasingConfig::default();
+        let mut reads = Vec::new();
+        for i in 0..6 {
+            reads.push(mk_read(i, 50, 200, vec![(100, b'A'), (150, b'G')]));
+        }
+        for i in 6..12 {
+            reads.push(mk_read(i, 50, 200, vec![]));
+        }
+        let res = phase_reads(&reads, &cfg);
+        assert_eq!(res.het_sites.len(), 2);
+        assert_eq!(res.assignments.len(), 12);
+        let hp_alt = res.assignments.iter().find(|a| a.read_name_hash == 0).unwrap().hp;
+        let hp_ref = res.assignments.iter().find(|a| a.read_name_hash == 6).unwrap().hp;
+        assert_ne!(hp_alt, hp_ref);
+        assert!(res.assignments.iter().all(|a| a.ps == res.assignments[0].ps));
+    }
+
+    #[test]
+    fn phase_reads_unphased_when_no_hets() {
+        let cfg = PhasingConfig::default();
+        let reads: Vec<_> = (0..10).map(|i| mk_read(i, 50, 200, vec![])).collect();
+        let res = phase_reads(&reads, &cfg);
+        assert!(res.het_sites.is_empty());
+        assert!(res.assignments.is_empty());
+    }
+
+    #[test]
+    fn phase_reads_deterministic() {
+        let cfg = PhasingConfig::default();
+        let mut reads = Vec::new();
+        for i in 0..6 { reads.push(mk_read(i, 50, 200, vec![(100, b'A')])); }
+        for i in 6..12 { reads.push(mk_read(i, 50, 200, vec![])); }
+        let a = phase_reads(&reads, &cfg).assignments;
+        let b = phase_reads(&reads, &cfg).assignments;
+        assert_eq!(a, b);
     }
 }
