@@ -66,3 +66,23 @@ def recovery_set(classification_rows, universe_tx):
         elif cat == ISM:
             cur["ism"] = True
     return rec
+
+
+def head_to_head(rustle_rec, stringtie_rec, authentic, family_of):
+    """rustle_rec / stringtie_rec: {ref_tx: {'fsm','ism'}}. authentic: {ref_tx: bool}
+    (only meaningful for rustle recoveries). family_of: {ref_tx: family_id}.
+    Returns the headline split as sorted lists + counts."""
+    def fsm_set(rec):
+        return {tx for tx, v in rec.items() if v["fsm"]}
+    r_fsm = fsm_set(rustle_rec)
+    s_fsm = fsm_set(stringtie_rec)
+    rustle_only = r_fsm - s_fsm
+    auth = sorted(tx for tx in rustle_only if authentic.get(tx, False))
+    phantom = sorted(tx for tx in rustle_only if not authentic.get(tx, False))
+    return {
+        "rustle_only_fsm_authentic": auth,
+        "rustle_only_fsm_phantom": phantom,
+        "n_win": len(auth),
+        "n_phantom": len(phantom),
+        "families_won": sorted({family_of.get(tx, "NA") for tx in auth}),
+    }

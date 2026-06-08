@@ -42,3 +42,21 @@ def test_recovery_set_fsm_ism_within_universe():
     assert rec["rna-A2"] == {"fsm": False, "ism": True}
     assert "rna-S1" not in rec
     assert "novel" not in rec
+
+
+def test_head_to_head_splits_authentic_and_phantom():
+    rustle = {
+        "rna-A1": {"fsm": True, "ism": False},   # ST misses, authentic -> WIN
+        "rna-B1": {"fsm": True, "ism": False},   # ST misses, phantom   -> phantom
+        "rna-C1": {"fsm": True, "ism": False},   # ST also has it       -> not rustle-only
+    }
+    stringtie = {
+        "rna-C1": {"fsm": True, "ism": False},
+    }
+    authentic = {"rna-A1": True, "rna-B1": False, "rna-C1": True}
+    fam = {"rna-A1": "FAM1", "rna-B1": "FAM2", "rna-C1": "FAM3"}
+    res = lib_eval.head_to_head(rustle, stringtie, authentic, fam)
+    assert res["rustle_only_fsm_authentic"] == ["rna-A1"]
+    assert res["rustle_only_fsm_phantom"] == ["rna-B1"]
+    assert res["n_win"] == 1
+    assert res["n_phantom"] == 1
