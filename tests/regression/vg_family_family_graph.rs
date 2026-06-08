@@ -1,9 +1,10 @@
-use rustle::vg_hmm::family_graph::{ExonClass, FamilyGraph, JunctionEdge, NodeIdx};
+use rustle::vg_family::family_graph::{ExonClass, FamilyGraph, JunctionEdge, NodeIdx};
 use rustle::types::{Bundle, BundleRead, JunctionStats};
 use std::sync::Arc;
 
 fn mk_bundle_with_reads(start: u64, end: u64, exons: Vec<(u64, u64)>) -> Bundle {
     let read = BundleRead {
+        em_ev_decisive: false,
         read_uid: 1, read_name: Arc::from("r1"), read_name_hash: 0,
         ref_id: None, mate_ref_id: None, mate_start: None, hi: 0,
         ref_start: start, ref_end: end, exons: exons.clone(),
@@ -32,6 +33,7 @@ fn mk_bundle_with_reads(start: u64, end: u64, exons: Vec<(u64, u64)>) -> Bundle 
         junction_pair_stats: Default::default(),
         bundlenodes: None, read_bnodes: None, bnode_colors: None,
         synthetic: false, rescue_class: None,
+        hp_tag: None, ps_tag: None,
     }
 }
 
@@ -57,7 +59,7 @@ fn exon_class_carries_per_copy_sequences() {
         per_copy_sequences: vec![(0, b"ACGT".to_vec()), (1, b"ACAT".to_vec())],
         per_copy_spans: vec![(0, (1000, 1500)), (1, (1000, 1500))],
         copy_specific: false,
-        profile: None, per_copy_profiles: vec![], per_copy_cov: vec![],
+        per_copy_cov: vec![],
     };
     assert_eq!(cls.per_copy_sequences.len(), 2);
     assert_eq!(cls.per_copy_spans.len(), 2);
@@ -66,7 +68,7 @@ fn exon_class_carries_per_copy_sequences() {
 
 #[test]
 fn exon_extraction_returns_unique_sorted_intervals() {
-    use rustle::vg_hmm::family_graph::extract_copy_exons;
+    use rustle::vg_family::family_graph::extract_copy_exons;
     let b = mk_bundle_with_reads(100, 500, vec![(100, 200), (300, 400), (450, 500)]);
     let exons = extract_copy_exons(&b);
     assert_eq!(exons, vec![(100, 200), (300, 400), (450, 500)]);
@@ -74,7 +76,7 @@ fn exon_extraction_returns_unique_sorted_intervals() {
 
 #[test]
 fn build_family_graph_two_copy_smoke() {
-    use rustle::vg_hmm::family_graph::build_family_graph;
+    use rustle::vg_family::family_graph::build_family_graph;
     use rustle::vg::FamilyGroup;
     use std::collections::HashMap;
     // Two bundles, identical exon coordinates.
@@ -93,7 +95,7 @@ fn build_family_graph_two_copy_smoke() {
 
 #[test]
 fn junction_edges_count_unique_copies_supporting_each_edge() {
-    use rustle::vg_hmm::family_graph::collect_family_junctions;
+    use rustle::vg_family::family_graph::collect_family_junctions;
     // Three copies, two of which share a junction at (1000,1100); one has a private (2000,2100).
     let per_copy = vec![
         ('+', vec![(1000u64, 1100u64), (3000, 3100)]),
@@ -112,7 +114,7 @@ fn junction_edges_count_unique_copies_supporting_each_edge() {
 
 #[test]
 fn minimizer_jaccard_splits_position_cluster_when_sequences_diverge() {
-    use rustle::vg_hmm::family_graph::refine_by_minimizer_jaccard;
+    use rustle::vg_family::family_graph::refine_by_minimizer_jaccard;
     // Two "exons" at the same position cluster but with no shared k-mers.
     let cluster = vec![(0usize, b"AAAAAAAAAAAAAAAA".to_vec()),
                        (1usize, b"GGGGGGGGGGGGGGGG".to_vec())];
@@ -122,7 +124,7 @@ fn minimizer_jaccard_splits_position_cluster_when_sequences_diverge() {
 
 #[test]
 fn minimizer_jaccard_keeps_similar_sequences_together() {
-    use rustle::vg_hmm::family_graph::refine_by_minimizer_jaccard;
+    use rustle::vg_family::family_graph::refine_by_minimizer_jaccard;
     let s = b"ACGTACGTACGTACGTACGTACGTACGT".to_vec();
     let cluster = vec![(0usize, s.clone()), (1usize, s.clone())];
     let split = refine_by_minimizer_jaccard(&cluster, 0.30, 15, 10);
@@ -131,7 +133,7 @@ fn minimizer_jaccard_keeps_similar_sequences_together() {
 
 #[test]
 fn position_overlap_clusters_partition_exons() {
-    use rustle::vg_hmm::family_graph::cluster_by_position;
+    use rustle::vg_family::family_graph::cluster_by_position;
     // copy 0: exons at 100-200 and 300-400
     // copy 1: exons at 110-210 (overlaps copy0[0]) and 500-600 (no overlap)
     let copy0 = vec![(100u64, 200u64), (300, 400)];
@@ -140,26 +142,4 @@ fn position_overlap_clusters_partition_exons() {
     // Expect 3 clusters: {(c0,0),(c1,0)}, {(c0,1)}, {(c1,1)}
     assert_eq!(clusters.len(), 3);
     assert!(clusters.iter().any(|c| c.len() == 2)); // the overlapping pair
-}
-
-#[test]
-fn build_family_graph_fits_profiles_when_sequences_present() {
-    use rustle::vg_hmm::family_graph::build_family_graph;
-    use rustle::vg::FamilyGroup;
-    use std::collections::HashMap;
-    // Without genome the test in 1.6 keeps profiles None — that case still holds.
-    // Here we simulate sequences by stubbing the genome path. Easiest: extend
-    // build_family_graph with a function variant that takes preloaded sequences.
-    // For test-only API, see fit_profiles_in_place below.
-    let bundles = vec![mk_bundle_with_reads(0, 100, vec![(0, 50), (60, 100)]),
-                       mk_bundle_with_reads(0, 100, vec![(0, 50), (60, 100)])];
-    let family = FamilyGroup { family_id: 0, bundle_indices: vec![0, 1], multimap_reads: HashMap::new() };
-    let mut fg = build_family_graph(&family, &bundles, None, 0.30, 0.30, 0.30).unwrap();
-    // Inject sequences and refit.
-    for n in &mut fg.nodes {
-        n.per_copy_sequences = vec![(0, b"ACGTACGT".to_vec()), (1, b"ACGAACGT".to_vec())];
-    }
-    rustle::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).unwrap();
-    assert!(fg.nodes.iter().all(|n| n.profile.is_some()));
-    assert!(fg.nodes[0].profile.as_ref().unwrap().n_columns >= 6);
 }

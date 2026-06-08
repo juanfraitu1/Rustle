@@ -265,6 +265,15 @@ fn trace_tx_detail(label: &str, t: &Transcript, extra: Option<&str>) {
 }
 
 fn is_rescue_protected(t: &Transcript) -> bool {
+    // RUSTLE_VG_UNION_BASELINE: primary-only baseline clones — protected from
+    // cross-bundle reconciliation so the secondary-polluted VG transcripts can't
+    // out-compete these primary-backed baseline isoforms (guarantees VG ⊇ baseline).
+    if matches!(
+        t.rescue_class,
+        Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline)
+    ) {
+        return true;
+    }
     // Guide-matched transcripts are protected from dedup/filtering.
     if t.source.as_deref().map_or(false, |s| s.starts_with("guide:")) {
         return true;
@@ -278,6 +287,14 @@ fn is_rescue_protected(t: &Transcript) -> bool {
         t.source.as_deref(),
         Some("terminal_alt_acceptor") | Some("micro_exon_rescue") | Some("terminal_stop_variant")
     ) {
+        return true;
+    }
+    // Emitted gene-conversion recombinant (opt-in RUSTLE_VG_MOSAIC_EMIT): it shares the host
+    // copy's exon chain by construction, so it would otherwise be removed as a same-chain
+    // subset of the higher-coverage native. It is a distinct molecular species (a confirmed
+    // cross-copy mosaic) — protect it from subset/near-duplicate dedup. Only ever set when the
+    // feature is on, so default behavior is byte-identical.
+    if t.source.as_deref() == Some("gene_conversion") {
         return true;
     }
     // Alt-splice rescue emissions are protected from isofrac.
@@ -1196,6 +1213,7 @@ mod tests {
             copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
         }
     }
 
@@ -3381,7 +3399,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     // longcov ratio (which is irrelevant for a recovered cassette isoform).
                     let csr_protected = longreads
                         && std::env::var_os("RUSTLE_INCLUDED_DROP_ALT_BOUNDARY_OFF").is_none()
-                        && t2.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::ChimericSuffixRescue)
+                        && t2.rescue_class == Some(crate::vg_family::diagnostic::RescueClass::ChimericSuffixRescue)
                         && {
                             let t2_first_start = t2.exons.first().map(|e| e.0).unwrap_or(0);
                             let t1_first_start = t1.exons.first().map(|e| e.0).unwrap_or(0);
@@ -8378,6 +8396,16 @@ pub fn print_predcluster_with_summary_multi(
         if is_guide_pair(t) {
             return true;
         }
+        // RUSTLE_VG_UNION_BASELINE: primary-only baseline clones are exempt — at a
+        // merged family locus a baseline isoform can look like a read-through next to
+        // the VG bundle's polluted transcripts, but it is a real primary-backed
+        // transcript the baseline keeps. (Default-off: no UnionBaseline tx exist.)
+        if matches!(
+            t.rescue_class,
+            Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline)
+        ) {
+            return true;
+        }
         // checktrf_rescue back-extend extras: retained-intron keeptrf has longcov=1.0
         // but the extra TSS variant inherits zero-flux coverage (~0.94); exempt when
         // longcov >= 1.0 so the correct TSS variant reaches the output.
@@ -8763,272 +8791,6 @@ pub fn filter_unsupported_junctions(
     result
 }
 
-/// Global cross-strand filter ( `print_predcluster` cross-strand block).
-///
-/// In ref, `print_predcluster` processes both strands of a genomic cluster together.
-/// When two transcripts on different strands overlap, a single-exon lower-scored transcript
-/// is eliminated by a higher-scored transcript on the opposite strand (18787: exons.Count()==1).
-///
-/// Rustle processes each strand in its own bundle, so the existing `pairwise_overlap_filter`
-/// cross-strand branch never fires. This function provides an equivalent global pass over ALL
-/// assembled transcripts (from all strands/bundles) after per-bundle filtering is complete.
-///
-/// Rule implemented (first condition):
-///   If n1 (higher score) and n2 (lower score) overlap on opposite strands AND n2 has 1 exon
-///   AND n2 is not guide-anchored → eliminate n2.
-pub fn apply_global_cross_strand_filter(txs: Vec<Transcript>, verbose: bool) -> Vec<Transcript> {
-    let n = txs.len();
-    if n < 2 {
-        return txs;
-    }
-
-    // Sort by chromosome and then score descending so we can iterate higher-scored first.
-    // We work on index arrays to avoid moving out of txs.
-    let mut order: Vec<usize> = (0..n).collect();
-    order.sort_unstable_by(|&a, &b| {
-        txs[a].chrom.cmp(&txs[b].chrom).then_with(|| {
-            tx_score(&txs[b])
-                .partial_cmp(&tx_score(&txs[a]))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
-
-    let mut dead = SmallBitset::with_capacity(n.min(64));
-
-    for oi in 0..order.len() {
-        let n1 = order[oi];
-        if dead.contains(n1) {
-            continue;
-        }
-        // Never kill oracle_direct tx via any downstream cross-strand rule.
-        if txs[n1].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
-            continue;
-        }
-        let t1_start = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
-        let t1_end = txs[n1].exons.last().map(|e| e.1).unwrap_or(0);
-
-        for oj in (oi + 1)..order.len() {
-            let n2 = order[oj];
-            if dead.contains(n2) {
-                continue;
-            }
-            // Never kill oracle_direct tx.
-            if txs[n2].source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
-                continue;
-            }
-            // Only cross-strand comparisons
-            if txs[n1].strand == txs[n2].strand {
-                continue;
-            }
-            // Must be on same chromosome
-            if txs[n1].chrom != txs[n2].chrom {
-                continue;
-            }
-            let t2_start = txs[n2].exons.first().map(|e| e.0).unwrap_or(0);
-            let t2_end = txs[n2].exons.last().map(|e| e.1).unwrap_or(0);
-            // Genomic span overlap check
-            if t1_end <= t2_start || t2_end <= t1_start {
-                continue;
-            }
-            // first condition: eliminate single-exon lower-scored transcript
-            if txs[n2].exons.len() == 1 && !is_guide_pair(&txs[n2]) {
-                dead.insert_grow(n2);
-            }
-
-            // second condition:
-            // if n1 is single-exon on reverse strand (tlen<0) and n2 is forward strand (tlen>0)
-            // with low coverage (cov < 1/ERROR_PERC = 10), eliminate n1
-            let n1_is_rev_long = txs[n1].is_longread && txs[n1].strand == '-';
-            let n2_is_fwd_long = !txs[n2].is_longread && txs[n2].strand == '+';
-            if n1_is_rev_long && n2_is_fwd_long && txs[n2].exons.len() == 1 && txs[n2].coverage < 10.0 {
-                dead.insert_grow(n1);
-            }
-
-            // low-coverage antisense elimination
-            // If n2 has low coverage across its single exon relative to total coverage, eliminate n2
-            // Note: Without bpcov in global pass, we use a simpler heuristic:
-            // if n2 single-exon with very low coverage (< singlethr=4.75), eliminate
-            if txs[n2].exons.len() == 1 && txs[n2].coverage < 4.75 && !is_guide_pair(&txs[n2]) {
-                dead.insert_grow(n2);
-            }
-
-            // Cross-strand retained intron filter (StringTie parity):
-            // StringTie's pairwise filter calls retainedintron() for ALL overlapping pairs
-            // regardless of strand. When the dominant has a low-coverage intron, and the
-            // weaker transcript's exon spans that intron, it's killed as "retained intron".
-            //
-            // In Rustle, per-subbundle print_predcluster never sees cross-strand pairs.
-            // We replicate here: n2 is killed if any of its exons spans an intron of n1,
-            // AND n2->cov < ERROR_PERC * n1->cov (matching StringTie's frac threshold).
-            if !is_guide_pair(&txs[n2])
-                && txs[n2].exons.len() > 1
-                && txs[n1].exons.len() > 1
-                && txs[n2].coverage < 0.05 * txs[n1].coverage
-            {
-                // StringTie retainedintron (rlink.cpp:17742) gated on lowintron[n1][i-1]:
-                // kills n2 when any n2 exon overlaps (even partially) an n1 intron that is
-                // marked low-coverage. Rustle's prior check required full containment
-                // (middle_exon case only); now allow partial overlap but ONLY when
-                // intron_low bit for that n1 intron is set.
-                // StringTie's rlink.cpp:19049 gates retainedintron on `overlaps.get(n1,n2)`:
-                // n1 and n2 must have substantial exon-to-exon overlap, not just
-                // coord-range touch. Require MULTIPLE n2 exons to overlap n1's exon
-                // region (not just one terminal exon briefly touching n1's tail).
-                let overlap_bp_total: u64 = txs[n1].exons.iter().map(|&(s1, e1)| {
-                    txs[n2].exons.iter().map(|&(s2, e2)| {
-                        let lo = s1.max(s2);
-                        let hi = e1.min(e2);
-                        if hi > lo { hi - lo } else { 0 }
-                    }).sum::<u64>()
-                }).sum();
-                // Count n2 exons with any overlap to n1's span
-                let n1_span_start = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
-                let n1_span_end = txs[n1].exons.last().map(|e| e.1).unwrap_or(0);
-                let n2_exons_in_n1: usize = txs[n2].exons.iter()
-                    .filter(|&&(s2, e2)| s2 < n1_span_end && e2 > n1_span_start)
-                    .count();
-                // Defaults tuned via trace diff: min_overlap=100, min_n2_exons=2.
-                // At these thresholds the gate is net-positive (removes 1 bogus + strand
-                // STRG.29-merged tx) without killing any legit StringTie matches.
-                // For tighter filtering: lower min_n2_exons to 1 (kills 44669742 extras
-                // but costs 7 matches globally).
-                let min_overlap_bp: u64 = std::env::var("RUSTLE_XSTRAND_MIN_OVERLAP")
-                    .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
-                let min_n2_exons: usize = std::env::var("RUSTLE_XSTRAND_MIN_N2_EXONS")
-                    .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
-                let substantial_overlap = overlap_bp_total >= min_overlap_bp
-                    && n2_exons_in_n1 >= min_n2_exons;
-                // Default ON; disable via RUSTLE_XSTRAND_LOWINTRON_OFF=1.
-                let use_lowintron_gate = substantial_overlap
-                    && !txs[n1].intron_low.is_empty()
-                    && txs[n1].intron_low.len() == txs[n1].exons.len().saturating_sub(1)
-                    && std::env::var_os("RUSTLE_XSTRAND_LOWINTRON_OFF").is_none();
-                // Three criterion modes:
-                // - RUSTLE_XSTRAND_C4_PARTIAL=1: ANY overlap + lowintron gate (broad; tends to regress)
-                // - default (with lowintron): full-containment + lowintron gate
-                // - fallback (no lowintron): full-containment (legacy)
-                let partial_mode = std::env::var_os("RUSTLE_XSTRAND_C4_PARTIAL").is_some();
-                // StringTie's pre-retainedintron guard (rlink.cpp:19058-19063):
-                // skip retainedintron kill when n2's first OR last exon is < anchor (25bp).
-                // These tiny terminal exons get killed by a DIFFERENT code path in StringTie
-                // (line 19062); porting only retainedintron without this guard over-kills.
-                const LONGINTRONANCHOR: u64 = 25;
-                let n2_first_len = txs[n2].exons.first().map(|&(s,e)| e.saturating_sub(s)).unwrap_or(0);
-                let n2_last_len = txs[n2].exons.last().map(|&(s,e)| e.saturating_sub(s)).unwrap_or(0);
-                let small_terminal = n2_first_len < LONGINTRONANCHOR || n2_last_len < LONGINTRONANCHOR;
-                // StringTie retainedintron() port (rlink.cpp:17742) with 4 cases:
-                //   last_exon / first_exon / middle_exon / exon_overlap
-                // All gated on n1.intron_low[i-1]. Walks n1 introns in order, advancing j
-                // through n2 exons.
-                let killed = if use_lowintron_gate && !small_terminal {
-                    let frac = 0.1f64; // ERROR_PERC
-                    let cov_ok = txs[n2].coverage < frac * txs[n1].coverage;
-                    let mut j = 0usize;
-                    let n2_last = txs[n2].exons.len().saturating_sub(1);
-                    let mut fired = false;
-                    for i in 1..txs[n1].exons.len() {
-                        if j >= txs[n2].exons.len() { break; }
-                        if !txs[n1].intron_low.get(i - 1).copied().unwrap_or(false) {
-                            continue;
-                        }
-                        // n1 intron i-1 = (n1.exons[i-1].end .. n1.exons[i].start)
-                        let n1_intron_donor = txs[n1].exons[i - 1].1;   // end of prev exon (inclusive-ish)
-                        let n1_intron_acceptor_start = txs[n1].exons[i].0;
-                        // Case: last_exon — n2's last exon starts at/before donor AND cov<frac
-                        if j == n2_last && cov_ok && txs[n2].exons[j].0 <= n1_intron_donor {
-                            fired = true;
-                            break;
-                        }
-                        // Advance j: while n2.exons[j].end < n1.exons[i].start, j++
-                        while j < txs[n2].exons.len()
-                            && txs[n2].exons[j].1 < n1_intron_acceptor_start
-                        {
-                            j += 1;
-                        }
-                        // Case: first_exon — j==0 AND cov<frac
-                        if j == 0 && cov_ok {
-                            fired = true;
-                            break;
-                        }
-                        // If j advanced past everything, stop.
-                        if j >= txs[n2].exons.len() {
-                            break;
-                        }
-                        // Check if n2.exons[j].start <= n1.exons[i-1].end (overlap with intron region)
-                        if txs[n2].exons[j].0 <= n1_intron_donor {
-                            if j > 0 && j < n2_last {
-                                // Case: middle_exon (no cov check per StringTie line 17777)
-                                // (but we keep cov check since we're in cross-strand context)
-                                if partial_mode || cov_ok {
-                                    fired = true;
-                                    break;
-                                }
-                            } else if cov_ok {
-                                // Case: exon_overlap
-                                fired = true;
-                                break;
-                            }
-                        }
-                    }
-                    fired
-                } else {
-                    // Legacy full-containment fallback (bpcov unavailable / gate disabled).
-                    txs[n1].exons.windows(2).any(|w| {
-                        let intron_start = w[0].1;
-                        let intron_end = w[1].0;
-                        txs[n2].exons.iter().any(|&(s2, e2)| {
-                            s2 < intron_start && e2 > intron_end
-                        })
-                    })
-                };
-                if killed {
-                    if std::env::var_os("RUSTLE_TRACE_LOWINTRON_KILLS").is_some() {
-                        let n1s = txs[n1].exons.first().map(|e| e.0).unwrap_or(0);
-                        let n1e = txs[n1].exons.last().map(|e| e.1).unwrap_or(0);
-                        let n2s = txs[n2].exons.first().map(|e| e.0).unwrap_or(0);
-                        let n2e = txs[n2].exons.last().map(|e| e.1).unwrap_or(0);
-                        eprintln!(
-                            "LOWINTRON_KILL n2={}..{}({}) n1={}..{}({}) n1cov={:.2} n2cov={:.2} n1_exons={} n2_exons={} lowintron_bits={}",
-                            n2s, n2e, txs[n2].strand,
-                            n1s, n1e, txs[n1].strand,
-                            txs[n1].coverage, txs[n2].coverage,
-                            txs[n1].exons.len(), txs[n2].exons.len(),
-                            txs[n1].intron_low.iter().filter(|&&b| b).count(),
-                        );
-                    }
-                    dead.insert_grow(n2);
-                }
-            }
-        }
-    }
-
-    let removed = dead.count_ones();
-    if verbose && removed > 0 {
-        eprintln!(
-            "    cross_strand_filter: removed {} transcript(s) (antisense elimination: single-exon + low-cov)",
-            removed
-        );
-    }
-    if std::env::var_os("RUSTLE_TRACE_XSTRAND").is_some() {
-        for i in 0..txs.len() {
-            if dead.contains(i) {
-                let t = &txs[i];
-                let s = t.exons.first().map(|e| e.0).unwrap_or(0);
-                let e = t.exons.last().map(|e| e.1).unwrap_or(0);
-                eprintln!(
-                    "XSTRAND_KILL {}:{}-{}({}) exons={} cov={:.2}",
-                    t.chrom, s, e, t.strand, t.exons.len(), t.coverage
-                );
-            }
-        }
-    }
-
-    // Preserve original order
-    txs.into_iter()
-        .enumerate()
-        .filter_map(|(i, t)| if !dead.contains(i) { Some(t) } else { None })
-        .collect()
-}
 
 /// Suppress near-duplicate chains: multi-exon transcripts whose intron chain
 /// differs from a higher-coverage sibling's by at most 2 introns, where each
@@ -9478,6 +9240,7 @@ pub fn recover_missing_guide_transcripts(
                 synthetic: false,
                 rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                hp_tag: None, ps_tag: None,
             };
             transcripts.push(tx);
             recovered += 1;

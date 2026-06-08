@@ -471,13 +471,14 @@ pub fn compute_family_graph_kmer_jaccard_diag(
     // canonical-k-mer set per copy across ALL sub-families. This scores the cross-strand
     // homologous pair (the inverted-paralog case) rather than only the largest same-strand
     // sub-family (which for inverted families is often unrelated bundles -> jaccard 0).
-    let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+    let sub_families = crate::vg_family::rescue::partition_family_by_strand(family, bundles);
     let mut all_kmer_sets: Vec<crate::types::DetHashSet<u64>> = Vec::new();
     let mut built_any = false;
     for sub in &sub_families {
         if sub.bundle_indices.is_empty() { continue; }
-        let fg = match crate::vg_hmm::family_graph::build_family_graph(
-            sub, bundles, Some(genome), 0.30, 0.30, 0.30,
+        let mj = crate::vg_family::family_graph::family_merge_jaccard();
+        let fg = match crate::vg_family::family_graph::build_family_graph(
+            sub, bundles, Some(genome), 0.30, mj, mj,
         ) {
             Ok(g) => g,
             Err(_) => continue,
@@ -625,7 +626,7 @@ pub fn compute_family_graph_poa_identity_diag(
     bundles: &[Bundle],
     genome: &crate::genome::GenomeIndex,
 ) -> (Option<f64>, Option<&'static str>) {
-    let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+    let sub_families = crate::vg_family::rescue::partition_family_by_strand(family, bundles);
     let largest = match sub_families.into_iter()
         .filter(|f| f.bundle_indices.len() >= 2)
         .max_by_key(|f| f.bundle_indices.len())
@@ -633,8 +634,9 @@ pub fn compute_family_graph_poa_identity_diag(
         Some(f) => f,
         None => return (None, Some("no_substrand_with_2_copies")),
     };
-    let fg = match crate::vg_hmm::family_graph::build_family_graph(
-        &largest, bundles, Some(genome), 0.30, 0.30, 0.30,
+    let mj = crate::vg_family::family_graph::family_merge_jaccard();
+    let fg = match crate::vg_family::family_graph::build_family_graph(
+        &largest, bundles, Some(genome), 0.30, mj, mj,
     ) {
         Ok(g) => g,
         Err(_) => return (None, Some("graph_build_err")),
@@ -665,7 +667,7 @@ pub fn compute_family_graph_poa_identity_diag(
         if seqs.len() < 2 { continue; }
         // Skip nodes where any copy is empty/too short to align meaningfully.
         if seqs.iter().any(|s| s.len() < 10) { continue; }
-        let msa = match crate::vg_hmm::profile::poa_msa(&seqs) {
+        let msa = match crate::vg_family::family_graph::poa_msa(&seqs) {
             Ok(m) => m,
             Err(_) => continue,
         };
@@ -697,7 +699,7 @@ pub fn compute_family_graph_poa_identity_diag(
 /// Cheap O(SKETCH × N_COPIES) prescreen for the POA-identity filter. Returns
 /// a Jaccard estimate in [0, 1] or None if there are < 2 copies with k-mers.
 fn minhash_jaccard_estimate(
-    fg: &crate::vg_hmm::family_graph::FamilyGraph,
+    fg: &crate::vg_family::family_graph::FamilyGraph,
     n_copies: usize,
     kmer_len: usize,
     sketch_size: usize,
@@ -1400,13 +1402,13 @@ pub fn run_em_reweighting(
 /// copies) get a `(copy_id, 0.0)` sentinel so downstream code can distinguish
 /// "no data" from "absent" without index arithmetic.
 ///
-/// Call this after `run_pre_assembly_em_hmm` (or the heuristic-EM variants)
-/// and before the main bundle-assembly loop, so the annotation is available
-/// for diagnostics and future copy-aware path extraction.
+/// Call this after the pre-assembly EM (e.g. `run_fingerprint_em` or the
+/// heuristic-EM variants) and before the main bundle-assembly loop, so the
+/// annotation is available for diagnostics and future copy-aware path extraction.
 pub fn annotate_per_copy_exon_coverage(
     family: &FamilyGroup,
     bundles: &[Bundle],
-    family_graph: &mut crate::vg_hmm::family_graph::FamilyGraph,
+    family_graph: &mut crate::vg_family::family_graph::FamilyGraph,
 ) {
     let n_copies = family.bundle_indices.len();
     for ec in family_graph.nodes.iter_mut() {
@@ -1508,6 +1510,128 @@ pub fn copy_support_fraction(n_unique: usize, multimappers: &[(f64, f64)], margi
         .filter(|&&(rate_c, rate_min_sib)| rate_c <= rate_min_sib + margin)
         .count();
     (n_unique + mm_support) as f64 / total as f64
+}
+
+/// Phantom-junction strip predicate. A read SURVIVES iff it is a PRIMARY
+/// alignment OR every one of its splice junctions is supported by ≥1 primary read
+/// in the same bundle (`primary_supported`). Secondary reads carrying a phantom
+/// (zero-primary) junction — the cross-mapped contamination that read-driven
+/// path_extract enumerates into spurious transcripts (RBMY 16→54; chrY pred
+/// 253→224) — are dropped, while secondaries that merely CONFIRM real
+/// (primary-backed) junctions are kept for their coverage.
+pub fn read_confirms_primary_junctions(
+    is_primary: bool,
+    junctions: &[crate::types::Junction],
+    primary_supported: &std::collections::HashSet<crate::types::Junction>,
+) -> bool {
+    is_primary || junctions.iter().all(|j| primary_supported.contains(j))
+}
+
+/// Anti-chimera check for a VG-enumerated isoform. path_extract assembles paths
+/// from read FRAGMENTS via graph extension with NO single-read full-length
+/// requirement, so multimapped secondaries let it enumerate "chimeric" isoforms
+/// that join two real sub-structures at a point no read actually bridges. Such a
+/// path has a CONSECUTIVE junction pair `(introns[k], introns[k+1])` that
+/// co-occurs in NO read. `supported_pairs` = every consecutive (junction,junction)
+/// pair observed within a single read in the bundle. The isoform is kept iff
+/// every one of its consecutive intron pairs is read-co-supported; a real isoform
+/// (even a low-primary copy spanned only by secondaries) passes because its
+/// adjacent junctions DO co-occur in its reads. <2 introns → trivially passes.
+pub fn isoform_junction_pairs_supported(
+    introns: &[(u64, u64)],
+    supported_pairs: &std::collections::HashSet<((u64, u64), (u64, u64))>,
+) -> bool {
+    introns.windows(2).all(|w| supported_pairs.contains(&(w[0], w[1])))
+}
+
+/// `compatPrim`: count of PRIMARY reads whose intron chain is a CONTIGUOUS
+/// sub-chain (±tol per junction coord) of the transcript's intron chain — primary
+/// reads that actually carry a real run of THIS isoform's junctions.
+///
+/// The over-enumeration discriminant (research 2026-06-04, separation AUC 0.992 vs
+/// coverage 0.777): VG's read-driven path_extract emits an isoform per observed
+/// read-chain, so low-abundance minor variants whose distinguishing junction is
+/// SECONDARY-only get compatPrim ≈ 0 (no primary read carries that run), while
+/// genuine copies get ≥3 — INCLUDING novel copies absent from the annotation,
+/// whose own reads are PRIMARY at their locus even if they mismap as secondary
+/// elsewhere (hidden copy measured 29, inverted copy 40-47 → novelty-safe). This
+/// is "VG structure + parsimonious primary-evidence selection": it suppresses the
+/// over-enum the per-isoform coverage floor and all-read filters cannot, without
+/// dropping real low-primary-but-owned copies. Caveat: gene-conversion/mosaic
+/// recombinants differ by exonic SNPs not junctions → BLIND to this signal; they
+/// belong on the PSV/phasing channel, not here.
+pub fn compat_prim_support(
+    tx_introns: &[(u64, u64)],
+    primary_read_chains: &[Vec<(u64, u64)>],
+    tol: u64,
+) -> usize {
+    let t = tol as i64;
+    let is_subchain = |rc: &[(u64, u64)]| -> bool {
+        if rc.is_empty() || rc.len() > tx_introns.len() {
+            return false;
+        }
+        (0..=tx_introns.len() - rc.len()).any(|off| {
+            rc.iter().enumerate().all(|(i, rj)| {
+                let tj = tx_introns[off + i];
+                (rj.0 as i64 - tj.0 as i64).abs() <= t && (rj.1 as i64 - tj.1 as i64).abs() <= t
+            })
+        })
+    };
+    primary_read_chains.iter().filter(|rc| is_subchain(rc)).count()
+}
+
+/// Stronger anti-over-enumeration check: a VG isoform is kept iff some SINGLE
+/// read spans its ENTIRE intron chain (`read_junction_sets` contains a set that
+/// is a superset of the isoform's introns). Catches global combination
+/// over-enumeration — paths whose every adjacent junction pair is read-supported
+/// but whose full combination no read actually observes (the pair-level check
+/// misses these). A real isoform — including a low-primary copy spanned only by
+/// secondaries — has ≥1 read covering its whole chain, so survives. <2 introns
+/// (single-/no-junction) trivially pass. WARNING: stricter than pair-support;
+/// drops legitimately fragment-assembled isoforms (validate it doesn't cost TP).
+pub fn isoform_fully_read_spanned(
+    introns: &[(u64, u64)],
+    read_junction_sets: &[std::collections::HashSet<(u64, u64)>],
+) -> bool {
+    if introns.len() < 2 {
+        return true;
+    }
+    let want: std::collections::HashSet<(u64, u64)> = introns.iter().copied().collect();
+    read_junction_sets.iter().any(|rs| want.iter().all(|j| rs.contains(j)))
+}
+
+/// Decisive-evidence gate decision: should a family copy KEEP its ambiguous
+/// (NM-tied) reads, or be restricted to its own decisive evidence?
+///
+/// `n_primary` = reads whose PRIMARY (best) alignment lands on this copy;
+/// `own_ev` = unique + strict-Owns reads (raw-dNM decisive support); `n_tied` =
+/// reads ambiguous between this copy and a sibling. Keep all reads iff the copy
+/// is confidently real/identifiable, by ANY of:
+///   * PRIMARY-coverage (`n_primary >= min_prim`): a copy that attracts its own
+///     primary alignments is genuinely expressed there. This is the honest
+///     real-vs-phantom discriminant: near-identical co-expressed copies have many
+///     primaries (RBMY copies measured 7–14) but tiny NM-ownership (own_ev=2,
+///     because their primaries are NM-TIED with the sibling), whereas phantoms
+///     have ~none (DAZ3≈2, prim=0 TSPY). Recovers real copies the NM metric
+///     under-counts without admitting phantoms; OR
+///   * STRONG absolute NM evidence (`own_ev >= min_strong`): a heavily-supported
+///     copy must not be starved by the ratio test (RBMY's 30-strict-read copy at
+///     frac 0.46 was wrongly gated, collapsing 7→2 tx); OR
+///   * a modest absolute floor AND a strict-fraction bar
+///     (`own_ev >= min_own && frac >= thr`).
+/// Otherwise the copy keeps only its own-evidence reads (phantom suppression).
+pub fn copy_keeps_ambiguous_reads(
+    n_primary: usize, own_ev: usize, n_tied: usize,
+    min_prim: usize, min_own: usize, thr: f64, min_strong: usize,
+) -> bool {
+    if n_primary >= min_prim {
+        return true;
+    }
+    if own_ev >= min_strong {
+        return true;
+    }
+    let frac = own_ev as f64 / (own_ev + n_tied).max(1) as f64;
+    own_ev >= min_own && frac >= thr
 }
 
 /// Where a multi-mapping read truly belongs, by raw edit-distance margin.
@@ -1638,6 +1762,121 @@ pub fn anchored_mass_per_copy(
     mass
 }
 
+/// Per-copy ownership tally from raw-dNM anchoring — the emission-gate signal.
+///
+/// Unlike `em_ev_decisive` (which needs PSV diagnostic SITES and is ~always 0 on
+/// copies distinguished by whole-read NM divergence, e.g. the RBMY array), this
+/// classifies every read placed at a copy by raw edit-distance margin, the same
+/// signal `anchored_mass_per_copy` uses. For each copy in `bundle_indices`:
+///   * `n_unique` — reads that place ONLY at this copy (always own it)
+///   * `n_strict` — multimappers that `Owns` this copy by dNM margin (anchor_read)
+///   * `n_tied`   — multimappers `Tie`d between this copy and a sibling (the
+///     non-identifiable mass: DAZ3 = 3 strict / 38 tied, frac 0.07; a real copy
+///     like RBMY LOC256 = 3 strict / 0 tied, frac 1.0)
+///   * `owner_hashes` — read_name_hash of the unique + strict-Owns reads (the
+///     copy's OWN decisive evidence; the gate keeps exactly these when it fires).
+/// Same `(nm, alen)` cost model + min-NM dedup as `anchored_mass_per_copy`.
+pub struct CopyOwnership {
+    pub n_unique: usize,
+    pub n_strict: usize,
+    pub n_tied: usize,
+    pub owner_hashes: std::collections::HashSet<u64>,
+}
+
+pub fn compute_copy_ownership(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    t: i64,
+    extent_frac: f64,
+) -> Vec<CopyOwnership> {
+    let n_copies = family.bundle_indices.len();
+    let placement = |fam_pos: usize, ri: usize| -> Option<(u32, u64)> {
+        let bi = *family.bundle_indices.get(fam_pos)?;
+        let read = bundles.get(bi)?.reads.get(ri)?;
+        let alen = read_aligned_len(read);
+        if alen == 0 {
+            return None;
+        }
+        let cost = match read.de {
+            Some(de) => ((de as f64) * (alen as f64)).round() as u32,
+            None => read.nm,
+        };
+        Some((cost, alen))
+    };
+    let mut per_copy_by_read: std::collections::HashMap<u64, std::collections::HashMap<usize, (u32, u64)>> =
+        std::collections::HashMap::with_capacity(family.multimap_reads.len());
+    for (&rnh, placements) in &family.multimap_reads {
+        let mut per_copy: std::collections::HashMap<usize, (u32, u64)> = std::collections::HashMap::new();
+        for &(fp, ri) in placements {
+            if fp >= n_copies {
+                continue;
+            }
+            if let Some((nm, al)) = placement(fp, ri) {
+                per_copy
+                    .entry(fp)
+                    .and_modify(|e| if nm < e.0 { *e = (nm, al); })
+                    .or_insert((nm, al));
+            }
+        }
+        if !per_copy.is_empty() {
+            per_copy_by_read.insert(rnh, per_copy);
+        }
+    }
+    let mut out: Vec<CopyOwnership> = (0..n_copies)
+        .map(|_| CopyOwnership {
+            n_unique: 0,
+            n_strict: 0,
+            n_tied: 0,
+            owner_hashes: std::collections::HashSet::new(),
+        })
+        .collect();
+    for (copy_id, &bi) in family.bundle_indices.iter().enumerate() {
+        let bundle = match bundles.get(bi) {
+            Some(b) => b,
+            None => continue,
+        };
+        for read in &bundle.reads {
+            let h = read.read_name_hash;
+            if !family.multimap_reads.contains_key(&h) {
+                // Unique WITHIN the family. Only genuine own-evidence if this is the
+                // read's PRIMARY (best) alignment — a secondary read that is unique
+                // within this family has its true primary at a copy OUTSIDE the
+                // family (borrowed evidence, e.g. the prim=0 TSPY3 phantom: 43
+                // secondaries, 0 primary → own_ev must be 0, not 43).
+                if read.is_primary_alignment {
+                    out[copy_id].n_unique += 1;
+                    out[copy_id].owner_hashes.insert(h);
+                }
+                continue;
+            }
+            let per_copy = match per_copy_by_read.get(&h) {
+                Some(pc) => pc,
+                None => continue,
+            };
+            let (nm_c, alen_c) = match per_copy.get(&copy_id) {
+                Some(&v) => v,
+                None => continue,
+            };
+            let others: Vec<(u32, u64)> = per_copy
+                .iter()
+                .filter(|(&c, _)| c != copy_id)
+                .map(|(_, &v)| v)
+                .collect();
+            match anchor_read(nm_c, alen_c, &others, t, extent_frac) {
+                ReadAnchor::Owns => {
+                    out[copy_id].n_strict += 1;
+                    out[copy_id].owner_hashes.insert(h);
+                }
+                ReadAnchor::Tie => {
+                    out[copy_id].n_tied += 1;
+                }
+                ReadAnchor::Sibling => {}
+            }
+        }
+    }
+    out
+}
+
 /// Assign each copy a dense identifiability-class label (0..n_classes-1). Copies
 /// are merged into one class when NON-identifiable (`nonid_pairs`, transitive).
 pub fn identifiability_classes(n_copies: usize, nonid_pairs: &[(usize, usize)]) -> Vec<usize> {
@@ -1714,15 +1953,15 @@ pub struct FamilyVerdict {
     /// Segmental-duplication extent / breakpoints (opt-in RUSTLE_VG_SEGDUP_EXTENT).
     /// `None` unless the segdup pass ran. Surfaces gene+flank duplicated extent and the
     /// segdup-vs-bare-paralog call. See `detect_and_report_segdups`.
-    pub segdup: Option<crate::vg_hmm::segdup::SegdupExtent>,
+    pub segdup: Option<crate::vg_family::segdup::SegdupExtent>,
     /// Best gene-conversion event for the family (opt-in RUSTLE_VG_MOSAIC_ON). `None` unless
     /// the mosaic pass found a recombinant. The family's most-supported event (confirmed
     /// preferred). See `detect_and_report_mosaics` / `ConversionEvent`.
-    pub conversion: Option<crate::vg_hmm::mosaic::ConversionEvent>,
+    pub conversion: Option<crate::vg_family::mosaic::ConversionEvent>,
     /// Evidence of a copy NOT in the reference genome (opt-in RUSTLE_VG_HIDDEN_COPY). `None`
     /// unless flagged. Detect-and-flag only — never a fabricated copy. See
     /// `detect_and_report_hidden_copies` / `HiddenCopyEvidence`.
-    pub hidden_copy: Option<crate::vg_hmm::hidden_copy::HiddenCopyEvidence>,
+    pub hidden_copy: Option<crate::vg_family::hidden_copy::HiddenCopyEvidence>,
 }
 impl FamilyClass {
     pub fn as_str(&self) -> &'static str {
@@ -2116,8 +2355,8 @@ pub fn detect_and_report_segdups(
     families: &[FamilyGroup],
     bundles: &[Bundle],
     genome: &crate::genome::GenomeIndex,
-) -> crate::types::DetHashMap<usize, crate::vg_hmm::segdup::SegdupExtent> {
-    use crate::vg_hmm::segdup::{call_segdup_extent, SegdupExtent, SegdupParams};
+) -> crate::types::DetHashMap<usize, crate::vg_family::segdup::SegdupExtent> {
+    use crate::vg_family::segdup::{call_segdup_extent, SegdupExtent, SegdupParams};
     let mut out: crate::types::DetHashMap<usize, SegdupExtent> = Default::default();
     let params = SegdupParams::from_env();
     let win: u64 = std::env::var("RUSTLE_VG_SEGDUP_FETCH")
@@ -2172,8 +2411,8 @@ pub fn detect_and_report_segdups(
 pub fn detect_and_report_hidden_copies(
     families: &[FamilyGroup],
     bundles: &[Bundle],
-) -> crate::types::DetHashMap<usize, crate::vg_hmm::hidden_copy::HiddenCopyEvidence> {
-    use crate::vg_hmm::hidden_copy::{detect_hidden_copy, HiddenCopyEvidence, HiddenCopyParams, ReadObs};
+) -> crate::types::DetHashMap<usize, crate::vg_family::hidden_copy::HiddenCopyEvidence> {
+    use crate::vg_family::hidden_copy::{detect_hidden_copy, HiddenCopyEvidence, HiddenCopyParams, ReadObs};
     let params = HiddenCopyParams::from_env();
     let mut out: crate::types::DetHashMap<usize, HiddenCopyEvidence> = Default::default();
     for fam in families {
@@ -2479,7 +2718,7 @@ pub fn apply_family_primary_boosts(families: &[FamilyGroup], bundles: &mut [Bund
 ///   coverage and decide when a copy is under-represented.
 pub fn build_bundle_borrow_coverage(
     partitions: &[FamilyGroup],
-    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    family_graphs: &[Option<crate::vg_family::family_graph::FamilyGraph>],
 ) -> HashMap<usize, Vec<(u64, u64, bool, f64, f64, f64, usize)>> {
     let mut out: HashMap<usize, Vec<(u64, u64, bool, f64, f64, f64, usize)>> = HashMap::new();
     for (pi, fam) in partitions.iter().enumerate() {
@@ -2528,7 +2767,7 @@ pub fn build_bundle_borrow_coverage(
 /// Returns: HashMap<bundle_idx, Vec<(donor, acceptor, strand, max_sibling_count)>>
 pub fn build_bundle_borrow_junctions(
     partitions: &[FamilyGroup],
-    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    family_graphs: &[Option<crate::vg_family::family_graph::FamilyGraph>],
     bundles: &[crate::types::Bundle],
 ) -> HashMap<usize, Vec<(u64, u64, char, f64)>> {
     use crate::types::Junction;
@@ -2637,7 +2876,7 @@ pub fn build_bundle_borrow_junctions(
 /// Returns: HashMap<bundle_idx, Vec<(start, end)>>
 pub fn build_bundle_completion_nodes(
     partitions: &[FamilyGroup],
-    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    family_graphs: &[Option<crate::vg_family::family_graph::FamilyGraph>],
 ) -> HashMap<usize, Vec<(u64, u64)>> {
     let trace = std::env::var_os("RUSTLE_VG_COMPLETION_TRACE").is_some();
     let mut out: HashMap<usize, Vec<(u64, u64)>> = HashMap::new();
@@ -2707,9 +2946,9 @@ pub fn build_bundle_completion_nodes(
 ///
 /// Sub-families with < 2 bundles are dropped (no EM possible).
 ///
-/// Use this before `build_family_graph` + `run_pre_assembly_em_hmm` because
+/// Use this before `build_family_graph` + the pre-assembly EM because
 /// `build_family_graph` requires single-strand input — without this, ~70 % of
-/// real-world families fail the strand check and skip HMM-EM.
+/// real-world families fail the strand check and skip the family graph.
 pub fn partition_and_remap_family_by_strand(
     family: &FamilyGroup,
     bundles: &[Bundle],
@@ -2789,209 +3028,6 @@ pub fn family_for_em_input(family: &FamilyGroup, _bundles: &[Bundle]) -> Vec<Fam
         bundle_indices: family.bundle_indices.clone(),
         multimap_reads: family.multimap_reads.clone(),
     }]
-}
-
-// ── HMM-based EM reweighting (sequence-aware copy assignment) ────────────────
-
-/// HMM-based EM reweighting across copies in a family group.
-///
-/// **Difference from `run_em_reweighting`:** the E-step compatibility score
-/// is `forward_against_path(family_graph, read_seq, paralog_path)` —
-/// the full sequence-level forward log-likelihood through that paralog's
-/// path through the family graph. This replaces the heuristic
-/// `compat × √context` with a probabilistic likelihood that uses every
-/// base-level mismatch the read carries (in particular, the diagnostic
-/// SNPs that distinguish paralogs).
-///
-/// Preconditions:
-///   - `family_graph` was built from the bundles indexed by
-///     `family.bundle_indices` (same order; CopyId = position in
-///     bundle_indices = `family_pos` in `family.multimap_reads` values).
-///   - `family_graph` has profiles fitted (`fit_profiles_in_place` called).
-///   - `sequences` contains entries for every multi-mapped read's
-///     `read_name_hash`. Reads without sequences are skipped (no
-///     reweighting applied — keeps original weight).
-///
-/// Returns the EM result summary. Modifies `BundleRead.weight` in place.
-pub fn run_em_reweighting_hmm(
-    family: &FamilyGroup,
-    bundles: &mut [Bundle],
-    family_graph: &crate::vg_hmm::family_graph::FamilyGraph,
-    sequences: &HashMap<u64, Vec<u8>>,
-    max_iter: usize,
-    convergence_thr: f64,
-) -> EmResult {
-    use crate::vg_hmm::scorer::forward_against_path_for_copy_with_norm;
-
-    let n_copies = family.bundle_indices.len();
-    if n_copies < 2 || family.multimap_reads.is_empty() {
-        return EmResult::default();
-    }
-
-    // Pre-compute per-paralog paths through the family graph.
-    let paralog_paths: Vec<Vec<crate::vg_hmm::family_graph::NodeIdx>> = (0..n_copies)
-        .map(|cid| family_graph.recover_paralog_path(cid))
-        .collect();
-
-    // Pre-compute total match-column count per paralog path (length-norm
-    // denominator) once — constant across all reads.
-    let path_match_cols: Vec<usize> = (0..n_copies)
-        .map(|cid| crate::vg_hmm::scorer::path_match_cols_for_copy(family_graph, &paralog_paths[cid], cid))
-        .collect();
-
-    // Filter family.multimap_reads to entries where we have the read sequence
-    // and at least one paralog has a non-empty path. Build the working entry
-    // list with pre-computed log-likelihood scores per placement (constant
-    // across EM iterations because the family graph and sequences don't change).
-    struct ReadEntry {
-        locs: Vec<(usize, usize, usize)>,  // (family_pos, global_bi, read_idx)
-        log_scores: Vec<f64>,              // forward_against_path per placement (len = locs.len())
-        weights: Vec<f64>,                 // current EM weights (sum to 1)
-    }
-    // PHASE 1 (sequential): collect work items. The expensive forward DP per
-    // placement is deferred to PHASE 2 where it runs in parallel via rayon.
-    struct WorkItem<'a> {
-        rnh: u64,
-        seq: &'a [u8],
-        // (fam_pos, global_bi, ri, current_weight)
-        placements: Vec<(usize, usize, usize, f64)>,
-    }
-    let mut work: Vec<WorkItem> = Vec::with_capacity(family.multimap_reads.len());
-    for (&rnh, locs) in &family.multimap_reads {
-        let seq = match sequences.get(&rnh) {
-            Some(s) if !s.is_empty() => s.as_slice(),
-            _ => continue,
-        };
-        let mut placements = Vec::with_capacity(locs.len());
-        for &(fam_pos, ri) in locs {
-            if fam_pos >= n_copies { continue; }
-            let global_bi = family.bundle_indices[fam_pos];
-            let w = bundles[global_bi].reads[ri].weight;
-            placements.push((fam_pos, global_bi, ri, w));
-        }
-        if placements.len() < 2 { continue; }
-        work.push(WorkItem { rnh, seq, placements });
-    }
-
-    // PHASE 2 (parallel): forward_against_path is pure in (graph, seq, path).
-    let mut entries: Vec<(u64, ReadEntry)> = work.par_iter()
-        .filter_map(|item| {
-            let mut entry_locs = Vec::with_capacity(item.placements.len());
-            let mut log_scores = Vec::with_capacity(item.placements.len());
-            let mut weights   = Vec::with_capacity(item.placements.len());
-            for &(fam_pos, global_bi, ri, w) in &item.placements {
-                let path = &paralog_paths[fam_pos];
-                let score = if path.is_empty() {
-                    f64::NEG_INFINITY
-                } else {
-                    forward_against_path_for_copy_with_norm(
-                        family_graph, item.seq, path, fam_pos, Some(path_match_cols[fam_pos]),
-                    )
-                };
-                entry_locs.push((fam_pos, global_bi, ri));
-                log_scores.push(score);
-                weights.push(w);
-            }
-            if entry_locs.len() < 2 { return None; }
-            if !log_scores.iter().any(|s| s.is_finite()) { return None; }
-            Some((item.rnh, ReadEntry { locs: entry_locs, log_scores, weights }))
-        })
-        .collect();
-
-    if entries.is_empty() {
-        return EmResult::default();
-    }
-
-    // EM iteration. With pre-computed log-scores, each iteration is just a
-    // softmax + delta check. We optionally weight by current per-paralog
-    // coverage (M-step prior) so iteration converges to a self-consistent
-    // assignment given the weights from the previous round. This is the
-    // proper EM with Bayesian prior on copy abundance.
-    let mut result = EmResult::default();
-
-    for iter in 0..max_iter {
-        // M-step: aggregate per-paralog total weight (proxy for per-copy coverage).
-        let mut copy_total: Vec<f64> = vec![0.0; n_copies];
-        for (_, entry) in &entries {
-            for (i, w) in entry.weights.iter().enumerate() {
-                let fam_pos = entry.locs[i].0;
-                copy_total[fam_pos] += w;
-            }
-        }
-        // Convert to log-priors (softmax over copy totals, smoothed). 1e-3
-        // floor avoids -∞ when a paralog is fully drained.
-        let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
-        let log_priors: Vec<f64> = copy_total.iter()
-            .map(|&t| ((t / total_sum) + 1e-3).ln())
-            .collect();
-
-        let mut max_delta: f64 = 0.0;
-
-        for (_, entry) in &mut entries {
-            // E-step: posterior = softmax(log_score + log_prior).
-            let n = entry.locs.len();
-            let mut log_post = vec![f64::NEG_INFINITY; n];
-            for i in 0..n {
-                let s = entry.log_scores[i];
-                if !s.is_finite() { continue; }
-                let fam_pos = entry.locs[i].0;
-                log_post[i] = s + log_priors[fam_pos];
-            }
-            // Numerically-stable softmax.
-            let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-            if !max_lp.is_finite() { continue; }
-            let mut total = 0.0_f64;
-            let mut exps = vec![0.0_f64; n];
-            for i in 0..n {
-                if log_post[i].is_finite() {
-                    exps[i] = (log_post[i] - max_lp).exp();
-                    total += exps[i];
-                }
-            }
-            if total <= 0.0 { continue; }
-            for i in 0..n {
-                let new_w = exps[i] / total;
-                let delta = (new_w - entry.weights[i]).abs();
-                if delta > max_delta { max_delta = delta; }
-                entry.weights[i] = new_w;
-            }
-        }
-
-        result.iterations = iter + 1;
-        result.max_delta = max_delta;
-        if max_delta < convergence_thr {
-            result.converged = true;
-            break;
-        }
-    }
-
-    // Apply final weights back to BundleRead.weight.
-    let mut n_reweighted = 0usize;
-    for (_, entry) in &entries {
-        for (i, &(_, global_bi, ri)) in entry.locs.iter().enumerate() {
-            let old_w = bundles[global_bi].reads[ri].weight;
-            let new_w = entry.weights[i];
-            if (old_w - new_w).abs() > 1e-9 {
-                bundles[global_bi].reads[ri].weight = new_w;
-                n_reweighted += 1;
-            }
-        }
-    }
-    result.reads_reweighted = n_reweighted;
-
-    if n_reweighted > 0 {
-        eprintln!(
-            "[VG-HMM-EM] Family {}: HMM-EM converged={} in {} iter (delta={:.6}), reweighted {} read entries across {} copies",
-            family.family_id,
-            result.converged,
-            result.iterations,
-            result.max_delta,
-            n_reweighted,
-            n_copies,
-        );
-    }
-
-    result
 }
 
 // ── Family report ────────────────────────────────────────────────────────────
@@ -3531,7 +3567,7 @@ pub struct ExonFingerprints {
 /// The `n_copies` parameter must match `family.bundle_indices.len()` so that
 /// `per_copy_site_refs` is indexed consistently with the family's copy ordering.
 pub fn build_exon_fingerprints(
-    fg: &crate::vg_hmm::family_graph::FamilyGraph,
+    fg: &crate::vg_family::family_graph::FamilyGraph,
     n_copies: usize,
 ) -> ExonFingerprints {
     let mut sites: Vec<ExonVariantSite> = Vec::new();
@@ -3670,8 +3706,8 @@ fn is_acgt(b: u8) -> bool {
 /// caller must fall back to positional synteny rather than rejecting a possibly
 /// homologous short exon.
 fn minimizer_jaccard(a: &[u8], b: &[u8]) -> Option<f64> {
-    let ma = crate::vg_hmm::family_graph::minimizers(a, 15, 10);
-    let mb = crate::vg_hmm::family_graph::minimizers(b, 15, 10);
+    let ma = crate::vg_family::family_graph::minimizers(a, 15, 10);
+    let mb = crate::vg_family::family_graph::minimizers(b, 15, 10);
     let union = ma.union(&mb).count();
     if union == 0 {
         return None; // too short to evaluate
@@ -3949,7 +3985,7 @@ fn syntenic_exon_pairs(ea: &[GfExon], eb: &[GfExon]) -> Vec<(usize, usize)> {
 /// genome-forward coordinates with strand-correct (genome-forward) alleles —
 /// exactly the frame `score_read_exon_fingerprint` consumes.
 pub fn enumerate_diagnostic_sites(
-    fg: &crate::vg_hmm::family_graph::FamilyGraph,
+    fg: &crate::vg_family::family_graph::FamilyGraph,
     n_copies: usize,
 ) -> ExonFingerprints {
     // All copies in a FamilyGraph are the SAME strand (build_family_graph requires it;
@@ -4156,8 +4192,8 @@ fn build_read_site_obs(
     read: &crate::types::BundleRead,
     fp: &ExonFingerprints,
     copy_idx: usize,
-) -> Vec<crate::vg_hmm::mosaic::SiteObs> {
-    use crate::vg_hmm::mosaic::SiteObs;
+) -> Vec<crate::vg_family::mosaic::SiteObs> {
+    use crate::vg_family::mosaic::SiteObs;
     let Some(site_refs) = fp.per_copy_site_refs.get(copy_idx) else {
         return Vec::new();
     };
@@ -4193,9 +4229,9 @@ fn detect_and_report_mosaics(
     family: &FamilyGroup,
     bundles: &[Bundle],
     fp: &ExonFingerprints,
-) -> Vec<crate::vg_hmm::mosaic::ConversionEvent> {
-    use crate::vg_hmm::mosaic::{aggregate_family, detect_mosaic, MosaicParams};
-    use crate::vg_hmm::mosaic::MosaicStatus;
+) -> Vec<crate::vg_family::mosaic::ConversionEvent> {
+    use crate::vg_family::mosaic::{aggregate_family, detect_mosaic, MosaicParams};
+    use crate::vg_family::mosaic::MosaicStatus;
     let params = MosaicParams::from_env();
     let n_copies = fp.n_copies;
     let trace = std::env::var_os("RUSTLE_VG_MOSAIC_TRACE").is_some();
@@ -4288,17 +4324,15 @@ pub fn run_pre_assembly_em(
 
 /// Per-family routing decision used by `--vg-solver auto`.
 ///
-/// Compact dispatch: HMM-EM is the universal target. For divergent copies the
-/// forward DP converges in 1–2 iterations to essentially-hard assignments, so
-/// it subsumes the legacy heuristic-EM routing. The dispatcher in pipeline.rs
-/// owns the heuristic fallback for the case where HMM prerequisites (genome
-/// FASTA, multi-mapper sequences) are not satisfied.
+/// Compact dispatch: the pre-assembly EM is the universal target. The
+/// dispatcher in pipeline.rs owns the heuristic fallback for the case where
+/// the genome FASTA / multi-mapper sequences are not satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmRoute {
     /// Skip — singleton, too many copies, or intronless. No EM to do.
     Skip(&'static str),
-    /// Send this family to HMM-EM (the universal solver).
-    Hmm,
+    /// Send this family to the pre-assembly EM (the universal solver).
+    Em,
 }
 
 /// Decide per-family routing. Triviality filters:
@@ -4307,13 +4341,13 @@ pub enum EmRoute {
 ///     work budget unmet, > 40 paralogs is almost always noise (mtDNA, rRNA,
 ///     mega-tandem clusters).
 ///   - `work_estimate > max_work` (default 2000): work budget gate. The
-///     dominant cost is the forward DP per (read, copy) placement, so we
+///     dominant cost is the per (read, copy) placement scoring, so we
 ///     estimate as `n_copies × max(n_multimap_reads, 10)`. Rejects mtDNA-class
 ///     (1509 copies → ≥ 15090 work) while letting NBPF (25 × 30 = 750) through.
 ///   - `skip_intronless && all bundles have empty junction_stats`: intronless paralogs
 ///     (e.g. olfactory receptors) yield degenerate single-node family graphs.
 ///
-/// Everything else routes to `Hmm`.
+/// Everything else routes to `Em`.
 pub fn classify_family_for_em(
     family: &FamilyGroup,
     bundles: &[Bundle],
@@ -4340,7 +4374,7 @@ pub fn classify_family_for_em(
             return EmRoute::Skip("intronless");
         }
     }
-    EmRoute::Hmm
+    EmRoute::Em
 }
 
 /// EM with optional SNP integration.
@@ -4704,396 +4738,12 @@ fn run_pre_assembly_em_inner(
     results
 }
 
-/// Pre-assembly EM using HMM-based per-path scoring (sequence-aware).
-///
-/// Mirrors `run_pre_assembly_em` but replaces the heuristic
-/// `junction_compatibility × log_context` with `forward_against_path` —
-/// the full forward log-likelihood of the read against each paralog's
-/// path through the family-graph HMM.
-///
-/// Inputs:
-///   - `families`: as before, the discovered family groups.
-///   - `bundles`: as before, mutated in place.
-///   - `family_graphs`: parallel slice to `families`. `family_graphs[i]`
-///     must be the FamilyGraph built from `families[i]`'s bundles, with
-///     profiles fitted (`fit_profiles_in_place`). If a family has `None`
-///     here, that family falls back to `run_pre_assembly_em` semantics
-///     (uniform / no-op).
-///   - `sequences`: `read_name_hash → bytes` for multi-mappers. Reads
-///     without sequences are skipped (no reweighting).
-pub fn run_pre_assembly_em_hmm(
-    families: &[FamilyGroup],
-    bundles: &mut [Bundle],
-    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
-    sequences: &HashMap<u64, Vec<u8>>,
-    max_iter: usize,
-    use_snps: bool,
-    junction_bonus: f64,
-    uniform_prior: bool,
-    exon_len_penalty: f64,
-) -> Vec<EmResult> {
-    use crate::vg_hmm::scorer::forward_against_path_for_copy_with_norm;
-    let mut results = Vec::with_capacity(families.len());
-    let convergence_thr = 0.001;
-    let t_em_start = std::time::Instant::now();
-
-    for (fam_idx, family) in families.iter().enumerate() {
-        let n_copies = family.bundle_indices.len();
-        if n_copies < 2 || family.multimap_reads.is_empty() {
-            results.push(EmResult::default());
-            continue;
-        }
-
-        let fg_opt = family_graphs.get(fam_idx).and_then(|f| f.as_ref());
-        let fg = match fg_opt {
-            Some(g) if !g.nodes.is_empty() => g,
-            _ => {
-                eprintln!(
-                    "[VG-HMM-EM] Family {}: no family graph available — skipping EM",
-                    family.family_id
-                );
-                results.push(EmResult::default());
-                continue;
-            }
-        };
-
-        // Pre-compute per-paralog paths.
-        let paralog_paths: Vec<Vec<crate::vg_hmm::family_graph::NodeIdx>> = (0..n_copies)
-            .map(|cid| fg.recover_paralog_path(cid))
-            .collect();
-
-        // Pre-compute total match-column count per paralog path. This is the
-        // length-norm denominator and is constant across all reads — sum it
-        // once here instead of recomputing inside every per-read forward call.
-        let path_match_cols: Vec<usize> = (0..n_copies)
-            .map(|cid| crate::vg_hmm::scorer::path_match_cols_for_copy(fg, &paralog_paths[cid], cid))
-            .collect();
-
-        // Build per-family diagnostic SNPs if SNP-aware HMM is enabled. The
-        // SNP signal is constant across EM iterations and per-(read, copy)
-        // independent of forward score, so cache log(snp_compat) per
-        // placement once and add it into the posterior.
-        let diagnostic = if use_snps {
-            Some(build_diagnostic_snps(family, bundles))
-        } else {
-            None
-        };
-
-        // Build entries with pre-computed log-likelihoods (constant across EM iters).
-        struct Entry {
-            locs: Vec<(usize, usize)>,
-            log_scores: Vec<f64>,
-            log_snp: Vec<f64>,
-            log_jct: Vec<f64>,
-            log_exonlen: Vec<f64>,
-            weights: Vec<f64>,
-            fam_pos: Vec<usize>,
-        }
-
-        // Optional cap on reads scored per family (env: RUSTLE_VG_HMM_EM_READ_CAP).
-        // Bounds runtime on huge families (e.g. 769 reads × 18 copies). Set to 0
-        // to disable. Default: 200 reads — usually enough to estimate copy
-        // priors, after which the EM iteration handles redistribution.
-        let read_cap: usize = std::env::var("RUSTLE_VG_HMM_EM_READ_CAP")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(200);
-
-        // PHASE 1 (sequential): collect work items — one per multimap read with
-        // a usable sequence. The expensive part (forward_against_path per
-        // placement) is deferred to PHASE 2 where it runs in parallel.
-        struct WorkItem<'a> {
-            seq: &'a [u8],
-            // (fam_pos, global_bi, ri, current_weight)
-            placements: Vec<(usize, usize, usize, f64)>,
-        }
-        let mut work: Vec<WorkItem> = Vec::with_capacity(family.multimap_reads.len());
-        let mut n_no_seq = 0usize;
-        let mut n_prefiltered = 0usize;
-
-        // Junction-compat pre-filter threshold: drop (read, copy) placements
-        // whose read junctions overlap with the copy's bundle junction_stats
-        // below this fraction. Cheap O(1) per placement; uses the existing
-        // junction_compatibility infrastructure. Default 0.5 — read must have
-        // ≥ 50 % of its CIGAR junctions matched within ±10 bp tolerance.
-        // Single-exon reads (no junctions) return compat = 1.0 and pass through.
-        // Override via RUSTLE_VG_HMM_EM_JCT_PREFILTER (0.0 disables).
-        let jct_prefilter: f64 = std::env::var("RUSTLE_VG_HMM_EM_JCT_PREFILTER")
-            .ok()
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.5);
-
-        // Iterate deterministically (HashMap order is unspecified). Sort by rnh so
-        // capping is reproducible across runs.
-        let mut keys: Vec<u64> = family.multimap_reads.keys().copied().collect();
-        keys.sort_unstable();
-
-        for rnh in keys {
-            let locs = &family.multimap_reads[&rnh];
-            let seq = match sequences.get(&rnh) {
-                Some(s) if !s.is_empty() => s.as_slice(),
-                _ => { n_no_seq += 1; continue; }
-            };
-            let mut placements = Vec::with_capacity(locs.len());
-            for &(fam_pos, ri) in locs {
-                if fam_pos >= n_copies { continue; }
-                let global_bi = family.bundle_indices[fam_pos];
-                let w = if ri < bundles[global_bi].reads.len() {
-                    bundles[global_bi].reads[ri].weight
-                } else {
-                    0.0
-                };
-                // Junction-compat pre-filter: skip this placement entirely
-                // when the read's junctions don't overlap enough with the
-                // copy's expected junctions. Saves a full forward DP per
-                // skipped placement; safe because such a placement would
-                // score very low and contribute negligibly to the posterior.
-                if jct_prefilter > 0.0 && ri < bundles[global_bi].reads.len() {
-                    let read = &bundles[global_bi].reads[ri];
-                    if !read.junctions.is_empty() {
-                        let compat = junction_compatibility(read, &bundles[global_bi]);
-                        if compat < jct_prefilter {
-                            n_prefiltered += 1;
-                            continue;
-                        }
-                    }
-                }
-                placements.push((fam_pos, global_bi, ri, w));
-            }
-            if placements.len() < 2 { continue; }
-            work.push(WorkItem { seq, placements });
-            if read_cap > 0 && work.len() >= read_cap { break; }
-        }
-        let n_capped = if read_cap > 0 && family.multimap_reads.len() > read_cap {
-            family.multimap_reads.len() - read_cap
-        } else {
-            0
-        };
-
-        // PHASE 2 (parallel): score every placement with forward_against_path.
-        // forward_against_path is a pure function of (fg, seq, path) — fg is
-        // shared `&` across threads, seqs/paths are non-overlapping reads.
-        let scored: Vec<Entry> = work.par_iter()
-            .filter_map(|item| {
-                let mut entry_locs = Vec::with_capacity(item.placements.len());
-                let mut log_scores  = Vec::with_capacity(item.placements.len());
-                let mut log_snp     = Vec::with_capacity(item.placements.len());
-                let mut log_jct     = Vec::with_capacity(item.placements.len());
-                let mut log_exonlen = Vec::with_capacity(item.placements.len());
-                let mut weights   = Vec::with_capacity(item.placements.len());
-                let mut fp_vec    = Vec::with_capacity(item.placements.len());
-                for &(fam_pos, global_bi, ri, w) in &item.placements {
-                    let path = &paralog_paths[fam_pos];
-                    let score = if path.is_empty() {
-                        f64::NEG_INFINITY
-                    } else {
-                        // Use per-copy profiles: each paralog scored against
-                        // its own genomic sequence, not the family consensus.
-                        // Pre-computed match-cols avoids re-summing per read.
-                        forward_against_path_for_copy_with_norm(
-                            fg, item.seq, path, fam_pos, Some(path_match_cols[fam_pos]),
-                        )
-                    };
-                    let snp_log = if let Some(ref diag) = diagnostic {
-                        if ri < bundles[global_bi].reads.len() {
-                            let read = &bundles[global_bi].reads[ri];
-                            snp_compatibility(read, fam_pos, diag).ln()
-                        } else {
-                            0.0
-                        }
-                    } else {
-                        0.0
-                    };
-                    // Structural-mismatch penalty: -bonus × #junctions in the
-                    // read's CIGAR that the copy's expected junction set does
-                    // NOT contain (±10 bp tolerance, via junction_compatibility).
-                    // Independent of nucleotide identity — discriminates copies
-                    // that differ in splice structure even when emissions are
-                    // near-uniform (divergent paralogs).  Zero when bonus = 0.
-                    let jct_log = if junction_bonus > 0.0
-                        && ri < bundles[global_bi].reads.len()
-                    {
-                        let read = &bundles[global_bi].reads[ri];
-                        let total = read.junctions.len() as f64;
-                        if total > 0.0 {
-                            let compat = junction_compatibility(read, &bundles[global_bi]);
-                            let miss = total * (1.0 - compat);
-                            -junction_bonus * miss
-                        } else {
-                            0.0
-                        }
-                    } else {
-                        0.0
-                    };
-                    // Structural exon-length divergence: penalise reads whose
-                    // total spliced length is far from any read in the candidate
-                    // bundle.  Orthogonal to identity — fires on divergent
-                    // paralogs whose copies differ in indel/cassette structure.
-                    let exonlen_log = if exon_len_penalty > 0.0
-                        && ri < bundles[global_bi].reads.len()
-                    {
-                        let read = &bundles[global_bi].reads[ri];
-                        let div = exon_length_divergence(read, &bundles[global_bi]);
-                        -exon_len_penalty * div
-                    } else {
-                        0.0
-                    };
-                    entry_locs.push((global_bi, ri));
-                    log_scores.push(score);
-                    log_snp.push(snp_log);
-                    log_jct.push(jct_log);
-                    log_exonlen.push(exonlen_log);
-                    weights.push(w);
-                    fp_vec.push(fam_pos);
-                }
-                if entry_locs.len() < 2 { return None; }
-                if !log_scores.iter().any(|s| s.is_finite()) { return None; }
-                Some(Entry { locs: entry_locs, log_scores, log_snp, log_jct, log_exonlen, weights, fam_pos: fp_vec })
-            })
-            .collect();
-        let mut entries = scored;
-
-        if entries.is_empty() {
-            if n_no_seq > 0 || n_capped > 0 {
-                eprintln!(
-                    "[VG-HMM-EM] Family {}: 0 entries usable ({} reads lacked sequences, {} capped)",
-                    family.family_id, n_no_seq, n_capped
-                );
-            }
-            results.push(EmResult::default());
-            continue;
-        }
-
-        let mut result = EmResult::default();
-
-        // Score-gap rule (advisor's primary-vs-secondary threshold): only
-        // redistribute a read's weight when the best-paralog log-score is at
-        // least `gap_threshold` log-units above the next-best. When the gap
-        // is smaller, the EM is uncertain — leave the read's weight at its
-        // initial 1/NH (BAM-aligner's call) rather than risk flipping it the
-        // wrong way. Default 10.0 log-units (per advisor); set 0 to disable.
-        let gap_threshold: f64 = std::env::var("RUSTLE_VG_EM_SCORE_GAP")
-            .ok()
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(10.0);
-
-        for iter in 0..max_iter {
-            // M-step: per-copy weight totals → log-priors with floor.
-            // With `uniform_prior`, the M-step is disabled — every copy gets
-            // a flat prior so the per-(read, copy) posterior is driven purely
-            // by the HMM (+ SNP, + junction) log-likelihood.  Used to test
-            // whether EM's iterative prior estimation is doing real work.
-            let mut copy_total = vec![0.0_f64; n_copies];
-            for entry in &entries {
-                for (i, w) in entry.weights.iter().enumerate() {
-                    copy_total[entry.fam_pos[i]] += w;
-                }
-            }
-            let total_sum: f64 = copy_total.iter().sum::<f64>().max(1.0);
-            let log_priors: Vec<f64> = if uniform_prior {
-                vec![0.0_f64; n_copies]
-            } else {
-                copy_total.iter()
-                    .map(|&t| ((t / total_sum) + 1e-3).ln())
-                    .collect()
-            };
-
-            let mut max_delta: f64 = 0.0;
-            for entry in &mut entries {
-                let n = entry.locs.len();
-                let mut log_post = vec![f64::NEG_INFINITY; n];
-                for i in 0..n {
-                    let s = entry.log_scores[i];
-                    if !s.is_finite() { continue; }
-                    log_post[i] = s
-                        + log_priors[entry.fam_pos[i]]
-                        + entry.log_snp[i]
-                        + entry.log_jct[i]
-                        + entry.log_exonlen[i];
-                }
-                let max_lp = log_post.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-                if !max_lp.is_finite() { continue; }
-
-                // Confidence gate: skip update if best vs second-best gap is
-                // below threshold.
-                if gap_threshold > 0.0 && n >= 2 {
-                    let mut best = f64::NEG_INFINITY;
-                    let mut second = f64::NEG_INFINITY;
-                    for &v in &log_post {
-                        if v > best { second = best; best = v; }
-                        else if v > second { second = v; }
-                    }
-                    if best.is_finite() && second.is_finite() && (best - second) < gap_threshold {
-                        continue;
-                    }
-                }
-
-                let mut total = 0.0_f64;
-                let mut exps = vec![0.0_f64; n];
-                for i in 0..n {
-                    if log_post[i].is_finite() {
-                        exps[i] = (log_post[i] - max_lp).exp();
-                        total += exps[i];
-                    }
-                }
-                if total <= 0.0 { continue; }
-                for i in 0..n {
-                    let new_w = exps[i] / total;
-                    let delta = (new_w - entry.weights[i]).abs();
-                    if delta > max_delta { max_delta = delta; }
-                    entry.weights[i] = new_w;
-                }
-            }
-            result.iterations = iter + 1;
-            result.max_delta = max_delta;
-            if max_delta < convergence_thr {
-                result.converged = true;
-                break;
-            }
-        }
-
-        // Apply final weights.
-        let mut n_reweighted = 0usize;
-        for entry in &entries {
-            for (i, &(global_bi, ri)) in entry.locs.iter().enumerate() {
-                if ri >= bundles[global_bi].reads.len() { continue; }
-                let old_w = bundles[global_bi].reads[ri].weight;
-                let new_w = entry.weights[i];
-                if (old_w - new_w).abs() > 1e-9 {
-                    bundles[global_bi].reads[ri].weight = new_w;
-                    n_reweighted += 1;
-                }
-            }
-        }
-        result.reads_reweighted = n_reweighted;
-
-        if n_reweighted > 0 || n_no_seq > 0 || n_capped > 0 || n_prefiltered > 0 {
-            eprintln!(
-                "[VG-HMM-EM] Family {}: HMM-EM converged={} in {} iter (delta={:.6}), reweighted {} reads ({} skipped: no seq, {} capped, {} jct-prefiltered) across {} copies",
-                family.family_id, result.converged, result.iterations, result.max_delta,
-                n_reweighted, n_no_seq, n_capped, n_prefiltered, n_copies,
-            );
-        }
-        results.push(result);
-    }
-
-    let total_reweighted: usize = results.iter().map(|r| r.reads_reweighted).sum();
-    eprintln!(
-        "[VG-HMM-EM] HMM-EM{} reweighting complete: {} reads adjusted across {} families in {:.1}s",
-        if use_snps { " (SNP-aware)" } else { "" },
-        total_reweighted,
-        results.iter().filter(|r| r.reads_reweighted > 0).count(),
-        t_em_start.elapsed().as_secs_f64(),
-    );
-    results
-}
-
 /// Fingerprint-based EM: redistribute multi-mapping read weights using per-copy
 /// SNP/indel fingerprints built from `ExonClass.per_copy_sequences`.
 ///
-/// Unlike `run_pre_assembly_em_hmm`, this does not run a full forward DP.
-/// Instead it accumulates log-likelihood from copy-distinguishing positions
-/// found by pairwise comparison of the family graph's per-copy sequences.
+/// This does not run a full forward DP. Instead it accumulates log-likelihood
+/// from copy-distinguishing positions found by pairwise comparison of the
+/// family graph's per-copy sequences.
 /// Works for non-overlapping copies (RBMY/TSPY/DAZ on chrY) because positions
 /// are exon-relative, not reference-coordinate.
 ///
@@ -5104,11 +4754,11 @@ pub fn run_pre_assembly_em_hmm(
 pub fn run_fingerprint_em(
     families: &[FamilyGroup],
     bundles: &mut [Bundle],
-    family_graphs: &[Option<crate::vg_hmm::family_graph::FamilyGraph>],
+    family_graphs: &[Option<crate::vg_family::family_graph::FamilyGraph>],
     max_iter: usize,
     // Optional collector for per-family gene-conversion events (mosaic pass), keyed by
     // family_id, so the pipeline can surface them to the GTF. None for callers that don't need it.
-    mut mosaic_out: Option<&mut crate::types::DetHashMap<usize, Vec<crate::vg_hmm::mosaic::ConversionEvent>>>,
+    mut mosaic_out: Option<&mut crate::types::DetHashMap<usize, Vec<crate::vg_family::mosaic::ConversionEvent>>>,
 ) -> Vec<EmResult> {
     use rayon::prelude::*;
     let mut results = Vec::with_capacity(families.len());
@@ -5198,12 +4848,11 @@ pub fn run_fingerprint_em(
             // The fingerprint carries no discriminating signal, but SKIPPING the
             // EM is wrong: shared multi-mappers then stay counted at full weight
             // in EVERY copy, inflating the non-starved copy (DAZ1: 9 tx / cov 142
-            // instead of HMM-EM's 2 / 8.5). Fall through to the EM with the
+            // instead of the expected 2 / 8.5). Fall through to the EM with the
             // fingerprint term neutral (all sites 0): the per-copy pileup-depth
             // PRIOR (M-step) plus the junction-chain / alignment-identity signals
-            // then split the multi-mappers. This is the simple, explainable
-            // replacement for the HMM-EM, whose forward DP also converges
-            // trivially for identical copies — the prior is the real signal.
+            // then split the multi-mappers. For identical copies the prior is
+            // the real signal.
             eprintln!(
                 "[VG-FP-EM] Family {}: 0 diagnostic sites — pileup-depth-prior fallback (identical copies)",
                 family.family_id
@@ -5378,7 +5027,7 @@ pub fn run_fingerprint_em(
         // RUSTLE_VG_ANCHOR_PRIOR=0 still forces legacy everywhere (DAZ A/B).
         let is_tandem_family = family.bundle_indices.iter().any(|&bi| {
             bundles.get(bi).and_then(|b| b.rescue_class)
-                == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy)
+                == Some(crate::vg_family::diagnostic::RescueClass::TandemCopy)
         });
         let anchor_prior_on = std::env::var("RUSTLE_VG_ANCHOR_PRIOR")
             .map(|v| v != "0").unwrap_or(true)
@@ -5735,7 +5384,7 @@ pub fn write_family_report_with_em(
     transcripts: Option<&[crate::path_extract::Transcript]>,
     bundles: Option<&[Bundle]>,
 ) -> std::io::Result<()> {
-    use crate::vg_hmm::diagnostic::RescueClass;
+    use crate::vg_family::diagnostic::RescueClass;
     use std::io::Write;
     let gene_gap: u64 = std::env::var("RUSTLE_VG_REPORT_GAP")
         .ok()
@@ -5760,6 +5409,8 @@ pub fn write_family_report_with_em(
                     | Some(RescueClass::ChimericSuffixRescue)
                     | Some(RescueClass::TopologyBorrow)
                     | Some(RescueClass::TandemCopy)
+                    | Some(RescueClass::StrandPureMinority)
+                    | Some(RescueClass::UnionBaseline)
                     | None => {}
                 }
             }
@@ -5950,24 +5601,16 @@ pub fn build_family_consensus_junctions(
 
 /// Top-level dispatcher for novel gene-copy discovery.
 ///
-/// Routes to the k-mer legacy path or the new HMM-based rescue path depending on
-/// `config.vg_discover_novel_mode`. The HMM path falls back to k-mer on error.
+/// Runs the k-mer novel-copy discovery scan. (`config.vg_discover_novel_mode`
+/// is retained for CLI compatibility; the only supported mode is the k-mer
+/// scan — any value routes here.)
 pub fn discover_novel_copies(
     bam_path: &std::path::Path,
     families: &[FamilyGroup],
     bundles: &[Bundle],
     config: &crate::types::RunConfig,
 ) -> Vec<NovelCandidate> {
-    match config.vg_discover_novel_mode.as_str() {
-        "hmm" => match crate::vg_hmm::rescue::run_rescue(bam_path, families, bundles, config) {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[VG-HMM] rescue failed: {} — falling back to kmer", e);
-                discover_novel_copies_kmer(bam_path, families, bundles, config)
-            }
-        },
-        _ => discover_novel_copies_kmer(bam_path, families, bundles, config),
-    }
+    discover_novel_copies_kmer(bam_path, families, bundles, config)
 }
 
 /// Discover novel gene copies from unmapped reads using k-mer matching.
@@ -6296,7 +5939,7 @@ pub struct TopoTransferState {
     /// FamilyGroup partitions (copy index → bundle index, same ordering as family_graphs).
     pub partitions: Vec<FamilyGroup>,
     /// FamilyGraph per partition entry (None if genome was unavailable for that family).
-    pub family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>>,
+    pub family_graphs: Vec<Option<crate::vg_family::family_graph::FamilyGraph>>,
     /// Snapshot of bundles at EM time (needed for chrom/strand/reads access after
     /// `bundles` is consumed by the parallel assembly loop).
     pub bundles: Vec<crate::types::Bundle>,
@@ -6558,17 +6201,470 @@ fn build_topology_borrow_transcript(
         copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
         intron_low: Vec::new(),
         synthetic: true,
-        rescue_class: Some(crate::vg_hmm::diagnostic::RescueClass::TopologyBorrow),
+        rescue_class: Some(crate::vg_family::diagnostic::RescueClass::TopologyBorrow),
         raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+        hp_tag: None, ps_tag: None,
     }
+}
+
+/// Promote a CONFIRMED gene-conversion event into a first-class recombinant isoform
+/// (the "emit, don't just flag" step). A gene conversion is a SEQUENCE mosaic — 5' exons
+/// from copy A, 3' from copy B — with the SAME intron chain as its host copy (no novel
+/// junction; see bench/multi_copy_eval/NOVEL_COMBINATION_PROOF.md). So the emitted transcript
+/// shares the host's exon chain but is a DISTINCT molecular species: tagged
+/// `source = "gene_conversion"`, coverage = the supporting recombinant-molecule count. It is
+/// cloned from the host so it inherits `family_verdict` and the gene_conversion / copies /
+/// breakpoint / reads GTF attributes are written automatically. Returns None unless the event
+/// is CONFIRMED (the don't-fabricate guard) and its breakpoint falls within the host span.
+pub fn build_conversion_transcript(
+    host: &crate::path_extract::Transcript,
+    event: &crate::vg_family::mosaic::ConversionEvent,
+) -> Option<crate::path_extract::Transcript> {
+    // Don't-fabricate guard: only a family-confirmed event (breakpoint recurred across
+    // ≥k molecules with tight dispersion) becomes a transcript; chimera-suspects stay flags.
+    if !event.confirmed {
+        return None;
+    }
+    // The recombinant aligns contiguously to ONE of the event's own copies, and its intron
+    // chain MUST be that copy's chain. Reject any host that is not a participant copy
+    // (copy_a or copy_b) — hosting on a third copy would clone the wrong structure.
+    match host.vg_copy_id {
+        Some(c) if c == event.copy_a || c == event.copy_b => {}
+        _ => return None,
+    }
+    // Sanity: the breakpoint BRACKET (last decisive A-site, first decisive B-site) must
+    // OVERLAP a transcribed (exonic) segment of the host. The endpoints are exonic diagnostic
+    // SNP sites, but the bracket legitimately spans the intron between two exons when the
+    // switch is between them — so test bracket↔exon overlap, not midpoint-in-exon. A bracket
+    // lying entirely in an intron (or off the transcript) is rejected.
+    if host.exons.is_empty() {
+        return None;
+    }
+    let (bp_lo, bp_hi) = event.breakpoint_ref;
+    if !host.exons.iter().any(|&(s, e)| bp_lo <= e && bp_hi >= s) {
+        return None;
+    }
+    // Clone the host (inherits chrom/strand/exons + family_verdict → the gene_conversion GTF
+    // attributes), then mark it as the distinct recombinant species.
+    let mut rec = host.clone();
+    rec.source = Some("gene_conversion".to_string());
+    rec.coverage = event.n_supporting_reads as f64;
+    rec.longcov = event.n_supporting_reads as f64;
+    // tpm/fpkm are recomputed for every transcript by compute_tpm_fpkm after emission.
+    rec.transcript_id = None; // auto-number; source + attributes distinguish it from the native
+    rec.ref_transcript_id = None;
+    rec.ref_gene_id = None;
+    Some(rec)
+}
+
+/// Emit a recombinant isoform for EVERY distinct confirmed conversion event in one family
+/// (lifts the one-per-family bound). `transcripts` is the full assembled set; only those with
+/// `vg_family_id == fam_id` and a participant copy are considered. For each distinct
+/// (copy_a, copy_b, breakpoint) event, the deterministic host is the participant copy
+/// (preferring copy_a, then lowest (start,end)) whose chain `build_conversion_transcript`
+/// accepts. Each emitted recombinant carries ITS OWN event in `family_verdict.conversion`, so
+/// its GTF attributes are its own breakpoint/copies/reads.
+pub fn emit_family_recombinants(
+    transcripts: &[crate::path_extract::Transcript],
+    events: &[crate::vg_family::mosaic::ConversionEvent],
+    fam_id: usize,
+) -> Vec<crate::path_extract::Transcript> {
+    let mut out: Vec<crate::path_extract::Transcript> = Vec::new();
+    // Distinct confirmed events, in a deterministic order.
+    let mut evs: Vec<&crate::vg_family::mosaic::ConversionEvent> =
+        events.iter().filter(|e| e.confirmed).collect();
+    evs.sort_by_key(|e| (e.copy_a, e.copy_b, e.breakpoint_ref.0, e.breakpoint_ref.1));
+    evs.dedup_by_key(|e| (e.copy_a, e.copy_b, e.breakpoint_ref.0, e.breakpoint_ref.1));
+    for ev in evs {
+        // Deterministic host: a participant copy (prefer copy_a) whose chain accepts this event.
+        let mut best: Option<((u8, u64, u64), usize)> = None;
+        for (i, tx) in transcripts.iter().enumerate() {
+            if tx.vg_family_id != Some(fam_id) {
+                continue;
+            }
+            let Some(copy_id) = tx.vg_copy_id else { continue };
+            if copy_id != ev.copy_a && copy_id != ev.copy_b {
+                continue;
+            }
+            if build_conversion_transcript(tx, ev).is_none() {
+                continue;
+            }
+            let start = tx.exons.first().map(|e| e.0).unwrap_or(u64::MAX);
+            let end = tx.exons.last().map(|e| e.1).unwrap_or(u64::MAX);
+            let rank = (if copy_id == ev.copy_a { 0u8 } else { 1u8 }, start, end);
+            if best.map_or(true, |(r, _)| rank < r) {
+                best = Some((rank, i));
+            }
+        }
+        if let Some((_, idx)) = best {
+            if let Some(mut rec) = build_conversion_transcript(&transcripts[idx], ev) {
+                // Carry THIS event so the recombinant's GTF attributes are its own (not the
+                // family's single "best" event).
+                if let Some(mut v) = transcripts[idx].family_verdict.clone() {
+                    v.conversion = Some(ev.clone());
+                    rec.family_verdict = Some(v);
+                }
+                out.push(rec);
+            }
+        }
+    }
+    out
+}
+
+/// Per-copy decisive-evidence certificate for the multimapper rescue report. Captures the copy's
+/// locus and the ownership tallies from `compute_copy_ownership` plus its primary-alignment count.
+#[derive(Debug, Clone)]
+pub struct CopyCertificate {
+    pub chrom: String,
+    pub start: u64,
+    pub end: u64,
+    pub family_id: usize,
+    pub copy_id: usize,
+    pub family_size: usize,
+    /// Reads whose PRIMARY (best) alignment lands on this copy — what a primary-only assembler sees.
+    pub n_primary: usize,
+    /// Reads placing ONLY at this copy (always own it).
+    pub n_unique: usize,
+    /// Multimappers that strictly OWN this copy by dNM margin (the rescued decisive evidence).
+    pub n_strict: usize,
+    /// Multimappers TIED between this copy and a sibling (non-identifiable mass).
+    pub n_tied: usize,
+}
+
+impl CopyCertificate {
+    /// Decisive own-evidence: reads that decisively belong to this copy (unique + strict owners).
+    pub fn own_ev(&self) -> usize {
+        self.n_unique + self.n_strict
+    }
+    /// Identifiability: decisive own-evidence over (own + tied). 1.0 = no ambiguity; low = phantom.
+    pub fn decisive_frac(&self) -> f64 {
+        let oe = self.own_ev();
+        oe as f64 / (oe + self.n_tied).max(1) as f64
+    }
+    pub fn is_rescued(&self, min_decisive: usize, min_frac: f64) -> bool {
+        is_multimapper_rescued(self.n_primary, self.own_ev(), self.n_strict, self.n_tied, min_decisive, min_frac)
+    }
+}
+
+/// A copy is "recoverable only from multimappers" when it has decisive own-evidence
+/// (`own_ev >= min_decisive`, i.e. a REAL copy — not a phantom), it is identifiable
+/// (`decisive_frac >= min_frac` — separates a real copy from one whose reads are tied to a
+/// sibling, e.g. DAZ3 at frac 0.07), AND the strictly-owning multimappers (the evidence only a
+/// secondary-retaining assembler has) strictly EXCEED what a primary-only assembler sees
+/// (`n_strict > n_primary`). The strict inequality matters: `own_ev` includes `n_unique`, which
+/// counts single-locus PRIMARY reads already reflected in `n_primary`, so an `n_strict ==
+/// n_primary` copy with unique primaries is in fact primary-visible — not a multimapper-only
+/// rescue. RABL2A (28 primary, ~140 strict) clears this decisively; a copy whose own primaries
+/// already reveal it does not.
+pub fn is_multimapper_rescued(
+    n_primary: usize,
+    own_ev: usize,
+    n_strict: usize,
+    n_tied: usize,
+    min_decisive: usize,
+    min_frac: f64,
+) -> bool {
+    let frac = own_ev as f64 / (own_ev + n_tied).max(1) as f64;
+    own_ev >= min_decisive && frac >= min_frac && n_strict > n_primary
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vg_hmm::family_graph::{ExonClass, FamilyGraph, NodeIdx};
+    use crate::vg_family::family_graph::{ExonClass, FamilyGraph, NodeIdx};
 
     fn approx(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+
+    fn conv_event(confirmed: bool, br: (u64, u64), n: usize, disp: u64) -> crate::vg_family::mosaic::ConversionEvent {
+        crate::vg_family::mosaic::ConversionEvent {
+            copy_a: 0, copy_b: 1, breakpoint_ref: br,
+            n_supporting_reads: n, breakpoint_dispersion: disp, confirmed,
+        }
+    }
+
+    fn fam_verdict() -> FamilyVerdict {
+        FamilyVerdict {
+            class: FamilyClass::Spillover, n_copies: 2, n_expressed: 2, connectivity: 0.0,
+            identifiability: Identifiability::None, n_id_classes: 0, locus_rel: LocusRel::Single,
+            depth_copies: None, em_confidence: None, segdup: None, conversion: None, hidden_copy: None,
+        }
+    }
+
+    // host on copy `c` of family 0 (must equal an event copy to be a valid host).
+    fn conv_host(c: usize, exons: Vec<(u64, u64)>) -> crate::path_extract::Transcript {
+        crate::path_extract::Transcript {
+            chrom: "chr1".into(), strand: '+', exons,
+            coverage: 50.0, source: Some("flow".into()),
+            vg_copy_id: Some(c), vg_family_id: Some(0), family_verdict: Some(fam_verdict()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn conversion_emit_confirmed_builds_recombinant_on_host_chain() {
+        // host is copy_a (0); breakpoint midpoint 9655 falls inside the last exon (9450-9750)
+        let host = conv_host(0, vec![(1000, 1400), (4000, 4300), (9450, 9750)]);
+        let ev = conv_event(true, (9600, 9710), 11, 0);
+        let rec = build_conversion_transcript(&host, &ev).expect("confirmed event should emit a recombinant");
+        assert_eq!(rec.exons, host.exons, "recombinant shares host exon chain (seq mosaic, no novel junction)");
+        assert_eq!(rec.chrom, host.chrom);
+        assert_eq!(rec.strand, host.strand);
+        assert_eq!(rec.source.as_deref(), Some("gene_conversion"), "marked as the gene-conversion isoform");
+        assert!(approx(rec.coverage, 11.0), "coverage reflects supporting recombinant molecules");
+    }
+
+    #[test]
+    fn conversion_emit_unconfirmed_does_not_fabricate() {
+        let host = conv_host(0, vec![(1000, 1400), (9450, 9750)]);
+        let ev = conv_event(false, (9600, 9710), 2, 80);
+        assert!(build_conversion_transcript(&host, &ev).is_none(),
+            "chimera-suspect (unconfirmed) must not be emitted (don't-fabricate guard)");
+    }
+
+    #[test]
+    fn conversion_emit_breakpoint_outside_host_span_rejected() {
+        let host = conv_host(0, vec![(1000, 1400), (4000, 4300)]);
+        let ev = conv_event(true, (50000, 50100), 11, 0);
+        assert!(build_conversion_transcript(&host, &ev).is_none(),
+            "breakpoint outside the host transcript span is a sanity reject");
+    }
+
+    #[test]
+    fn conversion_emit_rejects_non_participant_host_copy() {
+        // host is copy 5, but the event is 0->1. The recombinant must NOT be built on a copy
+        // that does not participate in the conversion (would clone the wrong chain).
+        let host = conv_host(5, vec![(1000, 1400), (9450, 9750)]);
+        let ev = conv_event(true, (9600, 9710), 11, 0);
+        assert!(build_conversion_transcript(&host, &ev).is_none(),
+            "host must be one of the event's copies (copy_a/copy_b)");
+    }
+
+    #[test]
+    fn conversion_emit_rejects_intronic_breakpoint() {
+        // breakpoint bracket (2650,2750) lies entirely in the INTRON between exon1 (1000-1400)
+        // and exon2 (4000-4300): within the overall span but overlapping no exon → reject.
+        let host = conv_host(0, vec![(1000, 1400), (4000, 4300)]);
+        let ev = conv_event(true, (2650, 2750), 11, 0);
+        assert!(build_conversion_transcript(&host, &ev).is_none(),
+            "breakpoint bracket overlapping no exon (intronic) is a sanity reject");
+    }
+
+    #[test]
+    fn rescued_rabl2a_like_multimapper_owned_copy() {
+        // RABL2A: 32 primaries but ~140 strictly-owning multimappers, 0 tied → decisively rescued.
+        assert!(is_multimapper_rescued(32, 164, 140, 0, 3, 0.5),
+            "a copy whose decisive evidence is dominated by strict-owning multimappers is rescued");
+    }
+
+    #[test]
+    fn rescued_invisible_real_copy() {
+        // 0 primaries (StringTie sees nothing), 12 strict owners, 1 tied → real & rescued.
+        assert!(is_multimapper_rescued(0, 12, 12, 1, 3, 0.5),
+            "a primary-invisible copy with decisive own-evidence is rescued");
+    }
+
+    #[test]
+    fn not_rescued_phantom_tied_copy() {
+        // DAZ3-like phantom: 3 strict but 38 tied → frac 0.07, not identifiable → NOT rescued.
+        assert!(!is_multimapper_rescued(0, 3, 3, 38, 3, 0.5),
+            "a copy whose reads are mostly tied to a sibling is a phantom, not a rescue");
+    }
+
+    #[test]
+    fn not_rescued_well_covered_copy() {
+        // 100 primaries, only 5 strict owners → StringTie already sees it → NOT a multimapper rescue.
+        assert!(!is_multimapper_rescued(100, 105, 5, 0, 3, 0.5),
+            "a primary-rich copy is not recoverable-only-from-multimappers");
+    }
+
+    #[test]
+    fn not_rescued_primary_visible_at_boundary() {
+        // 3 unique single-locus PRIMARY reads (primary-visible) + 3 strict owners → n_strict == n_primary.
+        // A primary-only assembler already sees the 3 uniques, so this is NOT recoverable ONLY from
+        // multimappers; strict owners must strictly EXCEED primary visibility.
+        assert!(!is_multimapper_rescued(3, 6, 3, 0, 3, 0.5),
+            "equal strict-vs-primary is not a multimapper-only rescue (own_ev double-counts unique primaries)");
+    }
+
+    #[test]
+    fn not_rescued_below_decisive_floor() {
+        // own_ev 2 < min_decisive 3 → too little evidence to claim a real copy.
+        assert!(!is_multimapper_rescued(0, 2, 2, 0, 3, 0.5),
+            "below the decisive-evidence floor is not a confirmed rescue");
+    }
+
+    #[test]
+    fn emit_family_two_distinct_events_two_recombinants() {
+        // family 0, copies 0 and 1 at different loci; two distinct confirmed events.
+        let txs = vec![
+            conv_host(0, vec![(1000, 1400), (4000, 4300), (9450, 9750)]),
+            conv_host(1, vec![(20000, 20400), (24000, 24300), (29450, 29750)]),
+        ];
+        let ev1 = conv_event(true, (9600, 9710), 11, 0); // 0->1, bp in copy0 exon3 → host copy0
+        let mut ev2 = conv_event(true, (29600, 29710), 7, 0); // bp in copy1 exon3 → host copy1
+        ev2.copy_a = 1;
+        ev2.copy_b = 0; // event 1->0
+        let recs = emit_family_recombinants(&txs, &[ev1, ev2], 0);
+        assert_eq!(recs.len(), 2, "two distinct confirmed events → two recombinants");
+        // each hosted on the correct copy's chain, carrying its OWN event
+        let r0 = recs.iter().find(|r| r.exons == txs[0].exons).expect("copy0-hosted recombinant");
+        let r1 = recs.iter().find(|r| r.exons == txs[1].exons).expect("copy1-hosted recombinant");
+        assert_eq!(r0.family_verdict.as_ref().unwrap().conversion.as_ref().unwrap().breakpoint_ref, (9600, 9710));
+        assert_eq!(r1.family_verdict.as_ref().unwrap().conversion.as_ref().unwrap().breakpoint_ref, (29600, 29710));
+    }
+
+    #[test]
+    fn emit_family_dedups_identical_events() {
+        let txs = vec![conv_host(0, vec![(1000, 1400), (9450, 9750)])];
+        let ev = conv_event(true, (9600, 9710), 11, 0);
+        let recs = emit_family_recombinants(&txs, &[ev.clone(), ev], 0);
+        assert_eq!(recs.len(), 1, "identical events dedup to one recombinant");
+    }
+
+    #[test]
+    fn emit_family_skips_unconfirmed_events() {
+        let txs = vec![conv_host(0, vec![(1000, 1400), (9450, 9750)])];
+        let confirmed = conv_event(true, (9600, 9710), 11, 0);
+        let suspect = conv_event(false, (1100, 1200), 2, 80);
+        let recs = emit_family_recombinants(&txs, &[confirmed, suspect], 0);
+        assert_eq!(recs.len(), 1, "only confirmed events are emitted");
+    }
+
+    #[test]
+    fn conversion_emit_accepts_bracket_spanning_an_intron() {
+        // Real case: bracket endpoints are exonic diagnostic sites in DIFFERENT exons, so the
+        // bracket spans the intron between them (its midpoint is intronic). Must still emit.
+        let host = conv_host(0, vec![(1000, 1400), (9450, 9750), (12150, 12600)]);
+        let ev = conv_event(true, (9655, 12180), 11, 0); // 9655∈exon2, 12180∈exon3; mid 10917∈intron
+        assert!(build_conversion_transcript(&host, &ev).is_some(),
+            "a bracket whose endpoints are exonic but whose midpoint is intronic must emit");
+    }
+
+    // Signature: copy_keeps_ambiguous_reads(n_primary, own_ev, n_tied, min_prim=4,
+    //                                        min_own=2, thr=0.5, min_strong=8)
+    #[test]
+    fn isoform_pair_support_drops_chimeric_joins() {
+        let mut pairs: std::collections::HashSet<((u64, u64), (u64, u64))> =
+            std::collections::HashSet::new();
+        let a = (100, 200); let b = (300, 400); let c = (500, 600); let d = (700, 800);
+        // reads observed: a->b->c (one read) and a chimera would join b->d which no read has.
+        pairs.insert((a, b));
+        pairs.insert((b, c));
+        // real isoform a->b->c: every consecutive pair supported → kept.
+        assert!(isoform_junction_pairs_supported(&[a, b, c], &pairs));
+        // chimeric isoform a->b->d: pair (b,d) unsupported → dropped.
+        assert!(!isoform_junction_pairs_supported(&[a, b, d], &pairs));
+        // single-junction and empty isoforms trivially pass (no pairs to violate).
+        assert!(isoform_junction_pairs_supported(&[a], &pairs));
+        assert!(isoform_junction_pairs_supported(&[], &pairs));
+    }
+
+    #[test]
+    fn compat_prim_counts_primary_chain_carriers_not_spurious() {
+        let a=(100,200); let b=(300,400); let c=(500,600); let sec=(350,420);
+        let tx = [a,b,c];
+        // primary reads that carry contiguous runs of tx → count.
+        let r_ab = vec![a,b]; let r_bc = vec![b,c]; let r_full = vec![a,b,c];
+        // a read that splices a then c (skipping b) is NOT a contiguous subchain.
+        let r_ac = vec![a,c];
+        // a read with a foreign junction is not a subchain.
+        let r_ax = vec![a,(700,800)];
+        let prim = vec![r_ab, r_bc, r_full, r_ac.clone(), r_ax];
+        assert_eq!(compat_prim_support(&tx, &prim, 6), 3, "a-b, b-c, a-b-c carry tx; a-c and a-x do not");
+        // tolerance: a read off by <=6bp still matches.
+        let r_tol = vec![(104,196),(300,400)];
+        assert_eq!(compat_prim_support(&tx, &[r_tol.clone()], 6), 1);
+        assert_eq!(compat_prim_support(&tx, &[r_tol], 2), 0, "off by 4bp fails tol=2");
+        // SPURIOUS isoform [a, sec, c]: the real full read [a,b,c] is NOT a subchain
+        // (b != sec); only short prefix reads like [a] match → compatPrim stays low.
+        let spurious = [a, sec, c];
+        assert_eq!(compat_prim_support(&spurious, &[vec![a,b,c]], 6), 0,
+            "a real a-b-c read does not support the secondary-junction spurious isoform");
+        assert_eq!(compat_prim_support(&spurious, &[vec![a]], 6), 1, "a short [a] read is a prefix subchain");
+    }
+
+    #[test]
+    fn isoform_fullread_span_drops_unspanned_combinations() {
+        let a = (100, 200); let b = (300, 400); let c = (500, 600); let d = (700, 800);
+        // reads: one spans a,b,c ; another spans c,d. No read spans a,b,c,d together.
+        let r1: std::collections::HashSet<(u64,u64)> = [a, b, c].into_iter().collect();
+        let r2: std::collections::HashSet<(u64,u64)> = [c, d].into_iter().collect();
+        let reads = vec![r1, r2];
+        // real isoform a,b,c is fully spanned by r1 → kept.
+        assert!(isoform_fully_read_spanned(&[a, b, c], &reads));
+        // c,d spanned by r2 → kept.
+        assert!(isoform_fully_read_spanned(&[c, d], &reads));
+        // a,b,c,d: every adjacent PAIR is read-supported but NO single read spans
+        // the whole chain → dropped (the combination over-enum the pair check misses).
+        assert!(!isoform_fully_read_spanned(&[a, b, c, d], &reads));
+        // single junction trivially passes.
+        assert!(isoform_fully_read_spanned(&[a], &reads));
+    }
+
+    #[test]
+    fn junction_strip_keeps_primaries_and_confirming_secondaries() {
+        use crate::types::Junction;
+        let j1 = Junction::new(100, 200);
+        let j2 = Junction::new(300, 400);   // primary-supported
+        let jp = Junction::new(999, 1099);  // phantom (no primary read crosses it)
+        let mut primary: std::collections::HashSet<Junction> = std::collections::HashSet::new();
+        primary.insert(j1);
+        primary.insert(j2);
+
+        // Primary reads always survive (regardless of their junctions).
+        assert!(read_confirms_primary_junctions(true, &[jp], &primary));
+        // A secondary whose ENTIRE chain is primary-supported survives — it
+        // CONFIRMS real junctions and adds coverage a low-cov copy needs.
+        assert!(read_confirms_primary_junctions(false, &[j1, j2], &primary));
+        // A secondary carrying ANY phantom junction is dropped (the contamination).
+        assert!(!read_confirms_primary_junctions(false, &[j1, jp], &primary));
+        // A single-exon (junction-less) secondary survives trivially — it cannot
+        // carry phantom structure, only coverage.
+        assert!(read_confirms_primary_junctions(false, &[], &primary));
+    }
+
+    #[test]
+    fn decisive_gate_primary_coverage_recovers_real_copies() {
+        // MEASURED RBMY bundles 4,5: own_ev=2 (NM gate would DROP), but 14 and 7
+        // PRIMARY reads → genuinely real (their primaries are NM-tied with the
+        // near-identical sibling, so NM-ownership under-counts). Primary escape keeps.
+        assert!(copy_keeps_ambiguous_reads(14, 2, 48, 4, 2, 0.5, 8),
+            "real copy with 14 primary reads must be kept despite own_ev=2");
+        assert!(copy_keeps_ambiguous_reads(7, 2, 26, 4, 2, 0.5, 8),
+            "real copy with 7 primary reads must be kept despite own_ev=2");
+    }
+
+    #[test]
+    fn decisive_gate_strong_evidence_escapes_ratio_test() {
+        // RBMY bundle 3: 30 strict, 35 tied, frac=0.46 — strong-evidence escape keeps it
+        // (here primary=10 would also keep it; isolate the strong path with primary<min_prim).
+        assert!(copy_keeps_ambiguous_reads(0, 30, 35, 4, 2, 0.5, 8),
+            "30 strict-decisive reads is a real copy — must keep regardless of frac");
+        // Control: ratio-only logic (no primary, huge min_strong) still gates frac=0.46.
+        assert!(!copy_keeps_ambiguous_reads(0, 30, 35, usize::MAX, 2, 0.5, usize::MAX),
+            "control: ratio-only logic gates frac=0.46 (the bug we fix)");
+    }
+
+    #[test]
+    fn decisive_gate_suppresses_phantom_copies() {
+        // DAZ3-class phantom: prim≈2, own_ev=3, frac=0.07 → gated (below ALL escapes).
+        assert!(!copy_keeps_ambiguous_reads(2, 3, 38, 4, 2, 0.5, 8),
+            "phantom (prim=2, own_ev=3) must stay gated");
+        // prim=0 TSPY-class: no primary, no own evidence → gated.
+        assert!(!copy_keeps_ambiguous_reads(0, 0, 20, 4, 2, 0.5, 8));
+        // A truly non-identifiable marginal copy (few primaries, low own_ev) stays gated.
+        assert!(!copy_keeps_ambiguous_reads(3, 2, 48, 4, 2, 0.5, 8),
+            "prim=3 (< min_prim 4) and own_ev=2 → gated");
+    }
+
+    #[test]
+    fn decisive_gate_keeps_confidently_identifiable_copy() {
+        // High strict-fraction copy clears the ratio test (own_ev=5, tied=2, frac~0.71).
+        assert!(copy_keeps_ambiguous_reads(0, 5, 2, 4, 2, 0.5, 8));
+        // Boundary: own_ev exactly at min_strong escapes; primary exactly at min_prim escapes.
+        assert!(copy_keeps_ambiguous_reads(0, 8, 1000, 4, 2, 0.5, 8));
+        assert!(copy_keeps_ambiguous_reads(4, 0, 1000, 4, 2, 0.5, 8));
+    }
 
     #[test]
     fn depth_copynum_equal_copies_no_collapse() {
@@ -6693,8 +6789,6 @@ mod tests {
             per_copy_sequences: copy_seqs.iter().map(|(c, s)| (*c, s.to_vec())).collect(),
             per_copy_spans: copy_spans.to_vec(),
             copy_specific: copy_spans.len() == 1,
-            profile: None,
-            per_copy_profiles: vec![],
             per_copy_cov: vec![],
         }
     }
@@ -6956,6 +7050,8 @@ mod tests {
             synthetic: false,
             rescue_class: None,
             vg_family_id: None,
+            hp_tag: None,
+            ps_tag: None,
         }
     }
 
@@ -7167,7 +7263,7 @@ mod tests {
             make_bundle("chr1", '-', c1_reads),   // opposite strand = inverted pair
         ];
         let family = FamilyGroup { family_id: 77, bundle_indices: vec![0, 1], multimap_reads: multimap };
-        let family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> = vec![None];
+        let family_graphs: Vec<Option<crate::vg_family::family_graph::FamilyGraph>> = vec![None];
 
         let _ = run_fingerprint_em(&[family], &mut bundles, &family_graphs, 5, None);
 
@@ -7450,7 +7546,7 @@ mod tests {
 #[cfg(test)]
 mod vg_phasing_sites {
     use super::*;
-    use crate::vg_hmm::family_graph::{ExonClass, FamilyGraph, NodeIdx};
+    use crate::vg_family::family_graph::{ExonClass, FamilyGraph, NodeIdx};
 
     /// Build a single ExonClass node carrying per-copy sequences (GENOME-FORWARD,
     /// as produced by genome.fetch_sequence) and per-copy genomic spans, with an
@@ -7471,8 +7567,6 @@ mod vg_phasing_sites {
             per_copy_sequences: copies.iter().map(|(c, s, _)| (*c, s.to_vec())).collect(),
             per_copy_spans: copies.iter().map(|(c, _, sp)| (*c, *sp)).collect(),
             copy_specific: copies.len() == 1,
-            profile: None,
-            per_copy_profiles: vec![],
             per_copy_cov: vec![],
         }
     }

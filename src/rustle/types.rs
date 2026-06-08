@@ -99,17 +99,23 @@ pub struct Bundle {
     /// Color assignments for bundlenodes
     pub bnode_colors: Option<Vec<usize>>,
     /// True for bundles synthesized by VG rescue from unmapped reads
-    /// (see src/rustle/vg_hmm/rescue.rs). Synthetic bundles bypass
+    /// (see src/rustle/vg_family/rescue.rs). Synthetic bundles bypass
     /// transcript_isofrac and cross-bundle pairwise-contained filters.
     pub synthetic: bool,
     /// Diagnostic classification bucket for this synthetic bundle (None for
-    /// real bundles). Set by `vg_hmm::diagnostic::classify_internal` and
+    /// real bundles). Set by `vg_family::diagnostic::classify_internal` and
     /// optionally refined by `classify_external` when
     /// `config.vg_rescue_diagnostic == true`.
-    pub rescue_class: Option<crate::vg_hmm::diagnostic::RescueClass>,
+    pub rescue_class: Option<crate::vg_family::diagnostic::RescueClass>,
     /// VG family this bundle belongs to (None for non-VG or non-synthetic bundles).
-    /// Populated for synthetic bundles created by vg_hmm rescue.
+    /// Populated for synthetic bundles created by vg_family rescue.
     pub vg_family_id: Option<usize>,
+    /// Haplotype this (sub-)bundle was split into by phased assembly (`--vg-phase`).
+    /// None = not split / unphased. Set by the phasing pre-pass; copied onto
+    /// transcripts so the GTF can carry a `haplotype` attribute.
+    pub hp_tag: Option<u8>,
+    /// Phase-set id for the haplotype split. None = unphased.
+    pub ps_tag: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -691,7 +697,8 @@ impl BundleData {
             synthetic: false,
             rescue_class: None,
             vg_family_id: None,
-
+            hp_tag: None,
+            ps_tag: None,
 }
     }
 }
@@ -699,8 +706,8 @@ impl BundleData {
 /// Multi-mapping resolution for VG mode.
 ///
 /// Two states only: `Off` (discovery / reporting, no read reweighting) and
-/// `On` (HMM-EM with two triviality skips; falls back to heuristic EM only
-/// when --genome-fasta is missing or multi-mapper sequences weren't collected).
+/// `On` (fingerprint-EM with two triviality skips; falls back to heuristic EM
+/// only when --genome-fasta is missing or multi-mapper sequences weren't collected).
 ///
 /// The legacy values `em`, `em-hmm`, `auto`, `flow` are accepted as deprecated
 /// aliases — all map to `On`. The dispatcher itself was collapsed (see
@@ -709,7 +716,7 @@ impl BundleData {
 pub enum VgSolver {
     /// Discovery / reporting only. No read weights are modified.
     Off,
-    /// HMM-EM with triviality skips (the compact universal solver).
+    /// Fingerprint-EM with triviality skips (the compact universal solver).
     On,
 }
 
@@ -923,7 +930,7 @@ pub struct RunConfig {
     /// (or its single-strand sub-family id). Populated mid-pipeline when
     /// `--vg-scan-novel-loci` is set or when --vg-discover-novel needs
     /// positional priors. Phase 2 of the positional rescue path.
-    pub vg_candidate_loci: std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>>,
+    pub vg_candidate_loci: std::collections::HashMap<usize, Vec<crate::vg_family::positional::CandidateLocus>>,
     /// Output path for family group report TSV (--vg-report).
     pub vg_report: Option<std::path::PathBuf>,
     /// Multi-mapping solver: em or flow [default: em].
@@ -939,9 +946,9 @@ pub struct RunConfig {
     /// Enable external minimap2 verification of rescued reads.
     pub vg_rescue_diagnostic: bool,
     /// Sequences for multi-mapped reads (read_name_hash → bytes), populated
-    /// at BAM-parse time when `vg_solver == VgSolver::EmHmm`. Empty for other
-    /// solvers (sequence collection has memory cost). Consumed by
-    /// `run_pre_assembly_em_hmm` to compute per-paralog forward log-likelihoods.
+    /// at BAM-parse time when `vg_solver == VgSolver::On`. Empty for other
+    /// solvers (sequence collection has memory cost). Consumed by the
+    /// pre-assembly EM for per-copy read scoring.
     pub vg_multimap_sequences: std::collections::HashMap<u64, Vec<u8>>,
     /// Forward log-odds threshold for HMM rescue (nats).
     pub vg_rescue_min_loglik: f64,
@@ -1034,14 +1041,6 @@ pub struct RunConfig {
     /// loose Jaccard prefilter. Default 0 (disabled). Stays DNA-side; requires
     /// --genome-fasta. Recommended starting threshold: 0.30.
     pub vg_family_min_poa_identity: f64,
-    /// Skip HMM sequence-profile fitting and forward-DP EM while still
-    /// building the FamilyGraph (ExonClass + JunctionEdges) for structural
-    /// junction propagation.  Falls back to the fast heuristic EM for read
-    /// reweighting.  Requires `--genome-fasta` (for `build_family_graph`);
-    /// does NOT require multi-mapper sequence collection.  Useful on laptops
-    /// or when HMM-EM timing is prohibitive on large datasets.  Enable with
-    /// `--vg-no-hmm`.  Default false.
-    pub vg_no_hmm: bool,
 }
 
 impl RunConfig {
@@ -1295,7 +1294,6 @@ impl Default for RunConfig {
             vg_family_min_primitive_jaccard: 0.20,
             vg_family_min_kmer_jaccard: 0.05,  // bimodal split on full GGO; no-op without --genome-fasta
             vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
-            vg_no_hmm: false,
         }
     }
 }

@@ -466,6 +466,8 @@ mod tests {
             synthetic: false,
             rescue_class: None,
             vg_family_id: None,
+            hp_tag: None,
+            ps_tag: None,
         }
     }
 
@@ -716,7 +718,7 @@ mod tests {
         };
         let mut bundles: Vec<crate::types::Bundle> = Vec::new();
         let cfg = crate::types::RunConfig::default();
-        let (fam, idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+        let (fam, idxs) = crate::vg_family::tandem::decompose_tandem_to_family(
             &parent, &decomp, &mut bundles, 0, &cfg,
         );
         assert_eq!(idxs.len(), 2, "two copies → two bundle indices");
@@ -789,7 +791,7 @@ mod tests {
             sentinel.clone(),
         ];
         let cfg = crate::types::RunConfig::default();
-        let (fam, idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+        let (fam, idxs) = crate::vg_family::tandem::decompose_tandem_to_family(
             &parent, &decomp, &mut bundles, 7, &cfg,
         );
         // Two sub-bundles appended after the 3 sentinels → indices 3 and 4.
@@ -830,7 +832,7 @@ mod tests {
         };
         let mut bundles: Vec<crate::types::Bundle> = Vec::new();
         let cfg = crate::types::RunConfig::default();
-        let (fam, _idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+        let (fam, _idxs) = crate::vg_family::tandem::decompose_tandem_to_family(
             &parent, &decomp, &mut bundles, 42, &cfg,
         );
         assert_eq!(fam.multimap_reads.len(), 1, "one shared hash → one multimap entry");

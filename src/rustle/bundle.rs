@@ -1303,7 +1303,7 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
 
         // LOO experiment: skip reads whose alignment overlaps a mask region.
         // The same read's sequence is collected by the HMM rescue path
-        // (vg_hmm/rescue.rs) so it can be recovered as a "novel" copy.
+        // (vg_family/rescue.rs) so it can be recovered as a "novel" copy.
         if !config.vg_mask_regions.is_empty() {
             if let Some((rs, re_excl)) = crate::bam::record_ref_span(&record) {
                 let masked = config.vg_mask_regions.iter().any(|(c, ms, me)| {
@@ -2091,7 +2091,8 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
                 synthetic: false,
                 rescue_class: None,
                 vg_family_id: None,
-
+                hp_tag: None,
+                ps_tag: None,
 });
         } // end for strand
     } // end for regions
@@ -2388,4 +2389,86 @@ fn recompute_junction_stats_inner(bundle: &mut Bundle, config: &RunConfig, prima
         }
     }
     bundle.junction_stats = new_stats;
+}
+
+/// Split read spans into bundle groups by the runoff-distance gap rule, matching the
+/// boundary logic in the main bundler (`build_bundles`): a new group starts when a
+/// read's start exceeds the running maximum end + `runoffdist`. Used by the VG
+/// over-collapse re-bundle pass to re-split a secondary-bridged mega-bundle's PRIMARY
+/// reads back into clean per-gene groups (the gap that secondaries papered over
+/// reappears once they are excluded). Returns groups of input indices.
+pub fn split_spans_by_runoff(spans: &[(u64, u64)], runoffdist: u64) -> Vec<Vec<usize>> {
+    if spans.is_empty() {
+        return Vec::new();
+    }
+    let mut order: Vec<usize> = (0..spans.len()).collect();
+    order.sort_by_key(|&i| (spans[i].0, spans[i].1));
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut cur: Vec<usize> = Vec::new();
+    let mut cur_end = 0u64;
+    for &i in &order {
+        let (s, e) = spans[i];
+        if cur.is_empty() {
+            cur.push(i);
+            cur_end = e;
+        } else if s > cur_end.saturating_add(runoffdist) {
+            groups.push(std::mem::take(&mut cur));
+            cur.push(i);
+            cur_end = e;
+        } else {
+            cur_end = cur_end.max(e);
+            cur.push(i);
+        }
+    }
+    if !cur.is_empty() {
+        groups.push(cur);
+    }
+    groups
+}
+
+#[cfg(test)]
+mod runoff_split_tests {
+    use super::split_spans_by_runoff;
+
+    #[test]
+    fn empty_is_empty() {
+        assert!(split_spans_by_runoff(&[], 200).is_empty());
+    }
+
+    #[test]
+    fn close_reads_one_group() {
+        // gaps <= 200 -> one bundle
+        let g = split_spans_by_runoff(&[(1000, 1200), (1300, 1500), (1600, 1800)], 200);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].len(), 3);
+    }
+
+    #[test]
+    fn big_gap_splits() {
+        // gap 1200->10000 far exceeds 200 -> two bundles (the mega-bundle case)
+        let g = split_spans_by_runoff(&[(1000, 1200), (10000, 10200)], 200);
+        assert_eq!(g.len(), 2);
+    }
+
+    #[test]
+    fn overlapping_reads_merge() {
+        let g = split_spans_by_runoff(&[(1000, 2000), (1500, 2500)], 200);
+        assert_eq!(g.len(), 1);
+    }
+
+    #[test]
+    fn gap_at_threshold_boundary() {
+        // start == end + runoffdist + 1 splits; == end + runoffdist does not.
+        assert_eq!(split_spans_by_runoff(&[(1000, 1200), (1401, 1500)], 200).len(), 2); // gap 201 > 200
+        assert_eq!(split_spans_by_runoff(&[(1000, 1200), (1400, 1500)], 200).len(), 1); // gap 200
+    }
+
+    #[test]
+    fn unsorted_input_handled() {
+        let g = split_spans_by_runoff(&[(10000, 10200), (1000, 1200), (1300, 1500)], 200);
+        assert_eq!(g.len(), 2);
+        // the far read is its own group
+        let sizes: Vec<usize> = g.iter().map(|x| x.len()).collect();
+        assert!(sizes.contains(&1) && sizes.contains(&2));
+    }
 }

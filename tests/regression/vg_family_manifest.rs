@@ -17,6 +17,8 @@ fn mk_bundle(chrom: &str, start: u64, end: u64) -> Bundle {
         synthetic: false,
         rescue_class: None,
         vg_family_id: None,
+        hp_tag: None,
+        ps_tag: None,
     }
 }
 

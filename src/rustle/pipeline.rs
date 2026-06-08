@@ -97,9 +97,9 @@ fn run_genome_scan(
     genome: Option<&crate::genome::GenomeIndex>,
     genome_fasta_path: Option<&str>,
     verbose: bool,
-) -> std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>> {
-    use crate::vg_hmm::positional::{ScanParams, KnownParalogSpan};
-    let mut empty_map: std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>> =
+) -> std::collections::HashMap<usize, Vec<crate::vg_family::positional::CandidateLocus>> {
+    use crate::vg_family::positional::{ScanParams, KnownParalogSpan};
+    let mut empty_map: std::collections::HashMap<usize, Vec<crate::vg_family::positional::CandidateLocus>> =
         std::collections::HashMap::new();
     let owned_genome: Option<crate::genome::GenomeIndex>;
     let g = match genome {
@@ -137,11 +137,11 @@ fn run_genome_scan(
     let prepared: Vec<Option<(usize, usize, crate::types::DetHashSet<u64>, Vec<KnownParalogSpan>)>> = families
         .par_iter()
         .map(|family| {
-            let sub_families = crate::vg_hmm::rescue::partition_family_by_strand(family, bundles);
+            let sub_families = crate::vg_family::rescue::partition_family_by_strand(family, bundles);
             let largest = sub_families.into_iter()
                 .filter(|f| f.bundle_indices.len() >= 2)
                 .max_by_key(|f| f.bundle_indices.len())?;
-            let fg = match crate::vg_hmm::family_graph::build_family_graph(
+            let fg = match crate::vg_family::family_graph::build_family_graph(
                 &largest, bundles, Some(g), 0.30, 0.30, 0.30,
             ) { Ok(g) => g, Err(_) => return None };
             if fg.nodes.is_empty() { return None; }
@@ -183,7 +183,7 @@ fn run_genome_scan(
                   family_kmer_sets.len(), t_setup_ms);
     }
     let t_scan = std::time::Instant::now();
-    let per_family = crate::vg_hmm::positional::scan_genome_for_all_families(
+    let per_family = crate::vg_family::positional::scan_genome_for_all_families(
         &family_kmer_sets, g, &known_per_family, &params, 4,
     );
     let t_scan_ms = t_scan.elapsed().as_millis();
@@ -191,7 +191,7 @@ fn run_genome_scan(
         eprintln!("[VG-SCAN] genome scan completed in {}ms", t_scan_ms);
     }
 
-    let mut out: std::collections::HashMap<usize, Vec<crate::vg_hmm::positional::CandidateLocus>> =
+    let mut out: std::collections::HashMap<usize, Vec<crate::vg_family::positional::CandidateLocus>> =
         std::collections::HashMap::new();
     let mut total_candidates = 0usize;
     for (fi, candidates) in per_family.into_iter().enumerate() {
@@ -397,6 +397,7 @@ fn append_missed_oracle_direct_emit(
             copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
         };
         txs.push(tx);
         if debug {
@@ -702,6 +703,71 @@ fn intron_chain_from_exons_0based(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
         out.push((exons[i].1, exons[i + 1].0));
     }
     out
+}
+
+/// RUSTLE_VG_UNION_BASELINE: stamp a primary-only clone bundle's transcripts with the
+/// `UnionBaseline` rescue class so `is_rescue_protected` shields them from cross-bundle
+/// reconciliation (predcluster / subset-dedup), where the secondary-polluted VG
+/// transcripts would otherwise out-compete these primary-backed baseline isoforms.
+/// No-op for every non-clone bundle (so the default path is unaffected).
+fn stamp_union_baseline_rescue_class(
+    bundle: &crate::types::Bundle,
+    bundle_txs: &mut [crate::path_extract::Transcript],
+) {
+    if bundle.rescue_class == Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline) {
+        for tx in bundle_txs.iter_mut() {
+            tx.rescue_class = Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline);
+        }
+    }
+}
+
+/// Phantom-junction strip across `family_bundles`: for each bundle that has any
+/// secondary read, keep all primary reads + only secondaries whose ENTIRE chain
+/// is primary-supported (see `crate::vg::read_confirms_primary_junctions`). Drops
+/// the cross-mapped secondary contamination that read-driven path_extract
+/// enumerates into spurious transcripts (RBMY 16→54; chrY pred 253→224 at the
+/// cost of ~3 low-support TP). Recomputes junction stats for touched bundles.
+/// Returns the number of reads dropped. Shared by the decisive-gate Pass 2 and
+/// the standalone `RUSTLE_VG_PRIMARY_JUNCTIONS` filter.
+fn strip_phantom_junction_secondaries(
+    bundles: &mut [crate::types::Bundle],
+    family_bundles: &std::collections::HashSet<usize>,
+    config: &crate::types::RunConfig,
+    min_sec: usize,
+) -> usize {
+    use std::collections::{HashMap, HashSet};
+    let mut n_dropped = 0usize;
+    for &bi in family_bundles {
+        if bi >= bundles.len() { continue; }
+        if !bundles[bi].reads.iter().any(|r| !r.is_primary_alignment) { continue; }
+        // A junction is CONFIRMED (real) if a primary read crosses it, OR — when
+        // `min_sec` is finite — at least `min_sec` SECONDARY reads cross it
+        // (consistent secondary support = a real low-primary copy whose primaries
+        // minimap2 assigned to a dominant sibling, e.g. RBMY LOC242/276: 40-61
+        // secondaries / 0 primary). Sporadic phantom junctions (a handful of
+        // cross-mapped reads) stay unconfirmed. min_sec = usize::MAX → primary-only.
+        let mut confirmed: HashSet<crate::types::Junction> =
+            bundles[bi].reads.iter().filter(|r| r.is_primary_alignment)
+                .flat_map(|r| r.junctions.iter().copied()).collect();
+        if min_sec != usize::MAX {
+            let mut sec_count: HashMap<crate::types::Junction, usize> = HashMap::new();
+            for r in bundles[bi].reads.iter().filter(|r| !r.is_primary_alignment) {
+                for j in &r.junctions { *sec_count.entry(*j).or_insert(0) += 1; }
+            }
+            for (j, c) in sec_count {
+                if c >= min_sec { confirmed.insert(j); }
+            }
+        }
+        let before = bundles[bi].reads.len();
+        bundles[bi].reads.retain(|r| crate::vg::read_confirms_primary_junctions(
+            r.is_primary_alignment, &r.junctions, &confirmed));
+        let dropped = before - bundles[bi].reads.len();
+        if dropped > 0 {
+            n_dropped += dropped;
+            crate::bundle::recompute_junction_stats(&mut bundles[bi], config);
+        }
+    }
+    n_dropped
 }
 
 /// Emit `pred_kill` parity events for transcripts present in `before` but not in `after`,
@@ -1443,7 +1509,7 @@ fn merge_region_outer_bundles(
         // bundle should still be marked synthetic so its transcripts get
         // `copy_status "novel"` in the GTF (otherwise the rescue is a no-op).
         let mut any_synthetic = false;
-        let mut merged_rescue_class: Option<crate::vg_hmm::diagnostic::RescueClass> = None;
+        let mut merged_rescue_class: Option<crate::vg_family::diagnostic::RescueClass> = None;
         while i < bundles.len()
             && bundles[i].chrom == chrom
             && bundles[i].start == start
@@ -1762,7 +1828,8 @@ fn merge_region_outer_bundles(
             synthetic: any_synthetic,
             rescue_class: merged_rescue_class,
             vg_family_id: None,
-
+            hp_tag: None,
+            ps_tag: None,
 });
     }
 
@@ -2970,6 +3037,7 @@ fn junction_recombination_supplement(
                                         rescue_class: None,
                                         raw_flow_sum: 0.0,
                                         min_jct_mm: mm_val, skip_jct_mm: 0.0, chain_witnessed: false,
+                                        hp_tag: None, ps_tag: None,
                                         exons,
                                     });
                                 }
@@ -3024,6 +3092,7 @@ fn junction_recombination_supplement(
                                         rescue_class: None,
                                         raw_flow_sum: 0.0,
                                         min_jct_mm: mm_val, skip_jct_mm: 0.0, chain_witnessed: false,
+                                        hp_tag: None, ps_tag: None,
                                         exons,
                                     });
                                 }
@@ -3112,6 +3181,7 @@ fn add_contained_isoforms(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                 });
                 added += 1;
             }
@@ -3304,6 +3374,7 @@ fn emit_junction_paths(
             alt_tts_end,
             vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
         });
 
         // Return true (to be added to main tx list) if it has at least one verified boundary
@@ -3590,6 +3661,7 @@ fn emit_chain_from_graph(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
     })
 }
 
@@ -3722,6 +3794,7 @@ fn emit_reference_chains(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                 });
                 added += 1;
                 emitted_cnt += 1;
@@ -3857,6 +3930,7 @@ fn emit_reference_chains(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                     });
                     added += 1;
                     emitted_cnt += 1;
@@ -3952,6 +4026,7 @@ fn emit_reference_chains(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
         });
         added += 1;
         emitted_cnt += 1;
@@ -4259,7 +4334,7 @@ fn collect_guide_boundary_sets_for_bundle(
 }
 
 use crate::transcript_filter::{
-    add_pred, alt_donor_acceptor_rescue, apply_global_cross_strand_filter,
+    add_pred, alt_donor_acceptor_rescue,
     collapse_equal_predictions, compute_tpm_fpkm, filter_unsupported_junctions,
     suppress_near_duplicate_chains, PredclusterStageSummary,
 };
@@ -5608,7 +5683,7 @@ fn generate_csr_suffix_siblings(txs: &mut Vec<Transcript>) {
     const MIN_SIBLING: usize = 3;     // sibling must have ≥ 3 exons
     const TSS_SLOP: u64 = 150;        // match threshold in bp
     const MAX_SKIP: usize = 6;        // trim at most 6 leading exons
-    use crate::vg_hmm::diagnostic::RescueClass;
+    use crate::vg_family::diagnostic::RescueClass;
 
     if std::env::var_os("RUSTLE_DISABLE_CSR_SUFFIX_SIBLINGS").is_some() {
         return;
@@ -6290,6 +6365,7 @@ fn emit_per_read_alt_combos(
             synthetic: false,
             rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
 
 });
     }
@@ -6485,6 +6561,7 @@ fn emit_internal_ri_siblings(
                 synthetic: false,
                 rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                hp_tag: None, ps_tag: None,
             });
             spawned += 1;
         }
@@ -6757,6 +6834,135 @@ fn dump_graph_and_walkability(
     }
 }
 
+/// Type-2 cut-off recovery (opt-in `RUSTLE_STRAND_PURE_MINORITY`).
+///
+/// At a convergent locus the dominant antisense gene's structure fragments the
+/// minority strand's reads across multiple sub-bundles, each of which fails to
+/// assemble (the minority gene is lost). This pass groups bundles into overlap
+/// regions; for each region with BOTH strands present where the minority strand
+/// is fragmented across ≥2 bundles, it clones one minority bundle as a template,
+/// merges ALL the region's minority-strand reads into it, and pushes it as a
+/// synthetic bundle. The main assembly loop then builds its graph from the merged
+/// reads in isolation — exactly the strand-pure assembly proven to recover these
+/// genes — and the cross-strand spare-gate protects the result. Additive: the
+/// original fragments are left in place (they still produce nothing).
+fn inject_strand_pure_minority_bundles(
+    bundles: &mut Vec<crate::types::Bundle>,
+    config: &RunConfig,
+) {
+    let min_reads: usize = std::env::var("RUSTLE_STRAND_PURE_MIN_READS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(5);
+    let debug = std::env::var_os("RUSTLE_STRAND_PURE_DEBUG").is_some();
+    if bundles.is_empty() {
+        return;
+    }
+    let mut order: Vec<usize> = (0..bundles.len()).collect();
+    order.sort_by(|&a, &b| {
+        bundles[a]
+            .chrom
+            .cmp(&bundles[b].chrom)
+            .then(bundles[a].start.cmp(&bundles[b].start))
+    });
+
+    let mut new_bundles: Vec<crate::types::Bundle> = Vec::new();
+    let mut i = 0;
+    while i < order.len() {
+        let chrom = bundles[order[i]].chrom.clone();
+        let mut end = bundles[order[i]].end;
+        let mut region = vec![order[i]];
+        let mut j = i + 1;
+        while j < order.len()
+            && bundles[order[j]].chrom == chrom
+            && bundles[order[j]].start <= end
+        {
+            end = end.max(bundles[order[j]].end);
+            region.push(order[j]);
+            j += 1;
+        }
+        i = j;
+
+        // Tally reads by their OWN (ts-inferred) strand across the region. At
+        // this stage bundles are still combined (`bundle.strand == '.'`); the
+        // per-strand split happens downstream, so the signal is each read's strand.
+        let mut plus = 0usize;
+        let mut minus = 0usize;
+        for &bi in &region {
+            for r in &bundles[bi].reads {
+                match r.strand {
+                    '+' => plus += 1,
+                    '-' => minus += 1,
+                    _ => {}
+                }
+            }
+        }
+        if plus == 0 || minus == 0 {
+            continue; // not convergent
+        }
+        // Target genuinely SWAMPED minorities (the Type-2 pattern: minority gene
+        // drowned by a dominant antisense neighbor). Skip near-balanced convergent
+        // pairs — both strands assemble fine there, so injecting only over-produces.
+        let max_ratio: f64 = std::env::var("RUSTLE_STRAND_PURE_MAX_MINOR_RATIO")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.34);
+        let (maj, minr) = if plus <= minus { (minus, plus) } else { (plus, minus) };
+        if (minr as f64) > max_ratio * (maj as f64) {
+            continue;
+        }
+        let minority = if plus <= minus { '+' } else { '-' };
+        if debug {
+            eprintln!(
+                "[STRAND_PURE_DIAG] {}:{}-{} region_bundles={} plus={} minus={} minority={}",
+                chrom, bundles[region[0]].start, end, region.len(), plus, minus, minority
+            );
+        }
+        // Collect the minority strand's reads across the region into one bundle.
+        let mut reads: Vec<crate::types::BundleRead> = Vec::new();
+        for &bi in &region {
+            for r in &bundles[bi].reads {
+                if r.strand == minority {
+                    reads.push(r.clone());
+                }
+            }
+        }
+        if reads.len() < min_reads {
+            continue;
+        }
+        let n_reads = reads.len();
+        let s = reads.iter().map(|r| r.ref_start).min().unwrap_or(0);
+        let e = reads.iter().map(|r| r.ref_end).max().unwrap_or(0);
+        let mut sub = bundles[region[0]].clone();
+        sub.start = s;
+        sub.end = e;
+        sub.strand = minority;
+        sub.reads = reads;
+        sub.synthetic = true;
+        sub.rescue_class = Some(crate::vg_family::diagnostic::RescueClass::StrandPureMinority);
+        // Drop the cloned bundle's combined-strand structure so the assembly
+        // rebuilds bundlenodes/colors fresh from the minority reads alone — this
+        // is what prevents the dominant antisense gene from re-fragmenting it.
+        sub.bundlenodes = None;
+        sub.read_bnodes = None;
+        sub.bnode_colors = None;
+        crate::bundle::recompute_junction_stats(&mut sub, config);
+        if debug {
+            eprintln!(
+                "[STRAND_PURE] {}:{}-{} merged {} minority({}) reads",
+                chrom, s, e, n_reads, minority
+            );
+        }
+        new_bundles.push(sub);
+    }
+
+    let n = new_bundles.len();
+    bundles.extend(new_bundles);
+    if debug {
+        eprintln!("[STRAND_PURE] injected {} synthetic minority bundles", n);
+    }
+}
+
 /// The trace-related elements are only populated when `trace_mode` is true.
 fn extract_bundle_transcripts_for_graph(
     graph_mut: &mut Graph,
@@ -7006,7 +7212,7 @@ fn extract_bundle_transcripts_for_graph(
     // `synthetic: false`; we stamp the flag here, at the single choke-point
     // that owns both the bundle and the freshly-produced Vec<Transcript>.
     if bundle.synthetic {
-        if std::env::var_os("RUSTLE_VG_HMM_DEBUG_SYNTHETIC").is_some() {
+        if std::env::var_os("RUSTLE_VG_FAMILY_DEBUG_SYNTHETIC").is_some() {
             eprintln!(
                 "[VG-HMM-DEBUG] synthetic bundle {}:{}-{}:{} produced {} transcripts (n_reads={}, n_juncs={})",
                 bundle.chrom, bundle.start, bundle.end, bundle.strand,
@@ -8001,6 +8207,7 @@ fn extract_bundle_transcripts_for_graph(
                 copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                hp_tag: None, ps_tag: None,
             });
         }
 
@@ -8133,6 +8340,7 @@ fn extract_bundle_transcripts_for_graph(
                     copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                 };
                 rescued.push(tx);
                 if debug {
@@ -8351,6 +8559,7 @@ fn extract_bundle_transcripts_for_graph(
                 copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                 intron_low: Vec::new(), synthetic: false, rescue_class: None,
                 raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                hp_tag: None, ps_tag: None,
             });
             added += 1;
         }
@@ -8485,6 +8694,7 @@ fn extract_bundle_transcripts_for_graph(
                     copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                 });
             }
         }
@@ -9450,6 +9660,7 @@ fn collect_flow_residual_se(
             synthetic: false,
             rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
         });
     }
     out
@@ -9458,8 +9669,10 @@ fn collect_flow_residual_se(
 /// mono-exon reads represent nested minor isoforms (alternative TSS/polyA
 /// within a larger exon). Targets the STRG.521.3 pattern.
 ///
-/// Default ON in de novo mode; suppressed when guide transcripts are present in bundle.
-/// Disable entirely with RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
+/// Default OFF (2026-06-04). This injector emits only false positives — on GGO_19
+/// all 38 single-exon transcripts it adds are non-RefSeq, and genome-wide disabling
+/// it is +0.49pp F1 (Pr 85.0->86.1, Sn 91.2->91.0; -1009 FP tx). Opt back IN with
+/// RUSTLE_STRANDED_SINGLE_EXON_ON=1. Also suppressed when guides are present in bundle.
 /// Knobs: RUSTLE_STRANDED_SE_MIN_READS (4), RUSTLE_STRANDED_SE_ENDPOINT_TOL (200),
 ///        RUSTLE_STRANDED_SE_COV_RATIO (5.0).
 fn emit_stranded_single_exon_candidates(
@@ -9470,12 +9683,13 @@ fn emit_stranded_single_exon_candidates(
     singlethr: f64,
     good_junctions: &HashSet<(u64, u64)>,
 ) -> Vec<Transcript> {
-    // Disabled if any guide transcript is present in this bundle: in guided mode, multi-exon
-    // guides already cover real loci, and SE candidates at those loci are FPs (−1.8pp guided Pr).
-    // Disabled entirely via RUSTLE_STRANDED_SINGLE_EXON_OFF=1.
-    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_OFF").is_some() {
+    // Default OFF: the injector adds only false positives (see fn doc). Opt back
+    // in with RUSTLE_STRANDED_SINGLE_EXON_ON=1.
+    if std::env::var_os("RUSTLE_STRANDED_SINGLE_EXON_ON").is_none() {
         return Vec::new();
     }
+    // Disabled if any guide transcript is present in this bundle: in guided mode, multi-exon
+    // guides already cover real loci, and SE candidates at those loci are FPs (−1.8pp guided Pr).
     if bundle_txs.iter().any(|t| crate::transcript_filter::is_guide_pair_pub(t)) {
         return Vec::new();
     }
@@ -9651,6 +9865,7 @@ fn emit_stranded_single_exon_candidates(
             copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
         });
     }
     // Dedup overlapping SE candidates emitted from the same bundle.
@@ -9808,6 +10023,7 @@ fn emit_terminal_exon_se_candidates(
             copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
             intron_low: Vec::new(), synthetic: false, rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
         });
     }
     out
@@ -9889,6 +10105,7 @@ fn create_single_exon_predictions_from_bundle(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                     };
                     predictions.push(tx);
                 }
@@ -9931,6 +10148,7 @@ fn create_single_exon_predictions_from_bundle(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                 };
                 predictions.push(tx);
             }
@@ -10036,7 +10254,7 @@ pub fn run<P: AsRef<Path>>(
             if show_timing { eprintln!("[TIMING] {} {:.3}s", $label, _t0.elapsed().as_secs_f64()); }
         };
     }
-    // EM-HMM populates config.vg_multimap_sequences after family discovery.
+    // The EM populates config.vg_multimap_sequences after family discovery.
     let mut config = config;
     init_rayon_pool(config.threads);
     let diag_tsv_resolved = resolve_debug_stage_tsv_path(&config, output_gtf.as_ref(), trace_reference);
@@ -10360,7 +10578,7 @@ pub fn run<P: AsRef<Path>>(
         // RUSTLE_VG_TANDEM (default OFF) — when off this is a no-op and the VG
         // output is unchanged.
         let mut families = families;
-        let tandem_cfg = crate::vg_hmm::tandem::TandemConfig::from_env();
+        let tandem_cfg = crate::vg_family::tandem::TandemConfig::from_env();
         if tandem_cfg.enabled {
             if let Some(genome) = vg_genome_for_discovery.as_ref() {
                 // `discovered` is kept only for the diagnostic trace below.
@@ -10384,7 +10602,7 @@ pub fn run<P: AsRef<Path>>(
                     for bi in 0..n_orig {
                         if bundles[bi].reads.is_empty() { continue; }
                         let in_fam = discovered.contains(&bi);
-                        if let Some(d) = crate::vg_hmm::tandem::detect_tandem_bundle(
+                        if let Some(d) = crate::vg_family::tandem::detect_tandem_bundle(
                             &bundles[bi], genome, tandem_cfg,
                         ) {
                             eprintln!(
@@ -10400,7 +10618,7 @@ pub fn run<P: AsRef<Path>>(
                         continue;
                     }
                     if let Some(decomp) =
-                        crate::vg_hmm::tandem::detect_tandem_bundle(&bundles[bi], genome, tandem_cfg)
+                        crate::vg_family::tandem::detect_tandem_bundle(&bundles[bi], genome, tandem_cfg)
                     {
                         // If this bundle was mis-claimed by a cross-mapping family,
                         // we do NOT edit that family's `bundle_indices` (doing so
@@ -10411,12 +10629,12 @@ pub fn run<P: AsRef<Path>>(
                         // the EM skips its now-invalid read indices. The array's
                         // sub-bundles become their own tandem family.
                         let parent = bundles[bi].clone();
-                        let (fam, sub_idxs) = crate::vg_hmm::tandem::decompose_tandem_to_family(
+                        let (fam, sub_idxs) = crate::vg_family::tandem::decompose_tandem_to_family(
                             &parent, &decomp, &mut bundles, next_fid, &config,
                         );
                         for &si in &sub_idxs {
                             bundles[si].rescue_class =
-                                Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy);
+                                Some(crate::vg_family::diagnostic::RescueClass::TandemCopy);
                         }
                         // Retain in the parent only reads NOT claimed by a tandem
                         // copy span — e.g. a non-paralogous gene co-bundled with
@@ -10594,76 +10812,41 @@ pub fn run<P: AsRef<Path>>(
                 synthetic: false,
                 rescue_class: None,
                 vg_family_id: None,
-
+                hp_tag: None,
+                ps_tag: None,
 })
             .collect()
     } else {
         Vec::new()
     };
 
-    // ── Variation graph: HMM rescue → synthetic bundles (Phase 5) ─────────────
-    if config.vg_mode && config.vg_discover_novel
-        && config.vg_discover_novel_mode == "hmm"
-        && !vg_families.is_empty()
-    {
-        match crate::vg_hmm::rescue::run_rescue_with_bundles(
-            bam_path.as_ref(),
-            &vg_families,
-            &vg_bundles_for_novel,
-            &config,
-        ) {
-            Ok((_, mut synthetic_bundles)) => {
-                if !synthetic_bundles.is_empty() {
-                    let n = synthetic_bundles.len();
-                    // Synthetic bundles are constructed with empty
-                    // `junction_stats` (rescue.rs line ~704). Rebuild from
-                    // the rescued reads' junctions so the assembly's splice
-                    // graph has something to work with — without this, the
-                    // bundles produce 0 transcripts and the rescue is a no-op.
-                    for sb in &mut synthetic_bundles {
-                        crate::bundle::recompute_junction_stats(sb, &config);
-                    }
-                    eprintln!(
-                        "[VG-HMM] integrated {} synthetic bundle(s) into assembly (junction_stats rebuilt)",
-                        n
-                    );
-                    bundles.extend(synthetic_bundles);
-                }
-            }
-            Err(e) => {
-                eprintln!("[VG-HMM] rescue failed: {} — continuing without synthetic bundles", e);
-            }
-        }
-    }
-
     // ── Variation graph: multi-mapping read resolution ──────────────────────
-    // For VgSolver::On (HMM-EM dispatch), collect raw read sequences for
+    // For VgSolver::On (EM dispatch), collect raw read sequences for
     // multi-mappers via a dedicated BAM scan (one pass; primary alignments
     // only — secondaries share read_name with their primary so we get the
     // same sequence).
     if config.vg_mode
         && config.vg_solver == crate::types::VgSolver::On
         && !vg_families.is_empty()
-        && !config.vg_no_hmm
     {
         let needed_hashes: std::collections::HashSet<u64> = vg_families.iter()
             .flat_map(|f| f.multimap_reads.keys().copied())
             .collect();
         if !needed_hashes.is_empty() {
             eprintln!(
-                "[VG-HMM-EM] Collecting sequences for {} multi-mapped read names from BAM",
+                "[VG-EM] Collecting sequences for {} multi-mapped read names from BAM",
                 needed_hashes.len()
             );
             match crate::bam::collect_multimapper_sequences(bam_path.as_ref(), &needed_hashes) {
                 Ok(seqs) => {
                     eprintln!(
-                        "[VG-HMM-EM] Collected {} sequences ({} requested)",
+                        "[VG-EM] Collected {} sequences ({} requested)",
                         seqs.len(), needed_hashes.len()
                     );
                     config.vg_multimap_sequences = seqs;
                 }
                 Err(e) => {
-                    eprintln!("[VG-HMM-EM] WARNING: sequence collection failed: {} — falling back", e);
+                    eprintln!("[VG-EM] WARNING: sequence collection failed: {} — falling back", e);
                 }
             }
         }
@@ -10714,6 +10897,14 @@ pub fn run<P: AsRef<Path>>(
     // vg_copy_support: (family_id, copy_id). VG-gated; annotation only.
     let mut vg_family_verdict: std::collections::HashMap<(usize, usize), crate::vg::FamilyVerdict> =
         std::collections::HashMap::new();
+    // ALL confirmed gene-conversion events per family (vs. the single "best" on the verdict),
+    // carried to the emission point so RUSTLE_VG_MOSAIC_EMIT can emit one recombinant per event.
+    let mut family_conversions: std::collections::HashMap<usize, Vec<crate::vg_family::mosaic::ConversionEvent>> =
+        std::collections::HashMap::new();
+    // Per-(family, copy) decisive-evidence certificate for the multimapper rescue report
+    // (opt-in RUSTLE_VG_RESCUE_REPORT). Empty unless that report is requested.
+    let mut vg_copy_certificate: std::collections::HashMap<(usize, usize), crate::vg::CopyCertificate> =
+        std::collections::HashMap::new();
 
     // Classify every discovered family (annotation-only), INDEPENDENT of EM
     // eligibility: families the EM skips for compute reasons (too_many_copies,
@@ -10739,13 +10930,10 @@ pub fn run<P: AsRef<Path>>(
             }
             VgSolver::On => {
                 // Compact dispatch: one probabilistic solver, two triviality
-                // escape hatches (singletons / oversized / intronless). HMM-EM
-                // is the universal target — for divergent copies the forward
-                // DP converges in 1–2 iterations to essentially-hard γ
-                // assignments, so it subsumes the legacy heuristic-EM routing.
-                // The heuristic path stays only as a graceful fallback when
-                // HMM prerequisites (--genome-fasta + collected sequences)
-                // are unavailable.
+                // escape hatches (singletons / oversized / intronless). The
+                // fingerprint-EM is the universal target. The heuristic path
+                // stays only as a graceful fallback when the prerequisites
+                // (--genome-fasta + collected sequences) are unavailable.
                 let has_genome = config.genome_fasta.is_some();
                 let mut families_for_em: Vec<crate::vg::FamilyGroup> = Vec::new();
                 let mut skip_counts: std::collections::BTreeMap<&str, usize> =
@@ -10760,11 +10948,10 @@ pub fn run<P: AsRef<Path>>(
                         crate::vg::EmRoute::Skip(reason) => {
                             *skip_counts.entry(reason).or_insert(0) += 1;
                         }
-                        crate::vg::EmRoute::Hmm => families_for_em.push(fam.clone()),
+                        crate::vg::EmRoute::Em => families_for_em.push(fam.clone()),
                     }
                 }
 
-                let hmm_ok = has_genome && !config.vg_multimap_sequences.is_empty();
                 eprintln!(
                     "[VG] {} families → {}, {} skipped {:?}",
                     families_for_em.len(),
@@ -10777,24 +10964,16 @@ pub fn run<P: AsRef<Path>>(
                     Vec::new()
                 } else {
                     // Build FamilyGraph when genome is available (needed for
-                    // junction propagation regardless of whether HMM profiles
-                    // are fitted). With --vg-no-hmm, profile fitting is
-                    // skipped and heuristic EM is used instead of HMM-EM.
+                    // junction propagation). Sequence-profile fitting is not
+                    // run on this path; the fingerprint-EM reweights reads.
                     let build_graph = has_genome;
-                    // HMM-EM is RETIRED: the profile-HMM forward-DP was proven to
-                    // FABRICATE copies (manufactured the phantom "DAZ3" from copy-1's
-                    // reads; inverted fam175's per-copy ratio). The validated default
-                    // is the haplotype-phasing fingerprint-EM (run_fingerprint_em),
-                    // which assigns reads by their alleles at copy-distinguishing
-                    // positions and falls back to the pileup prior when there are none.
-                    // --vg-no-hmm is now the (always-on) default; the flag is a no-op alias.
-                    let do_hmm = false;
-                    let _ = hmm_ok; // kept for the log line below
-
-                    let em_hmm_genome: Option<crate::genome::GenomeIndex> =
-                        if build_graph && !do_hmm {
-                            // Need genome index for graph building but HMM-EM
-                            // hasn't loaded it via vg_snp_genome path.
+                    // Validated default is the haplotype-phasing fingerprint-EM
+                    // (run_fingerprint_em), which assigns reads by their alleles at
+                    // copy-distinguishing positions and falls back to the pileup
+                    // prior when there are none.
+                    let em_graph_genome: Option<crate::genome::GenomeIndex> =
+                        if build_graph {
+                            // Need genome index for graph building.
                             if let Some(p) = config.genome_fasta.as_ref() {
                                 load_vg_genome_scoped(p, bam_path.as_ref(), "graph-EM build")
                             } else {
@@ -10807,7 +10986,7 @@ pub fn run<P: AsRef<Path>>(
                         } else {
                             None
                         };
-                    let genome_ref: Option<&crate::genome::GenomeIndex> = em_hmm_genome
+                    let genome_ref: Option<&crate::genome::GenomeIndex> = em_graph_genome
                         .as_ref()
                         .or(vg_snp_genome.as_ref());
 
@@ -10835,40 +11014,40 @@ pub fn run<P: AsRef<Path>>(
                         }
                     }
 
-                    let mut em_hmm_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
-                    // Per source family: (start index into em_hmm_partitions, #strand partitions).
+                    let mut em_partitions: Vec<crate::vg::FamilyGroup> = Vec::new();
+                    // Per source family: (start index into em_partitions, #strand partitions).
                     let mut em_fam_spans: Vec<(usize, usize)> = Vec::with_capacity(families_for_em.len());
                     for fam in families_for_em.iter() {
-                        let start = em_hmm_partitions.len();
+                        let start = em_partitions.len();
                         let parts = crate::vg::partition_and_remap_family_by_strand(fam, &bundles);
                         let count = parts.len();
-                        em_hmm_partitions.extend(parts);
+                        em_partitions.extend(parts);
                         em_fam_spans.push((start, count));
                     }
 
                     use rayon::prelude::*;
-                    let mut family_graphs: Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>> =
+                    // Cross-copy exon-merge bar (env RUSTLE_VG_FAMILY_MERGE_JACCARD,
+                    // default 0.30). Raised from a hardcoded 0.05: the assembly
+                    // benchmark showed 0.05 OVER-merges near-identical-but-distinct
+                    // paralog copies (RBMY recovered transcripts are monotone in the
+                    // bar — 0.05→5, 0.30→7, 0.40→8 — and nothing on the win-loci panel
+                    // regresses). See FAMILY_MERGE_JACCARD_DEFAULT docs + the merge_*
+                    // tests + bench/multi_copy_eval/MERGE_JACCARD_THRESHOLD.md.
+                    let merge_bar = crate::vg_family::family_graph::family_merge_jaccard();
+                    let mut family_graphs: Vec<Option<crate::vg_family::family_graph::FamilyGraph>> =
                         if build_graph && genome_ref.is_some() {
-                            em_hmm_partitions.par_iter()
+                            em_partitions.par_iter()
                                 .map(|fam| {
-                                    match crate::vg_hmm::family_graph::build_family_graph(
-                                        fam, &bundles, genome_ref, 0.30, 0.05, if do_hmm { 0.30 } else { 0.0 },
+                                    match crate::vg_family::family_graph::build_family_graph(
+                                        fam, &bundles, genome_ref, 0.30, merge_bar, 0.0,
                                     ) {
-                                        Ok(mut fg) => {
-                                            if do_hmm {
-                                                // Full HMM path: fit sequence profiles.
-                                                if crate::vg_hmm::family_graph::fit_profiles_in_place(&mut fg).is_err() {
-                                                    return None;
-                                                }
-                                            }
-                                            Some(fg)
-                                        }
+                                        Ok(fg) => Some(fg),
                                         Err(_) => None,
                                     }
                                 })
                                 .collect()
                         } else {
-                            vec![None; em_hmm_partitions.len()]
+                            vec![None; em_partitions.len()]
                         };
 
                     // Joint-strand EM input (spec component 1, O1-resolved): default ON in VG.
@@ -10882,7 +11061,7 @@ pub fn run<P: AsRef<Path>>(
                         .unwrap_or(true);
                     let (em_input_partitions, em_input_graphs):
                         (Vec<crate::vg::FamilyGroup>,
-                         Vec<Option<crate::vg_hmm::family_graph::FamilyGraph>>) =
+                         Vec<Option<crate::vg_family::family_graph::FamilyGraph>>) =
                     if joint_strand_em {
                         let mut parts = Vec::with_capacity(families_for_em.len());
                         let mut graphs = Vec::with_capacity(families_for_em.len());
@@ -10901,7 +11080,7 @@ pub fn run<P: AsRef<Path>>(
                             // the joint (cross-strand-unified) family_for_em_input apportions the
                             // inverted copy's reads onto the forward copies (neutral fp) and
                             // starves it; the un-jointed partition assembles it cleanly. Use the
-                            // un-jointed em_hmm_partitions for those (what JOINT_STRAND_EM=0 does),
+                            // un-jointed em_partitions for those (what JOINT_STRAND_EM=0 does),
                             // and keep the joint family for single-strand + OVERLAPPING inverted
                             // pairs (genuine same-locus ambiguity, DAZ1−/DAZ3+).
                             let mut strands: Vec<char> = fam.bundle_indices.iter()
@@ -10917,7 +11096,7 @@ pub fn run<P: AsRef<Path>>(
                             if dispersed_inv {
                                 // un-jointed: each copy keeps its reads + valid (single-strand) graph.
                                 for i in start..start + count {
-                                    if let Some(p) = em_hmm_partitions.get(i) {
+                                    if let Some(p) = em_partitions.get(i) {
                                         parts.push(p.clone());
                                         graphs.push(family_graphs.get(i).and_then(|o| o.clone()));
                                     }
@@ -10935,37 +11114,18 @@ pub fn run<P: AsRef<Path>>(
                         (parts, graphs)
                     } else {
                         // exact current behavior: strand-split input + its graphs
-                        (em_hmm_partitions.clone(), family_graphs.clone())
+                        (em_partitions.clone(), family_graphs.clone())
                     };
 
                     // Collector for gene-conversion (mosaic) events, surfaced to the GTF.
-                    let mut mosaic_events: crate::types::DetHashMap<usize, Vec<crate::vg_hmm::mosaic::ConversionEvent>> = Default::default();
-                    let em_res = if do_hmm {
-                        // Full HMM-EM path.
-                        let res = crate::vg::run_pre_assembly_em_hmm(
-                            &em_hmm_partitions,
-                            &mut bundles,
-                            &family_graphs,
-                            &config.vg_multimap_sequences,
-                            config.vg_em_max_iter,
-                            config.vg_snp,
-                            config.vg_junction_bonus,
-                            config.vg_em_uniform_prior,
-                            config.vg_exon_len_penalty,
-                        );
-                        for (pi, fam) in em_hmm_partitions.iter().enumerate() {
-                            if let Some(fg) = family_graphs.get_mut(pi).and_then(|o| o.as_mut()) {
-                                crate::vg::annotate_per_copy_exon_coverage(fam, &bundles, fg);
-                            }
-                        }
-                        res
-                    } else {
-                        // Graph-EM (--vg-no-hmm) or heuristic fallback:
-                        // FamilyGraph already built above (if genome available);
-                        // annotate per-copy coverage for junction propagation.
+                    let mut mosaic_events: crate::types::DetHashMap<usize, Vec<crate::vg_family::mosaic::ConversionEvent>> = Default::default();
+                    // Graph-EM: FamilyGraph already built above (if genome
+                    // available); annotate per-copy coverage for junction
+                    // propagation.
+                    let em_res = {
                         if build_graph {
-                            eprintln!("[VG] Graph-EM mode (--vg-no-hmm): FamilyGraph built, HMM profiles skipped");
-                            for (pi, fam) in em_hmm_partitions.iter().enumerate() {
+                            eprintln!("[VG] Graph-EM mode: FamilyGraph built");
+                            for (pi, fam) in em_partitions.iter().enumerate() {
                                 if let Some(fg) = family_graphs.get_mut(pi).and_then(|o| o.as_mut()) {
                                     crate::vg::annotate_per_copy_exon_coverage(fam, &bundles, fg);
                                 }
@@ -11001,7 +11161,7 @@ pub fn run<P: AsRef<Path>>(
                     // here, so a phantom copy's secondaries are correctly read
                     // as fitting a sibling far better. Applied post-assembly,
                     // pre-GTF. Computed on the ORIGINAL families (`vg_families`),
-                    // NOT the strand-split `em_hmm_partitions`, keyed by
+                    // NOT the strand-split `em_partitions`, keyed by
                     // (family_id, fam_pos) to match transcripts' (vg_family_id,
                     // vg_copy_id).
                     {
@@ -11050,26 +11210,31 @@ pub fn run<P: AsRef<Path>>(
                                 }
                             }
                         }
+                        // Carry ALL confirmed events (the verdict only holds the best one) so the
+                        // emission can promote every distinct event to its own recombinant isoform.
+                        let confirmed: Vec<_> = events.iter().filter(|e| e.confirmed).cloned().collect();
+                        if !confirmed.is_empty() {
+                            family_conversions.insert(*fam_id, confirmed);
+                        }
                     }
 
                     // Junction propagation and coverage borrowing: available
-                    // whenever FamilyGraph was built (hmm_ok OR --vg-no-hmm
-                    // with --genome-fasta).
+                    // whenever FamilyGraph was built (i.e. with --genome-fasta).
                     if build_graph {
                         if std::env::var_os("RUSTLE_VG_NO_BORROW").is_none() {
                             bundle_borrow_cov = crate::vg::build_bundle_borrow_coverage(
-                                &em_hmm_partitions,
+                                &em_partitions,
                                 &family_graphs,
                             );
                             bundle_borrow_junctions = crate::vg::build_bundle_borrow_junctions(
-                                &em_hmm_partitions,
+                                &em_partitions,
                                 &family_graphs,
                                 &bundles,
                             );
                         }
                         if std::env::var_os("RUSTLE_VG_COMPLETION_OFF").is_none() {
                             bundle_completion_nodes = crate::vg::build_bundle_completion_nodes(
-                                &em_hmm_partitions,
+                                &em_partitions,
                                 &family_graphs,
                             );
                         }
@@ -11079,7 +11244,7 @@ pub fn run<P: AsRef<Path>>(
                     // parallel assembly loop that runs later.
                     if build_graph && std::env::var_os("RUSTLE_VG_TOPO_BORROW").is_some() {
                         vg_topo_state = Some(crate::vg::TopoTransferState {
-                            partitions: em_hmm_partitions.clone(),
+                            partitions: em_partitions.clone(),
                             family_graphs: family_graphs.iter().map(|o| o.clone()).collect(),
                             bundles: bundles.clone(),
                         });
@@ -11104,6 +11269,186 @@ pub fn run<P: AsRef<Path>>(
             std::collections::HashMap::new()
         };
 
+    // ── Multimapper rescue report: per-copy certificate (opt-in RUSTLE_VG_RESCUE_REPORT) ──
+    // Read-only snapshot of each copy's decisive own-evidence (the same raw-dNM ownership the
+    // decisive gate uses, but for REPORTING, not dropping). Computed BEFORE any gating so it
+    // reflects the original read evidence. The TSV is written after the GTF.
+    if config.vg_mode
+        && std::env::var_os("RUSTLE_VG_RESCUE_REPORT").is_some()
+        && !vg_families.is_empty()
+    {
+        let t_margin: i64 = std::env::var("RUSTLE_VG_DECISIVE_GATE_T")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+        for fam in &vg_families {
+            let own = crate::vg::compute_copy_ownership(fam, &bundles, t_margin, 0.8);
+            let fsize = fam.bundle_indices.len();
+            for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                if bi >= bundles.len() {
+                    continue;
+                }
+                let o = match own.get(copy_id) {
+                    Some(o) => o,
+                    None => continue,
+                };
+                let n_primary = bundles[bi].reads.iter().filter(|r| r.is_primary_alignment).count();
+                vg_copy_certificate.insert(
+                    (fam.family_id, copy_id),
+                    crate::vg::CopyCertificate {
+                        chrom: bundles[bi].chrom.clone(),
+                        start: bundles[bi].start,
+                        end: bundles[bi].end,
+                        family_id: fam.family_id,
+                        copy_id,
+                        family_size: fsize,
+                        n_primary,
+                        n_unique: o.n_unique,
+                        n_strict: o.n_strict,
+                        n_tied: o.n_tied,
+                    },
+                );
+            }
+        }
+    }
+
+    // ── Decisive-evidence emission gate (opt-in RUSTLE_VG_DECISIVE_GATE) ──────
+    // Beat StringTie via secondaries WITHOUT fabrication. VG retains secondaries
+    // so it can recover paralog copies StringTie (which drops them) cannot — but
+    // naively assembling secondaries at EVERY near-identical copy matches every
+    // copy's annotation, so Sn inflates by FABRICATION (chrY-amp 2026-06-04: VG
+    // "recovers" DAZ3 + a prim=0 TSPY copy; RBMY array 16→54 tx; Pr 36.5→26.3).
+    // The honest discriminant is raw-dNM strict ownership (compute_copy_ownership):
+    // for each copy, the reads whose edit-distance is STRICTLY minimal here vs all
+    // siblings (Owns) + reads unique to here are its OWN evidence; reads TIED with
+    // a sibling are the non-identifiable mass. A copy is trusted to also use its
+    // tied (ambiguous) reads only if confidently identifiable: own_ev = uniq+strict
+    // >= MIN  AND  strict-fraction = own_ev/(own_ev+tied) >= THR. Else it keeps
+    // ONLY its own-evidence reads → assembles from decisive evidence or NOT AT ALL
+    // (DAZ3 = 3 strict / 38 tied, frac 0.07 → gated, stays suppressed; prim=0 TSPY
+    // own_ev=0 → gated). Real copies (ZFY 147 strict; RBMY LOC256/261 = 3-5 strict /
+    // 0 tied, frac 1.0) keep everything. NOTE: keys on raw-NM ownership, NOT the
+    // EM `em_ev_decisive` flag — that flag needs PSV diagnostic SITES and is ~always
+    // 0 on NM-divergent copies (it gated every copy in the first cut). Conservative
+    // defaults THR=0.5, MIN=2, dNM margin t=2. Scoped to vg_mode + opt-in flag →
+    // default byte-identical.
+    if config.vg_mode
+        && std::env::var_os("RUSTLE_VG_DECISIVE_GATE").is_some()
+        && !vg_families.is_empty()
+    {
+        let thr: f64 = std::env::var("RUSTLE_VG_DECISIVE_GATE_THR")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(0.5);
+        let min_own: usize = std::env::var("RUSTLE_VG_DECISIVE_GATE_MIN")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+        let t_margin: i64 = std::env::var("RUSTLE_VG_DECISIVE_GATE_T")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+        // Strong-evidence escape: a copy with >= this many own (unique+strict-Owns)
+        // decisive reads keeps ALL its reads regardless of strict-fraction. Fixes
+        // the ratio-test mis-calibration that starved RBMY's 30-strict-read copy at
+        // frac 0.46 (measured 7→2 tx). Default 8 sits above the phantom level
+        // (DAZ3 own_ev≈3) and below strong real copies (RBMY 30).
+        let min_strong: usize = std::env::var("RUSTLE_VG_DECISIVE_GATE_STRONG")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(8);
+        // Primary-coverage escape: a copy with >= this many reads whose PRIMARY
+        // alignment lands here is genuinely expressed and kept, even if NM-ownership
+        // under-counts it (near-identical copies' primaries are NM-tied with the
+        // sibling: RBMY copies measured 7-14 primaries but own_ev=2). Phantoms have
+        // ~none (DAZ3≈2, prim=0 TSPY). Default 4 separates real (>=7) from phantom (<=3).
+        let min_prim: usize = std::env::var("RUSTLE_VG_DECISIVE_GATE_MIN_PRIM")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(4);
+        let extent_frac = 0.8_f64;
+        let mut n_gated_copies = 0usize;
+        let mut n_dropped_reads = 0usize;
+        for fam in &vg_families {
+            let own = crate::vg::compute_copy_ownership(fam, &bundles, t_margin, extent_frac);
+            for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
+                if bi >= bundles.len() { continue; }
+                let o = match own.get(copy_id) { Some(o) => o, None => continue };
+                let own_ev = o.n_unique + o.n_strict;
+                let frac = own_ev as f64 / (own_ev + o.n_tied).max(1) as f64;
+                let n_primary = bundles[bi].reads.iter()
+                    .filter(|r| r.is_primary_alignment).count();
+                // Confidently real → keep all reads. Primary-coverage escape keeps a
+                // genuinely-expressed copy the NM metric under-counts; strong absolute
+                // NM evidence escapes the ratio test (RBMY fixes).
+                if crate::vg::copy_keeps_ambiguous_reads(
+                    n_primary, own_ev, o.n_tied, min_prim, min_own, thr, min_strong) {
+                    continue;
+                }
+                // Otherwise keep ONLY this copy's own-evidence reads (unique + strict Owns).
+                let before = bundles[bi].reads.len();
+                bundles[bi]
+                    .reads
+                    .retain(|r| o.owner_hashes.contains(&r.read_name_hash));
+                let dropped = before - bundles[bi].reads.len();
+                if dropped > 0 {
+                    n_dropped_reads += dropped;
+                    n_gated_copies += 1;
+                    crate::bundle::recompute_junction_stats(&mut bundles[bi], &config);
+                    eprintln!(
+                        "[VG-DECISIVE-GATE] family={} bundle={} {}:{}-{} own_ev={} (uniq={} strict={}) tied={} frac={:.2} → dropped {} ambiguous read(s)",
+                        fam.family_id, bi, bundles[bi].chrom, bundles[bi].start,
+                        bundles[bi].end, own_ev, o.n_unique, o.n_strict, o.n_tied, frac, dropped
+                    );
+                }
+            }
+        }
+        if n_gated_copies > 0 {
+            eprintln!(
+                "[VG-DECISIVE-GATE] gated {} non-identifiable copy/copies ({} ambiguous reads dropped); kept copies with own_ev>={} AND strict-frac>={}",
+                n_gated_copies, n_dropped_reads, min_own, thr
+            );
+        }
+
+        // ── Pass 2: phantom-junction strip at ALL family copies (de-enumeration).
+        // The copy-gate above removes fake COPIES (TSPY3, DAZ3). It does NOT touch
+        // the ISOFORM over-enumeration at the REAL copies: cross-mapped secondaries
+        // draw splice junctions no primary read supports, which read-driven
+        // path_extract enumerates into spurious transcripts (RBMY array 16→54 tx).
+        // Generalize the RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS prototype (which was
+        // scoped to TandemCopy sub-bundles) to every family-copy bundle: keep all
+        // PRIMARY reads + only the secondary reads whose ENTIRE chain is primary-
+        // supported (they CONFIRM real junctions). Drops secondaries carrying any
+        // phantom (zero-primary) junction. Ablate with RUSTLE_VG_DECISIVE_GATE_NO_JCT.
+        if std::env::var_os("RUSTLE_VG_DECISIVE_GATE_NO_JCT").is_none() {
+            let family_bundles: std::collections::HashSet<usize> =
+                vg_families.iter().flat_map(|f| f.bundle_indices.iter().copied()).collect();
+            let n_jct_stripped = strip_phantom_junction_secondaries(&mut bundles, &family_bundles, &config, usize::MAX);
+            if n_jct_stripped > 0 {
+                eprintln!("[VG-DECISIVE-GATE] phantom-junction strip: dropped {} phantom-junction secondary read(s) across family copies", n_jct_stripped);
+            }
+        }
+    }
+
+    // ── Standalone phantom-junction strip (opt-in RUSTLE_VG_PRIMARY_JUNCTIONS) ──
+    // The over-enumeration precision lever, DECOUPLED from the decisive copy-gate:
+    // applies the primary-junction strip to ALL family-copy bundles (generalizing
+    // the TandemCopy-scoped RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS prototype) WITHOUT
+    // suppressing any copy. On the chrY amplicon it removes the secondary-junction
+    // contamination that inflates predictions (253→224 pred, Pr 34→36.6, landing
+    // ≥ baseline on both Sn and Pr). Scoped to vg_mode + opt-in → default
+    // byte-identical. Skipped if the decisive gate already ran its Pass-2 strip.
+    if config.vg_mode
+        && std::env::var_os("RUSTLE_VG_PRIMARY_JUNCTIONS").is_some()
+        && std::env::var_os("RUSTLE_VG_DECISIVE_GATE").is_none()
+        && !vg_families.is_empty()
+    {
+        let family_bundles: std::collections::HashSet<usize> =
+            vg_families.iter().flat_map(|f| f.bundle_indices.iter().copied()).collect();
+        // Secondary-consensus threshold: a low-primary REAL copy's junctions carry
+        // many consistent secondaries (recover them); sporadic phantom junctions do
+        // not. Default 10 is the measured chrY knee — 87 TP / 229 pred / Pr 38.0%,
+        // beating the -L baseline on BOTH Sn AND Pr (+5 TP, +1.4pp) and the
+        // no-strip VG on both. Lower → recovers nothing more but re-admits phantoms
+        // (pred climbs); usize::MAX → primary-only (83/224). NOTE: absolute count,
+        // so coverage-dependent — revisit if genome-wide validation shows drift.
+        let min_sec: usize = std::env::var("RUSTLE_VG_PRIMARY_JUNCTIONS_MIN_SEC")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(10);
+        let n = strip_phantom_junction_secondaries(&mut bundles, &family_bundles, &config, min_sec);
+        if n > 0 {
+            eprintln!("[VG-PRIMARY-JCT] phantom-junction strip (min_sec={}): dropped {} secondary read(s) across {} family bundle(s)",
+                if min_sec==usize::MAX {"inf".into()} else {min_sec.to_string()}, n, family_bundles.len());
+        }
+    }
+
     // ── PROTOTYPE (opt-in RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS): primary-only structure ──
     // The RBMY over-enumeration is SECONDARY-READ CONTAMINATION: cross-mapped secondaries
     // (e.g. a c0-origin read landing on c4) draw splice junctions NO primary read supports
@@ -11119,11 +11464,11 @@ pub fn run<P: AsRef<Path>>(
     // docs/superpowers/specs/2026-06-04-over-enumeration-research.md.
     if config.vg_mode
         && std::env::var_os("RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS").is_some()
-        && crate::vg_hmm::tandem::TandemConfig::from_env().enabled
+        && crate::vg_family::tandem::TandemConfig::from_env().enabled
     {
         let mut n_stripped = 0usize;
         for bundle in bundles.iter_mut() {
-            if bundle.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy)
+            if bundle.rescue_class == Some(crate::vg_family::diagnostic::RescueClass::TandemCopy)
                 && bundle.reads.iter().any(|r| !r.is_primary_alignment)
             {
                 // Primary-supported junction set for this copy: junctions appearing in ≥1
@@ -11164,7 +11509,7 @@ pub fn run<P: AsRef<Path>>(
     // (above), before assembly. Gated by RUSTLE_VG_TANDEM (sub-bundles only exist
     // then) + the rescue_class check.
     if config.vg_mode && !vg_copy_support.is_empty()
-        && crate::vg_hmm::tandem::TandemConfig::from_env().enabled
+        && crate::vg_family::tandem::TandemConfig::from_env().enabled
     {
         let t_support: f64 = std::env::var("RUSTLE_VG_TANDEM_SUPPORT_FLOOR")
             .ok().and_then(|s| s.parse().ok()).unwrap_or(0.75);
@@ -11187,7 +11532,7 @@ pub fn run<P: AsRef<Path>>(
         for fam in &vg_families {
             for (copy_id, &bi) in fam.bundle_indices.iter().enumerate() {
                 if bundles[bi].rescue_class
-                    != Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy)
+                    != Some(crate::vg_family::diagnostic::RescueClass::TandemCopy)
                 {
                     continue;
                 }
@@ -11714,6 +12059,15 @@ pub fn run<P: AsRef<Path>>(
 
     t!("pre_processing_pass");
 
+    // Opt-in (RUSTLE_STRAND_PURE_MINORITY): recover Type-2 cut-offs — convergent
+    // loci where combined-coverage bundling fragments the minority strand so it
+    // never assembles. Inject a synthetic bundle merging the minority strand's
+    // reads across the fragments; the main loop assembles it in isolation and the
+    // cross-strand spare-gate (auto-enabled below) protects the recovered gene.
+    if std::env::var_os("RUSTLE_STRAND_PURE_MINORITY").is_some() {
+        inject_strand_pure_minority_bundles(&mut bundles, &config);
+    }
+
     // Keep 3-strand groupflow on by default for compatibility, with an explicit opt-out.
     let use_3strand_groupflow = std::env::var_os("RUSTLE_DISABLE_3STRAND_GROUPFLOW").is_none();
     let mut region_reads_for_groupflow: HbHashMap<(String, u64, u64), Vec<BundleRead>> =
@@ -11769,13 +12123,122 @@ pub fn run<P: AsRef<Path>>(
 
     let snapshot_all = std::env::var_os("RUSTLE_SNAPSHOT_ALL").is_some();
     use rayon::prelude::*;
-    let bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
-    if std::env::var_os("RUSTLE_VG_HMM_DEBUG_SYNTHETIC").is_some() {
+    let mut bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
+    // ── RUSTLE_VG_UNION_BASELINE (EXPERIMENTAL, opt-in, default-OFF — NOT recommended) ──
+    // GOAL: guarantee VG output ⊇ primary-only baseline so the over-collapse regression
+    // (VG dropping primary-backed isoforms under secondary graph pollution) never loses a
+    // baseline transcript. STATUS (2026-06-05): this clone-at-assembly implementation is
+    // INCOMPLETE and NET-HARMFUL when enabled. Measured -p1 on 13 regressions: fixed ~2,
+    // no-op 7, and MADE WORSE ≥1 (the protected clone of a MEGA-BUNDLE — a gene bridged to
+    // its downstream neighbour by secondaries — is an unsplit read-through that displaces
+    // real VG transcripts in predcluster). ROOT CAUSE: rustle's bundler RE-SPLITS such
+    // regions for a standalone primary-only run, but a clone injected here is the unsplit
+    // span; patching start/end or clearing bundlenodes both made it worse. The correct fix
+    // is to RE-BUNDLE the primary reads (run the splitter) or do a post-process GTF union
+    // (run primary-only + vg, union by exact intron chain — the originally validated path).
+    // Kept default-off (byte-identical when unset) as scaffolding for that future work.
+    // Over-collapse regression: at family/secondary-bearing bundles, cross-mapped
+    // secondaries pollute the splice graph and the assembly drops primary-supported
+    // isoforms that the primary-only (baseline ≡ StringTie) path keeps. The winning
+    // and the polluting secondaries are structurally identical (junctions no primary
+    // supports), so no junction-support strip can separate them. Instead inject a
+    // PRIMARY-ONLY clone of each secondary-bearing bundle: the existing assembly
+    // produces the baseline transcripts for it, and the existing intron-chain dedup
+    // (dedup_*_intron_chains) merges them with the VG transcripts → union. So VG can
+    // only ADD over baseline, never lose a primary-backed transcript. Opt-in; with
+    // the flag off this block is skipped and output is byte-identical.
+    if config.vg_mode && std::env::var_os("RUSTLE_VG_UNION_BASELINE").is_some() {
+        let runoff = config.bundle_runoff_dist;
+        let mut clones: Vec<(usize, crate::types::Bundle)> = Vec::new();
+        let mut next_idx = bundles_vec.len();
+        for (_, b) in bundles_vec.iter() {
+            // Only secondary-bearing (VG-modified) bundles need re-splitting.
+            if !b.reads.iter().any(|r| !r.is_primary_alignment) {
+                continue;
+            }
+            let prim: Vec<&crate::types::BundleRead> =
+                b.reads.iter().filter(|r| r.is_primary_alignment).collect();
+            if prim.is_empty() {
+                continue;
+            }
+            // Re-split the PRIMARY reads by the runoff gap. The cross-mapped secondaries
+            // that papered over the inter-gene gap (collapsing this into a mega-bundle)
+            // are excluded here, so the per-gene boundary reappears and each gene gets a
+            // clean primary-only sub-bundle whose assembly reproduces the baseline
+            // (StringTie-equivalent) isoforms. These are marked UnionBaseline and, at the
+            // global stage, HELD OUT of the VG predcluster/dedup then unioned back by NOVEL
+            // intron chain only (see the union_baseline_holdout block after the par_iter) —
+            // strictly additive, so VG output ⊇ the no-union output (never displaces a VG
+            // transcript; the earlier in-flow protection leaked, displacing VG at e.g.
+            // LOC101146691). (A single clone of the whole mega-bundle failed: both genes'
+            // primaries in one wide bundle assembled to read-throughs/nothing — hence the
+            // per-gene runoff re-split.) Recovers ~6/13 over-collapse regressions; the rest
+            // need the sub-bundle to assemble cleanly (residual Bundle-consistency issue).
+            let spans: Vec<(u64, u64)> = prim
+                .iter()
+                .map(|r| {
+                    let s = r.exons.first().map(|e| e.0).unwrap_or(b.start);
+                    let e = r.exons.last().map(|e| e.1).unwrap_or(b.end);
+                    (s, e)
+                })
+                .collect();
+            for grp in crate::bundle::split_spans_by_runoff(&spans, runoff) {
+                let reads: Vec<crate::types::BundleRead> =
+                    grp.iter().map(|&i| prim[i].clone()).collect();
+                let start = reads
+                    .iter()
+                    .filter_map(|r| r.exons.first().map(|e| e.0))
+                    .min()
+                    .unwrap_or(b.start);
+                let end = reads
+                    .iter()
+                    .filter_map(|r| r.exons.last().map(|e| e.1))
+                    .max()
+                    .unwrap_or(b.end);
+                let mut sub = b.clone();
+                sub.reads = reads;
+                sub.start = start;
+                sub.end = end;
+                // Cached graph structures belonged to the mega-bundle; the closure
+                // rebuilds from reads, but clear them for clarity/safety.
+                sub.bundlenodes = None;
+                sub.read_bnodes = None;
+                sub.bnode_colors = None;
+                sub.synthetic = false;
+                sub.vg_family_id = None;
+                sub.rescue_class =
+                    Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline);
+                // Rebuild BOTH junction_stats AND junction_pair_stats from the
+                // sub-bundle's own reads. recompute_junction_stats does only the
+                // former, so the clone otherwise keeps the mega-bundle's pair stats
+                // (spanning both genes) which the closure consumes → mis-assembly
+                // (the residual loci that assembled to nothing).
+                let (js, jps) = compute_initial_junction_stats_for_reads(
+                    &sub.reads,
+                    sub.start,
+                    sub.end,
+                    &config,
+                );
+                sub.junction_stats = js;
+                sub.junction_pair_stats = jps;
+                clones.push((next_idx, sub));
+                next_idx += 1;
+            }
+        }
+        if !clones.is_empty() {
+            eprintln!(
+                "[VG-UNION-BASELINE] re-split into {} primary-only baseline sub-bundle(s)",
+                clones.len()
+            );
+        }
+        bundles_vec.extend(clones);
+    }
+    if std::env::var_os("RUSTLE_VG_FAMILY_DEBUG_SYNTHETIC").is_some() {
         let n_synth = bundles_vec.iter().filter(|(_, b)| b.synthetic).count();
         eprintln!("[VG-HMM-DEBUG] par_iter starting with {} bundles total, {} synthetic", bundles_vec.len(), n_synth);
     }
     bundles_vec.into_par_iter().try_for_each(|(bundle_idx, mut bundle)| -> Result<()> {
-        if bundle.synthetic && std::env::var_os("RUSTLE_VG_HMM_DEBUG_SYNTHETIC").is_some() {
+        if bundle.synthetic && std::env::var_os("RUSTLE_VG_FAMILY_DEBUG_SYNTHETIC").is_some() {
             eprintln!(
                 "[VG-HMM-DEBUG] entering par_iter for synthetic bundle bi={} {}:{}-{}:{} reads={} juncs={}",
                 bundle_idx, bundle.chrom, bundle.start, bundle.end, bundle.strand,
@@ -14790,6 +15253,17 @@ pub fn run<P: AsRef<Path>>(
                 // at STRG.253) means the drop belongs to an intermediate bundlenode
                 // and truncating would incorrectly cut real exon body.
                 let mut txs = txs;
+                // Provenance: tag transcripts assembled from a strand-pure-minority
+                // synthetic bundle so the output gate can filter the cross-strand
+                // collateral (intergenic/antisense) without touching normal output.
+                if graph_bundle.rescue_class
+                    == Some(crate::vg_family::diagnostic::RescueClass::StrandPureMinority)
+                {
+                    for tx in &mut txs {
+                        tx.rescue_class =
+                            Some(crate::vg_family::diagnostic::RescueClass::StrandPureMinority);
+                    }
+                }
                 if let Some(corrected_end) = graph_mut.terminal_corrected_end {
                     let max_overhang: u64 = std::env::var("RUSTLE_TERMINAL_OVERHANG_MAX")
                         .ok().and_then(|v| v.parse().ok()).unwrap_or(150u64);
@@ -15621,7 +16095,8 @@ pub fn run<P: AsRef<Path>>(
                     synthetic: bundle.synthetic,
                     rescue_class: bundle.rescue_class,
                     vg_family_id: bundle.vg_family_id,
-
+                    hp_tag: bundle.hp_tag,
+                    ps_tag: bundle.ps_tag,
 };
 
                 // DEBUG_BUNDLE: emit bundle summary matching expected format.
@@ -16360,11 +16835,12 @@ pub fn run<P: AsRef<Path>>(
                     }
                     // O5/tandem provenance: transcripts from a tandem-decomposed
                     // per-copy sub-bundle carry the inferred-copy flag (spec 2026-06-02).
-                    if tx.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy) {
+                    if tx.rescue_class == Some(crate::vg_family::diagnostic::RescueClass::TandemCopy) {
                         tx.tandem_copy = Some(true);
                     }
                 }
             }
+            stamp_union_baseline_rescue_class(&bundle, &mut bundle_txs);
             trace_chain_intron_probe("bundle_before_extend_all_transcripts_pernode", &bundle_txs);
             all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
             return Ok(());
@@ -16814,6 +17290,75 @@ pub fn run<P: AsRef<Path>>(
                     bundle_to_confidence.get(&bundle_idx).copied();
             }
         }
+        // Anti-chimera isoform filter (opt-in RUSTLE_VG_ISOFORM_PAIR_SUPPORT): for
+        // VG-family bundles, drop enumerated isoforms whose intron chain has a
+        // CONSECUTIVE junction pair co-occurring in NO read — the chimeric paths
+        // path_extract assembles from secondary-read fragments (the dominant
+        // autosomal VG over-enum the junction strip can't reach). Real copies
+        // (incl. low-primary ones spanned only by secondaries) keep every adjacent
+        // pair co-supported, so survive. Scoped to VG-family bundles + opt-in →
+        // default byte-identical.
+        let want_fullread = std::env::var_os("RUSTLE_VG_ISOFORM_FULLREAD").is_some();
+        let want_pair = std::env::var_os("RUSTLE_VG_ISOFORM_PAIR_SUPPORT").is_some();
+        if bundle_to_vg.contains_key(&bundle_idx) && (want_fullread || want_pair) {
+            let supported_pairs: std::collections::HashSet<((u64, u64), (u64, u64))> =
+                bundle.reads.iter().flat_map(|r| r.junctions.windows(2)
+                    .map(|w| ((w[0].donor, w[0].acceptor), (w[1].donor, w[1].acceptor))))
+                .collect();
+            let read_sets: Vec<std::collections::HashSet<(u64, u64)>> = bundle.reads.iter()
+                .filter(|r| r.junctions.len() >= 2)
+                .map(|r| r.junctions.iter().map(|j| (j.donor, j.acceptor)).collect())
+                .collect();
+            let before = bundle_txs.len();
+            bundle_txs.retain(|tx| {
+                let introns: Vec<(u64, u64)> =
+                    tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                if want_fullread {
+                    crate::vg::isoform_fully_read_spanned(&introns, &read_sets)
+                } else {
+                    crate::vg::isoform_junction_pairs_supported(&introns, &supported_pairs)
+                }
+            });
+            let dropped = before - bundle_txs.len();
+            if dropped > 0 && std::env::var_os("RUSTLE_VG_ISOFORM_PAIR_TRACE").is_some() {
+                eprintln!("[VG-NOCHIMERA] bundle {} ({}:{}-{}): dropped {}/{} isoform(s)",
+                    bundle_idx, bundle.chrom, bundle.start, bundle.end, dropped, before);
+            }
+        }
+        // compatPrim isoform selection (opt-in RUSTLE_VG_COMPATPRIM): "VG structure
+        // + parsimonious primary-evidence flow". Drop a VG-family multi-exon isoform
+        // unless >= MIN primary reads carry a contiguous run of its junctions
+        // (compat_prim_support). Suppresses the read-driven over-enum (secondary-only
+        // minor variants → compatPrim 0) that coverage/all-read filters miss, while
+        // KEEPING genuine copies incl. novel ones (own reads are primary at their
+        // locus). Research 2026-06-04: AUC 0.992, novelty-safe. Scoped to VG-family
+        // bundles + opt-in → default byte-identical.
+        if config.vg_mode
+            && std::env::var_os("RUSTLE_VG_COMPATPRIM").is_some()
+            && bundle_txs.len() > 1
+        {
+            let min_cp: usize = std::env::var("RUSTLE_VG_COMPATPRIM_MIN")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(3);
+            let tol: u64 = std::env::var("RUSTLE_VG_COMPATPRIM_TOL")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(6);
+            let prim_chains: Vec<Vec<(u64, u64)>> = bundle.reads.iter()
+                .filter(|r| r.is_primary_alignment && !r.junctions.is_empty())
+                .map(|r| r.junctions.iter().map(|j| (j.donor, j.acceptor)).collect())
+                .collect();
+            let before = bundle_txs.len();
+            bundle_txs.retain(|tx| {
+                let introns: Vec<(u64, u64)> =
+                    tx.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+                // single-exon isoforms are not subject to the chain-support test.
+                introns.is_empty()
+                    || crate::vg::compat_prim_support(&introns, &prim_chains, tol) >= min_cp
+            });
+            let dropped = before - bundle_txs.len();
+            if std::env::var_os("RUSTLE_VG_COMPATPRIM_TRACE").is_some() {
+                eprintln!("[VG-COMPATPRIM] bundle {} ({}:{}-{}): {} primary-chains, dropped {}/{} isoform(s)",
+                    bundle_idx, bundle.chrom, bundle.start, bundle.end, prim_chains.len(), dropped, before);
+            }
+        }
         if bundle.synthetic {
             for tx in bundle_txs.iter_mut() {
                 tx.synthetic = true;
@@ -16823,11 +17368,12 @@ pub fn run<P: AsRef<Path>>(
                 }
                 // O5/tandem provenance: transcripts from a tandem-decomposed
                 // per-copy sub-bundle carry the inferred-copy flag (spec 2026-06-02).
-                if tx.rescue_class == Some(crate::vg_hmm::diagnostic::RescueClass::TandemCopy) {
+                if tx.rescue_class == Some(crate::vg_family::diagnostic::RescueClass::TandemCopy) {
                     tx.tandem_copy = Some(true);
                 }
             }
         }
+        stamp_union_baseline_rescue_class(&bundle, &mut bundle_txs);
         trace_chain_intron_probe("bundle_before_extend_all_transcripts_final", &bundle_txs);
         all_transcripts_mutex.lock().unwrap().extend(bundle_txs);
         Ok(())
@@ -16835,6 +17381,26 @@ pub fn run<P: AsRef<Path>>(
 
     phase_timer!("assembly_done");
     let mut all_transcripts = all_transcripts_mutex.into_inner().unwrap();
+    // RUSTLE_VG_UNION_BASELINE (strictly-additive): hold the primary-only baseline
+    // re-split transcripts OUT of the VG predcluster/dedup so they can NEVER displace a
+    // VG transcript (the LOC101146691 leak). They are unioned back by NOVEL intron chain
+    // at the very end — so the VG output is byte-identical to the no-union run, plus only
+    // the baseline isoforms VG dropped. Guarantees output ⊇ no-union VG output.
+    let mut union_baseline_holdout: Vec<crate::path_extract::Transcript> = Vec::new();
+    if config.vg_mode && std::env::var_os("RUSTLE_VG_UNION_BASELINE").is_some() {
+        let mut kept: Vec<crate::path_extract::Transcript> =
+            Vec::with_capacity(all_transcripts.len());
+        for t in all_transcripts.drain(..) {
+            if t.rescue_class
+                == Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline)
+            {
+                union_baseline_holdout.push(t);
+            } else {
+                kept.push(t);
+            }
+        }
+        all_transcripts = kept;
+    }
     trace_chain_intron_probe("ENTER_global", &all_transcripts);
 
     // Cross-strand predcluster pass (default ON). Runs subtractive
@@ -16931,16 +17497,60 @@ pub fn run<P: AsRef<Path>>(
         }
     }
 
-    // Cross-strand filtering.
-    // print_predcluster processes both strands of a locus together; single-exon
-    // transcripts on the minority strand are eliminated by higher-scored opposite-strand
-    // multi-exon transcripts. Rustle bundles are single-strand so this must be a global pass.
-    crate::tracing::reference::debug_target_ref_global_stage("global_pre_cross_strand", &ref_transcripts, &all_transcripts);
-    let _before_xstrand = pre_filter_snapshot(&all_transcripts);
-    all_transcripts = apply_global_cross_strand_filter(all_transcripts, config.verbose);
-    emit_post_pred_kills("global_cross_strand_filter", &_before_xstrand, &all_transcripts);
-    trace_chain_intron_probe("after_apply_global_cross_strand_filter", &all_transcripts);
-    crate::tracing::reference::debug_target_ref_global_stage("global_after_cross_strand", &ref_transcripts, &all_transcripts);
+    // Cross-strand filtering is handled entirely by cross_strand_kri_filter (the KRI
+    // pass) above. The former apply_global_cross_strand_filter was a duplicate port of
+    // the same StringTie retainedintron() rule; it was proven inert (KRI runs first and
+    // its kills are a strict superset — disabling the global pass was byte-identical on
+    // GGO_19, 95.6/90.5) and has been removed (2026-06-04).
+
+    // Strand-pure-minority OUTPUT GATE (provenance-based). The injection
+    // over-produces; keep a tagged transcript only if it is a credible recovered
+    // convergent-minority gene: multi-exon, read-backed (longcov), AND genuinely
+    // convergent (overlaps a surviving NON-strand-pure opposite-strand transcript
+    // = the dominant antisense gene). Drops the intergenic (`u`) and antisense
+    // (`x`) collateral while preserving the real recoveries. Normal transcripts
+    // are untouched.
+    if std::env::var_os("RUSTLE_STRAND_PURE_MINORITY").is_some() {
+        use crate::vg_family::diagnostic::RescueClass;
+        let min_exons: usize = std::env::var("RUSTLE_STRAND_PURE_OUT_MIN_EXONS")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(4);
+        let min_longcov: f64 = std::env::var("RUSTLE_STRAND_PURE_OUT_MIN_LONGCOV")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(3.0);
+        let span = |t: &crate::path_extract::Transcript| -> (u64, u64) {
+            (
+                t.exons.first().map(|e| e.0).unwrap_or(0),
+                t.exons.last().map(|e| e.1).unwrap_or(0),
+            )
+        };
+        // (chrom, start, end, strand) of surviving NON-strand-pure transcripts.
+        let normal: Vec<(String, u64, u64, char)> = all_transcripts
+            .iter()
+            .filter(|t| t.rescue_class != Some(RescueClass::StrandPureMinority))
+            .map(|t| {
+                let (s, e) = span(t);
+                (t.chrom.clone(), s, e, t.strand)
+            })
+            .collect();
+        let before = all_transcripts.len();
+        all_transcripts.retain(|t| {
+            if t.rescue_class != Some(RescueClass::StrandPureMinority) {
+                return true;
+            }
+            let (s, e) = span(t);
+            let multiexon = t.exons.len() >= min_exons;
+            let supported = t.longcov >= min_longcov;
+            let convergent = normal
+                .iter()
+                .any(|(c, ss, ee, st)| c == &t.chrom && *st != t.strand && *ss <= e && *ee >= s);
+            multiexon && supported && convergent
+        });
+        if config.verbose && before > all_transcripts.len() {
+            eprintln!(
+                "    strand_pure_output_gate: dropped {} ungated strand-pure transcripts",
+                before - all_transcripts.len()
+            );
+        }
+    }
 
     // Near-duplicate chain suppression (opt-in via RUSTLE_SUPPRESS_NEAR_DUP=1):
     // drop low-cov multi-exon transcripts whose intron chain differs from a
@@ -17695,6 +18305,7 @@ pub fn run<P: AsRef<Path>>(
                     alt_tts_end: false,
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None, intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
             });
         }
         if config.verbose && !zero_cov_txs.is_empty() {
@@ -18406,6 +19017,7 @@ pub fn run<P: AsRef<Path>>(
                     vg_family_id: None, vg_copy_id: None, vg_family_size: None, copy_assignment_confidence: None, copy_independent_support: None, capacity_confidence: None, abundance_min: None, family_verdict: None, tandem_copy: None,
                     intron_low: Vec::new(), synthetic: false, rescue_class: None,
                     raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+                    hp_tag: None, ps_tag: None,
                 });
                 *added += 1;
                 if debug {
@@ -18586,6 +19198,32 @@ pub fn run<P: AsRef<Path>>(
         );
     }
 
+    // Gene-conversion EMISSION (opt-in RUSTLE_VG_MOSAIC_EMIT; default-off → byte-identical).
+    // Promote each family-CONFIRMED gene-conversion event into a first-class recombinant isoform
+    // (a sequence mosaic on its host copy's chain — no novel junction; see
+    // bench/multi_copy_eval/NOVEL_COMBINATION_PROOF.md), instead of only flagging it as a GTF
+    // attribute on the native transcripts. One recombinant per (family, event), hosted on the
+    // transcript whose span contains the breakpoint. Conservative: confirmed events only.
+    // (Requires RUSTLE_VG_MOSAIC_ON to have populated family_conversions — without the detector
+    // this block finds nothing and is a no-op.) Emits ONE recombinant per distinct confirmed
+    // event, each hosted on its participant copy and carrying its own breakpoint/copies.
+    if std::env::var_os("RUSTLE_VG_MOSAIC_EMIT").is_some() {
+        let mut fam_ids: Vec<usize> = family_conversions.keys().copied().collect();
+        fam_ids.sort_unstable();
+        let mut recombinants: Vec<crate::path_extract::Transcript> = Vec::new();
+        for fam_id in fam_ids {
+            let events = &family_conversions[&fam_id];
+            recombinants.extend(crate::vg::emit_family_recombinants(&all_transcripts, events, fam_id));
+        }
+        if !recombinants.is_empty() {
+            eprintln!(
+                "[VG-MOSAIC-EMIT] emitted {} gene-conversion recombinant isoform(s)",
+                recombinants.len()
+            );
+            all_transcripts.extend(recombinants);
+        }
+    }
+
     // Compute TPM/FPKM globally across the whole run (standard).
     compute_tpm_fpkm(&mut all_transcripts, global_num_frag, global_frag_len_sum);
 
@@ -18694,6 +19332,43 @@ pub fn run<P: AsRef<Path>>(
         all_transcripts = crate::transcript_filter::recover_missing_guide_transcripts(
             all_transcripts, &guide_transcripts, config.verbose);
         emit_post_pred_kills("global_recover_missing_guides", &_before, &all_transcripts);
+    }
+
+    // RUSTLE_VG_UNION_BASELINE (strictly-additive): union back the held-out primary-only
+    // baseline transcripts, but ONLY those whose exact multi-exon intron chain is ABSENT
+    // from the final VG output. Pure addition — never displaces a VG transcript — so the
+    // result is the no-union VG output plus the baseline isoforms VG dropped (over-collapse
+    // recovery) without the predcluster-displacement leak. Single-exon baseline tx are
+    // skipped (FP-prone; gated separately by --read-chain-single).
+    if !union_baseline_holdout.is_empty() {
+        let chain_of = |t: &crate::path_extract::Transcript| -> Vec<(u64, u64)> {
+            t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect()
+        };
+        let vg_chains: std::collections::HashSet<Vec<(u64, u64)>> = all_transcripts
+            .iter()
+            .filter(|t| t.exons.len() >= 2)
+            .map(|t| chain_of(t))
+            .collect();
+        let mut seen: std::collections::HashSet<Vec<(u64, u64)>> = std::collections::HashSet::new();
+        let mut added = 0usize;
+        for mut t in std::mem::take(&mut union_baseline_holdout) {
+            if t.exons.len() < 2 {
+                continue;
+            }
+            let chain = chain_of(&t);
+            if vg_chains.contains(&chain) || !seen.insert(chain) {
+                continue;
+            }
+            t.rescue_class = None;
+            all_transcripts.push(t);
+            added += 1;
+        }
+        if added > 0 {
+            eprintln!(
+                "[VG-UNION-BASELINE] unioned {} novel baseline isoform(s) VG dropped (strictly additive)",
+                added
+            );
+        }
     }
 
     // Emit a final `path_emit_pre_write` parity event for every tx that survives
@@ -18806,6 +19481,64 @@ pub fn run<P: AsRef<Path>>(
 
     let mut f = std::fs::File::create(output_gtf.as_ref())?;
     write_gtf(&all_transcripts, &mut f, &config.label)?;
+
+    // ── Multimapper rescue report (opt-in RUSTLE_VG_RESCUE_REPORT) ───────────
+    // One row per VG-family transcript, joined to its copy's decisive-evidence certificate:
+    // what a primary-only assembler sees (primary_reads) vs the decisive evidence recoverable
+    // from multimappers (decisive_own_reads), with a `rescued` flag for the copies that are
+    // recoverable ONLY from multimappers. Written next to the GTF as <output>.rescue.tsv.
+    if std::env::var_os("RUSTLE_VG_RESCUE_REPORT").is_some() && !vg_copy_certificate.is_empty() {
+        let min_decisive: usize = std::env::var("RUSTLE_VG_RESCUE_MIN_DECISIVE")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(3);
+        let min_frac: f64 = std::env::var("RUSTLE_VG_RESCUE_MIN_FRAC")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(0.5);
+        let report_path = output_gtf.as_ref().with_extension("rescue.tsv");
+        // Transcript ids matching the GTF (assign_gene_tx_numbers is what write_gtf uses), so a
+        // rescue row joins directly to the GTF / a gffcompare tmap.
+        let gene_tx_no = crate::gtf::assign_gene_tx_numbers(&all_transcripts);
+        let mut rows: Vec<(String, u64, usize, usize, String)> = Vec::new();
+        let mut rescued_copies: std::collections::HashSet<(usize, usize)> = Default::default();
+        for (i, tx) in all_transcripts.iter().enumerate() {
+            let (Some(fam_id), Some(copy_id)) = (tx.vg_family_id, tx.vg_copy_id) else { continue };
+            let Some(cert) = vg_copy_certificate.get(&(fam_id, copy_id)) else { continue };
+            let rescued = cert.is_rescued(min_decisive, min_frac);
+            if rescued {
+                rescued_copies.insert((fam_id, copy_id));
+            }
+            let (gno, tno) = gene_tx_no[i];
+            let tid = match (&tx.gene_id, &tx.transcript_id) {
+                (Some(_), Some(t)) => t.clone(),
+                _ => format!("{}.{}.{}", config.label, gno.max(1), tno.max(1)),
+            };
+            let tx_start = tx.exons.first().map(|e| e.0).unwrap_or(0);
+            let tx_end = tx.exons.last().map(|e| e.1).unwrap_or(0);
+            let supp = tx.copy_independent_support.map(|s| format!("{:.3}", s)).unwrap_or_else(|| "NA".into());
+            let row = format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\t{}\t{}\t{}\t{}-{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
+                tid, tx.chrom, tx_start, tx_end, tx.strand, tx.exons.len(), tx.coverage,
+                fam_id, copy_id, cert.family_size, cert.start, cert.end,
+                cert.n_primary, cert.own_ev(), cert.n_unique, cert.n_strict, cert.n_tied,
+                cert.decisive_frac(), supp,
+                if rescued { "true" } else { "false" },
+            );
+            rows.push((tx.chrom.clone(), tx_start, fam_id, copy_id, row));
+        }
+        // Total order (the formatted row is the final tiebreaker) so the report is deterministic
+        // regardless of all_transcripts' (rayon-assembled) iteration order.
+        rows.sort_by(|a, b| {
+            a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)).then(a.3.cmp(&b.3)).then(a.4.cmp(&b.4))
+        });
+        let mut rf = std::fs::File::create(&report_path)?;
+        use std::io::Write as _;
+        writeln!(rf, "transcript_id\tchrom\ttx_start\ttx_end\tstrand\tn_exons\tcoverage\tfamily_id\tcopy_id\tfamily_size\tcopy_locus\tprimary_reads\tdecisive_own_reads\tunique_reads\tstrict_reads\ttied_reads\tdecisive_frac\tcopy_independent_support\trescued")?;
+        for (_, _, _, _, row) in &rows {
+            writeln!(rf, "{}", row)?;
+        }
+        eprintln!(
+            "[VG-RESCUE-REPORT] {} family transcript(s) across {} copies → {} (rescued copies: {})",
+            rows.len(), vg_copy_certificate.len(), report_path.display(), rescued_copies.len()
+        );
+    }
     let (emit_start, emit_end) = debug_stage::transcript_span(&all_transcripts).unwrap_or((0, 0));
     debug_stage::emit(
         "transcript_emission",
@@ -18845,12 +19578,8 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: novel copy discovery (Phase 3, opt-in) ─────────────
-    // HMM mode: rescue + synthetic bundles were already injected into the
-    // assembly loop above (before the per-bundle pass). Nothing to do here.
-    // k-mer mode: run the legacy scan and report candidates.
-    if config.vg_mode && config.vg_discover_novel && !vg_families.is_empty()
-        && config.vg_discover_novel_mode != "hmm"
-    {
+    // k-mer mode: run the scan and report candidates.
+    if config.vg_mode && config.vg_discover_novel && !vg_families.is_empty() {
         eprintln!(
             "[VG] Novel copy discovery: scanning supplementary alignments in uncovered regions..."
         );

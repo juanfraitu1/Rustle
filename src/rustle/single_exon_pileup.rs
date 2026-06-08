@@ -249,6 +249,7 @@ pub fn detect(
             synthetic: false,
             rescue_class: None,
             raw_flow_sum: 0.0, min_jct_mm: 0.0, skip_jct_mm: 0.0, chain_witnessed: false,
+            hp_tag: None, ps_tag: None,
 
 });
     }
