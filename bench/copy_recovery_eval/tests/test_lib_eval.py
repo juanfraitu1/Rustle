@@ -27,3 +27,18 @@ def test_build_universe_transitive_closure():
     assert fam["a"] == fam["b"] == fam["c"]
     assert "d" not in fam
     assert all(r["n_family_copies"] == 3 for r in uni)
+
+
+def test_recovery_set_fsm_ism_within_universe():
+    classif = [
+        {"isoform": "q1", "structural_category": "full-splice_match",       "associated_transcript": "rna-A1"},
+        {"isoform": "q2", "structural_category": "incomplete-splice_match", "associated_transcript": "rna-A2"},
+        {"isoform": "q3", "structural_category": "novel_not_in_catalog",    "associated_transcript": "novel"},
+        {"isoform": "q4", "structural_category": "full-splice_match",       "associated_transcript": "rna-S1"},  # not in U
+    ]
+    universe_tx = {"rna-A1", "rna-A2", "rna-B1"}
+    rec = lib_eval.recovery_set(classif, universe_tx)
+    assert rec["rna-A1"] == {"fsm": True, "ism": False}
+    assert rec["rna-A2"] == {"fsm": False, "ism": True}
+    assert "rna-S1" not in rec
+    assert "novel" not in rec

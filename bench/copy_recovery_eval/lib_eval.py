@@ -42,3 +42,27 @@ def build_universe(gene_tx, paralog_pairs):
                 })
     rows.sort(key=lambda r: (r["family_id"], r["gene_id"], r["transcript_id"]))
     return rows
+
+
+FSM = "full-splice_match"
+ISM = "incomplete-splice_match"
+
+
+def recovery_set(classification_rows, universe_tx):
+    """classification_rows: list of dicts with 'structural_category' and
+    'associated_transcript'. universe_tx: set of reference transcript ids (U).
+    Returns {ref_transcript: {'fsm': bool, 'ism': bool}} restricted to U."""
+    rec = {}
+    for row in classification_rows:
+        cat = row.get("structural_category", "")
+        ref = row.get("associated_transcript", "")
+        if ref not in universe_tx:
+            continue
+        if cat not in (FSM, ISM):
+            continue
+        cur = rec.setdefault(ref, {"fsm": False, "ism": False})
+        if cat == FSM:
+            cur["fsm"] = True
+        elif cat == ISM:
+            cur["ism"] = True
+    return rec
