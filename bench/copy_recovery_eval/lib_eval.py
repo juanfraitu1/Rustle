@@ -48,15 +48,35 @@ FSM = "full-splice_match"
 ISM = "incomplete-splice_match"
 
 
+def norm_tx_id(s):
+    """Normalize a transcript id to its bare NCBI accession so IDs join across
+    sources. The annotation's `transcript_id=` attribute is the clean accession
+    (e.g. `XM_055380435.2`), but gffread -T (which feeds SQANTI3's reference)
+    emits the GFF3 `ID=` form with an `rna-`/`gene-` prefix (e.g.
+    `rna-XR_008678095.2`). SQANTI3's `associated_transcript` therefore carries
+    that prefix while `universe.tsv` does not — stripping the prefix on both
+    sides makes the join work. Idempotent."""
+    if s is None:
+        return ""
+    for pre in ("rna-", "gene-"):
+        if s.startswith(pre):
+            return s[len(pre):]
+    return s
+
+
 def recovery_set(classification_rows, universe_tx):
     """classification_rows: list of dicts with 'structural_category' and
     'associated_transcript'. universe_tx: set of reference transcript ids (U).
-    Returns {ref_transcript: {'fsm': bool, 'ism': bool}} restricted to U."""
+    Returns {ref_transcript: {'fsm': bool, 'ism': bool}} restricted to U.
+    IDs are normalized via norm_tx_id on both sides before matching, so a
+    prefixed SQANTI3 associated_transcript joins the clean universe accession.
+    The returned keys are the normalized (clean) ids."""
+    uni = {norm_tx_id(t) for t in universe_tx}
     rec = {}
     for row in classification_rows:
         cat = row.get("structural_category", "")
-        ref = row.get("associated_transcript", "")
-        if ref not in universe_tx:
+        ref = norm_tx_id(row.get("associated_transcript", ""))
+        if ref not in uni:
             continue
         if cat not in (FSM, ISM):
             continue

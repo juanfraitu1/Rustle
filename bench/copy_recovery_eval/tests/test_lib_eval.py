@@ -3,6 +3,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import lib_eval
 
 
+def test_recovery_set_joins_across_rna_prefix():
+    # SQANTI3 associated_transcript carries the gffread/GFF3 'rna-' prefix; the
+    # universe uses the clean accession. They must still join.
+    classif = [
+        {"isoform": "q1", "structural_category": "full-splice_match", "associated_transcript": "rna-XM_055380435.2"},
+        {"isoform": "q2", "structural_category": "full-splice_match", "associated_transcript": "rna-XR_999.1"},  # not in U
+    ]
+    universe_tx = {"XM_055380435.2", "XM_031015533.3"}  # clean accessions
+    rec = lib_eval.recovery_set(classif, universe_tx)
+    assert rec == {"XM_055380435.2": {"fsm": True, "ism": False}}
+
+
 def test_build_universe_groups_paralog_families():
     gene_tx = {
         "RABL2A": ["rna-A1", "rna-A2"],
@@ -30,17 +42,19 @@ def test_build_universe_transitive_closure():
 
 
 def test_recovery_set_fsm_ism_within_universe():
+    # Clean (un-prefixed) ids isolate the FSM/ISM logic from prefix normalization
+    # (which has its own test, test_recovery_set_joins_across_rna_prefix).
     classif = [
-        {"isoform": "q1", "structural_category": "full-splice_match",       "associated_transcript": "rna-A1"},
-        {"isoform": "q2", "structural_category": "incomplete-splice_match", "associated_transcript": "rna-A2"},
+        {"isoform": "q1", "structural_category": "full-splice_match",       "associated_transcript": "A1"},
+        {"isoform": "q2", "structural_category": "incomplete-splice_match", "associated_transcript": "A2"},
         {"isoform": "q3", "structural_category": "novel_not_in_catalog",    "associated_transcript": "novel"},
-        {"isoform": "q4", "structural_category": "full-splice_match",       "associated_transcript": "rna-S1"},  # not in U
+        {"isoform": "q4", "structural_category": "full-splice_match",       "associated_transcript": "S1"},  # not in U
     ]
-    universe_tx = {"rna-A1", "rna-A2", "rna-B1"}
+    universe_tx = {"A1", "A2", "B1"}
     rec = lib_eval.recovery_set(classif, universe_tx)
-    assert rec["rna-A1"] == {"fsm": True, "ism": False}
-    assert rec["rna-A2"] == {"fsm": False, "ism": True}
-    assert "rna-S1" not in rec
+    assert rec["A1"] == {"fsm": True, "ism": False}
+    assert rec["A2"] == {"fsm": False, "ism": True}
+    assert "S1" not in rec
     assert "novel" not in rec
 
 

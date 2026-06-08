@@ -15,7 +15,7 @@ RUSTLE="${RUSTLE:-$ROOT/target/release/rustle}"
 STRINGTIE="${STRINGTIE:-$ROOT/tools/stringtie/stringtie}"
 SAMTOOLS="${SAMTOOLS:-samtools}"
 MINIMAP2="${MINIMAP2:-minimap2}"
-GFFREAD="${GFFREAD:-gffread}"
+GFFREAD="${GFFREAD:-/home/juanfra/miniforge3/envs/sqanti3/bin/gffread}"  # not on base PATH; sqanti3 env has 0.12.7
 SQANTI3_DIR="${SQANTI3_DIR:-$HOME/tools/SQANTI3}"
 SQANTI3_ENV="${SQANTI3_ENV:-sqanti3}"
 # Python interpreter with pysam/pandas available (base env lacks them).
