@@ -84,6 +84,65 @@ pub fn detect_het_sites(reads: &[BundleRead], cfg: &PhasingConfig) -> Vec<HetSit
     sites
 }
 
+/// A read's allele at each het site: Some(true)=Alt, Some(false)=Ref, None=not covered.
+pub type AlleleRow = Vec<Option<bool>>;
+
+/// Build the read × het-site allele matrix (row order matches `reads`).
+pub fn allele_matrix(reads: &[BundleRead], sites: &[HetSite]) -> Vec<AlleleRow> {
+    reads
+        .iter()
+        .map(|r| {
+            sites
+                .iter()
+                .map(|s| {
+                    if !read_spans(r, s.pos) {
+                        None
+                    } else {
+                        Some(r.mismatches.iter().any(|&(p, b)| p == s.pos && b == s.alt_allele))
+                    }
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Cost of a read row against a haplotype allele vector (Hamming over covered sites).
+fn row_cost(row: &AlleleRow, hap: &[bool]) -> u32 {
+    row.iter()
+        .zip(hap)
+        .filter_map(|(a, &h)| a.map(|av| if av != h { 1 } else { 0 }))
+        .sum()
+}
+
+/// Exact MEC over all 2^M haplotype-A allele assignments (M = #sites).
+/// Each read greedily joins the cheaper of {hapA, complement(hapA)}.
+/// Returns (hapA alleles, side per read [false=A,true=B], total cost).
+/// Caller must ensure M is small (<= ~20).
+pub fn mec_brute(matrix: &[AlleleRow], n_sites: usize) -> (Vec<bool>, Vec<bool>, u32) {
+    let mut best: Option<(Vec<bool>, Vec<bool>, u32)> = None;
+    for mask in 0u32..(1u32 << n_sites) {
+        let hap_a: Vec<bool> = (0..n_sites).map(|j| (mask >> j) & 1 == 1).collect();
+        let hap_b: Vec<bool> = hap_a.iter().map(|&x| !x).collect();
+        let mut sides = Vec::with_capacity(matrix.len());
+        let mut total = 0u32;
+        for row in matrix {
+            let ca = row_cost(row, &hap_a);
+            let cb = row_cost(row, &hap_b);
+            if ca <= cb {
+                sides.push(false);
+                total += ca;
+            } else {
+                sides.push(true);
+                total += cb;
+            }
+        }
+        if best.as_ref().map_or(true, |b| total < b.2) {
+            best = Some((hap_a, sides, total));
+        }
+    }
+    best.unwrap_or((vec![false; n_sites], vec![false; matrix.len()], 0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +242,32 @@ mod tests {
         let cfg = PhasingConfig::default();
         let reads: Vec<_> = (0..10).map(|i| mk_read(i, 50, 200, vec![(100, b'A')])).collect();
         assert!(detect_het_sites(&reads, &cfg).is_empty());
+    }
+
+    #[test]
+    fn mec_brute_two_clean_haplotypes() {
+        let matrix = vec![
+            vec![Some(true), Some(false)],
+            vec![Some(true), Some(false)],
+            vec![Some(false), Some(true)],
+            vec![Some(false), Some(true)],
+        ];
+        let (_hap, sides, cost) = mec_brute(&matrix, 2);
+        assert_eq!(cost, 0);
+        assert_eq!(sides[0], sides[1]);
+        assert_eq!(sides[2], sides[3]);
+        assert_ne!(sides[0], sides[2]);
+    }
+
+    #[test]
+    fn mec_brute_tolerates_one_error() {
+        let matrix = vec![
+            vec![Some(true), Some(true)],
+            vec![Some(true), Some(false)],
+            vec![Some(false), Some(true)],
+            vec![Some(false), Some(true)],
+        ];
+        let (_hap, _sides, cost) = mec_brute(&matrix, 2);
+        assert_eq!(cost, 1);
     }
 }
