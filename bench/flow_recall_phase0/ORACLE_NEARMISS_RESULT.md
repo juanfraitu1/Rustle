@@ -1,0 +1,26 @@
+# Oracle near-miss analysis — what it would take, and the empirical-rule verdict
+
+**Date:** 2026-06-09. Baseline -L, 4 mid-size chroms. Tooling: oracle_nearmiss.py + oracle_support_sweep.py.
+
+## Oracle half — what it would take (structural)
+- 3,724 refs matched '='; **1,475 near-miss-only** (rustle shares a junction, no exact match).
+- **529 (36%) are exactly 1 junction edit away** (both-axes-positive to convert: +TP/-FP):
+  c_extend 191 (add missing junction) · altsplice 173 (snap boundary) · k_trim 165 (drop extra).
+- ~3,000+ single-edit near-misses extrapolated genome-wide.
+
+## Empirical-rule half — read-support sweep: NEGATIVE on all three
+- **k_trim** (drop extra junction): 34% of extra junctions weak (reads/body <0.1), BUT 27% of
+  MATCHED refs carry a real junction <0.1 too → a drop-rule breaks ~950 correct matches to fix 56.
+  Indistinguishable.
+- **altsplice** (snap to ref): read support points the WRONG way — rustle already picks the
+  HIGHER-support junction; the annotation uses a LOWER-support one. "Prefer higher" wrong 85%.
+  The annotated isoform is the minority in this sample's reads.
+- **c_extend** (add missing junction): 45% of missing junctions have 0 reads (genuinely absent);
+  median 1 read; only 32% (61) have >=2 reads = the flow-skipped-a-supported-junction cases =
+  read-chain territory.
+
+## Verdict
+No read-support threshold rule converts near-misses without breaking correct calls — same
+indistinguishability wall, confirmed from the both-axes near-miss angle. The ONLY orthogonal
+escape is **read-chain** (per-molecule collapse, no support threshold), which maps to the
+c_extend-supported 32% and the earlier flow_enumeration finding (project_readchain_flow_enum).
