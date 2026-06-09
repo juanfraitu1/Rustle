@@ -59,3 +59,36 @@ cause is identified and localized to the family stage.
 
 Tooling: `vg_regression_attribution.py`, `vg_regressions.json`. Baseline FSM
 `/tmp/strand_safety/all/*/off_fsm.txt`, VG FSM `perchrom/*/r_fsm.txt`.
+
+## ROOT CAUSE (2026-06-09, confirmed) — secondary pollution / over-collapse
+
+The drop mechanism is documented in `pipeline.rs:12127-12176` (the RUSTLE_VG_UNION_BASELINE
+block). At family/secondary-bearing bundles, **cross-mapped secondary reads pollute the splice
+graph**, and the assembly drops PRIMARY-supported isoforms that the primary-only (baseline ≡ ST)
+path keeps. The dropped isoform and the polluting secondaries are structurally indistinguishable
+(no junction-support strip separates them). A mega-bundle variant: secondaries bridge a gene to
+its neighbour into an unsplit read-through. This matches my attribution (family-scope, recovers
+on slice when the family doesn't form).
+
+## VALIDATED FIX DIRECTION — TARGETED post-process union (net-F1-POSITIVE)
+
+The `UNION_BASELINE` in-flow injection is "INCOMPLETE and NET-HARMFUL" (recovers ~6/13; the
+mega-bundle clone displaces real VG tx). The comment names the correct path: **post-process GTF
+union** (run primary-only baseline + vg, union by exact intron chain). Measured:
+
+| union scope | recall gain (FSM) | FP cost (non-annot) | recall:FP |
+|---|---:|---:|---:|
+| naive (ALL baseline novel chains) | 108 | 1047 | **0.10** (net-neg) |
+| **TARGETED (only over-collapse zones)** | **108** | **85** | **1.27 (net-POSITIVE)** |
+
+The naive union floods in baseline's GENOME-WIDE over-extraction → net-negative (why UNION_BASELINE
+was abandoned). Restricting to the over-collapse zones (secondary-bearing family loci — exactly
+UNION_BASELINE's `secondary-bearing bundle` filter) gives **recall:FP 1.27**, the first
+extraction-lever >1.0 of the whole investigation. Per-chrom confirm (NC_073247.2): union 1043 FSM
+= VG 1025 +18, recovers 17/17 regressions, loses no VG win. Genome-wide ceiling: VG 24373 → 24482
+(+108 over baseline).
+
+**Implementation choice (architectural — prior in-flow attempts failed, see Phase-4.5):** either
+(a) corrected post-process union scoped to secondary-bearing bundle spans, or (b) fix the in-flow
+re-bundle (the splitter on primary reads at secondary-bearing bundles). The targeting (secondary-
+bearing bundles) is the load-bearing requirement — naive/unscoped is net-negative.
