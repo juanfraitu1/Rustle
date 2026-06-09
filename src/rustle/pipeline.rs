@@ -707,6 +707,21 @@ fn intron_chain_from_exons_0based(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
 
 /// RUSTLE_VG_UNION_BASELINE: stamp a primary-only clone bundle's transcripts with the
 /// `UnionBaseline` rescue class so `is_rescue_protected` shields them from cross-bundle
+/// Read-weight majority strand for a fresh sub-bundle. The over-collapse re-bundle must derive
+/// strand from the sub-bundle's OWN reads — NOT inherit the parent mega-bundle's strand, which is
+/// the residual mis-assembly the clone path could not fix. Ties / empty default to '+'.
+fn majority_strand(strand_weights: impl Iterator<Item = (char, f64)>) -> char {
+    let (mut plus, mut minus) = (0.0f64, 0.0f64);
+    for (s, w) in strand_weights {
+        match s {
+            '+' => plus += w,
+            '-' => minus += w,
+            _ => {}
+        }
+    }
+    if minus > plus { '-' } else { '+' }
+}
+
 /// reconciliation (predcluster / subset-dedup), where the secondary-polluted VG
 /// transcripts would otherwise out-compete these primary-backed baseline isoforms.
 /// No-op for every non-clone bundle (so the default path is unaffected).
@@ -2395,6 +2410,14 @@ fn emit_trace_junction_decision_table(junction_stats: &JunctionStats, junction_t
 mod tests {
     use super::*;
     use crate::types::{Junction, JunctionStat, JunctionStats};
+
+    #[test]
+    fn majority_strand_picks_read_weighted_majority() {
+        assert_eq!(super::majority_strand([('+', 1.0), ('-', 3.0), ('-', 2.0)].into_iter()), '-');
+        assert_eq!(super::majority_strand([('+', 5.0), ('-', 1.0)].into_iter()), '+');
+        assert_eq!(super::majority_strand([('+', 1.0), ('-', 1.0)].into_iter()), '+');
+        assert_eq!(super::majority_strand(std::iter::empty()), '+');
+    }
 
     #[test]
     fn bad_mm_neg_donor_uses_probe_base() {
