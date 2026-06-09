@@ -97,6 +97,41 @@ graph_missing cases are a *different, deeper* lever (junction acceptance / graph
 The diagnostic succeeded: it prevented committing a high-risk flow rewrite that addresses only
 9% of the recall gap, and re-pointed at two larger, better-characterized levers.
 
+## ⚠ CORRECTION (2026-06-09): attribution had a junction-coordinate bug — parse_trflong verdict REVERSED
+
+The Phase 0 attribution (d) used the raw `junction_accept` (start,end) to test whether a ref
+intron is in rustle's graph. But `junction_accept` logs the **exon-flanking** convention
+`(intron_first-1, intron_last+1)`, NOT the intron-interior coords `ref_chain` emits. The raw
+comparison NEVER matched a multi-exon intron → every multi-exon non-generated miss fell to
+`graph_missing`, and the only "flow_enumeration" hits were the **vacuous 0-intron single-exon**
+cases. So the reported "graph_missing 193 / flow_enumeration 59" was an artifact.
+
+**Corrected attribution of the 252 non-generated** (`attribute.py` fixed to match both coord
+conventions + separate single-exon; verified end-to-end on NC_073224.2 XM_055373957.2: all 6
+junctions accepted, chain absent from path_extracted):
+
+| corrected cause | n | was (buggy) |
+|---|---:|---|
+| **flow_enumeration** (junctions in graph, flow didn't walk) | **190 (28% of 668)** | 59 |
+| single_exon (0 introns) | 59 | (mislabeled flow_enum) |
+| graph_missing (junction truly absent) | 3 | 193 |
+
+**This REVERSES the parse_trflong REDIRECT.** The flow-path-enumeration target is **190 chains
+(28% of the gap)** — comfortably ABOVE the 150 materiality bar, not 59 (9%). The gate's
+recall-ceiling condition now PASSES. `graph_missing` is negligible (3), NOT a lever.
+
+**Corrected 668 landscape:** 416 generated-then-filtered (62%) · 190 flow_enumeration (28%,
+parse_trflong) · 59 single_exon (9%) · 3 graph_missing.
+
+**Status of parse_trflong:** re-opened as a material lever (190). The recall ceiling passes; the
+OPEN question is the net-F1 feasibility — the precision cost of *generating* those 190 (how many
+spurious chains the completed seed/extension would also produce). That generation-precision-cost
+was never measured (the recall-oracle +1713-FP figure was for adopting ST's FULL extraction, a
+superset). That measurement is the real Phase-0.5 gate before committing the rewrite.
+
+`graph_missing_anatomy.py` is superseded (built on the buggy 193). Corrected tooling:
+`attribution_fixed.py`, fixed `attribute.py`.
+
 ## FOLLOW-UP (2026-06-09): filter-rescue lever (416) — FALSIFIED
 
 The Phase 0 separability AUC 0.78 was measured on the WRONG population (ST-extracted chains

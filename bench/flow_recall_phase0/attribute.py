@@ -11,7 +11,17 @@ def attribute_cause(ref_introns, rustle_junctions):
     return "flow_enumeration"
 
 def rustle_junctions(wd):
-    return {(j["start"], j["end"]) for j in lib.read_parity(f"{wd}/r.jsonl", "junction_accept")}
+    # FIX (2026-06-09): junction_accept logs (start,end) in the exon-flanking convention
+    # (intron_first-1, intron_last+1), NOT the intron-interior coords ref_chain emits. The
+    # original raw comparison NEVER matched -> every multi-exon miss fell to graph_missing
+    # (and only vacuous 0-intron single-exon cases matched -> false flow_enumeration). Emit
+    # BOTH conventions per junction so the match is robust regardless of logging site.
+    out = set()
+    for j in lib.read_parity(f"{wd}/r.jsonl", "junction_accept"):
+        s, e = j["start"], j["end"]
+        out.add((s, e))
+        out.add((s + 1, e - 1))
+    return out
 
 def main():
     census = {}
@@ -33,7 +43,10 @@ def main():
         ch = lib.ref_chain(m["chrom"], m["tid"])
         if ch is None:
             continue
-        c = attribute_cause(ch[2], rustle_junctions(wd))
+        if not ch[2]:
+            c = "single_exon"   # 0 introns: separate, not a vacuous flow_enumeration
+        else:
+            c = attribute_cause(ch[2], rustle_junctions(wd))
         cause[c] += 1
         rows.append({"chrom": m["chrom"], "tid": m["tid"], "cat": m["cat"], "cause": c})
     print("=== non-generation attribution ===")
