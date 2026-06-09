@@ -24,3 +24,16 @@ No read-support threshold rule converts near-misses without breaking correct cal
 indistinguishability wall, confirmed from the both-axes near-miss angle. The ONLY orthogonal
 escape is **read-chain** (per-molecule collapse, no support threshold), which maps to the
 c_extend-supported 32% and the earlier flow_enumeration finding (project_readchain_flow_enum).
+
+## CORRECTION via instrumented ST comparison (2026-06-09)
+Traced 3 altsplice near-misses where ST='=' / rustle=near-miss (NC_073227.2): all are tiny
+3-5bp alt-donor shifts. Instrumented junction_accept (both tools) on XM_055384841.2:
+BOTH tools accept BOTH donors with identical support — 48967721 (annotated, 40 reads) and
+48967718 (28 reads). **ST's path emits the higher-support donor (40 → annotated '='); rustle's
+flow emits the lower one (28 → near-miss).** So the divergence is PATH SELECTION (parse_trflong),
+NOT junction acceptance, and NOT the -E snap window (-E 0/5/10/30 all fail to recover).
+**KEY:** my earlier "altsplice support points the wrong way (85%)" used RAW BAM CIGAR counts —
+the WRONG metric. The tools' good-junction support (nreads_good/anchor) points toward the
+annotation. The altsplice rule may be VIABLE if re-measured with the tool's good-junction
+support. Re-measure: run both tools' junction_accept on the altsplice loci, compare ref-donor
+vs rustle-donor by nreads_good, check if "prefer higher good-support" matches annotation.
