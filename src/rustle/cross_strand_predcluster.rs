@@ -42,6 +42,17 @@ use crate::transcript_filter::retained_intron_score_with_covs;
 
 const DEFAULT_MIN_LOWINTRON_COV: f64 = 50.0;
 
+/// Strand-pure-minority cut-off recovery — ON by default. Recovers convergent
+/// minority-strand genes that combined-coverage bundling otherwise fragments and
+/// drops. Genome-wide validation (baseline `-L`, all 26 GGO contigs): +48 FSM
+/// (50 gains / 2 convergent-collision losses), precision neutral-to-positive,
+/// OOM-safe — see `bench/flow_recall_phase0/STRAND_PROMOTE_VALIDATION.md`.
+/// Opt out with `RUSTLE_STRAND_PURE_MINORITY_OFF`. The legacy opt-in
+/// `RUSTLE_STRAND_PURE_MINORITY` is still accepted (now a no-op; the pass is default-on).
+pub fn strand_pure_minority_enabled() -> bool {
+    std::env::var_os("RUSTLE_STRAND_PURE_MINORITY_OFF").is_none()
+}
+
 /// Group transcript indices by chromosome + overlapping span.
 /// Returns Vec<Vec<usize>> where each inner Vec is one cluster.
 fn group_by_overlap(transcripts: &[Transcript]) -> Vec<Vec<usize>> {
@@ -418,10 +429,96 @@ pub fn cross_strand_kri_filter(
         }
     }
 
-    if verbose && (n_killed > 0 || n_would_fire > 0) {
+    // Spare-gate (opt-in): never let cross-strand kills eliminate an ENTIRE
+    // same-strand multi-exon gene. A genuine convergent gene (e.g. OGFOD1/RPAIN)
+    // is swamped by a high-cov antisense neighbor: every one of its isoforms
+    // triggers the cross-strand retained-intron kill, so the locus loses the
+    // gene entirely while the antisense partner survives. Redundant isoforms and
+    // alternative-junction clutter are NOT affected — they overlap a same-strand
+    // sibling that survives, so the "all same-strand members dead" test is false.
+    // For each cluster+strand where every multi-exon member was killed, revive
+    // the best (most exons, then highest cov) so the gene survives via one isoform.
+    let mut n_revived = 0usize;
+    // The strand-pure-minority pass (RUSTLE_STRAND_PURE_MINORITY) recovers
+    // convergent minority genes that this filter would otherwise kill, so it
+    // auto-enables the sole-gene spare.
+    let spare_on = std::env::var_os("RUSTLE_CSKRI_SPARE_SOLE_GENE").is_some()
+        || strand_pure_minority_enabled();
+    if !dry_run && spare_on {
+        // min_exons=4 (>=3 introns): on GGO this halves antisense-collateral
+        // revivals (4 -> 2) versus min_exons=3 at zero cost to genuine recovery
+        // — the excluded 3-exon revivals are all chimeras, not real cut-offs.
+        let min_exons: usize = std::env::var("RUSTLE_CSKRI_SPARE_SOLE_MIN_EXONS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4);
+        // Read-support floor: a genuine swamped gene carries real read abundance
+        // (`longcov`, pre-flow-depletion transfrag count); an antisense chimera
+        // revived from the same wiped locus does not. longcov >= 3 drops ~14/16
+        // of the antisense-collateral revivals while keeping ~29/37 of the real
+        // genes (measured on GGO). Override with RUSTLE_CSKRI_SPARE_MIN_LONGCOV.
+        let min_longcov: f64 = std::env::var("RUSTLE_CSKRI_SPARE_MIN_LONGCOV")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3.0);
+        for cluster in &clusters {
+            for &strand in &['+', '-'] {
+                let members: Vec<usize> = cluster
+                    .iter()
+                    .cloned()
+                    .filter(|&k| {
+                        transcripts[k].strand == strand
+                            && transcripts[k].exons.len() >= min_exons
+                    })
+                    .collect();
+                if members.is_empty() || !members.iter().all(|&k| dead[k]) {
+                    continue; // gene survives via some isoform, or no multi-exon member
+                }
+                // Only revive read-backed candidates (drops antisense collateral).
+                let supported: Vec<usize> = members
+                    .iter()
+                    .cloned()
+                    .filter(|&k| transcripts[k].longcov >= min_longcov)
+                    .collect();
+                if supported.is_empty() {
+                    continue;
+                }
+                if let Some(&best) = supported.iter().max_by(|&&a, &&b| {
+                    transcripts[a]
+                        .exons
+                        .len()
+                        .cmp(&transcripts[b].exons.len())
+                        .then(
+                            transcripts[a]
+                                .coverage
+                                .partial_cmp(&transcripts[b].coverage)
+                                .unwrap_or(std::cmp::Ordering::Equal),
+                        )
+                }) {
+                    dead[best] = false;
+                    n_killed -= 1;
+                    n_revived += 1;
+                    if debug {
+                        let t = &transcripts[best];
+                        eprintln!(
+                            "[XSKRI] REVIVE sole-gene {}:{}-{}({}) cov={:.2} nex={}",
+                            t.chrom,
+                            t.exons.first().map(|e| e.0).unwrap_or(0),
+                            t.exons.last().map(|e| e.1).unwrap_or(0),
+                            t.strand,
+                            t.coverage,
+                            t.exons.len(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if verbose && (n_killed > 0 || n_would_fire > 0 || n_revived > 0) {
         eprintln!(
-            "    cross_strand_kri_filter: would_fire={} killed={} (dry_run={}, min_cov={})",
-            n_would_fire, n_killed, dry_run, min_cov
+            "    cross_strand_kri_filter: would_fire={} killed={} revived={} (dry_run={}, min_cov={})",
+            n_would_fire, n_killed, n_revived, dry_run, min_cov
         );
     }
 

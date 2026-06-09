@@ -12064,7 +12064,7 @@ pub fn run<P: AsRef<Path>>(
     // never assembles. Inject a synthetic bundle merging the minority strand's
     // reads across the fragments; the main loop assembles it in isolation and the
     // cross-strand spare-gate (auto-enabled below) protects the recovered gene.
-    if std::env::var_os("RUSTLE_STRAND_PURE_MINORITY").is_some() {
+    if crate::cross_strand_predcluster::strand_pure_minority_enabled() {
         inject_strand_pure_minority_bundles(&mut bundles, &config);
     }
 
@@ -17510,7 +17510,7 @@ pub fn run<P: AsRef<Path>>(
     // = the dominant antisense gene). Drops the intergenic (`u`) and antisense
     // (`x`) collateral while preserving the real recoveries. Normal transcripts
     // are untouched.
-    if std::env::var_os("RUSTLE_STRAND_PURE_MINORITY").is_some() {
+    if crate::cross_strand_predcluster::strand_pure_minority_enabled() {
         use crate::vg_family::diagnostic::RescueClass;
         let min_exons: usize = std::env::var("RUSTLE_STRAND_PURE_OUT_MIN_EXONS")
             .ok().and_then(|s| s.parse().ok()).unwrap_or(4);
