@@ -97,5 +97,26 @@ graph_missing cases are a *different, deeper* lever (junction acceptance / graph
 The diagnostic succeeded: it prevented committing a high-risk flow rewrite that addresses only
 9% of the recall gap, and re-pointed at two larger, better-characterized levers.
 
-Artifacts: `gen_census.jsonl`, `attribution.jsonl`, `separability_rows.jsonl`; harness in this
-directory; cache under `cache/` (gitignored).
+## FOLLOW-UP (2026-06-09): filter-rescue lever (416) — FALSIFIED
+
+The Phase 0 separability AUC 0.78 was measured on the WRONG population (ST-extracted chains
+rustle misses). The filter-rescue operation actually acts on **rustle's OWN generated-then-killed
+chains**. `rescue_feasibility.py` measured the correct population (per locus: rustle
+path_extracted = generated; rustle r.gtf = kept; killed = generated − kept; label real if
+annotated):
+
+- real-killed (annotated, want to rescue): **680** · spurious-killed (correctly killed): **5855**
+- **cov AUC(real > spurious) = 0.568** — essentially random. cov does NOT separate rustle's real
+  killed chains from spurious ones. (The 0.78 was an artifact of ST's extraction quality.)
+- cov-threshold sweep is net-F1-NEGATIVE everywhere: t≥3 rescues 147 real but adds 495 FP
+  (1:3.3); best ratio (t=50) rescues only 3.
+
+**Filter-rescue is DEAD** — same indistinguishability rock as chr19 / pathpat_flow_parity_scope,
+now confirmed genome-wide on the correct population. Two of the three redirect levers
+(parse_trflong, filter-rescue) are now no-gos. Only `graph_missing` (193) is untested — but the
+recurring pattern (real/spurious indistinguishable by available features) predicts it is also a
+Sn/Pr reshape. The one orthogonal, non-reshape recall win remains strand-aware bundling
+(`RUSTLE_STRAND_PURE_MINORITY`).
+
+Artifacts: `gen_census.jsonl`, `attribution.jsonl`, `separability_rows.jsonl`,
+`rescue_feasibility.py`; harness in this directory; cache under `cache/` (gitignored).
