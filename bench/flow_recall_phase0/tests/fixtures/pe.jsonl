@@ -1,0 +1,3 @@
+{"step":"_meta","tool":"rustle","payload":{"version":1}}
+{"step":"path_extracted","tool":"rustle","chrom":"chrA","start":100,"end":900,"strand":"+","payload":{"cov":3.6,"longcov":3.0,"entry_abund":2.0,"nexons":3,"seed_tf":7,"introns":"201-300,501-800"}}
+{"step":"junction_accept","tool":"rustle","chrom":"chrA","start":201,"end":300,"strand":"+","payload":{"accepted":true,"nreads":40}}
