@@ -1,29 +1,39 @@
-## Task 4 integration (NC_073224.2 rna-XM_063708549.1)
+# In-flow union-baseline re-bundle — notes
 
-OFF has chain: True
-ON  has chain: True
+## Task 4 integration (NC_073224.2 rna-XM_063708549.1) — slice can't reproduce
+Both OFF and ON byte-identical on the slice; flag didn't trigger (the over-collapse needs the
+full-chromosome family/secondary context, absent in a narrow slice — consistent with the 94%
+`context_only` attribution). Recovery validation must be genome-wide.
 
-union-baseline log: (no [VG-UNION-BASELINE] log lines emitted)
+## Task 5 genome-wide validation — RESULT: NET-NEGATIVE
 
-### Interpretation: DONE_WITH_CONCERNS
+5 high-regression chromosomes, full VG config (`--vg --vg-snp` + TANDEM + DECISIVE_GATE),
+opt-in `RUSTLE_VG_UNION_BASELINE=1`, gate `MIN_LONGCOV=2`:
 
-Both OFF and ON outputs are **byte-identical** (0 diff lines, 334 lines each).
-The flag `RUSTLE_VG_UNION_BASELINE=1` did not trigger on this locus slice — no
-`[VG-UNION-BASELINE]` log lines appeared in `/tmp/un.log`.
+| chrom | regressions | recovered | FP added | lost |
+|---|---:|---:|---:|---:|
+| NC_073247.2 | 17 | 3 | 2 | 0 |
+| NC_073229.2 | 15 | 0 | 2 | 0 |
+| NC_073242.2 | 14 | 0 | 81 | 0 |
+| NC_073224.2 | 13 | 0 | 91 | 0 |
+| NC_073228.2 | 10 | 0 | 39 | 0 |
+| **TOTAL** | 69 | **3** | **215** | 0 |
 
-The slice (NC_073224.2:39996000-40059000) already emits a transcript matching the
-reference intron chain in both modes (`RSTL.1.5`, 16 exons, chain_len=15). The
-over-collapse regression that drops `rna-XM_063708549.1` in the genome-wide run
-requires the full secondary/family cross-mapping context from surrounding
-paralog copies, which is absent in this narrow BAM slice.
+**recall:FP ≈ 0.01 — catastrophically net-negative.** NC_073247 (3 real / 2 FP) was an
+unrepresentative outlier. On the other four chromosomes the re-bundle recovers ZERO regressions
+but unions 39–91 read-supported-but-NON-ANNOTATED chains that pass the `longcov>=2` gate.
 
-The fix was not exercised on this slice. The real validation must come from
-the genome-wide run (next task, T12/T13) where the full over-collapse context
-is present.
+### Diagnosis
+The in-flow re-bundle (re-split secondary-bearing bundles' primary reads, assemble) produces many
+read-supported-but-spurious chains (wrong-strand / fragmented sub-bundle assemblies) the longcov
+gate can't separate from real recoveries — the same indistinguishability rock, on the GENERATION
+side. build-fresh made the assembly *clean* (strictly additive, 0 lost) but not *correct* (re-split
+fragments ≠ real baseline bundles).
 
-### Run details
-
-- Control (OFF): exit 0, RSTL.1.5 has chain
-- Treatment (ON):  exit 0, RSTL.1.5 has chain, outputs byte-identical to OFF
-- Flags used: RUSTLE_VG_TANDEM=1 RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS=1
-              RUSTLE_VG_DECISIVE_GATE=1 RUSTLE_VG_DECISIVE_GATE_MIN_PRIM=4
+### Verdict
+- The in-flow fix is committed (default-OFF, default byte-identical, suite 277/0) but is **NOT a
+  net-positive win** — stays opt-in/off, do NOT promote. "Ship in-flow now" is RETRACTED.
+- Architecture is wrong: re-split fragments ≠ real baseline assembly. The validated path is the
+  **post-process union** (separate clean full `baseline -L` run; union novel chains scoped to
+  family/secondary-bearing spans; primary-gated) — measured recall:FP **1.27**, 17/17 on
+  NC_073247. Uses the real baseline pipeline. Build that next.
