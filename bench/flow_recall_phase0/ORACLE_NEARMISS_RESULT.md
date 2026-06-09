@@ -37,3 +37,13 @@ the WRONG metric. The tools' good-junction support (nreads_good/anchor) points t
 annotation. The altsplice rule may be VIABLE if re-measured with the tool's good-junction
 support. Re-measure: run both tools' junction_accept on the altsplice loci, compare ref-donor
 vs rustle-donor by nreads_good, check if "prefer higher good-support" matches annotation.
+
+## Corrected altsplice sweep (rustle good-junction support, not raw BAM)
+ST-converts altsplice cases (ST='=', rustle near-miss) are RARE: only 6 across 4 chroms (most
+altsplice near-misses, BOTH tools miss). With rustle's junction_accept `mm` support:
+"prefer higher good-support at the shared boundary" matches annotation 3/6 (50%) — up from the
+raw-BAM 12% (confirming that metric was wrong), but STILL only 50% = not a separator. ST's
+parse_trflong path-selection is more nuanced than "prefer higher support." Lever is tiny (~40
+genome-wide) and 50/50 => no net both-axes gain. **altsplice rule = NOT VIABLE even corrected.**
+The instrumented comparison's value: corrected a wrong metric + localized the divergence to
+parse_trflong path-selection (junctions rustle already has), reconfirming the architectural lever.
