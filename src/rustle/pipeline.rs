@@ -720,6 +720,48 @@ fn majority_strand(strand_weights: impl Iterator<Item = (char, f64)>) -> char {
     if minus > plus { '-' } else { '+' }
 }
 
+/// Build a FRESH primary-only sub-bundle from re-split reads — every field set from the reads,
+/// nothing inherited from the (polluted) parent except `chrom`. This replaces the clone-and-patch
+/// path whose inherited `strand`/`hp_tag`/`ps_tag` caused ~7/13 over-collapse sub-bundles to
+/// mis-assemble. Tagged `UnionBaseline` so the end-stage union holds it out and unions it back by
+/// novel intron chain (strictly additive).
+fn build_fresh_baseline_subbundle(
+    parent: &crate::types::Bundle,
+    reads: Vec<crate::types::BundleRead>,
+    config: &RunConfig,
+) -> crate::types::Bundle {
+    let start = reads
+        .iter()
+        .filter_map(|r| r.exons.first().map(|e| e.0))
+        .min()
+        .unwrap_or(parent.start);
+    let end = reads
+        .iter()
+        .filter_map(|r| r.exons.last().map(|e| e.1))
+        .max()
+        .unwrap_or(parent.end);
+    let strand = majority_strand(reads.iter().map(|r| (r.strand, r.weight)));
+    let (junction_stats, junction_pair_stats) =
+        compute_initial_junction_stats_for_reads(&reads, start, end, config);
+    crate::types::Bundle {
+        chrom: parent.chrom.clone(),
+        start,
+        end,
+        strand,
+        reads,
+        junction_stats,
+        junction_pair_stats,
+        bundlenodes: None,
+        read_bnodes: None,
+        bnode_colors: None,
+        synthetic: false,
+        rescue_class: Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline),
+        vg_family_id: None,
+        hp_tag: None,
+        ps_tag: None,
+    }
+}
+
 /// RUSTLE_VG_UNION_BASELINE: stamp a primary-only clone bundle's transcripts with the
 /// `UnionBaseline` rescue class so `is_rescue_protected` shields them from cross-bundle
 /// reconciliation (predcluster / subset-dedup), where the secondary-polluted VG
@@ -12208,42 +12250,7 @@ pub fn run<P: AsRef<Path>>(
             for grp in crate::bundle::split_spans_by_runoff(&spans, runoff) {
                 let reads: Vec<crate::types::BundleRead> =
                     grp.iter().map(|&i| prim[i].clone()).collect();
-                let start = reads
-                    .iter()
-                    .filter_map(|r| r.exons.first().map(|e| e.0))
-                    .min()
-                    .unwrap_or(b.start);
-                let end = reads
-                    .iter()
-                    .filter_map(|r| r.exons.last().map(|e| e.1))
-                    .max()
-                    .unwrap_or(b.end);
-                let mut sub = b.clone();
-                sub.reads = reads;
-                sub.start = start;
-                sub.end = end;
-                // Cached graph structures belonged to the mega-bundle; the closure
-                // rebuilds from reads, but clear them for clarity/safety.
-                sub.bundlenodes = None;
-                sub.read_bnodes = None;
-                sub.bnode_colors = None;
-                sub.synthetic = false;
-                sub.vg_family_id = None;
-                sub.rescue_class =
-                    Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline);
-                // Rebuild BOTH junction_stats AND junction_pair_stats from the
-                // sub-bundle's own reads. recompute_junction_stats does only the
-                // former, so the clone otherwise keeps the mega-bundle's pair stats
-                // (spanning both genes) which the closure consumes → mis-assembly
-                // (the residual loci that assembled to nothing).
-                let (js, jps) = compute_initial_junction_stats_for_reads(
-                    &sub.reads,
-                    sub.start,
-                    sub.end,
-                    &config,
-                );
-                sub.junction_stats = js;
-                sub.junction_pair_stats = jps;
+                let sub = build_fresh_baseline_subbundle(b, reads, &config);
                 clones.push((next_idx, sub));
                 next_idx += 1;
             }
