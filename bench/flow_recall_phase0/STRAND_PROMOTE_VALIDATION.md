@@ -34,6 +34,23 @@ test chromosome.)
 Extrapolates to roughly +60 FSM genome-wide (26 chroms), consistent with the
 `cutoff_bundle_investigation` "+30 cut-offs / 57 rescuable."
 
+## GENOME-WIDE validation (all 26 chroms) — net +48 FSM / 2 losses
+
+`/tmp/strand_safety/allchrom.sh`, `-L` ± flag, gffcompare vs annotation:
+
+- **TOTAL: default 24,374 → flag 24,422 = net +48 FSM** (50 gains − 2 losses, ~25:1).
+- 24/26 chroms strictly net ≥ 0 with 0 losses; biggest gains NC_073234 +7, NC_073224 +6,
+  NC_086017 +6, NC_073244 +5. Peak RSS ≤2.1GB, no OOM.
+- **2 losses, both convergent-collision behavior** (the cut-off memory's predicted "5 collisions"):
+  - NC_073237.2: lost TRMT10B (−) — its annotated isoform displaced by rescuing the OVERLAPPING
+    convergent partner EXOSC3 (+) (25.18M overlap). A strand SWAP; chrom still net +1 (unrelated
+    clean gain PIERCE1). Inherent tradeoff of strand-aware assembly at a fully-overlapping pair.
+  - NC_073247.2: lost GLUD2 (+) at 132.69M — collision at its own locus (rescued partner didn't
+    FSM-match). Non-colocated with that chrom's gain (MAP3K15, 29.8M). Pure small collision cost.
+
+**Verdict: default-worthy.** +48 net, losses understood and minimal (~25:1), OOM-safe,
+precision neutral-to-positive. Proceed to flip with an opt-out env var.
+
 ## Promotion options
 1. Flip default (opt-OUT env var) — 3 gate sites: `cross_strand_predcluster.rs:435`,
    `pipeline.rs:12067`, `pipeline.rs:17513`. Validate all 26 chroms first OR trust the 8-chrom +
