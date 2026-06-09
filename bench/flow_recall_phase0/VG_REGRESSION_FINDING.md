@@ -35,13 +35,27 @@ VG emits NOTHING at the locus; baseline emits 8 transcripts incl. the FSM match.
   baseline — the copy-finding gain VG is supposed to deliver, currently masked by the leak.
 - **Directly answers "extend to VG for more isoforms."**
 
-## Caveat / next step (scoping)
+## ATTRIBUTION (2026-06-09) — cause = core --vg family processing, NOT a tunable gate
 
-The VG run carried extra precision flags (RUSTLE_VG_DECISIVE_GATE=1, TANDEM). Some of the 109
-regressions may be the decisive gate / family-graph / apportionment over-suppressing real
-baseline-recoverable transcripts (the gate trades recall for phantom-suppression). The next
-step is to attribute the 109 to their VG-pipeline cause:
-  - re-run VG with vs without each suppression flag on the regression loci, OR
-  - check whether the UnionBaseline rescue (meant to guarantee ⊇baseline) fires for them.
-Then fix the dominant cause. Tooling: this analysis reuses `/tmp/strand_safety/all/*/off_fsm.txt`
-(baseline) and `perchrom/*/r_fsm.txt` (VG); regression set is `baseline_off − VG` per chrom.
+Two-stage attribution (`vg_regression_attribution.py` slices + whole-chrom ±flag on NC_073247.2):
+
+**Slice stage (per-locus ±flag, n=109):** **102/109 (94%) are `context_only`** — full VG on the
+locus SLICE *recovers* the transcript. So the drop is NOT a per-locus gate (those reproduce on a
+slice); it's a **whole-chromosome-scale effect**. On a slice the paralog family doesn't form, so
+VG assembles the gene normally; on the full chromosome the locus is absorbed into a family.
+(core_vg 5, tandem 1, single_exon 1, decisive_gate 0.)
+
+**Whole-chromosome stage (NC_073247.2, 17 regressions):** removing `RUSTLE_VG_DECISIVE_GATE`
+recovers only **1 of the 17** regressions. It reaches baseline's FSM *count* (full 1025 →
+no-decisive 1036 = baseline 1036, +11) but via a **set reshuffle** — the +11 are mostly different
+(VG-specific) transcripts, not the regressions. So **the decisive gate is NOT the cause** (and
+relaxing it just trades for phantoms).
+
+**Conclusion:** the 109 regressions are **core `--vg` family processing** — when a gene is pulled
+into a paralog family at whole-chromosome scale, the family apportionment/merge/scope drops it.
+This is NOT a removable flag; the fix is in VG family construction/apportionment (connects to the
+`vg/flow-capacity-apportionment` branch + the O5/borrow work). Harder than a gate flip, but the
+cause is identified and localized to the family stage.
+
+Tooling: `vg_regression_attribution.py`, `vg_regressions.json`. Baseline FSM
+`/tmp/strand_safety/all/*/off_fsm.txt`, VG FSM `perchrom/*/r_fsm.txt`.
