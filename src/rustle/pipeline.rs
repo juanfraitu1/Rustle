@@ -705,8 +705,6 @@ fn intron_chain_from_exons_0based(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
     out
 }
 
-/// RUSTLE_VG_UNION_BASELINE: stamp a primary-only clone bundle's transcripts with the
-/// `UnionBaseline` rescue class so `is_rescue_protected` shields them from cross-bundle
 /// Read-weight majority strand for a fresh sub-bundle. The over-collapse re-bundle must derive
 /// strand from the sub-bundle's OWN reads — NOT inherit the parent mega-bundle's strand, which is
 /// the residual mis-assembly the clone path could not fix. Ties / empty default to '+'.
@@ -722,6 +720,8 @@ fn majority_strand(strand_weights: impl Iterator<Item = (char, f64)>) -> char {
     if minus > plus { '-' } else { '+' }
 }
 
+/// RUSTLE_VG_UNION_BASELINE: stamp a primary-only clone bundle's transcripts with the
+/// `UnionBaseline` rescue class so `is_rescue_protected` shields them from cross-bundle
 /// reconciliation (predcluster / subset-dedup), where the secondary-polluted VG
 /// transcripts would otherwise out-compete these primary-backed baseline isoforms.
 /// No-op for every non-clone bundle (so the default path is unaffected).
