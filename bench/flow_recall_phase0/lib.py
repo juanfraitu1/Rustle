@@ -1,7 +1,8 @@
 """Shared helpers for the Phase 0 flow-recall diagnostic."""
-import json, os, re, subprocess
+import json, os, re, subprocess  # subprocess used by ensure_locus_logs (Task 2)
 
-ROOT = "/mnt/c/Users/jfris/Desktop/Rustle"
+# Repo root derived from this file's location (bench/flow_recall_phase0/lib.py).
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RG = f"{ROOT}/bench/copy_recovery_eval/results_genomewide"
 PERCHROM = f"{RG}/perchrom"
 CACHE = f"{ROOT}/bench/flow_recall_phase0/cache"
@@ -13,17 +14,18 @@ def parse_gtf(path):
     tx = {}
     if not os.path.exists(path):
         return tx
-    for line in open(path):
-        if line.startswith("#"):
-            continue
-        f = line.rstrip("\n").split("\t")
-        if len(f) < 9 or f[2] != "exon":
-            continue
-        m = re.search(r'transcript_id "([^"]+)"', f[8])
-        if not m:
-            continue
-        d = tx.setdefault(m.group(1), {"strand": f[6], "chrom": f[0], "exons": []})
-        d["exons"].append((int(f[3]), int(f[4])))
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 9 or f[2] != "exon":
+                continue
+            m = re.search(r'transcript_id "([^"]+)"', f[8])
+            if not m:
+                continue
+            d = tx.setdefault(m.group(1), {"strand": f[6], "chrom": f[0], "exons": []})
+            d["exons"].append((int(f[3]), int(f[4])))
     for d in tx.values():
         d["exons"].sort()
         ex = d["exons"]
@@ -42,11 +44,12 @@ def read_parity(path, step):
     out = []
     if not os.path.exists(path):
         return out
-    for line in open(path):
-        try:
-            o = json.loads(line)
-        except ValueError:
-            continue
-        if o.get("step") == step:
-            out.append(o)
+    with open(path) as fh:
+        for line in fh:
+            try:
+                o = json.loads(line)
+            except ValueError:
+                continue
+            if o.get("step") == step:
+                out.append(o)
     return out
