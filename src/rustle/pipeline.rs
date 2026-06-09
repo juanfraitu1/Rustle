@@ -19380,10 +19380,17 @@ pub fn run<P: AsRef<Path>>(
             .map(|t| chain_of(t))
             .collect();
         let mut seen: std::collections::HashSet<Vec<(u64, u64)>> = std::collections::HashSet::new();
+        let min_longcov: f64 = std::env::var("RUSTLE_VG_UNION_BASELINE_MIN_LONGCOV")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2.0);
         let mut added = 0usize;
         for mut t in std::mem::take(&mut union_baseline_holdout) {
             if t.exons.len() < 2 {
                 continue;
+            }
+            if t.longcov < min_longcov {
+                continue; // primary-support gate: only union real primary-backed dropped isoforms
             }
             let chain = chain_of(&t);
             if vg_chains.contains(&chain) || !seen.insert(chain) {
