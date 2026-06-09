@@ -123,11 +123,15 @@ recall-ceiling condition now PASSES. `graph_missing` is negligible (3), NOT a le
 **Corrected 668 landscape:** 416 generated-then-filtered (62%) · 190 flow_enumeration (28%,
 parse_trflong) · 59 single_exon (9%) · 3 graph_missing.
 
-**Status of parse_trflong:** re-opened as a material lever (190). The recall ceiling passes; the
-OPEN question is the net-F1 feasibility — the precision cost of *generating* those 190 (how many
-spurious chains the completed seed/extension would also produce). That generation-precision-cost
-was never measured (the recall-oracle +1713-FP figure was for adopting ST's FULL extraction, a
-superset). That measurement is the real Phase-0.5 gate before committing the rewrite.
+**Status of parse_trflong (RESOLVED — still no-go, now for the right reason):** the recall
+ceiling passes (190, material), so the generation-precision-cost gate was measured
+(`flow_enum_precision.py`): at the 190 flow_enumeration loci, adopting ST's extraction recovers
+**203 real chains** but adds **715 non-annotated FP collateral** = **recall:FP 0.28** (worse than
+the all-668 0.39). **Net-F1-NEGATIVE — ~3.5 collateral FPs per real chain.** Same
+indistinguishability rock: making the flow extract these chains floods in collateral the metric
+counts as FPs (ST itself over-extracts 715 here). So parse_trflong stays a no-go — but the
+correct reason is the generation precision-cost, NOT the buggy "9% ceiling." The bug correction
+restored integrity without changing the build decision.
 
 `graph_missing_anatomy.py` is superseded (built on the buggy 193). Corrected tooling:
 `attribution_fixed.py`, fixed `attribute.py`.
