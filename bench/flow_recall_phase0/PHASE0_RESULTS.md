@@ -1,0 +1,101 @@
+# Phase 0 flow-recall diagnostic — RESULTS
+
+**Date:** 2026-06-09
+**Spec:** `docs/superpowers/specs/2026-06-09-parse-trflong-flow-recall-scope.md`
+**Plan:** `docs/superpowers/plans/2026-06-09-flow-recall-phase0.md`
+**Input:** 668 st_only misses (annotated isoforms ST recovers, rustle misses), all 668 captured
+cross-tool (baseline `-L`, per-locus slices). No OOM (18 GB free throughout).
+
+## Headline: literal gate = PROCEED, but the honest verdict for the parse_trflong work is STOP/REDIRECT
+
+The `gate_report` script printed **PROCEED** (ceiling 668 ≥ 150, discriminator AUC 0.78).
+**That verdict is overstated** — it used the full 668 st_only as the recall ceiling, which
+conflates three different mechanisms. The attribution shows the `parse_trflong` flow-generation
+work targets only **59** of them.
+
+## (a) Generation census — 416 generated / 252 non-generated
+
+Of the 668 misses, **62% (416) ARE generated** by rustle's flow (the exact ref chain appears
+in `path_extracted`) and then die in a downstream filter. Only **38% (252) are true
+non-generation.** (The container-only probe had estimated ~50% non-gen; genome-wide it's 38%.)
+
+| category | generated | non_generated |
+|---|---:|---:|
+| partial_multi | 188 | 80 |
+| altsplice_1junc | 100 | 41 |
+| no_overlap | 63 | 11 |
+| container | 43 | 43 |
+| contained | 16 | 12 |
+| no_shared_introns | 6 | 5 |
+| single_exon | 0 | 59 |
+| partial_disjoint_1junc | 0 | 1 |
+
+(single_exon is entirely non-generated, as expected — rustle emits no single-exon tx.)
+
+## (b) Recall-oracle ceiling + precision cost
+
+- Current rustle FSM (genome-wide): **24,373**. Ceiling if rustle adopted ST's extraction
+  exactly: **25,041 (+668)**.
+- **Precision cost: 1,713** ST-extracted non-annotated chains at the miss loci would be added
+  as FPs. **Crude recall:FP ratio = 668:1713 = 0.39** — naively matching ST's extraction adds
+  ~2.6 spurious chains per real chain recovered. Net-F1-negative without a discriminator.
+
+## (c) Separability — moderate discriminator exists
+
+Among ST-extracted chains rustle misses (real=316 annotated, spurious=2152 unannotated):
+
+| feature | AUC(real > spurious) |
+|---|---:|
+| cov | **0.782** |
+| longcov | 0.765 |
+| entry_abund | 0.765 |
+| nexons | 0.575 |
+
+Coverage separates real from spurious at **AUC ~0.78** — a *moderate* discriminator (clears
+the 0.70 bar but is far from clean; any threshold still mixes substantial FPs). This is more
+hopeful than the prior precision-direction finding (which found no discriminator via
+min_jct_mm), but 0.78 is not strong enough to make naive adoption net-positive on its own.
+
+## (d) Attribution of the 252 non-generated — THE decisive number
+
+| cause | n | % of non-gen |
+|---|---:|---:|
+| **graph_missing** (a ref intron absent from rustle's junction_accept) | 193 | 77% |
+| **flow_enumeration** (junctions present, flow didn't walk the chain) | 59 | 23% |
+
+**Only the 59 flow_enumeration cases are the `parse_trflong` seed/extension target.** The 193
+graph_missing cases are a *different, deeper* lever (junction acceptance / graph construction).
+
+## Synthesis — the 668 gap decomposes into THREE mechanisms, not one
+
+| mechanism | n | % | lever | parse_trflong? |
+|---|---:|---:|---|---|
+| generated-then-filtered | 416 | 62% | downstream filters (retained_intron / isofrac) | NO |
+| graph_missing | 193 | 29% | junction acceptance / graph construction | NO |
+| flow_enumeration | 59 | 9% | parse_trflong seed_order_st / update_abundance_st | **YES** |
+
+## Verdict for the parse_trflong flow work: REDIRECT (do not commit the rewrite)
+
+- The `parse_trflong`-specific ceiling is **~59 chains (9% of the gap)** — **below** the 150
+  materiality bar the spec pre-registered. The literal PROCEED was an artifact of the gate
+  using 668 (total st_only) instead of 59 (flow-attributable) as the ceiling.
+- Completing `seed_order_st` + `update_abundance_st` is a high-risk core-flow rewrite for a
+  ~59-chain ceiling. Not worth it on these numbers.
+
+**What the diagnostic redirected us toward (the real recall mass):**
+1. **Generated-then-filtered (416, 62%)** — the largest lever, and unlike chr19 it now has a
+   *moderate* discriminator (cov AUC 0.78 on this population). This is the filter side
+   (retained_intron/isofrac) we found hard before — but the 0.78 signal is worth a fresh,
+   recall-framed look: can a cov-gated rescue of generated-but-killed annotated chains net out
+   F1-positive? Most tractable next probe.
+2. **graph_missing (193, 29%)** — a newly-surfaced lever: rustle's junction acceptance / graph
+   construction drops junctions ST keeps. Distinct from both filters and parse_trflong; its own
+   precision risk (accepting more junctions → more FPs). Worth a separate characterization.
+3. **flow_enumeration (59, 9%)** — the parse_trflong target; smallest. Park unless 1 & 2 are
+   exhausted.
+
+The diagnostic succeeded: it prevented committing a high-risk flow rewrite that addresses only
+9% of the recall gap, and re-pointed at two larger, better-characterized levers.
+
+Artifacts: `gen_census.jsonl`, `attribution.jsonl`, `separability_rows.jsonl`; harness in this
+directory; cache under `cache/` (gitignored).
