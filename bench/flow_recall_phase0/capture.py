@@ -4,7 +4,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib
 
 def main():
-    misses = [json.loads(l) for l in open(f"{lib.RG}/st_only_classified.jsonl")]
+    with open(f"{lib.RG}/st_only_classified.jsonl") as fh:
+        misses = [json.loads(l) for l in fh]
     done = 0
     for i, m in enumerate(misses):
         wd = lib.ensure_locus_logs(m["chrom"], m["tid"])

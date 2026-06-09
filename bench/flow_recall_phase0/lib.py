@@ -98,5 +98,7 @@ def ensure_locus_logs(chrom, tid, pad=8000):
     subprocess.run(["samtools", "index", sb], stderr=subprocess.DEVNULL)
     _run_tool(RUSTLE, "RUSTLE_PARITY_LOG", sb, chrom, f"{wd}/r.gtf", f"{wd}/r.jsonl")
     _run_tool(ST, "STRINGTIE_PARITY_LOG", sb, chrom, f"{wd}/s.gtf", f"{wd}/s.jsonl")
+    # No check=True: a tool failure should not abort the 668-locus resumable sweep.
+    # Analyses tolerate empty logs; a missing-.done locus is simply re-run next pass.
     open(f"{wd}/.done", "w").close()
     return wd
