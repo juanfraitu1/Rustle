@@ -1316,6 +1316,30 @@ gated-fix + measure per the §6p worklist.
 
 ---
 
+## §6r — Component 2 fix #2 (accepted_onpath) FALSIFIED; remaining tail (2026-06-10)
+
+After fix #1 (§6q), re-characterized the post-fix-#1 canonical state (181/122 vs default 186/104):
+- 21 canonical-only-FP ADDED (was 69): 11 flow-sourced + **10 checktrf-sourced**, cov median 1.23, heterogeneous.
+- 28 ST-shared REMOVED (recall, was 56): each locus has 3-8 overlapping canonical chains (fragmentation).
+
+**Fix #2 candidate (workflow's #2 suspect) = `accepted_onpath` sink relaxation (parse_trflong_st.rs:466).**
+Gated it off (require ST-strict `tf_first==i`): **NET-NEGATIVE — canonical 181→181 (no benefit),
+default ST-only 104→111 (−7 recall via the soft gate).** `accepted_onpath` admits REAL paths; it is
+load-bearing, not a truncation bug. Reverted (kept on). Same pattern as Approaches A/B: an
+ST-strict-ification removes recall. A code-reading hypothesis again falsified by measurement.
+
+**Remaining tail is diminishing-returns + partly load-bearing:** 10/21 ADDED FPs are checktrf-sourced
+(Approach B proved checktrf is load-bearing — gating it over-kills); the 11 flow-sourced ADDED + 28
+REMOVED are a heterogeneous back/fwd tail (no single dominant mechanism like fix #1's free-sink
+shortcut) requiring per-locus first-divergence whack-a-mole. Per the §6p pre-registered convergence
+fork (fix #2 did not reduce the divergence), this is the caution signal. **Fix #1 (free-sink) was the
+dominant clean lever (223→181, +1 default FP removed); the tail past it converges slowly with high
+risk of re-hitting the load-bearing wall.** Next-session options: (a) continue per-locus tracing of
+the 11 flow-sourced ADDED, (b) genome-wide-validate the shipped fix #1 default change (187→186), or
+(c) checkpoint here. Tooling: bench/canonical_divergence.py; data /tmp/ru_canon.* vs /tmp/stP.*.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):

@@ -463,6 +463,11 @@ pub fn fwd_to_sink_fast_long_st(
                             // confirms the transfrag is compatible with the actual path
                             // (handles exonic extension nodes with no reads starting there).
                             let accepted_exact = tf_first == i && *maxpath <= i;
+                            // §6r: accepted_onpath relaxes ST's strict sink rule (ST fwd 2D(a)
+                            // requires tf_first==i) by admitting an earlier-starting transfrag.
+                            // TESTED gating it off (RUSTLE_CANON_ONPATH_SINK): NET-NEGATIVE — no
+                            // canonical benefit (181→181), -7 default recall via the soft gate.
+                            // It is load-bearing (admits real paths), NOT a truncation bug. Kept on.
                             let accepted_onpath = !accepted_exact
                                 && tf_first < i
                                 && *maxpath <= i
