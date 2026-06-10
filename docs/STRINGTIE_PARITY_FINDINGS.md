@@ -1370,6 +1370,43 @@ whole-genome OOM avoidance) is the protocol for future flow-port default-change 
 
 ---
 
+## §6t — Layered flow-input parity: the flow-port ceiling is ~12 chains (2026-06-10)
+
+Question (user): can we ensure everything ENTERING the flow (bundles, bundlenodes, junctions,
+graph) is the same between rustle and ST? Built a layered parity harness (`bench/flow_input_parity.py`)
+from the existing structural parity events (both tools emit `junction_raw`/`good_junction`/
+`bundlenode_list`/`graphnode_list`/`graph_edge`/`transfrag_pre_depl`).
+
+### The flow inputs are NOT the same — divergence starts at the junction layer
+Entity-level (chr19): rustle good-junctions = **7,319**, a STRICT SUBSET of ST's **17,477** (rustle
+has 41.9%; ST keeps 10,158 more, the deliberate permissive-early architecture, `project_junction_parity`).
+Cascades: rustle graph 3,796 nodes vs ST 3,430; transfrags 10,526 vs 7,982. **Each tool's flow runs
+on a different graph.**
+
+### Partition of the rustle-only chains: 93% GRAPH-rooted, 7% flow-rooted
+Precise criterion: a rustle-only chain is GRAPH-rooted if an ST good-junction rustle LACKS lands
+strictly inside one of the chain's exons (rustle's & ST's graphs differ in node structure there →
+different flow INPUTS). FLOW-rooted if all exons are intact in ST's graph (same local structure →
+ST's flow simply selected differently).
+
+| population | total | graph-rooted | flow-rooted |
+|------------|-------|--------------|-------------|
+| canonical-only | 181 | **169 (93%)** | **12 (7%)** |
+| default rustle-only | 186 | 173 (93%) | 13 (7%) |
+
+### Conclusion — measures the flow-port's hard ceiling
+**93% of the rustle-vs-ST chain divergence is rooted in the GRAPH (the junction-acceptance
+architecture), not the flow algorithm.** No flow-port fix (back/fwd/long_max_flow) can touch the 169
+graph-rooted chains — they exist because rustle's graph is built from a different (subset) junction
+set. Closing them = matching ST's junctions = the PROVEN precision catastrophe (`project_junction_parity`,
+`RUSTLE_ST_SHADOW`). **The flow-port's entire addressable target is ~12 chains (7%).** Fix #1
+(free-sink, §6q/§6s) was a real canonical-specific win, but the path to ST-parity past it is 93%
+architectural. The user's instinct was correct: input parity, not the flow algorithm, dominates the
+residual gap — and it is deliberately, load-bearingly different. RECOMMEND treating the flow-port as
+at its ceiling; the harness encapsulates the input-parity check for any future flow comparison.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
