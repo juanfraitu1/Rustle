@@ -1479,7 +1479,19 @@ DOES independently-store no-match transfrags (713 `independent_store` on GGO_19)
 them was FAITHFUL to ST's -L behavior, not a deviation. (Approach B was still correctly falsified by
 *validation* — the over-kill — so the disposition is unchanged; only the §6o code-reading rationale
 was wrong, caught immediately by the new instrumentation. This is exactly the infra's purpose.)
-Remaining infra to add (next): `transfrag_drop` + `junction_demote` on the ST side.
+**ALL 4 categories DONE (submodule commit de161a2):**
+- `transfrag_drop` {reason,abund,introns} at process_transfrags keeptrf guide-elimination
+  (contained_in_guide / containing_guide / low_abundance). ⚠ Fires only in GUIDED mode — de-novo
+  `-L` has no guides, so it emits 0; de-novo transfrag consolidation is already covered by
+  `transfrag_collapse` (both tools, ST 7250 / rustle 10526). rustle's de-novo transfrag_drop fires
+  on `under_thr` (151) — an implicit readthr-skip in ST with no clean event; aligning that is a
+  future refinement.
+- `junction_demote`: NOT a new event — ST's `junction_accept` already emits every junction with
+  `accepted` (false = demoted). Enriched it with a categorical `reason` (strand_zero/mm_negative/ok)
+  mirroring rustle, so demotion reasons diff directly. Verified: {ok:17488, strand_zero:1541}.
+ST output byte-identical throughout (emit-only; 1845 tx, 0/0 chain-diff). Net: ST now emits the
+checktrf/seed/transfrag/demotion decision events rustle already had — the parity stream is
+integrated across all four categories for future ST-alignment diffing.
 
 ---
 
