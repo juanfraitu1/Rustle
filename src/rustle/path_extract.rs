@@ -598,6 +598,29 @@ pub enum SeedOutcome {
     Stored(usize),
 }
 
+/// StringTie-faithful checktrf store gate (rlink.cpp:10369/10413).
+///
+/// In StringTie, a multi-node long-read transfrag with no kept-path match is handled by the
+/// `if(!shortread && nodes.Count()>1)` redistribute-only branch; the independent-store `else`
+/// branch is structurally unreachable for such transfrags, so they are NEVER stored as a new
+/// prediction. Rustle historically fell through and stored them (the checktrf rustle-only FP
+/// chains, ~48 on chr19). This predicate returns `true` when rustle should DROP (not store) the
+/// transfrag, matching StringTie.
+///
+/// Returns `false` (keep) for the cases StringTie's `else` branch DOES store/handle: short-read
+/// or single-node (`n_inner_nodes <= 1`) transfrags, guides, and `csr_triggered` chimeric-suffix
+/// folds. `rescue_opt_out` is the `RUSTLE_CHECKTRF_MULTINODE_RESCUE` env opt-out (`true` restores
+/// the old store-it behavior).
+fn checktrf_multinode_no_match_drop(
+    is_shortread: bool,
+    n_inner_nodes: usize,
+    csr_triggered: bool,
+    is_guide: bool,
+    rescue_opt_out: bool,
+) -> bool {
+    !rescue_opt_out && !is_shortread && n_inner_nodes > 1 && !csr_triggered && !is_guide
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LongRecSummary {
     pub attempted: usize,
@@ -12134,5 +12157,48 @@ mod capacity_confidence_tests {
             let abundance_min = coverage * cc;
             assert!(abundance_min <= coverage + 1e-9, "abundance_min {abundance_min} > coverage {coverage}");
         }
+    }
+}
+
+#[cfg(test)]
+mod checktrf_gate_tests {
+    use super::checktrf_multinode_no_match_drop;
+
+    // multi-node long-read, non-guide, non-csr, opt-out unset -> DROP (the fix)
+    #[test]
+    fn drops_multinode_longread_no_match() {
+        assert!(checktrf_multinode_no_match_drop(false, 2, false, false, false));
+        assert!(checktrf_multinode_no_match_drop(false, 9, false, false, false));
+    }
+
+    // short-read transfrag -> KEEP (StringTie's else branch stores it)
+    #[test]
+    fn keeps_shortread() {
+        assert!(!checktrf_multinode_no_match_drop(true, 5, false, false, false));
+    }
+
+    // single inner node -> KEEP (nodes.Count() <= 1)
+    #[test]
+    fn keeps_single_node() {
+        assert!(!checktrf_multinode_no_match_drop(false, 1, false, false, false));
+        assert!(!checktrf_multinode_no_match_drop(false, 0, false, false, false));
+    }
+
+    // guide -> KEEP (StringTie always recovers guides)
+    #[test]
+    fn keeps_guide() {
+        assert!(!checktrf_multinode_no_match_drop(false, 4, false, true, false));
+    }
+
+    // csr_triggered chimeric-suffix fold -> KEEP (legitimate RUSTLE_CSR_FOLD case)
+    #[test]
+    fn keeps_csr_triggered() {
+        assert!(!checktrf_multinode_no_match_drop(false, 4, true, false, false));
+    }
+
+    // opt-out env set -> KEEP (restore old store-it behavior)
+    #[test]
+    fn keeps_when_opt_out() {
+        assert!(!checktrf_multinode_no_match_drop(false, 4, false, false, true));
     }
 }
