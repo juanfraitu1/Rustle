@@ -1340,6 +1340,36 @@ the 11 flow-sourced ADDED, (b) genome-wide-validate the shipped fix #1 default c
 
 ---
 
+## §6s — Fix #1 genome-wide validation → re-scoped CANONICAL-ONLY (2026-06-10)
+
+§6q shipped the free-sink fix default-on after chr19 showed default 187→186 (−1 FP). Genome-wide
+validation (5 size-diverse chroms via per-chrom slices of `../GGO.bam`; whole-genome `-L` OOMs at
+~18GB so per-chrom serial is required) MEASURED the default-mode effect (the soft-gate coupling)
+and it does NOT generalize:
+
+| chrom | fix removes (FP/TP) | fix adds (FP/TP) | net FP | net TP |
+|-------|------|------|------|------|
+| NC_073224.2 | 6 (5/1) | 11 (8/3) | +3 | +2 |
+| NC_073234.2 | 3 (3/0) | 2 (2/0) | −1 | 0 |
+| NC_073231.2 | 3 (3/0) | 1 (1/0) | −2 | 0 |
+| NC_073240.2 | 4 (3/1) | 9 (9/0) | +6 | −1 |
+| NC_086018.1 | 4 (3/1) | 4 (3/1) | 0 | 0 |
+| **sum (+chr19 −1FP)** | | | **+5 FP** | **+1 TP** |
+
+**The default change is NET-NEGATIVE on precision genome-wide** (+5 FP for +1 TP); the chr19 −1 FP
+was unrepresentative. The default soft gate (which runs the `_st` fwd on a clone) is sensitive to the
+`_st` give-up behavior in a way that adds FPs at most loci when the shortcut is removed.
+
+**Re-scoped CANONICAL-ONLY** (`parse_trflong_st.rs:375`): the shortcut is gated `!canonical_active()`
+→ KEPT in default (incl. the soft-gate clone, where canonical_active()=false) so default is
+byte-identical (187 restored, verified independent of `RUSTLE_CANON_FREESINK`), and removed ONLY in
+canonical extraction (223→181 preserved). This is option B from the §6q decision — the genome-wide
+data overrode the chr19-based "keep default-on" choice. The flow-port returns to its spec discipline:
+default byte-identical, all `_st` improvements canonical-gated. Validation method (per-chrom serial,
+whole-genome OOM avoidance) is the protocol for future flow-port default-change checks.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):

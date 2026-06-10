@@ -367,15 +367,17 @@ pub fn fwd_to_sink_fast_long_st(
                 // a transfrag. In ST, artificial sink transfrags always enable this, but
                 // they can be depleted in rustle's flow model. This preserves parity.
                 //
-                // ⚠ §6p: this shortcut diverges from ST (fwd 2D(a) requires a live transfrag
-                // with tf_first==i && maxpath<=i) and manufactures low-cov near-duplicate 3'
-                // truncations (the canonical 223-vs-187 regression). DEFAULT-GATED OFF: the
-                // sink-closure now goes through the transfrag-scoring block (~451) like ST.
-                // Opt back in to the old shortcut with RUSTLE_CANON_FREESINK=1.
-                if c == sink_id
-                    && *maxpath <= i
-                    && std::env::var_os("RUSTLE_CANON_FREESINK").is_some()
-                {
+                // ⚠ §6q/§6s: this shortcut diverges from ST (fwd 2D(a) requires a live
+                // transfrag with tf_first==i && maxpath<=i) and manufactures low-cov
+                // near-duplicate 3' truncations (the canonical 223-vs-187 regression).
+                // Removing it improves canonical (223→181) but is NET-NEGATIVE in DEFAULT
+                // (+5 FP / +1 TP genome-wide via the ST-port soft gate, §6s). So it is gated
+                // CANONICAL-ONLY: kept ON in default (incl. the soft-gate clone path, where
+                // canonical_active() is false) for default byte-identity; removed ONLY in
+                // canonical extraction. Opt back into canonical too with RUSTLE_CANON_FREESINK=1.
+                let freesink_active = !canonical_active()
+                    || std::env::var_os("RUSTLE_CANON_FREESINK").is_some();
+                if c == sink_id && *maxpath <= i && freesink_active {
                     maxc = c as i64;
                     tmax = -1;
                     reach = true;
