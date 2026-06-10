@@ -1222,6 +1222,47 @@ the workflow surfaced. That is the next (deferred, multi-session) target. Spec/p
 
 ---
 
+## §6p — Canonical flow-port regression characterized (Component 1, 2026-06-09)
+
+Flow-parity Component 1 (spec `2026-06-09-flow-enumeration-parity-port-design.md`): characterize why
+`RUSTLE_PARSE_TRFLONG_ST_CANONICAL=1` regresses (223 rustle-only / 144 ST-only, vs default 187/104).
+Tooling: `bench/canonical_divergence.py`, path-level trace from the path_extracted logs.
+
+### The regression is bidirectional
+3-way chain-set diff (default / canonical / ST vs `../GGO_genomic.gff` NC_073243.2):
+- canonical **ADDS 87** chains vs default: 16 ST-shared (converging) / **69 canonical-only-FP
+  (regressing)** / 2 canonical-only-TP.
+- canonical **REMOVES 91**: **56 ST-shared (recall lost → ST-only 104→144)** / 9 RefSeq-TP.
+- canonical extracts **5883 path_extracted events** vs ST 5199 / default 5098 (same 10526 seeds) —
+  it OVER-extracts paths.
+
+### Root mechanism: long_max_flow_st under-depletes (ONE shared bug, not 49 causes)
+The 71 canonical-only additions cluster across 49 loci (38 singletons, 11 multi). Path-level trace
+at the top 3 loci (44156486-, 19115694-, 22459860-) shows the SAME mechanism at each: canonical
+extracts MORE paths than BOTH ST and default, and the extras are **low-cov (<1.0) near-duplicate
+sub-paths of the dominant backbone, clustered just at/below cov 1.0** (e.g. locus 22459860:
+canonical 27 paths / 19 low-cov vs default 15/6 vs ST 11). ST and default both deplete these residual
+sub-paths away; `long_max_flow_st` leaves ~1.0 residual flux and keeps extracting them (they pass the
+min_cov_gate 0.15 store gate). So canonical is LESS parsimonious than both ST and default — a
+depletion/stopping defect in `long_max_flow_st`, not a pervasive multi-cause divergence.
+
+### VERDICT: close-but-broken → DEBUG the existing port
+The 49-loci scatter is one shared depletion bug, so a single fix in `long_max_flow_st`
+(`src/rustle/parse_trflong_st.rs:991`) — correct the abundance/nodecov depletion so dominant-backbone
+sub-paths drop below the flux/store threshold like ST's `long_max_flow` (rlink.cpp:9856, 9926/9939
+nodecov depletion) — should converge most of the 49 loci. Component 2 = trace + fix that depletion,
+canonical-gated, measured at `bench/gtf_chain_diff.py /tmp/ru_canon.gtf /tmp/stP.gtf` (223 → toward
+187 then below). Worklist (top regression loci, all strand `-` unless noted): 44156486-44307898 (6),
+19115694-19174217 (4), 22459860-22469708 (4), 70716579-70761097 + (3), 27242275-27289018 (3),
+97518383-97540599 (3), then the 11 multi-chain loci before the 38 singletons.
+
+⚠ Node-flux instrumentation gap: `RUSTLE_COV_DEBUG` does not fire in canonical mode (canonical routes
+through `long_max_flow_st`, which lacks that trace). Component 2 should add a COV_DEBUG-equivalent
+inside `long_max_flow_st` to trace per-node depletion directly. Path-level tracing (above) sufficed
+for the Component-1 verdict.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
