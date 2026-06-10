@@ -366,7 +366,16 @@ pub fn fwd_to_sink_fast_long_st(
                 // and the only next step is the sink, proceed directly without requiring
                 // a transfrag. In ST, artificial sink transfrags always enable this, but
                 // they can be depleted in rustle's flow model. This preserves parity.
-                if c == sink_id && *maxpath <= i {
+                //
+                // ⚠ §6p: this shortcut diverges from ST (fwd 2D(a) requires a live transfrag
+                // with tf_first==i && maxpath<=i) and manufactures low-cov near-duplicate 3'
+                // truncations (the canonical 223-vs-187 regression). DEFAULT-GATED OFF: the
+                // sink-closure now goes through the transfrag-scoring block (~451) like ST.
+                // Opt back in to the old shortcut with RUSTLE_CANON_FREESINK=1.
+                if c == sink_id
+                    && *maxpath <= i
+                    && std::env::var_os("RUSTLE_CANON_FREESINK").is_some()
+                {
                     maxc = c as i64;
                     tmax = -1;
                     reach = true;
