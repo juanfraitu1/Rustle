@@ -2121,16 +2121,6 @@ pub fn process_transfrags(
         // eligibility. This fixes the STRG.1.3/1.5 class of miss where the new
         // rep was erroneously dropped before parse_trflong ran.
         let mut tf_is_new_rep = false;
-        // Shadow experiment (RUSTLE_ST_SHADOW): track whether this tf was found
-        // CONTAINED in a kept rep via compatible_long ret==2 but rejected from
-        // folding (conflicting hard/long boundary). Today such a tf, when it has
-        // longstart+longend, survives as its OWN keeptrf rep at the !included
-        // push below (strict_pass via has_source_strict/has_sink). That is the
-        // "Special: tf with longstart+longend → separate keeptrf" case in the
-        // module header (line 23). StringTie folds it (weak=1). Under shadow we
-        // drop rustle's longstart/longend exception so it is absorbed, mirroring
-        // how keeptrf_ret2_st already drops the analogous ret==2 inner guard.
-        let mut was_contained_ret2 = false;
         for (kept_idx, group, kept_cov) in keeptrf.iter_mut() {
             let kept_tf = &transfrags[*kept_idx];
             let trace_pair = tf_overlaps_trace_graph(tf, graph, trace_locus)
@@ -2347,11 +2337,6 @@ pub fn process_transfrags(
             }
             if ret == 2 {
                 // kept extends past tf: absorb tf into kept only if ( reference 10869-10895)
-                // ret==2 means tf is structurally CONTAINED in kept (kept extends
-                // past tf with introns). Record that so the shadow fold below can
-                // absorb a contained longstart+longend tf instead of keeping it
-                // as its own separate seed.
-                was_contained_ret2 = true;
                 let left_dist = lens[1];
                 let right_dist = lens[3];
                 if !tf.guide && left_dist < SSDIST && right_dist < SSDIST {
@@ -2459,18 +2444,8 @@ pub fn process_transfrags(
         }
         if !included {
             // guides are added to keeptrf even without proper boundaries.
-            // Shadow experiment: for a tf that compatible_long found CONTAINED in
-            // a kept rep (ret==2) but did not fold, drop rustle's longstart/longend
-            // boundary exception so a contained longstart+longend tf is absorbed
-            // (weak=1) instead of becoming its own separate keeptrf seed — matching
-            // StringTie, which marks all contained tfs weak. Hard boundaries still
-            // count (ST keeps hardstart/hardend-bounded fragments); only the
-            // long-read soft-boundary (longstart/longend) exception is dropped.
-            let drop_long_exception =
-                crate::stringtie_parity::st_shadow() && was_contained_ret2 && !tf.guide;
-            let has_source_strict =
-                first_node.hardstart || (tf.longstart != 0 && !drop_long_exception);
-            let has_sink = last_node.hardend || (tf.longend != 0 && !drop_long_exception);
+            let has_source_strict = first_node.hardstart || tf.longstart != 0;
+            let has_sink = last_node.hardend || tf.longend != 0;
             // Short-tf stricter gate (opt-in RUSTLE_SHORT_TF_STRICT=1): for tfs with
             // ≤2 nodes, require BOTH boundary evidence. Prevents short mid-chain
             // tfs (like STRG.398's t=82) from becoming keeptrf seeds and depleting
