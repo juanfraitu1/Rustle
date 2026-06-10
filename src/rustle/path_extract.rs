@@ -9810,15 +9810,26 @@ pub fn extract_transcripts(
 
                 // ST-faithful checktrf gate (rlink.cpp:10369/10413): a multi-node long-read
                 // transfrag with no kept-path match is redistribute-only in StringTie and is
-                // NEVER stored as an independent prediction. Drop it here to match ST. Preserves
-                // short-read/single-node rescue, guides, and csr_triggered chimeric-suffix folds.
-                // Opt-out: RUSTLE_CHECKTRF_MULTINODE_RESCUE=1 restores the old store-it behavior.
+                // NEVER stored as an independent prediction. This gate drops it to match ST.
+                // Preserves short-read/single-node rescue, guides, and csr_triggered folds.
+                //
+                // DEFAULT-OFF (opt-in: RUSTLE_CHECKTRF_MULTINODE_DROP=1). Validation (2026-06-09)
+                // proved the gate is NET-NEGATIVE default-on: it over-rejects 156 StringTie-shared
+                // real isoforms (chr19: ST-only 104->259, -18 RefSeq TP) because rustle's checktrf
+                // rescue is LOAD-BEARING — it recovers chains StringTie finds via FLOW but rustle's
+                // (weaker) flow misses. The 43 genuine FPs are indistinguishable from the 158 real
+                // recoveries by any gate-time feature (cov/longcov/abundance/nexons all overlap).
+                // This gate is therefore the DOWNSTREAM COMPLEMENT to flow-enumeration parity:
+                // once rustle's flow produces those chains directly, the checktrf compensation is
+                // no longer needed and enabling this gate becomes correct + non-regressing.
+                // See docs/STRINGTIE_PARITY_FINDINGS.md §6o.
                 if checktrf_multinode_no_match_drop(
                     is_shortread_tf,
                     tf_nodes.len(),
                     csr_triggered,
                     transfrags[t].guide,
-                    std::env::var_os("RUSTLE_CHECKTRF_MULTINODE_RESCUE").is_some(),
+                    /* rescue_opt_out: keep (don't drop) unless the opt-in DROP flag is set */
+                    std::env::var_os("RUSTLE_CHECKTRF_MULTINODE_DROP").is_none(),
                 ) {
                     record_outcome!(t, SeedOutcome::ChecktrfMultinodeNoMatchDrop);
                     emit_checktrf_result!(t, "multinode_no_match_drop", &tf_nodes);
