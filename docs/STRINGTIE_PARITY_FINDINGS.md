@@ -1407,6 +1407,45 @@ at its ceiling; the harness encapsulates the input-parity check for any future f
 
 ---
 
+## §6u — Stricter-options audit: faithful baseline is NOT flag-separable (2026-06-10)
+
+Question (user): rustle should find everything ST finds + more; the "more" only via VG/deliberate
+options. Can we separate this — make all deliberate stricter options gated so baseline ⊇ ST?
+Audited via workflow wf_a874c2b0-62b (5 parallel per-stage code catalogs) + empirical flag-toggle
+measurement. Full catalog: `docs/stricter_options_catalog.tsv` (66 options).
+
+### The sensitivity gap is 100% junction-acceptance, and it is PROVEN load-bearing
+The 104 ST-only misses are 100% graph-rooted (rustle lacks junctions ST uses, §6t method on the
+ST-only side). Empirically NO existing gated junction option recovers them — good_junction stays
+stuck at 7,319 across RUSTLE_LENIENT_JUNCTIONS / KEEP_MM_NEG / JCT_ISOFRAC_RESCUE / SKIP_JCT_RESCUE /
+ALT_JUNC_COALESCE / REF_JUNCTION_WITNESS / LEGACY_SUB_JUNC_STATS / SKIP_JCT_REJECT / SPURIOUS_ME_REJECT
+(the two that nudge ST-only 104→98/99 cost rustle-only 187→342/337). The ONE path that adds junctions
+(RUSTLE_ST_SHADOW: 7,319→11,961) makes EVERY axis worse (ST-only 104→324, rustle-only 187→1,494). The
+strictness is in the hardcoded `good_junc` quality filter (rustle passes 42% of raw junctions vs ST's
+92%) + the anchor threshold (10 vs ST 5) + mm_negative + good_junc coverage-drop — all co-designed
+with a lean downstream.
+
+### Catalog summary (66 stricter options)
+By gate: **23 default-on-optout, 32 default-off-optin, 8 HARDCODED, 3 config_param.** By direction:
+12 sensitivity, 39 precision, 15 both. By stage: junctions 15, graph/bundle 12, transfrags 11,
+pred-filters 13, flow 15. So **58/66 are ALREADY gated**; only 8 are hardcoded (strand_zero,
+isofrac_junction_reads_ratio, CHI_THR micro-exon, predcluster survival gate, included_drop, zero-flux
+deferral, etc.).
+
+### Verdict: gating is possible but does NOT achieve baseline ⊇ ST
+The ~30+ cleanly-gatable options are all TERMINAL precision-side filters — toggling them does NOT
+close the sensitivity gap, because the missed chains were dropped UPSTREAM at junction acceptance and
+never reach those filters. The ~5-6 options that DO drive the 104 misses are precisely the ones
+proven load-bearing (the st_shadow regression). **Rustle's architecture is "strict-junctions-early +
+lean-downstream", the inverse of ST's "permissive-junctions + strict-downstream".** Relaxing
+acceptance without porting ST's compensating downstream over-segments — a half-measure is provably
+worse than the strict default. **A faithful baseline (⊇ ST) requires a co-designed re-port of the
+acceptance+downstream PAIR together, not flag-flipping.** Mechanically gating the 8 hardcoded options
+is feasible and cleanly documents the strictness, but it will not make baseline find everything ST
+finds. Consistent with [[project_junction_parity]], §6t, and the RUSTLE_ST_SHADOW non-convergence.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
