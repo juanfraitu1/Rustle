@@ -7358,6 +7358,8 @@ pub fn extract_transcripts(
                     &mut minp,
                     &mut maxp,
                     maxi,
+                    bundle_chrom,
+                    bundle_strand,
                 )
             } else {
                 back_to_source_fast_long(
@@ -7393,6 +7395,8 @@ pub fn extract_transcripts(
                     minp_pre,
                     maxp_pre,
                     maxi,
+                    bundle_chrom,
+                    bundle_strand,
                 );
                 let r = crate::parse_trflong_st::outcome_from_rustle(
                     back_ok,
@@ -7463,6 +7467,8 @@ pub fn extract_transcripts(
                         &mut minp,
                         &mut maxp,
                         maxi,
+                        bundle_chrom,
+                        bundle_strand,
                     )
                 } else {
                     fwd_to_sink_fast_long(
@@ -7491,6 +7497,8 @@ pub fn extract_transcripts(
                         minp_pre,
                         maxp_pre,
                         maxi,
+                        bundle_chrom,
+                        bundle_strand,
                     );
                     let r = crate::parse_trflong_st::outcome_from_rustle(
                         fwd_ok,

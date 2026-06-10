@@ -295,6 +295,8 @@ pub fn fwd_to_sink_fast_long_st(
     minpath: &mut usize,
     maxpath: &mut usize,
     start_i: usize,
+    bundle_chrom: &str,
+    bundle_strand: char,
 ) -> bool {
     const EPS: f64 = 1e-9;
     let mut i = start_i;
@@ -616,6 +618,36 @@ pub fn fwd_to_sink_fast_long_st(
 
         // Commit maxc to path
         let maxc_idx = maxc as usize;
+        // parity_decisions: backfwd_extension — per-step extension decision at the commit
+        // point. Mirrors ST fwd_to_sink_fast_long (rlink.cpp). Emit-only: reads only, never
+        // mutates path/pathpat/min/maxpath. On the DEFAULT -L path these _st helpers run as
+        // the ST-faithful SHADOW clone (canonical=false), so this traces the shadow's
+        // per-step choices — a finer-grained companion to path_extend_diff.
+        if crate::parity::decisions::is_enabled() {
+            let abund = if tmax >= 0 { transfrags[tmax as usize].abundance } else { -1.0 };
+            let weak = if tmax >= 0 { transfrags[tmax as usize].weak as i32 } else { -1 };
+            let has_tf = if tmax >= 0 { 1 } else { 0 };
+            let from_n = &graph.nodes[i];
+            let ncand = from_n.children.ones().count();
+            let (fs, fe) = (from_n.start + 1, from_n.end);
+            let (ts, te) = graph
+                .nodes
+                .get(maxc_idx)
+                .map(|n| (n.start + 1, n.end))
+                .unwrap_or((0, 0));
+            let payload = format!(
+                r#""direction":"fwd","from_node":{},"to_node":{},"to_start":{},"to_end":{},"chosen_capacity":{:.4},"chosen_transfrag_abund":{:.4},"chosen_transfrag_weak":{},"has_transfrag":{},"num_candidates":{},"outcome":"extend""#,
+                i, maxc_idx, ts, te, maxcov, abund, weak, has_tf, ncand,
+            );
+            crate::parity::decisions::emit(
+                "backfwd_extension",
+                Some(bundle_chrom),
+                fs,
+                fe,
+                bundle_strand,
+                &payload,
+            );
+        }
         path.push(maxc_idx);
         pathpat.insert_grow(maxc_idx);
         if let Some(p) = graph.edge_bit_index(i, maxc_idx) {
@@ -670,6 +702,8 @@ pub fn back_to_source_fast_long_st(
     minpath: &mut usize,
     maxpath: &mut usize,
     start_i: usize,
+    bundle_chrom: &str,
+    bundle_strand: char,
 ) -> bool {
     const EPS: f64 = 1e-9;
     let mut i = start_i;
@@ -953,6 +987,33 @@ pub fn back_to_source_fast_long_st(
         }
 
         let maxp_idx = maxp as usize;
+        // parity_decisions: backfwd_extension — per-step extension decision (back). See the
+        // fwd commit point for the emit-only / shadow-path rationale.
+        if crate::parity::decisions::is_enabled() {
+            let abund = if tmax >= 0 { transfrags[tmax as usize].abundance } else { -1.0 };
+            let weak = if tmax >= 0 { transfrags[tmax as usize].weak as i32 } else { -1 };
+            let has_tf = if tmax >= 0 { 1 } else { 0 };
+            let from_n = &graph.nodes[i];
+            let ncand = from_n.parents.ones().count();
+            let (fs, fe) = (from_n.start + 1, from_n.end);
+            let (ts, te) = graph
+                .nodes
+                .get(maxp_idx)
+                .map(|n| (n.start + 1, n.end))
+                .unwrap_or((0, 0));
+            let payload = format!(
+                r#""direction":"back","from_node":{},"to_node":{},"to_start":{},"to_end":{},"chosen_capacity":{:.4},"chosen_transfrag_abund":{:.4},"chosen_transfrag_weak":{},"has_transfrag":{},"num_candidates":{},"outcome":"extend""#,
+                i, maxp_idx, ts, te, maxcov, abund, weak, has_tf, ncand,
+            );
+            crate::parity::decisions::emit(
+                "backfwd_extension",
+                Some(bundle_chrom),
+                fs,
+                fe,
+                bundle_strand,
+                &payload,
+            );
+        }
         // ST line 8467: only add to path if not source.
         if maxp_idx != source_id {
             path.push(maxp_idx);
@@ -1148,6 +1209,8 @@ pub fn run_fwd_to_sink_st_on_clone(
     minpath: usize,
     maxpath: usize,
     i: usize,
+    bundle_chrom: &str,
+    bundle_strand: char,
 ) -> PathExtendOutcome {
     SCRATCH_PATHPAT.with(|spp| {
         SCRATCH_PATH.with(|sp| {
@@ -1167,6 +1230,8 @@ pub fn run_fwd_to_sink_st_on_clone(
                 &mut minp,
                 &mut maxp,
                 i,
+                bundle_chrom,
+                bundle_strand,
             );
             PathExtendOutcome {
                 returned_true,
@@ -1192,6 +1257,8 @@ pub fn run_back_to_source_st_on_clone(
     minpath: usize,
     maxpath: usize,
     i: usize,
+    bundle_chrom: &str,
+    bundle_strand: char,
 ) -> PathExtendOutcome {
     SCRATCH_PATHPAT.with(|spp| {
         SCRATCH_PATH.with(|sp| {
@@ -1211,6 +1278,8 @@ pub fn run_back_to_source_st_on_clone(
                 &mut minp,
                 &mut maxp,
                 i,
+                bundle_chrom,
+                bundle_strand,
             );
             PathExtendOutcome {
                 returned_true,
@@ -1424,6 +1493,8 @@ mod tests {
             &mut minpath,
             &mut maxpath,
             1,
+            "",
+            '.',
         );
         assert!(reached, "expected to reach sink");
         assert_eq!(
@@ -1488,6 +1559,8 @@ mod tests {
             &mut minpath,
             &mut maxpath,
             2,
+            "",
+            '.',
         );
         assert!(reached, "expected to reach source from node 2");
         // Path before walk: [2]. Walk should add [1] (not source — ST's `if(maxp)` rule).
