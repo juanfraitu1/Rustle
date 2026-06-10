@@ -1458,6 +1458,31 @@ mechanically, with the standing caveat (above) that toggling them does NOT make 
 
 ---
 
+## §6v — Parity infra extended to checktrf + seeds; §6o ST-ground-truth corrected (2026-06-10)
+
+Extended the cross-tool parity instrumentation so StringTie emits events rustle already emits
+(the asymmetry was: rustle 28 event types vs ST 13). Added to `tools/stringtie/rlink.cpp` (submodule
+commit 2f513bb): **`checktrf_result`** (per-transfrag checktrf outcome `{outcome,abund,introns}`, in
+both `get_trf_long` -L and `get_trf_long_mix`) and **`seed_reject`** (parse_trflong zero-flux seeds
+`{reason,abund}`). ST output unchanged (emit-only). Verified GGO_19: checktrf_result 1138, seed_reject 452.
+
+First diff enabled by it:
+- checktrf_result: rustle 2765 (7 outcomes: matched/rescued/readthr_skip/trunc_hardend/flow_redundant/
+  incomplete/subset_cosurvivor) vs ST 1138 (redistributed 425 / independent_store 713). rustle's extra
+  outcomes = its extra checktrf strictness.
+- seed_reject: ST rejects on `zero_flux` (452); rustle on `back/fwd_fail` (610) — different reasons.
+
+⚠ **§6o ST-ground-truth CORRECTED:** §6o claimed "ST never independently-stores a multi-node no-match
+transfrag." That read the MIXED-mode `get_trf_long_mix` (if(!shortread&&nodes>1) redistribute-only).
+The actual `-L` path is `get_trf_long`, whose `if(tmatch) redistribute; else if(!eonly||guide) store`
+DOES independently-store no-match transfrags (713 `independent_store` on GGO_19). So rustle storing
+them was FAITHFUL to ST's -L behavior, not a deviation. (Approach B was still correctly falsified by
+*validation* — the over-kill — so the disposition is unchanged; only the §6o code-reading rationale
+was wrong, caught immediately by the new instrumentation. This is exactly the infra's purpose.)
+Remaining infra to add (next): `transfrag_drop` + `junction_demote` on the ST side.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
