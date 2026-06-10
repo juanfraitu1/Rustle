@@ -1247,19 +1247,31 @@ min_cov_gate 0.15 store gate). So canonical is LESS parsimonious than both ST an
 depletion/stopping defect in `long_max_flow_st`, not a pervasive multi-cause divergence.
 
 ### VERDICT: close-but-broken → DEBUG the existing port
-The 49-loci scatter is one shared depletion bug, so a single fix in `long_max_flow_st`
-(`src/rustle/parse_trflong_st.rs:991`) — correct the abundance/nodecov depletion so dominant-backbone
-sub-paths drop below the flux/store threshold like ST's `long_max_flow` (rlink.cpp:9856, 9926/9939
-nodecov depletion) — should converge most of the 49 loci. Component 2 = trace + fix that depletion,
-canonical-gated, measured at `bench/gtf_chain_diff.py /tmp/ru_canon.gtf /tmp/stP.gtf` (223 → toward
-187 then below). Worklist (top regression loci, all strand `-` unless noted): 44156486-44307898 (6),
-19115694-19174217 (4), 22459860-22469708 (4), 70716579-70761097 + (3), 27242275-27289018 (3),
-97518383-97540599 (3), then the 11 multi-chain loci before the 38 singletons.
+The 49-loci scatter is one shared mechanism. ⚠ **CORRECTED root cause (code-level, supersedes the
+"under-depletes" wording above):** the canonical FLOW is IDENTICAL to default — for `-L` the flow
+call is `if canonical || stringtie_exact()` → `long_max_flow_st`, and `stringtie_exact()` is
+default-ON, so default and canonical share the exact same depletion (`long_max_flow_direct`,
+`exact=true`). The ONLY thing the `canonical` flag switches is the **back/fwd path extension**:
+`back_to_source_fast_long_st` (`parse_trflong_st.rs:648`) + `fwd_to_sink_fast_long_st` (:289) instead
+of the default `back_to_source_fast_long` / `fwd_to_sink_fast_long` (`path_extract.rs:4993` / sibling).
+So the regression is that **canonical's ST-faithful back/fwd extension reaches extra / different
+(truncated) full paths that the default back/fwd rejects** — each then flows+stores as a low-cov
+(~1.0) near-duplicate sub-path of the dominant backbone. NOT a depletion bug.
 
-⚠ Node-flux instrumentation gap: `RUSTLE_COV_DEBUG` does not fire in canonical mode (canonical routes
-through `long_max_flow_st`, which lacks that trace). Component 2 should add a COV_DEBUG-equivalent
-inside `long_max_flow_st` to trace per-node depletion directly. Path-level tracing (above) sufficed
-for the Component-1 verdict.
+Component 2 = trace the back/fwd divergence (NOT the flow): instrument `back_to_source_fast_long_st`
+/ `fwd_to_sink_fast_long_st` to log, per seed at the worklist loci, the path they build and their
+true/false return, vs the default back/fwd and vs ST's `back_to_source`/`fwd_to_sink`
+(rlink.cpp:8267+ / fwd sibling). Pin where the ST-port admits a path ST/default reject (or truncates
+differently). Fix canonical-gated, measure `bench/gtf_chain_diff.py /tmp/ru_canon.gtf /tmp/stP.gtf`
+(223 → toward 187, then below). Note the preserved `j++` quirk at `parse_trflong_st.rs:736`
+(faithful-to-ST-but-suspicious) as a candidate. Worklist (top regression loci, strand `-` unless
+noted): 44156486-44307898 (6), 19115694-19174217 (4), 22459860-22469708 (4), 70716579-70761097 +
+(3), 27242275-27289018 (3), 97518383-97540599 (3), then the 11 multi-chain loci, then 38 singletons.
+
+⚠ Instrumentation gap: `RUSTLE_COV_DEBUG` does not fire in canonical mode. Component 2's first step is
+adding a back/fwd trace (per-seed path + return) gated by `RUSTLE_TRACE_LOCUS` inside the `_st`
+back/fwd functions. Path-level tracing (above) sufficed for the Component-1 verdict but not for the
+exact back/fwd divergence.
 
 ---
 
