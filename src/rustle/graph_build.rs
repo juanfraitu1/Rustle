@@ -847,7 +847,13 @@ fn filter_junctions_for_bundle<'a>(
                     {
                         reject_reason = Some("mm_negative");
                     }
-                    if reject_reason.is_none() && stat.strand == Some(0) {
+                    // §6u-gated strictness: reject strand==0 (ambiguous-strand) junctions.
+                    // Opt-out RUSTLE_KEEP_STRAND_ZERO=1 keeps them (ST-permissive direction).
+                    // Default (unset) = byte-identical reject.
+                    if reject_reason.is_none()
+                        && stat.strand == Some(0)
+                        && std::env::var_os("RUSTLE_KEEP_STRAND_ZERO").is_none()
+                    {
                         reject_reason = Some("strand_zero");
                     }
                 }

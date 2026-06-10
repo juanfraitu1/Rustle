@@ -681,8 +681,14 @@ fn should_keep_exon(
 ) -> bool {
     //
     // seg_len < junctionsupport || (longread && seg_len < CHI_THR && seg_len < DROP * read_len)
-    let is_small = seg_len < junction_support
-        || (is_long_read && seg_len < CHI_THR && (seg_len as f64) < DROP * (read_len as f64));
+    // §6u-gated strictness: the long-read CHI_THR (<50bp) micro-exon trim. Opt-out
+    // RUSTLE_MICRO_EXON_TRIM_OFF=1 disables ONLY the CHI_THR micro-exon clause (keeps the
+    // base `< junction_support` filter). Default (unset) = byte-identical.
+    let micro_exon_trim = is_long_read
+        && seg_len < CHI_THR
+        && (seg_len as f64) < DROP * (read_len as f64)
+        && std::env::var_os("RUSTLE_MICRO_EXON_TRIM_OFF").is_none();
+    let is_small = seg_len < junction_support || micro_exon_trim;
 
     if is_small {
         // First exon

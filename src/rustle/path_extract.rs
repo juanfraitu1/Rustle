@@ -8890,7 +8890,13 @@ pub fn extract_transcripts(
                 flow_flux, coverage, long_read_nodecov_mode
             );
         }
-        if flow_flux > 0.0 || transfrags[idx].guide {
+        // §6u-gated strictness: zero-flux long-read seeds are deferred to checktrf (not
+        // flow-stored). Opt-in RUSTLE_ZERO_FLUX_STORE=1 stores them directly instead of
+        // deferring. Default (unset) = byte-identical (defer at zero flux).
+        if flow_flux > 0.0
+            || transfrags[idx].guide
+            || std::env::var_os("RUSTLE_ZERO_FLUX_STORE").is_some()
+        {
             tocheck = false;
         }
 

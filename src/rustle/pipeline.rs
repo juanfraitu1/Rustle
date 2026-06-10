@@ -2317,8 +2317,12 @@ fn apply_bad_mm_neg_stage(
         }
 
         // === Isofrac: junction reads as fraction of splice site support ===
-        if st.mrcount * 10.0 < ERROR_PERC * eff_leftsupport
-            || st.mrcount * 10.0 < ERROR_PERC * eff_rightsupport
+        // §6u-gated strictness: demote junctions whose reads are <1% of splice-site
+        // support. Opt-out RUSTLE_GOOD_JUNC_ISOFRAC_OFF=1 skips the demotion (ST keeps
+        // these low-fraction junctions). Default (unset) = byte-identical demotion.
+        if (st.mrcount * 10.0 < ERROR_PERC * eff_leftsupport
+            || st.mrcount * 10.0 < ERROR_PERC * eff_rightsupport)
+            && std::env::var_os("RUSTLE_GOOD_JUNC_ISOFRAC_OFF").is_none()
         {
             st.mm = -1.0;
         }
