@@ -8817,6 +8817,26 @@ pub fn extract_transcripts(
                                 nc_before, nodeflux[k], nflux, local_noderate[nid], st_rate, st_ecov, bpcov, ecov);
                         }
                         cov_total += ecov;
+                        // parity_decisions: node_flux — per-node flux during long-read
+                        // flow extraction, mirroring ST's node_flux (rlink.cpp:9969/9982).
+                        // Lets us diff the coverage-depletion ladder node-by-node between
+                        // tools. HIGH VOLUME: scope with RUSTLE_PARITY_FILTER_RANGE/STEPS.
+                        // Coords: rustle node.start is 0-based inclusive (→ +1 for ST's
+                        // 1-based), node.end is 0-based exclusive = 1-based last base (no +1).
+                        if crate::parity::decisions::is_enabled() {
+                            let nf_payload = format!(
+                                r#""nodeflux":{:.4},"noderate":{:.4},"nodecov_before":{:.4},"ecov":{:.4}"#,
+                                nflux, local_noderate[nid], nc_before, ecov,
+                            );
+                            crate::parity::decisions::emit(
+                                "node_flux",
+                                Some(bundle_chrom),
+                                graph.nodes[nid].start + 1,
+                                graph.nodes[nid].end,
+                                bundle_strand,
+                                &nf_payload,
+                            );
+                        }
                         // Distribute per-node ecov to overlapping exons
                         // accumulates raw ecov per exon, then divides by exon_len at line 10956.
                         if let Some(node) = graph.nodes.get(nid) {
