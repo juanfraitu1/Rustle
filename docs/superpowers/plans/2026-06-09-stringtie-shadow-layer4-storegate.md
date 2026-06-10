@@ -60,25 +60,15 @@ git commit -m "docs(shadow): Layer 4 store-gate divergence characterization (§6
 
 ---
 
-## Task 2: Port ST's store gate under `st_shadow()`
+## Task 2: Make per-seed flux depletion-coupled under `st_shadow()` (REVISED per §6j)
 
-**Files:** Modify `src/rustle/path_extract.rs` (the store site named in Task 1 §6j; + test module if predicate is extractable).
+**REVISION (Task 1 finding):** §6j proved the store PREDICATE is identical on both sides — porting it would be gate-neutral. The real divergence is the **flux VALUE**: rustle's `long_max_flow_st` / `long_max_flow_seeded_with_used_pathpat` (`path_extract.rs:8539-8557`) returns INDEPENDENT `flow_flux≈1.0, coverage≈1.0` for a sibling seed whose supporting mass an earlier seed already claimed; ST's `long_max_flow` (built from the depleted `transfrag->abundance`) returns `flux≈0` for that sibling → it fails the existing gate (`path_extract.rs:8879`) and is never stored. So Task 2 makes rustle's per-seed flux reflect prior-seed depletion, so the 1379 independent-abundance siblings return flux≈0.
 
-**Context:** Implement exactly the ST store condition characterized in §6j, gated on `crate::stringtie_parity::st_shadow()`. The non-shadow path must be byte-identical.
+**Files:** Modify `src/rustle/path_extract.rs` (seed loop) and/or `src/rustle/max_flow.rs` (the flux computation), gated on `crate::stringtie_parity::st_shadow()`. Non-shadow path byte-identical.
 
-- [ ] **Step 1 (TDD, if predicate extractable): Write the failing test.** If the store decision can be expressed as a pure predicate `fn st_store_path(path_flux: f64, ...) -> bool` (inputs named in §6j), add to path_extract.rs's `#[cfg(test)] mod tests`:
-```rust
-#[test]
-fn st_store_gate_rejects_low_flux_sibling() {
-    // ST stores only when the path clears its store condition (from §6j); a sibling whose
-    // post-depletion flux is below ST's threshold is rejected.
-    assert!(!super::st_store_path(/* low-flux sibling args from §6j */));
-    assert!(super::st_store_path(/* dominant-path args from §6j */));
-}
-```
-(If the decision is too entangled to extract purely, SKIP this step and rely on the integration gate in Task 4 — note that in the commit. Do NOT fabricate a pure function that doesn't match the real code.)
+- [ ] **Step 1 (DIAGNOSE — required before any fix): why does the sibling flux survive depletion?** The prior depletion-port ran but siblings kept flux≈1.0. Determine WHY: read `long_max_flow_st`/`long_max_flow_seeded_with_used_pathpat` (path_extract.rs:8539-8557) + `max_flow.rs`. Does it build capacity from the *current depleted* node/transfrag abundance, or from an independent/seed-local pathpat capacity? Use Trace 1 (`NC_073243.2 (-) 29234259-29293356`, intron `29236027-29292449`, `seed_tf=0`) — add a temporary `eprintln!`/trace at the flux site under shadow, run `RUSTLE_ST_SHADOW=1 ./target/release/rustle GGO_19.bam -L` (or slice the region), and confirm the sibling's flux input is NOT the depleted value. Write the WHY (one paragraph) to `docs/STRINGTIE_PARITY_FINDINGS.md` §6j-diag, commit `docs(shadow): L4 flux-survives-depletion diagnosis`. **If the flux is architecturally independent of depletion (can't be coupled without restructuring the seed loop), STOP and report BLOCKED with the finding — that is the everything-at-once wall and the controller must escalate.**
 
-- [ ] **Step 2: Run the test, expect FAIL** (`cargo test --lib st_store_gate_rejects_low_flux_sibling 2>&1 | tail -8`) — function not defined.
+- [ ] **Step 2: Implement the coupling under `st_shadow()`.** Based on Step 1, make the per-seed flux computation consume from the depleted pool so a sibling whose mass was claimed returns flux≈0 (mirroring ST `long_max_flow` capacity-from-depleted-abundance, rlink.cpp:8614/8621 + depletion 9926). Gate on `crate::stringtie_parity::st_shadow()`; keep the non-shadow path byte-identical. Use the real rustle structures from Step 1.
 
 - [ ] **Step 3: Implement the shadow store gate.** At the store site (§6j), add:
 ```rust
