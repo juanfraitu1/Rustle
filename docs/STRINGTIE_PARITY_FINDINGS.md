@@ -1040,13 +1040,185 @@ isolated case; the junction may be near the mm_negative boundary.
 
 | Stage        | Realizable fix | Risk |
 |-------------|---------------|------|
-| `post_flow` (50.3%) | Match ST's pred_kill / longcov-floor for long chains | Moderate — reduces these FPs but may suppress real low-coverage isoforms |
+| `post_flow` (50.3%) | ~~longcov-floor~~ → §6m PINS this: match ST's coverage metric (lowintron+pred cov), NOT a filter | High — root is flow-coverage divergence; longcov floor over-kills (ST keeps 439 longcov==1) |
 | `seed` (32.6%) | Reduce Rustle transfrag over-segmentation (Layer-2/3 read→transfrag) | High — architectural change; §5b documents prior attempts |
 | `flow` (31, 16.6%) | Match ST's flow depletion / path selection | High — same root as over-segmentation |
 
 The highest-leverage **filter-level** fix is at `post_flow` (longcov floor for long-chain
 predictions), which requires no structural change to the flow. The `seed` + `flow` population
 requires the multi-session read→transfrag rewrite documented in §5b.
+
+---
+
+## §6m — Pinned: which GATE drops the 94 `post_flow` chains (2026-06-09)
+
+Direct trace of the 94 `post_flow` rustle-only chains against ST's instrumented log
+(`/tmp/stP.jsonl`: 5199 `path_extracted` + 2100 `pred_kill`). Tooling: `/tmp/pin_gate.py`,
+`/tmp/pin_gate2.py`, `/tmp/ri.py`, `/tmp/diffsets.py`, `/tmp/probe64.py`.
+
+### Answer: NOT GATE A (flux) or GATE B (store cov). Downstream PAIRWISE selection.
+
+All 94 chains appear in ST's `path_extracted` (so `long_max_flow` extracted them → **GATE A flux
+passes**) and carry a high flux-`cov` (median 4941, min 729 → **GATE B `cov>epsilon` store passes**;
+GATE B uses flux-cov, which is high). ST drops them **after** store, at the pairwise
+selection / output-filter stage. The discriminating signal is **`longcov` (long-read count),
+not flux-cov**: post_flow `longcov` median = 1 (50/94 exactly 1; entry_abund==longcov throughout)
+vs ST-kept median = 3 — but **not a clean threshold** (ST keeps 439 chains at longcov==1, so an
+absolute longcov floor over-kills).
+
+### Mechanism split of the 94
+- **30 chains** → explicit `pred_kill reason=retained_intron`, `stage=pairwise`, cov/killer_cov
+  ratio **0.03–0.10** (28/30 ≤0.10). A retained-intron variant of an overlapping higher-cov
+  spliced killer, retainer cov <~10% of killer. Named ST filter.
+- **64 chains** → not in `pred_kill` (filtered at an uninstrumented stage). Low-cov near-equals:
+  14 subset of an ST output chain, 17 one-junction-off, 5 superset, 23 other-overlap, 5 no overlap;
+  **54/64 have longcov ≤2**. Same path-selection-on-shared-junctions pattern as §6 altsplice.
+
+### Why rustle can't cleanly reproduce these (THE WALL, precision side)
+Running rustle with `RUSTLE_PREDCLUSTER_ST=1` (the faithful ST selection port) on the same input:
+rustle-only 187→175 (−12) but ST-only 104→**117 (+13 over-killed TPs)** — net wash. Critically it
+kills only **2 of the 30** retained_intron-targeted chains while over-killing 15 shared TPs and
+removing 33 *different* rustle-only FPs. **The port's RI/included_drop/isofrac decisions hinge on
+ST's per-base `lowintron` mask + pred coverage, which rustle computes divergently** (the documented
+flow-coverage divergence, `project_coverage_metrics_deviation`). So the selection *logic* is faithful;
+the *coverage input* is not. No filter or threshold reproduces ST's 94 drops without the upstream
+coverage metric.
+
+### Conclusion (SUPERSEDED — see §6n for the precise root cause)
+Closing the 94 `post_flow` requires **matching ST's flow enumeration**, not a coverage formula fix.
+See §6n for the complete trace. The §6L "longcov floor" row is **downgraded**: a longcov floor
+over-kills (ST keeps 439 longcov==1 chains).
+
+---
+
+## §6n — Coverage divergence root cause for the 30 RI kills (2026-06-09)
+
+Traced the 30 retained_intron post_flow kills to their exact coverage divergence. Tooling:
+`RUSTLE_LOWINTRON_TRACE` (transcript_filter.rs:1663), comparison scripts `/tmp/ru_cov.py`,
+`/tmp/diffsets.py`, `/tmp/pin_gate2.py`.
+
+### Finding: coverage divergence is flow-enumeration depletion, NOT a formula bug
+
+For the specific killer case at locus `59398665-59575456` (26-exon, ST killer_cov=37.1):
+- **Rustle has the exact same 26-exon chain** (same coords, same nexons) — RSTL.479.11, cov=**3.29**
+- **But rustle also emits two extra chains** (27-exon cov=22.08 + another 26-exon cov=18.99)
+- Those extra chains were extracted FIRST and depleted the shared node coverage budget
+- When rustle extracts the ST-equivalent 26-exon killer, only leftover coverage remains → 3.29 vs 37.1 (11x lower)
+- Victim/killer ratio in rustle = 2.98/3.29 = **0.904 >> 0.1** → RI kill doesn't fire
+
+For another case (`31707587-31722117`, 8-exon, ST cov=37.2):
+- Rustle has the 8-exon chain (RSTL.100.3 cov=2.98) but also a 9-exon chain (RSTL.100.1 cov=6.22)
+  and RSTL.100.5 (8-exon, raw_flow_sum=9.85)
+- `RUSTLE_COV_RAW_FLOW` raises raw killer cov to 9.85 vs ST's 37.2 — improvement is 1.6x,
+  still 3.8x short of ST; ratio = 1.91/9.85 = 0.194 >> 0.1
+
+**The 14 killer-present cases break down:**
+- 2/14 kill correctly (ratios 0.034, 0.094 in rustle — both killer_cov large and close to ST)
+- 12/14 fail: rustle's killer is 2–12x under-covered (depletion by extra paths)
+- `RUSTLE_COV_RAW_FLOW` does NOT fix this — improvements 1.3–1.6x while divergences are 4–12x
+- `RUSTLE_RI_USE_RAW_FLOW` is same (uses raw_flow_sum in the RI ratio check)
+
+### Self-reinforcing loop: the precise mechanism
+
+```
+Rustle over-enumerates → extra paths extracted first
+  → deplete shared nodecov
+  → dominant "killer" chains get under-counted coverage (3.29 vs 37.1)
+  → RI kills don't fire (victim/killer ratio too high)
+  → victim chains survive → counted in the 94 post_flow FPs
+```
+
+The 94 post_flow FPs and the 30 RI coverage failures are the SAME problem: rustle's flow
+over-enumeration. The coverage divergence IS the flow divergence. Fixing one requires fixing the other.
+
+### Why predcluster_st doesn't help
+
+`RUSTLE_PREDCLUSTER_ST=1` kills only 2/30 RI victims while over-killing 13 shared TPs — net wash.
+It fails because:
+1. 16/30 killers aren't in rustle at all (structural chain divergence — different path set)
+2. 12/14 killer-present cases: killer too under-covered to trigger the 0.1 ratio (depletion)
+3. The lowintron flags DO fire on the killers — `RUSTLE_LOWINTRON_TRACE` shows flagged introns —
+   so the flag is not the problem
+
+### Updated actionability for §6L post_flow row
+
+| Stage | Old conclusion | Updated conclusion |
+|-------|---------------|-------------------|
+| `post_flow` (50.3%) | Match ST coverage metric | Fix flow over-enumeration (parse_trflong). Coverage is a symptom, not the root. |
+
+### Approach A (bpcov killer coverage in RI gate) — TESTED and FALSIFIED (2026-06-09)
+
+Hypothesis: substitute the killer's flow-depleted `coverage` with its undepleted per-base bpcov
+average in the RI cov-ratio gate (`n2.coverage < frac * n1_cov`), so the kill fires despite
+depletion. Implemented in `predcluster_st::retainedintron_st` + call site, tested under
+`RUSTLE_PREDCLUSTER_ST=1` vs `../GGO_19.gtf`:
+
+| Config | Rustle-only | ST-only | both |
+|--------|-------------|---------|------|
+| default (predcluster_st off) | 159 | 69 | 1745 |
+| predcluster_st + bpcov-RI (both branches) | 113 | **188** | 1626 |
+| predcluster_st + bpcov-RI (RI branch only) | 113 | **188** | 1626 |
+
+**RESULT: over-killed 119 shared TPs** (ST-only 69→188). The RI branch alone produces the entire
+regression. Root cause of the failure: raw bpcov averages ALL reads at the killer's exons,
+including sibling-isoform reads at shared exons, so `n1_cov` is inflated far above ST's allocated
+value. This makes `n2.coverage < 0.1 * n1_cov` true for legitimate alternative isoforms, not just
+RI artifacts — the cov-ratio gate's discrimination is destroyed.
+
+**Decisive conclusion:** NO per-transcript scalar in rustle recovers ST's allocated-undepleted
+killer coverage: `tj.coverage` is depleted (3.29), bpcov-avg is sibling-inflated (~37 but
+over-kills), `longcov` is a small read count (2-3, wrong units). ST's 37.1 only exists if the
+extra sibling paths are never extracted. **The fix MUST be at flow enumeration (parse_trflong
+over-enumeration), not the downstream RI filter.** Code reverted to clean (default byte-identical,
+159/69 restored). Confirms §6n self-reinforcing-loop diagnosis from the fix side.
+
+---
+
+## §6o — Approach B (checktrf multinode store-gate) — TESTED and FALSIFIED (2026-06-09)
+
+A multi-agent investigation (workflow wf_abb54bf1-34e) of the 187 default rustle-only chains split
+them into 139 flow-only + 48 checktrf-only. The checktrf pool looked like a clean structural
+divergence: StringTie's `parse_trflong` (rlink.cpp:10369/10413) handles a multi-node long-read
+transfrag with no kept-path match by **redistribute-only** — its independent-store `else` branch is
+structurally unreachable for such transfrags, so they are NEVER stored. Rustle stored them
+(path_extract.rs:9779), producing the 48 checktrf-only chains (measured 2 TP / 46 FP vs RefSeq).
+
+Built the ST-faithful gate (predicate `checktrf_multinode_no_match_drop` + `SeedOutcome` variant +
+the gate; TDD + two-stage review). **Validation killed it.** Gate removed 201 chains:
+
+| Config (vs /tmp/stP.gtf) | Rustle-only | ST-only |
+|--------------------------|-------------|---------|
+| default (pre-fix / opt-out) | 187 | 104 |
+| gate ON (default-on, as built) | 157 | **259** |
+
+The gate over-rejected **156 StringTie-shared real isoforms** (up to 37 introns) and cost **18
+RefSeq TPs** — not the ~46 FPs it was scoped for. Root cause: rustle's checktrf rescue is
+**load-bearing for recall** — it recovers 156 chains StringTie finds via FLOW but rustle's weaker
+flow misses. Separability analysis (gate-time transfrag features, `/tmp` analysis):
+
+| Feature | should-DROP (43 genuine FP) | should-KEEP (158 shared/TP) |
+|---------|------|------|
+| cov median | 1.01 (range 0.43–13.2) | 1.06 (range 0.37–619.8) |
+| longcov median | 1.0 (30/43 ≤1) | 1.0 (85/158 ≤1) |
+| entry_abund median | 1.0 | 1.0 |
+| nexons median | 11 | 9 |
+
+**No gate-time feature separates them** (cov low-ends identical; FPs are if anything MORE complex).
+This is the SAME WALL as Approach A (§6n): a downstream gate "ST-faithful in isolation" over-kills
+because rustle's UPSTREAM FLOW differs from ST's. My scoping error: measured only the rustle-ONLY
+checktrf FPs, missed the 156 shared-chain collateral; the validation caught it.
+
+**Disposition:** flipped to **opt-in, default-off** (`RUSTLE_CHECKTRF_MULTINODE_DROP=1`); default
+byte-identical (187/104 restored). The gate is preserved as the **downstream complement** to
+flow-enumeration parity: once rustle's flow produces those 156 chains directly, the checktrf
+compensation is unnecessary and enabling this gate becomes correct + non-regressing.
+
+**Convergent conclusion (Approaches A + B):** the 187 rustle-only chains are NOT closable by any
+downstream gate — both the RI filter (bpcov) and the checktrf store-gate over-kill identically,
+because rustle's checktrf/filtering compensates for flow gaps. **The only real lever is
+flow-enumeration parity** (`parse_trflong`): the ~2× seed count / keeptrf-consolidation divergence
+the workflow surfaced. That is the next (deferred, multi-session) target. Spec/plan:
+`docs/superpowers/{specs,plans}/2026-06-09-checktrf-multinode-store-gate*`.
 
 ---
 
