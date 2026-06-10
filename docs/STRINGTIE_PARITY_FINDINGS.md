@@ -935,6 +935,121 @@ read→transfrag collapse layer, not depletion-coupled per-seed flux. (Tooling f
 
 ---
 
+## §6L — Default rustle-only (187) first-divergence stage distribution
+
+**Date:** 2026-06-09. **Branch:** `vg/flow-capacity-apportionment`.
+**Setup:** `rustle GGO_19.bam -L` vs `stringtie GGO_19.bam -L` (no shadow, no guided, no VG).
+Both tools run with full parity logging (five stages: `junction_accept`, `graphnode_list`,
+`transfrag_collapse`, `parse_trflong_seed`, `path_extracted`). The 187 rustle-only chains
+were confirmed with `bench/gtf_chain_diff.py`. Analysis script: `bench/stage_divergence_187.py`.
+
+### Stage distribution
+
+Each of the 187 rustle-only multi-intron chains was classified by the EARLIEST pipeline stage
+where rustle has it and StringTie does not.
+
+| Stage        | Count |    % | Meaning |
+|-------------|------:|------:|---------|
+| `junction`  |     1 |  0.5% | ST didn't accept ≥1 junction; rustle did |
+| `graph`     |     0 |  0.0% | — |
+| `collapse`  |     0 |  0.0% | — |
+| `seed`      |    61 | 32.6% | ST has no transfrag_collapse rep for this chain; rustle seeds it from an extra transfrag |
+| `flow`      |    31 | 16.6% | ST seeds this chain but doesn't extract it via path_extracted; rustle does |
+| `post_flow` |    94 | 50.3% | ST DOES emit this chain via path_extracted, then its pred_kill/filter stage removes it; rustle keeps it |
+| `unknown`   |     0 |  0.0% | — |
+| **TOTAL**   | **187** | | |
+
+### Dominant stage: `post_flow` (94 chains, 50.3%)
+
+ST actually extracts these chains in its flow stage (`path_extracted` event is present) but then
+removes them before the final GTF. The pred_kill events were not captured in this run (not in the
+filter-steps list), but the ST `path_extracted` payload reveals the mechanism: these chains have
+**very low `longcov`**. Of the 89 post_flow chains that were also confirmed in `st_seeds` (a
+slightly stricter sub-check):
+
+- Median ST `longcov` = **1.0**
+- 49/89 (55%) have `longcov ≤ 1`
+- 71/89 (80%) have `longcov ≤ 2`
+- 18/89 (20%) have `longcov ≥ 3`
+
+ST's pred_kill / isofrac filter eliminates low-longcov transcripts; rustle's equivalent filter
+passes them. This is consistent with the earlier (§5b) finding that rustle over-attributes read
+mass to long chains (`ru_read_count == ru_abund` >> ST's 1).
+
+**Three concrete examples (coords = path_extracted 1-based intron format, strand):**
+
+1. `strand=-, 4 introns, first: 53304432-53306277,53306384-53307260,...`
+   ST: cov=3956.2, longcov=**2**, entry_abund=2. Kept by rustle, killed by ST.
+
+2. `strand=+, 14 introns, first: 110889996-110901426,110901623-110903773,...`
+   ST: cov=3948.7, longcov=**1**, entry_abund=1. Kept by rustle, killed by ST.
+
+3. `strand=-, 15 introns, first: 20534118-20534556,20534676-20534829,...`
+   ST: cov=6665.3, longcov=**3**, entry_abund=3. Kept by rustle, killed by ST.
+
+### Second stage: `seed` (61 chains, 32.6%)
+
+These chains never appear in ST's `transfrag_collapse` set — ST does not build a transfrag
+representative for them at all. Of the 71 seed-classified chains, **0/71 are in ST's collapse
+set** (verified independently). This is the over-segmentation problem documented in §5b:
+Rustle produces ~36% more long multi-intron transfrags than ST (7335 vs 4383 at
+`transfrag_pre_depl`), creating seeds that ST never forms.
+
+**Three concrete examples:**
+
+1. `strand=-, 15 introns, first: 32006522-32009343,32009424-32011744,...`
+   Not in ST collapse, not in ST seeds. Source: extra Rustle transfrag.
+
+2. `strand=-, 25 introns, first: 22460560-22461440,22461607-22461696,...`
+   Not in ST collapse, not in ST seeds.
+
+3. `strand=-, 5 introns, first: 56745726-56746448,56746680-56747380,...`
+   Not in ST collapse, not in ST seeds.
+
+### Third stage: `flow` (31 chains, 16.6%)
+
+ST seeds these chains (present in `parse_trflong_seed`) but flow depletion prevents extraction
+(`path_extracted` absent for ST). This is the "flux=0 / depletion-coupled" mechanism described
+at §6K — the chain exists as a seed but a competing path with higher flux depletes the shared
+edges before the seed can be extracted.
+
+### Single `junction`-stage case (1 chain)
+
+`strand=-, 11 introns, first junction donor=21845195 acceptor=21852482`: ST's `junction_accept`
+events do not include this junction (with either strand); rustle accepts it (mm=ok). This is an
+isolated case; the junction may be near the mm_negative boundary.
+
+### Accuracy caveats
+
+1. **Graph-node coverage check**: The `graphnode_list` stage check uses a coordinate-overlap
+   approximation (exon boundary in any node interval). Since 0 chains were classified as `graph`,
+   this approximation had no effect on the final counts.
+2. **ST transfrag_collapse truncation**: ST's parity log uses a ~480-char line buffer, truncating
+   1081 of 7982 `transfrag_collapse` events mid-`rep_introns`. The analysis uses partial matches
+   (dropping the truncated final segment) where possible. This may under-count ST's collapse set,
+   but since 0 of 187 chains are classified as `collapse` and 0/71 seed chains matched any ST
+   collapse entry, the truncation does not affect the main conclusions.
+3. **15 bypass-collapse chains**: 15 rustle-only chains reach `path_extracted` without appearing
+   in rustle's `transfrag_collapse` events (likely sub-bundle or checktrf paths). These are
+   correctly classified by the seed/flow/post_flow checks at subsequent stages.
+4. **`post_flow` pred_kill reason**: The specific ST filter reason (isofrac / predcluster /
+   longcov threshold) was not captured in this run. The longcov distribution strongly suggests
+   the `pred_intron_low`/isofrac check as the cause, consistent with §5b.
+
+### Actionability
+
+| Stage        | Realizable fix | Risk |
+|-------------|---------------|------|
+| `post_flow` (50.3%) | Match ST's pred_kill / longcov-floor for long chains | Moderate — reduces these FPs but may suppress real low-coverage isoforms |
+| `seed` (32.6%) | Reduce Rustle transfrag over-segmentation (Layer-2/3 read→transfrag) | High — architectural change; §5b documents prior attempts |
+| `flow` (31, 16.6%) | Match ST's flow depletion / path selection | High — same root as over-segmentation |
+
+The highest-leverage **filter-level** fix is at `post_flow` (longcov floor for long-chain
+predictions), which requires no structural change to the flow. The `seed` + `flow` population
+requires the multi-session read→transfrag rewrite documented in §5b.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
