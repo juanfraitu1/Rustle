@@ -931,7 +931,7 @@ fn outcome_label(outcome: &crate::path_extract::SeedOutcome) -> &'static str {
         SeedOutcome::ChecktrfRescued => "checktrf_rescued",
         SeedOutcome::ChecktrfIncomplete => "checktrf_incomplete",
         SeedOutcome::ChecktrfRescueFail => "checktrf_rescue_fail",
-        SeedOutcome::ChecktrfMultinodeNoMatchDrop => "checktrf_multinode_drop",
+        SeedOutcome::ChecktrfMultinodeNoMatchDrop => "checktrf_multinode_no_match_drop",
         SeedOutcome::Stored(_) => "stored",
     }
 }
@@ -7359,7 +7359,7 @@ fn extract_bundle_transcripts_for_graph(
                 crate::path_extract::SeedOutcome::ChecktrfRescued => "checktrf_rescued".into(),
                 crate::path_extract::SeedOutcome::ChecktrfIncomplete => "checktrf_incomplete".into(),
                 crate::path_extract::SeedOutcome::ChecktrfRescueFail => "checktrf_rescue_fail".into(),
-                crate::path_extract::SeedOutcome::ChecktrfMultinodeNoMatchDrop => "checktrf_multinode_drop".into(),
+                crate::path_extract::SeedOutcome::ChecktrfMultinodeNoMatchDrop => "checktrf_multinode_no_match_drop".into(),
                 crate::path_extract::SeedOutcome::Stored(_) => "stored".into(),
             };
             *counts.entry(key).or_insert(0) += 1;

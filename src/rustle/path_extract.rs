@@ -11267,7 +11267,7 @@ pub fn extract_transcripts(
                                 SeedOutcome::ChecktrfRescued => ("checktrf_rescued", None),
                                 SeedOutcome::ChecktrfIncomplete => ("checktrf_incomplete", None),
                                 SeedOutcome::ChecktrfRescueFail => ("checktrf_rescue_fail", None),
-                                SeedOutcome::ChecktrfMultinodeNoMatchDrop => ("checktrf_multinode_drop", None),
+                                SeedOutcome::ChecktrfMultinodeNoMatchDrop => ("checktrf_multinode_no_match_drop", None),
                             };
                             // Path data only available for Stored — pull from out[stored_idx].
                             let (path_len, pfirst_c, plast_c, path_nodes_str, intron_chain) =
