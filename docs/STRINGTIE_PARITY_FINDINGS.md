@@ -874,6 +874,67 @@ once the supporting transfrag abundance has been consumed — NOT merely `flow_f
 
 ---
 
+## §6j-diag — Layer 4 flux-survives-depletion diagnosis (2026-06-09, Task 2 Step 1)
+
+**Verdict for Task 2: BLOCKED.** The premise that the rustle-only siblings survive because the
+per-seed flux reads an **un-depleted capacity structure** is REFUTED by direct instrumentation. The
+capacity IS already coupled to the live, shared, depleted abundance, and depletion propagates
+correctly. The 92% FLOW-divergence is NOT a flux-coupling defect — it is an **upstream read→transfrag /
+seed-construction divergence**: rustle forms long-read seeds that StringTie never forms at all.
+
+### What carries the capacity (the structure the task asked to identify)
+`max_flow.rs:1280` — `capacity[i][end_idx] += tf.abundance` (and the source/sink mirror at 1298-1299)
+reads the **CURRENT value of the shared `transfrags[t_idx].abundance` slice**, gated by `tf.abundance > 0`
+at `max_flow.rs:1189`. That slice is the SAME `&mut [GraphTransfrag]` threaded across every seed in the
+loop (`path_extract.rs:6751 for (loop_pos, idx) in order` → `long_max_flow_st` at 8540, no per-seed
+clone on the long-read non-guide path). The depletion tail (`max_flow.rs:1834 if !no_subtract`,
+`update_transfrag_capacity` at 1930/1961) writes back into that same slice and is **structurally
+identical to ST** (rlink.cpp:8692-8731: same `flow[n1][n2]>0 ∧ nodes[0]==path[i]` predicate, same
+subtract-to-zero). The rustle-only protections (subseq-protect 1896, alt-splice-protect 1868,
+seed-chord 1242) are all correctly **disabled under `st_shadow()`/`exact`** — verified
+`RUSTLE_DEBUG_FLOW_SUBSEQ=1` → 0 hits. **So the flux is NOT independent of depletion by construction;
+it reads the depleted pool already.**
+
+### Empirical proof that depletion reaches and zeroes siblings (so coupling already works)
+Trace-1 bundle `NC_073243.2:29200000-29400000` slice (49-tf bundle), `RUSTLE_ST_SHADOW=1
+RUSTLE_DEPLETION_DIAG=1` + a temporary `SEED_CHAIN` print (since removed, `path_extract.rs` clean):
+- Dominant seed idx=9 chain `[3,4,5,6,7,8,9,10,22,23,24]` flux=69.8 depletes the shared pool.
+- Later overlapping seeds whose support it claimed: idx=1 `[5,6,7,8,9,10,22,23,24]`, idx=3, idx=8 all
+  enter the loop at `ab_before=0.0 → flux=0.0`. **Depletion DID propagate through the shared slice.**
+- The SURVIVING siblings idx=21 `[1,2,9,10,22,23,24]`, idx=22 `[3,4,9,10,22,23,24]`, idx=26
+  `[3,4,9,22,23,24]`, idx=27 `[3,9,10,22,23,24]` each enter at `ab_before=1.0 → flux=1.0`. They are
+  **distinct single-read transfrags** (each a different first-exon / skip-junction structure) that the
+  dominant seed's flow never routed through, so `update_transfrag_capacity` never touched them. This is
+  ST's algorithm exactly — ST seeds these same reads and also gives them independent flux.
+
+### The REAL divergence (why ST emits zero for these chains): seeds ST never forms
+Ran ST and rustle with the parity-decisions JSONL (`STRINGTIE_PARITY_LOG` / `RUSTLE_PARITY_LOG`) on the
+same slice and diffed seeds vs stores:
+- ST: 25 `parse_trflong_seed`, 25 `transfrag_pre_depl`, 25 `transfrag_collapse`, 17 `path_extracted`.
+- rustle: 34 `parse_trflong_seed`, 34 `transfrag_pre_depl`, 22 `path_extracted`.
+- Of the **9 rustle-only stored chains in the region, 8 have NO matching ST seed at all** — including
+  **Trace 1 `29236027-29292449`**, which is rustle seed `f_idx=0 t_idx=0 entry_abund=1.0` but appears
+  NOWHERE in ST's log (not seed, not pre_depl, not collapse). ST's read→transfrag stage
+  (keeptrf containment-collapse, rlink.cpp:5805 `transfrag_collapse`) folds/drops these reads so they
+  never become distinct `trflong` seeds; rustle keeps 34 vs ST's 25.
+- The **1 of 9** that IS an ST seed (`29314688-29317778,29318188-29320347`, ST `entry_abund=1`, ST
+  seeds it but does NOT store it) is the only genuine flux-coupling case in the region — ST depletes it
+  via an earlier overlapping seed → flux=0 → drop; rustle stores it. This is the residual that a
+  flux-coupling change could address, but it is the minority, not the 92%.
+
+### Why this is the documented "everything-at-once" wall (DECISION = BLOCKED)
+A change to the per-seed flux/store gate cannot reach the dominant 8/9 mechanism, because those chains
+have **no ST analog to converge toward** — there is no ST seed/store whose `flux≈0` rustle should
+reproduce; the entity simply does not exist on ST's side. Forcing flux=0 on rustle's extra seeds would
+mean **suppressing the seeds themselves** (matching ST's keeptrf collapse magnitude / read→transfrag
+folding), which is the upstream Layer-2/3 (read→transfrag, collapse) restructuring — not the Layer-4
+flow store gate this task scoped. The siblings' flux is already depletion-coupled and faithful; the gap
+is that rustle constructs ~36% more long-read seeds than ST. Escalate: the realizable lever is the
+read→transfrag collapse layer, not depletion-coupled per-seed flux. (Tooling for the next pass:
+`RUSTLE_DEPLETION_DIAG`, `RUSTLE_TF_INV_TSV`, and the `parity-decisions` JSONL seed/collapse diff above.)
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
