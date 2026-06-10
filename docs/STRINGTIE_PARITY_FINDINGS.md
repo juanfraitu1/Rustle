@@ -763,6 +763,117 @@ it), NOT where RU must reproduce ST's population-dependent path selection (= the
 
 ---
 
+## §6j — Layer 4 store-gate divergence (2026-06-09)
+
+Grounds the next task. `RUSTLE_ST_SHADOW=1` shadow mode. Branch `vg/flow-capacity-apportionment`.
+NO Rust changed in this task — characterization only.
+
+### (a) Current gate baseline (HONEST gate, final emitted GTFs)
+`python3 bench/gtf_chain_diff.py /tmp/ru_final.gtf /tmp/st_final.gtf`:
+- Rustle: 2992 tx (2991 multi-intron chains, 1 single-exon)
+- ST: 1845 tx (1821 multi-intron chains, 24 single-exon)
+- multi-intron in both: 1497 — **Rustle-only: 1494** — **ST-only: 324**
+
+(11-day-old memory baseline was ~1506/~322; the layer baseline shifted slightly to **1494 / 324**.
+Use 1494 rustle-only as this layer's working baseline.)
+
+### (b) Flow vs filter split
+For each of the 1494 rustle-only final chains, checked whether its intron chain appears in ST's
+`path_extracted` parity log (`/tmp/st.jsonl`). Coordinate convention: a GTF intron tuple
+`(exon_end, next_exon_start)` maps to a `path_extracted` `introns` segment `(exon_end+1, next_exon_start-1)`
+(offset `+1/-1`, verified empirically — 200/200 sample chains matched at exactly that offset).
+
+- **FLOW divergence (chain ABSENT from ST `path_extracted`): 1379 (92.3%)** — ST's flow never even
+  extracted a path with this chain. Matches the prior "~92% flow" estimate.
+- **FILTER divergence (chain PRESENT in ST `path_extracted`): 115 (7.7%)** — of those, ST `pred_kill`'d
+  49 (its chains appear in a `pred_kill` payload), 66 present-but-not-killed (likely collapsed into a
+  different ST survivor or coordinate-edge mismatches; not this task's target).
+
+This task targets the **1379 FLOW-divergence chains** — the surviving sibling seed-paths.
+
+### Trace cases (flow-divergence)
+All three confirmed absent from ST `path_extracted`. Signature: rustle stores **sibling seed-paths**
+each carrying minimal **independent** mass (`flux≈1.0, longcov=1.0, entry_abund=1.0`):
+- **Trace 1 (cleanest):** `NC_073243.2 (-) 29234259-29293356`, 1 intron `29236027-29292449`.
+  Rustle `path_extracted`: `source=flow cov=1.0000 longcov=1.0 entry_abund=1.0 flux=1.0000 raw_flow=2.0 seed_tf=0 nexons=2`.
+  ST: **zero `path_extracted` records anywhere in 29234000-29294000** — ST never extracts this path at all.
+- **Trace 2:** `NC_073243.2 (-) 111697442-111734611`, 10-intron sibling (`seed_tf=29`), one of ~17 sibling
+  seeds at this locus; the high-abundance seeds (`seed_tf=1, flux=36`) ARE shared with ST, but the thin
+  siblings (`flux=1.0, raw_flow=16`) are rustle-only.
+- **Trace 3:** `NC_073243.2 (+) 22704221-22707567`, 5-intron sibling (`seed_tf=6, flux=1.0, raw_flow=8.0`)
+  living beside a `flux=3.0` primary (`seed_tf=1`) that ST keeps.
+
+### (c) Rustle store site
+`src/rustle/path_extract.rs` — inside `parse_trflong`'s seed loop. The store cascade:
+1. `path_extract.rs:8879` — `if long_read_mode && !mixed_mode && !guide && flow_flux <= 0.0` → defer to
+   checktrf (zero-flux), `continue`.
+2. `path_extract.rs:8991` — `if coverage < min_cov_gate && !is_guide_pred` → defer to checktrf
+   (`min_cov_gate` default **0.15**, env `RUSTLE_MIN_COV_GATE`; ST-parity-lite, NOT in ST), `continue`.
+3. `path_extract.rs:9064` — `if config.eonly && !is_guide_pred` → skip.
+4. **`path_extract.rs:9180` — `out.push(Transcript{…})` = the STORE.**
+
+**Operative rustle store predicate:** store iff `flow_flux > 0.0` (8879) **AND** `coverage >= 0.15`
+(8991) AND `!eonly` (9064). `coverage` and `flow_flux` are computed in the block at
+`path_extract.rs:8377-8859`: `flow_flux` = the `flux` (`lf`) returned by `long_max_flow_st` /
+`long_max_flow_seeded_with_used_pathpat` (long-read branch, `path_extract.rs:8539-8557`); `coverage` =
+`Σ_j nodeflux[j]·noderate[path[j]]` summed over path nodes (`path_extract.rs:8741-8815`), mirroring ST's
+`ecov`. The flow-divergence siblings have `flow_flux≈1.0, coverage≈1.0` and pass trivially.
+
+### (d) StringTie store condition
+`tools/stringtie/rlink.cpp`, `parse_trflong` (defined line 9758):
+- `rlink.cpp:9856` — `flux = long_max_flow(...)` computes the path's max flow.
+- `rlink.cpp:9872` — `if(flux || transfrag[t]->guide)` — **GATE A:** only non-zero-flux (or guide)
+  paths proceed; else `tocheck` stays true → `checktrf.Add(t)` at `rlink.cpp:9044`. This is reached only
+  after `back_to_source_fast_long` (9850) AND `fwd_to_sink_fast_long` (9854) both succeed.
+- `rlink.cpp:9918-9950` — build exons; `cov += nodeflux[j]*noderate[path[j]]` (9923/9946).
+- **`rlink.cpp:9982` — `if(g || (!eonly && len>=mintranscriptlen && cov>epsilon))` → `pred.Add(p)`
+  (`rlink.cpp:10020`) = ST's STORE.** GATE B.
+
+**`long_max_flow` capacity source:** `rlink.cpp:8614/8621` builds network capacity from the CURRENT
+`transfrag[t]->abundance`, which is DEPLETED by every prior seed's extraction (`nodecov[path[j]] -=
+nodeflux[j]` at `rlink.cpp:9926`, plus per-transfrag abundance consumption). So for a sibling seed
+processed after its mass was consumed, `long_max_flow` returns `flux ≈ 0`.
+
+### (e) The named divergence
+**The store PREDICATE TEXT is essentially identical on both sides** (`flux>0 ∧ cov>ε ∧ len≥mintranscriptlen`,
+rustle additionally requiring `coverage≥0.15`). **The divergence is NOT the predicate — it is the VALUE
+of `flow_flux`/`coverage` that rustle's flow extraction returns for sibling seed-paths.**
+
+- ST: for a thin sibling whose mass an earlier seed already depleted, `long_max_flow` (rlink.cpp:9856)
+  returns **`flux = 0`** → ST fails GATE A (`rlink.cpp:9872`) → the path **never reaches the store at
+  `rlink.cpp:9982`**; it is routed to `checktrf` and (in `!mixedMode` long mode) almost never stored
+  there. Net: ST emits NO `path_extracted` for the chain → it is rustle-only.
+- Rustle: for the same sibling, `long_max_flow_st` / `long_max_flow_seeded_with_used_pathpat`
+  (`path_extract.rs:8539-8557`) returns **`flow_flux ≈ 1.0`** with **`coverage ≈ 1.0`** (INDEPENDENT,
+  non-zero per-seed mass), so it passes 8879 + 8991 and is STORED at `path_extract.rs:9180`.
+
+So ST's effective store gate carries an **implicit depletion-coupling requirement** that rustle's does
+not realize: ST only stores a seed-path if `long_max_flow` over the **already-depleted** graph still
+carries non-zero flow — i.e. the path must own residual, NOT-yet-claimed abundance mass. Rustle's
+extraction preserves independent positive per-seed flux for the siblings (the prior depletion-port was
+gate-neutral precisely because the depletion ran but the siblings' flux survived it). 1379 of 1494
+rustle-only chains are these surviving independent-abundance siblings.
+
+**Rustle-side inputs the next task will gate on** (the variables that differ from ST's `flux≈0`):
+- `flow_flux` (`path_extract.rs:8859`, the `flux`/`lf` from the long-read max-flow call).
+- `coverage` (`path_extract.rs:8378`, = `Σ nodeflux·noderate`).
+- supporting: `raw_flow_sum_out` (`path_extract.rs:8377/9153`, logged as `raw_flow`), and the per-seed
+  entry abundance `seed_entry_abund[idx]` (logged as `entry_abund`).
+The next task must reproduce ST's depletion-coupled rejection: a sibling should be stored only if its
+flux reflects residual UNCLAIMED mass after prior seeds, mirroring how ST's `long_max_flow` returns 0
+once the supporting transfrag abundance has been consumed — NOT merely `flow_flux>0 ∧ coverage≥0.15`.
+
+### Caveats / honesty
+- The store SITES are pinned exactly on both sides (`path_extract.rs:9180` / `rlink.cpp:9982`, plus the
+  upstream flux gate `rlink.cpp:9872`).
+- I did NOT instrument ST's `long_max_flow` to print `flux=0` for the specific Trace-1 transfrag (ST's
+  per-seed flux is not in the parity log); the "ST returns flux≈0 for depleted siblings" conclusion is a
+  read of the capacity-from-`abundance` code path (rlink.cpp:8614/8621 + depletion at 9926) plus the
+  EMPIRICAL fact that ST emits zero `path_extracted` for Trace 1's region. A confirmatory instrumented ST
+  flux print for one trace transfrag is left to the next task if a tighter proof is wanted.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
