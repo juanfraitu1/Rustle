@@ -594,6 +594,9 @@ pub enum SeedOutcome {
     ChecktrfIncomplete,
     /// Checktrf: rescue exons empty or too short or zero coverage.
     ChecktrfRescueFail,
+    /// Checktrf: multi-node long-read transfrag with no kept-path match — dropped to match
+    /// StringTie (rlink.cpp:10369 redistribute-only branch; never independently stored).
+    ChecktrfMultinodeNoMatchDrop,
     /// Successfully stored as transcript at output index.
     Stored(usize),
 }
@@ -11264,6 +11267,7 @@ pub fn extract_transcripts(
                                 SeedOutcome::ChecktrfRescued => ("checktrf_rescued", None),
                                 SeedOutcome::ChecktrfIncomplete => ("checktrf_incomplete", None),
                                 SeedOutcome::ChecktrfRescueFail => ("checktrf_rescue_fail", None),
+                                SeedOutcome::ChecktrfMultinodeNoMatchDrop => ("checktrf_multinode_drop", None),
                             };
                             // Path data only available for Stored — pull from out[stored_idx].
                             let (path_len, pfirst_c, plast_c, path_nodes_str, intron_chain) =

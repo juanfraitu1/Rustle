@@ -839,6 +839,7 @@ fn diagnose_junctions_present(
             SeedOutcome::ChecktrfRescued => "checktrf_rescued",
             SeedOutcome::ChecktrfIncomplete => "checktrf_incomplete",
             SeedOutcome::ChecktrfRescueFail => "checktrf_rescue_fail",
+            SeedOutcome::ChecktrfMultinodeNoMatchDrop => "checktrf_multinode_drop",
             SeedOutcome::Stored(_) => "stored",
         };
         *counts.entry(label).or_insert(0) += 1;
