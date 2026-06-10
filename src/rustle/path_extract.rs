@@ -9804,9 +9804,26 @@ pub fn extract_transcripts(
             }
             {
                 // Independent rescue: store complete transfrag as its own prediction.
-                // Applies to: shortread/<=1-node, AND multi-node longread with no kept-path match.
+                // Applies to: shortread/<=1-node only (StringTie rlink.cpp:10413 `else` branch).
                 // `else if(!eonly || guide)` — in non-eonly mode always rescues.
                 // Non-contiguous jumps must have explicit transfrag edge pattern support.
+
+                // ST-faithful checktrf gate (rlink.cpp:10369/10413): a multi-node long-read
+                // transfrag with no kept-path match is redistribute-only in StringTie and is
+                // NEVER stored as an independent prediction. Drop it here to match ST. Preserves
+                // short-read/single-node rescue, guides, and csr_triggered chimeric-suffix folds.
+                // Opt-out: RUSTLE_CHECKTRF_MULTINODE_RESCUE=1 restores the old store-it behavior.
+                if checktrf_multinode_no_match_drop(
+                    is_shortread_tf,
+                    tf_nodes.len(),
+                    csr_triggered,
+                    transfrags[t].guide,
+                    std::env::var_os("RUSTLE_CHECKTRF_MULTINODE_RESCUE").is_some(),
+                ) {
+                    record_outcome!(t, SeedOutcome::ChecktrfMultinodeNoMatchDrop);
+                    emit_checktrf_result!(t, "multinode_no_match_drop", &tf_nodes);
+                    continue;
+                }
 
                 // in eonly mode, only guide transfrags are independently rescued.
                 if config.eonly && !transfrags[t].guide {
