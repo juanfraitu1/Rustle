@@ -1444,6 +1444,18 @@ acceptance+downstream PAIR together, not flag-flipping.** Mechanically gating th
 is feasible and cleanly documents the strictness, but it will not make baseline find everything ST
 finds. Consistent with [[project_junction_parity]], §6t, and the RUSTLE_ST_SHADOW non-convergence.
 
+### Mechanical gating pass DONE (commit 3e09564)
+Of the 8 hardcoded options, 4 already had gates or live in the default-off `predcluster_st` path.
+The 4 genuinely-ungated baseline-path options are now toggleable (default-preserving opt-outs):
+`RUSTLE_KEEP_STRAND_ZERO` (graph_build.rs strand==0 reject), `RUSTLE_GOOD_JUNC_ISOFRAC_OFF`
+(pipeline.rs <1%-support junction demotion), `RUSTLE_MICRO_EXON_TRIM_OFF` (bundle_builder.rs CHI_THR
+<50bp trim), `RUSTLE_ZERO_FLUX_STORE` (path_extract.rs zero-flux→checktrf deferral). Default (all
+unset) verified BYTE-IDENTICAL (187/104, symdiff 0); suite green. Effects when enabled (chr19):
+micro-exon-trim 187→188, zero-flux-store 187/104→174/161; strand_zero & isofrac inert on chr19
+(their junctions don't alter chr19 final chains) but now toggleable for other data. **Every deliberate
+baseline strictness is now a documented, toggleable option** — the user's separation goal achieved
+mechanically, with the standing caveat (above) that toggling them does NOT make baseline ⊇ ST.
+
 ---
 
 ## 7. Superseded documents
