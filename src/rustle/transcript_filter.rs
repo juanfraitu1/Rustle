@@ -8546,6 +8546,26 @@ pub fn print_predcluster_with_summary_multi(
             );
         }
     }
+    // Opt-in precision floor: drop multi-intron predictions below a coverage threshold.
+    // DEFAULT-OFF — env unset or <= 0 is a no-op, so the default output is byte-identical.
+    // Surfaced by the divergence-localization analysis (§6w). VERIFICATION FINDING: there is
+    // NO clean threshold here. The offline analysis suggested cov<0.8 was a clean ~7-FP win,
+    // but that used pred_filter_stage ENTER cov; this filter runs on FINAL t.coverage, where
+    // chr19 behaves: cov<0.8 drops NOTHING, and cov<1.0 removes 10 rustle-only FP but also
+    // costs ~1 annotation-confirmed isoform + 4 ST-shared chains (new recall misses). So this
+    // is the structural FP floor (cf. feedback_filter_knobs_dont_move_precision), not a clean
+    // lever. Kept as a tunable precision/recall knob (e.g. a high-precision use case may set a
+    // higher floor and accept recall loss); validate genome-wide before any default flip.
+    // Single-exon predictions are untouched (different coverage semantics).
+    if let Some(min_cov) = std::env::var("RUSTLE_MIN_MULTI_INTRON_COV")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+    {
+        txs.retain(|t| t.exons.len() < 2 || t.coverage >= min_cov);
+        emit_pred_stage("AFTER_min_multi_intron_cov", &txs);
+    }
+
     // Layer 4 final emit: surviving transcripts after the entire predcluster
     // filter chain (just before merging with protected sources).
     emit_pred_stage("FINAL", &txs);

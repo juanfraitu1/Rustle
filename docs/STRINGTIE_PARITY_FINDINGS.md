@@ -1495,6 +1495,64 @@ integrated across all four categories for future ST-alignment diffing.
 
 ---
 
+## §6w — Divergence localized across 3 new ladders; node_flux closes the coverage hypothesis (2026-06-10)
+
+Added 3 more aligned parity events and used them to localize *where* the canonical 187/104 divergence
+enters the pipeline. Events (all emit-only; ST content byte-identical; rustle default chain-diff 0):
+- **`pred_filter_stage`** {stage,cov,longcov,tlen,n_exons,n_introns,introns} — per-stage survivor snapshot.
+  rustle already had it; added longcov+tlen + the ST mirror (a read-only `pd_emit_pred_stage` lambda
+  snapshotting `flag==true` preds at the 6 shared stage boundaries; ST `print_predcluster` is monolithic
+  — 76 scattered `flag=false`, no stage structure). submodule 14d73c8 / rustle c9fea2e.
+- **`backfwd_extension`** {direction,from/to_node,to_start/end,chosen_capacity,chosen_transfrag_abund/weak,
+  has_transfrag,num_candidates,outcome} — per-step path-extension commit (finer than the whole-path
+  `path_extend_diff`). ⚠ on the default -L path the `_st` helpers run as the ST-faithful SHADOW clone
+  (canonical_active()=false), so it traces the shadow. submodule 8991c97 / rustle d9e8f0e.
+- **`node_flux`** {nodeflux,noderate,nodecov_before,ecov} — per-node depletion ladder (added §6 earlier).
+
+**THE DIVERGENCE MAP** (workflow wf_971c6da1; TP/FP = exact intron-chain match vs `../GGO_genomic.gff`
+NC_073243.2, cross-validated with gffcompare class `=`). Canonical 187 rustle-only (155 FP + 32 TP) /
+104 ST-only (100 FP + 4 TP). It enters at **two** points, split ~50/50:
+- **Extension/graph (NEVER_BUILT by ST): 93/187.** Per-step view: 55% true graph-architecture (ST graph
+  lacks the node/edge or splits an exon boundary ≤12bp off), 38% path-combinatorics (ST traverses *every*
+  junction edge — 98.5% accepted — but assembles a competing transcript), only **7 (7.5%)** a portable
+  extension-SELECTION difference. This independently reproduces the prior junction-layer "93% graph-rooted /
+  ~12 flow-rooted" ceiling (§6t).
+- **Filtering (BUILT_THEN_KILLED): 94/187.** Kill stages guides 42 / pairwise 34 / runoff 18 / **isofrac 0**.
+  ⚠ The first-pass "pairwise 96 / isofrac 35" was an artifact of the `pred_filter_stage` FINAL **superset**
+  (275 vs 187 — rustle has ~8 post-FINAL collapse stages ST lacks); on the true GTF set isofrac kills zero.
+  Every kill bucket is only 79–89% FP-pure: matching ST's filters removes 80 FP but also kills **14
+  annotation-TP** real isoforms (cov AUC 0.704; the "FP" are dominated by gffcompare class-`j` real-gene
+  splice variants, not junk). **Same FP/TP-inseparable over-kill wall** as Approach A/B (§6n/§6o).
+- **ST-only (recall) is symmetric** (55/8/37 graph/extchoice/pathcomb) and reassuring: rustle misses only
+  **4** annotated isoforms of 104; its stricter filters correctly strip ST's FP (kill 42 at 2 TP cost).
+
+**`node_flux` ladder closes the coverage hypothesis.** On 8256 shared nodes: `noderate` is identical on
+74.3% (median ru/st ratio **1.0000**) and explains only **14.7%** of the ecov divergence; `nodecov_before`
+equal on 80% (same starting coverage). The other **85.3% is depletion DEPTH** — rustle runs ~1.8× more
+ladder steps/node (9.83 vs 5.43; 18 vs 9 on over-enum backbone), and those extra steps ARE the rustle-only
+chains consuming shared backbone. So the historical "37.1 vs 3.29 / 11× backbone cov" gap is **over-enumeration,
+NOT a metric-definition difference** — the metric hypothesis is REFUTED. node_flux is a spent confirmatory
+diagnostic (re-pins the root at enumeration for the 3rd time), **not** an independent lever: ceiling = 0 new
+addressable chains. Fixing enumeration parity fixes coverage for free; the reverse is impossible.
+
+**cov-floor gate VERIFIED → NO clean threshold (the offline win was an ENTER-cov artifact).** The analysis
+surfaced a "cov<1.0 → 10 FP / 0 TP" lever, but that was on the rustle-only subset (not runtime-identifiable)
+*and* used `pred_filter_stage` ENTER cov. Implemented as `RUSTLE_MIN_MULTI_INTRON_COV=<float>` (opt-in
+default-off, transcript_filter.rs just before FINAL, single-exon untouched, emits `AFTER_min_multi_intron_cov`)
+and run end-to-end — the **filter sees FINAL `t.coverage`, not ENTER cov**, and there the window is empty:
+cov<0.8 drops NOTHING, cov<1.0 removes 10 rustle-only FP but costs ~1 annotation-TP + 4 ST-shared chains
+(187/104 → 177/108). So running the real filter REFUTED the offline "clean cov<0.8" — there is no clean
+threshold; this is the structural FP floor (`feedback_filter_knobs_dont_move_precision`). Default unset →
+byte-identical (chain-diff 0/0). Kept as a tunable precision/recall knob, not shipped on.
+
+**Verdict:** all 3 new ladders + both axes triangulate on the prior thesis (§6t/§6u, project_parity_consolidated):
+~93% architectural graph+path-enumeration co-design, ~7–12 addressable chains, faithful baseline (strict-early
++ lean-downstream) NOT flag-separable from ST (permissive-junctions + heavy-filter), divergence is MUTUAL. The
+harness now mirrors 8 ST-side decision events end-to-end. Tooling: bench/gtf_chain_diff.py + the analysis is
+reproducible from the aligned `/tmp/{st,ru}_all.jsonl` logs (FILTER_STEPS=the 8 events).
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
