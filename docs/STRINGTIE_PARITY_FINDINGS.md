@@ -1275,6 +1275,47 @@ exact back/fwd divergence.
 
 ---
 
+## §6q — Component 2 fix #1: _st fwd free-sink shortcut (2026-06-10)
+
+First convergence fix for the canonical regression (§6p). Method: ultracode workflow wf_189c5106
+read all 3 back/fwd implementations (ST source / rustle `_st` port / rustle default) in parallel and
+named the top suspect; confirmed empirically by a one-line gated test.
+
+### The bug
+`fwd_to_sink_fast_long_st` (`parse_trflong_st.rs:369`) had a "direct sink shortcut": when
+`c == sink_id && *maxpath <= i` it closed the path at the sink with NO transfrag and `break` BEFORE
+the coverage-scoring block (`:451`). ST (fwd 2D(a)) and rustle-default both require a LIVE transfrag
+(`tf_first==i && maxpath<=i`, or onpath-validated) to authorize sink termination. So whenever a seed
+reached an internal backbone node carrying a node→sink edge (from some shorter read), the shortcut
+greedily truncated the path early — manufacturing the low-cov (~1.0) near-duplicate 3' truncations
+(24→21/18/11/9-exon prefixes) that are the §6p regression. The code comment self-documented it as a
+rustle relaxation. Gated off by default; opt back in `RUSTLE_CANON_FREESINK=1`.
+
+### Result (chr19, full suite green)
+| Mode | before | after |
+|------|--------|-------|
+| canonical rustle-only / ST-only | 223 / 144 | **181 / 122** (−42, +22 shared recovered) |
+| default rustle-only | 187 | **186** (−1, a verified RefSeq+ST FP: 97630192-97748272) |
+
+### Architectural discovery
+The `_st` back/fwd is NOT canonical-only — it is **load-bearing in DEFAULT** via the "ST-port soft
+gate" (`path_extract.rs:7484`, `RUSTLE_PARSE_TRFLONG_ST_GATE_OFF` default-on): default runs the
+`_st` fwd on a clone and, when rustle's default path succeeds but `_st` gives up, routes the path to
+checktrf. So improving `_st` faithfulness improves DEFAULT precision now (not just an eventual
+canonical flip). The flow-port spec's "default byte-identical, all canonical-gated" premise was
+therefore incomplete — `_st` changes leak to default through the soft gate. ⚠ The default change
+needs genome-wide validation before the 186 headline is final (the soft gate could drop TPs at other
+loci); chr19 shows a clean FP removal.
+
+### Remaining Component-2 work
+Canonical is now 181 (vs default 186) — still above the ~0 target, and ST-only 122 > default 104
+(canonical still drops shared chains = recall side). Next divergences (from wf_189c5106 synthesis):
+the `accepted_onpath` sink relaxation (`parse_trflong_st.rs:457-468`, secondary truncation admit) and
+the preserved `j++` back-continuity quirk (`:730-741`, latent). Continue first-divergence-trace +
+gated-fix + measure per the §6p worklist.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):
