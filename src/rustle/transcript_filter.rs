@@ -7757,12 +7757,19 @@ pub fn print_predcluster_with_summary_multi(
     // → last exon end. Payload includes stage name + intron chain so we can
     // diff per-stage on both sides.
     let emit_pred_stage = |stage: &str, txs: &[Transcript]| {
+        if !crate::parity::decisions::is_enabled() {
+            return;
+        }
         for t in txs {
             if t.exons.is_empty() {
                 continue;
             }
             let span_start = t.exons.first().map(|e| e.0).unwrap_or(0);
             let span_end = t.exons.last().map(|e| e.1).unwrap_or(0);
+            // tlen = summed exonic length (0-based half-open: e.1 - e.0). Matches ST
+            // abs(pred->tlen) (sum of 1-based inclusive exon lengths). Added for symmetry
+            // with the ST pred_filter_stage payload.
+            let tlen: u64 = t.exons.iter().map(|e| e.1 - e.0).sum();
             // Build intron chain (1-based inclusive, donor+1 → acceptor-1).
             // Note: rustle's exons are stored 0-based half-open, but coverage
             // payloads downstream typically write GTF-style 1-based inclusive.
@@ -7787,9 +7794,11 @@ pub fn print_predcluster_with_summary_multi(
                 }
             }
             let payload = format!(
-                r#""stage":"{}","cov":{:.4},"n_exons":{},"n_introns":{},"introns":"{}""#,
+                r#""stage":"{}","cov":{:.4},"longcov":{:.4},"tlen":{},"n_exons":{},"n_introns":{},"introns":"{}""#,
                 stage,
                 t.coverage,
+                t.longcov,
+                tlen,
                 t.exons.len(),
                 n_introns,
                 introns_str,
