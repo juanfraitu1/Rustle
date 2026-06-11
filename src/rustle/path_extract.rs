@@ -7405,7 +7405,11 @@ pub fn extract_transcripts(
                     minp,
                     maxp,
                 );
-                crate::parse_trflong_st::emit_diff_if_diverges(&r, &st, "back", idx, maxi);
+                crate::parse_trflong_st::emit_diff_if_diverges(
+                    &r, &st, "back", idx, maxi,
+                    bundle_chrom, bundle_strand,
+                    graph.nodes[maxi].start + 1, graph.nodes[maxi].end,
+                );
                 // ST soft gate (back direction): default ON; disable via RUSTLE_PARSE_TRFLONG_ST_GATE_OFF=1.
                 if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none()
                     && back_ok
@@ -7507,7 +7511,11 @@ pub fn extract_transcripts(
                         minp,
                         maxp,
                     );
-                    crate::parse_trflong_st::emit_diff_if_diverges(&r, &st, "fwd", idx, maxi);
+                    crate::parse_trflong_st::emit_diff_if_diverges(
+                        &r, &st, "fwd", idx, maxi,
+                        bundle_chrom, bundle_strand,
+                        graph.nodes[maxi].start + 1, graph.nodes[maxi].end,
+                    );
                     // ST-port soft gate (option C): when rustle succeeds but
                     // ST's strict algorithm would have given up, treat the
                     // path as failed so it routes to checktrf rescue. ST's

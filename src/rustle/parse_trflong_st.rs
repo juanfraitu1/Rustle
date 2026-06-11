@@ -1387,12 +1387,20 @@ pub fn outcome_from_rustle(
 }
 
 /// Emit a divergence event when the two outcomes differ.
+#[allow(clippy::too_many_arguments)]
 pub fn emit_diff_if_diverges(
     rustle: &PathExtendOutcome,
     st: &PathExtendOutcome,
     direction: &str,
     seed_idx: usize,
     start_node: usize,
+    // parity harness cleanup: real from-node coords so this clone-time comparison
+    // event respects FILTER_RANGE/FILTER_CHROM (was emitted with 0/0/'.', which
+    // bypassed the coord filters and leaked into every scoped locus capture).
+    chrom: &str,
+    strand: char,
+    from_start: u64,
+    from_end: u64,
 ) {
     if rustle == st {
         return;
@@ -1420,7 +1428,14 @@ pub fn emit_diff_if_diverges(
         rustle.pathpat_hash,
         st.pathpat_hash,
     );
-    crate::parity::decisions::emit("path_extend_diff", None, 0, 0, '.', &payload);
+    crate::parity::decisions::emit(
+        "path_extend_diff",
+        Some(chrom),
+        from_start,
+        from_end,
+        strand,
+        &payload,
+    );
 }
 
 /// Whether the comparison harness is enabled. Off by default; set
