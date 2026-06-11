@@ -1604,6 +1604,21 @@ three (and twice OOM-killed the mapping workflow on WSL2 — salvaged from the r
   (extension_scan_step); rejection-rationale gap closed for the extension layer, partially for filtering (pred_kill
   already covers it), and for junctions the de-novo gap is now KNOWN to be support-driven (consensus-orthogonal).
 
+**Exhaustive deviation audit with the 9-event harness (2026-06-10): no correctable deviation; root = read→transfrag
+creation.** Used the aligned events to test, layer by layer, whether any rustle/ST divergence is a fixable port
+deviation vs the architectural enumeration. EXTENSION (extension_scan_step cross-tool diff on 1834 shared from→cand
+node pairs): 66% identical (action,reason); of 228 "ST-skips / rustle-_st-selects" clear deviations, 227 (99.6%) are
+because rustle's `candidate_cov` is HIGHER (denser transfrag population through the node), only 1 is an equal-cov
+maxcov/scan-order case — the extension LOGIC is faithful, the divergence is the input population. TRANSFRAG
+CONSOLIDATION (transfrag_collapse diff): rustle's +2938 surplus multi-intron chains are only 14 (0%) fuzzy-mergeable
+to an ST chain, 690 (23%) sub-path truncations, 2234 (76%) genuinely novel; rustle collapses MORE per group (n_members
+1.75 vs 1.48) — so NOT an under-collapse deviation. ROOT: rustle creates ~1.7× more RAW read-transfrags (sum n_members
+18461 vs 10739), 52% of the surplus single-read (cov≤1.0). NODE_FLUX: noderate median-identical (not a metric bug).
+JUNCTIONS: 71% canonical (support-driven, not quality). FILTERING: FP/TP-inseparable. SIX independent instruments
+converge: every downstream stage (extension, collapse, coverage, filters) is FAITHFUL given its input; the sole root
+is the read→transfrag CREATION population (architectural, the established at-ceiling enumeration lever) — there is no
+hidden port bug or tunable knob to correct.
+
 ---
 
 ## 7. Superseded documents
