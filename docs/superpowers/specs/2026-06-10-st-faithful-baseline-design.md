@@ -16,7 +16,9 @@
 
 3. **Surgical terminal-boundary gate**: the 3rd layer (`apply_terminal_boundary_evidence_to_longread_txs`) over-extends checktrf alt-TES chains to 36065683. Gating it broadly is neutral (un-extends real 3' UTRs); restricting to **checktrf_rescue-source** chains is net-positive — chr19 267→**266**, mini3 → 2/4.
 
-**Cumulative session: chr19 291→266 (5 gates), mini3 3/16→2/4.** Remaining 4 ST-only are exon-skip alt-splice isoforms that **rustle's flow over-extracts** (to 36066183, low cov → killed) where StringTie leaves them for checktrf (36063554, high cov → kept) — a deep flow path-selection (which chains flow consumes vs defers to checktrf); broad flow suppression regresses real 3' UTRs.
+4. **Endpoint-demotion** (`a235a0d`): the fwd soft-gate now also defers a flow seed to checktrf when ST's `_st` clone stops at a strictly-earlier 3' node (rustle over-extends past ST's stop). This was a **no-op before the M2 checktrf gates** (over-extended chains were shared) but **converges now** because checktrf stores the deferred seed at its natural terminus — the **coupled flow+checktrf co-port** validated. chr19 266→**264**.
+
+**Cumulative session: chr19 291→264 (6 gates), mini3 3/16→2/4.** The remaining 4 mini3 ST-only are alt-splice **combination** differences (different intron counts) — `ST_ORDER` converges them (4→1) but overfits (chr19 regresses); canonical still regresses even with the M2 gates. Geometry-based truncation proven dead (post-hoc trim and fwd junction-acceptor-stop both blow up — junctions are too common). The lever is the alt-splice combination selection that generalizes (seed-order/depletion coupling) or more coupled-gate pairs like endpoint-demotion.
 
 **Date:** 2026-06-10
 
