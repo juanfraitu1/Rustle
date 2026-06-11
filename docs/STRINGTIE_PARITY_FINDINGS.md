@@ -1585,16 +1585,24 @@ three (and twice OOM-killed the mapping workflow on WSL2 — salvaged from the r
   mismatched shared token — rustle `short_terminal_exon` → `short_first_last_exon` (label only; no assembly change).
   Completing ST's other ~14 pairwise emits is deferred (lower marginal value; rustle side already enables analysis).
 
-- **`junction_accept` consensus sub-codes — BLOCKED (the block IS the finding).** Adversarial verify killed it on
-  both sides: (1) rustle NEVER computes splice-dinucleotide consensus — `consleft/consright` are hardcoded -1 in
-  every JunctionStat (junction_graph.rs:342, junction_graph_st.rs:1055; no genome-consensus pass exists); (2) ST's
-  consensus/`mm` demotions run INSIDE build_graphs, which is called AFTER the junction_accept emit (rlink.cpp:17120),
-  so at emit time consleft/consright are still -1 and mm un-demoted. Unreachable both sides. The ASYMMETRY is the
-  result: rustle's junction acceptance lacks the splice-consensus check ST applies — a real algorithmic contributor
-  to the proven good-junc strict-subset gap ([[project_junction_parity]]), addressable only by ADDING a consensus
-  pass to rustle (a feature), not by instrumentation. Net: harness now mirrors a 9th decision event
-  (extension_scan_step); the rejection-rationale gap is closed for the extension layer, partially for filtering
-  (pred_kill already covers it), and confirmed-not-closable for junctions without new rustle algorithm work.
+- **`junction_accept` consensus sub-codes — NOT A DE-NOVO LEVER (corrected).** First read: "rustle lacks the
+  consensus check ST applies → contributes to the good-junc subset gap." That was WRONG. ⚠ Splice consensus is
+  genome-dependent: ST computes it only `if(bdata->gseq)`, and `gseq` is loaded ONLY when `--rseq`/`-S` (a genome
+  FASTA) is passed (stringtie.cpp:1087/622). Standard `stringtie -L GGO_19.bam` (de novo, no genome) → gseq=NULL →
+  ST's consensus check is SKIPPED. So in the de-novo comparison we actually run, NEITHER tool uses consensus, and it
+  cannot be a factor in the observed subset gap. (Rustle does have the machinery — genome.rs `is_consensus_splice`
+  + `--genome-fasta` — it's just never wired into the junction layer; ST's gseq demotion also runs after the emit.
+  Both moot for de novo.) EMPIRICAL CONFIRMATION (computed GT-AG directly from GGO.fasta NC_073243.2 over the
+  junction_accept sets; convention: start=1-based last donor-exon base, end=1-based first acceptor-exon base,
+  strand-aware): rustle accepted = **98.6% canonical**, ST accepted = 82.7%, and the subset gap (ST-accepts /
+  rustle-drops, 10162) = **71.3% canonical**. So 71% of the junctions rustle drops are perfectly canonical GT-AG —
+  rustle drops them on SUPPORT (mm/nreads thresholds), NOT splice quality. The gap is support/threshold-driven, not
+  consensus-driven (consistent with [[project_junction_parity]]: ST keeps ~15k extra mostly-single-read junctions).
+  Consensus, IF a genome were supplied, would only let ST drop the ~29% non-canonical junk it keeps and rustle
+  already drops (moving ST toward rustle), and would NOT touch the 71% canonical gap. Conclusion: NOT wired — zero
+  de-novo value; a genome-assisted-mode concern only. Net: harness now mirrors a 9th decision event
+  (extension_scan_step); rejection-rationale gap closed for the extension layer, partially for filtering (pred_kill
+  already covers it), and for junctions the de-novo gap is now KNOWN to be support-driven (consensus-orthogonal).
 
 ---
 
