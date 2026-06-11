@@ -8320,10 +8320,18 @@ pub fn extract_transcripts(
         // BEFORE flow extraction. the original implementation rejects all 2046 single-node paths
         // as "low_coverage" — they consume flow budget without producing valid
         // multi-exon predictions, starving downstream multi-exon path extraction.
-        // Opt-out via RUSTLE_KEEP_SINGLE_EXON_MULTINODE for evaluation.
-        if long_read_mode && exons.len() == 1 && real_nodes.len() > 1
-            && std::env::var_os("RUSTLE_KEEP_SINGLE_EXON_MULTINODE").is_none()
-        {
+        //
+        // ST-faithful flip (precise_mode gate): skipping these SE-multinode seeds WITHOUT
+        // depleting their flux strands their transfrag abundance as residual (mini3 locus B:
+        // the 36062294-36066183 SE seed, abund 4.0), which the leftover redistribution then
+        // dumps onto flow fragments, inflating them past the retained-intron gate. StringTie
+        // consumes that flux (0 residual). So by default we KEEP these seeds (extract → deplete
+        // the flux; the SE prediction is filtered downstream as before, so output SE count is
+        // unchanged). precise_mode keeps today's skip (byte-identical to 4705ab1).
+        // Opt-out override: RUSTLE_KEEP_SINGLE_EXON_MULTINODE (force keep regardless of mode).
+        let skip_se_multinode = crate::stringtie_parity::precise_mode()
+            && std::env::var_os("RUSTLE_KEEP_SINGLE_EXON_MULTINODE").is_none();
+        if long_read_mode && exons.len() == 1 && real_nodes.len() > 1 && skip_se_multinode {
             // Single exon result from a multi-node seed: skip.
             record_outcome!(idx, SeedOutcome::Skipped("single_exon_from_multinode"));
             continue;
