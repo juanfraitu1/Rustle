@@ -194,6 +194,16 @@ pub fn st_shadow() -> bool {
     st_shadow_from(std::env::var("RUSTLE_ST_SHADOW").ok().as_deref())
 }
 
+/// Master gate for the ST-faithful baseline flip. DEFAULT (unset) = ST-faithful
+/// (the converging baseline). `RUSTLE_PRECISE=1` = today's strict-early behavior
+/// (the escape hatch; must stay byte-identical to commit 4705ab1).
+#[allow(dead_code)]
+pub fn precise_mode() -> bool {
+    use std::sync::OnceLock;
+    static P: OnceLock<bool> = OnceLock::new();
+    *P.get_or_init(|| std::env::var_os("RUSTLE_PRECISE").is_some())
+}
+
 /// Pure helper for `st_predcluster()`.
 #[inline]
 pub fn st_predcluster_from(v: Option<&str>) -> bool { matches!(v, Some(s) if s != "0") }
