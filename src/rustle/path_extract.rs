@@ -8015,9 +8015,21 @@ pub fn extract_transcripts(
         // earlier baseline enabling it lost TPs. Re-measured on 2026-04-20
         // baseline (F1=86.72): enabling it fires 128 unwitnessed outcomes but
         // final output is F1-neutral (same matches, 1 fewer noise query).
-        // Default changed to ON; disable via RUSTLE_WITNESS_OFF=1.
-        let witness_on = !std::env::var_os("RUSTLE_WITNESS_OFF").is_some()
-            || std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some();
+        //
+        // ST-faithful flip (precise_mode gate): the witness check is a precision
+        // filter rustle ADDS over StringTie — StringTie stitches consecutive splice
+        // edges from separate reads (the cross-gene read-through "mistake"; mini3
+        // locus C, +5 deep locus-B chains). Baseline rustle must reproduce that, so
+        // the witness check is OFF by default and only ON under RUSTLE_PRECISE=1
+        // (today's strict-early behavior, held byte-identical to commit 4705ab1).
+        //   - RUSTLE_PRECISE=1 : witness ON  (escape hatch; RUSTLE_WITNESS_OFF=1 still disables it)
+        //   - default          : witness OFF (ST-faithful; RUSTLE_ENABLE_WITNESS=1 opts back in)
+        let witness_on = if crate::stringtie_parity::precise_mode() {
+            !std::env::var_os("RUSTLE_WITNESS_OFF").is_some()
+                || std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some()
+        } else {
+            std::env::var_os("RUSTLE_ENABLE_WITNESS").is_some()
+        };
         // Full-chain witness: require a single transfrag to span ALL splice junctions
         // in sequence, rather than each consecutive pair independently. Catches paths
         // that are witnessed pair-by-pair but never by a single complete read.
