@@ -10886,7 +10886,13 @@ pub fn extract_transcripts(
     }
     // parse_trflong post-pass: for remaining long-read transfrags with internal paths,
     // redistribute support to best kept predictions (no independent transcript creation here).
-    if long_read_mode && !out.is_empty() && !kept_paths.is_empty() {
+    // RUSTLE_SECONDPASS_REDIST_OFF=1: diagnostic bypass (measures this pass's net effect on
+    // rustle-vs-ST; it inflates short subset-fragment coverage, e.g. the mini3 36062294 fragment 1.37->4.33).
+    if long_read_mode
+        && !out.is_empty()
+        && !kept_paths.is_empty()
+        && std::env::var_os("RUSTLE_SECONDPASS_REDIST_OFF").is_none()
+    {
         let has_guide_kept = kept_paths.iter().any(|(_, _, g, _)| *g);
         for t in 0..transfrags.len() {
             if !transfrags[t].longread || transfrags[t].abundance <= EPS {
