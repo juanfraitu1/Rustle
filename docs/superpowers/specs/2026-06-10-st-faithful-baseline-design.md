@@ -14,7 +14,9 @@
 1. **JAB-extension gate** (`...`): chr19 269→268, mini3 → 1/6 (STRG.2.12 converged).
 2. **fwd-extend gate**: chr19 268→**267** (−1 rustle-only FP).
 
-A *third* layer (`apply_terminal_boundary_evidence_to_longread_txs`, pipeline 3' extension) pushes the rest to 36065683; gating it recovers 2 more mini3 chains but is **neutral genome-wide** (balanced precision/recall — un-extends real 3' UTRs as it recovers alt-TES), so not shipped. **Cumulative session: chr19 291→267, mini3 3/16→1/6.** Remaining 6 need surgical (checktrf-only) terminal-extension suppression — uncertain net value.
+3. **Surgical terminal-boundary gate**: the 3rd layer (`apply_terminal_boundary_evidence_to_longread_txs`) over-extends checktrf alt-TES chains to 36065683. Gating it broadly is neutral (un-extends real 3' UTRs); restricting to **checktrf_rescue-source** chains is net-positive — chr19 267→**266**, mini3 → 2/4.
+
+**Cumulative session: chr19 291→266 (5 gates), mini3 3/16→2/4.** Remaining 4 ST-only are exon-skip alt-splice isoforms that **rustle's flow over-extracts** (to 36066183, low cov → killed) where StringTie leaves them for checktrf (36063554, high cov → kept) — a deep flow path-selection (which chains flow consumes vs defers to checktrf); broad flow suppression regresses real 3' UTRs.
 
 **Date:** 2026-06-10
 
