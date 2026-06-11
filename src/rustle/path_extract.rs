@@ -10096,8 +10096,12 @@ pub fn extract_transcripts(
                 // Default ON; disable via RUSTLE_CHECKTRF_FWD_EXTEND_OFF=1.
                 // Tunable: RUSTLE_CHECKTRF_FWD_EXTEND_COV_RATIO (default 15.0).
                 let fwd_extend_buf: Vec<usize>;
-                let do_fwd_extend =
-                    std::env::var_os("RUSTLE_CHECKTRF_FWD_EXTEND_OFF").is_none();
+                // ST-faithful flip (precise_mode gate): like JAB, the fwd-extend appends
+                // a high-cov kept_path tail past the rescued transfrag's natural terminus
+                // (over-extension StringTie does not do — it stores at the terminus). OFF
+                // by default; precise_mode keeps it ON (byte-identical to 4705ab1).
+                let do_fwd_extend = crate::stringtie_parity::precise_mode()
+                    && std::env::var_os("RUSTLE_CHECKTRF_FWD_EXTEND_OFF").is_none();
                 if complete && do_fwd_extend && rescue_nodes.len() >= 3 {
                     let last_node = *rescue_nodes.last().unwrap();
                     let last_is_hardend = graph.nodes.get(last_node)
