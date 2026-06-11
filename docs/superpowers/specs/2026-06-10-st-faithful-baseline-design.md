@@ -2,7 +2,15 @@
 
 **Status:** Approved (design choice: *flip-now*). In execution — Milestone 1 partial. Revert point: git `4705ab1` (`main`/current HEAD) — restore today's behavior by reverting to this commit, or in-code via `RUSTLE_PRECISE=1`.
 
-**Progress (2026-06-10):** `precise_mode()` gate live (`bc58844`). **Witness-check gate shipped as default** (`2385cec`): the LR consecutive-splice-pair witness filter is OFF by default (ST-faithful, reproduces ST's cross-gene read-through) and ON under `RUSTLE_PRECISE=1`. It **generalizes** — chr19 rustle-vs-ST divergence 291→273 (+22 in-both, −22 ST-only, +4 rustle-only); mini3 3/16 → 2/7 (locus C fully converged + 5 locus-B chains). **ST seed-order** default-flip tried and **reverted** (`4d92176`→`33b6951`): mini3-overfit (+1 there, −48 chr19). Endpoint-demotion and full canonical-fold falsified. **Remaining mini3 2/7** = the deep locus-B path-selection tail (alt-splice/cassette/boundary near-misses), which needs the coupled canonical+flow-depletion co-port (multi-session; canonical regresses standalone). **Methodology refinement:** every mini3 convergence must be validated genome-wide (chr19, ~7s) before defaulting — mini3 is a 3-locus proxy that can overfit.
+**Progress (2026-06-10 → 06-11):** `precise_mode()` gate live (`bc58844`). Two generalizing default-flips shipped, each gated behind `RUSTLE_PRECISE`, escape-hatch byte-identical throughout, full suite 284/0 under `RUSTLE_PRECISE=1`:
+1. **Witness-check gate** (`2385cec`): LR splice-pair witness OFF by default (reproduces ST's cross-gene read-through). chr19 divergence 291→273; mini3 3/16 → 2/7 (locus C converged).
+2. **Single-exon-multinode flux depletion** (`cab62d4`): keep SE-multinode seeds (extract → deplete flux) instead of skipping them, so their abundance isn't stranded as residual and dumped onto flow fragments by the redistribution. chr19 273→269; mini3 2/7 → 1/7 (the inflated fragment RI-killed). No SE-FP increase.
+
+**Cumulative: mini3 3/16 → 1/7, chr19 291 → 269.** ST+rustle redistribution instrumentation committed (ST submodule `72a71a1`: `trf_redistribute`/`trf_residual`; rustle `ea8adb9`). Unified root proven: rustle's flow under-depletes → residual → redistribution inflates fragments.
+
+**Tried + reverted (all regress genome-wide):** ST seed-order (`4d92176`→`33b6951`, mini3-overfit), geometry-RI kill, endpoint-demotion, canonical-fold, redistribution-scoping, RI-relax. **Methodology:** validate every mini3 win on chr19 (~7s) before defaulting.
+
+**Remaining (mini3 1/7) — diagnosed, not a cov-formula issue:** the 7 ST-only are **extracted then retained-intron-killed** (5/7 exact in pre-filter `path_extracted`). Per-base cov formula is sound (shared-chain ratio 0.97). Root: rustle over-extends the 3' terminus (ends 36063658 vs ST's 36063554) → becomes a retained-intron of the dominant chain → RI-killed; ST's clean terminus survives. Next fix = match ST's TES/terminal-exon boundary in extraction (deep; RI-relax can't separate real alt-TES from over-extended artifacts).
 
 **Date:** 2026-06-10
 
