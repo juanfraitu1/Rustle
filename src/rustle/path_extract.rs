@@ -3196,6 +3196,17 @@ fn redistribute_transfrag_to_matches(
         if oi >= out.len() {
             continue;
         }
+        // ST-faithful scoping (diagnostic RUSTLE_REDIST_NONFLOW_ONLY=1): ST redistributes
+        // leftover only to checktrf/keeptrf-added predictions (np>=npred), never to the
+        // main-flow predictions. Kept as a diagnostic: with the flow UNDER-extracting,
+        // scoping to non-flow loses the boost real flow isoforms need (chr19 in-both
+        // 1739->1522). Once the flow extracts ST-faithfully, the redistribution boost is
+        // unnecessary and this scoping becomes the correct ST-faithful default.
+        if std::env::var_os("RUSTLE_REDIST_NONFLOW_ONLY").is_some()
+            && out[oi].source.as_deref() == Some("flow")
+        {
+            continue;
+        }
         let abundprop = if abundancesum > 0.0 {
             tf.abundance * *keep_support / abundancesum
         } else if j == 0 {
@@ -10895,6 +10906,47 @@ pub fn extract_transcripts(
     {
         let has_guide_kept = kept_paths.iter().any(|(_, _, g, _)| *g);
         for t in 0..transfrags.len() {
+            // parity: residual long-transfrag abundance available for leftover redistribution
+            // (mirrors ST trf_residual, emitted before the abundance gate). ST has 0 residual
+            // (full depletion); rustle's nonzero residual is the under-extraction this feeds.
+            if crate::parity::decisions::is_enabled()
+                && transfrags[t].longread
+                && transfrags[t].node_ids.len() > 1
+            {
+                let fr = transfrags[t]
+                    .node_ids
+                    .iter()
+                    .copied()
+                    .find(|&n| n != source_id && n != sink_id);
+                let lr = transfrags[t]
+                    .node_ids
+                    .iter()
+                    .copied()
+                    .rev()
+                    .find(|&n| n != source_id && n != sink_id);
+                if let (Some(fr), Some(lr)) = (fr, lr) {
+                    let rs = graph.nodes.get(fr).map(|n| n.start).unwrap_or(0);
+                    let re = graph.nodes.get(lr).map(|n| n.end).unwrap_or(0);
+                    let redistributes = (transfrags[t].abundance > EPS
+                        && transfrags[t].node_ids.first().copied() != Some(source_id)
+                        && transfrags[t].node_ids.last().copied() != Some(sink_id))
+                        as i32;
+                    let payload = format!(
+                        r#""abund":{:.4},"nnodes":{},"redistributes":{}"#,
+                        transfrags[t].abundance,
+                        transfrags[t].node_ids.len(),
+                        redistributes
+                    );
+                    crate::parity::decisions::emit(
+                        "trf_residual",
+                        Some(bundle_chrom),
+                        rs,
+                        re,
+                        bundle_strand,
+                        &payload,
+                    );
+                }
+            }
             if !transfrags[t].longread || transfrags[t].abundance <= EPS {
                 continue;
             }
