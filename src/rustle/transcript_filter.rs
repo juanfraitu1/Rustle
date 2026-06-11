@@ -3245,7 +3245,7 @@ pub fn pairwise_overlap_filter_with_summary(
                     .map(|x| x.1.saturating_sub(x.0) >= anchor)
                     .unwrap_or(false);
                 if !(first_ok && last_ok) {
-                    kill!(n2, n1, "short_terminal_exon");
+                    kill!(n2, n1, "short_first_last_exon"); // byte-aligns with ST pred_kill reason token
                     continue;
                 }
                 // Retained-intron: check if n2 appears to be a retained-intron

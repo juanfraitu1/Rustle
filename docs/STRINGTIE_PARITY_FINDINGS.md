@@ -1553,6 +1553,51 @@ reproducible from the aligned `/tmp/{st,ru}_all.jsonl` logs (FILTER_STEPS=the 8 
 
 ---
 
+## §6x — Harness-completeness audit: 3 gap events (1 shipped, 1 already-present, 1 blocked) (2026-06-10)
+
+Audited the harness's COMPLETENESS against StringTie's own decision logging. Grounding: ST decision tracing is
+NOT compile-flag gated — rlink.cpp has zero `#ifdef DEBUG/GDEBUG` decision blocks (only GMEMTRACE memory); the
+decision points live as 3 getenv toggles + ~916 `fprintf(stderr)` lines (450 active / 466 commented-out — the
+commented ones are ST authors' dormant catalog of every decision worth logging). A stage-partitioned audit found
+the harness captures every PRODUCED ARTIFACT but systematically lacks REJECTION RATIONALE inside the three
+reasoning loops (extension candidate-scan, pairwise pred-elimination, flow augmentation) — which are exactly the
+layers §6w localized the divergence to. Three gap events were scoped; adversarial verification then reshaped all
+three (and twice OOM-killed the mapping workflow on WSL2 — salvaged from the run journal):
+
+- **`extension_scan_step` — NEW, SHIPPED.** The per-candidate scan internals of the long-read extension helpers:
+  for every child(fwd)/parent(back) the cov-scan evaluates, emit {direction,from_node,candidate_node,cand_start/end,
+  candidate_index,num_candidates,action(select|skip),reason,candidate_cov,maxcov_so_far,nodecov_i,nodecov_candidate,
+  cand_transfrag,cand_transfrag_weak}. This is the LOSER detail `backfwd_extension`'s single commit cannot show —
+  it makes `path_extend_diff` drill-downable to the exact fork node ("they forked at N because rustle skipped child
+  C via lower_cov_reject"). Added to rustle fwd/back (`_st`, reusing the threaded bundle_chrom/strand) + ST fwd/back
+  (reusing pd_chrom/pd_sign). ⚠ verdict fix applied: snapshot `maxcov_before` the cov-compare so the reason can
+  split higher_childcov (strict win) from higher_nodecov_tiebreak (the compare mutates maxcov). Emit-only: ST
+  content byte-identical, rustle default chain-diff unchanged (187). GGO_19 -L: ST 9524 / rustle 21774; reasons
+  fire {higher_childcov, lower_cov_reject, child_on_path, higher_nodecov_tiebreak}; shared fwd scan rows align
+  cross-tool by (from→cand) coords + (action,reason). v1 = the cov-scan competition; DEFERRED (documented): terminal
+  sink/source rows (dropped to avoid fragile ST anchoring vs the short-read `fwd_to_sink_fast` twins) + the
+  pre-loop short-circuit / exclude / unreachable reject branches. HIGH VOLUME — scope with FILTER_RANGE/STEPS.
+
+- **`pred_kill_pairwise` — NOT a new event; already present.** `pred_kill` ALREADY carries `"stage":"pairwise"`,
+  and rustle ALREADY emits it at all 21 pairwise kill sites (the `kill!` macro, transcript_filter.rs:3226-3552) with
+  victim+killer+reason; ST emits at only 3 of ~17. So the per-rule FP/TP testability the audit wanted is ALREADY
+  possible TODAY from rustle's emits. Minting a new event would duplicate. Only fix shipped: byte-aligned the one
+  mismatched shared token — rustle `short_terminal_exon` → `short_first_last_exon` (label only; no assembly change).
+  Completing ST's other ~14 pairwise emits is deferred (lower marginal value; rustle side already enables analysis).
+
+- **`junction_accept` consensus sub-codes — BLOCKED (the block IS the finding).** Adversarial verify killed it on
+  both sides: (1) rustle NEVER computes splice-dinucleotide consensus — `consleft/consright` are hardcoded -1 in
+  every JunctionStat (junction_graph.rs:342, junction_graph_st.rs:1055; no genome-consensus pass exists); (2) ST's
+  consensus/`mm` demotions run INSIDE build_graphs, which is called AFTER the junction_accept emit (rlink.cpp:17120),
+  so at emit time consleft/consright are still -1 and mm un-demoted. Unreachable both sides. The ASYMMETRY is the
+  result: rustle's junction acceptance lacks the splice-consensus check ST applies — a real algorithmic contributor
+  to the proven good-junc strict-subset gap ([[project_junction_parity]]), addressable only by ADDING a consensus
+  pass to rustle (a feature), not by instrumentation. Net: harness now mirrors a 9th decision event
+  (extension_scan_step); the rejection-rationale gap is closed for the extension layer, partially for filtering
+  (pred_kill already covers it), and confirmed-not-closable for junctions without new rustle algorithm work.
+
+---
+
 ## 7. Superseded documents
 
 The following are superseded by this file for the precision/parity-gap analysis (kept for history):

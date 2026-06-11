@@ -350,7 +350,11 @@ pub fn fwd_to_sink_fast_long_st(
             tmax = -1;
             reach = true;
         } else {
+            // parity_decisions: extension_scan_step candidate ordinal + count (emit-only).
+            let es_num_cands = inode.children.ones().count();
+            let mut es_ci_ord: i64 = -1;
             for c in inode.children.ones() {
+                es_ci_ord += 1;
                 let childonpath = pathpat.contains(c);
 
                 // ST line 8092: pathpat[edge_pos]
@@ -508,6 +512,10 @@ pub fn fwd_to_sink_fast_long_st(
                         }
                     }
 
+                    // parity_decisions: snapshot maxcov BEFORE the cov-compare so the scan
+                    // reason can distinguish higher_childcov (strict win) from
+                    // higher_nodecov_tiebreak (tie won on nodecov); the compare mutates maxcov.
+                    let es_maxcov_before = maxcov;
                     // ST line 8168: pick best child by cov + weak preference
                     if childcov > maxcov {
                         let take = if tmax == -1 {
@@ -538,6 +546,37 @@ pub fn fwd_to_sink_fast_long_st(
                         }
                     }
 
+                    // parity_decisions: extension_scan_step — per-candidate fwd scan outcome.
+                    // This is the LOSER detail backfwd_extension's single commit cannot show:
+                    // every scanned child + whether it won (select) or lost (skip) + why. Makes
+                    // path_extend_diff drill-downable to the exact fork node. Emit-only (reads
+                    // only). HIGH VOLUME — scope with RUSTLE_PARITY_FILTER_RANGE/STEPS.
+                    if crate::parity::decisions::is_enabled() {
+                        let won = maxc == c as i64;
+                        let reason = if won {
+                            if childonpath { "child_on_path" }
+                            else if childcov > es_maxcov_before { "higher_childcov" }
+                            else { "higher_nodecov_tiebreak" }
+                        } else {
+                            "lower_cov_reject"
+                        };
+                        let cwk = if tchild >= 0 { transfrags[tchild as usize].weak as i32 } else { -1 };
+                        let (cs, ce) = graph
+                            .nodes
+                            .get(c)
+                            .map(|n| (n.start + 1, n.end))
+                            .unwrap_or((0, 0));
+                        let payload = format!(
+                            r#""direction":"fwd","from_node":{},"candidate_node":{},"cand_start":{},"cand_end":{},"candidate_index":{},"num_candidates":{},"action":"{}","reason":"{}","candidate_cov":{:.4},"maxcov_so_far":{:.4},"nodecov_i":{:.4},"nodecov_candidate":{:.4},"cand_transfrag":{},"cand_transfrag_weak":{}"#,
+                            i, c, cs, ce, es_ci_ord, es_num_cands,
+                            if won { "select" } else { "skip" }, reason,
+                            childcov, es_maxcov_before, nodecov_i, nodecov_c, tchild, cwk,
+                        );
+                        crate::parity::decisions::emit(
+                            "extension_scan_step", Some(bundle_chrom),
+                            inode.start + 1, inode.end, bundle_strand, &payload,
+                        );
+                    }
                     // Roll back pathpat marks (we'll re-set the winner later)
                     if let Some(p) = pos {
                         pathpat.clear_bit(p);
@@ -755,7 +794,11 @@ pub fn back_to_source_fast_long_st(
             tmax = -1;
             reach = true;
         } else {
+            // parity_decisions: extension_scan_step candidate ordinal + count (emit-only).
+            let es_num_cands = inode.parents.ones().count();
+            let mut es_pi_ord: i64 = -1;
             for p in inode.parents.ones() {
+                es_pi_ord += 1;
                 let parentonpath = pathpat.contains(p);
 
                 // ST line 8312: edge already in pathpat
@@ -879,6 +922,8 @@ pub fn back_to_source_fast_long_st(
                         }
                     }
 
+                    // parity_decisions: snapshot maxcov BEFORE the cov-compare (see fwd).
+                    let es_maxcov_before = maxcov;
                     // ST line 8390: pick best parent by cov + weak preference
                     if parentcov > maxcov {
                         let take = if tmax == -1 {
@@ -909,6 +954,34 @@ pub fn back_to_source_fast_long_st(
                         }
                     }
 
+                    // parity_decisions: extension_scan_step — per-candidate back scan outcome
+                    // (the LOSER detail; mirror of the fwd emit). Emit-only; HIGH VOLUME.
+                    if crate::parity::decisions::is_enabled() {
+                        let won = maxp == p as i64;
+                        let reason = if won {
+                            if parentonpath { "child_on_path" }
+                            else if parentcov > es_maxcov_before { "higher_childcov" }
+                            else { "higher_nodecov_tiebreak" }
+                        } else {
+                            "lower_cov_reject"
+                        };
+                        let cwk = if tpar >= 0 { transfrags[tpar as usize].weak as i32 } else { -1 };
+                        let (cs, ce) = graph
+                            .nodes
+                            .get(p)
+                            .map(|n| (n.start + 1, n.end))
+                            .unwrap_or((0, 0));
+                        let payload = format!(
+                            r#""direction":"back","from_node":{},"candidate_node":{},"cand_start":{},"cand_end":{},"candidate_index":{},"num_candidates":{},"action":"{}","reason":"{}","candidate_cov":{:.4},"maxcov_so_far":{:.4},"nodecov_i":{:.4},"nodecov_candidate":{:.4},"cand_transfrag":{},"cand_transfrag_weak":{}"#,
+                            i, p, cs, ce, es_pi_ord, es_num_cands,
+                            if won { "select" } else { "skip" }, reason,
+                            parentcov, es_maxcov_before, nodecov_i, nodecov_p, tpar, cwk,
+                        );
+                        crate::parity::decisions::emit(
+                            "extension_scan_step", Some(bundle_chrom),
+                            inode.start + 1, inode.end, bundle_strand, &payload,
+                        );
+                    }
                     if let Some(ep) = pos {
                         pathpat.clear_bit(ep);
                     }
