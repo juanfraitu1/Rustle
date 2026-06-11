@@ -5953,7 +5953,14 @@ fn parse_trflong(transfrags: &[GraphTransfrag], _graph: &Graph) -> Vec<usize> {
     // then iterates it IN REVERSE → effective processing order is ASC (lowest first).
     // RUSTLE_PARSE_TRFLONG_ST_ORDER=1: match ST's ASC processing order.
     // RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT=1: legacy DESC (opposite of ST, regresses).
-    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_ORDER").is_some() {
+    //
+    // ST-faithful flip (precise_mode gate): ST's ASC seed-processing order is the
+    // default (it changes flow-depletion order; mini3 locus B converges STRG.2.13).
+    // precise_mode keeps today's usepath order (byte-identical to 4705ab1).
+    let use_st_order = std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_ORDER").is_some()
+        || (!crate::stringtie_parity::precise_mode()
+            && std::env::var_os("RUSTLE_PARSE_TRFLONG_STRINGTIE_SORT").is_none());
+    if use_st_order {
         seeded.sort_by(|&a, &b| {
             let ta = &transfrags[a];
             let tb = &transfrags[b];
