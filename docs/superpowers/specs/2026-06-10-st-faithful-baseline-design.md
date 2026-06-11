@@ -10,7 +10,11 @@
 
 **Tried + reverted (all regress genome-wide):** ST seed-order (`4d92176`→`33b6951`, mini3-overfit), geometry-RI kill, endpoint-demotion, canonical-fold, redistribution-scoping, RI-relax. **Methodology:** validate every mini3 win on chr19 (~7s) before defaulting.
 
-**Remaining (mini3 1/7) — diagnosed, not a cov-formula issue:** the 7 ST-only are **extracted then retained-intron-killed** (5/7 exact in pre-filter `path_extracted`). Per-base cov formula is sound (shared-chain ratio 0.97). Root: rustle over-extends the 3' terminus (ends 36063658 vs ST's 36063554) → becomes a retained-intron of the dominant chain → RI-killed; ST's clean terminus survives. Next fix = match ST's TES/terminal-exon boundary in extraction (deep; RI-relax can't separate real alt-TES from over-extended artifacts).
+**Milestone 2 (2026-06-11): flow-decomposition co-port — 2 more gates shipped.** Discovery (`docs/superpowers/plans/2026-06-11-st-faithful-m2-flow-decomposition.md`) pinned the remaining-7 root via ST checktrf instrumentation: ST stores the 36063554-terminus chains via `independent_store` at their natural terminus; rustle's **checktrf JAB + fwd-extend** push them past the junction-acceptor node split (36063554 → 36063658 → 36065683), making them retained-intron victims of the dominant chain. Two gates shipped behind `precise_mode()`:
+1. **JAB-extension gate** (`...`): chr19 269→268, mini3 → 1/6 (STRG.2.12 converged).
+2. **fwd-extend gate**: chr19 268→**267** (−1 rustle-only FP).
+
+A *third* layer (`apply_terminal_boundary_evidence_to_longread_txs`, pipeline 3' extension) pushes the rest to 36065683; gating it recovers 2 more mini3 chains but is **neutral genome-wide** (balanced precision/recall — un-extends real 3' UTRs as it recovers alt-TES), so not shipped. **Cumulative session: chr19 291→267, mini3 3/16→1/6.** Remaining 6 need surgical (checktrf-only) terminal-extension suppression — uncertain net value.
 
 **Date:** 2026-06-10
 
