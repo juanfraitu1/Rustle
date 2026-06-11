@@ -1619,6 +1619,18 @@ converge: every downstream stage (extension, collapse, coverage, filters) is FAI
 is the read→transfrag CREATION population (architectural, the established at-ceiling enumeration lever) — there is no
 hidden port bug or tunable knob to correct.
 
+**Root pinned to read→transfrag CONSTRUCTION (not junctions, not fabrication, not multimapping).** Closing diff of the
++2938 rustle-only surplus chains: (a) origin = read_map (read-derived; NOT a borrow/completion mechanism — none/longtrim
+are SE bookkeeping); (b) rustle filters secondary/supplementary (bam.rs:798/956) so the BAM's 24084 secondaries are NOT
+the cause — both tools use the same ~114.7k primary reads; (c) DECISIVE: 97% of surplus chains use ONLY ST-accepted
+junctions (99.8% of their introns are ST junctions) — so NOT novel junctions but novel COMBINATIONS. rustle assembles
+the same reads over the same (subset of) junctions into more distinct transfrag chains than ST (76% novel combos, 52%
+single-read). This is a read→transfrag CONSTRUCTION/path-assembly algorithm difference (the audit's uncovered
+process_transfrags CPath/usepath path-distribution lives here), architectural — a re-port, not a deviation-fix; and
+76%-novel-not-un-merged means it would not simply consolidate away. Full causal chain now measured end-to-end: junction
+acceptance (support) -> read->transfrag construction (ROOT) -> denser transfrag pop -> higher candidate_cov -> extension
+over-selects -> coverage diluted -> 187/104; every link below the root is FAITHFUL.
+
 ---
 
 ## 7. Superseded documents
