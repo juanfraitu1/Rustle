@@ -5880,6 +5880,19 @@ fn apply_terminal_boundary_evidence_to_longread_txs(
         if tx.source.as_deref().map_or(false, |s| s.starts_with("oracle_direct:") || s.starts_with("ref_chain_rescue:")) {
             continue;
         }
+        // ST-faithful flip (precise_mode gate): StringTie stores checktrf-rescued chains
+        // at their NATURAL terminus (independent_store). This terminal-boundary extension
+        // over-extends them past a junction-acceptor node split, turning them into
+        // retained-intron victims of the dominant chain (mini3 locus B: 36063554 ->
+        // 36065683). Surgically skip the extension for checktrf_rescue chains by default
+        // (normal flow chains keep their 3' UTR extension); precise_mode processes all as
+        // today (byte-identical to 4705ab1). Opt-out: RUSTLE_TERMINAL_BOUNDARY_CHECKTRF_ON.
+        if !crate::stringtie_parity::precise_mode()
+            && std::env::var_os("RUSTLE_TERMINAL_BOUNDARY_CHECKTRF_ON").is_none()
+            && tx.source.as_deref().map_or(false, |s| s.starts_with("checktrf_rescue"))
+        {
+            continue;
+        }
         if tx.exons.is_empty() {
             continue;
         }
