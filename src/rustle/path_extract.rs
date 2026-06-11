@@ -7533,17 +7533,33 @@ pub fn extract_transcripts(
                     // give-up signals over-extension via weak/inconsistent
                     // transfrags — exactly the k-class artifact pattern.
                     // Default ON; disable via RUSTLE_PARSE_TRFLONG_ST_GATE_OFF=1.
-                    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none()
-                        && fwd_ok
-                        && !st.returned_true
-                    {
-                        if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_TRACE").is_some() {
-                            eprintln!(
-                                "[ST_GATE] idx={} fwd_ok=true but ST disagreed → route to checktrf",
-                                idx
-                            );
+                    //
+                    // ST-faithful endpoint-demotion (precise_mode gate): ST often returns
+                    // true but stops at a strictly-EARLIER 3' node (st.maxpath) than rustle
+                    // (maxp) — rustle over-extends past ST's stop. Coupled with the M2
+                    // checktrf gates (which store rescues at their natural terminus),
+                    // deferring these over-extended seeds to checktrf lets them store like
+                    // ST (the exon-skip alt-TES chains). This was a no-op BEFORE the M2 gates
+                    // (the over-extended chains were shared); it converges now because
+                    // checktrf no longer re-over-extends. By default (ST-faithful) the
+                    // earlier-stop demotion is ON; precise_mode keeps today's boolean-only
+                    // gate (byte-identical to 4705ab1). Override: RUSTLE_FWD_ENDPOINT_DEMOTE.
+                    if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_OFF").is_none() && fwd_ok {
+                        let st_earlier = (!crate::stringtie_parity::precise_mode()
+                            || std::env::var_os("RUSTLE_FWD_ENDPOINT_DEMOTE").is_some())
+                            && st.returned_true
+                            && st.maxpath != maxp
+                            && graph.nodes.get(st.maxpath).map(|n| n.end).unwrap_or(u64::MAX)
+                                < graph.nodes.get(maxp).map(|n| n.end).unwrap_or(0);
+                        if !st.returned_true || st_earlier {
+                            if std::env::var_os("RUSTLE_PARSE_TRFLONG_ST_GATE_TRACE").is_some() {
+                                eprintln!(
+                                    "[ST_GATE] idx={} demote (ret={} earlier={}) → checktrf",
+                                    idx, st.returned_true, st_earlier
+                                );
+                            }
+                            fwd_ok = false;
                         }
-                        fwd_ok = false;
                     }
                 }
                 if pathpat_trace
