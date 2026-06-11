@@ -10166,9 +10166,19 @@ pub fn extract_transcripts(
                 // the contiguous tail nodes so the last exon is correct.
                 //
                 // Default ON; disable via RUSTLE_CHECKTRF_JAB_OFF=1.
+                //
+                // ST-faithful flip (precise_mode gate): the JAB extension pushes a
+                // checktrf-rescued chain through contiguous children past a junction-
+                // acceptor node split (e.g. the 36062859-36063554 chain extended to
+                // 36063658). StringTie instead stores these at their natural terminus
+                // (independent_store at the node split, 36063554) — over-extending makes
+                // them retained-intron victims of the dominant chain. So by default
+                // (ST-faithful) JAB is OFF; precise_mode keeps it ON (byte-identical to
+                // commit 4705ab1). Explicit RUSTLE_CHECKTRF_JAB_OFF still forces off.
                 let mut jab_extend_buf: Vec<usize> = Vec::new();
                 let mut jab_extended = false;
-                if std::env::var_os("RUSTLE_CHECKTRF_JAB_OFF").is_none()
+                if crate::stringtie_parity::precise_mode()
+                    && std::env::var_os("RUSTLE_CHECKTRF_JAB_OFF").is_none()
                     && !rescue_nodes.is_empty()
                 {
                     let last = *rescue_nodes.last().unwrap();
