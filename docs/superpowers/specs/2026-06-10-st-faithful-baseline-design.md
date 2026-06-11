@@ -1,6 +1,8 @@
 # ST-Faithful Baseline (rustle-vs-StringTie → 0) — Design
 
-**Status:** Approved (design choice: *flip-now*). Revert point: git `4705ab1` (`main`/current HEAD) — restore today's behavior by reverting to this commit, or in-code via `RUSTLE_PRECISE=1`.
+**Status:** Approved (design choice: *flip-now*). In execution — Milestone 1 partial. Revert point: git `4705ab1` (`main`/current HEAD) — restore today's behavior by reverting to this commit, or in-code via `RUSTLE_PRECISE=1`.
+
+**Progress (2026-06-10):** `precise_mode()` gate live (`bc58844`). **Witness-check gate shipped as default** (`2385cec`): the LR consecutive-splice-pair witness filter is OFF by default (ST-faithful, reproduces ST's cross-gene read-through) and ON under `RUSTLE_PRECISE=1`. It **generalizes** — chr19 rustle-vs-ST divergence 291→273 (+22 in-both, −22 ST-only, +4 rustle-only); mini3 3/16 → 2/7 (locus C fully converged + 5 locus-B chains). **ST seed-order** default-flip tried and **reverted** (`4d92176`→`33b6951`): mini3-overfit (+1 there, −48 chr19). Endpoint-demotion and full canonical-fold falsified. **Remaining mini3 2/7** = the deep locus-B path-selection tail (alt-splice/cassette/boundary near-misses), which needs the coupled canonical+flow-depletion co-port (multi-session; canonical regresses standalone). **Methodology refinement:** every mini3 convergence must be validated genome-wide (chr19, ~7s) before defaulting — mini3 is a 3-locus proxy that can overfit.
 
 **Date:** 2026-06-10
 
