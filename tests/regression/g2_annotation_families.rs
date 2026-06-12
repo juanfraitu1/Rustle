@@ -11,6 +11,27 @@ fn runconfig_g2_defaults_off() {
 use rustle::annotation_families::{load_copies, CopyStructure};
 
 #[test]
+fn copy_sequence_concatenates_exons() {
+    // Build genome chr1 = "ACGTACGTAC" via a temp FASTA file + GenomeIndex::from_fasta.
+    let dir = tempfile::tempdir().unwrap();
+    let fa = dir.path().join("test.fa");
+    std::fs::write(&fa, ">chr1\nACGTACGTAC\n").unwrap();
+    let genome = rustle::genome::GenomeIndex::from_fasta(fa.to_str().unwrap()).unwrap();
+
+    let copy = CopyStructure {
+        copy_id: "A".into(),
+        chrom: "chr1".into(),
+        strand: '+',
+        exons: vec![(0, 4), (6, 10)],
+    };
+    // exons[0]: bytes[0..4] = "ACGT"
+    // exons[1]: bytes[6..10] = "GTAC"
+    // concatenated: "ACGTGTAC"
+    let seq = rustle::annotation_families::copy_sequence(&copy, &genome).unwrap();
+    assert_eq!(seq, b"ACGTGTAC");
+}
+
+#[test]
 fn load_copies_parses_two_transcripts() {
     let gtf = "chr1\ttest\texon\t101\t200\t.\t+\t.\ttranscript_id \"A\";\n\
                chr5\ttest\texon\t301\t400\t.\t+\t.\ttranscript_id \"B\";\n";

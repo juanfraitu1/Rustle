@@ -24,6 +24,25 @@ pub struct AnnotationFamily {
     pub achieved_mean_sim: f64,
 }
 
+/// Concatenated exon sequence of a copy, in genomic (exon-list) order.
+///
+/// Fetches each exon's bases from the genome using 0-based half-open coordinates
+/// (matching `CopyStructure.exons`). Returns `None` if any exon is entirely out
+/// of range for its chromosome. Strand is NOT considered here — all copies are
+/// returned in the same forward-genomic convention so similarity is computed on
+/// a consistent basis.
+pub fn copy_sequence(
+    copy: &CopyStructure,
+    genome: &crate::genome::GenomeIndex,
+) -> Option<Vec<u8>> {
+    let mut seq = Vec::new();
+    for &(s, e) in &copy.exons {
+        let part = genome.fetch_sequence(&copy.chrom, s, e)?;
+        seq.extend_from_slice(&part);
+    }
+    Some(seq)
+}
+
 /// Load -G2 GTF into copy structures (one per transcript).
 pub fn load_copies<P: AsRef<Path>>(path: P) -> Result<Vec<CopyStructure>> {
     let refs = crate::reference_gtf::parse_reference_gtf(path)?;
