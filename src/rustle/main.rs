@@ -49,7 +49,7 @@ struct Args {
     #[arg(long = "guide2")]
     guide2: Option<String>,
 
-    /// Shared-exon minimizer-Jaccard threshold (0..1) gating whether two copies merge into
+    /// Shared-exon minimizer-Jaccard threshold [0.0, 1.0] gating whether two copies merge into
     /// one family graph. Default = the built-in family_merge_jaccard bar.
     #[arg(long = "family-exon-similarity")]
     family_exon_similarity: Option<f64>,
@@ -686,12 +686,18 @@ pub fn run_cli() -> anyhow::Result<()> {
         std::process::exit(1);
     }
     if args.guide2.is_some() && !args.vg {
-        eprintln!("error: --guide2/-G2 requires --vg");
-        std::process::exit(2);
+        eprintln!("error: --guide2 requires --vg");
+        std::process::exit(1);
     }
     if args.guide2.is_some() && args.genome_fasta.is_none() {
-        eprintln!("error: --guide2/-G2 requires --genome-fasta (exon sequences for family clustering)");
-        std::process::exit(2);
+        eprintln!("error: --guide2 requires --genome-fasta (exon sequences for family clustering)");
+        std::process::exit(1);
+    }
+    if let Some(t) = args.family_exon_similarity {
+        if !(0.0..=1.0).contains(&t) {
+            eprintln!("error: --family-exon-similarity must be in [0.0, 1.0] (got {})", t);
+            std::process::exit(1);
+        }
     }
 
     // --read-chain enables the read-chain assembly path (read internally via the
