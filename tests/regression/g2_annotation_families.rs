@@ -213,7 +213,7 @@ fn render_vg_eval_summary_counts() {
         ("c4".to_string(), "FAM1".to_string(), false, false), // miss
     ];
     let tsv = render_vg_eval(&entries);
-    assert!(tsv.contains("c2\tFAM0\tyes\tfalse\ttrue\tWIN"), "WIN row; got:\n{}", tsv);
+    assert!(tsv.contains("c2\tFAM0\tyes\tno\tyes\tWIN"), "WIN row; got:\n{}", tsv);
     assert!(tsv.contains("WIN=1"));
     assert!(tsv.contains("tie=1"));
     assert!(tsv.contains("miss=1"));

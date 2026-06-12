@@ -47,7 +47,10 @@ pub fn render_vg_eval(entries: &[(String, String, bool, bool)]) -> String {
             "miss" => miss += 1,
             _ => reg += 1,
         }
-        out.push_str(&format!("{}\t{}\tyes\t{}\t{}\t{}\n", cid, fid, in_st, in_vg, v));
+        let st = if *in_st { "yes" } else { "no" };
+        let vg = if *in_vg { "yes" } else { "no" };
+        // in_annotation is always "yes": every scorecard row is a -G2 annotation copy by construction.
+        out.push_str(&format!("{}\t{}\tyes\t{}\t{}\t{}\n", cid, fid, st, vg, v));
     }
     out.push_str(&format!("SUMMARY\tmode=guided\tWIN={}\ttie={}\tmiss={}\tregression={}\n", win, tie, miss, reg));
     out
