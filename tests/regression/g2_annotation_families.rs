@@ -132,3 +132,15 @@ fn threshold_gates_merge() {
     assert_eq!(fams_high.len(), 0,
         "T_high={} (above measured Jaccard ~0.3158) → pair splits, singletons dropped → 0 families", t_high);
 }
+
+#[test]
+fn opposite_strand_copies_never_merge() {
+    use rustle::annotation_families::CopyStructure;
+    // Two sequence-identical copies on different chroms but OPPOSITE strands must not merge.
+    let a = CopyStructure{ copy_id:"A".into(), chrom:"chr1".into(), strand:'+', exons:vec![(0,30)] };
+    let mut b = a.clone(); b.copy_id="B".into(); b.chrom="chr5".into(); b.strand='-';
+    let s = b"ACGTACGTACGTACGTACGTACGTACGTAC".to_vec(); // identical sequence
+    let fams = rustle::annotation_families::families_from_grouped(
+        vec![(a, s.clone()), (b, s)], 0.5);
+    assert_eq!(fams.len(), 0, "opposite-strand copies must not merge (build_family_graph bails on mixed strand)");
+}

@@ -130,6 +130,40 @@ pub fn cluster_families(
     out
 }
 
+/// Cluster within each strand group separately (same-strand is the only structural precondition,
+/// since build_family_graph bails on mixed strands), then concat. Position-agnostic within strand.
+pub fn families_from_grouped(
+    copies_with_seq: Vec<(CopyStructure, Vec<u8>)>,
+    threshold: f64,
+) -> Vec<AnnotationFamily> {
+    use std::collections::BTreeMap;
+    let mut by_strand: BTreeMap<char, Vec<(CopyStructure, Vec<u8>)>> = BTreeMap::new();
+    for cs in copies_with_seq {
+        by_strand.entry(cs.0.strand).or_default().push(cs);
+    }
+    let mut out = Vec::new();
+    for (_, group) in by_strand {
+        out.extend(cluster_families(group, threshold));
+    }
+    out
+}
+
+/// Top-level: load -G2, fetch exon sequences from genome, cluster (position-agnostic, same-strand).
+pub fn build_families<P: AsRef<std::path::Path>>(
+    g2_path: P,
+    genome: &crate::genome::GenomeIndex,
+    threshold: f64,
+) -> anyhow::Result<Vec<AnnotationFamily>> {
+    let copies = load_copies(g2_path)?;
+    let mut with_seq = Vec::new();
+    for c in copies {
+        if let Some(s) = copy_sequence(&c, genome) {
+            with_seq.push((c, s));
+        }
+    }
+    Ok(families_from_grouped(with_seq, threshold))
+}
+
 /// Load -G2 GTF into copy structures (one per transcript).
 pub fn load_copies<P: AsRef<Path>>(path: P) -> Result<Vec<CopyStructure>> {
     let refs = crate::reference_gtf::parse_reference_gtf(path)?;
