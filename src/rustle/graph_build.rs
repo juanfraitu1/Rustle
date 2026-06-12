@@ -1300,6 +1300,19 @@ fn compute_demoted_alt_coords(
             }
         }
     }
+    // ST-faithful alt-donor SNAP (StringTie build_graphs, rlink.cpp:14486-14626) — the
+    // donor-split slice of the ST-faithful graph layer. Demotes a "bad" (mismatch-
+    // dominated) donor that snaps to a nearby canonical donor, so it creates no node
+    // boundary (matching ST's node-keep-whole, e.g. 32049138 -> 32049150). Gated:
+    // RUSTLE_ST_GRAPH_SNAP + !precise_mode (RUSTLE_PRECISE stays byte-identical to 4705ab1).
+    if !crate::stringtie_parity::precise_mode()
+        && std::env::var_os("RUSTLE_ST_GRAPH_SNAP").is_some()
+    {
+        for d in compute_st_donor_snaps(filtered_juncs, stats) {
+            demoted_donors.insert(d);
+        }
+    }
+
     if std::env::var_os("RUSTLE_GRAPH_ALT_COALESCE").is_none() {
         return (demoted_donors, demoted_acceptors);
     }
@@ -1389,6 +1402,143 @@ fn compute_demoted_alt_coords(
         );
     }
     (demoted_donors, demoted_acceptors)
+}
+
+/// ST-faithful alt-donor SNAP, donor side of StringTie's `build_graphs`
+/// (rlink.cpp:14486-14626). A "bad" junction (mismatch-dominated: `nm >= nreads`,
+/// typically a read-misalignment a few bp off the canonical donor) is snapped to a
+/// nearby (within `sserror`=25 bp) same-strand more-reliable donor whose `leftsupport`
+/// exceeds `tolerance`(0.9) x the bad junction's `leftsupport`. StringTie deletes the
+/// snapped junction (its reads reassign to the canonical), so its donor coord creates
+/// NO graph-node boundary — which is why ST keeps e.g. node 32049072-32049150 whole
+/// (donor 32049138 snaps to 32049150). Returns the donor coords to demote.
+/// Long-read (`-L`) window only (juncsupport = sserror). Caller gates on
+/// RUSTLE_ST_GRAPH_SNAP + !precise_mode().
+fn compute_st_donor_snaps(
+    filtered_juncs: &[&Junction],
+    stats: &JunctionStats,
+) -> HashSet<u64> {
+    const SSERROR: u64 = 25; // ST sserror (stringtie.cpp:142); long-read snap window
+    let tolerance = 1.0 - ERROR_PERC; // 0.9
+    let juncsupport = SSERROR; // long-read (-L): juncsupport = sserror (rlink.cpp:14490)
+
+    // StringTie's `junction` array is sorted by donor (start); mirror that.
+    let mut order: Vec<usize> = (0..filtered_juncs.len()).collect();
+    order.sort_by_key(|&i| (filtered_juncs[i].donor, filtered_juncs[i].acceptor));
+    let n = order.len();
+    let jof = |k: usize| filtered_juncs[order[k]];
+    let sof = |k: usize| stats.get(jof(k));
+    let strand_of = |k: usize| sof(k).and_then(|s| s.strand);
+
+    // higherr: trigger only when some junction is fully mismatch-supported
+    // (nm == nreads, rlink.cpp:14355) — StringTie skips the whole snap block otherwise.
+    let higherr = (0..n).any(|k| {
+        sof(k).map_or(false, |s| {
+            s.strand.map_or(false, |x| x != 0) && s.nm == s.mrcount && !s.guide_match
+        })
+    });
+    if !higherr {
+        return Default::default();
+    }
+
+    // Snap state (ST overloads junction->nreads sign; we track the target index).
+    let mut snapped: Vec<Option<usize>> = vec![None; n];
+    for i in 1..n {
+        let si = match sof(i) {
+            Some(s) => s,
+            None => continue,
+        };
+        let strand_i = match si.strand {
+            Some(x) if x != 0 => x,
+            _ => continue,
+        };
+        // bad junction: nm && !guide_match && nm >= nreads (rlink.cpp:14548)
+        if !(si.nm > 0.0 && !si.guide_match && si.nm >= si.mrcount) {
+            continue;
+        }
+        let start_i = jof(i).donor;
+        let lsup_i = si.leftsupport;
+        let mut support = 0.0f64;
+        let mut searchjunc = true;
+        let mut reliable = false;
+        // backward search (rlink.cpp:14571-14600)
+        let mut j: i64 = i as i64 - 1;
+        while j > 0 && start_i.saturating_sub(jof(j as usize).donor) < juncsupport {
+            let jk = j as usize;
+            if strand_of(jk) == Some(strand_i) {
+                let sj = sof(jk).unwrap();
+                let start_j = jof(jk).donor;
+                if start_j == start_i {
+                    if snapped[jk].is_some() {
+                        snapped[i] = snapped[jk];
+                        searchjunc = false;
+                    }
+                    break;
+                } else if sj.guide_match || sj.nm < sj.mrcount {
+                    if sj.leftsupport > lsup_i * tolerance {
+                        reliable = true;
+                        snapped[i] = Some(jk);
+                        support = sj.leftsupport;
+                        break;
+                    }
+                } else if sj.leftsupport > support
+                    && start_i.saturating_sub(start_j) < SSERROR
+                    && sj.leftsupport * tolerance > lsup_i
+                {
+                    snapped[i] = Some(jk);
+                    support = sj.leftsupport;
+                }
+            }
+            j -= 1;
+        }
+        // forward search (rlink.cpp:14601-14626)
+        if searchjunc {
+            let mut dist = juncsupport;
+            if let Some(tj) = snapped[i] {
+                dist = start_i.saturating_sub(jof(tj).donor);
+            }
+            let mut k = i + 1;
+            while k < n && jof(k).donor.saturating_sub(start_i) < juncsupport {
+                if strand_of(k) == Some(strand_i) && jof(k).donor != start_i {
+                    let sj = sof(k).unwrap();
+                    let d = jof(k).donor - start_i;
+                    if sj.guide_match || sj.nm < sj.mrcount {
+                        if (d < dist || (d == dist && sj.leftsupport > support))
+                            && sj.leftsupport > lsup_i * tolerance
+                        {
+                            snapped[i] = Some(k);
+                            support = sj.leftsupport;
+                            break;
+                        }
+                    } else if !reliable
+                        && sj.leftsupport > support
+                        && d < SSERROR
+                        && sj.leftsupport * tolerance > lsup_i
+                    {
+                        snapped[i] = Some(k);
+                        support = sj.leftsupport;
+                    }
+                }
+                k += 1;
+            }
+        }
+    }
+
+    // Snapped donors -> demote, UNLESS a non-snapped junction also uses that donor coord
+    // (else we'd drop a node boundary StringTie keeps).
+    let mut kept: HashSet<u64> = Default::default();
+    for k in 0..n {
+        if snapped[k].is_none() {
+            kept.insert(jof(k).donor);
+        }
+    }
+    let mut demoted: HashSet<u64> = Default::default();
+    for k in 0..n {
+        if snapped[k].is_some() && !kept.contains(&jof(k).donor) {
+            demoted.insert(jof(k).donor);
+        }
+    }
+    demoted
 }
 
 fn build_longtrim_bundle_schedules(
@@ -3522,4 +3672,68 @@ pub fn prune_graph_nodes_with_redirects(
         );
     }
     (removed, redirects)
+}
+
+#[cfg(test)]
+mod st_donor_snap_tests {
+    use super::*;
+    use crate::types::{Junction, JunctionStat, JunctionStats};
+
+    fn stat(strand: i8, mrcount: f64, nm: f64, leftsupport: f64) -> JunctionStat {
+        JunctionStat {
+            mrcount,
+            nreads_good: mrcount,
+            nm,
+            leftsupport,
+            strand: Some(strand),
+            ..Default::default()
+        }
+    }
+
+    // Mirrors chr19 STRG.225: alt donor 32049138 (192 reads, mismatch-dominated) snaps
+    // FORWARD to the canonical donor 32049150 (445 reads) at the same acceptor, so the
+    // alt creates no node boundary (StringTie keeps node 32049072-32049150 whole).
+    // The alt must not sit at array index 0 (ST's loop starts at i=1), hence the dummy.
+    #[test]
+    fn alt_donor_snaps_forward_to_canonical() {
+        let dummy = Junction::new(50, 60); // pushes the alt off index 0
+        let alt = Junction::new(100, 200);
+        let canon = Junction::new(112, 200); // 12bp away, within sserror=25
+        let mut stats: JunctionStats = Default::default();
+        stats.insert(dummy, stat(-1, 5.0, 0.0, 5.0));
+        stats.insert(alt, stat(-1, 192.0, 192.0, 10.0)); // nm==nreads -> bad + higherr
+        stats.insert(canon, stat(-1, 445.0, 0.0, 100.0)); // reliable, leftsupport 100 > 10*0.9
+        let juncs = vec![&dummy, &alt, &canon];
+        let demoted = compute_st_donor_snaps(&juncs, &stats);
+        assert!(demoted.contains(&100), "alt donor must snap/demote");
+        assert!(!demoted.contains(&112), "canonical donor must be kept");
+        assert!(!demoted.contains(&50), "unrelated donor must be kept");
+    }
+
+    // No mismatch-dominated junction => higherr never trips => no demotion at all.
+    #[test]
+    fn no_demotion_without_higherr() {
+        let alt = Junction::new(100, 200);
+        let canon = Junction::new(112, 200);
+        let mut stats: JunctionStats = Default::default();
+        stats.insert(alt, stat(-1, 50.0, 5.0, 10.0)); // nm < nreads -> clean
+        stats.insert(canon, stat(-1, 445.0, 0.0, 100.0));
+        let juncs = vec![&alt, &canon];
+        assert!(compute_st_donor_snaps(&juncs, &stats).is_empty());
+    }
+
+    // A reliable neighbor with insufficient leftsupport must NOT pull the alt
+    // (leftsupport gate: canon.leftsupport > alt.leftsupport * 0.9).
+    #[test]
+    fn weak_neighbor_does_not_snap() {
+        let dummy = Junction::new(50, 60);
+        let alt = Junction::new(100, 200);
+        let canon = Junction::new(112, 200);
+        let mut stats: JunctionStats = Default::default();
+        stats.insert(dummy, stat(-1, 5.0, 0.0, 5.0));
+        stats.insert(alt, stat(-1, 192.0, 192.0, 100.0)); // high leftsupport
+        stats.insert(canon, stat(-1, 445.0, 0.0, 10.0)); // neighbor leftsupport too low
+        let juncs = vec![&dummy, &alt, &canon];
+        assert!(!compute_st_donor_snaps(&juncs, &stats).contains(&100));
+    }
 }
