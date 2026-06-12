@@ -104,6 +104,8 @@ pub fn cluster_families(
 
     let mut out = Vec::new();
     for (gi, (_, members)) in groups.iter().enumerate() {
+        // ≥2-copy invariant: singletons never form a paralog family.
+        if members.len() < 2 { continue; }
         let mut pair_sims = Vec::new();
         for a in 0..members.len() {
             for b in (a + 1)..members.len() {

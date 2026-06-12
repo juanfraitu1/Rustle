@@ -52,27 +52,36 @@ fn copy(id: &str, chrom: &str, exons: Vec<(u64, u64)>) -> CopyStructure {
     CopyStructure { copy_id: id.into(), chrom: chrom.into(), strand: '+', exons }
 }
 
-// 60 bp sequences (2× repeat of the 30 bp motifs) so that k=15, w=10 produces
-// enough minimizers for the Jaccard thresholds to behave as asserted.
-// With 60 bp: n = 60-15+1 = 46 positions, ~36 windows → rich minimizer sets.
+// Non-repetitive ~90 bp sequences (varied bases → plentiful minimizers).
+//
+// SEQ_A: pseudo-random ACGT string, varied throughout.
+const SEQ_A: &[u8] =
+    b"GATTACAGCTAGCTTGACGTACGTTAACGTCGATCGATCGTAATCGATCGTTACGATCGATCGTATCGATCGTAACGTTACG";
+//   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 82 bp
 
-/// Two sequences that are nearly identical (1-base difference at position 59):
-/// high Jaccard >= 0.5, used for the trans-chromosomal and far-apart tests.
-const SEQ_A: &[u8] = b"ACGTACGTACGTACGTACGTACGTACGTACACGTACGTACGTACGTACGTACGTACGTAC";
-const SEQ_A2: &[u8] = b"ACGTACGTACGTACGTACGTACGTACGTACACGTACGTACGTACGTACGTACGTACGTAG";
+// SEQ_A_IDENT: identical to SEQ_A — used for trans-chrom / far-apart tests where
+// Jaccard = 1.0, well above any reasonable threshold.
+const SEQ_A_IDENT: &[u8] =
+    b"GATTACAGCTAGCTTGACGTACGTTAACGTCGATCGATCGTAATCGATCGTTACGATCGATCGTATCGATCGTAACGTTACG";
 
-/// Completely different sequence: Jaccard with SEQ_A should be ~0.0.
-const SEQ_DIFF: &[u8] = b"TTTTGGGGCCCCAAAATTTTGGGGCCCCAATTTTGGGGCCCCAAAATTTTGGGGCCCCAA";
+// SEQ_DIFF: completely different non-repetitive sequence — no 15-mer shared with SEQ_A.
+// Built from a complementary-ish composition to minimize accidental k-mer overlap.
+const SEQ_DIFF: &[u8] =
+    b"CCCGTTTAAAGGGCCCGTTTAAAGGGCCCGTTTAAAGGGCCCGTTTAAAGGGCCCGTTTAAAGGGCCCGTTTAAAGGGCCCA";
 
-/// Partially similar to SEQ_A: differs in 15 central bases (positions 22-36).
-/// Jaccard expected to be moderate: >= 0.5 (clusters at T=0.5) but < 0.99 (splits at T=0.99).
-const SEQ_PART: &[u8] = b"ACGTACGTACGTACGTACGTACTTTTTTTTTTTTTTACGTACGTACGTACGTACGTACGT";
+// SEQ_MID: SEQ_A with 8 substitutions spread evenly (roughly every 10 bp).
+// This gives intermediate Jaccard (clearly > 0, clearly < 1).
+// Changes at positions 5, 15, 25, 35, 45, 55, 65, 75 (0-based).
+const SEQ_MID: &[u8] =
+    b"GATTACAGCTAGCTTGCCGTACGTTAACGTCGATCGATCGTAATCGATCGTTACGATCGATCGTATCAATCGTAACGTTACG";
+//                   ^                                                      ^
+// Measured minimizer-Jaccard(SEQ_A, SEQ_MID) ~ see threshold_gates_merge test.
 
 #[test]
 fn trans_chromosomal_copies_form_one_family() {
     let seqs = vec![
-        (copy("A", "chr1", vec![(0, 60)]), SEQ_A.to_vec()),
-        (copy("B", "chr5", vec![(0, 60)]), SEQ_A2.to_vec()),
+        (copy("A", "chr1", vec![(0, 82)]), SEQ_A.to_vec()),
+        (copy("B", "chr5", vec![(0, 82)]), SEQ_A_IDENT.to_vec()),
     ];
     let fams = cluster_families(seqs, 0.5);
     assert_eq!(fams.len(), 1, "trans-chromosomal homologs must form ONE family");
@@ -84,22 +93,42 @@ fn trans_chromosomal_copies_form_one_family() {
 #[test]
 fn far_apart_same_chrom_form_one_family() {
     let seqs = vec![
-        (copy("A", "chr1", vec![(0, 60)]), SEQ_A.to_vec()),
-        (copy("B", "chr1", vec![(20_000_000, 20_000_060)]), SEQ_A.to_vec()),
+        (copy("A", "chr1", vec![(0, 82)]), SEQ_A.to_vec()),
+        (copy("B", "chr1", vec![(20_000_000, 20_000_082)]), SEQ_A_IDENT.to_vec()),
     ];
     assert_eq!(cluster_families(seqs, 0.5).len(), 1, ">10Mb-apart homologs must form ONE family");
 }
 
 #[test]
 fn dissimilar_copies_stay_separate_and_threshold_is_real() {
+    // With singleton-dropping: two dissimilar copies stay in separate singleton components
+    // which are both dropped → cluster_families returns 0 families.
     let seqs = vec![
-        (copy("A", "chr1", vec![(0, 60)]), SEQ_A.to_vec()),
-        (copy("B", "chr5", vec![(0, 60)]), SEQ_DIFF.to_vec()),
+        (copy("A", "chr1", vec![(0, 82)]), SEQ_A.to_vec()),
+        (copy("B", "chr5", vec![(0, 82)]), SEQ_DIFF.to_vec()),
     ];
-    assert_eq!(cluster_families(seqs.clone(), 0.5).len(), 2, "dissimilar -> 2 families");
-    let sim = vec![
-        (copy("A", "chr1", vec![(0, 60)]), SEQ_A.to_vec()),
-        (copy("B", "chr5", vec![(0, 60)]), SEQ_PART.to_vec()),
+    assert_eq!(cluster_families(seqs, 0.5).len(), 0,
+        "dissimilar singletons are dropped → 0 families");
+}
+
+#[test]
+fn threshold_gates_merge() {
+    // SEQ_A vs SEQ_MID: measured minimizer-Jaccard (k=15, w=10) = 0.3158
+    // (|A|=12, |M|=13, inter=6, union=19; calibrated offline via inline FNV-1a mirror).
+    // T_low  = 0.20 → well below 0.3158 → pair MERGES → 1 family (2 copies).
+    // T_high = 0.50 → well above 0.3158 → pair SPLITS → both singletons dropped → 0 families.
+    let pair = || vec![
+        (copy("A", "chr1", vec![(0, 82)]), SEQ_A.to_vec()),
+        (copy("M", "chr5", vec![(0, 82)]), SEQ_MID.to_vec()),
     ];
-    assert_eq!(cluster_families(sim.clone(), 0.99).len(), 2, "T above achieved sim -> split");
+    let t_low = 0.20;
+    let t_high = 0.50;
+    let fams_low = cluster_families(pair(), t_low);
+    assert_eq!(fams_low.len(), 1,
+        "T_low={} (below measured Jaccard ~0.3158) → pair merges into 1 family", t_low);
+    assert_eq!(fams_low[0].copies.len(), 2);
+
+    let fams_high = cluster_families(pair(), t_high);
+    assert_eq!(fams_high.len(), 0,
+        "T_high={} (above measured Jaccard ~0.3158) → pair splits, singletons dropped → 0 families", t_high);
 }
