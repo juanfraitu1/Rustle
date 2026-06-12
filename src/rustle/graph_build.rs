@@ -840,8 +840,13 @@ fn filter_junctions_for_bundle<'a>(
                     // Layer 1 of the StringTie shadow mode: StringTie accepts mm<0
                     // (demotion-marker) junctions on raw read support; rejecting them
                     // splits reads -> over-segmentation. st_shadow() implies keep.
+                    // RUSTLE_ST_JUNC (Layer-1 faithful umbrella) implies KEEP_MM_NEG:
+                    // accept mm<0 demotion-marker junctions on raw read support, like ST.
+                    // Gated !precise_mode so RUSTLE_PRECISE stays byte-identical.
                     let keep_mm_neg = std::env::var_os("RUSTLE_KEEP_MM_NEG").is_some()
-                        || crate::stringtie_parity::st_shadow();
+                        || crate::stringtie_parity::st_shadow()
+                        || (!crate::stringtie_parity::precise_mode()
+                            && std::env::var_os("RUSTLE_ST_JUNC").is_some());
                     if reject_reason.is_none() && stat.mm < 0.0
                         && !(keep_mm_neg && stat.nreads_good > 0.0)
                     {

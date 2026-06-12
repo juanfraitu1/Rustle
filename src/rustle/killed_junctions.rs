@@ -1140,6 +1140,18 @@ pub fn good_junc(
     order.sort_by_key(|&i| (cjunctions[i].start, cjunctions[i].end, cjunctions[i].strand));
 
     let gjd = goodjunc_trace_active();
+    // ST-faithful junction acceptance (Layer 1): StringTie snaps single-read alt-donors/
+    // acceptors to the canonical and KEEPS the junction edge; it never runs the good_junc
+    // witness on them (verified by ST_GJ_WATCH: ST good_junc fires on the canonical donor,
+    // never on the 4bp-shifted alt-donor). rustle instead witness-kills them. Under
+    // RUSTLE_ST_JUNC, exempt the asymmetric-support alt-junction signature from the witness:
+    // a strong SHARED acceptor (high rightsupport) marks an alt-DONOR -> skip the left
+    // witness; a strong shared donor (high leftsupport) marks an alt-ACCEPTOR -> skip the
+    // right witness. The shipped donor/acceptor graph snaps then handle the node boundary.
+    // Gated !precise_mode (RUSTLE_PRECISE stays byte-identical to 4705ab1).
+    let st_junc = !crate::stringtie_parity::precise_mode()
+        && std::env::var_os("RUSTLE_ST_JUNC").is_some();
+    let st_junc_shared_thr = 5.0 * junction_thr;
     for &idx in &order {
         let cj = &mut cjunctions[idx];
         let strand = cj.strand;
@@ -1303,6 +1315,7 @@ pub fn good_junc(
         if lleftcov > 1.0 / ERROR_PERC
             && cj.leftsupport * mult < ERROR_PERC * lleftcov
             && (mismatch || lrightcov > lleftcov * (1.0 - ERROR_PERC))
+            && !(st_junc && cj.rightsupport > st_junc_shared_thr)
         {
             if gjd {
                 eprintln!(
@@ -1340,6 +1353,7 @@ pub fn good_junc(
         if rrightcov > 1.0 / ERROR_PERC
             && cj.rightsupport * mult < ERROR_PERC * rrightcov
             && (mismatch || rleftcov > rrightcov * (1.0 - ERROR_PERC))
+            && !(st_junc && cj.leftsupport > st_junc_shared_thr)
         {
             if gjd {
                 eprintln!(
@@ -1495,15 +1509,26 @@ pub fn apply_higherr_demotions(
     // to unreliable candidates when the minor junction has >= N reads. Unlike RUSTLE_HIGHERR_MIN_READS
     // (which blocks all higherr processing), this floor only affects the unreliable-candidate
     // branch — reliable candidates (guide_match or nm<nreads) can still demote any junction.
+    // RUSTLE_ST_JUNC is the Layer-1 (junction-acceptance) faithful umbrella: when set
+    // (and not in precise_mode), it relaxes BOTH higherr floors to 1.0 so single-read
+    // alt-donor/acceptor junctions ST keeps are not folded into the dominant. Individual
+    // env vars (RUSTLE_HIGHERR_UNRELIABLE_FLOOR / RUSTLE_HE_SMALL_SHIFT_FLOOR) still
+    // override for isolation. Pairs with the good_junc witness exemption + KEEP_MM_NEG,
+    // all gated under RUSTLE_ST_JUNC. Escape hatch RUSTLE_PRECISE -> precise_mode -> inert.
+    let st_junc = !crate::stringtie_parity::precise_mode()
+        && std::env::var_os("RUSTLE_ST_JUNC").is_some();
     let unreliable_floor: f64 = std::env::var("RUSTLE_HIGHERR_UNRELIABLE_FLOOR")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        .ok().and_then(|v| v.parse().ok())
+        .unwrap_or(if st_junc { 1.0 } else { 0.0 });
     // Exempt junctions with a small donor/acceptor shift from a dominant candidate
     // from HE_DEMOTE when they have enough absolute reads. Primary use case: 2 bp
     // alt-acceptor/donor variants with strong read support that ST keeps but aggressive
     // HE_DEMOTE would fold into the dominant junction.  Default: floor=15, window=2
     // (GGO_19 benchmark: +0.4pp Pr / same Sn vs floor=0).  Override via env vars.
+    // RUSTLE_ST_JUNC lowers the floor to 1.0 (keep single-read small-shift alts).
     let small_shift_floor: f64 = std::env::var("RUSTLE_HE_SMALL_SHIFT_FLOOR")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(15.0);
+        .ok().and_then(|v| v.parse().ok())
+        .unwrap_or(if st_junc { 1.0 } else { 15.0 });
     let small_shift_window: u64 = std::env::var("RUSTLE_HE_SMALL_SHIFT_WINDOW")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     for ord_i in 0..cjunctions.len() {
