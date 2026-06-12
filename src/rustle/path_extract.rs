@@ -7001,7 +7001,18 @@ pub fn extract_transcripts(
         //
         // Default `RUSTLE_SINGLE_EXON_MIN_READS=60` still applied as
         // belt-and-suspenders flow-depletion protection.
-        let skip_se_off = std::env::var_os("RUSTLE_SINGLE_NODE_SKIP_OFF").is_some();
+        //
+        // ST-faithful single-exon FLOW architecture (precise_mode gate): StringTie
+        // emits single-exon transcripts as first-class single-node max-flow paths,
+        // kept when per-bp `cov >= singlethr` (store_transcript, rlink.cpp:9645).
+        // Under the ST-faithful default we drop rustle's belt-and-suspenders 60-read
+        // count gate so `cov >= singlethr` is the sole criterion — matching ST's
+        // architecture (the SE-last seed ordering still protects multi-exon flow).
+        // precise_mode keeps the 60-read gate (byte-identical to 4705ab1).
+        // Override: RUSTLE_SE_FLOW_ARCH_OFF=1.
+        let skip_se_off = std::env::var_os("RUSTLE_SINGLE_NODE_SKIP_OFF").is_some()
+            || (!crate::stringtie_parity::precise_mode()
+                && std::env::var_os("RUSTLE_SE_FLOW_ARCH_OFF").is_none());
         let single_exon_min: f64 = std::env::var("RUSTLE_SINGLE_EXON_MIN_READS")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -8358,7 +8369,12 @@ pub fn extract_transcripts(
             // active (default), and SKIP_OFF set, this gate becomes a no-op
             // and `collapse_single_exon_runoff`'s `cov >= singlethr` is the
             // sole emission criterion — ST-parity.
-            let skip_se_off = std::env::var_os("RUSTLE_SINGLE_NODE_SKIP_OFF").is_some();
+            // ST-faithful single-exon FLOW architecture (precise_mode gate): see the
+            // matching early gate above — drop the 60-read count gate under the
+            // ST-faithful default. Override: RUSTLE_SE_FLOW_ARCH_OFF=1.
+            let skip_se_off = std::env::var_os("RUSTLE_SINGLE_NODE_SKIP_OFF").is_some()
+                || (!crate::stringtie_parity::precise_mode()
+                    && std::env::var_os("RUSTLE_SE_FLOW_ARCH_OFF").is_none());
             let single_exon_min: f64 = std::env::var("RUSTLE_SINGLE_EXON_MIN_READS")
                 .ok()
                 .and_then(|s| s.parse().ok())

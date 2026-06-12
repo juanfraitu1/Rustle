@@ -4699,18 +4699,30 @@ pub fn collapse_single_exon_runoff(
     // strand. Reference single-exons live at distinct loci — overlap signals
     // retained-intron / runoff noise.
     let suppress_multi_overlap = std::env::var_os("RUSTLE_SINGLE_EXON_NO_MULTI_OVERLAP_OFF").is_none();
-    let multi_spans: Vec<(u64, u64, char)> = if suppress_multi_overlap {
+    let multi_spans: Vec<(u64, u64, char, f64)> = if suppress_multi_overlap {
         txs.iter()
             .filter(|t| t.exons.len() > 1)
             .map(|t| (
                 t.exons.first().map(|e| e.0).unwrap_or(0),
                 t.exons.last().map(|e| e.1).unwrap_or(0),
                 t.strand,
+                t.coverage,
             ))
             .collect()
     } else {
         Vec::new()
     };
+    // ST-faithful high-cov single-exon exemption (precise_mode gate): StringTie keeps
+    // a single-exon gene that overlaps a multi-exon transcript when the SE is the
+    // DOMINANT (higher-cov) form — a genuine intron-retained / unspliced isoform it
+    // emits alongside the spliced gene (e.g. STRG.156.7 cov 11.6 next to the cov-2
+    // spliced 22-exon). The SE diagnosis (20/24 suppressed SE) showed the true SE
+    // almost always out-covers the spliced over-extension that contains it. So only
+    // suppress the SE-over-multi overlap as runoff/RI when the SE does NOT dominate.
+    // precise_mode keeps the unconditional suppress (byte-identical to 4705ab1).
+    // Override: RUSTLE_SE_DOM_OVERLAP_OFF=1.
+    let se_dom_overlap_exempt = !crate::stringtie_parity::precise_mode()
+        && std::env::var_os("RUSTLE_SE_DOM_OVERLAP_OFF").is_none();
 
     for i in 0..n {
         if dead.contains(i) {
@@ -4787,16 +4799,24 @@ pub fn collapse_single_exon_runoff(
         // non-guide that overlaps a surviving multi-exon on the same strand,
         // it's almost always retained-intron / runoff noise rather than a
         // genuine novel locus. Reference single-exons live at distinct loci.
-        if suppress_multi_overlap
-            && !did_stitch
-            && !is_guide_tx(&txs[i])
-            && multi_spans.iter().any(|(ms, me, mstrand)| {
+        if suppress_multi_overlap && !did_stitch && !is_guide_tx(&txs[i]) {
+            // Highest-cov overlapping multi-exon on the same strand (-1 = none).
+            let mut max_ov_cov = -1.0f64;
+            for (ms, me, mstrand, mcov) in &multi_spans {
                 // half-open semantics: [is, ie) overlaps [ms, me) iff is < me && ms < ie
-                *mstrand == txs[i].strand && is < *me && *ms < ie
-            })
-        {
-            dead.insert_grow(i);
-            dropped_multi_overlap += 1;
+                if *mstrand == txs[i].strand && is < *me && *ms < ie && *mcov > max_ov_cov {
+                    max_ov_cov = *mcov;
+                }
+            }
+            let overlaps_multi = max_ov_cov >= 0.0;
+            // ST-faithful: keep a dominant single-exon (cov above the overlapping
+            // multi-exon) — StringTie emits it as a standalone intron-retained isoform.
+            let se_dominates =
+                se_dom_overlap_exempt && overlaps_multi && txs[i].coverage > max_ov_cov;
+            if overlaps_multi && !se_dominates {
+                dead.insert_grow(i);
+                dropped_multi_overlap += 1;
+            }
         }
     }
 
