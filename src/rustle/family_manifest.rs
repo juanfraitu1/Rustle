@@ -1,5 +1,5 @@
 //! Family manifest ingestion: parse R-exported TSV of multi-copy gene family loci
-//! and create FamilyGroups that the existing HMM-EM pipeline can consume.
+//! and create FamilyGroups that the existing EM pipeline can consume.
 
 use crate::vg::FamilyGroup;
 use crate::types::Bundle;
@@ -79,10 +79,10 @@ pub fn parse_family_manifest<P: AsRef<Path>>(path: P) -> Result<Vec<FamilyLocus>
 ///
 /// For each distinct `family_id`, collects every bundle whose `[start, end)` half-open
 /// range overlaps any locus belonging to that family. The resulting `FamilyGroup`
-/// has `multimap_reads` left empty — the HMM-EM pipeline populates it from the BAM.
+/// has `multimap_reads` left empty — the EM pipeline populates it from the BAM.
 ///
 /// A bundle may appear in more than one family group if it overlaps loci from multiple
-/// distinct families. Each family's HMM-EM runs independently, so this does not cause
+/// distinct families. Each family's EM runs independently, so this does not cause
 /// double-counting within a family.
 pub fn create_family_groups_from_manifest(
     loci: &[FamilyLocus],

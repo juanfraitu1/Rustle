@@ -43,7 +43,7 @@ pub enum RescueClass {
     /// Synthetic bundle was placed at a candidate locus discovered by the
     /// genome k-mer scan (Phase 3 positional rescue) — represents a novel
     /// paralog not present in any aligned bundle. The locus's family
-    /// signature was detected by `vg_hmm::positional` but no bundle existed
+    /// signature was detected by `vg_family::positional` but no bundle existed
     /// there at family-discovery time.
     NovelLocusFromScan,
     /// Transfrag was detected as a proper suffix of a chimeric flow-decomposition
@@ -62,6 +62,19 @@ pub enum RescueClass {
     /// sub-bundles so the family machinery can resolve them. Transcripts from
     /// these sub-bundles carry the `tandem_copy` provenance flag.
     TandemCopy,
+    /// Synthetic bundle merging a convergent locus's minority-strand reads that
+    /// the combined-coverage bundling fragmented across multiple sub-bundles
+    /// (Type-2 cut-off). Assembling the minority strand in isolation recovers the
+    /// gene the dominant antisense neighbor otherwise suppresses. Opt-in
+    /// (`RUSTLE_STRAND_PURE_MINORITY`).
+    StrandPureMinority,
+    /// Primary-only clone of a secondary-bearing family bundle, injected by
+    /// `RUSTLE_VG_UNION_BASELINE` to guarantee VG output ⊇ primary-only baseline.
+    /// Its transcripts are the baseline (StringTie-equivalent) isoforms that the
+    /// secondary-polluted VG bundle drops; they are protected from cross-bundle
+    /// reconciliation (predcluster / subset-dedup) so the polluted VG transcripts
+    /// can't out-compete them. Real primary reads (NOT synthetic).
+    UnionBaseline,
 }
 
 impl RescueClass {
@@ -78,6 +91,8 @@ impl RescueClass {
             RescueClass::ChimericSuffixRescue => "chimeric_suffix_rescue",
             RescueClass::TopologyBorrow => "topology_borrow",
             RescueClass::TandemCopy => "tandem_copy",
+            RescueClass::StrandPureMinority => "strand_pure_minority",
+            RescueClass::UnionBaseline => "union_baseline",
         }
     }
 }

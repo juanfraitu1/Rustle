@@ -28,19 +28,6 @@ pub struct ExonClass {
     pub per_copy_spans: Vec<(CopyId, (u64, u64))>,
     /// True iff exactly one copy contributes — i.e. a bubble branch.
     pub copy_specific: bool,
-    /// Per-exon profile HMM. None until fit_profiles_in_place is called.
-    /// This is the SHARED profile (built from POA-MSA of all copies) used by
-    /// family-level scoring functions (`forward_against_family`,
-    /// `viterbi_against_family`). For per-paralog scoring (HMM-EM E-step),
-    /// `per_copy_profiles` below is the right field — it preserves SNPs and
-    /// per-copy sequence drift that the shared MSA pools away.
-    pub profile: Option<crate::vg_hmm::profile::ProfileHmm>,
-    /// One profile per copy that contributes to this node, fitted as a
-    /// singleton from that copy's exact genomic sequence at this exon. Lets
-    /// `forward_against_path_for_copy` score reads against each paralog's
-    /// actual sequence rather than the family-wide consensus. Empty until
-    /// `fit_profiles_in_place` is called.
-    pub per_copy_profiles: Vec<(CopyId, crate::vg_hmm::profile::ProfileHmm)>,
     /// Per-copy weighted coverage for this exon class, populated after EM by
     /// `annotate_per_copy_exon_coverage`. Entry `(k, cov)` gives the
     /// EM-weighted per-base coverage from copy k's reads. Copies that don't
@@ -250,6 +237,41 @@ pub(crate) fn minimizers(seq: &[u8], k: usize, w: usize) -> HashSet<u64> {
         if let Some(h) = best { out.insert(h); }
     }
     out
+}
+
+/// Default similarity bar for unifying homologous exons across paralog copies
+/// (both the Stage-1b cross-copy merge and the Stage-2 within-cluster refine).
+/// Overridable per-run via `RUSTLE_VG_FAMILY_MERGE_JACCARD` (applied to both
+/// gates by `family_merge_jaccard()`).
+///
+/// 0.30 from an indel-inclusive TDD study + assembly benchmark (2026-06-06; see
+/// the `merge_*` tests below + bench/multi_copy_eval/MERGE_JACCARD_THRESHOLD.md):
+///
+/// The main VG assembly path (pipeline.rs em_partitions) previously HARDCODED the
+/// cross-copy merge bar at **0.05** — far too low. On the flagship dispersed
+/// paralog (RBMY / LOC129530243) recovered RefSeq transcripts are MONOTONE in the
+/// bar: **0.05→5, 0.30→7, 0.40→8**, because a low bar OVER-merges near-identical-
+/// but-DISTINCT copies (union-find folds a copy on a single above-bar edge and
+/// chains transitively; the completion gate at vg.rs:2803 then fabricates phantom
+/// exons on coverage asymmetry with no similarity-magnitude guard), collapsing
+/// copy-distinct isoforms. Nothing on the 15-locus win-loci panel regresses when
+/// raising 0.05→0.30. Adversarial constructions confirm false-merge modes that
+/// 0.30 refuses but a low bar accepts: embedded shared TE/domain (J≈0.22), poly-A/
+/// low-complexity cores (J≈0.17). A pure sequence-SEPARATION view (unrelated exons
+/// share zero k=15 minimizers, ceiling 0.000) would even tolerate a much lower
+/// bar — but that view ignores the assembly over-merge cost, which is the binding
+/// constraint. 0.30 is the benchmark-coherent operating point (0.40 is a candidate
+/// pending genome-wide validation). The remaining lever for starved-copy recovery
+/// is coverage/flow + a similarity-magnitude guard on the completion gate.
+pub const FAMILY_MERGE_JACCARD_DEFAULT: f64 = 0.30;
+
+/// Resolves the merge bar from `RUSTLE_VG_FAMILY_MERGE_JACCARD` or the default,
+/// applied CONSISTENTLY to both the Stage-1b cross-copy merge and the Stage-2
+/// within-cluster refine (so a single env knob controls the whole merge decision
+/// — required for a clean threshold sweep).
+pub fn family_merge_jaccard() -> f64 {
+    std::env::var("RUSTLE_VG_FAMILY_MERGE_JACCARD")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(FAMILY_MERGE_JACCARD_DEFAULT)
 }
 
 /// Within a position-overlap cluster, split by minimizer-Jaccard similarity.
@@ -559,8 +581,6 @@ pub fn build_family_graph(
                 per_copy_sequences,
                 per_copy_spans,
                 copy_specific: cids.len() == 1,
-                profile: None,
-                per_copy_profiles: Vec::new(),
                 per_copy_cov: Vec::new(),
             });
         }
@@ -624,127 +644,103 @@ pub fn build_family_graph(
     Ok(FamilyGraph { family_id: family.family_id, nodes, edges })
 }
 
-use crate::vg_hmm::profile::ProfileHmm;
+/// Multiple sequence alignment via poasta POA graph traversal.
+/// Returns rows of equal length, padded with b'-' for gaps.
+/// One row per input sequence, in the same order.
+/// Errors if fewer than 2 sequences provided.
+///
+/// Pure POA-MSA utility used by the graph-POA-identity family filter
+/// (`compute_family_graph_poa_identity_diag`). No HMM/profile dependency.
+pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+    use poasta::graphs::poa::{POAGraph, POANodeIndex};
+    use poasta::aligner::PoastaAligner;
+    use poasta::aligner::config::AffineDijkstra;
+    use poasta::aligner::scoring::{GapAffine, AlignmentType};
+    use poasta::io::fasta::poa_graph_to_fasta;
 
-pub fn fit_profiles_in_place(fg: &mut FamilyGraph) -> Result<()> {
-    // Facultative POA-MSA-smoothed per-copy profiles. When triggered (≥3
-    // copies, mean pairwise identity ≥ 0.50), build the POA-MSA once per
-    // node and use it to produce per-copy profiles that blend each copy's
-    // singleton signal with the column-wise MSA composition. This softens
-    // the harsh per-error penalty of pure singleton 1-hot emissions
-    // (~6.9 log-units → ~3 log-units), letting the gap rule mute
-    // confidently-wrong assignments on noisy reads.
-    //
-    // Tunable via env vars:
-    //   - RUSTLE_VG_HMM_PERCOPY_TILT (default 0.7): blend weight for target
-    //     copy's base vs column observations. 1.0 = pure singleton, 0.0 =
-    //     pure shared MSA. Empirical default 0.7 keeps strong per-paralog
-    //     discrimination while softening errors.
-    //   - RUSTLE_VG_HMM_PERCOPY_MIN_IDENTITY (default 0.50): threshold to
-    //     trigger the smoothed path. Below it, copies are too divergent for
-    //     POA-MSA to be meaningful — fall back to plain singleton.
-    let tilt: f64 = std::env::var("RUSTLE_VG_HMM_PERCOPY_TILT")
-        .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.7);
-    let min_id: f64 = std::env::var("RUSTLE_VG_HMM_PERCOPY_MIN_IDENTITY")
-        .ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.50);
-
-    // Process nodes in parallel — fit_profiles is independent across nodes
-    // and POA dominates per-node cost. Each node also locally deduplicates
-    // POA work: shared and per-copy profiles share the same MSA.
-    use rayon::prelude::*;
-    let updated: Vec<(Option<ProfileHmm>, bool, Vec<(CopyId, ProfileHmm)>)> =
-        fg.nodes.par_iter()
-        .map(|node| {
-            let seqs: Vec<&[u8]> = node.per_copy_sequences.iter().map(|(_, s)| s.as_slice()).collect();
-            // Decide whether MSA is needed at all (shared OR per-copy).
-            let mut copy_specific = node.copy_specific;
-            let mean_id_opt = if seqs.len() >= 2 { Some(mean_pairwise_identity_refs(&seqs)) } else { None };
-            let needs_shared_msa = seqs.len() >= 2 && mean_id_opt.unwrap_or(0.0) >= 0.60;
-            let needs_percopy_msa = seqs.len() >= 2 && tilt < 1.0
-                && mean_id_opt.unwrap_or(0.0) >= min_id;
-
-            // Run POA at most ONCE per node. Re-used by shared and per-copy paths.
-            let msa_opt: Option<Vec<Vec<u8>>> = if needs_shared_msa || needs_percopy_msa {
-                let owned: Vec<Vec<u8>> = seqs.iter().map(|s| s.to_vec()).collect();
-                match crate::vg_hmm::profile::poa_msa(&owned) {
-                    Ok(m) => Some(m),
-                    Err(_) => {
-                        copy_specific = true;
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-            // Shared profile.
-            let shared = if seqs.is_empty() {
-                ProfileHmm::empty(0)
-            } else if seqs.len() == 1 {
-                ProfileHmm::from_singleton(seqs[0])
-            } else if !needs_shared_msa {
-                ProfileHmm::from_singleton(seqs[0])
-            } else if let Some(ref msa) = msa_opt {
-                ProfileHmm::from_msa(msa).unwrap_or_else(|_| ProfileHmm::from_singleton(seqs[0]))
-            } else {
-                ProfileHmm::from_singleton(seqs[0])
-            };
-
-            // Per-copy profiles.
-            let per_copy: Vec<(CopyId, ProfileHmm)> = if needs_percopy_msa && msa_opt.is_some() {
-                let msa = msa_opt.as_ref().unwrap();
-                node.per_copy_sequences.iter().enumerate()
-                    .map(|(idx_in_msa, (cid, seq))| {
-                        let p = if seq.is_empty() {
-                            ProfileHmm::empty(0)
-                        } else {
-                            ProfileHmm::from_per_copy_msa_smoothed(seq, msa, idx_in_msa, tilt)
-                        };
-                        (*cid, p)
-                    })
-                    .collect()
-            } else {
-                node.per_copy_sequences.iter()
-                    .map(|(cid, seq)| {
-                        let p = if seq.is_empty() {
-                            ProfileHmm::empty(0)
-                        } else {
-                            ProfileHmm::from_singleton(seq)
-                        };
-                        (*cid, p)
-                    })
-                    .collect()
-            };
-
-            (Some(shared), copy_specific, per_copy)
-        })
-        .collect();
-
-    for (node, (shared, copy_specific, per_copy)) in fg.nodes.iter_mut().zip(updated.into_iter()) {
-        node.profile = shared;
-        node.copy_specific = copy_specific;
-        node.per_copy_profiles = per_copy;
+    if seqs.len() < 2 {
+        return Err(anyhow!("poa_msa requires at least 2 sequences"));
     }
-    Ok(())
-}
 
-/// Mean pairwise identity over slice references — same math as
-/// `mean_pairwise_identity` (m / max_len normalization) but avoids cloning.
-fn mean_pairwise_identity_refs(seqs: &[&[u8]]) -> f64 {
-    let n = seqs.len();
-    if n < 2 { return 1.0; }
-    let mut total = 0.0_f64; let mut pairs = 0u32;
-    for i in 0..n {
-        for j in (i + 1)..n {
-            let m = seqs[i].iter().zip(seqs[j].iter())
-                .take(seqs[i].len().min(seqs[j].len()))
-                .filter(|(a, b)| a == b).count();
-            let l = seqs[i].len().max(seqs[j].len()).max(1);
-            total += m as f64 / l as f64;
-            pairs += 1;
+    // Build a POA graph by aligning each sequence progressively.
+    // Uses affine-gap Dijkstra (no A* heuristic) with mismatch=1, gap_extend=1, gap_open=2.
+    let gap_costs = GapAffine::new(1, 1, 2);
+    let aligner: PoastaAligner<'_, AffineDijkstra> =
+        PoastaAligner::new(AffineDijkstra(gap_costs), AlignmentType::Global);
+
+    let mut graph: POAGraph<u32> = POAGraph::new();
+    let unit_weights: Vec<usize> = vec![1; seqs.iter().map(|s| s.len()).max().unwrap_or(0)];
+
+    for (i, seq) in seqs.iter().enumerate() {
+        let w = &unit_weights[..seq.len()];
+        if graph.is_empty() {
+            // First sequence: add unaligned (no existing graph to align to).
+            graph
+                .add_alignment_with_weights(&format!("seq{i}"), seq, None, w)
+                .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
+        } else {
+            // Subsequent sequences: align against the current graph.
+            let aln_result = aligner.align::<u32, _>(&graph, seq);
+            let alignment = if aln_result.alignment.is_empty() {
+                None
+            } else {
+                Some(&aln_result.alignment as &poasta::aligner::Alignment<POANodeIndex<u32>>)
+            };
+            graph
+                .add_alignment_with_weights(&format!("seq{i}"), seq, alignment, w)
+                .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
         }
     }
-    total / pairs.max(1) as f64
+
+    // Extract the MSA rows by using poasta's public poa_graph_to_fasta function,
+    // which walks the graph in topological order and writes aligned FASTA records.
+    // We write into a Vec<u8> buffer and parse the resulting FASTA lines.
+    let mut fasta_buf: Vec<u8> = Vec::new();
+    poa_graph_to_fasta(&graph, &mut fasta_buf)
+        .map_err(|e| anyhow!("poa_graph_to_fasta failed: {e}"))?;
+
+    // Parse the FASTA output: each sequence record is a set of lines starting with '>'.
+    // We collect the sequences in order and convert them to Vec<u8> rows.
+    let mut msa: Vec<Vec<u8>> = Vec::with_capacity(seqs.len());
+    let mut current_seq: Option<Vec<u8>> = None;
+    for line in fasta_buf.split(|&b| b == b'\n') {
+        if line.is_empty() {
+            continue;
+        }
+        if line[0] == b'>' {
+            if let Some(seq) = current_seq.take() {
+                msa.push(seq);
+            }
+            current_seq = Some(Vec::new());
+        } else if let Some(ref mut seq) = current_seq {
+            seq.extend_from_slice(line);
+        }
+    }
+    if let Some(seq) = current_seq {
+        msa.push(seq);
+    }
+
+    if msa.len() != seqs.len() {
+        return Err(anyhow!(
+            "poa_msa: expected {} rows from graph but got {}",
+            seqs.len(),
+            msa.len()
+        ));
+    }
+
+    // poasta's fasta_aln_for_seq has an off-by-one in the trailing-gap fill for
+    // sequences whose path ends before max_col, so rows can occasionally come
+    // back one column short. Pad with trailing gaps to the max row length —
+    // this is content-neutral for an MSA (gaps are not part of the ungapped
+    // sequence) and the round-trip ungap(row) ≡ original input is preserved.
+    let n_cols = msa.iter().map(|r| r.len()).max().unwrap_or(0);
+    for row in msa.iter_mut() {
+        if row.len() < n_cols {
+            row.extend(std::iter::repeat(b'-').take(n_cols - row.len()));
+        }
+    }
+    Ok(msa)
 }
 
 #[cfg(test)]
@@ -780,6 +776,507 @@ mod tests {
             assert_eq!(groups.len(), 1,
                 "identical sequences should always stay merged (threshold={threshold})");
         }
+    }
+
+    // --- Merge-Jaccard sensitivity sweep (analysis harness, not a pass/fail test) ---
+    //
+    // Characterises the EXACT metric the family-merge step uses (`minimizers`
+    // k=15/w=10 + Jaccard, threshold env RUSTLE_VG_FAMILY_MERGE_JACCARD, default
+    // 0.30). Produces (1) a controlled SNP-divergence curve on real exon
+    // sequences and (2) an unrelated-exon baseline, so the separation margin and
+    // a recommended threshold can be read off directly.
+    //
+    // Guarded by env MERGE_SWEEP_DATA (path to a `id<TAB>seq` TSV) and #[ignore],
+    // so it never runs in the normal suite. Run with:
+    //   MERGE_SWEEP_DATA=/tmp/merge_sweep_exons.tsv \
+    //     cargo test -p rustle merge_jaccard_sensitivity_sweep -- --ignored --nocapture
+    struct SplitMix64(u64);
+    impl SplitMix64 {
+        fn next_u64(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        }
+        fn unit(&mut self) -> f64 {
+            (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    fn jaccard(a: &HashSet<u64>, b: &HashSet<u64>) -> f64 {
+        let inter = a.intersection(b).count() as f64;
+        let uni = a.union(b).count() as f64;
+        if uni == 0.0 { 0.0 } else { inter / uni }
+    }
+
+    /// Substitution-only mutation at per-base rate `r`; returns (mutated, #SNPs).
+    fn mutate_snps(seq: &[u8], r: f64, rng: &mut SplitMix64) -> (Vec<u8>, usize) {
+        const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+        let mut out = seq.to_vec();
+        let mut n = 0;
+        for x in out.iter_mut() {
+            if rng.unit() < r {
+                let cur = *x;
+                // pick a different base
+                let mut nb = B[(rng.next_u64() % 4) as usize];
+                while nb == cur { nb = B[(rng.next_u64() % 4) as usize]; }
+                *x = nb;
+                n += 1;
+            }
+        }
+        (out, n)
+    }
+
+    /// COHERENCE GUARD (permanent, runs in the normal suite).
+    ///
+    /// The family-merge default bar must BRACKET the real homology signal, once
+    /// indels are modelled, on BOTH sides:
+    ///   (lower bound) genuinely near-identical paralog copies — the real regime,
+    ///     ≤~1% substitution + small indels, e.g. RBMY at 98-99.8% identity —
+    ///     must unify into ONE `ExonClass` (else the borrow/completion machinery
+    ///     is inert); guards against the bar being too HIGH.
+    ///   (upper bound — separate adversarial guards below) unrelated / TE-sharing
+    ///     / low-complexity exons must NEVER merge; guards against too LOW.
+    ///
+    /// NOTE the divergence here is ≤1% (NOT 2-3%): the indel-inclusive sweep +
+    /// the RBMY assembly benchmark showed that forcing the 2-3% band to merge
+    /// (which a ~0.10 bar would do) OVER-merges distinct copies and REGRESSES
+    /// recovered transcripts. So the coherent property is "merge the near-
+    /// identical, leave the moderately-diverged distinct" — exactly what 0.30
+    /// does. Uses the production metric (minimizer-Jaccard, k=15, w=10) at the
+    /// production default. Hermetic panel: bench/multi_copy_eval/merge_sweep_exons.tsv.
+    #[test]
+    fn family_merge_default_merges_near_identical_paralogs() {
+        let panel = load_panel();
+        let fam: Vec<&(String, Vec<u8>)> =
+            panel.iter().filter(|(id, _)| id.starts_with("LRPAP1")).collect();
+        let unrel: Vec<&(String, Vec<u8>)> =
+            panel.iter().filter(|(id, _)| id.starts_with("UNREL")).collect();
+        let thr = FAMILY_MERGE_JACCARD_DEFAULT;
+
+        // Near-identical (≤1% div + small indels) copy-vs-copy recall at default bar.
+        let (mut merged, mut total) = (0usize, 0usize);
+        for (ei, exon) in fam.iter().enumerate() {
+            let mut rng = SplitMix64(0x00C0_FFEE_u64 ^ ei as u64);
+            for _ in 0..40 {
+                let (a, _, _) = mutate_indels(&exon.1, 0.008, 0.002, 3, &mut rng);
+                let (b, _, _) = mutate_indels(&exon.1, 0.008, 0.002, 3, &mut rng);
+                let j = jaccard(&minimizers(&a, 15, 10), &minimizers(&b, 15, 10));
+                if j >= thr { merged += 1; }
+                total += 1;
+            }
+        }
+        let recall = merged as f64 / total as f64;
+        assert!(recall >= 0.85,
+            "default merge bar {thr} fails to unify NEAR-IDENTICAL paralog copies \
+             (only {:.0}% merge; need >=85%) — bar is too HIGH", recall * 100.0);
+
+        // Unrelated exons must never merge at the same bar (specificity).
+        let mins: Vec<HashSet<u64>> = unrel.iter().map(|(_, s)| minimizers(s, 15, 10)).collect();
+        for i in 0..mins.len() {
+            for j in (i + 1)..mins.len() {
+                let s = jaccard(&mins[i], &mins[j]);
+                assert!(s < thr,
+                    "unrelated exons would falsely merge at bar {thr} (sim={s:.3})");
+            }
+        }
+    }
+
+    fn rand_seq(n: usize, rng: &mut SplitMix64) -> Vec<u8> {
+        const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+        (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
+    }
+
+    /// ADVERSARIAL GUARD: a short exon-fragment fully embedded inside a larger,
+    /// otherwise-unrelated exon must NOT cause a merge at the default bar. This is
+    /// the "small-set-in-big-set" failure mode of a containment metric: the small
+    /// fragment's minimizers ⊆ the big exon's, so containment ≈ 1.0 (would merge),
+    /// but these are NOT homologous whole exons. The production Jaccard metric
+    /// (union denominator) correctly refuses. This test is WHY the default stays
+    /// Jaccard rather than switching to containment.
+    #[test]
+    fn fragment_in_larger_exon_does_not_merge_under_jaccard_default() {
+        let mut rng = SplitMix64(0x0BAD_F00D);
+        let small = rand_seq(45, &mut rng);            // a short exon fragment
+        let mut big = rand_seq(300, &mut rng);
+        big.extend_from_slice(&small);                 // fragment literally inside big
+        big.extend(rand_seq(300, &mut rng));           // unrelated flanks
+        let (ms, mb) = (minimizers(&small, 15, 10), minimizers(&big, 15, 10));
+
+        let cont = containment(&ms, &mb);
+        let jacc = jaccard(&ms, &mb);
+        // containment WOULD merge (this documents the risk we are avoiding)…
+        assert!(cont >= 0.90,
+            "sanity: fragment is contained, containment should be ~1 (got {cont:.3})");
+        // …but the production Jaccard default must NOT merge them.
+        assert!(jacc < FAMILY_MERGE_JACCARD_DEFAULT,
+            "Jaccard default {} must not merge a fragment into an unrelated larger exon \
+             (jacc={jacc:.3})", FAMILY_MERGE_JACCARD_DEFAULT);
+    }
+
+    /// ADVERSARIAL GUARD: two genuinely unrelated exons that happen to share a
+    /// low-complexity tract (e.g. a (CAG)_n microsatellite or a common short
+    /// motif) must NOT merge at the default bar — the shared repeat contributes
+    /// few distinct minimizers, so Jaccard stays well below the bar.
+    #[test]
+    fn shared_low_complexity_tract_does_not_merge_at_default() {
+        let mut rng = SplitMix64(0xFEED_BEEF);
+        let repeat: Vec<u8> = b"CAG".iter().cycle().take(60).copied().collect();
+        let mut a = rand_seq(280, &mut rng); a.extend_from_slice(&repeat); a.extend(rand_seq(20, &mut rng));
+        let mut b = rand_seq(20, &mut rng);  b.extend_from_slice(&repeat); b.extend(rand_seq(280, &mut rng));
+        let j = jaccard(&minimizers(&a, 15, 10), &minimizers(&b, 15, 10));
+        assert!(j < FAMILY_MERGE_JACCARD_DEFAULT,
+            "unrelated exons sharing only a low-complexity tract must not merge at bar {} (jacc={j:.3})",
+            FAMILY_MERGE_JACCARD_DEFAULT);
+    }
+
+    /// ADVERSARIAL GUARD (from the merge-metric adversarial workflow): two
+    /// otherwise-unrelated exons that share ONE embedded high-complexity block
+    /// (stand-in for a common Alu/L1 fragment or protein domain) must NOT merge
+    /// at the default bar. Measured Jaccard ≈ 0.2 — this is EXACTLY a case a 0.10
+    /// bar would wrongly merge (fabricating a chimeric ExonClass across genes),
+    /// and a key reason the default stays 0.30.
+    #[test]
+    fn embedded_shared_element_does_not_merge_at_default() {
+        let element = { let mut r = SplitMix64(0xABCD_0001); rand_seq(110, &mut r) };
+        let mut rng = SplitMix64(0x1111_2222);
+        let mut a = rand_seq(95, &mut rng); a.extend_from_slice(&element); a.extend(rand_seq(95, &mut rng));
+        let mut b = rand_seq(95, &mut rng); b.extend_from_slice(&element); b.extend(rand_seq(95, &mut rng));
+        let j = jaccard(&minimizers(&a, 15, 10), &minimizers(&b, 15, 10));
+        assert!(j > 0.05, "sanity: shared element should give non-trivial overlap (j={j:.3})");
+        assert!(j < FAMILY_MERGE_JACCARD_DEFAULT,
+            "unrelated exons sharing an embedded element must not merge at default bar {} (j={j:.3})",
+            FAMILY_MERGE_JACCARD_DEFAULT);
+    }
+
+    /// ADVERSARIAL GUARD: two unrelated exons that share a long poly-A / AT-rich
+    /// core but have distinct ends must NOT merge at the default. Measured Jaccard
+    /// ≈ 0.17 — again inside the danger zone of a ~0.10 bar, refused by 0.30.
+    #[test]
+    fn poly_a_core_does_not_merge_at_default() {
+        let core: Vec<u8> = std::iter::repeat(b'A').take(600).collect();
+        let mut a = core.clone(); a.extend_from_slice(b"CGTCGTCGTC");
+        let mut b = core.clone(); b.extend_from_slice(b"GCTGCTGCTG");
+        let j = jaccard(&minimizers(&a, 15, 10), &minimizers(&b, 15, 10));
+        assert!(j < FAMILY_MERGE_JACCARD_DEFAULT,
+            "unrelated exons sharing only a poly-A core must not merge at default bar {} (j={j:.3})",
+            FAMILY_MERGE_JACCARD_DEFAULT);
+    }
+
+    /// CHARACTERIZATION (documents a KNOWN metric limitation, not threshold-
+    /// fixable): two unrelated exons each DOMINATED by the same simple repeat
+    /// collapse to a tiny minimizer set and false-merge at Jaccard ≈ 1.0 — at ANY
+    /// threshold including 0.30. Real exons are rarely pure-satellite, and this is
+    /// mitigated upstream by repeat-masking (diagnostic.rs `SeedMasked`,
+    /// masked_fraction>0.30). Encoded so the limitation is tracked; a true fix
+    /// would low-complexity-mask before minimizing.
+    #[test]
+    fn pure_repeat_exons_collapse_known_metric_limitation() {
+        let a: Vec<u8> = b"AC".iter().cycle().take(146).copied().collect();
+        let mut b: Vec<u8> = vec![b'G'];
+        b.extend(b"AC".iter().cycle().take(146).copied());
+        b.push(b'T');
+        let j = jaccard(&minimizers(&a, 15, 10), &minimizers(&b, 15, 10));
+        assert!(j >= 0.90,
+            "documents the known low-complexity collapse (pure-repeat exons false-merge); got j={j:.3}. \
+             If this dropped, a low-complexity mask was added — update the metric docs.");
+    }
+
+    fn containment(a: &HashSet<u64>, b: &HashSet<u64>) -> f64 {
+        let inter = a.intersection(b).count() as f64;
+        let denom = a.len().min(b.len()) as f64;
+        if denom == 0.0 { 0.0 } else { inter / denom }
+    }
+
+    /// SNP + indel mutation. `snp` = per-base substitution rate, `indel_rate` =
+    /// per-position indel-event rate, `mean_indel_len` = geometric mean length.
+    /// Insertions add random bases; deletions remove a run. Returns
+    /// (mutated, n_snp, n_indel_events). Length-changing — this is what makes the
+    /// metric choice (Jaccard vs containment) matter.
+    fn mutate_indels(seq: &[u8], snp: f64, indel_rate: f64, mean_indel_len: usize,
+                     rng: &mut SplitMix64) -> (Vec<u8>, usize, usize) {
+        const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+        let mut out = Vec::with_capacity(seq.len() + 8);
+        let (mut nsnp, mut nindel) = (0usize, 0usize);
+        let mut i = 0usize;
+        while i < seq.len() {
+            if indel_rate > 0.0 && rng.unit() < indel_rate {
+                nindel += 1;
+                let mut len = 1usize;
+                let cont = 1.0 - 1.0 / (mean_indel_len.max(1) as f64);
+                while rng.unit() < cont { len += 1; if len >= 20 { break; } }
+                if rng.next_u64() & 1 == 0 {
+                    for _ in 0..len { out.push(B[(rng.next_u64() % 4) as usize]); } // insertion
+                    continue; // original base processed next iteration
+                } else {
+                    i += len; // deletion of a run
+                    continue;
+                }
+            }
+            let base = seq[i];
+            if rng.unit() < snp {
+                let mut nb = B[(rng.next_u64() % 4) as usize];
+                while nb == base { nb = B[(rng.next_u64() % 4) as usize]; }
+                out.push(nb); nsnp += 1;
+            } else {
+                out.push(base);
+            }
+            i += 1;
+        }
+        (out, nsnp, nindel)
+    }
+
+    fn load_panel() -> Vec<(String, Vec<u8>)> {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"),
+                           "/bench/multi_copy_eval/merge_sweep_exons.tsv");
+        let raw = std::fs::read_to_string(path).expect("read committed exon panel");
+        raw.lines().filter_map(|l| {
+            let mut it = l.splitn(2, '\t');
+            let id = it.next()?.to_string();
+            let seq = it.next()?.trim().as_bytes().to_vec();
+            if seq.len() < 15 { return None; }
+            Some((id, seq))
+        }).collect()
+    }
+
+    /// `n` paralog copies, each an INDEPENDENT mutation of `ancestor` (so pairwise
+    /// divergence ≈ 2× per-copy — models real paralog pairs descending from a
+    /// common ancestor).
+    fn homolog_cluster(ancestor: &[u8], n: usize, snp: f64, indel: f64, ilen: usize,
+                       seed: u64) -> Vec<(CopyId, Vec<u8>)> {
+        let mut rng = SplitMix64(seed ^ 0x5DEE_CE66_u64);
+        (0..n).map(|c| {
+            let (m, _, _) = mutate_indels(ancestor, snp, indel, ilen, &mut rng);
+            (c as CopyId, m)
+        }).collect()
+    }
+
+    // Indel-inclusive separation sweep: how SNPs+indels move minimizer similarity,
+    // and which (metric, k, w, threshold) operating point is most COHERENT —
+    // homologs unify, unrelated stay separate, max margin. Deterministic, hermetic
+    // (reads the committed exon panel). Run:
+    //   cargo test -p rustle merge_metric_indel_sweep -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn merge_metric_indel_sweep() {
+        let panel = load_panel();
+        let fam: Vec<&(String, Vec<u8>)> =
+            panel.iter().filter(|(id, _)| id.starts_with("LRPAP1")).collect();
+        let unrel: Vec<&(String, Vec<u8>)> =
+            panel.iter().filter(|(id, _)| id.starts_with("UNREL")).collect();
+        const TRIALS: usize = 40;
+
+        // Pairwise homolog similarity at a given (metric,k,w) and divergence: for
+        // each real exon, mutate twice (two independent copies), measure copy-vs-copy
+        // similarity (the quantity union-find thresholds). Returns the mean and the
+        // fraction that would MERGE at each candidate threshold.
+        let eval = |use_cont: bool, k: usize, w: usize, snp: f64, indel: f64|
+            -> (f64, Vec<(f64, f64)>) {
+            let thrs = [0.30_f64, 0.25, 0.20, 0.15, 0.10, 0.07, 0.05];
+            let mut sims: Vec<f64> = Vec::new();
+            for (ei, exon) in fam.iter().enumerate() {
+                let seed = 0xD1B5_4A32_u64.wrapping_mul(ei as u64 + 1)
+                    .wrapping_add((snp * 1e6) as u64 + (indel * 1e5) as u64);
+                let mut rng = SplitMix64(seed);
+                for _ in 0..TRIALS {
+                    let (a, _, _) = mutate_indels(&exon.1, snp, indel, 3, &mut rng);
+                    let (b, _, _) = mutate_indels(&exon.1, snp, indel, 3, &mut rng);
+                    let (ma, mb) = (minimizers(&a, k, w), minimizers(&b, k, w));
+                    sims.push(if use_cont { containment(&ma, &mb) } else { jaccard(&ma, &mb) });
+                }
+            }
+            let mean = sims.iter().sum::<f64>() / sims.len() as f64;
+            let merge_frac: Vec<(f64, f64)> = thrs.iter().map(|&t| {
+                (t, sims.iter().filter(|&&s| s >= t).count() as f64 / sims.len() as f64)
+            }).collect();
+            (mean, merge_frac)
+        };
+
+        // unrelated false-merge ceiling for a (metric,k,w)
+        let neg_ceiling = |use_cont: bool, k: usize, w: usize| -> f64 {
+            let mins_un: Vec<HashSet<u64>> = unrel.iter().map(|(_, s)| minimizers(s, k, w)).collect();
+            let mins_fa: Vec<HashSet<u64>> = fam.iter().map(|(_, s)| minimizers(s, k, w)).collect();
+            let mut mx = 0.0_f64;
+            for i in 0..mins_un.len() {
+                for j in (i + 1)..mins_un.len() {
+                    let s = if use_cont { containment(&mins_un[i], &mins_un[j]) }
+                            else { jaccard(&mins_un[i], &mins_un[j]) };
+                    mx = mx.max(s);
+                }
+            }
+            for a in &mins_fa { for b in &mins_un {
+                let s = if use_cont { containment(a, b) } else { jaccard(a, b) };
+                mx = mx.max(s);
+            }}
+            mx
+        };
+
+        eprintln!("\n===== A. indel-inclusive divergence curve (Jaccard vs Containment, k=15,w=10) =====");
+        eprintln!("model: snp=div, indel=div/3 (mean len 3); copy-vs-copy similarity, {} trials/exon", TRIALS);
+        eprintln!("{:>6}  {:>18}  {:>18}", "div%", "Jaccard mean", "Containment mean");
+        for div in [0.0_f64, 0.01, 0.02, 0.03, 0.05, 0.08] {
+            let (jm, _) = eval(false, 15, 10, div, div / 3.0);
+            let (cm, _) = eval(true, 15, 10, div, div / 3.0);
+            eprintln!("{:>5.0}%  {:>18.3}  {:>18.3}", div * 100.0, jm, cm);
+        }
+
+        eprintln!("\n===== B. operating-point grid @ realistic paralog divergence (2.5% snp + 0.8% indel) =====");
+        eprintln!("recall = % copy-pairs merging; ceil = max unrelated sim (must be < threshold)");
+        eprintln!("{:>5} {:>2} {:>2}  {:>8} {:>7} {:>7} {:>7} {:>7} {:>7}",
+            "metric", "k", "w", "ceil", "R@.30", "R@.20", "R@.15", "R@.10", "R@.05");
+        let (snp_r, ind_r) = (0.025_f64, 0.008_f64);
+        for &use_cont in &[false, true] {
+            for &k in &[11usize, 13, 15] {
+                for &w in &[10usize] {
+                    let (_mean, mf) = eval(use_cont, k, w, snp_r, ind_r);
+                    let ceil = neg_ceiling(use_cont, k, w);
+                    let g = |t: f64| mf.iter().find(|(tt, _)| (*tt - t).abs() < 1e-9).map(|(_, f)| *f).unwrap_or(0.0);
+                    eprintln!("{:>5} {:>2} {:>2}  {:>8.4} {:>6.0}% {:>6.0}% {:>6.0}% {:>6.0}% {:>6.0}%",
+                        if use_cont { "cont" } else { "jacc" }, k, w, ceil,
+                        100.0 * g(0.30), 100.0 * g(0.20), 100.0 * g(0.15), 100.0 * g(0.10), 100.0 * g(0.05));
+                }
+            }
+        }
+
+        eprintln!("\n===== C. recommended operating point: jaccard,k=15,w=10 — recall vs divergence =====");
+        let ceil = neg_ceiling(false, 15, 10);
+        eprintln!("unrelated ceiling = {:.4}", ceil);
+        eprintln!("{:>6} {:>7} {:>7} {:>7} {:>7}", "thr", "1%", "2%", "3%", "5%");
+        for &t in &[0.30_f64, 0.20, 0.15, 0.10, 0.07] {
+            let r: Vec<f64> = [0.01_f64, 0.02, 0.03, 0.05].iter().map(|&d| {
+                let (_m, mf) = eval(false, 15, 10, d, d / 3.0);
+                mf.iter().find(|(tt, _)| (*tt - t).abs() < 1e-9).map(|(_, f)| *f).unwrap_or(0.0)
+            }).collect();
+            let fm = if ceil >= t { "FALSE-MERGE" } else { "clean" };
+            eprintln!("{:>6.2} {:>6.0}% {:>6.0}% {:>6.0}% {:>6.0}%   {}", t,
+                100.0 * r[0], 100.0 * r[1], 100.0 * r[2], 100.0 * r[3], fm);
+        }
+        eprintln!();
+    }
+
+    #[test]
+    #[ignore]
+    fn merge_jaccard_sensitivity_sweep() {
+        let path = match std::env::var("MERGE_SWEEP_DATA") {
+            Ok(p) => p,
+            Err(_) => { eprintln!("MERGE_SWEEP_DATA unset; skipping sweep"); return; }
+        };
+        let raw = std::fs::read_to_string(&path).expect("read MERGE_SWEEP_DATA");
+        let exons: Vec<(String, Vec<u8>)> = raw.lines().filter_map(|l| {
+            let mut it = l.splitn(2, '\t');
+            let id = it.next()?.to_string();
+            let seq = it.next()?.trim().as_bytes().to_vec();
+            if seq.len() < 15 { return None; }
+            Some((id, seq))
+        }).collect();
+
+        let fam: Vec<&(String, Vec<u8>)> =
+            exons.iter().filter(|(id, _)| id.starts_with("LRPAP1")).collect();
+        let unrel: Vec<&(String, Vec<u8>)> =
+            exons.iter().filter(|(id, _)| id.starts_with("UNREL")).collect();
+        assert!(!fam.is_empty() && !unrel.is_empty(), "need both family and unrel exons");
+
+        const K: usize = 15;
+        const W: usize = 10;
+        const TRIALS: usize = 40;
+        let rates = [0.0_f64, 0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.10];
+
+        eprintln!("\n===== PART 1: controlled SNP-divergence curve (k={K}, w={W}) =====");
+        eprintln!("real exons: {} (LRPAP1), {} trials/rate", fam.len(), TRIALS);
+        eprintln!("{:>7} {:>9} {:>8} {:>8} {:>8} {:>10} {:>12}",
+            "div%", "meanJacc", "minJacc", "maxJacc", "meanSNP", "merge@.30", "merge@.10");
+        // per-rate aggregate of mean Jaccard for the crossing computation
+        let mut rate_meanj: Vec<(f64, f64)> = Vec::new();
+        for &r in &rates {
+            let (mut sj, mut mn, mut mx, mut ssnp, mut merge30, mut merge10, mut cnt) =
+                (0.0_f64, 1.0_f64, 0.0_f64, 0.0_f64, 0usize, 0usize, 0usize);
+            for (ei, exon) in fam.iter().enumerate() {
+                let seq = &exon.1;
+                let orig = minimizers(seq, K, W);
+                // deterministic seed per (exon, rate)
+                let seed = 0xD1B5_4A32_u64
+                    .wrapping_mul(ei as u64 + 1)
+                    .wrapping_add((r * 1e6) as u64);
+                let mut rng = SplitMix64(seed ^ 0x1234_5678_9ABC_DEF0);
+                for _ in 0..TRIALS {
+                    let (mt, nsnp) = mutate_snps(seq, r, &mut rng);
+                    let mm = minimizers(&mt, K, W);
+                    let j = jaccard(&orig, &mm);
+                    sj += j; mn = mn.min(j); mx = mx.max(j); ssnp += nsnp as f64;
+                    if j >= 0.30 { merge30 += 1; }
+                    if j >= 0.10 { merge10 += 1; }
+                    cnt += 1;
+                }
+            }
+            let meanj = sj / cnt as f64;
+            rate_meanj.push((r, meanj));
+            eprintln!("{:>7.1} {:>9.3} {:>8.3} {:>8.3} {:>8.1} {:>9.0}% {:>11.0}%",
+                r * 100.0, meanj, mn, mx, ssnp / cnt as f64,
+                100.0 * merge30 as f64 / cnt as f64,
+                100.0 * merge10 as f64 / cnt as f64);
+        }
+
+        eprintln!("\n===== PART 2: unrelated-exon baseline (false-merge ceiling) =====");
+        // all distinct pairs among unrel, plus cross fam×unrel (truly non-homologous)
+        let mut neg: Vec<(String, f64)> = Vec::new();
+        let mins_un: Vec<(String, HashSet<u64>)> =
+            unrel.iter().map(|(id, s)| (id.clone(), minimizers(s, K, W))).collect();
+        let mins_fa: Vec<(String, HashSet<u64>)> =
+            fam.iter().map(|(id, s)| (id.clone(), minimizers(s, K, W))).collect();
+        for i in 0..mins_un.len() {
+            for j in (i + 1)..mins_un.len() {
+                neg.push((format!("{}|{}", mins_un[i].0, mins_un[j].0),
+                          jaccard(&mins_un[i].1, &mins_un[j].1)));
+            }
+        }
+        for a in &mins_fa {
+            for b in &mins_un {
+                neg.push((format!("{}|{}", a.0, b.0), jaccard(&a.1, &b.1)));
+            }
+        }
+        let max_neg = neg.iter().map(|x| x.1).fold(0.0_f64, f64::max);
+        let mean_neg = neg.iter().map(|x| x.1).sum::<f64>() / neg.len() as f64;
+        eprintln!("non-homologous pairs: {}", neg.len());
+        eprintln!("  mean Jaccard = {:.4}, MAX Jaccard = {:.4}", mean_neg, max_neg);
+        let mut sorted = neg.clone();
+        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        eprintln!("  top-3 non-homologous: {:?}",
+            sorted.iter().take(3).map(|(k,v)| format!("{k}={v:.4}")).collect::<Vec<_>>());
+
+        eprintln!("\n===== PART 3: threshold sweep (recall vs false-merge) =====");
+        eprintln!("recall = % of mutated-copy trials that still MERGE at each divergence");
+        eprintln!("{:>7} {:>9} {:>9} {:>9} {:>9}   {:>10}",
+            "thresh", "R@0.5%", "R@1%", "R@2%", "R@3%", "false-merge");
+        let report_rates = [0.005_f64, 0.01, 0.02, 0.03];
+        // recompute recall per (threshold, rate) using same deterministic mutation
+        let recall = |thr: f64, rr: f64| -> f64 {
+            let (mut hit, mut cnt) = (0usize, 0usize);
+            for (ei, exon) in fam.iter().enumerate() {
+                let seq = &exon.1;
+                let orig = minimizers(seq, K, W);
+                let seed = 0xD1B5_4A32_u64
+                    .wrapping_mul(ei as u64 + 1)
+                    .wrapping_add((rr * 1e6) as u64);
+                let mut rng = SplitMix64(seed ^ 0x1234_5678_9ABC_DEF0);
+                for _ in 0..TRIALS {
+                    let (mt, _n) = mutate_snps(seq, rr, &mut rng);
+                    let j = jaccard(&orig, &minimizers(&mt, K, W));
+                    if j >= thr { hit += 1; }
+                    cnt += 1;
+                }
+            }
+            100.0 * hit as f64 / cnt as f64
+        };
+        for &thr in &[0.30_f64, 0.25, 0.20, 0.15, 0.10, 0.07, 0.05, 0.03, 0.02] {
+            let r: Vec<f64> = report_rates.iter().map(|&rr| recall(thr, rr)).collect();
+            let fm = if max_neg >= thr { "FALSE-MERGE" } else { "clean" };
+            eprintln!("{:>7.2} {:>8.0}% {:>8.0}% {:>8.0}% {:>8.0}%   {:>10} (max_neg={:.3})",
+                thr, r[0], r[1], r[2], r[3], fm, max_neg);
+        }
+        eprintln!("\nrecommended bar = just above max non-homologous Jaccard ({:.3}); ", max_neg);
+        eprintln!("any threshold in ({:.3}, R_min] keeps unrelated exons separate while", max_neg);
+        eprintln!("recovering near-identical paralog exons the 0.30 default rejects.\n");
     }
 }
 

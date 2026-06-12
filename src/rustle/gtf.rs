@@ -244,6 +244,12 @@ pub fn write_gtf<W: Write>(
                     " gene_conversion \"{}\"; conversion_copies \"{}>{}\"; conversion_breakpoint \"{}-{}\"; conversion_reads \"{}\";",
                     if c.confirmed { "confirmed" } else { "chimera_suspect" },
                     c.copy_a, c.copy_b, c.breakpoint_ref.0, c.breakpoint_ref.1, c.n_supporting_reads));
+                // The emitted recombinant ISOFORM (opt-in RUSTLE_VG_MOSAIC_EMIT) is tagged
+                // source="gene_conversion"; mark it so it is distinguishable from the native
+                // transcripts that merely carry the locus-level conversion flag.
+                if tx.source.as_deref() == Some("gene_conversion") {
+                    tx_attrs.push_str(" conversion_isoform \"recombinant\";");
+                }
             }
             // Hidden-copy evidence (opt-in RUSTLE_VG_HIDDEN_COPY; absent otherwise). A flag that
             // the reads imply a copy not in the reference — NOT a placed/fabricated copy.

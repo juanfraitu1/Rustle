@@ -49,7 +49,6 @@ fn run_fp_em() -> (String, String) {
         .args([
             "-L",
             "--vg",
-            "--vg-no-hmm",
             "--genome-fasta", FIXTURE_FA,
             "-o", gtf_file.path().to_str().unwrap(),
             FIXTURE_BAM,
@@ -283,7 +282,6 @@ fn topo_borrow_adds_transcripts_to_under_assembled_copies() {
             .args([
                 "-L",
                 "--vg",
-                "--vg-no-hmm",
                 "--genome-fasta", FIXTURE_FA,
                 "-o", gtf_file.path().to_str().unwrap(),
                 FIXTURE_BAM,

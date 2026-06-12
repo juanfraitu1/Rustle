@@ -54,6 +54,12 @@ fn is_guide(t: &Transcript) -> bool {
 /// `frac` is `ERROR_PERC` in long-read mode (mixedMode isofrac relaxation does not
 /// apply for `-L`). This is the actual gate the task asked us to determine: the RI
 /// kill is **lowintron-gated** (per-base coverage), not unconditional.
+///
+/// NOTE (§6n, 2026-06-09): substituting an "undepleted" killer coverage here (raw bpcov
+/// average) was tested and REVERTED — it over-killed 119 shared TPs because bpcov counts
+/// sibling-isoform reads at shared exons, destroying the cov-ratio gate's discrimination.
+/// No per-transcript scalar in rustle recovers ST's allocated-undepleted killer coverage;
+/// the depletion is upstream (flow over-enumeration). See §6n.
 fn retainedintron_st(
     n1: &Transcript,
     n2: &Transcript,

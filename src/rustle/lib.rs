@@ -90,7 +90,7 @@ pub mod per_bnode_graph; // junction-expanded per-bundlenode graphs
 pub mod vg; // family group discovery, EM reweighting
 pub mod vg_ingestion; // GTF/GFF ingestion mode for template-based family assembly
 pub mod family_manifest; // TSV-manifest ingestion: R-annotated multi-locus families
-pub mod vg_hmm; // Family-aware HMM rescue for novel gene copies (see docs/superpowers/specs/2026-04-28-vg-novel-copy-hmm-design.md)
+pub mod vg_family; // Family-aware rescue + fingerprint-EM for novel gene copies
 pub mod graph_comparison; // Compare de novo graphs against reference GTF for diagnosis
 
 // ── JSON snapshots (debug) ────────────────────────────────────────────────────

@@ -557,6 +557,127 @@ pub fn extract_transcripts_greedy_decompose(
 
 // ─── Read-chain enumeration (RUSTLE_READCHAIN=1) ────────────────────────────
 
+/// Build a fuzzy-junction canonicalization map for read-chain collapse.
+///
+/// Alignment wobble places the same true splice site at slightly different
+/// (donor, acceptor) coordinates across reads, which an exact intron-chain key
+/// splits into near-duplicate isoforms. This clusters junctions whose donor AND
+/// acceptor are both within `fuzz` bp of a higher-support junction and maps each
+/// to that canonical (consensus) junction — the IsoSeq `--max-fuzzy-junction`
+/// idea. `fuzz == 0` returns the identity map (exact behaviour preserved).
+///
+/// Greedy by descending support (deterministic, coord tie-break): the most-
+/// supported junctions become canonicals first, lower-support neighbours snap to
+/// them. Chain length is preserved (1:1 remap), so only same-length chains whose
+/// every junction snaps together can merge.
+fn build_fuzzy_junction_map(
+    junctions_with_support: &[((u64, u64), f64)],
+    fuzz: u64,
+) -> std::collections::HashMap<(u64, u64), (u64, u64)> {
+    use std::collections::HashMap;
+    // Aggregate support per distinct junction.
+    let mut support: HashMap<(u64, u64), f64> = HashMap::new();
+    for (j, s) in junctions_with_support {
+        *support.entry(*j).or_insert(0.0) += *s;
+    }
+    let mut map: HashMap<(u64, u64), (u64, u64)> = HashMap::with_capacity(support.len());
+    if fuzz == 0 {
+        for j in support.keys() {
+            map.insert(*j, *j);
+        }
+        return map;
+    }
+    // Process distinct junctions by descending support (coord tie-break for
+    // determinism): the most-supported become canonicals first; lower-support
+    // neighbours within `fuzz` on BOTH coordinates snap to the nearest canonical.
+    let mut distinct: Vec<((u64, u64), f64)> = support.into_iter().collect();
+    distinct.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.0.cmp(&b.0))
+    });
+    let mut canonicals: Vec<(u64, u64)> = Vec::new();
+    for (j, _) in &distinct {
+        let canon = canonicals.iter().find(|c| {
+            j.0.abs_diff(c.0) <= fuzz && j.1.abs_diff(c.1) <= fuzz
+        });
+        match canon {
+            Some(c) => {
+                map.insert(*j, *c);
+            }
+            None => {
+                canonicals.push(*j);
+                map.insert(*j, *j);
+            }
+        }
+    }
+    map
+}
+
+/// Determine 5'-degradation containment folds for read-chain collapse.
+///
+/// A 5'-degraded read is the same molecule as a longer read but truncated at the
+/// 5' cap, so its intron chain is a strand-appropriate sub-chain of the longer
+/// "super" chain — a SUFFIX on the `+` strand (missing upstream/left introns), a
+/// PREFIX on `-` (5' is the right end) — sharing the 3' terminus within `end3_tol`
+/// bp. Such a chain is folded into the longest containing super (IsoSeq collapse
+/// `--max-5-diff` / merge-5-shorter), rather than minting a truncated isoform.
+///
+/// `chains[i] = (intron_chain, abundance, min_start, max_end)`. Returns, per index,
+/// `Some(parent_idx)` of the strictly-longer chain it folds into (longest-first;
+/// callers resolve transitively to a root), or `None` if it is kept. Deterministic.
+fn compute_5p_degrade_folds(
+    chains: &[(Vec<(u64, u64)>, f64, u64, u64)],
+    strand: char,
+    end3_tol: u64,
+) -> Vec<Option<usize>> {
+    let n = chains.len();
+    let mut fold: Vec<Option<usize>> = vec![None; n];
+    if n < 2 {
+        return fold;
+    }
+    // Candidate-super order: longest chain first (so a shorter chain matches its
+    // LONGEST container first), tie-break by abundance desc then chain coords.
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&i, &j| {
+        chains[j]
+            .0
+            .len()
+            .cmp(&chains[i].0.len())
+            .then(
+                chains[j]
+                    .1
+                    .partial_cmp(&chains[i].1)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+            .then(chains[i].0.cmp(&chains[j].0))
+    });
+    for &b in &order {
+        let (bchain, _, bmin, bmax) = &chains[b];
+        for &a in &order {
+            if a == b {
+                continue;
+            }
+            let (achain, _, amin, amax) = &chains[a];
+            if achain.len() <= bchain.len() {
+                continue; // super must be STRICTLY longer
+            }
+            let contained = match strand {
+                // 5' is the right end on '-': a 5'-truncation drops right/late
+                // introns -> shorter chain is a PREFIX; 3' terminus is min_start.
+                '-' => achain.starts_with(bchain.as_slice()) && bmin.abs_diff(*amin) <= end3_tol,
+                // '+': 5'-truncation drops left/early introns -> SUFFIX; 3' is max_end.
+                _ => achain.ends_with(bchain.as_slice()) && bmax.abs_diff(*amax) <= end3_tol,
+            };
+            if contained {
+                fold[b] = Some(a); // longest-first order -> first match is the longest super
+                break;
+            }
+        }
+    }
+    fold
+}
+
 /// Extract transcripts by grouping long-read transfrags by their exact intron chain.
 ///
 /// Enable via `RUSTLE_READCHAIN=1`. Each unique (donor, acceptor) chain observed in
@@ -564,8 +685,45 @@ pub fn extract_transcripts_greedy_decompose(
 /// This avoids flow-composition artifacts: every emitted transcript is directly
 /// supported by one or more actual reads with matching splice sites.
 ///
-/// Single-exon transfrags (empty intron chain) are skipped; set RUSTLE_READCHAIN_SINGLE
-/// to also group single-exon reads by their locus mid-point (coarse clustering).
+/// Cluster single-exon read spans into locus groups for `--read-chain-single`.
+///
+/// Single-exon reads carry no junctions to key on, so they are grouped by genomic
+/// overlap: spans are merged when the gap between them is `<= min_gap` (overlap =
+/// gap 0). Each cluster becomes one single-exon transcript spanning [min start,
+/// max end] with summed abundance. Deterministic (sorts internally by coord).
+fn cluster_single_exon_spans(
+    spans: &[(u64, u64, f64)],
+    min_gap: u64,
+) -> Vec<(u64, u64, f64)> {
+    if spans.is_empty() {
+        return Vec::new();
+    }
+    let mut sorted: Vec<(u64, u64, f64)> = spans.to_vec();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    let mut out: Vec<(u64, u64, f64)> = Vec::new();
+    let mut cur = sorted[0];
+    for &(s, e, ab) in &sorted[1..] {
+        if s <= cur.1.saturating_add(min_gap) {
+            // Overlapping (or within min_gap): extend the cluster, sum abundance.
+            cur.1 = cur.1.max(e);
+            cur.2 += ab;
+        } else {
+            out.push(cur);
+            cur = (s, e, ab);
+        }
+    }
+    out.push(cur);
+    out
+}
+
+/// Single-exon transfrags (empty intron chain) are skipped unless `--read-chain-single`
+/// (RUSTLE_READCHAIN_SINGLE), which clusters them by locus and emits one single-exon
+/// transcript per cluster. NOT RECOMMENDED / strictly opt-in: measured on GGO chr19
+/// HiFi every emitted single-exon call was a false positive (390/390 class u/i/p, 0
+/// RefSeq matches) and it cost real multi-exon matches via downstream interference
+/// (Sn 86.2->84.3, Pr 57.7->50.2) — single-exon loci on this data are spurious and no
+/// abundance gate separates them. The switch is now live (previously dead) for inputs
+/// where single-exon isoforms are real.
 pub fn extract_transcripts_readchain(
     graph: &Graph,
     transfrags: &mut [GraphTransfrag],
@@ -585,6 +743,11 @@ pub fn extract_transcripts_readchain(
         (f64, u64, u64, Vec<usize>),
     > = std::collections::HashMap::new();
 
+    // Pass 1: collect each long-read transfrag's intron chain + span + abundance.
+    // --read-chain-single (RUSTLE_READCHAIN_SINGLE) also collects single-exon spans.
+    let read_chain_single = std::env::var_os("RUSTLE_READCHAIN_SINGLE").is_some();
+    let mut se_spans: Vec<(u64, u64, f64)> = Vec::new();
+    let mut rc_entries: Vec<(Vec<(u64, u64)>, f64, u64, u64, Vec<usize>)> = Vec::new();
     for tf in transfrags.iter() {
         if !tf.longread || tf.abundance < EPSILON || tf.node_ids.is_empty() {
             continue;
@@ -606,8 +769,20 @@ pub fn extract_transcripts_readchain(
 
         let chain = intron_chain_from_nodes(graph, inner);
 
-        // Skip single-exon reads — baseline handles those.
+        // Single-exon reads (empty intron chain): the baseline handles these unless
+        // --read-chain-single, which collects their spans for locus clustering below.
         if chain.is_empty() {
+            if read_chain_single {
+                let s = graph.nodes.get(inner[0]).map(|n| n.start).unwrap_or(0);
+                let e = graph
+                    .nodes
+                    .get(*inner.last().unwrap())
+                    .map(|n| n.end)
+                    .unwrap_or(0);
+                if e > s {
+                    se_spans.push((s, e, tf.abundance));
+                }
+            }
             continue;
         }
 
@@ -615,20 +790,108 @@ pub fn extract_transcripts_readchain(
         let last_node = *inner.last().unwrap();
         let tf_start = graph.nodes.get(first_node).map(|n| n.start).unwrap_or(0);
         let tf_end = graph.nodes.get(last_node).map(|n| n.end).unwrap_or(0);
+        rc_entries.push((chain, tf.abundance, tf_start, tf_end, inner.to_vec()));
+    }
 
+    // Fuzzy-junction canonicalization (IsoSeq `--max-fuzzy-junction` analogue):
+    // snap junctions wobbling within RUSTLE_READCHAIN_FUZZ bp to a per-cluster
+    // consensus so alignment noise doesn't split one isoform into near-duplicate
+    // chains. DEFAULT 0 (exact, no merging) — measured NET-NEGATIVE on GGO chr19
+    // HiFi (deterministic): clean alignments have little junction wobble, and
+    // near-junctions on paralog loci are often REAL distinct copies that merging
+    // wrongly collapses — fuzz=5 lost RefSeq matches 1441->1424 (Sn 78.4->77.4)
+    // with NO precision gain (Pr ~62.1 flat).
+    // Kept as an OPT-IN knob (RUSTLE_READCHAIN_FUZZ=N) for noisier inputs (e.g. ONT)
+    // where genuine wobble does split isoforms. Identity map when fuzz == 0.
+    let fuzz: u64 = std::env::var("RUSTLE_READCHAIN_FUZZ")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let jmap = if fuzz > 0 {
+        let mut js: Vec<((u64, u64), f64)> = Vec::new();
+        for (chain, abund, ..) in &rc_entries {
+            for j in chain {
+                js.push((*j, *abund));
+            }
+        }
+        build_fuzzy_junction_map(&js, fuzz)
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    // Pass 2: group by the (fuzzy-canonicalized) intron chain. The canonical chain
+    // also supplies the emitted internal exon boundaries below (consensus coords);
+    // first/last exon ends still float via min_start/max_end across the group.
+    for (chain, abund, tf_start, tf_end, inner) in rc_entries {
+        let key: Vec<(u64, u64)> = if fuzz > 0 {
+            chain.iter().map(|j| jmap.get(j).copied().unwrap_or(*j)).collect()
+        } else {
+            chain
+        };
         let entry = chain_groups
-            .entry(chain)
-            .or_insert((0.0, tf_start, tf_end, inner.to_vec()));
-        entry.0 += tf.abundance;
+            .entry(key)
+            .or_insert((0.0, tf_start, tf_end, inner));
+        entry.0 += abund;
         if tf_start < entry.1 {
             entry.1 = tf_start;
         }
         if tf_end > entry.2 {
             entry.2 = tf_end;
         }
-        // Keep highest-abundance transfrag's nodes as representative.
-        // (entry is initialised with the first seen; no update needed for coverage
-        //  because we use nodecov rather than raw node coords for coverage.)
+    }
+
+    // 5'-degradation containment collapse (DEFAULT ON, tol=100 bp — IsoSeq's own
+    // default; RUSTLE_READCHAIN_DEGRADE_TOL=N to override, =0 to disable). Fold a
+    // chain that is a strand-appropriate 5'-truncation of a longer chain (sharing
+    // the 3' terminus within N bp) into that longer "super" chain, summing its
+    // abundance in. Runs before the isofrac threshold so the super's boosted
+    // abundance counts — this redistributes the high read-counts that 5'-degraded
+    // fragments otherwise pile onto truncated keys (where they inflate max_abund and
+    // suppress real minor isoforms). Measured on GGO chr19 HiFi: Sn 78.4->86.2,
+    // matched 1441->1586 (+145 real RefSeq tx), Pr 62.1->57.7 (~F1-neutral),
+    // deterministic. 4456 chains folded across 449 bundles.
+    let degrade_tol: u64 = std::env::var("RUSTLE_READCHAIN_DEGRADE_TOL")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(100);
+    if degrade_tol > 0 {
+        let tol = degrade_tol;
+        let keys: Vec<Vec<(u64, u64)>> = chain_groups.keys().cloned().collect();
+        let view: Vec<(Vec<(u64, u64)>, f64, u64, u64)> = keys
+            .iter()
+            .map(|k| {
+                let v = &chain_groups[k];
+                (k.clone(), v.0, v.1, v.2)
+            })
+            .collect();
+        let folds = compute_5p_degrade_folds(&view, bundle_strand, tol);
+        // Resolve each folded chain to its transitive root super and accumulate.
+        let mut add_to_root: Vec<f64> = vec![0.0; keys.len()];
+        let mut removed = 0usize;
+        for i in 0..keys.len() {
+            if folds[i].is_some() {
+                let mut r = i;
+                while let Some(p) = folds[r] {
+                    r = p;
+                }
+                add_to_root[r] += view[i].1;
+                chain_groups.remove(&keys[i]);
+                removed += 1;
+            }
+        }
+        for i in 0..keys.len() {
+            if add_to_root[i] > 0.0 {
+                if let Some(entry) = chain_groups.get_mut(&keys[i]) {
+                    entry.0 += add_to_root[i];
+                }
+            }
+        }
+        if debug && removed > 0 {
+            eprintln!(
+                "[READCHAIN] 5'-degradation collapse: folded {} truncated chain(s) into supers (tol={})",
+                removed, tol
+            );
+        }
     }
 
     // Isofrac filter: within this bundle, drop chains below isofrac fraction of
@@ -650,12 +913,16 @@ pub fn extract_transcripts_readchain(
     let mut out: Vec<Transcript> = Vec::new();
 
     // Sort by descending abundance for deterministic nodecov depletion order.
+    // Tie-break on the intron-chain coordinates so equal-abundance chains have a
+    // total order independent of HashMap iteration order — without this the
+    // depletion order (and thus the emitted transcript set) varied run-to-run.
     let mut sorted_chains: Vec<(&Vec<(u64, u64)>, &(f64, u64, u64, Vec<usize>))> =
         chain_groups.iter().collect();
     sorted_chains.sort_by(|a, b| {
         b.1 .0
             .partial_cmp(&a.1 .0)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
     });
 
     for (chain, (total_abund, min_start, max_end, rep_nodes)) in sorted_chains {
@@ -766,6 +1033,45 @@ pub fn extract_transcripts_readchain(
         });
     }
 
+    // --read-chain-single: emit clustered single-exon transcripts. Single-exon
+    // calls are FP-prone (the stranded-SE injector emitted 38/38 non-RefSeq), so
+    // this is GATED behind --read-chain-single AND a strict abundance floor:
+    // max(singlethr≈4.75, the bundle's isofrac threshold) — a single-exon cluster
+    // must clear the same single-exon bar the flow assembler uses and not be a
+    // minor fraction of a spliced locus. RUSTLE_READCHAIN_SINGLE_GAP merges spans
+    // within N bp (default 0 = overlap only).
+    if read_chain_single && !se_spans.is_empty() {
+        let min_gap: u64 = std::env::var("RUSTLE_READCHAIN_SINGLE_GAP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let se_floor = config.singlethr.max(isofrac_threshold);
+        let mut n_se = 0usize;
+        for (s, e, abund) in cluster_single_exon_spans(&se_spans, min_gap) {
+            if abund < se_floor {
+                continue;
+            }
+            if len_half_open(s, e) < config.min_transcript_length {
+                continue;
+            }
+            out.push(Transcript {
+                chrom: bundle_chrom.to_string(),
+                strand: bundle_strand,
+                exon_cov: vec![abund],
+                exons: vec![(s, e)],
+                coverage: abund,
+                source: Some("readchain_single".to_string()),
+                is_longread: true,
+                longcov: abund,
+                ..Transcript::default()
+            });
+            n_se += 1;
+        }
+        if debug && n_se > 0 {
+            eprintln!("[READCHAIN] single-exon: emitted {} clustered SE transcript(s)", n_se);
+        }
+    }
+
     // Zero all long-read transfrag abundances (consumed by readchain extraction).
     for tf in transfrags.iter_mut() {
         if tf.longread {
@@ -864,12 +1170,16 @@ pub fn readchain_supplement(
     let mut out: Vec<Transcript> = Vec::new();
 
     // Sort by descending abundance for deterministic nodecov depletion order.
+    // Tie-break on the intron-chain coordinates so equal-abundance chains have a
+    // total order independent of HashMap iteration order — without this the
+    // depletion order (and thus the emitted transcript set) varied run-to-run.
     let mut sorted_chains: Vec<(&Vec<(u64, u64)>, &(f64, u64, u64, Vec<usize>))> =
         chain_groups.iter().collect();
     sorted_chains.sort_by(|a, b| {
         b.1 .0
             .partial_cmp(&a.1 .0)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
     });
 
     for (chain, (total_abund, min_start, max_end, rep_nodes)) in sorted_chains {
@@ -1502,4 +1812,186 @@ pub fn competing_junction_supplement(
     }
 
     out
+}
+
+#[cfg(test)]
+mod fuzzy_junction_tests {
+    use super::build_fuzzy_junction_map;
+
+    // A lone junction maps to itself.
+    #[test]
+    fn identity_single() {
+        let m = build_fuzzy_junction_map(&[((100, 200), 5.0)], 5);
+        assert_eq!(m.get(&(100, 200)), Some(&(100, 200)));
+    }
+
+    // fuzz=0 preserves exact behaviour: every junction maps to itself, no merging.
+    #[test]
+    fn fuzz_zero_is_identity() {
+        let js = [((100, 200), 5.0), ((102, 201), 1.0)];
+        let m = build_fuzzy_junction_map(&js, 0);
+        assert_eq!(m.get(&(100, 200)), Some(&(100, 200)));
+        assert_eq!(m.get(&(102, 201)), Some(&(102, 201)));
+    }
+
+    // A low-support junction within `fuzz` of a higher-support one snaps to it;
+    // a far junction stays its own canonical.
+    #[test]
+    fn snaps_wobble_to_higher_support() {
+        let js = [
+            ((100, 200), 10.0), // dominant
+            ((102, 201), 2.0),  // +2/+1 wobble -> snaps to (100,200)
+            ((500, 600), 3.0),  // far -> own canonical
+        ];
+        let m = build_fuzzy_junction_map(&js, 5);
+        assert_eq!(m.get(&(100, 200)), Some(&(100, 200)));
+        assert_eq!(m.get(&(102, 201)), Some(&(100, 200)));
+        assert_eq!(m.get(&(500, 600)), Some(&(500, 600)));
+    }
+
+    // Outside the fuzz window on EITHER coordinate -> not merged.
+    #[test]
+    fn beyond_fuzz_not_merged() {
+        let js = [((100, 200), 10.0), ((108, 200), 1.0)]; // donor +8 > fuzz 5
+        let m = build_fuzzy_junction_map(&js, 5);
+        assert_eq!(m.get(&(108, 200)), Some(&(108, 200)));
+        // acceptor out of window
+        let js2 = [((100, 200), 10.0), ((100, 207), 1.0)]; // acceptor +7 > 5
+        let m2 = build_fuzzy_junction_map(&js2, 5);
+        assert_eq!(m2.get(&(100, 207)), Some(&(100, 207)));
+    }
+
+    // Support is aggregated across duplicate observations before choosing canonical.
+    #[test]
+    fn aggregates_support_picks_dominant() {
+        // (100,200) appears twice (total 4) vs (103,203) once (5). The single
+        // (103,203) has higher support -> it becomes canonical, (100,200) snaps to it.
+        let js = [((100, 200), 2.0), ((100, 200), 2.0), ((103, 203), 5.0)];
+        let m = build_fuzzy_junction_map(&js, 5);
+        assert_eq!(m.get(&(103, 203)), Some(&(103, 203)));
+        assert_eq!(m.get(&(100, 200)), Some(&(103, 203)));
+    }
+}
+
+#[cfg(test)]
+mod degrade_collapse_tests {
+    use super::compute_5p_degrade_folds;
+
+    // + strand: a 2-junction SUFFIX of a 3-junction chain, same 3' (max_end),
+    // folds into the longer chain.
+    #[test]
+    fn plus_suffix_folds() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650), // super (idx0)
+            (vec![(300, 400), (500, 600)], 2.0, 250, 650),              // 5'-trunc (idx1)
+        ];
+        let f = compute_5p_degrade_folds(&chains, '+', 100);
+        assert_eq!(f[0], None);
+        assert_eq!(f[1], Some(0));
+    }
+
+    // - strand: 5' is the right end, so a 5'-truncation is a PREFIX; shares the 3'
+    // (min_start) terminus.
+    #[test]
+    fn minus_prefix_folds() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650),
+            (vec![(100, 200), (300, 400)], 2.0, 50, 450), // prefix, same min_start
+        ];
+        let f = compute_5p_degrade_folds(&chains, '-', 100);
+        assert_eq!(f[0], None);
+        assert_eq!(f[1], Some(0));
+    }
+
+    // A suffix whose 3' end is FAR from the super's 3' is NOT a degradation of it.
+    #[test]
+    fn rejects_3p_mismatch() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650),
+            (vec![(300, 400), (500, 600)], 2.0, 250, 900), // max_end 900 vs 650 -> >tol
+        ];
+        let f = compute_5p_degrade_folds(&chains, '+', 100);
+        assert_eq!(f[1], None);
+    }
+
+    // Two structurally-unrelated chains do not fold.
+    #[test]
+    fn unrelated_not_folded() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400)], 10.0, 50, 450),
+            (vec![(700, 800), (900, 1000)], 5.0, 650, 1050),
+        ];
+        let f = compute_5p_degrade_folds(&chains, '+', 100);
+        assert_eq!(f[0], None);
+        assert_eq!(f[1], None);
+    }
+
+    // A nested chain folds into the LONGEST containing super (not an intermediate).
+    #[test]
+    fn folds_into_longest_super() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650), // idx0 longest
+            (vec![(300, 400), (500, 600)], 4.0, 250, 650),             // idx1 mid (suffix of 0)
+            (vec![(500, 600)], 1.0, 450, 650),                         // idx2 short (suffix of 0 and 1)
+        ];
+        let f = compute_5p_degrade_folds(&chains, '+', 100);
+        assert_eq!(f[0], None);
+        assert_eq!(f[1], Some(0));
+        assert_eq!(f[2], Some(0)); // longest container, not idx1
+    }
+
+    // Equal chains never fold (a strictly-longer super is required).
+    #[test]
+    fn equal_length_no_fold() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400)], 10.0, 50, 450),
+            (vec![(100, 200), (300, 400)], 3.0, 50, 450),
+        ];
+        let f = compute_5p_degrade_folds(&chains, '+', 100);
+        assert_eq!(f[0], None);
+        assert_eq!(f[1], None);
+    }
+}
+
+#[cfg(test)]
+mod single_exon_cluster_tests {
+    use super::cluster_single_exon_spans;
+
+    #[test]
+    fn empty_input() {
+        assert!(cluster_single_exon_spans(&[], 0).is_empty());
+    }
+
+    #[test]
+    fn overlapping_merge_sum_abundance() {
+        let c = cluster_single_exon_spans(&[(100, 200, 3.0), (150, 250, 2.0)], 0);
+        assert_eq!(c, vec![(100, 250, 5.0)]);
+    }
+
+    #[test]
+    fn disjoint_stay_separate() {
+        let mut c = cluster_single_exon_spans(&[(500, 600, 2.0), (100, 200, 3.0)], 0);
+        c.sort_by_key(|x| x.0);
+        assert_eq!(c, vec![(100, 200, 3.0), (500, 600, 2.0)]);
+    }
+
+    #[test]
+    fn gap_within_min_gap_merges() {
+        // gap of 10 (200 -> 210) merges at min_gap=20, stays separate at min_gap=0.
+        assert_eq!(
+            cluster_single_exon_spans(&[(100, 200, 3.0), (210, 300, 2.0)], 20),
+            vec![(100, 300, 5.0)]
+        );
+        assert_eq!(
+            cluster_single_exon_spans(&[(100, 200, 3.0), (210, 300, 2.0)], 0).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn input_order_independent() {
+        let a = cluster_single_exon_spans(&[(100, 200, 1.0), (150, 250, 1.0), (500, 600, 1.0)], 0);
+        let b = cluster_single_exon_spans(&[(500, 600, 1.0), (150, 250, 1.0), (100, 200, 1.0)], 0);
+        assert_eq!(a, b);
+    }
 }

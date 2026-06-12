@@ -1,6 +1,6 @@
-//! Regression tests for `vg_hmm::diagnostic` — internal and external classifiers.
+//! Regression tests for `vg_family::diagnostic` — internal and external classifiers.
 
-use rustle::vg_hmm::diagnostic::{
+use rustle::vg_family::diagnostic::{
     cigar_has_long_indel, classify_internal, RescueClass,
 };
 
@@ -97,7 +97,7 @@ fn test_external_classify_skip_if_no_minimap2() {
     // A random GC-rich read that is maximally divergent from the AT reference.
     let read_seq = b"GCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCGCG";
 
-    let result = rustle::vg_hmm::diagnostic::classify_external(&ref_path, read_seq);
+    let result = rustle::vg_family::diagnostic::classify_external(&ref_path, read_seq);
     let class = result.expect("classify_external should not error");
     assert!(
         matches!(class, RescueClass::Divergent | RescueClass::ReferenceAbsent),

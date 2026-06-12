@@ -2,14 +2,14 @@
 //!
 //! This mode allows Rustle to ingest a reference GTF/GFF file (e.g., StringTie output)
 //! and use those transcripts as templates for discovering new isoforms or family members
-//! via multi-mapped read reassignment with HMM-EM.
+//! via multi-mapped read reassignment with the fingerprint-EM.
 //!
 //! Flow:
 //! 1. Parse GTF → extract transcripts with exons
 //! 2. Group transcripts into families (by gene, overlap, or k-mer similarity)
 //! 3. Find bundles overlapping each family
 //! 4. Link bundles into FamilyGroups
-//! 5. Feed into standard HMM-EM + assembly pipeline
+//! 5. Feed into standard EM + assembly pipeline
 
 use crate::types::Bundle;
 use crate::vg::FamilyGroup;
