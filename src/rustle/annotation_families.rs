@@ -43,6 +43,91 @@ pub fn copy_sequence(
     Some(seq)
 }
 
+// ── position-agnostic family clustering ──────────────────────────────────────
+
+fn jaccard(a: &std::collections::HashSet<u64>, b: &std::collections::HashSet<u64>) -> f64 {
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
+    }
+    let inter = a.intersection(b).count() as f64;
+    let union = a.union(b).count() as f64;
+    if union == 0.0 { 0.0 } else { inter / union }
+}
+
+/// Iterative path-halving union-find: find root of x.
+fn uf_find(parent: &mut Vec<usize>, mut x: usize) -> usize {
+    while parent[x] != x {
+        parent[x] = parent[parent[x]]; // path halving
+        x = parent[x];
+    }
+    x
+}
+
+/// Cluster copies into families purely by shared-exon minimizer-Jaccard >= threshold.
+/// POSITION-AGNOSTIC: no chrom / coordinate / distance gate.
+pub fn cluster_families(
+    copies_with_seq: Vec<(CopyStructure, Vec<u8>)>,
+    threshold: f64,
+) -> Vec<AnnotationFamily> {
+    let n = copies_with_seq.len();
+    let mins: Vec<std::collections::HashSet<u64>> = copies_with_seq
+        .iter()
+        .map(|(_, s)| crate::vg_family::family_graph::minimizers(s, 15, 10))
+        .collect();
+
+    let mut parent: Vec<usize> = (0..n).collect();
+
+    // Precompute pairwise Jaccard and union-find copies with sim >= threshold.
+    let mut sim = vec![vec![0.0f64; n]; n];
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let s = jaccard(&mins[i], &mins[j]);
+            sim[i][j] = s;
+            sim[j][i] = s;
+            if s >= threshold {
+                let ri = uf_find(&mut parent, i);
+                let rj = uf_find(&mut parent, j);
+                if ri != rj {
+                    parent[ri] = rj;
+                }
+            }
+        }
+    }
+
+    // Collect components.
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for i in 0..n {
+        let r = uf_find(&mut parent, i);
+        groups.entry(r).or_default().push(i);
+    }
+
+    let mut out = Vec::new();
+    for (gi, (_, members)) in groups.iter().enumerate() {
+        let mut pair_sims = Vec::new();
+        for a in 0..members.len() {
+            for b in (a + 1)..members.len() {
+                pair_sims.push(sim[members[a]][members[b]]);
+            }
+        }
+        // Singleton: achieved sims undefined; use 0.0 as sentinel.
+        let (min_s, mean_s) = if pair_sims.is_empty() {
+            (0.0, 0.0)
+        } else {
+            let mn = pair_sims.iter().cloned().fold(f64::INFINITY, f64::min);
+            let me = pair_sims.iter().sum::<f64>() / pair_sims.len() as f64;
+            (mn, me)
+        };
+        out.push(AnnotationFamily {
+            family_id: format!("FAM{}", gi),
+            copies: members.iter().map(|&m| copies_with_seq[m].0.clone()).collect(),
+            achieved_min_sim: min_s,
+            achieved_mean_sim: mean_s,
+        });
+    }
+    out
+}
+
 /// Load -G2 GTF into copy structures (one per transcript).
 pub fn load_copies<P: AsRef<Path>>(path: P) -> Result<Vec<CopyStructure>> {
     let refs = crate::reference_gtf::parse_reference_gtf(path)?;
