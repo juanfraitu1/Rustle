@@ -451,3 +451,110 @@ fn read_based_linker_unions_trans_chromosomal_bundles() {
         "all 3 shared-hash reads must be recorded in multimap_reads; got {}",
         fam.multimap_reads.len());
 }
+
+// ── Task 10: -G2 misuse-error + -G2-absent report-file invariants ────────────
+
+/// `--guide2` without `--vg` must exit non-zero with a message containing
+/// "requires --vg".  The validation fires before any file I/O, so the guide2
+/// path need not exist.
+#[test]
+fn guide2_without_vg_exits_nonzero_with_message() {
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rustle"))
+        .args([
+            "-o", "/tmp/rustle_g2_misuse_test.gtf",
+            "--guide2", "/tmp/nonexistent_g2.gtf",
+            // deliberately NO --vg
+        ])
+        .output()
+        .expect("failed to spawn rustle");
+
+    assert!(
+        !status.status.success(),
+        "--guide2 without --vg must exit non-zero; got {:?}",
+        status.status
+    );
+    let stderr = String::from_utf8_lossy(&status.stderr);
+    assert!(
+        stderr.contains("requires --vg"),
+        "stderr must contain 'requires --vg'; got:\n{}",
+        stderr
+    );
+}
+
+/// `--guide2 --vg` without `--genome-fasta` must exit non-zero with a message
+/// containing "requires --genome-fasta".  Again, no file I/O occurs before
+/// the check.
+#[test]
+fn guide2_without_genome_fasta_exits_nonzero_with_message() {
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rustle"))
+        .args([
+            "-o", "/tmp/rustle_g2_misuse_test.gtf",
+            "--vg",
+            "--guide2", "/tmp/nonexistent_g2.gtf",
+            // deliberately NO --genome-fasta
+        ])
+        .output()
+        .expect("failed to spawn rustle");
+
+    assert!(
+        !status.status.success(),
+        "--guide2 --vg without --genome-fasta must exit non-zero; got {:?}",
+        status.status
+    );
+    let stderr = String::from_utf8_lossy(&status.stderr);
+    assert!(
+        stderr.contains("requires --genome-fasta"),
+        "stderr must contain 'requires --genome-fasta'; got:\n{}",
+        stderr
+    );
+}
+
+/// A `--vg` run WITHOUT `--guide2` must NOT write any `.vg_families.tsv` or
+/// `.vg_eval.tsv` files — the report block is gated on `guide2_path.is_some()`.
+///
+/// Uses the committed synthetic fixture (`test_data/vg_hmm/`) which has only
+/// unmapped reads, so the assembly exits quickly (0 bundles → 0 families).
+#[test]
+fn vg_without_guide2_writes_no_report_files() {
+    const FIXTURE_BAM: &str = "test_data/vg_hmm/synthetic_reads.bam";
+    const FIXTURE_FA:  &str = "test_data/vg_hmm/synthetic_family.fa";
+
+    // Graceful skip if the committed fixture is somehow absent.
+    if !std::path::Path::new(FIXTURE_BAM).exists()
+        || !std::path::Path::new(FIXTURE_FA).exists()
+    {
+        eprintln!("skipping: fixture missing — run `python3 tools/make_vg_family_fixture.py`");
+        return;
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out_gtf = dir.path().join("out.gtf");
+
+    let status = std::process::Command::new(env!("CARGO_BIN_EXE_rustle"))
+        .args([
+            "-L",
+            "--vg",
+            "--genome-fasta", FIXTURE_FA,
+            "-o", out_gtf.to_str().unwrap(),
+            FIXTURE_BAM,
+            // deliberately NO --guide2
+        ])
+        .status()
+        .expect("failed to spawn rustle");
+
+    assert!(status.success(), "rustle exited non-zero ({:?})", status);
+
+    // These two report files must NOT exist when --guide2 is absent.
+    let fam_tsv  = dir.path().join("out.vg_families.tsv");
+    let eval_tsv = dir.path().join("out.vg_eval.tsv");
+    assert!(
+        !fam_tsv.exists(),
+        ".vg_families.tsv must NOT be written without --guide2; found {:?}",
+        fam_tsv
+    );
+    assert!(
+        !eval_tsv.exists(),
+        ".vg_eval.tsv must NOT be written without --guide2; found {:?}",
+        eval_tsv
+    );
+}
