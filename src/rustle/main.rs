@@ -44,6 +44,16 @@ struct Args {
     #[arg(short = 'G', long = "guide")]
     guide: Option<String>,
 
+    /// Second reference annotation (-G2): defines paralog families that guide VG copy
+    /// recovery + the per-run scorecard vs -G. Requires --vg and --genome-fasta. GTF/GFF.
+    #[arg(long = "guide2")]
+    guide2: Option<String>,
+
+    /// Shared-exon minimizer-Jaccard threshold (0..1) gating whether two copies merge into
+    /// one family graph. Default = the built-in family_merge_jaccard bar.
+    #[arg(long = "family-exon-similarity")]
+    family_exon_similarity: Option<f64>,
+
     /// Genome FASTA for splice consensus validation (GT/GC-AG, CT-AC/GC). CRAM: --cram-ref
     #[arg(long = "genome-fasta")]
     genome_fasta: Option<String>,
@@ -675,6 +685,14 @@ pub fn run_cli() -> anyhow::Result<()> {
         eprintln!("error: --vg and --single-copy-mode are mutually exclusive");
         std::process::exit(1);
     }
+    if args.guide2.is_some() && !args.vg {
+        eprintln!("error: --guide2/-G2 requires --vg");
+        std::process::exit(2);
+    }
+    if args.guide2.is_some() && args.genome_fasta.is_none() {
+        eprintln!("error: --guide2/-G2 requires --genome-fasta (exon sequences for family clustering)");
+        std::process::exit(2);
+    }
 
     // --read-chain enables the read-chain assembly path (read internally via the
     // RUSTLE_READCHAIN env switch). --read-chain-single also groups single-exon reads.
@@ -828,6 +846,9 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_min_poa_identity: args.vg_family_min_poa_identity,
         use_ml_filter: args.filter_mode == FilterMode::Ml,
         guide_mode: args.guide.is_some(),
+        guide2_path: args.guide2.clone(),
+        family_exon_similarity: args.family_exon_similarity
+            .unwrap_or_else(rustle::vg_family::family_graph::family_merge_jaccard),
     };
 
     if !args.max_sensitivity && (args.compat_preset || config.long_reads) {

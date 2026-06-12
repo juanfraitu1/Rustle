@@ -121,5 +121,9 @@ path = "tests/regression/vg_family_manifest.rs"
 name = "vg_fingerprint_em_correctness"
 path = "tests/regression/vg_fingerprint_em_correctness.rs"
 
+[[test]]
+name = "g2_annotation_families"
+path = "tests/regression/g2_annotation_families.rs"
+
 [dev-dependencies]
 tempfile = "3"

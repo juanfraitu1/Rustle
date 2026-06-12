@@ -819,6 +819,10 @@ pub struct RunConfig {
     pub use_ml_filter: bool,
     /// True when a guide GTF was supplied (-G). Used to disable the ML filter in guided mode.
     pub guide_mode: bool,
+    /// Path to the -G2 reference annotation (drives VG family definition + scorecard). None = off.
+    pub guide2_path: Option<String>,
+    /// Shared-exon minimizer-Jaccard threshold gating family-graph merging (--family-exon-similarity).
+    pub family_exon_similarity: f64,
     /// Low isofrac (header lowisofrac=0.02): keep transcript if cov >= this * neighbor (pairwise filter). Lower = more permissive.
     pub lowisofrac: f64,
     /// Merge consecutive exons when gap <= this (bp); 0 = off.
@@ -1218,6 +1222,8 @@ impl Default for RunConfig {
             transcript_isofrac_keep_min: 1.0,
             use_ml_filter: false,
             guide_mode: false,
+            guide2_path: None,
+            family_exon_similarity: crate::vg_family::family_graph::family_merge_jaccard(),
             lowisofrac: 0.02, // the original algorithm default lowisofrac=0.02
             merge_micro_intron_max_gap: 0,
             output_tpm: false,
