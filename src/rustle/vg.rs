@@ -5313,7 +5313,7 @@ pub fn run_fingerprint_em(
         // Write header only once (check file size).
         if let (Some(ref p), Some(ref mut w)) = (&attr_tsv_path, &mut attr_writer) {
             if std::fs::metadata(p).map(|m| m.len()).unwrap_or(1) <= 1 {
-                let _ = writeln!(w, "family_id\tread_name_hash\tplacement_copy\tn_sites_covered\tfinal_weight\tweight_gap\tweight_sum\tevidence_gap\tev_decisive");
+                let _ = writeln!(w, "family_id\tread_name_hash\tplacement_copy\tn_sites_covered\tfinal_weight\tweight_gap\tweight_sum\tevidence_gap\tev_decisive\tnm_score");
             }
         }
 
@@ -5404,10 +5404,10 @@ pub fn run_fingerprint_em(
                 bundles[global_bi].reads[ri].em_ev_decisive = is_winner && ev_decisive;
                 if let Some(ref mut w) = attr_writer {
                     let rnh = &bundles[global_bi].reads[ri].read_name_hash;
-                    let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}",
+                    let _ = writeln!(w, "{}\t{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{}\t{:.6}",
                         family.family_id, rnh, entry.fam_pos[i],
                         entry.n_sites_covered[i], new_w, gap, w_sum,
-                        ev_gap, if ev_decisive { 1 } else { 0 });
+                        ev_gap, if ev_decisive { 1 } else { 0 }, entry.nm_scores[i]);
                 }
             }
         }
