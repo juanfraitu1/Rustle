@@ -178,3 +178,45 @@ fn vg_families_report_shows_per_copy_chroms() {
     assert!(tsv.contains("0.500"), "must record merge_threshold_T");
     assert!(tsv.contains("0.930"), "must record achieved similarity");
 }
+
+#[test]
+fn scorecard_verdicts() {
+    use rustle::vg_eval::verdict;
+    assert_eq!(verdict(true, false), "WIN");        // in_vg, not in stringtie
+    assert_eq!(verdict(true, true), "tie");
+    assert_eq!(verdict(false, false), "miss");
+    assert_eq!(verdict(false, true), "regression"); // stringtie had it, vg lost it
+}
+
+#[test]
+fn chain_match_within_tolerance() {
+    use rustle::vg_eval::chain_in_set;
+    let mut set = std::collections::HashSet::new();
+    set.insert(vec![(100u64, 200u64), (300, 400)]);
+    // exact match
+    assert!(chain_in_set(&[(100,200),(300,400)], &set));
+    // within +/-2 bp per coordinate
+    assert!(chain_in_set(&[(101,199),(302,400)], &set));
+    // off by >2 -> no match
+    assert!(!chain_in_set(&[(105,200),(300,400)], &set));
+    // different length -> no match
+    assert!(!chain_in_set(&[(100,200)], &set));
+}
+
+#[test]
+fn render_vg_eval_summary_counts() {
+    use rustle::vg_eval::render_vg_eval;
+    let entries = vec![
+        ("c1".to_string(), "FAM0".to_string(), true, true),   // in_st, in_vg -> tie
+        ("c2".to_string(), "FAM0".to_string(), false, true),  // !in_st, in_vg -> WIN
+        ("c3".to_string(), "FAM1".to_string(), true, false),  // in_st, !in_vg -> regression
+        ("c4".to_string(), "FAM1".to_string(), false, false), // miss
+    ];
+    let tsv = render_vg_eval(&entries);
+    assert!(tsv.contains("c2\tFAM0\tyes\tfalse\ttrue\tWIN"), "WIN row; got:\n{}", tsv);
+    assert!(tsv.contains("WIN=1"));
+    assert!(tsv.contains("tie=1"));
+    assert!(tsv.contains("miss=1"));
+    assert!(tsv.contains("regression=1"));
+    assert!(tsv.contains("mode=guided"));
+}
