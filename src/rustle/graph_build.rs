@@ -1312,6 +1312,15 @@ fn compute_demoted_alt_coords(
             demoted_donors.insert(d);
         }
     }
+    // ST-faithful alt-acceptor SNAP (acceptor-split slice; rlink.cpp:14634-14708).
+    // Independently toggleable to isolate its effect. RUSTLE_ST_GRAPH_SNAP_ACC + !precise_mode.
+    if !crate::stringtie_parity::precise_mode()
+        && std::env::var_os("RUSTLE_ST_GRAPH_SNAP_ACC").is_some()
+    {
+        for a in compute_st_acceptor_snaps(filtered_juncs, stats) {
+            demoted_acceptors.insert(a);
+        }
+    }
 
     if std::env::var_os("RUSTLE_GRAPH_ALT_COALESCE").is_none() {
         return (demoted_donors, demoted_acceptors);
@@ -1536,6 +1545,136 @@ fn compute_st_donor_snaps(
     for k in 0..n {
         if snapped[k].is_some() && !kept.contains(&jof(k).donor) {
             demoted.insert(jof(k).donor);
+        }
+    }
+    demoted
+}
+
+/// ST-faithful alt-acceptor SNAP, acceptor side of StringTie's `build_graphs`
+/// (rlink.cpp:14634-14708) — exact mirror of `compute_st_donor_snaps` on the `ejunction`
+/// (acceptor-sorted) array using `rightsupport`. A "bad" junction (`nm >= nreads`) whose
+/// ACCEPTOR sits a few bp off a canonical acceptor snaps to it (within `sserror`=25 bp)
+/// when the canonical's `rightsupport` exceeds `tolerance`(0.9) x the bad junction's, so
+/// the alt acceptor creates no node boundary. (ST's forward-search extra OR clause at
+/// 14700 is dead in the `else` branch — `nm<nreads` is false there — so the logic equals
+/// the donor side.) Returns the acceptor coords to demote. Caller gates on
+/// RUSTLE_ST_GRAPH_SNAP_ACC + !precise_mode().
+fn compute_st_acceptor_snaps(
+    filtered_juncs: &[&Junction],
+    stats: &JunctionStats,
+) -> HashSet<u64> {
+    const SSERROR: u64 = 25; // ST sserror; long-read snap window
+    let tolerance = 1.0 - ERROR_PERC; // 0.9
+    let juncsupport = SSERROR;
+
+    // StringTie's `ejunction` array is sorted by acceptor (end); mirror that.
+    let mut order: Vec<usize> = (0..filtered_juncs.len()).collect();
+    order.sort_by_key(|&i| (filtered_juncs[i].acceptor, filtered_juncs[i].donor));
+    let n = order.len();
+    let jof = |k: usize| filtered_juncs[order[k]];
+    let sof = |k: usize| stats.get(jof(k));
+    let strand_of = |k: usize| sof(k).and_then(|s| s.strand);
+
+    let higherr = (0..n).any(|k| {
+        sof(k).map_or(false, |s| {
+            s.strand.map_or(false, |x| x != 0) && s.nm == s.mrcount && !s.guide_match
+        })
+    });
+    if !higherr {
+        return Default::default();
+    }
+
+    let mut snapped: Vec<Option<usize>> = vec![None; n];
+    for i in 1..n {
+        let si = match sof(i) {
+            Some(s) => s,
+            None => continue,
+        };
+        let strand_i = match si.strand {
+            Some(x) if x != 0 => x,
+            _ => continue,
+        };
+        if !(si.nm > 0.0 && !si.guide_match && si.nm >= si.mrcount) {
+            continue;
+        }
+        let end_i = jof(i).acceptor;
+        let rsup_i = si.rightsupport;
+        let mut support = 0.0f64;
+        let mut searchjunc = true;
+        let mut reliable = false;
+        // backward search (rlink.cpp:14653-14682)
+        let mut j: i64 = i as i64 - 1;
+        while j > 0 && end_i.saturating_sub(jof(j as usize).acceptor) < juncsupport {
+            let jk = j as usize;
+            if strand_of(jk) == Some(strand_i) {
+                let sj = sof(jk).unwrap();
+                let end_j = jof(jk).acceptor;
+                if end_j == end_i {
+                    if snapped[jk].is_some() {
+                        snapped[i] = snapped[jk];
+                        searchjunc = false;
+                    }
+                    break;
+                } else if sj.guide_match || sj.nm < sj.mrcount {
+                    if sj.rightsupport > rsup_i * tolerance {
+                        reliable = true;
+                        snapped[i] = Some(jk);
+                        support = sj.rightsupport;
+                        break;
+                    }
+                } else if sj.rightsupport > support
+                    && end_i.saturating_sub(end_j) < SSERROR
+                    && sj.rightsupport * tolerance > rsup_i
+                {
+                    snapped[i] = Some(jk);
+                    support = sj.rightsupport;
+                }
+            }
+            j -= 1;
+        }
+        // forward search (rlink.cpp:14683-14707)
+        if searchjunc {
+            let mut dist = juncsupport;
+            if let Some(tj) = snapped[i] {
+                dist = end_i.saturating_sub(jof(tj).acceptor);
+            }
+            let mut k = i + 1;
+            while k < n && jof(k).acceptor.saturating_sub(end_i) < juncsupport {
+                if strand_of(k) == Some(strand_i) && jof(k).acceptor != end_i {
+                    let sj = sof(k).unwrap();
+                    let d = jof(k).acceptor - end_i;
+                    if sj.guide_match || sj.nm < sj.mrcount {
+                        if (d < dist || (d == dist && sj.rightsupport > support))
+                            && sj.rightsupport > rsup_i * tolerance
+                        {
+                            snapped[i] = Some(k);
+                            support = sj.rightsupport;
+                            break;
+                        }
+                    } else if !reliable
+                        && sj.rightsupport > support
+                        && d < SSERROR
+                        && sj.rightsupport * tolerance > rsup_i
+                    {
+                        snapped[i] = Some(k);
+                        support = sj.rightsupport;
+                    }
+                }
+                k += 1;
+            }
+        }
+    }
+
+    let mut kept: HashSet<u64> = Default::default();
+    for k in 0..n {
+        if snapped[k].is_none() {
+            kept.insert(jof(k).acceptor);
+        }
+    }
+    let mut demoted: HashSet<u64> = Default::default();
+    for k in 0..n {
+        if snapped[k].is_some() && !kept.contains(&jof(k).acceptor) {
+            demoted.insert(jof(k).acceptor);
         }
     }
     demoted
@@ -3735,5 +3874,32 @@ mod st_donor_snap_tests {
         stats.insert(canon, stat(-1, 445.0, 0.0, 10.0)); // neighbor leftsupport too low
         let juncs = vec![&dummy, &alt, &canon];
         assert!(!compute_st_donor_snaps(&juncs, &stats).contains(&100));
+    }
+
+    // Acceptor-side mirror: alt acceptor 200 (mismatch-dominated) snaps forward to the
+    // canonical acceptor 212 (445 reads) at the same donor -> alt acceptor demoted.
+    #[test]
+    fn alt_acceptor_snaps_forward_to_canonical() {
+        fn astat(mrcount: f64, nm: f64, rightsupport: f64) -> JunctionStat {
+            JunctionStat {
+                mrcount,
+                nreads_good: mrcount,
+                nm,
+                rightsupport,
+                strand: Some(-1),
+                ..Default::default()
+            }
+        }
+        let dummy = Junction::new(10, 50); // pushes alt off index 0 (acceptor-sorted)
+        let alt = Junction::new(100, 200);
+        let canon = Junction::new(100, 212); // 12bp away, within sserror=25
+        let mut stats: JunctionStats = Default::default();
+        stats.insert(dummy, astat(5.0, 0.0, 5.0));
+        stats.insert(alt, astat(192.0, 192.0, 10.0)); // nm==nreads -> bad + higherr
+        stats.insert(canon, astat(445.0, 0.0, 100.0)); // reliable, rightsupport 100 > 10*0.9
+        let juncs = vec![&dummy, &alt, &canon];
+        let demoted = compute_st_acceptor_snaps(&juncs, &stats);
+        assert!(demoted.contains(&200), "alt acceptor must snap/demote");
+        assert!(!demoted.contains(&212), "canonical acceptor must be kept");
     }
 }
