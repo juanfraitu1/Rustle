@@ -220,3 +220,78 @@ fn render_vg_eval_summary_counts() {
     assert!(tsv.contains("regression=1"));
     assert!(tsv.contains("mode=guided"));
 }
+
+// ── Task 8: annotation_family_bundle_indices (pure bundle-overlap selection) ──
+
+fn mk_bundle(chrom: &str, start: u64, end: u64) -> rustle::types::Bundle {
+    rustle::types::Bundle {
+        chrom: chrom.into(),
+        start,
+        end,
+        strand: '+',
+        reads: Vec::new(),
+        junction_stats: rustle::types::JunctionStats::default(),
+        junction_pair_stats: Default::default(),
+        bundlenodes: None,
+        read_bnodes: None,
+        bnode_colors: None,
+        synthetic: false,
+        rescue_class: None,
+        vg_family_id: None,
+        hp_tag: None,
+        ps_tag: None,
+    }
+}
+
+#[test]
+fn annotation_family_selects_overlapping_bundles_position_agnostic() {
+    use rustle::annotation_families::{AnnotationFamily, CopyStructure};
+    // Three bundles: two on chr1 (one overlapping the chr1 copy, one not), one on chr2.
+    let bundles = vec![
+        mk_bundle("chr1", 1000, 2000), // idx 0: overlaps the chr1 copy
+        mk_bundle("chr1", 9000, 9500), // idx 1: chr1 but DISJOINT from the copy
+        mk_bundle("chr2", 1100, 1600), // idx 2: overlaps the chr2 copy (cross-chrom)
+    ];
+    // Family has copies on chr1 AND chr2 — position-agnostic: each copy contributes
+    // the bundles overlapping its OWN (chrom, span).
+    let fam = AnnotationFamily {
+        family_id: "FAM0".into(),
+        copies: vec![
+            CopyStructure { copy_id: "A".into(), chrom: "chr1".into(), strand: '+',
+                            exons: vec![(1200, 1400), (1500, 1800)] }, // span [1200,1800)
+            CopyStructure { copy_id: "B".into(), chrom: "chr2".into(), strand: '+',
+                            exons: vec![(1200, 1500)] },               // span [1200,1500)
+        ],
+        achieved_min_sim: 0.95,
+        achieved_mean_sim: 0.95,
+    };
+    let idx = rustle::vg::annotation_family_bundle_indices(&fam, &bundles);
+    // Bundle 0 (chr1 overlap) + bundle 2 (chr2 cross-chrom overlap); NOT bundle 1.
+    assert_eq!(idx, vec![0, 2],
+        "must select the overlapping chr1 bundle AND the cross-chrom chr2 bundle, \
+         but not the disjoint chr1 bundle");
+}
+
+#[test]
+fn annotation_family_bundle_indices_dedup_and_sorted() {
+    use rustle::annotation_families::{AnnotationFamily, CopyStructure};
+    // Two copies on the same chrom whose spans both overlap the SAME bundle →
+    // that bundle must appear once (dedup), output sorted ascending.
+    let bundles = vec![
+        mk_bundle("chr1", 5000, 6000), // idx 0
+        mk_bundle("chr1", 1000, 2000), // idx 1 — both copies overlap this
+    ];
+    let fam = AnnotationFamily {
+        family_id: "FAM0".into(),
+        copies: vec![
+            CopyStructure { copy_id: "A".into(), chrom: "chr1".into(), strand: '+',
+                            exons: vec![(1100, 1300)] },
+            CopyStructure { copy_id: "B".into(), chrom: "chr1".into(), strand: '+',
+                            exons: vec![(1500, 1800)] },
+        ],
+        achieved_min_sim: 0.95,
+        achieved_mean_sim: 0.95,
+    };
+    let idx = rustle::vg::annotation_family_bundle_indices(&fam, &bundles);
+    assert_eq!(idx, vec![1], "overlapping bundle appears once, sorted; non-overlapping excluded");
+}

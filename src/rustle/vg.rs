@@ -416,6 +416,90 @@ pub fn discover_family_groups(
     families
 }
 
+/// Bundle indices whose locus overlaps any copy of an annotation family.
+///
+/// Position-agnostic per copy: each copy contributes the bundles overlapping its
+/// OWN (chrom, span). A copy on chr1 picks up chr1 bundles; a copy of the same
+/// family on chr2 picks up chr2 bundles — the family is the cross-locus union.
+/// Span is `[first_exon.start, last_exon.end)` (exons are 0-based half-open and
+/// stored in genomic order by `load_copies`). Result is deduped + sorted.
+///
+/// Pure / BAM-free: unit-testable without reads.
+pub fn annotation_family_bundle_indices(
+    family: &crate::annotation_families::AnnotationFamily,
+    bundles: &[Bundle],
+) -> Vec<usize> {
+    let mut idx = std::collections::BTreeSet::new();
+    for copy in &family.copies {
+        let cs = copy.exons.first().map(|e| e.0).unwrap_or(0);
+        let ce = copy.exons.last().map(|e| e.1).unwrap_or(0);
+        for (bi, b) in bundles.iter().enumerate() {
+            if b.chrom == copy.chrom && overlaps_half_open(b.start, b.end, cs, ce) {
+                idx.insert(bi);
+            }
+        }
+    }
+    idx.into_iter().collect()
+}
+
+/// Build `FamilyGroup`s directly from authoritative `-G2` annotation families.
+///
+/// For each family: `bundle_indices` = bundles overlapping any copy's locus
+/// (`annotation_family_bundle_indices`), and `multimap_reads` is populated from
+/// the global multimap index using the SAME bi→position remap that
+/// `discover_family_groups` uses (so the downstream EM, which keys reads by
+/// position-in-`bundle_indices`, runs identically). The multimap index is built
+/// once via the supplementary-aware pass when a BAM path is available (matching
+/// `discover_family_groups`), else the primary-only index.
+///
+/// Unlike discovery, NO link-count / quality gating is applied — annotation
+/// families are authoritative and must reach the EM even when read-sharing is
+/// thin (the caller also bypasses `filter_high_confidence_families`).
+pub fn create_family_groups_from_annotation(
+    families: &[crate::annotation_families::AnnotationFamily],
+    bundles: &[Bundle],
+    bam_path: Option<&std::path::Path>,
+) -> Vec<FamilyGroup> {
+    // Same index source as discover_family_groups (~275-279).
+    let multimap_index = if let Some(path) = bam_path {
+        build_multimap_index_with_supplementary(path, bundles)
+    } else {
+        build_multimap_index(bundles)
+    };
+
+    families
+        .iter()
+        .enumerate()
+        .map(|(fid, fam)| {
+            let bundle_indices = annotation_family_bundle_indices(fam, bundles);
+            // bi -> position-in-bundle_indices remap (mirror vg.rs ~383-398).
+            let bi_to_pos: crate::types::DetHashMap<usize, usize> = bundle_indices
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(pos, bi)| (bi, pos))
+                .collect();
+            let mut multimap_reads: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
+            for (&rnh, locs) in &multimap_index {
+                let mut family_locs: Vec<(usize, usize)> = Vec::with_capacity(locs.len());
+                for (bi, ri) in locs {
+                    if let Some(&pos) = bi_to_pos.get(bi) {
+                        family_locs.push((pos, *ri));
+                    }
+                }
+                if family_locs.len() > 1 {
+                    multimap_reads.insert(rnh, family_locs);
+                }
+            }
+            FamilyGroup {
+                family_id: fid,
+                bundle_indices,
+                multimap_reads,
+            }
+        })
+        .collect()
+}
+
 /// Compute the mean pairwise k-mer Jaccard over the family graph's per-copy
 /// sequences. **Graph-supported** because it uses sequences extracted at the
 /// family graph's exon-class nodes (not raw read k-mers). For each pair of

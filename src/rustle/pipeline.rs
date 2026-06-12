@@ -10455,6 +10455,10 @@ pub fn run<P: AsRef<Path>>(
     }
 
     // ── Variation graph: discover gene family groups ────────────────────────
+    // Carries the authoritative -G2 annotation families (when --guide2 is set)
+    // from the discovery block out to the report point (~19540). Threaded via the
+    // family tuple below; empty for non-G2 runs.
+    let vg_annotation_families: Vec<crate::annotation_families::AnnotationFamily>;
     let vg_families = if config.vg_mode && !config.single_copy_mode {
         // Load genome once for all VG operations (discovery, filtering, etc.)
         // Loaded whenever a genome FASTA is available — NOT gated on
@@ -10483,11 +10487,54 @@ pub fn run<P: AsRef<Path>>(
             None
         };
 
-        // Family ingestion: manifest > GTF > multi-mapper discovery
+        // Family ingestion: -G2 annotation > manifest > GTF > multi-mapper discovery
         if config.family_manifest.is_some() && config.ingress_gtf.is_some() {
             eprintln!("[VG-Manifest] Warning: --ingress-gtf is ignored because --family-manifest takes priority");
         }
-        let raw_families = if let Some(manifest_path) = &config.family_manifest {
+        // Captures the authoritative -G2 annotation families (for the report).
+        // Stays empty unless the --guide2 branch below populates it.
+        let mut g2_families_local: Vec<crate::annotation_families::AnnotationFamily> = Vec::new();
+        let raw_families = if let Some(g2_path) = &config.guide2_path {
+            // -G2 annotation mode: cluster annotation transcripts into position-
+            // agnostic paralog families (validated in main.rs to require --vg +
+            // --genome-fasta), then build authoritative FamilyGroups directly.
+            let genome = vg_genome_for_discovery
+                .as_ref()
+                .expect("--guide2 requires --genome-fasta (validated in main)");
+            match crate::annotation_families::build_families(
+                g2_path,
+                genome,
+                config.family_exon_similarity,
+            ) {
+                Ok(fams) => {
+                    if config.verbose {
+                        eprintln!(
+                            "[VG-G2] Built {} annotation family group(s) from {}",
+                            fams.len(),
+                            g2_path
+                        );
+                    }
+                    g2_families_local = fams.clone();
+                    crate::vg::create_family_groups_from_annotation(
+                        &fams,
+                        &bundles,
+                        Some(bam_path.as_ref()),
+                    )
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[VG-G2] build_families failed: {}; falling back to discovery",
+                        e
+                    );
+                    crate::vg::discover_family_groups(
+                        &bundles,
+                        config.vg_min_shared_reads,
+                        Some(bam_path.as_ref()),
+                        vg_genome_for_discovery.as_ref(),
+                    )
+                }
+            }
+        } else if let Some(manifest_path) = &config.family_manifest {
             // Manifest ingestion mode: use R-exported locus coordinates
             match crate::family_manifest::parse_family_manifest(manifest_path) {
                 Ok(loci) => {
@@ -10588,21 +10635,28 @@ pub fn run<P: AsRef<Path>>(
         // count, megafamilies, low junction-overlap pairs). Keeps real
         // multi-copy paralogs while removing alignment artifacts. See
         // vg.rs::filter_high_confidence_families for the rationale.
-        let families = crate::vg::filter_high_confidence_families(
-            raw_families,
-            &bundles,
-            2,
-            config.vg_family_max_copies,
-            config.vg_family_min_shared,
-            config.vg_family_min_shared_per_copy,
-            config.vg_family_max_exon_cv,
-            config.vg_family_min_primitive_jaccard,
-        );
+        // -G2 annotation families are AUTHORITATIVE: bypass the read-sharing /
+        // jaccard quality filter (it would drop thin-evidence real paralog copies
+        // we were explicitly told to assemble). Discovered families still gate.
+        let families = if config.guide2_path.is_some() {
+            raw_families
+        } else {
+            crate::vg::filter_high_confidence_families(
+                raw_families,
+                &bundles,
+                2,
+                config.vg_family_max_copies,
+                config.vg_family_min_shared,
+                config.vg_family_min_shared_per_copy,
+                config.vg_family_max_exon_cv,
+                config.vg_family_min_primitive_jaccard,
+            )
+        };
         // Optional 6th signal: graph-supported k-mer Jaccard. Requires the
         // genome FASTA to be loaded so the family graph can extract per-copy
         // sequences. If --vg-family-min-kmer-jaccard is 0 (default) this is
         // a no-op. If genome isn't available, the helper logs and skips.
-        let families = if config.vg_family_min_kmer_jaccard > 0.0 {
+        let families = if config.vg_family_min_kmer_jaccard > 0.0 && config.guide2_path.is_none() {
             crate::vg::filter_by_graph_kmer_jaccard(
                 families,
                 &bundles,
@@ -10615,7 +10669,7 @@ pub fn run<P: AsRef<Path>>(
         };
         // POA-aligned mean-pairwise-identity filter. Independent gate from
         // k-mer Jaccard; shared genome handle. Opt-in (default 0).
-        let families = if config.vg_family_min_poa_identity > 0.0 {
+        let families = if config.vg_family_min_poa_identity > 0.0 && config.guide2_path.is_none() {
             crate::vg::filter_by_graph_poa_identity(
                 families,
                 &bundles,
@@ -10745,12 +10799,13 @@ pub fn run<P: AsRef<Path>>(
                 }
             }
         }
-        (families, raw_family_bundles, megafamily_dropped_bundles)
+        (families, raw_family_bundles, megafamily_dropped_bundles, g2_families_local)
     } else {
-        (Vec::new(), crate::types::DetHashSet::default(), crate::types::DetHashSet::default())
+        (Vec::new(), crate::types::DetHashSet::default(), crate::types::DetHashSet::default(), Vec::new())
     };
     let vg_raw_family_bundle_set = vg_families.1;
     let vg_megafamily_dropped_set = vg_families.2;
+    vg_annotation_families = vg_families.3;
     let vg_families = vg_families.0;
     // Build set of bundle indices that belong to a kept family group (for deferred processing).
     // FxHash is ~3-5x faster than SipHash here; the strip loop calls
@@ -19538,6 +19593,68 @@ pub fn run<P: AsRef<Path>>(
 
     let mut f = std::fs::File::create(output_gtf.as_ref())?;
     write_gtf(&all_transcripts, &mut f, &config.label)?;
+
+    // ── -G2 reports: vg_families.tsv (family merge audit) + vg_eval.tsv (vs -G) ──
+    // Written next to the GTF whenever --guide2 produced annotation families.
+    // Same path pattern as the rescue report (output_gtf.with_extension(..) +
+    // File::create). vg_families.tsv = the merge audit; vg_eval.tsv = per-copy
+    // head-to-head where in_st comes from the -G guides and in_vg from the VG
+    // output chains (both compared by intron chain via chain_in_set).
+    if config.guide2_path.is_some() && !vg_annotation_families.is_empty() {
+        use std::collections::HashSet;
+        // Intron chain from a 0-based half-open exon list (sorted): introns are the
+        // gaps between consecutive exons. Single-exon transcripts have an empty chain.
+        fn intron_chain(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
+            let mut e = exons.to_vec();
+            e.sort_unstable();
+            let mut introns = Vec::new();
+            for w in e.windows(2) {
+                introns.push((w[0].1, w[1].0));
+            }
+            introns
+        }
+
+        // vg_families.tsv — family merge audit.
+        let fam_tsv = crate::vg_eval::render_vg_families(
+            &vg_annotation_families,
+            config.family_exon_similarity,
+        );
+        let fam_path = output_gtf.as_ref().with_extension("vg_families.tsv");
+        std::fs::write(&fam_path, fam_tsv)?;
+
+        // -G guide chains (StringTie / annotation baseline). Empty when no -G given
+        // → in_st all-false (every copy is WIN-or-miss, which is correct).
+        let st_set: HashSet<Vec<(u64, u64)>> = guide_transcripts
+            .iter()
+            .map(|g| intron_chain(&g.exons))
+            .collect();
+        // VG-output chains (this run's emitted transcripts).
+        let vg_set: HashSet<Vec<(u64, u64)>> = all_transcripts
+            .iter()
+            .map(|t| intron_chain(&t.exons))
+            .collect();
+
+        let mut entries: Vec<(String, String, bool, bool)> = Vec::new();
+        for fam in &vg_annotation_families {
+            for copy in &fam.copies {
+                let chain = intron_chain(&copy.exons);
+                let in_st = crate::vg_eval::chain_in_set(&chain, &st_set);
+                let in_vg = crate::vg_eval::chain_in_set(&chain, &vg_set);
+                entries.push((copy.copy_id.clone(), fam.family_id.clone(), in_st, in_vg));
+            }
+        }
+        let eval_tsv = crate::vg_eval::render_vg_eval(&entries);
+        let eval_path = output_gtf.as_ref().with_extension("vg_eval.tsv");
+        std::fs::write(&eval_path, eval_tsv)?;
+
+        eprintln!(
+            "[VG-G2] {} family group(s), {} copies → {} + {}",
+            vg_annotation_families.len(),
+            entries.len(),
+            fam_path.display(),
+            eval_path.display(),
+        );
+    }
 
     // ── Multimapper rescue report (opt-in RUSTLE_VG_RESCUE_REPORT) ───────────
     // One row per VG-family transcript, joined to its copy's decisive-evidence certificate:
