@@ -295,3 +295,159 @@ fn annotation_family_bundle_indices_dedup_and_sorted() {
     let idx = rustle::vg::annotation_family_bundle_indices(&fam, &bundles);
     assert_eq!(idx, vec![1], "overlapping bundle appears once, sorted; non-overlapping excluded");
 }
+
+// ── Task 9: read-based trans-chromosomal family linker ────────────────────────
+
+/// Build a minimal `BundleRead` with a controlled `read_name_hash`.
+/// All other fields are set to inert defaults (the same pattern used in
+/// `vg.rs`'s `make_read` test helper).
+fn mk_bundle_read(read_name_hash: u64, ref_start: u64, ref_end: u64) -> rustle::types::BundleRead {
+    rustle::types::BundleRead {
+        read_uid: 0,
+        read_name: "r".into(),
+        read_name_hash,
+        ref_id: None,
+        mate_ref_id: None,
+        mate_start: None,
+        hi: 0,
+        ref_start,
+        ref_end,
+        exons: vec![(ref_start, ref_end)],
+        junctions: vec![],
+        junction_valid: vec![],
+        junctions_raw: vec![],
+        junctions_del: vec![],
+        weight: 1.0,
+        is_reverse: false,
+        strand: '+',
+        has_poly_start: false,
+        has_poly_end: false,
+        has_poly_start_aligned: false,
+        has_poly_start_unaligned: false,
+        has_poly_end_aligned: false,
+        has_poly_end_unaligned: false,
+        unaligned_poly_t: 0,
+        unaligned_poly_a: 0,
+        has_last_exon_polya: false,
+        has_first_exon_polyt: false,
+        query_length: None,
+        clip_left: 0,
+        clip_right: 0,
+        nh: 2,
+        nm: 0,
+        de: None,
+        md: None,
+        insertion_sites: vec![],
+        unitig: false,
+        unitig_cov: 0.0,
+        read_count_yc: 1.0,
+        countfrag_len: 0.0,
+        countfrag_num: 0.0,
+        junc_mismatch_weight: 0.0,
+        pair_idx: vec![],
+        pair_count: vec![],
+        mapq: 60,
+        mismatches: vec![],
+        seq: vec![],
+        hp_tag: None,
+        ps_tag: None,
+        is_primary_alignment: true,
+        em_weight_gap: -1.0,
+        em_n_sites: 0,
+        em_anchored: true,
+        em_ev_decisive: false,
+    }
+}
+
+#[test]
+fn read_based_linker_unions_trans_chromosomal_bundles() {
+    // Two bundles on DIFFERENT chromosomes sharing >= min_shared_reads multimapped reads
+    // (same read_name_hash present in both bundles) must union into ONE FamilyGroup.
+    //
+    // We build a chr1 bundle and a chr5 bundle.  3 reads carry a read_name_hash that
+    // is present in BOTH bundles (the multimappers).  Each bundle also has 1 unique read
+    // (hash not shared) so the test is not trivially degenerate.
+    //
+    // We call discover_family_groups with min_shared_reads = 2 and no BAM / genome path,
+    // so the function uses build_multimap_index (pure in-memory scan over bundle reads).
+
+    const SHARED_HASH_A: u64 = 0x0000_0001_0000_0001;
+    const SHARED_HASH_B: u64 = 0x0000_0002_0000_0002;
+    const SHARED_HASH_C: u64 = 0x0000_0003_0000_0003;
+    const UNIQUE_CHR1:   u64 = 0xDEAD_BEEF_0000_0001;
+    const UNIQUE_CHR5:   u64 = 0xDEAD_BEEF_0000_0002;
+
+    // chr1 bundle (index 0): 3 shared reads + 1 unique read
+    let chr1_reads = vec![
+        mk_bundle_read(SHARED_HASH_A, 1000, 2000),
+        mk_bundle_read(SHARED_HASH_B, 1100, 2100),
+        mk_bundle_read(SHARED_HASH_C, 1200, 2200),
+        mk_bundle_read(UNIQUE_CHR1,   1300, 2300),
+    ];
+    // chr5 bundle (index 1): same 3 shared reads + 1 unique read
+    let chr5_reads = vec![
+        mk_bundle_read(SHARED_HASH_A, 50_000, 51_000),
+        mk_bundle_read(SHARED_HASH_B, 50_100, 51_100),
+        mk_bundle_read(SHARED_HASH_C, 50_200, 51_200),
+        mk_bundle_read(UNIQUE_CHR5,   50_300, 51_300),
+    ];
+
+    let bundles = vec![
+        rustle::types::Bundle {
+            chrom: "chr1".into(),
+            start: 1000,
+            end: 2300,
+            strand: '+',
+            reads: chr1_reads,
+            junction_stats: rustle::types::JunctionStats::default(),
+            junction_pair_stats: Default::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: false,
+            rescue_class: None,
+            vg_family_id: None,
+            hp_tag: None,
+            ps_tag: None,
+        },
+        rustle::types::Bundle {
+            chrom: "chr5".into(),
+            start: 50_000,
+            end: 51_300,
+            strand: '+',
+            reads: chr5_reads,
+            junction_stats: rustle::types::JunctionStats::default(),
+            junction_pair_stats: Default::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: false,
+            rescue_class: None,
+            vg_family_id: None,
+            hp_tag: None,
+            ps_tag: None,
+        },
+    ];
+
+    // min_shared_reads = 2; we have 3 shared hashes → well above threshold.
+    // No BAM path and no genome: discover_family_groups uses build_multimap_index,
+    // which finds cross-bundle links purely from the in-memory read_name_hash values.
+    let families = rustle::vg::discover_family_groups(&bundles, 2, None, None);
+
+    assert_eq!(families.len(), 1,
+        "exactly one FamilyGroup must be formed from the two trans-chromosomal bundles; got: {:?}",
+        families.iter().map(|f| &f.bundle_indices).collect::<Vec<_>>());
+
+    let fam = &families[0];
+    assert!(fam.bundle_indices.contains(&0),
+        "FamilyGroup must include the chr1 bundle (index 0); bundle_indices = {:?}",
+        fam.bundle_indices);
+    assert!(fam.bundle_indices.contains(&1),
+        "FamilyGroup must include the chr5 bundle (index 1); bundle_indices = {:?}",
+        fam.bundle_indices);
+
+    // The 3 shared hashes must all appear in multimap_reads.
+    assert_eq!(fam.multimap_reads.len(), 3,
+        "all 3 shared-hash reads must be recorded in multimap_reads; got {}",
+        fam.multimap_reads.len());
+}
