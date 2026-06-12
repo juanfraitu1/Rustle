@@ -88,6 +88,7 @@ pub mod per_bnode_graph; // junction-expanded per-bundlenode graphs
 
 // ── Variation graph (gene family) mode ───────────────────────────────────────
 pub mod annotation_families; // -G2 annotation -> paralog families
+pub mod vg_eval; // -G2 reports
 pub mod vg; // family group discovery, EM reweighting
 pub mod vg_ingestion; // GTF/GFF ingestion mode for template-based family assembly
 pub mod family_manifest; // TSV-manifest ingestion: R-annotated multi-locus families

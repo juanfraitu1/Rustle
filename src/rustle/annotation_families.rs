@@ -145,6 +145,11 @@ pub fn families_from_grouped(
     for (_, group) in by_strand {
         out.extend(cluster_families(group, threshold));
     }
+    // Reindex family_ids to be globally unique across all strand groups.
+    // cluster_families restarts at "FAM0" per call, so + and - groups can collide.
+    for (i, fam) in out.iter_mut().enumerate() {
+        fam.family_id = format!("FAM{}", i);
+    }
     out
 }
 

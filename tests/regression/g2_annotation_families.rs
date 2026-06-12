@@ -144,3 +144,37 @@ fn opposite_strand_copies_never_merge() {
         vec![(a, s.clone()), (b, s)], 0.5);
     assert_eq!(fams.len(), 0, "opposite-strand copies must not merge (build_family_graph bails on mixed strand)");
 }
+
+#[test]
+fn family_ids_unique_across_strands() {
+    use rustle::annotation_families::{families_from_grouped, CopyStructure};
+    // Reuse two similar copies per strand so each strand forms a family.
+    let plus_a = CopyStructure{copy_id:"PA".into(),chrom:"chr1".into(),strand:'+',exons:vec![(0,80)]};
+    let plus_b = CopyStructure{copy_id:"PB".into(),chrom:"chr2".into(),strand:'+',exons:vec![(0,80)]};
+    let minus_a = CopyStructure{copy_id:"MA".into(),chrom:"chr3".into(),strand:'-',exons:vec![(0,80)]};
+    let minus_b = CopyStructure{copy_id:"MB".into(),chrom:"chr4".into(),strand:'-',exons:vec![(0,80)]};
+    // Identical sequence within each strand -> each strand merges into one family.
+    let s = SEQ_A.to_vec(); // reuse the non-repetitive 82bp SEQ_A constant from earlier cluster tests
+    let fams = families_from_grouped(vec![
+        (plus_a, s.clone()), (plus_b, s.clone()), (minus_a, s.clone()), (minus_b, s.clone())], 0.5);
+    assert_eq!(fams.len(), 2, "one family per strand");
+    let ids: std::collections::HashSet<_> = fams.iter().map(|f| f.family_id.clone()).collect();
+    assert_eq!(ids.len(), 2, "family_ids must be globally unique across strands");
+}
+
+#[test]
+fn vg_families_report_shows_per_copy_chroms() {
+    use rustle::annotation_families::{AnnotationFamily, CopyStructure};
+    let fam = AnnotationFamily {
+        family_id: "FAM0".into(),
+        copies: vec![
+            CopyStructure{copy_id:"A".into(),chrom:"chr1".into(),strand:'+',exons:vec![(0,30)]},
+            CopyStructure{copy_id:"B".into(),chrom:"chr5".into(),strand:'+',exons:vec![(0,30)]},
+        ],
+        achieved_min_sim: 0.93, achieved_mean_sim: 0.93,
+    };
+    let tsv = rustle::vg_eval::render_vg_families(&[fam], 0.5);
+    assert!(tsv.contains("chr1;chr5"), "copy_chroms must list both contigs; got:\n{}", tsv);
+    assert!(tsv.contains("0.500"), "must record merge_threshold_T");
+    assert!(tsv.contains("0.930"), "must record achieved similarity");
+}
