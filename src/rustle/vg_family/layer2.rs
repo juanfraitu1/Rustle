@@ -68,9 +68,9 @@ pub fn amend_family_graph(
     GraphAmendment { edges, copy_membership }
 }
 
-/// A recovered copy/isoform path (exon chain in genomic coordinates).
-/// `copy_id == usize::MAX` is a sentinel never emitted (a path that violated
-/// allele-linkage is dropped) — it exists only so tests can assert no chimeric leak.
+/// A recovered copy/isoform path (exon chain in genomic coordinates). A path that
+/// violates allele-linkage (a copy claiming a diagnostic node it has no allele for)
+/// is DROPPED during decomposition — never emitted.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FamilyPath {
     pub exons: Vec<(u64, u64)>,
@@ -98,22 +98,24 @@ pub fn decompose_family_paths(
     if n_copies == 0 {
         return Vec::new();
     }
+    // PSV-driven allele-linkage constraint. `enumerate_diagnostic_sites` tells us
+    // whether the family is identifiable at all (n_sites > 0); we enforce linkage
+    // only then. A node is DIAGNOSTIC when its present copies carry >= 2 distinct
+    // alleles (a PSV column lives there). The constraint: a copy may borrow
+    // strength on shared / non-diagnostic backbone nodes, but may NOT claim a
+    // diagnostic node where it has no native allele — that would assign it another
+    // copy's distinguishing sequence (a chimeric, allele-mixing path).
     let fingerprints = crate::vg::enumerate_diagnostic_sites(fg, n_copies);
-    let _ = &fingerprints; // PSV sites proven to exist; node_compat below is the
-    // operational form of the same data driving the allele-linkage constraint.
-    let mut node_compat: DetHashMap<usize, DetHashSet<(usize, usize)>> = DetHashMap::default();
+    let enforce_linkage = fingerprints.n_sites > 0;
+    let mut diagnostic_node: DetHashSet<usize> = DetHashSet::default();
     for (ni, n) in fg.nodes.iter().enumerate() {
-        let copies: Vec<(usize, &Vec<u8>)> =
-            n.per_copy_sequences.iter().map(|(c, s)| (*c, s)).collect();
-        let mut compat: DetHashSet<(usize, usize)> = DetHashSet::default();
-        for i in 0..copies.len() {
-            for j in 0..copies.len() {
-                if copies[i].1 == copies[j].1 {
-                    compat.insert((copies[i].0, copies[j].0));
-                }
-            }
+        let mut distinct: DetHashSet<&[u8]> = DetHashSet::default();
+        for (_, s) in &n.per_copy_sequences {
+            distinct.insert(s.as_slice());
         }
-        node_compat.insert(ni, compat);
+        if distinct.len() >= 2 {
+            diagnostic_node.insert(ni);
+        }
     }
     let mut adj: DetHashMap<usize, Vec<usize>> = DetHashMap::default();
     let mut edge_flow: DetHashMap<(usize, usize), f64> = DetHashMap::default();
@@ -165,14 +167,18 @@ pub fn decompose_family_paths(
         if !connected {
             continue;
         }
-        let linkage_ok = nodes_of_copy.iter().all(|&ni| {
-            let compat = node_compat.get(&ni);
-            match compat {
-                Some(c) => c.contains(&(copy, copy))
-                    || !fg.nodes[ni].per_copy_sequences.iter().any(|(cc, _)| *cc == copy),
-                None => true,
-            }
-        });
+        // Allele-linkage: reject this copy's path if it traverses a diagnostic
+        // node where the copy has no native allele (it would borrow another copy's
+        // distinguishing sequence = chimeric). Shared / non-diagnostic nodes are
+        // freely borrowable (the starved-copy strength-borrowing case).
+        let linkage_ok = !enforce_linkage
+            || nodes_of_copy.iter().all(|&ni| {
+                !(diagnostic_node.contains(&ni)
+                    && !fg.nodes[ni]
+                        .per_copy_sequences
+                        .iter()
+                        .any(|(cc, _)| *cc == copy))
+            });
         if !linkage_ok {
             continue;
         }
@@ -373,16 +379,37 @@ mod tests {
 
     #[test]
     fn decompose_forbids_allele_mixing_path() {
-        let fg = build_psv_two_copy_fg();
-        let am = GraphAmendment::default();
+        // 3-copy family. Middle node M (idx 1) is DIAGNOSTIC: copy0 and copy1 carry
+        // distinct alleles (AAAAAA vs CCCCCC); copy2 has NO native allele at M.
+        // copy2 is registered on M only via an AMENDMENT (a secondary). copy2's
+        // walk A→M→C is edge-connected, but claiming the diagnostic node M with no
+        // allele = chimeric → it MUST be rejected, while copy0/copy1 (native M
+        // alleles) survive. This genuinely exercises the linkage guard: deleting
+        // the guard would let copy2's chimeric path leak (test would fail).
+        let fg = build_psv_three_copy_fg();
+        let am = GraphAmendment {
+            edges: Vec::new(),
+            copy_membership: vec![(1, 2)], // amendment puts copy 2 onto diagnostic node M
+        };
         let paths = decompose_family_paths(&fg, &am, 0.0);
-        assert!(paths.iter().filter(|p| p.exons.len() == 3).count() >= 2,
-            "two PSV-consistent copy paths recovered");
-        assert!(paths.iter().all(|p| p.copy_id != usize::MAX),
-            "no allele-mixing (chimeric) path emitted");
+        assert!(
+            paths.iter().any(|p| p.copy_id == 0 && p.exons.len() == 3),
+            "copy 0 (native M allele) recovered: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.copy_id == 1 && p.exons.len() == 3),
+            "copy 1 (native M allele) recovered: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.copy_id == 2),
+            "copy 2 has no allele at diagnostic M → its chimeric path is rejected: {paths:?}"
+        );
     }
 
-    fn build_psv_two_copy_fg() -> FamilyGraph {
+    /// 3 copies; node M (idx 1) shared-coordinate but PSV-distinguishable between
+    /// copy0/copy1 (distinct alleles), with copy2 ABSENT at M. Nodes A and C are
+    /// shared identical across all three copies.
+    fn build_psv_three_copy_fg() -> FamilyGraph {
         use crate::vg_family::family_graph::{ExonClass, JunctionEdge, NodeIdx};
         let mk_node = |idx: usize, span: (u64, u64), seqs: &[(usize, &[u8])]| ExonClass {
             idx: NodeIdx(idx),
@@ -395,9 +422,10 @@ mod tests {
             per_copy_cov: Vec::new(),
         };
         let nodes = vec![
-            mk_node(0, (100, 160), &[(0, b"ACGTAC"), (1, b"ACGTAC")]),
-            mk_node(1, (300, 360), &[(0, b"AGGTAC"), (1, b"ACGTAC")]),
-            mk_node(2, (500, 560), &[(0, b"TTGGCC"), (1, b"TTGGCC")]),
+            mk_node(0, (100, 160), &[(0, b"ACGTAC"), (1, b"ACGTAC"), (2, b"ACGTAC")]),
+            // diagnostic: copy0 vs copy1 differ; copy2 absent (recovered only via amendment).
+            mk_node(1, (300, 360), &[(0, b"AAAAAA"), (1, b"CCCCCC")]),
+            mk_node(2, (500, 560), &[(0, b"TTGGCC"), (1, b"TTGGCC"), (2, b"TTGGCC")]),
         ];
         let edges = vec![
             JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 5, strand: '+' },
