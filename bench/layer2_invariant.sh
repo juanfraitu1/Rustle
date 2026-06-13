@@ -97,4 +97,20 @@ if [ ! -f "$CHRY_BAM" ]; then
 fi
 check_chrom chrY "$CHRY_BAM"
 
+echo "== (5) simulated paralog: Layer-2 recovers the starved copy =="
+SIM_BAM=${SIM_BAM:-bench/fixtures/sim_paralog.bam}
+SIM_FA=${SIM_FA:-bench/fixtures/sim_paralog.fa}
+if [ -f "$SIM_BAM" ] && [ -f "$SIM_FA" ]; then
+  "$BIN" -L "$SIM_BAM" --vg --genome-fasta "$SIM_FA" -o /tmp/layer2/sim_default.gtf 2>/dev/null
+  "$BIN" -L "$SIM_BAM" --vg --vg-layer2 --genome-fasta "$SIM_FA" -o /tmp/layer2/sim_layer2.gtf 2>/dev/null
+  d=$(grep -c $'\ttranscript\t' /tmp/layer2/sim_default.gtf || true)
+  l=$(grep -c $'\ttranscript\t' /tmp/layer2/sim_layer2.gtf || true)
+  echo "  sim transcripts: default=$d layer2=$l"
+  python3 scripts/coord_signature_superset.py /tmp/layer2/sim_layer2.gtf /tmp/layer2/sim_default.gtf \
+    && echo "  OK: layer2 ⊇ default on sim"
+  [ "$l" -gt "$d" ] && echo "  OK: Layer-2 recovered $((l-d)) extra isoform(s) on sim" || echo "  WARN: no extra sim isoforms"
+else
+  echo "  SKIP: $SIM_BAM / $SIM_FA not present"
+fi
+
 echo "ALL INVARIANTS PASS: VG Layer-2 is additive (⊇ VG default) AND ⊇ baseline (M-FLOOR floor holds) on chr19 + chrY."

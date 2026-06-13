@@ -301,11 +301,47 @@ pub fn run_layer2(
         family_graphs.push(fg);
     }
 
-    let _ = new_copies; // consumed in M5
+    // (M4.3c) Materialize recovered copy/isoform paths into emittable Transcripts.
+    // For each family: amend its merged graph with the family's pruned secondaries,
+    // then constrained-flow-decompose into per-copy paths. Each surviving path becomes
+    // a UnionBaseline-tagged Transcript so the pipeline's union-by-chain stage emits it
+    // only if its intron chain is absent from the VG output (strictly additive).
+    let mut novel_transcripts: Vec<Transcript> = Vec::new();
+    for (fi, fam) in families.iter().enumerate() {
+        let Some(fg) = family_graphs[fi].as_ref() else { continue };
+        let mut copy_of_locus: DetHashMap<usize, usize> = DetHashMap::default();
+        for (copy, &loc) in fam.bundle_indices.iter().enumerate() {
+            copy_of_locus.insert(loc, copy);
+        }
+        let member_set: DetHashSet<usize> = fam.bundle_indices.iter().copied().collect();
+        let secs: Vec<crate::vg_family::secondary_index::SecondaryAlignment> = side_index
+            .alignments().iter()
+            .filter(|a| a.locus.map(|l| member_set.contains(&l)).unwrap_or(false))
+            .cloned().collect();
+        let am = amend_family_graph(fg, &secs, &copy_of_locus);
+        let paths = decompose_family_paths(fg, &am, 1.0);
+        for p in paths {
+            let chrom = loci[fam.bundle_indices[0]].chrom.clone();
+            let strand = loci[fam.bundle_indices[0]].strand;
+            let mut t = Transcript::default();
+            t.chrom = chrom;
+            t.strand = strand;
+            t.exons = p.exons;
+            t.coverage = p.flow;
+            t.longcov = p.flow;
+            t.is_longread = true;
+            t.synthetic = true;
+            t.vg_family_id = Some(fam.family_id);
+            t.vg_copy_id = Some(p.copy_id);
+            t.rescue_class = Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline);
+            novel_transcripts.push(t);
+        }
+    }
+    let _ = new_copies; // C5 (M5)
     Ok(Layer2Output {
         families,
         family_graphs,
-        novel_transcripts: Vec::new(),
+        novel_transcripts,
     })
 }
 
@@ -471,6 +507,18 @@ mod tests {
 
         assert_eq!(out.families.len(), 1, "one family from C2");
         assert!(out.family_graphs[0].is_some(), "family graph merged (C3)");
-        assert!(out.novel_transcripts.is_empty(), "no emission yet (M3)");
+        // M4.3c: emission is now wired. This fixture carries no amending secondaries
+        // (the lone secondary has no introns), so any emitted paths come purely from the
+        // merged family graph's own edges; assert the emitted transcripts (if any) are
+        // well-formed and carry the UnionBaseline tag that drives union-by-chain.
+        for t in &out.novel_transcripts {
+            assert_eq!(
+                t.rescue_class,
+                Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline),
+                "emitted Layer-2 transcripts are tagged UnionBaseline"
+            );
+            assert_eq!(t.vg_family_id, Some(0), "tagged with the family id");
+            assert!(t.exons.len() >= 2, "emitted paths are multi-exon");
+        }
     }
 }

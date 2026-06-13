@@ -10476,7 +10476,9 @@ pub fn run<P: AsRef<Path>>(
     // Layer 2 (C1): build the secondary side-index when --vg-layer2 is on. Additive
     // and default-off; with Layer 2 off the default path is untouched (VG ⊇ baseline
     // / RUSTLE_PRECISE byte-identity preserved by construction). Built + logged here;
-    // discovery/merge/amend consumers are wired in later milestones (M3.2/M4.3).
+    // HOISTED into `secondary_index` (M4.3c) so the Layer-2 amend/decompose consumer
+    // after the assembly loop can take ownership of it.
+    let mut secondary_index: Option<crate::vg_family::secondary_index::SecondaryIndex> = None;
     if config.vg_mode && config.vg_layer2 {
         let mut side_index = crate::bundle::collect_secondary_index_from_bam(
             bam_path.as_ref(),
@@ -10494,6 +10496,7 @@ pub fn run<P: AsRef<Path>>(
             side_index.n_reads(),
             bundles.len()
         );
+        secondary_index = Some(side_index);
     }
     if crate::tracing::pipeline::active() {
         for b in &bundles {
@@ -17763,6 +17766,42 @@ pub fn run<P: AsRef<Path>>(
             }
         }
         all_transcripts = kept;
+    }
+    // (M4.3c) Run Layer 2 and stage its recovered family transcripts. They are pushed
+    // into `union_baseline_holdout` (tagged UnionBaseline) so the existing union-by-chain
+    // stage (~19614) emits each only when its intron chain is absent from the VG output —
+    // strictly additive (VG ⊇ baseline preserved; layer2 ⊇ default by construction).
+    if config.vg_mode && config.vg_layer2 {
+        if let (Some(si), Some(genome), Some(cap)) =
+            (secondary_index.take(), vg_snp_genome.as_ref(), layer2_graph_capture)
+        {
+            let captured: Vec<Option<crate::graph::Graph>> =
+                cap.into_iter().map(|m| m.into_inner().unwrap()).collect();
+            let empty_graph = crate::graph::Graph::new();
+            let loci: Vec<crate::vg_family::layer2::Layer1Locus> = layer2_bundle_meta
+                .iter().enumerate()
+                .map(|(bi, (chrom, _s, _e, strand))| crate::vg_family::layer2::Layer1Locus {
+                    chrom: chrom.clone(),
+                    strand: *strand,
+                    graph: captured.get(bi).and_then(|o| o.as_ref()).unwrap_or(&empty_graph),
+                })
+                .collect();
+            match crate::vg_family::layer2::run_layer2(
+                &loci, si, &layer2_primary_locus, Some(genome),
+                config.vg_min_shared_reads as u32,
+                config.family_exon_similarity,
+                2000, 15, config.vg_layer2_new_copies,
+            ) {
+                Ok(out) => {
+                    if !out.novel_transcripts.is_empty() {
+                        eprintln!("[layer2] emitting {} recovered family transcript(s) (unioned by chain)",
+                            out.novel_transcripts.len());
+                        union_baseline_holdout.extend(out.novel_transcripts);
+                    }
+                }
+                Err(e) => eprintln!("[layer2] disabled this run: {e}"),
+            }
+        }
     }
     trace_chain_intron_probe("ENTER_global", &all_transcripts);
 
