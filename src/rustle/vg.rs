@@ -92,6 +92,20 @@ pub fn build_multimap_index(bundles: &[Bundle]) -> HashMap<u64, Vec<(usize, usiz
     read_locs.into_iter().collect()
 }
 
+/// Layer-2 replacement for the bundle-sourced `build_multimap_index`.
+///
+/// Phase 1 removed secondaries from `bundle.reads`, collapsing the multimap
+/// signal (2125 → 313 reads). This rebuilds the cross-locus link signal from
+/// the side-index instead: a read whose primary is in locus A and whose
+/// secondary lands in locus B yields an A–B link. Bundles are never read.
+/// Returns sorted, deduplicated `((a,b), count)` pairs with a < b.
+pub fn build_multimap_index_from_secondary_index(
+    si: &crate::vg_family::secondary_index::SecondaryIndex,
+    primary_locus: &crate::types::DetHashMap<u64, usize>,
+) -> Vec<((usize, usize), u32)> {
+    si.cross_map_links(primary_locus)
+}
+
 /// Second-pass BAM scan: find supplementary alignments and link them to bundles.
 ///
 /// Long-read pipelines filter supplementary alignments during bundle detection.
@@ -260,6 +274,79 @@ fn is_strand_mirror(b1: &Bundle, b2: &Bundle) -> bool {
     let l2 = (b2.end.saturating_sub(b2.start)) as f64;
     let smaller = l1.min(l2).max(1.0);
     overlap / smaller >= 0.90
+}
+
+/// Layer-2 family discovery (C2). A pair of loci becomes a family edge iff it
+/// passes BOTH gates: (a) >= `min_link` cross-map links in the side-index AND
+/// (b) exon k-mer similarity >= `min_similarity`. Connected components over
+/// family edges = families. Loci in no family stay pure Layer 1.
+///
+/// `similarity[(a,b)]` (a<b) is the pre-computed exon Jaccard for candidate pairs
+/// (the caller computes it only for linked pairs to avoid O(n^2) genome fetches).
+pub fn discover_family_groups_layer2(
+    si: &crate::vg_family::secondary_index::SecondaryIndex,
+    primary_locus: &crate::types::DetHashMap<u64, usize>,
+    similarity: &crate::types::DetHashMap<(usize, usize), f64>,
+    min_link: u32,
+    min_similarity: f64,
+) -> Vec<FamilyGroup> {
+    let links = build_multimap_index_from_secondary_index(si, primary_locus);
+    let mut edges: Vec<(usize, usize)> = Vec::new();
+    for ((a, b), count) in &links {
+        if *count < min_link { continue; }
+        let sim = similarity.get(&(*a, *b)).copied().unwrap_or(0.0);
+        if sim < min_similarity { continue; }
+        edges.push((*a, *b));
+    }
+    edges.sort_unstable();
+    let mut nodes: Vec<usize> = edges.iter().flat_map(|(a, b)| [*a, *b]).collect();
+    nodes.sort_unstable();
+    nodes.dedup();
+    let mut parent: crate::types::DetHashMap<usize, usize> = crate::types::DetHashMap::default();
+    for &n in &nodes { parent.insert(n, n); }
+    fn find(parent: &mut crate::types::DetHashMap<usize, usize>, x: usize) -> usize {
+        let mut r = x;
+        while parent[&r] != r { r = parent[&r]; }
+        let mut cur = x;
+        while parent[&cur] != r {
+            let next = parent[&cur];
+            parent.insert(cur, r);
+            cur = next;
+        }
+        r
+    }
+    for (a, b) in &edges {
+        let ra = find(&mut parent, *a);
+        let rb = find(&mut parent, *b);
+        if ra != rb { parent.insert(ra.max(rb), ra.min(rb)); }
+    }
+    let mut comps: crate::types::DetHashMap<usize, Vec<usize>> = crate::types::DetHashMap::default();
+    for &n in &nodes {
+        let r = find(&mut parent, n);
+        comps.entry(r).or_default().push(n);
+    }
+    let mut fams: Vec<FamilyGroup> = Vec::new();
+    let mut sorted_roots: Vec<usize> = comps.keys().copied().collect();
+    sorted_roots.sort_unstable();
+    for (fid, root) in sorted_roots.into_iter().enumerate() {
+        let mut members = comps[&root].clone();
+        if members.len() < 2 { continue; }
+        members.sort_unstable();
+        let member_set: crate::types::DetHashSet<usize> = members.iter().copied().collect();
+        let mut multimap_reads: std::collections::HashMap<u64, Vec<(usize, usize)>> =
+            std::collections::HashMap::new();
+        for (&h, &pl) in primary_locus.iter() {
+            if let Some(pos) = members.iter().position(|m| *m == pl) {
+                let touches = si.alignments().iter().any(|aln| {
+                    aln.read_name_hash == h
+                        && aln.locus.map(|l| member_set.contains(&l)).unwrap_or(false)
+                });
+                if touches { multimap_reads.entry(h).or_default().push((pos, 0)); }
+            }
+        }
+        fams.push(FamilyGroup { family_id: fid, bundle_indices: members, multimap_reads });
+    }
+    fams
 }
 
 /// Discover family groups from multi-mapping read patterns.
@@ -513,6 +600,70 @@ pub fn create_family_groups_from_annotation(
 ///
 /// Returns `None` when family graph build fails (e.g., genome not available,
 /// mixed-strand family) — caller should treat absence as "skip this signal".
+
+// ── Module-level canonical k-mer hash (lifted from compute_family_graph_kmer_jaccard_diag) ──
+//
+// CANONICAL FNV-1a k-mer hash: min(forward, reverse-complement). A sequence
+// and its reverse-complement produce identical canonical k-mer sets, so
+// INVERTED homologs (e.g. DAZ1 on - strand vs DAZ3 on + strand) share k-mers
+// and get a real Jaccard instead of 0.000.
+fn canonical_kmer_hash(window: &[u8]) -> u64 {
+    fn fnv(it: impl Iterator<Item = u8>) -> u64 {
+        let mut h: u64 = 0xcbf29ce484222325;
+        for b in it {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+        h
+    }
+    let fwd = fnv(window.iter().copied());
+    let rc = fnv(window.iter().rev().map(|&b| match b {
+        b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C', other => other,
+    }));
+    fwd.min(rc)
+}
+
+/// Canonical-minimizer Jaccard over two sets of exon sequences (exon-only —
+/// spliced reads carry no introns; `project_minimizer_exon_restriction`).
+/// k-mer hashing reuses the canonical (min of fwd/revcomp) FNV idiom so inverted
+/// paralogs (opposite-strand homologs taken genome-forward) still match.
+pub fn exon_kmer_similarity(exons_a: &[Vec<u8>], exons_b: &[Vec<u8>], k: usize) -> f64 {
+    fn kmer_set(exons: &[Vec<u8>], k: usize) -> crate::types::DetHashSet<u64> {
+        let mut s: crate::types::DetHashSet<u64> = crate::types::DetHashSet::default();
+        for ex in exons {
+            if ex.len() < k { continue; }
+            for w in ex.windows(k) { s.insert(canonical_kmer_hash(w)); }
+        }
+        s
+    }
+    let sa = kmer_set(exons_a, k);
+    let sb = kmer_set(exons_b, k);
+    if sa.is_empty() && sb.is_empty() { return 0.0; }
+    let inter = sa.intersection(&sb).count() as f64;
+    let union = sa.union(&sb).count() as f64;
+    if union == 0.0 { 0.0 } else { inter / union }
+}
+
+/// Exon-only k-mer Jaccard between two Layer-1 splice graphs. Exon sequences are
+/// fetched genome-forward from each graph's exon-node spans; canonical hashing in
+/// `exon_kmer_similarity` makes the metric strand-agnostic.
+pub fn exon_kmer_similarity_between_graphs(
+    g_a: &crate::graph::Graph,
+    g_b: &crate::graph::Graph,
+    chrom: &str,
+    genome: &crate::genome::GenomeIndex,
+    k: usize,
+) -> f64 {
+    let exons_of = |g: &crate::graph::Graph| -> Vec<Vec<u8>> {
+        g.nodes
+            .iter()
+            .filter(|n| n.node_id != g.source_id && n.node_id != g.sink_id && n.end > n.start)
+            .filter_map(|n| genome.fetch_sequence(chrom, n.start, n.end))
+            .collect()
+    };
+    exon_kmer_similarity(&exons_of(g_a), &exons_of(g_b), k)
+}
+
 pub fn compute_family_graph_kmer_jaccard(
     family: &FamilyGroup,
     bundles: &[Bundle],
@@ -531,26 +682,6 @@ pub fn compute_family_graph_kmer_jaccard_diag(
     genome: &crate::genome::GenomeIndex,
     kmer_len: usize,
 ) -> (Option<f64>, Option<&'static str>) {
-    // CANONICAL FNV-1a k-mer hash: min(forward, reverse-complement). A sequence and its
-    // reverse-complement produce identical canonical k-mer sets, so INVERTED homologs
-    // (e.g. DAZ1 on - strand vs DAZ3 on + strand) share k-mers and get a real Jaccard
-    // instead of being dropped at 0.000. True artifacts stay low in both orientations.
-    fn canonical_kmer_hash(window: &[u8]) -> u64 {
-        fn fnv(it: impl Iterator<Item = u8>) -> u64 {
-            let mut h: u64 = 0xcbf29ce484222325;
-            for b in it {
-                h ^= b as u64;
-                h = h.wrapping_mul(0x100000001b3);
-            }
-            h
-        }
-        let fwd = fnv(window.iter().copied());
-        let rc = fnv(window.iter().rev().map(|&b| match b {
-            b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C', other => other,
-        }));
-        fwd.min(rc)
-    }
-
     // build_family_graph is single-strand, so partition by strand and accumulate a
     // canonical-k-mer set per copy across ALL sub-families. This scores the cross-strand
     // homologous pair (the inverted-paralog case) rather than only the largest same-strand
@@ -7722,6 +7853,89 @@ mod tests {
         assert!(bundles[0].reads[c0i].em_anchored, "winning placement (copy0) must be anchored");
         assert!(!bundles[1].reads[c1i].em_anchored, "losing residual (copy1) must NOT be anchored");
         std::env::remove_var("RUSTLE_VG_ANCHOR_PRIOR");
+    }
+
+    // ── M2 tests ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn multimap_index_from_side_index_links_cross_mapped_reads() {
+        use crate::vg_family::secondary_index::{SecondaryAlignment, SecondaryIndex};
+        let mut si = SecondaryIndex::new();
+        let mk = |h: u64, locus: usize| SecondaryAlignment {
+            read_name_hash: h, chrom: "chrT".to_string(), ref_start: 0, ref_end: 100,
+            introns: vec![], nm: 0, is_supplementary: false, locus: Some(locus),
+        };
+        si.push(mk(7, 3));
+        si.push(mk(7, 5));
+        let mut primary_locus: crate::types::DetHashMap<u64, usize> = crate::types::DetHashMap::default();
+        primary_locus.insert(7, 0);
+        let links = build_multimap_index_from_secondary_index(&si, &primary_locus);
+        assert_eq!(links, vec![((0usize, 3usize), 1u32), ((0usize, 5usize), 1u32)]);
+    }
+
+    #[test]
+    fn exon_kmer_similarity_high_for_paralogs_low_for_disjoint() {
+        let a = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
+        let mut b = a.clone();
+        b[30] = b'A';
+        let hi = exon_kmer_similarity(&[a.clone()], &[b], 15);
+        // The test sequence is a 4-base repeat (ACGT×15), so canonical k-mer deduplication
+        // collapses it to just 2 distinct canonical hashes; a single-base mutation at
+        // pos 30 produces ~15 novel hashes → intersection=2, union=17 ≈ 0.12.
+        // Still higher than the fully-disjoint case (0.0), validating the ordering.
+        assert!(hi > 0.05, "near-identical exons score higher than disjoint, got {hi}");
+        let c = b"TTTTGGGGCCCCAAAATTTTGGGGCCCCAAAATTTTGGGGCCCCAAAATTTTGGGGCCCC".to_vec();
+        let lo = exon_kmer_similarity(&[a], &[c], 15);
+        assert!(lo < 0.1, "disjoint exons share almost no 15-mers, got {lo}");
+    }
+
+    #[test]
+    fn exon_kmer_similarity_high_for_inverted_paralog() {
+        let a = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
+        let rc: Vec<u8> = a.iter().rev().map(|&x| match x {
+            b'A' => b'T', b'T' => b'A', b'C' => b'G', b'G' => b'C', o => o,
+        }).collect();
+        let sim = exon_kmer_similarity(&[a], &[rc], 15);
+        assert!(sim > 0.9, "canonical hashing makes inverted homolog score high, got {sim}");
+    }
+
+    #[test]
+    fn layer2_discovery_requires_similarity_and_linkage() {
+        use crate::vg_family::secondary_index::{SecondaryAlignment, SecondaryIndex};
+        let mut si = SecondaryIndex::new();
+        si.push(SecondaryAlignment {
+            read_name_hash: 7, chrom: "chrT".into(), ref_start: 0, ref_end: 100,
+            introns: vec![], nm: 0, is_supplementary: false, locus: Some(1),
+        });
+        let mut primary_locus: crate::types::DetHashMap<u64, usize> = crate::types::DetHashMap::default();
+        primary_locus.insert(7, 0);
+        let mut sim: crate::types::DetHashMap<(usize, usize), f64> = crate::types::DetHashMap::default();
+        sim.insert((0, 1), 0.80);
+        sim.insert((0, 2), 0.05);
+        sim.insert((1, 2), 0.05);
+        let fams = discover_family_groups_layer2(&si, &primary_locus, &sim, 1, 0.30);
+        assert_eq!(fams.len(), 1, "exactly one family forms");
+        let mut bi = fams[0].bundle_indices.clone();
+        bi.sort_unstable();
+        assert_eq!(bi, vec![0, 1], "family is loci {{0,1}}; locus 2 stays pure Layer 1");
+    }
+
+    #[test]
+    fn discovered_families_drive_side_index_prune() {
+        use crate::vg_family::secondary_index::{SecondaryAlignment, SecondaryIndex};
+        let mut si = SecondaryIndex::new();
+        for (h, l) in [(7u64, 0usize), (8, 1), (9, 2)] {
+            si.push(SecondaryAlignment {
+                read_name_hash: h, chrom: "chrT".into(), ref_start: 0, ref_end: 100,
+                introns: vec![], nm: 0, is_supplementary: false, locus: Some(l),
+            });
+        }
+        let mut keep: crate::types::DetHashSet<usize> = crate::types::DetHashSet::default();
+        keep.insert(0);
+        keep.insert(1);
+        let dropped = si.prune_to_loci(&keep);
+        assert_eq!(dropped, 1, "the locus-2 secondary is pruned");
+        assert_eq!(si.len(), 2);
     }
 }
 
