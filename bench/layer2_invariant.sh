@@ -55,24 +55,24 @@ check_chrom () {
   "$BIN" -L "$bam" --vg -o "/tmp/layer2/${tag}_vg_default.gtf" 2>/dev/null
   "$BIN" -L "$bam" --vg --vg-layer2 -o "/tmp/layer2/${tag}_vg_layer2.gtf" 2>/dev/null
 
-  # (A) HARD — Layer 2 is additive: ON must equal OFF until the emitter lands (M6).
-  if python3 "$SUPERSET" "/tmp/layer2/${tag}_vg_layer2.gtf" "/tmp/layer2/${tag}_vg_default.gtf" >/dev/null \
-     && python3 "$SUPERSET" "/tmp/layer2/${tag}_vg_default.gtf" "/tmp/layer2/${tag}_vg_layer2.gtf" >/dev/null; then
-    echo "  OK [$tag] (A): VG Layer-2 == VG default (additive; no chain altered)"
+  # (A) HARD — additivity vs the VG copy-recovery output: Layer 2 may ADD chains
+  #     (the recovered baseline floor + future novel copies) but must NEVER DROP a
+  #     chain that --vg already produced. So vg_layer2 ⊇ vg_default.
+  if python3 "$SUPERSET" "/tmp/layer2/${tag}_vg_layer2.gtf" "/tmp/layer2/${tag}_vg_default.gtf" >/dev/null; then
+    echo "  OK [$tag] (A): VG Layer-2 ⊇ VG default (additive; no VG chain dropped)"
   else
-    echo "  FAIL [$tag] (A): --vg-layer2 changed output vs --vg — Layer 2 must stay additive"
+    echo "  FAIL [$tag] (A): --vg-layer2 DROPPED a chain present in --vg — Layer 2 must be additive"
     exit 1
   fi
 
-  # (B) TARGET — baseline ⊆ VG-layer2. Measured; fatal only under LAYER2_STRICT=1.
+  # (B) HARD (M-FLOOR established 2026-06-13) — baseline ⊆ VG-layer2. The pulled-forward
+  #     union floor guarantees every baseline chain survives VG. Any later milestone that
+  #     breaks this is a regression. (LAYER2_STRICT kept as a no-op alias for callers.)
   if python3 "$SUPERSET" "/tmp/layer2/${tag}_vg_layer2.gtf" "/tmp/layer2/${tag}_baseline.gtf"; then
-    echo "  OK [$tag] (B): VG Layer-2 superset baseline (TARGET met)"
+    echo "  OK [$tag] (B): VG Layer-2 ⊇ baseline (floor holds)"
   else
-    if [ "${LAYER2_STRICT:-0}" = "1" ]; then
-      echo "  FAIL [$tag] (B): baseline NOT subset of VG (LAYER2_STRICT) — M6 union must close this"
-      exit 1
-    fi
-    echo "  WIP [$tag] (B): baseline NOT yet subset of VG (gap above) — target for M6 union-by-chain"
+    echo "  FAIL [$tag] (B): baseline NOT subset of VG-layer2 — M-FLOOR regression"
+    exit 1
   fi
 }
 
@@ -98,4 +98,4 @@ if [ ! -f "$CHRY_BAM" ]; then
 fi
 check_chrom chrY "$CHRY_BAM"
 
-echo "ALL HARD INVARIANTS PASS (Layer 2 additive). (B) baseline-subset is the M6 target; run LAYER2_STRICT=1 to enforce."
+echo "ALL INVARIANTS PASS: VG Layer-2 is additive (⊇ VG default) AND ⊇ baseline (M-FLOOR floor holds) on chr19 + chrY."
