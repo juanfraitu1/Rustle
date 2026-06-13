@@ -86,6 +86,126 @@ impl SecondaryIndex {
     pub fn alignments(&self) -> &[SecondaryAlignment] {
         &self.alignments
     }
+
+    /// Assign each stored alignment to the Layer-1 locus (bundle index) it overlaps.
+    /// `locus_spans[i] = (chrom, start, end)` of bundle `i`. On overlap ties the
+    /// lowest bundle index wins (deterministic).
+    pub fn assign_loci(&mut self, locus_spans: &[(String, u64, u64)]) {
+        // Build a per-chrom list of (start, end, idx) for overlap lookup.
+        let mut by_chrom: DetHashMap<&str, Vec<(u64, u64, usize)>> = DetHashMap::default();
+        for (i, (c, s, e)) in locus_spans.iter().enumerate() {
+            by_chrom.entry(c.as_str()).or_default().push((*s, *e, i));
+        }
+        for v in by_chrom.values_mut() {
+            v.sort_unstable();
+        }
+        for a in self.alignments.iter_mut() {
+            a.locus = None;
+            if let Some(spans) = by_chrom.get(a.chrom.as_str()) {
+                // pick the locus with maximal overlap (deterministic: lowest idx on tie)
+                let mut best: Option<(u64, usize)> = None;
+                for (s, e, i) in spans {
+                    if a.ref_start < *e && *s < a.ref_end {
+                        let ov = a.ref_end.min(*e).saturating_sub(a.ref_start.max(*s));
+                        match best {
+                            Some((bov, bi)) if ov < bov || (ov == bov && *i >= bi) => {}
+                            _ => best = Some((ov, *i)),
+                        }
+                    }
+                }
+                a.locus = best.map(|(_, i)| i);
+            }
+        }
+    }
+
+    /// Cross-map links for family discovery. `primary_locus[read_name_hash] = locus`
+    /// is the Layer-1 locus the read's PRIMARY (in `bundle.reads`) lives in.
+    /// A link (a,b) with a<b is emitted whenever a read's primary is in locus `a`
+    /// and one of its secondaries is assigned to a DISTINCT locus `b` (or vice-versa).
+    /// Returns sorted, deduplicated `((a,b), count)` pairs.
+    pub fn cross_map_links(
+        &self,
+        primary_locus: &DetHashMap<u64, usize>,
+    ) -> Vec<((usize, usize), u32)> {
+        let mut counts: DetHashMap<(usize, usize), u32> = DetHashMap::default();
+        for (&h, idxs) in self.by_read.iter() {
+            let Some(&pl) = primary_locus.get(&h) else { continue };
+            // distinct secondary loci for this read
+            let mut sec_loci: DetHashSet<usize> = DetHashSet::default();
+            for &ai in idxs {
+                if let Some(sl) = self.alignments[ai].locus {
+                    if sl != pl {
+                        sec_loci.insert(sl);
+                    }
+                }
+            }
+            for sl in sec_loci {
+                let key = if pl < sl { (pl, sl) } else { (sl, pl) };
+                *counts.entry(key).or_default() += 1;
+            }
+        }
+        let mut out: Vec<((usize, usize), u32)> = counts.into_iter().collect();
+        out.sort_unstable();
+        out
+    }
+
+    /// All secondaries assigned to `locus`, in capture order (deterministic).
+    pub fn secondaries_for_locus(&self, locus: usize) -> Vec<&SecondaryAlignment> {
+        self.alignments
+            .iter()
+            .filter(|a| a.locus == Some(locus))
+            .collect()
+    }
+
+    /// Drop every alignment whose locus is not in `keep`. Open-decision (1):
+    /// prune the index to family-candidate loci after discovery's first pass.
+    /// Returns the number of alignments dropped (caller logs it; never silent).
+    pub fn prune_to_loci(&mut self, keep: &DetHashSet<usize>) -> usize {
+        let before = self.alignments.len();
+        let kept: Vec<SecondaryAlignment> = self
+            .alignments
+            .drain(..)
+            .filter(|a| a.locus.map(|l| keep.contains(&l)).unwrap_or(false))
+            .collect();
+        self.rebuild(kept);
+        before - self.alignments.len()
+    }
+
+    /// Cap the number of secondaries kept per locus at `cap`, keeping the first
+    /// `cap` in capture order. Open-decision (1): logged drop, no silent truncation.
+    /// Alignments with no locus are retained (they feed C5 all-secondary detection).
+    /// Returns total dropped across all loci.
+    pub fn cap_per_locus(&mut self, cap: usize) -> usize {
+        let before = self.alignments.len();
+        let mut seen: DetHashMap<usize, usize> = DetHashMap::default();
+        let kept: Vec<SecondaryAlignment> = self
+            .alignments
+            .drain(..)
+            .filter(|a| match a.locus {
+                Some(l) => {
+                    let c = seen.entry(l).or_default();
+                    if *c < cap {
+                        *c += 1;
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => true,
+            })
+            .collect();
+        self.rebuild(kept);
+        before - self.alignments.len()
+    }
+
+    /// Rebuild `by_read` after a filtering pass.
+    fn rebuild(&mut self, kept: Vec<SecondaryAlignment>) {
+        self.alignments = kept;
+        self.by_read.clear();
+        for (i, a) in self.alignments.iter().enumerate() {
+            self.by_read.entry(a.read_name_hash).or_default().push(i);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -131,5 +251,65 @@ mod tests {
             2,
             "both alignments for read 7 stored"
         );
+    }
+
+    fn sa_loc(hash: u64, start: u64, end: u64, locus: Option<usize>) -> SecondaryAlignment {
+        let mut a = sa(hash, start, end);
+        a.locus = locus;
+        a
+    }
+
+    #[test]
+    fn cross_map_links_pair_distinct_loci() {
+        // Read 7: primary-locus link encoded via two placements in loci 0 and 3.
+        // Read 9: only one locus → no link.
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(7, 100, 200, Some(0)));
+        idx.push(sa_loc(7, 9000, 9100, Some(3)));
+        idx.push(sa_loc(9, 100, 200, Some(0)));
+        // primary loci for the two reads: read 7 primary in locus 0, read 9 in 0.
+        let mut primary_locus: DetHashMap<u64, usize> = DetHashMap::default();
+        primary_locus.insert(7, 0);
+        primary_locus.insert(9, 0);
+        let links = idx.cross_map_links(&primary_locus);
+        // read 7: primary 0, secondary in 3 → link (0,3). read 9: secondary 0 == primary → none.
+        assert_eq!(links, vec![((0usize, 3usize), 1u32)]);
+    }
+
+    #[test]
+    fn per_locus_view_returns_overlapping_secondaries() {
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(7, 100, 200, Some(5)));
+        idx.push(sa_loc(8, 300, 400, Some(5)));
+        idx.push(sa_loc(9, 100, 200, Some(2)));
+        let v = idx.secondaries_for_locus(5);
+        assert_eq!(v.len(), 2, "two secondaries assigned to locus 5");
+        assert_eq!(v[0].read_name_hash, 7);
+        assert_eq!(v[1].read_name_hash, 8);
+    }
+
+    #[test]
+    fn prune_drops_alignments_outside_candidate_loci() {
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(7, 100, 200, Some(0)));
+        idx.push(sa_loc(8, 300, 400, Some(1)));
+        idx.push(sa_loc(9, 100, 200, None)); // no locus → pruned
+        let mut keep: DetHashSet<usize> = DetHashSet::default();
+        keep.insert(0);
+        let dropped = idx.prune_to_loci(&keep);
+        assert_eq!(dropped, 2, "locus-1 and no-locus alignments dropped");
+        assert_eq!(idx.len(), 1, "only the locus-0 alignment survives");
+        assert_eq!(idx.alignments()[0].read_name_hash, 7);
+    }
+
+    #[test]
+    fn cap_per_locus_logs_overflow_count() {
+        let mut idx = SecondaryIndex::new();
+        for h in 0..10u64 {
+            idx.push(sa_loc(h, 100, 200, Some(0)));
+        }
+        let dropped = idx.cap_per_locus(4);
+        assert_eq!(dropped, 6, "kept 4 of 10 at locus 0; 6 dropped (logged, not silent)");
+        assert_eq!(idx.secondaries_for_locus(0).len(), 4);
     }
 }
