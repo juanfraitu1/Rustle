@@ -1038,6 +1038,12 @@ pub struct RunConfig {
     /// loose Jaccard prefilter. Default 0 (disabled). Stays DNA-side; requires
     /// --genome-fasta. Recommended starting threshold: 0.30.
     pub vg_family_min_poa_identity: f64,
+    /// Layer-2 family variation graph (default OFF; opt-in `--vg-layer2` /
+    /// `RUSTLE_VG_LAYER2`). With it off, `--vg` is Layer-1-baseline-identical.
+    pub vg_layer2: bool,
+    /// C5 — admit candidate NEW copies from all-secondary regions. Default OFF
+    /// (`--vg-layer2-new-copies` / `RUSTLE_VG_LAYER2_NEW_COPIES`) until validated.
+    pub vg_layer2_new_copies: bool,
 }
 
 impl RunConfig {
@@ -1292,6 +1298,8 @@ impl Default for RunConfig {
             vg_family_min_primitive_jaccard: 0.20,
             vg_family_min_kmer_jaccard: 0.05,  // bimodal split on full GGO; no-op without --genome-fasta
             vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
+            vg_layer2: false,
+            vg_layer2_new_copies: false,
         }
     }
 }
@@ -1304,5 +1312,25 @@ mod config_ml_defaults_tests {
         let c = RunConfig::default();
         assert!(!c.use_ml_filter, "use_ml_filter must default to false");
         assert!(!c.guide_mode, "guide_mode must default to false");
+    }
+}
+
+#[cfg(test)]
+mod layer2_config_tests {
+    use super::*;
+
+    #[test]
+    fn layer2_defaults_off() {
+        let c = RunConfig::default();
+        assert!(!c.vg_layer2, "Layer 2 is OFF by default during development");
+        assert!(!c.vg_layer2_new_copies, "all-secondary new copies OFF by default");
+        // family_exon_similarity already exists (the advisor's merge threshold);
+        // its default is family_merge_jaccard(), NOT a Layer-2-specific constant.
+        assert!(
+            (c.family_exon_similarity - crate::vg_family::family_graph::family_merge_jaccard())
+                .abs()
+                < 1e-9,
+            "Layer 2 reuses the existing family-merge similarity default"
+        );
     }
 }

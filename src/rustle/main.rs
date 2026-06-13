@@ -589,6 +589,14 @@ struct Args {
     /// (olfactory receptors etc.) yield degenerate family graphs.
     #[arg(long = "vg-em-no-skip-intronless")]
     vg_em_no_skip_intronless: bool,
+
+    /// Enable Layer-2 family variation graph (default off; Layer 1 stays baseline-identical).
+    #[arg(long = "vg-layer2", default_value_t = false)]
+    vg_layer2: bool,
+
+    /// Admit candidate new copies from all-secondary regions (default off, proof-gated).
+    #[arg(long = "vg-layer2-new-copies", default_value_t = false)]
+    vg_layer2_new_copies: bool,
 }
 
 fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
@@ -839,6 +847,9 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_family_min_primitive_jaccard: args.vg_family_min_primitive_jaccard,
         vg_family_min_kmer_jaccard: args.vg_family_min_kmer_jaccard,
         vg_family_min_poa_identity: args.vg_family_min_poa_identity,
+        vg_layer2: args.vg_layer2 || std::env::var_os("RUSTLE_VG_LAYER2").is_some(),
+        vg_layer2_new_copies: args.vg_layer2_new_copies
+            || std::env::var_os("RUSTLE_VG_LAYER2_NEW_COPIES").is_some(),
         use_ml_filter: args.filter_mode == FilterMode::Ml,
         guide_mode: args.guide.is_some(),
         guide2_path: args.guide2.clone(),
