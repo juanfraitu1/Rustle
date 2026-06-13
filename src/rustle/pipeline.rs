@@ -19635,7 +19635,10 @@ pub fn run<P: AsRef<Path>>(
                 continue;
             }
             if t.longcov < min_longcov {
-                continue; // primary-support gate: only union real primary-backed dropped isoforms
+                // primary-support gate (legacy env path, floor 2.0). Under --vg-layer2
+                // the floor is 0.0 (default_min_longcov above) so this is a no-op: the
+                // M-FLOOR floor must never re-drop a baseline chain.
+                continue;
             }
             let chain = chain_of(&t);
             if vg_chains.contains(&chain) || !seen.insert(chain) {

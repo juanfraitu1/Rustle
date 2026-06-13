@@ -5,15 +5,14 @@
 # Runs on BOTH chr19 (GGO_19.bam) AND a chrY family chrom
 # (bench/fixtures/chrY_family.bam). Two tiers of invariant:
 #
-#   (A) HARD (must pass every milestone until consumers emit, M3.2+):
-#       --vg --vg-layer2 output == --vg output. Layer 2 is ADDITIVE — until the
-#       union-by-chain emitter lands (M6) it must not change a single chain.
+#   (A) HARD — additivity: --vg --vg-layer2 ⊇ --vg output. Layer 2 may ADD chains
+#       (the recovered baseline floor + future novel copies) but must NEVER DROP a
+#       chain --vg already produced.
 #
-#   (B) TARGET (the project goal): baseline coord-signatures ⊆ VG-layer2 output.
-#       This is NOT satisfied yet — plain --vg drops some baseline chains
-#       (pre-existing VG-vs-baseline regression; see project_vg_baseline_regression).
-#       M6's union-by-chain closes it. Reported here as a measured gap; promote to a
-#       HARD failure with LAYER2_STRICT=1 (flip on in CI once M6 lands).
+#   (B) HARD — the floor (established by M-FLOOR, 2026-06-13): baseline coord-signatures
+#       ⊆ --vg --vg-layer2 output. The pulled-forward union floor recovers every baseline
+#       chain VG's family-EM dropped (chr19 RSTL.589.1 + 18 chrY chains). Any later
+#       milestone that breaks this is a regression. LAYER2_STRICT kept as a no-op alias.
 #
 # Optional leg (C): RUSTLE_PRECISE=1 byte-identical to commit 4705ab1 — runs only if
 #   bench/ref/4705ab1_precise_GGO_19.gtf exists. Generate it on a CLEAN tree with
