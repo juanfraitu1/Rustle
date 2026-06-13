@@ -687,6 +687,10 @@ pub fn run_cli() -> anyhow::Result<()> {
         eprintln!("error: --guide2 requires --vg");
         std::process::exit(1);
     }
+    if args.vg_layer2 && !args.vg {
+        eprintln!("error: --vg-layer2 requires --vg");
+        std::process::exit(1);
+    }
     if args.guide2.is_some() && args.genome_fasta.is_none() {
         eprintln!("error: --guide2 requires --genome-fasta (exon sequences for family clustering)");
         std::process::exit(1);

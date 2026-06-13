@@ -182,15 +182,18 @@ pub fn decompose_family_paths(
         if !linkage_ok {
             continue;
         }
-        // Emit this copy's OWN coordinates per node — NOT the node's `span`, which
-        // is the UNION of all contributing copies' spans and, for paralogs at
-        // different genomic loci, would fabricate a cross-copy chimeric transcript.
-        // A node where this copy contributes natively → its `per_copy_spans` entry.
-        // An amendment-borrowed node is only placeable if its contributing copies
-        // are CO-LOCATED (all per_copy_spans identical); a cross-locus union is
-        // ambiguous (recovering the borrowing copy's true coordinates needs
-        // homology coordinate-transfer — future work) → drop the path rather than
-        // emit wrong coordinates.
+        // Emit this copy's OWN coordinates per node — NEVER the node's `span` (the
+        // UNION of all contributing copies' spans, which would fabricate coordinates).
+        //   - native node (this copy has a `per_copy_spans` entry) → that coordinate.
+        //   - amendment-BORROWED node (no native entry): placeable ONLY when the node
+        //     carries >=2 per_copy_spans entries that AGREE — i.e. multiple copies
+        //     independently confirm the SAME coordinate (genuine co-location). A
+        //     single foreign entry is a DIFFERENT-LOCUS paralog exon (the common
+        //     cross-mapped-secondary case): borrowing it would assign this copy the
+        //     OTHER copy's genomic coordinates — a wrong-coordinate false positive.
+        //     Placing a cross-locus borrowed copy correctly requires homology
+        //     coordinate-transfer (the thesis "isoform transfer via homology" — not
+        //     yet implemented) → DROP the path rather than emit fabricated coords.
         let exons: Option<Vec<(u64, u64)>> = nodes_of_copy
             .iter()
             .map(|&i| {
@@ -198,15 +201,17 @@ pub fn decompose_family_paths(
                 if let Some((_, sp)) = n.per_copy_spans.iter().find(|(c, _)| *c == copy) {
                     return Some(*sp);
                 }
-                let first = n.per_copy_spans.first().map(|(_, s)| *s);
-                match first {
-                    Some(f) if n.per_copy_spans.iter().all(|(_, s)| *s == f) => Some(f),
-                    _ => None,
+                if n.per_copy_spans.len() >= 2 {
+                    let f = n.per_copy_spans[0].1;
+                    if n.per_copy_spans.iter().all(|(_, s)| *s == f) {
+                        return Some(f);
+                    }
                 }
+                None
             })
             .collect();
         let Some(exons) = exons else {
-            continue; // cross-locus coordinate ambiguity → don't emit (no chimera)
+            continue; // cross-locus borrow → coords unknowable here → don't emit
         };
         let flow = nodes_of_copy
             .windows(2)
@@ -357,6 +362,7 @@ pub fn run_layer2(
             t.synthetic = true;
             t.vg_family_id = Some(fam.family_id);
             t.vg_copy_id = Some(p.copy_id);
+            t.vg_family_size = Some(fam.bundle_indices.len());
             t.rescue_class = Some(crate::vg_family::diagnostic::RescueClass::UnionBaseline);
             novel_transcripts.push(t);
         }
@@ -410,7 +416,13 @@ mod tests {
     }
 
     #[test]
-    fn decompose_recovers_starved_copy_path() {
+    fn decompose_recovers_native_copy_defers_crosslocus_borrow() {
+        // copy 0 is fully native (all 3 exons survived Layer 1); copy 1 is starved
+        // (only the first exon survived) and would borrow exons 2+3 via secondaries.
+        // The well copy MUST recover its full chain at ITS OWN coordinates. The
+        // starved copy's borrowed nodes are single-entry (copy-0-only), so its true
+        // coordinates are unknowable without homology coordinate-transfer (future
+        // work) — it is conservatively DROPPED rather than emitted at copy 0's coords.
         let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
             "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
         );
@@ -431,9 +443,18 @@ mod tests {
         copy_of_locus.insert(1, 1);
         let am = amend_family_graph(&fg, &secs, &copy_of_locus);
         let paths = decompose_family_paths(&fg, &am, 1.0);
+        // The native copy recovers its full chain at its own coordinates.
         assert!(
-            paths.iter().any(|p| p.exons == vec![(100, 160), (300, 360), (500, 560)]),
-            "starved copy's full chain recovered: {paths:?}"
+            paths.iter().any(|p| p.copy_id == 0
+                && p.exons == vec![(100, 160), (300, 360), (500, 560)]),
+            "native copy 0 full chain recovered: {paths:?}"
+        );
+        // No path is emitted with FABRICATED coordinates for the starved copy: every
+        // emitted exon is a real per-copy span, never a node union or a borrowed
+        // foreign coordinate. (Cross-locus starved recovery is deferred.)
+        assert!(
+            paths.iter().all(|p| p.exons.iter().all(|&(s, e)| e - s == 60)),
+            "no fabricated/union-span exon (all exons are real 60bp spans): {paths:?}"
         );
     }
 
