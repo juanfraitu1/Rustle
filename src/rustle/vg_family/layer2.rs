@@ -375,6 +375,166 @@ pub fn run_layer2(
     })
 }
 
+// =============================================================================
+// Homology coordinate-transfer (C5 building blocks, PURE — no wiring yet).
+//
+// Recover a STARVED paralog copy's exon coordinates from its OWN secondary
+// alignments (those that mapped to its native region but whose PRIMARY went to
+// the well-expressed paralog). NO coordinate is ever invented: every emitted
+// coordinate is a real secondary's exon, anchored by the starved copy's
+// surviving native exon(s).
+// =============================================================================
+
+/// Reconstruct each secondary's exon chain from `(ref_start, introns, ref_end)`
+/// and return the CONSENSUS exon chain for this group of secondaries (all from
+/// ONE copy's locus). Deterministic. Returns empty if there is no supported
+/// consensus (never fabricate from a single noisy read).
+///
+/// Junctions are crisp splice sites (group key); exon ends jitter (median).
+/// The winning chain needs >=2 supporters; interior boundaries are the chosen
+/// junction coords; the 5' start and 3' end are the median over supporters
+/// (even count → lower-middle element).
+fn consensus_exon_chain(
+    secondaries: &[&crate::vg_family::secondary_index::SecondaryAlignment],
+) -> Vec<(u64, u64)> {
+    if secondaries.is_empty() {
+        return Vec::new();
+    }
+    // Group by full junction-chain identity (the introns tuple).
+    let mut groups: DetHashMap<Vec<(u64, u64)>, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+        DetHashMap::default();
+    for s in secondaries {
+        groups.entry(s.introns.clone()).or_default().push(s);
+    }
+    // Pick the MODE junction-chain. Deterministic tie-break:
+    //   (a) most support, (b) longest chain (more junctions),
+    //   (c) lexicographically smallest intron tuple.
+    let mut best: Option<&Vec<(u64, u64)>> = None;
+    let mut best_support = 0usize;
+    for (chain, members) in &groups {
+        let support = members.len();
+        let take = match best {
+            None => true,
+            Some(b) => {
+                let b_support = groups[b].len();
+                (support, chain.len(), std::cmp::Reverse(chain))
+                    > (b_support, b.len(), std::cmp::Reverse(b))
+            }
+        };
+        if take {
+            best = Some(chain);
+            best_support = support;
+        }
+    }
+    let chain = match best {
+        Some(c) if best_support >= 2 => c.clone(),
+        _ => return Vec::new(), // no consensus (single read / unsupported)
+    };
+    let supporters = &groups[&chain];
+
+    // Terminal exon coords vary across supporters → MEDIAN (lower-middle).
+    let median = |mut v: Vec<u64>| -> u64 {
+        v.sort_unstable();
+        v[(v.len() - 1) / 2]
+    };
+    let start = median(supporters.iter().map(|s| s.ref_start).collect());
+    let end = median(supporters.iter().map(|s| s.ref_end).collect());
+
+    // Build exons: start .. (donor) , (acceptor) .. (next donor) , ... , (last acceptor) .. end.
+    // Interior boundaries are exactly the junction coords (crisp).
+    let mut exons = Vec::with_capacity(chain.len() + 1);
+    let mut cur_start = start;
+    for &(donor, acceptor) in &chain {
+        exons.push((cur_start, donor));
+        cur_start = acceptor;
+    }
+    exons.push((cur_start, end));
+    exons
+}
+
+/// Map a starved copy's consensus exon chain onto the family backbone nodes by
+/// CO-LINEAR position, pinned by the copy's surviving NATIVE exon(s) (its
+/// `per_copy_spans` entries). Returns `(node_idx, transferred_exon_span)` for
+/// each backbone node the copy is placed on. Requires >=1 native anchor (else
+/// the frame is unpinnable → returns empty; never guesses the frame). Returns
+/// empty on any frame inconsistency rather than emitting a wrong-frame mapping.
+fn positional_mapping(
+    fg: &crate::vg_family::family_graph::FamilyGraph,
+    starved_copy_id: usize,
+    consensus: &[(u64, u64)],
+) -> Vec<(usize, (u64, u64))> {
+    if consensus.is_empty() {
+        return Vec::new();
+    }
+    // 1. Backbone order: node indices sorted by genomic start. Stable tie-break
+    //    on (span, idx) keeps it total-order deterministic.
+    let mut order: Vec<usize> = (0..fg.nodes.len()).collect();
+    order.sort_by(|&a, &b| {
+        fg.nodes[a]
+            .span
+            .cmp(&fg.nodes[b].span)
+            .then(a.cmp(&b))
+    });
+    if order.is_empty() {
+        return Vec::new();
+    }
+
+    // 2. Starved copy's NATIVE coords per backbone rank.
+    let mut native_at_rank: DetHashMap<usize, (u64, u64)> = DetHashMap::default();
+    for (rank, &node_idx) in order.iter().enumerate() {
+        for &(c, sp) in &fg.nodes[node_idx].per_copy_spans {
+            if c == starved_copy_id {
+                native_at_rank.insert(rank, sp);
+            }
+        }
+    }
+    if native_at_rank.is_empty() {
+        return Vec::new(); // C5: refuse to guess the frame.
+    }
+
+    // 3. Anchor the consensus to the backbone. For every (rank, native span)
+    //    find a consensus exon that overlaps it; the implied offset is
+    //    `rank - ci`. Use the FIRST/lowest anchor deterministically; any
+    //    second anchor that implies a DIFFERENT offset = frame inconsistency.
+    let overlaps =
+        |a: (u64, u64), b: (u64, u64)| a.0 < b.1 && b.0 < a.1;
+    let mut ranks: Vec<usize> = native_at_rank.keys().copied().collect();
+    ranks.sort_unstable();
+    let mut offset: Option<i64> = None;
+    for &rank in &ranks {
+        let native = native_at_rank[&rank];
+        for (ci, &cons) in consensus.iter().enumerate() {
+            if overlaps(cons, native) {
+                let off = rank as i64 - ci as i64;
+                match offset {
+                    None => offset = Some(off),
+                    Some(o) if o != off => return Vec::new(), // inconsistent frame
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+    let offset = match offset {
+        Some(o) => o,
+        None => return Vec::new(), // native exists but no consensus exon overlaps it
+    };
+
+    // 4. Map each consensus exon ci → backbone rank r = ci + offset → order[r].
+    //    Validate every exon lands in range (contiguous co-linear by construction).
+    let mut out: Vec<(usize, (u64, u64))> = Vec::with_capacity(consensus.len());
+    for (ci, &cons) in consensus.iter().enumerate() {
+        let r = ci as i64 + offset;
+        if r < 0 || r as usize >= order.len() {
+            return Vec::new(); // maps out of range → frame inconsistent.
+        }
+        out.push((order[r as usize], cons));
+    }
+
+    // 6. Determinism: sort by node_idx.
+    out.sort_by_key(|&(node_idx, _)| node_idx);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -565,5 +725,189 @@ mod tests {
             assert_eq!(t.vg_family_id, Some(0), "tagged with the family id");
             assert!(t.exons.len() >= 2, "emitted paths are multi-exon");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // T1 — consensus_exon_chain
+    // -------------------------------------------------------------------------
+
+    fn sec_owned(
+        start: u64, end: u64, introns: &[(u64, u64)],
+    ) -> crate::vg_family::secondary_index::SecondaryAlignment {
+        sec_aln(0, start, end, introns, 0)
+    }
+
+    #[test]
+    fn consensus_full_agreement_returns_exact_chain() {
+        let s = [
+            sec_owned(30000, 30660, &[(30060, 30300), (30360, 30600)]),
+            sec_owned(30000, 30660, &[(30060, 30300), (30360, 30600)]),
+            sec_owned(30000, 30660, &[(30060, 30300), (30360, 30600)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        let got = consensus_exon_chain(&refs);
+        assert_eq!(
+            got,
+            vec![(30000, 30060), (30300, 30360), (30600, 30660)],
+            "3 identical secondaries reconstruct that exact exon chain"
+        );
+    }
+
+    #[test]
+    fn consensus_jitter_uses_median_terminals_exact_junctions() {
+        // Same introns; ref_start/ref_end jitter a few bp. Interior boundaries are
+        // junction-anchored (crisp); terminals are the MEDIAN of the supporters.
+        let s = [
+            sec_owned(29998, 30658, &[(30060, 30300), (30360, 30600)]),
+            sec_owned(30000, 30660, &[(30060, 30300), (30360, 30600)]),
+            sec_owned(30003, 30662, &[(30060, 30300), (30360, 30600)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        let got = consensus_exon_chain(&refs);
+        assert_eq!(
+            got,
+            vec![(30000, 30060), (30300, 30360), (30600, 30660)],
+            "median start=30000, median end=30660; interior junctions exact"
+        );
+    }
+
+    #[test]
+    fn consensus_disagreement_returns_mode() {
+        // 3 of chain X, 2 of chain Y (different introns) → X wins on support.
+        let s = [
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 320), (380, 500)]),
+            sec_owned(100, 560, &[(160, 320), (380, 500)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        let got = consensus_exon_chain(&refs);
+        assert_eq!(
+            got,
+            vec![(100, 160), (300, 360), (500, 560)],
+            "mode chain X recovered, not Y"
+        );
+    }
+
+    #[test]
+    fn consensus_single_read_returns_empty() {
+        let s = [sec_owned(100, 560, &[(160, 300), (360, 500)])];
+        let refs: Vec<&_> = s.iter().collect();
+        assert!(
+            consensus_exon_chain(&refs).is_empty(),
+            "support<2 → no consensus (never fabricate from one read)"
+        );
+    }
+
+    #[test]
+    fn consensus_empty_input_returns_empty() {
+        assert!(consensus_exon_chain(&[]).is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // T2 — positional_mapping
+    // -------------------------------------------------------------------------
+
+    /// Backbone of `spans.len()` nodes; for each (rank, span) the listed copies
+    /// are recorded in per_copy_spans at the GIVEN per-copy coordinate. `well`
+    /// supplies the node's union `span` (the well copy's coordinate).
+    fn mk_backbone(
+        well: &[(u64, u64)],
+        per_copy: &[Vec<(usize, (u64, u64))>],
+    ) -> FamilyGraph {
+        use crate::vg_family::family_graph::{ExonClass, NodeIdx};
+        let nodes = well
+            .iter()
+            .enumerate()
+            .map(|(i, &span)| ExonClass {
+                idx: NodeIdx(i),
+                chrom: "chrT".into(),
+                span,
+                strand: '+',
+                per_copy_sequences: per_copy[i].iter().map(|(c, _)| (*c, Vec::new())).collect(),
+                per_copy_spans: per_copy[i].clone(),
+                copy_specific: per_copy[i].len() == 1,
+                per_copy_cov: Vec::new(),
+            })
+            .collect();
+        FamilyGraph { family_id: 0, nodes, edges: Vec::new() }
+    }
+
+    #[test]
+    fn positional_cross_locus_returns_starved_copy_coords() {
+        // Well copy (0) at backbone coords; starved copy (1) native ONLY at node 0
+        // (its real coord 30000-30060). Consensus = the starved copy's own 3-exon
+        // chain. Mapping must place exons 2+3 onto node1/node2 at the STARVED
+        // copy's coords, NOT the well copy's backbone coords.
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360))],
+                vec![(0, (500, 560))],
+            ],
+        );
+        let consensus = [(30000, 30060), (30300, 30360), (30600, 30660)];
+        let got = positional_mapping(&fg, 1, &consensus);
+        assert_eq!(
+            got,
+            vec![
+                (0, (30000, 30060)),
+                (1, (30300, 30360)),
+                (2, (30600, 30660)),
+            ],
+            "transferred spans are the STARVED copy's coords, not the well copy's"
+        );
+    }
+
+    #[test]
+    fn positional_no_anchor_returns_empty() {
+        // Starved copy (1) has zero per_copy_spans entries anywhere.
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[vec![(0, (100, 160))], vec![(0, (300, 360))], vec![(0, (500, 560))]],
+        );
+        let consensus = [(30000, 30060), (30300, 30360), (30600, 30660)];
+        assert!(
+            positional_mapping(&fg, 1, &consensus).is_empty(),
+            "no native anchor → frame unpinnable → empty (never guess)"
+        );
+    }
+
+    #[test]
+    fn positional_overflow_returns_empty() {
+        // Anchor at node 0 fixes offset 0, but the consensus has more exons than
+        // the backbone can hold → frame inconsistent → empty.
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360)],
+            &[vec![(0, (100, 160)), (1, (30000, 30060))], vec![(0, (300, 360))]],
+        );
+        let consensus = [(30000, 30060), (30300, 30360), (30600, 30660)];
+        assert!(
+            positional_mapping(&fg, 1, &consensus).is_empty(),
+            "consensus longer than backbone from the anchor → empty"
+        );
+    }
+
+    #[test]
+    fn positional_inconsistent_offsets_return_empty() {
+        // Starved copy native at node 0 AND node 2, but the consensus overlaps
+        // those native spans at offsets that disagree → frame inconsistent → empty.
+        // node0 native (30000,30060) overlaps consensus[0] → offset 0.
+        // node2 native (30600,30660) overlaps consensus[1] (30550,30660) → offset 1.
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360))],
+                vec![(0, (500, 560)), (1, (30600, 30660))],
+            ],
+        );
+        let consensus = [(30000, 30060), (30550, 30660), (30900, 30960)];
+        assert!(
+            positional_mapping(&fg, 1, &consensus).is_empty(),
+            "anchors imply inconsistent offsets → empty (no wrong-frame map)"
+        );
     }
 }
