@@ -182,8 +182,32 @@ pub fn decompose_family_paths(
         if !linkage_ok {
             continue;
         }
-        let exons: Vec<(u64, u64)> =
-            nodes_of_copy.iter().map(|&i| fg.nodes[i].span).collect();
+        // Emit this copy's OWN coordinates per node — NOT the node's `span`, which
+        // is the UNION of all contributing copies' spans and, for paralogs at
+        // different genomic loci, would fabricate a cross-copy chimeric transcript.
+        // A node where this copy contributes natively → its `per_copy_spans` entry.
+        // An amendment-borrowed node is only placeable if its contributing copies
+        // are CO-LOCATED (all per_copy_spans identical); a cross-locus union is
+        // ambiguous (recovering the borrowing copy's true coordinates needs
+        // homology coordinate-transfer — future work) → drop the path rather than
+        // emit wrong coordinates.
+        let exons: Option<Vec<(u64, u64)>> = nodes_of_copy
+            .iter()
+            .map(|&i| {
+                let n = &fg.nodes[i];
+                if let Some((_, sp)) = n.per_copy_spans.iter().find(|(c, _)| *c == copy) {
+                    return Some(*sp);
+                }
+                let first = n.per_copy_spans.first().map(|(_, s)| *s);
+                match first {
+                    Some(f) if n.per_copy_spans.iter().all(|(_, s)| *s == f) => Some(f),
+                    _ => None,
+                }
+            })
+            .collect();
+        let Some(exons) = exons else {
+            continue; // cross-locus coordinate ambiguity → don't emit (no chimera)
+        };
         let flow = nodes_of_copy
             .windows(2)
             .map(|w| edge_flow[&(w[0], w[1])])

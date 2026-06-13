@@ -97,7 +97,14 @@ if [ ! -f "$CHRY_BAM" ]; then
 fi
 check_chrom chrY "$CHRY_BAM"
 
-echo "== (5) simulated paralog: Layer-2 recovers the starved copy =="
+# (5) simulated 2-copy paralog NO-FALSE-POSITIVE check. Both copies already
+# assemble in --vg (copyB is NOT starved here — its 5 primary reads suffice), so
+# Layer 2 must add NOTHING: layer2 == default. This guards against the chimeric
+# cross-copy emission bug (decompose emitting a node's union span instead of
+# per-copy coordinates) that this fixture originally exposed. (A genuine
+# starved-copy RECOVERY fixture — needing homology coordinate-transfer — is
+# separate future work.)
+echo "== (5) simulated paralog: Layer-2 emits NO chimera (layer2 == default) =="
 SIM_BAM=${SIM_BAM:-bench/fixtures/sim_paralog.bam}
 SIM_FA=${SIM_FA:-bench/fixtures/sim_paralog.fa}
 if [ -f "$SIM_BAM" ] && [ -f "$SIM_FA" ]; then
@@ -106,9 +113,13 @@ if [ -f "$SIM_BAM" ] && [ -f "$SIM_FA" ]; then
   d=$(grep -c $'\ttranscript\t' /tmp/layer2/sim_default.gtf || true)
   l=$(grep -c $'\ttranscript\t' /tmp/layer2/sim_layer2.gtf || true)
   echo "  sim transcripts: default=$d layer2=$l"
-  python3 scripts/coord_signature_superset.py /tmp/layer2/sim_layer2.gtf /tmp/layer2/sim_default.gtf \
-    && echo "  OK: layer2 ⊇ default on sim"
-  [ "$l" -gt "$d" ] && echo "  OK: Layer-2 recovered $((l-d)) extra isoform(s) on sim" || echo "  WARN: no extra sim isoforms"
+  if python3 "$SUPERSET" /tmp/layer2/sim_layer2.gtf /tmp/layer2/sim_default.gtf >/dev/null \
+     && python3 "$SUPERSET" /tmp/layer2/sim_default.gtf /tmp/layer2/sim_layer2.gtf >/dev/null; then
+    echo "  OK: layer2 == default on sim (no chimera, no spurious addition)"
+  else
+    echo "  FAIL: layer2 != default on sim — Layer 2 emitted a spurious/chimeric chain"
+    exit 1
+  fi
 else
   echo "  SKIP: $SIM_BAM / $SIM_FA not present"
 fi
