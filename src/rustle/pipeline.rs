@@ -10414,6 +10414,28 @@ pub fn run<P: AsRef<Path>>(
         chrom_filter,
         vg_snp_genome.as_ref(),
     )?;
+    // Layer 2 (C1): build the secondary side-index when --vg-layer2 is on. Additive
+    // and default-off; with Layer 2 off the default path is untouched (VG ⊇ baseline
+    // / RUSTLE_PRECISE byte-identity preserved by construction). Built + logged here;
+    // discovery/merge/amend consumers are wired in later milestones (M3.2/M4.3).
+    if config.vg_mode && config.vg_layer2 {
+        let mut side_index = crate::bundle::collect_secondary_index_from_bam(
+            bam_path.as_ref(),
+            chrom_filter,
+            &config,
+        )?;
+        let locus_spans: Vec<(String, u64, u64)> = bundles
+            .iter()
+            .map(|b| (b.chrom.clone(), b.start, b.end))
+            .collect();
+        side_index.assign_loci(&locus_spans);
+        eprintln!(
+            "[layer2] side-index: {} secondary alignments, {} reads across {} bundles",
+            side_index.len(),
+            side_index.n_reads(),
+            bundles.len()
+        );
+    }
     if crate::tracing::pipeline::active() {
         for b in &bundles {
             crate::tracing::pipeline::dump_bundle(
