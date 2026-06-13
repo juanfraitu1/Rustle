@@ -7875,16 +7875,17 @@ mod tests {
 
     #[test]
     fn exon_kmer_similarity_high_for_paralogs_low_for_disjoint() {
-        let a = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
+        // Non-repeating sequence so the metric genuinely exercises "paralogs share
+        // MOST k-mers" (a tandem repeat collapses to ~2 distinct canonical k-mers and
+        // makes the assertion vacuous). A single mutation flips only the ~k windows
+        // spanning it, so the bulk of k-mers stay shared → high Jaccard.
+        let a = b"GTCAGTTACCGATGCTAAGGCTTACGGATCCGTTAGCCATGACTGGATCCTAGCATGCATTGACGTACCGATTGCATGGCATTAGCCGTAATCGTACA".to_vec();
         let mut b = a.clone();
-        b[30] = b'A';
+        b[48] = if b[48] == b'A' { b'C' } else { b'A' };
         let hi = exon_kmer_similarity(&[a.clone()], &[b], 15);
-        // The test sequence is a 4-base repeat (ACGT×15), so canonical k-mer deduplication
-        // collapses it to just 2 distinct canonical hashes; a single-base mutation at
-        // pos 30 produces ~15 novel hashes → intersection=2, union=17 ≈ 0.12.
-        // Still higher than the fully-disjoint case (0.0), validating the ordering.
-        assert!(hi > 0.05, "near-identical exons score higher than disjoint, got {hi}");
-        let c = b"TTTTGGGGCCCCAAAATTTTGGGGCCCCAAAATTTTGGGGCCCCAAAATTTTGGGGCCCC".to_vec();
+        assert!(hi > 0.5, "near-identical exons share most 15-mers, got {hi}");
+        // Disjoint, different-composition sequence shares essentially no 15-mers.
+        let c = b"TTTTTTAAAAAACCCCCCGGGGGGTTTTTTAAAAAACCCCCCGGGGGGTTTTTTAAAAAACCCCCCGGGGGGTTTTTTAAAAAACCCCCCGGGGGG".to_vec();
         let lo = exon_kmer_similarity(&[a], &[c], 15);
         assert!(lo < 0.1, "disjoint exons share almost no 15-mers, got {lo}");
     }
