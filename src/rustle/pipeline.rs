@@ -19621,10 +19621,14 @@ pub fn run<P: AsRef<Path>>(
             .map(|t| chain_of(t))
             .collect();
         let mut seen: std::collections::HashSet<Vec<(u64, u64)>> = std::collections::HashSet::new();
+        // Layer-2 floor must guarantee VG ⊇ baseline → do NOT re-drop a low-longcov
+        // baseline chain. Default the floor to 0.0 under --vg-layer2 (the legacy env
+        // path keeps its 2.0 default).
+        let default_min_longcov = if config.vg_layer2 { 0.0 } else { 2.0 };
         let min_longcov: f64 = std::env::var("RUSTLE_VG_UNION_BASELINE_MIN_LONGCOV")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(2.0);
+            .unwrap_or(default_min_longcov);
         let mut added = 0usize;
         for mut t in std::mem::take(&mut union_baseline_holdout) {
             if t.exons.len() < 2 {
