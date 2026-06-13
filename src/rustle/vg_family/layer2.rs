@@ -1,4 +1,6 @@
-//! Layer-2 orchestrator (C2–C6). Reads Layer-1 splice graphs and the C1
+//! Layer-2 orchestrator. Implements C2–C3 (family discovery + variation-graph
+//! merge); C4–C6 (secondary amendment, constrained flow-decomposition, emission)
+//! are deferred to later milestones. Reads Layer-1 splice graphs and the C1
 //! side-index; never re-bundles, never re-splits, never shifts a coordinate.
 //! Default-off behind `config.vg_layer2`.
 
@@ -11,8 +13,11 @@ use crate::vg_family::family_graph::FamilyGraph;
 use crate::vg_family::secondary_index::SecondaryIndex;
 use anyhow::Result;
 
-/// Clustering thresholds passed through to the family-graph merge (conservative
-/// defaults matching the bundle-path `build_family_graph` invocation).
+/// Clustering thresholds passed through to the family-graph merge. Layer-2
+/// families are already screened by `min_similarity` at discovery, so positional
+/// overlap is left permissive (0.0 — accept any) rather than the bundle path's
+/// stricter `min_pos_recip`; minimizer-refinement is likewise left to the
+/// `merge_min_jaccard` (= `min_similarity`) stage. (NOT the bundle-path values.)
 const FG_MIN_POS_RECIP: f64 = 0.0;
 const FG_REFINE_MIN_JACCARD: f64 = 0.0;
 
@@ -35,6 +40,15 @@ pub struct Layer1Locus<'a> {
 ///
 /// `primary_locus[read_name_hash] = bundle index of the read's primary`. The
 /// side-index is consumed (pruned to family-candidate loci, capped per locus).
+///
+/// CALLER CONTRACT (M4.3 wiring): every value in `primary_locus` and every
+/// `SecondaryAlignment::locus` in `side_index` MUST be a valid index into `loci`
+/// (i.e. < `loci.len()`) — they are used to index `loci` directly. The pipeline
+/// builds both from the same bundle list `loci` is derived from, so this holds by
+/// construction; a `debug_assert!` below catches violations in test/debug builds.
+///
+/// With `genome = None`, similarity is never computed (`similarity` stays empty);
+/// families then form on link count alone iff `min_similarity <= 0.0`.
 #[allow(clippy::too_many_arguments)]
 pub fn run_layer2(
     loci: &[Layer1Locus<'_>],
@@ -49,6 +63,10 @@ pub fn run_layer2(
 ) -> Result<Layer2Output> {
     // (C2) candidate links → compute similarity only for linked, same-chrom pairs.
     let links = crate::vg::build_multimap_index_from_secondary_index(&side_index, primary_locus);
+    debug_assert!(
+        links.iter().all(|((a, b), _)| *a < loci.len() && *b < loci.len()),
+        "run_layer2: link locus index out of range of loci slice (caller contract)"
+    );
     let mut similarity: DetHashMap<(usize, usize), f64> = DetHashMap::default();
     if let Some(g) = genome {
         for ((a, b), count) in &links {
