@@ -11100,6 +11100,13 @@ pub fn run<P: AsRef<Path>>(
     // (opt-in RUSTLE_VG_RESCUE_REPORT). Empty unless that report is requested.
     let mut vg_copy_certificate: std::collections::HashMap<(usize, usize), crate::vg::CopyCertificate> =
         std::collections::HashMap::new();
+    // Layer 2 (M-FLOOR) producer: pre-EM baseline clones of family-member bundles.
+    // Captured below (inside the EM arm, BEFORE the family EM reweights reads) and
+    // injected into bundles_vec after the dead UNION_BASELINE block, so the existing
+    // assembly reproduces baseline chains the EM would otherwise zero out. Declared at
+    // function scope because the capture point (family/EM block) and the injection
+    // point (bundles_vec) live in disjoint inner scopes. Gated default-off (vg_layer2).
+    let mut layer2_baseline_clones: Vec<crate::types::Bundle> = Vec::new();
 
     // Classify every discovered family (annotation-only), INDEPENDENT of EM
     // eligibility: families the EM skips for compute reasons (too_many_copies,
@@ -11352,6 +11359,35 @@ pub fn run<P: AsRef<Path>>(
                         // exact current behavior: strand-split input + its graphs
                         (em_partitions.clone(), family_graphs.clone())
                     };
+
+                    // Layer 2 (M-FLOOR): capture a pre-EM baseline clone of every family-member
+                    // bundle. The family EM (below) zeroes multimapper read weights in their
+                    // original bundle, so a copy's baseline chain can vanish from VG output. We
+                    // clone here — BEFORE reweighting — so the clone keeps baseline (pre-EM)
+                    // weights; assembling it reproduces the dropped baseline chain. Injected into
+                    // bundles_vec after EM, held out of predcluster, unioned back by chain
+                    // (strictly additive ⇒ VG ⊇ baseline). Gated default-off via --vg-layer2.
+                    if config.vg_layer2 {
+                        let mut seen_idx: crate::types::DetHashSet<usize> = crate::types::DetHashSet::default();
+                        for fam in families_for_em.iter() {
+                            for &bi in fam.bundle_indices.iter() {
+                                if !seen_idx.insert(bi) {
+                                    continue;
+                                }
+                                if let Some(b) = bundles.get(bi) {
+                                    if b.reads.is_empty() {
+                                        continue;
+                                    }
+                                    let reads = b.reads.clone(); // pre-EM weights
+                                    layer2_baseline_clones.push(build_fresh_baseline_subbundle(b, reads, &config));
+                                }
+                            }
+                        }
+                        eprintln!(
+                            "[layer2-floor] captured {} pre-EM baseline clone(s) of family bundles",
+                            layer2_baseline_clones.len()
+                        );
+                    }
 
                     // Collector for gene-conversion (mosaic) events, surfaced to the GTF.
                     let mut mosaic_events: crate::types::DetHashMap<usize, Vec<crate::vg_family::mosaic::ConversionEvent>> = Default::default();
@@ -12433,6 +12469,15 @@ pub fn run<P: AsRef<Path>>(
             );
         }
         bundles_vec.extend(clones);
+    }
+    if config.vg_layer2 && !layer2_baseline_clones.is_empty() {
+        let mut next_idx = bundles_vec.len();
+        let n = layer2_baseline_clones.len();
+        for sub in std::mem::take(&mut layer2_baseline_clones) {
+            bundles_vec.push((next_idx, sub));
+            next_idx += 1;
+        }
+        eprintln!("[layer2-floor] injected {n} baseline-floor clone bundle(s) for assembly");
     }
     if std::env::var_os("RUSTLE_VG_FAMILY_DEBUG_SYNTHETIC").is_some() {
         let n_synth = bundles_vec.iter().filter(|(_, b)| b.synthetic).count();
@@ -17611,7 +17656,9 @@ pub fn run<P: AsRef<Path>>(
     // at the very end — so the VG output is byte-identical to the no-union run, plus only
     // the baseline isoforms VG dropped. Guarantees output ⊇ no-union VG output.
     let mut union_baseline_holdout: Vec<crate::path_extract::Transcript> = Vec::new();
-    if config.vg_mode && std::env::var_os("RUSTLE_VG_UNION_BASELINE").is_some() {
+    if config.vg_mode
+        && (config.vg_layer2 || std::env::var_os("RUSTLE_VG_UNION_BASELINE").is_some())
+    {
         let mut kept: Vec<crate::path_extract::Transcript> =
             Vec::with_capacity(all_transcripts.len());
         for t in all_transcripts.drain(..) {
