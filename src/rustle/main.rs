@@ -575,16 +575,6 @@ struct Args {
     #[arg(long = "vg-junction-bonus", default_value_t = 0.0)]
     vg_junction_bonus: f64,
 
-    /// Force EM to use a uniform prior over copies — disables the
-    /// iterative M-step's prior update so the per-(read, copy) posterior
-    /// is driven purely by HMM (+ SNP, + junction) log-likelihood.  Use to
-    /// empirically test whether EM iteration is doing real work on your
-    /// data: if `--vg-em-uniform-prior` produces the same gffcompare
-    /// numbers as the default, the cross-read prior inheritance isn't
-    /// load-bearing for this dataset.  Off by default.
-    #[arg(long = "vg-em-uniform-prior")]
-    vg_em_uniform_prior: bool,
-
     /// Exon-length penalty (nats per bp of length mismatch) added to
     /// HMM-EM's per-(read, copy) log-likelihood.  `0.0` (default) →
     /// unchanged behaviour.  For each exon the read spans, contributes
@@ -840,7 +830,6 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_em_max_copies: args.vg_em_max_copies,
         vg_em_max_work: args.vg_em_max_work,
         vg_junction_bonus: args.vg_junction_bonus,
-        vg_em_uniform_prior: args.vg_em_uniform_prior,
         vg_exon_len_penalty: args.vg_exon_len_penalty,
         vg_em_skip_intronless: !args.vg_em_no_skip_intronless,
         vg_family_min_shared: args.vg_family_min_shared,

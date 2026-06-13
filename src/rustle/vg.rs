@@ -4835,6 +4835,24 @@ fn run_pre_assembly_em_inner(
 /// family graph), returns a default (no-op) EmResult for that family.
 /// Uses BundleRead.seq (always populated in VG mode) via snp_compatibility,
 /// so does not require --vg-snp or BundleRead.mismatches.
+/// EM restriction gate predicate: should the fingerprint-EM run on a family with `n_tied` tied
+/// (NM-ambiguous) multimappers?
+///
+/// The EM is only non-redundant when there is a genuine tie to resolve: a multimapper that NM-argmax
+/// cannot decisively place (`n_tied >= 1`). The EM then breaks it — via copy-distinguishing PSVs if
+/// the family has them, or via the abundance prior (or pileup-depth fallback) if it does not. When
+/// every multimapper is already decisively NM-owned (`n_tied == 0`), argmax == EM for assignment, so
+/// the EM only churns coverage numbers without changing structure; that family abstains to 1/NH.
+///
+/// Note the gate keys ONLY on the presence of a tie, NOT on PSV count or an anchor: a tied family
+/// with 0 PSVs and 0 anchored mass (e.g. DAZ-like identical copies, or a mixed-strand inverted pair)
+/// still needs the EM — its pileup-prior apportionment prevents the non-starved copy from
+/// over-counting, and it sets `em_anchored=false` so `capacity_confidence` is not defaulted to 1.0.
+/// Pure function (no I/O) — see docs/.../2026-06-12-em-restriction-and-psv-fasta-design.md.
+pub(crate) fn em_family_qualifies(n_tied: usize) -> bool {
+    n_tied >= 1
+}
+
 pub fn run_fingerprint_em(
     families: &[FamilyGroup],
     bundles: &mut [Bundle],
@@ -4848,6 +4866,11 @@ pub fn run_fingerprint_em(
     let mut results = Vec::with_capacity(families.len());
     let convergence_thr = 0.001;
     let t_start = std::time::Instant::now();
+    // EM restriction (default ON; opt-out RUSTLE_VG_EM_LEGACY=1): tally families the gate ran vs
+    // skipped (abstained to 1/NH). See em_family_qualifies.
+    let em_legacy = std::env::var_os("RUSTLE_VG_EM_LEGACY").is_some();
+    let mut em_gate_ran = 0usize;
+    let mut em_gate_skipped = 0usize;
 
     // Score-gap gate: fingerprint evidence requires a large gap (default 10.0 log-units)
     // to be decisive. Structural-only evidence (junction chain + alignment identity,
@@ -4891,6 +4914,12 @@ pub fn run_fingerprint_em(
     });
 
     for (fam_idx, family) in families.iter().enumerate() {
+        // `--vg-em-iter 0` now truly disables the EM (previously silently overridden to 1 iter when
+        // the anchor prior was on, vg.rs effective_max_iter): abstain to incoming 1/NH weights.
+        if max_iter == 0 {
+            results.push(EmResult::default());
+            continue;
+        }
         let n_copies = family.bundle_indices.len();
         if n_copies < 2 || family.multimap_reads.is_empty() {
             results.push(EmResult::default());
@@ -4941,6 +4970,24 @@ pub fn run_fingerprint_em(
                 "[VG-FP-EM] Family {}: 0 diagnostic sites — pileup-depth-prior fallback (identical copies)",
                 family.family_id
             );
+        }
+
+        // EM restriction gate (default ON; opt-out RUSTLE_VG_EM_LEGACY=1): run the EM body only on
+        // families with a genuine tie to resolve — a multimapper NM-argmax cannot decisively place.
+        // When every multimapper is already decisively NM-owned, argmax == EM for assignment, so the
+        // EM only churns coverage numbers; that family abstains and its reads keep their incoming
+        // 1/NH weights (byte-identical for this family to the EM never having run).
+        // compute_copy_ownership mirrors the (t=2, extent_frac=0.8) params of the
+        // anchored_mass_per_copy call below.
+        if !em_legacy {
+            let own = compute_copy_ownership(family, bundles, 2, 0.8);
+            let n_tied: usize = own.iter().map(|o| o.n_tied).sum();
+            if !em_family_qualifies(n_tied) {
+                em_gate_skipped += 1;
+                results.push(EmResult::default());
+                continue;
+            }
+            em_gate_ran += 1;
         }
 
         // Gene-conversion mosaic-read detection (audit theme: "VG finds unusual exon
@@ -5439,6 +5486,12 @@ pub fn run_fingerprint_em(
         results.iter().filter(|r| r.reads_reweighted > 0).count(),
         t_start.elapsed().as_secs_f64(),
     );
+    if !em_legacy {
+        eprintln!(
+            "[VG-FP-EM] EM gate: ran {} / skipped {} families (abstained to 1/NH; RUSTLE_VG_EM_LEGACY=1 to disable gate)",
+            em_gate_ran, em_gate_skipped,
+        );
+    }
     results
 }
 
@@ -6458,6 +6511,14 @@ mod tests {
     use crate::vg_family::family_graph::{ExonClass, FamilyGraph, NodeIdx};
 
     fn approx(a: f64, b: f64) -> bool { (a - b).abs() < 1e-9 }
+
+    #[test]
+    fn em_gate_runs_only_when_a_tie_exists() {
+        // Run iff there is a genuine tie to resolve; abstain when argmax already decides everything.
+        assert!(em_family_qualifies(1), "1 tied multimapper -> run");
+        assert!(em_family_qualifies(5), "many ties -> run");
+        assert!(!em_family_qualifies(0), "no ties (all decisively NM-owned) -> abstain (argmax==EM)");
+    }
 
     fn conv_event(confirmed: bool, br: (u64, u64), n: usize, disp: u64) -> crate::vg_family::mosaic::ConversionEvent {
         crate::vg_family::mosaic::ConversionEvent {

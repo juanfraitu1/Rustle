@@ -984,13 +984,6 @@ pub struct RunConfig {
     /// Recommended range: 1.0–3.0 nats per missed junction.  See
     /// `--vg-junction-bonus`.
     pub vg_junction_bonus: f64,
-    /// Disable the EM prior term so every iteration uses a *uniform* prior over
-    /// copies — i.e. the per-(read, copy) posterior is driven purely by HMM
-    /// (+ SNP, + junction) log-likelihood, with no cross-read prior inheritance.
-    /// Used to answer the empirical question "does EM's iterative prior
-    /// estimation actually do work on real data, or is the per-read HMM score
-    /// already decisive?".  See `--vg-em-uniform-prior`.  Default false.
-    pub vg_em_uniform_prior: bool,
     /// Exon-length penalty coefficient added to HMM-EM's per-(read, copy)
     /// log-likelihood. For each exon a read spans, the contribution is
     /// `-vg_exon_len_penalty * |len_read_exon − len_copy_exon|`. Targets the
@@ -1290,7 +1283,6 @@ impl Default for RunConfig {
             vg_em_max_copies: 40,
             vg_em_max_work: 2000,
             vg_junction_bonus: 0.0,
-            vg_em_uniform_prior: false,
             vg_exon_len_penalty: 0.0,
             vg_em_skip_intronless: true,
             vg_family_min_shared: 10,
