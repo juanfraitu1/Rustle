@@ -16,7 +16,7 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 
 /// FNV-1a hash matching bam.rs read_name_hash computation.
-fn fnv1a64(s: &[u8]) -> u64 {
+pub fn fnv1a64(s: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for &b in s {
         h ^= b as u64;

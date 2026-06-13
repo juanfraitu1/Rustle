@@ -1253,6 +1253,79 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
     (Some(head), read_bnodes_new, sorted_colors, read_scales)
 }
 
+/// C1 — Build the secondary side-index from a BAM in a dedicated pass.
+///
+/// Reads ONLY the secondary/supplementary records the Phase-1 gate at
+/// `bundle.rs:1413-1438` drops from `bundle.reads`. Mirrors that gate's
+/// predicate (secondary/supplementary AND `config.long_reads` AND long-class)
+/// so it captures exactly what Phase 1 dropped. Primaries are skipped (Layer 1's
+/// job). Parsing reuses `record_to_bundle_read` so the side-index never diverges
+/// from the in-bundle parser. `chrom_filter` restricts to one chromosome
+/// (whole-genome `-L` OOMs; per-chrom serial only). Locus assignment is left to
+/// `SecondaryIndex::assign_loci`.
+pub fn collect_secondary_index_from_bam<P: AsRef<std::path::Path>>(
+    bam_path: P,
+    chrom_filter: Option<&str>,
+    config: &RunConfig,
+) -> anyhow::Result<crate::vg_family::secondary_index::SecondaryIndex> {
+    use crate::vg_family::secondary_index::{SecondaryAlignment, SecondaryIndex};
+
+    let mut reader = open_bam(&bam_path, 1)?;
+    let header = reader.read_header()?;
+    let mut record = noodles_sam::alignment::RecordBuf::default();
+
+    let mut idx = SecondaryIndex::new();
+    while reader.read_record_buf(&header, &mut record)? > 0 {
+        let flags = record.flags();
+        let is_secondary = flags.is_secondary();
+        let is_supplementary = flags.is_supplementary();
+        if !is_secondary && !is_supplementary {
+            continue; // primaries are Layer 1's; never captured here
+        }
+        // Gate-mirroring: only capture what Phase 1 would have dropped.
+        if !config.long_reads {
+            continue;
+        }
+        let name = match record
+            .reference_sequence(&header)
+            .transpose()
+            .ok()
+            .flatten()
+            .map(|(n, _)| String::from_utf8_lossy(n).into_owned())
+        {
+            Some(n) => n,
+            None => continue,
+        };
+        if let Some(cf) = chrom_filter {
+            if name != cf {
+                continue;
+            }
+        }
+        let Some(read) = crate::bam::record_to_bundle_read(&record) else {
+            continue;
+        };
+        if !read_is_long_class(&read, config) {
+            continue;
+        }
+        let introns: Vec<(u64, u64)> = read
+            .exons
+            .windows(2)
+            .map(|w| (w[0].1, w[1].0))
+            .collect();
+        idx.push(SecondaryAlignment {
+            read_name_hash: read.read_name_hash,
+            chrom: name,
+            ref_start: read.ref_start,
+            ref_end: read.ref_end,
+            introns,
+            nm: read.nm,
+            is_supplementary,
+            locus: None,
+        });
+    }
+    Ok(idx)
+}
+
 /// Detect bundles from BAM and optionally use a reference FASTA for SNP extraction.
 pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
     bam_path: P,

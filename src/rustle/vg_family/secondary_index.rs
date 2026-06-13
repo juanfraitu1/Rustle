@@ -213,6 +213,9 @@ impl SecondaryIndex {
     }
 }
 
+/// Re-export the bundle-side collector so tests + the pipeline have one path.
+pub use crate::bundle::collect_secondary_index_from_bam;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,5 +340,45 @@ mod tests {
         assert_eq!(idx.alignments()[0].locus, Some(0), "equal overlap → lowest index wins");
         assert_eq!(idx.alignments()[1].locus, None, "no overlapping locus → None");
         assert_eq!(idx.alignments()[2].locus, None, "different chromosome → None");
+    }
+
+    #[test]
+    fn collector_captures_secondaries_not_primaries() {
+        // Fixture: one primary + one secondary (FLAG 0x100), same QNAME on chrT.
+        // The collector must store ONLY the secondary. config.long_reads true so
+        // the gate-mirroring predicate admits the record.
+        let mut config = crate::types::RunConfig::default();
+        config.long_reads = true;
+        let idx = super::collect_secondary_index_from_bam(
+            "bench/fixtures/mini_secondary.bam",
+            Some("chrT"),
+            &config,
+        )
+        .expect("collect from fixture bam");
+        assert_eq!(idx.len(), 1, "exactly one secondary captured");
+        assert!(!idx.alignments()[0].is_supplementary, "it is a SECONDARY");
+        assert_eq!(idx.n_reads(), 1, "one distinct read");
+        assert_eq!(idx.alignments()[0].nm, 1, "NM tag parsed via the shared helper");
+        assert_eq!(
+            idx.alignments()[0].read_name_hash,
+            crate::vg::fnv1a64(b"read_xmap")
+        );
+    }
+
+    #[test]
+    fn collector_intron_chain_matches_bundle_parser() {
+        // Prove intron-chain derivation uses the shared exon parser
+        // (bam::exons_from_cigar). "10M100N10M" at 0-based 100 → one intron (110,210).
+        use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+        use noodles_sam::alignment::record_buf::Cigar;
+        let cigar: Cigar = vec![Op::new(Kind::Match, 10), Op::new(Kind::Skip, 100), Op::new(Kind::Match, 10)]
+            .into_iter()
+            .collect();
+        let exons = crate::bam::exons_from_cigar(100, &cigar).unwrap();
+        let introns: Vec<(u64, u64)> = exons
+            .windows(2)
+            .map(|w| (w[0].1, w[1].0))
+            .collect();
+        assert_eq!(introns, vec![(110, 210)], "intron chain from shared exon parser");
     }
 }
