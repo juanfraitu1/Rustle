@@ -297,6 +297,23 @@ pub fn run_layer2(
         &side_index, primary_locus, &similarity, min_link, min_similarity,
     );
 
+    if std::env::var_os("RUSTLE_LAYER2_DEBUG").is_some() {
+        eprintln!(
+            "[layer2-dbg] {} cross-map link(s) over {} loci; min_link={min_link} min_sim={min_similarity}",
+            links.len(),
+            loci.len()
+        );
+        for ((a, b), count) in &links {
+            let sim = similarity.get(&(*a, *b)).copied();
+            let na = loci.get(*a).map(|l| l.graph.nodes.len()).unwrap_or(0);
+            let nb = loci.get(*b).map(|l| l.graph.nodes.len()).unwrap_or(0);
+            eprintln!(
+                "[layer2-dbg]   link ({a},{b}) count={count} sim={sim:?} graph_nodes a={na} b={nb}"
+            );
+        }
+        eprintln!("[layer2-dbg] {} families formed", families.len());
+    }
+
     // (C1 prune) keep only family-candidate loci, cap per locus (logged drops).
     let keep: DetHashSet<usize> = families
         .iter()

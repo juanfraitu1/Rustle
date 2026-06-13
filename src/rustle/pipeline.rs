@@ -15447,6 +15447,18 @@ pub fn run<P: AsRef<Path>>(
                     bundle.start,
                     bundle.end,
                 )));
+                // (M4.3b) Capture the per-locus splice graph for Layer 2 BEFORE
+                // extraction. `extract_bundle_transcripts_for_graph` depletes the
+                // graph (a thin bundle that yields 0 transcripts ends up with 0
+                // nodes), so a post-extract capture is useless for the family merge.
+                // The pre-extract graph is the true Layer-1 splice graph (all exon
+                // nodes). `layer2_graph_capture_ref` is `Copy` (an `&`), usable in
+                // this parallel closure; None when --vg-layer2 is off (no-op).
+                if let Some(cap) = layer2_graph_capture_ref {
+                    if let Some(slot) = cap.get(bundle_idx) {
+                        *slot.lock().unwrap() = Some(graph_mut.clone());
+                    }
+                }
                 let (
                     txs,
                     pre_filter_txs,
@@ -15469,14 +15481,6 @@ pub fn run<P: AsRef<Path>>(
                     trace_reference.is_some() || config.debug_stage_tsv.is_some(),
                 );
                 crate::path_extract::set_parent_partition_for_dump(None);
-                // (M4.3b) Capture the finalized per-locus splice graph for Layer 2.
-                // `layer2_graph_capture_ref` is `Copy` (an `&`), so it is usable inside
-                // this parallel closure. None when --vg-layer2 is off (no-op).
-                if let Some(cap) = layer2_graph_capture_ref {
-                    if let Some(slot) = cap.get(bundle_idx) {
-                        *slot.lock().unwrap() = Some(graph_mut.clone());
-                    }
-                }
                 // BUNDLE_STATS per-bundle summary across all layers (RUSTLE_BUNDLE_STATS=1).
                 // Emits one line with: reads, junctions, nodes/edges, transfrags,
                 // seeds, outcome counts. Paired with StringTie PARITY_BUNDLE_STATS
