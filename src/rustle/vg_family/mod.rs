@@ -16,6 +16,7 @@ pub mod segdup;
 pub mod hidden_copy;
 pub mod phasing;
 pub mod secondary_index;
+pub mod layer2;
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
