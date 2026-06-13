@@ -2130,6 +2130,39 @@ fn parity_forced_drop_junctions(chrom: &str, start: u64, end: u64) -> Vec<Juncti
         .unwrap_or_default()
 }
 
+/// Runtime registry of family-consensus-vetoed junctions, keyed by chromosome, holding
+/// `(strand, donor, acceptor)` tuples (a single whole-genome table — vetoes from every chromosome
+/// and family are merged). Populated ONCE in the VG family block (when `RUSTLE_VG_CONSENSUS_CORRECT`
+/// is set and not in precise mode) and consulted in the per-bundle assembly loop to drop a starved
+/// paralog copy's thin off-consensus junctions from its graph input.
+///
+/// The `strand` component is load-bearing: Rustle bundles per strand, so one genomic locus carries
+/// both a `+` and a `−` bundle at identical coordinates (a strand mirror), and overlapping inverted
+/// paralogs (DAZ1−/DAZ3+) share absolute coords on opposite strands. Keying on strand prevents a
+/// veto computed from a single-strand family from over-killing the unrelated antisense bundle.
+/// Default (flag unset): never populated → empty getter → byte-identical output.
+/// See `crate::vg_family::consensus`.
+static CONSENSUS_VETO_JUNCTIONS: OnceLock<HashMap<String, std::collections::HashSet<(char, u64, u64)>>> =
+    OnceLock::new();
+
+/// Install the consensus veto set. Idempotent: a second call is ignored (the VG block runs once per
+/// process). No-op when `map` is empty so the registry stays uninitialized and the getter stays a
+/// pure no-op (preserving byte-identical default output).
+fn set_consensus_veto_junctions(map: HashMap<String, std::collections::HashSet<(char, u64, u64)>>) {
+    if map.is_empty() {
+        return;
+    }
+    let _ = CONSENSUS_VETO_JUNCTIONS.set(map);
+}
+
+/// Return the consensus-vetoed `(strand, donor, acceptor)` junctions for `chrom`, or `None` if there
+/// are none (or the registry was never populated).
+fn consensus_veto_junctions_for(
+    chrom: &str,
+) -> Option<&'static std::collections::HashSet<(char, u64, u64)>> {
+    CONSENSUS_VETO_JUNCTIONS.get().and_then(|m| m.get(chrom))
+}
+
 fn trace_junction_reason(st: &JunctionStat, _junction_thr: f64) -> &'static str {
     if st.strand.unwrap_or(0) == 0 {
         "BAD_NO_STRAND"
@@ -11190,6 +11223,47 @@ pub fn run<P: AsRef<Path>>(
                             vec![None; em_partitions.len()]
                         };
 
+                    // VG consensus error-correction (subtractive precision lever, opt-in
+                    // default-off): veto a starved paralog copy's thin off-consensus junction when
+                    // the family's well-covered siblings agree on a different backbone. Computed in
+                    // the family graph's HOMOLOGOUS-edge space (paralog copies sit at distinct loci,
+                    // so a shared junction has different absolute coords per copy but the same
+                    // node-pair) and applied at graph-input time in the per-bundle assembly loop (see
+                    // `consensus_veto_junctions_for`). The conservative rule (veto only when an edge
+                    // is in `< min_copies` copies AND the junction's own support is `< floor`)
+                    // protects well-supported copy-private junctions = real paralog divergence.
+                    // Gated: RUSTLE_VG_CONSENSUS_CORRECT + !precise_mode. Default-off → the registry
+                    // stays empty → byte-identical output.
+                    if !crate::stringtie_parity::precise_mode()
+                        && std::env::var_os("RUSTLE_VG_CONSENSUS_CORRECT").is_some()
+                    {
+                        let min_consensus: usize = std::env::var("RUSTLE_VG_CONSENSUS_MIN_COPIES")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(2);
+                        let support_floor: f64 = std::env::var("RUSTLE_VG_CONSENSUS_SUPPORT_FLOOR")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(2.0);
+                        let tol: u64 = std::env::var("RUSTLE_VG_CONSENSUS_TOL")
+                            .ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                        let mut veto_map: HashMap<String, std::collections::HashSet<(char, u64, u64)>> =
+                            HashMap::default();
+                        let mut n_vetoes = 0usize;
+                        for (fam, fg) in em_partitions.iter().zip(family_graphs.iter()) {
+                            if let Some(fg) = fg {
+                                for (chrom, strand, d, a) in crate::vg_family::consensus::family_consensus_vetoes(
+                                    fg, &fam.bundle_indices, &bundles, min_consensus, support_floor, tol,
+                                ) {
+                                    veto_map.entry(chrom).or_default().insert((strand, d, a));
+                                    n_vetoes += 1;
+                                }
+                            }
+                        }
+                        eprintln!(
+                            "[VG] consensus error-correction: {} junction(s) vetoed across {} chrom(s) \
+                             (min_copies={}, support_floor={}, tol={})",
+                            n_vetoes, veto_map.len(), min_consensus, support_floor, tol
+                        );
+                        set_consensus_veto_junctions(veto_map);
+                    }
+
                     // Joint-strand EM input (spec component 1, O1-resolved): default ON in VG.
                     // The fingerprint-EM consumes the UNSPLIT family so a read shared only
                     // across an inverted pair (DAZ1/DAZ3) keeps both placements and is
@@ -12962,6 +13036,29 @@ pub fn run<P: AsRef<Path>>(
                 2,
                 &format!("requested={};removed={}", forced_drop_junctions.len(), removed),
             );
+        }
+        // VG consensus error-correction: drop family-consensus-vetoed junctions from this copy's
+        // graph input (registry populated in the VG family block; empty unless
+        // RUSTLE_VG_CONSENSUS_CORRECT is set → byte-identical default). Applied here, at graph-input
+        // construction, so it survives all upstream junction recomputation. `good_junctions` below
+        // is derived from the filtered `junctions`, so the veto propagates automatically. The match
+        // includes `bundle.strand` so a veto from a single-strand family never touches the strand
+        // mirror / overlapping antisense bundle at the same coordinates.
+        if let Some(veto) = consensus_veto_junctions_for(&bundle.chrom) {
+            let before = junctions.len();
+            junctions.retain(|j| !veto.contains(&(bundle.strand, j.donor, j.acceptor)));
+            let removed = before.saturating_sub(junctions.len());
+            if removed > 0 {
+                trace_dump::emit_event_row(
+                    &bundle.chrom,
+                    bundle.start,
+                    bundle.end,
+                    bundle.strand,
+                    "consensus_veto_junctions_graph_input",
+                    2,
+                    &format!("removed={}", removed),
+                );
+            }
         }
         if junction_dump::enabled() {
             junction_dump::emit_row(

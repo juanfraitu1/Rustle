@@ -14,7 +14,8 @@
 //! `< support_floor`. A well-supported copy-private junction (support ≥ floor) is preserved even if
 //! no sibling shares it.
 
-use super::family_graph::{CopyId, NodeIdx};
+use super::family_graph::{CopyId, FamilyGraph, NodeIdx};
+use crate::types::Bundle;
 
 /// One copy's junction within a family, mapped to the homologous family-graph edge it spans.
 #[derive(Clone, Debug, PartialEq)]
@@ -83,6 +84,62 @@ pub fn map_junctions_to_edges(
         }
     }
     out
+}
+
+/// Compute the consensus vetoes for one family as `(chrom, strand, donor, acceptor)` tuples —
+/// junctions to drop from the assembly's per-copy graph input. Side-effect-free: reads the family
+/// graph's per-copy exon spans + each copy's bundle junction stats, maps junctions to homologous
+/// family-graph edges, and applies [`consensus_vetoes`]. `bundle_indices[cid]` is the bundle index
+/// for copy `cid` (the family-graph `CopyId` convention: `CopyId` = position in the family's
+/// `bundle_indices`). Already-killed junctions (`strand == Some(0)`) are skipped — they neither
+/// establish consensus nor get re-vetoed. Returns an empty Vec for an empty graph or when no
+/// junction qualifies.
+///
+/// The result is keyed by `(chrom, strand, donor, acceptor)`. Chrom + coords locate the junction
+/// across copies at distinct loci; the bundle's **strand** is included because Rustle bundles per
+/// strand, so one genomic locus carries both a `+` and a `−` bundle at identical coordinates (a
+/// strand mirror), and overlapping inverted paralogs (e.g. DAZ1−/DAZ3+) share absolute coords on
+/// opposite strands. Without the strand component a veto computed from a single-strand family would
+/// over-kill the unrelated antisense bundle. `Junction` is strandless, so the strand must come from
+/// the copy's own bundle here.
+pub fn family_consensus_vetoes(
+    graph: &FamilyGraph,
+    bundle_indices: &[usize],
+    bundles: &[Bundle],
+    min_consensus_copies: usize,
+    support_floor: f64,
+    tol: u64,
+) -> Vec<(String, char, u64, u64)> {
+    // Per-copy node spans from the family graph (the homologous-edge coordinate basis).
+    let node_spans: Vec<NodeCopySpan> = graph
+        .nodes
+        .iter()
+        .flat_map(|n| {
+            let idx = n.idx;
+            n.per_copy_spans.iter().map(move |&(cid, span)| (idx, cid, span))
+        })
+        .collect();
+    // Each copy's junctions (donor, acceptor, support) from its bundle, skipping already-killed.
+    let mut copy_junctions: Vec<(CopyId, (u64, u64), f64)> = Vec::new();
+    for (cid, &bi) in bundle_indices.iter().enumerate() {
+        let Some(bundle) = bundles.get(bi) else { continue };
+        for (j, stat) in bundle.junction_stats.iter() {
+            if stat.strand == Some(0) {
+                continue; // already killed upstream — not a consensus voter, not a veto target
+            }
+            copy_junctions.push((cid, (j.donor, j.acceptor), stat.nreads_good));
+        }
+    }
+    let mapped = map_junctions_to_edges(&node_spans, &copy_junctions, tol);
+    consensus_vetoes(&mapped, min_consensus_copies, support_floor)
+        .into_iter()
+        .filter_map(|(cid, (d, a))| {
+            bundle_indices
+                .get(cid)
+                .and_then(|&bi| bundles.get(bi))
+                .map(|b| (b.chrom.clone(), b.strand, d, a))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -175,5 +232,98 @@ mod tests {
             fj(1, (1, 8), (1300, 1800), 40.0), // strong off-consensus -> keep
         ];
         assert_eq!(consensus_vetoes(&juncs, 2, 5.0), vec![(0usize, (300u64, 800u64))]);
+    }
+
+    // --- adapter test: FamilyGraph + real Bundles -> (chrom, donor, acceptor) vetoes ---
+
+    fn exon_class(idx: usize, spans: &[(CopyId, (u64, u64))]) -> crate::vg_family::family_graph::ExonClass {
+        crate::vg_family::family_graph::ExonClass {
+            idx: NodeIdx(idx),
+            chrom: "fam".to_string(),
+            span: (0, 0),
+            strand: '+',
+            per_copy_sequences: Vec::new(),
+            per_copy_spans: spans.to_vec(),
+            copy_specific: spans.len() == 1,
+            per_copy_cov: Vec::new(),
+        }
+    }
+
+    fn bundle_with_juncs(chrom: &str, juncs: &[(u64, u64, f64)]) -> Bundle {
+        let mut js: crate::types::JunctionStats = Default::default();
+        for &(d, a, sup) in juncs {
+            js.insert(
+                crate::types::Junction::new(d, a),
+                crate::types::JunctionStat { nreads_good: sup, ..Default::default() },
+            );
+        }
+        Bundle {
+            chrom: chrom.to_string(),
+            start: 0,
+            end: 0,
+            strand: '+',
+            reads: Vec::new(),
+            junction_stats: js,
+            junction_pair_stats: Default::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: false,
+            rescue_class: None,
+            vg_family_id: None,
+            hp_tag: None,
+            ps_tag: None,
+        }
+    }
+
+    #[test]
+    fn family_consensus_vetoes_resolves_chrom_from_starved_copy() {
+        // 2-copy family at DISTINCT loci (chrA, chrB). Shared backbone = nodes 0,1 (edge 0->1 in
+        // BOTH copies -> consensus). Copy 1 (chrB, low-cov) also has node 2 (an off-consensus target)
+        // reached by a THIN junction -> vetoed, keyed to chrB's coordinates.
+        let graph = FamilyGraph {
+            family_id: 0,
+            nodes: vec![
+                exon_class(0, &[(0, (100, 200)), (1, (1100, 1200))]),
+                exon_class(1, &[(0, (300, 400)), (1, (1300, 1400))]),
+                exon_class(2, &[(1, (1500, 1600))]),
+            ],
+            edges: Vec::new(),
+        };
+        let bundles = vec![
+            bundle_with_juncs("chrA", &[(200, 300, 30.0)]), // copy0: edge 0->1
+            bundle_with_juncs("chrB", &[(1200, 1300, 25.0), (1400, 1500, 1.0)]), // copy1: edge 0->1 + thin 1->2
+        ];
+        let bundle_indices = vec![0usize, 1usize];
+        let vetoes = family_consensus_vetoes(&graph, &bundle_indices, &bundles, 2, 5.0, 3);
+        assert_eq!(
+            vetoes,
+            vec![("chrB".to_string(), '+', 1400u64, 1500u64)],
+            "only the thin off-consensus junction is vetoed, resolved to the starved copy's chrom+strand"
+        );
+    }
+
+    #[test]
+    fn family_consensus_vetoes_skips_already_killed_junctions() {
+        // The thin off-consensus junction is already killed (strand=Some(0)) -> the adapter ignores
+        // it entirely (neither a consensus voter nor a veto target) -> no vetoes.
+        let graph = FamilyGraph {
+            family_id: 0,
+            nodes: vec![
+                exon_class(0, &[(0, (100, 200)), (1, (1100, 1200))]),
+                exon_class(1, &[(0, (300, 400)), (1, (1300, 1400))]),
+                exon_class(2, &[(1, (1500, 1600))]),
+            ],
+            edges: Vec::new(),
+        };
+        let mut copy1 = bundle_with_juncs("chrB", &[(1200, 1300, 25.0), (1400, 1500, 1.0)]);
+        copy1
+            .junction_stats
+            .get_mut(&crate::types::Junction::new(1400, 1500))
+            .unwrap()
+            .strand = Some(0); // killed upstream
+        let bundles = vec![bundle_with_juncs("chrA", &[(200, 300, 30.0)]), copy1];
+        let vetoes = family_consensus_vetoes(&graph, &[0usize, 1usize], &bundles, 2, 5.0, 3);
+        assert!(vetoes.is_empty(), "already-killed junction is skipped, not re-vetoed");
     }
 }
