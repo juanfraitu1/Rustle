@@ -105,7 +105,12 @@ impl SecondaryIndex {
                 // pick the locus with maximal overlap (deterministic: lowest idx on tie)
                 let mut best: Option<(u64, usize)> = None;
                 for (s, e, i) in spans {
-                    if a.ref_start < *e && *s < a.ref_end {
+                    // spans are sorted by start; once a locus starts at/after this
+                    // alignment's end, no later locus can overlap → stop scanning.
+                    if *s >= a.ref_end {
+                        break;
+                    }
+                    if a.ref_start < *e {
                         let ov = a.ref_end.min(*e).saturating_sub(a.ref_start.max(*s));
                         match best {
                             Some((bov, bi)) if ov < bov || (ov == bov && *i >= bi) => {}
@@ -311,5 +316,26 @@ mod tests {
         let dropped = idx.cap_per_locus(4);
         assert_eq!(dropped, 6, "kept 4 of 10 at locus 0; 6 dropped (logged, not silent)");
         assert_eq!(idx.secondaries_for_locus(0).len(), 4);
+    }
+
+    #[test]
+    fn assign_loci_picks_max_overlap_and_breaks_ties_low_index() {
+        // Three loci on chrT; one alignment off-chrom; one with equal overlap to
+        // two loci (lowest index wins); one with no overlap (→ None).
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa(7, 100, 200)); // overlaps locus 0 (0..150) and locus 1 (150..300)? see spans
+        idx.push(sa(8, 5000, 5100)); // overlaps nothing → None
+        let mut off = sa(9, 100, 200);
+        off.chrom = "chrOther".to_string();
+        idx.push(off); // different chrom → None
+        // locus 0: 90..160 (overlap with 7 = 60), locus 1: 140..210 (overlap with 7 = 60) → tie → idx 0
+        let spans = vec![
+            ("chrT".to_string(), 90u64, 160u64),
+            ("chrT".to_string(), 140u64, 210u64),
+        ];
+        idx.assign_loci(&spans);
+        assert_eq!(idx.alignments()[0].locus, Some(0), "equal overlap → lowest index wins");
+        assert_eq!(idx.alignments()[1].locus, None, "no overlapping locus → None");
+        assert_eq!(idx.alignments()[2].locus, None, "different chromosome → None");
     }
 }
