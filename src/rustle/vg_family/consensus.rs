@@ -53,6 +53,38 @@ pub fn consensus_vetoes(
         .collect()
 }
 
+/// A family-graph node's span for one copy, flattened from `ExonClass.per_copy_spans`:
+/// `(node, copy, (start, end))`.
+pub type NodeCopySpan = (NodeIdx, CopyId, (u64, u64));
+
+/// Map a copy's junctions to homologous family-graph edges via per-copy node spans.
+/// A junction `(donor, acceptor)` at copy `C` maps to edge `(F, T)` where node `F`'s span for `C`
+/// ends at ~`donor` and node `T`'s span for `C` starts at ~`acceptor` (within `tol`). Junctions
+/// that don't map to a homologous edge pair (e.g. the family graph never unified that exon across
+/// copies — the barrier regime) are dropped, so they are never vetoed: consensus correction only
+/// acts where the homologous structure is actually established.
+pub fn map_junctions_to_edges(
+    node_spans: &[NodeCopySpan],
+    copy_junctions: &[(CopyId, (u64, u64), f64)],
+    tol: u64,
+) -> Vec<FamilyJunction> {
+    let mut out = Vec::new();
+    for &(cid, (donor, acceptor), support) in copy_junctions {
+        let f = node_spans
+            .iter()
+            .find(|(_, c, (_, e))| *c == cid && e.abs_diff(donor) <= tol)
+            .map(|(n, _, _)| *n);
+        let t = node_spans
+            .iter()
+            .find(|(_, c, (s, _))| *c == cid && s.abs_diff(acceptor) <= tol)
+            .map(|(n, _, _)| *n);
+        if let (Some(f), Some(t)) = (f, t) {
+            out.push(FamilyJunction { copy: cid, edge: (f, t), junc: (donor, acceptor), support });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,6 +122,47 @@ mod tests {
             fj(1, (0, 1), (1100, 1200), 1.0),
         ];
         assert!(consensus_vetoes(&juncs, 2, 5.0).is_empty());
+    }
+
+    #[test]
+    fn end_to_end_maps_then_vetoes_spurious_via_homologous_edges() {
+        // 3-copy family. Shared backbone = nodes 0,1,2 (each copy at its own locus). Copy 2 (low-cov)
+        // also has node 5 (a spurious off-consensus target) and node 6 (a REAL copy-private exon).
+        let node_spans: Vec<NodeCopySpan> = vec![
+            (NodeIdx(0), 0, (100, 200)), (NodeIdx(1), 0, (300, 400)), (NodeIdx(2), 0, (500, 600)),
+            (NodeIdx(0), 1, (1100, 1200)), (NodeIdx(1), 1, (1300, 1400)), (NodeIdx(2), 1, (1500, 1600)),
+            (NodeIdx(0), 2, (2100, 2200)), (NodeIdx(1), 2, (2300, 2400)), (NodeIdx(2), 2, (2500, 2600)),
+            (NodeIdx(5), 2, (2900, 3000)), (NodeIdx(6), 2, (3100, 3200)),
+        ];
+        let copy_junctions = vec![
+            (0usize, (200u64, 300u64), 30.0), (0, (400, 500), 28.0),   // copyA backbone (0->1, 1->2)
+            (1usize, (1200u64, 1300u64), 25.0), (1, (1400, 1500), 24.0), // copyB backbone
+            (2usize, (2200u64, 2300u64), 3.0),  // copyC backbone (0->1): consensus, thin but PROTECTED
+            (2, (2400, 2900), 1.0),             // copyC SPURIOUS (1->5), support 1 -> VETO
+            (2, (2600, 3100), 22.0),            // copyC copy-private REAL (2->6), support 22 -> KEEP
+        ];
+        let mapped = map_junctions_to_edges(&node_spans, &copy_junctions, 2);
+        // every junction maps to an edge here
+        assert_eq!(mapped.len(), 7, "all junctions map to homologous edges");
+        let vetoes = consensus_vetoes(&mapped, 2, 5.0);
+        assert_eq!(
+            vetoes,
+            vec![(2usize, (2400u64, 2900u64))],
+            "only the thin off-consensus junction is vetoed; consensus + copy-private survive"
+        );
+    }
+
+    #[test]
+    fn unmappable_junction_is_never_vetoed() {
+        // A junction whose acceptor matches no node span (barrier regime: exon not unified) is
+        // dropped by the mapper, so it can never be vetoed.
+        let node_spans: Vec<NodeCopySpan> = vec![
+            (NodeIdx(0), 0, (100, 200)), (NodeIdx(0), 1, (1100, 1200)),
+        ];
+        let copy_junctions = vec![(0usize, (200u64, 99999u64), 1.0)]; // acceptor 99999 maps to nothing
+        let mapped = map_junctions_to_edges(&node_spans, &copy_junctions, 2);
+        assert!(mapped.is_empty(), "unmappable junction dropped -> never vetoed");
+        assert!(consensus_vetoes(&mapped, 2, 5.0).is_empty());
     }
 
     #[test]
