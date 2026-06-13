@@ -610,8 +610,10 @@ pub use crate::bundle::collect_secondary_index_from_bam;
 
 ### Task M1.4 — CLI flags + `RunConfig` wiring (Layer-2 default-off)
 
+> **Grounding correction (applied during execution):** the similarity knob the design called for ALREADY EXISTS. `--family-exon-similarity` is defined in `main.rs:55` as `Option<f64>`, and `RunConfig.family_exon_similarity: f64` exists at `types.rs:825`, wired at `main.rs:845-846` (`args.family_exon_similarity.unwrap_or_else(family_merge_jaccard)`) with `RunConfig::default()` = `family_merge_jaccard()` (`types.rs:1219`, env-overridable via `RUSTLE_VG_FAMILY_MERGE_JACCARD`). This is exactly the advisor's principled shared-exon minimizer-Jaccard threshold. **Do NOT add a duplicate flag/field/default (clap would panic; the field already exists).** Layer-2 discovery (M2) reuses `config.family_exon_similarity` directly. M1.4 therefore adds ONLY the two new booleans.
+
 **Files:**
-- Modify: `src/rustle/main.rs` (flag block, near `386-522`; the `RunConfig` construction site)
+- Modify: `src/rustle/main.rs` (flag block, near `381-522`; the `RunConfig` construction at `~713`/`~792`)
 - Modify: `src/rustle/types.rs` (`RunConfig` struct ~756; `impl Default for RunConfig` ~1180) — **RunConfig lives here; there is no `config.rs`**
 
 **Steps:**
@@ -628,53 +630,48 @@ mod layer2_config_tests {
         let c = RunConfig::default();
         assert!(!c.vg_layer2, "Layer 2 is OFF by default during development");
         assert!(!c.vg_layer2_new_copies, "all-secondary new copies OFF by default");
+        // family_exon_similarity already exists (the advisor's merge threshold);
+        // its default is family_merge_jaccard(), NOT a Layer-2-specific constant.
         assert!(
-            (c.family_exon_similarity - 0.30).abs() < 1e-9,
-            "conservative default exon-similarity threshold"
+            (c.family_exon_similarity - crate::vg_family::family_graph::family_merge_jaccard())
+                .abs()
+                < 1e-9,
+            "Layer 2 reuses the existing family-merge similarity default"
         );
     }
 }
 ```
 
 - [ ] Run, expect FAIL: `cargo test --lib layer2_defaults_off` → compile error (`no field vg_layer2`).
-- [ ] Add the fields to `RunConfig` (struct ~756):
+- [ ] Add the two NEW fields to `RunConfig` (struct ~756). Do NOT add `family_exon_similarity` — it already exists:
 
 ```rust
     /// Layer-2 family variation graph (default OFF; opt-in `--vg-layer2` /
     /// `RUSTLE_VG_LAYER2`). With it off, `--vg` is Layer-1-baseline-identical.
     pub vg_layer2: bool,
-    /// Exon-only k-mer (canonical-minimizer) Jaccard threshold two Layer-1 loci
-    /// must exceed to be considered the same paralog family (the advisor's
-    /// principled-merge knob). Conservative default 0.30.
-    pub family_exon_similarity: f64,
     /// C5 — admit candidate NEW copies from all-secondary regions. Default OFF
     /// (`--vg-layer2-new-copies` / `RUSTLE_VG_LAYER2_NEW_COPIES`) until validated.
     pub vg_layer2_new_copies: bool,
 ```
 
-In `impl Default for RunConfig` (~1180) add: `vg_layer2: false, family_exon_similarity: 0.30, vg_layer2_new_copies: false,`.
+In `impl Default for RunConfig` (~1180) add: `vg_layer2: false, vg_layer2_new_copies: false,` (leave the existing `family_exon_similarity: family_merge_jaccard()` default untouched).
 
-- [ ] Add the CLI args in `main.rs` alongside the existing `--vg-*` flags (~`386-522`), following the established `#[arg(long, ...)]` idiom:
+- [ ] Add the two NEW CLI args in `main.rs` alongside the existing `--vg-*` flags (~`381-522`), following the established `#[arg(long, ...)]` idiom. Do NOT add `--family-exon-similarity` (exists at `main.rs:55`):
 
 ```rust
     /// Enable Layer-2 family variation graph (default off; Layer 1 stays baseline-identical).
     #[arg(long = "vg-layer2", default_value_t = false)]
     vg_layer2: bool,
 
-    /// Exon-only k-mer Jaccard threshold to link two loci into one paralog family.
-    #[arg(long = "family-exon-similarity", default_value_t = 0.30)]
-    family_exon_similarity: f64,
-
     /// Admit candidate new copies from all-secondary regions (default off, proof-gated).
     #[arg(long = "vg-layer2-new-copies", default_value_t = false)]
     vg_layer2_new_copies: bool,
 ```
 
-- [ ] Wire CLI + env into `RunConfig` construction (in `main.rs` where the other `vg_*` fields are populated; env mirrors so harnesses can toggle without recompiling):
+- [ ] Wire CLI + env into the `RunConfig` construction (in `main.rs` where the other `vg_*` fields are populated, ~`792`; env mirrors so harnesses can toggle without recompiling). Do NOT add a `family_exon_similarity:` line — it is already wired at `main.rs:845-846`:
 
 ```rust
         vg_layer2: args.vg_layer2 || std::env::var_os("RUSTLE_VG_LAYER2").is_some(),
-        family_exon_similarity: args.family_exon_similarity,
         vg_layer2_new_copies: args.vg_layer2_new_copies
             || std::env::var_os("RUSTLE_VG_LAYER2_NEW_COPIES").is_some(),
 ```
