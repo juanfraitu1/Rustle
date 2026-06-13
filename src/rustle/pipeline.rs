@@ -2534,6 +2534,44 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod layer2_plumbing_tests {
+    /// Build a minimal Bundle for plumbing tests (Bundle has no Default impl).
+    fn mk_bundle(chrom: &str, start: u64, end: u64, strand: char) -> crate::types::Bundle {
+        crate::types::Bundle {
+            chrom: chrom.to_string(),
+            start,
+            end,
+            strand,
+            reads: Vec::new(),
+            junction_stats: Default::default(),
+            junction_pair_stats: Default::default(),
+            bundlenodes: None,
+            read_bnodes: None,
+            bnode_colors: None,
+            synthetic: false,
+            rescue_class: None,
+            vg_family_id: None,
+            hp_tag: None,
+            ps_tag: None,
+        }
+    }
+
+    #[test]
+    fn snapshot_bundle_meta_preserves_order_and_fields() {
+        let b0 = mk_bundle("chrT", 100, 200, '+');
+        let b1 = mk_bundle("chrT", 900, 950, '-');
+        let meta = super::snapshot_bundle_meta(&[b0, b1]);
+        assert_eq!(
+            meta,
+            vec![
+                ("chrT".to_string(), 100, 200, '+'),
+                ("chrT".to_string(), 900, 950, '-')
+            ]
+        );
+    }
+}
+
 fn build_component_reads(
     comps: &[Vec<(usize, u64, u64, f64)>],
     read_bnodes: &[Vec<usize>],
@@ -2726,6 +2764,14 @@ fn dump_junction_redirects(
             from.donor, from.acceptor, to.donor, to.acceptor
         );
     }
+}
+
+/// Snapshot (chrom,start,end,strand) of each bundle before the assembly loop
+/// consumes `bundles` (pipeline.rs:12398). Layer 2 needs this AFTER the loop.
+pub(crate) fn snapshot_bundle_meta(
+    bundles: &[crate::types::Bundle],
+) -> Vec<(String, u64, u64, char)> {
+    bundles.iter().map(|b| (b.chrom.clone(), b.start, b.end, b.strand)).collect()
 }
 
 fn intron_chain_from_exons(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
@@ -12395,6 +12441,22 @@ pub fn run<P: AsRef<Path>>(
 
     let snapshot_all = std::env::var_os("RUSTLE_SNAPSHOT_ALL").is_some();
     use rayon::prelude::*;
+    // (M4.3a) Snapshot per-bundle metadata + primary-locus map BEFORE `bundles` is
+    // consumed by the assembly loop below. Layer 2 needs both AFTER the loop to build
+    // its `Layer1Locus` slice and map each multimapper's primary back to its locus.
+    // Gated: with --vg-layer2 off these stay empty (no work, byte-identical).
+    let layer2_bundle_meta: Vec<(String, u64, u64, char)> =
+        if config.vg_mode && config.vg_layer2 { snapshot_bundle_meta(&bundles) } else { Vec::new() };
+    let layer2_primary_locus: crate::types::DetHashMap<u64, usize> =
+        if config.vg_mode && config.vg_layer2 {
+            let mut m: crate::types::DetHashMap<u64, usize> = crate::types::DetHashMap::default();
+            for (bi, b) in bundles.iter().enumerate() {
+                for r in &b.reads {
+                    if r.is_primary_alignment { m.entry(r.read_name_hash).or_insert(bi); }
+                }
+            }
+            m
+        } else { crate::types::DetHashMap::default() };
     let mut bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
     // ── RUSTLE_VG_UNION_BASELINE (EXPERIMENTAL, opt-in, default-OFF — NOT recommended) ──
     // GOAL: guarantee VG output ⊇ primary-only baseline so the over-collapse regression
