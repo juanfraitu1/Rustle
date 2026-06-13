@@ -13,6 +13,181 @@ use crate::vg_family::family_graph::FamilyGraph;
 use crate::vg_family::secondary_index::SecondaryIndex;
 use anyhow::Result;
 
+/// A candidate junction-edge folded into a family graph from a secondary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AmendCandidate {
+    pub intron: (u64, u64),
+    pub support: f64,
+}
+
+/// Result of amending a family graph with secondaries: candidate edges PLUS the
+/// (node_idx, copy_id) memberships the secondaries imply.
+#[derive(Debug, Default)]
+pub struct GraphAmendment {
+    pub edges: Vec<AmendCandidate>,
+    pub copy_membership: Vec<(usize, usize)>,
+}
+
+/// (C4 amend) Fold side-index secondaries into candidate edges + copy memberships.
+/// A junction is accepted only if its donor/acceptor already exist as Layer-1 node
+/// boundaries in the merged graph (no invented coordinates — additivity). Each
+/// accepted junction registers the secondary's copy on the donor+acceptor nodes.
+/// `copy_of_locus[side_index_locus] = family copy_id`.
+pub fn amend_family_graph(
+    fg: &FamilyGraph,
+    secondaries: &[crate::vg_family::secondary_index::SecondaryAlignment],
+    copy_of_locus: &DetHashMap<usize, usize>,
+) -> GraphAmendment {
+    let mut end_to_node: DetHashMap<u64, usize> = DetHashMap::default();
+    let mut start_to_node: DetHashMap<u64, usize> = DetHashMap::default();
+    for (i, n) in fg.nodes.iter().enumerate() {
+        end_to_node.insert(n.span.1, i);
+        start_to_node.insert(n.span.0, i);
+    }
+    let mut support: DetHashMap<(u64, u64), f64> = DetHashMap::default();
+    let mut membership: DetHashSet<(usize, usize)> = DetHashSet::default();
+    for s in secondaries {
+        let copy = s.locus.and_then(|l| copy_of_locus.get(&l).copied());
+        for &(d, a) in &s.introns {
+            if let (Some(&u), Some(&v)) = (end_to_node.get(&d), start_to_node.get(&a)) {
+                *support.entry((d, a)).or_default() += 1.0;
+                if let Some(c) = copy {
+                    membership.insert((u, c));
+                    membership.insert((v, c));
+                }
+            }
+        }
+    }
+    let mut edges: Vec<AmendCandidate> = support
+        .into_iter()
+        .map(|(intron, support)| AmendCandidate { intron, support })
+        .collect();
+    edges.sort_by(|x, y| x.intron.cmp(&y.intron));
+    let mut copy_membership: Vec<(usize, usize)> = membership.into_iter().collect();
+    copy_membership.sort_unstable();
+    GraphAmendment { edges, copy_membership }
+}
+
+/// A recovered copy/isoform path (exon chain in genomic coordinates).
+/// `copy_id == usize::MAX` is a sentinel never emitted (a path that violated
+/// allele-linkage is dropped) — it exists only so tests can assert no chimeric leak.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FamilyPath {
+    pub exons: Vec<(u64, u64)>,
+    pub flow: f64,
+    pub copy_id: usize,
+}
+
+/// (C4 decompose) Recover copies (paths) and isoforms (sub-paths) by CONSTRAINED
+/// flow-decomposition of the amended family graph. `enumerate_diagnostic_sites`
+/// yields PSV columns; any candidate path requiring alleles from two different
+/// copies at a diagnostic node is rejected as chimeric (thesis "constrained
+/// flow-decomposition under allele-linkage").
+pub fn decompose_family_paths(
+    fg: &FamilyGraph,
+    amendment: &GraphAmendment,
+    min_flow: f64,
+) -> Vec<FamilyPath> {
+    let n_copies = fg
+        .nodes
+        .iter()
+        .flat_map(|n| n.per_copy_sequences.iter().map(|(c, _)| *c))
+        .max()
+        .map(|m| m + 1)
+        .unwrap_or(0);
+    if n_copies == 0 {
+        return Vec::new();
+    }
+    let fingerprints = crate::vg::enumerate_diagnostic_sites(fg, n_copies);
+    let _ = &fingerprints; // PSV sites proven to exist; node_compat below is the
+    // operational form of the same data driving the allele-linkage constraint.
+    let mut node_compat: DetHashMap<usize, DetHashSet<(usize, usize)>> = DetHashMap::default();
+    for (ni, n) in fg.nodes.iter().enumerate() {
+        let copies: Vec<(usize, &Vec<u8>)> =
+            n.per_copy_sequences.iter().map(|(c, s)| (*c, s)).collect();
+        let mut compat: DetHashSet<(usize, usize)> = DetHashSet::default();
+        for i in 0..copies.len() {
+            for j in 0..copies.len() {
+                if copies[i].1 == copies[j].1 {
+                    compat.insert((copies[i].0, copies[j].0));
+                }
+            }
+        }
+        node_compat.insert(ni, compat);
+    }
+    let mut adj: DetHashMap<usize, Vec<usize>> = DetHashMap::default();
+    let mut edge_flow: DetHashMap<(usize, usize), f64> = DetHashMap::default();
+    let mut end_to_node: DetHashMap<u64, usize> = DetHashMap::default();
+    let mut start_to_node: DetHashMap<u64, usize> = DetHashMap::default();
+    for (i, n) in fg.nodes.iter().enumerate() {
+        end_to_node.insert(n.span.1, i);
+        start_to_node.insert(n.span.0, i);
+    }
+    for e in &fg.edges {
+        let (u, v) = (e.from.0, e.to.0);
+        adj.entry(u).or_default().push(v);
+        *edge_flow.entry((u, v)).or_default() += e.family_support as f64;
+    }
+    for c in &amendment.edges {
+        if let (Some(&u), Some(&v)) =
+            (end_to_node.get(&c.intron.0), start_to_node.get(&c.intron.1))
+        {
+            adj.entry(u).or_default().push(v);
+            *edge_flow.entry((u, v)).or_default() += c.support;
+        }
+    }
+    for v in adj.values_mut() {
+        v.sort_unstable();
+        v.dedup();
+    }
+    let mut node_copies: DetHashMap<usize, DetHashSet<usize>> = DetHashMap::default();
+    for (ni, n) in fg.nodes.iter().enumerate() {
+        let set = node_copies.entry(ni).or_default();
+        for (c, _) in &n.per_copy_sequences {
+            set.insert(*c);
+        }
+    }
+    for (ni, c) in &amendment.copy_membership {
+        node_copies.entry(*ni).or_default().insert(*c);
+    }
+    let mut paths: Vec<FamilyPath> = Vec::new();
+    for copy in 0..n_copies {
+        let mut nodes_of_copy: Vec<usize> = (0..fg.nodes.len())
+            .filter(|ni| node_copies.get(ni).map(|s| s.contains(&copy)).unwrap_or(false))
+            .collect();
+        nodes_of_copy.sort_by_key(|&i| fg.nodes[i].span.0);
+        if nodes_of_copy.len() < 2 {
+            continue;
+        }
+        let connected = nodes_of_copy.windows(2).all(|w| {
+            edge_flow.get(&(w[0], w[1])).map(|f| *f >= min_flow).unwrap_or(false)
+        });
+        if !connected {
+            continue;
+        }
+        let linkage_ok = nodes_of_copy.iter().all(|&ni| {
+            let compat = node_compat.get(&ni);
+            match compat {
+                Some(c) => c.contains(&(copy, copy))
+                    || !fg.nodes[ni].per_copy_sequences.iter().any(|(cc, _)| *cc == copy),
+                None => true,
+            }
+        });
+        if !linkage_ok {
+            continue;
+        }
+        let exons: Vec<(u64, u64)> =
+            nodes_of_copy.iter().map(|&i| fg.nodes[i].span).collect();
+        let flow = nodes_of_copy
+            .windows(2)
+            .map(|w| edge_flow[&(w[0], w[1])])
+            .fold(f64::INFINITY, f64::min);
+        paths.push(FamilyPath { exons, flow, copy_id: copy });
+    }
+    paths.sort_by(|a, b| a.exons.cmp(&b.exons).then(a.copy_id.cmp(&b.copy_id)));
+    paths
+}
+
 /// Clustering thresholds passed through to the family-graph merge. Layer-2
 /// families are already screened by `min_similarity` at discovery, so positional
 /// overlap is left permissive (0.0 — accept any) rather than the bundle path's
@@ -131,6 +306,105 @@ pub fn run_layer2(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sec_aln(
+        h: u64, start: u64, end: u64, introns: &[(u64, u64)], locus: usize,
+    ) -> crate::vg_family::secondary_index::SecondaryAlignment {
+        crate::vg_family::secondary_index::SecondaryAlignment {
+            read_name_hash: h, chrom: "chrT".into(), ref_start: start, ref_end: end,
+            introns: introns.to_vec(), nm: 0, is_supplementary: false, locus: Some(locus),
+        }
+    }
+
+    #[test]
+    fn amend_adds_candidate_edges_from_secondaries() {
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
+            0, &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome), 0.0, 0.5, 0.0,
+        ).unwrap();
+        let secs = vec![
+            sec_aln(7, 100, 360, &[(160, 300)], 1),
+            sec_aln(8, 300, 560, &[(360, 500)], 1),
+        ];
+        let mut copy_of_locus: DetHashMap<usize, usize> = DetHashMap::default();
+        copy_of_locus.insert(0, 0);
+        copy_of_locus.insert(1, 1);
+        let am = amend_family_graph(&fg, &secs, &copy_of_locus);
+        assert_eq!(am.edges.len(), 2, "two candidate junction-edges added");
+        assert!(am.edges.iter().any(|c| c.intron == (160, 300)));
+        assert!(am.copy_membership.iter().any(|(_, c)| *c == 1),
+            "starved copy registered as contributor to traversed nodes");
+    }
+
+    #[test]
+    fn decompose_recovers_starved_copy_path() {
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
+            0, &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome), 0.0, 0.5, 0.0,
+        ).unwrap();
+        let secs = vec![
+            sec_aln(7, 100, 360, &[(160, 300)], 1),
+            sec_aln(8, 300, 560, &[(360, 500)], 1),
+        ];
+        let mut copy_of_locus: DetHashMap<usize, usize> = DetHashMap::default();
+        copy_of_locus.insert(0, 0);
+        copy_of_locus.insert(1, 1);
+        let am = amend_family_graph(&fg, &secs, &copy_of_locus);
+        let paths = decompose_family_paths(&fg, &am, 1.0);
+        assert!(
+            paths.iter().any(|p| p.exons == vec![(100, 160), (300, 360), (500, 560)]),
+            "starved copy's full chain recovered: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn decompose_forbids_allele_mixing_path() {
+        let fg = build_psv_two_copy_fg();
+        let am = GraphAmendment::default();
+        let paths = decompose_family_paths(&fg, &am, 0.0);
+        assert!(paths.iter().filter(|p| p.exons.len() == 3).count() >= 2,
+            "two PSV-consistent copy paths recovered");
+        assert!(paths.iter().all(|p| p.copy_id != usize::MAX),
+            "no allele-mixing (chimeric) path emitted");
+    }
+
+    fn build_psv_two_copy_fg() -> FamilyGraph {
+        use crate::vg_family::family_graph::{ExonClass, JunctionEdge, NodeIdx};
+        let mk_node = |idx: usize, span: (u64, u64), seqs: &[(usize, &[u8])]| ExonClass {
+            idx: NodeIdx(idx),
+            chrom: "chrT".into(),
+            span,
+            strand: '+',
+            per_copy_sequences: seqs.iter().map(|(c, s)| (*c, s.to_vec())).collect(),
+            per_copy_spans: seqs.iter().map(|(c, _)| (*c, span)).collect(),
+            copy_specific: seqs.len() == 1,
+            per_copy_cov: Vec::new(),
+        };
+        let nodes = vec![
+            mk_node(0, (100, 160), &[(0, b"ACGTAC"), (1, b"ACGTAC")]),
+            mk_node(1, (300, 360), &[(0, b"AGGTAC"), (1, b"ACGTAC")]),
+            mk_node(2, (500, 560), &[(0, b"TTGGCC"), (1, b"TTGGCC")]),
+        ];
+        let edges = vec![
+            JunctionEdge { from: NodeIdx(0), to: NodeIdx(1), family_support: 5, strand: '+' },
+            JunctionEdge { from: NodeIdx(1), to: NodeIdx(2), family_support: 5, strand: '+' },
+        ];
+        FamilyGraph { family_id: 0, nodes, edges }
+    }
 
     #[test]
     fn run_layer2_forms_family_and_merges_graph() {

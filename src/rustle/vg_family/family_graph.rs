@@ -1419,6 +1419,11 @@ pub(crate) mod tests_support {
         g
     }
 
+    /// Same deterministic genome as make_two_copy_genome (covers 3-exon spans up to 560).
+    pub fn make_two_copy_genome_3exon() -> GenomeIndex {
+        make_two_copy_genome()
+    }
+
     /// GenomeIndex over chrT (>=60kb) with deterministic pseudo-sequence so shared
     /// coords read identical bytes across copies and distinct spans differ.
     ///
