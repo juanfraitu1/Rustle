@@ -122,5 +122,14 @@ mod tests {
         assert_eq!(idx.len(), 3, "three alignments stored");
         assert_eq!(idx.n_reads(), 2, "two distinct reads");
         assert_eq!(idx.alignments()[0].read_name_hash, 7);
+        // both placements of read 7 are retained (not collapsed to one)
+        assert_eq!(
+            idx.alignments()
+                .iter()
+                .filter(|a| a.read_name_hash == 7)
+                .count(),
+            2,
+            "both alignments for read 7 stored"
+        );
     }
 }
