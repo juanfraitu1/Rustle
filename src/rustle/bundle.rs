@@ -1255,14 +1255,17 @@ pub fn build_bundlenodes_and_readgroups_from_cgroups_3strand(
 
 /// C1 — Build the secondary side-index from a BAM in a dedicated pass.
 ///
-/// Reads ONLY the secondary/supplementary records the Phase-1 gate at
-/// `bundle.rs:1413-1438` drops from `bundle.reads`. Mirrors that gate's
-/// predicate (secondary/supplementary AND `config.long_reads` AND long-class)
-/// so it captures exactly what Phase 1 dropped. Primaries are skipped (Layer 1's
-/// job). Parsing reuses `record_to_bundle_read` so the side-index never diverges
-/// from the in-bundle parser. `chrom_filter` restricts to one chromosome
-/// (whole-genome `-L` OOMs; per-chrom serial only). Locus assignment is left to
-/// `SecondaryIndex::assign_loci`.
+/// Reads ONLY the secondary/supplementary records the Phase-1 gate (the
+/// `vg_include_secondary` / `drop_sec_supp_for_mode` logic in
+/// `detect_bundles_from_bam_with_snp`, ~bundle.rs:1486-1503) drops from
+/// `bundle.reads`. Mirrors that gate's predicate so it captures EXACTLY what
+/// Phase 1 dropped — including the escape hatch: when `RUSTLE_VG_INCLUDE_SECONDARY`
+/// is set (and `RUSTLE_VG_DROP_SECONDARY` is not) Phase 1 KEEPS those secondaries
+/// in bundles, so the side-index must NOT also capture them (no double-index).
+/// Primaries are skipped (Layer 1's job). Parsing reuses `record_to_bundle_read`
+/// so the side-index never diverges from the in-bundle parser. `chrom_filter`
+/// restricts to one chromosome (whole-genome `-L` OOMs; per-chrom serial only).
+/// Locus assignment is left to `SecondaryIndex::assign_loci`.
 pub fn collect_secondary_index_from_bam<P: AsRef<std::path::Path>>(
     bam_path: P,
     chrom_filter: Option<&str>,
@@ -1270,7 +1273,12 @@ pub fn collect_secondary_index_from_bam<P: AsRef<std::path::Path>>(
 ) -> anyhow::Result<crate::vg_family::secondary_index::SecondaryIndex> {
     use crate::vg_family::secondary_index::{SecondaryAlignment, SecondaryIndex};
 
-    let mut reader = open_bam(&bam_path, 1)?;
+    // Mirror the gate's `vg_include_secondary` term: when the escape hatch keeps
+    // secondaries in bundles, they are NOT "what Phase 1 dropped" → don't capture.
+    let include_secondary_in_bundles = std::env::var_os("RUSTLE_VG_INCLUDE_SECONDARY").is_some()
+        && std::env::var_os("RUSTLE_VG_DROP_SECONDARY").is_none();
+
+    let mut reader = open_bam(&bam_path, config.threads.max(1))?;
     let header = reader.read_header()?;
     let mut record = noodles_sam::alignment::RecordBuf::default();
 
@@ -1283,6 +1291,9 @@ pub fn collect_secondary_index_from_bam<P: AsRef<std::path::Path>>(
             continue; // primaries are Layer 1's; never captured here
         }
         // Gate-mirroring: only capture what Phase 1 would have dropped.
+        if include_secondary_in_bundles {
+            continue;
+        }
         if !config.long_reads {
             continue;
         }

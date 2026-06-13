@@ -381,4 +381,26 @@ mod tests {
             .collect();
         assert_eq!(introns, vec![(110, 210)], "intron chain from shared exon parser");
     }
+
+    #[test]
+    fn collector_derives_intron_chain_for_spliced_secondary() {
+        // End-to-end: a SPLICED secondary (10M100N10M @ 1-based 101) flows through
+        // the collector and yields the intron chain [(110, 210)] — proving the
+        // collector's intron derivation works on a real record, not just the
+        // exon-parser unit. Fixture built out-of-band with samtools.
+        let mut config = crate::types::RunConfig::default();
+        config.long_reads = true;
+        let idx = super::collect_secondary_index_from_bam(
+            "bench/fixtures/mini_secondary_spliced.bam",
+            Some("chrT"),
+            &config,
+        )
+        .expect("collect from spliced fixture bam");
+        assert_eq!(idx.len(), 1, "one spliced secondary captured");
+        assert_eq!(
+            idx.alignments()[0].introns,
+            vec![(110, 210)],
+            "spliced secondary's intron chain derived through the collector"
+        );
+    }
 }
