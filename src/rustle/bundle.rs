@@ -1413,14 +1413,15 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
             let is_secondary_or_supp =
                 record.flags().is_secondary() || record.flags().is_supplementary();
             let this_long = read_is_long_class(&read, config);
-            // VG flow-based multi-map redirection: in VG mode, retain secondary
-            // alignments as per-copy evidence. Defaults to on whenever --vg is
-            // set so the downstream EM solver can replace the uniform 1/NH
-            // weighting with evidence-based (junction-compatibility + context)
-            // weights per copy. Override with RUSTLE_VG_DROP_SECONDARY=1 to
-            // restore StringTie-equivalent behaviour.
-            let vg_include_secondary = (config.vg_mode
-                || std::env::var_os("RUSTLE_VG_INCLUDE_SECONDARY").is_some())
+            // PHASE 1 (VG ⊇ baseline floor): VG must NOT ingest secondary/supplementary alignments
+            // into bundles by default — VG bundles must be BYTE-IDENTICAL to baseline. Keeping them
+            // inflates a family bundle's splice-graph transfrags so flow-extraction fails and a whole
+            // baseline region can vanish (project_vg_drops_baseline_region_rootcause; chr19: VG dropped
+            // the 111.86-112.07M region, 17 baseline transcripts → 0). Copy recovery (which used these
+            // secondaries) is DEFERRED to Phase 2, where secondaries will AMEND splice graphs
+            // additively (and seed all-secondary new-copy candidates) without ever altering bundles.
+            // Opt back into ingestion with RUSTLE_VG_INCLUDE_SECONDARY=1 (Phase-2 development).
+            let vg_include_secondary = std::env::var_os("RUSTLE_VG_INCLUDE_SECONDARY").is_some()
                 && std::env::var_os("RUSTLE_VG_DROP_SECONDARY").is_none()
                 && is_secondary_or_supp
                 && config.long_reads
