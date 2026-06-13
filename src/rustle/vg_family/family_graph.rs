@@ -471,29 +471,32 @@ use crate::genome::GenomeIndex;
 use crate::vg::FamilyGroup;
 use anyhow::Result;
 
-pub fn build_family_graph(
-    family: &FamilyGroup,
-    bundles: &[Bundle],
+/// Shared cluster→FamilyGraph assembly used by BOTH `build_family_graph` (bundle
+/// path) and `build_family_graph_from_layer1_graphs` (Layer-1-graph path).
+/// per_copy_exons[c] = (chrom, strand, sorted exon spans); per_copy_juncs[c] =
+/// (strand, junctions). The three thresholds pass through to the existing stages.
+fn assemble_family_graph_from_copy_exons(
+    family_id: usize,
+    per_copy_exons: &[(String, char, Vec<(u64, u64)>)],
+    per_copy_juncs: &[(char, Vec<(u64, u64)>)],
     genome: Option<&GenomeIndex>,
     min_pos_recip: f64,
     merge_min_jaccard: f64,
     refine_min_jaccard: f64,
 ) -> Result<FamilyGraph> {
-    // 1. Collect (chrom, strand, exons) per copy.
-    let copies: Vec<(&str, char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
-        .map(|&bi| {
-            let b = &bundles[bi];
-            (b.chrom.as_str(), b.strand, extract_copy_exons(b))
-        })
+    // 1. Collect (chrom, strand, exons) per copy. Borrow the owned chrom String
+    //    as &str so the rest of the body is verbatim from build_family_graph.
+    let copies: Vec<(&str, char, Vec<(u64, u64)>)> = per_copy_exons.iter()
+        .map(|(c, s, e)| (c.as_str(), *s, e.clone()))
         .collect();
     if copies.is_empty() {
-        return Ok(FamilyGraph { family_id: family.family_id, nodes: Vec::new(), edges: Vec::new() });
+        return Ok(FamilyGraph { family_id, nodes: Vec::new(), edges: Vec::new() });
     }
 
     // Anyhow-error if strands are mixed — caller should have filtered this.
     let strand0 = copies[0].1;
     if copies.iter().any(|(_, s, _)| *s != strand0) {
-        anyhow::bail!("family {} has mixed strands; build_family_graph requires single-strand families", family.family_id);
+        anyhow::bail!("family {} has mixed strands; build_family_graph requires single-strand families", family_id);
     }
 
     // 2. Stage 1: position-overlap clusters.
@@ -516,7 +519,7 @@ pub fn build_family_graph(
         let n_singletons = pos_clusters.iter().filter(|c| c.len() == 1).count();
         if trace_compl {
             eprintln!("[FG] family={} total_exons={} pos_clusters={} singletons={} has_genome={}",
-                family.family_id, total_exons, pos_clusters.len(), n_singletons, genome.is_some());
+                family_id, total_exons, pos_clusters.len(), n_singletons, genome.is_some());
         }
         if n_singletons >= 2 && total_exons <= 2000 {
             if let Some(g) = genome {
@@ -586,19 +589,10 @@ pub fn build_family_graph(
         }
     }
 
-    // 4. Junction edges: collect junctions from each copy's bundle, bind to nodes
-    //    by mapping (donor, acceptor) → nodes whose span ends at donor / starts at acceptor.
-    let per_copy_juncs: Vec<(char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
-        .map(|&bi| {
-            let b = &bundles[bi];
-            let mut js = Vec::new();
-            for (j, _) in &b.junction_stats {
-                js.push((j.donor, j.acceptor));
-            }
-            (b.strand, js)
-        })
-        .collect();
-    let raw = collect_family_junctions(&per_copy_juncs);
+    // 4. Junction edges: collect junctions from each copy (passed in by the
+    //    caller), bind to nodes by mapping (donor, acceptor) → nodes whose span
+    //    ends at donor / starts at acceptor.
+    let raw = collect_family_junctions(per_copy_juncs);
 
     // r.donor / r.acceptor are rounded to nearest 10 bp by collect_family_junctions
     // (jitter absorption). Search per_copy_spans (not span) so that multi-copy
@@ -635,13 +629,112 @@ pub fn build_family_graph(
     if trace_compl {
         let multi_edges = edges.iter().filter(|e| e.family_support >= 2).count();
         eprintln!("[FG] family={} edges={} edges_support>=2={}",
-                  family.family_id, edges.len(), multi_edges);
+                  family_id, edges.len(), multi_edges);
         for e in edges.iter().filter(|e| e.family_support >= 2).take(5) {
             eprintln!("[FG]   edge {:?}->{:?} support={}", e.from, e.to, e.family_support);
         }
     }
 
-    Ok(FamilyGraph { family_id: family.family_id, nodes, edges })
+    Ok(FamilyGraph { family_id, nodes, edges })
+}
+
+pub fn build_family_graph(
+    family: &FamilyGroup,
+    bundles: &[Bundle],
+    genome: Option<&GenomeIndex>,
+    min_pos_recip: f64,
+    merge_min_jaccard: f64,
+    refine_min_jaccard: f64,
+) -> Result<FamilyGraph> {
+    // 1. Collect (chrom, strand, exons) per copy from the family's bundles.
+    let per_copy_exons: Vec<(String, char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
+        .map(|&bi| {
+            let b = &bundles[bi];
+            (b.chrom.clone(), b.strand, extract_copy_exons(b))
+        })
+        .collect();
+    // 2. Per-copy junctions from each bundle's junction_stats.
+    let per_copy_juncs: Vec<(char, Vec<(u64, u64)>)> = family.bundle_indices.iter()
+        .map(|&bi| {
+            let b = &bundles[bi];
+            let mut js = Vec::new();
+            for (j, _) in &b.junction_stats {
+                js.push((j.donor, j.acceptor));
+            }
+            (b.strand, js)
+        })
+        .collect();
+    assemble_family_graph_from_copy_exons(
+        family.family_id,
+        &per_copy_exons,
+        &per_copy_juncs,
+        genome,
+        min_pos_recip,
+        merge_min_jaccard,
+        refine_min_jaccard,
+    )
+}
+
+/// Layer-2 (C3) family-graph merge sourced from Layer-1 splice graphs.
+/// Each graph contributes its exon-node spans as one copy and its node adjacency
+/// as that copy's junctions. Delegates to the shared routine (fetches sequences,
+/// binds edges). No coordinate is invented.
+pub fn build_family_graph_from_layer1_graphs(
+    family_id: usize,
+    copies: &[(String, char, &crate::graph::Graph)],
+    genome: Option<&GenomeIndex>,
+    min_pos_recip: f64,
+    merge_min_jaccard: f64,
+    refine_min_jaccard: f64,
+) -> Result<FamilyGraph> {
+    let per_copy_exons: Vec<(String, char, Vec<(u64, u64)>)> = copies
+        .iter()
+        .map(|(chrom, strand, g)| {
+            let mut exons: Vec<(u64, u64)> = g
+                .nodes
+                .iter()
+                .filter(|n| n.node_id != g.source_id && n.node_id != g.sink_id && n.end > n.start)
+                .map(|n| (n.start, n.end))
+                .collect();
+            exons.sort_unstable();
+            exons.dedup();
+            (chrom.clone(), *strand, exons)
+        })
+        .collect();
+    let per_copy_juncs: Vec<(char, Vec<(u64, u64)>)> = copies
+        .iter()
+        .map(|(_, strand, g)| {
+            // node_id == vec index (graph.rs add_node sets node_id = nodes.len()),
+            // so g.nodes[child] indexes the child node directly.
+            let mut js: Vec<(u64, u64)> = Vec::new();
+            for n in &g.nodes {
+                if n.node_id == g.source_id || n.node_id == g.sink_id || !(n.end > n.start) {
+                    continue;
+                }
+                for child in n.children.ones() {
+                    if child == g.sink_id {
+                        continue;
+                    }
+                    let c = &g.nodes[child];
+                    if c.start > n.end {
+                        js.push((n.end, c.start));
+                    }
+                }
+            }
+            js.sort_unstable();
+            js.dedup();
+            (*strand, js)
+        })
+        .collect();
+    assemble_family_graph_from_copy_exons(
+        family_id,
+        &per_copy_exons,
+        &per_copy_juncs,
+        genome,
+        min_pos_recip,
+        merge_min_jaccard,
+        refine_min_jaccard,
+    )
 }
 
 /// Multiple sequence alignment via poasta POA graph traversal.
@@ -1277,6 +1370,85 @@ mod tests {
         eprintln!("\nrecommended bar = just above max non-homologous Jaccard ({:.3}); ", max_neg);
         eprintln!("any threshold in ({:.3}, R_min] keeps unrelated exons separate while", max_neg);
         eprintln!("recovering near-identical paralog exons the 0.30 default rejects.\n");
+    }
+
+    #[test]
+    fn merge_from_layer1_graphs_shares_homologous_exon_and_has_edges() {
+        let g0 = tests_support::make_layer1_graph("chrT", '+', &[(100, 160), (300, 360)]);
+        let g1 = tests_support::make_layer1_graph("chrT", '+', &[(100, 160), (5300, 5360)]);
+        let genome = tests_support::make_two_copy_genome();
+        let fg = build_family_graph_from_layer1_graphs(
+            0,
+            &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome),
+            0.0, 0.5, 0.0,
+        ).expect("merge two layer-1 graphs");
+        let shared = fg.nodes.iter().find(|n| n.span == (100, 160)).expect("homologous exon present");
+        assert_eq!(shared.per_copy_sequences.len(), 2, "both copies contribute → shared node");
+        assert!(!shared.per_copy_sequences[0].1.is_empty(), "sequence channel populated");
+        assert!(!shared.copy_specific, "shared exon is not copy-specific");
+        let n_private = fg.nodes.iter().filter(|n| n.copy_specific).count();
+        assert_eq!(n_private, 2, "one private exon per copy");
+        assert!(!fg.edges.is_empty(), "junction edges derived from Layer-1 adjacency");
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod tests_support {
+    use super::*;
+
+    /// Minimal real Layer-1 splice graph: source(0), one node per exon (chained), sink.
+    pub fn make_layer1_graph(_chrom: &str, _strand: char, exons: &[(u64, u64)]) -> crate::graph::Graph {
+        let mut g = crate::graph::Graph::new();
+        let source = g.add_node(0, 0).node_id;
+        let mut exon_node_ids = Vec::new();
+        for &(s, e) in exons {
+            exon_node_ids.push(g.add_node(s, e).node_id);
+        }
+        let sink = g.add_node(u64::MAX, u64::MAX).node_id;
+        g.source_id = source;
+        g.sink_id = sink;
+        g.n_nodes = g.nodes.len();
+        let mut chain = vec![source];
+        chain.extend(exon_node_ids.iter().copied());
+        chain.push(sink);
+        for w in chain.windows(2) {
+            g.nodes[w[0]].children.insert(w[1]);
+            g.nodes[w[1]].parents.insert(w[0]);
+        }
+        g
+    }
+
+    /// GenomeIndex over chrT (>=60kb) with deterministic pseudo-sequence so shared
+    /// coords read identical bytes across copies and distinct spans differ.
+    ///
+    /// The base at each position is a non-periodic hash of its ABSOLUTE index
+    /// (SplitMix64 finalizer), NOT a short cyclic pattern: a low-period pattern
+    /// makes every window share the same minimizer set (Jaccard 1.0 everywhere),
+    /// which would collapse distinct exons. With per-index hashing, identical
+    /// coordinates always read identical bytes (so homologous exons still merge)
+    /// while distinct spans get distinct minimizers (so private exons stay split).
+    pub fn make_two_copy_genome() -> GenomeIndex {
+        use std::io::Write;
+        let dir = Box::leak(Box::new(tempfile::tempdir().unwrap()));
+        let fa = dir.path().join("chrT.fa");
+        let len = 60_000usize;
+        let mut seq = vec![b'A'; len];
+        for (i, b) in seq.iter_mut().enumerate() {
+            let mut z = (i as u64).wrapping_add(0x9E3779B97F4A7C15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^= z >> 31;
+            *b = match z % 4 { 0 => b'A', 1 => b'C', 2 => b'G', _ => b'T' };
+        }
+        let mut f = std::fs::File::create(&fa).unwrap();
+        writeln!(f, ">chrT").unwrap();
+        for chunk in seq.chunks(70) {
+            f.write_all(chunk).unwrap();
+            f.write_all(b"\n").unwrap();
+        }
+        drop(f);
+        GenomeIndex::from_fasta(fa.to_str().unwrap()).expect("load test genome")
     }
 }
 
