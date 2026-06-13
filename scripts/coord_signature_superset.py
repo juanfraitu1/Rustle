@@ -45,6 +45,8 @@ def chains(path):
 
 
 def main():
+    if len(sys.argv) != 3:
+        sys.exit(f"Usage: {sys.argv[0]} SUPERSET.gtf SUBSET.gtf")
     sup, sub = sys.argv[1], sys.argv[2]
     s_sup, s_sub = chains(sup), chains(sub)
     missing = s_sub - s_sup
