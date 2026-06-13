@@ -10,6 +10,7 @@ pub mod rescue;
 pub mod diagnostic;
 pub mod positional;
 pub mod tandem;
+pub mod consensus; // cross-copy consensus error-correction (subtractive precision lever)
 pub mod mosaic;
 pub mod segdup;
 pub mod hidden_copy;
