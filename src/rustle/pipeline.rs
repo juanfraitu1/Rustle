@@ -2570,6 +2570,19 @@ mod layer2_plumbing_tests {
             ]
         );
     }
+
+    #[test]
+    fn graph_capture_slot_roundtrips_exon_nodes() {
+        let g = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360)],
+        );
+        let slot: std::sync::Mutex<Option<crate::graph::Graph>> = std::sync::Mutex::new(None);
+        *slot.lock().unwrap() = Some(g.clone());
+        let got = slot.lock().unwrap();
+        let spans: Vec<(u64, u64)> = got.as_ref().unwrap().nodes.iter()
+            .filter(|n| n.end > n.start && n.end != u64::MAX).map(|n| (n.start, n.end)).collect();
+        assert!(spans.contains(&(100, 160)) && spans.contains(&(300, 360)));
+    }
 }
 
 fn build_component_reads(
@@ -12541,6 +12554,15 @@ pub fn run<P: AsRef<Path>>(
         }
         eprintln!("[layer2-floor] injected {n} baseline-floor clone bundle(s) for assembly");
     }
+    // (M4.3b) Per-locus Layer-1 graph capture for Layer 2. One Mutex<Option<Graph>>
+    // slot per bundle (sized AFTER the M-FLOOR injection so indices match the par_iter's
+    // `bundle_idx`). Each assembly task clones its finalized splice graph into its slot.
+    // Gated: None with --vg-layer2 off (no allocation, byte-identical path).
+    let layer2_graph_capture: Option<Vec<std::sync::Mutex<Option<crate::graph::Graph>>>> =
+        if config.vg_mode && config.vg_layer2 {
+            Some((0..bundles_vec.len()).map(|_| std::sync::Mutex::new(None)).collect())
+        } else { None };
+    let layer2_graph_capture_ref = layer2_graph_capture.as_ref();
     if std::env::var_os("RUSTLE_VG_FAMILY_DEBUG_SYNTHETIC").is_some() {
         let n_synth = bundles_vec.iter().filter(|(_, b)| b.synthetic).count();
         eprintln!("[VG-HMM-DEBUG] par_iter starting with {} bundles total, {} synthetic", bundles_vec.len(), n_synth);
@@ -15444,6 +15466,14 @@ pub fn run<P: AsRef<Path>>(
                     trace_reference.is_some() || config.debug_stage_tsv.is_some(),
                 );
                 crate::path_extract::set_parent_partition_for_dump(None);
+                // (M4.3b) Capture the finalized per-locus splice graph for Layer 2.
+                // `layer2_graph_capture_ref` is `Copy` (an `&`), so it is usable inside
+                // this parallel closure. None when --vg-layer2 is off (no-op).
+                if let Some(cap) = layer2_graph_capture_ref {
+                    if let Some(slot) = cap.get(bundle_idx) {
+                        *slot.lock().unwrap() = Some(graph_mut.clone());
+                    }
+                }
                 // BUNDLE_STATS per-bundle summary across all layers (RUSTLE_BUNDLE_STATS=1).
                 // Emits one line with: reads, junctions, nodes/edges, transfrags,
                 // seeds, outcome counts. Paired with StringTie PARITY_BUNDLE_STATS

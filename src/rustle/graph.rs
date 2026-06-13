@@ -371,7 +371,7 @@ pub type CTransfrag = GraphTransfrag;
 pub type CMTransfrag = GraphTransfrag;
 
 /// Splice graph: source(0), real nodes 1..n-1, sink(n-1).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Graph {
     pub nodes: Vec<GraphNode>,
     pub source_id: usize,
