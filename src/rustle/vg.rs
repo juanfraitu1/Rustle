@@ -283,6 +283,15 @@ fn is_strand_mirror(b1: &Bundle, b2: &Bundle) -> bool {
 ///
 /// `similarity[(a,b)]` (a<b) is the pre-computed exon Jaccard for candidate pairs
 /// (the caller computes it only for linked pairs to avoid O(n^2) genome fetches).
+///
+/// ⚠ M3 CONTRACT: the returned `multimap_reads` is a DISCOVERY-ONLY signal
+/// (family membership + shared-read counts). Its `(family_pos, read_idx)` entries
+/// use a PLACEHOLDER `read_idx = 0` and record only the read's PRIMARY-copy
+/// position (one placement per read), so they do NOT index real reads. M3 MUST
+/// rebuild `multimap_reads` with real `(family_pos, read_index_within_bundle)`
+/// pairs (and both primary+secondary placements) before passing any of these
+/// `FamilyGroup`s to code that indexes `bundles[bi].reads[ri]` (EM, classify_family,
+/// copy-support) or that checks `placements.len() >= 2`.
 pub fn discover_family_groups_layer2(
     si: &crate::vg_family::secondary_index::SecondaryIndex,
     primary_locus: &crate::types::DetHashMap<u64, usize>,
@@ -341,6 +350,8 @@ pub fn discover_family_groups_layer2(
                     aln.read_name_hash == h
                         && aln.locus.map(|l| member_set.contains(&l)).unwrap_or(false)
                 });
+                // ri=0 is a PLACEHOLDER (discovery-only); M3 replaces multimap_reads
+                // with real (family_pos, read_index) pairs before any EM/classify use.
                 if touches { multimap_reads.entry(h).or_default().push((pos, 0)); }
             }
         }
@@ -587,20 +598,6 @@ pub fn create_family_groups_from_annotation(
         .collect()
 }
 
-/// Compute the mean pairwise k-mer Jaccard over the family graph's per-copy
-/// sequences. **Graph-supported** because it uses sequences extracted at the
-/// family graph's exon-class nodes (not raw read k-mers). For each pair of
-/// copies, builds a k-mer set per copy by concatenating its node-level
-/// sequences, then takes Jaccard.
-///
-/// Real paralog clusters: high pairwise Jaccard (paralogs share most
-/// exonic sequence). TE-bridge artifacts: low Jaccard (different gene
-/// families have different sequences even when their bundles span similar
-/// intron-length patterns by coincidence).
-///
-/// Returns `None` when family graph build fails (e.g., genome not available,
-/// mixed-strand family) — caller should treat absence as "skip this signal".
-
 // ── Module-level canonical k-mer hash (lifted from compute_family_graph_kmer_jaccard_diag) ──
 //
 // CANONICAL FNV-1a k-mer hash: min(forward, reverse-complement). A sequence
@@ -664,6 +661,19 @@ pub fn exon_kmer_similarity_between_graphs(
     exon_kmer_similarity(&exons_of(g_a), &exons_of(g_b), k)
 }
 
+/// Compute the mean pairwise k-mer Jaccard over the family graph's per-copy
+/// sequences. **Graph-supported** because it uses sequences extracted at the
+/// family graph's exon-class nodes (not raw read k-mers). For each pair of
+/// copies, builds a k-mer set per copy by concatenating its node-level
+/// sequences, then takes Jaccard.
+///
+/// Real paralog clusters: high pairwise Jaccard (paralogs share most
+/// exonic sequence). TE-bridge artifacts: low Jaccard (different gene
+/// families have different sequences even when their bundles span similar
+/// intron-length patterns by coincidence).
+///
+/// Returns `None` when family graph build fails (e.g., genome not available,
+/// mixed-strand family) — caller should treat absence as "skip this signal".
 pub fn compute_family_graph_kmer_jaccard(
     family: &FamilyGroup,
     bundles: &[Bundle],
