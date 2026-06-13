@@ -4166,6 +4166,43 @@ pub fn enumerate_diagnostic_sites(
     ExonFingerprints { sites, per_copy_site_refs: per_copy_refs, n_copies, n_sites }
 }
 
+/// Copy-distinguishing sites between two copies, each supplied as genome-forward ordered exons
+/// `(genomic_start, forward_seq)` (sequences as fetched from the FASTA, i.e. forward strand). Returns
+/// `(pos_a, base_a, pos_b, base_b)` per divergent column, where `pos_*` are absolute genome-forward
+/// coordinates (`exon_start + offset`). Reuses the same synteny + base-diff the fingerprint EM uses
+/// (`syntenic_exon_pairs` + `diff_gf_exons`), so a divergent column is a real PSV between the two
+/// copies. The two copies must be the SAME strand (their forward sequences are then homologous); an
+/// inverted pair is the caller's responsibility to skip. Used by the PSV-FASTA report
+/// (`crate::psv_fasta`) to compute PSVs directly from EMITTED transcripts, guaranteeing the sites
+/// land in the transcripts' exons.
+pub fn diagnostic_sites_between(
+    copy_a: &[(u64, Vec<u8>)],
+    copy_b: &[(u64, Vec<u8>)],
+) -> Vec<(u64, u8, u64, u8)> {
+    let to_gf = |c: &[(u64, Vec<u8>)]| -> Vec<GfExon> {
+        c.iter()
+            .filter(|(_, seq)| !seq.is_empty())
+            .map(|(s, seq)| GfExon {
+                start: *s,
+                end: *s + seq.len() as u64,
+                seq: seq.iter().map(|b| b.to_ascii_uppercase()).collect(),
+            })
+            .collect()
+    };
+    let ea = to_gf(copy_a);
+    let eb = to_gf(copy_b);
+    let mut out = Vec::new();
+    if ea.is_empty() || eb.is_empty() {
+        return out;
+    }
+    for (ei, ej) in syntenic_exon_pairs(&ea, &eb) {
+        for (oa, ba, ob, bb) in diff_gf_exons(&ea[ei].seq, &eb[ej].seq) {
+            out.push((ea[ei].start + oa as u64, ba, eb[ej].start + ob as u64, bb));
+        }
+    }
+    out
+}
+
 /// Compute log-likelihood scores for each copy given a multi-mapping read.
 ///
 /// `copy_idx` is the copy that this `BundleRead` is aligned to — it selects
@@ -6002,7 +6039,7 @@ fn kmer_hash(kmer: &[u8]) -> u64 {
 }
 
 /// Reverse complement of a DNA sequence.
-fn reverse_complement(seq: &[u8]) -> Vec<u8> {
+pub(crate) fn reverse_complement(seq: &[u8]) -> Vec<u8> {
     seq.iter()
         .rev()
         .map(|&b| match b {

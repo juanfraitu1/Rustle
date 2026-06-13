@@ -19691,6 +19691,26 @@ pub fn run<P: AsRef<Path>>(
     let mut f = std::fs::File::create(output_gtf.as_ref())?;
     write_gtf(&all_transcripts, &mut f, &config.label)?;
 
+    // ── PSV-FASTA report (opt-in RUSTLE_VG_PSV_FASTA) ─────────────────────────
+    // Per-transcript spliced sequence (<out>.transcripts.fa) + copy-distinguishing variants
+    // (<out>.psv.tsv), proving against sequence-blind StringTie that real PSVs were found. PSVs are
+    // computed from the EMITTED transcript sequences (per-family, same-strand copy diffs), so every
+    // site lies in a transcript's exons. Default-off → no files, GTF byte-identical.
+    if std::env::var_os("RUSTLE_VG_PSV_FASTA").is_some() {
+        if let Some(genome) = vg_snp_genome.as_ref() {
+            if let Err(e) = crate::psv_fasta::emit_psv_fasta(
+                &all_transcripts,
+                genome,
+                &config.label,
+                output_gtf.as_ref(),
+            ) {
+                eprintln!("[VG] PSV-FASTA emission failed: {}", e);
+            }
+        } else {
+            eprintln!("[VG] PSV-FASTA requested but no --genome-fasta provided; skipping (need a genome to build transcript sequences)");
+        }
+    }
+
     // ── -G2 reports: vg_families.tsv (family merge audit) + vg_eval.tsv (vs -G) ──
     // Written next to the GTF whenever --guide2 produced annotation families.
     // Same path pattern as the rescue report (output_gtf.with_extension(..) +
