@@ -937,6 +937,19 @@ fn verify_recipient_support(
 ///
 /// REGRESSION ANCHOR: with both flags false, returns exactly decompose_family_paths(..)
 /// (now carrying source=Native + junction_chain). All additions are gated off.
+///
+/// # Preconditions
+/// - `secondaries_by_copy` keys are family `copy_id`s — the SAME copy indices used in
+///   `fg.nodes[].per_copy_spans` / `per_copy_sequences`. Part A/B index the graph by
+///   these ids, so a mismatched keyspace would map a copy's reads onto another copy's
+///   coordinates.
+/// - Each value MUST contain ONLY that copy's OWN secondaries. Part A labels every
+///   enumerated chain `Native` with NO allele-linkage guard (a chain from a copy's own
+///   reads is, by assumption, a real molecule at that copy's locus). So if a foreign /
+///   cross-mapped secondary leaks into a copy's bucket, its chain is emitted as that
+///   copy's native isoform — a SILENT false positive with no downstream gate to catch
+///   it. This is a known historical hazard in this codebase: cross-mapped secondaries
+///   contaminating per-copy graphs. The caller owns this partition; we trust it here.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_family_isoforms(
     fg: &FamilyGraph,
@@ -1002,6 +1015,9 @@ pub fn emit_family_isoforms(
 
     // --- Part B: cross-copy isoform transfer ("transfer proposes, recipient disposes")
     if enable_transfer {
+        // Fallback for a recipient with no secondaries — borrows nothing donor- or
+        // recipient-specific, so hoist it once instead of rebuilding it per recipient.
+        let empty: Vec<&crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
         for &donor in &copies {
             let donor_secs = &secondaries_by_copy[&donor];
             // The donor's REAL isoforms (only chains a molecule traversed >= k times).
@@ -1012,7 +1028,6 @@ pub fn emit_family_isoforms(
                 }
                 // Recipient's own secondaries (empty slice if it has none → the gate
                 // can still pass via fg.edges, but never via the donor's reads).
-                let empty: Vec<&crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
                 let recip_secs = secondaries_by_copy.get(&recipient).unwrap_or(&empty);
                 for (donor_exons, _donor_chain, _support) in &donor_chains {
                     // Map donor's isoform onto the recipient's OWN coordinates.
@@ -1030,6 +1045,10 @@ pub fn emit_family_isoforms(
                     // Conservative simplification: the isoform is RECOVERED (verified
                     // to >= k support), not flow-quantified — record the verified
                     // support floor as its flow rather than a fabricated abundance.
+                    // NOTE: this is a RECOVERY FLOOR, not an abundance estimate. It is
+                    // NOT comparable to native `flow` values (real per-chain support);
+                    // downstream code must not rank/filter across native vs transferred
+                    // paths by `flow` as if they were on the same scale.
                     let flow = k as f64;
                     // G6 (min_flow): respect the base decompose flow floor.
                     if flow < min_flow {
@@ -1055,9 +1074,12 @@ pub fn emit_family_isoforms(
     out.retain(|p| seen.insert((p.copy_id, p.junction_chain.clone())));
 
     // --- Final deterministic total order: (exons, copy_id, source_rank) ------------
-    // The source tiebreak only ever activates among non-Native paths, so when every
-    // path is Native this reduces to decompose's own (exons, copy_id) ordering — the
-    // both-flags-off regression anchor stays byte-identical.
+    // After the G8 dedup, no two surviving paths share (copy_id, junction_chain), and
+    // since junction_chain is derived from exons no two share (exons, copy_id) either —
+    // so (exons, copy_id) already totally orders the output and the source_rank tiebreak
+    // never actually decides ordering. It is a total-order safety net only. (With every
+    // path Native this also reduces to decompose's own (exons, copy_id) ordering, keeping
+    // the both-flags-off regression anchor byte-identical.)
     let source_rank = |s: &IsoformSource| -> (usize, usize) {
         match s {
             IsoformSource::Native => (0, 0),
@@ -1810,10 +1832,11 @@ mod tests {
 
     #[test]
     fn emit_part_a_respects_support_floor() {
-        // copy_max = 100 (dominant chain). A chain with 1 supporter is below k=2 (G6
-        // via support<k inside enumerate); a minor chain with support below the G7
-        // isofrac floor (0.01*copy_max = 1, but max(2.0, 1.0)=2.0 → support 1 fails)
-        // is also dropped. Construct a high-coverage dominant + two weak chains.
+        // This case covers the K-FILTER inside enumerate_secondary_chains (NOT G7): a
+        // lone read (support 1 < k=2) never even survives enumeration, so it is gone
+        // before Part A's G7 isofrac floor runs. G7 is exercised independently by
+        // emit_part_a_g7_floor_drops_minor_isoform below (a chain that CLEARS k yet
+        // falls under the isofrac floor). Here: a high-support dominant + a sub-k chain.
         let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
             "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
         );
@@ -1826,9 +1849,9 @@ mod tests {
             Some(&genome), 0.0, 0.5, 0.0,
         ).unwrap();
         let am = GraphAmendment::default();
-        // 4 supporters of the dominant full chain; a 1-supporter chain (below k);
-        // (with k=2 and copy_max=4 the G7 floor is max(2.0, 0.04)=2.0, so a
-        // 1-supporter chain fails both k and the floor.)
+        // 4 supporters of the dominant full chain; a 1-supporter (sub-k) skip chain.
+        // The skip chain is dropped by enumerate's support<k filter — it never reaches
+        // the G7 floor. (G7's distinct behavior is proven in the sibling test.)
         let mut secs: Vec<crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
         for h in 0..4u64 {
             secs.push(sec_aln(h, 100, 560, &[(160, 300), (360, 500)], 0));
@@ -1849,7 +1872,57 @@ mod tests {
         );
         assert!(
             !on.iter().any(|p| p.junction_chain == skip),
-            "below-k / below-floor minor chain NOT emitted: {on:?}"
+            "sub-k minor chain NOT emitted (dropped by enumerate's support<k filter): {on:?}"
+        );
+    }
+
+    #[test]
+    fn emit_part_a_g7_floor_drops_minor_isoform() {
+        // G7 isofrac-floor coverage that is INDEPENDENT of enumerate's support<k filter.
+        // One copy carries a DOMINANT chain with ~300 supporters and a MINOR alt chain
+        // with support == 2 (== k, so it CLEARS the k-filter and survives enumeration).
+        // With copy_max=300 the G7 floor is max(2.0, 0.01*300)=3.0, so the support-2 alt
+        // is dropped by G7 — NOT by the k-filter. This is the case the existing
+        // emit_part_a_respects_support_floor test does NOT reach: deleting the G7 skip
+        // line in Part A makes ONLY this test fail (the alt would then be emitted).
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
+            0, &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome), 0.0, 0.5, 0.0,
+        ).unwrap();
+        let am = GraphAmendment::default();
+        let dominant_chain = [(160, 300), (360, 500)];
+        let minor_chain = [(160, 500)];
+        // ~300 supporters of the dominant chain (copy_max=300 → G7 floor = 3.0) ...
+        let mut secs: Vec<crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
+        for i in 0..300u64 {
+            secs.push(sec_aln(i, 100, 560, &dominant_chain, 0));
+        }
+        // ... plus EXACTLY 2 supporters of the minor alt chain: support==k=2 clears the
+        // k-filter, but 2 < 3.0 floor → G7 must drop it.
+        secs.push(sec_aln(1000, 100, 560, &minor_chain, 0));
+        secs.push(sec_aln(1001, 100, 560, &minor_chain, 0));
+        let refs: Vec<&_> = secs.iter().collect();
+        let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+            DetHashMap::default();
+        by_copy.insert(0, refs);
+
+        let on = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, true, false);
+        let dominant = dominant_chain.to_vec();
+        let minor = minor_chain.to_vec();
+        assert!(
+            on.iter().any(|p| p.copy_id == 0 && p.junction_chain == dominant),
+            "dominant chain (support 300 >= floor) emitted: {on:?}"
+        );
+        assert!(
+            !on.iter().any(|p| p.junction_chain == minor),
+            "minor chain (support 2 >= k but < 3.0 isofrac floor) dropped by G7: {on:?}"
         );
     }
 
