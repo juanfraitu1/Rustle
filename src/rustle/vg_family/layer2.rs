@@ -550,7 +550,22 @@ fn consensus_exon_chain(
         _ => return Vec::new(), // no consensus (single read / unsupported)
     };
     let supporters = &groups[&chain];
+    build_exons_from_chain(supporters, &chain)
+}
 
+/// Build exon spans for a known intron chain from its supporting secondaries:
+/// interior boundaries are the exact junctions; terminal exon start/end are the
+/// MEDIAN of supporters' ref_start/ref_end (lower-middle, deterministic).
+///
+/// Factored out of `consensus_exon_chain` (behavior-preserving): given the chain
+/// and the secondaries that traversed it, produce the consensus exon coordinates.
+fn build_exons_from_chain(
+    supporters: &[&crate::vg_family::secondary_index::SecondaryAlignment],
+    chain: &[(u64, u64)],
+) -> Vec<(u64, u64)> {
+    if supporters.is_empty() {
+        return Vec::new();
+    }
     // Terminal exon coords vary across supporters → MEDIAN (lower-middle).
     let median = |mut v: Vec<u64>| -> u64 {
         v.sort_unstable();
@@ -563,12 +578,51 @@ fn consensus_exon_chain(
     // Interior boundaries are exactly the junction coords (crisp).
     let mut exons = Vec::with_capacity(chain.len() + 1);
     let mut cur_start = start;
-    for &(donor, acceptor) in &chain {
+    for &(donor, acceptor) in chain {
         exons.push((cur_start, donor));
         cur_start = acceptor;
     }
     exons.push((cur_start, end));
     exons
+}
+
+/// Return EVERY distinct intron-chain carried by >= K of these secondaries (one
+/// copy's), each with its consensus exons + support count. Deterministic:
+/// sorted by (support DESC, chain.len() DESC, chain ASC). The single most
+/// important false-positive defense is that we only ever return chains a real
+/// molecule fully traversed >= K times — never a synthesized/graph-walk chain.
+fn enumerate_secondary_chains(
+    secondaries: &[&crate::vg_family::secondary_index::SecondaryAlignment],
+    k: usize,
+) -> Vec<(Vec<(u64, u64)> /*exons*/, Vec<(u64, u64)> /*intron chain*/, usize /*support*/)> {
+    if secondaries.is_empty() {
+        return Vec::new();
+    }
+    // Group by full junction-chain identity (the introns tuple) — the SAME
+    // grouping consensus_exon_chain uses.
+    let mut groups: DetHashMap<
+        Vec<(u64, u64)>,
+        Vec<&crate::vg_family::secondary_index::SecondaryAlignment>,
+    > = DetHashMap::default();
+    for s in secondaries {
+        groups.entry(s.introns.clone()).or_default().push(s);
+    }
+    let mut out: Vec<(Vec<(u64, u64)>, Vec<(u64, u64)>, usize)> = Vec::new();
+    for (chain, members) in &groups {
+        let support = members.len();
+        if support < k {
+            continue; // never return a chain a real molecule didn't traverse >= K times
+        }
+        let exons = build_exons_from_chain(members, chain);
+        out.push((exons, chain.clone(), support));
+    }
+    // Deterministic order: support DESC, chain.len() DESC, chain ASC.
+    out.sort_by(|a, b| {
+        b.2.cmp(&a.2)
+            .then(b.1.len().cmp(&a.1.len()))
+            .then(a.1.cmp(&b.1))
+    });
+    out
 }
 
 /// Map a starved copy's consensus exon chain onto the family backbone nodes by
@@ -666,6 +720,162 @@ fn positional_mapping(
     // 6. Determinism: sort by node_idx.
     out.sort_by_key(|&(node_idx, _)| node_idx);
     out
+}
+
+// =============================================================================
+// Isoform transfer across copies (C5 building blocks, PURE — no wiring yet).
+//
+// "Transfer proposes, recipient disposes." A donor copy's isoform (a real exon
+// chain) is mapped onto a recipient copy's OWN coordinates via the co-linear
+// backbone, then admitted ONLY if the recipient has its own per-junction
+// evidence. We never emit the donor's coordinates for the recipient, and never
+// claim a node the recipient cannot legitimately place.
+// =============================================================================
+
+/// Backbone node indices in canonical co-linear order (by span, then idx) — the
+/// SAME order positional_mapping uses. Rank = position in this Vec.
+fn canonical_node_order(fg: &FamilyGraph) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..fg.nodes.len()).collect();
+    order.sort_by(|&a, &b| fg.nodes[a].span.cmp(&fg.nodes[b].span).then(a.cmp(&b)));
+    order
+}
+
+/// Map donor copy A's isoform (given as A's exon spans) onto recipient copy B's
+/// COORDINATES via the co-linear backbone. For each of A's exons: find its
+/// backbone node (A's per_copy_spans match), take that node's rank, and emit B's
+/// coordinate at that node — B's own per_copy_spans entry, ELSE a >=2-agree
+/// co-located shared span (the borrow rule from decompose), ELSE abort (return
+/// empty: B can't legitimately claim a copy-A-unique node). Result exons must be
+/// strictly genomically ordered (co-linear) else abort. NEVER emits A's coords.
+fn map_isoform_across_copies(
+    fg: &FamilyGraph,
+    donor_copy: usize,
+    donor_exons: &[(u64, u64)],
+    recipient_copy: usize,
+) -> Vec<(u64, u64)> {
+    if donor_exons.is_empty() {
+        return Vec::new();
+    }
+    let order = canonical_node_order(fg);
+    // Rank of each backbone node (position in canonical order).
+    let mut rank_of_node: DetHashMap<usize, usize> = DetHashMap::default();
+    for (rank, &node_idx) in order.iter().enumerate() {
+        rank_of_node.insert(node_idx, rank);
+    }
+    let mut placed: Vec<(usize /*rank*/, (u64, u64) /*recipient coord*/)> =
+        Vec::with_capacity(donor_exons.len());
+    for &dex in donor_exons {
+        // 1. Locate A's backbone node: the node whose per_copy_spans carries
+        //    EXACTLY donor A's coordinate for this exon.
+        let node = fg.nodes.iter().position(|n| {
+            n.per_copy_spans
+                .iter()
+                .any(|&(c, sp)| c == donor_copy && sp == dex)
+        });
+        let Some(node_idx) = node else {
+            return Vec::new(); // donor exon not a real backbone node for A → abort
+        };
+        let Some(&rank) = rank_of_node.get(&node_idx) else {
+            return Vec::new();
+        };
+        let n = &fg.nodes[node_idx];
+        // 2. Recipient B's coordinate at this node:
+        //    (a) B's own per_copy_spans entry → that coordinate.
+        //    (b) ELSE a >=2-agree co-located shared span (genuine co-location).
+        //    (c) ELSE abort: copy-A-unique node, B cannot legitimately claim it.
+        let recip_coord = if let Some((_, sp)) =
+            n.per_copy_spans.iter().find(|(c, _)| *c == recipient_copy)
+        {
+            *sp
+        } else if n.per_copy_spans.len() >= 2 {
+            let f = n.per_copy_spans[0].1;
+            if n.per_copy_spans.iter().all(|(_, s)| *s == f) {
+                f
+            } else {
+                return Vec::new();
+            }
+        } else {
+            return Vec::new();
+        };
+        placed.push((rank, recip_coord));
+    }
+    // 3. Co-linearity: emit in backbone-rank order; recipient coords must be
+    //    strictly genomically ordered (non-overlapping, ascending) else abort.
+    placed.sort_by_key(|&(rank, _)| rank);
+    let exons: Vec<(u64, u64)> = placed.iter().map(|&(_, sp)| sp).collect();
+    for w in exons.windows(2) {
+        // each exon's end must not exceed the next exon's start (strict order)
+        if w[0].1 > w[1].0 {
+            return Vec::new();
+        }
+    }
+    // Each exon must itself be a valid (start < end) span.
+    if exons.iter().any(|&(s, e)| s >= e) {
+        return Vec::new();
+    }
+    exons
+}
+
+/// "Transfer proposes, recipient disposes": a transferred isoform is admissible
+/// ONLY if the recipient B has its OWN evidence for EVERY junction of the
+/// recipient chain — i.e. each (donor,acceptor) junction of `recipient_exons`
+/// appears (within +-5bp jitter, matching collect_family_junctions) among B's own
+/// secondaries' introns OR among fg.edges between B-member nodes. Returns true iff
+/// all junctions are recipient-supported with >= K support.
+fn verify_recipient_support(
+    fg: &FamilyGraph,
+    recipient_copy: usize,
+    recipient_exons: &[(u64, u64)],
+    recipient_secondaries: &[&crate::vg_family::secondary_index::SecondaryAlignment],
+    k: usize,
+) -> bool {
+    // The recipient chain's junctions: (prev_exon.end, next_exon.start).
+    let junctions: Vec<(u64, u64)> = recipient_exons
+        .windows(2)
+        .map(|w| (w[0].1, w[1].0))
+        .collect();
+    if junctions.is_empty() {
+        return false; // a single-exon "chain" has no junction to verify
+    }
+    // collect_family_junctions absorbs jitter by rounding to nearest 10 bp; we
+    // accept a match when both donor and acceptor agree within +-5 bp (the same
+    // tolerance window: |a-b| <= 5 ⇒ same 10-bp bin under the documented rule).
+    let close = |a: u64, b: u64| -> bool { a.max(b) - a.min(b) <= 5 };
+    // Nodes that recipient B is a member of (for the fg.edges path).
+    let mut b_member_node: DetHashSet<usize> = DetHashSet::default();
+    for (ni, n) in fg.nodes.iter().enumerate() {
+        if n.per_copy_spans.iter().any(|(c, _)| *c == recipient_copy)
+            || n.per_copy_sequences.iter().any(|(c, _)| *c == recipient_copy)
+        {
+            b_member_node.insert(ni);
+        }
+    }
+    for &(jd, ja) in &junctions {
+        // (A) Count B's own secondaries whose intron chain carries this junction.
+        let mut support = 0usize;
+        for s in recipient_secondaries {
+            if s.introns.iter().any(|&(d, a)| close(d, jd) && close(a, ja)) {
+                support += 1;
+            }
+        }
+        // (B) ELSE fg.edges between B-member nodes whose donor/acceptor match.
+        if support < k {
+            for e in &fg.edges {
+                if !b_member_node.contains(&e.from.0) || !b_member_node.contains(&e.to.0) {
+                    continue;
+                }
+                let de = fg.nodes[e.from.0].span.1;
+                let ae = fg.nodes[e.to.0].span.0;
+                if close(de, jd) && close(ae, ja) {
+                    support += e.family_support as usize;
+                }
+            }
+        }
+        if support < k {
+            return false; // recipient lacks its own evidence for this junction
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -940,6 +1150,80 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // T1 — enumerate_secondary_chains
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn enumerate_returns_both_chains_above_k_sorted() {
+        // Chain X: 3 supporters (2 introns). Chain Y: 2 supporters (1 intron).
+        // Both >= K=2 → both returned. Sorted by support DESC → X first.
+        let s = [
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 500)]),
+            sec_owned(100, 560, &[(160, 500)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        let got = enumerate_secondary_chains(&refs, 2);
+        assert_eq!(got.len(), 2, "both >=K chains returned: {got:?}");
+        // X first (3 support), then Y (2 support).
+        assert_eq!(got[0].1, vec![(160, 300), (360, 500)], "X (mode) first");
+        assert_eq!(got[0].2, 3);
+        assert_eq!(got[0].0, vec![(100, 160), (300, 360), (500, 560)], "X exons");
+        assert_eq!(got[1].1, vec![(160, 500)], "Y second");
+        assert_eq!(got[1].2, 2);
+        assert_eq!(got[1].0, vec![(100, 160), (500, 560)], "Y exons");
+    }
+
+    #[test]
+    fn enumerate_filters_chain_below_k() {
+        // Chain X: 2 supporters; chain Y: 1 supporter (< K=2) → only X returned.
+        let s = [
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 300), (360, 500)]),
+            sec_owned(100, 560, &[(160, 320), (380, 500)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        let got = enumerate_secondary_chains(&refs, 2);
+        assert_eq!(got.len(), 1, "the <K chain is filtered: {got:?}");
+        assert_eq!(got[0].1, vec![(160, 300), (360, 500)]);
+        assert_eq!(got[0].2, 2);
+    }
+
+    #[test]
+    fn enumerate_single_chain_matches_consensus_exons() {
+        // One distinct chain at >=K support → exactly one result, and its exons
+        // match consensus_exon_chain's single mode chain (factor consistency).
+        let s = [
+            sec_owned(29998, 30658, &[(30060, 30300), (30360, 30600)]),
+            sec_owned(30000, 30660, &[(30060, 30300), (30360, 30600)]),
+            sec_owned(30003, 30662, &[(30060, 30300), (30360, 30600)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        let got = enumerate_secondary_chains(&refs, 2);
+        assert_eq!(got.len(), 1, "one chain returned");
+        assert_eq!(got[0].0, consensus_exon_chain(&refs), "exons match consensus");
+        assert_eq!(got[0].0, vec![(30000, 30060), (30300, 30360), (30600, 30660)]);
+    }
+
+    #[test]
+    fn enumerate_empty_input_returns_empty() {
+        assert!(enumerate_secondary_chains(&[], 2).is_empty());
+    }
+
+    #[test]
+    fn enumerate_k_default_two_filters_singletons() {
+        // K=2 default behavior: a lone read forms a singleton group → excluded.
+        let s = [sec_owned(100, 560, &[(160, 300), (360, 500)])];
+        let refs: Vec<&_> = s.iter().collect();
+        assert!(
+            enumerate_secondary_chains(&refs, 2).is_empty(),
+            "single read (<K=2) yields no chain"
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // T2 — positional_mapping
     // -------------------------------------------------------------------------
 
@@ -1073,6 +1357,144 @@ mod tests {
         assert!(
             positional_mapping(&fg, 1, &consensus).is_empty(),
             "anchors imply inconsistent offsets → empty (no wrong-frame map)"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // T2 — map_isoform_across_copies / verify_recipient_support
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn map_isoform_returns_recipient_coords_not_donor() {
+        // 3-node backbone. Donor A (copy 0) has its own coords at every node;
+        // recipient B (copy 1) has its OWN distinct coords (the 30k locus) at
+        // every node. A's SKIP isoform uses nodes 0 and 2 only. The mapped
+        // recipient chain must be B's coords for nodes 0 and 2 — never A's.
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+                vec![(0, (500, 560)), (1, (30600, 30660))],
+            ],
+        );
+        // Donor A's skip isoform: exon 0 (node 0) then exon 2 (node 2).
+        let donor_exons = [(100, 160), (500, 560)];
+        let got = map_isoform_across_copies(&fg, 0, &donor_exons, 1);
+        assert_eq!(
+            got,
+            vec![(30000, 30060), (30600, 30660)],
+            "recipient B's own coords for the shared nodes, NOT donor A's"
+        );
+        // Explicitly assert none of A's coordinates leaked.
+        assert!(
+            !got.iter().any(|&sp| donor_exons.contains(&sp)),
+            "no donor coordinate appears in the transferred chain"
+        );
+    }
+
+    #[test]
+    fn map_isoform_aborts_on_copy_a_unique_node() {
+        // Node 1 is copy-A-UNIQUE (only copy 0 present, single entry → not a
+        // >=2-agree co-located borrow). A's full chain touches node 1, which B
+        // cannot legitimately claim → abort (empty).
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360))], // copy-0-unique node → B cannot claim it
+                vec![(0, (500, 560)), (1, (30600, 30660))],
+            ],
+        );
+        let donor_exons = [(100, 160), (300, 360), (500, 560)];
+        assert!(
+            map_isoform_across_copies(&fg, 0, &donor_exons, 1).is_empty(),
+            "recipient cannot claim a copy-A-unique node → abort"
+        );
+    }
+
+    /// Build a 3-node backbone graph that ALSO carries junction edges, so
+    /// verify_recipient_support can be exercised on its fg.edges path.
+    fn mk_backbone_with_edges(
+        well: &[(u64, u64)],
+        per_copy: &[Vec<(usize, (u64, u64))>],
+        edges: &[(usize, usize)],
+    ) -> FamilyGraph {
+        use crate::vg_family::family_graph::{JunctionEdge, NodeIdx};
+        let mut fg = mk_backbone(well, per_copy);
+        fg.edges = edges
+            .iter()
+            .map(|&(f, t)| JunctionEdge {
+                from: NodeIdx(f),
+                to: NodeIdx(t),
+                family_support: 5,
+                strand: '+',
+            })
+            .collect();
+        fg
+    }
+
+    #[test]
+    fn verify_true_when_recipient_secondaries_cover_junction() {
+        // Recipient B (copy 1) at the 30k locus. Transferred chain has one
+        // junction (30060 -> 30300). B has 2 of its OWN secondaries carrying it
+        // → >= K=2 → admissible.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+            ],
+            &[],
+        );
+        let recipient_exons = [(30000, 30060), (30300, 30360)];
+        let s = [
+            sec_owned(30000, 30360, &[(30060, 30300)]),
+            sec_owned(30000, 30360, &[(30060, 30300)]),
+        ];
+        let refs: Vec<&_> = s.iter().collect();
+        assert!(
+            verify_recipient_support(&fg, 1, &recipient_exons, &refs, 2),
+            "B's own secondaries cover the transferred junction → admissible"
+        );
+    }
+
+    #[test]
+    fn verify_false_when_recipient_has_no_evidence() {
+        // Same transferred chain, but B has ZERO supporting secondaries and no
+        // fg.edge between its member nodes → not admissible.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+            ],
+            &[],
+        );
+        let recipient_exons = [(30000, 30060), (30300, 30360)];
+        assert!(
+            !verify_recipient_support(&fg, 1, &recipient_exons, &[], 2),
+            "recipient has 0 evidence → not admissible (recipient disposes)"
+        );
+    }
+
+    #[test]
+    fn verify_false_when_recipient_support_below_k() {
+        // B has exactly ONE supporting secondary (< K=2) → not admissible.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+            ],
+            &[],
+        );
+        let recipient_exons = [(30000, 30060), (30300, 30360)];
+        let s = [sec_owned(30000, 30360, &[(30060, 30300)])];
+        let refs: Vec<&_> = s.iter().collect();
+        assert!(
+            !verify_recipient_support(&fg, 1, &recipient_exons, &refs, 2),
+            "single supporter (<K=2) → not admissible"
         );
     }
 }
