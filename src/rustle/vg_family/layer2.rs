@@ -595,6 +595,7 @@ fn enumerate_secondary_chains(
     secondaries: &[&crate::vg_family::secondary_index::SecondaryAlignment],
     k: usize,
 ) -> Vec<(Vec<(u64, u64)> /*exons*/, Vec<(u64, u64)> /*intron chain*/, usize /*support*/)> {
+    debug_assert!(k >= 1, "enumerate_secondary_chains: K must be >= 1");
     if secondaries.is_empty() {
         return Vec::new();
     }
@@ -753,6 +754,10 @@ fn map_isoform_across_copies(
     donor_exons: &[(u64, u64)],
     recipient_copy: usize,
 ) -> Vec<(u64, u64)> {
+    debug_assert!(
+        donor_copy != recipient_copy,
+        "map_isoform_across_copies: donor and recipient must differ"
+    );
     if donor_exons.is_empty() {
         return Vec::new();
     }
@@ -837,9 +842,8 @@ fn verify_recipient_support(
     if junctions.is_empty() {
         return false; // a single-exon "chain" has no junction to verify
     }
-    // collect_family_junctions absorbs jitter by rounding to nearest 10 bp; we
-    // accept a match when both donor and acceptor agree within +-5 bp (the same
-    // tolerance window: |a-b| <= 5 ⇒ same 10-bp bin under the documented rule).
+    // Splice sites are crisp; allow the small (<=5 bp) jitter typical of noisy
+    // long-read soft-clip/alignment tails when matching a recipient junction.
     let close = |a: u64, b: u64| -> bool { a.max(b) - a.min(b) <= 5 };
     // Nodes that recipient B is a member of (for the fg.edges path).
     let mut b_member_node: DetHashSet<usize> = DetHashSet::default();
@@ -858,16 +862,30 @@ fn verify_recipient_support(
                 support += 1;
             }
         }
-        // (B) ELSE fg.edges between B-member nodes whose donor/acceptor match.
+        // (B) ELSE fg.edges between B-native nodes whose donor/acceptor match — at
+        // the RECIPIENT's OWN coordinate (per_copy_spans), NOT the node's union
+        // `span` (which, for dispersed paralogs at different loci, is genomically
+        // nonsensical and would never match the recipient's junction). An edge
+        // contributes only when B is natively placed at BOTH endpoints.
         if support < k {
             for e in &fg.edges {
                 if !b_member_node.contains(&e.from.0) || !b_member_node.contains(&e.to.0) {
                     continue;
                 }
-                let de = fg.nodes[e.from.0].span.1;
-                let ae = fg.nodes[e.to.0].span.0;
-                if close(de, jd) && close(ae, ja) {
-                    support += e.family_support as usize;
+                let de = fg.nodes[e.from.0]
+                    .per_copy_spans
+                    .iter()
+                    .find(|(c, _)| *c == recipient_copy)
+                    .map(|(_, sp)| sp.1);
+                let ae = fg.nodes[e.to.0]
+                    .per_copy_spans
+                    .iter()
+                    .find(|(c, _)| *c == recipient_copy)
+                    .map(|(_, sp)| sp.0);
+                if let (Some(de), Some(ae)) = (de, ae) {
+                    if close(de, jd) && close(ae, ja) {
+                        support += e.family_support as usize;
+                    }
                 }
             }
         }
@@ -1495,6 +1513,29 @@ mod tests {
         assert!(
             !verify_recipient_support(&fg, 1, &recipient_exons, &refs, 2),
             "single supporter (<K=2) → not admissible"
+        );
+    }
+
+    #[test]
+    fn verify_true_via_fg_edge_between_recipient_native_nodes() {
+        // Recipient B (copy 1) at the 30k locus, NO secondaries — but an fg.edge
+        // (node 0 -> node 1) between B-native nodes carries the junction. The edge
+        // coordinate MUST be derived from B's OWN per_copy_spans (30060 -> 30300),
+        // NOT the node union span (which, with copy-0 at 100-360, would be a
+        // nonsensical 30060 -> 300). This exercises the fg.edges fallback path and
+        // is a regression guard for the union-span bug.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+            ],
+            &[(0, 1)],
+        );
+        let recipient_exons = [(30000, 30060), (30300, 30360)];
+        assert!(
+            verify_recipient_support(&fg, 1, &recipient_exons, &[], 2),
+            "fg.edge between B-native nodes supports the junction at B's own coords"
         );
     }
 }
