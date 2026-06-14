@@ -17776,7 +17776,7 @@ pub fn run<P: AsRef<Path>>(
     // stage (~19614) emits each only when its intron chain is absent from the VG output —
     // strictly additive (VG ⊇ baseline preserved; layer2 ⊇ default by construction).
     if config.vg_mode && config.vg_layer2 {
-        if let (Some(si), Some(genome), Some(cap)) =
+        if let (Some(mut si), Some(genome), Some(cap)) =
             (secondary_index.take(), vg_snp_genome.as_ref(), layer2_graph_capture)
         {
             let captured: Vec<Option<crate::graph::Graph>> =
@@ -17790,6 +17790,18 @@ pub fn run<P: AsRef<Path>>(
                     graph: captured.get(bi).and_then(|o| o.as_ref()).unwrap_or(&empty_graph),
                 })
                 .collect();
+            // Re-sync the side-index loci to the SAME bundle list `loci`,
+            // `layer2_primary_locus`, and the graph capture are indexed by
+            // (the layer2_bundle_meta snapshot). The side-index was originally
+            // assign_loci'd at M1.5 over a possibly-different bundle set; on real
+            // data those indices diverge from the snapshot, yielding cross-map
+            // link indices out of range of `loci`. Re-assigning here makes every
+            // index (side-index loci / primary_locus / loci / captured) consistent.
+            let layer2_spans: Vec<(String, u64, u64)> = layer2_bundle_meta
+                .iter()
+                .map(|(c, s, e, _)| (c.clone(), *s, *e))
+                .collect();
+            si.assign_loci(&layer2_spans);
             match crate::vg_family::layer2::run_layer2(
                 &loci, si, &layer2_primary_locus, Some(genome),
                 config.vg_min_shared_reads as u32,

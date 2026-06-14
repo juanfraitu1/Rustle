@@ -356,7 +356,12 @@ pub fn run_layer2(
             if *count < min_link {
                 continue;
             }
-            let (la, lb) = (&loci[*a], &loci[*b]);
+            // Defensive: a cross-map link index must be in range of `loci`
+            // (the caller re-syncs side-index loci to the loci snapshot, but never
+            // index out of range even if that contract is violated).
+            let (Some(la), Some(lb)) = (loci.get(*a), loci.get(*b)) else {
+                continue;
+            };
             if la.chrom == lb.chrom {
                 let sim = crate::vg::exon_kmer_similarity(
                     &locus_exon_seqs(*a, g),
@@ -408,7 +413,7 @@ pub fn run_layer2(
         let copies: Vec<(String, char, &Graph)> = fam
             .bundle_indices
             .iter()
-            .map(|&i| (loci[i].chrom.clone(), loci[i].strand, loci[i].graph))
+            .filter_map(|&i| loci.get(i).map(|l| (l.chrom.clone(), l.strand, l.graph)))
             .collect();
         let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
             fam.family_id,
@@ -455,8 +460,17 @@ pub fn run_layer2(
             }
         }
         for p in paths {
-            let chrom = loci[fam.bundle_indices[0]].chrom.clone();
-            let strand = loci[fam.bundle_indices[0]].strand;
+            // Use the recovered copy's OWN bundle for chrom/strand (not the family's
+            // first), falling back to the first member; guarded against any stale idx.
+            let anchor = fam
+                .bundle_indices
+                .get(p.copy_id)
+                .copied()
+                .or_else(|| fam.bundle_indices.first().copied())
+                .and_then(|i| loci.get(i));
+            let Some(anchor) = anchor else { continue };
+            let chrom = anchor.chrom.clone();
+            let strand = anchor.strand;
             let mut t = Transcript::default();
             t.chrom = chrom;
             t.strand = strand;
