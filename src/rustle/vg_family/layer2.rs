@@ -354,6 +354,15 @@ pub fn run_layer2(
     kmer_len: usize,
     new_copies: bool,
 ) -> Result<Layer2Output> {
+    // Secondary-enriched isoform discovery (T4 wiring). Part A (per-copy alt-splice
+    // from own secondaries) is ON by default under --vg-layer2 (additive; emit only
+    // unions chains absent from VG output). Opt out for bisection. Part B (cross-copy
+    // transfer) stays OFF until real-data gffcompare proves it net-positive.
+    let isoform_min_support: usize = std::env::var("RUSTLE_VG_LAYER2_MIN_ISOFORM_SUPPORT")
+        .ok().and_then(|v| v.parse::<usize>().ok()).filter(|&k| k >= 1).unwrap_or(2);
+    let enable_multi_isoform = std::env::var_os("RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM").is_none();
+    let enable_transfer = std::env::var_os("RUSTLE_VG_LAYER2_ISOFORM_TRANSFER").is_some();
+
     // (C2) candidate links → compute similarity only for linked, same-chrom pairs.
     let links = crate::vg::build_multimap_index_from_secondary_index(&side_index, primary_locus);
     debug_assert!(
@@ -475,7 +484,24 @@ pub fn run_layer2(
             .filter(|a| a.locus.map(|l| member_set.contains(&l)).unwrap_or(false))
             .cloned().collect();
         let am = amend_family_graph(fg, &secs, &copy_of_locus);
-        let paths = decompose_family_paths(fg, &am, 1.0);
+        // Group secondaries by the copy of their ALIGNMENT locus — the SAME grouping
+        // amend_family_graph uses internally (by_copy). Satisfies emit's "own secondaries
+        // only" precondition by construction: each bucket holds exactly the secondaries
+        // that align at that copy's locus.
+        let mut secondaries_by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> = DetHashMap::default();
+        for s in &secs {
+            if let Some(copy) = s.locus.and_then(|l| copy_of_locus.get(&l).copied()) {
+                secondaries_by_copy.entry(copy).or_default().push(s);
+            }
+        }
+        // min_flow stays 1.0 so the base decompose behavior is unchanged (preserves
+        // starved-copy + baseline-floor recovery — legs 6/7). Part A is independently
+        // gated at >=2 support by K + the G7 isofrac floor (max(2.0, 0.01*copy_max)),
+        // which already subsumes a 2.0 min_flow, so 1.0 here loses no Part-A precision.
+        let paths = emit_family_isoforms(
+            fg, &am, &secondaries_by_copy, 1.0,
+            isoform_min_support, enable_multi_isoform, enable_transfer,
+        );
         if std::env::var_os("RUSTLE_LAYER2_DEBUG").is_some() {
             eprintln!(
                 "[layer2-dbg] fam {} fg_nodes={} secs={} transferred={} paths={}",
@@ -486,7 +512,10 @@ pub fn run_layer2(
                 eprintln!("[layer2-dbg]   transferred node={ni} copy={c} span={sp:?}");
             }
             for p in &paths {
-                eprintln!("[layer2-dbg]   path copy={} flow={} exons={:?}", p.copy_id, p.flow, p.exons);
+                eprintln!(
+                    "[layer2-dbg]   path copy={} flow={} source={:?} exons={:?}",
+                    p.copy_id, p.flow, p.source, p.exons
+                );
             }
         }
         for p in paths {
