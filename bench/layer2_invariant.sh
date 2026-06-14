@@ -175,14 +175,20 @@ if [ -f "$GH_BAM" ] && [ -f "$GH_FA" ]; then
   "$BIN" -L "$GH_BAM" --vg --vg-layer2 --vg-layer2-new-copies --genome-fasta "$GH_FA" -o /tmp/layer2/ghost_on.gtf 2>/dev/null
   goff=$(awk -F'\t' '$3=="transcript" && $4>20000' /tmp/layer2/ghost_off.gtf | wc -l)
   gon=$(awk -F'\t' '$3=="transcript" && $4>20000' /tmp/layer2/ghost_on.gtf | wc -l)
-  echo "  copyB transcripts (region>20000): M5-off=$goff M5-on=$gon"
+  # copy A sits at <20000, copy B at >20000, so every exon line >20000 belongs to a
+  # recovered copy-B transcript. More copy-B exon lines than copy-B transcripts ⇒ at
+  # least one recovered transcript is MULTI-EXON (pigeonhole) — M5 must reconstruct a
+  # spliced chain, not a single-exon blob (its gate requires >=2 exons).
+  gex=$(awk -F'\t' '$3=="exon" && $4>20000' /tmp/layer2/ghost_on.gtf | wc -l)
+  echo "  copyB transcripts (region>20000): M5-off=$goff M5-on=$gon ($gex copyB exon lines)"
   # (i) ghost gate: M5 OFF must leave copy B absent (no bundle ever formed); M5 ON
-  #     must recover it. If OFF != 0 the existing path already handles it (wrong
-  #     fixture); if ON < 1 M5 regressed.
-  if [ "$goff" -eq 0 ] && [ "$gon" -ge 1 ]; then
-    echo "  OK: M5 recovered the no-primary ghost copy B (off=0 → on=$gon)"
+  #     must recover it MULTI-EXON. If OFF != 0 the existing path already handles it
+  #     (wrong fixture); if ON < 1 M5 regressed; if exons <= tx the recovery degenerated
+  #     to single-exon blobs.
+  if [ "$goff" -eq 0 ] && [ "$gon" -ge 1 ] && [ "$gex" -gt "$gon" ]; then
+    echo "  OK: M5 recovered the no-primary ghost copy B, multi-exon (off=0 → on=$gon tx / $gex exons)"
   else
-    echo "  FAIL: ghost copy B recovery wrong (M5-off=$goff must be 0, M5-on=$gon must be >=1)"
+    echo "  FAIL: ghost copy B recovery wrong (M5-off=$goff must be 0, M5-on=$gon must be >=1, exons=$gex must be > tx)"
     exit 1
   fi
   # (ii) additive: M5-on ⊇ M5-off (recovery must never drop a chain VG already had).
