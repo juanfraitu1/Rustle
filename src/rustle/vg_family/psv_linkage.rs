@@ -141,34 +141,53 @@ pub fn family_identifiability(fg: &FamilyGraph, error_rate: f64, min_psv_columns
     psv_columns_for_family(fg).len() >= min_psv_columns
 }
 
-/// One read's PSV evidence + its junction (intron) chain, aggregated across ALL of
-/// the read's alignments overlapping the family (its primary at the well copy AND
-/// any secondaries cross-mapped to siblings — they carry the same molecule's bases).
+/// One of a read's alignments, at a specific family copy's locus, expressed IN THAT
+/// COPY's OWN coordinate frame. This is the per-LOCUS chain — the fix for the
+/// cross-locus chimera: a read that cross-maps to copies A and B carries TWO of these
+/// (A's junctions in A's coords, B's junctions in B's coords), never a single pooled
+/// chimeric set spanning both. Assembly uses the chain whose `copy_id` equals the
+/// read's ASSIGNED copy, so an isoform is always built in one copy's frame.
 ///
-/// `psv_votes`: `(copy_id, #PSVs whose allele this read's base matched)`. WHY this
-/// is the load-bearing signal: a read physically aligned at copy X's locus reads
-/// copy X's genomic coordinates, but the read's *actual base* at a PSV column tells
-/// us its true origin — `base == allele_X` ⇒ native copy-X read; `base == allele_Y`
-/// (a sibling's allele) ⇒ a copy-Y read CROSS-MAPPED to X. So at each PSV the read
-/// covers we vote for whichever copy's allele the base matches. Aggregating these
-/// votes across the PSVs the read spans is its copy genotype — the same allele
-/// signal that beats the homology-shadow phantom Part A cannot.
+/// `junctions`: this alignment's introns (`exons.windows(2)` → `(prev_end, next_start)`).
+/// `exons`: this alignment's aligned exon blocks (sorted), needed for the consensus
+///   TERMINAL coordinates (the crisp junctions alone fix only interior boundaries).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocusChain {
+    pub copy_id: usize,
+    pub junctions: Vec<(u64, u64)>,
+    pub exons: Vec<(u64, u64)>,
+}
+
+/// One read's PSV evidence (GLOBAL, across all its alignments) + its per-LOCUS
+/// junction chains (one per family-copy locus the read aligns at, each in that copy's
+/// own frame).
 ///
-/// `junctions`: the read's introns (`exons.windows(2)` → `(prev_end, next_start)`),
-/// the splice chain a later task links to the assigned copy.
+/// `psv_votes`: `(copy_id, #PSVs whose allele this read's base matched)`, aggregated
+/// across ALL of the read's alignments. WHY this is the load-bearing signal — and why
+/// it MUST stay global while junctions go per-locus: a read physically aligned at copy
+/// X's locus reads copy X's genomic coordinates, but the read's *actual base* at a PSV
+/// column tells us its true origin — `base == allele_X` ⇒ native copy-X read;
+/// `base == allele_Y` (a sibling's allele) ⇒ a copy-Y read CROSS-MAPPED to X. Both the
+/// primary AND the cross-mapped secondary carry the SAME molecule's bases, so both
+/// must vote — the genotype is a property of the molecule, not of one alignment.
 ///
-/// `exons`: the read's aligned exon blocks (sorted), kept ALONGSIDE `junctions`
-/// (the two are redundant — `junctions = exons.windows(2).map(|w|(w[0].1,w[1].0))`)
-/// because per-copy isoform assembly needs the reads' TERMINAL coordinates to build
-/// consensus exons (the crisp junctions alone fix only interior boundaries, never
-/// the 5'/3' ends). Carrying both keeps the linkage gate (`junctions`) and the
-/// assembly (`exons`) reading the same molecule without re-deriving either.
+/// `per_locus`: one [`LocusChain`] per DISTINCT copy-locus this read aligns at, sorted
+/// by `copy_id`. The junctions/exons live here (not pooled) so that downstream linkage
+/// and assembly read the chain in the ASSIGNED copy's frame ONLY — never a chimera
+/// pooled across loci. A read whose alignment covers no PSV position (so its locus-copy
+/// is unknown) contributes no `per_locus` entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadGenotype {
     pub read_name_hash: u64,
     pub psv_votes: Vec<(usize, usize)>,
-    pub junctions: Vec<(u64, u64)>,
-    pub exons: Vec<(u64, u64)>,
+    pub per_locus: Vec<LocusChain>,
+}
+
+impl ReadGenotype {
+    /// The read's junction chain in `copy`'s own frame, if it aligns at `copy`'s locus.
+    fn chain_for_copy(&self, copy: usize) -> Option<&LocusChain> {
+        self.per_locus.iter().find(|lc| lc.copy_id == copy)
+    }
 }
 
 /// Confidently assign a read to one copy iff that copy has >= `min_psv` supporting
@@ -217,10 +236,23 @@ pub fn assign_read_to_copy(g: &ReadGenotype, min_psv: usize, margin: usize) -> O
 /// All alignments overlapping a family locus are read — primaries AND secondaries
 /// AND supplementaries: a read's primary at the well copy and its secondary
 /// cross-mapped to a sibling both carry the SAME molecule's bases, so both should
-/// vote; votes are aggregated per `read_name_hash`. (No `RunConfig` is threaded here,
-/// so no long-read-class filter is applied — the work is already bounded tightly by
-/// `family_loci` × `psv_columns`, and the per-read PSV floor in `assign_read_to_copy`
-/// is what actually gates short/uninformative reads out.)
+/// vote; PSV votes are aggregated GLOBALLY per `read_name_hash`. (No `RunConfig` is
+/// threaded here, so no long-read-class filter is applied — the work is already bounded
+/// tightly by `family_loci` × `psv_columns`, and the per-read PSV floor in
+/// `assign_read_to_copy` is what actually gates short/uninformative reads out.)
+///
+/// PER-LOCUS junctions (the cross-locus-chimera fix): unlike the PSV votes, an
+/// alignment's junctions+exons must NOT be pooled across the read's alignments — a
+/// copy-A read's primary (A's coords) and its secondary cross-mapped to copy B (B's
+/// coords) carry junction sets in DIFFERENT coordinate frames; pooling them yields a
+/// chimera spanning both loci. So each alignment's junctions/exons are recorded under
+/// its LOCUS-COPY in that copy's own frame ([`LocusChain`]), and assembly later uses
+/// only the chain in the read's ASSIGNED copy's frame.
+///
+/// Locus-copy rule: for an alignment, each covered PSV per-copy `genomic_pos` lies in
+/// exactly one copy's frame; the alignment's locus-copy = the copy with the MOST
+/// covered frame positions (tiebreak: lowest copy_id). An alignment covering no PSV
+/// position has no locus-copy and contributes no `per_locus` entry.
 ///
 /// Coverage rule: a PSV column's per-copy `genomic_pos` is "covered" by an alignment
 /// iff it lies within `[ref_start, ref_end)` AND inside one of the read's aligned
@@ -231,7 +263,8 @@ pub fn assign_read_to_copy(g: &ReadGenotype, min_psv: usize, margin: usize) -> O
 ///
 /// Deterministic: records are processed in BAM order; aggregation lives in
 /// `DetHashMap`/`DetHashSet`; the returned Vec is sorted by `read_name_hash`, each
-/// `psv_votes` sorted by `copy_id`, and each `junctions` sorted.
+/// `psv_votes` sorted by `copy_id`, `per_locus` sorted by `copy_id`, and each chain's
+/// `junctions`/`exons` sorted.
 ///
 /// Known v1 limitation (inherited from the eqx reconstruction): a read with a
 /// non-canonical base (e.g. `N`) at a PSV position is not recorded as a mismatch by
@@ -249,12 +282,16 @@ pub fn genotype_family_reads(
 ) -> anyhow::Result<Vec<ReadGenotype>> {
     use crate::types::{DetHashMap, DetHashSet};
 
-    // votes: read_name_hash -> (copy_id -> #supporting PSVs); junctions + exons per read.
+    // votes: read_name_hash -> (copy_id -> #supporting PSVs), GLOBAL across all of the
+    // read's alignments (the genotype is a molecule property, not an alignment property).
     let mut votes_by_read: DetHashMap<u64, DetHashMap<usize, usize>> = DetHashMap::default();
-    let mut junctions_by_read: DetHashMap<u64, DetHashSet<(u64, u64)>> = DetHashMap::default();
-    let mut exons_by_read: DetHashMap<u64, DetHashSet<(u64, u64)>> = DetHashMap::default();
-    // Track read order of first appearance is unnecessary — we sort by hash at the
-    // end — but we must register every read seen even if it casts no votes.
+    // per_locus: read_name_hash -> (locus copy_id -> that alignment's chain IN THAT
+    // COPY's frame). One entry per distinct locus-copy the read aligns at; if a read has
+    // two alignments at the SAME locus-copy, the FIRST seen is kept (deterministic — BAM
+    // order), guarding against a chimera from merging two same-copy frames.
+    let mut per_locus_by_read: DetHashMap<u64, DetHashMap<usize, LocusChain>> =
+        DetHashMap::default();
+    // Register every read seen even if it casts no votes / has no locus-copy.
     let mut seen_reads: DetHashSet<u64> = DetHashSet::default();
 
     let mut reader = crate::bam::open_bam(bam_path, 1)?;
@@ -294,24 +331,8 @@ pub fn genotype_family_reads(
             continue;
         }
 
-        // Register the read so it appears in the output even with zero votes (its
-        // junctions still matter for later linkage of confidently-assigned reads).
+        // Register the read so it appears in the output even with zero votes / no PSV.
         seen_reads.insert(read.read_name_hash);
-
-        // The read's aligned exon blocks (assembly needs terminal coords) AND its
-        // intron chain (the gaps between consecutive exons — what linkage votes).
-        {
-            let eset = exons_by_read.entry(read.read_name_hash).or_default();
-            for &ex in &read.exons {
-                eset.insert(ex);
-            }
-        }
-        if read.exons.len() >= 2 {
-            let jset = junctions_by_read.entry(read.read_name_hash).or_default();
-            for w in read.exons.windows(2) {
-                jset.insert((w[0].1, w[1].0));
-            }
-        }
 
         // Per-position mismatch set vs the reference FASTA (the `--eqx`-equivalent).
         // A read's base at ref position P = the FASTA base at P UNLESS P is in this
@@ -321,7 +342,12 @@ pub fn genotype_family_reads(
             mismatches.iter().find(|(p, _)| *p == pos).map(|(_, b)| *b)
         };
 
-        // Vote at every PSV column this alignment covers.
+        // Vote at every PSV column this alignment covers, AND tally which copy's frame
+        // this alignment lands in (its locus-copy) — the count of covered PSV positions
+        // per copy. A position is "covered" iff it lies in [ref_start,ref_end) inside an
+        // aligned exon (the per-copy frame position falling inside THIS alignment marks
+        // the copy whose locus the alignment is at).
+        let mut covered_by_copy: DetHashMap<usize, usize> = DetHashMap::default();
         for col in psv_columns {
             // A read aligned at one copy's locus covers at most ONE per-copy frame
             // position for this column. Find the covered position (inside an aligned
@@ -337,6 +363,9 @@ pub fn genotype_family_reads(
                 if !in_exon {
                     continue;
                 }
+                // This covered per-copy frame position marks pc.copy_id as the locus
+                // this alignment sits in (count it for the locus-copy decision).
+                *covered_by_copy.entry(pc.copy_id).or_insert(0) += 1;
                 // The read's base at this reference position.
                 let base = match mismatch_at(pos) {
                     Some(b) => b,
@@ -348,10 +377,10 @@ pub fn genotype_family_reads(
                         None => continue, // no reference base -> cannot genotype here
                     },
                 };
-                // Compare the base against EVERY copy's allele in this column and
-                // vote for the copy it matches (the cross-mapping detector). At most
-                // one position per column is covered by this alignment, so we break
-                // after handling it to avoid double-counting if frames ever collide.
+                // Compare the base against EVERY copy's allele in this column and vote
+                // GLOBALLY for the copy it matches (the cross-mapping detector). At most
+                // one position per column is covered by this alignment, so we break after
+                // handling it to avoid double-counting if frames ever collide.
                 let copy_votes = votes_by_read.entry(read.read_name_hash).or_default();
                 for cand in &col.per_copy {
                     if cand.allele == base {
@@ -361,10 +390,52 @@ pub fn genotype_family_reads(
                 break;
             }
         }
+
+        // Determine this alignment's LOCUS-COPY = the copy whose frame positions this
+        // alignment covered the most (deterministic tiebreak: lowest copy_id). An
+        // alignment that covers no PSV position has no locus-copy → it contributes NO
+        // per_locus entry (we cannot place its chain in a copy frame).
+        let locus_copy = covered_by_copy
+            .iter()
+            .map(|(&c, &n)| (c, n))
+            .fold(None::<(usize, usize)>, |acc, (c, n)| match acc {
+                None => Some((c, n)),
+                Some((bc, bn)) => {
+                    if n > bn || (n == bn && c < bc) {
+                        Some((c, n))
+                    } else {
+                        Some((bc, bn))
+                    }
+                }
+            })
+            .map(|(c, _)| c);
+        let Some(locus_copy) = locus_copy else {
+            continue;
+        };
+
+        // Record this alignment's junctions + exons IN locus_copy's frame (its own
+        // coords) under per_locus[read][locus_copy]. If a read has two alignments at the
+        // same locus-copy, keep the FIRST (BAM order) — deterministic, no chimera.
+        let mut exons: Vec<(u64, u64)> = read.exons.clone();
+        exons.sort_unstable();
+        exons.dedup();
+        let mut junctions: Vec<(u64, u64)> = if read.exons.len() >= 2 {
+            read.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect()
+        } else {
+            Vec::new()
+        };
+        junctions.sort_unstable();
+        junctions.dedup();
+        per_locus_by_read
+            .entry(read.read_name_hash)
+            .or_default()
+            .entry(locus_copy)
+            .or_insert(LocusChain { copy_id: locus_copy, junctions, exons });
     }
 
-    // Emit one ReadGenotype per read seen, sorted by read_name_hash; psv_votes
-    // sorted by copy_id; junctions sorted. Determinism is load-bearing.
+    // Emit one ReadGenotype per read seen, sorted by read_name_hash; psv_votes sorted by
+    // copy_id; per_locus sorted by copy_id (each chain's junctions/exons already sorted).
+    // Determinism is load-bearing.
     let mut out: Vec<ReadGenotype> = seen_reads
         .into_iter()
         .map(|h| {
@@ -373,17 +444,12 @@ pub fn genotype_family_reads(
                 .map(|m| m.iter().map(|(&c, &n)| (c, n)).collect())
                 .unwrap_or_default();
             psv_votes.sort_by_key(|(c, _)| *c);
-            let mut junctions: Vec<(u64, u64)> = junctions_by_read
+            let mut per_locus: Vec<LocusChain> = per_locus_by_read
                 .get(&h)
-                .map(|s| s.iter().copied().collect())
+                .map(|m| m.values().cloned().collect())
                 .unwrap_or_default();
-            junctions.sort();
-            let mut exons: Vec<(u64, u64)> = exons_by_read
-                .get(&h)
-                .map(|s| s.iter().copied().collect())
-                .unwrap_or_default();
-            exons.sort();
-            ReadGenotype { read_name_hash: h, psv_votes, junctions, exons }
+            per_locus.sort_by_key(|lc| lc.copy_id);
+            ReadGenotype { read_name_hash: h, psv_votes, per_locus }
         })
         .collect();
     out.sort_by_key(|g| g.read_name_hash);
@@ -420,7 +486,12 @@ pub fn link_junctions(
         let Some(copy) = assign_read_to_copy(g, min_psv, margin) else {
             continue; // ambiguous read → no junction vote
         };
-        for &j in &g.junctions {
+        // Junctions FROM the assigned copy's OWN frame — never the pooled cross-locus
+        // set. A read assigned to copy X that does not align at X contributes nothing.
+        let Some(lc) = g.chain_for_copy(copy) else {
+            continue;
+        };
+        for &j in &lc.junctions {
             votes
                 .entry((copy, j))
                 .or_default()
@@ -496,27 +567,37 @@ pub fn assemble_psv_isoforms(
     // The per-junction linkage view (consistency gate): copy -> its linked junctions.
     let linked = link_junctions(gens, min_psv, margin, k);
 
-    // Confidently-assigned reads, grouped by (copy, full intron chain). We retain the
-    // whole ReadGenotype per supporter so consensus can read terminal exon coords and
-    // the certificate can read PSV-vote counts.
-    let mut by_copy_chain: DetHashMap<(usize, Vec<(u64, u64)>), Vec<&ReadGenotype>> =
+    // Confidently-assigned reads, grouped by (copy, full intron chain). The chain is the
+    // read's chain IN THE ASSIGNED COPY's OWN FRAME ([`LocusChain`]) — never a pooled
+    // cross-locus set, so a cross-copy chimera cannot be assembled. We retain the read's
+    // assigned-copy LocusChain per supporter so consensus reads its terminal exon coords
+    // in that frame, and the ReadGenotype so the certificate reads PSV-vote counts.
+    let mut by_copy_chain: DetHashMap<(usize, Vec<(u64, u64)>), Vec<(&ReadGenotype, &LocusChain)>> =
         DetHashMap::default();
-    // (chain -> set of copies that confidently span it) for the copy_posterior competitor count.
+    // (chain -> set of copies that confidently span it) for the copy_posterior competitor
+    // count. The chain key is each read's ASSIGNED-copy frame chain (consistent with the
+    // grouping above), so competitors are reads whose assigned-copy chain matches.
     let mut chain_copy_reads: DetHashMap<Vec<(u64, u64)>, DetHashMap<usize, DetHashSet<u64>>> =
         DetHashMap::default();
     for g in gens {
         let Some(copy) = assign_read_to_copy(g, min_psv, margin) else {
             continue;
         };
-        if g.junctions.is_empty() {
+        // The read's chain in the ASSIGNED copy's frame. A read assigned to X but with no
+        // alignment at X (no X-frame chain) is skipped — never assembled from another
+        // locus's coords.
+        let Some(lc) = g.chain_for_copy(copy) else {
+            continue;
+        };
+        if lc.junctions.is_empty() {
             continue; // single-exon read → no chain to assemble
         }
         by_copy_chain
-            .entry((copy, g.junctions.clone()))
+            .entry((copy, lc.junctions.clone()))
             .or_default()
-            .push(g);
+            .push((g, lc));
         chain_copy_reads
-            .entry(g.junctions.clone())
+            .entry(lc.junctions.clone())
             .or_default()
             .entry(copy)
             .or_default()
@@ -539,7 +620,7 @@ pub fn assemble_psv_isoforms(
         let supporters = &by_copy_chain[&(*copy, chain.clone())];
         // Distinct supporting reads (defensive — upstream groups per read, but the
         // certificate's `linked_reads` MUST be a distinct count).
-        let distinct: DetHashSet<u64> = supporters.iter().map(|g| g.read_name_hash).collect();
+        let distinct: DetHashSet<u64> = supporters.iter().map(|(g, _)| g.read_name_hash).collect();
         let support = distinct.len();
         if support < k {
             continue; // chains-only >= k floor
@@ -558,17 +639,18 @@ pub fn assemble_psv_isoforms(
             v.sort_unstable();
             v[(v.len() - 1) / 2]
         };
-        // A supporter's terminal coords are the first exon's start and last exon's end.
+        // A supporter's terminal coords are the first exon's start and last exon's end,
+        // read from the ASSIGNED copy's frame chain (lc.exons) — never a pooled frame.
         let start = median(
             supporters
                 .iter()
-                .filter_map(|g| g.exons.first().map(|e| e.0))
+                .filter_map(|(_, lc)| lc.exons.first().map(|e| e.0))
                 .collect(),
         );
         let end = median(
             supporters
                 .iter()
-                .filter_map(|g| g.exons.last().map(|e| e.1))
+                .filter_map(|(_, lc)| lc.exons.last().map(|e| e.1))
                 .collect(),
         );
         let mut exons: Vec<(u64, u64)> = Vec::with_capacity(chain.len() + 1);
@@ -587,7 +669,7 @@ pub fn assemble_psv_isoforms(
         // DIFFERENT copy.
         let n_psvs = supporters
             .iter()
-            .map(|g| {
+            .map(|(g, _)| {
                 g.psv_votes
                     .iter()
                     .find(|(c, _)| c == copy)
@@ -803,8 +885,11 @@ mod tests {
         let g = ReadGenotype {
             read_name_hash: 7,
             psv_votes: vec![(0, 0), (1, 3)],
-            junctions: vec![(160, 300)],
-            exons: vec![(100, 160), (300, 360)],
+            per_locus: vec![LocusChain {
+                copy_id: 1,
+                junctions: vec![(160, 300)],
+                exons: vec![(100, 160), (300, 360)],
+            }],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), Some(1));
     }
@@ -815,8 +900,11 @@ mod tests {
         let g = ReadGenotype {
             read_name_hash: 8,
             psv_votes: vec![(0, 2), (1, 2)],
-            junctions: vec![],
-            exons: vec![(100, 200)],
+            per_locus: vec![LocusChain {
+                copy_id: 0,
+                junctions: vec![],
+                exons: vec![(100, 200)],
+            }],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), None);
     }
@@ -827,8 +915,11 @@ mod tests {
         let g = ReadGenotype {
             read_name_hash: 9,
             psv_votes: vec![(0, 2)],
-            junctions: vec![],
-            exons: vec![(100, 200)],
+            per_locus: vec![LocusChain {
+                copy_id: 0,
+                junctions: vec![],
+                exons: vec![(100, 200)],
+            }],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), None);
     }
@@ -839,16 +930,22 @@ mod tests {
         let tied = ReadGenotype {
             read_name_hash: 10,
             psv_votes: vec![(0, 3), (1, 3)],
-            junctions: vec![],
-            exons: vec![(100, 200)],
+            per_locus: vec![LocusChain {
+                copy_id: 0,
+                junctions: vec![],
+                exons: vec![(100, 200)],
+            }],
         };
         assert_eq!(assign_read_to_copy(&tied, 3, 1), None);
         // One copy clears min_psv and beats the runner-up by the margin -> assigned.
         let dominant = ReadGenotype {
             read_name_hash: 11,
             psv_votes: vec![(0, 4), (1, 3)],
-            junctions: vec![],
-            exons: vec![(100, 200)],
+            per_locus: vec![LocusChain {
+                copy_id: 0,
+                junctions: vec![],
+                exons: vec![(100, 200)],
+            }],
         };
         assert_eq!(assign_read_to_copy(&dominant, 3, 1), Some(0));
     }
@@ -867,8 +964,11 @@ mod tests {
         let g = ReadGenotype {
             read_name_hash: 42,
             psv_votes: vec![(0, 3), (1, 1)],
-            junctions: vec![(100, 200), (250, 400)],
-            exons: vec![(50, 100), (200, 250), (400, 450)],
+            per_locus: vec![LocusChain {
+                copy_id: 0,
+                junctions: vec![(100, 200), (250, 400)],
+                exons: vec![(50, 100), (200, 250), (400, 450)],
+            }],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), Some(0));
         // Function exists with the documented signature (compile-time check).
@@ -904,6 +1004,58 @@ mod tests {
         );
     }
 
+    // ── Chimera guard: assembly uses the ASSIGNED copy's frame ONLY ──────────
+    //
+    // The root-cause regression test. A copy-0 read cross-maps to BOTH copy0 and
+    // copy1, so it carries two LocusChains (one per copy frame). Its alleles vote
+    // copy0. Assembly MUST build the isoform from copy0's frame chain ONLY — never the
+    // pooled {copy0, copy1} junction set that produced a cross-locus chimera (on real
+    // chrY a 9.3 Mb `.`-strand transcript spanning two copies).
+    #[test]
+    fn no_cross_locus_chimera_uses_assigned_copy_frame() {
+        // A copy-0 read aligns at BOTH copy0 (junctions [(160,300)], exons
+        // [(100,160),(300,360)]) and copy1 (junctions [(30160,30300)] in copy1's frame),
+        // votes copy0 (psv_votes [(0,3)]).
+        let g = ReadGenotype {
+            read_name_hash: 1,
+            psv_votes: vec![(0, 3)],
+            per_locus: vec![
+                LocusChain {
+                    copy_id: 0,
+                    junctions: vec![(160, 300)],
+                    exons: vec![(100, 160), (300, 360)],
+                },
+                LocusChain {
+                    copy_id: 1,
+                    junctions: vec![(30160, 30300)],
+                    exons: vec![(30100, 30160), (30300, 30360)],
+                },
+            ],
+        };
+        // two such reads -> assemble emits ONE copy0 isoform with exons within copy0's
+        // range, junction (160,300) only; NO exon coordinate > 1000 (copy1's frame).
+        let out = assemble_psv_isoforms(
+            &[
+                g.clone(),
+                ReadGenotype {
+                    read_name_hash: 2,
+                    ..g.clone()
+                },
+            ],
+            3,
+            1,
+            2,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].copy_id, 0);
+        assert!(
+            out[0].exons.iter().all(|&(_, e)| e <= 1000),
+            "no copy1-frame (chimera) coords: {:?}",
+            out[0].exons
+        );
+        assert_eq!(out[0].junction_chain, vec![(160, 300)]);
+    }
+
     // ── Task 4: junction linkage + per-copy isoform assembly + PsvCertificate ──
     //
     // link_junctions is the per-junction view: confidently-assigned reads vote each
@@ -920,14 +1072,20 @@ mod tests {
             ReadGenotype {
                 read_name_hash: 1,
                 psv_votes: vec![(0, 3)],
-                junctions: vec![(160, 300)],
-                exons: vec![(100, 160), (300, 360)],
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: vec![(160, 300)],
+                    exons: vec![(100, 160), (300, 360)],
+                }],
             },
             ReadGenotype {
                 read_name_hash: 2,
                 psv_votes: vec![(0, 3)],
-                junctions: vec![(160, 300)],
-                exons: vec![(100, 160), (300, 360)],
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: vec![(160, 300)],
+                    exons: vec![(100, 160), (300, 360)],
+                }],
             },
         ];
         let m = link_junctions(&gens, 3, 1, 2);
@@ -945,14 +1103,20 @@ mod tests {
             ReadGenotype {
                 read_name_hash: 1,
                 psv_votes: vec![(0, 3)],
-                junctions: vec![(160, 300)],
-                exons: vec![(100, 160), (300, 360)],
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: vec![(160, 300)],
+                    exons: vec![(100, 160), (300, 360)],
+                }],
             },
             ReadGenotype {
                 read_name_hash: 2,
                 psv_votes: vec![(0, 2), (1, 2)], // tied → assign_read_to_copy == None
-                junctions: vec![(160, 300)],
-                exons: vec![(100, 160), (300, 360)],
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: vec![(160, 300)],
+                    exons: vec![(100, 160), (300, 360)],
+                }],
             },
         ];
         let m = link_junctions(&gens, 3, 1, 2);
@@ -976,14 +1140,20 @@ mod tests {
             ReadGenotype {
                 read_name_hash: 1,
                 psv_votes: vec![(0, 3)],
-                junctions: chain.clone(),
-                exons: exons.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: chain.clone(),
+                    exons: exons.clone(),
+                }],
             },
             ReadGenotype {
                 read_name_hash: 2,
                 psv_votes: vec![(0, 4)],
-                junctions: chain.clone(),
-                exons: exons.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: chain.clone(),
+                    exons: exons.clone(),
+                }],
             },
         ];
         let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
@@ -1017,15 +1187,21 @@ mod tests {
             ReadGenotype {
                 read_name_hash: 1,
                 psv_votes: vec![(0, 3)],
-                junctions: chain0.clone(),
-                exons: exons0.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: chain0.clone(),
+                    exons: exons0.clone(),
+                }],
             },
             // a copy1 read on a different chain — must not contribute to copy0
             ReadGenotype {
                 read_name_hash: 2,
                 psv_votes: vec![(1, 3)],
-                junctions: chain1.clone(),
-                exons: exons1.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 1,
+                    junctions: chain1.clone(),
+                    exons: exons1.clone(),
+                }],
             },
         ];
         let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
@@ -1039,8 +1215,11 @@ mod tests {
         gens2.push(ReadGenotype {
             read_name_hash: 3,
             psv_votes: vec![(0, 3)],
-            junctions: chain0.clone(),
-            exons: exons0.clone(),
+            per_locus: vec![LocusChain {
+                copy_id: 0,
+                junctions: chain0.clone(),
+                exons: exons0.clone(),
+            }],
         });
         let paths2 = assemble_psv_isoforms(&gens2, 3, 1, 2);
         assert_eq!(paths2.len(), 1, "only copy0's chain clears k: {paths2:?}");
@@ -1056,14 +1235,20 @@ mod tests {
             ReadGenotype {
                 read_name_hash: 1,
                 psv_votes: vec![(0, 3)],
-                junctions: vec![],
-                exons: vec![(100, 600)],
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: vec![],
+                    exons: vec![(100, 600)],
+                }],
             },
             ReadGenotype {
                 read_name_hash: 2,
                 psv_votes: vec![(0, 4)],
-                junctions: vec![],
-                exons: vec![(100, 600)],
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: vec![],
+                    exons: vec![(100, 600)],
+                }],
             },
         ];
         let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
@@ -1097,20 +1282,32 @@ mod tests {
             ReadGenotype {
                 read_name_hash: 1,
                 psv_votes: vec![(0, 3)],
-                junctions: chain.clone(),
-                exons: exons.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: chain.clone(),
+                    exons: exons.clone(),
+                }],
             },
             ReadGenotype {
                 read_name_hash: 2,
                 psv_votes: vec![(0, 3)],
-                junctions: chain.clone(),
-                exons: exons.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 0,
+                    junctions: chain.clone(),
+                    exons: exons.clone(),
+                }],
             },
+            // A copy1 read whose copy1-frame chain has the SAME coords → it competes on
+            // copy0's chain in the posterior count (one competitor) but is itself
+            // sub-k for copy1, so it is not emitted.
             ReadGenotype {
                 read_name_hash: 3,
                 psv_votes: vec![(1, 3)],
-                junctions: chain.clone(),
-                exons: exons.clone(),
+                per_locus: vec![LocusChain {
+                    copy_id: 1,
+                    junctions: chain.clone(),
+                    exons: exons.clone(),
+                }],
             },
         ];
         let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
