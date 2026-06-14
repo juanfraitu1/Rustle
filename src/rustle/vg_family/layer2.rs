@@ -363,6 +363,14 @@ pub fn run_layer2(
     let enable_multi_isoform = std::env::var_os("RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM").is_none();
     let enable_transfer = std::env::var_os("RUSTLE_VG_LAYER2_ISOFORM_TRANSFER").is_some();
 
+    // (C5) all-secondary new-copy scan tuning (read once; only consulted when the
+    // default-off --vg-layer2-new-copies path is active). max_gap = single-linkage
+    // clustering distance; min_reads = distinct-read proof floor (>=2 enforced).
+    let new_copy_max_gap: u64 = std::env::var("RUSTLE_VG_LAYER2_NEW_COPY_MAX_GAP")
+        .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(200);
+    let new_copy_min_reads: usize = std::env::var("RUSTLE_VG_LAYER2_NEW_COPY_MIN_READS")
+        .ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n >= 2).unwrap_or(3);
+
     // (C2) candidate links → compute similarity only for linked, same-chrom pairs.
     let links = crate::vg::build_multimap_index_from_secondary_index(&side_index, primary_locus);
     debug_assert!(
@@ -438,6 +446,27 @@ pub fn run_layer2(
         .iter()
         .flat_map(|f| f.bundle_indices.iter().copied())
         .collect();
+    // M5 (C5): admit candidate NEW copies from all-secondary regions (regions where
+    // every read is a cross-map secondary, so Layer 1 built no bundle). MUST run
+    // before prune_to_loci, which drops every locus==None alignment. Default-off
+    // (--vg-layer2-new-copies); strictly ADDITIVE via the downstream union-by-chain
+    // stage (a genuinely new-copy chain is absent from VG output, so it only ADDs;
+    // the VG⊇baseline floor is never at risk). Proof-gated inside the emitter
+    // (>= new_copy_min_reads distinct reads, >=2 exons, chain consensus).
+    let new_copy_candidates: Vec<Transcript> = if new_copies {
+        let regions = side_index.all_secondary_regions(new_copy_max_gap);
+        let cands = candidate_new_copy_transcripts(&regions, new_copies, new_copy_min_reads);
+        if !cands.is_empty() {
+            eprintln!(
+                "[layer2] {} candidate new-copy transcript(s) from {} all-secondary region(s) (proof-gated; --vg-layer2-new-copies enabled)",
+                cands.len(), regions.len()
+            );
+        }
+        cands
+    } else {
+        Vec::new()
+    };
+
     let pruned = side_index.prune_to_loci(&keep);
     let capped = side_index.cap_per_locus(per_locus_cap);
     if pruned + capped > 0 {
@@ -545,7 +574,9 @@ pub fn run_layer2(
             novel_transcripts.push(t);
         }
     }
-    let _ = new_copies; // C5 (M5)
+    // M5 (C5): fold in the all-secondary new-copy candidates computed before prune.
+    // Order is irrelevant downstream (union-by-chain dedups by intron chain).
+    novel_transcripts.extend(new_copy_candidates);
     Ok(Layer2Output {
         families,
         family_graphs,
@@ -1473,6 +1504,64 @@ mod tests {
             assert_eq!(t.vg_family_id, Some(0), "tagged with the family id");
             assert!(t.exons.len() >= 2, "emitted paths are multi-exon");
         }
+    }
+
+    // M5 (C5) WIRING — run_layer2 admits all-secondary new-copy candidates only on
+    // the default-off path, and only AFTER computing them before prune (an
+    // all-secondary region's alignments are locus==None, which prune_to_loci drops).
+    #[test]
+    fn run_layer2_new_copy_scan_wiring_gated_and_additive() {
+        // No primaries, no family-candidate loci: a lone all-secondary cluster of 3
+        // distinct spliced reads at chrT:[100..560] with a 2-intron chain. Layer 1
+        // built no bundle here (locus==None), so this region only surfaces via C5.
+        let chain = &[(160u64, 300u64), (360u64, 500u64)];
+        let build_si = || {
+            let mut si = SecondaryIndex::new();
+            for h in [11u64, 22, 33] {
+                let mut a = sec_aln(h, 100, 560, chain, 0);
+                a.locus = None; // all-secondary: no Layer-1 bundle owns this region
+                si.push(a);
+            }
+            si
+        };
+        let loci: Vec<Layer1Locus<'_>> = Vec::new();
+        let primary_locus: DetHashMap<u64, usize> = DetHashMap::default();
+
+        // Default-off: scan is gated → no NovelLocusFromScan transcripts emitted.
+        let off = run_layer2(
+            &loci, build_si(), &primary_locus, None,
+            1, 0.3, 1000, 15, false,
+        )
+        .unwrap();
+        assert!(
+            !off.novel_transcripts.iter().any(|t| t.rescue_class
+                == Some(crate::vg_family::diagnostic::RescueClass::NovelLocusFromScan)),
+            "default-off path emits no new-copy-from-scan transcripts"
+        );
+
+        // ON: the 3-distinct-read, 2-intron cluster passes the proof gate and is
+        // appended to novel_transcripts (additive; flows to union-by-chain).
+        let on = run_layer2(
+            &loci, build_si(), &primary_locus, None,
+            1, 0.3, 1000, 15, true,
+        )
+        .unwrap();
+        let scanned: Vec<&Transcript> = on
+            .novel_transcripts
+            .iter()
+            .filter(|t| t.rescue_class
+                == Some(crate::vg_family::diagnostic::RescueClass::NovelLocusFromScan))
+            .collect();
+        assert_eq!(scanned.len(), 1, "one new-copy candidate from the cluster");
+        assert_eq!(
+            scanned[0].exons,
+            vec![(100, 160), (300, 360), (500, 560)],
+            "exons reconstructed from the consensus chain"
+        );
+        assert!(
+            (scanned[0].coverage - 3.0).abs() < 1e-9,
+            "coverage = distinct-read count"
+        );
     }
 
     // -------------------------------------------------------------------------
