@@ -110,6 +110,13 @@ pub fn amend_family_graph(
 pub enum IsoformSource {
     Native,
     Transferred { donor_copy: usize },
+    /// Layer-2 "C": an isoform assigned to `copy_id` by within-molecule PSV->junction
+    /// linkage — reads carrying that copy's distinguishing alleles vote their spanned
+    /// junctions to it. PURE for Task 1 (the engine is not yet wired into emission);
+    /// the variant exists so the total order in `emit_family_isoforms` already accounts
+    /// for it. Ranks strictly after `Native`/`Transferred` so the both-flags-off
+    /// regression anchor stays byte-identical (no `PsvLinked` paths are produced yet).
+    PsvLinked { copy_id: usize },
 }
 
 /// A recovered copy/isoform path (exon chain in genomic coordinates). A path that
@@ -1211,6 +1218,10 @@ pub fn emit_family_isoforms(
         match s {
             IsoformSource::Native => (0, 0),
             IsoformSource::Transferred { donor_copy } => (1, *donor_copy),
+            // PsvLinked ranks after both existing sources. It never activates in the
+            // both-flags-off anchor (no PsvLinked paths are produced there), so the
+            // sort still reduces to (exons, copy_id) — anchor preserved.
+            IsoformSource::PsvLinked { copy_id } => (2, *copy_id),
         }
     };
     out.sort_by(|a, b| {
