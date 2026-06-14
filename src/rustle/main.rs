@@ -602,6 +602,13 @@ struct Args {
     /// off, proof-gated; identifiable families only). Strictly additive when on.
     #[arg(long = "vg-layer2-psv-linkage", default_value_t = false)]
     vg_layer2_psv_linkage: bool,
+
+    /// EXPERIMENT: in identifiable families, REPLACE Part A (per-copy alt-splice from
+    /// own secondaries) with PSV-validated isoforms — a precision lever. Default off.
+    /// Implies the PSV genotyping pass for identifiable families (no need to also set
+    /// --vg-layer2-psv-linkage). Base + Part B intact; only Part A is replaced.
+    #[arg(long = "vg-layer2-psv-filter", default_value_t = false)]
+    vg_layer2_psv_filter: bool,
 }
 
 fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
@@ -861,6 +868,8 @@ pub fn run_cli() -> anyhow::Result<()> {
             || std::env::var_os("RUSTLE_VG_LAYER2_NEW_COPIES").is_some(),
         vg_layer2_psv_linkage: args.vg_layer2_psv_linkage
             || std::env::var_os("RUSTLE_VG_LAYER2_PSV_LINKAGE").is_some(),
+        vg_layer2_psv_filter: args.vg_layer2_psv_filter
+            || std::env::var_os("RUSTLE_VG_LAYER2_PSV_FILTER").is_some(),
         use_ml_filter: args.filter_mode == FilterMode::Ml,
         guide_mode: args.guide.is_some(),
         guide2_path: args.guide2.clone(),

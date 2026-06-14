@@ -1048,6 +1048,12 @@ pub struct RunConfig {
     /// linkage. Default OFF (`--vg-layer2-psv-linkage` /
     /// `RUSTLE_VG_LAYER2_PSV_LINKAGE`); strictly additive when on.
     pub vg_layer2_psv_linkage: bool,
+    /// Layer-2 EXPERIMENT — REPLACE Part A (per-copy alt-splice from own secondaries)
+    /// with PSV-validated isoforms in identifiable families (a precision lever, NOT
+    /// additive). Default OFF (`--vg-layer2-psv-filter` /
+    /// `RUSTLE_VG_LAYER2_PSV_FILTER`). Implies the PSV genotyping pass for identifiable
+    /// families regardless of `vg_layer2_psv_linkage`.
+    pub vg_layer2_psv_filter: bool,
 }
 
 impl RunConfig {
@@ -1305,6 +1311,7 @@ impl Default for RunConfig {
             vg_layer2: false,
             vg_layer2_new_copies: false,
             vg_layer2_psv_linkage: false,
+            vg_layer2_psv_filter: false,
         }
     }
 }
@@ -1330,6 +1337,7 @@ mod layer2_config_tests {
         assert!(!c.vg_layer2, "Layer 2 is OFF by default during development");
         assert!(!c.vg_layer2_new_copies, "all-secondary new copies OFF by default");
         assert!(!c.vg_layer2_psv_linkage, "PSV-linkage OFF by default");
+        assert!(!c.vg_layer2_psv_filter, "PSV-filter OFF by default");
         // family_exon_similarity already exists (the advisor's merge threshold);
         // its default is family_merge_jaccard(), NOT a Layer-2-specific constant.
         assert!(

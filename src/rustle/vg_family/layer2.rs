@@ -369,6 +369,7 @@ pub fn run_layer2(
     new_copies: bool,
     psv_linkage: bool,
     bam_path: &std::path::Path,
+    psv_filter: bool,
 ) -> Result<Layer2Output> {
     // Secondary-enriched isoform discovery (T4 wiring). Part A (per-copy alt-splice
     // from own secondaries) is ON by default under --vg-layer2 (additive; emit only
@@ -568,13 +569,30 @@ pub fn run_layer2(
                 secondaries_by_copy.entry(copy).or_default().push(s);
             }
         }
+        // (E) identifiability gate — computed ONCE per family (a present genome is a
+        // prerequisite for any PSV work). Reused for two decisions: (1) PSV-FILTER's
+        // Part-A suppression, and (2) the PSV genotyping pass. Cheap, reference-only.
+        let family_identifiable = genome
+            .map(|_| {
+                crate::vg_family::psv_linkage::family_identifiability(fg, 0.005, psv_family_min)
+            })
+            .unwrap_or(false);
+
+        // PSV-FILTER (experiment): in an IDENTIFIABLE family, REPLACE Part A with the
+        // PSV-validated isoforms. We do this by suppressing Part A here
+        // (enable_multi_isoform=false), keeping base + Part B intact; the PSV-validated
+        // isoforms are added below (psv_paths). When the flag is off, or the family is
+        // not identifiable, Part A behaves exactly as today (byte-identical default).
+        let suppress_part_a = psv_filter && family_identifiable;
+        let emit_multi_isoform = enable_multi_isoform && !suppress_part_a;
+
         // min_flow stays 1.0 so the base decompose behavior is unchanged (preserves
         // starved-copy + baseline-floor recovery — legs 6/7). Part A is independently
         // gated at >=2 support by K + the G7 isofrac floor (max(2.0, 0.01*copy_max)),
         // which already subsumes a 2.0 min_flow, so 1.0 here loses no Part-A precision.
         let paths = emit_family_isoforms(
             fg, &am, &secondaries_by_copy, 1.0,
-            isoform_min_support, enable_multi_isoform, enable_transfer,
+            isoform_min_support, emit_multi_isoform, enable_transfer,
         );
         if std::env::var_os("RUSTLE_LAYER2_DEBUG").is_some() {
             eprintln!(
@@ -592,38 +610,48 @@ pub fn run_layer2(
                 );
             }
         }
-        // (C) PSV->junction linkage: an additional, opt-in per-copy isoform channel.
-        // Gated to `--vg-layer2-psv-linkage` AND a present genome AND families that
-        // pass the (E) identifiability gate. Reads carrying a copy's distinguishing
-        // alleles vote their spanned junctions to that copy; confident chains become
-        // PsvLinked FamilyPaths that flow through the SAME materialization loop below
-        // (UnionBaseline-tagged → strictly additive via union-by-chain). Default-off
-        // path produces no PSV paths, so default output is byte-identical.
+        // (C) PSV->junction linkage: a per-copy isoform channel from within-molecule
+        // PSV evidence. The genotyping pass runs for an IDENTIFIABLE family when EITHER
+        //   - `--vg-layer2-psv-linkage` (ADDITIVE: PSV isoforms on top of Part A), OR
+        //   - `--vg-layer2-psv-filter`  (REPLACE: Part A was suppressed above; the
+        //     PSV-validated isoforms emitted here take its place).
+        // `psv_filter` thus IMPLIES the genotyping pass for identifiable families,
+        // independent of `psv_linkage`. Reads carrying a copy's distinguishing alleles
+        // vote their spanned junctions to that copy; confident chains become PsvLinked
+        // FamilyPaths that flow through the SAME materialization loop below
+        // (UnionBaseline-tagged → unioned by chain downstream). When neither flag is set
+        // (or the family is not identifiable), no PSV path is produced, so the default
+        // path is byte-identical.
         let mut psv_paths: Vec<FamilyPath> = Vec::new();
-        if psv_linkage {
+        if (psv_linkage || psv_filter) && family_identifiable {
             if let Some(g) = genome {
-                if crate::vg_family::psv_linkage::family_identifiability(fg, 0.005, psv_family_min) {
-                    let cols = crate::vg_family::psv_linkage::psv_columns_for_family(fg);
-                    let family_loci = psv_family_loci(fg);
-                    match crate::vg_family::psv_linkage::genotype_family_reads(
-                        bam_path, &family_loci, &cols, g,
-                    ) {
-                        Ok(gens) => {
-                            psv_paths = crate::vg_family::psv_linkage::assemble_psv_isoforms(
-                                &gens, psv_min, psv_margin, psv_min_linked,
+                let cols = crate::vg_family::psv_linkage::psv_columns_for_family(fg);
+                let family_loci = psv_family_loci(fg);
+                match crate::vg_family::psv_linkage::genotype_family_reads(
+                    bam_path, &family_loci, &cols, g,
+                ) {
+                    Ok(gens) => {
+                        psv_paths = crate::vg_family::psv_linkage::assemble_psv_isoforms(
+                            &gens, psv_min, psv_margin, psv_min_linked,
+                        );
+                        if !psv_paths.is_empty() {
+                            eprintln!(
+                                "[layer2] {} PSV-{} isoform(s) from family {} ({})",
+                                psv_paths.len(),
+                                if suppress_part_a { "filter" } else { "linked" },
+                                fam.family_id,
+                                if suppress_part_a {
+                                    "--vg-layer2-psv-filter; replaces Part A"
+                                } else {
+                                    "--vg-layer2-psv-linkage"
+                                }
                             );
-                            if !psv_paths.is_empty() {
-                                eprintln!(
-                                    "[layer2] {} PSV-linked isoform(s) from family {} (--vg-layer2-psv-linkage)",
-                                    psv_paths.len(), fam.family_id
-                                );
-                            }
                         }
-                        Err(e) => eprintln!(
-                            "[layer2] psv-linkage skipped for family {}: {e}",
-                            fam.family_id
-                        ),
                     }
+                    Err(e) => eprintln!(
+                        "[layer2] psv genotyping skipped for family {}: {e}",
+                        fam.family_id
+                    ),
                 }
             }
         }
@@ -1642,6 +1670,7 @@ mod tests {
             &loci, si, &primary_locus, Some(&genome),
             1, 0.3, 1000, 15, false,
             false, std::path::Path::new("/dev/null"),
+            /*psv_filter*/ false,
         )
         .unwrap();
 
@@ -1688,6 +1717,7 @@ mod tests {
             &loci, build_si(), &primary_locus, None,
             1, 0.3, 1000, 15, false,
             false, std::path::Path::new("/dev/null"),
+            /*psv_filter*/ false,
         )
         .unwrap();
         assert!(
@@ -1702,6 +1732,7 @@ mod tests {
             &loci, build_si(), &primary_locus, None,
             1, 0.3, 1000, 15, true,
             false, std::path::Path::new("/dev/null"),
+            /*psv_filter*/ false,
         )
         .unwrap();
         let scanned: Vec<&Transcript> = on
@@ -1761,6 +1792,7 @@ mod tests {
             &loci, si, &primary_locus, Some(&genome),
             1, 0.3, 1000, 15, false,
             /*psv_linkage*/ false, std::path::Path::new("/nonexistent/psv.bam"),
+            /*psv_filter*/ false,
         )
         .unwrap();
         // No PsvLinked emission: every emitted Layer-2 transcript here is a Part-A /
@@ -1772,6 +1804,63 @@ mod tests {
         for t in &out.novel_transcripts {
             assert!(t.exons.len() >= 2, "emitted paths remain well-formed");
         }
+    }
+
+    // PSV-FILTER gate (experiment) — with --vg-layer2-psv-filter OFF, Part A is
+    // emitted exactly as today (the suppression only fires when the flag is ON AND the
+    // family is identifiable). This fixture builds a 2-copy family whose copy-0
+    // secondaries carry a dominant full chain plus an exon-SKIP chain; Part A's
+    // multi-isoform discovery emits the skip isoform. We assert that skip isoform is
+    // PRESENT in the run_layer2 output with psv_filter=false (Part A intact). A NON-
+    // EXISTENT BAM path doubly proves the genotyping pass is never invoked off-flag.
+    #[test]
+    fn run_layer2_psv_filter_gated() {
+        // copy 0 is a 3-exon locus (so it has an interior exon to skip); copy 1 is the
+        // homologous shared first exon (the cross-map partner that forms the family).
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (5300, 5360)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let loci = vec![
+            Layer1Locus { chrom: "chrT".into(), strand: '+', graph: &g0 },
+            Layer1Locus { chrom: "chrT".into(), strand: '+', graph: &g1 },
+        ];
+
+        // Read 7's primary is at locus 0, its secondary maps to locus 1 → a cross-map
+        // link that forms the family. Copy-0's OWN secondaries (locus 0) carry two
+        // distinct chains: 3 full + 3 skip → Part A enumerates the skip alt-isoform.
+        let mut si = SecondaryIndex::new();
+        si.push(crate::vg_family::secondary_index::SecondaryAlignment {
+            read_name_hash: 7, chrom: "chrT".into(), ref_start: 100, ref_end: 160,
+            introns: vec![], nm: 0, strand: '+', is_supplementary: false, locus: Some(1),
+        });
+        for h in [11u64, 12, 13] {
+            si.push(sec_aln(h, 100, 560, &[(160, 300), (360, 500)], 0)); // full
+        }
+        for h in [21u64, 22, 23] {
+            si.push(sec_aln(h, 100, 560, &[(160, 500)], 0)); // exon-skip alt-splice
+        }
+        let mut primary_locus: DetHashMap<u64, usize> = DetHashMap::default();
+        primary_locus.insert(7, 0);
+
+        // psv_filter OFF + a non-existent BAM: Part A must be emitted (skip isoform
+        // present), and the genotyping pass is never reached (no panic on the bad path).
+        let out = run_layer2(
+            &loci, si, &primary_locus, Some(&genome),
+            1, 0.2, 1000, 15, false,
+            /*psv_linkage*/ false, std::path::Path::new("/nonexistent/psv.bam"),
+            /*psv_filter*/ false,
+        )
+        .unwrap();
+        let skip = vec![(100, 160), (500, 560)];
+        assert!(
+            out.novel_transcripts.iter().any(|t| t.exons == skip),
+            "psv_filter OFF: Part A's exon-skip alt-isoform is present: {:?}",
+            out.novel_transcripts.iter().map(|t| &t.exons).collect::<Vec<_>>()
+        );
     }
 
     // psv_family_loci derives per-copy (chrom,start,end) from per_copy_spans ONLY
