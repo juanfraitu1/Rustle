@@ -130,6 +130,13 @@ if [ -f "$SIM_BAM" ] && [ -f "$SIM_FA" ]; then
     echo "  FAIL: layer2 DROPPED a sim chain present in default (not additive)"
     exit 1
   fi
+  # (i+) positive Part-A regression guard: Part A MUST recover copy B's exon-skip
+  # isoform from the copyA-skip secondaries shadowing copyB's locus, so layer2 has
+  # strictly more transcripts than default. If this stops firing, Part A regressed.
+  if [ "$l" -le "$d" ]; then
+    echo "  FAIL: Part A added nothing on sim ($l <= $d) — multi-isoform recovery regressed"
+    exit 1
+  fi
   # (ii) no cross-copy chimera: max transcript span must stay within a single copy.
   lmax=$(awk -F'\t' '$3=="transcript"{s=$5-$4; if(s>m)m=s} END{print m+0}' /tmp/layer2/sim_layer2.gtf)
   echo "  sim max transcript span: layer2=$lmax (chimera bound=$SIM_CHIMERA_SPAN_MAX)"
