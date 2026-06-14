@@ -123,6 +123,24 @@ pub fn psv_columns_for_family(fg: &FamilyGraph) -> Vec<PsvColumn> {
     columns
 }
 
+/// (E) family identifiability gate. A family is identifiable enough to attempt
+/// PSV-linkage iff it has >= `min_psv_columns` distinguishable PSV columns on its
+/// exons. The `error_rate` argument is RESERVED for the coverage-weighted
+/// refinement (P(a read spans >= N PSVs) given read length and error); v1 is
+/// count-based, since requiring `min_psv_columns` distinct columns already makes
+/// `min_psv_columns` independent error-agreements improbable at typical long-read
+/// error rates. Returns false for families below the floor (e.g. DAZ-like: long
+/// identical cores with ~1 PSV), so they are skipped wholesale — the primary
+/// phantom defense.
+///
+/// Naming: `min_psv_columns` is the FAMILY's distinguishing-column count, distinct
+/// from the per-READ `min_psv` (the agreeing-PSV count a single read needs, used by
+/// the later read-assignment task).
+pub fn family_identifiability(fg: &FamilyGraph, error_rate: f64, min_psv_columns: usize) -> bool {
+    let _ = error_rate; // reserved for the coverage-weighted refinement (documented v1 limitation)
+    psv_columns_for_family(fg).len() >= min_psv_columns
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +174,58 @@ mod tests {
             (0, b"ACGTAC", (100, 106)),
             (1, b"ACCTAC", (500, 506)),
         ])
+    }
+
+    /// RABL2-like (identifiable): two copies of equal length differing at >= 3
+    /// offsets, so `psv_columns_for_family` yields >= 3 distinguishing columns.
+    /// copy0 b"ACGTACGT", copy1 b"AGGAAGGT" differ at offsets 1, 3, 4 -> 3 columns.
+    fn rabl2_like_fg() -> FamilyGraph {
+        one_node_fg(&[
+            (0, b"ACGTACGT", (100, 108)),
+            (1, b"AGGAAGGT", (500, 508)),
+        ])
+    }
+
+    /// DAZ-like (unidentifiable): long near-identical cores differing at exactly
+    /// ONE offset -> 1 column, below the >= 3 floor.
+    fn daz_like_fg() -> FamilyGraph {
+        one_node_fg(&[
+            (0, b"ACGTACGT", (100, 108)),
+            (1, b"ACGTACGA", (500, 508)),
+        ])
+    }
+
+    /// Exactly-three-columns fixture for the `>=` boundary test: copy0 b"AAAAAA"
+    /// vs copy1 b"ACCCAA" differ at offsets 1, 2, 3 -> 3 columns.
+    fn three_psv_fg() -> FamilyGraph {
+        one_node_fg(&[
+            (0, b"AAAAAA", (100, 106)),
+            (1, b"ACCCAA", (500, 506)),
+        ])
+    }
+
+    #[test]
+    fn identifiable_family_passes() {
+        // >= 3 distinguishable PSV columns on exons -> family is identifiable.
+        assert_eq!(psv_columns_for_family(&rabl2_like_fg()).len(), 3);
+        assert!(family_identifiability(&rabl2_like_fg(), 0.001, 3));
+    }
+
+    #[test]
+    fn unidentifiable_family_fails() {
+        // 1 PSV column (DAZ-like long identical cores) -> below the floor -> skip.
+        assert_eq!(psv_columns_for_family(&daz_like_fg()).len(), 1);
+        assert!(!family_identifiability(&daz_like_fg(), 0.001, 3));
+    }
+
+    #[test]
+    fn identifiability_threshold_boundary() {
+        // Exactly 3 columns: passes at min_psv_columns=3 (>=), fails at 4. Locks
+        // the inclusive boundary so a future off-by-one cannot slip the gate.
+        let fg = three_psv_fg();
+        assert_eq!(psv_columns_for_family(&fg).len(), 3);
+        assert!(family_identifiability(&fg, 0.001, 3));
+        assert!(!family_identifiability(&fg, 0.001, 4));
     }
 
     #[test]
