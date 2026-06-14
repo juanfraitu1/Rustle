@@ -156,11 +156,19 @@ pub fn family_identifiability(fg: &FamilyGraph, error_rate: f64, min_psv_columns
 ///
 /// `junctions`: the read's introns (`exons.windows(2)` → `(prev_end, next_start)`),
 /// the splice chain a later task links to the assigned copy.
+///
+/// `exons`: the read's aligned exon blocks (sorted), kept ALONGSIDE `junctions`
+/// (the two are redundant — `junctions = exons.windows(2).map(|w|(w[0].1,w[1].0))`)
+/// because per-copy isoform assembly needs the reads' TERMINAL coordinates to build
+/// consensus exons (the crisp junctions alone fix only interior boundaries, never
+/// the 5'/3' ends). Carrying both keeps the linkage gate (`junctions`) and the
+/// assembly (`exons`) reading the same molecule without re-deriving either.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadGenotype {
     pub read_name_hash: u64,
     pub psv_votes: Vec<(usize, usize)>,
     pub junctions: Vec<(u64, u64)>,
+    pub exons: Vec<(u64, u64)>,
 }
 
 /// Confidently assign a read to one copy iff that copy has >= `min_psv` supporting
@@ -241,9 +249,10 @@ pub fn genotype_family_reads(
 ) -> anyhow::Result<Vec<ReadGenotype>> {
     use crate::types::{DetHashMap, DetHashSet};
 
-    // votes: read_name_hash -> (copy_id -> #supporting PSVs); junctions per read.
+    // votes: read_name_hash -> (copy_id -> #supporting PSVs); junctions + exons per read.
     let mut votes_by_read: DetHashMap<u64, DetHashMap<usize, usize>> = DetHashMap::default();
     let mut junctions_by_read: DetHashMap<u64, DetHashSet<(u64, u64)>> = DetHashMap::default();
+    let mut exons_by_read: DetHashMap<u64, DetHashSet<(u64, u64)>> = DetHashMap::default();
     // Track read order of first appearance is unnecessary — we sort by hash at the
     // end — but we must register every read seen even if it casts no votes.
     let mut seen_reads: DetHashSet<u64> = DetHashSet::default();
@@ -289,7 +298,14 @@ pub fn genotype_family_reads(
         // junctions still matter for later linkage of confidently-assigned reads).
         seen_reads.insert(read.read_name_hash);
 
-        // The read's intron chain = gaps between consecutive aligned exons.
+        // The read's aligned exon blocks (assembly needs terminal coords) AND its
+        // intron chain (the gaps between consecutive exons — what linkage votes).
+        {
+            let eset = exons_by_read.entry(read.read_name_hash).or_default();
+            for &ex in &read.exons {
+                eset.insert(ex);
+            }
+        }
         if read.exons.len() >= 2 {
             let jset = junctions_by_read.entry(read.read_name_hash).or_default();
             for w in read.exons.windows(2) {
@@ -362,11 +378,252 @@ pub fn genotype_family_reads(
                 .map(|s| s.iter().copied().collect())
                 .unwrap_or_default();
             junctions.sort();
-            ReadGenotype { read_name_hash: h, psv_votes, junctions }
+            let mut exons: Vec<(u64, u64)> = exons_by_read
+                .get(&h)
+                .map(|s| s.iter().copied().collect())
+                .unwrap_or_default();
+            exons.sort();
+            ReadGenotype { read_name_hash: h, psv_votes, junctions, exons }
         })
         .collect();
     out.sort_by_key(|g| g.read_name_hash);
     Ok(out)
+}
+
+/// (Per-junction linkage view, for the certificate + the chain-consistency gate.)
+/// Each CONFIDENTLY-assigned read (`assign_read_to_copy == Some(copy)`) votes every
+/// junction it spans to that copy; a junction is assigned to a copy iff `>= k`
+/// DISTINCT reads vote it. AMBIGUOUS reads (`assign_read_to_copy == None`) contribute
+/// nothing — never a guessed junction. Returns `copy_id -> sorted assigned junctions`.
+///
+/// WHY a per-junction view alongside the chain assembly: the certificate wants to know
+/// whether a chain's EVERY junction independently cleared the linked-read floor (a
+/// chain whose splice graph is well-supported overall but has one thinly-linked
+/// junction is structurally weaker than one all of whose junctions are linked). The
+/// assembly's consistency gate consumes this map directly: a chain is only emitted if
+/// all of its junctions appear in its copy's assigned set.
+///
+/// Deterministic: copies are a `DetHashMap`; each copy's junction Vec is sorted.
+pub fn link_junctions(
+    gens: &[ReadGenotype],
+    min_psv: usize,
+    margin: usize,
+    k: usize,
+) -> crate::types::DetHashMap<usize, Vec<(u64, u64)>> {
+    use crate::types::{DetHashMap, DetHashSet};
+    // (copy, junction) -> set of distinct reads voting it. A DetHashSet of read
+    // hashes per (copy, junction) guards against one read's duplicate junction (a
+    // read never spans the same junction twice, but a paranoid distinct count keeps
+    // the >= k floor honest regardless of upstream dedup).
+    let mut votes: DetHashMap<(usize, (u64, u64)), DetHashSet<u64>> = DetHashMap::default();
+    for g in gens {
+        let Some(copy) = assign_read_to_copy(g, min_psv, margin) else {
+            continue; // ambiguous read → no junction vote
+        };
+        for &j in &g.junctions {
+            votes
+                .entry((copy, j))
+                .or_default()
+                .insert(g.read_name_hash);
+        }
+    }
+    let mut out: DetHashMap<usize, Vec<(u64, u64)>> = DetHashMap::default();
+    for ((copy, j), readers) in &votes {
+        if readers.len() >= k {
+            out.entry(*copy).or_default().push(*j);
+        }
+    }
+    for v in out.values_mut() {
+        v.sort_unstable();
+    }
+    out
+}
+
+/// Certificate of within-molecule PSV-linkage evidence backing an emitted per-copy
+/// isoform. It is the per-transcript proof that the assignment to `copy_id` rests on
+/// reads carrying that copy's distinguishing alleles, not on homology shadow.
+///
+/// - `linked_reads`: the number of DISTINCT confidently-assigned reads that traversed
+///   this exact intron chain (the chain's support).
+/// - `n_psvs`: the WEAKEST LINK — the minimum PSV-vote count among those supporting
+///   reads (a chain backed by reads each carrying >= n_psvs of the copy's alleles is
+///   only as strong as its thinnest-genotyped molecule).
+/// - `copy_posterior`: a v1 vote-fraction confidence (see `assemble_psv_isoforms`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PsvCertificate {
+    pub copy_id: usize,
+    pub linked_reads: usize,
+    pub n_psvs: usize,
+    pub copy_posterior: f64,
+}
+
+/// Assemble per-copy isoforms from PSV-linked reads. This is the recovery payload of
+/// the channel: a real per-copy splice isoform, justified entirely by reads whose
+/// alleles place them on that copy.
+///
+/// For each copy (sorted) take its CONFIDENTLY-assigned reads (`assign_read_to_copy ==
+/// Some(copy)`), group them by FULL intron chain (their `junctions`), and for each
+/// chain that
+///   - has `>= k` DISTINCT supporting reads, AND
+///   - whose EVERY junction is copy-assigned per [`link_junctions`] (the consistency
+///     gate — a chain may not contain a junction the copy didn't independently link),
+/// build consensus exons and emit one [`FamilyPath`]. Consensus mirrors
+/// `build_exons_from_chain`'s rule: interior boundaries are the crisp junction coords;
+/// the 5' start / 3' end are the MEDIAN (lower-middle) of the supporters' terminal exon
+/// coordinates. Chains-only — we emit only chains a real molecule traversed; single-
+/// exon chains (no junctions) are skipped (no splice signal to assign).
+///
+/// PsvCertificate (v1):
+///   - `linked_reads` = the chain's distinct supporting reads.
+///   - `n_psvs` = the minimum PSV-vote count among those supporters (the weakest link).
+///   - `copy_posterior` = `supporting / (supporting + competing)`, the VOTE FRACTION,
+///     where `competing` is the number of reads that span THIS chain AND are
+///     confidently assigned to a DIFFERENT copy. With no competitors this is 1.0; it
+///     degrades as cross-mapped reads of other copies traverse the same chain. (v1: a
+///     simple fraction, not a calibrated Bayesian posterior — documented.)
+///
+/// Deterministic: copies sorted; per copy, chains ranked by (support DESC, chain ASC)
+/// so the assembly order is stable; the final Vec is sorted by (exons, copy_id).
+pub fn assemble_psv_isoforms(
+    gens: &[ReadGenotype],
+    min_psv: usize,
+    margin: usize,
+    k: usize,
+) -> Vec<crate::vg_family::layer2::FamilyPath> {
+    use crate::types::{DetHashMap, DetHashSet};
+    use crate::vg_family::layer2::{FamilyPath, IsoformSource};
+
+    // The per-junction linkage view (consistency gate): copy -> its linked junctions.
+    let linked = link_junctions(gens, min_psv, margin, k);
+
+    // Confidently-assigned reads, grouped by (copy, full intron chain). We retain the
+    // whole ReadGenotype per supporter so consensus can read terminal exon coords and
+    // the certificate can read PSV-vote counts.
+    let mut by_copy_chain: DetHashMap<(usize, Vec<(u64, u64)>), Vec<&ReadGenotype>> =
+        DetHashMap::default();
+    // (chain -> set of copies that confidently span it) for the copy_posterior competitor count.
+    let mut chain_copy_reads: DetHashMap<Vec<(u64, u64)>, DetHashMap<usize, DetHashSet<u64>>> =
+        DetHashMap::default();
+    for g in gens {
+        let Some(copy) = assign_read_to_copy(g, min_psv, margin) else {
+            continue;
+        };
+        if g.junctions.is_empty() {
+            continue; // single-exon read → no chain to assemble
+        }
+        by_copy_chain
+            .entry((copy, g.junctions.clone()))
+            .or_default()
+            .push(g);
+        chain_copy_reads
+            .entry(g.junctions.clone())
+            .or_default()
+            .entry(copy)
+            .or_default()
+            .insert(g.read_name_hash);
+    }
+
+    // Iterate copies in sorted order; within a copy, chains ranked (support DESC, chain
+    // ASC) so assembly is deterministic regardless of map order.
+    let mut keys: Vec<(usize, Vec<(u64, u64)>)> = by_copy_chain.keys().cloned().collect();
+    keys.sort_by(|a, b| {
+        let sa = by_copy_chain[a].len();
+        let sb = by_copy_chain[b].len();
+        a.0.cmp(&b.0) // copy ASC
+            .then(sb.cmp(&sa)) // support DESC
+            .then(a.1.cmp(&b.1)) // chain ASC
+    });
+
+    let mut out: Vec<FamilyPath> = Vec::new();
+    for (copy, chain) in &keys {
+        let supporters = &by_copy_chain[&(*copy, chain.clone())];
+        // Distinct supporting reads (defensive — upstream groups per read, but the
+        // certificate's `linked_reads` MUST be a distinct count).
+        let distinct: DetHashSet<u64> = supporters.iter().map(|g| g.read_name_hash).collect();
+        let support = distinct.len();
+        if support < k {
+            continue; // chains-only >= k floor
+        }
+        // Consistency gate: every junction of the chain must be copy-assigned.
+        let copy_links = linked.get(copy);
+        let all_linked = chain.iter().all(|j| {
+            copy_links.map(|v| v.binary_search(j).is_ok()).unwrap_or(false)
+        });
+        if !all_linked {
+            continue;
+        }
+        // Consensus exons: crisp junctions, median terminal start/end. Mirrors
+        // build_exons_from_chain (lower-middle median).
+        let median = |mut v: Vec<u64>| -> u64 {
+            v.sort_unstable();
+            v[(v.len() - 1) / 2]
+        };
+        // A supporter's terminal coords are the first exon's start and last exon's end.
+        let start = median(
+            supporters
+                .iter()
+                .filter_map(|g| g.exons.first().map(|e| e.0))
+                .collect(),
+        );
+        let end = median(
+            supporters
+                .iter()
+                .filter_map(|g| g.exons.last().map(|e| e.1))
+                .collect(),
+        );
+        let mut exons: Vec<(u64, u64)> = Vec::with_capacity(chain.len() + 1);
+        let mut cur_start = start;
+        for &(donor, acceptor) in chain {
+            exons.push((cur_start, donor));
+            cur_start = acceptor;
+        }
+        exons.push((cur_start, end));
+        if exons.len() < 2 {
+            continue; // single-exon → skip (defensive; a non-empty chain has >= 2)
+        }
+        // Certificate. n_psvs = weakest link = min PSV-vote count for the ASSIGNED copy
+        // among the supporters. copy_posterior = supporting / (supporting + competing),
+        // where competing = distinct reads spanning this chain confidently assigned to a
+        // DIFFERENT copy.
+        let n_psvs = supporters
+            .iter()
+            .map(|g| {
+                g.psv_votes
+                    .iter()
+                    .find(|(c, _)| c == copy)
+                    .map(|(_, n)| *n)
+                    .unwrap_or(0)
+            })
+            .min()
+            .unwrap_or(0);
+        let competing: usize = chain_copy_reads
+            .get(chain)
+            .map(|m| {
+                m.iter()
+                    .filter(|(c, _)| **c != *copy)
+                    .map(|(_, reads)| reads.len())
+                    .sum()
+            })
+            .unwrap_or(0);
+        let copy_posterior = support as f64 / (support + competing) as f64;
+        let junction_chain = chain.clone();
+        out.push(FamilyPath {
+            exons,
+            flow: support as f64,
+            copy_id: *copy,
+            junction_chain,
+            source: IsoformSource::PsvLinked { copy_id: *copy },
+            certificate: Some(PsvCertificate {
+                copy_id: *copy,
+                linked_reads: support,
+                n_psvs,
+                copy_posterior,
+            }),
+        });
+    }
+    // Final deterministic total order: (exons, copy_id).
+    out.sort_by(|a, b| a.exons.cmp(&b.exons).then(a.copy_id.cmp(&b.copy_id)));
+    out
 }
 
 #[cfg(test)]
@@ -547,6 +804,7 @@ mod tests {
             read_name_hash: 7,
             psv_votes: vec![(0, 0), (1, 3)],
             junctions: vec![(160, 300)],
+            exons: vec![(100, 160), (300, 360)],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), Some(1));
     }
@@ -558,6 +816,7 @@ mod tests {
             read_name_hash: 8,
             psv_votes: vec![(0, 2), (1, 2)],
             junctions: vec![],
+            exons: vec![(100, 200)],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), None);
     }
@@ -569,6 +828,7 @@ mod tests {
             read_name_hash: 9,
             psv_votes: vec![(0, 2)],
             junctions: vec![],
+            exons: vec![(100, 200)],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), None);
     }
@@ -580,6 +840,7 @@ mod tests {
             read_name_hash: 10,
             psv_votes: vec![(0, 3), (1, 3)],
             junctions: vec![],
+            exons: vec![(100, 200)],
         };
         assert_eq!(assign_read_to_copy(&tied, 3, 1), None);
         // One copy clears min_psv and beats the runner-up by the margin -> assigned.
@@ -587,6 +848,7 @@ mod tests {
             read_name_hash: 11,
             psv_votes: vec![(0, 4), (1, 3)],
             junctions: vec![],
+            exons: vec![(100, 200)],
         };
         assert_eq!(assign_read_to_copy(&dominant, 3, 1), Some(0));
     }
@@ -606,6 +868,7 @@ mod tests {
             read_name_hash: 42,
             psv_votes: vec![(0, 3), (1, 1)],
             junctions: vec![(100, 200), (250, 400)],
+            exons: vec![(50, 100), (200, 250), (400, 450)],
         };
         assert_eq!(assign_read_to_copy(&g, 3, 1), Some(0));
         // Function exists with the documented signature (compile-time check).
@@ -638,6 +901,228 @@ mod tests {
         assert!(
             rank(&IsoformSource::PsvLinked { copy_id: 0 })
                 < rank(&IsoformSource::PsvLinked { copy_id: 1 })
+        );
+    }
+
+    // ── Task 4: junction linkage + per-copy isoform assembly + PsvCertificate ──
+    //
+    // link_junctions is the per-junction view: confidently-assigned reads vote each
+    // junction they span to their copy; a junction is the copy's only at >= k votes.
+    // assemble_psv_isoforms is the recovery payload: it groups a copy's reads by full
+    // chain, gates each chain (>= k support + every junction copy-linked), and emits a
+    // PsvLinked FamilyPath with a certificate. Both NEVER act on ambiguous reads.
+
+    #[test]
+    fn link_junctions_assigns_at_k() {
+        // 2 reads both confidently copy0 (3 PSV votes) spanning junction (160,300).
+        // At k=2 the junction is assigned to copy0; at k=3 it falls below the floor.
+        let gens = vec![
+            ReadGenotype {
+                read_name_hash: 1,
+                psv_votes: vec![(0, 3)],
+                junctions: vec![(160, 300)],
+                exons: vec![(100, 160), (300, 360)],
+            },
+            ReadGenotype {
+                read_name_hash: 2,
+                psv_votes: vec![(0, 3)],
+                junctions: vec![(160, 300)],
+                exons: vec![(100, 160), (300, 360)],
+            },
+        ];
+        let m = link_junctions(&gens, 3, 1, 2);
+        assert_eq!(m.get(&0).unwrap(), &vec![(160, 300)]);
+        // k=3 → only 2 distinct readers → copy0 has no linked junction.
+        let m3 = link_junctions(&gens, 3, 1, 3);
+        assert!(m3.get(&0).is_none(), "k=3 with 2 reads → empty for copy0: {m3:?}");
+    }
+
+    #[test]
+    fn link_junctions_excludes_ambiguous() {
+        // One CONFIDENT copy0 read + one AMBIGUOUS (tied) read, both span (160,300).
+        // The ambiguous read contributes nothing, so at k=2 the junction is NOT linked.
+        let gens = vec![
+            ReadGenotype {
+                read_name_hash: 1,
+                psv_votes: vec![(0, 3)],
+                junctions: vec![(160, 300)],
+                exons: vec![(100, 160), (300, 360)],
+            },
+            ReadGenotype {
+                read_name_hash: 2,
+                psv_votes: vec![(0, 2), (1, 2)], // tied → assign_read_to_copy == None
+                junctions: vec![(160, 300)],
+                exons: vec![(100, 160), (300, 360)],
+            },
+        ];
+        let m = link_junctions(&gens, 3, 1, 2);
+        assert!(
+            m.get(&0).is_none(),
+            "ambiguous read must not count toward the k=2 floor: {m:?}"
+        );
+        // Sanity: with k=1 the single confident read links it (the ambiguous one still
+        // contributes nothing — the linked set is exactly the confident junction).
+        let m1 = link_junctions(&gens, 3, 1, 1);
+        assert_eq!(m1.get(&0).unwrap(), &vec![(160, 300)]);
+    }
+
+    #[test]
+    fn assemble_emits_psvlinked_isoform() {
+        // 2 reads confidently copy0, same 3-exon chain. k=2 → one PsvLinked FamilyPath
+        // with the consensus exons, the chain, and a certificate (linked_reads == 2).
+        let exons = vec![(100, 160), (300, 360), (500, 560)];
+        let chain = vec![(160, 300), (360, 500)];
+        let gens = vec![
+            ReadGenotype {
+                read_name_hash: 1,
+                psv_votes: vec![(0, 3)],
+                junctions: chain.clone(),
+                exons: exons.clone(),
+            },
+            ReadGenotype {
+                read_name_hash: 2,
+                psv_votes: vec![(0, 4)],
+                junctions: chain.clone(),
+                exons: exons.clone(),
+            },
+        ];
+        let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
+        assert_eq!(paths.len(), 1, "exactly one assembled isoform: {paths:?}");
+        let p = &paths[0];
+        assert_eq!(p.source, crate::vg_family::layer2::IsoformSource::PsvLinked { copy_id: 0 });
+        assert_eq!(p.copy_id, 0);
+        assert_eq!(p.junction_chain, chain);
+        assert_eq!(p.exons, exons, "consensus exons = crisp junctions + median terminals");
+        assert_eq!(p.flow, 2.0);
+        let cert = p.certificate.as_ref().expect("PsvLinked path carries a certificate");
+        assert_eq!(cert.copy_id, 0);
+        assert_eq!(cert.linked_reads, 2);
+        // n_psvs = weakest link = min(3, 4) = 3.
+        assert_eq!(cert.n_psvs, 3);
+        // No competitor reads → posterior 1.0.
+        assert_eq!(cert.copy_posterior, 1.0);
+    }
+
+    #[test]
+    fn assemble_respects_k_and_consistency() {
+        // Only ONE read for copy0's chain at k=2 → not emitted (chains-only >= k). A
+        // read confidently assigned to copy1 sharing nothing with copy0 must not bleed
+        // into copy0's chains.
+        let chain0 = vec![(160, 300), (360, 500)];
+        let exons0 = vec![(100, 160), (300, 360), (500, 560)];
+        let chain1 = vec![(1160, 1300)];
+        let exons1 = vec![(1100, 1160), (1300, 1360)];
+        let gens = vec![
+            // single copy0 supporter for chain0 (below k=2)
+            ReadGenotype {
+                read_name_hash: 1,
+                psv_votes: vec![(0, 3)],
+                junctions: chain0.clone(),
+                exons: exons0.clone(),
+            },
+            // a copy1 read on a different chain — must not contribute to copy0
+            ReadGenotype {
+                read_name_hash: 2,
+                psv_votes: vec![(1, 3)],
+                junctions: chain1.clone(),
+                exons: exons1.clone(),
+            },
+        ];
+        let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
+        assert!(
+            paths.is_empty(),
+            "neither chain reaches k=2 distinct supporters: {paths:?}"
+        );
+        // Add a SECOND copy0 read on chain0 → now it clears k=2 and is emitted; copy1's
+        // lone read still does not (and the copy0 path is assigned to copy0 only).
+        let mut gens2 = gens.clone();
+        gens2.push(ReadGenotype {
+            read_name_hash: 3,
+            psv_votes: vec![(0, 3)],
+            junctions: chain0.clone(),
+            exons: exons0.clone(),
+        });
+        let paths2 = assemble_psv_isoforms(&gens2, 3, 1, 2);
+        assert_eq!(paths2.len(), 1, "only copy0's chain clears k: {paths2:?}");
+        assert_eq!(paths2[0].copy_id, 0);
+        assert_eq!(paths2[0].junction_chain, chain0);
+    }
+
+    #[test]
+    fn assemble_skips_single_exon() {
+        // Confidently-assigned reads with NO junction (single aligned block) carry no
+        // splice signal → nothing to assemble → no emission.
+        let gens = vec![
+            ReadGenotype {
+                read_name_hash: 1,
+                psv_votes: vec![(0, 3)],
+                junctions: vec![],
+                exons: vec![(100, 600)],
+            },
+            ReadGenotype {
+                read_name_hash: 2,
+                psv_votes: vec![(0, 4)],
+                junctions: vec![],
+                exons: vec![(100, 600)],
+            },
+        ];
+        let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
+        assert!(paths.is_empty(), "single-exon reads emit nothing: {paths:?}");
+    }
+
+    #[test]
+    fn familypath_certificate_none_by_default() {
+        // Sanity: a hand-built Native FamilyPath carries certificate: None (the field's
+        // default everywhere outside assemble_psv_isoforms). Locks the PartialEq anchor
+        // for emit_both_off_equals_decompose (all base/Part-A/B paths are certificate-None).
+        use crate::vg_family::layer2::{FamilyPath, IsoformSource};
+        let p = FamilyPath {
+            exons: vec![(100, 160), (300, 360)],
+            flow: 1.0,
+            copy_id: 0,
+            junction_chain: vec![(160, 300)],
+            source: IsoformSource::Native,
+            certificate: None,
+        };
+        assert!(p.certificate.is_none());
+    }
+
+    #[test]
+    fn assemble_copy_posterior_degrades_with_competitor() {
+        // 2 copy0 reads + 1 copy1 read ALL span the same chain. copy0's chain clears
+        // k=2; its posterior = 2 / (2 + 1) (one competing copy1 read on the same chain).
+        let chain = vec![(160, 300), (360, 500)];
+        let exons = vec![(100, 160), (300, 360), (500, 560)];
+        let gens = vec![
+            ReadGenotype {
+                read_name_hash: 1,
+                psv_votes: vec![(0, 3)],
+                junctions: chain.clone(),
+                exons: exons.clone(),
+            },
+            ReadGenotype {
+                read_name_hash: 2,
+                psv_votes: vec![(0, 3)],
+                junctions: chain.clone(),
+                exons: exons.clone(),
+            },
+            ReadGenotype {
+                read_name_hash: 3,
+                psv_votes: vec![(1, 3)],
+                junctions: chain.clone(),
+                exons: exons.clone(),
+            },
+        ];
+        let paths = assemble_psv_isoforms(&gens, 3, 1, 2);
+        // copy1 has only 1 read on the chain (< k) → not emitted; copy0 is.
+        assert_eq!(paths.len(), 1, "only copy0 clears k=2: {paths:?}");
+        let cert = paths[0].certificate.as_ref().unwrap();
+        assert_eq!(cert.copy_id, 0);
+        assert_eq!(cert.linked_reads, 2);
+        assert!(
+            (cert.copy_posterior - 2.0 / 3.0).abs() < 1e-9,
+            "posterior 2/(2+1): {}",
+            cert.copy_posterior
         );
     }
 }

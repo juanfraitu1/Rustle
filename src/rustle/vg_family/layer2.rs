@@ -132,6 +132,12 @@ pub struct FamilyPath {
     /// the intron chain without recomputing it.
     pub junction_chain: Vec<(u64, u64)>,
     pub source: IsoformSource,
+    /// PSV-linkage evidence certificate. `None` for every Native / Transferred
+    /// path (the base decompose + Part A/B channels); `Some` ONLY on a
+    /// `PsvLinked` path emitted by `psv_linkage::assemble_psv_isoforms`, where it
+    /// records the within-molecule allele evidence (linked reads, weakest-link
+    /// PSV count, copy posterior) that justified the per-copy assignment.
+    pub certificate: Option<crate::vg_family::psv_linkage::PsvCertificate>,
 }
 
 /// The intron chain (junctions) implied by an exon chain: one `(donor, acceptor)`
@@ -307,6 +313,7 @@ pub fn decompose_family_paths(
             copy_id: copy,
             junction_chain,
             source: IsoformSource::Native,
+            certificate: None,
         });
     }
     paths.sort_by(|a, b| a.exons.cmp(&b.exons).then(a.copy_id.cmp(&b.copy_id)));
@@ -1104,6 +1111,7 @@ pub fn emit_family_isoforms(
                     copy_id: copy,
                     junction_chain: chain.clone(),
                     source: IsoformSource::Native,
+                    certificate: None,
                 });
             }
         }
@@ -1189,6 +1197,7 @@ pub fn emit_family_isoforms(
                         copy_id: recipient,
                         junction_chain: jc,
                         source: IsoformSource::Transferred { donor_copy: donor },
+                        certificate: None,
                     });
                 }
             }
