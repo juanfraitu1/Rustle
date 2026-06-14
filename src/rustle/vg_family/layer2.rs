@@ -1186,7 +1186,7 @@ mod tests {
     ) -> crate::vg_family::secondary_index::SecondaryAlignment {
         crate::vg_family::secondary_index::SecondaryAlignment {
             read_name_hash: h, chrom: "chrT".into(), ref_start: start, ref_end: end,
-            introns: introns.to_vec(), nm: 0, is_supplementary: false, locus: Some(locus),
+            introns: introns.to_vec(), nm: 0, strand: '+', is_supplementary: false, locus: Some(locus),
         }
     }
 
@@ -1341,6 +1341,7 @@ mod tests {
             ref_end: 160,
             introns: vec![],
             nm: 0,
+            strand: '+',
             is_supplementary: false,
             locus: Some(1),
         });

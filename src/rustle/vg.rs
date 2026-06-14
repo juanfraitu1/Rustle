@@ -7886,7 +7886,7 @@ mod tests {
         let mut si = SecondaryIndex::new();
         let mk = |h: u64, locus: usize| SecondaryAlignment {
             read_name_hash: h, chrom: "chrT".to_string(), ref_start: 0, ref_end: 100,
-            introns: vec![], nm: 0, is_supplementary: false, locus: Some(locus),
+            introns: vec![], nm: 0, strand: '+', is_supplementary: false, locus: Some(locus),
         };
         si.push(mk(7, 3));
         si.push(mk(7, 5));
@@ -7929,7 +7929,7 @@ mod tests {
         let mut si = SecondaryIndex::new();
         si.push(SecondaryAlignment {
             read_name_hash: 7, chrom: "chrT".into(), ref_start: 0, ref_end: 100,
-            introns: vec![], nm: 0, is_supplementary: false, locus: Some(1),
+            introns: vec![], nm: 0, strand: '+', is_supplementary: false, locus: Some(1),
         });
         let mut primary_locus: crate::types::DetHashMap<u64, usize> = crate::types::DetHashMap::default();
         primary_locus.insert(7, 0);
@@ -7951,7 +7951,7 @@ mod tests {
         for (h, l) in [(7u64, 0usize), (8, 1), (9, 2)] {
             si.push(SecondaryAlignment {
                 read_name_hash: h, chrom: "chrT".into(), ref_start: 0, ref_end: 100,
-                introns: vec![], nm: 0, is_supplementary: false, locus: Some(l),
+                introns: vec![], nm: 0, strand: '+', is_supplementary: false, locus: Some(l),
             });
         }
         let mut keep: crate::types::DetHashSet<usize> = crate::types::DetHashSet::default();

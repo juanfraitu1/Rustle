@@ -1330,6 +1330,10 @@ pub fn collect_secondary_index_from_bam<P: AsRef<std::path::Path>>(
             ref_end: read.ref_end,
             introns,
             nm: read.nm,
+            // Carry the placement's strand from the same parser Layer 1 uses, so a
+            // recovered all-secondary copy gets a real (possibly '-') strand instead
+            // of a hardcoded '+' that would break gffcompare strand-matching.
+            strand: read.strand,
             is_supplementary,
             locus: None,
         });

@@ -33,6 +33,10 @@ pub struct SecondaryAlignment {
     pub introns: Vec<(u64, u64)>,
     /// Edit distance (NM tag) for this placement — used for PSV / decisive evidence.
     pub nm: u32,
+    /// Placement strand (`'+'`/`'-'`), from the read's alignment strand. A recovered
+    /// all-secondary new copy needs a real strand: hardcoding `'+'` is wrong for
+    /// spliced transcripts and breaks gffcompare strand-matching downstream.
+    pub strand: char,
     /// `true` for supplementary alignments, `false` for secondary alignments.
     pub is_supplementary: bool,
     /// Layer-1 locus (bundle index) this placement overlaps, filled in after
@@ -162,6 +166,57 @@ impl SecondaryIndex {
             .collect()
     }
 
+    /// Cluster the unassigned (locus == None) alignments — those overlapping NO
+    /// Layer-1 bundle, i.e. genomic regions Layer 1 dropped because every read there
+    /// is a cross-map secondary — into candidate new-copy regions by genomic
+    /// proximity. Single-linkage on [ref_start, ref_end] per chromosome: an alignment
+    /// joins the running cluster when same chrom AND ref_start <= cluster_end + max_gap
+    /// (cluster_end = max ref_end so far). Deterministic. Returns one Vec of
+    /// alignment refs per cluster, in genomic order. NO support/min-reads filter here
+    /// (the emission stage gates on distinct-read support); this is pure clustering.
+    ///
+    /// Must run BEFORE `prune_to_loci`, which deletes the locus == None alignments
+    /// this method consumes.
+    pub fn all_secondary_regions(&self, max_gap: u64) -> Vec<Vec<&SecondaryAlignment>> {
+        // 1. Collect refs to the unassigned alignments, paired with capture index.
+        //    The capture index is the final sort tiebreak: it gives a TOTAL order so
+        //    the clustering is independent of map/iteration nondeterminism — this is
+        //    load-bearing for byte-identical output.
+        let mut unassigned: Vec<(usize, &SecondaryAlignment)> = self
+            .alignments
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.locus.is_none())
+            .collect();
+        // 2. Total-order sort: (chrom, start, end, hash, capture_index).
+        unassigned.sort_unstable_by(|(ia, a), (ib, b)| {
+            a.chrom
+                .cmp(&b.chrom)
+                .then(a.ref_start.cmp(&b.ref_start))
+                .then(a.ref_end.cmp(&b.ref_end))
+                .then(a.read_name_hash.cmp(&b.read_name_hash))
+                .then(ia.cmp(ib))
+        });
+        // 3. Single-linkage cluster: same chrom AND start within cluster_end + max_gap.
+        let mut clusters: Vec<Vec<&SecondaryAlignment>> = Vec::new();
+        let mut cluster_chrom: &str = "";
+        let mut cluster_end: u64 = 0;
+        for (_, a) in unassigned {
+            let joins = !clusters.is_empty()
+                && a.chrom == cluster_chrom
+                && a.ref_start <= cluster_end.saturating_add(max_gap);
+            if joins {
+                cluster_end = cluster_end.max(a.ref_end);
+                clusters.last_mut().unwrap().push(a);
+            } else {
+                cluster_chrom = a.chrom.as_str();
+                cluster_end = a.ref_end;
+                clusters.push(vec![a]);
+            }
+        }
+        clusters
+    }
+
     /// Drop every alignment whose locus is not in `keep`. Open-decision (1):
     /// prune the index to family-candidate loci after discovery's first pass.
     /// Returns the number of alignments dropped (caller logs it; never silent).
@@ -228,6 +283,7 @@ mod tests {
             ref_end: end,
             introns: Vec::new(),
             nm: 0,
+            strand: '+',
             is_supplementary: false,
             locus: None,
         }
@@ -380,6 +436,104 @@ mod tests {
             .map(|w| (w[0].1, w[1].0))
             .collect();
         assert_eq!(introns, vec![(110, 210)], "intron chain from shared exon parser");
+    }
+
+    // ── M5.0 / M5.1: strand field + all-secondary-region clustering ──────────
+
+    /// Lock in that the `strand` field exists, is `pub`, and round-trips. A
+    /// recovered all-secondary copy on the minus strand must keep `'-'`.
+    #[test]
+    fn secondary_alignment_carries_strand() {
+        let mut a = sa(7, 100, 200);
+        a.strand = '-';
+        assert_eq!(a.strand, '-', "strand field is accessible and preserved");
+        // the default-`'+'` helper path also works
+        assert_eq!(sa(8, 0, 10).strand, '+');
+    }
+
+    #[test]
+    fn all_secondary_regions_clusters_unassigned() {
+        // Three overlapping locus=None spans + one far away + one ASSIGNED (Some(0))
+        // sitting inside the overlapping cluster. The assigned one must be excluded.
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(1, 1000, 1200, None));
+        idx.push(sa_loc(2, 1100, 1300, None));
+        idx.push(sa_loc(3, 1150, 1350, None));
+        idx.push(sa_loc(4, 5000, 5200, None)); // far → own cluster
+        idx.push(sa_loc(5, 1120, 1320, Some(0))); // assigned → excluded entirely
+        let clusters = idx.all_secondary_regions(200);
+        assert_eq!(clusters.len(), 2, "two clusters: the overlap group and the far one");
+        assert_eq!(clusters[0].len(), 3, "the three overlapping spans cluster together");
+        assert_eq!(clusters[1].len(), 1, "the far span is its own cluster");
+        // the Some(0) alignment appears in NO cluster
+        let total: usize = clusters.iter().map(|c| c.len()).sum();
+        assert_eq!(total, 4, "the assigned (Some(0)) alignment is excluded");
+        // the size-3 cluster carries exactly the three overlapping spans (genomic order)
+        let spans: Vec<(u64, u64)> = clusters[0].iter().map(|a| (a.ref_start, a.ref_end)).collect();
+        assert_eq!(spans, vec![(1000, 1200), (1100, 1300), (1150, 1350)]);
+    }
+
+    #[test]
+    fn all_secondary_regions_respects_max_gap() {
+        // Two non-overlapping locus=None spans with a 300bp gap between them.
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(1, 1000, 1100, None));
+        idx.push(sa_loc(2, 1400, 1500, None));
+        // gap (1400 - 1100 = 300) exceeds max_gap=200 → separate clusters
+        assert_eq!(idx.all_secondary_regions(200).len(), 2, "gap > max_gap splits");
+        // max_gap=400 bridges the gap → single cluster
+        assert_eq!(idx.all_secondary_regions(400).len(), 1, "gap <= max_gap merges");
+    }
+
+    #[test]
+    fn all_secondary_regions_separates_chromosomes() {
+        // Identical coordinates but different chromosomes must never merge.
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(1, 1000, 1200, None));
+        let mut other = sa_loc(2, 1000, 1200, None);
+        other.chrom = "chrU".to_string();
+        idx.push(other);
+        assert_eq!(idx.all_secondary_regions(1000).len(), 2, "different chrom → 2 clusters");
+    }
+
+    #[test]
+    fn all_secondary_regions_empty_when_all_assigned() {
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa_loc(1, 1000, 1200, Some(0)));
+        idx.push(sa_loc(2, 2000, 2200, Some(1)));
+        assert!(idx.all_secondary_regions(200).is_empty(), "no None alignments → no clusters");
+    }
+
+    #[test]
+    fn all_secondary_regions_deterministic() {
+        // Same alignment set pushed in two DIFFERENT orders must cluster identically.
+        // The total-order sort (chrom, start, end, hash, capture_index) makes the
+        // result independent of insertion / map-iteration order — load-bearing for
+        // byte-identical output.
+        let items = [
+            (1u64, 1000u64, 1200u64),
+            (2, 1100, 1300),
+            (3, 1150, 1350),
+            (4, 5000, 5200),
+            (5, 5100, 5300),
+        ];
+        let mut a = SecondaryIndex::new();
+        for &(h, s, e) in items.iter() {
+            a.push(sa_loc(h, s, e, None));
+        }
+        let mut b = SecondaryIndex::new();
+        for &(h, s, e) in items.iter().rev() {
+            b.push(sa_loc(h, s, e, None));
+        }
+        let ca = a.all_secondary_regions(200);
+        let cb = b.all_secondary_regions(200);
+        assert_eq!(ca.len(), cb.len(), "same cluster count regardless of push order");
+        let key = |cs: &Vec<Vec<&SecondaryAlignment>>| -> Vec<Vec<(u64, u64, u64)>> {
+            cs.iter()
+                .map(|c| c.iter().map(|a| (a.ref_start, a.ref_end, a.read_name_hash)).collect())
+                .collect()
+        };
+        assert_eq!(key(&ca), key(&cb), "each cluster's sorted spans are identical");
     }
 
     #[test]
