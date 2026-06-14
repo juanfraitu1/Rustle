@@ -829,15 +829,29 @@ fn map_isoform_across_copies(
     let mut placed: Vec<(usize /*rank*/, (u64, u64) /*recipient coord*/)> =
         Vec::with_capacity(donor_exons.len());
     for &dex in donor_exons {
-        // 1. Locate A's backbone node: the node whose per_copy_spans carries
-        //    EXACTLY donor A's coordinate for this exon.
-        let node = fg.nodes.iter().position(|n| {
-            n.per_copy_spans
-                .iter()
-                .any(|&(c, sp)| c == donor_copy && sp == dex)
-        });
-        let Some(node_idx) = node else {
-            return Vec::new(); // donor exon not a real backbone node for A → abort
+        // 1. Locate A's backbone node: the node whose per_copy_spans entry for donor A
+        //    OVERLAPS this donor exon. Exact equality is too strict — the donor isoform's
+        //    exons are secondary-consensus coords (median terminal ends + crisp junctions),
+        //    which essentially never equal the Layer-1-assembled node span to the base. The
+        //    node a donor exon OVERLAPS is the node it belongs to; the recipient still
+        //    supplies its OWN coordinate below (we never emit A's coords). Pick the largest
+        //    overlap so a donor exon grazing a neighbor maps to its true node.
+        let overlaps = |a: (u64, u64), b: (u64, u64)| a.0 < b.1 && b.0 < a.1;
+        let node_idx = fg
+            .nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, n)| {
+                n.per_copy_spans
+                    .iter()
+                    .find(|&&(c, _)| c == donor_copy)
+                    .map(|&(_, sp)| (i, sp))
+            })
+            .filter(|&(_, sp)| overlaps(sp, dex))
+            .max_by_key(|&(_, sp)| dex.1.min(sp.1).saturating_sub(dex.0.max(sp.0)))
+            .map(|(i, _)| i);
+        let Some(node_idx) = node_idx else {
+            return Vec::new(); // donor exon overlaps no backbone node for A → abort
         };
         let Some(&rank) = rank_of_node.get(&node_idx) else {
             return Vec::new();
@@ -1695,6 +1709,38 @@ mod tests {
         assert!(
             map_isoform_across_copies(&fg, 0, &donor_exons, 1).is_empty(),
             "recipient cannot claim a copy-A-unique node → abort"
+        );
+    }
+
+    #[test]
+    fn map_isoform_overlap_not_exact() {
+        // Co-located paralog: donor (copy 0) and recipient (copy 1) share the SAME
+        // backbone nodes at the SAME coordinates. The donor isoform's exons are
+        // secondary-consensus coords (median terminals + crisp junctions) that
+        // OVERLAP — but never exactly equal — the Layer-1-assembled node spans.
+        // Exact-equality lookup finds no node and returns empty (the real-chrY bug);
+        // overlap matching maps each donor exon to the node it overlaps and emits the
+        // RECIPIENT's own coordinates.
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (100, 160))],
+                vec![(0, (300, 360)), (1, (300, 360))],
+                vec![(0, (500, 560)), (1, (500, 560))],
+            ],
+        );
+        // Donor exons overlap each node but equal none (off-by-1 terminals/junctions).
+        let donor_exons = [(101, 161), (301, 361), (501, 559)];
+        let got = map_isoform_across_copies(&fg, 0, &donor_exons, 1);
+        assert_eq!(
+            got,
+            vec![(100, 160), (300, 360), (500, 560)],
+            "overlap matching maps donor exons to their nodes and emits recipient coords"
+        );
+        // Negative: a donor exon overlapping NO backbone node → abort (empty).
+        assert!(
+            map_isoform_across_copies(&fg, 0, &[(5000, 5060)], 1).is_empty(),
+            "donor exon overlapping no backbone node → abort"
         );
     }
 
