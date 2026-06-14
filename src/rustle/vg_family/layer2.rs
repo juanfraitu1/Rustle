@@ -1177,6 +1177,110 @@ pub fn emit_family_isoforms(
     out
 }
 
+// =============================================================================
+// All-secondary new-copy emission (C5 / M5.2, PURE — not yet wired).
+//
+// Layer 1 drops a cluster of secondaries when NO primary bundle exists at its
+// region (an unexpressed paralog copy whose reads all placed primarily on the
+// well-expressed sibling). Task A's `all_secondary_regions` clusters them; this
+// emitter turns each cluster into candidate NEW-COPY transcripts. As everywhere
+// in Layer 2, no coordinate is invented — exons come from `build_exons_from_chain`
+// (crisp junctions + median terminal ends).
+// =============================================================================
+
+/// Emit candidate NEW-COPY transcripts from all-secondary regions (clusters of
+/// secondaries Layer 1 dropped because no primary bundle exists there). Each
+/// cluster may yield several isoforms: we group its alignments by intron chain,
+/// and emit one transcript per distinct chain supported by >= `min_reads`
+/// DISTINCT reads (read_name_hash — never raw alignment count, since one molecule
+/// can have multiple secondary/supplementary placements in the cluster) AND with
+/// >= 1 intron (>= 2 exons). Single-exon clusters are skipped (unvalidatable by
+/// chain, FP-prone). Coordinates come from `build_exons_from_chain` (median
+/// terminal ends + crisp junctions) — never invented. Strand = majority strand of
+/// the chain's supporters (tie -> '+'). Gated: returns empty unless `new_copies`.
+/// These are tagged `NovelLocusFromScan` and flow through the additive
+/// union-by-chain stage downstream (they only ADD chains absent from VG output).
+fn candidate_new_copy_transcripts(
+    regions: &[Vec<&crate::vg_family::secondary_index::SecondaryAlignment>],
+    new_copies: bool,
+    min_reads: usize,
+) -> Vec<Transcript> {
+    // 1. The gate. Default-off path returns nothing.
+    if !new_copies {
+        return Vec::new();
+    }
+
+    let mut out: Vec<Transcript> = Vec::new();
+    for cluster in regions {
+        // 2. Group this cluster's alignments by their full intron-chain identity.
+        let mut groups: DetHashMap<
+            Vec<(u64, u64)>,
+            Vec<&crate::vg_family::secondary_index::SecondaryAlignment>,
+        > = DetHashMap::default();
+        for s in cluster {
+            groups.entry(s.introns.clone()).or_default().push(s);
+        }
+
+        // Collect surviving (distinct_reads, chain, supporters) for deterministic
+        // ordering before we touch the output (never iterate a map into output).
+        let mut survivors: Vec<(usize, Vec<(u64, u64)>, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>)> =
+            Vec::new();
+        for (chain, supporters) in &groups {
+            // Single-exon (no junction) → unvalidatable by chain; skip.
+            if chain.is_empty() {
+                continue;
+            }
+            // DISTINCT-read support — count read_name_hash, NOT alignment count: one
+            // molecule can place secondary+supplementary in the same cluster.
+            let mut reads: DetHashSet<u64> = DetHashSet::default();
+            for s in supporters {
+                reads.insert(s.read_name_hash);
+            }
+            let distinct = reads.len();
+            if distinct < min_reads {
+                continue;
+            }
+            survivors.push((distinct, chain.clone(), supporters.clone()));
+        }
+        // Deterministic per-cluster order: distinct DESC, chain.len() DESC, chain ASC
+        // (mirrors enumerate_secondary_chains).
+        survivors.sort_by(|a, b| {
+            b.0.cmp(&a.0)
+                .then(b.1.len().cmp(&a.1.len()))
+                .then(a.1.cmp(&b.1))
+        });
+
+        for (distinct, chain, supporters) in survivors {
+            let exons = build_exons_from_chain(&supporters, &chain);
+            if exons.len() < 2 {
+                continue; // defensive: a junction chain must yield >= 2 exons.
+            }
+            // Majority strand of the chain's supporters; tie / all-equal -> '+'.
+            let plus = supporters.iter().filter(|s| s.strand == '+').count();
+            let minus = supporters.iter().filter(|s| s.strand == '-').count();
+            let strand = if minus > plus { '-' } else { '+' };
+
+            let mut t = Transcript::default();
+            // All alignments in a cluster share a chromosome (clusters are per-chrom).
+            t.chrom = supporters[0].chrom.clone();
+            t.strand = strand;
+            t.exons = exons;
+            t.coverage = distinct as f64;
+            t.longcov = distinct as f64;
+            t.is_longread = true;
+            t.synthetic = true;
+            t.rescue_class = Some(crate::vg_family::diagnostic::RescueClass::NovelLocusFromScan);
+            // Standalone scan candidates — not family members; leave vg_* default None.
+            out.push(t);
+        }
+    }
+
+    // 3. Final deterministic output order: (chrom, exons) so emission never
+    //    depends on map iteration order across clusters.
+    out.sort_by(|a, b| a.chrom.cmp(&b.chrom).then(a.exons.cmp(&b.exons)));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2171,5 +2275,172 @@ mod tests {
             IsoformSource::Native,
             "the survivor is the Native isoform (base/Part-A wins over transfer)"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // M5.2 candidate_new_copy_transcripts — spliced consensus emission for
+    // all-secondary regions (PURE; not yet wired into run_layer2).
+    // -------------------------------------------------------------------------
+
+    // `sec_aln` defaults strand to '+'; this variant lets a test pick the strand
+    // (needed for the strand-consensus test).
+    fn sec_aln_s(
+        h: u64, start: u64, end: u64, introns: &[(u64, u64)], locus: usize, strand: char,
+    ) -> crate::vg_family::secondary_index::SecondaryAlignment {
+        let mut s = sec_aln(h, start, end, introns, locus);
+        s.strand = strand;
+        s
+    }
+
+    #[test]
+    fn new_copy_gated_off_returns_empty() {
+        // Non-empty regions but the gate is off → nothing emitted (proves the
+        // default-off path).
+        let regions_owned = vec![vec![
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+        ]];
+        let regions: Vec<Vec<&_>> = regions_owned.iter().map(|c| c.iter().collect()).collect();
+        let out = candidate_new_copy_transcripts(&regions, false, 3);
+        assert!(out.is_empty(), "gate off → empty: {out:?}");
+    }
+
+    #[test]
+    fn new_copy_emits_multiexon_consensus() {
+        // One cluster, 3 alignments with DISTINCT reads sharing intron chain
+        // [(1200,1400)] → exons (1000,1200),(1400,1600). Expect one transcript.
+        let regions_owned = vec![vec![
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+        ]];
+        let regions: Vec<Vec<&_>> = regions_owned.iter().map(|c| c.iter().collect()).collect();
+        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        assert_eq!(out.len(), 1, "exactly one transcript: {out:?}");
+        let t = &out[0];
+        assert_eq!(t.exons, vec![(1000, 1200), (1400, 1600)], "consensus exons");
+        assert_eq!(t.coverage, 3.0, "coverage == distinct read count");
+        assert_eq!(t.longcov, 3.0, "longcov == distinct read count");
+        assert!(t.synthetic, "synthetic candidate");
+        assert!(t.is_longread, "is_longread");
+        assert_eq!(
+            t.rescue_class,
+            Some(crate::vg_family::diagnostic::RescueClass::NovelLocusFromScan),
+            "tagged NovelLocusFromScan"
+        );
+        assert_eq!(t.vg_family_id, None, "standalone scan candidate, no family");
+        assert_eq!(t.vg_copy_id, None, "standalone scan candidate, no copy id");
+    }
+
+    #[test]
+    fn new_copy_distinct_read_gate() {
+        // Cluster A: 3 ALIGNMENTS but only 2 DISTINCT reads (read 1 appears twice)
+        // → must NOT be emitted with min_reads=3 (proves distinct-read counting,
+        // NOT alignment counting). Cluster B: 3 DISTINCT reads → emitted. This
+        // brackets the gate: same min_reads, only the distinct count differs.
+        let region_a = vec![
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0), // same read again
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+        ];
+        let region_b = vec![
+            sec_aln(10, 5000, 5600, &[(5200, 5400)], 1),
+            sec_aln(11, 5000, 5600, &[(5200, 5400)], 1),
+            sec_aln(12, 5000, 5600, &[(5200, 5400)], 1),
+        ];
+        let regions: Vec<Vec<&_>> = vec![region_a.iter().collect(), region_b.iter().collect()];
+        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        assert_eq!(out.len(), 1, "only the 3-distinct-read cluster emits: {out:?}");
+        assert_eq!(
+            out[0].exons,
+            vec![(5000, 5200), (5400, 5600)],
+            "the emitted transcript is cluster B (3 distinct reads)"
+        );
+    }
+
+    #[test]
+    fn new_copy_skips_single_exon() {
+        // Single-exon alignments (empty intron chain) are unvalidatable by chain
+        // and FP-prone → skipped entirely, even with plenty of distinct reads.
+        let region = vec![
+            sec_aln(1, 1000, 1600, &[], 0),
+            sec_aln(2, 1000, 1600, &[], 0),
+            sec_aln(3, 1000, 1600, &[], 0),
+        ];
+        let regions: Vec<Vec<&_>> = vec![region.iter().collect()];
+        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        assert!(out.is_empty(), "single-exon cluster skipped: {out:?}");
+    }
+
+    #[test]
+    fn new_copy_strand_consensus() {
+        // Majority of supporters are '-' → emitted strand is '-'.
+        let region = vec![
+            sec_aln_s(1, 1000, 1600, &[(1200, 1400)], 0, '-'),
+            sec_aln_s(2, 1000, 1600, &[(1200, 1400)], 0, '-'),
+            sec_aln_s(3, 1000, 1600, &[(1200, 1400)], 0, '+'),
+        ];
+        let regions: Vec<Vec<&_>> = vec![region.iter().collect()];
+        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        assert_eq!(out.len(), 1, "one transcript: {out:?}");
+        assert_eq!(out[0].strand, '-', "majority strand '-'");
+    }
+
+    #[test]
+    fn new_copy_multiple_isoforms_one_cluster() {
+        // One cluster containing two distinct intron chains, each with >= min_reads
+        // distinct reads → two transcripts (distinct exon chains).
+        let region = vec![
+            // chain X: [(1200,1400)] → exons (1000,1200),(1400,1600)
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+            // chain Y: [(1200,1500)] → exons (1000,1200),(1500,1700)
+            sec_aln(4, 1000, 1700, &[(1200, 1500)], 0),
+            sec_aln(5, 1000, 1700, &[(1200, 1500)], 0),
+            sec_aln(6, 1000, 1700, &[(1200, 1500)], 0),
+        ];
+        let regions: Vec<Vec<&_>> = vec![region.iter().collect()];
+        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        assert_eq!(out.len(), 2, "two distinct isoforms: {out:?}");
+        let mut chains: Vec<Vec<(u64, u64)>> = out.iter().map(|t| t.exons.clone()).collect();
+        chains.sort();
+        assert_eq!(
+            chains,
+            vec![
+                vec![(1000, 1200), (1400, 1600)],
+                vec![(1000, 1200), (1500, 1700)],
+            ],
+            "both chains emitted"
+        );
+    }
+
+    #[test]
+    fn new_copy_deterministic() {
+        // The SAME regions built with alignments in two different orders must give
+        // identical output (count + each transcript's (chrom, strand, exons)).
+        let mk = |order: &[usize]| -> Vec<crate::vg_family::secondary_index::SecondaryAlignment> {
+            let pool = vec![
+                sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+                sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+                sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+                sec_aln(4, 1000, 1700, &[(1200, 1500)], 0),
+                sec_aln(5, 1000, 1700, &[(1200, 1500)], 0),
+                sec_aln(6, 1000, 1700, &[(1200, 1500)], 0),
+            ];
+            order.iter().map(|&i| pool[i].clone()).collect()
+        };
+        let a = mk(&[0, 1, 2, 3, 4, 5]);
+        let b = mk(&[5, 0, 4, 1, 3, 2]);
+        let ra: Vec<Vec<&_>> = vec![a.iter().collect()];
+        let rb: Vec<Vec<&_>> = vec![b.iter().collect()];
+        let oa = candidate_new_copy_transcripts(&ra, true, 3);
+        let ob = candidate_new_copy_transcripts(&rb, true, 3);
+        assert_eq!(oa.len(), ob.len(), "same transcript count regardless of input order");
+        let key = |ts: &[Transcript]| -> Vec<(String, char, Vec<(u64, u64)>)> {
+            ts.iter().map(|t| (t.chrom.clone(), t.strand, t.exons.clone())).collect()
+        };
+        assert_eq!(key(&oa), key(&ob), "byte-identical (chrom, strand, exons) ordering");
     }
 }
