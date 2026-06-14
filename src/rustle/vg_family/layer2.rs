@@ -102,6 +102,16 @@ pub fn amend_family_graph(
     GraphAmendment { edges, copy_membership, transferred_coords }
 }
 
+/// Where a recovered isoform came from. `Native` = the copy's own reads (base
+/// decompose path or its own enumerated alt-splice chains). `Transferred` = a
+/// donor copy's isoform mapped onto this copy and confirmed by the recipient's
+/// own per-junction evidence ("transfer proposes, recipient disposes").
+#[derive(Debug, Clone, PartialEq)]
+pub enum IsoformSource {
+    Native,
+    Transferred { donor_copy: usize },
+}
+
 /// A recovered copy/isoform path (exon chain in genomic coordinates). A path that
 /// violates allele-linkage (a copy claiming a diagnostic node it has no allele for)
 /// is DROPPED during decomposition — never emitted.
@@ -110,6 +120,19 @@ pub struct FamilyPath {
     pub exons: Vec<(u64, u64)>,
     pub flow: f64,
     pub copy_id: usize,
+    /// (prev_exon.end, next_exon.start) per junction — always derived from
+    /// `exons` via `junctions_of`. Carried so dedup / union-by-chain can key on
+    /// the intron chain without recomputing it.
+    pub junction_chain: Vec<(u64, u64)>,
+    pub source: IsoformSource,
+}
+
+/// The intron chain (junctions) implied by an exon chain: one `(donor, acceptor)`
+/// per adjacent exon pair. Single-exon chains have no junctions (empty). This is
+/// the ONE canonical derivation — every FamilyPath's `junction_chain` comes from
+/// here so the field can never drift out of sync with `exons`.
+fn junctions_of(exons: &[(u64, u64)]) -> Vec<(u64, u64)> {
+    exons.windows(2).map(|w| (w[0].1, w[1].0)).collect()
 }
 
 /// (C4 decompose) Recover copies (paths) and isoforms (sub-paths) by CONSTRAINED
@@ -270,7 +293,14 @@ pub fn decompose_family_paths(
             .windows(2)
             .map(|w| edge_flow[&(w[0], w[1])])
             .fold(f64::INFINITY, f64::min);
-        paths.push(FamilyPath { exons, flow, copy_id: copy });
+        let junction_chain = junctions_of(&exons);
+        paths.push(FamilyPath {
+            exons,
+            flow,
+            copy_id: copy,
+            junction_chain,
+            source: IsoformSource::Native,
+        });
     }
     paths.sort_by(|a, b| a.exons.cmp(&b.exons).then(a.copy_id.cmp(&b.copy_id)));
     paths
@@ -894,6 +924,154 @@ fn verify_recipient_support(
         }
     }
     true
+}
+
+/// Compose the validated per-copy base (`decompose_family_paths`) with two additive
+/// discovery channels, under strict false-positive gates:
+///   Part A (enable_multi_isoform): per-copy ALT-SPLICE isoforms from the copy's OWN
+///     secondaries (enumerate_secondary_chains). More isoforms, never a synthesized
+///     chain — only chains a real molecule traversed >= k times.
+///   Part B (enable_transfer): cross-copy TRANSFER — a donor copy's isoform mapped
+///     onto a recipient's own coordinates (map_isoform_across_copies) and admitted
+///     ONLY if the recipient has its own per-junction evidence (verify_recipient_support).
+///
+/// REGRESSION ANCHOR: with both flags false, returns exactly decompose_family_paths(..)
+/// (now carrying source=Native + junction_chain). All additions are gated off.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_family_isoforms(
+    fg: &FamilyGraph,
+    amendment: &GraphAmendment,
+    secondaries_by_copy: &DetHashMap<
+        usize,
+        Vec<&crate::vg_family::secondary_index::SecondaryAlignment>,
+    >,
+    min_flow: f64,
+    k: usize,
+    enable_multi_isoform: bool,
+    enable_transfer: bool,
+) -> Vec<FamilyPath> {
+    debug_assert!(k >= 1, "emit_family_isoforms: K must be >= 1");
+
+    // 1. The VALIDATED base. These are Native and pushed FIRST so they win every
+    //    dedup tie (a recipient's native isoform always beats an identical transfer).
+    let mut out = decompose_family_paths(fg, amendment, min_flow);
+
+    // Canonical copy iteration order — sort the keys once so Part A / Part B are
+    // deterministic regardless of map insertion order.
+    let mut copies: Vec<usize> = secondaries_by_copy.keys().copied().collect();
+    copies.sort_unstable();
+
+    // --- Part A: per-copy alt-splice isoforms from the copy's OWN secondaries ----
+    // No allele-linkage guard here: a chain enumerated from the copy's OWN reads is a
+    // real molecule at the copy's own locus, so decompose's diagnostic-node guard
+    // (which defends against BORROWING another copy's node) does not apply. The
+    // chains-only >= k rule is the false-positive defense.
+    if enable_multi_isoform {
+        for &copy in &copies {
+            let secs = &secondaries_by_copy[&copy];
+            let chains = enumerate_secondary_chains(secs, k);
+            // Isoform-fraction floor is relative to THIS copy's strongest chain.
+            let copy_max = chains.iter().map(|(_, _, sup)| *sup).max().unwrap_or(0) as f64;
+            for (exons, chain, support) in &chains {
+                let flow = *support as f64;
+                // G6 (min_flow): respect the same flow floor the base decompose uses.
+                if flow < min_flow {
+                    continue;
+                }
+                // G7 (isofrac floor): an alt isoform must clear BOTH an absolute floor
+                // (>= 2 supporters — never a near-singleton) and 1% of the copy's
+                // dominant chain (suppresses dribble alongside a high-coverage copy).
+                if flow < (2.0_f64).max(0.01 * copy_max) {
+                    continue;
+                }
+                // Single-exon chains carry no junction → no informative alt-splice
+                // signal here; they are noise in this channel.
+                if exons.len() < 2 {
+                    continue;
+                }
+                out.push(FamilyPath {
+                    exons: exons.clone(),
+                    flow,
+                    copy_id: copy,
+                    junction_chain: chain.clone(),
+                    source: IsoformSource::Native,
+                });
+            }
+        }
+    }
+
+    // --- Part B: cross-copy isoform transfer ("transfer proposes, recipient disposes")
+    if enable_transfer {
+        for &donor in &copies {
+            let donor_secs = &secondaries_by_copy[&donor];
+            // The donor's REAL isoforms (only chains a molecule traversed >= k times).
+            let donor_chains = enumerate_secondary_chains(donor_secs, k);
+            for &recipient in &copies {
+                if recipient == donor {
+                    continue;
+                }
+                // Recipient's own secondaries (empty slice if it has none → the gate
+                // can still pass via fg.edges, but never via the donor's reads).
+                let empty: Vec<&crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
+                let recip_secs = secondaries_by_copy.get(&recipient).unwrap_or(&empty);
+                for (donor_exons, _donor_chain, _support) in &donor_chains {
+                    // Map donor's isoform onto the recipient's OWN coordinates.
+                    let recip_exons = map_isoform_across_copies(fg, donor, donor_exons, recipient);
+                    if recip_exons.is_empty() {
+                        continue; // recipient cannot legitimately place this chain
+                    }
+                    if recip_exons.len() < 2 {
+                        continue; // single-exon → nothing to verify / transfer
+                    }
+                    // GATE: the recipient must have its OWN per-junction evidence.
+                    if !verify_recipient_support(fg, recipient, &recip_exons, recip_secs, k) {
+                        continue;
+                    }
+                    // Conservative simplification: the isoform is RECOVERED (verified
+                    // to >= k support), not flow-quantified — record the verified
+                    // support floor as its flow rather than a fabricated abundance.
+                    let flow = k as f64;
+                    // G6 (min_flow): respect the base decompose flow floor.
+                    if flow < min_flow {
+                        continue;
+                    }
+                    let jc = junctions_of(&recip_exons);
+                    out.push(FamilyPath {
+                        exons: recip_exons,
+                        flow,
+                        copy_id: recipient,
+                        junction_chain: jc,
+                        source: IsoformSource::Transferred { donor_copy: donor },
+                    });
+                }
+            }
+        }
+    }
+
+    // --- G8 dedup by (copy_id, junction_chain), keeping the FIRST occurrence -------
+    // First-wins preserves base > Part A > Part B priority (a transferred isoform
+    // identical to a recipient's native isoform is dropped in favor of the native).
+    let mut seen: DetHashSet<(usize, Vec<(u64, u64)>)> = DetHashSet::default();
+    out.retain(|p| seen.insert((p.copy_id, p.junction_chain.clone())));
+
+    // --- Final deterministic total order: (exons, copy_id, source_rank) ------------
+    // The source tiebreak only ever activates among non-Native paths, so when every
+    // path is Native this reduces to decompose's own (exons, copy_id) ordering — the
+    // both-flags-off regression anchor stays byte-identical.
+    let source_rank = |s: &IsoformSource| -> (usize, usize) {
+        match s {
+            IsoformSource::Native => (0, 0),
+            IsoformSource::Transferred { donor_copy } => (1, *donor_copy),
+        }
+    };
+    out.sort_by(|a, b| {
+        a.exons
+            .cmp(&b.exons)
+            .then(a.copy_id.cmp(&b.copy_id))
+            .then(source_rank(&a.source).cmp(&source_rank(&b.source)))
+    });
+
+    out
 }
 
 #[cfg(test)]
@@ -1536,6 +1714,275 @@ mod tests {
         assert!(
             verify_recipient_support(&fg, 1, &recipient_exons, &[], 2),
             "fg.edge between B-native nodes supports the junction at B's own coords"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // T3 — emit_family_isoforms (orchestrator)
+    // -------------------------------------------------------------------------
+
+    /// Empty secondaries-by-copy map (the both-flags-off regression-anchor input).
+    fn empty_secs_map<'a>(
+    ) -> DetHashMap<usize, Vec<&'a crate::vg_family::secondary_index::SecondaryAlignment>> {
+        DetHashMap::default()
+    }
+
+    #[test]
+    fn emit_both_off_equals_decompose() {
+        // REGRESSION ANCHOR: both channels gated off → emit == decompose byte-for-byte
+        // (including the new junction_chain + source=Native fields). Built from the
+        // same fixture as decompose_recovers_native_copy_defers_crosslocus_borrow.
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
+            0, &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome), 0.0, 0.5, 0.0,
+        ).unwrap();
+        let secs = vec![
+            sec_aln(7, 100, 360, &[(160, 300)], 1),
+            sec_aln(8, 300, 560, &[(360, 500)], 1),
+        ];
+        let mut copy_of_locus: DetHashMap<usize, usize> = DetHashMap::default();
+        copy_of_locus.insert(0, 0);
+        copy_of_locus.insert(1, 1);
+        let am = amend_family_graph(&fg, &secs, &copy_of_locus);
+        let empty = empty_secs_map();
+        let emitted = emit_family_isoforms(&fg, &am, &empty, 1.0, 2, false, false);
+        let base = decompose_family_paths(&fg, &am, 1.0);
+        assert_eq!(emitted, base, "both flags off → exactly decompose's output");
+    }
+
+    #[test]
+    fn emit_part_a_discovers_alt_splice_isoform() {
+        // ONE copy whose secondaries carry TWO distinct intron chains, each with 3
+        // supporters: a full chain [(160,300),(360,500)] and an exon-skipping chain
+        // [(160,500)]. With enable_multi_isoform=true,k=2 emit returns BOTH chains
+        // for that copy (both Native). With the flag off, the alt (skip) is absent.
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
+            0, &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome), 0.0, 0.5, 0.0,
+        ).unwrap();
+        let am = GraphAmendment::default();
+        // copy 0's own secondaries: 3 full-chain + 3 skip-chain.
+        let secs: Vec<_> = vec![
+            sec_aln(1, 100, 560, &[(160, 300), (360, 500)], 0),
+            sec_aln(2, 100, 560, &[(160, 300), (360, 500)], 0),
+            sec_aln(3, 100, 560, &[(160, 300), (360, 500)], 0),
+            sec_aln(4, 100, 560, &[(160, 500)], 0),
+            sec_aln(5, 100, 560, &[(160, 500)], 0),
+            sec_aln(6, 100, 560, &[(160, 500)], 0),
+        ];
+        let refs: Vec<&_> = secs.iter().collect();
+        let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+            DetHashMap::default();
+        by_copy.insert(0, refs);
+
+        let on = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, true, false);
+        let full = vec![(160, 300), (360, 500)];
+        let skip = vec![(160, 500)];
+        assert!(
+            on.iter().any(|p| p.copy_id == 0 && p.junction_chain == full && p.source == IsoformSource::Native),
+            "full alt-splice chain emitted as Native: {on:?}"
+        );
+        assert!(
+            on.iter().any(|p| p.copy_id == 0 && p.junction_chain == skip && p.source == IsoformSource::Native),
+            "exon-skipping chain emitted as Native: {on:?}"
+        );
+
+        let off = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, false, false);
+        assert!(
+            !off.iter().any(|p| p.junction_chain == skip),
+            "with multi-isoform OFF the alt (skip) chain is absent: {off:?}"
+        );
+    }
+
+    #[test]
+    fn emit_part_a_respects_support_floor() {
+        // copy_max = 100 (dominant chain). A chain with 1 supporter is below k=2 (G6
+        // via support<k inside enumerate); a minor chain with support below the G7
+        // isofrac floor (0.01*copy_max = 1, but max(2.0, 1.0)=2.0 → support 1 fails)
+        // is also dropped. Construct a high-coverage dominant + two weak chains.
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360), (500, 560)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome_3exon();
+        let fg = crate::vg_family::family_graph::build_family_graph_from_layer1_graphs(
+            0, &[("chrT".to_string(), '+', &g0), ("chrT".to_string(), '+', &g1)],
+            Some(&genome), 0.0, 0.5, 0.0,
+        ).unwrap();
+        let am = GraphAmendment::default();
+        // 4 supporters of the dominant full chain; a 1-supporter chain (below k);
+        // (with k=2 and copy_max=4 the G7 floor is max(2.0, 0.04)=2.0, so a
+        // 1-supporter chain fails both k and the floor.)
+        let mut secs: Vec<crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
+        for h in 0..4u64 {
+            secs.push(sec_aln(h, 100, 560, &[(160, 300), (360, 500)], 0));
+        }
+        // a lone read on a different chain (skip) — support 1, below k=2.
+        secs.push(sec_aln(100, 100, 560, &[(160, 500)], 0));
+        let refs: Vec<&_> = secs.iter().collect();
+        let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+            DetHashMap::default();
+        by_copy.insert(0, refs);
+
+        let on = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, true, false);
+        let dominant = vec![(160, 300), (360, 500)];
+        let skip = vec![(160, 500)];
+        assert!(
+            on.iter().any(|p| p.copy_id == 0 && p.junction_chain == dominant),
+            "dominant chain (support 4 >= floor) emitted: {on:?}"
+        );
+        assert!(
+            !on.iter().any(|p| p.junction_chain == skip),
+            "below-k / below-floor minor chain NOT emitted: {on:?}"
+        );
+    }
+
+    #[test]
+    fn emit_part_b_transfers_with_recipient_evidence() {
+        // Two co-located 3-exon copies (per_copy_spans line up on the backbone).
+        // Donor copy 0 has a full isoform (its enumerated chain). Recipient copy 1
+        // has per_copy_spans on the same nodes AND its own secondaries carrying the
+        // SAME junctions → transfer admitted at copy 1's OWN coords.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+                vec![(0, (500, 560)), (1, (30600, 30660))],
+            ],
+            &[],
+        );
+        let am = GraphAmendment::default();
+        // Donor 0's own secondaries → full 3-exon chain at copy 0's coords.
+        let donor_secs: Vec<_> = vec![
+            sec_aln(1, 100, 560, &[(160, 300), (360, 500)], 0),
+            sec_aln(2, 100, 560, &[(160, 300), (360, 500)], 0),
+        ];
+        // Recipient 1's own secondaries → the SAME junctions at copy 1's coords.
+        let recip_secs: Vec<_> = vec![
+            sec_aln(3, 30000, 30660, &[(30060, 30300), (30360, 30600)], 1),
+            sec_aln(4, 30000, 30660, &[(30060, 30300), (30360, 30600)], 1),
+        ];
+        let dref: Vec<&_> = donor_secs.iter().collect();
+        let rref: Vec<&_> = recip_secs.iter().collect();
+        let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+            DetHashMap::default();
+        by_copy.insert(0, dref);
+        by_copy.insert(1, rref);
+
+        let on = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, false, true);
+        let transferred: Vec<&FamilyPath> = on
+            .iter()
+            .filter(|p| p.copy_id == 1 && p.source == IsoformSource::Transferred { donor_copy: 0 })
+            .collect();
+        assert!(!transferred.is_empty(), "a transferred isoform for copy 1 is emitted: {on:?}");
+        // It must be at copy 1's OWN coordinates (the 30k locus), never copy 0's.
+        assert!(
+            transferred.iter().any(|p| p.exons == vec![(30000, 30060), (30300, 30360), (30600, 30660)]),
+            "transferred chain is at recipient copy 1's own coords: {transferred:?}"
+        );
+        assert!(
+            transferred.iter().all(|p| p.exons.iter().all(|&(s, _)| s >= 30000)),
+            "no donor (copy 0, <1000) coordinate leaked into the transferred chain: {transferred:?}"
+        );
+    }
+
+    #[test]
+    fn emit_part_b_rejects_without_recipient_evidence() {
+        // Same donor isoform, but recipient copy 1 has NO secondaries carrying the
+        // junctions and no fg.edge support → verify_recipient_support fails → no
+        // Transferred path. Also: with enable_transfer=false, none appears.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+                vec![(0, (500, 560)), (1, (30600, 30660))],
+            ],
+            &[],
+        );
+        let am = GraphAmendment::default();
+        let donor_secs: Vec<_> = vec![
+            sec_aln(1, 100, 560, &[(160, 300), (360, 500)], 0),
+            sec_aln(2, 100, 560, &[(160, 300), (360, 500)], 0),
+        ];
+        let dref: Vec<&_> = donor_secs.iter().collect();
+        let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+            DetHashMap::default();
+        by_copy.insert(0, dref);
+        // copy 1 deliberately has NO secondaries entry.
+
+        let on = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, false, true);
+        assert!(
+            !on.iter().any(|p| p.copy_id == 1 && matches!(p.source, IsoformSource::Transferred { .. })),
+            "no recipient evidence → no Transferred path for copy 1: {on:?}"
+        );
+        let off = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, false, false);
+        assert!(
+            !off.iter().any(|p| matches!(p.source, IsoformSource::Transferred { .. })),
+            "with transfer OFF no Transferred path appears: {off:?}"
+        );
+    }
+
+    #[test]
+    fn emit_dedup_prefers_native_over_transfer() {
+        // copy 1 has its OWN full isoform (Part A Native) AND copy 0's identical
+        // isoform would transfer onto copy 1 with the SAME (copy_id, junction_chain).
+        // Dedup (base/Part-A first) keeps the Native one; the Transferred dup drops.
+        let fg = mk_backbone_with_edges(
+            &[(100, 160), (300, 360), (500, 560)],
+            &[
+                vec![(0, (100, 160)), (1, (30000, 30060))],
+                vec![(0, (300, 360)), (1, (30300, 30360))],
+                vec![(0, (500, 560)), (1, (30600, 30660))],
+            ],
+            &[],
+        );
+        let am = GraphAmendment::default();
+        let donor_secs: Vec<_> = vec![
+            sec_aln(1, 100, 560, &[(160, 300), (360, 500)], 0),
+            sec_aln(2, 100, 560, &[(160, 300), (360, 500)], 0),
+        ];
+        // Recipient 1 has its OWN secondaries for the same chain → Part A emits it
+        // as Native; Part B would also propose it (identical key) → dedup to one.
+        let recip_secs: Vec<_> = vec![
+            sec_aln(3, 30000, 30660, &[(30060, 30300), (30360, 30600)], 1),
+            sec_aln(4, 30000, 30660, &[(30060, 30300), (30360, 30600)], 1),
+        ];
+        let dref: Vec<&_> = donor_secs.iter().collect();
+        let rref: Vec<&_> = recip_secs.iter().collect();
+        let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+            DetHashMap::default();
+        by_copy.insert(0, dref);
+        by_copy.insert(1, rref);
+
+        let on = emit_family_isoforms(&fg, &am, &by_copy, 1.0, 2, true, true);
+        let recip_chain = vec![(30060, 30300), (30360, 30600)];
+        let matching: Vec<&FamilyPath> = on
+            .iter()
+            .filter(|p| p.copy_id == 1 && p.junction_chain == recip_chain)
+            .collect();
+        assert_eq!(matching.len(), 1, "exactly one path survives dedup for that key: {matching:?}");
+        assert_eq!(
+            matching[0].source,
+            IsoformSource::Native,
+            "the survivor is the Native isoform (base/Part-A wins over transfer)"
         );
     }
 }
