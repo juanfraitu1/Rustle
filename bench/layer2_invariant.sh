@@ -97,27 +97,46 @@ if [ ! -f "$CHRY_BAM" ]; then
 fi
 check_chrom chrY "$CHRY_BAM"
 
-# (5) simulated 2-copy paralog NO-FALSE-POSITIVE check. Both copies already
-# assemble in --vg (copyB is NOT starved here — its 5 primary reads suffice), so
-# Layer 2 must add NOTHING: layer2 == default. This guards against the chimeric
-# cross-copy emission bug (decompose emitting a node's union span instead of
-# per-copy coordinates) that this fixture originally exposed. (A genuine
-# starved-copy RECOVERY fixture — needing homology coordinate-transfer — is
-# separate future work.)
-echo "== (5) simulated paralog: Layer-2 emits NO chimera (layer2 == default) =="
+# (5) simulated 2-copy paralog. Originally this asserted strict layer2==default
+# (Layer 2 must add NOTHING) to guard the chimeric cross-copy emission bug
+# (decompose emitting a node's UNION span instead of per-copy coordinates). That
+# strict form is now RELAXED (2026-06-13): Part A (secondary-enriched per-copy
+# isoform discovery, default-on under --vg-layer2) legitimately ADDS within-copy
+# alt-splice isoforms — real-data-validated on chrY as read-backed novel isoforms
+# of real paralog genes (10 j / 1 c / 3 n, ZERO invented junctions, ZERO
+# phantoms). On this fixture Part A adds copy B's exon-skip isoform (chrSIM
+# 30001-32000) from copyA-skip secondaries shadowing copyB's near-identical locus.
+# So we no longer forbid additions; we keep the two invariants that actually
+# matter:
+#   (i)  ADDITIVE — layer2 ⊇ default (drops nothing VG already produced).
+#   (ii) NO CHIMERA — no transcript spans BOTH copies. The two copies sit at
+#        chrSIM:10001-12000 and 30001-32000 (each ~2kb, ~18kb apart); the original
+#        union-span chimera bridged them (10001-32000, ~22kb). Every legitimate
+#        per-copy isoform is bounded by one copy's ~2kb extent, so we cap the max
+#        transcript span well below the inter-copy distance (5kb: above any single
+#        copy, far below a ~22kb cross-copy union). A reborn chimera blows past it.
+echo "== (5) simulated paralog: Layer-2 additive + NO cross-copy chimera =="
 SIM_BAM=${SIM_BAM:-bench/fixtures/sim_paralog.bam}
 SIM_FA=${SIM_FA:-bench/fixtures/sim_paralog.fa}
+SIM_CHIMERA_SPAN_MAX=${SIM_CHIMERA_SPAN_MAX:-5000}
 if [ -f "$SIM_BAM" ] && [ -f "$SIM_FA" ]; then
   "$BIN" -L "$SIM_BAM" --vg --genome-fasta "$SIM_FA" -o /tmp/layer2/sim_default.gtf 2>/dev/null
   "$BIN" -L "$SIM_BAM" --vg --vg-layer2 --genome-fasta "$SIM_FA" -o /tmp/layer2/sim_layer2.gtf 2>/dev/null
   d=$(grep -c $'\ttranscript\t' /tmp/layer2/sim_default.gtf || true)
   l=$(grep -c $'\ttranscript\t' /tmp/layer2/sim_layer2.gtf || true)
   echo "  sim transcripts: default=$d layer2=$l"
-  if python3 "$SUPERSET" /tmp/layer2/sim_layer2.gtf /tmp/layer2/sim_default.gtf >/dev/null \
-     && python3 "$SUPERSET" /tmp/layer2/sim_default.gtf /tmp/layer2/sim_layer2.gtf >/dev/null; then
-    echo "  OK: layer2 == default on sim (no chimera, no spurious addition)"
+  # (i) additive: layer2 ⊇ default (Part A may add; it must never drop).
+  if ! python3 "$SUPERSET" /tmp/layer2/sim_layer2.gtf /tmp/layer2/sim_default.gtf >/dev/null; then
+    echo "  FAIL: layer2 DROPPED a sim chain present in default (not additive)"
+    exit 1
+  fi
+  # (ii) no cross-copy chimera: max transcript span must stay within a single copy.
+  lmax=$(awk -F'\t' '$3=="transcript"{s=$5-$4; if(s>m)m=s} END{print m+0}' /tmp/layer2/sim_layer2.gtf)
+  echo "  sim max transcript span: layer2=$lmax (chimera bound=$SIM_CHIMERA_SPAN_MAX)"
+  if [ "$lmax" -le "$SIM_CHIMERA_SPAN_MAX" ]; then
+    echo "  OK: layer2 additive + no cross-copy chimera (max span within single-copy bound)"
   else
-    echo "  FAIL: layer2 != default on sim — Layer 2 emitted a spurious/chimeric chain"
+    echo "  FAIL: layer2 transcript span $lmax > $SIM_CHIMERA_SPAN_MAX — possible cross-copy union chimera"
     exit 1
   fi
 else
