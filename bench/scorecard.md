@@ -94,3 +94,29 @@ paralog families ×2), concentrated on chr1 (14), the X chromosome (8), and othe
 chromosomes. This is the VG mechanism's defensible genome-wide contribution; it is modest in
 absolute count but real, strictly additive (0 regressions), and lands where the mechanism is
 designed to help. Full lists: `/tmp/gw/vglayer_genes.tsv`, `/tmp/gw/assembler_genes.tsv`.
+
+## PSV-linkage channel (`--vg-layer2-psv-linkage`) — genome-wide result
+
+The PSV→junction linkage channel (`bench/gw_psvlink.sh` + `bench/gw_psvlink_aggregate.py`)
+assigns a junction to the correct paralog copy when a single read spans both a PSV and the
+junction. Genome-wide (25 chroms, ~23 min), comparing PSV-linkage ON (`pl`) vs the rest of
+the VG layer (`vg`, Part A on):
+
+| Tier | vg-matched | pl-matched | **PSV net-new** | dropped (pl<vg) |
+|------|-----------|-----------|-----------------|-----------------|
+| strict `=`/`c` | 25,567 | 25,567 | **0** | 0 |
+| broad `=`/`c`/`j` | 32,018 | 32,018 | **0** | 0 |
+
+**Correct and safe, but inert as an additive channel.** No chimeras (0 transcripts > 1.5 Mb —
+the per-locus-frame fix holds genome-wide), 0 regressions, 100% StringTie parity preserved.
+But **PSV net-new = 0**: the channel adds no NCBI-corroborated transcripts over the VG layer.
+
+Why: PSV-linkage emits a PSV-*validated subset* of what Part A already emits — both build the
+same per-copy chains from the same reads (`build_exons_from_chain`); PSV-linkage merely
+restricts to reads whose alleles confirm the copy. So as an *additive* channel alongside Part A
+(the design choice), it can only produce chains Part A already produced → union-by-chain dedups
+them → net contribution ≈ 0. The mechanism *is* real (in isolation, with Part A off via
+`RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM=1`, it recovers a copy-specific skip isoform resolvable only
+via the linked PSV — harness leg 9, fixture `sim_psvlink`). Its value (precision-safe per-copy
+assignment, no phantoms) would only materialize if it **replaced or filtered** Part A rather
+than augmenting it. Kept **default-off**, like Part B; the engine + `PsvCertificate` are reusable.
