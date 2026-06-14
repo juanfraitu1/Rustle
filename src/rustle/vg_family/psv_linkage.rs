@@ -141,6 +141,234 @@ pub fn family_identifiability(fg: &FamilyGraph, error_rate: f64, min_psv_columns
     psv_columns_for_family(fg).len() >= min_psv_columns
 }
 
+/// One read's PSV evidence + its junction (intron) chain, aggregated across ALL of
+/// the read's alignments overlapping the family (its primary at the well copy AND
+/// any secondaries cross-mapped to siblings — they carry the same molecule's bases).
+///
+/// `psv_votes`: `(copy_id, #PSVs whose allele this read's base matched)`. WHY this
+/// is the load-bearing signal: a read physically aligned at copy X's locus reads
+/// copy X's genomic coordinates, but the read's *actual base* at a PSV column tells
+/// us its true origin — `base == allele_X` ⇒ native copy-X read; `base == allele_Y`
+/// (a sibling's allele) ⇒ a copy-Y read CROSS-MAPPED to X. So at each PSV the read
+/// covers we vote for whichever copy's allele the base matches. Aggregating these
+/// votes across the PSVs the read spans is its copy genotype — the same allele
+/// signal that beats the homology-shadow phantom Part A cannot.
+///
+/// `junctions`: the read's introns (`exons.windows(2)` → `(prev_end, next_start)`),
+/// the splice chain a later task links to the assigned copy.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadGenotype {
+    pub read_name_hash: u64,
+    pub psv_votes: Vec<(usize, usize)>,
+    pub junctions: Vec<(u64, u64)>,
+}
+
+/// Confidently assign a read to one copy iff that copy has >= `min_psv` supporting
+/// PSVs AND strictly dominates every sibling by >= `margin`
+/// (`votes[X] - max_other >= margin`). Otherwise `None` — the read is AMBIGUOUS and
+/// is never guessed, because a wrong assignment silently fabricates a phantom
+/// per-copy isoform downstream. Deterministic: ties and sub-threshold votes → None;
+/// when several copies tie for the top vote no copy can beat the runner-up by the
+/// margin, so the result is `None`.
+///
+/// `min_psv` is the per-READ floor (env `RUSTLE_VG_LAYER2_PSV_MIN`, default 3) — the
+/// ~3-PSV/0.997-identity sequencing-error floor; it is DISTINCT from the family
+/// gate's `min_psv_columns`.
+pub fn assign_read_to_copy(g: &ReadGenotype, min_psv: usize, margin: usize) -> Option<usize> {
+    // Find the top-voted copy and the best vote among all OTHER copies. We scan in a
+    // single deterministic pass; ties for the top are detected via the runner-up.
+    let mut best_copy: Option<usize> = None;
+    let mut best_votes: usize = 0;
+    let mut second_votes: usize = 0;
+    for &(copy_id, votes) in &g.psv_votes {
+        if votes > best_votes {
+            second_votes = best_votes;
+            best_votes = votes;
+            best_copy = Some(copy_id);
+        } else if votes > second_votes {
+            second_votes = votes;
+        }
+    }
+    let copy = best_copy?;
+    // Beat the error floor AND strictly dominate every sibling by the margin. The
+    // margin check folds in tie rejection: a tie makes `best - second == 0 < margin`.
+    if best_votes >= min_psv && best_votes.saturating_sub(second_votes) >= margin {
+        Some(copy)
+    } else {
+        None
+    }
+}
+
+/// Targeted second BAM pass that GENOTYPES each read overlapping the family copies'
+/// genomic spans, then aggregates per molecule. This is "Approach A" of the design:
+/// re-read the BAM only over `family_loci`, reuse `bam.rs`'s per-position
+/// mismatch-vs-FASTA reconstruction, and at every PSV column a read covers, vote for
+/// the copy whose allele the read's base matches (see [`ReadGenotype`] for the
+/// allele-voting rationale).
+///
+/// All alignments overlapping a family locus are read — primaries AND secondaries
+/// AND supplementaries: a read's primary at the well copy and its secondary
+/// cross-mapped to a sibling both carry the SAME molecule's bases, so both should
+/// vote; votes are aggregated per `read_name_hash`. (No `RunConfig` is threaded here,
+/// so no long-read-class filter is applied — the work is already bounded tightly by
+/// `family_loci` × `psv_columns`, and the per-read PSV floor in `assign_read_to_copy`
+/// is what actually gates short/uninformative reads out.)
+///
+/// Coverage rule: a PSV column's per-copy `genomic_pos` is "covered" by an alignment
+/// iff it lies within `[ref_start, ref_end)` AND inside one of the read's aligned
+/// exons (NOT an intron gap) — an intronic position carries no base. A read aligned
+/// at copy X's locus covers only copy X's frame position for that column, so we read
+/// the read's base once at the covered position and compare it against EVERY copy's
+/// allele in the column, voting for the one it matches (no match → no vote).
+///
+/// Deterministic: records are processed in BAM order; aggregation lives in
+/// `DetHashMap`/`DetHashSet`; the returned Vec is sorted by `read_name_hash`, each
+/// `psv_votes` sorted by `copy_id`, and each `junctions` sorted.
+///
+/// Known v1 limitation (inherited from the eqx reconstruction): a read with a
+/// non-canonical base (e.g. `N`) at a PSV position is not recorded as a mismatch by
+/// `extract_mismatches_vs_fasta`, so it falls back to the reference base and casts a
+/// native-copy vote. This is rare on HiFi reads and only ever inflates the NATIVE
+/// vote (never fabricates a cross-copy vote), so it is conservative w.r.t. phantoms;
+/// the per-read `min_psv` floor + strict-dominance margin absorb the occasional
+/// spurious native vote. Re-deriving the true base would require duplicating the
+/// CIGAR walk, which we deliberately avoid.
+pub fn genotype_family_reads(
+    bam_path: &std::path::Path,
+    family_loci: &[(String, u64, u64)],
+    psv_columns: &[PsvColumn],
+    genome: &crate::genome::GenomeIndex,
+) -> anyhow::Result<Vec<ReadGenotype>> {
+    use crate::types::{DetHashMap, DetHashSet};
+
+    // votes: read_name_hash -> (copy_id -> #supporting PSVs); junctions per read.
+    let mut votes_by_read: DetHashMap<u64, DetHashMap<usize, usize>> = DetHashMap::default();
+    let mut junctions_by_read: DetHashMap<u64, DetHashSet<(u64, u64)>> = DetHashMap::default();
+    // Track read order of first appearance is unnecessary — we sort by hash at the
+    // end — but we must register every read seen even if it casts no votes.
+    let mut seen_reads: DetHashSet<u64> = DetHashSet::default();
+
+    let mut reader = crate::bam::open_bam(bam_path, 1)?;
+    let header = reader.read_header()?;
+    let mut record = noodles_sam::alignment::RecordBuf::default();
+
+    while reader.read_record_buf(&header, &mut record)? > 0 {
+        if record.flags().is_unmapped() {
+            continue;
+        }
+        // Chromosome name for this alignment (needed for locus overlap + base lookup).
+        let chrom = match record
+            .reference_sequence(&header)
+            .transpose()
+            .ok()
+            .flatten()
+            .map(|(n, _)| String::from_utf8_lossy(n).into_owned())
+        {
+            Some(n) => n,
+            None => continue,
+        };
+
+        // Parse once via the same parser Layer 1 uses, so exons/junctions/hashing
+        // never diverge from the rest of the pipeline. Primaries, secondaries, and
+        // supplementaries are ALL kept (each carries the molecule's bases).
+        let Some(read) = crate::bam::record_to_bundle_read(&record) else {
+            continue;
+        };
+        let ref_start = read.ref_start;
+        let ref_end = read.ref_end; // exclusive (last exon end)
+
+        // Only consider alignments that overlap a family locus on the same chrom.
+        let overlaps_family = family_loci.iter().any(|(c, s, e)| {
+            c == &chrom && ref_start < *e && *s < ref_end
+        });
+        if !overlaps_family {
+            continue;
+        }
+
+        // Register the read so it appears in the output even with zero votes (its
+        // junctions still matter for later linkage of confidently-assigned reads).
+        seen_reads.insert(read.read_name_hash);
+
+        // The read's intron chain = gaps between consecutive aligned exons.
+        if read.exons.len() >= 2 {
+            let jset = junctions_by_read.entry(read.read_name_hash).or_default();
+            for w in read.exons.windows(2) {
+                jset.insert((w[0].1, w[1].0));
+            }
+        }
+
+        // Per-position mismatch set vs the reference FASTA (the `--eqx`-equivalent).
+        // A read's base at ref position P = the FASTA base at P UNLESS P is in this
+        // set, in which case it is the recorded alt base.
+        let mismatches = crate::bam::extract_mismatches_vs_fasta(&record, ref_start, &chrom, genome);
+        let mismatch_at = |pos: u64| -> Option<u8> {
+            mismatches.iter().find(|(p, _)| *p == pos).map(|(_, b)| *b)
+        };
+
+        // Vote at every PSV column this alignment covers.
+        for col in psv_columns {
+            // A read aligned at one copy's locus covers at most ONE per-copy frame
+            // position for this column. Find the covered position (inside an aligned
+            // exon), read the base there, then vote for whichever copy's allele it
+            // matches.
+            for pc in &col.per_copy {
+                let pos = pc.genomic_pos;
+                if pos < ref_start || pos >= ref_end {
+                    continue;
+                }
+                // Must fall inside an aligned exon, not an intron gap.
+                let in_exon = read.exons.iter().any(|(s, e)| pos >= *s && pos < *e);
+                if !in_exon {
+                    continue;
+                }
+                // The read's base at this reference position.
+                let base = match mismatch_at(pos) {
+                    Some(b) => b,
+                    None => match genome
+                        .fetch_sequence(&chrom, pos, pos + 1)
+                        .and_then(|v| v.first().copied())
+                    {
+                        Some(b) => b.to_ascii_uppercase(),
+                        None => continue, // no reference base -> cannot genotype here
+                    },
+                };
+                // Compare the base against EVERY copy's allele in this column and
+                // vote for the copy it matches (the cross-mapping detector). At most
+                // one position per column is covered by this alignment, so we break
+                // after handling it to avoid double-counting if frames ever collide.
+                let copy_votes = votes_by_read.entry(read.read_name_hash).or_default();
+                for cand in &col.per_copy {
+                    if cand.allele == base {
+                        *copy_votes.entry(cand.copy_id).or_insert(0) += 1;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // Emit one ReadGenotype per read seen, sorted by read_name_hash; psv_votes
+    // sorted by copy_id; junctions sorted. Determinism is load-bearing.
+    let mut out: Vec<ReadGenotype> = seen_reads
+        .into_iter()
+        .map(|h| {
+            let mut psv_votes: Vec<(usize, usize)> = votes_by_read
+                .get(&h)
+                .map(|m| m.iter().map(|(&c, &n)| (c, n)).collect())
+                .unwrap_or_default();
+            psv_votes.sort_by_key(|(c, _)| *c);
+            let mut junctions: Vec<(u64, u64)> = junctions_by_read
+                .get(&h)
+                .map(|s| s.iter().copied().collect())
+                .unwrap_or_default();
+            junctions.sort();
+            ReadGenotype { read_name_hash: h, psv_votes, junctions }
+        })
+        .collect();
+    out.sort_by_key(|g| g.read_name_hash);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +528,93 @@ mod tests {
         // First column = lower copy0 genomic_pos (101 < 104).
         assert_eq!(cols[0].per_copy.iter().find(|p| p.copy_id == 0).unwrap().genomic_pos, 101);
         assert_eq!(cols[1].per_copy.iter().find(|p| p.copy_id == 0).unwrap().genomic_pos, 104);
+    }
+
+    // ── Task 3: per-read copy assignment (pure logic, no BAM) ──────────────
+    //
+    // assign_read_to_copy is the decision a single read makes about its copy of
+    // origin from its aggregated PSV votes. The contract is deliberately strict:
+    // it assigns ONLY when the evidence beats the sequencing-error floor (>= min_psv
+    // agreeing PSVs) AND one copy strictly dominates every sibling (>= margin). A
+    // tie or sub-threshold read is left ambiguous — NEVER guessed — because a wrong
+    // assignment silently fabricates a phantom isoform downstream.
+
+    #[test]
+    fn read_with_sibling_alleles_assigned_to_sibling() {
+        // 3 PSVs match copy1's allele, 0 match copy0 -> copy1 wins (the cross-mapped
+        // read case: aligned at copy0's locus but its bases say copy1).
+        let g = ReadGenotype {
+            read_name_hash: 7,
+            psv_votes: vec![(0, 0), (1, 3)],
+            junctions: vec![(160, 300)],
+        };
+        assert_eq!(assign_read_to_copy(&g, 3, 1), Some(1));
+    }
+
+    #[test]
+    fn ambiguous_tie_unassigned() {
+        // Even-split votes, and neither reaches min_psv -> ambiguous -> None.
+        let g = ReadGenotype {
+            read_name_hash: 8,
+            psv_votes: vec![(0, 2), (1, 2)],
+            junctions: vec![],
+        };
+        assert_eq!(assign_read_to_copy(&g, 3, 1), None);
+    }
+
+    #[test]
+    fn sub_threshold_unassigned() {
+        // Single copy with 2 votes but min_psv=3 -> below the error floor -> None.
+        let g = ReadGenotype {
+            read_name_hash: 9,
+            psv_votes: vec![(0, 2)],
+            junctions: vec![],
+        };
+        assert_eq!(assign_read_to_copy(&g, 3, 1), None);
+    }
+
+    #[test]
+    fn margin_enforced() {
+        // Both copies clear min_psv but are tied -> no strict dominance -> None.
+        let tied = ReadGenotype {
+            read_name_hash: 10,
+            psv_votes: vec![(0, 3), (1, 3)],
+            junctions: vec![],
+        };
+        assert_eq!(assign_read_to_copy(&tied, 3, 1), None);
+        // One copy clears min_psv and beats the runner-up by the margin -> assigned.
+        let dominant = ReadGenotype {
+            read_name_hash: 11,
+            psv_votes: vec![(0, 4), (1, 3)],
+            junctions: vec![],
+        };
+        assert_eq!(assign_read_to_copy(&dominant, 3, 1), Some(0));
+    }
+
+    #[test]
+    fn genotype_family_reads_smoke_constructs() {
+        // Smoke-level exercise of the pass's signature + empty-input path: with no
+        // PSV columns and no loci, an absent BAM path must not panic before it even
+        // tries to open the file is not asserted here (it would error); instead we
+        // assert the pure pieces compose. The end-to-end BAM I/O assertion (a read
+        // carrying sibling alleles genotyping to the sibling) is DEFERRED to Task 7's
+        // `sim_psvlink` fixture, per the plan (Task 3 Step 5 permits deferral).
+        //
+        // This keeps the function compiled + type-checked here and verifies the
+        // ReadGenotype it returns flows into assign_read_to_copy.
+        let g = ReadGenotype {
+            read_name_hash: 42,
+            psv_votes: vec![(0, 3), (1, 1)],
+            junctions: vec![(100, 200), (250, 400)],
+        };
+        assert_eq!(assign_read_to_copy(&g, 3, 1), Some(0));
+        // Function exists with the documented signature (compile-time check).
+        let _f: fn(
+            &std::path::Path,
+            &[(String, u64, u64)],
+            &[PsvColumn],
+            &crate::genome::GenomeIndex,
+        ) -> anyhow::Result<Vec<ReadGenotype>> = genotype_family_reads;
     }
 
     #[test]
