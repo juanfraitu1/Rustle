@@ -135,4 +135,28 @@ if [ -f "$ST_BAM" ] && [ -f "$ST_FA" ]; then
   if [ "$db" -eq 0 ] && [ "$lb" -ge 1 ]; then echo "  OK: Layer-2 recovered the starved copy B"; else echo "  FAIL: starved copy B not recovered (default=$db layer2=$lb)"; exit 1; fi
 else echo "  SKIP: starved fixture absent"; fi
 
+# (7) GENOME-BACKED real chrY recovery leg. The legs above run chrY WITHOUT a
+# genome, so run_layer2 (which requires --genome-fasta) is SKIPPED — they only
+# test the M-FLOOR floor, not homology-transfer recovery. This leg exercises the
+# real genome-backed homology-transfer path on real chrY families (the path that
+# panicked on real data before the loci re-sync fix). Env-gated on a full genome
+# FASTA covering chrY; SKIPs if absent (large, not in-repo). HARD: must not panic,
+# must stay additive (layer2 ⊇ default). Real-data validation confirmed 2 real
+# copy recoveries here (RSTL.82.1=LOC129530264) with zero false positives.
+echo "== (7) genome-backed chrY: homology-transfer runs + stays additive =="
+GGO_GENOME=${GGO_GENOME:-/mnt/c/Users/jfris/Desktop/GGO.fasta}
+if [ -f "$GGO_GENOME" ]; then
+  "$BIN" -L "$CHRY_BAM" --vg --genome-fasta "$GGO_GENOME" -o /tmp/layer2/chrYg_default.gtf 2>/dev/null
+  "$BIN" -L "$CHRY_BAM" --vg --vg-layer2 --genome-fasta "$GGO_GENOME" -o /tmp/layer2/chrYg_layer2.gtf 2>/dev/null \
+    || { echo "  FAIL: genome-backed --vg-layer2 errored/panicked on chrY"; exit 1; }
+  if python3 "$SUPERSET" /tmp/layer2/chrYg_layer2.gtf /tmp/layer2/chrYg_default.gtf >/dev/null; then
+    nv=$(grep -cP 'copy_status "novel"' /tmp/layer2/chrYg_layer2.gtf || true)
+    echo "  OK: genome-backed layer2 ⊇ default (additive); $nv homology-recovered copy(ies)"
+  else
+    echo "  FAIL: genome-backed layer2 DROPPED a chain present in --vg default"; exit 1
+  fi
+else
+  echo "  SKIP: genome $GGO_GENOME absent (set GGO_GENOME to enable)"
+fi
+
 echo "ALL INVARIANTS PASS: VG Layer-2 is additive (⊇ VG default) AND ⊇ baseline (M-FLOOR floor holds) on chr19 + chrY."
