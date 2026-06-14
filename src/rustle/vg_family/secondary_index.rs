@@ -86,6 +86,13 @@ impl SecondaryIndex {
         self.by_read.len()
     }
 
+    /// read_name_hash -> number of placements (alignments) this read has in the
+    /// side-index. Used by M5's repeat-spread filter: a read placed many ways is a
+    /// homology-shadow/repeat artifact, not a genuine new-copy molecule.
+    pub fn read_placement_counts(&self) -> DetHashMap<u64, usize> {
+        self.by_read.iter().map(|(h, idxs)| (*h, idxs.len())).collect()
+    }
+
     /// Read-only access to all alignments.
     pub fn alignments(&self) -> &[SecondaryAlignment] {
         &self.alignments
@@ -534,6 +541,22 @@ mod tests {
                 .collect()
         };
         assert_eq!(key(&ca), key(&cb), "each cluster's sorted spans are identical");
+    }
+
+    #[test]
+    fn read_placement_counts_reports_per_read() {
+        // M5 repeat-spread filter input: a read with 3 placements + a read with 1.
+        // The map must report the per-read placement count so a read placed many
+        // ways (a homology-shadow/repeat artifact) can be excluded downstream.
+        let mut idx = SecondaryIndex::new();
+        idx.push(sa(101, 100, 200));
+        idx.push(sa(101, 5000, 5100));
+        idx.push(sa(101, 9000, 9100));
+        idx.push(sa(202, 100, 200));
+        let counts = idx.read_placement_counts();
+        assert_eq!(counts.get(&101).copied(), Some(3), "read 101 placed 3 ways");
+        assert_eq!(counts.get(&202).copied(), Some(1), "read 202 placed once");
+        assert_eq!(counts.len(), 2, "exactly two distinct reads counted");
     }
 
     #[test]

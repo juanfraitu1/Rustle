@@ -370,6 +370,15 @@ pub fn run_layer2(
         .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(200);
     let new_copy_min_reads: usize = std::env::var("RUSTLE_VG_LAYER2_NEW_COPY_MIN_READS")
         .ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n >= 2).unwrap_or(3);
+    // S4: cap on a supporter's TOTAL secondary placements. A read placed many ways is
+    // a repeat/homology-shadow artifact, not a genuine new-copy molecule; default 3
+    // allows legit reads (1 placement) up to ~4-copy families (k-1 placements).
+    let new_copy_max_placements: usize = std::env::var("RUSTLE_VG_LAYER2_NEW_COPY_MAX_PLACEMENTS")
+        .ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n >= 1).unwrap_or(3);
+    // S1: minimum length of a candidate's FIRST/LAST exon. Terminal exons come from
+    // median read ends and can be degenerate stubs; interior exons are crisp.
+    let new_copy_min_exon: u64 = std::env::var("RUSTLE_VG_LAYER2_NEW_COPY_MIN_EXON")
+        .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(25);
 
     // (C2) candidate links → compute similarity only for linked, same-chrom pairs.
     let links = crate::vg::build_multimap_index_from_secondary_index(&side_index, primary_locus);
@@ -455,7 +464,13 @@ pub fn run_layer2(
     // (>= new_copy_min_reads distinct reads, >=2 exons, chain consensus).
     let new_copy_candidates: Vec<Transcript> = if new_copies {
         let regions = side_index.all_secondary_regions(new_copy_max_gap);
-        let cands = candidate_new_copy_transcripts(&regions, new_copies, new_copy_min_reads);
+        // Per-read placement counts feed S4 (repeat-spread). Borrows &self immutably
+        // and returns an owned map, so there is no conflict with the later &mut prune.
+        let placements = side_index.read_placement_counts();
+        let cands = candidate_new_copy_transcripts(
+            &regions, new_copies, new_copy_min_reads,
+            new_copy_max_placements, new_copy_min_exon, &placements,
+        );
         if !cands.is_empty() {
             eprintln!(
                 "[layer2] {} candidate new-copy transcript(s) from {} all-secondary region(s) (proof-gated; --vg-layer2-new-copies enabled)",
@@ -1235,6 +1250,9 @@ fn candidate_new_copy_transcripts(
     regions: &[Vec<&crate::vg_family::secondary_index::SecondaryAlignment>],
     new_copies: bool,
     min_reads: usize,
+    max_placements: usize,
+    min_terminal_exon: u64,
+    placements: &crate::types::DetHashMap<u64, usize>,
 ) -> Vec<Transcript> {
     // 1. The gate. Default-off path returns nothing.
     if !new_copies {
@@ -1261,17 +1279,32 @@ fn candidate_new_copy_transcripts(
             if chain.is_empty() {
                 continue;
             }
+            // S4 (repeat-spread): a read placed MANY ways in the side-index is a
+            // repeat/low-complexity homology-shadow artifact, not a genuine new-copy
+            // molecule. Drop such supporters BEFORE counting / building exons — both
+            // the distinct-read proof and the consensus coordinates must rest only on
+            // singly/few-placed reads. (Legit reads place once; a k-copy family read
+            // up to k-1; the default cap allows up to ~4-copy families.)
+            let filtered_supporters: Vec<&crate::vg_family::secondary_index::SecondaryAlignment> =
+                supporters
+                    .iter()
+                    .copied()
+                    .filter(|s| {
+                        placements.get(&s.read_name_hash).copied().unwrap_or(1) <= max_placements
+                    })
+                    .collect();
             // DISTINCT-read support — count read_name_hash, NOT alignment count: one
-            // molecule can place secondary+supplementary in the same cluster.
+            // molecule can place secondary+supplementary in the same cluster. Counted
+            // over the S4-filtered supporters only.
             let mut reads: DetHashSet<u64> = DetHashSet::default();
-            for s in supporters {
+            for s in &filtered_supporters {
                 reads.insert(s.read_name_hash);
             }
             let distinct = reads.len();
             if distinct < min_reads {
                 continue;
             }
-            survivors.push((distinct, chain.clone(), supporters.clone()));
+            survivors.push((distinct, chain.clone(), filtered_supporters));
         }
         // Deterministic per-cluster order: distinct DESC, chain.len() DESC, chain ASC
         // (mirrors enumerate_secondary_chains).
@@ -1285,6 +1318,15 @@ fn candidate_new_copy_transcripts(
             let exons = build_exons_from_chain(&supporters, &chain);
             if exons.len() < 2 {
                 continue; // defensive: a junction chain must yield >= 2 exons.
+            }
+            // S1 (min terminal exon): the FIRST/LAST exon comes from the median of
+            // supporters' read ends and can be degenerate (a 7bp stub on real chrY).
+            // Interior exons are crisp junction-defined and trusted; a terminal exon
+            // shorter than min_terminal_exon is a degenerate-stub phantom → reject.
+            let first_len = exons.first().map(|&(s, e)| e - s).unwrap_or(0);
+            let last_len = exons.last().map(|&(s, e)| e - s).unwrap_or(0);
+            if first_len < min_terminal_exon || last_len < min_terminal_exon {
+                continue;
             }
             // Majority strand of the chain's supporters; tie / all-equal -> '+'.
             let plus = supporters.iter().filter(|s| s.strand == '+').count();
@@ -2391,7 +2433,8 @@ mod tests {
             sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
         ]];
         let regions: Vec<Vec<&_>> = regions_owned.iter().map(|c| c.iter().collect()).collect();
-        let out = candidate_new_copy_transcripts(&regions, false, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1)]);
+        let out = candidate_new_copy_transcripts(&regions, false, 3, 3, 1, &pl);
         assert!(out.is_empty(), "gate off → empty: {out:?}");
     }
 
@@ -2405,7 +2448,8 @@ mod tests {
             sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
         ]];
         let regions: Vec<Vec<&_>> = regions_owned.iter().map(|c| c.iter().collect()).collect();
-        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1)]);
+        let out = candidate_new_copy_transcripts(&regions, true, 3, 3, 1, &pl);
         assert_eq!(out.len(), 1, "exactly one transcript: {out:?}");
         let t = &out[0];
         assert_eq!(t.exons, vec![(1000, 1200), (1400, 1600)], "consensus exons");
@@ -2439,7 +2483,8 @@ mod tests {
             sec_aln(12, 5000, 5600, &[(5200, 5400)], 1),
         ];
         let regions: Vec<Vec<&_>> = vec![region_a.iter().collect(), region_b.iter().collect()];
-        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (10, 1), (11, 1), (12, 1)]);
+        let out = candidate_new_copy_transcripts(&regions, true, 3, 3, 1, &pl);
         assert_eq!(out.len(), 1, "only the 3-distinct-read cluster emits: {out:?}");
         assert_eq!(
             out[0].exons,
@@ -2458,7 +2503,8 @@ mod tests {
             sec_aln(3, 1000, 1600, &[], 0),
         ];
         let regions: Vec<Vec<&_>> = vec![region.iter().collect()];
-        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1)]);
+        let out = candidate_new_copy_transcripts(&regions, true, 3, 3, 1, &pl);
         assert!(out.is_empty(), "single-exon cluster skipped: {out:?}");
     }
 
@@ -2471,7 +2517,8 @@ mod tests {
             sec_aln_s(3, 1000, 1600, &[(1200, 1400)], 0, '+'),
         ];
         let regions: Vec<Vec<&_>> = vec![region.iter().collect()];
-        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1)]);
+        let out = candidate_new_copy_transcripts(&regions, true, 3, 3, 1, &pl);
         assert_eq!(out.len(), 1, "one transcript: {out:?}");
         assert_eq!(out[0].strand, '-', "majority strand '-'");
     }
@@ -2491,7 +2538,8 @@ mod tests {
             sec_aln(6, 1000, 1700, &[(1200, 1500)], 0),
         ];
         let regions: Vec<Vec<&_>> = vec![region.iter().collect()];
-        let out = candidate_new_copy_transcripts(&regions, true, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)]);
+        let out = candidate_new_copy_transcripts(&regions, true, 3, 3, 1, &pl);
         assert_eq!(out.len(), 2, "two distinct isoforms: {out:?}");
         let mut chains: Vec<Vec<(u64, u64)>> = out.iter().map(|t| t.exons.clone()).collect();
         chains.sort();
@@ -2524,12 +2572,101 @@ mod tests {
         let b = mk(&[5, 0, 4, 1, 3, 2]);
         let ra: Vec<Vec<&_>> = vec![a.iter().collect()];
         let rb: Vec<Vec<&_>> = vec![b.iter().collect()];
-        let oa = candidate_new_copy_transcripts(&ra, true, 3);
-        let ob = candidate_new_copy_transcripts(&rb, true, 3);
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)]);
+        let oa = candidate_new_copy_transcripts(&ra, true, 3, 3, 1, &pl);
+        let ob = candidate_new_copy_transcripts(&rb, true, 3, 3, 1, &pl);
         assert_eq!(oa.len(), ob.len(), "same transcript count regardless of input order");
         let key = |ts: &[Transcript]| -> Vec<(String, char, Vec<(u64, u64)>)> {
             ts.iter().map(|t| (t.chrom.clone(), t.strand, t.exons.clone())).collect()
         };
         assert_eq!(key(&oa), key(&ob), "byte-identical (chrom, strand, exons) ordering");
+    }
+
+    // ── M5 phantom gate: S1 (min terminal exon) + S4 (repeat-spread) ──────────
+    // Diagnostic facts (real chrY): the REAL candidate has crisp interior junctions
+    // and reads placed once; the dropped phantoms have a degenerate 7bp terminal
+    // exon (S1) and reads placed 5 ways each (S4). These two principled filters
+    // discriminate without a min_reads bump (which would be overfit).
+
+    /// Build a placements map giving every listed read `n` placements. The default
+    /// (a read absent from the map) is treated as 1 placement by the emitter.
+    fn placements_of(reads: &[(u64, usize)]) -> crate::types::DetHashMap<u64, usize> {
+        let mut m: crate::types::DetHashMap<u64, usize> = crate::types::DetHashMap::default();
+        for &(h, n) in reads {
+            m.insert(h, n);
+        }
+        m
+    }
+
+    #[test]
+    fn new_copy_rejects_degenerate_terminal_exon() {
+        // S1: a chain whose FIRST exon is a 7bp stub (terminal exons come from median
+        // read ends and can be degenerate) is rejected at min_terminal_exon=25, while
+        // the SAME chain shaped with a normal-length first exon is emitted. Brackets S1.
+        // Stub chain: ref_start=1193, intron (1200,1400) → first exon (1193,1200) = 7bp.
+        let stub = vec![
+            sec_aln(1, 1193, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1193, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1193, 1600, &[(1200, 1400)], 0),
+        ];
+        // Normal chain: ref_start=1000 → first exon (1000,1200) = 200bp.
+        let normal = vec![
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+        ];
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1)]);
+
+        let r_stub: Vec<Vec<&_>> = vec![stub.iter().collect()];
+        let out_stub = candidate_new_copy_transcripts(&r_stub, true, 3, 3, 25, &pl);
+        assert!(out_stub.is_empty(), "7bp terminal-exon stub rejected by S1: {out_stub:?}");
+
+        let r_norm: Vec<Vec<&_>> = vec![normal.iter().collect()];
+        let out_norm = candidate_new_copy_transcripts(&r_norm, true, 3, 3, 25, &pl);
+        assert_eq!(out_norm.len(), 1, "normal-length terminal exon survives S1: {out_norm:?}");
+        assert_eq!(out_norm[0].exons, vec![(1000, 1200), (1400, 1600)]);
+    }
+
+    #[test]
+    fn new_copy_excludes_repeat_spread_reads() {
+        // S4: a chain with 3 distinct reads, but EACH read is placed 5 ways in the
+        // side-index (a repeat/low-complexity artifact, not a genuine new-copy
+        // molecule). With max_placements=3 all three supporters are excluded → the
+        // filtered distinct count is 0 < min_reads=3 → NOT emitted. Bracket: the SAME
+        // chain with placements=1 per read → emitted. Brackets S4.
+        let region = vec![
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+        ];
+        let r: Vec<Vec<&_>> = vec![region.iter().collect()];
+
+        let spread = placements_of(&[(1, 5), (2, 5), (3, 5)]);
+        let out_spread = candidate_new_copy_transcripts(&r, true, 3, 3, 1, &spread);
+        assert!(out_spread.is_empty(), "all repeat-spread reads excluded → none: {out_spread:?}");
+
+        let clean = placements_of(&[(1, 1), (2, 1), (3, 1)]);
+        let out_clean = candidate_new_copy_transcripts(&r, true, 3, 3, 1, &clean);
+        assert_eq!(out_clean.len(), 1, "singly-placed reads survive S4: {out_clean:?}");
+    }
+
+    #[test]
+    fn new_copy_repeat_spread_partial() {
+        // S4 affects the COUNT, not all-or-nothing: 4 distinct reads, 3 placed once +
+        // 1 placed 5 ways. With max_placements=3 the repeat read is excluded, leaving
+        // 3 clean reads == min_reads → emitted, and coverage == 3 (the repeat read is
+        // not counted). Proves the filter trims the support set, not just gates it.
+        let region = vec![
+            sec_aln(1, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(2, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(3, 1000, 1600, &[(1200, 1400)], 0),
+            sec_aln(4, 1000, 1600, &[(1200, 1400)], 0), // repeat-spread read
+        ];
+        let r: Vec<Vec<&_>> = vec![region.iter().collect()];
+        let pl = placements_of(&[(1, 1), (2, 1), (3, 1), (4, 5)]);
+        let out = candidate_new_copy_transcripts(&r, true, 3, 3, 1, &pl);
+        assert_eq!(out.len(), 1, "3 clean reads >= min_reads → emitted: {out:?}");
+        assert_eq!(out[0].coverage, 3.0, "coverage counts only the 3 non-repeat reads");
+        assert_eq!(out[0].longcov, 3.0, "longcov counts only the 3 non-repeat reads");
     }
 }
