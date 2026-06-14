@@ -161,6 +161,39 @@ if [ -f "$ST_BAM" ] && [ -f "$ST_FA" ]; then
   if [ "$db" -eq 0 ] && [ "$lb" -ge 1 ]; then echo "  OK: Layer-2 recovered the starved copy B"; else echo "  FAIL: starved copy B not recovered (default=$db layer2=$lb)"; exit 1; fi
 else echo "  SKIP: starved fixture absent"; fi
 
+# (8) GHOST fixture: M5 recovers a no-primary copy. Distinct from leg 6's starved
+# copy (which has 1 primary → a bundle forms → the existing homology-transfer path
+# handles it). Here copy B has ZERO primary reads: Layer 1 builds NO bundle there,
+# so its secondaries get locus=None and are dropped — ONLY M5 (the default-off
+# --vg-layer2-new-copies path) clusters those locus=None secondaries and recovers
+# the copy. So copy B is ABSENT with --vg-layer2 (M5 OFF) and RECOVERED only when
+# --vg-layer2-new-copies is added. Must also stay additive (on ⊇ off).
+echo "== (8) ghost fixture: M5 recovers a no-primary copy =="
+GH_BAM=${GH_BAM:-bench/fixtures/sim_ghost.bam}; GH_FA=${GH_FA:-bench/fixtures/sim_ghost.fa}
+if [ -f "$GH_BAM" ] && [ -f "$GH_FA" ]; then
+  "$BIN" -L "$GH_BAM" --vg --vg-layer2 --genome-fasta "$GH_FA" -o /tmp/layer2/ghost_off.gtf 2>/dev/null
+  "$BIN" -L "$GH_BAM" --vg --vg-layer2 --vg-layer2-new-copies --genome-fasta "$GH_FA" -o /tmp/layer2/ghost_on.gtf 2>/dev/null
+  goff=$(awk -F'\t' '$3=="transcript" && $4>20000' /tmp/layer2/ghost_off.gtf | wc -l)
+  gon=$(awk -F'\t' '$3=="transcript" && $4>20000' /tmp/layer2/ghost_on.gtf | wc -l)
+  echo "  copyB transcripts (region>20000): M5-off=$goff M5-on=$gon"
+  # (i) ghost gate: M5 OFF must leave copy B absent (no bundle ever formed); M5 ON
+  #     must recover it. If OFF != 0 the existing path already handles it (wrong
+  #     fixture); if ON < 1 M5 regressed.
+  if [ "$goff" -eq 0 ] && [ "$gon" -ge 1 ]; then
+    echo "  OK: M5 recovered the no-primary ghost copy B (off=0 → on=$gon)"
+  else
+    echo "  FAIL: ghost copy B recovery wrong (M5-off=$goff must be 0, M5-on=$gon must be >=1)"
+    exit 1
+  fi
+  # (ii) additive: M5-on ⊇ M5-off (recovery must never drop a chain VG already had).
+  if python3 "$SUPERSET" /tmp/layer2/ghost_on.gtf /tmp/layer2/ghost_off.gtf >/dev/null; then
+    echo "  OK: M5-on ⊇ M5-off (additive; no chain dropped)"
+  else
+    echo "  FAIL: --vg-layer2-new-copies DROPPED a chain present without it (not additive)"
+    exit 1
+  fi
+else echo "  SKIP: ghost fixture absent"; fi
+
 # (7) GENOME-BACKED real chrY recovery leg. The legs above run chrY WITHOUT a
 # genome, so run_layer2 (which requires --genome-fasta) is SKIPPED — they only
 # test the M-FLOOR floor, not homology-transfer recovery. This leg exercises the
