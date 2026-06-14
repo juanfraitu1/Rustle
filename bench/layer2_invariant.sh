@@ -124,4 +124,15 @@ else
   echo "  SKIP: $SIM_BAM / $SIM_FA not present"
 fi
 
+echo "== (6) starvation fixture: Layer-2 RECOVERS the dropped copy =="
+ST_BAM=${ST_BAM:-bench/fixtures/sim_starved.bam}; ST_FA=${ST_FA:-bench/fixtures/sim_starved.fa}
+if [ -f "$ST_BAM" ] && [ -f "$ST_FA" ]; then
+  "$BIN" -L "$ST_BAM" --vg --genome-fasta "$ST_FA" -o /tmp/layer2/starved_default.gtf 2>/dev/null
+  "$BIN" -L "$ST_BAM" --vg --vg-layer2 --genome-fasta "$ST_FA" -o /tmp/layer2/starved_layer2.gtf 2>/dev/null
+  db=$(awk -F'\t' '$3=="transcript" && $4>20000' /tmp/layer2/starved_default.gtf | wc -l)
+  lb=$(awk -F'\t' '$3=="transcript" && $4>20000' /tmp/layer2/starved_layer2.gtf | wc -l)
+  echo "  copyB transcripts (region>20000): default=$db layer2=$lb"
+  if [ "$db" -eq 0 ] && [ "$lb" -ge 1 ]; then echo "  OK: Layer-2 recovered the starved copy B"; else echo "  FAIL: starved copy B not recovered (default=$db layer2=$lb)"; exit 1; fi
+else echo "  SKIP: starved fixture absent"; fi
+
 echo "ALL INVARIANTS PASS: VG Layer-2 is additive (⊇ VG default) AND ⊇ baseline (M-FLOOR floor holds) on chr19 + chrY."

@@ -26,6 +26,12 @@ pub struct AmendCandidate {
 pub struct GraphAmendment {
     pub edges: Vec<AmendCandidate>,
     pub copy_membership: Vec<(usize, usize)>,
+    /// Homology-transferred per-copy coordinates: `(node_idx, copy_id, exon_span)`.
+    /// Populated when a starved copy's exon coordinates are recovered from its OWN
+    /// secondaries' consensus and positionally mapped onto the backbone. Each span
+    /// is a REAL secondary's exon at the STARVED copy's coordinates — never the well
+    /// copy's backbone span. Consumed by `decompose_family_paths` to emit the copy.
+    pub transferred_coords: Vec<(usize, usize, (u64, u64))>,
 }
 
 /// (C4 amend) Fold side-index secondaries into candidate edges + copy memberships.
@@ -58,6 +64,34 @@ pub fn amend_family_graph(
             }
         }
     }
+    // Homology coordinate-transfer (C5): for each family copy, reconstruct its OWN
+    // exon coordinates from the consensus of its secondaries and positionally map
+    // them onto the backbone. This recovers a STARVED copy whose Layer-1 graph was
+    // empty — its real coordinates live only in its secondaries. Every transferred
+    // span is a real secondary's exon; positional_mapping refuses ambiguous frames.
+    let mut by_copy: DetHashMap<usize, Vec<&crate::vg_family::secondary_index::SecondaryAlignment>> =
+        DetHashMap::default();
+    for s in secondaries {
+        if let Some(copy) = s.locus.and_then(|l| copy_of_locus.get(&l).copied()) {
+            by_copy.entry(copy).or_default().push(s);
+        }
+    }
+    let mut copies: Vec<usize> = by_copy.keys().copied().collect();
+    copies.sort_unstable();
+    let mut transferred_coords: Vec<(usize, usize, (u64, u64))> = Vec::new();
+    for copy in copies {
+        let secs = &by_copy[&copy];
+        let consensus = consensus_exon_chain(secs);
+        if consensus.is_empty() {
+            continue;
+        }
+        for (node_idx, span) in positional_mapping(fg, copy, &consensus) {
+            transferred_coords.push((node_idx, copy, span));
+            membership.insert((node_idx, copy));
+        }
+    }
+    transferred_coords.sort_unstable();
+
     let mut edges: Vec<AmendCandidate> = support
         .into_iter()
         .map(|(intron, support)| AmendCandidate { intron, support })
@@ -65,7 +99,7 @@ pub fn amend_family_graph(
     edges.sort_by(|x, y| x.intron.cmp(&y.intron));
     let mut copy_membership: Vec<(usize, usize)> = membership.into_iter().collect();
     copy_membership.sort_unstable();
-    GraphAmendment { edges, copy_membership }
+    GraphAmendment { edges, copy_membership, transferred_coords }
 }
 
 /// A recovered copy/isoform path (exon chain in genomic coordinates). A path that
@@ -88,10 +122,16 @@ pub fn decompose_family_paths(
     amendment: &GraphAmendment,
     min_flow: f64,
 ) -> Vec<FamilyPath> {
+    // Copy count must include copies introduced ONLY via the amendment — a STARVED
+    // copy whose Layer-1 graph was empty contributes no `per_copy_sequences` to any
+    // node, so it would be invisible if we counted graph nodes alone. Its homology-
+    // transferred coordinates / memberships are what re-introduce it.
     let n_copies = fg
         .nodes
         .iter()
         .flat_map(|n| n.per_copy_sequences.iter().map(|(c, _)| *c))
+        .chain(amendment.copy_membership.iter().map(|(_, c)| *c))
+        .chain(amendment.transferred_coords.iter().map(|(_, c, _)| *c))
         .max()
         .map(|m| m + 1)
         .unwrap_or(0);
@@ -152,6 +192,12 @@ pub fn decompose_family_paths(
     for (ni, c) in &amendment.copy_membership {
         node_copies.entry(*ni).or_default().insert(*c);
     }
+    // Homology-transferred per-copy coordinates: (node_idx, copy_id) → recovered
+    // exon span (a real secondary's exon at the STARVED copy's own coordinates).
+    let mut transferred: DetHashMap<(usize, usize), (u64, u64)> = DetHashMap::default();
+    for &(ni, c, sp) in &amendment.transferred_coords {
+        transferred.insert((ni, c), sp);
+    }
     let mut paths: Vec<FamilyPath> = Vec::new();
     for copy in 0..n_copies {
         let mut nodes_of_copy: Vec<usize> = (0..fg.nodes.len())
@@ -199,6 +245,13 @@ pub fn decompose_family_paths(
             .map(|&i| {
                 let n = &fg.nodes[i];
                 if let Some((_, sp)) = n.per_copy_spans.iter().find(|(c, _)| *c == copy) {
+                    return Some(*sp);
+                }
+                // Homology-transferred coordinate (NEW): the starved copy's OWN exon
+                // span, recovered from its secondaries' consensus and positionally
+                // mapped onto this backbone node. Takes precedence over the >=2-agree
+                // co-located borrow because it carries the copy's TRUE coordinates.
+                if let Some(sp) = transferred.get(&(i, copy)) {
                     return Some(*sp);
                 }
                 if n.per_copy_spans.len() >= 2 {
@@ -277,6 +330,26 @@ pub fn run_layer2(
         links.iter().all(|((a, b), _)| *a < loci.len() && *b < loci.len()),
         "run_layer2: link locus index out of range of loci slice (caller contract)"
     );
+    // Derive a locus's exon SEQUENCES with a starved-copy fallback: prefer the
+    // Layer-1 graph nodes; if the graph is empty (the starved copy whose primaries
+    // cross-mapped away → 0 exon nodes), reconstruct the copy's exon seqs from the
+    // CONSENSUS of its OWN secondaries' coordinates. This keeps the SAME k-mer-
+    // Jaccard threshold — it only sources the starved copy's real exon sequence from
+    // its reads instead of its (empty) graph, so families can still form.
+    let locus_exon_seqs = |locus_idx: usize, g: &GenomeIndex| -> Vec<Vec<u8>> {
+        let l = &loci[locus_idx];
+        let mut seqs = crate::vg::graph_exon_seqs(l.graph, &l.chrom, g);
+        if seqs.is_empty() {
+            let secs = side_index.secondaries_for_locus(locus_idx);
+            let consensus = consensus_exon_chain(&secs);
+            seqs = consensus
+                .iter()
+                .filter_map(|&(s, e)| g.fetch_sequence(&l.chrom, s, e))
+                .collect();
+        }
+        seqs
+    };
+
     let mut similarity: DetHashMap<(usize, usize), f64> = DetHashMap::default();
     if let Some(g) = genome {
         for ((a, b), count) in &links {
@@ -285,8 +358,10 @@ pub fn run_layer2(
             }
             let (la, lb) = (&loci[*a], &loci[*b]);
             if la.chrom == lb.chrom {
-                let sim = crate::vg::exon_kmer_similarity_between_graphs(
-                    la.graph, lb.graph, &la.chrom, g, kmer_len,
+                let sim = crate::vg::exon_kmer_similarity(
+                    &locus_exon_seqs(*a, g),
+                    &locus_exon_seqs(*b, g),
+                    kmer_len,
                 );
                 similarity.insert((*a, *b), sim);
             }
@@ -366,6 +441,19 @@ pub fn run_layer2(
             .cloned().collect();
         let am = amend_family_graph(fg, &secs, &copy_of_locus);
         let paths = decompose_family_paths(fg, &am, 1.0);
+        if std::env::var_os("RUSTLE_LAYER2_DEBUG").is_some() {
+            eprintln!(
+                "[layer2-dbg] fam {} fg_nodes={} secs={} transferred={} paths={}",
+                fam.family_id, fg.nodes.len(), secs.len(),
+                am.transferred_coords.len(), paths.len()
+            );
+            for (ni, c, sp) in &am.transferred_coords {
+                eprintln!("[layer2-dbg]   transferred node={ni} copy={c} span={sp:?}");
+            }
+            for p in &paths {
+                eprintln!("[layer2-dbg]   path copy={} flow={} exons={:?}", p.copy_id, p.flow, p.exons);
+            }
+        }
         for p in paths {
             let chrom = loci[fam.bundle_indices[0]].chrom.clone();
             let strand = loci[fam.bundle_indices[0]].strand;
@@ -506,6 +594,20 @@ fn positional_mapping(
         }
     }
     if native_at_rank.is_empty() {
+        // No native anchor. Only one case is unambiguous: the consensus spans the
+        // WHOLE backbone (exact length match). Then co-linear order pins the frame
+        // with no anchor needed — consensus exon `i` → `order[i]` at the STARVED
+        // copy's OWN consensus coordinate (never the well copy's backbone span).
+        // Any other length mismatch leaves the frame ambiguous → refuse.
+        if consensus.len() == fg.nodes.len() {
+            let mut out: Vec<(usize, (u64, u64))> = consensus
+                .iter()
+                .enumerate()
+                .map(|(ci, &cons)| (order[ci], cons))
+                .collect();
+            out.sort_by_key(|&(node_idx, _)| node_idx);
+            return out;
+        }
         return Vec::new(); // C5: refuse to guess the frame.
     }
 
@@ -648,6 +750,7 @@ mod tests {
         let am = GraphAmendment {
             edges: Vec::new(),
             copy_membership: vec![(1, 2)], // amendment puts copy 2 onto diagnostic node M
+            ..Default::default()
         };
         let paths = decompose_family_paths(&fg, &am, 0.0);
         assert!(
@@ -879,16 +982,47 @@ mod tests {
     }
 
     #[test]
-    fn positional_no_anchor_returns_empty() {
-        // Starved copy (1) has zero per_copy_spans entries anywhere.
+    fn positional_no_anchor_partial_consensus_returns_empty() {
+        // Starved copy (1) has zero per_copy_spans entries anywhere AND the consensus
+        // does NOT span the whole backbone (2 exons vs 4 nodes) → frame unpinnable.
+        // (The exact-length, whole-backbone case is covered by the anchor-free test;
+        // a length mismatch with no anchor stays ambiguous → empty, never guess.)
+        let fg = mk_backbone(
+            &[(100, 160), (300, 360), (500, 560), (700, 760)],
+            &[
+                vec![(0, (100, 160))],
+                vec![(0, (300, 360))],
+                vec![(0, (500, 560))],
+                vec![(0, (700, 760))],
+            ],
+        );
+        let consensus = [(30000, 30060), (30300, 30360)];
+        assert!(
+            positional_mapping(&fg, 1, &consensus).is_empty(),
+            "no native anchor + partial-span consensus → frame unpinnable → empty (never guess)"
+        );
+    }
+
+    #[test]
+    fn positional_anchor_free_full_span_maps_starved_coords() {
+        // Starved copy (1) has ZERO native per_copy_spans entries anywhere, but the
+        // consensus spans the WHOLE backbone (len 3 == 3 nodes). Co-linear order pins
+        // the frame with no anchor needed: consensus exon i → order[i], at the STARVED
+        // copy's OWN 30k coords (NOT the well copy's backbone coords).
         let fg = mk_backbone(
             &[(100, 160), (300, 360), (500, 560)],
             &[vec![(0, (100, 160))], vec![(0, (300, 360))], vec![(0, (500, 560))]],
         );
         let consensus = [(30000, 30060), (30300, 30360), (30600, 30660)];
-        assert!(
-            positional_mapping(&fg, 1, &consensus).is_empty(),
-            "no native anchor → frame unpinnable → empty (never guess)"
+        let got = positional_mapping(&fg, 1, &consensus);
+        assert_eq!(
+            got,
+            vec![
+                (0, (30000, 30060)),
+                (1, (30300, 30360)),
+                (2, (30600, 30660)),
+            ],
+            "anchor-free full-span map yields the STARVED copy's own coords, not the well copy's"
         );
     }
 

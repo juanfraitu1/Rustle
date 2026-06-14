@@ -641,6 +641,22 @@ pub fn exon_kmer_similarity(exons_a: &[Vec<u8>], exons_b: &[Vec<u8>], k: usize) 
     if union == 0.0 { 0.0 } else { inter / union }
 }
 
+/// Extract a Layer-1 splice graph's exon SEQUENCES, fetched genome-forward from
+/// each real exon-node span (skipping source/sink/zero-length nodes). Reusable
+/// node→seq extraction shared by `exon_kmer_similarity_between_graphs` and the
+/// Layer-2 starved-copy similarity fallback.
+pub fn graph_exon_seqs(
+    g: &crate::graph::Graph,
+    chrom: &str,
+    genome: &crate::genome::GenomeIndex,
+) -> Vec<Vec<u8>> {
+    g.nodes
+        .iter()
+        .filter(|n| n.node_id != g.source_id && n.node_id != g.sink_id && n.end > n.start)
+        .filter_map(|n| genome.fetch_sequence(chrom, n.start, n.end))
+        .collect()
+}
+
 /// Exon-only k-mer Jaccard between two Layer-1 splice graphs. Exon sequences are
 /// fetched genome-forward from each graph's exon-node spans; canonical hashing in
 /// `exon_kmer_similarity` makes the metric strand-agnostic.
@@ -651,14 +667,11 @@ pub fn exon_kmer_similarity_between_graphs(
     genome: &crate::genome::GenomeIndex,
     k: usize,
 ) -> f64 {
-    let exons_of = |g: &crate::graph::Graph| -> Vec<Vec<u8>> {
-        g.nodes
-            .iter()
-            .filter(|n| n.node_id != g.source_id && n.node_id != g.sink_id && n.end > n.start)
-            .filter_map(|n| genome.fetch_sequence(chrom, n.start, n.end))
-            .collect()
-    };
-    exon_kmer_similarity(&exons_of(g_a), &exons_of(g_b), k)
+    exon_kmer_similarity(
+        &graph_exon_seqs(g_a, chrom, genome),
+        &graph_exon_seqs(g_b, chrom, genome),
+        k,
+    )
 }
 
 /// Compute the mean pairwise k-mer Jaccard over the family graph's per-copy
