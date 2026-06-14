@@ -1047,10 +1047,33 @@ pub fn emit_family_isoforms(
         // Fallback for a recipient with no secondaries — borrows nothing donor- or
         // recipient-specific, so hoist it once instead of rebuilding it per recipient.
         let empty: Vec<&crate::vg_family::secondary_index::SecondaryAlignment> = Vec::new();
+        // RUSTLE_LAYER2_DEBUG funnel: pinpoints WHERE transfers die (donor chains →
+        // exact backbone-match of donor exons → map success → recipient verify). On
+        // dispersed real paralogs the exact `sp == dex` match in map_isoform_across_copies
+        // is the suspected bottleneck; this counts it directly.
+        let dbg = std::env::var_os("RUSTLE_LAYER2_DEBUG").is_some();
+        let (mut n_chains, mut n_chain_unmatched, mut n_map_attempt, mut n_map_ok, mut n_verify_ok) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
         for &donor in &copies {
             let donor_secs = &secondaries_by_copy[&donor];
             // The donor's REAL isoforms (only chains a molecule traversed >= k times).
             let donor_chains = enumerate_secondary_chains(donor_secs, k);
+            if dbg {
+                n_chains += donor_chains.len();
+                // Recipient-independent probe: does EVERY donor exon of each chain have
+                // an EXACT backbone node (donor per_copy_spans sp == dex)? If not, map
+                // returns empty for ALL recipients (the exact-match hypothesis).
+                for (donor_exons, _c, _s) in &donor_chains {
+                    let all_matched = donor_exons.iter().all(|&dex| {
+                        fg.nodes.iter().any(|n| {
+                            n.per_copy_spans.iter().any(|&(c, sp)| c == donor && sp == dex)
+                        })
+                    });
+                    if !all_matched {
+                        n_chain_unmatched += 1;
+                    }
+                }
+            }
             for &recipient in &copies {
                 if recipient == donor {
                     continue;
@@ -1059,6 +1082,9 @@ pub fn emit_family_isoforms(
                 // can still pass via fg.edges, but never via the donor's reads).
                 let recip_secs = secondaries_by_copy.get(&recipient).unwrap_or(&empty);
                 for (donor_exons, _donor_chain, _support) in &donor_chains {
+                    if dbg {
+                        n_map_attempt += 1;
+                    }
                     // Map donor's isoform onto the recipient's OWN coordinates.
                     let recip_exons = map_isoform_across_copies(fg, donor, donor_exons, recipient);
                     if recip_exons.is_empty() {
@@ -1067,9 +1093,15 @@ pub fn emit_family_isoforms(
                     if recip_exons.len() < 2 {
                         continue; // single-exon → nothing to verify / transfer
                     }
+                    if dbg {
+                        n_map_ok += 1;
+                    }
                     // GATE: the recipient must have its OWN per-junction evidence.
                     if !verify_recipient_support(fg, recipient, &recip_exons, recip_secs, k) {
                         continue;
+                    }
+                    if dbg {
+                        n_verify_ok += 1;
                     }
                     // Conservative simplification: the isoform is RECOVERED (verified
                     // to >= k support), not flow-quantified — record the verified
@@ -1093,6 +1125,12 @@ pub fn emit_family_isoforms(
                     });
                 }
             }
+        }
+        if dbg {
+            eprintln!(
+                "[layer2-dbg] Part B funnel fam={}: donor_chains={} chains_with_unmatched_donor_exon={} map_attempts={} map_ok={} verify_ok(emitted)={}",
+                fg.family_id, n_chains, n_chain_unmatched, n_map_attempt, n_map_ok, n_verify_ok
+            );
         }
     }
 
