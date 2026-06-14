@@ -224,4 +224,60 @@ else
   echo "  SKIP: genome $GGO_GENOME absent (set GGO_GENOME to enable)"
 fi
 
+# (9) PSV-linkage: recovers a copy-specific isoform resolvable only via linked PSV.
+# Two near-identical 3-exon paralog copies (copy A chrSIM_PSVLINK:10001-12000, copy B
+# 30001-32000). Copy A expresses an exon-SKIP isoform (exon1+exon3, missing exon2);
+# copy B is full-only. The skip junction is coordinate-AMBIGUOUS between the copies (they
+# share intron/exon structure) — nothing in the splice graph says which copy a 2-exon
+# (exon1+exon3) chain belongs to. The ONLY positive evidence is WITHIN each skip read:
+# it carries >=3 copy-A PSV alleles AND spans the skip junction, so PSV->junction linkage
+# assigns that isoform to copy A. The (C) PSV-linkage channel emits it tagged
+# copy_status "novel" + family_id. We isolate the (C) channel from Part A's multi-isoform
+# discovery with RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM=1 (exported for BOTH OFF and ON), so
+# ONLY the PSV channel can emit the recovered copy. Assert: the PSV-linkage novel
+# copy-A-skip isoform is ABSENT without --vg-layer2-psv-linkage and PRESENT with it;
+# no cross-copy chimera; additive (on ⊇ off).
+echo "== (9) PSV-linkage: recovers a copy-specific isoform resolvable only via linked PSV =="
+PSV_BAM=${PSV_BAM:-bench/fixtures/sim_psvlink.bam}; PSV_FA=${PSV_FA:-bench/fixtures/sim_psvlink.fa}
+if [ -f "$PSV_BAM" ] && [ -f "$PSV_FA" ]; then
+  # OFF/ON BOTH isolate the (C) channel via RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM=1.
+  RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM=1 "$BIN" -L "$PSV_BAM" --vg --vg-layer2 \
+    --genome-fasta "$PSV_FA" -o /tmp/layer2/psvlink_off.gtf 2>/dev/null
+  RUSTLE_VG_LAYER2_NO_MULTI_ISOFORM=1 "$BIN" -L "$PSV_BAM" --vg --vg-layer2 --vg-layer2-psv-linkage \
+    --genome-fasta "$PSV_FA" -o /tmp/layer2/psvlink_on.gtf 2>/dev/null
+  # The recovered copy-A skip isoform is the PSV-linkage product: a copy_status "novel"
+  # transcript inside copy A's region (start<12000). A base-flow 2-exon skip already
+  # exists OFF, so a generic 2-exon count is NOT specific — we key on the "novel"
+  # PSV-linkage tag, which only the (C) channel emits.
+  poff=$(awk -F'\t' '$3=="transcript" && $4<12000 && /copy_status "novel"/' /tmp/layer2/psvlink_off.gtf | wc -l)
+  pon=$(awk -F'\t'  '$3=="transcript" && $4<12000 && /copy_status "novel"/' /tmp/layer2/psvlink_on.gtf  | wc -l)
+  echo "  copy-A PSV-linkage novel isoforms (region<12000): off=$poff on=$pon"
+  # (i) PSV-linkage gate: ABSENT off (no copy-specific novel isoform without the channel),
+  #     PRESENT on (the linked-PSV evidence recovers exactly the copy-A skip).
+  if [ "$poff" -eq 0 ] && [ "$pon" -ge 1 ]; then
+    echo "  OK: PSV-linkage recovered the copy-A skip isoform (off=0 → on=$pon novel)"
+  else
+    echo "  FAIL: PSV-linkage recovery wrong (off=$poff must be 0, on=$pon must be >=1)"
+    exit 1
+  fi
+  # (ii) no cross-copy chimera: copy A sits at 10001-12000, copy B at 30001-32000 (~18kb
+  #      apart). No transcript may span BOTH copies (start<12000 AND end>30000).
+  chim=$(awk -F'\t' '$3=="transcript" && $4<12000 && $5>30000' /tmp/layer2/psvlink_on.gtf | wc -l)
+  if [ "$chim" -eq 0 ]; then
+    echo "  OK: no cross-copy chimera (no transcript spans both copies)"
+  else
+    echo "  FAIL: $chim cross-copy chimera transcript(s) span both copies (start<12000 AND end>30000)"
+    exit 1
+  fi
+  # (iii) additive: on ⊇ off (the PSV channel may ADD the copy-A skip; it must never drop).
+  if python3 "$SUPERSET" /tmp/layer2/psvlink_on.gtf /tmp/layer2/psvlink_off.gtf >/dev/null; then
+    echo "  OK: PSV-linkage on ⊇ off (additive; no chain dropped)"
+  else
+    echo "  FAIL: --vg-layer2-psv-linkage DROPPED a chain present without it (not additive)"
+    exit 1
+  fi
+else
+  echo "  SKIP: $PSV_BAM / $PSV_FA not present"
+fi
+
 echo "ALL INVARIANTS PASS: VG Layer-2 is additive (⊇ VG default) AND ⊇ baseline (M-FLOOR floor holds) on chr19 + chrY."
