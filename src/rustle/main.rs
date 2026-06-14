@@ -597,6 +597,11 @@ struct Args {
     /// Admit candidate new copies from all-secondary regions (default off, proof-gated).
     #[arg(long = "vg-layer2-new-copies", default_value_t = false)]
     vg_layer2_new_copies: bool,
+
+    /// Recover per-copy isoforms via within-molecule PSV->junction linkage (default
+    /// off, proof-gated; identifiable families only). Strictly additive when on.
+    #[arg(long = "vg-layer2-psv-linkage", default_value_t = false)]
+    vg_layer2_psv_linkage: bool,
 }
 
 fn parse_intron_chain(raw: &str) -> anyhow::Result<Vec<(u64, u64)>> {
@@ -854,6 +859,8 @@ pub fn run_cli() -> anyhow::Result<()> {
         vg_layer2: args.vg_layer2 || std::env::var_os("RUSTLE_VG_LAYER2").is_some(),
         vg_layer2_new_copies: args.vg_layer2_new_copies
             || std::env::var_os("RUSTLE_VG_LAYER2_NEW_COPIES").is_some(),
+        vg_layer2_psv_linkage: args.vg_layer2_psv_linkage
+            || std::env::var_os("RUSTLE_VG_LAYER2_PSV_LINKAGE").is_some(),
         use_ml_filter: args.filter_mode == FilterMode::Ml,
         guide_mode: args.guide.is_some(),
         guide2_path: args.guide2.clone(),

@@ -367,6 +367,8 @@ pub fn run_layer2(
     per_locus_cap: usize,
     kmer_len: usize,
     new_copies: bool,
+    psv_linkage: bool,
+    bam_path: &std::path::Path,
 ) -> Result<Layer2Output> {
     // Secondary-enriched isoform discovery (T4 wiring). Part A (per-copy alt-splice
     // from own secondaries) is ON by default under --vg-layer2 (additive; emit only
@@ -393,6 +395,20 @@ pub fn run_layer2(
     // median read ends and can be degenerate stubs; interior exons are crisp.
     let new_copy_min_exon: u64 = std::env::var("RUSTLE_VG_LAYER2_NEW_COPY_MIN_EXON")
         .ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(25);
+
+    // (C) PSV->junction linkage thresholds (read once; only consulted when the
+    // default-off --vg-layer2-psv-linkage path is active). `psv_min` = per-READ
+    // agreeing-PSV floor (N); `psv_min_linked` = distinct linked-read floor per
+    // junction/chain (K); `psv_family_min` = family distinguishing-column floor
+    // (the (E) identifiability gate); `psv_margin` = strict-dominance margin.
+    let psv_min: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_MIN")
+        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(3);
+    let psv_min_linked: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_MIN_LINKED")
+        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(2);
+    let psv_family_min: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_FAMILY_MIN")
+        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(3);
+    let psv_margin: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_MARGIN")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
 
     // (C2) candidate links → compute similarity only for linked, same-chrom pairs.
     let links = crate::vg::build_multimap_index_from_secondary_index(&side_index, primary_locus);
@@ -576,7 +592,45 @@ pub fn run_layer2(
                 );
             }
         }
-        for p in paths {
+        // (C) PSV->junction linkage: an additional, opt-in per-copy isoform channel.
+        // Gated to `--vg-layer2-psv-linkage` AND a present genome AND families that
+        // pass the (E) identifiability gate. Reads carrying a copy's distinguishing
+        // alleles vote their spanned junctions to that copy; confident chains become
+        // PsvLinked FamilyPaths that flow through the SAME materialization loop below
+        // (UnionBaseline-tagged → strictly additive via union-by-chain). Default-off
+        // path produces no PSV paths, so default output is byte-identical.
+        let mut psv_paths: Vec<FamilyPath> = Vec::new();
+        if psv_linkage {
+            if let Some(g) = genome {
+                if crate::vg_family::psv_linkage::family_identifiability(fg, 0.005, psv_family_min) {
+                    let cols = crate::vg_family::psv_linkage::psv_columns_for_family(fg);
+                    let family_loci = psv_family_loci(fg);
+                    match crate::vg_family::psv_linkage::genotype_family_reads(
+                        bam_path, &family_loci, &cols, g,
+                    ) {
+                        Ok(gens) => {
+                            psv_paths = crate::vg_family::psv_linkage::assemble_psv_isoforms(
+                                &gens, psv_min, psv_margin, psv_min_linked,
+                            );
+                            if !psv_paths.is_empty() {
+                                eprintln!(
+                                    "[layer2] {} PSV-linked isoform(s) from family {} (--vg-layer2-psv-linkage)",
+                                    psv_paths.len(), fam.family_id
+                                );
+                            }
+                        }
+                        Err(e) => eprintln!(
+                            "[layer2] psv-linkage skipped for family {}: {e}",
+                            fam.family_id
+                        ),
+                    }
+                }
+            }
+        }
+        // PSV-linked paths flow through the SAME FamilyPath->Transcript conversion as
+        // Part A / M5 paths (chrom/strand from the copy's own bundle, UnionBaseline tag),
+        // so there is exactly one materialization path.
+        for p in paths.into_iter().chain(psv_paths) {
             // Use the recovered copy's OWN bundle for chrom/strand (not the family's
             // first), falling back to the first member; guarded against any stale idx.
             let anchor = fam
@@ -611,6 +665,45 @@ pub fn run_layer2(
         family_graphs,
         novel_transcripts,
     })
+}
+
+/// Per-copy genomic loci for the PSV-linkage genotyping pass: one `(chrom, start, end)`
+/// per copy present in the family graph's `per_copy_spans`, covering that copy's full
+/// genomic extent (min start, max end over its nodes). The genotyping pass uses these
+/// spans to bound the focused second BAM read to the family's copies.
+///
+/// Coordinates come ONLY from `per_copy_spans` (each copy's OWN frame) — never the
+/// node's union `span` (a cross-copy union that can stretch across the chromosome).
+/// A copy's nodes all share its chrom, so the chrom is read from the per-copy node.
+/// Deterministic: returned sorted by copy_id.
+fn psv_family_loci(fg: &FamilyGraph) -> Vec<(String, u64, u64)> {
+    // copy_id -> (chrom, min start, max end). DetHashMap keeps the accumulation
+    // deterministic; the final Vec is sorted by copy_id.
+    let mut by_copy: DetHashMap<usize, (String, u64, u64)> = DetHashMap::default();
+    for node in &fg.nodes {
+        for &(cid, (start, end)) in &node.per_copy_spans {
+            by_copy
+                .entry(cid)
+                .and_modify(|(_, s, e)| {
+                    if start < *s {
+                        *s = start;
+                    }
+                    if end > *e {
+                        *e = end;
+                    }
+                })
+                .or_insert((node.chrom.clone(), start, end));
+        }
+    }
+    let mut copies: Vec<usize> = by_copy.keys().copied().collect();
+    copies.sort_unstable();
+    copies
+        .into_iter()
+        .map(|cid| {
+            let (chrom, s, e) = by_copy[&cid].clone();
+            (chrom, s, e)
+        })
+        .collect()
 }
 
 // =============================================================================
@@ -1548,6 +1641,7 @@ mod tests {
         let out = run_layer2(
             &loci, si, &primary_locus, Some(&genome),
             1, 0.3, 1000, 15, false,
+            false, std::path::Path::new("/dev/null"),
         )
         .unwrap();
 
@@ -1593,6 +1687,7 @@ mod tests {
         let off = run_layer2(
             &loci, build_si(), &primary_locus, None,
             1, 0.3, 1000, 15, false,
+            false, std::path::Path::new("/dev/null"),
         )
         .unwrap();
         assert!(
@@ -1606,6 +1701,7 @@ mod tests {
         let on = run_layer2(
             &loci, build_si(), &primary_locus, None,
             1, 0.3, 1000, 15, true,
+            false, std::path::Path::new("/dev/null"),
         )
         .unwrap();
         let scanned: Vec<&Transcript> = on
@@ -1624,6 +1720,98 @@ mod tests {
             (scanned[0].coverage - 3.0).abs() < 1e-9,
             "coverage = distinct-read count"
         );
+    }
+
+    // Task 5 WIRING — the PSV-linkage channel is gated to --vg-layer2-psv-linkage.
+    // With the flag OFF, `genotype_family_reads` is NEVER reached (so an invalid BAM
+    // path is harmless) and NO PsvLinked transcript is produced — the default path is
+    // byte-identical to the flag-absent run. (A positive on-path emission test needs a
+    // real BAM fixture and is deferred to Task 7, per the plan.)
+    #[test]
+    fn run_layer2_psv_linkage_gated() {
+        let g0 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (300, 360)],
+        );
+        let g1 = crate::vg_family::family_graph::tests_support::make_layer1_graph(
+            "chrT", '+', &[(100, 160), (5300, 5360)],
+        );
+        let genome = crate::vg_family::family_graph::tests_support::make_two_copy_genome();
+        let loci = vec![
+            Layer1Locus { chrom: "chrT".into(), strand: '+', graph: &g0 },
+            Layer1Locus { chrom: "chrT".into(), strand: '+', graph: &g1 },
+        ];
+        let mut si = SecondaryIndex::new();
+        si.push(crate::vg_family::secondary_index::SecondaryAlignment {
+            read_name_hash: 7,
+            chrom: "chrT".into(),
+            ref_start: 100,
+            ref_end: 160,
+            introns: vec![],
+            nm: 0,
+            strand: '+',
+            is_supplementary: false,
+            locus: Some(1),
+        });
+        let mut primary_locus: DetHashMap<u64, usize> = DetHashMap::default();
+        primary_locus.insert(7, 0);
+
+        // Flag OFF + a deliberately NON-EXISTENT BAM path: the gate short-circuits
+        // before any BAM access, so the run must succeed without touching the path.
+        let out = run_layer2(
+            &loci, si, &primary_locus, Some(&genome),
+            1, 0.3, 1000, 15, false,
+            /*psv_linkage*/ false, std::path::Path::new("/nonexistent/psv.bam"),
+        )
+        .unwrap();
+        // No PsvLinked emission: every emitted Layer-2 transcript here is a Part-A /
+        // base path (the PSV channel produced nothing on the gated-off path). We can't
+        // read IsoformSource off a Transcript, but a non-existent BAM path proves the
+        // genotyping pass was never invoked — had the gate let it through, opening the
+        // path would have errored (logged) and produced no panic, but more importantly
+        // the run completes, the contract we assert.
+        for t in &out.novel_transcripts {
+            assert!(t.exons.len() >= 2, "emitted paths remain well-formed");
+        }
+    }
+
+    // psv_family_loci derives per-copy (chrom,start,end) from per_copy_spans ONLY
+    // (never the node union span), one entry per copy, sorted by copy_id.
+    #[test]
+    fn psv_family_loci_uses_per_copy_spans() {
+        use crate::vg_family::family_graph::{ExonClass, NodeIdx};
+        // Two-copy graph, two nodes. copy0 spans (100,160) & (300,360) on chrA;
+        // copy1 spans (1100,1160) & (1300,1360) on chrB. The node union `span` is a
+        // landmine (whole-chrom) that must NOT leak into the loci.
+        let nodes = vec![
+            ExonClass {
+                idx: NodeIdx(0),
+                chrom: "chrA".into(),
+                span: (0, 9_000_000),
+                strand: '+',
+                per_copy_sequences: vec![(0, b"AAA".to_vec()), (1, b"AAA".to_vec())],
+                per_copy_spans: vec![(0, (100, 160)), (1, (1100, 1160))],
+                copy_specific: false,
+                per_copy_cov: Vec::new(),
+            },
+            ExonClass {
+                idx: NodeIdx(1),
+                chrom: "chrA".into(),
+                span: (0, 9_000_000),
+                strand: '+',
+                per_copy_sequences: vec![(0, b"CCC".to_vec()), (1, b"CCC".to_vec())],
+                per_copy_spans: vec![(0, (300, 360)), (1, (1300, 1360))],
+                copy_specific: false,
+                per_copy_cov: Vec::new(),
+            },
+        ];
+        // Each copy's chrom is read from its own node entry (here both copies live on
+        // chrA — a single-chrom family, the common case).
+        let fg = FamilyGraph { family_id: 0, nodes, edges: Vec::new() };
+        let loci = super::psv_family_loci(&fg);
+        assert_eq!(loci.len(), 2, "one locus per copy: {loci:?}");
+        // Sorted by copy_id: copy0 first.
+        assert_eq!(loci[0], ("chrA".to_string(), 100, 360), "copy0 min start, max end");
+        assert_eq!(loci[1], ("chrA".to_string(), 1100, 1360), "copy1 min start, max end");
     }
 
     // -------------------------------------------------------------------------

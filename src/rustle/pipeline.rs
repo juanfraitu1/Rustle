@@ -17807,6 +17807,7 @@ pub fn run<P: AsRef<Path>>(
                 config.vg_min_shared_reads as u32,
                 config.family_exon_similarity,
                 2000, 15, config.vg_layer2_new_copies,
+                config.vg_layer2_psv_linkage, bam_path.as_ref(),
             ) {
                 Ok(out) => {
                     if !out.novel_transcripts.is_empty() {

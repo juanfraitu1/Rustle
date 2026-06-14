@@ -1044,6 +1044,10 @@ pub struct RunConfig {
     /// C5 — admit candidate NEW copies from all-secondary regions. Default OFF
     /// (`--vg-layer2-new-copies` / `RUSTLE_VG_LAYER2_NEW_COPIES`) until validated.
     pub vg_layer2_new_copies: bool,
+    /// Layer-2 "C" — recover per-copy isoforms via within-molecule PSV->junction
+    /// linkage. Default OFF (`--vg-layer2-psv-linkage` /
+    /// `RUSTLE_VG_LAYER2_PSV_LINKAGE`); strictly additive when on.
+    pub vg_layer2_psv_linkage: bool,
 }
 
 impl RunConfig {
@@ -1300,6 +1304,7 @@ impl Default for RunConfig {
             vg_family_min_poa_identity: 0.0,   // opt-in; requires --genome-fasta
             vg_layer2: false,
             vg_layer2_new_copies: false,
+            vg_layer2_psv_linkage: false,
         }
     }
 }
@@ -1324,6 +1329,7 @@ mod layer2_config_tests {
         let c = RunConfig::default();
         assert!(!c.vg_layer2, "Layer 2 is OFF by default during development");
         assert!(!c.vg_layer2_new_copies, "all-secondary new copies OFF by default");
+        assert!(!c.vg_layer2_psv_linkage, "PSV-linkage OFF by default");
         // family_exon_similarity already exists (the advisor's merge threshold);
         // its default is family_merge_jaccard(), NOT a Layer-2-specific constant.
         assert!(
