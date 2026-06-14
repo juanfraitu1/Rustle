@@ -56,7 +56,41 @@ NC_073224.2 at 110 s for 481k reads).
   annotation contains far more loci than any single dataset expresses; the meaningful
   comparison is the **cross-tool delta** on the identical reference (denominator cancels).
 - **Attribution:** the 419 VG-only transcripts combine *both* rustle's assembler beating
-  StringTie *and* the VG secondary-alignment layer. To isolate the VG layer's own
-  contribution, see the 4-way attribution (`bench/gw_attribution.sh` + `bench/gw_attribute.py`),
-  which adds a rustle guided-baseline (no `--vg`) per chromosome and splits the 419 into
-  "assembler" vs "VG-layer" recoveries.
+  StringTie *and* the VG secondary-alignment layer. The 4-way attribution
+  (`bench/gw_attribution.sh` + `bench/gw_attribute.py`) adds a rustle guided-baseline
+  (no `--vg`) per chromosome and splits the 419 — see below.
+
+## 4-way attribution (isolating the VG layer's own contribution)
+
+Adds rustle **guided-baseline** (`rustle -G st.gtf`, NO `--vg`) per chromosome, then splits the
+419 strict (`=`/`c`) VG-only-vs-StringTie recoveries by whether the guided baseline already
+finds them. Run after the three-way:
+
+```
+bash bench/gw_attribution.sh   # ~9 min, writes /tmp/gw/gd_*.gtf + gc_gd_*
+python3 bench/gw_attribute.py   # prints the split below
+```
+
+Genome-wide (strict `=`/`c`, unique NCBI ref transcripts):
+
+| Output                                   | NCBI-matched |
+|------------------------------------------|--------------|
+| StringTie                                | 25,148       |
+| rustle guided-baseline (no `--vg`)       | 25,505       |
+| rustle-VG (`--vg --vg-layer2`)           | 25,567       |
+
+Splitting the **419** VG-only-vs-StringTie net-new recoveries:
+
+| Source | count | meaning |
+|--------|-------|---------|
+| **assembler** | **357 (85 %)** | also found by the guided baseline — rustle's *assembler* beats StringTie; the VG layer was not needed |
+| **VG-layer**  | **62 (15 %)**  | found **only** with `--vg --vg-layer2` — the secondary-alignment mechanism's own contribution |
+
+So genome-wide, most of rustle-VG's advantage over StringTie is **rustle's base assembler**
+(357 net-new), and the **VG secondary-alignment layer adds 62** NCBI-corroborated transcripts
+that *both* StringTie *and* rustle's own assembler miss — across **54 genes, enriched in
+paralog / multi-copy families** (LOC134756437 ×3; LOC101146541, LOC129527020/24, and other LOC
+paralog families ×2), concentrated on chr1 (14), the X chromosome (8), and other read-dense
+chromosomes. This is the VG mechanism's defensible genome-wide contribution; it is modest in
+absolute count but real, strictly additive (0 regressions), and lands where the mechanism is
+designed to help. Full lists: `/tmp/gw/vglayer_genes.tsv`, `/tmp/gw/assembler_genes.tsv`.
