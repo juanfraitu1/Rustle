@@ -95,6 +95,40 @@ chromosomes. This is the VG mechanism's defensible genome-wide contribution; it 
 absolute count but real, strictly additive (0 regressions), and lands where the mechanism is
 designed to help. Full lists: `/tmp/gw/vglayer_genes.tsv`, `/tmp/gw/assembler_genes.tsv`.
 
+## Intron-chain (multi-exon) recompute + baseline-parity finding
+
+The transcript-level `=`/`c` counts above include single-exon transcripts, which is where
+rustle is *permissive* and the headline is weakest. Re-cut at **intron-chain level** (multi-exon
+only — the rigorous gffcompare metric):
+
+**Genome-wide intron-chain Sn/Pr vs NCBI** (from the per-chrom gffcompare stats):
+
+| Tool | matching intron-chains | Sn | Pr |
+|------|------------------------|------|------|
+| StringTie | 23,304 | 24.39 % | 34.58 % |
+| rustle-VG | 23,438 | 24.52 % | 34.27 % |
+
+Near-identical genome-wide. **Multi-exon decomposition of the net-new recoveries:**
+- Assembler net-new (357 transcript-level): **113 are multi-exon** (244 = 68 % single-exon —
+  the permissiveness-driven part, the weak headline).
+- VG-layer (62 transcript-level): **62 = 100 % multi-exon, intron-chain-corroborated.** The
+  *entire* `--vg-layer2` secondary-alignment contribution is multi-exon real-structure recovery,
+  no single-exon inflation — the pushback-resistant headline.
+
+**Baseline-parity finding (de-novo rustle vs StringTie, no flags — the "baseline must equal
+StringTie" question).** On chrY / chr19 / chr1, rustle de-novo already reproduces **92.8–95.6 %
+of StringTie's intron chains** (Pr 84–90 %). The ~5–7 % divergence (1,384 rustle-only chains over
+the 3 chroms) is **83 % NCBI-corroborated** (real annotated transcripts StringTie misses, not FPs).
+**It is architectural, not threshold-gateable:** rustle's scalar thresholds already match StringTie's
+`-L` defaults (`-c -f -j -m -a -g`); the only difference is `-s` (single-exon), where rustle is
+*stricter* (4.75 vs 1.5) — matching StringTie there *explodes* single-exon output (wrong direction).
+The only knob that shrinks the divergence (strict junction acceptance) removes just 17 % of it while
+destroying ~5× as many *shared* real chains. So the divergence is the documented strict-early /
+lean-downstream architecture (the inverse of StringTie), not a tunable — and it is mostly *real
+recall*, so suppressing it to match StringTie would discard true positives. Achieving exact
+baseline parity would require an architectural re-port (gating rustle's junction-acceptance and
+downstream-retention behavior), not a threshold flag.
+
 ## PSV-linkage channel (`--vg-layer2-psv-linkage`) — genome-wide result
 
 The PSV→junction linkage channel (`bench/gw_psvlink.sh` + `bench/gw_psvlink_aggregate.py`)
