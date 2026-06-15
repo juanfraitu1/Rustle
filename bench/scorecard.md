@@ -225,3 +225,25 @@ them → net contribution ≈ 0. The mechanism *is* real (in isolation, with Par
 via the linked PSV — harness leg 9, fixture `sim_psvlink`). Its value (precision-safe per-copy
 assignment, no phantoms) would only materialize if it **replaced or filtered** Part A rather
 than augmenting it. Kept **default-off**, like Part B; the engine + `PsvCertificate` are reusable.
+
+## PSV / multimapping — final verdict (2026-06-15): would PSVs beat StringTie? Not meaningfully.
+
+Rigorously tested both PSV routes to beating StringTie. Conclusion: **PSVs are a real, principled
+mechanism but the defensible margin over StringTie is small**; the broad primary-read route is
+alignment noise. Scripts: `bench/psv_sizing/`.
+
+1. **Secondary-driven copy recovery** (`RUSTLE_VG_RECOVER_COPIES`, commit e6a51f7): **+77
+   NCBI-corroborated additive isoforms** over the primary-only/StringTie-level baseline on 2
+   paralog-dense chroms (21 solid `=`/`c`; 56 `j`; **only 3 exact `=`**; 1/27 starved-copy targets
+   cleanly improved). Real but small and mostly partial; exactness is coverage/identifiability-limited.
+
+2. **Primary-read PSV-phasing** (sizing only, not built): sizer flagged 84 loci with PSV-linked
+   structural divergence — but validation collapsed it: 14 already in StringTie, **2 RefSeq-
+   corroborated**, 68 novel. The 68 are **not** cross-mapping artifacts (reads align strictly best
+   at their own locus, 0/69) — but junction-QC of the 89 novel divergent junctions found **88/89
+   non-canonical, 0 credible-real** (canonical + support≥5 + non-RT): they are **systematic paralog
+   alignment artifacts** (spurious non-canonical `N`-gaps), not real splicing. Defensible headroom ≈ **2**.
+
+**Bigger lever for "beat StringTie" is non-PSV:** read-coherence (`--read-chain`) adds **+1,857
+strict-real (FSM/NIC) isoforms** genome-wide over the flow baseline (`bench/readcoherence_finding.md`)
+— ~20× the PSV margin. Pivoting effort there.
