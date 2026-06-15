@@ -123,6 +123,207 @@ pub fn psv_columns_for_family(fg: &FamilyGraph) -> Vec<PsvColumn> {
     columns
 }
 
+/// Reference-anchored PSV columns: the alternative column source that does NOT
+/// depend on >= 2 copies sharing a graph node. Paralog copies at separate
+/// genomic loci almost never share a node (each contributes a private node), so
+/// the node-based [`psv_columns_for_family`] returns 0 and the whole recovery
+/// pass is skipped. This extractor instead aligns the family copies' CONCATENATED
+/// EXON SEQUENCES (pulled from the reference genome) and emits a column wherever
+/// the aligned copies carry >= 2 distinct non-gap bases — finding PSVs even when
+/// the copies live in separate nodes.
+///
+/// Coordinate / strand convention (must match [`genotype_family_reads`]): the
+/// genome stores forward-strand bytes; `genotype_family_reads` reads each copy's
+/// allele via `genome.fetch_sequence(chrom, pos, pos+1)` (a FORWARD base) and
+/// compares it against the read's forward-strand base. A `FamilyGraph` is
+/// single-strand (`build_family_graph` bails on mixed strands) and every copy's
+/// `per_copy_sequences` is stored as FORWARD-genome bytes (family_graph.rs:22),
+/// so homologous exons across copies are already in the same orientation and we
+/// align the FORWARD sequences directly — no reverse-complement. Consequently a
+/// column's `allele` is the forward-strand base read straight from the genome and
+/// `genomic_pos` is the forward genomic coordinate (`copy_exon_start + within-
+/// exon offset`), exactly the frame `genotype_family_reads` looks up. (A future
+/// mixed-strand extension would revcomp the '-' copy for alignment and map the
+/// allele/position back to forward; not needed today.)
+///
+/// Per-copy offset->genomic map: each copy's concatenated exon sequence indexes
+/// its exons in genomic-ascending order (the order `paralog_exon_spans` returns),
+/// so concat-offset `o` maps to `(exon containing o).start + (o - exon_concat_base)`.
+/// Gaps the MSA inserts into a copy's aligned row are skipped when walking that
+/// copy's concat offset (a gap consumes no copy base).
+///
+/// Deterministic: total-order sort mirrors [`psv_columns_for_family`]
+/// ((node_idx, first genomic_pos); per_copy sorted by copy_id). `node_idx` is set
+/// to `usize::MAX` for reference-anchored columns (no single originating node) so
+/// they sort AFTER node-based columns when the two sets are unioned.
+pub fn psv_columns_from_reference(
+    fg: &FamilyGraph,
+    genome: &crate::genome::GenomeIndex,
+) -> Vec<PsvColumn> {
+    // 1. For each copy: concatenate its exon sequences (forward-genome bytes) and
+    //    build a per-offset -> genomic-position map. Skip copies with no spans /
+    //    no fetchable sequence.
+    struct CopySeq {
+        cid: usize,
+        seq: Vec<u8>,
+        // For concat-offset o, off_to_pos[o] = forward genomic coordinate.
+        off_to_pos: Vec<u64>,
+    }
+    let mut copy_seqs: Vec<CopySeq> = Vec::new();
+    for cid in fg.all_copies() {
+        // Determine this copy's chromosome (from any node it contributes to).
+        let chrom = match fg
+            .nodes
+            .iter()
+            .find(|n| n.per_copy_spans.iter().any(|(c, _)| *c == cid))
+        {
+            Some(n) => n.chrom.clone(),
+            None => continue,
+        };
+        let spans = fg.paralog_exon_spans(cid); // genomic-ascending
+        if spans.is_empty() {
+            continue;
+        }
+        let mut seq: Vec<u8> = Vec::new();
+        let mut off_to_pos: Vec<u64> = Vec::new();
+        for (s, e) in spans {
+            match genome.fetch_sequence(&chrom, s, e) {
+                Some(bytes) => {
+                    for (i, b) in bytes.iter().enumerate() {
+                        seq.push(b.to_ascii_uppercase());
+                        off_to_pos.push(s + i as u64);
+                    }
+                }
+                None => {
+                    // A missing exon shifts the frame for the rest of this copy,
+                    // which would misalign concat offsets -> drop the whole copy.
+                    seq.clear();
+                    off_to_pos.clear();
+                    break;
+                }
+            }
+        }
+        if seq.is_empty() {
+            continue;
+        }
+        copy_seqs.push(CopySeq { cid, seq, off_to_pos });
+    }
+
+    // 2. Require >= 2 copies with sequence.
+    if copy_seqs.len() < 2 {
+        return Vec::new();
+    }
+
+    // 3. Align the concatenated copy sequences. poa_msa returns one aligned row
+    //    per input in input order.
+    let seqs: Vec<Vec<u8>> = copy_seqs.iter().map(|c| c.seq.clone()).collect();
+    let rows = match crate::vg_family::family_graph::poa_msa(&seqs) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    if rows.len() != copy_seqs.len() {
+        return Vec::new();
+    }
+
+    // Per-copy walking cursor into its concat offset (advances on a non-gap
+    // alignment cell; a gap consumes no copy base).
+    let n_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let mut cursors: Vec<usize> = vec![0; copy_seqs.len()];
+
+    let mut columns: Vec<PsvColumn> = Vec::new();
+    for col in 0..n_cols {
+        // Bases present at this alignment column, per copy (non-gap only), with
+        // the copy's genomic position captured BEFORE advancing the cursor.
+        let mut present: Vec<(usize, u64, u8)> = Vec::new(); // (cid, genomic_pos, allele)
+        let mut distinct: crate::types::DetHashSet<u8> = crate::types::DetHashSet::default();
+        for (i, cs) in copy_seqs.iter().enumerate() {
+            let cell = rows[i].get(col).copied().unwrap_or(b'-');
+            if cell == b'-' {
+                continue;
+            }
+            // The cell is this copy's next ungapped base; its genomic position is
+            // off_to_pos[cursor]. (cursor must be in range — the row's ungapped
+            // length equals the copy's concat length.)
+            if let Some(&pos) = cs.off_to_pos.get(cursors[i]) {
+                let allele = cell.to_ascii_uppercase();
+                present.push((cs.cid, pos, allele));
+                distinct.insert(allele);
+            }
+            cursors[i] += 1;
+        }
+        // A PSV column needs >= 2 present copies carrying >= 2 distinct bases.
+        if present.len() < 2 || distinct.len() < 2 {
+            continue;
+        }
+        let mut per_copy: Vec<PsvCopyAllele> = present
+            .into_iter()
+            .map(|(cid, genomic_pos, allele)| PsvCopyAllele { copy_id: cid, genomic_pos, allele })
+            .collect();
+        per_copy.sort_by_key(|p| p.copy_id);
+        // node_idx = usize::MAX: reference-anchored columns have no single
+        // originating node; sorting them after node-based columns is harmless
+        // (genotyping treats columns as an unordered set of positions).
+        columns.push(PsvColumn { node_idx: usize::MAX, per_copy });
+    }
+
+    // Total order mirrors psv_columns_for_family: (node_idx, first genomic_pos).
+    columns.sort_by(|a, b| {
+        let a_first = a.per_copy.first().map(|p| p.genomic_pos).unwrap_or(0);
+        let b_first = b.per_copy.first().map(|p| p.genomic_pos).unwrap_or(0);
+        a.node_idx.cmp(&b.node_idx).then(a_first.cmp(&b_first))
+    });
+
+    columns
+}
+
+/// PSV columns for the family, selecting the column SOURCE by the
+/// `RUSTLE_VG_RECOVER_COPIES` gate. Default (gate unset): the node-based
+/// [`psv_columns_for_family`] alone (byte-identical to before this fix). Gate set:
+/// the UNION of node-based + reference-anchored columns — falling back to
+/// reference-anchored when node-based is empty (the separate-locus case this fix
+/// unblocks). The union is deduplicated by the column's per-copy (copy_id,
+/// genomic_pos, allele) signature so a PSV found by BOTH sources is not doubled,
+/// then re-sorted with the shared total order.
+pub fn psv_columns_for_family_gated(
+    fg: &FamilyGraph,
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> Vec<PsvColumn> {
+    let node_based = psv_columns_for_family(fg);
+    if std::env::var_os("RUSTLE_VG_RECOVER_COPIES").is_none() {
+        return node_based;
+    }
+    let Some(g) = genome else {
+        return node_based;
+    };
+    let ref_based = psv_columns_from_reference(fg, g);
+    if node_based.is_empty() {
+        return ref_based;
+    }
+    if ref_based.is_empty() {
+        return node_based;
+    }
+    // Union, deduped by per-copy signature (the genotyping pass keys on positions
+    // + alleles, not node_idx, so two columns with the same per_copy are
+    // genotype-identical). Keep node-based on a tie (its node_idx is meaningful).
+    let mut seen: crate::types::DetHashSet<Vec<(usize, u64, u8)>> =
+        crate::types::DetHashSet::default();
+    let sig = |c: &PsvColumn| -> Vec<(usize, u64, u8)> {
+        c.per_copy.iter().map(|p| (p.copy_id, p.genomic_pos, p.allele)).collect()
+    };
+    let mut out: Vec<PsvColumn> = Vec::with_capacity(node_based.len() + ref_based.len());
+    for c in node_based.into_iter().chain(ref_based.into_iter()) {
+        if seen.insert(sig(&c)) {
+            out.push(c);
+        }
+    }
+    out.sort_by(|a, b| {
+        let a_first = a.per_copy.first().map(|p| p.genomic_pos).unwrap_or(0);
+        let b_first = b.per_copy.first().map(|p| p.genomic_pos).unwrap_or(0);
+        a.node_idx.cmp(&b.node_idx).then(a_first.cmp(&b_first))
+    });
+    out
+}
+
 /// (E) family identifiability gate. A family is identifiable enough to attempt
 /// PSV-linkage iff it has >= `min_psv_columns` distinguishable PSV columns on its
 /// exons. The `error_rate` argument is RESERVED for the coverage-weighted
@@ -139,6 +340,45 @@ pub fn psv_columns_for_family(fg: &FamilyGraph) -> Vec<PsvColumn> {
 pub fn family_identifiability(fg: &FamilyGraph, error_rate: f64, min_psv_columns: usize) -> bool {
     let _ = error_rate; // reserved for the coverage-weighted refinement (documented v1 limitation)
     psv_columns_for_family(fg).len() >= min_psv_columns
+}
+
+/// `family_identifiability` but using the `RUSTLE_VG_RECOVER_COPIES`-gated column
+/// source ([`psv_columns_for_family_gated`]). Default (gate unset, or no genome):
+/// identical to [`family_identifiability`] (node-based count). Gate set + genome
+/// present: counts the union of node-based + reference-anchored columns, so a
+/// family whose copies sit in separate graph nodes can still pass the (E) gate.
+pub fn family_identifiability_gated(
+    fg: &FamilyGraph,
+    genome: Option<&crate::genome::GenomeIndex>,
+    error_rate: f64,
+    min_psv_columns: usize,
+) -> bool {
+    let _ = error_rate; // reserved for the coverage-weighted refinement
+    psv_columns_for_family_gated(fg, genome).len() >= min_psv_columns
+}
+
+/// Compute the gated PSV columns ONCE and return BOTH the columns and the
+/// identifiability boolean (`columns.len() >= min_psv_columns`). Exactly equivalent
+/// to calling [`psv_columns_for_family_gated`] and [`family_identifiability_gated`]
+/// separately, but performs the (expensive) `poa_msa`-backed column computation a
+/// SINGLE time.
+///
+/// Perf: `psv_columns_from_reference` runs a partial-order MSA over each copy's full
+/// concatenated exon sequence — O(L²) and the dominant Layer-2 cost on real paralog
+/// families (a ~30 kb copy can take minutes). `run_layer2` previously recomputed it
+/// 2-3× per family (E-gate, an optional DIAG dump, the genotyping pass); reusing this
+/// one result removes those redundant passes. Pure de-duplication of a deterministic
+/// function → byte-identical output.
+pub fn psv_columns_and_identifiable(
+    fg: &FamilyGraph,
+    genome: Option<&crate::genome::GenomeIndex>,
+    error_rate: f64,
+    min_psv_columns: usize,
+) -> (Vec<PsvColumn>, bool) {
+    let _ = error_rate; // reserved for the coverage-weighted refinement (mirrors *_gated)
+    let cols = psv_columns_for_family_gated(fg, genome);
+    let identifiable = cols.len() >= min_psv_columns;
+    (cols, identifiable)
 }
 
 /// One of a read's alignments, at a specific family copy's locus, expressed IN THAT
@@ -867,6 +1107,146 @@ mod tests {
         // First column = lower copy0 genomic_pos (101 < 104).
         assert_eq!(cols[0].per_copy.iter().find(|p| p.copy_id == 0).unwrap().genomic_pos, 101);
         assert_eq!(cols[1].per_copy.iter().find(|p| p.copy_id == 0).unwrap().genomic_pos, 104);
+    }
+
+    // ── Fix #1: reference-anchored PSV columns (separate-locus copies) ─────
+    //
+    // The node-based extractor only finds PSVs where >= 2 copies SHARE a graph
+    // node. Paralog copies at separate genomic loci almost never share a node
+    // (each contributes a private node), so node-based returns 0 and the whole
+    // recovery pass is skipped. The reference-anchored extractor aligns the
+    // copies' concatenated exon sequences (from the genome) so columns are found
+    // even when copies sit in separate nodes.
+
+    /// Two copies, each its OWN private single-exon node (NO shared node), at
+    /// separate loci on chrPSV. The genome makes their exon sequences differ at
+    /// offsets 1, 3, 5 (>= 3 PSVs). Node-based extraction must return 0; the
+    /// reference-anchored extraction must return the 3 columns.
+    ///
+    /// copy0 exon @ (100,108) reads bytes from chrPSV[100..108],
+    /// copy1 exon @ (500,508) reads bytes from chrPSV[500..508].
+    fn separate_locus_two_copy_fg() -> FamilyGraph {
+        // Build each copy as a private node (copy_specific=true): no node has
+        // two contributors, so the node-based extractor finds 0 columns. The
+        // per_copy_sequences here are intentionally STUBBED (empty) — the
+        // reference-anchored extractor pulls real bytes from the genome, never
+        // from these node fields. We DO need per_copy_spans so paralog_exon_spans
+        // returns the loci.
+        let n0 = ExonClass {
+            idx: NodeIdx(0),
+            chrom: "chrPSV".into(),
+            span: (100, 108),
+            strand: '+',
+            per_copy_sequences: vec![(0, Vec::new())],
+            per_copy_spans: vec![(0, (100, 108))],
+            copy_specific: true,
+            per_copy_cov: Vec::new(),
+        };
+        let n1 = ExonClass {
+            idx: NodeIdx(1),
+            chrom: "chrPSV".into(),
+            span: (500, 508),
+            strand: '+',
+            per_copy_sequences: vec![(1, Vec::new())],
+            per_copy_spans: vec![(1, (500, 508))],
+            copy_specific: true,
+            per_copy_cov: Vec::new(),
+        };
+        FamilyGraph { family_id: 0, nodes: vec![n0, n1], edges: Vec::<JunctionEdge>::new() }
+    }
+
+    /// Tiny genome: chrPSV with copy0's exon (100..108) = "ACGTACGT" and copy1's
+    /// exon (500..508) = "AAGTCCGA" — equal length, differing at offsets 1 (C/A),
+    /// 3 (T/T same), … chosen so copy0 vs copy1 differ at exactly offsets 1, 4, 7.
+    /// Filler elsewhere is 'N'-free constant 'A'.
+    fn make_separate_locus_genome() -> crate::genome::GenomeIndex {
+        use std::io::Write;
+        let dir = Box::leak(Box::new(tempfile::tempdir().unwrap()));
+        let fa = dir.path().join("chrPSV.fa");
+        let len = 700usize;
+        let mut seq = vec![b'A'; len];
+        // copy0 exon @ 100..108
+        seq[100..108].copy_from_slice(b"ACGTACGT");
+        // copy1 exon @ 500..508 — differs from copy0 at offsets 1, 4, 7:
+        //   copy0: A C G T A C G T
+        //   copy1: A A G T C C G A
+        seq[500..508].copy_from_slice(b"AAGTCCGA");
+        let mut f = std::fs::File::create(&fa).unwrap();
+        writeln!(f, ">chrPSV").unwrap();
+        for chunk in seq.chunks(70) {
+            f.write_all(chunk).unwrap();
+            f.write_all(b"\n").unwrap();
+        }
+        drop(f);
+        crate::genome::GenomeIndex::from_fasta(fa.to_str().unwrap()).expect("load test genome")
+    }
+
+    #[test]
+    fn reference_anchored_finds_psvs_when_node_based_finds_none() {
+        let fg = separate_locus_two_copy_fg();
+        // Node-based: each copy is a private node -> 0 multi-copy nodes -> 0 columns.
+        assert_eq!(
+            psv_columns_for_family(&fg).len(),
+            0,
+            "separate-locus copies share no node -> node-based finds 0 PSVs"
+        );
+
+        // Reference-anchored: align the copies' exon sequences from the genome.
+        let genome = make_separate_locus_genome();
+        let cols = psv_columns_from_reference(&fg, &genome);
+        assert!(
+            cols.len() >= 3,
+            "reference-anchored must find >= 3 PSV columns from separate-locus copies: got {} -> {cols:?}",
+            cols.len()
+        );
+
+        // copy0 "ACGTACGT" vs copy1 "AAGTCCGA" differ at offsets 1, 4, 7.
+        // copy0 genomic_pos = 100 + offset; copy1 genomic_pos = 500 + offset.
+        // The alleles are the FORWARD-strand bases (same convention as
+        // genotype_family_reads' genome.fetch_sequence lookup).
+        let expect = [(1u64, b'C', b'A'), (4, b'A', b'C'), (7, b'T', b'A')];
+        for (off, a0, a1) in expect {
+            let found = cols.iter().any(|c| {
+                c.per_copy.iter().any(|p| p.copy_id == 0 && p.genomic_pos == 100 + off && p.allele == a0)
+                    && c.per_copy.iter().any(|p| p.copy_id == 1 && p.genomic_pos == 500 + off && p.allele == a1)
+            });
+            assert!(found, "expected PSV at offset {off}: copy0={} @{} copy1={} @{} in {cols:?}",
+                a0 as char, 100 + off, a1 as char, 500 + off);
+        }
+
+        // Determinism: columns sorted, per_copy sorted by copy_id.
+        let cols2 = psv_columns_from_reference(&fg, &genome);
+        assert_eq!(cols, cols2, "reference-anchored extraction must be deterministic");
+        for c in &cols {
+            assert!(c.per_copy.windows(2).all(|w| w[0].copy_id <= w[1].copy_id),
+                "per_copy sorted by copy_id: {c:?}");
+        }
+    }
+
+    // TDD (perf): the gated PSV-column computation (poa_msa over each copy's full
+    // concatenated exon sequence) is the dominant Layer-2 cost on real paralog
+    // families, and `run_layer2` recomputes it 2-3× per family (E-gate via
+    // `family_identifiability_gated`, an optional DIAG dump, and the genotyping pass).
+    // `psv_columns_and_identifiable` computes it ONCE and returns BOTH the columns and
+    // the identifiability boolean, so the caller reuses one result. It must be exactly
+    // equivalent to calling the two functions separately (no behavior change — pure
+    // de-duplication of a deterministic computation).
+    #[test]
+    fn columns_and_identifiable_matches_separate_calls() {
+        // Node-based path (no env gate needed): a family with 3 node-based PSV columns.
+        // `psv_columns_for_family_gated` falls back to node-based when the gate is off,
+        // so this exercises the same combiner the production code uses, gate-agnostically.
+        let fg = rabl2_like_fg();
+        let cols_ref = psv_columns_for_family_gated(&fg, None);
+        assert_eq!(cols_ref.len(), 3, "fixture has 3 node-based PSV columns: {}", cols_ref.len());
+        for min in [1usize, 3, 4] {
+            let id_ref = family_identifiability_gated(&fg, None, 0.005, min);
+            // The combined function: one computation, both outputs.
+            let (cols, id) = psv_columns_and_identifiable(&fg, None, 0.005, min);
+            assert_eq!(cols, cols_ref, "combined columns must equal the standalone gated columns");
+            assert_eq!(id, id_ref, "combined identifiability must equal the standalone boolean (min={min})");
+            assert_eq!(id, cols.len() >= min, "identifiability is column-count >= min (min={min})");
+        }
     }
 
     // ── Task 3: per-read copy assignment (pure logic, no BAM) ──────────────

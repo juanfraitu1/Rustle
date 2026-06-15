@@ -13,6 +13,195 @@ use crate::vg_family::family_graph::FamilyGraph;
 use crate::vg_family::secondary_index::SecondaryIndex;
 use anyhow::Result;
 
+/// DIAG-only: the target starved-copy span to trace (RUSTLE_DIAG_TARGET).
+/// Defaults to XM_055380753.2 @ NC_073235.2:31684678-31709055; overridable via
+/// RUSTLE_DIAG_TARGET_{CHROM,START,END} so the same instrumentation can be pointed
+/// at a different copy without recompiling.
+fn diag_target_span() -> (String, u64, u64) {
+    let chrom = std::env::var("RUSTLE_DIAG_TARGET_CHROM").unwrap_or_else(|_| "NC_073235.2".to_string());
+    let start = std::env::var("RUSTLE_DIAG_TARGET_START").ok().and_then(|v| v.parse().ok()).unwrap_or(31684678u64);
+    let end = std::env::var("RUSTLE_DIAG_TARGET_END").ok().and_then(|v| v.parse().ok()).unwrap_or(31709055u64);
+    (chrom, start, end)
+}
+
+/// Real exon span of a Layer-1 splice graph (union of non-source/sink nodes).
+/// Source nodes (start=0) and sink nodes (end=u64::MAX) are excluded so the span
+/// reflects the copy's actual exons, not the whole-chromosome placeholder bounds.
+/// Returns `None` if the graph has no exon nodes (e.g. a depleted/empty capture).
+pub fn graph_exon_span(g: &Graph) -> Option<(u64, u64, usize)> {
+    let mut s = u64::MAX;
+    let mut e = 0u64;
+    let mut n = 0usize;
+    for nd in &g.nodes {
+        if nd.node_id == g.source_id || nd.node_id == g.sink_id || nd.end <= nd.start {
+            continue;
+        }
+        s = s.min(nd.start);
+        e = e.max(nd.end);
+        n += 1;
+    }
+    if n == 0 { None } else { Some((s, e, n)) }
+}
+
+/// Pick the component locus a primary read belongs to, by maximal span overlap.
+/// `comp_spans[i] = (start, end)` is the exon span of component locus `i`.
+/// Returns the index with the largest overlap with `read_span`; ties broken by
+/// lowest index (deterministic). `None` if no component overlaps the read.
+///
+/// This is the fix for the capture-aliasing defect: a wide parent bundle that
+/// holds several disjoint copies (separate connected components) must place each
+/// read at the COPY it aligns to, not collapse every copy into one bundle index
+/// whose captured graph is whichever component happened to be written last.
+pub fn component_locus_for_span(comp_spans: &[(u64, u64)], read_span: (u64, u64)) -> Option<usize> {
+    let (rs, re) = read_span;
+    let mut best: Option<(u64, usize)> = None;
+    for (i, &(s, e)) in comp_spans.iter().enumerate() {
+        if rs < e && s < re {
+            let ov = re.min(e).saturating_sub(rs.max(s));
+            match best {
+                Some((bov, _)) if ov <= bov => {}
+                _ => best = Some((ov, i)),
+            }
+        }
+    }
+    best.map(|(_, i)| i)
+}
+
+/// Flattened per-component locus model (RUSTLE_VG_RECOVER_COPIES). Splits each
+/// wide parent bundle into one locus per connected-component graph, so a starved
+/// copy that shares a parent bundle with a well-expressed sister becomes its own
+/// locus (and can independently join its homology family). See
+/// [`expand_component_loci`].
+#[derive(Debug, Default)]
+pub struct ComponentLociPlan {
+    /// (chrom, start, end, strand) for each flat locus, derived from the
+    /// component graph's own exon nodes (NOT the parent-bundle meta span).
+    pub spans: Vec<(String, u64, u64, char)>,
+    /// `bundle_to_flat[bi]` = the flat locus indices the original bundle `bi`
+    /// expanded into (one per non-empty component graph). Empty if the bundle had
+    /// no exon-bearing component graph.
+    pub bundle_to_flat: Vec<Vec<usize>>,
+    /// `flat_to_components[fi]` = (bundle index, component-graph indices) that flat
+    /// locus `fi` draws its graph(s) from. A SPLIT locus carries exactly one
+    /// component index; a COLLAPSED locus (a non-qualifying wide bundle kept whole)
+    /// carries every exon-bearing component of the bundle. The pipeline uses this to
+    /// build the borrowed flat-graph list in lockstep with `spans` (so flat index
+    /// `fi` lines up 1:1) — for a collapsed locus it picks the LAST component as the
+    /// representative graph, matching the off-path single-slot last-write capture.
+    pub flat_to_components: Vec<(usize, Vec<usize>)>,
+}
+
+/// Build the flattened per-component locus plan from the captured component graphs.
+/// `per_bundle[bi]` = (chrom, strand, component graphs) for original bundle `bi`.
+/// One flat locus is produced per component graph that has >=1 exon node, in
+/// (bundle, capture) order — a TOTAL order, so the plan is deterministic.
+///
+/// `strand` falls back to the bundle's recorded strand when a component graph's
+/// nodes don't carry one (graphs store coords, not strand).
+pub fn expand_component_loci(
+    per_bundle: &[(String, char, Vec<&Graph>)],
+) -> ComponentLociPlan {
+    let mut plan = ComponentLociPlan::default();
+    plan.bundle_to_flat = vec![Vec::new(); per_bundle.len()];
+    for (bi, (chrom, strand, graphs)) in per_bundle.iter().enumerate() {
+        for (ci, g) in graphs.iter().enumerate() {
+            if let Some((s, e, _n)) = graph_exon_span(g) {
+                let flat = plan.spans.len();
+                plan.spans.push((chrom.clone(), s, e, *strand));
+                plan.bundle_to_flat[bi].push(flat);
+                plan.flat_to_components.push((bi, vec![ci]));
+            }
+        }
+    }
+    plan
+}
+
+/// Like [`expand_component_loci`], but the per-component split is RESTRICTED to
+/// bundles that actually carry cross-mapped secondaries (`qualifying_bundles`),
+/// i.e. bundles that participate in a paralog family with multimappers.
+///
+/// - A QUALIFYING wide bundle expands to one flat locus per exon-bearing
+///   connected-component graph (identical to `expand_component_loci`).
+/// - A NON-QUALIFYING bundle keeps the ORIGINAL single locus: one flat locus per
+///   bundle, spanning the UNION of its exon-bearing components, drawing graph(s)
+///   from ALL of them (the pipeline picks the last as the representative, matching
+///   the off-path single-slot last-write capture). No split, no extra families.
+///
+/// This is the performance fix: blanket-splitting every wide bundle exploded the
+/// locus count (41 -> 96 on one slice) and re-read the BAM in
+/// `genotype_family_reads` for each, so only the multimapper-bearing bundles —
+/// the handful that can form a family at all — should ever expand.
+///
+/// Deterministic: bundles are processed in index order; within a qualifying bundle
+/// components are emitted in capture order — a total order, same as the blanket
+/// helper.
+pub fn expand_component_loci_qualified(
+    per_bundle: &[(String, char, Vec<&Graph>)],
+    qualifying_bundles: &DetHashSet<usize>,
+) -> ComponentLociPlan {
+    let mut plan = ComponentLociPlan::default();
+    plan.bundle_to_flat = vec![Vec::new(); per_bundle.len()];
+    for (bi, (chrom, strand, graphs)) in per_bundle.iter().enumerate() {
+        // Exon-bearing component indices + spans, in capture order.
+        let exon_components: Vec<(usize, (u64, u64))> = graphs
+            .iter()
+            .enumerate()
+            .filter_map(|(ci, g)| graph_exon_span(g).map(|(s, e, _n)| (ci, (s, e))))
+            .collect();
+        if exon_components.is_empty() {
+            continue;
+        }
+        if qualifying_bundles.contains(&bi) {
+            // Multimapper bundle → split into one locus per component.
+            for &(ci, (s, e)) in &exon_components {
+                let flat = plan.spans.len();
+                plan.spans.push((chrom.clone(), s, e, *strand));
+                plan.bundle_to_flat[bi].push(flat);
+                plan.flat_to_components.push((bi, vec![ci]));
+            }
+        } else {
+            // Non-multimapper bundle → ONE collapsed locus over the union span,
+            // drawing from every exon-bearing component (no extra families).
+            let s = exon_components.iter().map(|(_, (s, _))| *s).min().unwrap();
+            let e = exon_components.iter().map(|(_, (_, e))| *e).max().unwrap();
+            let comp_idxs: Vec<usize> = exon_components.iter().map(|(ci, _)| *ci).collect();
+            let flat = plan.spans.len();
+            plan.spans.push((chrom.clone(), s, e, *strand));
+            plan.bundle_to_flat[bi].push(flat);
+            plan.flat_to_components.push((bi, comp_idxs));
+        }
+    }
+    plan
+}
+
+/// Re-key a read's primary from its parent BUNDLE index to the flat COMPONENT
+/// locus its primary span overlaps. `read_primary_span` is the read's primary
+/// alignment span; `bundle_idx` is the bundle that read's primary lived in. Among
+/// that bundle's component loci, pick the one with maximal span overlap. Falls
+/// back to the first component locus when there is exactly one (no ambiguity), and
+/// to `None` only when the bundle expanded to zero component loci.
+pub fn rekey_primary_to_component(
+    plan: &ComponentLociPlan,
+    bundle_idx: usize,
+    read_primary_span: (u64, u64),
+) -> Option<usize> {
+    let flats = plan.bundle_to_flat.get(bundle_idx)?;
+    if flats.is_empty() {
+        return None;
+    }
+    if flats.len() == 1 {
+        return Some(flats[0]);
+    }
+    let comp_spans: Vec<(u64, u64)> = flats.iter().map(|&f| {
+        let (_, s, e, _) = &plan.spans[f];
+        (*s, *e)
+    }).collect();
+    match component_locus_for_span(&comp_spans, read_primary_span) {
+        Some(local) => Some(flats[local]),
+        None => Some(flats[0]), // primary outside all component spans → dominant component
+    }
+}
+
 /// A candidate junction-edge folded into a family graph from a secondary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmendCandidate {
@@ -464,6 +653,84 @@ pub fn run_layer2(
         &side_index, primary_locus, &similarity, min_link, min_similarity,
     );
 
+    // DIAG2 (RUSTLE_DIAG_TARGET): pin WHY the target starved-copy locus is/isn't a
+    // family member. Reports (i) whether a Layer-1 locus exists at the target span
+    // and (ii) its cross-map links + similarities to other loci and the family it
+    // landed in. Target span is configurable via RUSTLE_DIAG_TARGET_{CHROM,START,END}
+    // (default = XM_055380753.2 @ NC_073235.2:31684678-31709055, the genuine
+    // strand-decisive starved copy).
+    let (tgt_chrom, tgt_start, tgt_end) = diag_target_span();
+    // Real exon span = union of non-source/sink nodes (source.start=0/sink.end=huge
+    // would otherwise make every graph span 0..chrom-end and falsely "overlap").
+    let real_span = |g: &Graph| -> (u64, u64, usize) {
+        let mut s = u64::MAX; let mut e = 0u64; let mut n = 0usize;
+        for nd in &g.nodes {
+            if nd.node_id == g.source_id || nd.node_id == g.sink_id || nd.end <= nd.start { continue; }
+            s = s.min(nd.start); e = e.max(nd.end); n += 1;
+        }
+        (s, e, n)
+    };
+    if std::env::var_os("RUSTLE_DIAG_TARGET").is_some() {
+        // (i.0) dump ALL loci on the target chrom whose real span is within 200kb of
+        // the target, plus their own-secondary count — to see if a bundle formed.
+        for (li, l) in loci.iter().enumerate() {
+            if l.chrom != tgt_chrom { continue; }
+            let (s, e, nn) = real_span(l.graph);
+            if s == u64::MAX { continue; }
+            if e + 200_000 < tgt_start || s > tgt_end + 200_000 { continue; }
+            let nsec = side_index.secondaries_for_locus(li).len();
+            eprintln!("[DIAG2] near-target li={} strand={} real_span={}-{} exon_nodes={} own_secondaries={}",
+                li, l.strand, s, e, nn, nsec);
+        }
+        // (i) which loci overlap the target span?
+        let mut target_loci: Vec<usize> = Vec::new();
+        for (li, l) in loci.iter().enumerate() {
+            if l.chrom != tgt_chrom { continue; }
+            let (s, e, nn) = real_span(l.graph);
+            let overlaps = s != u64::MAX && s < tgt_end && tgt_start < e;
+            if overlaps {
+                target_loci.push(li);
+                eprintln!("[DIAG2] TARGET-LOCUS li={} chrom={} strand={} graph_span={}-{} graph_nodes={} (overlaps target {}:{}-{})",
+                    li, l.chrom, l.strand, s, e, nn, tgt_chrom, tgt_start, tgt_end);
+            }
+        }
+        if target_loci.is_empty() {
+            eprintln!("[DIAG2] NO Layer-1 locus overlaps target {}:{}-{} (only secondaries there?)",
+                tgt_chrom, tgt_start, tgt_end);
+        }
+        // (ii) for each target locus, its cross-map links + similarity + family membership.
+        for &tli in &target_loci {
+            let mut any_link = false;
+            for ((a, b), count) in &links {
+                if *a != tli && *b != tli { continue; }
+                any_link = true;
+                let other = if *a == tli { *b } else { *a };
+                let sim = similarity.get(&(*a, *b)).or_else(|| similarity.get(&(*b, *a))).copied();
+                let (oc, os, oe, ons) = loci.get(other)
+                    .map(|l| {
+                        let (s, e, n) = real_span(l.graph);
+                        (l.chrom.clone(), s, e, n)
+                    })
+                    .unwrap_or(("?".into(), 0, 0, 0));
+                let passes_link = *count >= min_link;
+                let passes_sim = sim.map(|v| v >= min_similarity).unwrap_or(false);
+                eprintln!("[DIAG2]   target-link ({tli}<->{other}) count={count} sim={sim:?} other={oc}:{os}-{oe}(nodes={ons}) | pass_link(>={min_link})={passes_link} pass_sim(>={min_similarity})={passes_sim} -> edge={}",
+                    passes_link && passes_sim);
+            }
+            if !any_link {
+                eprintln!("[DIAG2]   target-locus li={tli} has NO cross-map links to any other locus");
+            }
+            // Which family did it land in?
+            let fam = families.iter().enumerate()
+                .find(|(_, f)| f.bundle_indices.contains(&tli));
+            match fam {
+                Some((fi, f)) => eprintln!("[DIAG2]   target-locus li={tli} IS in family fi={} (id={}, {} members)",
+                    fi, f.family_id, f.bundle_indices.len()),
+                None => eprintln!("[DIAG2]   target-locus li={tli} is NOT in ANY family (dropped by link/sim/min-members gate)"),
+            }
+        }
+    }
+
     if std::env::var_os("RUSTLE_LAYER2_DEBUG").is_some() {
         eprintln!(
             "[layer2-dbg] {} cross-map link(s) over {} loci; min_link={min_link} min_sim={min_similarity}",
@@ -547,8 +814,51 @@ pub fn run_layer2(
     // a UnionBaseline-tagged Transcript so the pipeline's union-by-chain stage emits it
     // only if its intron chain is absent from the VG output (strictly additive).
     let mut novel_transcripts: Vec<Transcript> = Vec::new();
+    // DIAG: target starved copy (default XM_055380753.2 @ NC_073235.2:31684678-31709055).
+    let diag_on = std::env::var_os("RUSTLE_DIAG_TARGET").is_some();
+    let (dt_chrom, dt_start, dt_end) = diag_target_span();
     for (fi, fam) in families.iter().enumerate() {
-        let Some(fg) = family_graphs[fi].as_ref() else { continue };
+        let Some(fg) = family_graphs[fi].as_ref() else {
+            if diag_on {
+                let spans: Vec<(String, char, u64, u64)> = fam.bundle_indices.iter()
+                    .filter_map(|&i| loci.get(i).map(|l| {
+                        let (s, e) = l.graph.nodes.iter().fold((u64::MAX, 0u64), |(a, b), n| (a.min(n.start), b.max(n.end)));
+                        (l.chrom.clone(), l.strand, s, e)
+                    }))
+                    .collect();
+                eprintln!("[DIAG] family fi={} id={} bundles={} -> FG=None (graph build failed); member spans={:?}",
+                    fi, fam.family_id, fam.bundle_indices.len(), spans);
+            }
+            continue
+        };
+        if diag_on {
+            // Per-member-bundle chrom/strand/span.
+            let spans: Vec<(usize, String, char, u64, u64)> = fam.bundle_indices.iter()
+                .filter_map(|&i| loci.get(i).map(|l| {
+                    let (s, e) = l.graph.nodes.iter().fold((u64::MAX, 0u64), |(a, b), n| (a.min(n.start), b.max(n.end)));
+                    (i, l.chrom.clone(), l.strand, s, e)
+                }))
+                .collect();
+            let touches_target = spans.iter().any(|(_, c, _, s, e)|
+                *c == dt_chrom && *s < dt_end && dt_start < *e);
+            eprintln!("[DIAG] family fi={} id={} bundles={} fg_nodes={} touches_target={} member_spans={:?}",
+                fi, fam.family_id, fam.bundle_indices.len(), fg.nodes.len(), touches_target, spans);
+            // FG copies: per-copy span (min start, max end) + strand from nodes.
+            use crate::types::DetHashMap as DM;
+            let mut cs: DM<usize, (String, char, u64, u64)> = DM::default();
+            for node in &fg.nodes {
+                for &(cid, (s, e)) in &node.per_copy_spans {
+                    let ent = cs.entry(cid).or_insert((node.chrom.clone(), node.strand, u64::MAX, 0));
+                    ent.2 = ent.2.min(s); ent.3 = ent.3.max(e);
+                }
+            }
+            let mut cv: Vec<(usize, (String, char, u64, u64))> = cs.into_iter().collect();
+            cv.sort_by_key(|(c, _)| *c);
+            for (cid, (c, st, s, e)) in &cv {
+                let is_target = *c == dt_chrom && *s < dt_end && dt_start < *e;
+                eprintln!("[DIAG]   fg_copy cid={} {}:{}-{} strand={} is_target_locus={}", cid, c, s, e, st, is_target);
+            }
+        }
         let mut copy_of_locus: DetHashMap<usize, usize> = DetHashMap::default();
         for (copy, &loc) in fam.bundle_indices.iter().enumerate() {
             copy_of_locus.insert(loc, copy);
@@ -569,14 +879,60 @@ pub fn run_layer2(
                 secondaries_by_copy.entry(copy).or_default().push(s);
             }
         }
-        // (E) identifiability gate — computed ONCE per family (a present genome is a
-        // prerequisite for any PSV work). Reused for two decisions: (1) PSV-FILTER's
-        // Part-A suppression, and (2) the PSV genotyping pass. Cheap, reference-only.
-        let family_identifiable = genome
-            .map(|_| {
-                crate::vg_family::psv_linkage::family_identifiability(fg, 0.005, psv_family_min)
-            })
-            .unwrap_or(false);
+        // (E) identifiability gate — the gated PSV columns are computed ONCE per family
+        // here and REUSED everywhere downstream (the DIAG dump's `.len()`, the (E) gate
+        // boolean, and the genotyping pass). The column computation runs a poa_msa over
+        // each copy's full concatenated exon sequence (O(L²)) — the dominant Layer-2
+        // cost on real paralog families — so recomputing it per consumer (as before)
+        // was the actual slowdown. `psv_columns_and_identifiable` returns both outputs
+        // from a single computation. Default OFF (gate unset) -> node-based columns only
+        // (byte-identical to before). When `genome` is None there is no PSV work at all.
+        // Columns are computed via the gated fn (which itself returns node-based columns
+        // when `genome` is None), then the (E) boolean is forced false when there is no
+        // genome — exactly the old `genome.map(..).unwrap_or(false)` semantics, so this
+        // is byte-identical (including the DIAG `ncols` value) while computing once.
+        let (family_psv_cols, family_identifiable) = {
+            let (cols, id) = crate::vg_family::psv_linkage::psv_columns_and_identifiable(
+                fg, genome, 0.005, psv_family_min,
+            );
+            (cols, genome.is_some() && id)
+        };
+        if diag_on {
+            let ncols = family_psv_cols.len();
+            // Why columns=0? Count nodes by #contributors w/ spans, distinct seqs, len-eq.
+            let mut n_multi = 0usize;       // nodes with >=2 contributors having per_copy_spans
+            let mut n_distinct2 = 0usize;   // of those, with >=2 distinct sequences
+            let mut n_diag_eqlen = 0usize;  // of those, all equal length (would yield columns)
+            let mut n_indel_skip = 0usize;  // of those distinct, length-mismatch -> v1 skip
+            for node in &fg.nodes {
+                let mut contribs: Vec<&[u8]> = Vec::new();
+                for (cid, seq) in &node.per_copy_sequences {
+                    if node.per_copy_spans.iter().any(|(c, _)| c == cid) {
+                        contribs.push(seq.as_slice());
+                    }
+                }
+                if contribs.len() < 2 { continue; }
+                n_multi += 1;
+                let distinct: std::collections::BTreeSet<&[u8]> = contribs.iter().copied().collect();
+                if distinct.len() < 2 { continue; }
+                n_distinct2 += 1;
+                let l0 = contribs[0].len();
+                if contribs.iter().all(|s| s.len() == l0) { n_diag_eqlen += 1; } else { n_indel_skip += 1; }
+            }
+            eprintln!("[DIAG] family fi={} id={} E-gate: psv_columns={} >= psv_family_min={} -> identifiable={} (psv_linkage={} psv_filter={})",
+                fi, fam.family_id, ncols, psv_family_min, family_identifiable, psv_linkage, psv_filter);
+            eprintln!("[DIAG] family fi={} node-breakdown: total_nodes={} multi_copy_nodes={} of_which_distinct_seq={} (eqlen_diagnostic={} indel_skipped={})",
+                fi, fg.nodes.len(), n_multi, n_distinct2, n_diag_eqlen, n_indel_skip);
+            // Per-copy node membership counts (how the 2 copies share nodes).
+            use crate::types::DetHashMap as DM2;
+            let mut per_copy_nodes: DM2<usize, usize> = DM2::default();
+            for node in &fg.nodes {
+                for (cid, _) in &node.per_copy_sequences { *per_copy_nodes.entry(*cid).or_insert(0) += 1; }
+            }
+            let mut pcn: Vec<(usize, usize)> = per_copy_nodes.into_iter().collect();
+            pcn.sort_by_key(|(c, _)| *c);
+            eprintln!("[DIAG] family fi={} nodes_per_copy={:?} (a node shared by 2 copies is a PSV candidate)", fi, pcn);
+        }
 
         // PSV-FILTER (experiment): in an IDENTIFIABLE family, REPLACE Part A with the
         // PSV-validated isoforms. We do this by suppressing Part A here
@@ -623,17 +979,58 @@ pub fn run_layer2(
         // (or the family is not identifiable), no PSV path is produced, so the default
         // path is byte-identical.
         let mut psv_paths: Vec<FamilyPath> = Vec::new();
+        if diag_on && (psv_linkage || psv_filter) && !family_identifiable {
+            eprintln!("[DIAG] family fi={} id={} PSV PASS SKIPPED: family not identifiable (E-gate failed)", fi, fam.family_id);
+        }
         if (psv_linkage || psv_filter) && family_identifiable {
             if let Some(g) = genome {
-                let cols = crate::vg_family::psv_linkage::psv_columns_for_family(fg);
+                // Reuse the columns computed once above (avoids a second poa_msa pass).
+                let cols = &family_psv_cols;
                 let family_loci = psv_family_loci(fg);
+                if diag_on {
+                    // Which copy_id (if any) is the - strand target locus? Report its frame loci.
+                    for (ci, (c, s, e)) in family_loci.iter().enumerate() {
+                        let is_target = *c == dt_chrom && *s < dt_end && dt_start < *e;
+                        if is_target {
+                            eprintln!("[DIAG] family fi={} TARGET copy_id={} loci-frame={}:{}-{}", fi, ci, c, s, e);
+                        }
+                    }
+                    eprintln!("[DIAG] family fi={} psv_columns={} family_loci={}", fi, cols.len(), family_loci.len());
+                }
                 match crate::vg_family::psv_linkage::genotype_family_reads(
-                    bam_path, &family_loci, &cols, g,
+                    bam_path, &family_loci, cols, g,
                 ) {
                     Ok(gens) => {
+                        if diag_on {
+                            // Aggregate per-copy: how many reads cast a top-assigned vote, and
+                            // raw total votes per copy. assign uses psv_min/psv_margin.
+                            use crate::types::DetHashMap as DM;
+                            let mut assigned: DM<usize, usize> = DM::default();
+                            let mut total_votes: DM<usize, usize> = DM::default();
+                            let mut n_with_votes = 0usize;
+                            for gg in &gens {
+                                if !gg.psv_votes.is_empty() { n_with_votes += 1; }
+                                for &(cid, n) in &gg.psv_votes { *total_votes.entry(cid).or_insert(0) += n; }
+                                if let Some(cp) = crate::vg_family::psv_linkage::assign_read_to_copy(gg, psv_min, psv_margin) {
+                                    *assigned.entry(cp).or_insert(0) += 1;
+                                }
+                            }
+                            let mut tv: Vec<(usize, usize)> = total_votes.into_iter().collect();
+                            tv.sort_by_key(|(c, _)| *c);
+                            let mut av: Vec<(usize, usize)> = assigned.into_iter().collect();
+                            av.sort_by_key(|(c, _)| *c);
+                            eprintln!("[DIAG] family fi={} genotyped reads={} (with>=1 vote={}); total_psv_votes_by_copy={:?}; assigned_reads_by_copy(min_psv={} margin={})={:?}",
+                                fi, gens.len(), n_with_votes, tv, psv_min, psv_margin, av);
+                        }
                         psv_paths = crate::vg_family::psv_linkage::assemble_psv_isoforms(
                             &gens, psv_min, psv_margin, psv_min_linked,
                         );
+                        if diag_on {
+                            for p in &psv_paths {
+                                eprintln!("[DIAG]   psv_path copy={} flow={} exons={:?}", p.copy_id, p.flow, p.exons);
+                            }
+                            eprintln!("[DIAG] family fi={} assemble_psv_isoforms -> {} path(s) (min_linked k={})", fi, psv_paths.len(), psv_min_linked);
+                        }
                         if !psv_paths.is_empty() {
                             eprintln!(
                                 "[layer2] {} PSV-{} isoform(s) from family {} ({})",
@@ -1506,6 +1903,116 @@ mod tests {
             read_name_hash: h, chrom: "chrT".into(), ref_start: start, ref_end: end,
             introns: introns.to_vec(), nm: 0, strand: '+', is_supplementary: false, locus: Some(locus),
         }
+    }
+
+    // TDD (RUSTLE_VG_RECOVER_COPIES): a WIDE parent bundle that holds two disjoint
+    // copies (separate connected-component graphs) must expand into TWO loci — one
+    // per copy — so a starved copy sharing a parent bundle with a well-expressed
+    // sister becomes its own locus (and can join its homology family). The previous
+    // single-slot capture model collapsed both copies into one bundle index whose
+    // captured graph was whichever component was written LAST (the sister fragment),
+    // dropping the starved copy from family formation entirely.
+    //
+    // Reproduces /tmp/dg2 bundle bi=3: meta-span 31684668-31756374 held the target
+    // copy (38-node graph @ 31684668-31713479) AND a 5-node sister fragment
+    // @ 31723374-31730230; only the fragment survived in the single slot.
+    #[test]
+    fn wide_bundle_expands_to_one_locus_per_component_and_rekeys_reads() {
+        let mk = crate::vg_family::family_graph::tests_support::make_layer1_graph;
+        // Starved copy: 2 exon nodes near the bundle start (the target).
+        let starved = mk("chrT", '-', &[(100, 200), (300, 400)]);
+        // Well-expressed sister fragment LATER in the same parent bundle (overwrote
+        // the slot under the old last-write-wins capture).
+        let sister = mk("chrT", '-', &[(1000, 1100), (1200, 1300), (1400, 1500)]);
+        // A second, separate bundle with one copy (no collision).
+        let other = mk("chrT", '-', &[(5000, 5100)]);
+
+        // Bundle 0 = the wide parent (two components); bundle 1 = a normal single.
+        let per_bundle: Vec<(String, char, Vec<&Graph>)> = vec![
+            ("chrT".into(), '-', vec![&starved, &sister]),
+            ("chrT".into(), '-', vec![&other]),
+        ];
+        let plan = expand_component_loci(&per_bundle);
+
+        // The wide bundle must become TWO distinct loci with the two copies' OWN
+        // spans (not the parent meta span and not just the last component).
+        assert_eq!(plan.bundle_to_flat[0].len(), 2,
+            "wide parent bundle must expand to 2 component loci, got {:?}", plan.bundle_to_flat);
+        let starved_flat = plan.bundle_to_flat[0][0];
+        let sister_flat = plan.bundle_to_flat[0][1];
+        assert_eq!(plan.spans[starved_flat], ("chrT".to_string(), 100, 400, '-'),
+            "starved copy locus span = its OWN exons");
+        assert_eq!(plan.spans[sister_flat], ("chrT".to_string(), 1000, 1500, '-'),
+            "sister copy locus span = its OWN exons (not overwriting the starved copy)");
+
+        // A read whose primary aligns at the STARVED copy must re-key to the starved
+        // locus — NOT collapse onto the sister (the old bug). This is what lets the
+        // starved copy receive its cross-map links and join the family.
+        let starved_read = rekey_primary_to_component(&plan, 0, (110, 390));
+        assert_eq!(starved_read, Some(starved_flat),
+            "a read aligned at the starved copy must map to the starved locus");
+        let sister_read = rekey_primary_to_component(&plan, 0, (1050, 1450));
+        assert_eq!(sister_read, Some(sister_flat),
+            "a read aligned at the sister copy must map to the sister locus");
+        // The single-copy bundle keeps a 1:1 mapping.
+        assert_eq!(rekey_primary_to_component(&plan, 1, (5010, 5090)), Some(plan.bundle_to_flat[1][0]));
+    }
+
+    // TDD (perf, RUSTLE_VG_RECOVER_COPIES): the per-component split MUST be
+    // restricted to wide bundles that actually carry cross-mapped secondaries
+    // (i.e. participate in a paralog family with multimappers). A wide bundle with
+    // NO cross-mapped secondary in the side-index keeps the ORIGINAL single-graph
+    // locus (no split, no extra families) — only multimapper-bearing bundles
+    // expand. Splitting every wide bundle exploded the locus count (41 -> 96 on one
+    // slice) and re-read the BAM in genotype_family_reads for each, costing ~10 min.
+    #[test]
+    fn only_multimapper_bundles_expand_to_per_component_loci() {
+        let mk = crate::vg_family::family_graph::tests_support::make_layer1_graph;
+        // Bundle 0 = WIDE + carries a cross-mapped secondary → MUST expand to 2 loci.
+        let mm_a = mk("chrT", '-', &[(100, 200), (300, 400)]);
+        let mm_b = mk("chrT", '-', &[(1000, 1100), (1200, 1300)]);
+        // Bundle 1 = WIDE but NO cross-mapped secondary → MUST stay a SINGLE locus.
+        let plain_a = mk("chrT", '-', &[(5000, 5100), (5300, 5400)]);
+        let plain_b = mk("chrT", '-', &[(6000, 6100), (6300, 6400)]);
+
+        let per_bundle: Vec<(String, char, Vec<&Graph>)> = vec![
+            ("chrT".into(), '-', vec![&mm_a, &mm_b]),
+            ("chrT".into(), '-', vec![&plain_a, &plain_b]),
+        ];
+        // Only bundle 0 carries cross-mapped secondaries.
+        let mut qualifying: DetHashSet<usize> = DetHashSet::default();
+        qualifying.insert(0);
+
+        let plan = expand_component_loci_qualified(&per_bundle, &qualifying);
+
+        // The multimapper bundle expands to one locus per component.
+        assert_eq!(
+            plan.bundle_to_flat[0].len(), 2,
+            "multimapper wide bundle must expand to 2 component loci, got {:?}",
+            plan.bundle_to_flat
+        );
+        // The plain wide bundle stays ONE locus (no split, no extra families).
+        assert_eq!(
+            plan.bundle_to_flat[1].len(), 1,
+            "non-multimapper wide bundle must stay a single locus, got {:?}",
+            plan.bundle_to_flat
+        );
+        // Total loci = 3 (2 from the multimapper bundle + 1 collapsed) — far below
+        // the 4 a blanket split would produce.
+        assert_eq!(plan.spans.len(), 3, "exactly 3 flat loci, got {:?}", plan.spans);
+
+        // The collapsed single locus covers the bundle's WHOLE exon span (union of
+        // its components) so it still represents the bundle correctly.
+        let collapsed = plan.bundle_to_flat[1][0];
+        assert_eq!(
+            plan.spans[collapsed], ("chrT".to_string(), 5000, 6400, '-'),
+            "collapsed locus span = union of the bundle's component exons"
+        );
+
+        // The blanket helper still splits every wide bundle (regression anchor:
+        // the qualified path is the ONLY behavior change).
+        let blanket = expand_component_loci(&per_bundle);
+        assert_eq!(blanket.spans.len(), 4, "blanket split yields 4 loci");
     }
 
     #[test]

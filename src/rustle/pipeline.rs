@@ -12473,6 +12473,23 @@ pub fn run<P: AsRef<Path>>(
             }
             m
         } else { crate::types::DetHashMap::default() };
+    // (copy-recovery, gated) Per-read primary span snapshot: read_name_hash ->
+    // (primary ref_start, ref_end). Needed to re-key a read from its parent BUNDLE
+    // index to the COMPONENT locus its primary actually aligns to when a wide bundle
+    // is split into per-copy loci. Default-OFF: empty (off-path unaffected).
+    let layer2_primary_span: crate::types::DetHashMap<u64, (u64, u64)> =
+        if config.vg_mode && config.vg_layer2
+            && std::env::var_os("RUSTLE_VG_RECOVER_COPIES").is_some() {
+            let mut m: crate::types::DetHashMap<u64, (u64, u64)> = crate::types::DetHashMap::default();
+            for b in bundles.iter() {
+                for r in &b.reads {
+                    if r.is_primary_alignment {
+                        m.entry(r.read_name_hash).or_insert((r.ref_start, r.ref_end));
+                    }
+                }
+            }
+            m
+        } else { crate::types::DetHashMap::default() };
     let mut bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
     // ── RUSTLE_VG_UNION_BASELINE (EXPERIMENTAL, opt-in, default-OFF — NOT recommended) ──
     // GOAL: guarantee VG output ⊇ primary-only baseline so the over-collapse regression
@@ -12566,6 +12583,20 @@ pub fn run<P: AsRef<Path>>(
             Some((0..bundles_vec.len()).map(|_| std::sync::Mutex::new(None)).collect())
         } else { None };
     let layer2_graph_capture_ref = layer2_graph_capture.as_ref();
+    // (copy-recovery) Gated ALL-COMPONENTS capture: a wide parent bundle calls
+    // `process_graph` once per connected component, and the single-slot capture above
+    // keeps only the LAST write — so a starved copy sharing a parent bundle with a
+    // well-expressed sister is overwritten and never reaches Layer 2. When
+    // RUSTLE_VG_RECOVER_COPIES is set we ALSO collect every component graph here so
+    // run_layer2 can split the bundle into one locus per copy. Default-OFF: None
+    // (no allocation, the off-path is byte-identical).
+    let recover_copies = config.vg_mode && config.vg_layer2
+        && std::env::var_os("RUSTLE_VG_RECOVER_COPIES").is_some();
+    let layer2_all_components: Option<Vec<std::sync::Mutex<Vec<crate::graph::Graph>>>> =
+        if recover_copies {
+            Some((0..bundles_vec.len()).map(|_| std::sync::Mutex::new(Vec::new())).collect())
+        } else { None };
+    let layer2_all_components_ref = layer2_all_components.as_ref();
     if std::env::var_os("RUSTLE_VG_FAMILY_DEBUG_SYNTHETIC").is_some() {
         let n_synth = bundles_vec.iter().filter(|(_, b)| b.synthetic).count();
         eprintln!("[VG-HMM-DEBUG] par_iter starting with {} bundles total, {} synthetic", bundles_vec.len(), n_synth);
@@ -15456,7 +15487,30 @@ pub fn run<P: AsRef<Path>>(
                 // this parallel closure; None when --vg-layer2 is off (no-op).
                 if let Some(cap) = layer2_graph_capture_ref {
                     if let Some(slot) = cap.get(bundle_idx) {
+                        // DIAG2: log every capture write so we can see multiple
+                        // per-component graphs colliding on one slot.
+                        if std::env::var_os("RUSTLE_DIAG_TARGET").is_some() {
+                            let ex: Vec<(u64,u64)> = graph_mut.nodes.iter()
+                                .filter(|n| n.node_id != graph_mut.source_id && n.node_id != graph_mut.sink_id && n.end > n.start)
+                                .map(|n| (n.start, n.end)).collect();
+                            let (gs, ge) = ex.iter().fold((u64::MAX, 0u64), |(a,b),&(s,e)| (a.min(s), b.max(e)));
+                            let dchrom = std::env::var("RUSTLE_DIAG_TARGET_CHROM").unwrap_or_else(|_| "NC_073235.2".to_string());
+                            if graph_bundle.chrom == dchrom && gs < 31760000 && ge > 31680000 {
+                                eprintln!("[DIAG2-cap] WRITE slot bundle_idx={} graph_bundle={}:{}-{} strand={} exon_span={}-{} exon_nodes={}",
+                                    bundle_idx, graph_bundle.chrom, graph_bundle.start, graph_bundle.end, graph_bundle.strand, gs, ge, ex.len());
+                            }
+                        }
                         *slot.lock().unwrap() = Some(graph_mut.clone());
+                    }
+                }
+                // (copy-recovery, gated) Append EVERY component graph (not just the last)
+                // so a wide parent bundle's starved + sister copies both survive to Layer 2.
+                if let Some(allcap) = layer2_all_components_ref {
+                    if let Some(slot) = allcap.get(bundle_idx) {
+                        // Only keep exon-bearing graphs (depleted/empty ones are noise).
+                        if crate::vg_family::layer2::graph_exon_span(&graph_mut).is_some() {
+                            slot.lock().unwrap().push(graph_mut.clone());
+                        }
                     }
                 }
                 let (
@@ -17782,28 +17836,154 @@ pub fn run<P: AsRef<Path>>(
             let captured: Vec<Option<crate::graph::Graph>> =
                 cap.into_iter().map(|m| m.into_inner().unwrap()).collect();
             let empty_graph = crate::graph::Graph::new();
-            let loci: Vec<crate::vg_family::layer2::Layer1Locus> = layer2_bundle_meta
-                .iter().enumerate()
-                .map(|(bi, (chrom, _s, _e, strand))| crate::vg_family::layer2::Layer1Locus {
-                    chrom: chrom.clone(),
-                    strand: *strand,
-                    graph: captured.get(bi).and_then(|o| o.as_ref()).unwrap_or(&empty_graph),
-                })
-                .collect();
-            // Re-sync the side-index loci to the SAME bundle list `loci`,
-            // `layer2_primary_locus`, and the graph capture are indexed by
-            // (the layer2_bundle_meta snapshot). The side-index was originally
-            // assign_loci'd at M1.5 over a possibly-different bundle set; on real
-            // data those indices diverge from the snapshot, yielding cross-map
-            // link indices out of range of `loci`. Re-assigning here makes every
-            // index (side-index loci / primary_locus / loci / captured) consistent.
-            let layer2_spans: Vec<(String, u64, u64)> = layer2_bundle_meta
-                .iter()
-                .map(|(c, s, e, _)| (c.clone(), *s, *e))
-                .collect();
-            si.assign_loci(&layer2_spans);
+
+            // (copy-recovery, gated) Split each WIDE parent bundle into one locus per
+            // connected-component graph. The single-slot `captured` keeps only the last
+            // component, so a starved copy sharing a parent bundle with a sister never
+            // reaches Layer 2; the all-components capture preserves every copy. We
+            // re-key `primary_locus` (read -> component locus by primary-span overlap)
+            // and re-sync the side-index to the per-component spans so the target copy
+            // gets its OWN locus, links, and graph. Default-OFF: `recover_copies` is
+            // false, this branch is skipped, and the legacy bundle-indexed loci are used
+            // (byte-identical).
+            let component_graphs: Vec<crate::graph::Graph>;
+            let (loci, effective_primary_locus): (
+                Vec<crate::vg_family::layer2::Layer1Locus>,
+                crate::types::DetHashMap<u64, usize>,
+            ) = if recover_copies {
+                let all = layer2_all_components
+                    .map(|v| v.into_iter().map(|m| m.into_inner().unwrap()).collect::<Vec<_>>())
+                    .unwrap_or_default();
+                // Per-bundle (chrom, strand, &component graphs) for the plan.
+                let per_bundle: Vec<(String, char, Vec<&crate::graph::Graph>)> = layer2_bundle_meta
+                    .iter().enumerate()
+                    .map(|(bi, (chrom, _s, _e, strand))| {
+                        let gs: Vec<&crate::graph::Graph> = all.get(bi).map(|v| v.iter().collect()).unwrap_or_default();
+                        (chrom.clone(), *strand, gs)
+                    })
+                    .collect();
+                // (perf) Restrict the per-component split to bundles that actually
+                // carry cross-mapped secondaries — i.e. participate in cross-locus
+                // multimapping (a paralog family with multimappers). A wide bundle
+                // with NO cross-mapped secondary cannot form a family, so splitting
+                // it only multiplies the locus count (and re-reads the BAM per family
+                // in genotype_family_reads, ~10 min/slice). The qualifying set is the
+                // bundles appearing in ANY cross-map link. `si` still holds its M1.5
+                // locus assignment here (over the original `bundles`, same index space
+                // as `layer2_bundle_meta` / `layer2_primary_locus`), so the link
+                // indices are exactly bundle indices. Non-qualifying wide bundles keep
+                // their ORIGINAL single locus (collapsed over the union span).
+                let qualifying_bundles: crate::types::DetHashSet<usize> = si
+                    .cross_map_links(&layer2_primary_locus)
+                    .into_iter()
+                    .flat_map(|((a, b), _)| [a, b])
+                    .collect();
+                if std::env::var_os("RUSTLE_DIAG_TARGET").is_some() {
+                    eprintln!("[DIAG2-comp] {} bundle(s) carry cross-mapped secondaries (qualify for per-component split)",
+                        qualifying_bundles.len());
+                }
+                // Perf-comparison hatch (default-off): RUSTLE_VG_RECOVER_COPIES_BLANKET_SPLIT
+                // forces the OLD blanket split (every wide bundle), for a fair warm-cache
+                // A/B against the qualified split. Production default is the qualified path.
+                let plan = if std::env::var_os("RUSTLE_VG_RECOVER_COPIES_BLANKET_SPLIT").is_some() {
+                    crate::vg_family::layer2::expand_component_loci(&per_bundle)
+                } else {
+                    crate::vg_family::layer2::expand_component_loci_qualified(
+                        &per_bundle, &qualifying_bundles,
+                    )
+                };
+                // Owned flat list of component graphs (loci borrow from this), built
+                // STRICTLY from `plan.flat_to_components` so the flat index `fi` lines
+                // up 1:1 with `plan.spans[fi]` for BOTH split (one component) and
+                // collapsed (non-qualifying bundle: all its components) loci. For a
+                // collapsed locus, use the LAST exon-bearing component as the
+                // representative graph — matching the off-path single-slot last-write
+                // capture semantics.
+                let mut flat_graphs: Vec<crate::graph::Graph> = Vec::with_capacity(plan.spans.len());
+                for (bi, comp_idxs) in &plan.flat_to_components {
+                    let graphs = &per_bundle[*bi].2;
+                    let rep_ci = comp_idxs.last().copied().unwrap_or(0);
+                    let g = graphs.get(rep_ci).copied().unwrap_or(&empty_graph);
+                    flat_graphs.push(g.clone());
+                }
+                debug_assert_eq!(flat_graphs.len(), plan.spans.len(),
+                    "component graph flat list must align 1:1 with plan.spans");
+                component_graphs = flat_graphs;
+                let loci: Vec<crate::vg_family::layer2::Layer1Locus> = plan.spans.iter().enumerate()
+                    .map(|(fi, (chrom, _s, _e, strand))| crate::vg_family::layer2::Layer1Locus {
+                        chrom: chrom.clone(),
+                        strand: *strand,
+                        graph: component_graphs.get(fi).unwrap_or(&empty_graph),
+                    })
+                    .collect();
+                // Re-key primary_locus: each read -> the component locus its primary
+                // span overlaps (falls back to the parent bundle's mapping when the
+                // read's primary span is unknown).
+                let mut pl: crate::types::DetHashMap<u64, usize> = crate::types::DetHashMap::default();
+                for (&h, &bi) in layer2_primary_locus.iter() {
+                    let span = layer2_primary_span.get(&h).copied().unwrap_or((0, 0));
+                    if let Some(flat) = crate::vg_family::layer2::rekey_primary_to_component(&plan, bi, span) {
+                        pl.insert(h, flat);
+                    }
+                }
+                // Re-sync the side-index to the per-component spans.
+                let comp_spans: Vec<(String, u64, u64)> = plan.spans.iter()
+                    .map(|(c, s, e, _)| (c.clone(), *s, *e)).collect();
+                si.assign_loci(&comp_spans);
+                if std::env::var_os("RUSTLE_DIAG_TARGET").is_some() {
+                    eprintln!("[DIAG2-comp] component-locus split: {} bundles -> {} component loci",
+                        layer2_bundle_meta.len(), loci.len());
+                }
+                (loci, pl)
+            } else {
+                component_graphs = Vec::new();
+                let _ = &component_graphs; // silence unused in off-path
+                let loci: Vec<crate::vg_family::layer2::Layer1Locus> = layer2_bundle_meta
+                    .iter().enumerate()
+                    .map(|(bi, (chrom, _s, _e, strand))| crate::vg_family::layer2::Layer1Locus {
+                        chrom: chrom.clone(),
+                        strand: *strand,
+                        graph: captured.get(bi).and_then(|o| o.as_ref()).unwrap_or(&empty_graph),
+                    })
+                    .collect();
+                // Re-sync the side-index loci to the SAME bundle list `loci`,
+                // `layer2_primary_locus`, and the graph capture are indexed by
+                // (the layer2_bundle_meta snapshot). The side-index was originally
+                // assign_loci'd at M1.5 over a possibly-different bundle set; on real
+                // data those indices diverge from the snapshot, yielding cross-map
+                // link indices out of range of `loci`. Re-assigning here makes every
+                // index (side-index loci / primary_locus / loci / captured) consistent.
+                let layer2_spans: Vec<(String, u64, u64)> = layer2_bundle_meta
+                    .iter()
+                    .map(|(c, s, e, _)| (c.clone(), *s, *e))
+                    .collect();
+                si.assign_loci(&layer2_spans);
+                (loci, layer2_primary_locus.clone())
+            };
+            // DIAG2 (RUSTLE_DIAG_TARGET): report bundles whose META span overlaps the
+            // target, with their captured-graph node count. Pins "bundle exists in meta
+            // but captured graph is empty" vs "no bundle at all".
+            if std::env::var_os("RUSTLE_DIAG_TARGET").is_some() {
+                let dchrom = std::env::var("RUSTLE_DIAG_TARGET_CHROM").unwrap_or_else(|_| "NC_073235.2".to_string());
+                let dstart: u64 = std::env::var("RUSTLE_DIAG_TARGET_START").ok().and_then(|v| v.parse().ok()).unwrap_or(31684678);
+                let dend: u64 = std::env::var("RUSTLE_DIAG_TARGET_END").ok().and_then(|v| v.parse().ok()).unwrap_or(31709055);
+                for (bi, (chrom, s, e, strand)) in layer2_bundle_meta.iter().enumerate() {
+                    if *chrom != dchrom { continue; }
+                    if *e < dstart || *s > dend { continue; }
+                    let g = captured.get(bi).and_then(|o| o.as_ref());
+                    let (ncap, nexon) = match g {
+                        Some(gr) => {
+                            let ex = gr.nodes.iter().filter(|n| n.node_id != gr.source_id && n.node_id != gr.sink_id && n.end > n.start).count();
+                            (gr.nodes.len(), ex)
+                        }
+                        None => (0, 0),
+                    };
+                    eprintln!("[DIAG2-pipe] bundle bi={} meta_span={}:{}-{} strand={} captured_graph={} (total_nodes={} exon_nodes={})",
+                        bi, chrom, s, e, strand, if g.is_some() {"SOME"} else {"NONE"}, ncap, nexon);
+                }
+            }
             match crate::vg_family::layer2::run_layer2(
-                &loci, si, &layer2_primary_locus, Some(genome),
+                &loci, si, &effective_primary_locus, Some(genome),
                 config.vg_min_shared_reads as u32,
                 config.family_exon_similarity,
                 2000, 15, config.vg_layer2_new_copies,
