@@ -18148,7 +18148,16 @@ pub fn run<P: AsRef<Path>>(
     // exon is also very short (<=100bp), emit an additional merged variant where the two
     // exons are fused. This recovers isoforms where most reads span the micro-intron
     // without splicing while a minority carry the split — both forms are real.
-    if std::env::var_os("RUSTLE_MICRO_EXON_MERGE_OFF").is_none() {
+    //
+    // Suppressed in eonly (`-e`): eonly must emit ONLY the reference transcript set, and
+    // this micro-merge is a deliberate rustle "different decision" that adds an extra
+    // (class-`m`) isoform beyond the guide — it is the sole remaining gap between the
+    // eonly floor and byte-exact StringTie parity. The faithful (unmerged) copy always
+    // survives, so Sensitivity is unaffected. Gated `!precise_mode()` so RUSTLE_PRECISE
+    // stays byte-identical to 4705ab1.
+    let suppress_micro_merge_eonly =
+        config.eonly && !crate::stringtie_parity::precise_mode();
+    if std::env::var_os("RUSTLE_MICRO_EXON_MERGE_OFF").is_none() && !suppress_micro_merge_eonly {
         const MAX_MICRO_EXON_LEN: u64 = 50;
         const MAX_MICRO_INTRON_LEN: u64 = 100;
         let mut merged_variants: Vec<crate::path_extract::Transcript> = Vec::new();
@@ -19642,6 +19651,25 @@ pub fn run<P: AsRef<Path>>(
             );
             all_transcripts.extend(recombinants);
         }
+    }
+
+    // Collapse byte-identical duplicate emissions before quantification. A guide that
+    // spans a coverage gap can be split across bundles and force-emitted once per
+    // overlapping bundle (guided / eonly), producing identical-coordinate duplicate
+    // transcripts that no chain/span dedup catches (they exempt guides and skip
+    // single-exon). StringTie emits each guide exactly once; the split copies' coverages
+    // sum to the true value, so we keep one representative and sum coverage onto it
+    // (feeding the correct value into TPM/FPKM below). Paralog-safe: VG copies are at
+    // distinct coordinates and are never byte-identical. Gated off under RUSTLE_PRECISE
+    // (escape hatch must stay byte-identical to 4705ab1); opt-out RUSTLE_DEDUP_IDENTICAL_OFF=1.
+    if !crate::stringtie_parity::precise_mode()
+        && std::env::var_os("RUSTLE_DEDUP_IDENTICAL_OFF").is_none()
+    {
+        let _before = pre_filter_snapshot(&all_transcripts);
+        all_transcripts =
+            crate::transcript_filter::dedup_identical_transcripts(all_transcripts, config.verbose);
+        emit_post_pred_kills("global_dedup_identical", &_before, &all_transcripts);
+        trace_chain_intron_probe("after_dedup_identical", &all_transcripts);
     }
 
     // Compute TPM/FPKM globally across the whole run (standard).

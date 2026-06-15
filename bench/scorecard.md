@@ -95,6 +95,77 @@ chromosomes. This is the VG mechanism's defensible genome-wide contribution; it 
 absolute count but real, strictly additive (0 regressions), and lands where the mechanism is
 designed to help. Full lists: `/tmp/gw/vglayer_genes.tsv`, `/tmp/gw/assembler_genes.tsv`.
 
+## Genome-wide StringTie-EXACT floor (`-e -G st.gtf`) — the baseline anchor
+
+The "baseline must equal StringTie exactly, then VG adds on top" question, answered
+genome-wide. `bench/gw_eonly_parity.sh` + `bench/gw_eonly_aggregate.py` run rustle in
+**eonly-guided** mode (`-e -G st.gtf`: emit ONLY transcripts matching the guide) per
+chromosome and gffcompare the result against StringTie's own GTF.
+
+```
+bash bench/gw_eonly_parity.sh      # ~9.5 min (568s), reuses st_$C.gtf
+python3 bench/gw_eonly_aggregate.py
+```
+
+**Result (25 chroms, after the two fixes below): BYTE-EXACT on every chromosome.**
+
+| metric | value |
+|--------|-------|
+| Transcript **Sensitivity** vs StringTie | **100.0 on every chromosome** |
+| Transcript **Precision** vs StringTie | **100.0 on every chromosome** |
+| floor transcripts vs StringTie | **68,157 == 68,157** (difference 0) |
+| chromosomes byte-exact (ee_tx==st_tx, Sn=Pr=100) | **25 / 25** |
+| NCBI-matched (strict =/c) vs StringTie | **25,148 == 25,148** (same annotated set) |
+
+`rustle -e -G st.gtf` reproduces StringTie's *exact transcript set on all 25 chromosomes* —
+the StringTie-exact floor the VG layer builds on. Reaching it took two fixes (below): the
+journey was **+50 → +6 → 0**.
+
+### The duplicate-emission bug (found here, fixed)
+
+The first floor run showed **+50** extras (68,207 vs 68,157), all class `=`. Tracing them:
+every one was a **duplicate guide emission**. Root cause:
+
+> A guide transcript spanning a coverage gap is split across bundles; guided/eonly mode
+> **force-emits the guide once per overlapping bundle** with bundle-local coverage,
+> producing identical-coordinate duplicates. StringTie emits each guide exactly once. No
+> existing dedup caught them — the intron-chain / same-span passes all **exempt guides and
+> skip single-exon**, which is exactly the duplicated population. The split copies' coverage
+> sums to the true single-bundle value (e.g. `1.004 + 43.433 = 44.437`).
+
+It was a **general rustle bug, present in every mode** (StringTie never duplicates):
+
+| output | exact-duplicate-transcript extras | single-exon of those |
+|--------|-----------------------------------|----------------------|
+| StringTie       | **0**  | 0  |
+| rustle-eonly    | **44** | 41 |
+| rustle-VG       | **20** | 5  |
+| rustle guided   | **19** | 5  |
+
+**Fix:** `transcript_filter::dedup_identical_transcripts` collapses byte-identical
+transcripts (same chrom/strand/exons), keeps a guide-preferred representative, and **sums
+coverage** onto it (feeding the correct value to TPM/FPKM). Wired at the global stage before
+quantification, gated `!precise_mode()` (RUSTLE_PRECISE stays byte-identical to 4705ab1),
+opt-out `RUSTLE_DEDUP_IDENTICAL_OFF=1`. Paralog-safe: VG copies live at distinct coordinates
+and are never byte-identical. Verified: 4 unit tests; `NC_073247.2` eonly 2396→2391 (==
+StringTie); chr19 **de-novo default unchanged** (2013==2013, no-op where no dups exist);
+`RUSTLE_PRECISE` dup preserved. Genome-wide eonly floor **+50 → +6**, 20/25 chroms byte-exact.
+
+### The residual +6 (`_micro5merge`) — gated out of eonly
+
+After the dedup fix, 6 extras remained: **8 `_micro5merge` variants** genome-wide (net +6).
+rustle deliberately emits a micro-exon-**merged** alternative of a guide alongside the
+faithful copy (e.g. fusing two ≤73 bp micro-exons), tagged `source
+"guide:STRG.x.y_micro5merge"`, class `m`. This is a *separate, intentional* micro-exon
+transformation — a rustle "different decision," not a duplicate — but in eonly mode (strict
+reference reproduction) it leaks one extra isoform per affected guide.
+
+**Fix:** the 5' micro-exon merge block (pipeline.rs ~18146) is now suppressed in eonly mode
+(`config.eonly && !precise_mode()`); the faithful unmerged copy always survives, so
+Sensitivity is unaffected. It remains default-on in guided / de-novo mode (where the extra
+isoform is a legitimate prediction) and under RUSTLE_PRECISE. With both fixes the eonly floor
+is **byte-exact on all 25 chromosomes** (68,157 == 68,157, Sn=Pr=100, NCBI 25,148 == 25,148).
+
 ## Intron-chain (multi-exon) recompute + baseline-parity finding
 
 The transcript-level `=`/`c` counts above include single-exon transcripts, which is where

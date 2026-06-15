@@ -1256,6 +1256,55 @@ mod tests {
         assert!(!retainedintron_like(&txs, 0, 1, &lowintron, 0.1));
     }
 
+    #[test]
+    fn dedup_identical_collapses_single_exon_and_sums_coverage() {
+        // The bundle-split guide case: same single-exon transcript emitted twice,
+        // coverages 1.0 + 43.0 -> one transcript with coverage 44.0.
+        let mut a = test_tx_cov(&[(100, 200)], 1.0);
+        a.longcov = 1.0;
+        let mut b = test_tx_cov(&[(100, 200)], 43.0);
+        b.longcov = 28.0;
+        let out = super::dedup_identical_transcripts(vec![a, b], false);
+        assert_eq!(out.len(), 1, "identical single-exon tx must collapse to one");
+        assert_eq!(out[0].coverage, 44.0, "coverage must sum across split copies");
+        assert_eq!(out[0].longcov, 29.0, "longcov must sum across split copies");
+    }
+
+    #[test]
+    fn dedup_identical_keeps_distinct_transcripts() {
+        let a = test_tx_cov(&[(100, 200)], 1.0); // single-exon
+        let b = test_tx_cov(&[(300, 400)], 1.0); // different coords
+        let c = test_tx_cov(&[(100, 150), (180, 200)], 1.0); // multi-exon, different
+        let out = super::dedup_identical_transcripts(vec![a, b, c], false);
+        assert_eq!(out.len(), 3, "distinct transcripts must all be kept");
+    }
+
+    #[test]
+    fn dedup_identical_prefers_guide_representative() {
+        // A non-guide copy with higher coverage vs a guide copy with lower coverage:
+        // the guide copy must be the surviving representative (paralog/guide identity
+        // matters more than raw coverage), and coverage still sums onto it.
+        let mut plain = test_tx_cov(&[(100, 200)], 50.0);
+        plain.source = None;
+        let mut guide = test_tx_cov(&[(100, 200)], 2.0);
+        guide.source = Some("guide:STRG.1.1".to_string());
+        let out = super::dedup_identical_transcripts(vec![plain, guide], false);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].source.as_deref(),
+            Some("guide:STRG.1.1"),
+            "guide copy must be the kept representative"
+        );
+        assert_eq!(out[0].coverage, 52.0, "coverage sums onto the guide representative");
+    }
+
+    #[test]
+    fn dedup_identical_noop_when_unique() {
+        let a = test_tx_cov(&[(100, 200)], 5.0);
+        let b = test_tx_cov(&[(100, 150), (180, 200)], 5.0);
+        let out = super::dedup_identical_transcripts(vec![a, b], false);
+        assert_eq!(out.len(), 2);
+    }
 }
 
 pub(crate) fn cov_avg_all(bpcov: &Bpcov, start: u64, end: u64) -> f64 {
@@ -4368,6 +4417,81 @@ pub fn dedup_equal_intron_chains(transcripts: Vec<Transcript>, verbose: bool) ->
         .enumerate()
         .filter(|(i, _)| keep.contains(*i))
         .map(|(_, t)| t)
+        .collect()
+}
+
+/// Collapse transcripts that are byte-identical in coordinates (same chrom, strand,
+/// and full exon list) into a single emission, summing coverage and longcov.
+///
+/// StringTie emits each transcript — and each guide — exactly once. rustle does not:
+/// a guide spanning a coverage gap can be split across bundles and *force-emitted once
+/// per overlapping bundle* (guided / eonly mode), producing identical-coordinate
+/// duplicate transcripts. No existing dedup catches these — the intron-chain / same-span
+/// passes exempt guides and skip single-exon transcripts, which is exactly the duplicated
+/// population. The split copies' coverages sum to the true single-bundle coverage, so we
+/// keep one representative and sum coverage onto it.
+///
+/// Paralog-safe: VG family copies live at distinct genomic coordinates, so they are never
+/// byte-identical and are never collapsed. Representative preference: a guide-matched copy
+/// over a non-guide copy, then higher coverage, then lower input index (stable, so the
+/// output is deterministic regardless of HashMap iteration order).
+pub fn dedup_identical_transcripts(transcripts: Vec<Transcript>, verbose: bool) -> Vec<Transcript> {
+    if transcripts.len() < 2 {
+        return transcripts;
+    }
+    let mut groups: HashMap<(String, char, Vec<(u64, u64)>), Vec<usize>> = Default::default();
+    for (i, t) in transcripts.iter().enumerate() {
+        groups
+            .entry((t.chrom.clone(), t.strand, t.exons.clone()))
+            .or_default()
+            .push(i);
+    }
+    if groups.len() == transcripts.len() {
+        return transcripts; // no exact duplicates
+    }
+    let mut keep_set: HashSet<usize> = Default::default();
+    let mut summed: HashMap<usize, (f64, f64)> = Default::default();
+    for idxs in groups.values() {
+        let mut rep = idxs[0];
+        for &i in idxs {
+            let ti = &transcripts[i];
+            let tr = &transcripts[rep];
+            let better = match (is_guide_tx(ti), is_guide_tx(tr)) {
+                (true, false) => true,
+                (false, true) => false,
+                _ => ti.coverage > tr.coverage || (ti.coverage == tr.coverage && i < rep),
+            };
+            if better {
+                rep = i;
+            }
+        }
+        if idxs.len() > 1 {
+            let cov: f64 = idxs.iter().map(|&i| transcripts[i].coverage).sum();
+            let lcov: f64 = idxs.iter().map(|&i| transcripts[i].longcov).sum();
+            summed.insert(rep, (cov, lcov));
+        }
+        keep_set.insert(rep);
+    }
+    let removed = transcripts.len() - keep_set.len();
+    if verbose && removed > 0 {
+        eprintln!(
+            "    Identical-transcript dedup: collapsed {} duplicate emission(s)",
+            removed
+        );
+    }
+    transcripts
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, mut t)| {
+            if !keep_set.contains(&i) {
+                return None;
+            }
+            if let Some(&(cov, lcov)) = summed.get(&i) {
+                t.coverage = cov;
+                t.longcov = lcov;
+            }
+            Some(t)
+        })
         .collect()
 }
 
