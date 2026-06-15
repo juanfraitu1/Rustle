@@ -41,7 +41,7 @@ This determines the real fix; do it before writing recovery code.
 - [ ] **Step 4:** gffcompare `out.gtf` vs the RefSeq for the region; is `XM_055375231.2` recovered (FSM)?
 - [ ] **Step 5:** If NOT recovered, pin the failure to ONE of (decision tree → sets the fix task):
   - (a) **family not formed** (the starved copy's locus isn't in the `FamilyGraph`) — because no
-    bundle/Layer-1 graph exists there (no primary reads). → fix in Task 2.x: seed the family with
+    bundle/Layer-1 graph exists there (no primary alignments). → fix in Task 2.x: seed the family with
     the secondary-supported locus.
   - (b) **copy not a path** in the graph (`recover_paralog_path` returns nothing for it). → fix:
     add the copy-path from its reference locus.

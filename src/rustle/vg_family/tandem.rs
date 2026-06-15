@@ -84,7 +84,7 @@ pub fn detect_tandem_bundle(
     if !cfg.enabled {
         return None;
     }
-    // Cluster PRIMARY read footprints only. Secondary / chimeric alignments of
+    // Cluster PRIMARY alignment footprints only. Secondary / chimeric alignments of
     // near-identical tandem copies BRIDGE the copies — single alignments span
     // tens of kb across several copies (e.g. RBMY1: footprints up to 56 kb),
     // which fills the intergenic gaps and collapses the gap-clustering into one
@@ -176,7 +176,7 @@ pub fn decompose_tandem_to_family(
     // `read_name_hash`) → a multimapper the fingerprint-EM apportions. That is
     // exactly what lets a read-starved copy borrow sibling STRUCTURE (the
     // secondaries carry the full gene) while the EM keeps its ABUNDANCE honest
-    // (only its own primary reads anchor it). Alignments starting in an
+    // (only its own primary alignments anchor it). Alignments starting in an
     // intergenic gap (no containing span) are dropped as noise.
     let spans = &decomp.copy_spans;
     let mut per_copy: Vec<Vec<usize>> = vec![Vec::new(); spans.len()];

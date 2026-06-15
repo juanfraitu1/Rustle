@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Explanatory figure: how the paralog-family splice graph looks with PRIMARY reads only
+"""Explanatory figure: how the paralog-family splice graph looks with PRIMARY alignments only
 vs. with SECONDARY (multimapper) alignments added — illustrating why primary-only assembly
 (StringTie / long-read) starves a paralog copy, and how the secondary alignments + PSVs
 resolve it. Schematic, annotated with the real GGO result (XM_055380753.2)."""
@@ -61,8 +61,8 @@ axL.set_title("A.  Primary alignments only  (StringTie / long-read)", fontsize=1
 draw_copy(axL, 4.4, "Copy A\n(expressed)", EXON, edge=PRIM, psv_color=PSV_A)
 draw_copy(axL, 0.2, "Copy B\n(paralog)", EXON_B_off, faded=True, edge="#999999")
 # all multimapper reads land their PRIMARY on Copy A (arbitrary MAPQ-0 tie-break)
-draw_reads(axL, 4.0, reads, PRIM, n_label="primary reads → A")
-axL.text(47, -2.4, "Copy B has ~no primary reads\n→ starved → NOT assembled\n(StringTie misses XM_055380753.2)",
+draw_reads(axL, 4.0, reads, PRIM, n_label="primary alignments → A")
+axL.text(47, -2.4, "Copy B has ~no primary alignments\n→ starved → NOT assembled\n(StringTie misses XM_055380753.2)",
          ha="center", va="center", fontsize=9.5, color="#888888",
          bbox=dict(boxstyle="round", fc="#f6f6f6", ec="#cccccc"))
 

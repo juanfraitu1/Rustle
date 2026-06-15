@@ -73,7 +73,7 @@ pub enum RescueClass {
     /// Its transcripts are the baseline (StringTie-equivalent) isoforms that the
     /// secondary-polluted VG bundle drops; they are protected from cross-bundle
     /// reconciliation (predcluster / subset-dedup) so the polluted VG transcripts
-    /// can't out-compete them. Real primary reads (NOT synthetic).
+    /// can't out-compete them. Real primary alignments (NOT synthetic).
     UnionBaseline,
 }
 

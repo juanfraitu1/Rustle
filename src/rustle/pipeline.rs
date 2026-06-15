@@ -779,7 +779,7 @@ fn stamp_union_baseline_rescue_class(
 }
 
 /// Phantom-junction strip across `family_bundles`: for each bundle that has any
-/// secondary read, keep all primary reads + only secondaries whose ENTIRE chain
+/// secondary alignment, keep all primary alignments + only secondaries whose ENTIRE chain
 /// is primary-supported (see `crate::vg::read_confirms_primary_junctions`). Drops
 /// the cross-mapped secondary contamination that read-driven path_extract
 /// enumerates into spurious transcripts (RBMY 16→54; chrY pred 253→224 at the
@@ -797,8 +797,8 @@ fn strip_phantom_junction_secondaries(
     for &bi in family_bundles {
         if bi >= bundles.len() { continue; }
         if !bundles[bi].reads.iter().any(|r| !r.is_primary_alignment) { continue; }
-        // A junction is CONFIRMED (real) if a primary read crosses it, OR — when
-        // `min_sec` is finite — at least `min_sec` SECONDARY reads cross it
+        // A junction is CONFIRMED (real) if a primary alignment crosses it, OR — when
+        // `min_sec` is finite — at least `min_sec` SECONDARY alignments cross it
         // (consistent secondary support = a real low-primary copy whose primaries
         // minimap2 assigned to a dominant sibling, e.g. RBMY LOC242/276: 40-61
         // secondaries / 0 primary). Sporadic phantom junctions (a handful of
@@ -10952,7 +10952,7 @@ pub fn run<P: AsRef<Path>>(
     // secondaries from sister paralogs):
     //   RUSTLE_VG_FAMILY_PRIMARY_SUPPORTED_JUNCTIONS=1
     //     → for family bundles, filter junction_stats to only those
-    //       junctions used by ≥1 primary read at the bundle locus.
+    //       junctions used by ≥1 primary alignment at the bundle locus.
     //       Note: a bridging primary at the locus may itself carry
     //       paralog-imprint introns, so this filter is not always
     //       sufficient (chr19 test: doesn't recover GOLGA6L10).
@@ -11735,11 +11735,11 @@ pub fn run<P: AsRef<Path>>(
         // ── Pass 2: phantom-junction strip at ALL family copies (de-enumeration).
         // The copy-gate above removes fake COPIES (TSPY3, DAZ3). It does NOT touch
         // the ISOFORM over-enumeration at the REAL copies: cross-mapped secondaries
-        // draw splice junctions no primary read supports, which read-driven
+        // draw splice junctions no primary alignment supports, which read-driven
         // path_extract enumerates into spurious transcripts (RBMY array 16→54 tx).
         // Generalize the RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS prototype (which was
         // scoped to TandemCopy sub-bundles) to every family-copy bundle: keep all
-        // PRIMARY reads + only the secondary reads whose ENTIRE chain is primary-
+        // PRIMARY alignments + only the secondary alignments whose ENTIRE chain is primary-
         // supported (they CONFIRM real junctions). Drops secondaries carrying any
         // phantom (zero-primary) junction. Ablate with RUSTLE_VG_DECISIVE_GATE_NO_JCT.
         if std::env::var_os("RUSTLE_VG_DECISIVE_GATE_NO_JCT").is_none() {
@@ -11747,7 +11747,7 @@ pub fn run<P: AsRef<Path>>(
                 vg_families.iter().flat_map(|f| f.bundle_indices.iter().copied()).collect();
             let n_jct_stripped = strip_phantom_junction_secondaries(&mut bundles, &family_bundles, &config, usize::MAX);
             if n_jct_stripped > 0 {
-                eprintln!("[VG-DECISIVE-GATE] phantom-junction strip: dropped {} phantom-junction secondary read(s) across family copies", n_jct_stripped);
+                eprintln!("[VG-DECISIVE-GATE] phantom-junction strip: dropped {} phantom-junction secondary alignment(s) across family copies", n_jct_stripped);
             }
         }
     }
@@ -11778,20 +11778,20 @@ pub fn run<P: AsRef<Path>>(
             .ok().and_then(|s| s.parse().ok()).unwrap_or(10);
         let n = strip_phantom_junction_secondaries(&mut bundles, &family_bundles, &config, min_sec);
         if n > 0 {
-            eprintln!("[VG-PRIMARY-JCT] phantom-junction strip (min_sec={}): dropped {} secondary read(s) across {} family bundle(s)",
+            eprintln!("[VG-PRIMARY-JCT] phantom-junction strip (min_sec={}): dropped {} secondary alignment(s) across {} family bundle(s)",
                 if min_sec==usize::MAX {"inf".into()} else {min_sec.to_string()}, n, family_bundles.len());
         }
     }
 
     // ── PROTOTYPE (opt-in RUSTLE_VG_TANDEM_PRIMARY_JUNCTIONS): primary-only structure ──
-    // The RBMY over-enumeration is SECONDARY-READ CONTAMINATION: cross-mapped secondaries
-    // (e.g. a c0-origin read landing on c4) draw splice junctions NO primary read supports
+    // The RBMY over-enumeration is SECONDARY-alignment CONTAMINATION: cross-mapped secondaries
+    // (e.g. a c0-origin read landing on c4) draw splice junctions NO primary alignment supports
     // (0/72 novel introns), which the read-driven path_extract enumerates into spurious
     // transcripts. Filtering junction_stats is bypassed (the graph re-derives junctions from
     // the reads), so the structural gate must act on the READS: after the EM has used the
     // secondaries for apportionment + copy_confidence (above), strip them from each TandemCopy
-    // sub-bundle so its splice graph is built from PRIMARY reads only. A genuine novel copy's
-    // reads are PRIMARY at its locus (hidden copy 40 primary reads / compatPrim 29; inversion
+    // sub-bundle so its splice graph is built from PRIMARY alignments only. A genuine novel copy's
+    // reads are PRIMARY at its locus (hidden copy 40 primary alignments / compatPrim 29; inversion
     // compatPrim 40-47), so it survives; only the secondary contamination is removed. Scoped to
     // TandemCopy → DAZ / dispersed families / de-novo are byte-identical. Refinement (keep
     // secondaries that CONFIRM primary-supported junctions) deferred. See
@@ -11806,9 +11806,9 @@ pub fn run<P: AsRef<Path>>(
                 && bundle.reads.iter().any(|r| !r.is_primary_alignment)
             {
                 // Primary-supported junction set for this copy: junctions appearing in ≥1
-                // PRIMARY read. Keep all primary reads + only the secondary reads whose ENTIRE
+                // PRIMARY alignment. Keep all primary alignments + only the secondary alignments whose ENTIRE
                 // chain is primary-supported (they CONFIRM real junctions → real coverage). Drop
-                // secondary reads carrying any phantom (zero-primary) junction — the contamination
+                // secondary alignments carrying any phantom (zero-primary) junction — the contamination
                 // that path_extract enumerates. This is the targeted version: it removes the
                 // phantom-junction transcripts WITHOUT discarding the coverage real low-cov copies
                 // need (the blunt strip-all-secondaries over-corrected: Sn 55→40).
@@ -11823,7 +11823,7 @@ pub fn run<P: AsRef<Path>>(
             }
         }
         if n_stripped > 0 {
-            eprintln!("[VG-TANDEM-PJ] primary-only structure: stripped {} secondary read(s) from tandem sub-bundles", n_stripped);
+            eprintln!("[VG-TANDEM-PJ] primary-only structure: stripped {} secondary alignment(s) from tandem sub-bundles", n_stripped);
         }
     }
 
@@ -11832,7 +11832,7 @@ pub fn run<P: AsRef<Path>>(
     // independent_support — it carries copy-specific evidence, e.g. RBMY1 c4 at
     // 0.895, NM=35 from its sibling) yet have its EM-apportioned weight claimed
     // by a dominant near-identical sibling, so it vanishes from assembly. Floor
-    // its OWN primary reads' weight so a certified copy emits (at low
+    // its OWN primary alignments' weight so a certified copy emits (at low
     // capacity_confidence — the borrowed coverage is unanchored) instead of
     // being silently absorbed. SCOPED to `TandemCopy` sub-bundles, so DAZ /
     // dispersed families and the default de-novo path are on different code
@@ -11849,8 +11849,8 @@ pub fn run<P: AsRef<Path>>(
             .ok().and_then(|s| s.parse().ok()).unwrap_or(0.75);
         let floor_w: f64 = std::env::var("RUSTLE_VG_TANDEM_WEIGHT_FLOOR")
             .ok().and_then(|s| s.parse().ok()).unwrap_or(0.5);
-        // OWN-PRIMARY-READ gate (2026-06-04): floor a tandem copy's under-weighted primaries
-        // only if it has ENOUGH of its OWN primary reads to self-assemble its structure
+        // OWN-PRIMARY-alignment gate (2026-06-04): floor a tandem copy's under-weighted primaries
+        // only if it has ENOUGH of its OWN primary alignments to self-assemble its structure
         // (min_prim). This recovers a real divergent copy whose reads are under-weighted (RBMY1
         // c0: 8 own primaries, micro-exons retained → recovered, Sn 65→70) WITHOUT flooring a
         // sparse copy that can only BORROW its structure from siblings (c6: 2 own reads →
@@ -11898,7 +11898,7 @@ pub fn run<P: AsRef<Path>>(
         }
         if n_floored > 0 {
             eprintln!(
-                "[VG-TANDEM] own-primary weight floor: raised {} primary read(s) across {} self-assemblable copy(ies) (n_prim>={}, floor={})",
+                "[VG-TANDEM] own-primary weight floor: raised {} primary alignment(s) across {} self-assemblable copy(ies) (n_prim>={}, floor={})",
                 n_floored, n_copies, min_prim, floor_w
             );
         }
@@ -12501,7 +12501,7 @@ pub fn run<P: AsRef<Path>>(
     // real VG transcripts in predcluster). ROOT CAUSE: rustle's bundler RE-SPLITS such
     // regions for a standalone primary-only run, but a clone injected here is the unsplit
     // span; patching start/end or clearing bundlenodes both made it worse. The correct fix
-    // is to RE-BUNDLE the primary reads (run the splitter) or do a post-process GTF union
+    // is to RE-BUNDLE the primary alignments (run the splitter) or do a post-process GTF union
     // (run primary-only + vg, union by exact intron chain — the originally validated path).
     // Kept default-off (byte-identical when unset) as scaffolding for that future work.
     // Over-collapse regression: at family/secondary-bearing bundles, cross-mapped
@@ -12528,7 +12528,7 @@ pub fn run<P: AsRef<Path>>(
             if prim.is_empty() {
                 continue;
             }
-            // Re-split the PRIMARY reads by the runoff gap. The cross-mapped secondaries
+            // Re-split the PRIMARY alignments by the runoff gap. The cross-mapped secondaries
             // that papered over the inter-gene gap (collapsing this into a mega-bundle)
             // are excluded here, so the per-gene boundary reappears and each gene gets a
             // clean primary-only sub-bundle whose assembly reproduces the baseline
@@ -17715,7 +17715,7 @@ pub fn run<P: AsRef<Path>>(
         // Anti-chimera isoform filter (opt-in RUSTLE_VG_ISOFORM_PAIR_SUPPORT): for
         // VG-family bundles, drop enumerated isoforms whose intron chain has a
         // CONSECUTIVE junction pair co-occurring in NO read — the chimeric paths
-        // path_extract assembles from secondary-read fragments (the dominant
+        // path_extract assembles from secondary-alignment fragments (the dominant
         // autosomal VG over-enum the junction strip can't reach). Real copies
         // (incl. low-primary ones spanned only by secondaries) keep every adjacent
         // pair co-supported, so survive. Scoped to VG-family bundles + opt-in →
@@ -17749,7 +17749,7 @@ pub fn run<P: AsRef<Path>>(
         }
         // compatPrim isoform selection (opt-in RUSTLE_VG_COMPATPRIM): "VG structure
         // + parsimonious primary-evidence flow". Drop a VG-family multi-exon isoform
-        // unless >= MIN primary reads carry a contiguous run of its junctions
+        // unless >= MIN primary alignments carry a contiguous run of its junctions
         // (compat_prim_support). Suppresses the read-driven over-enum (secondary-only
         // minor variants → compatPrim 0) that coverage/all-read filters miss, while
         // KEEPING genuine copies incl. novel ones (own reads are primary at their

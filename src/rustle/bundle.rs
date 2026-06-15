@@ -1878,7 +1878,7 @@ pub fn detect_bundles_from_bam_with_snp<P: AsRef<Path>>(
     }
 
     // Optional: post-pass that splits regions at zero-coverage stretches >= min_gap.
-    // Uses exon-level coverage from primary reads (introns don't contribute coverage).
+    // Uses exon-level coverage from primary alignments (introns don't contribute coverage).
     // Activated by RUSTLE_BPCOV_REGION_SPLIT=<min_gap_bp> (e.g. 200).
     if let Some(min_gap) = std::env::var("RUSTLE_BPCOV_REGION_SPLIT")
         .ok()
@@ -2316,9 +2316,9 @@ pub fn recompute_junction_stats_primary_only(bundle: &mut Bundle, config: &RunCo
 }
 
 /// Rebuild `junction_stats` using ALL reads, but only count junctions that
-/// at least one PRIMARY read supports. This is the right knob for family
+/// at least one PRIMARY alignment supports. This is the right knob for family
 /// bundles: it drops "wrong-intron" cross-mapping junctions (introns that
-/// no primary read at this locus uses — they came from a sister paralog's
+/// no primary alignment at this locus uses — they came from a sister paralog's
 /// structure when its read was secondary-aligned here) while preserving
 /// real junctions where primaries AND secondaries agree. The
 /// secondary-confirmed counts on real junctions stay intact so EM and

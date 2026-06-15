@@ -1168,7 +1168,7 @@ pub fn filter_high_confidence_families(
         }
         let n_shared = fam.multimap_reads.len();
         // Exemption: if any copy in the family consists entirely of supplementary
-        // reads (0 primary reads at that locus), this is a genuine multi-copy
+        // reads (0 primary alignments at that locus), this is a genuine multi-copy
         // gene family where reads are shared across copies by definition.
         // Don't drop it on shared count thresholds — the pileup EM will handle it.
         let has_supp_only_copy = fam.bundle_indices.iter().any(|&bi| {
@@ -1751,8 +1751,8 @@ pub fn copy_support_fraction(n_unique: usize, multimappers: &[(f64, f64)], margi
 }
 
 /// Phantom-junction strip predicate. A read SURVIVES iff it is a PRIMARY
-/// alignment OR every one of its splice junctions is supported by ≥1 primary read
-/// in the same bundle (`primary_supported`). Secondary reads carrying a phantom
+/// alignment OR every one of its splice junctions is supported by ≥1 primary alignment
+/// in the same bundle (`primary_supported`). Secondary alignments carrying a phantom
 /// (zero-primary) junction — the cross-mapped contamination that read-driven
 /// path_extract enumerates into spurious transcripts (RBMY 16→54; chrY pred
 /// 253→224) — are dropped, while secondaries that merely CONFIRM real
@@ -1782,14 +1782,14 @@ pub fn isoform_junction_pairs_supported(
     introns.windows(2).all(|w| supported_pairs.contains(&(w[0], w[1])))
 }
 
-/// `compatPrim`: count of PRIMARY reads whose intron chain is a CONTIGUOUS
+/// `compatPrim`: count of PRIMARY alignments whose intron chain is a CONTIGUOUS
 /// sub-chain (±tol per junction coord) of the transcript's intron chain — primary
 /// reads that actually carry a real run of THIS isoform's junctions.
 ///
 /// The over-enumeration discriminant (research 2026-06-04, separation AUC 0.992 vs
 /// coverage 0.777): VG's read-driven path_extract emits an isoform per observed
 /// read-chain, so low-abundance minor variants whose distinguishing junction is
-/// SECONDARY-only get compatPrim ≈ 0 (no primary read carries that run), while
+/// SECONDARY-only get compatPrim ≈ 0 (no primary alignment carries that run), while
 /// genuine copies get ≥3 — INCLUDING novel copies absent from the annotation,
 /// whose own reads are PRIMARY at their locus even if they mismap as secondary
 /// elsewhere (hidden copy measured 29, inverted copy 40-47 → novelty-safe). This
@@ -2077,7 +2077,7 @@ pub fn compute_copy_ownership(
             let h = read.read_name_hash;
             if !family.multimap_reads.contains_key(&h) {
                 // Unique WITHIN the family. Only genuine own-evidence if this is the
-                // read's PRIMARY (best) alignment — a secondary read that is unique
+                // read's PRIMARY (best) alignment — a secondary alignment that is unique
                 // within this family has its true primary at a copy OUTSIDE the
                 // family (borrowed evidence, e.g. the prim=0 TSPY3 phantom: 43
                 // secondaries, 0 primary → own_ev must be 0, not 43).
@@ -2643,7 +2643,7 @@ pub fn detect_and_report_segdups(
 
 /// Per-family pass detecting gene-family copies PRESENT in the reads but ABSENT from the
 /// reference (opt-in RUSTLE_VG_HIDDEN_COPY). For each reference copy locus, scans the FULL
-/// bundles for PRIMARY reads (the paralog-bleed firewall — an in-reference paralog's reads are
+/// bundles for PRIMARY alignments (the paralog-bleed firewall — an in-reference paralog's reads are
 /// primary at ITS locus, secondary here) and runs `detect_hidden_copy` over their mismatch
 /// haplotype. DETECT + FLAG only — reports the discrepancy, never places or fabricates the copy.
 pub fn detect_and_report_hidden_copies(
@@ -2822,7 +2822,7 @@ pub fn compute_copy_independent_support(
 
 /// Boost read weights in underpowered family-member bundles.
 ///
-/// When a bundle has fewer than `RUSTLE_VG_BOOST_PRIMARY_THR` primary reads
+/// When a bundle has fewer than `RUSTLE_VG_BOOST_PRIMARY_THR` primary alignments
 /// (default 10) but the family's multi-mappers carry significant EM-assigned
 /// weight to that bundle (`RUSTLE_VG_BOOST_MIN_EM_WEIGHT`, default 3.0), read
 /// weights are multiplied so the assembler sees enough effective coverage.
@@ -2832,7 +2832,7 @@ pub fn compute_copy_independent_support(
 ///   primary∈[1, primary_min): skipped. Boosting 1–2 primaries creates a
 ///     coverage spike that can disrupt secondary-driven assembly at bundles
 ///     already producing output.
-///   primary∈[primary_min, primary_thr): only primary reads are boosted;
+///   primary∈[primary_min, primary_thr): only primary alignments are boosted;
 ///     secondaries keep their EM-assigned weights so relative evidence is
 ///     preserved. With 3+ primaries the boost is spread across enough reads
 ///     that the coverage profile stays balanced.
@@ -2842,7 +2842,7 @@ pub fn compute_copy_independent_support(
 ///
 /// ⚠️ PRECISION CHECK (2026-06-03) — DO NOT ENABLE BY DEFAULT. The `primary=0`
 /// path fabricates phantoms. On real GOLGA8 it fired twice on loci with ZERO
-/// genuine primary reads (pure sibling echoes — the DAZ3 pattern); one was inert,
+/// genuine primary alignments (pure sibling echoes — the DAZ3 pattern); one was inert,
 /// the other amplified 79 secondary echoes 10× into 2 NEW transcripts (RSTL.373)
 /// at cov 229× with capacity_confidence 1.000 — i.e. it manufactures a
 /// MAXIMALLY-confident-looking copy with no read calling that locus home, defeating
@@ -4496,7 +4496,7 @@ fn build_read_site_obs(
     obs
 }
 
-/// Per-family mosaic detection pass (opt-in). For each copy's PRIMARY reads (a read's home
+/// Per-family mosaic detection pass (opt-in). For each copy's PRIMARY alignments (a read's home
 /// copy), build the per-site match structure and run `detect_mosaic`; aggregate per family
 /// and report confirmed gene-conversion events vs chimera-suspects. Pure-analysis: it never
 /// mutates bundles or EM weights.
@@ -6680,7 +6680,7 @@ impl CopyCertificate {
 /// sibling, e.g. DAZ3 at frac 0.07), AND the strictly-owning multimappers (the evidence only a
 /// secondary-retaining assembler has) strictly EXCEED what a primary-only assembler sees
 /// (`n_strict > n_primary`). The strict inequality matters: `own_ev` includes `n_unique`, which
-/// counts single-locus PRIMARY reads already reflected in `n_primary`, so an `n_strict ==
+/// counts single-locus PRIMARY alignments already reflected in `n_primary`, so an `n_strict ==
 /// n_primary` copy with unique primaries is in fact primary-visible — not a multimapper-only
 /// rescue. RABL2A (28 primary, ~140 strict) clears this decisively; a copy whose own primaries
 /// already reveal it does not.
@@ -6815,7 +6815,7 @@ mod tests {
 
     #[test]
     fn not_rescued_primary_visible_at_boundary() {
-        // 3 unique single-locus PRIMARY reads (primary-visible) + 3 strict owners → n_strict == n_primary.
+        // 3 unique single-locus PRIMARY alignments (primary-visible) + 3 strict owners → n_strict == n_primary.
         // A primary-only assembler already sees the 3 uniques, so this is NOT recoverable ONLY from
         // multimappers; strict owners must strictly EXCEED primary visibility.
         assert!(!is_multimapper_rescued(3, 6, 3, 0, 3, 0.5),
@@ -6899,7 +6899,7 @@ mod tests {
     fn compat_prim_counts_primary_chain_carriers_not_spurious() {
         let a=(100,200); let b=(300,400); let c=(500,600); let sec=(350,420);
         let tx = [a,b,c];
-        // primary reads that carry contiguous runs of tx → count.
+        // primary alignments that carry contiguous runs of tx → count.
         let r_ab = vec![a,b]; let r_bc = vec![b,c]; let r_full = vec![a,b,c];
         // a read that splices a then c (skipping b) is NOT a contiguous subchain.
         let r_ac = vec![a,c];
@@ -6942,12 +6942,12 @@ mod tests {
         use crate::types::Junction;
         let j1 = Junction::new(100, 200);
         let j2 = Junction::new(300, 400);   // primary-supported
-        let jp = Junction::new(999, 1099);  // phantom (no primary read crosses it)
+        let jp = Junction::new(999, 1099);  // phantom (no primary alignment crosses it)
         let mut primary: std::collections::HashSet<Junction> = std::collections::HashSet::new();
         primary.insert(j1);
         primary.insert(j2);
 
-        // Primary reads always survive (regardless of their junctions).
+        // Primary alignments always survive (regardless of their junctions).
         assert!(read_confirms_primary_junctions(true, &[jp], &primary));
         // A secondary whose ENTIRE chain is primary-supported survives — it
         // CONFIRMS real junctions and adds coverage a low-cov copy needs.
@@ -6962,12 +6962,12 @@ mod tests {
     #[test]
     fn decisive_gate_primary_coverage_recovers_real_copies() {
         // MEASURED RBMY bundles 4,5: own_ev=2 (NM gate would DROP), but 14 and 7
-        // PRIMARY reads → genuinely real (their primaries are NM-tied with the
+        // PRIMARY alignments → genuinely real (their primaries are NM-tied with the
         // near-identical sibling, so NM-ownership under-counts). Primary escape keeps.
         assert!(copy_keeps_ambiguous_reads(14, 2, 48, 4, 2, 0.5, 8),
-            "real copy with 14 primary reads must be kept despite own_ev=2");
+            "real copy with 14 primary alignments must be kept despite own_ev=2");
         assert!(copy_keeps_ambiguous_reads(7, 2, 26, 4, 2, 0.5, 8),
-            "real copy with 7 primary reads must be kept despite own_ev=2");
+            "real copy with 7 primary alignments must be kept despite own_ev=2");
     }
 
     #[test]

@@ -4,18 +4,18 @@
 //! A hidden copy's reads have no correct home, so they mismap to the closest sibling reference
 //! copy carrying their PRIVATE SNPs — a COHERENT second haplotype the reference (one copy at
 //! that locus) cannot explain. This detector finds that second haplotype among the locus's
-//! PRIMARY reads and FLAGS the discrepancy. Per the DAZ3 discipline it DETECTS and reports
+//! PRIMARY alignments and FLAGS the discrepancy. Per the DAZ3 discipline it DETECTS and reports
 //! evidence ("the reads imply ≥2 copies; the reference models 1") and ABSTAINS from placing or
 //! fabricating the missing copy — it never manufactures a copy.
 //!
 //! Design = synthesis of an independent design panel (statistical / algorithmic / honesty
-//! lenses), which converged on: PRIMARY-reads-only matrix (the paralog-bleed firewall, since an
+//! lenses), which converged on: PRIMARY-alignments-only matrix (the paralog-bleed firewall, since an
 //! in-reference paralog's reads are primary at THEIR locus), candidate columns where the
 //! non-reference allele frequency sits in a balanced band (excludes 0.5% sequencing error and
 //! fixed differences), and a co-segregation/block test (a hidden copy's alt columns co-occur on
 //! ONE read subset — distinguishing it from scattered heterozygous SNPs by requiring many).
 
-/// One primary read's observation at the locus: its covered span [start, end) and the positions
+/// One primary alignment's observation at the locus: its covered span [start, end) and the positions
 /// where it carries a non-reference allele (a mismatch).
 #[derive(Debug, Clone)]
 pub struct ReadObs {
@@ -71,7 +71,7 @@ pub struct HiddenCopyEvidence {
     pub flagged: bool,          // evidence of an unmodeled copy at this locus
 }
 
-/// Pure detector over PRIMARY reads at one reference-copy locus. The caller MUST pass primary
+/// Pure detector over PRIMARY alignments at one reference-copy locus. The caller MUST pass primary
 /// reads only (the paralog-bleed firewall). Deterministic; no I/O.
 pub fn detect_hidden_copy(reads: &[ReadObs], p: &HiddenCopyParams) -> HiddenCopyEvidence {
     let n = reads.len();

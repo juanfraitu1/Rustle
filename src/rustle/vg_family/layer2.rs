@@ -43,7 +43,7 @@ pub fn graph_exon_span(g: &Graph) -> Option<(u64, u64, usize)> {
     if n == 0 { None } else { Some((s, e, n)) }
 }
 
-/// Pick the component locus a primary read belongs to, by maximal span overlap.
+/// Pick the component locus a primary alignment belongs to, by maximal span overlap.
 /// `comp_spans[i] = (start, end)` is the exon span of component locus `i`.
 /// Returns the index with the largest overlap with `read_span`; ties broken by
 /// lowest index (deterministic). `None` if no component overlaps the read.
