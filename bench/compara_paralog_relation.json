@@ -1,0 +1,1321 @@
+{
+  "families": {
+    "APOBEC3D": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "APOBEC3D",
+        "APOBEC3F"
+      ],
+      "named_genes": [
+        "APOBEC3D",
+        "APOBEC3F"
+      ]
+    },
+    "AQP12A": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "AQP12A"
+      ],
+      "named_genes": [
+        "AQP12A"
+      ]
+    },
+    "ASDURF": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "ASDURF",
+        "ASNSD1"
+      ],
+      "named_genes": [
+        "ASDURF",
+        "ASNSD1"
+      ]
+    },
+    "CASP8": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "CASP8",
+        "FLACC1"
+      ],
+      "named_genes": [
+        "CASP8",
+        "FLACC1"
+      ]
+    },
+    "CCDC188": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "CCDC188",
+        "ZDHHC8"
+      ],
+      "named_genes": [
+        "CCDC188",
+        "ZDHHC8"
+      ]
+    },
+    "CDPF1": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "CDPF1",
+        "PPARA"
+      ],
+      "named_genes": [
+        "CDPF1",
+        "PPARA"
+      ]
+    },
+    "COPS8": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "COPS8"
+      ],
+      "named_genes": [
+        "COPS8"
+      ]
+    },
+    "CREB1": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "CREB1",
+        "METTL21A"
+      ],
+      "named_genes": [
+        "CREB1",
+        "METTL21A"
+      ]
+    },
+    "DDT": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "DDT"
+      ],
+      "named_genes": [
+        "DDT"
+      ]
+    },
+    "DGCR6": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "DGCR6"
+      ],
+      "named_genes": [
+        "DGCR6"
+      ]
+    },
+    "FAM246A": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "FAM246A"
+      ],
+      "named_genes": [
+        "FAM246A"
+      ]
+    },
+    "GCA": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "GCA",
+        "KCNH7"
+      ],
+      "named_genes": [
+        "GCA",
+        "KCNH7"
+      ]
+    },
+    "GGT1": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "GGT1"
+      ],
+      "named_genes": [
+        "GGT1"
+      ]
+    },
+    "GGTLC2": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "GGTLC2"
+      ],
+      "named_genes": [
+        "GGTLC2"
+      ]
+    },
+    "GP1BB": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "SEPTIN5"
+      ],
+      "named_genes": [
+        "GP1BB",
+        "SEPTIN5"
+      ]
+    },
+    "GPR39": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "GPR39",
+        "LYPD1"
+      ],
+      "named_genes": [
+        "GPR39",
+        "LYPD1"
+      ]
+    },
+    "IGLL1": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "IGLL1"
+      ],
+      "named_genes": [
+        "IGLL1"
+      ]
+    },
+    "LOC101123878": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101126655": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101127159": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101127811": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101129569": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101131416": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101132221": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101132628": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101134642": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101136027": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101138607": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101142890": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101144123": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101144552": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101145825": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101145885": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101146886": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101146937": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101147293": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101147656": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC101150852": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "USP18"
+      ],
+      "named_genes": [
+        "USP18"
+      ]
+    },
+    "LOC101151758": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC109024534": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC109025943": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC115931911": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "PRODH"
+      ],
+      "named_genes": [
+        "PRODH"
+      ]
+    },
+    "LOC115931965": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "PI4KA"
+      ],
+      "named_genes": [
+        "PI4KA"
+      ]
+    },
+    "LOC115931973": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "TOP3B"
+      ],
+      "named_genes": [
+        "TOP3B"
+      ]
+    },
+    "LOC115933728": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "TUBA3E"
+      ],
+      "named_genes": [
+        "TUBA3E"
+      ]
+    },
+    "LOC129529430": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129529434": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129529456": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "NCAPH2"
+      ],
+      "named_genes": [
+        "NCAPH2"
+      ]
+    },
+    "LOC129529513": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "MIEF1"
+      ],
+      "named_genes": [
+        "MIEF1"
+      ]
+    },
+    "LOC129529548": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129529560": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "ZNF74"
+      ],
+      "named_genes": [
+        "ZNF74"
+      ]
+    },
+    "LOC129529592": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129529611": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129529666": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129529667": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129530539": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129532044": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC129532202": {
+      "checkable_pair": false,
+      "mapped_genes": [],
+      "named_genes": []
+    },
+    "LOC134756662": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "TTN"
+      ],
+      "named_genes": [
+        "TTN"
+      ]
+    },
+    "LOC134756677": {
+      "checkable_pair": false,
+      "mapped_genes": [
+        "SYN3"
+      ],
+      "named_genes": [
+        "SYN3"
+      ]
+    },
+    "LOC134758217": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "RFPL1",
+        "RFPL2",
+        "RFPL3"
+      ],
+      "named_genes": [
+        "RFPL1",
+        "RFPL2",
+        "RFPL3"
+      ]
+    },
+    "RABL2A": {
+      "checkable_pair": true,
+      "mapped_genes": [
+        "RABL2A",
+        "RABL2B"
+      ],
+      "named_genes": [
+        "RABL2A",
+        "RABL2B"
+      ]
+    }
+  },
+  "genes": {
+    "APOBEC3D": {
+      "ensg": "ENSG00000243811",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000100298",
+        "ENSG00000111701",
+        "ENSG00000111732",
+        "ENSG00000124701",
+        "ENSG00000128383",
+        "ENSG00000128394",
+        "ENSG00000179750",
+        "ENSG00000239713",
+        "ENSG00000244509"
+      ]
+    },
+    "APOBEC3F": {
+      "ensg": "ENSG00000128394",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000100298",
+        "ENSG00000111701",
+        "ENSG00000111732",
+        "ENSG00000124701",
+        "ENSG00000128383",
+        "ENSG00000179750",
+        "ENSG00000239713",
+        "ENSG00000243811",
+        "ENSG00000244509"
+      ]
+    },
+    "AQP12A": {
+      "ensg": "ENSG00000184945",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000178301",
+        "ENSG00000185176"
+      ]
+    },
+    "ASDURF": {
+      "ensg": "ENSG00000286053",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": []
+    },
+    "ASNSD1": {
+      "ensg": "ENSG00000138381",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000070669"
+      ]
+    },
+    "CASP8": {
+      "ensg": "ENSG00000064012",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000003400",
+        "ENSG00000003402",
+        "ENSG00000103490",
+        "ENSG00000105141",
+        "ENSG00000106144",
+        "ENSG00000132906",
+        "ENSG00000137752",
+        "ENSG00000137757",
+        "ENSG00000138794",
+        "ENSG00000164305",
+        "ENSG00000165806",
+        "ENSG00000169900",
+        "ENSG00000196954",
+        "ENSG00000204397",
+        "ENSG00000204403",
+        "ENSG00000255501"
+      ]
+    },
+    "CCDC188": {
+      "ensg": "ENSG00000234409",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000165935",
+        "ENSG00000166069"
+      ]
+    },
+    "CDPF1": {
+      "ensg": "ENSG00000205643",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": []
+    },
+    "COPS8": {
+      "ensg": "ENSG00000198612",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": []
+    },
+    "CREB1": {
+      "ensg": "ENSG00000118260",
+      "lookup_status": "ok",
+      "para_status": "error",
+      "paralogues": []
+    },
+    "DDT": {
+      "ensg": "ENSG00000099977",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000099974",
+        "ENSG00000240972"
+      ]
+    },
+    "DGCR6": {
+      "ensg": "ENSG00000183628",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000128185",
+        "ENSG00000278817"
+      ]
+    },
+    "FAM246A": {
+      "ensg": "ENSG00000286102",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000286025",
+        "ENSG00000286175"
+      ]
+    },
+    "FLACC1": {
+      "ensg": "ENSG00000155749",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": []
+    },
+    "GCA": {
+      "ensg": "ENSG00000115271",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000014216",
+        "ENSG00000075142",
+        "ENSG00000077274",
+        "ENSG00000092529",
+        "ENSG00000103326",
+        "ENSG00000118492",
+        "ENSG00000126247",
+        "ENSG00000131375",
+        "ENSG00000135773",
+        "ENSG00000137225",
+        "ENSG00000142330",
+        "ENSG00000149260",
+        "ENSG00000162517",
+        "ENSG00000162909",
+        "ENSG00000162949",
+        "ENSG00000182472",
+        "ENSG00000203697",
+        "ENSG00000214711",
+        "ENSG00000249915",
+        "ENSG00000256812"
+      ]
+    },
+    "GGT1": {
+      "ensg": "ENSG00000100031",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000099998",
+        "ENSG00000100121",
+        "ENSG00000131067",
+        "ENSG00000149435",
+        "ENSG00000167741",
+        "ENSG00000274252"
+      ]
+    },
+    "GGTLC2": {
+      "ensg": "ENSG00000100121",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000099998",
+        "ENSG00000100031",
+        "ENSG00000131067",
+        "ENSG00000149435",
+        "ENSG00000167741",
+        "ENSG00000274252"
+      ]
+    },
+    "GP1BB": {
+      "ensg": null,
+      "lookup_status": "error",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000169704"
+      ]
+    },
+    "GPR39": {
+      "ensg": "ENSG00000183840",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000101188",
+        "ENSG00000102239",
+        "ENSG00000102539",
+        "ENSG00000121853",
+        "ENSG00000126010",
+        "ENSG00000132911",
+        "ENSG00000135577",
+        "ENSG00000136160",
+        "ENSG00000151617",
+        "ENSG00000169006",
+        "ENSG00000170075",
+        "ENSG00000170775",
+        "ENSG00000171596",
+        "ENSG00000173302",
+        "ENSG00000174417"
+      ]
+    },
+    "IGLL1": {
+      "ensg": "ENSG00000128322",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000188403",
+        "ENSG00000211592",
+        "ENSG00000211675",
+        "ENSG00000211677",
+        "ENSG00000211679",
+        "ENSG00000211685",
+        "ENSG00000211829",
+        "ENSG00000211890",
+        "ENSG00000211891",
+        "ENSG00000211892",
+        "ENSG00000211893",
+        "ENSG00000211895",
+        "ENSG00000211896",
+        "ENSG00000211897",
+        "ENSG00000211898",
+        "ENSG00000211899",
+        "ENSG00000211933",
+        "ENSG00000211934",
+        "ENSG00000211935",
+        "ENSG00000211937",
+        "ENSG00000211938",
+        "ENSG00000211941",
+        "ENSG00000211942",
+        "ENSG00000211943",
+        "ENSG00000211944",
+        "ENSG00000211945",
+        "ENSG00000211946",
+        "ENSG00000211947",
+        "ENSG00000211949",
+        "ENSG00000211950",
+        "ENSG00000211951",
+        "ENSG00000211952",
+        "ENSG00000211955",
+        "ENSG00000211956",
+        "ENSG00000211957",
+        "ENSG00000211958",
+        "ENSG00000211959",
+        "ENSG00000211961",
+        "ENSG00000211962",
+        "ENSG00000211964",
+        "ENSG00000211965",
+        "ENSG00000211966",
+        "ENSG00000211967",
+        "ENSG00000211968",
+        "ENSG00000211970",
+        "ENSG00000211972",
+        "ENSG00000211973",
+        "ENSG00000211974",
+        "ENSG00000211976",
+        "ENSG00000211979",
+        "ENSG00000223648",
+        "ENSG00000224373",
+        "ENSG00000224650",
+        "ENSG00000225698",
+        "ENSG00000231475",
+        "ENSG00000232216",
+        "ENSG00000233732",
+        "ENSG00000254167",
+        "ENSG00000254709",
+        "ENSG00000259261",
+        "ENSG00000259303",
+        "ENSG00000259490",
+        "ENSG00000259680",
+        "ENSG00000270467",
+        "ENSG00000270472",
+        "ENSG00000270505",
+        "ENSG00000270550",
+        "ENSG00000271130",
+        "ENSG00000271178",
+        "ENSG00000274576",
+        "ENSG00000275063",
+        "ENSG00000276775",
+        "ENSG00000277282",
+        "ENSG00000277836",
+        "ENSG00000277856",
+        "ENSG00000278263",
+        "ENSG00000280411",
+        "ENSG00000281179",
+        "ENSG00000281990",
+        "ENSG00000282122",
+        "ENSG00000282639",
+        "ENSG00000282651"
+      ]
+    },
+    "KCNH7": {
+      "ensg": "ENSG00000184611",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000055118",
+        "ENSG00000070729",
+        "ENSG00000089558",
+        "ENSG00000099822",
+        "ENSG00000132259",
+        "ENSG00000135519",
+        "ENSG00000138622",
+        "ENSG00000140015",
+        "ENSG00000143473",
+        "ENSG00000143630",
+        "ENSG00000144191",
+        "ENSG00000164588",
+        "ENSG00000170289",
+        "ENSG00000173826",
+        "ENSG00000183862",
+        "ENSG00000183960",
+        "ENSG00000198515"
+      ]
+    },
+    "LYPD1": {
+      "ensg": "ENSG00000150551",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000085063",
+        "ENSG00000126233",
+        "ENSG00000197353"
+      ]
+    },
+    "METTL21A": {
+      "ensg": "ENSG00000144401",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000100483",
+        "ENSG00000123427",
+        "ENSG00000139780",
+        "ENSG00000181038",
+        "ENSG00000250878"
+      ]
+    },
+    "MIEF1": {
+      "ensg": "ENSG00000100335",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000177427"
+      ]
+    },
+    "NCAPH2": {
+      "ensg": "ENSG00000025770",
+      "lookup_status": "ok",
+      "para_status": "error",
+      "paralogues": []
+    },
+    "PI4KA": {
+      "ensg": "ENSG00000241973",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000011405",
+        "ENSG00000051382",
+        "ENSG00000078142",
+        "ENSG00000105851",
+        "ENSG00000121879",
+        "ENSG00000133056",
+        "ENSG00000139144",
+        "ENSG00000143393",
+        "ENSG00000171608"
+      ]
+    },
+    "PPARA": {
+      "ensg": "ENSG00000186951",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000012504",
+        "ENSG00000025434",
+        "ENSG00000069667",
+        "ENSG00000077092",
+        "ENSG00000111424",
+        "ENSG00000112033",
+        "ENSG00000126351",
+        "ENSG00000126368",
+        "ENSG00000131408",
+        "ENSG00000131759",
+        "ENSG00000132170",
+        "ENSG00000143257",
+        "ENSG00000143365",
+        "ENSG00000144852",
+        "ENSG00000151090",
+        "ENSG00000172819",
+        "ENSG00000174738",
+        "ENSG00000198963"
+      ]
+    },
+    "PRODH": {
+      "ensg": "ENSG00000100033",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000250799",
+        "ENSG00000277196"
+      ]
+    },
+    "RABL2A": {
+      "ensg": "ENSG00000144134",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000041353",
+        "ENSG00000069974",
+        "ENSG00000075785",
+        "ENSG00000080371",
+        "ENSG00000084733",
+        "ENSG00000099246",
+        "ENSG00000100228",
+        "ENSG00000100360",
+        "ENSG00000102128",
+        "ENSG00000103769",
+        "ENSG00000104388",
+        "ENSG00000105514",
+        "ENSG00000105649",
+        "ENSG00000108774",
+        "ENSG00000109113",
+        "ENSG00000111540",
+        "ENSG00000111737",
+        "ENSG00000112210",
+        "ENSG00000115137",
+        "ENSG00000117280",
+        "ENSG00000118508",
+        "ENSG00000119396",
+        "ENSG00000123570",
+        "ENSG00000123595",
+        "ENSG00000123892",
+        "ENSG00000124209",
+        "ENSG00000124839",
+        "ENSG00000129472",
+        "ENSG00000132698",
+        "ENSG00000134594",
+        "ENSG00000137502",
+        "ENSG00000138069",
+        "ENSG00000139832",
+        "ENSG00000139998",
+        "ENSG00000141542",
+        "ENSG00000143545",
+        "ENSG00000144134",
+        "ENSG00000144566",
+        "ENSG00000146955",
+        "ENSG00000147127",
+        "ENSG00000152932",
+        "ENSG00000154917",
+        "ENSG00000155961",
+        "ENSG00000157869",
+        "ENSG00000165105",
+        "ENSG00000166128",
+        "ENSG00000167461",
+        "ENSG00000167578",
+        "ENSG00000167964",
+        "ENSG00000168118",
+        "ENSG00000168461",
+        "ENSG00000169213",
+        "ENSG00000169228",
+        "ENSG00000172007",
+        "ENSG00000172476",
+        "ENSG00000172780",
+        "ENSG00000172794",
+        "ENSG00000174903",
+        "ENSG00000175582",
+        "ENSG00000179331",
+        "ENSG00000185236",
+        "ENSG00000188060",
+        "ENSG00000197562",
+        "ENSG00000206418",
+        "ENSG00000222014",
+        "ENSG00000233087",
+        "ENSG00000255587",
+        "ENSG00000276600"
+      ]
+    },
+    "RABL2B": {
+      "ensg": "ENSG00000079974",
+      "lookup_status": "ok",
+      "para_status": "error",
+      "paralogues": []
+    },
+    "RFPL1": {
+      "ensg": "ENSG00000128250",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000114013",
+        "ENSG00000120217",
+        "ENSG00000121594",
+        "ENSG00000128253",
+        "ENSG00000128276",
+        "ENSG00000176422",
+        "ENSG00000176641",
+        "ENSG00000181481",
+        "ENSG00000197646",
+        "ENSG00000223638",
+        "ENSG00000229292",
+        "ENSG00000251258"
+      ]
+    },
+    "RFPL2": {
+      "ensg": "ENSG00000128253",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000114013",
+        "ENSG00000120217",
+        "ENSG00000121594",
+        "ENSG00000128250",
+        "ENSG00000128276",
+        "ENSG00000176422",
+        "ENSG00000176641",
+        "ENSG00000181481",
+        "ENSG00000197646",
+        "ENSG00000223638",
+        "ENSG00000229292",
+        "ENSG00000251258"
+      ]
+    },
+    "RFPL3": {
+      "ensg": "ENSG00000128276",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000114013",
+        "ENSG00000120217",
+        "ENSG00000121594",
+        "ENSG00000128250",
+        "ENSG00000128253",
+        "ENSG00000176422",
+        "ENSG00000176641",
+        "ENSG00000181481",
+        "ENSG00000197646",
+        "ENSG00000223638",
+        "ENSG00000229292",
+        "ENSG00000251258"
+      ]
+    },
+    "SEPTIN5": {
+      "ensg": "ENSG00000184702",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000100167",
+        "ENSG00000122545",
+        "ENSG00000125354",
+        "ENSG00000138758",
+        "ENSG00000140623",
+        "ENSG00000154997",
+        "ENSG00000164402",
+        "ENSG00000168385",
+        "ENSG00000180096",
+        "ENSG00000184640",
+        "ENSG00000186522",
+        "ENSG00000238227"
+      ]
+    },
+    "SYN3": {
+      "ensg": "ENSG00000185666",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000008056",
+        "ENSG00000157152"
+      ]
+    },
+    "TOP3B": {
+      "ensg": "ENSG00000100038",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000177302"
+      ]
+    },
+    "TTN": {
+      "ensg": "ENSG00000155657",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": []
+    },
+    "TUBA3E": {
+      "ensg": "ENSG00000152086",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000037042",
+        "ENSG00000074935",
+        "ENSG00000075886",
+        "ENSG00000101162",
+        "ENSG00000104833",
+        "ENSG00000108423",
+        "ENSG00000123416",
+        "ENSG00000127824",
+        "ENSG00000131462",
+        "ENSG00000137267",
+        "ENSG00000137285",
+        "ENSG00000167552",
+        "ENSG00000167553",
+        "ENSG00000173213",
+        "ENSG00000176014",
+        "ENSG00000178462",
+        "ENSG00000183785",
+        "ENSG00000188229",
+        "ENSG00000196230",
+        "ENSG00000198033",
+        "ENSG00000243910",
+        "ENSG00000258947",
+        "ENSG00000261456"
+      ]
+    },
+    "USP18": {
+      "ensg": "ENSG00000184979",
+      "lookup_status": "ok",
+      "para_status": "error",
+      "paralogues": []
+    },
+    "ZDHHC8": {
+      "ensg": "ENSG00000099904",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000156599"
+      ]
+    },
+    "ZNF74": {
+      "ensg": "ENSG00000185252",
+      "lookup_status": "ok",
+      "para_status": "ok",
+      "paralogues": [
+        "ENSG00000005801",
+        "ENSG00000062370",
+        "ENSG00000063587",
+        "ENSG00000075407",
+        "ENSG00000081386",
+        "ENSG00000081665",
+        "ENSG00000090612",
+        "ENSG00000099326",
+        "ENSG00000102870",
+        "ENSG00000105497",
+        "ENSG00000105750",
+        "ENSG00000120784",
+        "ENSG00000124459",
+        "ENSG00000124613",
+        "ENSG00000125945",
+        "ENSG00000127081",
+        "ENSG00000127903",
+        "ENSG00000128000",
+        "ENSG00000130182",
+        "ENSG00000130803",
+        "ENSG00000130844",
+        "ENSG00000131115",
+        "ENSG00000131127",
+        "ENSG00000131849",
+        "ENSG00000136870",
+        "ENSG00000141946",
+        "ENSG00000142065",
+        "ENSG00000144026",
+        "ENSG00000145908",
+        "ENSG00000146587",
+        "ENSG00000147117",
+        "ENSG00000147118",
+        "ENSG00000147124",
+        "ENSG00000147789",
+        "ENSG00000152926",
+        "ENSG00000159905",
+        "ENSG00000159917",
+        "ENSG00000160352",
+        "ENSG00000161551",
+        "ENSG00000164631",
+        "ENSG00000166526",
+        "ENSG00000166704",
+        "ENSG00000167377",
+        "ENSG00000167380",
+        "ENSG00000167555",
+        "ENSG00000167635",
+        "ENSG00000167637",
+        "ENSG00000167766",
+        "ENSG00000168661",
+        "ENSG00000169131",
+        "ENSG00000169740",
+        "ENSG00000170631",
+        "ENSG00000170954",
+        "ENSG00000171161",
+        "ENSG00000171817",
+        "ENSG00000172687",
+        "ENSG00000172888",
+        "ENSG00000173258",
+        "ENSG00000175322",
+        "ENSG00000176293",
+        "ENSG00000177932",
+        "ENSG00000178187",
+        "ENSG00000178229",
+        "ENSG00000178338",
+        "ENSG00000178665",
+        "ENSG00000180479",
+        "ENSG00000180787",
+        "ENSG00000181007",
+        "ENSG00000181315",
+        "ENSG00000181450",
+        "ENSG00000182111",
+        "ENSG00000182141",
+        "ENSG00000182986",
+        "ENSG00000183309",
+        "ENSG00000184517",
+        "ENSG00000184617",
+        "ENSG00000184635",
+        "ENSG00000185730",
+        "ENSG00000185869",
+        "ENSG00000185947",
+        "ENSG00000186026",
+        "ENSG00000186446",
+        "ENSG00000186448",
+        "ENSG00000186777",
+        "ENSG00000187187",
+        "ENSG00000187607",
+        "ENSG00000188033",
+        "ENSG00000188283",
+        "ENSG00000189144",
+        "ENSG00000189180",
+        "ENSG00000189190",
+        "ENSG00000196081",
+        "ENSG00000196109",
+        "ENSG00000196110",
+        "ENSG00000196150",
+        "ENSG00000196172",
+        "ENSG00000196263",
+        "ENSG00000196267",
+        "ENSG00000196268",
+        "ENSG00000196357",
+        "ENSG00000196387",
+        "ENSG00000196456",
+        "ENSG00000196458",
+        "ENSG00000196597",
+        "ENSG00000196652",
+        "ENSG00000196653",
+        "ENSG00000196693",
+        "ENSG00000196793",
+        "ENSG00000196867",
+        "ENSG00000196967",
+        "ENSG00000197008",
+        "ENSG00000197013",
+        "ENSG00000197016",
+        "ENSG00000197123",
+        "ENSG00000197124",
+        "ENSG00000197343",
+        "ENSG00000197363",
+        "ENSG00000197472",
+        "ENSG00000197483",
+        "ENSG00000197566",
+        "ENSG00000197608",
+        "ENSG00000197619",
+        "ENSG00000197714",
+        "ENSG00000197779",
+        "ENSG00000197782",
+        "ENSG00000197808",
+        "ENSG00000197863",
+        "ENSG00000197928",
+        "ENSG00000197935",
+        "ENSG00000197951",
+        "ENSG00000197961",
+        "ENSG00000198131",
+        "ENSG00000198169",
+        "ENSG00000198182",
+        "ENSG00000198185",
+        "ENSG00000198393",
+        "ENSG00000198453",
+        "ENSG00000198521",
+        "ENSG00000198538",
+        "ENSG00000198556",
+        "ENSG00000198633",
+        "ENSG00000198939",
+        "ENSG00000204514",
+        "ENSG00000204611",
+        "ENSG00000213020",
+        "ENSG00000213096",
+        "ENSG00000213967",
+        "ENSG00000213988",
+        "ENSG00000214652",
+        "ENSG00000221923",
+        "ENSG00000221994",
+        "ENSG00000223614",
+        "ENSG00000226314",
+        "ENSG00000227124",
+        "ENSG00000228623",
+        "ENSG00000229676",
+        "ENSG00000233757",
+        "ENSG00000234284",
+        "ENSG00000234444",
+        "ENSG00000241149",
+        "ENSG00000245680",
+        "ENSG00000250312",
+        "ENSG00000250571",
+        "ENSG00000251247",
+        "ENSG00000254004",
+        "ENSG00000256087",
+        "ENSG00000256229",
+        "ENSG00000256294",
+        "ENSG00000263002",
+        "ENSG00000267680",
+        "ENSG00000269067",
+        "ENSG00000269699",
+        "ENSG00000272602",
+        "ENSG00000274349",
+        "ENSG00000275111",
+        "ENSG00000278318"
+      ]
+    }
+  },
+  "meta": {
+    "compara": "vertebrates",
+    "families": 62,
+    "families_with_ge2_mapped": 10,
+    "families_with_ge2_named": 11,
+    "loc_only_genes": 154,
+    "lookup_errors": 1,
+    "named_genes": 41,
+    "named_genes_unmapped": 0,
+    "named_genes_with_ensg": 40,
+    "named_genes_with_nonempty_paralogues": 32,
+    "named_genes_with_paralogue_data": 37,
+    "paralogue_errors": 4,
+    "rest_endpoint": "https://rest.ensembl.org",
+    "total_genes": 195,
+    "within_universe_paralog_pairs": 5
+  },
+  "within_universe_paralog_relation": [
+    [
+      "APOBEC3D",
+      "APOBEC3F"
+    ],
+    [
+      "GGT1",
+      "GGTLC2"
+    ],
+    [
+      "RFPL1",
+      "RFPL2"
+    ],
+    [
+      "RFPL1",
+      "RFPL3"
+    ],
+    [
+      "RFPL2",
+      "RFPL3"
+    ]
+  ]
+}

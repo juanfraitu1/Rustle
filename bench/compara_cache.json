@@ -1,0 +1,6268 @@
+{
+ "homology_paralogues|APOBEC3D": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000128383",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000249116",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000179750",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000327459",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000239713",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000385057",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000100298",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000411754",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111732",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000229335",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111701",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000229304",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124701",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000244669",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000244509",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000355340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000128394",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000309749",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000243811"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|APOBEC3F": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000128383",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000249116",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000179750",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000327459",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000239713",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000385057",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000100298",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000411754",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111732",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000229335",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111701",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000229304",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124701",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000244669",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000243811",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000216099",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000244509",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000355340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000128394"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|AQP12A": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000185176",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000384894",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000178301",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000318770",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000184945"
+    },
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000184945",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000337144",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000178301",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000318770",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000185176"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|ASDURF": {
+  "data": {
+   "data": [
+    {
+     "homologies": [],
+     "id": "ENSG00000286053"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|ASNSD1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000070669",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000377845",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000138381"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|CASP8": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000003402",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000312455",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105141",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000393417",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169900",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000304336",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000204403",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000424038",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196954",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000388566",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137757",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000260315",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000106144",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000312664",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000164305",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000311032",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000165806",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000358324",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000103490",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000247470",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000138794",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000265164",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000003400",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000286186",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000132906",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000330237",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000204397",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000509408",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137752",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000433138",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000255501",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000436691",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000064012"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|CCDC188": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000166069",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000327234",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Theria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000165935",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000441688",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Theria",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000234409"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|CDPF1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [],
+     "id": "ENSG00000205643"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|COPS8": {
+  "data": {
+   "data": [
+    {
+     "homologies": [],
+     "id": "ENSG00000198612"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|DDT": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000099974",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000215770",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Simiiformes",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000240972",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000215754",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000099977"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|DGCR6": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000278817",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000482514",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000128185",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000248879",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homininae",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000183628"
+    },
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000183628",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000331681",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000128185",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000248879",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homininae",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000278817"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|FAM246A": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000286175",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498626",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000286025",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000513435",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000286102"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|FLACC1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [],
+     "id": "ENSG00000155749"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|GCA": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000162517",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000362807",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000135773",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000271971",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000249915",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264933",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000118492",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000381036",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000142330",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375844",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000077274",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000317214",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000103326",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000219611",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000014216",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000279247",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000149260",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498132",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000126247",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000246533",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000214711",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000385247",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000092529",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380349",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000162949",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000295055",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000256812",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000400882",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000162909",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000295006",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000182472",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000331636",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000203697",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000355837",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131375",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000253693",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137225",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000381758",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000075142",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000265729",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000115271"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|GGT1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000149435",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000337587",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homininae",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000274252",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000477856",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homininae",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000100121",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000415676",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000131067",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000338964",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167741",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000370962",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000099998",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000330080",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000100031"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|GGTLC2": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000100031",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000383232",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000274252",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000477856",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000149435",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000337587",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000131067",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000338964",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167741",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000370962",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000099998",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000330080",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000100121"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|GP1BB": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000169704",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000303942",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000203618"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|GPR39": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000173302",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000308908",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000170075",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000356251",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000170775",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000306449",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000171596",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000305877",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000132911",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000255262",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000101188",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000359532",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000174417",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000430711",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169006",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000303686",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000121853",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000241256",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000102539",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000218721",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000135577",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000258042",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000151617",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498969",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000136160",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000493527",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000126010",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000369643",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000102239",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000359682",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000183840"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|IGLL1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000211677",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374856",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Boreoeutheria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000211679",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374857",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Boreoeutheria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000211675",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374855",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Boreoeutheria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000254709",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000431254",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Boreoeutheria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000211685",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374859",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Boreoeutheria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000211899",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000490253",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211970",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375039",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211951",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375020",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211937",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375006",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211952",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375021",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211956",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375025",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000224373",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375038",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000278263",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000479937",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211959",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375028",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211933",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375002",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000259303",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474384",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000231475",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000395656",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211974",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375043",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000276775",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000410711",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000274576",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000485200",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000259261",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000473987",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000275063",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000478289",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211897",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000492969",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211896",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374990",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211893",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000493129",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211892",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000493388",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000282122",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000487727",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211979",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375048",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211829",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000451468",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211891",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000492979",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000259680",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474135",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000277836",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000478725",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000270472",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474363",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000271130",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474964",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211944",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375013",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211957",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375026",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211898",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374998",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211890",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000493086",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211895",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000493114",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211976",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375045",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000233732",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474941",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211958",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375027",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211949",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375018",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211964",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375033",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000224650",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000394447",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211972",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375041",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000270550",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474524",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211946",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375015",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211943",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375012",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211938",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375007",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211947",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375016",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000225698",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000416201",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000232216",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000399826",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000254167",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000503582",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000271178",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474814",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000277856",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000481152",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000270467",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474013",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211955",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375024",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211941",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375010",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000282639",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000488230",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000223648",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000401707",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000259490",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474509",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211942",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375011",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211967",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375036",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211965",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375034",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211962",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375031",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211973",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375042",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211935",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375004",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211966",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375035",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000277282",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000481738",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000281179",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000486959",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211945",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375014",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000188403",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474639",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211950",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375019",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000281990",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000487714",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211968",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375037",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211961",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375030",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000280411",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000485152",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000270505",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000474284",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211934",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375003",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000282651",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000488144",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000211592",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000374777",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000128322"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|KCNH7": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000143473",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000271751",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000183862",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328478",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000135519",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000257981",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198515",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000426862",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000143630",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000357342",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000173826",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000318212",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000132259",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000369268",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000089558",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264661",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000055118",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262186",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000183960",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328813",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000138622",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000261917",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000099822",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000251287",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000164588",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000307342",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000144191",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000272602",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000170289",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000316605",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000070729",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000251102",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000140015",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000321427",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000184611"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|LYPD1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000085063",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000494884",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197353",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000352163",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000126233",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000246515",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000150551"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|METTL21A": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000100483",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000379201",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181038",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000341543",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000250878",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000518446",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123427",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000300209",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000139780",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000267273",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000144401"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|MIEF1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000177427",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000323591",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Gnathostomata",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000100335"
+    },
+    {
+     "homologies": [],
+     "id": "ENSG00000285025"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|PI4KA": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000143393",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000357867",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000121879",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000263967",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000051382",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000501150",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000078142",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262039",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000133056",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000507222",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000139144",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000445381",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000171608",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000366563",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105851",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000419260",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000011405",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000509400",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000241973"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|PPARA": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000126351",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000395641",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198963",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000366093",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131408",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000253727",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000126368",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000246672",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000132170",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498313",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111424",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000449573",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000077092",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000332296",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000112033",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353916",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000174738",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000310006",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000025434",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000387946",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000143365",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000327025",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000143257",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000356962",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000012504",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000376712",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172819",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000388510",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000151090",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000496686",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131759",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000254066",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000069667",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000335087",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000144852",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000377319",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000186951"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|PRODH": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000277196",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000481127",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homo sapiens",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000250799",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000499779",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000100033"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|RABL2A": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000144134",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000507832",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homininae",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000115137",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264711",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000139832",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000267328",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000255587",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000481054",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000134594",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000257017",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105649",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000222256",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169213",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000360718",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000146955",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000440167",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197562",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000248139",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111540",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353444",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000155961",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000358466",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000100360",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000393541",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000108774",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345689",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111737",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000229340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000276600",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000482499",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000102128",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000218249",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000075785",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000265062",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000144566",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000273047",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000175582",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000336850",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167964",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000210187",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000118508",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000356465",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000139998",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000434103",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000174903",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000310226",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000109113",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000378666",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000119396",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000362946",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000165105",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000365630",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172794",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000376389",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000154917",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000285208",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123570",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000243298",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123595",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000420127",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105514",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000222120",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123892",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000243662",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000141542",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000461785",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000084733",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264710",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000100228",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000263116",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000104388",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262646",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000129472",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380869",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000152932",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000282878",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000138069",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000387286",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124209",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000244040",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000143545",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000357564",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172780",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000319781",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172007",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000306496",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000157869",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328551",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000168461",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000461945",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167578",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349560",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000206418",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000497886",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000080371",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000261263",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000147127",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000363597",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137502",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000435089",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000168118",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000355651",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167461",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000300935",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000222014",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000387307",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000233087",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000490038",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000041353",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262094",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000132698",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000354376",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000112210",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000417610",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000099246",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349415",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172476",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000305648",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000188060",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000491546",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000069974",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000337761",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000179331",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000322594",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000166128",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000312734",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000117280",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000356107",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169228",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000304376",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000103769",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000261890",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000185236",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000333547",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124839",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264601",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000079974"
+    },
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000079974",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000509250",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Homininae",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000115137",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264711",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000139832",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000267328",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000255587",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000481054",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000134594",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000257017",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105649",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000222256",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169213",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000360718",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000146955",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000440167",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197562",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000248139",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111540",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353444",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000155961",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000358466",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000100360",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000393541",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000108774",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345689",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000111737",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000229340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000276600",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000482499",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000102128",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000218249",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000075785",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000265062",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000144566",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000273047",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000175582",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000336850",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167964",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000210187",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000118508",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000356465",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000139998",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000434103",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000174903",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000310226",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000109113",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000378666",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000119396",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000362946",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000165105",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000365630",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172794",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000376389",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000154917",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000285208",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123570",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000243298",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123595",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000420127",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105514",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000222120",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000123892",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000243662",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000141542",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000461785",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000084733",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264710",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000100228",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000263116",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000104388",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262646",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000129472",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380869",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000152932",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000282878",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000138069",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000387286",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124209",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000244040",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000143545",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000357564",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172780",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000319781",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172007",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000306496",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000157869",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328551",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000168461",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000461945",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167578",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349560",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000206418",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000497886",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000080371",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000261263",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000147127",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000363597",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137502",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000435089",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000168118",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000355651",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167461",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000300935",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000222014",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000387307",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000233087",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000490038",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000041353",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262094",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000132698",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000354376",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000112210",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000417610",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000099246",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349415",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172476",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000305648",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000188060",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000491546",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000069974",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000337761",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000179331",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000322594",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000166128",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000312734",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000117280",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000356107",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169228",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000304376",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000103769",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000261890",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000185236",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000333547",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124839",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264601",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000144134"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|RFPL1": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000176422",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000338034",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197646",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380855",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000251258",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000423391",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000121594",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264246",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000229292",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345151",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000223638",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000392936",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181481",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000114013",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000332049",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000120217",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000370989",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000176641",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000316628",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000128276",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000249007",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Hominidae",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000128253",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498332",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000128250"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|RFPL2": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000176422",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000338034",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197646",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380855",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000251258",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000423391",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000121594",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264246",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000229292",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345151",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000223638",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000392936",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181481",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000114013",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000332049",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000120217",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000370989",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000176641",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000316628",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000128276",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000249007",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000128250",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000346342",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000128253"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|RFPL3": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000176422",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000338034",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197646",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380855",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000251258",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000423391",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000121594",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264246",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000229292",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345151",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000223638",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000392936",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181481",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328340",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000114013",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000332049",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000120217",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000370989",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000176641",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000316628",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Vertebrata",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000128250",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000346342",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Hominidae",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000128253",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498332",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Catarrhini",
+       "type": "within_species_paralog"
+      }
+     ],
+     "id": "ENSG00000128276"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|SEPTIN5": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000100167",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000494051",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000164402",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000367991",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000154997",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000373627",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000125354",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000378108",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000184640",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000391249",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000180096",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000324511",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000122545",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000344868",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000138758",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264893",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000186522",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380824",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000140623",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000268231",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000168385",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000375832",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000238227",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000453019",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000184702"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|SYN3": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000157152",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000480050",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000008056",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000295987",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000185666"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|TOP3B": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000177302",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000321636",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000100038"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|TTN": {
+  "data": {
+   "data": [
+    {
+     "homologies": [],
+     "id": "ENSG00000155657"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|TUBA3E": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000198033",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000382982",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Boreoeutheria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000075886",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000326042",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Amniota",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000123416",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000336799",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000167552",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000301071",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000167553",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000301072",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "within_species_paralog"
+      },
+      {
+       "id": "ENSG00000261456",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000456206",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000173213",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000496713",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000101162",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000217133",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000183785",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000333326",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131462",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000251413",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000243910",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000487719",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000074935",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000357651",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000108423",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000320797",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000127824",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000248437",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137267",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000369703",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000137285",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000259818",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196230",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000339001",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000178462",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000369784",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000176014",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000318697",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000037042",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000251412",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000104833",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000264071",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000188229",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000341289",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000258947",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000320295",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Opisthokonta",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000152086"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|ZDHHC8": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000156599",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000287169",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Chordata",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000099904"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "homology_paralogues|ZNF74": {
+  "data": {
+   "data": [
+    {
+     "homologies": [
+      {
+       "id": "ENSG00000124459",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000269973",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000144026",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000295208",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197935",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000366384",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000189190",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000509267",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000213020",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498713",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000189144",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000440464",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198182",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000347338",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000256229",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000335042",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000081665",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000440625",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000223614",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000485547",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197123",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000416809",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000213096",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349494",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000182141",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349401",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000213988",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000410466",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196109",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380310",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000182111",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000394248",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000213967",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000471516",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000269067",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000471593",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000229676",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000413660",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000160352",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000478345",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000241149",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000492202",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000178229",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000322545",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197808",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000467931",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181315",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000418897",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000275111",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000480297",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197343",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000252713",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196597",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000419397",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167380",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000336719",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196387",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000347755",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000142065",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000270001",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131849",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000254166",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197483",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000469591",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000173258",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000311679",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167555",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353652",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000221923",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000406318",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167766",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000301096",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198556",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000331927",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000186777",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000415774",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000272602",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000477392",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131127",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000240499",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000250312",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000480556",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000152926",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000282869",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196268",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000376110",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000102870",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262525",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000214652",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000485448",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197472",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000341236",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172687",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000507366",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105750",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000329793",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196172",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000384000",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197124",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380351",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000234444",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000400852",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181450",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000344828",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196081",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000413411",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000136870",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000342019",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000180787",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000320347",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197951",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000471138",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197961",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000326967",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000251247",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000431216",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000125945",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000313582",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000228623",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000516482",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197714",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353491",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000099326",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000215057",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197363",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353058",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000184617",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000520625",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000178665",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000416662",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000204514",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000410545",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196150",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000393442",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196110",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000467723",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000181007",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000431265",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000171817",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000324598",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000127081",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000364645",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000171161",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000421915",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000256087",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000221315",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000105497",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262259",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196653",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000406469",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000172888",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000340841",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000182986",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000506814",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196793",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000363569",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198633",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000391358",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169131",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000337122",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196456",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000330838",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000263002",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000400878",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000183309",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000435232",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198185",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000510334",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000120784",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000508019",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000227124",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000498738",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000269699",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000486502",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000185730",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000328515",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000189180",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000402467",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196693",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000352444",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196267",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000507838",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000127903",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000444747",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000130803",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000247956",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000063587",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000496975",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000169740",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000363556",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000161551",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000491936",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197008",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000303533",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000184635",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000342002",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000147117",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000366273",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000278318",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000479884",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167635",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000392095",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000226314",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000509393",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000176293",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000321406",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000166526",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000299667",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000124613",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000244576",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000186446",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000482632",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000188033",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000311521",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000147118",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000366142",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000233757",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000478941",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000130844",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000393817",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167637",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000484852",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198131",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000510489",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000131115",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000321049",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000187607",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000464063",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197863",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000349161",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197608",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000470100",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000170954",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000243643",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000145908",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000274599",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000221994",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000354683",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198393",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000333725",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000185947",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000300870",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000274349",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000482447",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000188283",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000507972",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000185869",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000429266",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000184517",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000457044",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000250571",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345024",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000062370",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000346305",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000005801",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000382511",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197013",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000351280",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000175322",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000464872",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000166704",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000446972",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197779",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000341151",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198538",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000397693",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198939",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000354453",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000254004",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000429803",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198453",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000334685",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000159917",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000291182",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000164631",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000385939",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000146587",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000380120",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000186448",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000345809",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000170631",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000378369",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197928",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000469391",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000147789",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000432641",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000178338",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000327143",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196967",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000292841",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000245680",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000433773",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000187187",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000339823",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000204611",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000471000",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197016",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000333223",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000178187",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000430354",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000167377",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000497736",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000081386",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000223428",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000177932",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000324064",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000147124",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000508254",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000159905",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000467367",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000256294",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000262894",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000186026",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000411032",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000267680",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000508532",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000168661",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000469954",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196867",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000301318",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197619",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000471041",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000075407",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000508865",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196357",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000306869",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000141946",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000269834",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196263",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000309161",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000130182",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000458879",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198521",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000347045",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197782",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000506741",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000090612",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000444412",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196652",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000322872",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000234284",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000414887",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000197566",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000310472",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000180479",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000392638",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000196458",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000353314",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000128000",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000391641",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      },
+      {
+       "id": "ENSG00000198169",
+       "method_link_type": "ENSEMBL_PARALOGUES",
+       "protein_id": "ENSP00000292562",
+       "species": "homo_sapiens",
+       "taxonomy_level": "Bilateria",
+       "type": "other_paralog"
+      }
+     ],
+     "id": "ENSG00000185252"
+    }
+   ]
+  },
+  "status": "ok"
+ },
+ "lookup|APOBEC3D": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000216099.13",
+   "db_type": "core",
+   "description": "apolipoprotein B mRNA editing enzyme catalytic subunit 3D [Source:HGNC Symbol;Acc:HGNC:17354]",
+   "display_name": "APOBEC3D",
+   "end": 39034327,
+   "id": "ENSG00000243811",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 39020952,
+   "strand": 1,
+   "version": 14
+  },
+  "status": "ok"
+ },
+ "lookup|APOBEC3F": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000308521.10",
+   "db_type": "core",
+   "description": "apolipoprotein B mRNA editing enzyme catalytic subunit 3F [Source:HGNC Symbol;Acc:HGNC:17356]",
+   "display_name": "APOBEC3F",
+   "end": 39055972,
+   "id": "ENSG00000128394",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 39040604,
+   "strand": 1,
+   "version": 19
+  },
+  "status": "ok"
+ },
+ "lookup|AQP12A": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000337801.9",
+   "db_type": "core",
+   "description": "aquaporin 12A [Source:HGNC Symbol;Acc:HGNC:19941]",
+   "display_name": "AQP12A",
+   "end": 240698483,
+   "id": "ENSG00000184945",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 240691866,
+   "strand": 1,
+   "version": 15
+  },
+  "status": "ok"
+ },
+ "lookup|ASDURF": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000607829.6",
+   "db_type": "core",
+   "description": "ASNSD1 upstream open reading frame [Source:HGNC Symbol;Acc:HGNC:53619]",
+   "display_name": "ASDURF",
+   "end": 189666437,
+   "id": "ENSG00000286053",
+   "logic_name": "havana_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "havana",
+   "species": "homo_sapiens",
+   "start": 189661385,
+   "strand": 1,
+   "version": 3
+  },
+  "status": "ok"
+ },
+ "lookup|ASNSD1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000260952.9",
+   "db_type": "core",
+   "description": "asparagine synthetase domain containing 1 [Source:HGNC Symbol;Acc:HGNC:24910]",
+   "display_name": "ASNSD1",
+   "end": 189671381,
+   "id": "ENSG00000138381",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 189661385,
+   "strand": 1,
+   "version": 11
+  },
+  "status": "ok"
+ },
+ "lookup|CASP8": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000673742.1",
+   "db_type": "core",
+   "description": "caspase 8 [Source:HGNC Symbol;Acc:HGNC:1509]",
+   "display_name": "CASP8",
+   "end": 201361836,
+   "id": "ENSG00000064012",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 201233443,
+   "strand": 1,
+   "version": 26
+  },
+  "status": "ok"
+ },
+ "lookup|CCDC188": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000439765.4",
+   "db_type": "core",
+   "description": "coiled-coil domain containing 188 [Source:HGNC Symbol;Acc:HGNC:51899]",
+   "display_name": "CCDC188",
+   "end": 20151059,
+   "id": "ENSG00000234409",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 20146381,
+   "strand": -1,
+   "version": 8
+  },
+  "status": "ok"
+ },
+ "lookup|CDPF1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000314567.8",
+   "db_type": "core",
+   "description": "cysteine rich DPF motif domain containing 1 [Source:HGNC Symbol;Acc:HGNC:33710]",
+   "display_name": "CDPF1",
+   "end": 46250897,
+   "id": "ENSG00000205643",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 46241405,
+   "strand": -1,
+   "version": 13
+  },
+  "status": "ok"
+ },
+ "lookup|COPS8": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000354371.7",
+   "db_type": "core",
+   "description": "COP9 signalosome subunit 8 [Source:HGNC Symbol;Acc:HGNC:24335]",
+   "display_name": "COPS8",
+   "end": 237103208,
+   "id": "ENSG00000198612",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 237085877,
+   "strand": 1,
+   "version": 13
+  },
+  "status": "ok"
+ },
+ "lookup|CREB1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000353267.8",
+   "db_type": "core",
+   "description": "cAMP responsive element binding protein 1 [Source:HGNC Symbol;Acc:HGNC:2345]",
+   "display_name": "CREB1",
+   "end": 207605988,
+   "id": "ENSG00000118260",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 207529697,
+   "strand": 1,
+   "version": 17
+  },
+  "status": "ok"
+ },
+ "lookup|DDT": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000398344.9",
+   "db_type": "core",
+   "description": "D-dopachrome tautomerase [Source:HGNC Symbol;Acc:HGNC:2732]",
+   "display_name": "DDT",
+   "end": 23980544,
+   "id": "ENSG00000099977",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 23891180,
+   "strand": -1,
+   "version": 18
+  },
+  "status": "ok"
+ },
+ "lookup|DGCR6": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000331444.12",
+   "db_type": "core",
+   "description": "DiGeorge syndrome critical region gene 6 [Source:HGNC Symbol;Acc:HGNC:2846]",
+   "display_name": "DGCR6",
+   "end": 18916623,
+   "id": "ENSG00000183628",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 18905677,
+   "strand": 1,
+   "version": 16
+  },
+  "status": "ok"
+ },
+ "lookup|FAM246A": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000652479.1",
+   "db_type": "core",
+   "description": "family with sequence similarity 246 member A [Source:HGNC Symbol;Acc:HGNC:54844]",
+   "display_name": "FAM246A",
+   "end": 21361299,
+   "id": "ENSG00000286102",
+   "logic_name": "havana_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "havana",
+   "species": "homo_sapiens",
+   "start": 21360601,
+   "strand": -1,
+   "version": 1
+  },
+  "status": "ok"
+ },
+ "lookup|FLACC1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000392257.8",
+   "db_type": "core",
+   "description": "flagellum associated containing coiled-coil domains 1 [Source:HGNC Symbol;Acc:HGNC:14439]",
+   "display_name": "FLACC1",
+   "end": 201357398,
+   "id": "ENSG00000155749",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 201287397,
+   "strand": -1,
+   "version": 14
+  },
+  "status": "ok"
+ },
+ "lookup|GCA": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000437150.7",
+   "db_type": "core",
+   "description": "grancalcin [Source:HGNC Symbol;Acc:HGNC:15990]",
+   "display_name": "GCA",
+   "end": 162388536,
+   "id": "ENSG00000115271",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 162318839,
+   "strand": 1,
+   "version": 13
+  },
+  "status": "ok"
+ },
+ "lookup|GGT1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000400382.6",
+   "db_type": "core",
+   "description": "gamma-glutamyltransferase 1 [Source:HGNC Symbol;Acc:HGNC:4250]",
+   "display_name": "GGT1",
+   "end": 24629011,
+   "id": "ENSG00000100031",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 24588696,
+   "strand": 1,
+   "version": 21
+  },
+  "status": "ok"
+ },
+ "lookup|GGTLC2": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000448514.3",
+   "db_type": "core",
+   "description": "gamma-glutamyltransferase light chain 2 [Source:HGNC Symbol;Acc:HGNC:18596]",
+   "display_name": "GGTLC2",
+   "end": 22647898,
+   "id": "ENSG00000100121",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 22644614,
+   "strand": 1,
+   "version": 14
+  },
+  "status": "ok"
+ },
+ "lookup|GPR39": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000329321.4",
+   "db_type": "core",
+   "description": "G protein-coupled receptor 39 [Source:HGNC Symbol;Acc:HGNC:4496]",
+   "display_name": "GPR39",
+   "end": 132646582,
+   "id": "ENSG00000183840",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 132416805,
+   "strand": 1,
+   "version": 8
+  },
+  "status": "ok"
+ },
+ "lookup|IGLL1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000330377.3",
+   "db_type": "core",
+   "description": "immunoglobulin lambda like polypeptide 1 [Source:HGNC Symbol;Acc:HGNC:5870]",
+   "display_name": "IGLL1",
+   "end": 23580302,
+   "id": "ENSG00000128322",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 23573125,
+   "strand": -1,
+   "version": 7
+  },
+  "status": "ok"
+ },
+ "lookup|KCNH7": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000332142.10",
+   "db_type": "core",
+   "description": "potassium voltage-gated channel subfamily H member 7 [Source:HGNC Symbol;Acc:HGNC:18863]",
+   "display_name": "KCNH7",
+   "end": 162838791,
+   "id": "ENSG00000184611",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 162365721,
+   "strand": -1,
+   "version": 15
+  },
+  "status": "ok"
+ },
+ "lookup|LYPD1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000397463.3",
+   "db_type": "core",
+   "description": "LY6/PLAUR domain containing 1 [Source:HGNC Symbol;Acc:HGNC:28431]",
+   "display_name": "LYPD1",
+   "end": 132671579,
+   "id": "ENSG00000150551",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 132640803,
+   "strand": -1,
+   "version": 13
+  },
+  "status": "ok"
+ },
+ "lookup|METTL21A": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000411432.6",
+   "db_type": "core",
+   "description": "methyltransferase 21A, HSPA lysine [Source:HGNC Symbol;Acc:HGNC:30476]",
+   "display_name": "METTL21A",
+   "end": 207626297,
+   "id": "ENSG00000144401",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 207579518,
+   "strand": -1,
+   "version": 16
+  },
+  "status": "ok"
+ },
+ "lookup|MIEF1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000325301.7",
+   "db_type": "core",
+   "description": "mitochondrial elongation factor 1 [Source:HGNC Symbol;Acc:HGNC:25979]",
+   "display_name": "MIEF1",
+   "end": 39518132,
+   "id": "ENSG00000100335",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 39499432,
+   "strand": 1,
+   "version": 17
+  },
+  "status": "ok"
+ },
+ "lookup|NCAPH2": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000420993.7",
+   "db_type": "core",
+   "description": "non-SMC condensin II complex subunit H2 [Source:HGNC Symbol;Acc:HGNC:25071]",
+   "display_name": "NCAPH2",
+   "end": 50524781,
+   "id": "ENSG00000025770",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 50508127,
+   "strand": 1,
+   "version": 21
+  },
+  "status": "ok"
+ },
+ "lookup|PI4KA": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000255882.11",
+   "db_type": "core",
+   "description": "phosphatidylinositol 4-kinase alpha [Source:HGNC Symbol;Acc:HGNC:8983]",
+   "display_name": "PI4KA",
+   "end": 20859417,
+   "id": "ENSG00000241973",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 20707691,
+   "strand": -1,
+   "version": 13
+  },
+  "status": "ok"
+ },
+ "lookup|PPARA": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000407236.6",
+   "db_type": "core",
+   "description": "peroxisome proliferator activated receptor alpha [Source:HGNC Symbol;Acc:HGNC:9232]",
+   "display_name": "PPARA",
+   "end": 46243755,
+   "id": "ENSG00000186951",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 46149924,
+   "strand": 1,
+   "version": 19
+  },
+  "status": "ok"
+ },
+ "lookup|PRODH": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000357068.11",
+   "db_type": "core",
+   "description": "proline dehydrogenase 1 [Source:HGNC Symbol;Acc:HGNC:9453]",
+   "display_name": "PRODH",
+   "end": 18936451,
+   "id": "ENSG00000100033",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 18912696,
+   "strand": -1,
+   "version": 19
+  },
+  "status": "ok"
+ },
+ "lookup|RABL2A": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000683472.1",
+   "db_type": "core",
+   "description": "RAB, member of RAS oncogene family like 2A [Source:HGNC Symbol;Acc:HGNC:9799]",
+   "display_name": "RABL2A",
+   "end": 113643407,
+   "id": "ENSG00000144134",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 113627215,
+   "strand": 1,
+   "version": 21
+  },
+  "status": "ok"
+ },
+ "lookup|RABL2B": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000691320.1",
+   "db_type": "core",
+   "description": "RAB, member of RAS oncogene family like 2B [Source:HGNC Symbol;Acc:HGNC:9800]",
+   "display_name": "RABL2B",
+   "end": 50783760,
+   "id": "ENSG00000079974",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 50767491,
+   "strand": -1,
+   "version": 21
+  },
+  "status": "ok"
+ },
+ "lookup|RFPL1": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000354373.2",
+   "db_type": "core",
+   "description": "ret finger protein like 1 [Source:HGNC Symbol;Acc:HGNC:9977]",
+   "display_name": "RFPL1",
+   "end": 29442455,
+   "id": "ENSG00000128250",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 29438583,
+   "strand": 1,
+   "version": 5
+  },
+  "status": "ok"
+ },
+ "lookup|RFPL2": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000652607.2",
+   "db_type": "core",
+   "description": "ret finger protein like 2 [Source:HGNC Symbol;Acc:HGNC:9979]",
+   "display_name": "RFPL2",
+   "end": 32205073,
+   "id": "ENSG00000128253",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 32190433,
+   "strand": -1,
+   "version": 17
+  },
+  "status": "ok"
+ },
+ "lookup|RFPL3": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000249007.4",
+   "db_type": "core",
+   "description": "ret finger protein like 3 [Source:HGNC Symbol;Acc:HGNC:9980]",
+   "display_name": "RFPL3",
+   "end": 32361161,
+   "id": "ENSG00000128276",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 32354885,
+   "strand": 1,
+   "version": 10
+  },
+  "status": "ok"
+ },
+ "lookup|SEPTIN5": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000455784.7",
+   "db_type": "core",
+   "description": "septin 5 [Source:HGNC Symbol;Acc:HGNC:9164]",
+   "display_name": "SEPTIN5",
+   "end": 19724781,
+   "id": "ENSG00000184702",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 19714117,
+   "strand": 1,
+   "version": 22
+  },
+  "status": "ok"
+ },
+ "lookup|SYN3": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000358763.7",
+   "db_type": "core",
+   "description": "synapsin III [Source:HGNC Symbol;Acc:HGNC:11496]",
+   "display_name": "SYN3",
+   "end": 33058388,
+   "id": "ENSG00000185666",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 32507820,
+   "strand": -1,
+   "version": 17
+  },
+  "status": "ok"
+ },
+ "lookup|TOP3B": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000357179.10",
+   "db_type": "core",
+   "description": "DNA topoisomerase III beta [Source:HGNC Symbol;Acc:HGNC:11993]",
+   "display_name": "TOP3B",
+   "end": 21982818,
+   "id": "ENSG00000100038",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 21957025,
+   "strand": -1,
+   "version": 22
+  },
+  "status": "ok"
+ },
+ "lookup|TTN": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000589042.5",
+   "db_type": "core",
+   "description": "titin [Source:HGNC Symbol;Acc:HGNC:12403]",
+   "display_name": "TTN",
+   "end": 178830802,
+   "id": "ENSG00000155657",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 178525989,
+   "strand": -1,
+   "version": 30
+  },
+  "status": "ok"
+ },
+ "lookup|TUBA3E": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000312988.9",
+   "db_type": "core",
+   "description": "tubulin alpha 3e [Source:HGNC Symbol;Acc:HGNC:20765]",
+   "display_name": "TUBA3E",
+   "end": 130198461,
+   "id": "ENSG00000152086",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "2",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 130191743,
+   "strand": -1,
+   "version": 10
+  },
+  "status": "ok"
+ },
+ "lookup|USP18": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000215794.8",
+   "db_type": "core",
+   "description": "ubiquitin specific peptidase 18 [Source:HGNC Symbol;Acc:HGNC:12616]",
+   "display_name": "USP18",
+   "end": 18177400,
+   "id": "ENSG00000184979",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 18148399,
+   "strand": 1,
+   "version": 14
+  },
+  "status": "ok"
+ },
+ "lookup|ZDHHC8": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000334554.12",
+   "db_type": "core",
+   "description": "zDHHC palmitoyltransferase 8 [Source:HGNC Symbol;Acc:HGNC:18474]",
+   "display_name": "ZDHHC8",
+   "end": 20148007,
+   "id": "ENSG00000099904",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 20129456,
+   "strand": 1,
+   "version": 18
+  },
+  "status": "ok"
+ },
+ "lookup|ZNF74": {
+  "data": {
+   "assembly_name": "GRCh38",
+   "biotype": "protein_coding",
+   "canonical_transcript": "ENST00000400451.7",
+   "db_type": "core",
+   "description": "zinc finger protein 74 [Source:HGNC Symbol;Acc:HGNC:13144]",
+   "display_name": "ZNF74",
+   "end": 20409406,
+   "id": "ENSG00000185252",
+   "logic_name": "ensembl_havana_gene_homo_sapiens",
+   "object_type": "Gene",
+   "seq_region_name": "22",
+   "source": "ensembl_havana",
+   "species": "homo_sapiens",
+   "start": 20394115,
+   "strand": 1,
+   "version": 21
+  },
+  "status": "ok"
+ }
+}
