@@ -513,6 +513,73 @@ pub fn compute_tpm(transcripts: &mut [Transcript]) {
     compute_tpm_fpkm(transcripts, 0.0, 0.0);
 }
 
+/// `true` iff this transcript was produced by the read-chain engine (and is therefore
+/// subject to the read-coherence realness gate). Flow/guide transcripts are NOT.
+fn is_read_chain_source(t: &Transcript) -> bool {
+    match t.source.as_deref() {
+        Some(s) => s.starts_with("readchain") || s.starts_with("read_coherence"),
+        None => false,
+    }
+}
+
+/// Annotation-free realness gate for the `--read-coherence` layer.
+///
+/// For every transcript whose `source` marks it read-chain-derived
+/// (`"readchain"*` / `"read_coherence"*`), DROP it if any of:
+///   - it has a junction that is NOT canonical (GT-AG / CT-AC), OR
+///   - it has a junction with an RT template-switch (direct-repeat) signature, OR
+///   - its read depth (`longcov`) is `< min_cov`.
+/// Survivors are re-tagged `source = "read_coherence"`.
+///
+/// Non-read-chain transcripts (flow / guide) pass through UNTOUCHED — even if they
+/// have a non-canonical junction — so the gate is strictly additive over the flow
+/// floor. Deterministic; preserves input order. `genome` provides the FASTA for the
+/// canonical / RT-switch checks; with no genome, sequence checks cannot run so the
+/// junction-based drops are skipped (only the depth floor applies to read-chain tx).
+/// Direct-repeat flank length (bp) for the RT-switch heuristic in the read-coherence gate.
+/// 8 bp is the conventional template-switch signature window; see `genome::is_rt_switch`.
+const RT_SWITCH_REPEAT_LEN: u64 = 8;
+
+pub fn gate_read_coherence(
+    txs: Vec<Transcript>,
+    genome: Option<&crate::genome::GenomeIndex>,
+    min_cov: f64,
+) -> Vec<Transcript> {
+    let mut out: Vec<Transcript> = Vec::with_capacity(txs.len());
+    for mut t in txs {
+        if !is_read_chain_source(&t) {
+            out.push(t);
+            continue;
+        }
+        // Read-depth floor.
+        if t.longcov < min_cov {
+            continue;
+        }
+        // Junction-level canonical + RT-switch checks (require a genome).
+        let mut keep = true;
+        if let Some(g) = genome {
+            for w in t.exons.windows(2) {
+                let donor = w[0].1; // left exon end
+                let acceptor = w[1].0; // right exon start
+                if !g.is_canonical_junction(&t.chrom, donor, acceptor, t.strand) {
+                    keep = false;
+                    break;
+                }
+                if g.is_rt_switch(&t.chrom, donor, acceptor, RT_SWITCH_REPEAT_LEN) {
+                    keep = false;
+                    break;
+                }
+            }
+        }
+        if !keep {
+            continue;
+        }
+        t.source = Some("read_coherence".to_string());
+        out.push(t);
+    }
+    out
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PairwiseKillSummary {
     pub included_kill: usize,
@@ -1219,6 +1286,103 @@ mod tests {
 
     fn test_tx(exons: &[(u64, u64)]) -> Transcript {
         test_tx_cov(exons, 1.0)
+    }
+
+    // --- read-coherence realness gate ---
+
+    use super::gate_read_coherence;
+    use crate::genome::GenomeIndex;
+
+    // Build a genome whose junction at [donor=10, acceptor=20) is canonical GT..AG
+    // (so a tx with exons [(0,10),(20,30)] is canonical). RT-switch flanks differ.
+    fn canonical_genome() -> GenomeIndex {
+        // 30 bp: exon [0,10) | intron [10,20) | exon [20,30)
+        // intron donor = positions 10,11 = "GT"; acceptor = positions 18,19 = "AG".
+        // Flanks: 8 bp ending at donor = seq[2..10]; 8 bp ending at acceptor = seq[12..20].
+        // Make those flanks DIFFER (no RT-switch) by using distinct fillers.
+        let mut seq = vec![b'C'; 30];
+        seq[10] = b'G';
+        seq[11] = b'T';
+        seq[18] = b'A';
+        seq[19] = b'G';
+        // ensure flank-before-donor (seq[2..10]) != flank-before-acceptor (seq[12..20])
+        seq[2..10].copy_from_slice(b"ACGTACGT");
+        seq[12..18].copy_from_slice(b"TTTTTT"); // seq[12..20] = "TTTTTTAG" != "ACGTACGT"
+        GenomeIndex::from_seqs(&[("chrTest", &seq[..])])
+    }
+
+    fn rc_tx(exons: &[(u64, u64)], longcov: f64) -> Transcript {
+        let mut t = test_tx(exons);
+        t.source = Some("readchain".to_string());
+        t.longcov = longcov;
+        t
+    }
+
+    #[test]
+    fn gate_keeps_canonical_supported_readchain_tx_and_retags() {
+        let g = canonical_genome();
+        let txs = vec![rc_tx(&[(0, 10), (20, 30)], 5.0)];
+        let out = gate_read_coherence(txs, Some(&g), 2.0);
+        assert_eq!(out.len(), 1, "canonical, supported read-chain tx is kept");
+        assert_eq!(out[0].source.as_deref(), Some("read_coherence"), "survivor re-tagged");
+    }
+
+    #[test]
+    fn gate_drops_noncanonical_readchain_tx() {
+        // Genome where the junction donor is GG (non-canonical).
+        let mut seq = vec![b'C'; 30];
+        seq[10] = b'G';
+        seq[11] = b'G'; // GG, not GT
+        seq[18] = b'A';
+        seq[19] = b'G';
+        let g = GenomeIndex::from_seqs(&[("chrTest", &seq[..])]);
+        let txs = vec![rc_tx(&[(0, 10), (20, 30)], 5.0)];
+        let out = gate_read_coherence(txs, Some(&g), 2.0);
+        assert!(out.is_empty(), "non-canonical read-chain tx is dropped");
+    }
+
+    #[test]
+    fn gate_drops_rt_switch_readchain_tx() {
+        // Canonical GT..AG but the 8 bp ending at donor == 8 bp ending at acceptor.
+        let mut seq = vec![b'C'; 30];
+        seq[10] = b'G';
+        seq[11] = b'T';
+        seq[18] = b'A';
+        seq[19] = b'G';
+        // flank-before-donor = seq[2..10]; flank-before-acceptor = seq[12..20].
+        seq[2..10].copy_from_slice(b"ACGTACGT");
+        seq[12..20].copy_from_slice(b"ACGTACGT"); // identical => RT-switch
+        let g = GenomeIndex::from_seqs(&[("chrTest", &seq[..])]);
+        let txs = vec![rc_tx(&[(0, 10), (20, 30)], 5.0)];
+        let out = gate_read_coherence(txs, Some(&g), 2.0);
+        assert!(out.is_empty(), "RT-switch read-chain tx is dropped");
+    }
+
+    #[test]
+    fn gate_drops_low_depth_readchain_tx() {
+        let g = canonical_genome();
+        let txs = vec![rc_tx(&[(0, 10), (20, 30)], 1.0)]; // longcov 1 < min_cov 2
+        let out = gate_read_coherence(txs, Some(&g), 2.0);
+        assert!(out.is_empty(), "below-depth read-chain tx is dropped");
+    }
+
+    #[test]
+    fn gate_never_touches_flow_or_guide_tx() {
+        // A NON-canonical junction genome; flow tx must still pass through.
+        let mut seq = vec![b'C'; 30]; // all C -> donor CC, acceptor CC: non-canonical
+        seq[2] = b'A'; // irrelevant
+        let g = GenomeIndex::from_seqs(&[("chrTest", &seq[..])]);
+        let mut flow = test_tx(&[(0, 10), (20, 30)]);
+        flow.source = Some("flow".to_string());
+        flow.longcov = 0.0; // even below any depth floor
+        let mut guide = test_tx(&[(0, 10), (20, 30)]);
+        guide.source = Some("guide".to_string());
+        guide.longcov = 0.0;
+        let txs = vec![flow.clone(), guide.clone()];
+        let out = gate_read_coherence(txs, Some(&g), 2.0);
+        assert_eq!(out.len(), 2, "flow + guide tx pass through untouched");
+        assert_eq!(out[0].source.as_deref(), Some("flow"));
+        assert_eq!(out[1].source.as_deref(), Some("guide"));
     }
 
     #[test]

@@ -626,10 +626,51 @@ fn build_fuzzy_junction_map(
 /// `chains[i] = (intron_chain, abundance, min_start, max_end)`. Returns, per index,
 /// `Some(parent_idx)` of the strictly-longer chain it folds into (longest-first;
 /// callers resolve transitively to a root), or `None` if it is kept. Deterministic.
+// Retained as the equivalence anchor for `legacy_wrapper_matches_5p_only` (proves the
+// generalized `compute_degrade_folds(.., rc=false)` is byte-identical to the original
+// 5'-only behavior). Production routes through `compute_degrade_folds` directly.
+#[allow(dead_code)]
 fn compute_5p_degrade_folds(
     chains: &[(Vec<(u64, u64)>, f64, u64, u64)],
     strand: char,
     end3_tol: u64,
+) -> Vec<Option<usize>> {
+    compute_degrade_folds(chains, strand, end3_tol, false)
+}
+
+/// `true` iff `sub` appears as a CONTIGUOUS sub-sequence of `sup` (i.e. there exists
+/// an offset `k` with `sup[k..k+sub.len()] == sub`). Used by the read-coherence
+/// degradation collapse to recognize internal fragments. `sub` empty => `false`.
+fn is_contiguous_subrun<T: PartialEq>(sub: &[T], sup: &[T]) -> bool {
+    if sub.is_empty() || sub.len() > sup.len() {
+        return false;
+    }
+    sup.windows(sub.len()).any(|w| w == sub)
+}
+
+/// Determine degradation containment folds for read-chain collapse.
+///
+/// Default (`read_coherence = false`): the original 5'-degradation rule — a
+/// 5'-truncated read is a strand-appropriate sub-chain of a longer "super" sharing
+/// the 3' terminus within `end3_tol` (a SUFFIX on `+`, a PREFIX on `-`). This path is
+/// BYTE-IDENTICAL to the historical `compute_5p_degrade_folds`.
+///
+/// Read-coherence (`read_coherence = true`): additionally fold
+///   - 3'-truncated chains (the opposite-end truncation: a PREFIX on `+` / SUFFIX on
+///     `-` sharing the 5' terminus within `end3_tol`), and
+///   - internal-fragment chains (junctions are a CONTIGUOUS sub-run of a longer
+///     chain; no terminus required — both ends were degraded).
+/// A chain only folds when its junction list is a contiguous sub-sequence of the
+/// super's (never a non-contiguous skip, which is a genuinely distinct isoform).
+///
+/// `chains[i] = (intron_chain, abundance, min_start, max_end)`. Returns, per index,
+/// `Some(parent_idx)` of the strictly-longer chain it folds into (longest-first;
+/// callers resolve transitively to a root), or `None` if it is kept. Deterministic.
+fn compute_degrade_folds(
+    chains: &[(Vec<(u64, u64)>, f64, u64, u64)],
+    strand: char,
+    end3_tol: u64,
+    read_coherence: bool,
 ) -> Vec<Option<usize>> {
     let n = chains.len();
     let mut fold: Vec<Option<usize>> = vec![None; n];
@@ -662,12 +703,28 @@ fn compute_5p_degrade_folds(
             if achain.len() <= bchain.len() {
                 continue; // super must be STRICTLY longer
             }
-            let contained = match strand {
+            // 5'-degradation (default + rc): strand-appropriate truncation sharing 3'.
+            let fold_5p = match strand {
                 // 5' is the right end on '-': a 5'-truncation drops right/late
                 // introns -> shorter chain is a PREFIX; 3' terminus is min_start.
                 '-' => achain.starts_with(bchain.as_slice()) && bmin.abs_diff(*amin) <= end3_tol,
                 // '+': 5'-truncation drops left/early introns -> SUFFIX; 3' is max_end.
                 _ => achain.ends_with(bchain.as_slice()) && bmax.abs_diff(*amax) <= end3_tol,
+            };
+            let contained = if !read_coherence {
+                fold_5p
+            } else {
+                // 3'-degradation: opposite-end truncation sharing the 5' terminus.
+                let fold_3p = match strand {
+                    // 5' is the left end on '+': a 3'-truncation drops late/right
+                    // introns -> shorter chain is a PREFIX; 5' terminus is min_start.
+                    '-' => achain.ends_with(bchain.as_slice()) && bmax.abs_diff(*amax) <= end3_tol,
+                    _ => achain.starts_with(bchain.as_slice()) && bmin.abs_diff(*amin) <= end3_tol,
+                };
+                // Internal fragment: junctions are a contiguous sub-run of the super
+                // (both ends degraded; no terminus required).
+                let fold_internal = is_contiguous_subrun(bchain.as_slice(), achain.as_slice());
+                fold_5p || fold_3p || fold_internal
             };
             if contained {
                 fold[b] = Some(a); // longest-first order -> first match is the longest super
@@ -864,7 +921,11 @@ pub fn extract_transcripts_readchain(
                 (k.clone(), v.0, v.1, v.2)
             })
             .collect();
-        let folds = compute_5p_degrade_folds(&view, bundle_strand, tol);
+        // Under --read-coherence (RUSTLE_READ_COHERENCE), generalize the collapse to
+        // also fold 3'-truncated + internal-fragment chains. Default (env unset) keeps
+        // the 5'-only behavior byte-for-byte.
+        let rc_collapse = std::env::var_os("RUSTLE_READ_COHERENCE").is_some();
+        let folds = compute_degrade_folds(&view, bundle_strand, tol, rc_collapse);
         // Resolve each folded chain to its transitive root super and accumulate.
         let mut add_to_root: Vec<f64> = vec![0.0; keys.len()];
         let mut removed = 0usize;
@@ -888,7 +949,7 @@ pub fn extract_transcripts_readchain(
         }
         if debug && removed > 0 {
             eprintln!(
-                "[READCHAIN] 5'-degradation collapse: folded {} truncated chain(s) into supers (tol={})",
+                "[READCHAIN] degradation collapse: folded {} truncated/fragment chain(s) into supers (tol={})",
                 removed, tol
             );
         }
@@ -1875,7 +1936,84 @@ mod fuzzy_junction_tests {
 
 #[cfg(test)]
 mod degrade_collapse_tests {
-    use super::compute_5p_degrade_folds;
+    use super::{compute_5p_degrade_folds, compute_degrade_folds};
+
+    // --- Generalized (read-coherence) collapse: 3' + internal + still-5' ---
+
+    // 3'-truncated chain: shares the 5' terminus, junctions are a PREFIX of a longer
+    // chain (on '+', 5' is the left end -> 3'-truncation drops late/right introns ->
+    // PREFIX). Folds only under read-coherence.
+    #[test]
+    fn rc_plus_prefix_3p_trunc_folds() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650), // super (idx0)
+            (vec![(100, 200), (300, 400)], 2.0, 50, 450),              // 3'-trunc (prefix), same 5' (min_start)
+        ];
+        // Default 5'-only: a '+' PREFIX is NOT a 5'-truncation -> no fold.
+        let f5 = compute_degrade_folds(&chains, '+', 100, false);
+        assert_eq!(f5[1], None, "5'-only mode must not fold a 3'-truncation");
+        // Read-coherence: prefix sharing the 5' terminus folds.
+        let frc = compute_degrade_folds(&chains, '+', 100, true);
+        assert_eq!(frc[0], None);
+        assert_eq!(frc[1], Some(0), "rc mode folds the 3'-truncation prefix");
+    }
+
+    // Internal fragment: junctions are a contiguous sub-run of a longer chain but
+    // share NEITHER terminus. Folds only under read-coherence (no terminus req).
+    #[test]
+    fn rc_internal_fragment_folds() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600), (700, 800)], 10.0, 50, 850), // super idx0
+            (vec![(300, 400), (500, 600)], 2.0, 250, 650), // internal sub-run, neither terminus shared
+        ];
+        let f5 = compute_degrade_folds(&chains, '+', 100, false);
+        assert_eq!(f5[1], None, "5'-only mode must not fold an internal fragment");
+        let frc = compute_degrade_folds(&chains, '+', 100, true);
+        assert_eq!(frc[0], None);
+        assert_eq!(frc[1], Some(0), "rc mode folds the internal fragment");
+    }
+
+    // The existing 5'-truncation (suffix, shares 3') must STILL fold under rc mode.
+    #[test]
+    fn rc_still_folds_5p_suffix() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650),
+            (vec![(300, 400), (500, 600)], 2.0, 250, 650), // 5'-trunc suffix, same max_end
+        ];
+        let frc = compute_degrade_folds(&chains, '+', 100, true);
+        assert_eq!(frc[0], None);
+        assert_eq!(frc[1], Some(0));
+    }
+
+    // A genuinely-distinct short isoform whose junctions are NOT a contiguous sub-run
+    // of any longer chain must NOT fold, even under rc mode.
+    #[test]
+    fn rc_distinct_isoform_not_folded() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650), // super
+            (vec![(100, 200), (500, 600)], 5.0, 50, 650), // skips (300,400) -> NOT a contiguous sub-run
+        ];
+        let frc = compute_degrade_folds(&chains, '+', 100, true);
+        assert_eq!(frc[0], None);
+        assert_eq!(frc[1], None, "non-contiguous sub-chain is a distinct isoform, never folds");
+    }
+
+    // The old 5'-only wrapper must remain byte-equivalent to compute_degrade_folds
+    // with read_coherence=false (default path unchanged).
+    #[test]
+    fn legacy_wrapper_matches_5p_only() {
+        let chains = vec![
+            (vec![(100, 200), (300, 400), (500, 600)], 10.0, 50, 650),
+            (vec![(300, 400), (500, 600)], 2.0, 250, 650), // 5'-trunc suffix
+            (vec![(100, 200), (300, 400)], 2.0, 50, 450),  // 3'-trunc prefix (must NOT fold here)
+        ];
+        let legacy = compute_5p_degrade_folds(&chains, '+', 100);
+        let general = compute_degrade_folds(&chains, '+', 100, false);
+        assert_eq!(legacy, general);
+        assert_eq!(legacy[1], Some(0)); // suffix folds
+        assert_eq!(legacy[2], None); // prefix does not (5'-only)
+    }
+
 
     // + strand: a 2-junction SUFFIX of a 3-junction chain, same 3' (max_end),
     // folds into the longer chain.

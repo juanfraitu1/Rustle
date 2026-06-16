@@ -397,6 +397,14 @@ struct Args {
     #[arg(long = "read-chain-single")]
     read_chain_single: bool,
 
+    /// Read-coherence layer (default OFF): a gated, strictly-additive layer that adds
+    /// read-chain-derived transcripts over the flow floor, with degradation-aware
+    /// collapse (5'+3'+internal fragments) + an annotation-free realness gate
+    /// (canonical junctions + RT-switch + read-depth). Enables the read-chain engine
+    /// internally. Default-off output is byte-identical to the flow-only run.
+    #[arg(long = "read-coherence", default_value_t = false)]
+    read_coherence: bool,
+
     /// GTF/GFF file for template-based family assembly (GTF ingestion mode).
     /// When provided, Rustle parses transcripts from this file and uses them
     /// as templates for discovering new isoforms or family members via
@@ -721,6 +729,26 @@ pub fn run_cli() -> anyhow::Result<()> {
     }
     if args.read_chain_single {
         std::env::set_var("RUSTLE_READCHAIN_SINGLE", "1");
+    }
+    // --read-coherence is the gated, default-off layer: it turns on the read-chain
+    // engine AND the read-coherence collapse/gate (read internally via the
+    // RUSTLE_READ_COHERENCE env switch). When unset, the whole layer is inert and
+    // output is byte-identical to the flow-only run.
+    if args.read_coherence {
+        // Defensive guard: RUSTLE_PRECISE is the strict escape hatch (byte-identical to
+        // 4705ab1). It and --read-coherence (an additive recall layer) are contradictory;
+        // precise wins. Enabling NEITHER env var here is required — setting RUSTLE_READCHAIN
+        // alone would still trigger the read-chain replacement branch and perturb precise
+        // output, since that branch is not precise-gated.
+        if std::env::var_os("RUSTLE_PRECISE").is_some() {
+            eprintln!(
+                "[read-coherence] RUSTLE_PRECISE is set; ignoring --read-coherence so the \
+                 precise escape hatch stays byte-identical."
+            );
+        } else {
+            std::env::set_var("RUSTLE_READ_COHERENCE", "1");
+            std::env::set_var("RUSTLE_READCHAIN", "1");
+        }
     }
 
     // the original algorithm -a is "minimum anchor length" for junction support around splice sites.

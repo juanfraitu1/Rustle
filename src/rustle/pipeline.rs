@@ -7257,6 +7257,12 @@ fn extract_bundle_transcripts_for_graph(
         && std::env::var_os("RUSTLE_READCHAIN").is_none()
         && std::env::var_os("RUSTLE_GREEDY_DECOMPOSE").is_none();
     let mut frs_se_buf: Vec<crate::path_extract::Transcript> = Vec::new();
+    // Option B read-coherence layer: read-chain transcripts are held OUT of this bundle's
+    // per-bundle filters (isofrac, pairwise containment, checkincomplete) — exactly like
+    // frs_se_buf — and appended at the end of this function so the flow floor flows through
+    // the per-bundle pipeline byte-identically to the flag-off run (⊇ flow). They are then
+    // collected into all_transcripts and managed by the global read-coherence holdout/gate.
+    let mut rc_layer_buf: Vec<crate::path_extract::Transcript> = Vec::new();
 
     // Direct-emit oracle: before extract_transcripts, record which ref tx
     // to inject. After, we compare per-tx with emitted output to classify
@@ -7280,7 +7286,57 @@ fn extract_bundle_transcripts_for_graph(
             &format!("{}:{}-{}", bundle.chrom, bundle.start, bundle.end),
             config,
         )
-    } else if std::env::var_os("RUSTLE_READCHAIN").is_some() {
+    } else if std::env::var_os("RUSTLE_READ_COHERENCE").is_some()
+        && !crate::stringtie_parity::precise_mode()
+    {
+        // Option B (truly additive, --read-coherence): produce BOTH the read-chain
+        // extras (degrade-collapsed; source "readchain"*) AND the de-novo flow floor.
+        // `extract_transcripts_readchain` takes `&Graph` (cannot mutate the graph) but
+        // does mutate its `transfrags` (depletes abundance and possibly other state), so
+        // we run it on a CLONE of the transfrags. The originals are therefore pristine
+        // for the subsequent flow extractor, which then produces a floor byte-identical
+        // to the flag-off run (`gd`). The global read-coherence holdout/union-back keeps
+        // that flow floor and unions back only novel-chain read-chain transcripts ⇒
+        // output ⊇ flow baseline (recovers the de-novo flow finds the replacement path
+        // gave up). --read-coherence sets both RUSTLE_READ_COHERENCE and RUSTLE_READCHAIN,
+        // so this branch precedes (and shadows) the plain `--read-chain` replacement
+        // branch below. Read-chain runs first so it sees the pristine graph too; its
+        // output is stashed in `rc_layer_buf` (held out of this bundle's per-bundle
+        // filters) and the flow extractor's result becomes `txs` (the floor).
+        let mut rc_tfs: Vec<crate::graph::GraphTransfrag> = transfrags.to_vec();
+        rc_layer_buf = crate::global_flow::extract_transcripts_readchain(
+            graph_mut,
+            &mut rc_tfs,
+            &bundle.chrom,
+            bundle.strand,
+            config,
+        );
+        extract_transcripts(
+            graph_mut,
+            transfrags,
+            &bundle.chrom,
+            bundle.strand,
+            &format!("{}:{}-{}", bundle.chrom, bundle.start, bundle.end),
+            config,
+            false,
+            if trace_mode
+                || std::env::var_os("RUSTLE_SEED_STATS").is_some()
+                || std::env::var_os("RUSTLE_PATH_DECISION_TSV").is_some()
+            {
+                Some(&mut seed_outcomes_buf)
+            } else {
+                None
+            },
+            Some(&mut longrec_summary),
+            None,
+            Some(good_junctions),
+        )
+    } else if std::env::var_os("RUSTLE_READCHAIN").is_some()
+        && !crate::stringtie_parity::precise_mode()
+    {
+        // Precise-gated like the option-B branch above: RUSTLE_PRECISE is the absolute
+        // escape hatch (byte-identical to 4705ab1, which has no read-chain), so no
+        // read-chain extraction runs under it regardless of env — falls through to flow.
         crate::global_flow::extract_transcripts_readchain(
             graph_mut,
             transfrags,
@@ -8927,6 +8983,12 @@ fn extract_bundle_transcripts_for_graph(
     // They bypass pairwise-containment and isofrac to avoid killing multi-exon TPs.
     if !frs_se_buf.is_empty() {
         txs.extend(frs_se_buf);
+    }
+    // Option B: append the held-out read-coherence read-chain transcripts after all
+    // per-bundle filters, so the flow floor above is byte-identical to flag-off (⊇ flow).
+    // The global read-coherence holdout/gate (pipeline global stage) then manages them.
+    if !rc_layer_buf.is_empty() {
+        txs.extend(rc_layer_buf);
     }
     trace_chain_intron_probe("bundle_extract_fn_return", &txs);
     (
@@ -17803,6 +17865,34 @@ pub fn run<P: AsRef<Path>>(
 
     phase_timer!("assembly_done");
     let mut all_transcripts = all_transcripts_mutex.into_inner().unwrap();
+    // Read-coherence (--read-coherence) strict-additivity holdout: drain read-chain-sourced
+    // transcripts (source "readchain"* / "read_coherence"*) OUT of all_transcripts BEFORE the
+    // global predcluster/pairwise/dedup filters, so the flow+guide floor flows through them
+    // byte-identically to the flag-off run (output ⊇ flow baseline — recovers the de-novo flow
+    // finds the read-chain replacement path gave up). Combined with the per-bundle hold-out
+    // (rc_layer_buf), read-chain never participates in any flow-displacing filter. The held-out
+    // chains are unioned back by NOVEL intron chain just before the realness gate (which then
+    // filters them). Gated !precise_mode() so RUSTLE_PRECISE is untouched; default OFF → the
+    // vec stays empty and the union-back below is a no-op (byte-identical).
+    let mut read_coherence_holdout: Vec<crate::path_extract::Transcript> = Vec::new();
+    if std::env::var_os("RUSTLE_READ_COHERENCE").is_some()
+        && !crate::stringtie_parity::precise_mode()
+    {
+        let mut kept: Vec<crate::path_extract::Transcript> =
+            Vec::with_capacity(all_transcripts.len());
+        for t in all_transcripts.drain(..) {
+            let is_rc = matches!(
+                t.source.as_deref(),
+                Some(s) if s.starts_with("readchain") || s.starts_with("read_coherence")
+            );
+            if is_rc {
+                read_coherence_holdout.push(t);
+            } else {
+                kept.push(t);
+            }
+        }
+        all_transcripts = kept;
+    }
     // RUSTLE_VG_UNION_BASELINE (strictly-additive): hold the primary-only baseline
     // re-split transcripts OUT of the VG predcluster/dedup so they can NEVER displace a
     // VG transcript (the LOC101146691 leak). They are unioned back by NOVEL intron chain
@@ -19831,6 +19921,78 @@ pub fn run<P: AsRef<Path>>(
             );
             all_transcripts.extend(recombinants);
         }
+    }
+
+    // Read-coherence union-back (strictly additive): re-add the held-out read-chain
+    // transcripts whose exact multi-exon intron chain is ABSENT from the flow+guide floor.
+    // Pure addition — never displaces a flow/guide transcript (output ⊇ flow baseline). The
+    // realness gate below then filters these for canonical junctions / RT-switch / read-depth.
+    // Single-exon read-chain spans are skipped (FP-prone; gated separately by --read-chain-single).
+    if !read_coherence_holdout.is_empty() {
+        let chain_of = |t: &crate::path_extract::Transcript| -> Vec<(u64, u64)> {
+            t.exons.windows(2).map(|w| (w[0].1, w[1].0)).collect()
+        };
+        let floor_chains: std::collections::HashSet<Vec<(u64, u64)>> = all_transcripts
+            .iter()
+            .filter(|t| t.exons.len() >= 2)
+            .map(|t| chain_of(t))
+            .collect();
+        let mut seen: std::collections::HashSet<Vec<(u64, u64)>> = std::collections::HashSet::new();
+        let mut added = 0usize;
+        for t in std::mem::take(&mut read_coherence_holdout) {
+            if t.exons.len() < 2 {
+                continue;
+            }
+            let chain = chain_of(&t);
+            if floor_chains.contains(&chain) || !seen.insert(chain) {
+                continue;
+            }
+            all_transcripts.push(t);
+            added += 1;
+        }
+        if added > 0 {
+            eprintln!(
+                "[READ-COHERENCE] unioned {} novel read-chain isoform(s) over the flow floor (pre-gate)",
+                added
+            );
+        }
+    }
+
+    // Read-coherence realness gate (opt-in --read-coherence → RUSTLE_READ_COHERENCE;
+    // default-off → byte-identical). Filters read-chain-sourced transcripts that lack a
+    // read-depth floor and (when a genome is available) carry non-canonical junctions or
+    // RT-template-switch artifacts. The genome is loaded scoped to ONLY the contigs present
+    // in all_transcripts (not the whole FASTA) so a multi-GB reference is never fully read.
+    // Gated `!precise_mode()` so RUSTLE_PRECISE is byte-identical regardless of env.
+    if std::env::var_os("RUSTLE_READ_COHERENCE").is_some()
+        && !crate::stringtie_parity::precise_mode()
+    {
+        // Default read-depth floor = 3 (the precision/recall knee from the genome-wide
+        // min_cov sweep: vs min_cov=2 it sheds ~10k mostly-single-read transcripts for only
+        // -513 FSM, still keeping 3x the ungated read-chain's exact recall). Env-overridable.
+        let min_cov: f64 = std::env::var("RUSTLE_READ_COHERENCE_MIN_COV")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3.0);
+        let genome: Option<crate::genome::GenomeIndex> = match config.genome_fasta.as_deref() {
+            Some(path) => {
+                let contigs: std::collections::HashSet<String> =
+                    all_transcripts.iter().map(|t| t.chrom.clone()).collect();
+                crate::genome::GenomeIndex::from_fasta_contigs(path, &contigs).ok()
+            }
+            None => None,
+        };
+        let _before = pre_filter_snapshot(&all_transcripts);
+        let n_before = all_transcripts.len();
+        all_transcripts =
+            crate::transcript_filter::gate_read_coherence(all_transcripts, genome.as_ref(), min_cov);
+        emit_post_pred_kills("global_read_coherence_gate", &_before, &all_transcripts);
+        eprintln!(
+            "[READ-COHERENCE] gate dropped {} transcript(s) (min_cov={}, genome={})",
+            n_before.saturating_sub(all_transcripts.len()),
+            min_cov,
+            if genome.is_some() { "yes" } else { "no" }
+        );
     }
 
     // Collapse byte-identical duplicate emissions before quantification. A guide that
