@@ -406,6 +406,14 @@ pub fn merge_singletons_by_sequence(
         .map(|(_, s)| minimizers(s, mk, mw))
         .collect();
 
+    // ADDITIVE gate (default OFF => byte-identical). When
+    // RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE > 0.0, a jaccard-passing pair must ALSO
+    // share a POA-derived contiguous homologous core covering >= the threshold of
+    // the shorter exon before it may merge — refusing domain-sharers that pass
+    // the (subsequence-rewarding) Jaccard bar on a short shared block. Strictly
+    // narrowing: it can only PREVENT merges, never create new ones, so with the
+    // default 0.0 it is fully inert.
+    let min_core_cov = family_min_core_coverage();
     let mut parent: Vec<usize> = (0..n).collect();
     fn find_s(p: &mut [usize], x: usize) -> usize {
         if p[x] == x { x } else { let r = find_s(p, p[x]); p[x] = r; r }
@@ -419,6 +427,12 @@ pub fn merge_singletons_by_sequence(
             let union_sz = mins[i].union(&mins[j]).count() as f64;
             if union_sz == 0.0 { continue; }
             if inter / union_sz >= min_jaccard {
+                // ADDITIONAL contiguous-core gate (only when enabled).
+                if min_core_cov > 0.0 {
+                    let cov = contiguous_core_coverage(
+                        &seqs_and_refs[i].1, &seqs_and_refs[j].1);
+                    if cov < min_core_cov { continue; }
+                }
                 let ri = find_s(&mut parent, i);
                 let rj = find_s(&mut parent, j);
                 if ri != rj { parent[ri] = rj; }
@@ -836,9 +850,94 @@ pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
     Ok(msa)
 }
 
+/// POA-derived CONTIGUOUS-CORE coverage of two sequences.
+///
+/// Aligns `a` and `b` via the 2-sequence POA instance (`poa_msa`, which for a
+/// pair reduces to a single global alignment), then finds the LONGEST run of
+/// consecutive alignment columns where BOTH rows are non-gap AND carry the same
+/// base, and returns that run length divided by `min(a.len(), b.len())`.
+///
+/// This is the validated criterion from `bench/poa_family_definition.py`: a true
+/// paralog copy shares ONE long contiguous homologous core (HIGH coverage, the
+/// prototype's `>= 0.13` band), whereas a domain-sharer co-aligns over only a
+/// short block and then diverges (LOW coverage, indistinguishable from random
+/// cross-family controls). Unlike all-column reciprocal coverage it is NOT
+/// inflated by a global aligner's scattered chance-match filler, because it
+/// requires the matching columns to be CONTIGUOUS.
+///
+/// Purely alignment-column-derived (POA-only): no DNA/protein domain annotation,
+/// no BLAST, no k-mer/minimizer is used. Deterministic (POA is deterministic).
+///
+/// Edge cases: returns 0.0 if either sequence is empty or the alignment fails;
+/// identical sequences return ~1.0 (the whole sequence is one matched run).
+pub fn contiguous_core_coverage(a: &[u8], b: &[u8]) -> f64 {
+    let minlen = a.len().min(b.len());
+    if minlen == 0 {
+        return 0.0;
+    }
+    let msa = match poa_msa(&[a.to_vec(), b.to_vec()]) {
+        Ok(m) => m,
+        Err(_) => return 0.0,
+    };
+    if msa.len() != 2 {
+        return 0.0;
+    }
+    let (row_a, row_b) = (&msa[0], &msa[1]);
+    let n_cols = row_a.len().min(row_b.len());
+    let mut longest = 0usize;
+    let mut run = 0usize;
+    for c in 0..n_cols {
+        let (ca, cb) = (row_a[c], row_b[c]);
+        if ca != b'-' && cb != b'-' && ca == cb {
+            run += 1;
+            if run > longest {
+                longest = run;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    longest as f64 / minlen as f64
+}
+
+/// Threshold for the POA contiguous-core coverage family-merge gate, read from
+/// `RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE`. Default `0.0` => gate OFF =>
+/// byte-identical to the pre-gate (jaccard-only) merge behaviour. When `> 0.0`,
+/// two singleton exons may merge across copies only if BOTH their minimizer
+/// Jaccard clears the existing bar AND their `contiguous_core_coverage` is
+/// `>= this threshold` (an ADDITIONAL, strictly-narrowing gate). The prototype
+/// (`bench/poa_family_definition.py`) found `0.13` separates true tandem copies
+/// from domain-sharers.
+pub fn family_min_core_coverage() -> f64 {
+    std::env::var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(0.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE is process-global; serialize the tests
+    // that read/mutate it so the default multi-threaded runner can't observe a
+    // sibling test's env mutation (the off-tests rely on the var being UNSET
+    // while the split-test sets it). Held across the full set/merge/restore
+    // window. `into_inner()` on poison keeps the lock usable after a sibling
+    // panic so we don't cascade unrelated failures.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Restore RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE to whatever it was before the
+    /// test touched it (set it back or remove it). Called while still holding
+    /// ENV_LOCK so the restored state is what the next serialized test sees.
+    fn restore_env(prior: Option<String>) {
+        match prior {
+            Some(v) => std::env::set_var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE", v),
+            None => std::env::remove_var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE"),
+        }
+    }
 
     #[test]
     fn refine_zero_threshold_keeps_all_merged() {
@@ -1372,6 +1471,186 @@ mod tests {
         eprintln!("recovering near-identical paralog exons the 0.30 default rejects.\n");
     }
 
+    // ----------------------------------------------------------------------
+    // POA-derived CONTIGUOUS-CORE coverage criterion (see
+    // bench/poa_family_definition.py). contiguous_core_coverage(a,b) aligns the
+    // two sequences via the 2-sequence POA instance (poa_msa) and reads off the
+    // LONGEST run of consecutive columns where BOTH rows are non-gap AND equal,
+    // divided by the shorter sequence. A true copy shares ONE long homologous
+    // core (HIGH); a domain-sharer shares only a short block then diverges (LOW).
+    // ----------------------------------------------------------------------
+
+    /// Deterministic random DNA of length `n` (SplitMix64, no test-time RNG dep).
+    fn core_rand_seq(n: usize, seed: u64) -> Vec<u8> {
+        let mut rng = SplitMix64(seed);
+        const B: [u8; 4] = [b'A', b'C', b'G', b'T'];
+        (0..n).map(|_| B[(rng.next_u64() % 4) as usize]).collect()
+    }
+
+    #[test]
+    fn contiguous_core_coverage_long_shared_core_is_high() {
+        // Two "true copy" sequences: a long identical 400 bp middle core,
+        // divergent (independent random) flanks on each side.
+        let core = core_rand_seq(400, 0xC0FE_0001);
+        let mut a = core_rand_seq(80, 0xAAAA_0001);
+        a.extend_from_slice(&core);
+        a.extend(core_rand_seq(80, 0xAAAA_0002));
+        let mut b = core_rand_seq(80, 0xBBBB_0001);
+        b.extend_from_slice(&core);
+        b.extend(core_rand_seq(80, 0xBBBB_0002));
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov >= 0.13,
+            "long shared core should give HIGH contiguous-core coverage (got {cov:.3})");
+    }
+
+    #[test]
+    fn contiguous_core_coverage_short_domain_sharer_is_low() {
+        // A "domain-sharer": shares only a short ~30 bp block, then both
+        // sequences are otherwise independent random (long, so 30/min is small).
+        let domain = core_rand_seq(30, 0xD0D0_0001);
+        let mut a = core_rand_seq(300, 0xAAAA_1001);
+        a.extend_from_slice(&domain);
+        a.extend(core_rand_seq(300, 0xAAAA_1002));
+        let mut b = core_rand_seq(300, 0xBBBB_1001);
+        b.extend_from_slice(&domain);
+        b.extend(core_rand_seq(300, 0xBBBB_1002));
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov < 0.13,
+            "short shared block should give LOW contiguous-core coverage (got {cov:.3})");
+    }
+
+    #[test]
+    fn contiguous_core_coverage_identical_is_one() {
+        let s = core_rand_seq(200, 0x1234_5678);
+        let cov = contiguous_core_coverage(&s, &s);
+        assert!(cov >= 0.99,
+            "identical sequences should give contiguous-core coverage ~1.0 (got {cov:.3})");
+    }
+
+    #[test]
+    fn contiguous_core_coverage_disjoint_is_near_zero() {
+        // Two independent random sequences: no long shared run, only short
+        // chance-match runs -> near zero.
+        let a = core_rand_seq(300, 0x1111_0001);
+        let b = core_rand_seq(300, 0x2222_0001);
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov < 0.13,
+            "disjoint random sequences should give near-zero contiguous-core coverage (got {cov:.3})");
+    }
+
+    /// GATE (a): DEFAULT-OFF is byte-identical. With the env unset (default 0.0),
+    /// `merge_singletons_by_sequence` must produce EXACTLY the same clustering as
+    /// before the gate existed: two true-copy singleton exons (long shared core)
+    /// must STILL merge into one ExonClass under the jaccard-only path.
+    #[test]
+    fn family_min_core_coverage_default_off_merges_like_jaccard() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE").ok();
+        std::env::remove_var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE");
+        // Two copies, each one exon, on a shared deterministic genome so the two
+        // exons read near-identical bytes (homologous) -> jaccard merges them.
+        let genome = tests_support::make_two_copy_genome();
+        // identical coordinates in two "copies" -> identical sequence -> merge.
+        let copies: Vec<(&str, char, Vec<(u64, u64)>)> = vec![
+            ("chrT", '+', vec![(1000, 1400)]),
+            ("chrT", '+', vec![(1000, 1400)]),
+        ];
+        // both clusters are singletons (one exon per copy, non-overlapping cluster ids)
+        let pos_clusters = vec![vec![(0usize, 0usize)], vec![(1usize, 0usize)]];
+        let merged = merge_singletons_by_sequence(pos_clusters, &copies, &genome, 0.30);
+        restore_env(prior);
+        // The two homologous exons must merge into one multi-copy cluster.
+        let multi = merged.iter().filter(|c| c.len() == 2).count();
+        assert_eq!(multi, 1,
+            "default-off: two homologous exons must still merge under jaccard (additive gate must not change default)");
+    }
+
+    /// GATE (b): the NEW demonstration. Three single-exon "loci": two TRUE copies
+    /// share a long identical core; a THIRD is a DOMAIN-SHARER that shares only a
+    /// short block with them. Under jaccard-only (or with the gate OFF) all three
+    /// can land together; with RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE set, the gate
+    /// KEEPS the two copies together and SPLITS OFF the domain-sharer.
+    /// Build the 3-locus demonstration panel:
+    ///   copy0, copy1 — two TRUE copies sharing a long contiguous homologous
+    ///     core (here: identical 400 bp), so BOTH jaccard AND contiguous-core are
+    ///     high; and
+    ///   domain-sharer — the SAME bases reordered in 40 bp chunks. Reordering
+    ///     preserves nearly all k-mers (so minimizer-Jaccard with the copies
+    ///     stays ABOVE the 0.30 merge bar -> jaccard alone WOULD merge it), but
+    ///     destroys the long contiguous run (so contiguous-core coverage is tiny).
+    /// This is the prototype's separating signature: a real copy has ONE long
+    /// homologous block; a domain-sharer's shared content is fragmented.
+    fn demo_three_loci() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let core = core_rand_seq(400, 0xCAFE_0007);
+        let copy0 = core.clone();
+        let copy1 = core.clone();
+        let mut chunks: Vec<&[u8]> = core.chunks(40).collect();
+        chunks.reverse();
+        let sharer: Vec<u8> = chunks.concat();
+        (copy0, copy1, sharer)
+    }
+
+    /// PRECONDITION for the gate demo: with the gate OFF, the jaccard-only merge
+    /// groups ALL THREE loci together (the domain-sharer's reordered-but-same
+    /// content clears the 0.30 jaccard bar against the copies). This is what
+    /// makes the gate's split (next test) a genuine added value, not a no-op.
+    #[test]
+    fn family_min_core_coverage_off_jaccard_groups_all_three() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE").ok();
+        std::env::remove_var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE");
+        let (c0, c1, c2) = demo_three_loci();
+        let genome = tests_support::genome_from_seqs(&[("ex0", &c0), ("ex1", &c1), ("ex2", &c2)]);
+        let copies: Vec<(&str, char, Vec<(u64, u64)>)> = vec![
+            ("ex0", '+', vec![(0, c0.len() as u64)]),
+            ("ex1", '+', vec![(0, c1.len() as u64)]),
+            ("ex2", '+', vec![(0, c2.len() as u64)]),
+        ];
+        let pos_clusters = vec![vec![(0usize, 0usize)], vec![(1usize, 0usize)], vec![(2usize, 0usize)]];
+        let merged = merge_singletons_by_sequence(pos_clusters, &copies, &genome, 0.30);
+        restore_env(prior);
+        // jaccard-only: all three collapse into a single cluster.
+        assert_eq!(merged.len(), 1,
+            "jaccard-only (gate off) should group all three loci (got {} clusters)", merged.len());
+        assert_eq!(merged[0].len(), 3, "all three loci in one ExonClass under jaccard-only");
+    }
+
+    /// GATE demo: with RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE set, the additional
+    /// contiguous-core gate KEEPS the two true copies together (they share a long
+    /// homologous core) and SPLITS OFF the domain-sharer (whose shared content is
+    /// fragmented, so its longest contiguous co-aligned run is tiny) — whereas the
+    /// jaccard-only path (previous test) grouped all three.
+    #[test]
+    fn family_min_core_coverage_splits_domain_sharer_keeps_copies() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let prior = std::env::var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE").ok();
+        let (c0, c1, c2) = demo_three_loci();
+        let genome = tests_support::genome_from_seqs(&[("ex0", &c0), ("ex1", &c1), ("ex2", &c2)]);
+        let copies: Vec<(&str, char, Vec<(u64, u64)>)> = vec![
+            ("ex0", '+', vec![(0, c0.len() as u64)]),
+            ("ex1", '+', vec![(0, c1.len() as u64)]),
+            ("ex2", '+', vec![(0, c2.len() as u64)]),
+        ];
+        let pos_clusters = vec![vec![(0usize, 0usize)], vec![(1usize, 0usize)], vec![(2usize, 0usize)]];
+
+        std::env::set_var("RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE", "0.13");
+        let merged = merge_singletons_by_sequence(pos_clusters, &copies, &genome, 0.30);
+        restore_env(prior);
+
+        let cluster_of = |cid: usize| -> Vec<usize> {
+            merged.iter()
+                .find(|c| c.iter().any(|&(c2, _)| c2 == cid))
+                .map(|c| { let mut v: Vec<usize> = c.iter().map(|&(c2, _)| c2).collect(); v.sort(); v })
+                .unwrap_or_default()
+        };
+        let g0 = cluster_of(0);
+        let g2 = cluster_of(2);
+        assert_eq!(g0, vec![0, 1],
+            "gate must KEEP the two true copies together (got {g0:?})");
+        assert_eq!(g2, vec![2],
+            "gate must SPLIT OFF the domain-sharer (got {g2:?})");
+    }
+
     #[test]
     fn merge_from_layer1_graphs_shares_homologous_exon_and_has_edges() {
         let g0 = tests_support::make_layer1_graph("chrT", '+', &[(100, 160), (300, 360)]);
@@ -1422,6 +1701,26 @@ pub(crate) mod tests_support {
     /// Same deterministic genome as make_two_copy_genome (covers 3-exon spans up to 560).
     pub fn make_two_copy_genome_3exon() -> GenomeIndex {
         make_two_copy_genome()
+    }
+
+    /// Build a GenomeIndex whose "chromosomes" are the given named sequences,
+    /// so `fetch_sequence(name, 0, seq.len())` returns the sequence verbatim.
+    /// Used by the contiguous-core gate demonstration tests where the exact
+    /// per-exon sequence content is what is under test.
+    pub fn genome_from_seqs(named: &[(&str, &[u8])]) -> GenomeIndex {
+        use std::io::Write;
+        let dir = Box::leak(Box::new(tempfile::tempdir().unwrap()));
+        let fa = dir.path().join("seqs.fa");
+        let mut f = std::fs::File::create(&fa).unwrap();
+        for (name, seq) in named {
+            writeln!(f, ">{name}").unwrap();
+            for chunk in seq.chunks(70) {
+                f.write_all(chunk).unwrap();
+                f.write_all(b"\n").unwrap();
+            }
+        }
+        drop(f);
+        GenomeIndex::from_fasta(fa.to_str().unwrap()).expect("load test genome")
     }
 
     /// GenomeIndex over chrT (>=60kb) with deterministic pseudo-sequence so shared
