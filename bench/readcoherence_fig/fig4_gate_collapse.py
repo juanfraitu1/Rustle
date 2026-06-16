@@ -40,7 +40,7 @@ def chain(ax, exons, yc, exon_color, intron_color, lw=1.3):
 def junc_label(ax, x0, x1, yc, donor, acceptor, color, dy=0.40):
     xm = (x0 + x1) / 2.0
     ax.text(xm, yc + dy, f"{donor}–{acceptor}", ha="center", va="bottom",
-            fontsize=8.0, color=color, fontweight="bold",
+            fontsize=9.6, color=color, fontweight="bold",
             family="DejaVu Sans Mono")
 
 
@@ -61,10 +61,10 @@ for ax in (axT, axB):
 axT.set_xlim(0, 12.6)
 axT.set_ylim(0, 6.2)
 
-axT.text(0.05, 5.95, "realness gate", fontsize=13, fontweight="bold",
+axT.text(0.05, 5.95, "realness gate", fontsize=14, fontweight="bold",
          color=NAVY, ha="left", va="top")
 axT.text(0.05, 5.55, "annotation-free: genome sequence + read depth only",
-         fontsize=8.6, color=SLATE, ha="left", va="top", style="italic")
+         fontsize=10.2, color=SLATE, ha="left", va="top", style="italic")
 
 VERDICT_X = 11.35   # where check / cross + verdict sit
 DEPTH_X   = 9.55    # read-depth column
@@ -74,11 +74,11 @@ y1 = 4.55
 chain(axT, [(0.5, 2.2), (4.0, 5.8), (7.4, 9.0)], y1, NAVY, "#4a5b6a")
 junc_label(axT, 2.2, 4.0, y1, "GT", "AG", GREEN)
 junc_label(axT, 5.8, 7.4, y1, "GC", "AG", GREEN)
-axT.text(DEPTH_X, y1, "depth 7 ≥ 3", fontsize=8.4, color=GREEN,
+axT.text(DEPTH_X, y1, "depth 7 ≥ 3", fontsize=9.8, color=GREEN,
          ha="center", va="center", fontweight="bold")
 axT.text(VERDICT_X, y1, "✓", fontsize=20, color=GREEN, ha="center",
          va="center", fontweight="bold")
-axT.text(VERDICT_X + 0.55, y1, "kept", fontsize=9.0, color=GREEN,
+axT.text(VERDICT_X + 0.55, y1, "kept", fontsize=10.2, color=GREEN,
          ha="left", va="center", fontweight="bold")
 
 # ---- candidate 2: DROP (non-canonical junction) ----
@@ -86,11 +86,11 @@ y2 = 3.05
 chain(axT, [(0.5, 2.4), (4.3, 6.0), (7.4, 9.0)], y2, NAVY, "#4a5b6a")
 junc_label(axT, 2.4, 4.3, y2, "GT", "AG", GREEN)
 junc_label(axT, 6.0, 7.4, y2, "AC", "TG", RED)      # non-canonical -> red
-axT.text(DEPTH_X, y2, "depth 6 ≥ 3", fontsize=8.4, color=SLATE,
+axT.text(DEPTH_X, y2, "depth 6 ≥ 3", fontsize=9.8, color=SLATE,
          ha="center", va="center")
 axT.text(VERDICT_X, y2, "✗", fontsize=18, color=RED, ha="center",
          va="center", fontweight="bold")
-axT.text(VERDICT_X + 0.55, y2, "non-canonical", fontsize=8.4, color=RED,
+axT.text(VERDICT_X + 0.55, y2, "non-canonical", fontsize=9.6, color=RED,
          ha="left", va="center", fontweight="bold")
 
 # ---- candidate 3: DROP (read-depth below min_cov) ----
@@ -98,28 +98,28 @@ y3 = 1.55
 chain(axT, [(0.5, 2.2), (4.0, 5.8), (7.4, 9.0)], y3, "#b9c3cc", "#aab4bd")
 junc_label(axT, 2.2, 4.0, y3, "GT", "AG", SLATE)
 junc_label(axT, 5.8, 7.4, y3, "GT", "AG", SLATE)
-axT.text(DEPTH_X, y3, "depth 1 < 3", fontsize=8.4, color=RED,
+axT.text(DEPTH_X, y3, "depth 1 < 3", fontsize=9.8, color=RED,
          ha="center", va="center", fontweight="bold")
 axT.text(VERDICT_X, y3, "✗", fontsize=18, color=RED, ha="center",
          va="center", fontweight="bold")
-axT.text(VERDICT_X + 0.55, y3, "below min_cov", fontsize=8.4, color=RED,
+axT.text(VERDICT_X + 0.55, y3, "below min_cov", fontsize=9.6, color=RED,
          ha="left", va="center", fontweight="bold")
 
 # column headers (small)
-axT.text(DEPTH_X, 5.25, "read depth", fontsize=8.0, color=NAVY,
+axT.text(DEPTH_X, 5.25, "read depth", fontsize=9.4, color=NAVY,
          ha="center", va="center", style="italic")
 
 # accepted canonical classes chip (small, bottom-left)
-axT.text(0.5, 0.55, "accepted:", fontsize=8.2, color=NAVY, ha="left",
+axT.text(0.5, 0.55, "accepted:", fontsize=9.6, color=NAVY, ha="left",
          va="center", style="italic")
 for i, cls in enumerate(["GT–AG", "GC–AG", "AT–AC"]):
-    cx = 1.7 + i * 1.35
-    chip = FancyBboxPatch((cx - 0.55, 0.30), 1.1, 0.5,
+    cx = 1.85 + i * 1.45
+    chip = FancyBboxPatch((cx - 0.6, 0.28), 1.2, 0.54,
                           boxstyle="round,pad=0.0,rounding_size=0.10",
                           linewidth=1.0, edgecolor=GREEN,
                           facecolor="#e7f3ec", zorder=2)
     axT.add_patch(chip)
-    axT.text(cx, 0.55, cls, fontsize=8.0, color=GREEN, ha="center",
+    axT.text(cx, 0.55, cls, fontsize=9.4, color=GREEN, ha="center",
              va="center", fontweight="bold", family="DejaVu Sans Mono")
 
 # =================================================================
@@ -128,10 +128,10 @@ for i, cls in enumerate(["GT–AG", "GC–AG", "AT–AC"]):
 axB.set_xlim(0, 12.6)
 axB.set_ylim(0, 6.2)
 
-axB.text(0.05, 5.95, "degradation-aware collapse", fontsize=13,
+axB.text(0.05, 5.95, "degradation-aware collapse", fontsize=14,
          fontweight="bold", color=NAVY, ha="left", va="top")
 axB.text(0.05, 5.55, "fragments fold into their full-length parent (ISM → FSM)",
-         fontsize=8.6, color=SLATE, ha="left", va="top", style="italic")
+         fontsize=10.2, color=SLATE, ha="left", va="top", style="italic")
 
 # full-length parent (FSM) on the right.
 # Use the parent exon coordinates as the reference frame for all fragments
@@ -142,7 +142,7 @@ PE = [(8.8, 10.4), (10.9, 11.9), (12.2, 12.45)]
 yP = 2.55
 chain(axB, PE, yP, ORANGE, "#d98a2b", lw=1.5)
 axB.text((PE[0][0] + PE[-1][1]) / 2, yP + 0.62, "full-length parent  (FSM)",
-         fontsize=8.8, color=ORANGE, ha="center", va="bottom",
+         fontsize=10.2, color=ORANGE, ha="center", va="bottom",
          fontweight="bold")
 
 # fragments on the left: each is a sub-path of the parent, drawn in a
@@ -159,7 +159,7 @@ frag_y = []
 for lbl, idxs, yc in FRAGS:
     exons = [FX[i] for i in idxs]
     chain(axB, exons, yc, AMBER, "#d98a2b", lw=1.3)
-    axB.text(exons[0][0] - 0.2, yc, lbl, fontsize=8.2, color=NAVY,
+    axB.text(exons[0][0] - 0.2, yc, lbl, fontsize=9.6, color=NAVY,
              ha="right", va="center")
     frag_y.append((yc, exons[-1][1]))
 
@@ -175,12 +175,12 @@ for (yc, x_right) in frag_y:
     axB.add_patch(a)
 
 # label the fold action in the clear gap between the two columns (top of gap)
-axB.text(7.55, 4.55, "fold into\nparent", fontsize=8.8, color=ORANGE,
+axB.text(7.55, 4.55, "fold into\nparent", fontsize=10.2, color=ORANGE,
          ha="center", va="center", fontweight="bold", linespacing=1.15)
 
 # note in genuinely clear space (centered, below the lowest fragment)
 axB.text(6.3, 0.35, "fragments  →  not separate isoforms",
-         fontsize=8.4, color=SLATE, ha="center", va="center", style="italic")
+         fontsize=9.8, color=SLATE, ha="center", va="center", style="italic")
 
 # =================================================================
 # shared legend (bottom, minimal)
@@ -198,7 +198,7 @@ handles = [
            markersize=11, label="non-canonical / drop"),
 ]
 fig.legend(handles=handles, loc="lower center", ncol=5, frameon=False,
-           fontsize=8.6, bbox_to_anchor=(0.5, -0.005), handletextpad=0.35,
+           fontsize=10.0, bbox_to_anchor=(0.5, -0.005), handletextpad=0.35,
            columnspacing=1.5)
 
 fig.suptitle("Two precision mechanisms", fontsize=15,

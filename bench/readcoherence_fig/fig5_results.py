@@ -64,12 +64,16 @@ axL.text(flow_tx / 1000.0, ymax * 1.02, "flow", rotation=90,
 axL.text(xs[0], ung_rc, "ungated read-chain", ha="right", va="bottom",
          fontsize=8.8, color=ORANGE, style="italic")
 
-# "min_cov" annotation near the open markers
+# clarify what the two vertical reference lines mean + what labels are
+axL.text(0.985, 0.10,
+         "vertical lines = each tool's emitted count",
+         transform=axL.transAxes, ha="right", va="bottom",
+         fontsize=8.5, color=GRAY, style="italic")
 axL.text(0.985, 0.05, "labels = min_cov", transform=axL.transAxes,
          ha="right", va="bottom", fontsize=8.5, color=GRAY, style="italic")
 
 axL.set_xlabel("transcripts emitted  (thousands)", fontsize=11, color=NAVY)
-axL.set_ylabel("annotated isoforms StringTie misses", fontsize=11, color=NAVY)
+axL.set_ylabel("StringTie-missed isoforms recovered", fontsize=11, color=NAVY)
 axL.set_title("Recall vs transcript count", fontsize=13,
               fontweight="bold", color=NAVY, pad=10)
 axL.set_xlim(65, 97)
@@ -139,12 +143,35 @@ facts = [
 ]
 fx = [0.16, 0.5, 0.84]
 for (txt, col), fpos in zip(facts, fx):
-    axR.text(fpos * n, y0 - h / 2.0 - 0.16, txt, ha="center", va="center",
+    axR.text(fpos * n, y0 - h / 2.0 - 0.13, txt, ha="center", va="center",
              fontsize=12, fontweight="bold", color=col,
              transform=axR.transData)
 
+# ---- per-segment category legend (decodes every coloured sub-bar) ----
+# two compact rows of swatch + label, so the lighter red / green shades and
+# the inner FSM/NIC/NNC/ISM segments are unambiguous.
+leg = [
+    ("FSM", "#1e8449"), ("NIC", "#52be80"), ("NNC", "#a9dfbf"),
+    ("ISM", GRAY),
+    ("intergenic", "#c0392b"), ("fusion", "#d98880"),
+    ("antisense", "#e6b0aa"), ("genic", "#f2d7d5"),
+]
+leg_row_y = [-0.085, -0.20]
+sw = 0.022 * n          # swatch width (data units)
+sh = 0.045              # swatch height (axes-y units)
+col_x = [0.0, 0.265, 0.53, 0.80]   # 4 columns across the panel (fractions of n)
+for k, (lbl, col) in enumerate(leg):
+    row = k // 4
+    cx = col_x[k % 4] * n
+    ly = leg_row_y[row]
+    axR.add_patch(plt.Rectangle((cx, ly - sh / 2), sw, sh,
+                                facecolor=col, edgecolor="white",
+                                linewidth=0.6, zorder=3, clip_on=False))
+    axR.text(cx + sw * 1.3, ly, lbl, ha="left", va="center",
+             fontsize=8.2, color=NAVY)
+
 axR.set_xlim(-0.01 * n, 1.02 * n)
-axR.set_ylim(0.0, 0.95)
+axR.set_ylim(-0.27, 0.95)
 axR.set_yticks([])
 axR.set_xticks([0, n / 2.0, n])
 axR.set_xticklabels(["0", f"{int(n/2):,}", f"{n:,}"], fontsize=9, color=NAVY)
