@@ -1,0 +1,17 @@
+{
+ "tools": {"StringTie":{"fsm":23372,"tx":68157,"beat_st":0},
+           "flow":{"fsm":23549,"tx":70373,"beat_st":177},
+           "ungated_readchain":{"fsm":23952,"tx":78559,"beat_st":580},
+           "option_b":{"fsm":25620,"tx":94145,"beat_st":2248}},
+ "sweep": [{"min_cov":2,"beat_st":2248,"rc_extras":23791,"total_tx":94145},
+           {"min_cov":3,"beat_st":1735,"rc_extras":13846,"total_tx":84200},
+           {"min_cov":5,"beat_st":1246,"rc_extras":7711,"total_tx":78065},
+           {"min_cov":8,"beat_st":922,"rc_extras":4800,"total_tx":75154},
+           {"min_cov":10,"beat_st":786,"rc_extras":3905,"total_tx":74259}],
+ "shipped_min_cov": 3,
+ "stringtie_tx": 68157, "flow_tx": 70373,
+ "sqanti_extras": {"novel_not_in_catalog":10059,"novel_in_catalog":6275,"incomplete-splice_match":2427,
+                   "full-splice_match":2066,"intergenic":1134,"fusion":949,"antisense":709,"genic_intron":117,"genic":55},
+ "sqanti_pct": {"canonical":100,"real_FSM_NIC_NNC":63,"strict_FSM_NIC":28,"noise":12},
+ "flow_lost": 0, "guide_lost": 0
+}
