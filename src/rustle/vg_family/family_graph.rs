@@ -414,6 +414,12 @@ pub fn merge_singletons_by_sequence(
     // narrowing: it can only PREVENT merges, never create new ones, so with the
     // default 0.0 it is fully inert.
     let min_core_cov = family_min_core_coverage();
+    // DEBUG-ONLY, default-off: dump the contiguous-core coverage of EVERY
+    // jaccard-passing pair so the operating threshold can be calibrated on real
+    // data (does the gate find any short-block domain-sharers to drop?). Gated on
+    // RUSTLE_VG_CORE_GATE_TRACE; purely additive (computes `cov` for the trace even
+    // when the gate itself is off), never changes merge decisions.
+    let core_trace = std::env::var_os("RUSTLE_VG_CORE_GATE_TRACE").is_some();
     let mut parent: Vec<usize> = (0..n).collect();
     fn find_s(p: &mut [usize], x: usize) -> usize {
         if p[x] == x { x } else { let r = find_s(p, p[x]); p[x] = r; r }
@@ -426,12 +432,19 @@ pub fn merge_singletons_by_sequence(
             let inter = mins[i].intersection(&mins[j]).count() as f64;
             let union_sz = mins[i].union(&mins[j]).count() as f64;
             if union_sz == 0.0 { continue; }
-            if inter / union_sz >= min_jaccard {
+            let jacc = inter / union_sz;
+            if jacc >= min_jaccard {
                 // ADDITIONAL contiguous-core gate (only when enabled).
-                if min_core_cov > 0.0 {
+                if min_core_cov > 0.0 || core_trace {
                     let cov = contiguous_core_coverage(
                         &seqs_and_refs[i].1, &seqs_and_refs[j].1);
-                    if cov < min_core_cov { continue; }
+                    if core_trace {
+                        let la = seqs_and_refs[i].1.len();
+                        let lb = seqs_and_refs[j].1.len();
+                        eprintln!("[CORE_TRACE] cid_i={} cid_j={} jacc={:.3} core_cov={:.3} len_i={} len_j={} would_gate={}",
+                            cid_i, cid_j, jacc, cov, la, lb, (min_core_cov > 0.0 && cov < min_core_cov));
+                    }
+                    if min_core_cov > 0.0 && cov < min_core_cov { continue; }
                 }
                 let ri = find_s(&mut parent, i);
                 let rj = find_s(&mut parent, j);
@@ -758,21 +771,42 @@ pub fn build_family_graph_from_layer1_graphs(
 ///
 /// Pure POA-MSA utility used by the graph-POA-identity family filter
 /// (`compute_family_graph_poa_identity_diag`). No HMM/profile dependency.
+///
+/// Uses poasta's default-ish affine-gap Dijkstra scoring (mismatch=1,
+/// gap_extend=1, gap_open=2). This is the scoring used by the family-graph's
+/// main POA path; do NOT change it here — `contiguous_core_coverage` uses a
+/// DEDICATED config via `poa_msa_with_costs` instead (see that function).
 pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+    use poasta::aligner::scoring::GapAffine;
+    // mismatch=1, gap_extend=1, gap_open=2 (the established main-path scoring).
+    poa_msa_with_costs(seqs, GapAffine::new(1, 1, 2))
+}
+
+/// Multiple sequence alignment via poasta POA graph traversal with EXPLICIT
+/// affine-gap costs. Body is identical to the historical `poa_msa` except the
+/// `GapAffine` is supplied by the caller, so a specialised alignment (e.g. the
+/// contiguous-core gate) can pick a scoring that anchors a conserved core
+/// against divergent flanks WITHOUT perturbing the main `poa_msa` scoring used
+/// elsewhere in the family graph.
+///
+/// `GapAffine::new(cost_mismatch, cost_gap_extend, cost_gap_open)`.
+pub fn poa_msa_with_costs(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+) -> Result<Vec<Vec<u8>>> {
     use anyhow::anyhow;
     use poasta::graphs::poa::{POAGraph, POANodeIndex};
     use poasta::aligner::PoastaAligner;
     use poasta::aligner::config::AffineDijkstra;
-    use poasta::aligner::scoring::{GapAffine, AlignmentType};
+    use poasta::aligner::scoring::AlignmentType;
     use poasta::io::fasta::poa_graph_to_fasta;
 
     if seqs.len() < 2 {
         return Err(anyhow!("poa_msa requires at least 2 sequences"));
     }
 
-    // Build a POA graph by aligning each sequence progressively.
-    // Uses affine-gap Dijkstra (no A* heuristic) with mismatch=1, gap_extend=1, gap_open=2.
-    let gap_costs = GapAffine::new(1, 1, 2);
+    // Build a POA graph by aligning each sequence progressively, using the
+    // caller-supplied affine-gap Dijkstra costs (no A* heuristic).
     let aligner: PoastaAligner<'_, AffineDijkstra> =
         PoastaAligner::new(AffineDijkstra(gap_costs), AlignmentType::Global);
 
@@ -868,14 +902,44 @@ pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
 /// Purely alignment-column-derived (POA-only): no DNA/protein domain annotation,
 /// no BLAST, no k-mer/minimizer is used. Deterministic (POA is deterministic).
 ///
+/// ROBUSTNESS: this uses a DEDICATED alignment config — a STRONG gap-open
+/// (`GapAffine::new(1, 1, 32)`: mismatch=1, gap_extend=1, gap_open=32) — instead
+/// of the main `poa_msa` scoring (gap_open=2). With the weak default gap-open,
+/// poasta is content-dependently unstable on two copies that share a long core
+/// but have DIVERGENT 5' AND 3' flanks: a few CHEAP single-base gaps in the
+/// divergent flanks frame-shift the otherwise-on-diagonal alignment THROUGH the
+/// conserved core, so the core never re-anchors and the longest equal run
+/// collapses to a chance-match ~3 bp (observed core coverage 0.71 -> ~0.01 on
+/// true copies). A strong gap-open makes those scattered frame-shift gaps
+/// uneconomical, so the alignment stays on one diagonal and the identical core
+/// aligns column-for-column (coverage restored to ~ the core fraction).
+///
+/// This mirrors the validated python prototype (`bench/poa_family_definition.py`,
+/// BioPython NW gap_open=-5) which avoided the same instability by gapping the
+/// divergent flank and anchoring the core. The strong gap-open ONLY fixes the
+/// false-collapse of true copies; it leaves domain-sharers / disjoint pairs LOW
+/// (measured: short-block 0.05, reordered-chunk 0.01, disjoint 0.01 — unchanged
+/// from the weak-gap default), so the separation is preserved, not blurred. The
+/// gap-open is the documented robustness lever: gap_open>=16 anchors all tested
+/// divergent-flank cases; 32 is a comfortable margin (poasta's internal Score
+/// arithmetic overflows for gap_open<2 and RAISING MISMATCH was counterproductive
+/// — both empirically falsified, so the strong gap-open is the chosen knob).
+/// poasta 0.1.0's `EndsFree`/semi-global mode is `todo!()` (panics), so an
+/// ends-free alignment was not available; the strong-gap-open config is the
+/// POA-only fix.
+///
 /// Edge cases: returns 0.0 if either sequence is empty or the alignment fails;
 /// identical sequences return ~1.0 (the whole sequence is one matched run).
 pub fn contiguous_core_coverage(a: &[u8], b: &[u8]) -> f64 {
+    use poasta::aligner::scoring::GapAffine;
     let minlen = a.len().min(b.len());
     if minlen == 0 {
         return 0.0;
     }
-    let msa = match poa_msa(&[a.to_vec(), b.to_vec()]) {
+    // Dedicated strong-gap-open scoring (mismatch=1, gap_extend=1, gap_open=32).
+    // See the doc comment: anchors the conserved core against divergent flanks.
+    let core_gap_costs = GapAffine::new(1, 1, 32);
+    let msa = match poa_msa_with_costs(&[a.to_vec(), b.to_vec()], core_gap_costs) {
         Ok(m) => m,
         Err(_) => return 0.0,
     };
@@ -1501,6 +1565,39 @@ mod tests {
         let cov = contiguous_core_coverage(&a, &b);
         assert!(cov >= 0.13,
             "long shared core should give HIGH contiguous-core coverage (got {cov:.3})");
+    }
+
+    /// ROBUSTNESS REGRESSION GUARD (the known defect). Two TRUE copies that share
+    /// a long internal core (400 bp) but have LONG DIVERGENT flanks on BOTH the 5'
+    /// AND 3' ends (120 bp each, independent random per copy) must STILL score a
+    /// HIGH contiguous-core coverage (~ the core fraction 400/640 ≈ 0.62).
+    ///
+    /// Before the fix, poasta's default affine gap costs threaded the divergent
+    /// flanks diagonally rather than gapping them, so the aligner never re-anchored
+    /// the conserved core and coverage collapsed (observed 0.71 -> 0.01). A
+    /// content-dependent collapse like that would wrongly SPLIT real paralog copies
+    /// at the family-merge gate. We require coverage >= 0.5 here (well above the
+    /// 0.13 merge bar, and close to the 0.62 core fraction).
+    #[test]
+    fn contiguous_core_coverage_divergent_flanks_still_high() {
+        // Construction chosen (seed=4) to RELIABLY trigger the threading collapse
+        // under poasta's default affine gap costs: with the old `poa_msa` scoring
+        // this exact input scored ~0.005. The fix must restore it to ~0.62.
+        const FLANK: usize = 120;
+        const S: u64 = 4;
+        let core = core_rand_seq(400, 0xC0FE_0000 ^ (S * 0x1001));
+        // 120 bp DIVERGENT (independent random) flanks on BOTH ends of each copy.
+        let mut a = core_rand_seq(FLANK, 0xAAAA_0000 ^ (S * 0x2002));
+        a.extend_from_slice(&core);
+        a.extend(core_rand_seq(FLANK, 0xAAAA_1000 ^ (S * 0x3003)));
+        let mut b = core_rand_seq(FLANK, 0xBBBB_0000 ^ (S * 0x4004));
+        b.extend_from_slice(&core);
+        b.extend(core_rand_seq(FLANK, 0xBBBB_1000 ^ (S * 0x5005)));
+        let cov = contiguous_core_coverage(&a, &b);
+        assert!(cov >= 0.5,
+            "two true copies sharing a 400 bp core with divergent 5' AND 3' flanks \
+             must score HIGH contiguous-core coverage (~0.62); got {cov:.3} — the \
+             aligner threaded the flanks and lost the core");
     }
 
     #[test]
