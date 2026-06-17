@@ -1,0 +1,6 @@
+K	reads	pct_MAPQ0	mismapped	identifiable_copies	PSV_assign_acc
+0	200	100.0	0	0	0.2
+1	200	40.0	0	3	0.8
+2	200	0.0	0	5	1.0
+4	200	0.0	0	5	1.0
+8	200	0.0	2	5	0.99
