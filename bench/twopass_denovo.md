@@ -45,5 +45,22 @@ annotation-free transcript caller** — it preserves the per-read PSVs that let 
 copies that flow would have collapsed. The two-pass `(read-coherence skeleton) → (family + PSV split)`
 is `copy_split`'s `(intron chain ⊕ PSV)` realized as a full pipeline.
 
+## Genome-wide: not restricted to a handful (bench/twopass_genomewide.py)
+The synthetic prototype above is one locus only because it needs a constructed collapsed reference +
+ground truth. The pipeline itself is genome-wide — every stage already ran at genome scale this session
+(read-coherence: 25 chroms; family graph definition: 1,337 families; de-novo PSV / co-segregation:
+10,178 loci in the hidden-collapse scan). Composed over ALL graph-defined families:
+
+- **1,337 families processed genome-wide** (603,267 reads at family loci) in ~5 s.
+- **848 (63%) dispersed** — copies at separate loci → coordinate-resolved (Pass-1 separate skeletons).
+- **489 (37%) co-located** — copies share/near one frame → de-novo PSV split applies.
+- **hard multimappers (MAPQ-0): 3,803 (0.6%)**; **46 co-located families have ≥5** — those are where the
+  PSV-split is genuinely decisive.
+
+So: genome-wide-capable and fast; most families resolve by coordinate, the PSV-split is decisive at the
+~46 co-located+hard families (the sparse hard regime — consistent with every prior finding; abundant
+only in deep co-located data like testis HiFi).
+
 ## Reproduce
-- `MINIFORGE python bench/twopass_denovo.py` ; `python3 bench/twopass_fig.py`
+- `MINIFORGE python bench/twopass_denovo.py` ; `python3 bench/twopass_fig.py`  (synthetic, with truth)
+- `MINIFORGE python bench/twopass_genomewide.py`  (genome-wide tally over all families)
