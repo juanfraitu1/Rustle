@@ -216,6 +216,7 @@ def poa_pair_stats(aligner, s1, s2):
     aligned_len = 0
     matches = 0
     biggest = 0
+    core_matches = 0   # matches WITHIN the single largest ungapped block
     n_blocks = 0
     for (ts, te), (qs, qe) in zip(t_blocks, q_blocks):
         n = te - ts
@@ -223,18 +224,25 @@ def poa_pair_stats(aligner, s1, s2):
             continue
         n_blocks += 1
         aligned_len += n
-        biggest = max(biggest, n)
         seg1 = s1[ts:te]
         seg2 = s2[qs:qe]
-        matches += sum(1 for c1, c2 in zip(seg1, seg2) if c1 == c2)
+        m = sum(1 for c1, c2 in zip(seg1, seg2) if c1 == c2)
+        matches += m
+        if n > biggest:
+            biggest = n
+            core_matches = m
     minlen = min(len(s1), len(s2))
     if aligned_len == 0 or minlen == 0:
-        return dict(recip=0.0, ident=0.0, core_recip=0.0, aligned_len=0,
-                    n_blocks=0, biggest=0, score=float(aln.score))
+        return dict(recip=0.0, ident=0.0, core_recip=0.0, core_ident=0.0,
+                    aligned_len=0, n_blocks=0, biggest=0, score=float(aln.score))
     recip = min(aligned_len / len(s1), aligned_len / len(s2))
     ident = matches / aligned_len
     core_recip = biggest / minlen
-    return dict(recip=recip, ident=ident, core_recip=core_recip,
+    # core_ident = identity WITHIN the largest ungapped block. Real homology has elevated
+    # identity in the core (recent dups high, ancient paralogs ~50-70%); a CHANCE end-to-end
+    # alignment of two unrelated short genes sits near the random baseline (~25%).
+    core_ident = core_matches / biggest if biggest else 0.0
+    return dict(recip=recip, ident=ident, core_recip=core_recip, core_ident=core_ident,
                 aligned_len=aligned_len, n_blocks=n_blocks, biggest=biggest,
                 score=float(aln.score))
 
