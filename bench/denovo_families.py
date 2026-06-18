@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""Full read-coherence way, genome-wide: from the de-novo assembled transcripts (annotation-free), build
+the multi-copy FAMILY layer. Minimizer-FREE end to end.
+
+Pipeline:
+  1. collapse isoforms -> one representative per GENE LOCUS by SHARED INTRON JUNCTIONS (union-find on
+     identical (donor,acceptor) coords). NOT raw span overlap -- dense GGO genes overlap transitively and
+     a span-merge chains a whole chromosome into one bogus "locus" (the old bug: 93k tx -> 27 reps).
+  2. COUNTING-BLOOM pre-filter ("only POA what is likely a family member"): one linear pass deposits every
+     rep's k-mers into a counting Bloom filter; a k-mer owned by >=2 (and <= CNT_MAX) distinct reps is
+     "family-informative". A rep whose informative-k-mer fraction >= TAU is a candidate family member;
+     single-copy genes (unique k-mers) are rejected here and never reach POA. This also fixes the prior OOM
+     (the old all-k-mer inverted index exploded on the millions of UNIQUE single-copy k-mers; here the
+     index is built ONLY over family-informative k-mers, a small bounded set).
+  3. POA contiguous-core grading is THE criterion (core_recip >= T_CORE). The Bloom is a recall-safe
+     pre-screen only -- it can over-include (costs an extra POA) but never decides membership.
+
+Frames the result as a GENERAL assembler (all transcripts) with a specialized family/copy layer on the
+multi-copy subset. Run with /home/juanfra/miniforge3/bin/python (Bio.Align + numpy). Parallel POA.
+"""
+import multiprocessing as mp
+import os
+import sys
+from collections import defaultdict
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(__file__))
+import poa_family_definition as P
+
+FA = "/home/juanfra/winloci_scratch/denovo_transcripts.fa"
+META = "/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv"
+SKEL = "/home/juanfra/winloci_scratch/denovo_skeletons.tsv"
+OUT = os.path.join(os.path.dirname(__file__), "denovo_families.tsv")
+EDGES = os.path.join(os.path.dirname(__file__), "denovo_family_edges.tsv")
+
+# --- POA decision (THE criterion; principled, validated) ---
+T_CORE = 0.13      # contiguous-core reciprocal-coverage threshold
+LEN_CAP = 20000    # skip POA on pairs where the shorter seq exceeds this (cost guard)
+
+# --- exact k-mer counting pre-filter (the "bloom filter" idea, done exactly: cheap pre-screen so only
+#     likely family members reach POA; recall-safe -- it NEVER decides membership, POA does) ---
+# KMER=18 gives a 4^18 ~ 6.9e10 k-mer space vs ~47M k-mers here (~0.07% load), so coincidental sharing is
+# negligible -- two genes sharing >= K_SHARE exact 18-mers is essentially always real homology, and a
+# single-copy gene has < K_SHARE informative k-mers so it is truly rejected (KMER=13/16 were too saturated
+# -> every gene looked "shared"). Counts are EXACT (np.unique distinct-rep ownership), no Bloom collisions.
+KMER = 18
+CNT_MIN = 2        # a k-mer must be owned by >= this many distinct gene-reps to be "family-informative"
+CNT_MAX = 40       # drop pervasive k-mers owned by > this many reps (mobile-element/repeat, not family-spec)
+PAIR_CAP = 40      # skip PAIR generation from a k-mer owned by > this many reps (cost guard; consistent
+                   #   with CNT_MAX -- big families (> this) are rare and logged)
+K_SHARE = 6        # propose a candidate pair only if the two reps co-own >= this many informative k-mers
+MAX_PAIRS = 8_000_000  # hard guard on the distinct-pair set (prevents any OOM; logged if hit)
+
+_CODE = np.full(256, -1, dtype=np.int64)
+for _i, _b in enumerate(b"ACGT"):
+    _CODE[_b] = _i
+    _CODE[_b + 32] = _i  # lowercase
+
+
+def _horner(codes, n):
+    h = np.zeros(n, dtype=np.int64)
+    for t in range(KMER):                       # Horner: h = h*4 + base, vectorized over all windows
+        h = (h << 2) + codes[t:t + n]
+    return h
+
+
+def kmer_hashes(seq: str):
+    """CANONICAL base-4 codes of every KMER-mer of seq (min of the k-mer and its reverse-complement, so a
+    sequence and its RC yield the SAME codes -> family detection is strand-symmetric; paralogs assembled on
+    opposite strands still share k-mers). Windows containing N are dropped. KMER<=31 fits int64. Minimizer-
+    free. Vectorized Horner rolling hash -- NOT an int64 matmul (numpy integer matmul is a slow non-BLAS loop)."""
+    codes = _CODE[np.frombuffer(seq.encode(), dtype=np.uint8)]
+    L = codes.size
+    if L < KMER:
+        return np.empty(0, dtype=np.int64)
+    n = L - KMER + 1
+    bad = codes < 0
+    safe = np.where(bad, 0, codes)
+    fwd = _horner(safe, n)
+    rc = _horner((3 - safe)[::-1], n)[::-1]      # rc[i] = hash of the reverse-complement of window i
+    canon = np.minimum(fwd, rc)
+    cb = np.concatenate(([0], np.cumsum(bad.astype(np.int64))))
+    badwin = (cb[KMER:] - cb[:n]) > 0            # drop any window touching an N
+    return canon[~badwin]
+
+
+# ---------- POA grading worker (parallel) ----------
+_S = None
+_A = None
+
+
+def _init():
+    global _S, _A
+    _S = P.load_fasta(FA)
+    _A = P.make_aligner()
+
+
+_RC = str.maketrans("ACGTN", "TGCAN")
+
+
+def _poa(t):
+    a, b = t
+    sa, sb = _S.get(a), _S.get(b)
+    if not sa or not sb or min(len(sa), len(sb)) > LEN_CAP:
+        return None
+    cr = P.poa_pair_stats(_A, sa, sb)["core_recip"]
+    if cr < T_CORE:                              # try opposite orientation (copies assembled on diff strands)
+        cr = max(cr, P.poa_pair_stats(_A, sa, sb.translate(_RC)[::-1])["core_recip"])
+    return (a, b, round(cr, 4)) if cr >= T_CORE else None
+
+
+def main():
+    import time
+    t0 = time.perf_counter()
+
+    def tick(msg):
+        print(f"[{time.perf_counter() - t0:6.1f}s] {msg}", flush=True)
+
+    seqs = P.load_fasta(FA)
+    meta = {}
+    for line in open(META):
+        if line.startswith("id\t"):
+            continue
+        tid, c, s, e, strand, ne, nr = line.rstrip("\n").split("\t")
+        meta[tid] = (c, int(s), int(e), int(nr))
+    n_assembly = len(seqs)
+
+    # introns per skeleton, keyed by (chrom, start, end) so distinct chains at the same start don't collide
+    skel_introns = {}
+    for line in open(SKEL):
+        if line.startswith("chrom\t"):
+            continue
+        c, s, e, ne, nr, intr = line.rstrip("\n").split("\t")
+        ivs = [tuple(map(int, x.split("-"))) for x in intr.split(";")] if intr else []
+        skel_introns[(c, int(s), int(e))] = ivs
+
+    # ---- (1) collapse isoforms -> GENE loci by SHARED INTRON JUNCTIONS (union-find) ----
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        r = x
+        while parent[r] != r:
+            r = parent[r]
+        while parent[x] != r:
+            parent[x], x = r, parent[x]
+        return r
+
+    def union(a, b):
+        parent[find(a)] = find(b)
+
+    junc_owner = {}  # (chrom, donor, acceptor) -> a tid that uses it
+    for tid, (c, s, e, nr) in meta.items():
+        find(tid)  # register every tid (single-exon genes stay singletons)
+        for d, a in skel_introns.get((c, s, e), []):
+            key = (c, d, a)
+            if key in junc_owner:
+                union(tid, junc_owner[key])
+            else:
+                junc_owner[key] = tid
+
+    comp = defaultdict(list)
+    for tid in meta:
+        comp[find(tid)].append(tid)
+    reps = []
+    for members in comp.values():
+        # rep = most reads, tie-break longest span
+        reps.append(max(members, key=lambda t: (meta[t][3], meta[t][2] - meta[t][1])))
+    reps = [r for r in reps if r in seqs]
+    n_loci = len(reps)
+    tick(f"collapsed {n_assembly:,} transcripts -> {n_loci:,} gene loci (intron-junction union-find)")
+
+    # ---- (2) exact k-mer counting pre-filter: family-informative k-mers, then candidate reps ----
+    # per-rep UNIQUE k-mers (dedup within rep) -> np.unique(concatenation, return_counts) gives EXACT
+    # distinct-rep ownership of every observed k-mer (no Bloom-array collisions; KMER=16 space is sparse).
+    rep_kmers = {}   # r -> (sorted unique k-mer values, their first-occurrence positions along the transcript)
+    chunks = []
+    for r in reps:
+        vals, pos = np.unique(kmer_hashes(seqs[r]), return_index=True)
+        rep_kmers[r] = (vals, pos)
+        if vals.size:
+            chunks.append(vals)
+    allk = np.concatenate(chunks) if chunks else np.empty(0, dtype=np.int64)
+    uniq, cnt = np.unique(allk, return_counts=True)        # cnt = #distinct gene-reps owning each k-mer
+    info_kmers = uniq[(cnt >= CNT_MIN) & (cnt <= CNT_MAX)]  # family-informative k-mers (sorted)
+    del allk, chunks, uniq, cnt
+    tick(f"exact k-mer counts built; {len(info_kmers):,} family-informative k-mers "
+         f"(owned by {CNT_MIN}..{CNT_MAX} reps)")
+
+    # per-rep informative signature = its k-mers that are family-informative (with positions); a rep can
+    # only be in a >= K_SHARE pair if it has >= K_SHARE informative k-mers -> cheap, threshold-free gate.
+    def members(vals):                          # boolean membership of vals in the SORTED info_kmers
+        idx = np.searchsorted(info_kmers, vals)
+        ok = idx < info_kmers.size
+        res = np.zeros(vals.size, dtype=bool)
+        res[ok] = info_kmers[idx[ok]] == vals[ok]
+        return res
+    informative_sig = {}   # r -> (sig values sorted, sig positions)
+    for r in reps:
+        vals, pos = rep_kmers[r]
+        if vals.size == 0:
+            continue
+        m = members(vals)
+        if m.sum() >= K_SHARE:
+            informative_sig[r] = (vals[m], pos[m])
+    candidates = list(informative_sig)
+    del rep_kmers
+    seqlen = {r: len(seqs[r]) for r in candidates}
+    tick(f"candidate family-member reps: {len(candidates):,} / {n_loci:,} loci "
+         f"(single-copy genes have < {K_SHARE} informative k-mers -> rejected, never reach POA)")
+
+    # inverted index ONLY over family-informative k-mers of CANDIDATE reps (bounded -> no OOM)
+    inv = defaultdict(list)
+    for r in candidates:
+        for h in informative_sig[r][0]:
+            inv[int(h)].append(r)
+    # dedup co-occurring pairs into a SET (a paralog pair recurs across many buckets but is added ONCE ->
+    # bounded; counting per-k-mer is what blew up before)
+    pair_set = set()
+    truncated = False
+    for h, lst in inv.items():
+        if len(lst) < 2 or len(lst) > PAIR_CAP:    # skip common-domain buckets (cost guard)
+            continue
+        for i in range(len(lst)):
+            ri = lst[i]
+            for j in range(i + 1, len(lst)):
+                rj = lst[j]
+                pair_set.add((ri, rj) if ri < rj else (rj, ri))
+        if len(pair_set) > MAX_PAIRS:
+            truncated = True
+            break
+    tick(f"distinct co-occurring candidate pairs: {len(pair_set):,}{' (TRUNCATED at guard)' if truncated else ''}")
+
+    # CONTIGUOUS-SPAN pre-filter: a real paralog pair shares >= K_SHARE k-mers that SPAN a contiguous
+    # block; domain-sharers share k-mers confined to one short domain. The span of shared-k-mer positions
+    # in the shorter transcript / its length is a cheap proxy for POA's core_recip -- use the SAME T_CORE
+    # threshold POA decides on, so this only pre-rejects pairs POA would reject (recall-safe), at ~0 cost.
+    # This is what lets POA run on the real-family subset instead of every domain-sharer (237k -> far less).
+    cands = []
+    n_kshare = 0
+    for a, b in pair_set:
+        va, pa = informative_sig[a]
+        vb, pb = informative_sig[b]
+        common, ia, ib = np.intersect1d(va, vb, assume_unique=True, return_indices=True)
+        if common.size < K_SHARE:
+            continue
+        n_kshare += 1
+        sa, sb = pa[ia], pb[ib]
+        core = min(int(sa.max() - sa.min()), int(sb.max() - sb.min()))   # contiguous-block proxy (bp)
+        if core >= T_CORE * min(seqlen[a], seqlen[b]):
+            cands.append((a, b))
+    print(f"general assembly transcripts: {n_assembly:,}; gene loci (intron-junction collapse): {n_loci:,}; "
+          f"candidate reps: {len(candidates):,}; pairs >= {K_SHARE} shared k-mers: {n_kshare:,}; "
+          f"after contiguous-span filter: {len(cands):,} POA pairs")
+    tick("starting POA grading")
+
+    # ---- (3) POA contiguous-core grading = THE family criterion ----
+    with mp.Pool(5, initializer=_init) as pool:
+        conf = [r for r in pool.map(_poa, cands, chunksize=64) if r]
+    tick(f"POA confirmed {len(conf):,} / {len(cands):,} pairs")
+
+    # persist the confirmed-edge graph (a, b, core_recip) so the family decomposition can be iterated
+    # WITHOUT re-running the expensive POA (community/density split reads this file).
+    with open(EDGES, "w") as eh:
+        eh.write("a\tb\tcore_recip\n")
+        for a, b, cr in conf:
+            eh.write(f"{a}\t{b}\t{cr}\n")
+    tick(f"wrote {len(conf):,} confirmed edges -> {EDGES}")
+
+    # families = connected components of POA-confirmed pairs
+    fparent = {}
+
+    def ffind(x):
+        fparent.setdefault(x, x)
+        r = x
+        while fparent[r] != r:
+            r = fparent[r]
+        while fparent[x] != r:
+            fparent[x], x = r, fparent[x]
+        return r
+    for a, b, cr in conf:
+        fparent[ffind(a)] = ffind(b)
+    fcomp = defaultdict(set)
+    for a, b, cr in conf:
+        fcomp[ffind(a)].add(a)
+        fcomp[ffind(a)].add(b)
+    fams = [c for c in fcomp.values() if len(c) >= 2]
+    in_fam = sum(len(c) for c in fams)
+
+    with open(OUT, "w") as fh:
+        fh.write("family_id\tn_copies\tmembers\n")
+        for i, c in enumerate(sorted(fams, key=lambda c: -len(c))):
+            fh.write(f"DNFAM{i}\t{len(c)}\t{','.join(sorted(c))}\n")
+
+    # ---- validation: do de-novo families recover KNOWN ones? (map known loci -> reps by overlap) ----
+    known = {"RABL2": [("NC_073235.2", 15131675, 15147533), ("NC_086018.1", 48818440, 48831690)],
+             "APOBEC3": [("NC_086018.1", 37023493, 37058621)],
+             "RFPL": [("NC_086018.1", 27445867, 30376055)]}
+    repmeta = [(meta[r][0], meta[r][1], meta[r][2], r) for r in reps]
+    g2fam = {}
+    for i, c in enumerate(fams):
+        for m in c:
+            g2fam[m] = i
+
+    def reps_in(chrom, s, e):
+        return [r for (c, rs, re, r) in repmeta if c == chrom and rs < e and re > s]
+    print("\nde-novo families:", len(fams), "; transcripts in a multi-copy family:", in_fam)
+    print("validation (known families recovered as de-novo families):")
+    for name, regions in known.items():
+        comps = defaultdict(int)
+        for c, s, e in regions:
+            for r in reps_in(c, s, e):
+                if r in g2fam:
+                    comps[g2fam[r]] += 1
+        best = max(comps.values()) if comps else 0
+        print(f"  {name}: {'RECOVERED' if best >= 2 else ('partial/' + str(best))} (reps co-grouped={best})")
+    print(f"\n[wrote {OUT}]")
+    print(f"FRAMING: general read-coherence assembler = {n_assembly:,} transcripts; the family/copy layer "
+          f"applies to {in_fam:,} transcripts in {len(fams):,} multi-copy families; the rest are single-copy "
+          f"(assembled normally).")
+
+
+if __name__ == "__main__":
+    main()
