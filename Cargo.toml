@@ -97,6 +97,10 @@ path = "src/bin/copy_assign.rs"
 name = "asj"
 path = "src/bin/asj.rs"
 
+[[bin]]
+name = "asj_verify"
+path = "src/bin/asj_verify.rs"
+
 [[test]]
 name = "test_parity_graph_edges_dump"
 path = "tests/regression/test_parity_graph_edges_dump.rs"

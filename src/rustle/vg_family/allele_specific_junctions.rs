@@ -197,6 +197,22 @@ pub fn scan_gene_asj(reads: &[AlignedRead], start: u64, end: u64, p: &AsjParams)
     out
 }
 
+/// A TRANSVERSION (purine↔pyrimidine: A/C, A/T, G/C, G/T) is unambiguously GENETIC; a transition (A/G or C/T)
+/// could be an RNA-editing site. The anchor/PSV base-change type is the genetic-vs-edit confound control.
+pub fn is_transversion(a: u8, b: u8) -> bool {
+    let purine = |x: u8| matches!(x.to_ascii_uppercase(), b'A' | b'G');
+    purine(a) != purine(b)
+}
+
+/// Anchor→junction distance = `min(|anchor − donor|, |anchor − acceptor|)`. `<= ~100bp` (splice-proximal) makes
+/// a splice-disrupting-variant mechanism plausible; a distal anchor fully flipping a junction is more likely
+/// two distinct transcript populations than allele-modulated splicing of one gene.
+pub fn anchor_junction_dist(anchor: u64, donor: u64, acceptor: u64) -> u64 {
+    let d = anchor.abs_diff(donor);
+    let a = anchor.abs_diff(acceptor);
+    d.min(a)
+}
+
 /// Benjamini-Hochberg q-values for `pvals` (returned in input order). Genome-wide multiple-testing control.
 pub fn bh_fdr(pvals: &[f64]) -> Vec<f64> {
     let m = pvals.len();
@@ -537,6 +553,16 @@ mod tests {
         assert!(approx(fisher_exact_2x2(10, 5, 3, 12), 0.025_327_69));
         assert!(approx(fisher_exact_2x2(3, 7, 8, 2), 0.069_778_52));
         assert!(fisher_exact_2x2(14, 0, 0, 18) < 1e-6);
+    }
+
+    #[test]
+    fn transversion_and_distance() {
+        assert!(is_transversion(b'A', b'C')); // purine vs pyrimidine
+        assert!(is_transversion(b'G', b'T'));
+        assert!(!is_transversion(b'A', b'G')); // both purine -> transition
+        assert!(!is_transversion(b'C', b'T')); // both pyrimidine -> transition
+        assert_eq!(anchor_junction_dist(100, 95, 300), 5); // nearest boundary
+        assert_eq!(anchor_junction_dist(290, 95, 300), 10);
     }
 
     #[test]

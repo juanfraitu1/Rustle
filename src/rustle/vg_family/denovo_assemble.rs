@@ -363,6 +363,36 @@ pub fn primary_aligned_reads_in_region(
     Ok(out)
 }
 
+/// Fraction of PRIMARY reads covering `pos` (0-based) that are MAPQ-0 (multimapping) — the ASJ confound
+/// control. A HIGH fraction at a het-ASJ anchor flags a collapsed-paralog masquerade (the two "alleles" are
+/// paralog copies); a LOW fraction means genuine within-gene heterozygosity. (For copy-specific junctions the
+/// reading inverts: multimapping is expected.) Capped at 600 reads, matching the python.
+pub fn frac_mq0_at(bam_path: &str, chrom: &str, pos: u64) -> Result<f64> {
+    let bai_path = format!("{bam_path}.bai");
+    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
+    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+    let header = reader.read_header()?;
+    let index = noodles_bam::bai::read(&bai_path)?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{}", pos + 1, pos + 1).parse()?;
+    let query = reader.query(&header, &index, &region)?;
+    let (mut n, mut z) = (0u32, 0u32);
+    for result in query {
+        let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
+        let f = rb.flags();
+        if f.is_unmapped() || f.is_secondary() || f.is_supplementary() {
+            continue;
+        }
+        n += 1;
+        if rb.mapping_quality().map(|q| q.get()).unwrap_or(0) == 0 {
+            z += 1;
+        }
+        if n >= 600 {
+            break;
+        }
+    }
+    Ok(if n > 0 { z as f64 / n as f64 } else { 0.0 })
+}
+
 /// Full-scan fallback (no index): one pass, region-filtered.
 fn reads_in_region_scan(
     bam_path: &str,
