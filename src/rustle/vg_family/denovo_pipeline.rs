@@ -200,6 +200,31 @@ pub struct FallbackEdge {
     pub len_b: usize,
 }
 
+/// Collapsed-copy recovery PAST the family gate. The genuinely collapsed tandem arrays (DAZ-type) don't form
+/// a co-located family to rescue into, so this runs the PSV copy-split directly on EACH rep's overlapping
+/// reads (`bam_reads` already include the secondary multimappers). Returns the number of EXTRA
+/// PSV-DISTINGUISHABLE copies found beyond one-per-rep. The phantom safeguard is intrinsic: a fully-tied
+/// (identical) locus does not split (`split_locus_copies` requires copy-specific PSVs), so only copies with
+/// real distinguishing evidence are counted — the identifiability gate the user asked for, for free.
+fn recover_collapsed_copies(reps: &[DenovoTranscript], bam_reads: &[BamRead]) -> usize {
+    let mut recovered = 0usize;
+    for rep in reps {
+        let reads: Vec<AlignedRead> = bam_reads
+            .iter()
+            .filter(|br| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_ref_end(&br.read) > rep.start)
+            .map(|br| br.read.clone())
+            .collect();
+        if reads.len() < 6 {
+            continue;
+        }
+        let copies = split_locus_copies(&reads, 3, 2, 3);
+        if copies.len() >= 2 {
+            recovered += copies.len() - 1;
+        }
+    }
+    recovered
+}
+
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -222,7 +247,12 @@ pub fn detect_and_assign(
         reps.len()
     );
     if !rescue_extra.is_empty() {
-        eprintln!("[detect_and_assign] rescue_extra (AS-tied secondary reads fed to rescue): {}", rescue_extra.len());
+        let rec = recover_collapsed_copies(&reps, bam_reads);
+        eprintln!(
+            "[detect_and_assign] rescue_extra (AS-tied secondaries): {} | collapsed copies recovered past family gate (PSV-distinguishable): {}",
+            rescue_extra.len(),
+            rec
+        );
     }
     let (edges, fallback_pairs) = detect_edges_reporting(&reps, &cfg.detect);
     eprintln!(
