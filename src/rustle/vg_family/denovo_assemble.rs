@@ -225,6 +225,7 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
             start: sk.start,
             end: sk.end,
             n_reads: sk.n_reads,
+            strand: strand.unwrap_or('+'),
             introns: sk.introns.clone(),
             seq,
         });
@@ -383,6 +384,7 @@ mod tests {
         assert_eq!(t.n_reads, 3);
         assert_eq!(t.introns, vec![(80, 100)]);
         assert_eq!(t.seq.len(), 160, "exon1 80 + exon2 80");
+        assert_eq!(t.strand, '+');
         assert!(t.seq.iter().all(|&b| b == b'A'), "plus strand: not reverse-complemented");
     }
 
@@ -392,6 +394,7 @@ mod tests {
         let g = genome_one_intron(b"CT", b"AC");
         let out = assemble_gate(&[skel("c1", 0, 180, 3, &[(80, 100)])], &g, &GateParams::default());
         assert_eq!(out.len(), 1);
+        assert_eq!(out[0].strand, '-');
         assert!(out[0].seq.iter().all(|&b| b == b'T'), "revcomp of all-A is all-T");
     }
 

@@ -51,6 +51,9 @@ pub struct DenovoTranscript {
     pub start: u64,
     pub end: u64,
     pub n_reads: u32,
+    /// Transcription strand (`'+'`/`'-'`), from the gate's canonical-junction classification. The `seq` is
+    /// in this orientation; copy assignment needs it for the spliced↔genomic map and read-base orientation.
+    pub strand: char,
     /// Intron `(donor, acceptor)` genomic coordinates.
     pub introns: Vec<(u64, u64)>,
     /// Spliced sequence in transcription orientation.
@@ -334,6 +337,7 @@ mod tests {
             start,
             end,
             n_reads,
+            strand: '+',
             introns: introns.to_vec(),
             seq,
         }
