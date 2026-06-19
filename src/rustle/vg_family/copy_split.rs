@@ -233,6 +233,77 @@ pub fn build_read_obs(read: &AlignedRead, psv_positions: &[u64]) -> ReadObs {
     }
 }
 
+fn base_index(b: u8) -> Option<usize> {
+    match b {
+        b'A' | b'a' => Some(0),
+        b'C' | b'c' => Some(1),
+        b'G' | b'g' => Some(2),
+        b'T' | b't' => Some(3),
+        _ => None,
+    }
+}
+
+/// Discover within-locus PSV positions from a read PILEUP: genomic positions where `>= 2` distinct ACGT
+/// alleles each have `>= min_allele_reads` support — the signature of `>= 2` collapsed copies at one locus
+/// (also het sites / RNA-editing, which the `>= min_psv_k` requirement in `split_readchain_by_psv` then
+/// filters by demanding a copy span MULTIPLE such columns). Returns the positions sorted ascending.
+pub fn discover_locus_psvs(reads: &[AlignedRead], min_allele_reads: usize) -> Vec<u64> {
+    // pileup: genome position -> per-base [A,C,G,T] counts, accumulated in a single walk per read.
+    let mut pileup: BTreeMap<u64, [usize; 4]> = BTreeMap::new();
+    for read in reads {
+        let mut ref_cur = read.ref_start;
+        let mut seq_cur = 0u64;
+        for &(op, len) in &read.cigar {
+            match op {
+                'M' | '=' | 'X' => {
+                    for k in 0..len {
+                        if let Some(&b) = read.seq.get((seq_cur + k) as usize) {
+                            if let Some(bi) = base_index(b) {
+                                pileup.entry(ref_cur + k).or_insert([0; 4])[bi] += 1;
+                            }
+                        }
+                    }
+                    ref_cur += len;
+                    seq_cur += len;
+                }
+                'N' | 'D' => ref_cur += len,
+                'I' | 'S' => seq_cur += len,
+                _ => {}
+            }
+        }
+    }
+    pileup
+        .into_iter()
+        .filter(|(_, counts)| counts.iter().filter(|&&c| c >= min_allele_reads).count() >= 2)
+        .map(|(g, _)| g)
+        .collect()
+}
+
+/// Recover COLLAPSED copies at a single locus: discover within-locus PSVs, then split the reads by PSV
+/// haplotype (`split_readchain_by_psv`). Returns the IDENTIFIABLE (PSV-split) copies — `>= 2` means the
+/// locus is actually multiple collapsed copies the aligner piled onto one place.
+///
+/// Caveat (measured on GGO): het sites / RNA editing / segdup spillover can mimic a collapsed copy; the
+/// `>= min_psv_k` gate filters single-column noise but not diploid haplotypes, so the real-copy headroom
+/// here was ~0 (the apparent collapses being het / domain-sharer confounds). Genuine wins are in the
+/// collapsed-tandem regime (DAZ/RBMY-like) where multiple real copies share one locus.
+pub fn split_locus_copies(
+    reads: &[AlignedRead],
+    min_allele_reads: usize,
+    min_psv_k: usize,
+    min_reads_per_copy: usize,
+) -> Vec<CopyIsoform> {
+    let psv = discover_locus_psvs(reads, min_allele_reads);
+    if psv.len() < min_psv_k {
+        return Vec::new(); // not enough variant columns to identify a collapsed copy
+    }
+    let obs: Vec<ReadObs> = reads.iter().map(|r| build_read_obs(r, &psv)).collect();
+    split_readchain_by_psv(&obs, psv.len(), min_psv_k, min_reads_per_copy)
+        .into_iter()
+        .filter(|c| c.identifiable)
+        .collect()
+}
+
 /// True if a read's observed (non-None) PSV columns all agree with `copy`'s alleles.
 /// A None in the read means "did not span" -> imposes no constraint at that column.
 fn read_consistent_with(read: &[Option<u8>], copy: &[Option<u8>]) -> bool {
@@ -319,6 +390,68 @@ mod tests {
     }
     fn chain_y() -> Vec<(u64, u64)> {
         vec![(100, 200), (300, 450)]
+    }
+
+    // ---- discover_locus_psvs + split_locus_copies (collapsed-copy recovery from raw reads) ----
+
+    /// A single-exon read over [start, start+len) carrying `seq`.
+    fn pile_read(start: u64, seq: &[u8]) -> AlignedRead {
+        aligned(start, &[('M', seq.len() as u64)], seq)
+    }
+
+    #[test]
+    fn discover_locus_psvs_finds_split_positions() {
+        // background all-G; half the reads carry A and half C at genome positions 130 and 160.
+        let mut reads = Vec::new();
+        for base in [b'A', b'C'] {
+            for _ in 0..5 {
+                let mut s = vec![b'G'; 100];
+                s[30] = base; // genome 130
+                s[60] = base; // genome 160
+                reads.push(pile_read(100, &s));
+            }
+        }
+        assert_eq!(discover_locus_psvs(&reads, 3), vec![130, 160]);
+        // raising the support bar above the per-allele depth (5) drops them
+        assert!(discover_locus_psvs(&reads, 6).is_empty());
+    }
+
+    #[test]
+    fn split_locus_recovers_two_collapsed_copies() {
+        // reads pile on ONE locus (same single-exon chain) but split into two PSV haplotypes -> 2 copies.
+        let mut reads = Vec::new();
+        for base in [b'A', b'C'] {
+            for _ in 0..5 {
+                let mut s = vec![b'G'; 100];
+                s[30] = base;
+                s[60] = base;
+                reads.push(pile_read(100, &s));
+            }
+        }
+        let copies = split_locus_copies(&reads, 3, 2, 3);
+        assert_eq!(copies.len(), 2, "two collapsed copies recovered");
+        assert!(copies.iter().all(|c| c.identifiable));
+        assert_eq!(copies.iter().map(|c| c.read_count).collect::<Vec<_>>(), vec![5, 5]);
+    }
+
+    #[test]
+    fn split_locus_no_variant_no_split() {
+        let reads: Vec<AlignedRead> = (0..10).map(|_| pile_read(100, &vec![b'G'; 100])).collect();
+        assert!(split_locus_copies(&reads, 3, 2, 3).is_empty(), "identical reads -> no collapsed copy");
+    }
+
+    #[test]
+    fn split_locus_single_variant_is_not_a_copy() {
+        // reads differ at ONE position only (a het site / single PSV) -> < min_psv_k=2 -> no split.
+        let mut reads = Vec::new();
+        for base in [b'A', b'C'] {
+            for _ in 0..5 {
+                let mut s = vec![b'G'; 100];
+                s[30] = base;
+                reads.push(pile_read(100, &s));
+            }
+        }
+        assert!(split_locus_copies(&reads, 3, 2, 3).is_empty(), "a single variant is not a collapsed copy");
     }
 
     #[test]

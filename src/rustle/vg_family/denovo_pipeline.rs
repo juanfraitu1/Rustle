@@ -12,6 +12,7 @@ use anyhow::Result;
 
 use super::copy_assign::{Assignment, AssignParams, AssignStatus};
 use super::copy_assign_pipeline::{assign_family_detailed, read_ref_end};
+use super::copy_split::{split_locus_copies, AlignedRead};
 use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, primary_reads_from_bam, BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
 };
@@ -165,6 +166,10 @@ pub struct FamilyAssignment {
     /// read confidently mapped (the assignment-vs-mapping accuracy proxy).
     pub uniq: usize,
     pub uniq_agree: usize,
+    /// EXTRA copies recovered by within-locus PSV split (`copy_split::split_locus_copies`): reads piled on
+    /// one detected copy that actually carry `>= 2` PSV haplotypes — collapsed copies the aligner merged.
+    /// (Caveat: het/editing/segdup can inflate this; treat as candidates.)
+    pub collapsed_copies: usize,
     /// `(index into bam_reads, PSV+junction assignment)` for each read over the family.
     pub assignments: Vec<(usize, Assignment)>,
 }
@@ -203,6 +208,16 @@ pub fn detect_and_assign(
             }
         }
         let detail = assign_family_detailed(&copies, &region, p);
+        // collapsed-copy recovery: group the reads by their mapped copy/locus and split each by within-locus
+        // PSV haplotype; >= 2 identifiable copies at one locus means extra (collapsed) copies were merged.
+        let mut by_copy: Vec<Vec<AlignedRead>> = vec![Vec::new(); copies.len()];
+        for r in &detail.results {
+            by_copy[r.mapped_copy].push(region[r.read_index].clone());
+        }
+        let collapsed_copies: usize = by_copy
+            .iter()
+            .map(|reads| split_locus_copies(reads, 3, 2, 3).len().saturating_sub(1))
+            .sum();
         let mut fa = FamilyAssignment {
             family_id: cf.family_id,
             chrom: cf.chrom,
@@ -216,6 +231,7 @@ pub fn detect_and_assign(
             junction_only: 0,
             uniq: 0,
             uniq_agree: 0,
+            collapsed_copies,
             assignments: Vec::with_capacity(detail.results.len()),
         };
         for r in detail.results {

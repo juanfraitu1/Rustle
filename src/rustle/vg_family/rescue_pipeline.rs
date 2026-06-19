@@ -10,7 +10,7 @@
 //!   3. build each thin locus's spliced sequence (canonical-junction gate, reverse-complement for `-`);
 //!   4. POA-confirm against the family members; dedup by locus, keep the best core coverage.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::denovo_assemble::{build_spliced_seq, PrimaryRead};
 use super::family_rescue::{rescue_thin_locus, FamilyMember, RescueOutcome, RescueParams};
@@ -155,6 +155,51 @@ pub fn rescue_thin_loci(
     by_key.into_values().collect()
 }
 
+/// ITERATIVE family-aware rescue (borrow strength across passes). A rescued copy is itself a new family
+/// member that can bridge to OTHER under-assembled copies the first pass couldn't reach (homologous to the
+/// rescued copy but not the original family). So: rescue, fold the rescued copies in as members + spans,
+/// rescue the remaining loci again, until a pass recovers nothing new (or `max_iters`). Deterministic.
+pub fn rescue_thin_loci_iterative(
+    loci: &[ThinLocus],
+    members: &[FamilyMember],
+    member_spans: &[MemberSpan],
+    genome: &GenomeIndex,
+    p: &RescueParams,
+    max_iters: usize,
+) -> Vec<RescuedCopy> {
+    let mut all_members: Vec<FamilyMember> = members.to_vec();
+    let mut all_spans: Vec<MemberSpan> = member_spans.to_vec();
+    let mut remaining: Vec<ThinLocus> = loci.to_vec();
+    let mut rescued_all: Vec<RescuedCopy> = Vec::new();
+    for _ in 0..max_iters {
+        let rescued = rescue_thin_loci(&remaining, &all_members, &all_spans, genome, p);
+        if rescued.is_empty() {
+            break;
+        }
+        // each rescued copy becomes a member (so it can bridge) and a span (so it is not re-rescued).
+        let done: BTreeSet<(String, u64, u64)> =
+            rescued.iter().map(|rc| (rc.locus.chrom.clone(), rc.locus.start, rc.locus.end)).collect();
+        for rc in &rescued {
+            all_members.push(FamilyMember::new(
+                format!("RC_{}_{}", rc.locus.chrom, rc.locus.start),
+                rc.outcome.family_id.clone(),
+                rc.seq.clone(),
+            ));
+            all_spans.push(MemberSpan {
+                chrom: rc.locus.chrom.clone(),
+                start: rc.locus.start,
+                end: rc.locus.end,
+            });
+        }
+        remaining.retain(|l| !done.contains(&(l.chrom.clone(), l.start, l.end)));
+        rescued_all.extend(rescued);
+        if remaining.is_empty() {
+            break;
+        }
+    }
+    rescued_all
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,5 +324,39 @@ mod tests {
         let loci = thin_loci(&reads, RESCUE_MIN_SUPPORT);
         let rescued = rescue_thin_loci(&loci, &members, &[], &genome, &RescueParams::default());
         assert!(rescued.is_empty(), "a non-homologous thin locus is not rescued");
+    }
+
+    #[test]
+    fn iterative_rescue_recovers_a_bridged_copy() {
+        // M1 = flank + core1. L1 spliced = core1 + core2 (rescued pass 1 via core1, shared with M1).
+        // L2 spliced = core2 + flank (homologous to L1's core2 but NOT to M1) -> rescued ONLY in pass 2,
+        // once L1 is a member. Single-pass recovers 1; iterative recovers 2.
+        let core1 = rand_seq(200, 0xC0DE_0001);
+        let core2 = rand_seq(200, 0xC0DE_0002);
+        let mut g = vec![b'A'; 1600];
+        // L1 = core1 | core2 ; L2 = flankL | core2 ; M1 = core1 | flankM. Shared cores sit at the SAME
+        // relative position (no offset) so POA anchors them cleanly.
+        g[0..200].copy_from_slice(&core1);
+        g[200] = b'G';
+        g[201] = b'T';
+        g[218] = b'A';
+        g[219] = b'G';
+        g[220..420].copy_from_slice(&core2);
+        g[1000..1200].copy_from_slice(&rand_seq(200, 0xF00D)); // flankL
+        g[1200] = b'G';
+        g[1201] = b'T';
+        g[1218] = b'A';
+        g[1219] = b'G';
+        g[1220..1420].copy_from_slice(&core2);
+        let genome = GenomeIndex::from_seqs(&[("c1", &g)]);
+        let m1 = FamilyMember::new("M1".into(), "FAM1".into(), cat(&[&core1, &rand_seq(200, 0xAA)]));
+        let loci = [
+            ThinLocus { chrom: "c1".into(), start: 0, end: 420, support: 1, introns: vec![(200, 220)] },
+            ThinLocus { chrom: "c1".into(), start: 1000, end: 1420, support: 1, introns: vec![(1200, 1220)] },
+        ];
+        let single = rescue_thin_loci(&loci, std::slice::from_ref(&m1), &[], &genome, &RescueParams::default());
+        assert_eq!(single.len(), 1, "single-pass rescues only the directly-homologous locus");
+        let iter = rescue_thin_loci_iterative(&loci, &[m1], &[], &genome, &RescueParams::default(), 5);
+        assert_eq!(iter.len(), 2, "iterative recovers the bridged locus via the first rescued copy");
     }
 }
