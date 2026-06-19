@@ -264,8 +264,12 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
 /// (3) POA edge confirmation: `contiguous_core_coverage` in both orientations (reverse-complement
 /// fallback for opposite-strand copies), `Some(core_recip)` iff `>= t_core`. `len_cap` guard. Uppercases
 /// the POA operands (the soft-mask lesson from `family_rescue`: `reverse_complement` maps lowercase → N).
+///
+/// The cap is on the LARGER sequence (`max`), not the smaller: poasta's graph aligner allocates with the
+/// longer operand, so a (5 kb, 18 kb) pair OOMs on the 18 kb side even though `min = 5 kb`. (The python's NW
+/// is O(La·Lb) in C and tolerates this; poasta does not — see the OOM lesson.)
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    if a.len().min(b.len()) > p.len_cap {
+    if a.len().max(b.len()) > p.len_cap {
         return None;
     }
     let au = a.to_ascii_uppercase();
@@ -293,11 +297,31 @@ pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
 /// process-pool POA. Order is preserved (rayon's indexed `collect`), so the edge list is deterministic
 /// and identical to the serial version (candidate-pair order).
 pub fn detect_edges(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usize, usize, f64)> {
+    detect_edges_reporting(reps, p).0
+}
+
+/// Like [`detect_edges`] but ALSO returns the candidate pairs SKIPPED at POA confirmation because a sequence
+/// exceeded the POA length cap (`p.len_cap`). Such a pair already passed the k-mer + contiguous-span homology
+/// prefilter, so it is a LIKELY family edge — it is just too large to verify by POA (poasta's graph aligner
+/// blows up on long divergent pairs). Returning these (rather than letting `confirm_edge`'s `len_cap` guard
+/// silently drop them) lets the caller AUDIT an oversized-gene family instead of losing it without a trace.
+/// The `.0` edge list is byte-identical to the old `detect_edges` (same candidate order, same POA).
+pub fn detect_edges_reporting(
+    reps: &[DenovoTranscript],
+    p: &DetectParams,
+) -> (Vec<(usize, usize, f64)>, Vec<(usize, usize)>) {
     use rayon::prelude::*;
-    candidate_pairs(reps, p)
+    // `candidate_pairs` is already homology-prefiltered; split off the oversized pairs (which `confirm_edge`
+    // would reject on the `len_cap` guard anyway) so they can be REPORTED. `partition` keeps candidate order,
+    // so both lists are deterministic.
+    let (skipped, poa_pairs): (Vec<_>, Vec<_>) = candidate_pairs(reps, p)
+        .into_iter()
+        .partition(|&(a, b)| reps[a].seq.len().max(reps[b].seq.len()) > p.len_cap);
+    let edges = poa_pairs
         .into_par_iter()
         .filter_map(|(a, b)| confirm_edge(&reps[a].seq, &reps[b].seq, p).map(|cr| (a, b, cr)))
-        .collect()
+        .collect();
+    (edges, skipped)
 }
 
 #[cfg(test)]
@@ -593,10 +617,18 @@ mod tests {
 
     #[test]
     fn confirm_edge_len_cap_guard() {
+        // the cap is on the LARGER operand (poasta allocates with the longer sequence). A pair where the
+        // SMALL side is under the cap but the LARGE side is over it must STILL be skipped — that asymmetric
+        // case (e.g. a 228 kb read-through hub vs a 2 kb copy) is exactly the OOM we are guarding against.
         let p = DetectParams { len_cap: 100, ..DetectParams::default() };
         let a = rand_seq(560, 0x1);
         let b = rand_seq(560, 0x2);
-        assert!(confirm_edge(&a, &b, &p).is_none(), "min(len) 560 > len_cap 100 -> skipped");
+        assert!(confirm_edge(&a, &b, &p).is_none(), "max(len) 560 > len_cap 100 -> skipped");
+        let small = rand_seq(50, 0x3);
+        assert!(
+            confirm_edge(&small, &a, &p).is_none(),
+            "small (50) under cap but large (560) over it -> still skipped (max-based guard)"
+        );
     }
 
     // ---- detect_edges ----
@@ -633,5 +665,27 @@ mod tests {
             "edges in sorted candidate-pair order"
         );
         assert_eq!(e1, e2, "parallel POA must be order-deterministic");
+    }
+
+    #[test]
+    fn detect_edges_reporting_flags_oversized_skipped_pairs() {
+        // a homologous pair that candidate_pairs finds. Under a NORMAL len_cap it is POA-confirmed and nothing
+        // is skipped; under a tiny len_cap the SAME prefiltered pair is too large for POA -> it must be
+        // REPORTED in `skipped` (not silently dropped), and produce no edge.
+        let core = rand_seq(400, 0xEE88);
+        let reps = [
+            homolog_tx("r0", 0xA1, &core, 0xA2, 5),
+            homolog_tx("r1", 0xB1, &core, 0xB2, 5),
+        ];
+        let (edges, skipped) = detect_edges_reporting(&reps, &DetectParams::default());
+        assert_eq!(edges.len(), 1, "homologous pair confirmed under normal cap");
+        assert!(skipped.is_empty(), "nothing oversized under normal cap");
+        // the .0 list still matches plain detect_edges (faithfulness of the delegation).
+        assert_eq!(edges, detect_edges(&reps, &DetectParams::default()));
+
+        let p = DetectParams { len_cap: 5, ..DetectParams::default() };
+        let (edges2, skipped2) = detect_edges_reporting(&reps, &p);
+        assert!(edges2.is_empty(), "no edge confirmed when every seq exceeds the cap");
+        assert_eq!(skipped2, vec![(0, 1)], "the oversized candidate pair is reported, not dropped");
     }
 }

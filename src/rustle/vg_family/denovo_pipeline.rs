@@ -16,7 +16,7 @@ use super::copy_split::{split_locus_copies, AlignedRead};
 use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, primary_reads_from_bam, BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
 };
-use super::family_detect::{collapse_loci, detect_edges, DenovoTranscript, DetectParams};
+use super::family_detect::{collapse_loci, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
 use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{decompose_families, FamilyClass, SplitFamily, SplitParams};
 use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
@@ -183,6 +183,23 @@ pub struct FamilyAssignment {
 /// a copy (PSV + copy-specific-junction likelihood, two-pass). `bam_reads` carry chrom (for region
 /// filtering) and mapq (for the silver-standard). The runnable detection + per-read copy-assignment pipeline.
 #[allow(clippy::too_many_arguments)]
+/// A homology-prefiltered candidate family pair that detection SKIPPED at POA confirmation because a transcript
+/// exceeded the POA length cap (`cfg.detect.len_cap`). These passed the k-mer + contiguous-span homology
+/// filter (so they are LIKELY family edges) but were too large to verify by POA. Surfaced so an oversized-gene
+/// family is auditable — never silently dropped.
+#[derive(Debug, Clone)]
+pub struct SkippedPoa {
+    pub chrom: String,
+    pub tid_a: String,
+    pub start_a: u64,
+    pub end_a: u64,
+    pub len_a: usize,
+    pub tid_b: String,
+    pub start_b: u64,
+    pub end_b: u64,
+    pub len_b: usize,
+}
+
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -191,12 +208,34 @@ pub fn detect_and_assign(
     win: u64,
     min_copies: usize,
     p: &AssignParams,
-) -> Vec<FamilyAssignment> {
+) -> (Vec<FamilyAssignment>, Vec<SkippedPoa>) {
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
     let rep_idx = collapse_loci(&transcripts);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
-    let edges = detect_edges(&reps, &cfg.detect);
+    eprintln!(
+        "[detect_and_assign] {} primary -> {} skeletons -> {} transcripts -> {} reps",
+        primary_reads.len(),
+        skeletons.len(),
+        transcripts.len(),
+        reps.len()
+    );
+    let (edges, skipped_pairs) = detect_edges_reporting(&reps, &cfg.detect);
+    eprintln!("[detect_and_assign] {} homology edges, {} oversized pairs skipped", edges.len(), skipped_pairs.len());
+    let skipped: Vec<SkippedPoa> = skipped_pairs
+        .iter()
+        .map(|&(a, b)| SkippedPoa {
+            chrom: reps[a].chrom.clone(),
+            tid_a: reps[a].tid.clone(),
+            start_a: reps[a].start,
+            end_a: reps[a].end,
+            len_a: reps[a].seq.len(),
+            tid_b: reps[b].tid.clone(),
+            start_b: reps[b].start,
+            end_b: reps[b].end,
+            len_b: reps[b].seq.len(),
+        })
+        .collect();
     let split = decompose_families(&edges, &cfg.split);
     let mut out = Vec::new();
     for cf in colocated_families(&reps, &split, win, min_copies) {
@@ -294,7 +333,7 @@ pub fn detect_and_assign(
         }
         out.push(fa);
     }
-    out
+    (out, skipped)
 }
 
 /// I/O wrapper: load primary reads from a BAM and the genome from a FASTA (scoped via `.fai` to only the
@@ -450,7 +489,7 @@ mod tests {
         contigs.insert(chrom.to_string());
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
-        let fas = detect_and_assign(
+        let (fas, skipped) = detect_and_assign(
             &primary,
             &bam_reads,
             &genome,
@@ -459,6 +498,9 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
         );
+        if !skipped.is_empty() {
+            eprintln!("oversized POA pairs skipped (auditable): {}", skipped.len());
+        }
         eprintln!("co-located families with assignments: {}", fas.len());
         for fa in &fas {
             let pct = |x: usize| if fa.n_reads > 0 { 100.0 * x as f64 / fa.n_reads as f64 } else { 0.0 };
@@ -478,7 +520,7 @@ mod tests {
     #[test]
     fn detect_and_assign_resolves_multimapper_end_to_end() {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
-        let fas = detect_and_assign(
+        let (fas, skipped) = detect_and_assign(
             &primary,
             &aligned,
             &genome,
@@ -487,6 +529,7 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
         );
+        assert!(skipped.is_empty(), "small paralogs are well under the POA cap");
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
