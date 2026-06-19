@@ -289,11 +289,75 @@ pub struct ReadResult {
     pub combined: Assignment,
 }
 
-/// Two-pass assignment detail for a family: the per-read results + the PSV-column count.
+/// Two-pass assignment detail for a family: the per-read results + the PSV-column count + the SOFT per-copy
+/// abundance (EM over per-read PSV likelihoods) with a normal-approx 95% CI half-width per copy.
 #[derive(Clone, Debug)]
 pub struct FamilyDetail {
     pub results: Vec<ReadResult>,
     pub n_cols: usize,
+    /// `copy_abundance[c]` = estimated fraction of reads from copy `c` (sums to 1).
+    pub copy_abundance: Vec<f64>,
+    /// `copy_abundance_ci[c]` = 95% CI half-width for `copy_abundance[c]`.
+    pub copy_abundance_ci: Vec<f64>,
+}
+
+/// Default per-base error for the soft-quant likelihood (HiFi-ish; match prob `1-e`, each mismatch `e/3`).
+pub const QUANT_ERROR: f64 = 0.01;
+
+/// SOFT per-copy abundance via EM over per-read PSV likelihoods — the estimator the quantification benchmark
+/// showed beats hard assignment at sparse PSVs (it uses the partial evidence instead of discarding it).
+/// `read_obs[r][j]` = read r's base at PSV column j (None = uncovered); `copy_alleles[c][j]` = copy c's allele
+/// at column j (None = copy lacks it). Returns the per-copy abundance (sums to 1). At zero informative PSVs it
+/// returns the uniform prior — the honest identifiability floor (no information => no resolution).
+pub fn soft_quantify_em(
+    read_obs: &[Vec<Option<u8>>],
+    copy_alleles: &[Vec<Option<u8>>],
+    error: f64,
+    iters: usize,
+) -> Vec<f64> {
+    let k = copy_alleles.len();
+    if k == 0 {
+        return Vec::new();
+    }
+    if read_obs.is_empty() {
+        return vec![1.0 / k as f64; k];
+    }
+    let (ln_match, ln_mis) = ((1.0 - error).ln(), (error / 3.0).ln());
+    // per-read log P(read | copy c) over the covered PSV columns.
+    let loglik: Vec<Vec<f64>> = read_obs
+        .iter()
+        .map(|obs| {
+            copy_alleles
+                .iter()
+                .map(|ca| {
+                    let mut ll = 0.0;
+                    for (j, o) in obs.iter().enumerate() {
+                        if let (Some(ob), Some(Some(al))) = (o, ca.get(j)) {
+                            ll += if ob == al { ln_match } else { ln_mis };
+                        }
+                    }
+                    ll
+                })
+                .collect()
+        })
+        .collect();
+    let mut theta = vec![1.0 / k as f64; k];
+    for _ in 0..iters {
+        let mut sum = vec![0.0; k];
+        for ll in &loglik {
+            let logpost: Vec<f64> = (0..k).map(|c| theta[c].max(1e-12).ln() + ll[c]).collect();
+            let m = logpost.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let z: f64 = logpost.iter().map(|&x| (x - m).exp()).sum();
+            for c in 0..k {
+                sum[c] += (logpost[c] - m).exp() / z;
+            }
+        }
+        let n = read_obs.len() as f64;
+        for c in 0..k {
+            theta[c] = sum[c] / n;
+        }
+    }
+    theta
 }
 
 /// Like `assign_family` but returns the TWO-PASS detail per read so callers can report how many reads a
@@ -305,19 +369,26 @@ pub fn assign_family_detailed(
     p: &AssignParams,
 ) -> FamilyDetail {
     if copies.len() < 2 {
-        return FamilyDetail { results: Vec::new(), n_cols: 0 };
+        return FamilyDetail { results: Vec::new(), n_cols: 0, copy_abundance: Vec::new(), copy_abundance_ci: Vec::new() };
     }
     let fp = build_family_profiles(copies);
     let mut results = Vec::new();
+    let mut read_obs: Vec<Vec<Option<u8>>> = Vec::new(); // per-read PSV observations for the soft EM
     for (ri, read) in reads.iter().enumerate() {
         let Some(mc) = best_overlap_copy(read, copies) else { continue };
         let feats = read_features(read, mc, &fp);
         let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
+        read_obs.push(feats.psv_obs.clone());
         let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, junctions: vec![] };
         let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
         results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined });
     }
-    FamilyDetail { results, n_cols: fp.n_cols }
+    // soft per-copy abundance (EM) + a normal-approx 95% CI half-width (theta(1-theta)/N).
+    let copy_alleles: Vec<Vec<Option<u8>>> = fp.profiles.iter().map(|pr| pr.alleles.clone()).collect();
+    let copy_abundance = soft_quantify_em(&read_obs, &copy_alleles, QUANT_ERROR, 100);
+    let n = read_obs.len().max(1) as f64;
+    let copy_abundance_ci = copy_abundance.iter().map(|&t| 1.96 * (t * (1.0 - t) / n).sqrt()).collect();
+    FamilyDetail { results, n_cols: fp.n_cols, copy_abundance, copy_abundance_ci }
 }
 
 /// Assign every read over a co-located family to a copy. Each read is mapped to the copy whose genomic span
@@ -603,5 +674,33 @@ mod tests {
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.best_copy, 1, "minus-strand read RC'd to transcription space -> copyB");
         assert_eq!(res[0].1.status, AssignStatus::Assigned);
+    }
+
+    #[test]
+    fn soft_quantify_recovers_skewed_abundance() {
+        // copy0 allele = A, copy1 allele = C at 3 PSV columns. 70 reads carry A, 30 carry C.
+        // the EM must recover ~0.7 / 0.3 (the benchmark's skewed case the soft estimator nails).
+        let copy_alleles = vec![vec![Some(b'A'); 3], vec![Some(b'C'); 3]];
+        let mut reads: Vec<Vec<Option<u8>>> = Vec::new();
+        for _ in 0..70 {
+            reads.push(vec![Some(b'A'); 3]);
+        }
+        for _ in 0..30 {
+            reads.push(vec![Some(b'C'); 3]);
+        }
+        let theta = soft_quantify_em(&reads, &copy_alleles, QUANT_ERROR, 100);
+        assert!((theta[0] - 0.7).abs() < 0.02, "copy0 ~0.7, got {}", theta[0]);
+        assert!((theta[1] - 0.3).abs() < 0.02, "copy1 ~0.3, got {}", theta[1]);
+        assert!((theta.iter().sum::<f64>() - 1.0).abs() < 1e-9, "sums to 1");
+    }
+
+    #[test]
+    fn soft_quantify_no_psv_returns_uniform_prior() {
+        // no informative PSV columns (copies identical / reads uncovered) -> the honest identifiability floor:
+        // the EM returns the uniform prior, not a false confident split.
+        let copy_alleles = vec![vec![None; 2], vec![None; 2]];
+        let reads = vec![vec![None; 2]; 40];
+        let theta = soft_quantify_em(&reads, &copy_alleles, QUANT_ERROR, 100);
+        assert!((theta[0] - 0.5).abs() < 1e-9 && (theta[1] - 0.5).abs() < 1e-9, "uniform: {theta:?}");
     }
 }

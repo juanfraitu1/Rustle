@@ -177,6 +177,11 @@ pub struct FamilyAssignment {
     pub rescued_copies: usize,
     /// `(index into bam_reads, PSV+junction assignment)` for each read over the family.
     pub assignments: Vec<(usize, Assignment)>,
+    /// SOFT per-copy quantification: copy transcript id, EM abundance (fraction of reads, sums to 1), and the
+    /// 95% CI half-width — the probabilistic estimator (uses partial PSV evidence; uniform at the K=0 floor).
+    pub copy_tids: Vec<String>,
+    pub copy_abundance: Vec<f64>,
+    pub copy_abundance_ci: Vec<f64>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
@@ -357,6 +362,9 @@ pub fn detect_and_assign(
             collapsed_copies,
             rescued_copies,
             assignments: Vec::with_capacity(detail.results.len()),
+            copy_tids: all_copies.iter().map(|c| c.tid.clone()).collect(),
+            copy_abundance: detail.copy_abundance.clone(),
+            copy_abundance_ci: detail.copy_abundance_ci.clone(),
         };
         for r in detail.results {
             let resolvable_psv = r.psv.n_decisive >= 1;

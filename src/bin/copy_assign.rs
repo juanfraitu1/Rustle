@@ -105,6 +105,15 @@ struct FamilyRow {
     collapsed_copies: usize,
     rescued_copies: usize,
 }
+/// One per-copy soft-quantification row.
+struct QuantRow {
+    family_id: String,
+    copy_index: usize,
+    copy_tid: String,
+    abundance: f64,
+    ci: f64,
+    n_hard: usize,
+}
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -135,6 +144,7 @@ fn main() -> Result<()> {
     let params = AssignParams::default();
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut assign_rows: Vec<AssignRow> = Vec::new();
+    let mut quant_rows: Vec<QuantRow> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
@@ -165,6 +175,17 @@ fn main() -> Result<()> {
                         status: status_str(a.status),
                         n_decisive: a.n_decisive,
                         margin: a.log_lr_margin,
+                    });
+                }
+                // soft per-copy abundance (+ the hard read count for comparison)
+                for (ci, tid) in fa.copy_tids.iter().enumerate() {
+                    quant_rows.push(QuantRow {
+                        family_id: fid.clone(),
+                        copy_index: ci,
+                        copy_tid: tid.clone(),
+                        abundance: fa.copy_abundance.get(ci).copied().unwrap_or(0.0),
+                        ci: fa.copy_abundance_ci.get(ci).copied().unwrap_or(0.0),
+                        n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
                     });
                 }
                 family_rows.push(FamilyRow {
@@ -210,6 +231,14 @@ fn main() -> Result<()> {
         )?;
     }
 
+    // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for
+    // comparison. The EM uses partial PSV evidence (the benchmark: beats hard at sparse PSVs; uniform at K=0).
+    let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
+    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tabundance\tci95_halfwidth\tn_reads_hard")?;
+    for r in &quant_rows {
+        writeln!(qh, "{}\t{}\t{}\t{:.4}\t{:.4}\t{}", r.family_id, r.copy_index, r.copy_tid, r.abundance, r.ci, r.n_hard)?;
+    }
+
     // document every family edge confirmed via the large-sequence LCS fallback (poasta memory threshold
     // exceeded), so edges resting on the approximate metric are auditable. Only written when the fallback ran.
     if !fallback_all.is_empty() {
@@ -242,6 +271,6 @@ fn main() -> Result<()> {
             100.0 * agree as f64 / uniq as f64
         );
     }
-    eprintln!("[copy_assign] wrote {0}.families.tsv + {0}.assignments.tsv", args.out);
+    eprintln!("[copy_assign] wrote {0}.families.tsv + {0}.assignments.tsv + {0}.quant.tsv", args.out);
     Ok(())
 }
