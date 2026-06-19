@@ -196,6 +196,50 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
     Ok(out)
 }
 
+/// Scan a BAM once, collecting BOTH the primary reads (detection input) and ALL mapped reads
+/// (assignment input, incl. secondary/supplementary multimappers) that overlap `[lo, hi)` on `chrom`.
+/// One pass, region-filtered — for a one-off scoped run (no index needed).
+pub fn reads_in_region(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    threads: usize,
+) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
+    let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
+    let header = reader.read_header()?;
+    let mut record = RecordBuf::default();
+    let mut primary = Vec::new();
+    let mut bam_reads = Vec::new();
+    while reader.read_record_buf(&header, &mut record)? > 0 {
+        let rchrom = match record
+            .reference_sequence_id()
+            .and_then(|id| header.reference_sequences().get_index(id))
+        {
+            Some((name, _)) => format!("{name}"),
+            None => continue,
+        };
+        if rchrom != chrom {
+            continue;
+        }
+        let start = match record.alignment_start() {
+            Some(p) => (p.get() as u64).saturating_sub(1),
+            None => continue,
+        };
+        let end = start + record.cigar().alignment_span() as u64;
+        if start >= hi || end <= lo {
+            continue;
+        }
+        if let Some(pr) = primary_read_from_record(&record, chrom) {
+            primary.push(pr);
+        }
+        if let Some((read, mapq, name)) = aligned_read_from_record(&record) {
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name });
+        }
+    }
+    Ok((primary, bam_reads))
+}
+
 /// Gate parameters (defaults mirror `denovo_assemble_gate.py`).
 #[derive(Clone, Copy, Debug)]
 pub struct GateParams {

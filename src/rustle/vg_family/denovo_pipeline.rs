@@ -365,6 +365,56 @@ mod tests {
         (genome, primary, bam)
     }
 
+    /// Real-data END-TO-END run: detect families + assign reads over a co-located family region. Ignored;
+    /// run in RELEASE with a co-located cluster region (e.g. MAGEA on GGO):
+    ///   RUSTLE_DENOVO_SMOKE_BAM=GGO.bam RUSTLE_DENOVO_SMOKE_FASTA=GGO.fasta \
+    ///   RUSTLE_DENOVO_SMOKE_REGION=NC_073247.2:161251228-164865959 \
+    ///     cargo test --release --lib -- --ignored smoke_detect_and_assign_real --nocapture
+    #[test]
+    #[ignore = "needs a real BAM + FASTA + REGION"]
+    fn smoke_detect_and_assign_real() {
+        use crate::vg_family::denovo_assemble::reads_in_region;
+        let (bam, fasta, region) = match (
+            std::env::var("RUSTLE_DENOVO_SMOKE_BAM"),
+            std::env::var("RUSTLE_DENOVO_SMOKE_FASTA"),
+            std::env::var("RUSTLE_DENOVO_SMOKE_REGION"),
+        ) {
+            (Ok(b), Ok(f), Ok(r)) => (b, f, r),
+            _ => return,
+        };
+        let (chrom, range) = region.split_once(':').unwrap();
+        let (lo, hi) = range.split_once('-').unwrap();
+        let (lo, hi): (u64, u64) = (lo.parse().unwrap(), hi.parse().unwrap());
+        let (primary, bam_reads) = reads_in_region(&bam, chrom, lo, hi, 4).expect("read region");
+        let mut contigs = std::collections::HashSet::new();
+        contigs.insert(chrom.to_string());
+        let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
+        eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
+        let fas = detect_and_assign(
+            &primary,
+            &bam_reads,
+            &genome,
+            &DenovoConfig::default(),
+            5_000_000,
+            2,
+            &super::super::copy_assign::AssignParams::default(),
+        );
+        eprintln!("co-located families with assignments: {}", fas.len());
+        for fa in &fas {
+            let pct = |x: usize| if fa.n_reads > 0 { 100.0 * x as f64 / fa.n_reads as f64 } else { 0.0 };
+            eprintln!(
+                "  {} {} copies={} reads={} PSVcols={} resolv_PSV={:.0}% resolv_+J={:.0}% J_only={} assign_+J={:.0}% silver={}/{}",
+                fa.family_id, fa.chrom, fa.n_copies, fa.n_reads, fa.psv_cols,
+                pct(fa.resolvable_psv), pct(fa.resolvable_j), fa.junction_only,
+                pct(fa.assigned_j), fa.uniq_agree, fa.uniq,
+            );
+        }
+        let (tot_uniq, tot_agree): (usize, usize) = fas.iter().fold((0, 0), |(u, a), f| (u + f.uniq, a + f.uniq_agree));
+        if tot_uniq > 0 {
+            eprintln!("AGGREGATE silver-standard unique-mapper agreement: {tot_agree}/{tot_uniq} ({:.1}%)", 100.0 * tot_agree as f64 / tot_uniq as f64);
+        }
+    }
+
     #[test]
     fn detect_and_assign_resolves_multimapper_end_to_end() {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
