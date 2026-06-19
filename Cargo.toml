@@ -93,6 +93,10 @@ path = "src/bin/index_bam.rs"
 name = "copy_assign"
 path = "src/bin/copy_assign.rs"
 
+[[bin]]
+name = "asj"
+path = "src/bin/asj.rs"
+
 [[test]]
 name = "test_parity_graph_edges_dump"
 path = "tests/regression/test_parity_graph_edges_dump.rs"

@@ -334,6 +334,35 @@ pub fn tied_secondary_reads_in_region(
     Ok(tied_secondary_reads(&aln, as_ratio))
 }
 
+/// PRIMARY mapped `AlignedRead`s (seq + CIGAR) overlapping `[lo, hi)` on `chrom` — the ASJ scan input
+/// (secondary/supplementary excluded, matching the python). Indexed query; errs without a `.bai`.
+pub fn primary_aligned_reads_in_region(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+) -> Result<Vec<crate::vg_family::copy_split::AlignedRead>> {
+    let bai_path = format!("{bam_path}.bai");
+    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
+    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+    let header = reader.read_header()?;
+    let index = noodles_bam::bai::read(&bai_path)?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+    let query = reader.query(&header, &index, &region)?;
+    let mut out = Vec::new();
+    for result in query {
+        let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
+        let f = rb.flags();
+        if f.is_unmapped() || f.is_secondary() || f.is_supplementary() {
+            continue;
+        }
+        if let Some((read, _, _)) = aligned_read_from_record(&rb) {
+            out.push(read);
+        }
+    }
+    Ok(out)
+}
+
 /// Full-scan fallback (no index): one pass, region-filtered.
 fn reads_in_region_scan(
     bam_path: &str,
