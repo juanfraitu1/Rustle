@@ -23,6 +23,7 @@ pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV 
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
 pub mod family_split; // De-novo family DECOMPOSITION: connected components + weighted-modularity Louvain.
+pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + general-purpose assemble gate.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
