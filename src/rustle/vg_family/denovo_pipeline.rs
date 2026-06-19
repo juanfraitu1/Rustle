@@ -212,9 +212,13 @@ pub fn detect_and_assign(
             .iter()
             .map(|c| MemberSpan { chrom: c.chrom.clone(), start: c.start, end: c.end })
             .collect();
+        // scan a ±1 Mb NEIGHBOURHOOD around the family span (the python rescue `WIN`) so under-assembled
+        // copies just outside the tight cluster are reachable — not only the detected-copy span.
+        const RESCUE_WIN: u64 = 1_000_000;
+        let (rlo, rhi) = (cf.start.saturating_sub(RESCUE_WIN), cf.end + RESCUE_WIN);
         let region_primary: Vec<PrimaryRead> = primary_reads
             .iter()
-            .filter(|r| r.chrom == cf.chrom && r.ref_start < cf.end && r.ref_end > cf.start)
+            .filter(|r| r.chrom == cf.chrom && r.ref_start < rhi && r.ref_end > rlo)
             .cloned()
             .collect();
         let loci = thin_loci(&region_primary, RESCUE_MIN_SUPPORT);
