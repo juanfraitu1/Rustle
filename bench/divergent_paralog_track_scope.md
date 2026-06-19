@@ -121,3 +121,27 @@ Run: `divergent_truth_gate.py` + `divergent_compara_label.py` (artifact: `diverg
 - ⚠️ CAVEAT: this set is from ACCEPTED edges (core 0.13–0.20, MILDLY divergent). The DEEP regime (core<0.13, the DSFAM45=0.036 case) is the REJECTED population, not yet generated — a feature calibrated here must be re-checked on the deep tail (Phase 1.5: generate core<0.13 pairs + label).
 
 VERDICT: enough independent truth to calibrate an RNA-only feature → proceed to Phase 1 (feature AUC on this set).
+
+## 11. PHASE 1 RESULT — RNA-only detector is a NO-GO (best AUC 0.629)
+
+`divergent_phase1_features.py` on the gold set (781 paralog / 1294 non-paralog divergent pairs):
+
+| feature class | best AUC |
+|---|---|
+| DNA k-mer (raw/jaccard/containment/span_cov) | 0.558 |
+| + low-complexity MASKING | 0.558 (masking removed ~0 k-mers → false sharing is REAL domain seq, not repeats) |
+| + EXON STRUCTURE (exon count/ratio) | 0.556 |
+| **protein-ORF (RNA-translated)** | **0.629** ← the only real signal |
+
+VERDICT for the user's RNA-only / no-protein goal = **NO-GO**:
+- DNA + structure features (cleanly independent of Compara) FAIL: AUC ≤ 0.56 ≈ random. Divergent paralogs and
+  prefilter domain-sharers are indistinguishable by RNA nucleotide sequence.
+- The ONLY signal is PROTEIN-level (0.629) — confirming divergent paralogs conserve protein under synonymous
+  DNA divergence. BUT: (a) still < 0.70; (b) violates "no protein"; (c) measurement is CONFOUNDED — crude ORF
+  deflates it, while Compara's protein-tree truth inflates it (semi-circular). Net: protein is the right axis
+  but unresolved whether a proper impl crosses 0.70, and resolving it leaves the RNA-only frame.
+- => the contiguous-core recent-duplicate boundary is the DEFENSIBLE detection limit on RNA sequence alone.
+  Rigorously confirms the prior "defensible = recent-duplicate detection only" with an INDEPENDENT gold truth.
+
+The ONE door ajar: if "no protein" is relaxed to allow RNA-derived ORF translation, a proper protein analysis
+(real ORF + alignment coverage, de-confounded) is one more test — but it is a different (protein) track.
