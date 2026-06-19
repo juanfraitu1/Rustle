@@ -45,7 +45,7 @@ fn exons_of(t: &DenovoTranscript) -> Vec<(u64, u64)> {
 }
 
 /// Reference end (0-based exclusive) of an aligned read = ref_start + reference-consuming CIGAR.
-fn read_ref_end(read: &AlignedRead) -> u64 {
+pub(crate) fn read_ref_end(read: &AlignedRead) -> u64 {
     let mut end = read.ref_start;
     for &(op, len) in &read.cigar {
         if matches!(op, 'M' | '=' | 'X' | 'D' | 'N') {
@@ -376,6 +376,92 @@ mod tests {
         let res = assign_family(&copies, &[read], &AssignParams::default());
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.status, AssignStatus::Tied, "spans no decisive feature");
+    }
+
+    /// Ground-truth validation on the sim5x 5-copy synthetic dataset (the python `copy_assign.py sim5x`
+    /// oracle): each read name encodes its TRUE copy, so we can report assignment accuracy. K = PSVs per
+    /// copy (the identifiability ladder): K=0 has no PSVs → all tied; K>=2 → ~100% accurate. Ignored by
+    /// default; run in release with RUSTLE_SIM5X_DIR set.
+    #[test]
+    #[ignore = "needs sim5x data via RUSTLE_SIM5X_DIR"]
+    fn smoke_sim5x_ground_truth() {
+        use crate::genome::GenomeIndex;
+        use crate::vg_family::denovo_assemble::aligned_reads_from_bam;
+        let dir = match std::env::var("RUSTLE_SIM5X_DIR") {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        fn true_copy(name: &str) -> Option<usize> {
+            name.split("_c").nth(1)?.split('_').next()?.parse().ok()
+        }
+        eprintln!(
+            "{:>2} {:>7} {:>8} {:>11} {:>13} {:>11} {:>6}",
+            "K", "reads", "PSVcols", "resolvable%", "acc|assigned", "acc|argmax", "tied%"
+        );
+        for k in [0u32, 1, 2, 4] {
+            let ref_fa = format!("{dir}/sim5x_K{k}.ref.fa");
+            let bam = format!("{dir}/sim5x_K{k}.bam");
+            if !std::path::Path::new(&bam).exists() {
+                continue;
+            }
+            let genome = GenomeIndex::from_fasta(&ref_fa).expect("ref");
+            let contig = format!("SIM5X_K{k}");
+            let clen = genome.chrom_len(&contig);
+            let len_g = (clen - 4 * 2000) / 5;
+            let unit = len_g + 2000;
+            let copies_owned: Vec<DenovoTranscript> = (0..5)
+                .map(|c| {
+                    let start = c as u64 * unit;
+                    let end = start + len_g;
+                    let seq = genome.fetch_sequence(&contig, start, end).unwrap();
+                    DenovoTranscript {
+                        tid: format!("copy{c}"),
+                        chrom: contig.clone(),
+                        start,
+                        end,
+                        n_reads: 0,
+                        strand: '+',
+                        introns: vec![],
+                        seq,
+                    }
+                })
+                .collect();
+            let copies: Vec<&DenovoTranscript> = copies_owned.iter().collect();
+            let fp = build_family_profiles(&copies);
+            let reads = aligned_reads_from_bam(&bam, 4).expect("bam");
+            let (ars, names): (Vec<AlignedRead>, Vec<String>) = reads.into_iter().unzip();
+            let assigns = assign_family(&copies, &ars, &AssignParams::default());
+            let (mut n, mut resolvable, mut assigned, mut tied) = (0usize, 0usize, 0usize, 0usize);
+            let (mut corr_assigned, mut corr_argmax) = (0usize, 0usize);
+            for (ri, a) in &assigns {
+                let true_c = match true_copy(&names[*ri]) {
+                    Some(t) => t,
+                    None => continue,
+                };
+                n += 1;
+                match a.status {
+                    AssignStatus::Tied => tied += 1,
+                    _ => {
+                        resolvable += 1;
+                        corr_argmax += (a.best_copy == true_c) as usize;
+                        if a.status == AssignStatus::Assigned {
+                            assigned += 1;
+                            corr_assigned += (a.best_copy == true_c) as usize;
+                        }
+                    }
+                }
+            }
+            let pct = |x: usize| if n > 0 { 100.0 * x as f64 / n as f64 } else { 0.0 };
+            let acc = |c: usize, d: usize| if d > 0 { c as f64 / d as f64 } else { f64::NAN };
+            eprintln!(
+                "{k:>2} {n:>7} {:>8} {:>10.1}% {:>13.3} {:>11.3} {:>5.1}%",
+                fp.n_cols,
+                pct(resolvable),
+                acc(corr_assigned, assigned),
+                acc(corr_argmax, resolvable),
+                pct(tied),
+            );
+        }
     }
 
     #[test]

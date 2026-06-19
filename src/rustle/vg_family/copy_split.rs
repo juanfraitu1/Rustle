@@ -153,6 +153,7 @@ pub fn split_readchain_by_psv(
 /// One read's spliced alignment (minimal model): ref_start (0-based), CIGAR ops as (op,len)
 /// with op in {'M','I','D','N','S'} (match/ins/del/intron/softclip; '=','X' treated as M),
 /// and the read sequence (no hard-clipped bases).
+#[derive(Clone, Debug)]
 pub struct AlignedRead {
     pub ref_start: u64,
     pub cigar: Vec<(char, u64)>,

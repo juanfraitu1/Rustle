@@ -13,8 +13,10 @@
 //! The gate reuses `GenomeIndex::{is_canonical_junction, fetch_sequence}` and `vg::reverse_complement`.
 
 use anyhow::Result;
+use noodles_sam::alignment::record::cigar::op::Kind;
 use noodles_sam::alignment::RecordBuf;
 
+use super::copy_split::AlignedRead;
 use super::family_detect::DenovoTranscript;
 use crate::genome::GenomeIndex;
 use crate::vg::reverse_complement;
@@ -121,6 +123,55 @@ pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<Prim
         };
         if let Some(pr) = primary_read_from_record(&record, &chrom) {
             out.push(pr);
+        }
+    }
+    Ok(out)
+}
+
+fn cigar_kind_to_char(k: Kind) -> char {
+    match k {
+        Kind::Match => 'M',
+        Kind::Insertion => 'I',
+        Kind::Deletion => 'D',
+        Kind::Skip => 'N',
+        Kind::SoftClip => 'S',
+        Kind::HardClip => 'H',
+        Kind::Pad => 'P',
+        Kind::SequenceMatch => '=',
+        Kind::SequenceMismatch => 'X',
+    }
+}
+
+/// Build an `AlignedRead` (ref_start 0-based, CIGAR ops as chars, read sequence) + the read NAME from a
+/// mapped record — the per-read input copy ASSIGNMENT consumes (`copy_assign_pipeline`). The sequence keeps
+/// soft-clipped bases (excludes hard-clips), matching `copy_split::allele_at`'s CIGAR walk. `None` if unmapped.
+pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, String)> {
+    if record.flags().is_unmapped() {
+        return None;
+    }
+    let ref_start = (record.alignment_start()?.get() as u64).saturating_sub(1);
+    let cigar: Vec<(char, u64)> = record
+        .cigar()
+        .as_ref()
+        .iter()
+        .map(|op| (cigar_kind_to_char(op.kind()), op.len() as u64))
+        .collect();
+    let seq: Vec<u8> = record.sequence().as_ref().to_vec();
+    let name = record.name().map(|n| n.to_string()).unwrap_or_default();
+    Some((AlignedRead { ref_start, cigar, seq }, name))
+}
+
+/// Scan every mapped alignment in a BAM into `(AlignedRead, name)` (the copy-assignment read input). I/O
+/// driver, mirroring `primary_reads_from_bam`. Includes secondary/supplementary (multimappers are exactly
+/// what assignment resolves); the name carries any ground-truth label.
+pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<(AlignedRead, String)>> {
+    let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
+    let header = reader.read_header()?;
+    let mut record = RecordBuf::default();
+    let mut out = Vec::new();
+    while reader.read_record_buf(&header, &mut record)? > 0 {
+        if let Some(ar) = aligned_read_from_record(&record) {
+            out.push(ar);
         }
     }
     Ok(out)
@@ -274,6 +325,32 @@ mod tests {
         assert_eq!(p.ref_start, 100);
         assert_eq!(p.ref_end, 280);
         assert_eq!(p.introns, vec![(180, 200)]);
+    }
+
+    #[test]
+    fn aligned_read_from_record_extracts_cigar_and_seq() {
+        use noodles_sam::alignment::record_buf::Sequence;
+        let cigar: Cigar =
+            vec![Op::new(Kind::Match, 5), Op::new(Kind::Skip, 10), Op::new(Kind::Match, 5)]
+                .into_iter()
+                .collect();
+        let seq: Sequence = Sequence::from(b"AAAAACCCCC".to_vec());
+        let r = RecordBuf::builder()
+            .set_flags(Flags::default())
+            .set_alignment_start(Position::try_from(101usize).unwrap())
+            .set_cigar(cigar)
+            .set_sequence(seq)
+            .build();
+        let (ar, _name) = aligned_read_from_record(&r).expect("mapped read");
+        assert_eq!(ar.ref_start, 100); // 1-based 101 -> 0-based
+        assert_eq!(ar.cigar, vec![('M', 5), ('N', 10), ('M', 5)]);
+        assert_eq!(ar.seq, b"AAAAACCCCC".to_vec());
+    }
+
+    #[test]
+    fn aligned_read_from_record_skips_unmapped() {
+        let r = RecordBuf::builder().set_flags(Flags::UNMAPPED).build();
+        assert!(aligned_read_from_record(&r).is_none());
     }
 
     #[test]
