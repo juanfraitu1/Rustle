@@ -17,7 +17,9 @@ use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, primary_reads_from_bam, BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
 };
 use super::family_detect::{collapse_loci, detect_edges, DenovoTranscript, DetectParams};
+use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{decompose_families, FamilyClass, SplitFamily, SplitParams};
+use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
 
 /// Configuration for the de-novo detection pipeline (defaults mirror the python stages).
@@ -170,6 +172,9 @@ pub struct FamilyAssignment {
     /// one detected copy that actually carry `>= 2` PSV haplotypes — collapsed copies the aligner merged.
     /// (Caveat: het/editing/segdup can inflate this; treat as candidates.)
     pub collapsed_copies: usize,
+    /// copies recovered by iterative family-aware RESCUE (below the assembly gate but homologous to the
+    /// family); these are added to the copy set and reads are assigned to them. `n_copies` includes them.
+    pub rescued_copies: usize,
     /// `(index into bam_reads, PSV+junction assignment)` for each read over the family.
     pub assignments: Vec<(usize, Assignment)>,
 }
@@ -195,7 +200,41 @@ pub fn detect_and_assign(
     let split = decompose_families(&edges, &cfg.split);
     let mut out = Vec::new();
     for cf in colocated_families(&reps, &split, win, min_copies) {
-        let copies: Vec<&DenovoTranscript> = cf.copies.iter().collect();
+        // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
+        // and ADD them to the copy set, so reads can be assigned to them too. Iterative (bridge-aware).
+        let members: Vec<FamilyMember> = cf
+            .copies
+            .iter()
+            .map(|c| FamilyMember::new(c.tid.clone(), cf.family_id.clone(), c.seq.clone()))
+            .collect();
+        let member_spans: Vec<MemberSpan> = cf
+            .copies
+            .iter()
+            .map(|c| MemberSpan { chrom: c.chrom.clone(), start: c.start, end: c.end })
+            .collect();
+        let region_primary: Vec<PrimaryRead> = primary_reads
+            .iter()
+            .filter(|r| r.chrom == cf.chrom && r.ref_start < cf.end && r.ref_end > cf.start)
+            .cloned()
+            .collect();
+        let loci = thin_loci(&region_primary, RESCUE_MIN_SUPPORT);
+        let rescued =
+            rescue_thin_loci_iterative(&loci, &members, &member_spans, genome, &RescueParams::default(), 3);
+        let rescued_copies = rescued.len();
+        let mut all_copies: Vec<DenovoTranscript> = cf.copies.clone();
+        for rc in &rescued {
+            all_copies.push(DenovoTranscript {
+                tid: format!("RC_{}_{}", rc.locus.chrom, rc.locus.start),
+                chrom: rc.locus.chrom.clone(),
+                start: rc.locus.start,
+                end: rc.locus.end,
+                n_reads: rc.locus.support,
+                strand: rc.strand,
+                introns: rc.locus.introns.clone(),
+                seq: rc.seq.clone(),
+            });
+        }
+        let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
         // reads on this family's chrom overlapping its span (assign overlaps by coord, so pre-filter chrom).
         let mut idx_map = Vec::new();
         let mut region = Vec::new();
@@ -221,7 +260,7 @@ pub fn detect_and_assign(
         let mut fa = FamilyAssignment {
             family_id: cf.family_id,
             chrom: cf.chrom,
-            n_copies: cf.copies.len(),
+            n_copies: all_copies.len(),
             n_reads: detail.results.len(),
             psv_cols: detail.n_cols,
             resolvable_psv: 0,
@@ -232,6 +271,7 @@ pub fn detect_and_assign(
             uniq: 0,
             uniq_agree: 0,
             collapsed_copies,
+            rescued_copies,
             assignments: Vec::with_capacity(detail.results.len()),
         };
         for r in detail.results {

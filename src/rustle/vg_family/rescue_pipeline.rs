@@ -39,12 +39,13 @@ pub struct MemberSpan {
     pub end: u64,
 }
 
-/// A rescued copy: the thin locus, the family/member that confirmed it (+ core coverage + orientation), and
-/// the spliced sequence (so the rescued copy is assignable).
+/// A rescued copy: the thin locus, the family/member that confirmed it (+ core coverage + orientation), the
+/// transcription strand, and the spliced sequence (so the rescued copy is assignable).
 #[derive(Clone, Debug)]
 pub struct RescuedCopy {
     pub locus: ThinLocus,
     pub outcome: RescueOutcome,
+    pub strand: char,
     pub seq: Vec<u8>,
 }
 
@@ -135,7 +136,7 @@ pub fn rescue_thin_loci(
         {
             continue;
         }
-        let (seq, _strand) = match build_spliced_seq(genome, &locus.chrom, locus.start, locus.end, &locus.introns) {
+        let (seq, strand) = match build_spliced_seq(genome, &locus.chrom, locus.start, locus.end, &locus.introns) {
             Some(v) => v,
             None => continue,
         };
@@ -148,7 +149,7 @@ pub fn rescue_thin_loci(
                 .get(&key)
                 .map_or(true, |prev| outcome.core_recip > prev.outcome.core_recip);
             if better {
-                by_key.insert(key, RescuedCopy { locus: locus.clone(), outcome, seq });
+                by_key.insert(key, RescuedCopy { locus: locus.clone(), outcome, strand, seq });
             }
         }
     }

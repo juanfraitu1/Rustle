@@ -88,6 +88,7 @@ struct FamilyRow {
     uniq_agree: usize,
     uniq: usize,
     collapsed_copies: usize,
+    rescued_copies: usize,
 }
 
 fn main() -> Result<()> {
@@ -155,6 +156,7 @@ fn main() -> Result<()> {
                     uniq_agree: fa.uniq_agree,
                     uniq: fa.uniq,
                     collapsed_copies: fa.collapsed_copies,
+                    rescued_copies: fa.rescued_copies,
                 });
             }
             eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", bam_reads.len(), fams.len());
@@ -164,14 +166,14 @@ fn main() -> Result<()> {
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     writeln!(
         fh,
-        "family_id\tchrom\tn_copies\tcollapsed_copies\tn_reads\tpsv_cols\tresolvable_psv\tresolvable_j\tjunction_only\tassigned_j\tuniq_agree\tuniq"
+        "family_id\tchrom\tn_copies\trescued_copies\tcollapsed_copies\tn_reads\tpsv_cols\tresolvable_psv\tresolvable_j\tjunction_only\tassigned_j\tuniq_agree\tuniq"
     )?;
     for r in &family_rows {
         writeln!(
             fh,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            r.family_id, r.chrom, r.n_copies, r.collapsed_copies, r.n_reads, r.psv_cols, r.resolvable_psv,
-            r.resolvable_j, r.junction_only, r.assigned_j, r.uniq_agree, r.uniq
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            r.family_id, r.chrom, r.n_copies, r.rescued_copies, r.collapsed_copies, r.n_reads, r.psv_cols,
+            r.resolvable_psv, r.resolvable_j, r.junction_only, r.assigned_j, r.uniq_agree, r.uniq
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
