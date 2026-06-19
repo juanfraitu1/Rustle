@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::copy_assign::{assign_read, AssignParams, Assignment, CopyProfile, ReadFeatures};
-use super::copy_split::{allele_at, intron_chain_of, AlignedRead};
+use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
 use super::family_graph::poa_msa_with_costs;
 
@@ -155,31 +155,44 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
         .collect()
 }
 
-/// Per-copy assignment profiles + the genomic PSV positions (to read a read in each copy's frame).
+/// Per-copy assignment profiles + cached frames (so reading a read costs no per-read map rebuilds).
 pub struct FamilyProfiles {
     pub profiles: Vec<CopyProfile>,
-    /// `copy_gpos[c]` = `{column -> forward-genome PSV position}` for copy `c`.
-    pub copy_gpos: Vec<BTreeMap<usize, u64>>,
+    /// `copy_gpos[c]` = `[(column, forward-genome PSV position)]` for copy `c` (sorted by genomic position
+    /// for a single-pass CIGAR walk).
+    pub copy_gpos: Vec<Vec<(usize, u64)>>,
+    /// `gen2off[c]` = forward-genome coord → spliced offset for copy `c` (cached once, not per read).
+    pub gen2off: Vec<BTreeMap<u64, usize>>,
+    /// `strand[c]` for each copy.
+    pub strand: Vec<char>,
     pub n_cols: usize,
 }
 
-/// Build the per-copy `CopyProfile`s (PSV alleles + intron boundaries) and genomic PSV positions.
+/// Build the per-copy `CopyProfile`s (PSV alleles + intron boundaries), the genomic PSV positions, and the
+/// per-copy `gen2off`/strand — everything a read needs, computed ONCE per family (not per read).
 pub fn build_family_profiles(copies: &[&DenovoTranscript]) -> FamilyProfiles {
     let exon_maps: Vec<Vec<u64>> = copies.iter().map(|c| exon_map(c)).collect();
     let cols = discover_psvs(copies, &exon_maps);
     let n = copies.len();
     let mut profiles = Vec::with_capacity(n);
-    let mut copy_gpos = vec![BTreeMap::new(); n];
+    let mut copy_gpos: Vec<Vec<(usize, u64)>> = vec![Vec::new(); n];
     for (ci, c) in copies.iter().enumerate() {
         let alleles: Vec<Option<u8>> = cols.iter().map(|col| col[ci].map(|(_, b)| b)).collect();
         for (j, col) in cols.iter().enumerate() {
             if let Some((g, _)) = col[ci] {
-                copy_gpos[ci].insert(j, g);
+                copy_gpos[ci].push((j, g));
             }
         }
+        copy_gpos[ci].sort_unstable_by_key(|&(_, g)| g); // genomic order for the single CIGAR sweep
         profiles.push(CopyProfile { copy_id: ci, alleles, junctions: copy_boundaries(c) });
     }
-    FamilyProfiles { profiles, copy_gpos, n_cols: cols.len() }
+    FamilyProfiles {
+        profiles,
+        copy_gpos,
+        gen2off: copies.iter().map(|c| gen2off(c)).collect(),
+        strand: copies.iter().map(|c| c.strand).collect(),
+        n_cols: cols.len(),
+    }
 }
 
 /// Assign one read to a copy, reading its PSV bases in `mapped_copy`'s genomic frame (reverse-complemented
@@ -187,33 +200,60 @@ pub fn build_family_profiles(copies: &[&DenovoTranscript]) -> FamilyProfiles {
 pub fn assign_one_read(
     read: &AlignedRead,
     mapped_copy: usize,
-    copies: &[&DenovoTranscript],
     fp: &FamilyProfiles,
     p: &AssignParams,
 ) -> Option<Assignment> {
-    assign_read(&read_features(read, mapped_copy, copies, fp), &fp.profiles, p)
+    assign_read(&read_features(read, mapped_copy, fp), &fp.profiles, p)
+}
+
+/// Fill `psv_obs[col] = Some(base)` for the read's base at each `(col, genomic-position)` (sorted by
+/// position) in a SINGLE CIGAR walk — O(cigar + positions) instead of O(cigar * positions). `None` is left
+/// for positions inside an intron/deletion or outside the read. `minus` reverse-complements the base.
+fn fill_psv_obs(read: &AlignedRead, gpos: &[(usize, u64)], minus: bool, psv_obs: &mut [Option<u8>]) {
+    let mut pi = 0;
+    while pi < gpos.len() && gpos[pi].1 < read.ref_start {
+        pi += 1; // before the read
+    }
+    let mut ref_cur = read.ref_start;
+    let mut seq_cur = 0u64;
+    for &(op, len) in &read.cigar {
+        if pi >= gpos.len() {
+            break;
+        }
+        match op {
+            'M' | '=' | 'X' => {
+                let block_end = ref_cur + len;
+                while pi < gpos.len() && gpos[pi].1 < block_end {
+                    let (col, g) = gpos[pi];
+                    if let Some(&b) = read.seq.get((seq_cur + (g - ref_cur)) as usize) {
+                        psv_obs[col] = Some(if minus { rc_base(b) } else { b });
+                    }
+                    pi += 1;
+                }
+                ref_cur = block_end;
+                seq_cur += len;
+            }
+            'N' | 'D' => {
+                let block_end = ref_cur + len;
+                while pi < gpos.len() && gpos[pi].1 < block_end {
+                    pi += 1; // inside intron/deletion -> unmatched
+                }
+                ref_cur = block_end;
+            }
+            'I' | 'S' => seq_cur += len,
+            _ => {}
+        }
+    }
 }
 
 /// The read's feature vector in the mapped copy's frame: PSV bases at each column's genomic position
-/// (reverse-complemented for a `-` copy) + intron boundaries via `gen2off`.
-fn read_features(
-    read: &AlignedRead,
-    mc: usize,
-    copies: &[&DenovoTranscript],
-    fp: &FamilyProfiles,
-) -> ReadFeatures {
-    let minus = copies[mc].strand == '-';
+/// (reverse-complemented for a `-` copy, single CIGAR walk) + intron boundaries via the cached `gen2off`.
+fn read_features(read: &AlignedRead, mc: usize, fp: &FamilyProfiles) -> ReadFeatures {
     let mut psv_obs = vec![None; fp.n_cols];
-    for (&col, &g) in &fp.copy_gpos[mc] {
-        if let Some(b) = allele_at(read, g) {
-            // copies' alleles are transcription-strand; RC the forward-genome base for a '-' copy.
-            psv_obs[col] = Some(if minus { rc_base(b) } else { b });
-        }
-    }
-    // intron boundaries in the mapped copy's spliced space, via gen2off. `checked_sub` (not saturating) so a
-    // donor at genome coord 0 yields no key — exactly like python's `g2o.get(d0 - 1)` where `d0 - 1 == -1` is
-    // never a key (a saturating 0 could spuriously match genome position 0).
-    let g2o = gen2off(copies[mc]);
+    fill_psv_obs(read, &fp.copy_gpos[mc], fp.strand[mc] == '-', &mut psv_obs);
+    // intron boundaries in the mapped copy's spliced space, via the cached gen2off. `checked_sub` (not
+    // saturating) so a donor at genome coord 0 yields no key — exactly like python's `g2o.get(d0 - 1)`.
+    let g2o = &fp.gen2off[mc];
     let mut junctions = Vec::new();
     for (d0, a0) in intron_chain_of(read) {
         let o1 = d0.checked_sub(1).and_then(|k| g2o.get(&k));
@@ -271,7 +311,7 @@ pub fn assign_family_detailed(
     let mut results = Vec::new();
     for (ri, read) in reads.iter().enumerate() {
         let Some(mc) = best_overlap_copy(read, copies) else { continue };
-        let feats = read_features(read, mc, copies, &fp);
+        let feats = read_features(read, mc, &fp);
         let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
         let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, junctions: vec![] };
         let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
@@ -295,7 +335,7 @@ pub fn assign_family(
     let mut out = Vec::new();
     for (ri, read) in reads.iter().enumerate() {
         if let Some(mc) = best_overlap_copy(read, copies) {
-            if let Some(a) = assign_one_read(read, mc, copies, &fp, p) {
+            if let Some(a) = assign_one_read(read, mc, &fp, p) {
                 out.push((ri, a));
             }
         }

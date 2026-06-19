@@ -196,10 +196,53 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
     Ok(out)
 }
 
-/// Scan a BAM once, collecting BOTH the primary reads (detection input) and ALL mapped reads
-/// (assignment input, incl. secondary/supplementary multimappers) that overlap `[lo, hi)` on `chrom`.
-/// One pass, region-filtered — for a one-off scoped run (no index needed).
+/// Collect BOTH the primary reads (detection input) and ALL mapped reads (assignment input, incl.
+/// secondary/supplementary multimappers) overlapping `[lo, hi)` on `chrom`. Uses the `.bai`-indexed region
+/// query when available (fast — reads only the region, not the whole file), falling back to a full scan.
 pub fn reads_in_region(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    threads: usize,
+) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
+    match reads_in_region_indexed(bam_path, chrom, lo, hi) {
+        Ok(r) => Ok(r),
+        Err(_) => reads_in_region_scan(bam_path, chrom, lo, hi, threads),
+    }
+}
+
+/// `.bai`-indexed region query (fast path). Errs if the index is missing/unreadable so the caller can scan.
+fn reads_in_region_indexed(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
+    let bai_path = format!("{bam_path}.bai");
+    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
+    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+    let header = reader.read_header()?;
+    let index = noodles_bam::bai::read(&bai_path)?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+    let query = reader.query(&header, &index, &region)?;
+    let mut primary = Vec::new();
+    let mut bam_reads = Vec::new();
+    for result in query {
+        let record = result?;
+        let rb = RecordBuf::try_from_alignment_record(&header, &record)?;
+        if let Some(pr) = primary_read_from_record(&rb, chrom) {
+            primary.push(pr);
+        }
+        if let Some((read, mapq, name)) = aligned_read_from_record(&rb) {
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name });
+        }
+    }
+    Ok((primary, bam_reads))
+}
+
+/// Full-scan fallback (no index): one pass, region-filtered.
+fn reads_in_region_scan(
     bam_path: &str,
     chrom: &str,
     lo: u64,

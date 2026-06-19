@@ -89,6 +89,10 @@ path = "src/bin/filter_bam_by_as.rs"
 name = "index_bam"
 path = "src/bin/index_bam.rs"
 
+[[bin]]
+name = "copy_assign"
+path = "src/bin/copy_assign.rs"
+
 [[test]]
 name = "test_parity_graph_edges_dump"
 path = "tests/regression/test_parity_graph_edges_dump.rs"
