@@ -158,8 +158,17 @@ Existing `copy_split.rs` does PSV *discovery* (`ReadObs`, `AlignedRead`, `allele
   copies, params) -> {best_copy, log_lr_margin, n_decisive, resolvable, status∈{Assigned,Ambiguous,Tied}}`.
   PSV likelihood + junction term + identifiability gate; reuses `allele_at`; 13 tests incl. the sim5x
   K=2/K=1 logic and the ref-allele-inheritance guard. Full crate compiles (454 existing tests intact).
-- ⬜ **Family-aware rescue** — POA-homology borrow-strength. Use `poasta::poa_msa([a,b])` for a 2-seq MSA →
-  derive contiguous-core/`core_recip`; try both orientations. Medium.
+- ✅ **Family-aware rescue** — `src/rustle/vg_family/family_rescue.rs`. Pure decision core:
+  `canonical_kmer_set` (exact base-4 KMER=18, `min(fwd,rc)`, N-drop — a faithful port of
+  `denovo_families.py::kmer_hashes`, the missing canonical-k-mer counter), best-member pre-filter by
+  k-mer overlap (`K_RESCUE=20`, strict-`>` earliest-wins), then `rescue_thin_locus` POA-confirms against the
+  single best member via the already-ported `family_graph::contiguous_core_coverage` (`core_recip`), trying
+  BOTH orientations (RC fallback), rescue iff `core_recip >= T_CORE=0.13`. 14 tests (TDD). The BAM-neighbourhood
+  scan that builds thin loci is deferred to Integration (below). Adversarially verified faithful vs the python
+  (encoding bit-for-bit over a 2000-seq sweep; decision logic confirmed); fixed one latent defect the review
+  caught — lowercase/soft-masked input passed the case-insensitive k-mer pre-filter but `reverse_complement`
+  mapped lowercase→N and voided the RC fallback, so POA operands are now uppercased (mirrors python
+  `poa_pair_stats.upper()`).
 - ⬜ **Strand-aware family detection** — add a **canonical** exact-k-mer counter (existing code uses
   minimizers); contiguous-span; POA core via poasta; **weighted-modularity decomposition** needs a
   community-detection approach (petgraph + Louvain, or a small implementation). Largest.
