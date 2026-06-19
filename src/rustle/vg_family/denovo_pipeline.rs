@@ -678,4 +678,99 @@ mod tests {
             );
         }
     }
+
+    /// DIAGNOSTIC: dump the homology prefilter internals for a region so we can see WHY a copy-copy pair did
+    /// or didn't become a candidate. Prints, per rep pair: raw shared k-mers, shared INFORMATIVE k-mers,
+    /// the contiguous span (the prefilter's `core`) vs the `t_core*minlen` bar, and the GROUND-TRUTH
+    /// contiguous-core coverage (bounded, so the 228 kb hub cannot OOM). Compares to candidate_pairs output.
+    ///   RUSTLE_DENOVO_SMOKE_BAM=...bam RUSTLE_DENOVO_SMOKE_FASTA=...fasta \
+    ///   RUSTLE_DIAG_REGION=NC_073234.2:48446103-49179309 \
+    ///     cargo test --release --lib -- --ignored diag_prefilter_homology --nocapture
+    #[test]
+    #[ignore = "diagnostic: needs RUSTLE_DENOVO_SMOKE_{BAM,FASTA} + RUSTLE_DIAG_REGION"]
+    fn diag_prefilter_homology() {
+        use crate::vg_family::family_detect::canonical_kmer_first_pos;
+        use crate::vg_family::family_graph::contiguous_core_coverage_bounded;
+        use std::collections::{BTreeMap, BTreeSet};
+        let (bam, fasta, region) = match (
+            std::env::var("RUSTLE_DENOVO_SMOKE_BAM"),
+            std::env::var("RUSTLE_DENOVO_SMOKE_FASTA"),
+            std::env::var("RUSTLE_DIAG_REGION"),
+        ) {
+            (Ok(b), Ok(f), Ok(r)) => (b, f, r),
+            _ => return,
+        };
+        let (chrom, range) = region.split_once(':').expect("chrom:start-end");
+        let (s, e) = range.split_once('-').expect("start-end");
+        let (lo, hi): (u64, u64) = (s.parse().unwrap(), e.parse().unwrap());
+        let mut reads = primary_reads_from_bam(&bam, 4).expect("read BAM");
+        reads.retain(|r| r.chrom == chrom && r.ref_start < hi && r.ref_end > lo);
+        let cfg = DenovoConfig::default();
+        let p = &cfg.detect;
+        let contigs: HashSet<String> = std::iter::once(chrom.to_string()).collect();
+        let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
+        let skeletons = pass1_skeletons(&reads, cfg.pass1_min_reads);
+        let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+        let reps: Vec<DenovoTranscript> =
+            collapse_loci(&transcripts).iter().map(|&i| transcripts[i].clone()).collect();
+        eprintln!("=== {} reps (cnt_min={} cnt_max={} k_share={} t_core={}) ===", reps.len(), p.cnt_min, p.cnt_max, p.k_share, p.t_core);
+        for (i, r) in reps.iter().enumerate() {
+            eprintln!("  [{i}] {} len={} exons={}", r.tid, r.seq.len(), r.introns.len() + 1);
+        }
+        // replicate candidate_pairs internals: per-rep k-mers, ownership, informative set, informative sig.
+        let rep_kmers: Vec<BTreeMap<u64, u32>> = reps.iter().map(|r| canonical_kmer_first_pos(&r.seq)).collect();
+        let mut owner: BTreeMap<u64, usize> = BTreeMap::new();
+        for km in &rep_kmers {
+            for c in km.keys() {
+                *owner.entry(*c).or_insert(0) += 1;
+            }
+        }
+        let info: BTreeSet<u64> = owner.iter().filter(|(_, &c)| c >= p.cnt_min && c <= p.cnt_max).map(|(&c, _)| c).collect();
+        let sig: Vec<BTreeMap<u64, u32>> = rep_kmers
+            .iter()
+            .map(|km| {
+                km.iter()
+                    .filter(|(c, _)| info.contains(*c))
+                    .map(|(&c, &x)| (c, x))
+                    .collect::<BTreeMap<u64, u32>>()
+            })
+            .collect();
+        eprintln!("=== pairwise (raw=all shared k-mers, info=shared INFORMATIVE, span=prefilter core, bar=t_core*minlen, cov=ground-truth homology) ===");
+        for i in 0..reps.len() {
+            for j in (i + 1)..reps.len() {
+                let raw = rep_kmers[i].keys().filter(|c| rep_kmers[j].contains_key(*c)).count();
+                let (mut amin, mut amax, mut bmin, mut bmax, mut common) = (u32::MAX, 0u32, u32::MAX, 0u32, 0usize);
+                for (c, &pa) in &sig[i] {
+                    if let Some(&pb) = sig[j].get(c) {
+                        common += 1;
+                        amin = amin.min(pa);
+                        amax = amax.max(pa);
+                        bmin = bmin.min(pb);
+                        bmax = bmax.max(pb);
+                    }
+                }
+                let span = if common > 0 { (amax - amin).min(bmax - bmin) as usize } else { 0 };
+                let minlen = reps[i].seq.len().min(reps[j].seq.len());
+                let bar = p.t_core * minlen as f64;
+                let au = reps[i].seq.to_ascii_uppercase();
+                let bu = reps[j].seq.to_ascii_uppercase();
+                let bru = crate::vg::reverse_complement(&bu);
+                let cov = contiguous_core_coverage_bounded(&au, &bu, p.len_cap)
+                    .max(contiguous_core_coverage_bounded(&au, &bru, p.len_cap));
+                // forced LCS (robust to poasta's flank-threading collapse): if lcs >> poasta cov on a small
+                // pair, poasta UNDER-counts a real shared core (false family split).
+                let minl = au.len().min(bu.len());
+                let lcs = (crate::vg_family::family_graph::longest_common_substring(&au, &bu)
+                    .max(crate::vg_family::family_graph::longest_common_substring(&au, &bru))) as f64
+                    / minl as f64;
+                let why = if common < p.k_share { "FAIL:k_share" } else if (span as f64) < bar { "FAIL:span" } else { "PASS" };
+                eprintln!(
+                    "  [{i}]x[{j}] raw={raw} info={common} span={span} bar={bar:.0} poasta={cov:.3} lcs={lcs:.3} {why}{}",
+                    if cov.max(lcs) >= p.t_core { "  <-HOMOLOG" } else { "" }
+                );
+            }
+        }
+        let cps = crate::vg_family::family_detect::candidate_pairs(&reps, p);
+        eprintln!("candidate_pairs accepts: {cps:?}");
+    }
 }
