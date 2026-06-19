@@ -169,9 +169,18 @@ Existing `copy_split.rs` does PSV *discovery* (`ReadObs`, `AlignedRead`, `allele
   caught — lowercase/soft-masked input passed the case-insensitive k-mer pre-filter but `reverse_complement`
   mapped lowercase→N and voided the RC fallback, so POA operands are now uppercased (mirrors python
   `poa_pair_stats.upper()`).
-- ⬜ **Strand-aware family detection** — add a **canonical** exact-k-mer counter (existing code uses
-  minimizers); contiguous-span; POA core via poasta; **weighted-modularity decomposition** needs a
-  community-detection approach (petgraph + Louvain, or a small implementation). Largest.
+- ✅ **Strand-aware family detection** — `family_detect.rs` (`denovo_families.py` core) + `family_split.rs`
+  (`denovo_family_split.py` core). `family_detect`: intron-junction union-find loci collapse, canonical
+  exact-k-mer counter (`canonical_kmer_first_pos`, position-compacted over N-dropped windows), ownership
+  pre-filter + contiguous-span, both-orientation POA edges via `contiguous_core_coverage`. `family_split`:
+  connected components + **hand-rolled deterministic weighted-modularity Louvain** (local-moving with the
+  python-louvain gain formula + multi-level aggregation), iterative-Tarjan articulation points, structural
+  metrics, web flagging. Chose hand-rolled over petgraph+a community crate (no Rust Louvain dep exists;
+  networkx-byte-identical is infeasible; the target is same modularity DEFINITION + determinism). 43 tests.
+  Adversarially verified: Louvain gain proven equal to networkx 3.6.1 (sympy) + identical modularity on
+  300+ planted graphs, articulation 0/2000 mismatches, fully deterministic. Review caught + fixed one real
+  bug — `canonical_kmer_first_pos` used absolute window indices vs python's N-compacted positions (shifts
+  the contiguous-span filter on N-containing transcripts).
 - ⬜ **Integration** — junction-boundary mapping (per-copy exon context, `gen2off`-style) + BAM/FASTA
   orchestration to run copy assignment inside the pipeline (bundle/family/transcript structs in
   `types.rs`/`vg.rs`/`pipeline.rs`).

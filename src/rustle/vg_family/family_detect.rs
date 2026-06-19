@@ -83,17 +83,21 @@ impl Default for DetectParams {
     }
 }
 
-/// Canonical k-mer codes of `seq` with the FIRST-occurrence window position of each. Mirrors
-/// `np.unique(kmer_hashes(seq), return_index=True)` (unique sorted codes + first occurrence). Windows
-/// touching a non-ACGT base are dropped. `BTreeMap` keeps the keys sorted for deterministic iteration.
+/// Canonical k-mer codes of `seq` with the FIRST-occurrence position of each in N-FILTERED window space.
+/// Mirrors `np.unique(kmer_hashes(seq), return_index=True)`: python's `kmer_hashes` DROPS N-touching
+/// windows BEFORE indexing, so positions are compacted over surviving windows (a dropped window leaves no
+/// gap in the counter). For all-ACGT input this equals the absolute window index. `BTreeMap` keeps the
+/// keys sorted for deterministic iteration.
 pub fn canonical_kmer_first_pos(seq: &[u8]) -> BTreeMap<u64, u32> {
     let mut map = BTreeMap::new();
     if seq.len() < KMER {
         return map;
     }
-    for (i, w) in seq.windows(KMER).enumerate() {
+    let mut pos = 0u32; // compacted index: only advances on SURVIVING (non-N) windows
+    for w in seq.windows(KMER) {
         if let Some(code) = window_canon_code(w) {
-            map.entry(code).or_insert(i as u32); // keep the FIRST occurrence
+            map.entry(code).or_insert(pos); // keep the FIRST occurrence
+            pos += 1;
         }
     }
     map
@@ -360,6 +364,30 @@ mod tests {
         assert_eq!(m.get(&code0), Some(&0));
     }
 
+    #[test]
+    fn first_pos_compacts_over_dropped_n_windows() {
+        // Positions are indices in N-FILTERED window space (python np.unique over kmer_hashes, which DROPS
+        // N-touching windows BEFORE indexing). An internal N must NOT leave a gap in the position counter.
+        // seq: 5 clean bases, an N at index 5, then a clean tail -> windows starting 0..=5 touch the N and
+        // are dropped; the first SURVIVING window starts at absolute index 6 but must get COMPACTED pos 0.
+        let mut s = rand_seq(5, 0x9999);
+        s.push(b'N');
+        s.extend_from_slice(&rand_seq(40, 0x1234));
+        let m = canonical_kmer_first_pos(&s);
+        let first_clean = window_canon_code(&s[6..6 + KMER]).unwrap();
+        assert_eq!(m.get(&first_clean), Some(&0), "first surviving window -> compacted position 0");
+    }
+
+    #[test]
+    fn first_pos_compacted_equals_absolute_without_n() {
+        // no N -> compacted index == absolute window index (existing all-ACGT behaviour preserved).
+        let s = rand_seq(35, 0x4321);
+        let m = canonical_kmer_first_pos(&s);
+        let mut ps: Vec<u32> = m.values().copied().collect();
+        ps.sort_unstable();
+        assert_eq!(ps, (0..(35 - KMER + 1) as u32).collect::<Vec<_>>());
+    }
+
     // ---- collapse_loci ----
 
     #[test]
@@ -421,6 +449,16 @@ mod tests {
         assert_eq!(collapse_loci(&txs), vec![1], "equal reads -> longest span wins");
     }
 
+    #[test]
+    fn collapse_rep_tiebreak_earliest_on_full_tie() {
+        // identical n_reads AND identical span -> the EARLIEST index wins (python max keeps first maximal).
+        let txs = [
+            tx("A", "c1", 100, 500, 5, &[(200, 300)], rand_seq(400, 1)),
+            tx("B", "c1", 100, 500, 5, &[(200, 300)], rand_seq(400, 2)),
+        ];
+        assert_eq!(collapse_loci(&txs), vec![0], "full tie -> smallest index");
+    }
+
     // ---- candidate_pairs ----
 
     #[test]
@@ -472,6 +510,36 @@ mod tests {
         // cnt_max=2: core k-mers owned by 3 > 2 -> NOT informative -> no candidates.
         let p = DetectParams { cnt_max: 2, ..DetectParams::default() };
         assert!(candidate_pairs(&reps, &p).is_empty());
+    }
+
+    #[test]
+    fn candidate_pairs_cnt_max_upper_bound_isolated() {
+        // exactly two reps share a 400 bp core -> the core k-mers are owned by exactly 2 reps. cnt_min=1
+        // makes the flanks (owned by 1) informative too, so this toggles ONLY the cnt_max upper bound:
+        // cnt_max=1 excludes the core (owned 2 > 1) -> only singleton flank buckets -> no pair; cnt_max=2
+        // includes it -> the pair is proposed.
+        let core = rand_seq(400, 0x5A5A);
+        let reps = [
+            homolog_tx("r0", 0xA1, &core, 0xA2, 5),
+            homolog_tx("r1", 0xB1, &core, 0xB2, 5),
+        ];
+        let excl = DetectParams { cnt_min: 1, cnt_max: 1, ..DetectParams::default() };
+        assert!(candidate_pairs(&reps, &excl).is_empty(), "core owned by 2 > cnt_max=1 -> excluded");
+        let incl = DetectParams { cnt_min: 1, cnt_max: 2, ..DetectParams::default() };
+        assert_eq!(candidate_pairs(&reps, &incl), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn candidate_pairs_strand_symmetric_via_canonical_kmers() {
+        // r1 is the reverse-complement of r0's homolog: the canonical (min(fwd,rc)) encoder still matches,
+        // so the opposite-strand copy survives the k-mer pre-filter and the pair is proposed (this is what
+        // feeds confirm_edge's RC fallback in the real pipeline).
+        let core = rand_seq(400, 0x57A7);
+        let r0 = homolog_tx("r0", 0xA1, &core, 0xA2, 5);
+        let fwd = cat(&[&rand_seq(80, 0xB1), &core, &rand_seq(80, 0xB2)]);
+        let rc = reverse_complement(&fwd);
+        let r1 = tx("r1", "c1", 0, rc.len() as u64, 5, &[(10, 20)], rc);
+        assert_eq!(candidate_pairs(&[r0, r1], &DetectParams::default()), vec![(0, 1)]);
     }
 
     // ---- confirm_edge ----
