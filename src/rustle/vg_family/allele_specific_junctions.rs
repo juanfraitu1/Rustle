@@ -271,6 +271,260 @@ pub fn fisher_exact_2x2(a: u32, b: u32, c: u32, d: u32) -> f64 {
     total.min(1.0)
 }
 
+// ============================ MULTI-SNP HAPLOTYPE PHASING ============================
+// Single-anchor phasing needs a read to cover ONE specific het SNP. Multi-SNP phasing assigns each read to
+// one of the two DIPLOID haplotypes using ALL het SNPs (read-backed 2-means), so reads covering any subset
+// of SNPs get phased → more reach, and the phasing QUALITY (how cleanly reads bipartition) is itself a
+// confound check (clean 2-way = diploid het; messy/>2 = paralog/artifact). Port of the python multi-SNP scan.
+
+const MAX_SNP: usize = 40; // cap het SNPs per gene (highest-coverage)
+const PHASE_ITERS: usize = 6;
+const AGREE: f64 = 0.80; // a read is confidently phased if it agrees with one hap at >= this frac
+
+/// All balanced het SNP columns in `[start, end)` as `(pos, major, minor)`, highest-coverage first, capped at
+/// `MAX_SNP`. (The multi-SNP scan uses a slightly looser balance window than the single-anchor `call_anchor`.)
+pub fn het_snps(reads: &[AlignedRead], start: u64, end: u64, p: &AsjParams) -> Vec<(u64, u8, u8)> {
+    const AC: [u8; 4] = [b'A', b'C', b'G', b'T'];
+    let mut snps: Vec<(u32, u64, u8, u8)> = Vec::new(); // (minor, pos, major, minor)
+    for (&pos, counts) in pileup(reads, start, end).iter() {
+        let depth: u32 = counts.iter().sum();
+        let mut idx = [0usize, 1, 2, 3];
+        idx.sort_by(|&a, &b| counts[b].cmp(&counts[a]));
+        let (major, minor) = (counts[idx[0]], counts[idx[1]]);
+        if depth >= p.d_min
+            && minor >= p.c_min
+            && (minor as f64) >= p.bal_lo * depth as f64
+            && (major as f64) <= p.bal_hi * depth as f64
+        {
+            snps.push((minor, pos, AC[idx[0]], AC[idx[1]]));
+        }
+    }
+    snps.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1))); // minor desc, then pos asc (deterministic)
+    snps.truncate(MAX_SNP);
+    snps.into_iter().map(|(_, pos, a, b)| (pos, a, b)).collect()
+}
+
+fn read_alleles(read: &AlignedRead, snps: &[(u64, u8, u8)]) -> Vec<Option<u8>> {
+    snps.iter().map(|&(pos, _, _)| allele_at(read, pos)).collect()
+}
+
+/// Deterministic 2-means haplotype phasing. `reads[r][i]` = read r's base at SNP i (or None). Seed = SNP 0's
+/// two alleles; iterate (assign reads to the closer hap, re-estimate each hap's consensus per SNP). Returns
+/// `hap[r]` in {Some(0), Some(1), None}` (None = not confidently phased) and `n_diff` = SNPs where the two
+/// haplotype consensuses actually differ (the phasing's information content).
+pub fn phase_multisnp(reads: &[Vec<Option<u8>>], snps: &[(u64, u8, u8)]) -> (Vec<Option<usize>>, usize) {
+    let k = snps.len();
+    let mut h0: Vec<Option<u8>> = vec![None; k];
+    let mut h1: Vec<Option<u8>> = vec![None; k];
+    h0[0] = Some(snps[0].1);
+    h1[0] = Some(snps[0].2);
+    let mut assign: Vec<Option<usize>> = vec![None; reads.len()];
+    for _ in 0..PHASE_ITERS {
+        for (ri, al) in reads.iter().enumerate() {
+            let (mut a0, mut a1, mut cov) = (0u32, 0u32, 0u32);
+            for i in 0..k {
+                if let (Some(b), Some(hb0)) = (al[i], h0[i]) {
+                    cov += 1;
+                    if b == hb0 {
+                        a0 += 1;
+                    }
+                    if h1[i] == Some(b) {
+                        a1 += 1;
+                    }
+                }
+            }
+            assign[ri] = if cov == 0 { None } else if a0 >= a1 { Some(0) } else { Some(1) };
+        }
+        for i in 0..k {
+            for grp in 0..2 {
+                let (mut t_a, mut t_b) = (0u32, 0u32);
+                for (ri, al) in reads.iter().enumerate() {
+                    if assign[ri] == Some(grp) {
+                        match al[i] {
+                            Some(b) if b == snps[i].1 => t_a += 1,
+                            Some(b) if b == snps[i].2 => t_b += 1,
+                            _ => {}
+                        }
+                    }
+                }
+                let cons = if t_a == 0 && t_b == 0 {
+                    None
+                } else if t_a >= t_b {
+                    Some(snps[i].1)
+                } else {
+                    Some(snps[i].2)
+                };
+                if grp == 0 {
+                    h0[i] = cons;
+                } else {
+                    h1[i] = cons;
+                }
+            }
+        }
+    }
+    let n_diff = (0..k).filter(|&i| h0[i].is_some() && h1[i].is_some() && h0[i] != h1[i]).count();
+    let mut hap = vec![None; reads.len()];
+    for (ri, al) in reads.iter().enumerate() {
+        let (mut a0, mut a1, mut cov) = (0u32, 0u32, 0u32);
+        for i in 0..k {
+            if h0[i].is_none() || h1[i].is_none() || h0[i] == h1[i] {
+                continue;
+            }
+            if let Some(b) = al[i] {
+                cov += 1;
+                if Some(b) == h0[i] {
+                    a0 += 1;
+                } else if Some(b) == h1[i] {
+                    a1 += 1;
+                }
+            }
+        }
+        if cov == 0 {
+            continue;
+        }
+        let (best, frac) = if a0 >= a1 { (0, a0 as f64 / cov as f64) } else { (1, a1 as f64 / cov as f64) };
+        if frac >= AGREE {
+            hap[ri] = Some(best);
+        }
+    }
+    (hap, n_diff)
+}
+
+/// A multi-SNP ASJ call: the gene's het-SNP count + phase quality (confound metric) + the per-haplotype test.
+#[derive(Clone, Debug)]
+pub struct AsjMultiCall {
+    pub n_snps: usize,
+    pub phase_qual: f64,
+    pub donor: u64,
+    pub acceptor: u64,
+    pub used0: u32,
+    pub span0: u32,
+    pub used1: u32,
+    pub span1: u32,
+    pub psi0: f64,
+    pub psi1: f64,
+    pub dpsi: f64,
+    pub p: f64,
+}
+
+/// Multi-SNP ASJ scan: het SNPs → 2-means phasing → per-haplotype junction test. A superset of the
+/// single-anchor scan (with one het SNP it degenerates to it) — more reach, plus `phase_qual` as a confound.
+pub fn scan_gene_asj_multisnp(reads: &[AlignedRead], start: u64, end: u64, p: &AsjParams) -> Vec<AsjMultiCall> {
+    phase_and_test(reads, &het_snps(reads, start, end, p), p)
+}
+
+/// Copy-distinguishing PSV columns (like [`het_snps`] but WITHOUT the diploid-balance window — paralog copies
+/// have unequal expression, so the two copy-alleles need not be 50/50; only `>= c_min` reads each). Returned
+/// `(pos, allele_a, allele_b)`, highest-minor first, capped at `MAX_SNP`.
+pub fn discover_psv_alleles(reads: &[AlignedRead], start: u64, end: u64, p: &AsjParams) -> Vec<(u64, u8, u8)> {
+    const AC: [u8; 4] = [b'A', b'C', b'G', b'T'];
+    let mut psvs: Vec<(u32, u64, u8, u8)> = Vec::new();
+    for (&pos, counts) in pileup(reads, start, end).iter() {
+        let mut idx = [0usize, 1, 2, 3];
+        idx.sort_by(|&a, &b| counts[b].cmp(&counts[a]));
+        let minor = counts[idx[1]];
+        if minor >= p.c_min {
+            psvs.push((minor, pos, AC[idx[0]], AC[idx[1]]));
+        }
+    }
+    psvs.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    psvs.truncate(MAX_SNP);
+    psvs.into_iter().map(|(_, pos, a, b)| (pos, a, b)).collect()
+}
+
+/// CONNECT ASJ TO COPIES: a junction whose usage depends on which COPY a read belongs to — the "allele" is
+/// the copy identity. Same phasing + test as the het-SNP scan, but the variants are copy-distinguishing PSVs,
+/// so the two phased groups are the two paralog COPIES and a call is a COPY-SPECIFIC junction. (This is the
+/// thesis join: copy DETECTION/ASSIGNMENT (PSVs) meets junction MODELLING (ASJ).) `phase_qual` again flags a
+/// clean 2-copy split vs a messy/>2 one. Pairwise on the two dominant copies.
+pub fn scan_gene_copy_specific_junctions(reads: &[AlignedRead], start: u64, end: u64, p: &AsjParams) -> Vec<AsjMultiCall> {
+    phase_and_test(reads, &discover_psv_alleles(reads, start, end, p), p)
+}
+
+/// Shared core: phase reads into 2 groups by their multi-VARIANT haplotype (het SNPs → diploid haplotypes;
+/// PSVs → paralog copies) and test each junction's PSI per group. Used by both the multi-SNP ASJ scan and the
+/// copy-specific-junction scan.
+fn phase_and_test(reads: &[AlignedRead], variants: &[(u64, u8, u8)], p: &AsjParams) -> Vec<AsjMultiCall> {
+    let snps = variants;
+    if snps.is_empty() {
+        return Vec::new();
+    }
+    let mut ral: Vec<Vec<Option<u8>>> = Vec::new();
+    let mut rmeta: Vec<(Vec<(u64, u64)>, u64, u64)> = Vec::new();
+    for r in reads {
+        let al = read_alleles(r, snps);
+        if al.iter().all(Option::is_none) {
+            continue;
+        }
+        ral.push(al);
+        rmeta.push((intron_chain_of(r), r.ref_start, ref_end(r)));
+    }
+    if ral.len() < 2 * p.c_min as usize {
+        return Vec::new();
+    }
+    let (hap, n_diff) = phase_multisnp(&ral, snps);
+    if n_diff < 1 {
+        return Vec::new();
+    }
+    let phased: Vec<usize> = (0..hap.len()).filter(|&i| hap[i].is_some()).collect();
+    let snp_covering = ral.iter().filter(|al| al.iter().any(Option::is_some)).count();
+    if snp_covering == 0 {
+        return Vec::new();
+    }
+    let phase_qual = phased.len() as f64 / snp_covering as f64;
+    let n0 = phased.iter().filter(|&&i| hap[i] == Some(0)).count() as u32;
+    let n1 = phased.iter().filter(|&&i| hap[i] == Some(1)).count() as u32;
+    if n0 < p.c_min || n1 < p.c_min {
+        return Vec::new();
+    }
+    let mut jc: BTreeMap<(u64, u64), u32> = BTreeMap::new();
+    for &i in &phased {
+        for &j in &rmeta[i].0 {
+            *jc.entry(j).or_insert(0) += 1;
+        }
+    }
+    let mut out = Vec::new();
+    for (&(d, a), &nj) in jc.iter() {
+        if nj < p.min_j {
+            continue;
+        }
+        let mut cnt = [[0u32; 2]; 2]; // [hap][used, spanning]
+        for &i in &phased {
+            let (js, rs, re) = (&rmeta[i].0, rmeta[i].1, rmeta[i].2);
+            if rs <= d && re >= a {
+                let h = hap[i].unwrap();
+                cnt[h][1] += 1;
+                if js.contains(&(d, a)) {
+                    cnt[h][0] += 1;
+                }
+            }
+        }
+        let (u0, s0, u1, s1) = (cnt[0][0], cnt[0][1], cnt[1][0], cnt[1][1]);
+        if s0 < p.min_span || s1 < p.min_span {
+            continue;
+        }
+        let (psi0, psi1) = (u0 as f64 / s0 as f64, u1 as f64 / s1 as f64);
+        if (psi0 >= 0.98 && psi1 >= 0.98) || (psi0 <= 0.02 && psi1 <= 0.02) {
+            continue;
+        }
+        out.push(AsjMultiCall {
+            n_snps: snps.len(),
+            phase_qual,
+            donor: d,
+            acceptor: a,
+            used0: u0,
+            span0: s0,
+            used1: u1,
+            span1: s1,
+            psi0,
+            psi1,
+            dpsi: (psi0 - psi1).abs(),
+            p: fisher_exact_2x2(u0, s0 - u0, u1, s1 - u1),
+        });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,5 +586,67 @@ mod tests {
         // homozygous locus (all G at 50) -> no balanced het anchor -> no calls.
         let reads: Vec<AlignedRead> = (0..12).map(|_| read(50, b'G', 260, Some((60, 160)))).collect();
         assert!(scan_gene_asj(&reads, 0, 260, &AsjParams::default()).is_empty());
+    }
+
+    #[test]
+    fn multisnp_phases_two_snps_and_finds_asj() {
+        // two het SNPs (30, 50). haplotype A: G at both + USES junction (60,160); haplotype B: T at both +
+        // RETAINS it. The 2-means phasing must bipartition cleanly and recover the full-switch ASJ.
+        let mk = |b: u8, intron: bool| {
+            let (cigar, slen) = if intron {
+                (vec![('M', 60u64), ('N', 100), ('M', 100)], 160usize)
+            } else {
+                (vec![('M', 260u64)], 260usize)
+            };
+            let mut seq = vec![b'A'; slen];
+            seq[30] = b;
+            seq[50] = b;
+            AlignedRead { ref_start: 0, cigar, seq }
+        };
+        let mut reads = Vec::new();
+        for _ in 0..7 {
+            reads.push(mk(b'G', true));
+        }
+        for _ in 0..7 {
+            reads.push(mk(b'T', false));
+        }
+        let calls = scan_gene_asj_multisnp(&reads, 0, 260, &AsjParams::default());
+        assert_eq!(calls.len(), 1, "one ASJ via multi-SNP phasing");
+        assert_eq!((calls[0].donor, calls[0].acceptor), (60, 160));
+        assert!((calls[0].dpsi - 1.0).abs() < 1e-9, "full allele switch");
+        assert_eq!(calls[0].n_snps, 2, "both het SNPs used");
+        assert!(calls[0].phase_qual > 0.9, "clean diploid bipartition");
+    }
+
+    #[test]
+    fn copy_specific_junction_from_unbalanced_psvs() {
+        // two COPIES at unequal expression (10 vs 5 reads) distinguished by 2 PSVs; copy0 USES junction
+        // (60,160), copy1 RETAINS. The het scan rejects this (10:5 is not a balanced diploid het), but the
+        // copy-specific scan accepts it (PSVs need no balance) -> a copy-specific junction.
+        let mk = |b: u8, intron: bool| {
+            let (cigar, slen) = if intron {
+                (vec![('M', 60u64), ('N', 100), ('M', 100)], 160usize)
+            } else {
+                (vec![('M', 260u64)], 260usize)
+            };
+            let mut seq = vec![b'A'; slen];
+            seq[30] = b;
+            seq[50] = b;
+            AlignedRead { ref_start: 0, cigar, seq }
+        };
+        let mut reads = Vec::new();
+        for _ in 0..10 {
+            reads.push(mk(b'G', true));
+        }
+        for _ in 0..5 {
+            reads.push(mk(b'T', false));
+        }
+        assert!(
+            scan_gene_asj_multisnp(&reads, 0, 260, &AsjParams::default()).is_empty(),
+            "10:5 is unbalanced -> not a diploid het anchor"
+        );
+        let calls = scan_gene_copy_specific_junctions(&reads, 0, 260, &AsjParams::default());
+        assert_eq!(calls.len(), 1, "copy-specific junction recovered from unbalanced PSVs");
+        assert!((calls[0].dpsi - 1.0).abs() < 1e-9, "full copy switch");
     }
 }

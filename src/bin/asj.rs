@@ -7,7 +7,9 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use std::io::Write;
 
-use rustle::vg_family::allele_specific_junctions::{bh_fdr, scan_gene_asj, AsjCall, AsjParams};
+use rustle::vg_family::allele_specific_junctions::{
+    bh_fdr, scan_gene_asj, scan_gene_asj_multisnp, scan_gene_copy_specific_junctions, AsjParams,
+};
 use rustle::vg_family::denovo_assemble::primary_aligned_reads_in_region;
 
 #[derive(Parser, Debug)]
@@ -31,6 +33,17 @@ struct Args {
     /// FDR threshold: report a junction only if its BH q-value `< q`.
     #[arg(long, default_value_t = 0.05)]
     q: f64,
+    /// Phasing mode: `single` (one het anchor SNP), `multisnp` (2-means over ALL het SNPs → diploid
+    /// haplotypes), or `copy` (PSVs → paralog COPIES; a call is a COPY-SPECIFIC junction).
+    #[arg(long, default_value = "single")]
+    mode: String,
+}
+
+/// One tested junction, flattened to (p, |ΔPSI|, output row) for genome-wide BH-FDR + emission.
+struct Row {
+    p: f64,
+    dpsi: f64,
+    line: String,
 }
 
 fn parse_region(s: &str) -> Result<(String, u64, u64)> {
@@ -54,34 +67,67 @@ fn main() -> Result<()> {
     };
 
     let p = AsjParams::default();
-    let mut calls: Vec<(String, AsjCall)> = Vec::new(); // all tested junctions, genome-wide
+    let header = match args.mode.as_str() {
+        "single" => "chrom\tanchor_pos\tax\tay\tdonor\tacceptor\tused_x\tspan_x\tused_y\tspan_y\tpsi_x\tpsi_y\tdpsi\tp\tq",
+        "multisnp" | "copy" => "chrom\tn_snps\tphase_qual\tdonor\tacceptor\tused0\tspan0\tused1\tspan1\tpsi0\tpsi1\tdpsi\tp\tq",
+        m => anyhow::bail!("unknown --mode {m} (single|multisnp|copy)"),
+    };
+
+    let mut rows: Vec<Row> = Vec::new(); // every tested junction, genome-wide
     for (chrom, lo, hi) in &regions {
         let reads = primary_aligned_reads_in_region(&args.bam, chrom, *lo, *hi)
             .with_context(|| format!("reading {chrom}:{lo}-{hi}"))?;
-        for c in scan_gene_asj(&reads, *lo, *hi, &p) {
-            calls.push((chrom.clone(), c));
+        match args.mode.as_str() {
+            "single" => {
+                for c in scan_gene_asj(&reads, *lo, *hi, &p) {
+                    rows.push(Row {
+                        p: c.p,
+                        dpsi: c.dpsi,
+                        line: format!(
+                            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3e}",
+                            chrom, c.anchor_pos, c.ax as char, c.ay as char, c.donor, c.acceptor,
+                            c.used_x, c.span_x, c.used_y, c.span_y, c.psi_x, c.psi_y, c.dpsi, c.p
+                        ),
+                    });
+                }
+            }
+            _ => {
+                let calls = if args.mode == "copy" {
+                    scan_gene_copy_specific_junctions(&reads, *lo, *hi, &p)
+                } else {
+                    scan_gene_asj_multisnp(&reads, *lo, *hi, &p)
+                };
+                for c in calls {
+                    rows.push(Row {
+                        p: c.p,
+                        dpsi: c.dpsi,
+                        line: format!(
+                            "{}\t{}\t{:.2}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3e}",
+                            chrom, c.n_snps, c.phase_qual, c.donor, c.acceptor,
+                            c.used0, c.span0, c.used1, c.span1, c.psi0, c.psi1, c.dpsi, c.p
+                        ),
+                    });
+                }
+            }
         }
     }
 
     // genome-wide BH-FDR over every tested junction, then select q<thresh & |ΔPSI|>=floor.
-    let q = bh_fdr(&calls.iter().map(|(_, c)| c.p).collect::<Vec<_>>());
+    let q = bh_fdr(&rows.iter().map(|r| r.p).collect::<Vec<_>>());
     let mut fh = std::fs::File::create(format!("{}.asj.tsv", args.out))?;
-    writeln!(fh, "chrom\tanchor_pos\tax\tay\tdonor\tacceptor\tused_x\tspan_x\tused_y\tspan_y\tpsi_x\tpsi_y\tdpsi\tp\tq")?;
+    writeln!(fh, "{header}")?;
     let mut n_asj = 0;
-    for (i, (chrom, c)) in calls.iter().enumerate() {
-        if q[i] < args.q && c.dpsi >= args.dpsi {
+    for (i, r) in rows.iter().enumerate() {
+        if q[i] < args.q && r.dpsi >= args.dpsi {
             n_asj += 1;
-            writeln!(
-                fh,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.3e}\t{:.3e}",
-                chrom, c.anchor_pos, c.ax as char, c.ay as char, c.donor, c.acceptor,
-                c.used_x, c.span_x, c.used_y, c.span_y, c.psi_x, c.psi_y, c.dpsi, c.p, q[i]
-            )?;
+            writeln!(fh, "{}\t{:.3e}", r.line, q[i])?;
         }
     }
     eprintln!(
-        "[asj] {} genes scanned, {} junctions tested, {} ASJ (q<{} & |dPSI|>={}) -> {}.asj.tsv",
-        regions.len(), calls.len(), n_asj, args.q, args.dpsi, args.out
+        "[asj] mode={} | {} genes scanned, {} junctions tested, {} {} (q<{} & |dPSI|>={}) -> {}.asj.tsv",
+        args.mode, regions.len(), rows.len(), n_asj,
+        if args.mode == "copy" { "copy-specific junctions" } else { "ASJ" },
+        args.q, args.dpsi, args.out
     );
     Ok(())
 }
