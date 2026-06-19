@@ -114,6 +114,17 @@ struct QuantRow {
     ci: f64,
     n_hard: usize,
 }
+/// One family-confirmed gene-conversion row.
+struct MosaicRow {
+    family_id: String,
+    copy_a: usize,
+    copy_b: usize,
+    bp_lo: u64,
+    bp_hi: u64,
+    n_reads: usize,
+    dispersion: u64,
+    confirmed: bool,
+}
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -145,6 +156,7 @@ fn main() -> Result<()> {
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut assign_rows: Vec<AssignRow> = Vec::new();
     let mut quant_rows: Vec<QuantRow> = Vec::new();
+    let mut mosaic_rows: Vec<MosaicRow> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
@@ -186,6 +198,19 @@ fn main() -> Result<()> {
                         abundance: fa.copy_abundance.get(ci).copied().unwrap_or(0.0),
                         ci: fa.copy_abundance_ci.get(ci).copied().unwrap_or(0.0),
                         n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
+                    });
+                }
+                // gene-conversion events (per-molecule PSV-path switches that recur across reads)
+                for ev in &fa.conversions {
+                    mosaic_rows.push(MosaicRow {
+                        family_id: fid.clone(),
+                        copy_a: ev.copy_a,
+                        copy_b: ev.copy_b,
+                        bp_lo: ev.breakpoint_ref.0,
+                        bp_hi: ev.breakpoint_ref.1,
+                        n_reads: ev.n_supporting_reads,
+                        dispersion: ev.breakpoint_dispersion,
+                        confirmed: ev.confirmed,
                     });
                 }
                 family_rows.push(FamilyRow {
@@ -237,6 +262,25 @@ fn main() -> Result<()> {
     writeln!(qh, "family_id\tcopy_index\tcopy_tid\tabundance\tci95_halfwidth\tn_reads_hard")?;
     for r in &quant_rows {
         writeln!(qh, "{}\t{}\t{}\t{:.4}\t{:.4}\t{}", r.family_id, r.copy_index, r.copy_tid, r.abundance, r.ci, r.n_hard)?;
+    }
+
+    // gene-conversion events: per-molecule PSV-path switches confirmed by RECURRENCE across reads (vs one-off
+    // chimeras). Only written when something was found. The enriched per-molecule multimapper signal.
+    if !mosaic_rows.is_empty() {
+        let mut mh = std::fs::File::create(format!("{}.mosaic.tsv", args.out))?;
+        writeln!(mh, "family_id\tcopy_a\tcopy_b\tbreakpoint_lo\tbreakpoint_hi\tn_reads\tdispersion\tconfirmed")?;
+        for r in &mosaic_rows {
+            writeln!(
+                mh,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                r.family_id, r.copy_a, r.copy_b, r.bp_lo, r.bp_hi, r.n_reads, r.dispersion, r.confirmed as u8
+            )?;
+        }
+        let conf = mosaic_rows.iter().filter(|r| r.confirmed).count();
+        eprintln!(
+            "[copy_assign] {} gene-conversion event(s) ({} confirmed by recurrence) -> {}.mosaic.tsv",
+            mosaic_rows.len(), conf, args.out
+        );
     }
 
     // document every family edge confirmed via the large-sequence LCS fallback (poasta memory threshold

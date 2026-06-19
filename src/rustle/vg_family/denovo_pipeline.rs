@@ -182,6 +182,10 @@ pub struct FamilyAssignment {
     pub copy_tids: Vec<String>,
     pub copy_abundance: Vec<f64>,
     pub copy_abundance_ci: Vec<f64>,
+    /// gene-conversion mosaic: reads whose PSV path switches copy mid-molecule, and the family-confirmed
+    /// conversion events (breakpoint recurs across molecules) — the enriched per-molecule multimapper signal.
+    pub mosaic_reads: usize,
+    pub conversions: Vec<crate::vg_family::mosaic::ConversionEvent>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
@@ -336,6 +340,12 @@ pub fn detect_and_assign(
             }
         }
         let detail = assign_family_detailed(&copies, &region, p);
+        if detail.mosaic_reads > 0 || !detail.conversions.is_empty() {
+            eprintln!(
+                "[mosaic] {} {}: {} mosaic-path reads, {} conversion events",
+                cf.family_id, cf.chrom, detail.mosaic_reads, detail.conversions.len()
+            );
+        }
         // collapsed-copy recovery: group the reads by their mapped copy/locus and split each by within-locus
         // PSV haplotype; >= 2 identifiable copies at one locus means extra (collapsed) copies were merged.
         let mut by_copy: Vec<Vec<AlignedRead>> = vec![Vec::new(); copies.len()];
@@ -365,6 +375,8 @@ pub fn detect_and_assign(
             copy_tids: all_copies.iter().map(|c| c.tid.clone()).collect(),
             copy_abundance: detail.copy_abundance.clone(),
             copy_abundance_ci: detail.copy_abundance_ci.clone(),
+            mosaic_reads: detail.mosaic_reads,
+            conversions: detail.conversions.clone(),
         };
         for r in detail.results {
             let resolvable_psv = r.psv.n_decisive >= 1;

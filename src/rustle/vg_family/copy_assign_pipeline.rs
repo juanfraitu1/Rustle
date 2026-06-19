@@ -299,6 +299,11 @@ pub struct FamilyDetail {
     pub copy_abundance: Vec<f64>,
     /// `copy_abundance_ci[c]` = 95% CI half-width for `copy_abundance[c]`.
     pub copy_abundance_ci: Vec<f64>,
+    /// reads whose per-PSV copy pattern SWITCHES mid-molecule (gene-conversion / recombinant candidates).
+    pub mosaic_reads: usize,
+    /// family-confirmed gene conversions: the breakpoint RECURS across independent molecules (vs a one-off
+    /// chimera). The enriched per-molecule signal the multimappers carry beyond presence/abundance.
+    pub conversions: Vec<super::mosaic::ConversionEvent>,
 }
 
 /// Default per-base error for the soft-quant likelihood (HiFi-ish; match prob `1-e`, each mismatch `e/3`).
@@ -369,26 +374,61 @@ pub fn assign_family_detailed(
     p: &AssignParams,
 ) -> FamilyDetail {
     if copies.len() < 2 {
-        return FamilyDetail { results: Vec::new(), n_cols: 0, copy_abundance: Vec::new(), copy_abundance_ci: Vec::new() };
+        return FamilyDetail {
+            results: Vec::new(),
+            n_cols: 0,
+            copy_abundance: Vec::new(),
+            copy_abundance_ci: Vec::new(),
+            mosaic_reads: 0,
+            conversions: Vec::new(),
+        };
     }
+    use super::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
+    const MOSAIC_EPS: f64 = 0.01; // HiFi per-base error for the mosaic likelihood
     let fp = build_family_profiles(copies);
+    // canonical column -> genomic position (first copy that has the column) so every read's switch breakpoints
+    // are in ONE frame and `aggregate_family` can cluster recurrences across molecules.
+    let mut col_canon: Vec<Option<u64>> = vec![None; fp.n_cols];
+    for gpos in &fp.copy_gpos {
+        for &(col, g) in gpos {
+            col_canon[col].get_or_insert(g);
+        }
+    }
+    let mparams = MosaicParams::from_env();
     let mut results = Vec::new();
     let mut read_obs: Vec<Vec<Option<u8>>> = Vec::new(); // per-read PSV observations for the soft EM
+    let mut mosaic_calls = Vec::new();
+    let mut mosaic_reads = 0usize;
     for (ri, read) in reads.iter().enumerate() {
         let Some(mc) = best_overlap_copy(read, copies) else { continue };
         let feats = read_features(read, mc, &fp);
+        // gene-conversion / mosaic: does this molecule's per-PSV copy match SWITCH mid-read?
+        let mut site_obs: Vec<SiteObs> = Vec::new();
+        for col in 0..fp.n_cols {
+            if let (Some(ob), Some(rp)) = (feats.psv_obs[col], col_canon[col]) {
+                let match_bits = fp.profiles.iter().map(|pr| pr.alleles[col] == Some(ob)).collect();
+                site_obs.push(SiteObs { ref_pos: rp, match_bits });
+            }
+        }
+        site_obs.sort_by_key(|s| s.ref_pos);
+        let mcall = detect_mosaic(&site_obs, copies.len(), MOSAIC_EPS, &mparams);
+        if mcall.is_mosaic() {
+            mosaic_reads += 1;
+        }
+        mosaic_calls.push(mcall);
         let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
         read_obs.push(feats.psv_obs.clone());
         let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, junctions: vec![] };
         let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
         results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined });
     }
+    let conversions = aggregate_family(&mosaic_calls, &mparams);
     // soft per-copy abundance (EM) + a normal-approx 95% CI half-width (theta(1-theta)/N).
     let copy_alleles: Vec<Vec<Option<u8>>> = fp.profiles.iter().map(|pr| pr.alleles.clone()).collect();
     let copy_abundance = soft_quantify_em(&read_obs, &copy_alleles, QUANT_ERROR, 100);
     let n = read_obs.len().max(1) as f64;
     let copy_abundance_ci = copy_abundance.iter().map(|&t| 1.96 * (t * (1.0 - t) / n).sqrt()).collect();
-    FamilyDetail { results, n_cols: fp.n_cols, copy_abundance, copy_abundance_ci }
+    FamilyDetail { results, n_cols: fp.n_cols, copy_abundance, copy_abundance_ci, mosaic_reads, conversions }
 }
 
 /// Assign every read over a co-located family to a copy. Each read is mapped to the copy whose genomic span
@@ -692,6 +732,29 @@ mod tests {
         assert!((theta[0] - 0.7).abs() < 0.02, "copy0 ~0.7, got {}", theta[0]);
         assert!((theta[1] - 0.3).abs() < 0.02, "copy1 ~0.3, got {}", theta[1]);
         assert!((theta.iter().sum::<f64>() - 1.0).abs() < 1e-9, "sums to 1");
+    }
+
+    #[test]
+    fn mosaic_recombinant_read_detected_end_to_end() {
+        // two copies differing at 8 PSVs; a RECOMBINANT read carries copy A's alleles at the first 4 PSVs and
+        // copy B's at the last 4 -> a gene-conversion switch the wired detector must flag (mosaic_reads >= 1).
+        let a = rand_seq(300, 0x0ABC_0001);
+        let mut sa = a.clone();
+        let mut sb = a.clone();
+        let psv = [30usize, 60, 90, 120, 150, 180, 210, 240];
+        for &p in &psv {
+            sa[p] = b'A';
+            sb[p] = b'C';
+        }
+        let ca = copy_tx("A", 0, 300, '+', &[], sa.clone());
+        let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
+        let mut recomb = sa; // copy A everywhere...
+        for &p in &psv[4..] {
+            recomb[p] = b'C'; // ...then switch to copy B at the last 4 PSVs
+        }
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb };
+        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default());
+        assert!(detail.mosaic_reads >= 1, "recombinant flagged as mosaic; got {}", detail.mosaic_reads);
     }
 
     #[test]
