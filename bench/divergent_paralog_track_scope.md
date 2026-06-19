@@ -83,6 +83,30 @@ Lead claim = **DNA/k-mer feature vs OrthoFinder truth** (clean cross-modality). 
 3. **Success bar.** Phase 3 (recover DSFAM45-type families at a calibrated FDR) — or push to Phase 4 (show the recovered families assign cleanly), which is the advisor-facing payoff. *Recommend committing to Phase 4 as the bar.*
 4. **Honest-negative acceptance.** The kill-criteria can end in "no separable feature" — a real result. Agree up front that a clean negative is an acceptable outcome (it bounds the contiguous-core decision as provably optimal on sequence alone).
 
-## 8. First concrete step
+## 8. First concrete step (SUPERSEDED — see §9)
 
-Phase 0, sub-step 1: get orthogroups from `proteins.fa` (OrthoFinder, or DIAMOND+MCL) and map de-novo loci → genes → orthogroups via `GGO_genomic.gff`. That single artifact (a labeled paralog-pair table covering LOC genes) is the gate the entire track hinges on; everything after is cheap by comparison.
+~~Phase 0: get orthogroups from `proteins.fa` (OrthoFinder)...~~ Replaced by the own-tool, RNA-only direction below.
+
+## 9. CONSTRAINTS (user) — own-tool, RNA-only, Phase-4 bar
+
+Three decisions reshape the track:
+
+1. **No OrthoFinder dependency — extract & implement its pertinent logic ourselves.** OrthoFinder's algorithm that matters here = a **length/composition-NORMALISED all-vs-all similarity graph → graph clustering (MCL) → orthogroups**. We already have the graph (`candidate_pairs`) and a clustering engine (`family_split::decompose_families`, weighted Louvain). So the divergent-paralog DETECTOR is a small extraction, not a new tool:
+   - (a) all-vs-all similarity on the REJECTED-by-core pairs, with a **normalised** score, and
+   - (b) **low-complexity / tandem-repeat masking** before scoring — this is the load-bearing piece for DSFAM45: its 374 shared k-mers must be shown to come from an orthologous divergent core, NOT a shared repeat. Masking + length-normalisation is exactly how OrthoFinder-style scoring separates true paralogs from repeat/domain-sharers. We implement that principle on RNA.
+   - (c) cluster with the existing weighted Louvain. No new arbitrary threshold beyond the ROC-calibrated edge.
+
+2. **RNA-only at ship time.** The shipped feature is computed from the de-novo transcript **nucleotide (RNA)** sequence only — k-mer containment / normalised shared-k-mer count / LCS — needing NO genome FASTA and NO proteome at inference. (Any ORF translation, if ever used, is derived from the RNA itself and stays self-contained; lead with nucleotide features to honour "no protein.") The genome/protein are allowed ONLY in the offline validation, never in the shipped detector.
+
+3. **Success bar = Phase 4** (recovered divergent families must ASSIGN cleanly — high per-read PSV identifiability).
+
+### What this changes vs §3–5
+- **Truth stays external, but as DATA not a tool.** Ensembl **Compara** paralog relations (already cached, `compara_paralog_relation.json`) are a published gene-tree oracle that never sees our RNA — using them as ground truth is NOT a tool dependency and keeps validation non-circular. We do **not** run OrthoFinder.
+- **The cost of dropping OrthoFinder = the LOC-coverage wall reopens.** Compara maps only NAMED genes (154/195 universe genes are LOC → unverifiable). Mitigation: the prior 12 pairs were a curated UNIVERSE subset — map **all** de-novo loci genome-wide → named RefSeq genes (`GGO_genomic.gff`) → cached Compara paralogy for a far larger NAMED calibration set; calibrate the RNA feature there, then APPLY genome-wide incl. LOC (predict at the calibrated FDR; LOC stays unvalidated — honest, as the prior report already stated). **KILL** if the genome-wide named+Compara set is still too small to calibrate → fall back to a qualitative DSFAM45 demo + caveat.
+
+### Revised Phase 0 (two parallel sub-tasks)
+- **(i) Detector (RNA-only, our own):** implement normalised all-vs-all similarity + low-complexity masking over the core-rejected candidate pairs; feed weighted edges to the existing Louvain. Default-OFF (`RUSTLE_DIVERGENT_PARALOGS`), byte-identical baseline, TDD.
+- **(ii) Truth (offline, Compara-as-data):** map de-novo loci → named RefSeq genes → cached Compara paralogy → a labeled NAMED-pair table, genome-wide. **GATE:** ≥ ~100 named paralog pairs incl. divergent ones; else underpowered → qualitative only.
+
+### First concrete step
+Build the offline Compara-based labeled NAMED-pair table genome-wide (sub-task ii) — it is cheap (reuses `compara_fetch.py`/cache + the GFF) and it is the GATE: it tells us whether there is enough independent truth to calibrate an RNA feature at all, before we invest in the detector. If the gate passes, implement sub-task (i).
