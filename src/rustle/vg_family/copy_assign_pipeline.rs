@@ -191,9 +191,18 @@ pub fn assign_one_read(
     fp: &FamilyProfiles,
     p: &AssignParams,
 ) -> Option<Assignment> {
-    let mc = mapped_copy;
+    assign_read(&read_features(read, mapped_copy, copies, fp), &fp.profiles, p)
+}
+
+/// The read's feature vector in the mapped copy's frame: PSV bases at each column's genomic position
+/// (reverse-complemented for a `-` copy) + intron boundaries via `gen2off`.
+fn read_features(
+    read: &AlignedRead,
+    mc: usize,
+    copies: &[&DenovoTranscript],
+    fp: &FamilyProfiles,
+) -> ReadFeatures {
     let minus = copies[mc].strand == '-';
-    // PSV observations: the read's base at each column's genomic position in the mapped copy's frame.
     let mut psv_obs = vec![None; fp.n_cols];
     for (&col, &g) in &fp.copy_gpos[mc] {
         if let Some(b) = allele_at(read, g) {
@@ -201,9 +210,9 @@ pub fn assign_one_read(
             psv_obs[col] = Some(if minus { rc_base(b) } else { b });
         }
     }
-    // the read's intron boundaries in the mapped copy's spliced space, via gen2off. `checked_sub` (not
-    // saturating) so a donor at genome coord 0 yields no key — exactly like python's `g2o.get(d0 - 1)` where
-    // `d0 - 1 == -1` is never a key (a saturating 0 could spuriously match genome position 0).
+    // intron boundaries in the mapped copy's spliced space, via gen2off. `checked_sub` (not saturating) so a
+    // donor at genome coord 0 yields no key — exactly like python's `g2o.get(d0 - 1)` where `d0 - 1 == -1` is
+    // never a key (a saturating 0 could spuriously match genome position 0).
     let g2o = gen2off(copies[mc]);
     let mut junctions = Vec::new();
     for (d0, a0) in intron_chain_of(read) {
@@ -212,7 +221,63 @@ pub fn assign_one_read(
             junctions.push(o1.max(o2) as i64);
         }
     }
-    assign_read(&ReadFeatures { psv_obs, junctions }, &fp.profiles, p)
+    ReadFeatures { psv_obs, junctions }
+}
+
+/// The copy whose genomic span the read overlaps most (`None` if it overlaps none).
+fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
+    let r_end = read_ref_end(read);
+    let mut best = None;
+    let mut best_ov = 0i64;
+    for (ci, c) in copies.iter().enumerate() {
+        let ov = (r_end.min(c.end) as i64) - (read.ref_start.max(c.start) as i64);
+        if ov > best_ov {
+            best_ov = ov;
+            best = Some(ci);
+        }
+    }
+    best
+}
+
+/// Two-pass per-read assignment: the mapped copy, the PSV-ONLY assignment, and the PSV+JUNCTION assignment
+/// (the decision). Mirrors copy_assign.py::assign_family's two `assign_read` calls.
+#[derive(Clone, Debug)]
+pub struct ReadResult {
+    pub read_index: usize,
+    pub mapped_copy: usize,
+    pub psv: Assignment,
+    pub combined: Assignment,
+}
+
+/// Two-pass assignment detail for a family: the per-read results + the PSV-column count.
+#[derive(Clone, Debug)]
+pub struct FamilyDetail {
+    pub results: Vec<ReadResult>,
+    pub n_cols: usize,
+}
+
+/// Like `assign_family` but returns the TWO-PASS detail per read so callers can report how many reads a
+/// copy-specific junction resolved that PSVs alone could not (`junction_only`), and — with read mapq — the
+/// silver-standard unique-mapper agreement. Reads overlapping no copy are skipped.
+pub fn assign_family_detailed(
+    copies: &[&DenovoTranscript],
+    reads: &[AlignedRead],
+    p: &AssignParams,
+) -> FamilyDetail {
+    if copies.len() < 2 {
+        return FamilyDetail { results: Vec::new(), n_cols: 0 };
+    }
+    let fp = build_family_profiles(copies);
+    let mut results = Vec::new();
+    for (ri, read) in reads.iter().enumerate() {
+        let Some(mc) = best_overlap_copy(read, copies) else { continue };
+        let feats = read_features(read, mc, copies, &fp);
+        let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
+        let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, junctions: vec![] };
+        let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
+        results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined });
+    }
+    FamilyDetail { results, n_cols: fp.n_cols }
 }
 
 /// Assign every read over a co-located family to a copy. Each read is mapped to the copy whose genomic span
@@ -229,18 +294,7 @@ pub fn assign_family(
     let fp = build_family_profiles(copies);
     let mut out = Vec::new();
     for (ri, read) in reads.iter().enumerate() {
-        let r_end = read_ref_end(read);
-        // map the read to the copy whose genomic span it overlaps most.
-        let mut best: Option<usize> = None;
-        let mut best_ov = 0i64;
-        for (ci, c) in copies.iter().enumerate() {
-            let ov = (r_end.min(c.end) as i64) - (read.ref_start.max(c.start) as i64);
-            if ov > best_ov {
-                best_ov = ov;
-                best = Some(ci);
-            }
-        }
-        if let Some(mc) = best {
+        if let Some(mc) = best_overlap_copy(read, copies) {
             if let Some(a) = assign_one_read(read, mc, copies, &fp, p) {
                 out.push((ri, a));
             }
@@ -359,6 +413,27 @@ mod tests {
     }
 
     #[test]
+    fn junction_resolves_read_when_psvs_cannot() {
+        // two copies with IDENTICAL spliced sequence (so ZERO PSV columns) but DIFFERENT junction positions
+        // (a copy-specific junction). A read whose intron boundary matches copyA is resolved by the junction
+        // alone -- the two-pass `junction_only` case (the DSFAM43 10%->99% effect).
+        let spliced = rand_seq(300, 0x5151);
+        let ca = copy_tx("A", 0, 400, '+', &[(100, 200)], spliced.clone());
+        let cb = copy_tx("B", 1000, 1400, '+', &[(1150, 1250)], spliced.clone());
+        let copies = [&ca, &cb];
+        // read aligned to copyA's region with copyA's intron structure (boundary at spliced offset 100).
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced };
+        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default());
+        assert_eq!(detail.n_cols, 0, "identical sequences -> no PSV columns");
+        assert_eq!(detail.results.len(), 1);
+        let r = &detail.results[0];
+        assert_eq!(r.psv.n_decisive, 0, "PSVs alone cannot resolve");
+        assert!(r.combined.n_decisive >= 1, "the copy-specific junction resolves it");
+        assert_eq!(r.combined.best_copy, 0, "boundary matches copyA's junction");
+        assert_eq!(r.combined.status, AssignStatus::Assigned);
+    }
+
+    #[test]
     fn assign_read_spanning_no_psv_is_tied() {
         // copies differ only at offsets >= 200; a read covering only [0,150) spans no PSV -> tied.
         let base = rand_seq(300, 0xB16);
@@ -429,7 +504,8 @@ mod tests {
             let copies: Vec<&DenovoTranscript> = copies_owned.iter().collect();
             let fp = build_family_profiles(&copies);
             let reads = aligned_reads_from_bam(&bam, 4).expect("bam");
-            let (ars, names): (Vec<AlignedRead>, Vec<String>) = reads.into_iter().unzip();
+            let names: Vec<String> = reads.iter().map(|br| br.name.clone()).collect();
+            let ars: Vec<AlignedRead> = reads.into_iter().map(|br| br.read).collect();
             let assigns = assign_family(&copies, &ars, &AssignParams::default());
             let (mut n, mut resolvable, mut assigned, mut tied) = (0usize, 0usize, 0usize, 0usize);
             let (mut corr_assigned, mut corr_argmax) = (0usize, 0usize);

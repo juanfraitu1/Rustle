@@ -142,10 +142,21 @@ fn cigar_kind_to_char(k: Kind) -> char {
     }
 }
 
-/// Build an `AlignedRead` (ref_start 0-based, CIGAR ops as chars, read sequence) + the read NAME from a
-/// mapped record — the per-read input copy ASSIGNMENT consumes (`copy_assign_pipeline`). The sequence keeps
-/// soft-clipped bases (excludes hard-clips), matching `copy_split::allele_at`'s CIGAR walk. `None` if unmapped.
-pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, String)> {
+/// A mapped alignment for copy assignment: its `AlignedRead`, reference name, mapping quality (the
+/// silver-standard "unique mapper" signal: `mapq > 0`), and read name (any ground-truth label).
+#[derive(Clone, Debug)]
+pub struct BamRead {
+    pub chrom: String,
+    pub read: AlignedRead,
+    pub mapq: u8,
+    pub name: String,
+}
+
+/// Build an `AlignedRead` (ref_start 0-based, CIGAR ops as chars, read sequence) + mapping quality + read
+/// NAME from a mapped record — the per-read input copy ASSIGNMENT consumes (`copy_assign_pipeline`). The
+/// sequence keeps soft-clipped bases (excludes hard-clips), matching `copy_split::allele_at`'s CIGAR walk.
+/// `None` if unmapped.
+pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String)> {
     if record.flags().is_unmapped() {
         return None;
     }
@@ -157,21 +168,29 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, Stri
         .map(|op| (cigar_kind_to_char(op.kind()), op.len() as u64))
         .collect();
     let seq: Vec<u8> = record.sequence().as_ref().to_vec();
+    let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
-    Some((AlignedRead { ref_start, cigar, seq }, name))
+    Some((AlignedRead { ref_start, cigar, seq }, mapq, name))
 }
 
-/// Scan every mapped alignment in a BAM into `(AlignedRead, name)` (the copy-assignment read input). I/O
-/// driver, mirroring `primary_reads_from_bam`. Includes secondary/supplementary (multimappers are exactly
-/// what assignment resolves); the name carries any ground-truth label.
-pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<(AlignedRead, String)>> {
+/// Scan every mapped alignment in a BAM into `BamRead`s (the copy-assignment read input). I/O driver,
+/// mirroring `primary_reads_from_bam`. Includes secondary/supplementary (multimappers are exactly what
+/// assignment resolves); the chrom resolves from the header.
+pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamRead>> {
     let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
     let header = reader.read_header()?;
     let mut record = RecordBuf::default();
     let mut out = Vec::new();
     while reader.read_record_buf(&header, &mut record)? > 0 {
-        if let Some(ar) = aligned_read_from_record(&record) {
-            out.push(ar);
+        let chrom = match record
+            .reference_sequence_id()
+            .and_then(|id| header.reference_sequences().get_index(id))
+        {
+            Some((name, _)) => format!("{name}"),
+            None => continue,
+        };
+        if let Some((read, mapq, name)) = aligned_read_from_record(&record) {
+            out.push(BamRead { chrom, read, mapq, name });
         }
     }
     Ok(out)
@@ -341,7 +360,7 @@ mod tests {
             .set_cigar(cigar)
             .set_sequence(seq)
             .build();
-        let (ar, _name) = aligned_read_from_record(&r).expect("mapped read");
+        let (ar, _mapq, _name) = aligned_read_from_record(&r).expect("mapped read");
         assert_eq!(ar.ref_start, 100); // 1-based 101 -> 0-based
         assert_eq!(ar.cigar, vec![('M', 5), ('N', 10), ('M', 5)]);
         assert_eq!(ar.seq, b"AAAAACCCCC".to_vec());

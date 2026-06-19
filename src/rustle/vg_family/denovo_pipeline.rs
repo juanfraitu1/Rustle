@@ -10,11 +10,10 @@ use std::collections::{BTreeSet, HashSet};
 
 use anyhow::Result;
 
-use super::copy_assign::{AssignParams, AssignStatus};
-use super::copy_assign_pipeline::{assign_family, read_ref_end};
-use super::copy_split::AlignedRead;
+use super::copy_assign::{Assignment, AssignParams, AssignStatus};
+use super::copy_assign_pipeline::{assign_family_detailed, read_ref_end};
 use super::denovo_assemble::{
-    assemble_gate, pass1_skeletons, primary_reads_from_bam, GateParams, PrimaryRead, PASS1_MIN_READS,
+    assemble_gate, pass1_skeletons, primary_reads_from_bam, BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
 };
 use super::family_detect::{collapse_loci, detect_edges, DenovoTranscript, DetectParams};
 use super::family_split::{decompose_families, FamilyClass, SplitFamily, SplitParams};
@@ -145,27 +144,38 @@ pub fn colocated_families(
     out
 }
 
-/// Per-co-located-family read-assignment summary.
+/// Per-co-located-family read-assignment summary, with the two-pass (PSV-only vs PSV+junction) breakdown
+/// and the silver-standard unique-mapper agreement (the accuracy proxy on real data — `copy_assign.py`).
 #[derive(Clone, Debug)]
 pub struct FamilyAssignment {
     pub family_id: String,
     pub chrom: String,
     pub n_copies: usize,
     pub n_reads: usize,
-    pub n_resolvable: usize,
-    pub n_assigned: usize,
-    pub n_tied: usize,
-    /// `(index into aligned_reads, assignment)` for each read over the family.
-    pub assignments: Vec<(usize, super::copy_assign::Assignment)>,
+    pub psv_cols: usize,
+    /// PSV-only.
+    pub resolvable_psv: usize,
+    pub assigned_psv: usize,
+    /// PSV + copy-specific junctions.
+    pub resolvable_j: usize,
+    pub assigned_j: usize,
+    /// reads a copy-specific junction resolved that PSVs alone could not.
+    pub junction_only: usize,
+    /// silver-standard: assigned + uniquely mapped (mapq > 0), and of those how many agree with where the
+    /// read confidently mapped (the assignment-vs-mapping accuracy proxy).
+    pub uniq: usize,
+    pub uniq_agree: usize,
+    /// `(index into bam_reads, PSV+junction assignment)` for each read over the family.
+    pub assignments: Vec<(usize, Assignment)>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
-/// a copy. `aligned_reads` are `(chrom, read)` (chrom for region filtering). This is the runnable
-/// detection + per-read copy-assignment pipeline.
+/// a copy (PSV + copy-specific-junction likelihood, two-pass). `bam_reads` carry chrom (for region
+/// filtering) and mapq (for the silver-standard). The runnable detection + per-read copy-assignment pipeline.
 #[allow(clippy::too_many_arguments)]
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
-    aligned_reads: &[(String, AlignedRead)],
+    bam_reads: &[BamRead],
     genome: &GenomeIndex,
     cfg: &DenovoConfig,
     win: u64,
@@ -181,39 +191,48 @@ pub fn detect_and_assign(
     let mut out = Vec::new();
     for cf in colocated_families(&reps, &split, win, min_copies) {
         let copies: Vec<&DenovoTranscript> = cf.copies.iter().collect();
-        // reads on this family's chrom overlapping its span (assign_family overlaps by coord, so pre-filter chrom).
+        // reads on this family's chrom overlapping its span (assign overlaps by coord, so pre-filter chrom).
         let mut idx_map = Vec::new();
         let mut region = Vec::new();
-        for (i, (chrom, read)) in aligned_reads.iter().enumerate() {
-            if chrom == &cf.chrom && read.ref_start < cf.end && read_ref_end(read) > cf.start {
+        let mut region_mapq = Vec::new();
+        for (i, br) in bam_reads.iter().enumerate() {
+            if br.chrom == cf.chrom && br.read.ref_start < cf.end && read_ref_end(&br.read) > cf.start {
                 idx_map.push(i);
-                region.push(read.clone());
+                region.push(br.read.clone());
+                region_mapq.push(br.mapq);
             }
         }
-        let assigns = assign_family(&copies, &region, p);
-        let (mut n_resolvable, mut n_assigned, mut n_tied) = (0usize, 0usize, 0usize);
-        let mut assignments = Vec::with_capacity(assigns.len());
-        for (local_ri, a) in assigns {
-            match a.status {
-                AssignStatus::Tied => n_tied += 1,
-                AssignStatus::Assigned => {
-                    n_resolvable += 1;
-                    n_assigned += 1;
-                }
-                AssignStatus::Ambiguous => n_resolvable += 1,
-            }
-            assignments.push((idx_map[local_ri], a));
-        }
-        out.push(FamilyAssignment {
+        let detail = assign_family_detailed(&copies, &region, p);
+        let mut fa = FamilyAssignment {
             family_id: cf.family_id,
             chrom: cf.chrom,
             n_copies: cf.copies.len(),
-            n_reads: assignments.len(),
-            n_resolvable,
-            n_assigned,
-            n_tied,
-            assignments,
-        });
+            n_reads: detail.results.len(),
+            psv_cols: detail.n_cols,
+            resolvable_psv: 0,
+            assigned_psv: 0,
+            resolvable_j: 0,
+            assigned_j: 0,
+            junction_only: 0,
+            uniq: 0,
+            uniq_agree: 0,
+            assignments: Vec::with_capacity(detail.results.len()),
+        };
+        for r in detail.results {
+            let resolvable_psv = r.psv.n_decisive >= 1;
+            let assigned_j = r.combined.status == AssignStatus::Assigned;
+            fa.resolvable_psv += resolvable_psv as usize;
+            fa.assigned_psv += (r.psv.status == AssignStatus::Assigned) as usize;
+            fa.resolvable_j += (r.combined.n_decisive >= 1) as usize;
+            fa.assigned_j += assigned_j as usize;
+            fa.junction_only += (r.combined.n_decisive >= 1 && !resolvable_psv) as usize;
+            if assigned_j && region_mapq[r.read_index] > 0 {
+                fa.uniq += 1;
+                fa.uniq_agree += (r.combined.best_copy == r.mapped_copy) as usize;
+            }
+            fa.assignments.push((idx_map[r.read_index], r.combined));
+        }
+        out.push(fa);
     }
     out
 }
@@ -234,6 +253,7 @@ pub fn detect_families_from_files(
 
 #[cfg(test)]
 mod tests {
+    use super::super::copy_split::AlignedRead;
     use super::*;
 
     struct SplitMix64(u64);
@@ -307,7 +327,7 @@ mod tests {
 
     /// Two paralogs sharing a core but DIFFERING at 3 PSV offsets (so detection finds a family AND reads are
     /// resolvable), plus one copyB read aligned to copyA's region (a multimapper).
-    fn two_paralogs_with_psvs() -> (GenomeIndex, Vec<PrimaryRead>, Vec<(String, AlignedRead)>) {
+    fn two_paralogs_with_psvs() -> (GenomeIndex, Vec<PrimaryRead>, Vec<BamRead>) {
         let base = rand_seq(300, 0xC0FE_D1FF);
         let psv = [60usize, 150, 240];
         let (mut core_a, mut core_b) = (base.clone(), base);
@@ -341,7 +361,8 @@ mod tests {
         // a copyB read aligned to copyA's genomic region: seq = copyB's spliced transcript.
         let copyb_spliced = cat(&[&fb1, &core_b, &fb2]);
         let ar = AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
-        (genome, primary, vec![("c1".to_string(), ar)])
+        let bam = vec![BamRead { chrom: "c1".into(), read: ar, mapq: 60, name: "readB".into() }];
+        (genome, primary, bam)
     }
 
     #[test]
