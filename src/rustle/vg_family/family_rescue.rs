@@ -69,7 +69,10 @@ fn base_code(b: u8) -> Option<u8> {
 /// Faithful to `bench/denovo_families.py::kmer_hashes`: forward Horner code
 /// `Σ base_t · 4^(k-1-t)`; reverse-complement code substitutes `3 - base` and
 /// reverses the position order.
-fn window_canon_code(window: &[u8]) -> Option<u64> {
+///
+/// `pub(crate)` so the family-detection layer can reuse the exact same canonical
+/// encoder for its position-aware k-mer signatures.
+pub(crate) fn window_canon_code(window: &[u8]) -> Option<u64> {
     let mut fwd: u64 = 0;
     let mut rc: u64 = 0;
     for (i, &b) in window.iter().enumerate() {

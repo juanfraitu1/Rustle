@@ -21,6 +21,7 @@ pub mod psv_linkage; // Layer-2 "C": within-molecule PSV->junction linkage (PSV-
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
+pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
