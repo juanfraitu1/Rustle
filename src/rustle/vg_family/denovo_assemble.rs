@@ -158,6 +158,49 @@ fn junction_strand(genome: &GenomeIndex, chrom: &str, donor: u64, acceptor: u64)
     }
 }
 
+/// Build a transcript's spliced sequence + strand from its exon structure `[start, end)` + intron chain:
+/// require ALL-canonical consistent-strand junctions, fetch each exon, uppercase (so a later
+/// `reverse_complement`, which maps lowercase → N, is safe), and reverse-complement for a `-` strand.
+/// Returns `None` if a junction is non-canonical/inconsistent or a fetch fails. Length gating is the
+/// caller's. Shared by the assemble gate and the rescue thin-locus scan.
+pub fn build_spliced_seq(
+    genome: &GenomeIndex,
+    chrom: &str,
+    start: u64,
+    end: u64,
+    introns: &[(u64, u64)],
+) -> Option<(Vec<u8>, char)> {
+    let mut strand: Option<char> = None;
+    for &(d, a) in introns {
+        match junction_strand(genome, chrom, d, a) {
+            Some(st) => {
+                if strand.is_some_and(|s0| s0 != st) {
+                    return None;
+                }
+                strand = Some(st);
+            }
+            None => return None,
+        }
+    }
+    let mut exons = Vec::with_capacity(introns.len() + 1);
+    let mut prev = start;
+    for &(d, a) in introns {
+        exons.push((prev, d));
+        prev = a;
+    }
+    exons.push((prev, end));
+    let mut seq = Vec::new();
+    for &(xs, xe) in &exons {
+        let s = genome.fetch_sequence(chrom, xs, xe)?;
+        seq.extend(s.iter().map(|b| b.to_ascii_uppercase()));
+    }
+    let strand = strand.unwrap_or('+');
+    if strand == '-' {
+        seq = reverse_complement(&seq);
+    }
+    Some((seq, strand))
+}
+
 /// Assemble gate: keep skeletons with `>= min_reads` reads, span `<= max_span`, and ALL-canonical
 /// consistent-strand junctions; build the spliced sequence (reverse-complemented for a `-` strand) and
 /// require its length in `[min_spliced, max_spliced]`. Returns the gated `DenovoTranscript`s in input
@@ -171,52 +214,12 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
         if sk.end.saturating_sub(sk.start) > p.max_span {
             continue;
         }
-        // all-canonical, consistent-strand junctions.
-        let mut strand: Option<char> = None;
-        let mut ok = true;
-        for &(d, a) in &sk.introns {
-            match junction_strand(genome, &sk.chrom, d, a) {
-                Some(st) => {
-                    if strand.is_some_and(|s0| s0 != st) {
-                        ok = false;
-                        break;
-                    }
-                    strand = Some(st);
-                }
-                None => {
-                    ok = false;
-                    break;
-                }
-            }
-        }
-        if !ok {
+        let (seq, strand) = match build_spliced_seq(genome, &sk.chrom, sk.start, sk.end, &sk.introns) {
+            Some(v) => v,
+            None => continue,
+        };
+        if seq.len() < p.min_spliced || seq.len() > p.max_spliced {
             continue;
-        }
-        // exon coords from the intron chain + terminal extents.
-        let mut exons = Vec::with_capacity(sk.introns.len() + 1);
-        let mut prev = sk.start;
-        for &(d, a) in &sk.introns {
-            exons.push((prev, d));
-            prev = a;
-        }
-        exons.push((prev, sk.end));
-        // spliced sequence (uppercased; reverse_complement maps lowercase -> N, so normalise first).
-        let mut seq = Vec::new();
-        let mut fetch_ok = true;
-        for &(xs, xe) in &exons {
-            match genome.fetch_sequence(&sk.chrom, xs, xe) {
-                Some(s) => seq.extend(s.iter().map(|b| b.to_ascii_uppercase())),
-                None => {
-                    fetch_ok = false;
-                    break;
-                }
-            }
-        }
-        if !fetch_ok || seq.len() < p.min_spliced || seq.len() > p.max_spliced {
-            continue;
-        }
-        if strand == Some('-') {
-            seq = reverse_complement(&seq);
         }
         let n_exon = sk.introns.len() + 1;
         out.push(DenovoTranscript {
@@ -225,7 +228,7 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
             start: sk.start,
             end: sk.end,
             n_reads: sk.n_reads,
-            strand: strand.unwrap_or('+'),
+            strand,
             introns: sk.introns.clone(),
             seq,
         });
