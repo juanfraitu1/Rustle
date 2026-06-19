@@ -21,7 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::family_graph::contiguous_core_coverage;
+use super::family_graph::contiguous_core_coverage_bounded;
 use super::family_rescue::window_canon_code;
 use crate::vg::reverse_complement;
 
@@ -261,23 +261,23 @@ pub fn candidate_pairs(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usiz
     out
 }
 
-/// (3) POA edge confirmation: `contiguous_core_coverage` in both orientations (reverse-complement
-/// fallback for opposite-strand copies), `Some(core_recip)` iff `>= t_core`. `len_cap` guard. Uppercases
-/// the POA operands (the soft-mask lesson from `family_rescue`: `reverse_complement` maps lowercase → N).
+/// (3) POA edge confirmation: contiguous-core coverage in both orientations (reverse-complement fallback for
+/// opposite-strand copies), `Some(core_recip)` iff `>= t_core`. Uppercases the operands (the soft-mask lesson
+/// from `family_rescue`: `reverse_complement` maps lowercase → N).
 ///
-/// The cap is on the LARGER sequence (`max`), not the smaller: poasta's graph aligner allocates with the
-/// longer operand, so a (5 kb, 18 kb) pair OOMs on the 18 kb side even though `min = 5 kb`. (The python's NW
-/// is O(La·Lb) in C and tolerates this; poasta does not — see the OOM lesson.)
+/// `len_cap` is the poasta MEMORY THRESHOLD, not a hard skip: when the LARGER operand exceeds it, poasta's
+/// graph aligner would OOM (it allocates with the longer sequence — a (5 kb, 228 kb) pair blows up on the
+/// 228 kb side even though `min = 5 kb`), so confirmation falls back to a linear-memory longest-common-
+/// substring metric (`contiguous_core_coverage_bounded`). The fallback is faithful — a poasta ungapped-equal
+/// run IS a common substring — so a large read-through "hub" that homologously contains a copy is still
+/// confirmed (the DSFAM45 case) instead of being lost. Below the cap the exact poasta path is unchanged.
 pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
-    if a.len().max(b.len()) > p.len_cap {
-        return None;
-    }
     let au = a.to_ascii_uppercase();
     let bu = b.to_ascii_uppercase();
-    let mut cr = contiguous_core_coverage(&au, &bu);
+    let mut cr = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
     if cr < p.t_core {
         // opposite orientation (copies assembled on different strands).
-        let rc = contiguous_core_coverage(&au, &reverse_complement(&bu));
+        let rc = contiguous_core_coverage_bounded(&au, &reverse_complement(&bu), p.len_cap);
         if rc > cr {
             cr = rc;
         }
@@ -300,28 +300,27 @@ pub fn detect_edges(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usize, 
     detect_edges_reporting(reps, p).0
 }
 
-/// Like [`detect_edges`] but ALSO returns the candidate pairs SKIPPED at POA confirmation because a sequence
-/// exceeded the POA length cap (`p.len_cap`). Such a pair already passed the k-mer + contiguous-span homology
-/// prefilter, so it is a LIKELY family edge — it is just too large to verify by POA (poasta's graph aligner
-/// blows up on long divergent pairs). Returning these (rather than letting `confirm_edge`'s `len_cap` guard
-/// silently drop them) lets the caller AUDIT an oversized-gene family instead of losing it without a trace.
-/// The `.0` edge list is byte-identical to the old `detect_edges` (same candidate order, same POA).
+/// Like [`detect_edges`] but ALSO returns the candidate pairs whose larger transcript exceeded the poasta
+/// memory threshold (`p.len_cap`) and were therefore confirmed via the memory-bounded longest-common-substring
+/// FALLBACK rather than the exact poasta path. These edges are still produced (the fallback confirms them — no
+/// OOM, no loss); reporting them lets the caller AUDIT which family edges rest on the approximate large-
+/// sequence metric. `partition`/candidate order is preserved, so both lists are deterministic.
 pub fn detect_edges_reporting(
     reps: &[DenovoTranscript],
     p: &DetectParams,
 ) -> (Vec<(usize, usize, f64)>, Vec<(usize, usize)>) {
     use rayon::prelude::*;
-    // `candidate_pairs` is already homology-prefiltered; split off the oversized pairs (which `confirm_edge`
-    // would reject on the `len_cap` guard anyway) so they can be REPORTED. `partition` keeps candidate order,
-    // so both lists are deterministic.
-    let (skipped, poa_pairs): (Vec<_>, Vec<_>) = candidate_pairs(reps, p)
-        .into_iter()
-        .partition(|&(a, b)| reps[a].seq.len().max(reps[b].seq.len()) > p.len_cap);
-    let edges = poa_pairs
+    let pairs = candidate_pairs(reps, p);
+    let fallback: Vec<(usize, usize)> = pairs
+        .iter()
+        .copied()
+        .filter(|&(a, b)| reps[a].seq.len().max(reps[b].seq.len()) > p.len_cap)
+        .collect();
+    let edges = pairs
         .into_par_iter()
         .filter_map(|(a, b)| confirm_edge(&reps[a].seq, &reps[b].seq, p).map(|cr| (a, b, cr)))
         .collect();
-    (edges, skipped)
+    (edges, fallback)
 }
 
 #[cfg(test)]
@@ -616,18 +615,26 @@ mod tests {
     }
 
     #[test]
-    fn confirm_edge_len_cap_guard() {
-        // the cap is on the LARGER operand (poasta allocates with the longer sequence). A pair where the
-        // SMALL side is under the cap but the LARGE side is over it must STILL be skipped — that asymmetric
-        // case (e.g. a 228 kb read-through hub vs a 2 kb copy) is exactly the OOM we are guarding against.
+    fn confirm_edge_over_cap_uses_fallback_not_skip() {
+        // over the poasta cap, confirm_edge switches to the linear-memory LCS fallback instead of skipping.
+        // DISJOINT random sequences still fail the t_core bar under the fallback -> None (low coverage), NOT
+        // an OOM and NOT a blind drop.
         let p = DetectParams { len_cap: 100, ..DetectParams::default() };
         let a = rand_seq(560, 0x1);
         let b = rand_seq(560, 0x2);
-        assert!(confirm_edge(&a, &b, &p).is_none(), "max(len) 560 > len_cap 100 -> skipped");
-        let small = rand_seq(50, 0x3);
+        assert!(confirm_edge(&a, &b, &p).is_none(), "disjoint over-cap pair -> low fallback coverage -> None");
+        // a true homologous over-cap pair (shared 400 bp core) must now be CONFIRMED via the fallback (the
+        // recall the old hard-skip lost): the embedded core gives high LCS coverage.
+        let core = rand_seq(400, 0x5);
+        let mut h0 = rand_seq(120, 0x6);
+        h0.extend_from_slice(&core);
+        h0.extend(rand_seq(120, 0x7));
+        let mut h1 = rand_seq(120, 0x8);
+        h1.extend_from_slice(&core);
+        h1.extend(rand_seq(120, 0x9));
         assert!(
-            confirm_edge(&small, &a, &p).is_none(),
-            "small (50) under cap but large (560) over it -> still skipped (max-based guard)"
+            confirm_edge(&h0, &h1, &p).is_some(),
+            "over-cap homologous pair confirmed by the bounded fallback (no OOM, no loss)"
         );
     }
 
@@ -668,24 +675,25 @@ mod tests {
     }
 
     #[test]
-    fn detect_edges_reporting_flags_oversized_skipped_pairs() {
-        // a homologous pair that candidate_pairs finds. Under a NORMAL len_cap it is POA-confirmed and nothing
-        // is skipped; under a tiny len_cap the SAME prefiltered pair is too large for POA -> it must be
-        // REPORTED in `skipped` (not silently dropped), and produce no edge.
+    fn detect_edges_reporting_uses_fallback_for_oversized_pairs() {
+        // a homologous pair that candidate_pairs finds. Under a NORMAL cap it is POA-confirmed and no fallback
+        // is used; under a tiny cap the SAME pair is over the poasta threshold -> it is confirmed by the
+        // bounded fallback (NOT skipped) AND reported, so the family edge survives and is auditable.
         let core = rand_seq(400, 0xEE88);
         let reps = [
             homolog_tx("r0", 0xA1, &core, 0xA2, 5),
             homolog_tx("r1", 0xB1, &core, 0xB2, 5),
         ];
-        let (edges, skipped) = detect_edges_reporting(&reps, &DetectParams::default());
+        let (edges, fb) = detect_edges_reporting(&reps, &DetectParams::default());
         assert_eq!(edges.len(), 1, "homologous pair confirmed under normal cap");
-        assert!(skipped.is_empty(), "nothing oversized under normal cap");
+        assert!(fb.is_empty(), "no fallback used under normal cap");
         // the .0 list still matches plain detect_edges (faithfulness of the delegation).
         assert_eq!(edges, detect_edges(&reps, &DetectParams::default()));
 
         let p = DetectParams { len_cap: 5, ..DetectParams::default() };
-        let (edges2, skipped2) = detect_edges_reporting(&reps, &p);
-        assert!(edges2.is_empty(), "no edge confirmed when every seq exceeds the cap");
-        assert_eq!(skipped2, vec![(0, 1)], "the oversized candidate pair is reported, not dropped");
+        let (edges2, fb2) = detect_edges_reporting(&reps, &p);
+        assert_eq!(edges2.len(), 1, "fallback still confirms the homologous pair (no OOM, no loss)");
+        assert_eq!((edges2[0].0, edges2[0].1), (0, 1));
+        assert_eq!(fb2, vec![(0, 1)], "the fallback-confirmed pair is reported for audit");
     }
 }

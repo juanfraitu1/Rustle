@@ -183,12 +183,12 @@ pub struct FamilyAssignment {
 /// a copy (PSV + copy-specific-junction likelihood, two-pass). `bam_reads` carry chrom (for region
 /// filtering) and mapq (for the silver-standard). The runnable detection + per-read copy-assignment pipeline.
 #[allow(clippy::too_many_arguments)]
-/// A homology-prefiltered candidate family pair that detection SKIPPED at POA confirmation because a transcript
-/// exceeded the POA length cap (`cfg.detect.len_cap`). These passed the k-mer + contiguous-span homology
-/// filter (so they are LIKELY family edges) but were too large to verify by POA. Surfaced so an oversized-gene
-/// family is auditable — never silently dropped.
+/// A homology-prefiltered candidate family pair whose larger transcript exceeded the poasta memory threshold
+/// (`cfg.detect.len_cap`) and was therefore confirmed via the memory-bounded longest-common-substring FALLBACK
+/// rather than the exact poasta path. The edge is still produced (no OOM, no loss); this record surfaces which
+/// family edges rest on the approximate large-sequence metric, for audit.
 #[derive(Debug, Clone)]
-pub struct SkippedPoa {
+pub struct FallbackEdge {
     pub chrom: String,
     pub tid_a: String,
     pub start_a: u64,
@@ -208,7 +208,7 @@ pub fn detect_and_assign(
     win: u64,
     min_copies: usize,
     p: &AssignParams,
-) -> (Vec<FamilyAssignment>, Vec<SkippedPoa>) {
+) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>) {
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
     let rep_idx = collapse_loci(&transcripts);
@@ -220,11 +220,15 @@ pub fn detect_and_assign(
         transcripts.len(),
         reps.len()
     );
-    let (edges, skipped_pairs) = detect_edges_reporting(&reps, &cfg.detect);
-    eprintln!("[detect_and_assign] {} homology edges, {} oversized pairs skipped", edges.len(), skipped_pairs.len());
-    let skipped: Vec<SkippedPoa> = skipped_pairs
+    let (edges, fallback_pairs) = detect_edges_reporting(&reps, &cfg.detect);
+    eprintln!(
+        "[detect_and_assign] {} homology edges ({} via large-seq fallback)",
+        edges.len(),
+        fallback_pairs.len()
+    );
+    let fallback: Vec<FallbackEdge> = fallback_pairs
         .iter()
-        .map(|&(a, b)| SkippedPoa {
+        .map(|&(a, b)| FallbackEdge {
             chrom: reps[a].chrom.clone(),
             tid_a: reps[a].tid.clone(),
             start_a: reps[a].start,
@@ -333,7 +337,7 @@ pub fn detect_and_assign(
         }
         out.push(fa);
     }
-    (out, skipped)
+    (out, fallback)
 }
 
 /// I/O wrapper: load primary reads from a BAM and the genome from a FASTA (scoped via `.fai` to only the
@@ -489,7 +493,7 @@ mod tests {
         contigs.insert(chrom.to_string());
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
-        let (fas, skipped) = detect_and_assign(
+        let (fas, fallback) = detect_and_assign(
             &primary,
             &bam_reads,
             &genome,
@@ -498,8 +502,8 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
         );
-        if !skipped.is_empty() {
-            eprintln!("oversized POA pairs skipped (auditable): {}", skipped.len());
+        if !fallback.is_empty() {
+            eprintln!("family edges via large-seq fallback (auditable): {}", fallback.len());
         }
         eprintln!("co-located families with assignments: {}", fas.len());
         for fa in &fas {
@@ -520,7 +524,7 @@ mod tests {
     #[test]
     fn detect_and_assign_resolves_multimapper_end_to_end() {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
-        let (fas, skipped) = detect_and_assign(
+        let (fas, fallback) = detect_and_assign(
             &primary,
             &aligned,
             &genome,
@@ -529,7 +533,7 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
         );
-        assert!(skipped.is_empty(), "small paralogs are well under the POA cap");
+        assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);

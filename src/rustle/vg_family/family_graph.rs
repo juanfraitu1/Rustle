@@ -964,6 +964,97 @@ pub fn contiguous_core_coverage(a: &[u8], b: &[u8]) -> f64 {
     longest as f64 / minlen as f64
 }
 
+/// Longest common SUBSTRING (contiguous, EXACT) of `a` and `b`, in O(min(|a|,|b|)) memory via a suffix
+/// automaton built on the SHORTER sequence and scanned by the longer.
+///
+/// This is the memory-bounded equivalent of [`contiguous_core_coverage`]'s "longest ungapped equal run": a
+/// run there is a maximal stretch of alignment columns that are BOTH non-gap AND equal — i.e. a substring
+/// shared by both sequences (a mismatch resets the run, so there are no internal mismatches). poasta finds it
+/// via a memory-hungry graph alignment that OOMs on a long (e.g. 228 kb read-through) operand; the suffix
+/// automaton finds the GLOBAL longest common substring directly in LINEAR memory, so it never OOMs.
+pub fn longest_common_substring(a: &[u8], b: &[u8]) -> usize {
+    use std::collections::BTreeMap;
+    let (s, t) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+    if s.is_empty() || t.is_empty() {
+        return 0;
+    }
+    // suffix automaton over the shorter string `s`. State = (longest len in its endpos class, suffix link,
+    // outgoing transitions). Deterministic (BTreeMap transitions; the result never depends on map order).
+    struct St {
+        len: i32,
+        link: i32,
+        next: BTreeMap<u8, i32>,
+    }
+    let mut st: Vec<St> = Vec::with_capacity(2 * s.len());
+    st.push(St { len: 0, link: -1, next: BTreeMap::new() });
+    let mut last = 0i32;
+    for &c in s {
+        let cur = st.len() as i32;
+        let cur_len = st[last as usize].len + 1;
+        st.push(St { len: cur_len, link: -1, next: BTreeMap::new() });
+        let mut p = last;
+        while p != -1 && !st[p as usize].next.contains_key(&c) {
+            st[p as usize].next.insert(c, cur);
+            p = st[p as usize].link;
+        }
+        if p == -1 {
+            st[cur as usize].link = 0;
+        } else {
+            let q = st[p as usize].next[&c];
+            if st[p as usize].len + 1 == st[q as usize].len {
+                st[cur as usize].link = q;
+            } else {
+                let clone = st.len() as i32;
+                let clone_len = st[p as usize].len + 1;
+                let (qlink, qnext) = (st[q as usize].link, st[q as usize].next.clone());
+                st.push(St { len: clone_len, link: qlink, next: qnext });
+                while p != -1 && st[p as usize].next.get(&c) == Some(&q) {
+                    st[p as usize].next.insert(c, clone);
+                    p = st[p as usize].link;
+                }
+                st[q as usize].link = clone;
+                st[cur as usize].link = clone;
+            }
+        }
+        last = cur;
+    }
+    // scan `t`, tracking the longest match ending at each position (canonical SAM-LCS walk).
+    let (mut v, mut l, mut best) = (0i32, 0i32, 0i32);
+    for &c in t {
+        while v != 0 && !st[v as usize].next.contains_key(&c) {
+            v = st[v as usize].link;
+            l = st[v as usize].len;
+        }
+        match st[v as usize].next.get(&c) {
+            Some(&nx) => {
+                v = nx;
+                l += 1;
+            }
+            None => l = 0, // dead-ended at the root
+        }
+        if l > best {
+            best = l;
+        }
+    }
+    best as usize
+}
+
+/// [`contiguous_core_coverage`] with a MEMORY GUARD: when the larger sequence exceeds `poasta_cap`, poasta's
+/// graph aligner would OOM, so use the linear-memory longest-common-substring metric instead (faithful — a
+/// poasta ungapped-equal run IS a common substring). At or below the cap, the exact poasta path is used, so
+/// the validated small-transcript behaviour is byte-identical.
+pub fn contiguous_core_coverage_bounded(a: &[u8], b: &[u8], poasta_cap: usize) -> f64 {
+    if a.len().max(b.len()) > poasta_cap {
+        let minlen = a.len().min(b.len());
+        if minlen == 0 {
+            return 0.0;
+        }
+        longest_common_substring(a, b) as f64 / minlen as f64
+    } else {
+        contiguous_core_coverage(a, b)
+    }
+}
+
 /// Threshold for the POA contiguous-core coverage family-merge gate, read from
 /// `RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE`. Default `0.0` => gate OFF =>
 /// byte-identical to the pre-gate (jaccard-only) merge behaviour. When `> 0.0`,
@@ -1633,6 +1724,90 @@ mod tests {
         let cov = contiguous_core_coverage(&a, &b);
         assert!(cov < 0.13,
             "disjoint random sequences should give near-zero contiguous-core coverage (got {cov:.3})");
+    }
+
+    #[test]
+    fn longest_common_substring_basic() {
+        assert_eq!(longest_common_substring(b"ABCDE", b"XBCDY"), 3, "BCD");
+        assert_eq!(longest_common_substring(b"AAAA", b"AAAA"), 4, "identical");
+        assert_eq!(longest_common_substring(b"ABC", b"XYZ"), 0, "disjoint");
+        assert_eq!(longest_common_substring(b"", b"ABC"), 0, "empty");
+        // asymmetric: the short string is a contiguous substring of the long one (the read-through case).
+        assert_eq!(longest_common_substring(b"GATTACA", b"TTTGATTACAGGG"), 7, "short ⊂ long");
+        assert_eq!(longest_common_substring(b"TTTGATTACAGGG", b"GATTACA"), 7, "order-independent");
+    }
+
+    #[test]
+    fn longest_common_substring_matches_naive_on_random() {
+        // cross-check the suffix-automaton LCS against an O(n^2) naive on small random strings.
+        fn naive(a: &[u8], b: &[u8]) -> usize {
+            let mut best = 0;
+            for i in 0..a.len() {
+                for j in 0..b.len() {
+                    let mut k = 0;
+                    while i + k < a.len() && j + k < b.len() && a[i + k] == b[j + k] {
+                        k += 1;
+                    }
+                    if k > best {
+                        best = k;
+                    }
+                }
+            }
+            best
+        }
+        for seed in 0..8u64 {
+            let a = core_rand_seq(120, 0x5151_0000 ^ seed);
+            let b = core_rand_seq(140, 0x6262_0000 ^ (seed * 7));
+            assert_eq!(longest_common_substring(&a, &b), naive(&a, &b), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn bounded_core_coverage_below_cap_is_exact_poasta() {
+        // a true-copy pair (400 bp exact core + divergent flanks); below the cap the bounded form must equal
+        // the exact poasta path bit-for-bit (the validated small-transcript behaviour is untouched).
+        let core = core_rand_seq(400, 0xC0FE_4242);
+        let mut a = core_rand_seq(80, 0xAAAA_4242);
+        a.extend_from_slice(&core);
+        a.extend(core_rand_seq(80, 0xAAAA_4243));
+        let mut b = core_rand_seq(80, 0xBBBB_4242);
+        b.extend_from_slice(&core);
+        b.extend(core_rand_seq(80, 0xBBBB_4243));
+        let poasta = contiguous_core_coverage(&a, &b);
+        assert_eq!(
+            contiguous_core_coverage_bounded(&a, &b, 100_000),
+            poasta,
+            "below cap = exact poasta"
+        );
+        // above the cap the LCS fallback recovers the SAME 400 bp core fraction (no OOM, no loss).
+        let lcs = contiguous_core_coverage_bounded(&a, &b, 10);
+        assert!(lcs >= 0.6, "fallback recovers the 400 bp core fraction (got {lcs:.3})");
+        assert!(
+            (lcs - poasta).abs() < 0.1,
+            "fallback ~ poasta on a clean exact core (lcs {lcs:.3} vs poasta {poasta:.3})"
+        );
+    }
+
+    #[test]
+    fn bounded_core_coverage_fallback_separates_copies_from_disjoint() {
+        // the fallback must preserve the family/non-family separation poasta gives. Two LONG disjoint random
+        // sequences (forcing the fallback) share only chance substrings -> well under the 0.13 family bar.
+        let a = core_rand_seq(5000, 0x1111_9999);
+        let b = core_rand_seq(5000, 0x2222_9999);
+        assert!(
+            contiguous_core_coverage_bounded(&a, &b, 100) < 0.13,
+            "disjoint long sequences stay below the family bar under the fallback"
+        );
+        // a long read-through that CONTAINS a 2 kb copy as a substring -> high coverage of the copy (the
+        // DSFAM45 hub case: the copy joins the family via the bounded fallback instead of OOMing).
+        let copy = core_rand_seq(2000, 0x7777_0001);
+        let mut hub = core_rand_seq(3000, 0x8888_0001);
+        hub.extend_from_slice(&copy);
+        hub.extend(core_rand_seq(3000, 0x8888_0002));
+        assert!(
+            contiguous_core_coverage_bounded(&copy, &hub, 100) >= 0.9,
+            "a copy embedded in a long read-through hub is confirmed via the fallback"
+        );
     }
 
     /// GATE (a): DEFAULT-OFF is byte-identical. With the env unset (default 0.0),

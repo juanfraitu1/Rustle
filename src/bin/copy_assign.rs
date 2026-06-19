@@ -15,7 +15,7 @@ use std::io::Write;
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::denovo_assemble::reads_in_region;
-use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, SkippedPoa};
+use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -48,10 +48,10 @@ struct Args {
     /// BAM-reading threads.
     #[arg(long, default_value_t = 4)]
     threads: usize,
-    /// Max transcript length (bp) for POA homology confirmation. A candidate family pair where either
-    /// transcript exceeds this is SKIPPED (recorded in `<out>.skipped.tsv`) rather than POA'd — poasta's graph
-    /// aligner blows up on long divergent pairs, so lowering this (e.g. 8000) keeps dense/large-gene regions
-    /// from exhausting memory. Default 20000 matches the python.
+    /// poasta memory threshold (bp) for POA homology confirmation. A candidate family pair whose larger
+    /// transcript exceeds this is confirmed via the linear-memory longest-common-substring FALLBACK instead of
+    /// poasta (which OOMs on long sequences); those edges are recorded in `<out>.fallback.tsv`. Lower it (e.g.
+    /// 8000) on dense/large-gene regions to keep poasta off the big operands. Default 20000 matches the python.
     #[arg(long, default_value_t = 20_000)]
     max_poa_len: usize,
 }
@@ -122,11 +122,11 @@ fn main() -> Result<()> {
     );
 
     let mut cfg = DenovoConfig::default();
-    cfg.detect.len_cap = args.max_poa_len; // POA memory guard: cap the transcript size we will align
+    cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     let params = AssignParams::default();
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut assign_rows: Vec<AssignRow> = Vec::new();
-    let mut skipped_all: Vec<SkippedPoa> = Vec::new(); // oversized POA pairs skipped (documented, not lost)
+    let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
     for (contig, ranges) in &by_contig {
@@ -137,8 +137,8 @@ fn main() -> Result<()> {
         for &(lo, hi) in ranges {
             let (primary, bam_reads) = reads_in_region(&args.bam, contig, lo, hi, args.threads)
                 .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
-            let (fams, skipped) = detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params);
-            skipped_all.extend(skipped);
+            let (fams, fallback) = detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params);
+            fallback_all.extend(fallback);
             for fa in &fams {
                 let fid = format!("CAFAM{gfam}");
                 gfam += 1;
@@ -195,12 +195,12 @@ fn main() -> Result<()> {
         )?;
     }
 
-    // document every candidate family pair that the POA length cap skipped, so an oversized-gene family is
-    // visible/auditable rather than silently lost. Only written when something was actually skipped.
-    if !skipped_all.is_empty() {
-        let mut sh = std::fs::File::create(format!("{}.skipped.tsv", args.out))?;
+    // document every family edge confirmed via the large-sequence LCS fallback (poasta memory threshold
+    // exceeded), so edges resting on the approximate metric are auditable. Only written when the fallback ran.
+    if !fallback_all.is_empty() {
+        let mut sh = std::fs::File::create(format!("{}.fallback.tsv", args.out))?;
         writeln!(sh, "chrom\ttid_a\tstart_a\tend_a\tlen_a\ttid_b\tstart_b\tend_b\tlen_b")?;
-        for s in &skipped_all {
+        for s in &fallback_all {
             writeln!(
                 sh,
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -208,8 +208,8 @@ fn main() -> Result<()> {
             )?;
         }
         eprintln!(
-            "[copy_assign] ⚠ {} candidate family pair(s) SKIPPED (transcript > --max-poa-len={}); wrote {}.skipped.tsv — re-run those loci with a larger --max-poa-len + ulimit to verify them",
-            skipped_all.len(),
+            "[copy_assign] {} family edge(s) confirmed via the large-seq LCS fallback (transcript > --max-poa-len={}); wrote {}.fallback.tsv",
+            fallback_all.len(),
             args.max_poa_len,
             args.out
         );
