@@ -29,9 +29,13 @@ struct Args {
     /// Genome FASTA (with a `.fai` so only the needed contig is loaded).
     #[arg(long)]
     fasta: String,
-    /// Region to scan as `chrom:start-end` (a co-located cluster region).
+    /// A single region to scan as `chrom:start-end`.
     #[arg(long)]
-    region: String,
+    region: Option<String>,
+    /// A regions FILE (one `chrom:start-end` per line; extra whitespace-separated columns ignored) for a
+    /// genome-wide sweep. Regions are grouped by contig so each contig is loaded ONCE.
+    #[arg(long)]
+    regions: Option<String>,
     /// Output prefix; writes `<out>.families.tsv` and `<out>.assignments.tsv`.
     #[arg(long)]
     out: String,
@@ -54,62 +58,139 @@ fn status_str(s: AssignStatus) -> &'static str {
     }
 }
 
+fn parse_region(s: &str) -> Result<(String, u64, u64)> {
+    let tok = s.split_whitespace().next().context("empty region")?;
+    let (chrom, range) = tok.split_once(':').context("region must be chrom:start-end")?;
+    let (lo_s, hi_s) = range.split_once('-').context("region must be chrom:start-end")?;
+    Ok((chrom.to_string(), lo_s.parse().context("bad region start")?, hi_s.parse().context("bad region end")?))
+}
+
+/// One assignment-table row (resolved while the region's reads are in scope).
+struct AssignRow {
+    read_name: String,
+    family_id: String,
+    assigned_copy: usize,
+    status: &'static str,
+    n_decisive: usize,
+    margin: f64,
+}
+/// One family-table row.
+struct FamilyRow {
+    family_id: String,
+    chrom: String,
+    n_copies: usize,
+    n_reads: usize,
+    psv_cols: usize,
+    resolvable_psv: usize,
+    resolvable_j: usize,
+    junction_only: usize,
+    assigned_j: usize,
+    uniq_agree: usize,
+    uniq: usize,
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
-    let (chrom, range) = args.region.split_once(':').context("region must be chrom:start-end")?;
-    let (lo_s, hi_s) = range.split_once('-').context("region must be chrom:start-end")?;
-    let (lo, hi): (u64, u64) = (lo_s.parse().context("bad region start")?, hi_s.parse().context("bad region end")?);
 
-    eprintln!("[copy_assign] region {chrom}:{lo}-{hi}");
-    let (primary, bam_reads) =
-        reads_in_region(&args.bam, chrom, lo, hi, args.threads).with_context(|| format!("reading {}", args.bam))?;
-    eprintln!("[copy_assign] {} primary, {} mapped reads", primary.len(), bam_reads.len());
-
-    let contigs: HashSet<String> = std::iter::once(chrom.to_string()).collect();
-    let genome =
-        GenomeIndex::from_fasta_contigs(&args.fasta, &contigs).with_context(|| format!("loading {}", args.fasta))?;
-
-    let fams = detect_and_assign(
-        &primary,
-        &bam_reads,
-        &genome,
-        &DenovoConfig::default(),
-        args.win,
-        args.min_copies,
-        &AssignParams::default(),
+    // collect the regions, then group by contig so each contig loads ONCE (memory-bounded sweep).
+    let regions: Vec<(String, u64, u64)> = match (&args.region, &args.regions) {
+        (Some(r), None) => vec![parse_region(r)?],
+        (None, Some(f)) => std::fs::read_to_string(f)
+            .with_context(|| format!("reading {f}"))?
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(parse_region)
+            .collect::<Result<_>>()?,
+        _ => anyhow::bail!("provide exactly one of --region or --regions"),
+    };
+    let mut by_contig: std::collections::BTreeMap<String, Vec<(u64, u64)>> = std::collections::BTreeMap::new();
+    for (c, lo, hi) in regions {
+        by_contig.entry(c).or_default().push((lo, hi));
+    }
+    eprintln!(
+        "[copy_assign] sweeping {} region(s) over {} contig(s)",
+        by_contig.values().map(|v| v.len()).sum::<usize>(),
+        by_contig.len()
     );
-    eprintln!("[copy_assign] {} co-located families", fams.len());
+
+    let cfg = DenovoConfig::default();
+    let params = AssignParams::default();
+    let mut family_rows: Vec<FamilyRow> = Vec::new();
+    let mut assign_rows: Vec<AssignRow> = Vec::new();
+    let mut gfam = 0usize; // global family counter (unique ids across regions)
+
+    for (contig, ranges) in &by_contig {
+        // load this contig once; it is dropped (freed) before the next contig.
+        let contigs: HashSet<String> = std::iter::once(contig.clone()).collect();
+        let genome = GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)
+            .with_context(|| format!("loading {} for {contig}", args.fasta))?;
+        for &(lo, hi) in ranges {
+            let (primary, bam_reads) = reads_in_region(&args.bam, contig, lo, hi, args.threads)
+                .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
+            let fams = detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params);
+            for fa in &fams {
+                let fid = format!("CAFAM{gfam}");
+                gfam += 1;
+                for (ri, a) in &fa.assignments {
+                    assign_rows.push(AssignRow {
+                        read_name: bam_reads[*ri].name.clone(),
+                        family_id: fid.clone(),
+                        assigned_copy: a.best_copy,
+                        status: status_str(a.status),
+                        n_decisive: a.n_decisive,
+                        margin: a.log_lr_margin,
+                    });
+                }
+                family_rows.push(FamilyRow {
+                    family_id: fid,
+                    chrom: fa.chrom.clone(),
+                    n_copies: fa.n_copies,
+                    n_reads: fa.n_reads,
+                    psv_cols: fa.psv_cols,
+                    resolvable_psv: fa.resolvable_psv,
+                    resolvable_j: fa.resolvable_j,
+                    junction_only: fa.junction_only,
+                    assigned_j: fa.assigned_j,
+                    uniq_agree: fa.uniq_agree,
+                    uniq: fa.uniq,
+                });
+            }
+            eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", bam_reads.len(), fams.len());
+        }
+    }
 
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     writeln!(
         fh,
         "family_id\tchrom\tn_copies\tn_reads\tpsv_cols\tresolvable_psv\tresolvable_j\tjunction_only\tassigned_j\tuniq_agree\tuniq"
     )?;
-    for fa in &fams {
+    for r in &family_rows {
         writeln!(
             fh,
             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            fa.family_id, fa.chrom, fa.n_copies, fa.n_reads, fa.psv_cols, fa.resolvable_psv, fa.resolvable_j,
-            fa.junction_only, fa.assigned_j, fa.uniq_agree, fa.uniq
+            r.family_id, r.chrom, r.n_copies, r.n_reads, r.psv_cols, r.resolvable_psv, r.resolvable_j,
+            r.junction_only, r.assigned_j, r.uniq_agree, r.uniq
+        )?;
+    }
+    let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin")?;
+    for r in &assign_rows {
+        writeln!(
+            ah,
+            "{}\t{}\t{}\t{}\t{}\t{:.3}",
+            r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin
         )?;
     }
 
-    let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin")?;
-    for fa in &fams {
-        for (ri, a) in &fa.assignments {
-            writeln!(
-                ah,
-                "{}\t{}\t{}\t{}\t{}\t{:.3}",
-                bam_reads[*ri].name, fa.family_id, a.best_copy, status_str(a.status), a.n_decisive, a.log_lr_margin
-            )?;
-        }
-    }
-
-    let (uniq, agree): (usize, usize) = fams.iter().fold((0, 0), |(u, g), f| (u + f.uniq, g + f.uniq_agree));
+    let (uniq, agree): (usize, usize) = family_rows.iter().fold((0, 0), |(u, g), f| (u + f.uniq, g + f.uniq_agree));
+    eprintln!(
+        "[copy_assign] {} families, {} read assignments",
+        family_rows.len(),
+        assign_rows.len()
+    );
     if uniq > 0 {
         eprintln!(
-            "[copy_assign] silver-standard unique-mapper agreement: {agree}/{uniq} ({:.1}%)",
+            "[copy_assign] genome-wide silver-standard unique-mapper agreement: {agree}/{uniq} ({:.1}%)",
             100.0 * agree as f64 / uniq as f64
         );
     }
