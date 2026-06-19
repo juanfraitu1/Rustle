@@ -12,6 +12,9 @@
 //! (via `bam::exons_from_cigar`) and loads the `GenomeIndex`; these functions are the testable transforms.
 //! The gate reuses `GenomeIndex::{is_canonical_junction, fetch_sequence}` and `vg::reverse_complement`.
 
+use anyhow::Result;
+use noodles_sam::alignment::RecordBuf;
+
 use super::family_detect::DenovoTranscript;
 use crate::genome::GenomeIndex;
 use crate::vg::reverse_complement;
@@ -74,6 +77,53 @@ pub fn pass1_skeletons(reads: &[PrimaryRead], min_reads: u32) -> Vec<Skeleton> {
             introns,
         })
         .collect()
+}
+
+/// Build a `PrimaryRead` from a mapped PRIMARY alignment record (the Pass-1 I/O edge, mirroring the
+/// python `bam.fetch()` filter). Returns `None` for unmapped / secondary / supplementary records (the ones
+/// Pass-1 skips) or a record with no exons. Coordinates are 0-based (matching `GenomeIndex` and pysam's
+/// `reference_start`); introns are the gaps between consecutive `bam::exons_from_cigar` exons. `chrom` is
+/// the record's reference-sequence name, resolved by the caller from the header.
+pub fn primary_read_from_record(record: &RecordBuf, chrom: &str) -> Option<PrimaryRead> {
+    let flags = record.flags();
+    if flags.is_unmapped() || flags.is_secondary() || flags.is_supplementary() {
+        return None;
+    }
+    let ref_start = (record.alignment_start()?.get() as u64).saturating_sub(1); // 1-based -> 0-based
+    let exons = crate::bam::exons_from_cigar(ref_start, record.cigar()).ok()?;
+    if exons.is_empty() {
+        return None;
+    }
+    // introns = gaps between consecutive exons (the shared exon-parser derivation).
+    let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+    Some(PrimaryRead {
+        chrom: chrom.to_string(),
+        ref_start,
+        ref_end: exons.last().map(|e| e.1).unwrap_or(ref_start),
+        introns,
+    })
+}
+
+/// Scan every PRIMARY mapped alignment in a BAM into `PrimaryRead`s (the Pass-1 input). I/O driver:
+/// opens the BAM, reads the header for reference names, and applies `primary_read_from_record`.
+pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<PrimaryRead>> {
+    let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
+    let header = reader.read_header()?;
+    let mut record = RecordBuf::default();
+    let mut out = Vec::new();
+    while reader.read_record_buf(&header, &mut record)? > 0 {
+        let chrom = match record
+            .reference_sequence_id()
+            .and_then(|id| header.reference_sequences().get_index(id))
+        {
+            Some((name, _)) => format!("{name}"),
+            None => continue,
+        };
+        if let Some(pr) = primary_read_from_record(&record, &chrom) {
+            out.push(pr);
+        }
+    }
+    Ok(out)
 }
 
 /// Gate parameters (defaults mirror `denovo_assemble_gate.py`).
@@ -188,6 +238,77 @@ mod tests {
 
     fn pr(chrom: &str, start: u64, end: u64, introns: &[(u64, u64)]) -> PrimaryRead {
         PrimaryRead { chrom: chrom.into(), ref_start: start, ref_end: end, introns: introns.to_vec() }
+    }
+
+    use noodles_core::Position;
+    use noodles_sam::alignment::record::cigar::{op::Kind, Op};
+    use noodles_sam::alignment::record::Flags;
+    use noodles_sam::alignment::record_buf::Cigar;
+
+    /// Build a minimal mapped record with the given flags, 1-based alignment start, and CIGAR ops.
+    fn rec(flags: Flags, start_1b: usize, ops: Vec<Op>) -> RecordBuf {
+        let cigar: Cigar = ops.into_iter().collect();
+        RecordBuf::builder()
+            .set_flags(flags)
+            .set_alignment_start(Position::try_from(start_1b).unwrap())
+            .set_cigar(cigar)
+            .build()
+    }
+
+    // ---- primary_read_from_record ----
+
+    #[test]
+    fn record_to_primary_read_0based_with_introns() {
+        // 80M20N80M at 1-based 101 -> 0-based start 100, exon1 [100,180), intron [180,200), exon2 [200,280).
+        let r = rec(
+            Flags::default(),
+            101,
+            vec![Op::new(Kind::Match, 80), Op::new(Kind::Skip, 20), Op::new(Kind::Match, 80)],
+        );
+        let p = primary_read_from_record(&r, "c1").expect("primary mapped read");
+        assert_eq!(p.chrom, "c1");
+        assert_eq!(p.ref_start, 100);
+        assert_eq!(p.ref_end, 280);
+        assert_eq!(p.introns, vec![(180, 200)]);
+    }
+
+    #[test]
+    fn record_to_primary_read_single_exon_no_introns() {
+        let r = rec(Flags::default(), 101, vec![Op::new(Kind::Match, 100)]);
+        let p = primary_read_from_record(&r, "c1").expect("primary mapped read");
+        assert_eq!((p.ref_start, p.ref_end), (100, 200));
+        assert!(p.introns.is_empty());
+    }
+
+    /// Real-data smoke check for the BAM adapter + Pass-1 (no FASTA needed). Ignored by default; run with:
+    ///   RUSTLE_DENOVO_SMOKE_BAM=/path/to.bam cargo test --lib -- --ignored smoke_pass1
+    #[test]
+    #[ignore = "needs a real BAM via RUSTLE_DENOVO_SMOKE_BAM"]
+    fn smoke_pass1_on_real_bam() {
+        let bam = match std::env::var("RUSTLE_DENOVO_SMOKE_BAM") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        let reads = primary_reads_from_bam(&bam, 4).expect("read the BAM");
+        assert!(!reads.is_empty(), "a real BAM should yield primary reads");
+        let sk = pass1_skeletons(&reads, PASS1_MIN_READS);
+        let multi = sk.iter().filter(|s| !s.introns.is_empty()).count();
+        assert!(!sk.is_empty(), "primary reads should form read-coherence skeletons");
+        eprintln!(
+            "smoke: {} primary reads -> {} skeletons (>= {} reads); {} multi-exon",
+            reads.len(),
+            sk.len(),
+            PASS1_MIN_READS,
+            multi
+        );
+    }
+
+    #[test]
+    fn record_to_primary_read_skips_secondary_supplementary_unmapped() {
+        let ops = || vec![Op::new(Kind::Match, 80), Op::new(Kind::Skip, 20), Op::new(Kind::Match, 80)];
+        assert!(primary_read_from_record(&rec(Flags::SECONDARY, 101, ops()), "c1").is_none());
+        assert!(primary_read_from_record(&rec(Flags::SUPPLEMENTARY, 101, ops()), "c1").is_none());
+        assert!(primary_read_from_record(&rec(Flags::UNMAPPED, 101, ops()), "c1").is_none());
     }
     fn skel(chrom: &str, start: u64, end: u64, n: u32, introns: &[(u64, u64)]) -> Skeleton {
         Skeleton { chrom: chrom.into(), start, end, n_reads: n, introns: introns.to_vec() }
