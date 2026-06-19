@@ -110,3 +110,14 @@ Three decisions reshape the track:
 
 ### First concrete step
 Build the offline Compara-based labeled NAMED-pair table genome-wide (sub-task ii) — it is cheap (reuses `compara_fetch.py`/cache + the GFF) and it is the GATE: it tells us whether there is enough independent truth to calibrate an RNA feature at all, before we invest in the detector. If the gate passes, implement sub-task (i).
+
+## 10. GATE RESULT (Phase 0) — PASS
+
+Run: `divergent_truth_gate.py` + `divergent_compara_label.py` (artifact: `divergent_calibration_pairs.tsv`).
+
+- locus→gene coverage (edge loci): 67% named / 28% LOC / 5% unmapped.
+- The divergent signal is in DIFFERENT-named low-core pairs (NOT same-root — those are mega-family ZNF/OR blobs).
+- **GOLD calibration set: 2,081 divergent (core<0.20) pairs → 2,075 Compara-labelable → 781 (38%) paralog / 1,294 non-paralog.** Balanced, independent (Compara gene-trees), clean classes (pos: ABCA8/10, ACOT2/6, ACSL3/4, AMPD2/3, BLK/HCK; neg: ABCA13/ITSN1, ALB/AVEN — prefilter false-groupings).
+- ⚠️ CAVEAT: this set is from ACCEPTED edges (core 0.13–0.20, MILDLY divergent). The DEEP regime (core<0.13, the DSFAM45=0.036 case) is the REJECTED population, not yet generated — a feature calibrated here must be re-checked on the deep tail (Phase 1.5: generate core<0.13 pairs + label).
+
+VERDICT: enough independent truth to calibrate an RNA-only feature → proceed to Phase 1 (feature AUC on this set).
