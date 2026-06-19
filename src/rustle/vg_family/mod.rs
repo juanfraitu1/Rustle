@@ -24,6 +24,7 @@ pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm 
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
 pub mod family_split; // De-novo family DECOMPOSITION: connected components + weighted-modularity Louvain.
 pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + general-purpose assemble gate.
+pub mod denovo_pipeline; // Integration: de-novo family DETECTION driver (pass1->gate->collapse->detect->split).
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1

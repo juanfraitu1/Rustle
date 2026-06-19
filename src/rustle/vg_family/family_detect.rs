@@ -283,10 +283,16 @@ pub fn confirm_edge(a: &[u8], b: &[u8], p: &DetectParams) -> Option<f64> {
 }
 
 /// Convenience driver: `candidate_pairs` then `confirm_edge` over `reps`. Returns confirmed
-/// `(i, j, core_recip)` edges (`i < j`). The integration layer parallelises the POA; this is serial.
+/// `(i, j, core_recip)` edges (`i < j`).
+///
+/// The POA confirmation (the expensive step) runs in PARALLEL via rayon — `confirm_edge` is independent
+/// per pair and `contiguous_core_coverage` is pure/deterministic, so this matches the python's
+/// process-pool POA. Order is preserved (rayon's indexed `collect`), so the edge list is deterministic
+/// and identical to the serial version (candidate-pair order).
 pub fn detect_edges(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usize, usize, f64)> {
+    use rayon::prelude::*;
     candidate_pairs(reps, p)
-        .into_iter()
+        .into_par_iter()
         .filter_map(|(a, b)| confirm_edge(&reps[a].seq, &reps[b].seq, p).map(|cr| (a, b, cr)))
         .collect()
 }
@@ -603,5 +609,25 @@ mod tests {
         assert_eq!(edges.len(), 1);
         assert_eq!((edges[0].0, edges[0].1), (0, 1));
         assert!(edges[0].2 >= T_CORE);
+    }
+
+    #[test]
+    fn detect_edges_is_deterministic_under_parallelism() {
+        // three paralogs sharing one core -> three candidate pairs -> three edges; the PARALLEL POA must
+        // return them in candidate-pair order, identically across runs.
+        let core = rand_seq(400, 0xEE77);
+        let reps = [
+            homolog_tx("r0", 0xA1, &core, 0xA2, 5),
+            homolog_tx("r1", 0xB1, &core, 0xB2, 5),
+            homolog_tx("r2", 0xC1, &core, 0xC2, 5),
+        ];
+        let e1 = detect_edges(&reps, &DetectParams::default());
+        let e2 = detect_edges(&reps, &DetectParams::default());
+        assert_eq!(
+            e1.iter().map(|&(a, b, _)| (a, b)).collect::<Vec<_>>(),
+            vec![(0, 1), (0, 2), (1, 2)],
+            "edges in sorted candidate-pair order"
+        );
+        assert_eq!(e1, e2, "parallel POA must be order-deterministic");
     }
 }
