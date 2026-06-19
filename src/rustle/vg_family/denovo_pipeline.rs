@@ -208,6 +208,7 @@ pub fn detect_and_assign(
     win: u64,
     min_copies: usize,
     p: &AssignParams,
+    rescue_extra: &[PrimaryRead],
 ) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>) {
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
@@ -220,6 +221,9 @@ pub fn detect_and_assign(
         transcripts.len(),
         reps.len()
     );
+    if !rescue_extra.is_empty() {
+        eprintln!("[detect_and_assign] rescue_extra (AS-tied secondary reads fed to rescue): {}", rescue_extra.len());
+    }
     let (edges, fallback_pairs) = detect_edges_reporting(&reps, &cfg.detect);
     eprintln!(
         "[detect_and_assign] {} homology edges ({} via large-seq fallback)",
@@ -259,8 +263,11 @@ pub fn detect_and_assign(
         // copies just outside the tight cluster are reachable — not only the detected-copy span.
         const RESCUE_WIN: u64 = 1_000_000;
         let (rlo, rhi) = (cf.start.saturating_sub(RESCUE_WIN), cf.end + RESCUE_WIN);
+        // collapsed-copy recovery: AS-tied secondary reads (rescue_extra, empty by default) join the rescue
+        // input so a copy whose reads minimap2 flagged secondary can clear the thin-loci support gate.
         let region_primary: Vec<PrimaryRead> = primary_reads
             .iter()
+            .chain(rescue_extra.iter())
             .filter(|r| r.chrom == cf.chrom && r.ref_start < rhi && r.ref_end > rlo)
             .cloned()
             .collect();
@@ -501,6 +508,7 @@ mod tests {
             5_000_000,
             2,
             &super::super::copy_assign::AssignParams::default(),
+            &[],
         );
         if !fallback.is_empty() {
             eprintln!("family edges via large-seq fallback (auditable): {}", fallback.len());
@@ -532,6 +540,7 @@ mod tests {
             5_000_000,
             2,
             &super::super::copy_assign::AssignParams::default(),
+            &[],
         );
         assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");

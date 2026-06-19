@@ -106,6 +106,72 @@ pub fn primary_read_from_record(record: &RecordBuf, chrom: &str) -> Option<Prima
     })
 }
 
+/// AS-tie gate (the phantom-avoidance kernel for collapsed-copy recovery). Given a region's alignments as
+/// `(read_name, is_secondary, alignment_score, PrimaryRead)`, emit the SECONDARY alignments whose AS is within
+/// `as_ratio` of that read's BEST score in the region — i.e. genuine TIED co-located copies (minimap2 flagged
+/// a sibling primary and this one secondary), NOT homology-shadow spillover (AS far below the primary). The
+/// read's primary is already counted in the main set; these tied secondaries restore the STARVED sibling
+/// copy's read support so the rescue can assemble it. A truly indistinguishable (no copy-specific feature)
+/// phantom is still rejected downstream by the identifiability / PSV gate — this only feeds candidates in.
+pub fn tied_secondary_reads(aln: &[(String, bool, i32, PrimaryRead)], as_ratio: f64) -> Vec<PrimaryRead> {
+    use std::collections::HashMap;
+    let mut best: HashMap<&str, i32> = HashMap::new();
+    for (name, _, as_, _) in aln {
+        let e = best.entry(name.as_str()).or_insert(i32::MIN);
+        if *as_ > *e {
+            *e = *as_;
+        }
+    }
+    aln.iter()
+        .filter(|(name, is_sec, as_, _)| *is_sec && (*as_ as f64) >= best[name.as_str()] as f64 * as_ratio)
+        .map(|(_, _, _, pr)| pr.clone())
+        .collect()
+}
+
+/// Read the `AS:i` alignment score from a record (the gate signal). `None` if absent.
+fn record_as(record: &RecordBuf) -> Option<i32> {
+    use noodles_sam::alignment::record::data::field::{Tag, Value};
+    for entry in noodles_sam::alignment::Record::data(record).iter() {
+        let (tag, value) = entry.ok()?;
+        if tag == Tag::ALIGNMENT_SCORE {
+            return match value {
+                Value::Int8(v) => Some(v as i32),
+                Value::UInt8(v) => Some(v as i32),
+                Value::Int16(v) => Some(v as i32),
+                Value::UInt16(v) => Some(v as i32),
+                Value::Int32(v) => Some(v),
+                Value::UInt32(v) => Some(v as i32),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+/// Like `primary_read_from_record` but ALSO accepts SECONDARY alignments, returning `(PrimaryRead, read_name,
+/// is_secondary, AS)` for the AS-tie gate. Unmapped / supplementary / no-AS / no-exon records are skipped.
+pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryRead, String, bool, i32)> {
+    let flags = record.flags();
+    if flags.is_unmapped() || flags.is_supplementary() {
+        return None;
+    }
+    let ref_start = (record.alignment_start()?.get() as u64).saturating_sub(1);
+    let exons = crate::bam::exons_from_cigar(ref_start, record.cigar()).ok()?;
+    if exons.is_empty() {
+        return None;
+    }
+    let introns: Vec<(u64, u64)> = exons.windows(2).map(|w| (w[0].1, w[1].0)).collect();
+    let pr = PrimaryRead {
+        chrom: chrom.to_string(),
+        ref_start,
+        ref_end: exons.last().map(|e| e.1).unwrap_or(ref_start),
+        introns,
+    };
+    let name = record.name().map(|n| n.to_string()).unwrap_or_default();
+    let as_ = record_as(record)?;
+    Some((pr, name, flags.is_secondary(), as_))
+}
+
 /// Scan every PRIMARY mapped alignment in a BAM into `PrimaryRead`s (the Pass-1 input). I/O driver:
 /// opens the BAM, reads the header for reference names, and applies `primary_read_from_record`.
 pub fn primary_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<PrimaryRead>> {
@@ -239,6 +305,33 @@ fn reads_in_region_indexed(
         }
     }
     Ok((primary, bam_reads))
+}
+
+/// Collect AS-TIED SECONDARY reads overlapping `[lo, hi)` on `chrom`, as `PrimaryRead`s — the starved-copy
+/// read support for collapsed-copy recovery (see [`tied_secondary_reads`]). Indexed query; errs without a
+/// `.bai`. These augment the RESCUE input only (additive), never the primary-only main detection pass.
+pub fn tied_secondary_reads_in_region(
+    bam_path: &str,
+    chrom: &str,
+    lo: u64,
+    hi: u64,
+    as_ratio: f64,
+) -> Result<Vec<PrimaryRead>> {
+    let bai_path = format!("{bam_path}.bai");
+    anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
+    let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+    let header = reader.read_header()?;
+    let index = noodles_bam::bai::read(&bai_path)?;
+    let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+    let query = reader.query(&header, &index, &region)?;
+    let mut aln = Vec::new();
+    for result in query {
+        let rb = RecordBuf::try_from_alignment_record(&header, &result?)?;
+        if let Some((pr, name, is_sec, as_)) = any_read_from_record(&rb, chrom) {
+            aln.push((name, is_sec, as_, pr));
+        }
+    }
+    Ok(tied_secondary_reads(&aln, as_ratio))
 }
 
 /// Full-scan fallback (no index): one pass, region-filtered.
@@ -399,6 +492,33 @@ mod tests {
 
     fn pr(chrom: &str, start: u64, end: u64, introns: &[(u64, u64)]) -> PrimaryRead {
         PrimaryRead { chrom: chrom.into(), ref_start: start, ref_end: end, introns: introns.to_vec() }
+    }
+
+    #[test]
+    fn tied_secondary_kept_spillover_dropped() {
+        // r1: a TIED multimapper (primary @ copyA AS=500, secondary @ copyB AS=500) -> the secondary restores
+        // copyB's support. r2: spillover (secondary AS 300 << 500) -> dropped. r3: primary-only -> never emitted.
+        let aln = vec![
+            ("r1".to_string(), false, 500, pr("c1", 0, 100, &[])),
+            ("r1".to_string(), true, 500, pr("c1", 1000, 1100, &[])),
+            ("r2".to_string(), false, 500, pr("c1", 0, 100, &[])),
+            ("r2".to_string(), true, 300, pr("c1", 1000, 1100, &[])),
+            ("r3".to_string(), false, 400, pr("c1", 0, 100, &[])),
+        ];
+        let out = tied_secondary_reads(&aln, 0.98);
+        assert_eq!(out.len(), 1, "only the tied secondary (r1) survives");
+        assert_eq!(out[0].ref_start, 1000, "and it sits at the STARVED copyB position");
+    }
+
+    #[test]
+    fn tied_secondary_margin_boundary() {
+        // secondary AS 495 vs best 500: kept at ratio 0.98 (>=490), dropped at 0.999 (<499.5).
+        let aln = vec![
+            ("r".to_string(), false, 500, pr("c1", 5, 105, &[])),
+            ("r".to_string(), true, 495, pr("c1", 5, 105, &[])),
+        ];
+        assert_eq!(tied_secondary_reads(&aln, 0.98).len(), 1);
+        assert_eq!(tied_secondary_reads(&aln, 0.999).len(), 0);
     }
 
     use noodles_core::Position;

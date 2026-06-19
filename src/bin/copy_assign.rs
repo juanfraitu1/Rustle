@@ -14,7 +14,7 @@ use std::io::Write;
 
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
-use rustle::vg_family::denovo_assemble::reads_in_region;
+use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region};
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge};
 
 #[derive(Parser, Debug)]
@@ -54,6 +54,15 @@ struct Args {
     /// 8000) on dense/large-gene regions to keep poasta off the big operands. Default 20000 matches the python.
     #[arg(long, default_value_t = 20_000)]
     max_poa_len: usize,
+    /// Recover COLLAPSED copies: feed AS-tied SECONDARY reads (a copy whose reads minimap2 flagged secondary
+    /// because it picked a sibling as primary) into the rescue, so the starved copy can clear the support gate.
+    /// Additive to the rescue only; default OFF (primary-only, byte-identical).
+    #[arg(long, default_value_t = false)]
+    recover_copies: bool,
+    /// AS-tie ratio for --recover-copies: a secondary counts only if its AS >= ratio * the read's best AS
+    /// (1.0 = exact tie; 0.98 admits a 2% margin). Guards against homology-shadow spillover.
+    #[arg(long, default_value_t = 0.98)]
+    as_ratio: f64,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -137,7 +146,13 @@ fn main() -> Result<()> {
         for &(lo, hi) in ranges {
             let (primary, bam_reads) = reads_in_region(&args.bam, contig, lo, hi, args.threads)
                 .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
-            let (fams, fallback) = detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params);
+            let extra = if args.recover_copies {
+                tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio).unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            let (fams, fallback) =
+                detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra);
             fallback_all.extend(fallback);
             for fa in &fams {
                 let fid = format!("CAFAM{gfam}");
