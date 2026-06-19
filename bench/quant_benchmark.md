@@ -26,3 +26,26 @@ Resolving multi-mapper ambiguity adds nothing to ASSEMBLY (structure is in the p
 QUANTIFICATION of asymmetrically-expressed paralogs, scaling with PSV density (long-read advantage) and bounded
 only at the K=0 identifiability floor. The right estimator is the SOFT likelihood (Canzar's frame), not hard
 labels. This is the concrete payoff of the PSV machinery: per-copy abundance, not better assembly.
+
+## Real-reads validation (sim5x, ground truth) — sim5x_quant_validate.py
+
+Subsampled the sim5x HiFi reads to a SKEWED abundance (40:30:20:10:10 = [0.364,0.273,0.182,0.091,0.091],
+truth in read names) and swept the PSV ladder K=0..8, running the actual copy_assign soft quant:
+
+| K | soft EM err | naive(uniform) err | hard-count err | soft abundance |
+|---|---|---|---|---|
+| 0 | 0.473 | 0.473 | 1.27 | [.2,.2,.2,.2,.2] (uniform: no info) |
+| 1 | 0.276 | 0.473 | 1.06 | partial resolution |
+| 2 | **0.007** | 0.473 | 1.02 | [.37,.27,.18,.09,.09] ≈ truth |
+| 4 | 0.007 | 0.473 | 1.02 | ≈ truth |
+| 8 | 0.025 | 0.473 | 1.02 | ≈ truth |
+
+CONFIRMS the simulation benchmark on REAL reads, and proves the EM RESOLVES (not just returns the prior):
+- K=0 (no PSV): soft == naive == uniform (honest identifiability floor; the soft EM does not fabricate).
+- K=1: soft already pulls toward the truth (0.276 < naive 0.473) -- uses the single PSV's PARTIAL evidence.
+- K>=2 (PSVs clear the HiFi error floor, psv_acc=1.0): soft = 0.007, recovering the SKEW exactly -- genuine
+  per-molecule resolution, not the 0.2-each prior. Naive stays flat at 0.473 (never resolves).
+- Tracks the identifiability ladder (per-read psv_acc K0=0.2 -> K2=1.0). The quant error IS the assignment error.
+- (hard read-count is ~1.0 throughout: each read has 5 alignments and the wrong-frame ones default to c0 --
+  itself an illustration of why naive best-alignment counting fails on multimappers; the clean contrast is
+  soft-resolves vs naive-uniform.)
