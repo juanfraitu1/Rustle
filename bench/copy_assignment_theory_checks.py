@@ -104,7 +104,66 @@ def check_lemma_mcc_equals_chromatic():
     return "Lemma 1 (MCC=chi) verified on C5: MCC=3=chi(C5)"
 
 
-CHECKS = [check_lemma_mcc_equals_chromatic]
+def reduction_instance(graph_edges, n):
+    """Map graph Gamma=(V=range(n), edges) to an MCC instance: one binary column per edge, one read per vertex.
+
+    Read w observes column e iff w in e, allele 0 if w==e[0] else 1.
+    The conflict graph of the resulting instance is isomorphic to Gamma.
+    """
+    cols = {e: idx for idx, e in enumerate(graph_edges)}
+    reads = []
+    for w in range(n):
+        obs = [(cols[e], 0 if w == e[0] else 1) for e in graph_edges if w in e]
+        reads.append(frozenset(obs))
+    return reads
+
+
+def chromatic_number(G):
+    """Brute-force chromatic number of a small graph."""
+    n = G.number_of_nodes()
+    nodes = list(G.nodes())
+    for k in range(1, n + 1):
+        for assign in itertools.product(range(k), repeat=n):
+            coloring = {nodes[i]: assign[i] for i in range(n)}
+            if all(coloring[u] != coloring[v] for u, v in G.edges()):
+                return k
+    return n
+
+
+def check_thm1_reduction():
+    """Verify Theorem 1's reduction on 4 small graphs.
+
+    For each source graph Gamma, the reduction produces an MCC instance whose conflict graph
+    is isomorphic to Gamma, and MCC == chi(Gamma).  Graphs tested:
+      - triangle (K3):   chi = 3
+      - 4-cycle  (C4):   chi = 2
+      - 5-cycle  (C5):   chi = 3
+      - star     (K1,3): chi = 2
+    """
+    cases = [
+        ([(0, 1), (1, 2), (2, 0)], 3),                          # triangle  -> chi 3
+        ([(0, 1), (1, 2), (2, 3), (3, 0)], 4),                  # C4        -> chi 2
+        ([(0, 1), (1, 2), (2, 3), (3, 4), (4, 0)], 5),          # C5        -> chi 3
+        ([(0, 1), (0, 2), (0, 3)], 4),                          # star      -> chi 2
+    ]
+    for edges, n in cases:
+        reads = reduction_instance(edges, n)
+        H = conflict_graph(reads)
+        Gamma = nx.Graph()
+        Gamma.add_nodes_from(range(n))
+        Gamma.add_edges_from(edges)
+        assert nx.is_isomorphic(H, Gamma), (
+            f"conflict graph not isomorphic to source graph for edges={edges}"
+        )
+        chi = chromatic_number(Gamma)
+        mcc = mcc_bruteforce(reads)
+        assert mcc == chi, (
+            f"MCC ({mcc}) != chi ({chi}) for edges={edges}"
+        )
+    return "Thm 1: conflict graph == source graph and MCC == chi on 4 instances"
+
+
+CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
 
 
 def main():

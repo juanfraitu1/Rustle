@@ -131,5 +131,68 @@ OK  - Lemma 1 (MCC=chi) verified on C5: MCC=3=chi(C5)
 
 ---
 
+---
+
+## §4 Complexity: Theorem 1
+
+The MCC = χ(H) identity (Lemma 1) immediately yields NP-hardness of MCC via a reduction from graph
+coloring, one of Karp's original 21 NP-complete problems.
+
+**Theorem 1.** MCC is NP-hard. (Hence CMCPC, which contains MCC as the single-backbone case, is NP-hard.)
+
+*Proof.* We reduce graph k-colorability to MCC in polynomial time.
+
+Let $\Gamma = (U, F)$ be an arbitrary undirected graph with $U = \{1, \ldots, n\}$ and edge set $F$.
+Construct an MCC instance as follows.
+
+- **Columns.** Introduce one binary column $j_e$ for each edge $e \in F$; the allele alphabet for every
+  column is $\{0, 1\}$.
+- **Reads.** Introduce one read $r_w$ for each vertex $w \in U$.  Read $r_w$ observes column $j_e$
+  if and only if $w \in e$.  If $e = (u, v)$ (ordered so that $u$ is the first endpoint and $v$ the
+  second), then $r_u(j_e) = 0$ and $r_v(j_e) = 1$.
+
+**The conflict graph of the instance is isomorphic to $\Gamma$.**
+Two reads $r_u$ and $r_v$ co-observe column $j_e$ if and only if both $u$ and $v$ belong to $e$,
+i.e., $(u, v) \in F$.  Whenever they do co-observe $j_e$, one of them reports allele 0 and the
+other reports allele 1, so they always disagree — they conflict.  Conversely, two reads $r_u, r_v$
+with $(u, v) \notin F$ share no column (each column $j_e$ is observed only by its two
+edge-endpoints, so non-adjacent vertices never co-observe).  Therefore the conflict graph $H$ has
+an edge $\{r_u, r_v\}$ if and only if $(u, v) \in F$, making $H$ isomorphic to $\Gamma$.
+
+**The reduction is correct.**
+By Lemma 1, $\mathrm{MCC}(R) = \chi(H) = \chi(\Gamma)$.  Hence $\Gamma$ is $k$-colorable if and
+only if $\mathrm{MCC}(R) \leq k$, so any polynomial-time algorithm for MCC would solve graph
+coloring in polynomial time.  Graph $k$-colorability is NP-complete for $k \geq 3$
+[Garey–Johnson 1979], so MCC is NP-hard.
+
+**The alphabet is binary.**
+Every column in the construction takes values in $\{0, 1\}$; hardness is therefore intrinsic to the
+problem, not an artifact of a large allele alphabet. $\square$
+
+### Adversarial check: each column is incident to exactly two reads
+
+The key invariant in the proof is that column $j_e$, for edge $e = (u, v)$, is observed by exactly
+$r_u$ and $r_v$ — no other read observes it.  This ensures non-adjacent vertices share *no* column
+and thus cannot conflict, i.e., the reduction introduces no spurious edges.  The executable check
+below verifies this structural property explicitly by confirming `nx.is_isomorphic(H, Gamma)` for
+four small graphs (triangle, $C_4$, $C_5$, star); see `bench/copy_assignment_theory_checks.py`,
+function `check_thm1_reduction`.
+
+### MEC framing
+
+The **Minimum Error Correction** (MEC) problem is the standard genomics formulation of the
+haplotype-assembly problem [Lippert et al. 2002]: given a set of reads and a fixed number $k$ of
+haplotypes, find an assignment of reads to haplotypes and an allele-vector for each haplotype that
+minimizes the total number of allele *mismatches* (flips) between reads and their assigned copy.
+MEC is NP-hard already at $k = 2$ [Lippert et al. 2002; Cilibrasi et al. 2005].
+
+The copy-assignment problem studied here is the $k$-copy, variation-graph generalization of MEC:
+reads are molecules over PSV columns, copies are allele-vectors in a family variation graph, and the
+error objective counts allele mismatches.  Theorem 1 (hardness via coloring, parsimony objective)
+and MEC-hardness (error objective) together show that hardness is **robust across both objective
+functions**: minimizing the number of copies and minimizing allele flips are both NP-hard.
+
+---
+
 *See also: `bench/family_definition_formal.md` for the upstream family-detection step whose output populates
 $R$ for each identified gene family.*
