@@ -316,32 +316,44 @@ pub fn detect_and_assign(
         transcripts.len(),
         reps.len()
     );
-    // Read-conflict families: group bam_reads (primary + secondary) by name, map each placement to a rep
-    // locus, then run the conflict-graph kernel.  These are the OPERATIONAL families — loci linked by
-    // AS-tied cross-mapping reads — and should align with the POA-similarity families below where both
-    // are valid.  Discrepancies expose domain-sharers the sequence gate over-merges.
-    {
-        let placements = build_read_placements(bam_reads, &reps);
-        let c_edges = conflict_edges(reps.len(), &placements, &ConflictParams::default());
-        let c_fams = conflict_families(reps.len(), &c_edges);
+    // Conflict-graph: AUTHORITATIVE family criterion
+    let placements = build_read_placements(bam_reads, &reps);
+    let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
+    let c_fams = conflict_families(reps.len(), &c_edges);
+    eprintln!(
+        "[detect_and_assign] conflict-graph: {} edges -> {} families",
+        c_edges.len(), c_fams.len(),
+    );
+    for (fi, fam) in c_fams.iter().enumerate() {
+        let members: Vec<&str> = fam.iter().map(|&i| reps[i].tid.as_str()).collect();
+        let coords: Vec<String> = fam.iter()
+            .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end))
+            .collect();
+        let edge_weights: Vec<usize> = c_edges.iter()
+            .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b))
+            .map(|&(_, _, w)| w)
+            .collect();
         eprintln!(
-            "[detect_and_assign] conflict-graph: {} edges -> {} families",
-            c_edges.len(),
-            c_fams.len(),
+            "  conflict-fam{fi} n={} reads_linking={:?}: {} @ {}",
+            fam.len(), edge_weights, members.join(","), coords.join(" | "),
         );
-        for (fi, fam) in c_fams.iter().enumerate() {
-            let members: Vec<&str> = fam.iter().map(|&i| reps[i].tid.as_str()).collect();
-            let coords: Vec<String> = fam.iter().map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end)).collect();
-            let edge_weights: Vec<usize> = c_edges.iter()
-                .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b))
-                .map(|&(_, _, w)| w)
-                .collect();
-            eprintln!(
-                "  conflict-fam{fi} n={} reads_linking={:?}: {} @ {}",
-                fam.len(), edge_weights, members.join(","), coords.join(" | "),
-            );
-        }
     }
+    let split = conflict_to_split_families(&c_fams, &c_edges, &cfg.split);
+
+    // POA homology edges — diagnostic only, no longer drives family membership
+    let (poa_edges, fallback_pairs) = detect_edges_reporting(&reps, &cfg.detect);
+    eprintln!(
+        "[detect_and_assign] POA homology (diagnostic): {} edges ({} via large-seq fallback)",
+        poa_edges.len(), fallback_pairs.len(),
+    );
+    let fallback: Vec<FallbackEdge> = fallback_pairs
+        .iter()
+        .map(|&(a, b)| FallbackEdge {
+            chrom: reps[a].chrom.clone(),
+            tid_a: reps[a].tid.clone(), start_a: reps[a].start, end_a: reps[a].end, len_a: reps[a].seq.len(),
+            tid_b: reps[b].tid.clone(), start_b: reps[b].start, end_b: reps[b].end, len_b: reps[b].seq.len(),
+        })
+        .collect();
     if !rescue_extra.is_empty() {
         let rec = recover_collapsed_copies(&reps, bam_reads);
         eprintln!(
@@ -350,27 +362,6 @@ pub fn detect_and_assign(
             rec
         );
     }
-    let (edges, fallback_pairs) = detect_edges_reporting(&reps, &cfg.detect);
-    eprintln!(
-        "[detect_and_assign] {} homology edges ({} via large-seq fallback)",
-        edges.len(),
-        fallback_pairs.len()
-    );
-    let fallback: Vec<FallbackEdge> = fallback_pairs
-        .iter()
-        .map(|&(a, b)| FallbackEdge {
-            chrom: reps[a].chrom.clone(),
-            tid_a: reps[a].tid.clone(),
-            start_a: reps[a].start,
-            end_a: reps[a].end,
-            len_a: reps[a].seq.len(),
-            tid_b: reps[b].tid.clone(),
-            start_b: reps[b].start,
-            end_b: reps[b].end,
-            len_b: reps[b].seq.len(),
-        })
-        .collect();
-    let split = decompose_families(&edges, &cfg.split);
     let mut out = Vec::new();
     for cf in colocated_families(&reps, &split, win, min_copies) {
         // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
@@ -613,13 +604,17 @@ mod tests {
         // a copyB read aligned to copyA's genomic region: seq = copyB's spliced transcript.
         let copyb_spliced = cat(&[&fb1, &core_b, &fb2]);
         let copya_spliced = cat(&[&fa1, &core_a, &fa2]);
-        // primary: readB maps to copyA's genomic region (locus 0).
-        let ar_primary = AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
-        // secondary: same read also maps (tied AS) to copyB's genomic region (locus 1000).
-        let ar_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced };
+        // readB: primary maps to copyA's locus (0), secondary to copyB's locus (1000). AS tied → conflict.
+        let ar_primary = AlignedRead { ref_start: 0,    cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced.clone() };
+        let ar_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced.clone() };
+        // readC: same pattern as readB (second conflicting multimapper; satisfies min_reads=2 edge guard).
+        let ar_c_primary   = AlignedRead { ref_start: 0,    cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
+        let ar_c_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced };
         let bam = vec![
-            BamRead { chrom: "c1".into(), read: ar_primary,   mapq: 60, name: "readB".into(), as_score: 380 },
-            BamRead { chrom: "c1".into(), read: ar_secondary, mapq:  0, name: "readB".into(), as_score: 379 },
+            BamRead { chrom: "c1".into(), read: ar_primary,     mapq: 60, name: "readB".into(), as_score: 380 },
+            BamRead { chrom: "c1".into(), read: ar_secondary,   mapq:  0, name: "readB".into(), as_score: 379 },
+            BamRead { chrom: "c1".into(), read: ar_c_primary,   mapq: 60, name: "readC".into(), as_score: 380 },
+            BamRead { chrom: "c1".into(), read: ar_c_secondary, mapq:  0, name: "readC".into(), as_score: 379 },
         ];
         (genome, primary, bam)
     }
@@ -695,9 +690,9 @@ mod tests {
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
-        // Two BamRecords: primary (readB at locus 0) + secondary (readB at locus 1000); both overlap the family.
-        assert_eq!(fa.n_reads, 2);
-        assert_eq!(fa.assignments.len(), 2);
+        // Four BamRecords: readB primary+secondary + readC primary+secondary; all overlap the family.
+        assert_eq!(fa.n_reads, 4);
+        assert_eq!(fa.assignments.len(), 4);
         // copies sorted by start: copyA=0, copyB=1.
         // Primary (ref_start=0, seq=copyb_spliced) -> assigned to copyB (best_copy=1).
         let primary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 1)
