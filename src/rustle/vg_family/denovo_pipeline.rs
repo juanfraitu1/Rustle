@@ -612,8 +612,15 @@ mod tests {
         }
         // a copyB read aligned to copyA's genomic region: seq = copyB's spliced transcript.
         let copyb_spliced = cat(&[&fb1, &core_b, &fb2]);
-        let ar = AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
-        let bam = vec![BamRead { chrom: "c1".into(), read: ar, mapq: 60, name: "readB".into(), as_score: 380 }];
+        let copya_spliced = cat(&[&fa1, &core_a, &fa2]);
+        // primary: readB maps to copyA's genomic region (locus 0).
+        let ar_primary = AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
+        // secondary: same read also maps (tied AS) to copyB's genomic region (locus 1000).
+        let ar_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced };
+        let bam = vec![
+            BamRead { chrom: "c1".into(), read: ar_primary,   mapq: 60, name: "readB".into(), as_score: 380 },
+            BamRead { chrom: "c1".into(), read: ar_secondary, mapq:  0, name: "readB".into(), as_score: 379 },
+        ];
         (genome, primary, bam)
     }
 
@@ -688,12 +695,18 @@ mod tests {
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
-        assert_eq!(fa.n_reads, 1);
-        assert_eq!(fa.assignments.len(), 1);
-        let (_, a) = &fa.assignments[0];
-        // copies sorted by start: copyA=0, copyB=1. The copyB read (aligned to copyA's region) -> copyB.
-        assert_eq!(a.best_copy, 1, "multimapper resolved to its true copy (copyB)");
-        assert_eq!(a.status, super::super::copy_assign::AssignStatus::Assigned);
+        // Two BamRecords: primary (readB at locus 0) + secondary (readB at locus 1000); both overlap the family.
+        assert_eq!(fa.n_reads, 2);
+        assert_eq!(fa.assignments.len(), 2);
+        // copies sorted by start: copyA=0, copyB=1.
+        // Primary (ref_start=0, seq=copyb_spliced) -> assigned to copyB (best_copy=1).
+        let primary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 1)
+            .expect("primary read (copyB seq at locus 0) should resolve to copyB (copy 1)");
+        assert_eq!(primary_assign.1.status, super::super::copy_assign::AssignStatus::Assigned);
+        // Secondary (ref_start=1000, seq=copya_spliced) -> assigned to copyA (best_copy=0).
+        let secondary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 0)
+            .expect("secondary read (copyA seq at locus 1000) should resolve to copyA (copy 0)");
+        assert_eq!(secondary_assign.1.status, super::super::copy_assign::AssignStatus::Assigned);
     }
 
     #[test]
