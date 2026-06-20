@@ -148,6 +148,18 @@ fn record_as(record: &RecordBuf) -> Option<i32> {
     None
 }
 
+/// Read the `de:f` (gap-compressed per-base divergence) tag from a record — the conflict-criterion signal.
+/// `None` if absent. `de` is a custom 2-char tag carrying a float.
+fn record_de(record: &RecordBuf) -> Option<f32> {
+    use noodles_sam::alignment::record::data::field::Tag;
+    use noodles_sam::alignment::record_buf::data::field::Value;
+    let de_tag = Tag::new(b'd', b'e');
+    match record.data().get(&de_tag)? {
+        Value::Float(v) => Some(*v),
+        _ => None,
+    }
+}
+
 /// Like `primary_read_from_record` but ALSO accepts SECONDARY alignments, returning `(PrimaryRead, read_name,
 /// is_secondary, AS)` for the AS-tie gate. Unmapped / supplementary / no-AS / no-exon records are skipped.
 pub fn any_read_from_record(record: &RecordBuf, chrom: &str) -> Option<(PrimaryRead, String, bool, i32)> {
@@ -209,20 +221,22 @@ fn cigar_kind_to_char(k: Kind) -> char {
 }
 
 /// A mapped alignment for copy assignment: its `AlignedRead`, reference name, mapping quality (the
-/// silver-standard "unique mapper" signal: `mapq > 0`), and read name (any ground-truth label).
+/// silver-standard "unique mapper" signal: `mapq > 0`), read name (any ground-truth label), and the `AS:i`
+/// alignment score (the conflict-graph tie criterion; 0 if absent from the BAM record).
 #[derive(Clone, Debug)]
 pub struct BamRead {
     pub chrom: String,
     pub read: AlignedRead,
     pub mapq: u8,
     pub name: String,
+    pub as_score: i32,
 }
 
 /// Build an `AlignedRead` (ref_start 0-based, CIGAR ops as chars, read sequence) + mapping quality + read
-/// NAME from a mapped record — the per-read input copy ASSIGNMENT consumes (`copy_assign_pipeline`). The
-/// sequence keeps soft-clipped bases (excludes hard-clips), matching `copy_split::allele_at`'s CIGAR walk.
-/// `None` if unmapped.
-pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String)> {
+/// NAME + `AS:i` alignment score from a mapped record — the per-read input copy ASSIGNMENT consumes
+/// (`copy_assign_pipeline`). The sequence keeps soft-clipped bases (excludes hard-clips), matching
+/// `copy_split::allele_at`'s CIGAR walk. `as_score` is 0 if the tag is absent. `None` if unmapped.
+pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, String, i32)> {
     if record.flags().is_unmapped() {
         return None;
     }
@@ -236,7 +250,8 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, 
     let seq: Vec<u8> = record.sequence().as_ref().to_vec();
     let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
-    Some((AlignedRead { ref_start, cigar, seq }, mapq, name))
+    let as_score = record_as(record).unwrap_or(0);
+    Some((AlignedRead { ref_start, cigar, seq }, mapq, name, as_score))
 }
 
 /// Scan every mapped alignment in a BAM into `BamRead`s (the copy-assignment read input). I/O driver,
@@ -255,8 +270,8 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
             Some((name, _)) => format!("{name}"),
             None => continue,
         };
-        if let Some((read, mapq, name)) = aligned_read_from_record(&record) {
-            out.push(BamRead { chrom, read, mapq, name });
+        if let Some((read, mapq, name, as_score)) = aligned_read_from_record(&record) {
+            out.push(BamRead { chrom, read, mapq, name, as_score });
         }
     }
     Ok(out)
@@ -300,8 +315,8 @@ fn reads_in_region_indexed(
         if let Some(pr) = primary_read_from_record(&rb, chrom) {
             primary.push(pr);
         }
-        if let Some((read, mapq, name)) = aligned_read_from_record(&rb) {
-            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name });
+        if let Some((read, mapq, name, as_score)) = aligned_read_from_record(&rb) {
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score });
         }
     }
     Ok((primary, bam_reads))
@@ -356,7 +371,7 @@ pub fn primary_aligned_reads_in_region(
         if f.is_unmapped() || f.is_secondary() || f.is_supplementary() {
             continue;
         }
-        if let Some((read, _, _)) = aligned_read_from_record(&rb) {
+        if let Some((read, _, _, _)) = aligned_read_from_record(&rb) {
             out.push(read);
         }
     }
@@ -428,8 +443,8 @@ fn reads_in_region_scan(
         if let Some(pr) = primary_read_from_record(&record, chrom) {
             primary.push(pr);
         }
-        if let Some((read, mapq, name)) = aligned_read_from_record(&record) {
-            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name });
+        if let Some((read, mapq, name, as_score)) = aligned_read_from_record(&record) {
+            bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score });
         }
     }
     Ok((primary, bam_reads))
@@ -626,7 +641,7 @@ mod tests {
             .set_cigar(cigar)
             .set_sequence(seq)
             .build();
-        let (ar, _mapq, _name) = aligned_read_from_record(&r).expect("mapped read");
+        let (ar, _mapq, _name, _as_score) = aligned_read_from_record(&r).expect("mapped read");
         assert_eq!(ar.ref_start, 100); // 1-based 101 -> 0-based
         assert_eq!(ar.cigar, vec![('M', 5), ('N', 10), ('M', 5)]);
         assert_eq!(ar.seq, b"AAAAACCCCC".to_vec());
@@ -819,5 +834,23 @@ mod tests {
         let g = GenomeIndex::from_seqs(&[("c1", &s)]);
         let sk = skel("c1", 0, 220, 3, &[(60, 80), (140, 160)]);
         assert!(assemble_gate(&[sk], &g, &GateParams::default()).is_empty());
+    }
+
+    // ---- record_de ----
+
+    #[test]
+    fn record_de_parses_float_tag() {
+        use noodles_sam::alignment::record::data::field::Tag;
+        use noodles_sam::alignment::record_buf::data::field::Value as BufValue;
+        let mut record = RecordBuf::builder().set_flags(Flags::default()).build();
+        record.data_mut().insert(Tag::new(b'd', b'e'), BufValue::Float(0.0123));
+        let de = record_de(&record).expect("de tag present");
+        assert!((de - 0.0123).abs() < 1e-6);
+    }
+
+    #[test]
+    fn record_de_absent_is_none() {
+        let record = RecordBuf::builder().set_flags(Flags::default()).build();
+        assert!(record_de(&record).is_none());
     }
 }
