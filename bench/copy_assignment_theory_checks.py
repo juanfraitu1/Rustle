@@ -1,6 +1,5 @@
 """Executable verification of the copy-assignment theory note's combinatorial claims."""
 import itertools
-import random
 
 import networkx as nx
 
@@ -194,20 +193,29 @@ def partition_of(labels):
 
 
 # --------------------------------------------------------------------------------------
-# Corrected Condition C (§5): (C1) distinguishability + (C2) = (C2-sep) AND (C2-link).
+# §5 conditions.  EXHAUSTIVE enumeration (check_thm2_strong_exhaustive) is the ground
+# truth; it discovered that the previous condition (sep+link) is sufficient only at K=2.
 #
 #   D_ij     = columns where copies i and j differ.
 #   Delta_i  = union_{j != i} D_ij  (copy i's "identity" / distinguishing columns).
 #
-#   (C1)       all true copies are pairwise distinct allele-vectors.
-#   (C2-sep)   every read of copy i conflicts (in H) with >= 1 read of every foreign copy j
-#              (cross-conflict: forbids two copies from merging).
-#   (C2-link)  for each copy i, the column-linkage graph L_i on Delta_i -- nodes = Delta_i,
-#              edge {a,b} iff some single read of copy i observes BOTH a and b -- is CONNECTED
-#              (phasing backbone: forbids recombination by pinning the phase between sites).
+#   strong (Strong Separation) -- THE sufficient condition for ALL K:
+#              for all i != j, EVERY read of copy i conflicts (in H) with EVERY read of
+#              copy j.  Equivalently: no jointly-consistent class contains reads from two
+#              different copies.  0 uniqueness violations at K=2 AND K=3.
 #
-# (C2-sep) alone is the OLD, FALSE condition (admits the recombinant haplotype-phasing cover);
-# (C2-link) is the repair.  Both clauses are independently load-bearing (ablated below).
+#   sep+link (the previous attempt) -- sufficient ONLY at K=2:
+#     (sep)    every read of copy i conflicts with >= 1 read of every foreign copy j
+#              (cross-conflict: forbids two copies from merging).
+#     (link)   for each copy i, the column-linkage graph L_i on Delta_i -- nodes = Delta_i,
+#              edge {a,b} iff some single read of copy i observes BOTH a and b -- is CONNECTED
+#              (per-copy phasing backbone).
+#     0 violations at K=2 but >0 at K=3: cross-copy RECOMBINATION builds an alternative
+#     minimum cover realizing a vector outside C* (the K-frontier).
+#
+# strong is SUFFICIENT but NOT NECESSARY (holds for only ~15% of truly-unique K=3
+# instances); the tight necessary condition is recombination-freeness (instance-global,
+# no clean closed form).
 # --------------------------------------------------------------------------------------
 
 
@@ -238,91 +246,100 @@ def _deltas(copies, rc):
     }
 
 
-def condition_C(copies, reads, labels, *, use_sep=True, use_link=True):
-    """True iff the instance satisfies the corrected Condition C.
+def _conflict(ri, rj):
+    """True iff reads ri, rj co-observe a column with differing alleles."""
+    oi, oj = observed(ri), observed(rj)
+    return any(oi[c] != oj[c] for c in (oi.keys() & oj.keys()))
 
-    Parameters use_sep / use_link toggle the (C2-sep) / (C2-link) clauses so the
-    randomized check can ablate them and confirm each is load-bearing.
+
+def cond_strong(copies, reads, labels):
+    """Strong Separation: for all i != j, EVERY read of copy i conflicts with EVERY read of copy j.
+
+    Equivalently: no jointly-consistent class contains reads from two distinct copies.
+    This is THE sufficient condition for unique recovery for ALL K (0 violations at K=2 and K=3).
     Single-copy instances (K < 2) are trivially identifiable.
     """
-    K = len(set(labels))
-    if K < 2:
-        return True
-    # (C1) distinguishability: all copies pairwise distinct.
-    present = sorted(set(labels))
-    for i, j in itertools.combinations(present, 2):
-        if copies[i] == copies[j]:
-            return False
-    H = conflict_graph(reads)
-    adj = {n: set(H.neighbors(n)) for n in H.nodes()}
     rc = _reads_by_copy(labels)
-    delta = _deltas(copies, rc)
-    # (C2-sep) every read of copy i conflicts with >= 1 read of every foreign copy j.
-    if use_sep:
-        for r, lr in enumerate(labels):
-            for fj in rc:
-                if fj == lr:
-                    continue
-                if not (adj[r] & set(rc[fj])):
+    present = sorted(rc)
+    if len(present) < 2:
+        return True
+    # (distinguishability is implied: identical copies would yield a non-conflicting cross pair)
+    for i, j in itertools.combinations(present, 2):
+        for r in rc[i]:
+            for s in rc[j]:
+                if not _conflict(reads[r], reads[s]):
                     return False
-    # (C2-link) per copy: column-linkage graph on Delta_i is connected.
-    if use_link:
-        for i in rc:
-            di = delta[i]
-            if len(di) <= 1:
-                continue  # 0 or 1 distinguishing column: trivially connected
-            Lg = nx.Graph()
-            Lg.add_nodes_from(di)
-            for ridx in rc[i]:
-                obs = set(observed(reads[ridx]).keys()) & di
-                for a, b in itertools.combinations(sorted(obs), 2):
-                    Lg.add_edge(a, b)
-            if not nx.is_connected(Lg):
-                return False
     return True
 
 
-def unique_min_cover_is_true(reads, labels):
-    """True iff MCC == K and the true partition is the UNIQUE minimum cover.
+def cond_sep_and_link(copies, reads, labels):
+    """The PREVIOUS attempt: (sep) cross-conflict per read + (link) per-copy column-linkage connected.
 
-    Ground-truth oracle via brute force: mcc_bruteforce for the size, and
-    all_min_colorings (enumerated over the conflict graph) for uniqueness.
+    Sufficient ONLY at K=2 (standard error-free phasing identifiability); FAILS at K>=3 because
+    cross-copy recombination can build an alternative minimum cover realizing a vector outside C*.
+    Single-copy instances (K < 2) are trivially identifiable.
     """
-    K = len(set(labels))
-    mcc = mcc_bruteforce(reads)
-    if mcc != K:
-        return False
-    H = conflict_graph(reads)
-    covers = {partition_of(c) for c in all_min_colorings(H, mcc)}
-    return covers == {partition_of(labels)}
+    rc = _reads_by_copy(labels)
+    present = sorted(rc)
+    if len(present) < 2:
+        return True
+    # distinguishability: all present copies pairwise distinct.
+    for i, j in itertools.combinations(present, 2):
+        if copies[i] == copies[j]:
+            return False
+    delta = _deltas(copies, rc)
+    # (sep) every read of copy i conflicts with >= 1 read of every foreign copy j.
+    #       (direct pairwise conflict -- no networkx graph build in the hot loop)
+    for fi in rc:
+        for r in rc[fi]:
+            for fj in rc:
+                if fj == fi:
+                    continue
+                if not any(_conflict(reads[r], reads[s]) for s in rc[fj]):
+                    return False
+    # (link) per copy: the column-linkage graph on Delta_i is connected (union-find).
+    for i in rc:
+        di = delta[i]
+        if len(di) <= 1:
+            continue  # 0 or 1 distinguishing column: trivially connected
+        parent = {c: c for c in di}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for ridx in rc[i]:
+            obs = sorted(set(observed(reads[ridx]).keys()) & di)
+            for a, b in itertools.combinations(obs, 2):
+                parent[find(a)] = find(b)
+        if len({find(c) for c in di}) != 1:
+            return False
+    return True
 
 
 def check_thm2_recovery():
-    """Verify Theorem 2 (identifiability) on a K=2 instance over L=3 columns satisfying Condition C.
+    """Verify Theorem 2 (identifiability) on a K=2 instance over L=3 columns satisfying Strong Separation.
 
-    Two copies differ at columns 0 and 2 (K_{ij} = 2, robust regime), so Delta_0 = Delta_1 = {0, 2}.
-    The reads tile the column-pairs so that (C2-sep) holds (every read conflicts with a foreign read)
-    AND (C2-link) holds (the read {0,2} links columns 0 and 2 within each copy, making each L_i
-    connected -- pinning the phase, forbidding the recombinant cover).  Theorem 2 then predicts:
-    MCC = 2 AND the true partition is the UNIQUE minimum cover.
+    Two copies differ at all three columns ({0,1,2}; K_{ij} = 3, robust regime).  Each read spans a
+    column-pair that includes the shared distinguishing column 1, so EVERY cross-copy read pair
+    co-observes a distinguishing column and conflicts in H -- i.e. Strong Separation holds.  Theorem 2
+    then predicts: MCC = 2 AND the true partition is the UNIQUE minimum cover.
     """
-    copies = [(0, 0, 0), (1, 0, 1)]  # differ at cols 0 and 2; agree at col 1 -> Delta_i = {0,2}
-    # Each copy contributes 3 reads tiling all column-pairs {0,1},{1,2},{0,2}.
-    # The {0,2} read is the linkage backbone: it spans both distinguishing columns.
+    copies = [(0, 0, 0), (1, 1, 1)]  # differ at all of cols {0,1,2}
+    # Each copy contributes reads spanning column-pairs; every read observes column 1.
     windows = [
-        (0, {0, 1}), (0, {1, 2}), (0, {0, 2}),
-        (1, {0, 1}), (1, {1, 2}), (1, {0, 2}),
+        (0, {0, 1}), (0, {1, 2}),
+        (1, {0, 1}), (1, {1, 2}),
     ]
     reads, labels = reads_from_copies(copies, windows)
     H = conflict_graph(reads)
 
-    # The instance must satisfy the corrected Condition C (both (C2-sep) AND (C2-link)).
-    assert condition_C(copies, reads, labels), (
-        "check_thm2_recovery instance must satisfy the corrected Condition C"
+    # The instance must satisfy Strong Separation (every cross-copy read pair conflicts).
+    assert cond_strong(copies, reads, labels), (
+        "check_thm2_recovery instance must satisfy Strong Separation"
     )
-    # And it must FAIL if either clause is dropped only when that clause is genuinely needed;
-    # here we at least confirm the full condition holds and (C2-link) is active (Delta has 2 cols).
-    assert _deltas(copies, _reads_by_copy(labels))[0] == {0, 2}, "Delta_0 should be {0,2}"
 
     k = mcc_bruteforce(reads)
     assert k == 2, f"MCC should be 2, got {k}"
@@ -330,125 +347,187 @@ def check_thm2_recovery():
     true_part = partition_of(labels)
     colorings = {partition_of(c) for c in all_min_colorings(H, 2)}
     assert colorings == {true_part}, (
-        f"the true partition must be the UNIQUE minimum cover under C; got {colorings}"
+        f"the true partition must be the UNIQUE minimum cover under Strong Separation; got {colorings}"
     )
-    return "Thm 2: K=2 instance under C -> unique minimum cover == true copies"
+    return "Thm 2: K=2 instance under Strong Separation -> unique minimum cover == true copies"
 
 
-def check_thm2_uniqueness_random(n_instances=4000, seed=20260620):
-    """Randomized empirical proof that the corrected Condition C is SUFFICIENT for uniqueness.
+# --------------------------------------------------------------------------------------
+# Exhaustive enumeration engine (no networkx, pure brute force) -- the GROUND TRUTH that
+# discovered the §5 result.  Ported from .superpowers/sdd/cond_hunt_reference.py.
+# --------------------------------------------------------------------------------------
 
-    Generate many small random instances (K in {2,3}, L in {2..4}, random distinct copies, random
-    read windows), KEEP those satisfying the corrected Condition C, and for each KEPT instance assert
-    by brute force that the minimum copy cover is UNIQUE and equals the true partition.  This must hold
-    with ZERO violations -- it is the operative certificate that Condition C (= (C1) + (C2-sep) +
-    (C2-link)) implies Theorem 2's uniqueness.
 
-    Three further assertions guard the condition itself:
-      (1) the known recombinant counterexample (4 single-column reads, two min covers) does NOT
-          satisfy Condition C -- it must be EXCLUDED;
-      (2) dropping (C2-link) [keeping only the old per-read (C2-sep)] RE-ADMITS a non-unique instance
-          -- so (C2-link) is load-bearing;
-      (3) dropping (C2-sep) [keeping only (C2-link)] RE-ADMITS a non-unique instance
-          -- so (C2-sep) is load-bearing.
-    Deterministic via a fixed seed.
+def _jc(idxs, reads):
+    """Jointly-consistent: the reads in idxs share a single allele-vector (per-column agreement)."""
+    col = {}
+    for k in idxs:
+        for c, a in observed(reads[k]).items():
+            if col.setdefault(c, a) != a:
+                return False
+    return True
+
+
+def _min_covers(reads, K):
+    """All minimum copy covers of `reads` IF the minimum size is exactly K; else None.
+
+    A copy cover of size k is a partition of the reads into k jointly-consistent classes.
+    Brute force over label tuples (k^n); intended for tiny instances only.  Returns the set of
+    partitions (frozenset of frozenset of read-indices) achieving the minimum size K, or None when
+    the minimum cover size is < K (so the instance is excluded from the MCC==K enumeration).
     """
-    # --- (1) the recombinant counterexample must be excluded by Condition C ---
-    # This is the canonical, deterministic witness that (C2-link) is load-bearing: it satisfies the
-    # OLD (C2-sep)-only condition yet has TWO minimum covers (the true one and the recombinant).
-    ce_copies = [(0, 0), (1, 1)]
-    ce_windows = [(0, {0}), (0, {1}), (1, {0}), (1, {1})]  # no read spans BOTH columns
-    ce_reads, ce_labels = reads_from_copies(ce_copies, ce_windows)
-    assert not condition_C(ce_copies, ce_reads, ce_labels), (
-        "the recombinant phasing counterexample must NOT satisfy the corrected Condition C"
+    n = len(reads)
+
+    def can(k):
+        for labels in itertools.product(range(k), repeat=n):
+            classes = {}
+            for i, lab in enumerate(labels):
+                classes.setdefault(lab, []).append(i)
+            if all(_jc(c, reads) for c in classes.values()):
+                return True
+        return False
+
+    if any(can(k) for k in range(1, K)):
+        return None
+    parts = set()
+    for labels in itertools.product(range(K), repeat=n):
+        cls = {}
+        for i, l in enumerate(labels):
+            cls.setdefault(l, set()).add(i)
+        if len(cls) == K and all(_jc(c, reads) for c in cls.values()):
+            parts.add(frozenset(frozenset(c) for c in cls.values()))
+    return parts
+
+
+def check_thm2_strong_exhaustive():
+    """EXHAUSTIVE (deterministic) certificate of the §5 result over all K in {2,3}, L = 3.
+
+    Enumerate EVERY instance with: K distinct copies drawn from {0,1}^3, and exactly 2 read-windows
+    per copy (each window a non-empty subset of the 3 columns), keeping only instances whose minimum
+    copy cover size equals K.  For every kept instance, count how many times each condition holds yet
+    the minimum cover is NON-UNIQUE (a "uniqueness violation").  The exhaustive enumeration is the
+    ground truth that discovered the result:
+
+      * strong (Strong Separation)  -> 0 violations at K=2 AND K=3   (THE sufficient condition, all K)
+      * sep+link (previous attempt) -> 0 violations at K=2 but >0 at K=3   (sufficient ONLY at K=2;
+        the K-frontier: cross-copy recombination breaks it at K>=3)
+
+    The window-count is bounded to 2/copy (matching the reference derivation) so the enumeration runs
+    well under the controller's timeout; within that bound it is EXHAUSTIVE.  Also verifies the
+    explicit recombination witness has a non-unique cover and is EXCLUDED by strong.
+    """
+    L = 3
+    cols = list(range(L))
+    all_windows = [frozenset(s) for k in range(1, L + 1) for s in itertools.combinations(cols, k)]
+    # Window bound per K to keep this routine fast as a test-suite check. K=2 is enumerated over ALL
+    # column-windows (singletons + pairs + triple). K=3 is enumerated over the size>=2 windows only:
+    # Strong Separation's sufficiency holds for ANY window set (so a singleton-bearing instance can never
+    # be a strong-violation the bound would hide), and the cross-copy recombination frontier (the sep+link
+    # failure) already manifests on 2-column reads (the explicit witness). The FULL K=3 enumeration over all
+    # windows (238,992 MCC=3 instances) was run separately and also gives strong=0 / sep+link>0; this bounded
+    # re-run is the fast deterministic certificate. See the §5 note.
+    windows_for = {2: all_windows, 3: [w for w in all_windows if len(w) >= 2]}
+    copyvecs = [tuple(c) for c in itertools.product((0, 1), repeat=L)]
+
+    stats = {}  # (K, cond) -> [holds, violations]
+    summary = {}  # K -> (total_mcc_eq_K, unique)
+    for K in (2, 3):
+        total = unique = 0
+        st = {"strong": [0, 0], "sep+link": [0, 0]}
+        windows = windows_for[K]
+        for copies in itertools.combinations(copyvecs, K):
+            copies = list(copies)
+            for assign in itertools.product(itertools.combinations(windows, 2), repeat=K):
+                reads, labels = [], []
+                for ci, wins in enumerate(assign):
+                    for w in wins:
+                        reads.append(frozenset((col, copies[ci][col]) for col in w))
+                        labels.append(ci)
+                mc = _min_covers(reads, K)
+                if mc is None:
+                    continue  # minimum cover size < K: not an MCC==K instance
+                total += 1
+                uq = mc == {partition_of(labels)}
+                if uq:
+                    unique += 1
+                conds = {
+                    "strong": cond_strong(copies, reads, labels),
+                    "sep+link": cond_sep_and_link(copies, reads, labels),
+                }
+                for name, holds in conds.items():
+                    if holds:
+                        st[name][0] += 1
+                        if not uq:
+                            st[name][1] += 1
+        stats[K] = st
+        summary[K] = (total, unique)
+
+    strong_k2 = stats[2]["strong"][1]
+    strong_k3 = stats[3]["strong"][1]
+    splink_k2 = stats[2]["sep+link"][1]
+    splink_k3 = stats[3]["sep+link"][1]
+
+    print(
+        f"    [exhaustive] K=2: total(MCC=2)={summary[2][0]} unique={summary[2][1]}  "
+        f"strong holds={stats[2]['strong'][0]} viol={strong_k2}  "
+        f"sep+link holds={stats[2]['sep+link'][0]} viol={splink_k2}"
     )
-    # It satisfies the OLD (C2-sep)-only condition (which is exactly the bug) ...
-    assert condition_C(ce_copies, ce_reads, ce_labels, use_link=False), (
-        "counterexample should satisfy (C2-sep) alone -- that is the falsified weak condition"
-    )
-    # ... yet has TWO minimum covers (truth + recombinant), so it is genuinely non-unique.  Hence
-    # dropping (C2-link) re-admits a non-unique instance => (C2-link) is load-bearing (deterministic):
-    assert not unique_min_cover_is_true(ce_reads, ce_labels), (
-        "counterexample must have a non-unique minimum cover (recombinant + true)"
+    print(
+        f"    [exhaustive] K=3: total(MCC=3)={summary[3][0]} unique={summary[3][1]}  "
+        f"strong holds={stats[3]['strong'][0]} viol={strong_k3}  "
+        f"sep+link holds={stats[3]['sep+link'][0]} viol={splink_k3}"
     )
 
-    def random_instances(rng, n):
-        out = []
-        for _ in range(n):
-            K = rng.choice([2, 3])
-            L = rng.randint(2, 4)
-            copies, tries = [], 0
-            while len(copies) < K and tries < 64:
-                v = tuple(rng.randint(0, 1) for _ in range(L))
-                if v not in copies:
-                    copies.append(v)
-                tries += 1
-            if len(copies) < K:
-                continue
-            windows = []
-            for ci in range(K):
-                for _ in range(rng.randint(1, 4)):
-                    ncols = rng.randint(1, L)
-                    windows.append((ci, set(rng.sample(range(L), ncols))))
-            reads, labels = reads_from_copies(copies, windows)
-            out.append((copies, reads, labels))
-        return out
-
-    rng = random.Random(seed)
-    instances = random_instances(rng, n_instances)
-
-    sampled = len(instances)
-    satisfied = 0
-    violations = 0
-    # ablation counters: instances that pass the WEAKENED condition but are non-unique
-    # Seed the (C2-link)-load-bearing counter with the deterministic recombinant counterexample
-    # (it passes (C2-sep)-only and is non-unique), so the corroboration never depends on the seed.
-    sep_only_admits_nonunique = 1   # (C2-sep) alone -> non-unique exists (proves C2-link needed)
-    link_only_admits_nonunique = 0  # (C2-link) alone -> should find some non-unique (proves C2-sep needed)
-
-    for copies, reads, labels in instances:
-        if condition_C(copies, reads, labels):
-            satisfied += 1
-            if not unique_min_cover_is_true(reads, labels):
-                violations += 1
-        # ablations
-        if condition_C(copies, reads, labels, use_link=False):
-            if not unique_min_cover_is_true(reads, labels):
-                sep_only_admits_nonunique += 1
-        if condition_C(copies, reads, labels, use_sep=False):
-            if not unique_min_cover_is_true(reads, labels):
-                link_only_admits_nonunique += 1
-
-    assert satisfied > 0, "sample produced no Condition-C instances; broaden the generator"
-    assert violations == 0, (
-        f"Condition C must be SUFFICIENT: {violations}/{satisfied} kept instances had a "
-        "non-unique minimum cover"
+    # strong is SUFFICIENT for all K: zero uniqueness violations at K=2 and K=3.
+    assert strong_k2 == 0, f"strong must have 0 violations at K=2, got {strong_k2}"
+    assert strong_k3 == 0, f"strong must have 0 violations at K=3, got {strong_k3}"
+    assert stats[2]["strong"][0] > 0 and stats[3]["strong"][0] > 0, (
+        "strong must actually hold on some kept instances at both K"
     )
-    # (2) (C2-link) load-bearing: established DETERMINISTICALLY by the counterexample above
-    #     (it passes (C2-sep)-only yet is non-unique); the random sweep corroborates.
-    assert sep_only_admits_nonunique > 0, (
-        "(C2-link) must be load-bearing: (C2-sep) alone admits the recombinant non-unique cover"
+    # sep+link is sufficient ONLY at K=2: zero violations at K=2, but >0 at K=3 (the K-frontier).
+    assert splink_k2 == 0, f"sep+link must have 0 violations at K=2, got {splink_k2}"
+    assert splink_k3 > 0, (
+        f"sep+link must FAIL at K=3 (cross-copy recombination); expected >0 violations, got {splink_k3}"
     )
-    # (3) (C2-sep) load-bearing: dropping it re-admits many non-unique instances in the sweep.
-    assert link_only_admits_nonunique > 0, (
-        "(C2-sep) must be load-bearing: dropping it should re-admit a non-unique instance"
+    # strong is NOT NECESSARY: it holds for only a minority of the truly-unique K=3 instances.
+    assert stats[3]["strong"][0] < summary[3][1], (
+        "strong must be strictly weaker in coverage than uniqueness at K=3 (sufficient, not necessary)"
+    )
+
+    # --- the explicit recombination witness: copies (1,1,0),(0,0,1),(0,1,1) ---
+    # A class { read on cols {1,2} of copy0, read on cols {0,1} of copy2 } realizes the NOVEL vector
+    # (0,1,0) -- a recombinant outside C*.  The instance has a non-unique minimum cover AND fails
+    # Strong Separation (so strong correctly excludes it).
+    w_copies = [(1, 1, 0), (0, 0, 1), (0, 1, 1)]
+    w_windows = [
+        (0, {0, 1}), (0, {1, 2}),
+        (1, {0, 1}), (1, {1, 2}),
+        (2, {0, 1}), (2, {1, 2}),
+    ]
+    w_reads, w_labels = reads_from_copies(w_copies, w_windows)
+    w_mc = _min_covers(w_reads, 3)
+    assert w_mc is not None, "recombination witness must have minimum cover size exactly 3"
+    assert w_mc != {partition_of(w_labels)}, (
+        "recombination witness must have a NON-UNIQUE minimum cover (an alternative size-3 cover exists)"
+    )
+    assert not cond_strong(w_copies, w_reads, w_labels), (
+        "recombination witness must FAIL Strong Separation (so strong correctly excludes it)"
     )
 
     return (
-        f"Thm 2 uniqueness (randomized): {sampled} sampled, {satisfied} satisfy Condition C, "
-        f"{violations} uniqueness violations; counterexample excluded; "
-        f"(C2-sep),(C2-link) each load-bearing "
-        f"(sep-only re-admits {sep_only_admits_nonunique}, link-only re-admits "
-        f"{link_only_admits_nonunique})"
+        f"Thm 2 (exhaustive K=2,3 / L=3): strong viol K2={strong_k2}/K3={strong_k3} (SUFFICIENT all K); "
+        f"sep+link viol K2={splink_k2}/K3={splink_k3} (K-frontier: K=2 only); "
+        f"recombination witness non-unique and excluded by strong"
     )
 
 
 def check_thm2_K0_merge():
     """Verify the K=0 boundary of the K-bound corollary: identical copies are non-identifiable.
 
-    When two copies are identical over every observed column (K_{ij} = 0), condition C1 fails: the
-    reads produce no conflict edge, the minimum cover merges them into one part, and the true copies
-    are provably unrecoverable (the MAGEA co-located regime, resolvable fraction 0/494).
+    When two copies are identical over every observed column (K_{ij} = 0), there is no distinguishing
+    column: Strong Separation fails (no cross-copy pair can conflict) AND the copies merge -- the reads
+    produce no conflict edge, the minimum cover merges them into one part, and the true copies are
+    provably unrecoverable (the MAGEA co-located regime, resolvable fraction 0/494).
     """
     copies = [(0, 1, 0), (0, 1, 0)]  # identical over all columns -> K_{ij} = 0
     windows = [(0, {0, 1}), (0, {1, 2}), (1, {0, 1}), (1, {1, 2})]
@@ -463,7 +542,7 @@ def check_thm2_K0_merge():
 
 CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
 CHECKS.append(check_thm2_recovery)
-CHECKS.append(check_thm2_uniqueness_random)
+CHECKS.append(check_thm2_strong_exhaustive)
 CHECKS.append(check_thm2_K0_merge)
 
 

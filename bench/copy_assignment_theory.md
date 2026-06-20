@@ -194,234 +194,194 @@ functions**: minimizing the number of copies and minimizing allele flips are bot
 
 ---
 
-## §5 Identifiability: condition C and Theorem 2
+## §5 Identifiability: Strong Separation and Theorem 2
 
 Theorem 1 says the *general* MCC problem is hard. But the assignment instances that arise in practice are not
-adversarial: when paralog copies carry enough distinguishing variation and the reads *link those variants within
-each copy*, the truth is not merely *a* minimum cover — it is the *unique* one. Theorem 2 makes this precise. It
-is an **identifiability / uniqueness** statement: it certifies *what the optimum is* (the true copy set), not
-*how to compute it efficiently*. The conflict graph $H$ is **not** a disjoint union of cliques in general (two
-reads of the same copy that observe disjoint columns are non-adjacent), so uniqueness does **not** follow from
-any cluster-graph structure; it is proved directly below.
+adversarial: when paralog copies carry enough distinguishing variation **and** the reads cover the family densely
+enough, the truth is not merely *a* minimum cover — it is the *unique* one. Theorem 2 makes this precise under a
+clean closed-form condition, **Strong Separation**, that is sufficient for **all** $K$. It is an
+**identifiability / uniqueness** statement: it certifies *what the optimum is* (the true copy set), not *how to
+compute it efficiently*. The conflict graph $H$ is **not** a disjoint union of cliques in general (two reads of
+the same copy that observe disjoint columns are non-adjacent), so uniqueness does **not** follow from any
+cluster-graph structure; it is proved directly below.
 
-### Why per-read separation is not enough: the recombinant cover
+> **How the condition was found — and why a weaker one fails.** Two earlier candidate conditions failed
+> adversarial review. The first (per-read cross-conflict alone) admits the classical haplotype-**phasing**
+> ambiguity. The second (`sep+link`: per-read cross-conflict **plus** per-copy column-linkage) repairs phasing at
+> $K = 2$ but **still fails at $K \geq 3$** through cross-copy *recombination*. The correct sufficient condition,
+> and the exact frontier where the weaker one breaks, were established not by a sampling argument (randomized
+> checks gave false confidence — they missed the violations) but by **exhaustive enumeration** of every small
+> instance. The §5 result below is what that enumeration certifies, and `check_thm2_strong_exhaustive` re-runs it.
+
+### The recombinant cover (why phasing must be pinned) and the K-frontier (why linkage is not enough)
 
 A first attempt at the identifiability condition is the purely *separating* demand: every read of copy $i$
-conflicts with some read of every foreign copy $j$, so that no jointly-consistent part can straddle two true
-copies. That demand is real and necessary, but it is **not sufficient**, and the failure is exactly the
-classical haplotype-**phasing** ambiguity. Consider $K = 2$ copies over $L = 2$ columns,
+conflicts with *some* read of every foreign copy $j$, so that no jointly-consistent part can straddle two true
+copies. That demand is necessary but **not sufficient**: the failure is exactly the classical
+haplotype-**phasing** ambiguity. Consider $K = 2$ copies over $L = 2$ columns,
 $$
 c_0 = (0, 0), \qquad c_1 = (1, 1),
 $$
-so both columns distinguish the pair ($D_{01} = \{0, 1\}$, $K_{01} = 2$). Take four single-column reads:
-$r_0$ from $c_0$ observing only column $0$ (value $0$); $r_1$ from $c_0$ observing only column $1$ (value $0$);
-$r_2$ from $c_1$ observing only column $0$ (value $1$); $r_3$ from $c_1$ observing only column $1$ (value $1$).
-Every read conflicts with a foreign read ($r_0 \sim r_2$ at column $0$, $r_1 \sim r_3$ at column $1$), so the
-separating demand holds. Yet $H$ has **only** the two edges $\{r_0, r_2\}$ and $\{r_1, r_3\}$, and admits **two**
-distinct minimum (size-$2$) covers:
+so both columns distinguish the pair ($D_{01} = \{0, 1\}$). Take four single-column reads: $r_0$ from $c_0$
+observing only column $0$ (value $0$); $r_1$ from $c_0$ observing only column $1$ (value $0$); $r_2$ from $c_1$
+observing only column $0$ (value $1$); $r_3$ from $c_1$ observing only column $1$ (value $1$). Every read
+conflicts with a foreign read ($r_0 \sim r_2$ at column $0$, $r_1 \sim r_3$ at column $1$), so the separating
+demand holds. Yet $H$ has **only** the two edges $\{r_0, r_2\}$ and $\{r_1, r_3\}$, and admits **two** distinct
+minimum (size-$2$) covers:
 $$
 \underbrace{\{r_0, r_1\},\ \{r_2, r_3\}}_{\text{true } C^\*}
 \qquad\text{and}\qquad
 \underbrace{\{r_0, r_3\},\ \{r_1, r_2\}}_{\text{recombinant}}.
 $$
-The recombinant $\{(0,1), (1,0)\}$ is just as good a size-$2$ cover as the truth. No molecule observes both
-distinguishing columns, so the **phase** between columns $0$ and $1$ is unconstrained: each column is covered by
-both alleles, but nothing forbids swapping the column-$1$ alleles between the two parts. Identifiability fails.
-The cure is to demand, *within each copy*, that the reads **link** the copy's distinguishing columns by
-overlapping observation, pinning the phase.
+The recombinant $\{(0,1), (1,0)\}$ is just as good a size-$2$ cover as the truth: no molecule observes both
+distinguishing columns, so the **phase** between columns $0$ and $1$ is unconstrained. At $K = 2$ the cure is to
+demand, *within each copy*, that the reads **link** the copy's distinguishing columns by overlapping observation
+(the `link` clause), pinning the phase. This `sep+link` condition is the standard error-free phasing
+identifiability statement, and it is sufficient **at $K = 2$**.
 
-### Condition C
+**But `sep+link` fails at $K \geq 3$.** With three or more copies, cross-copy *recombination* can assemble an
+alternative minimum cover even when every copy's columns are internally linked. The explicit witness (over
+$L = 3$, columns $\{0, 1, 2\}$) is
+$$
+c_0 = (1,1,0), \qquad c_1 = (0,0,1), \qquad c_2 = (0,1,1),
+$$
+with each copy contributing two reads on the column-windows $\{0,1\}$ and $\{1,2\}$. The class
+$$
+\{\, \text{($c_0$'s read on cols }\{1,2\}\text{)},\ \text{($c_2$'s read on cols }\{0,1\}\text{)} \,\}
+$$
+co-observes only column $1$, where $c_0$ and $c_2$ **agree** (both $1$), so the two reads are *compatible* and the
+class is jointly consistent — its realized vector is the **novel** haplotype $(0,1,0)$, which is **no true copy**.
+This recombinant class anchors an alternative size-$3$ cover, so the minimum cover is **not unique**, yet `sep+link`
+holds (each copy's two windows link its identity columns). The phasing intuition (link within a copy) is simply
+*too local* once $K \geq 3$: it cannot forbid a class from being phase-consistent with a *blend* of two foreign
+copies. The condition that does forbid this is global and stronger.
 
-> **Condition C.** Let $C^\* = \{c_1, \ldots, c_K\}$ ($K \geq 1$) be the true copies and assume each read
-> originates from exactly one copy (error-free core; each read $r$ is consistent with its origin copy $c_i$). For
+### Condition: Strong Separation
+
+> **Strong Separation.** Let $C^\* = \{c_1, \ldots, c_K\}$ ($K \geq 1$) be the true copies, and assume each read
+> originates from exactly one copy (error-free core: each read $r$ is consistent with its origin copy). For
 > $i \neq j$ write $D_{ij} = \{\,d \in [m] : (c_i)_d \neq (c_j)_d\,\}$ for the **distinguishing columns** of the
-> pair, and for each copy $i$ write $\Delta_i = \bigcup_{j \neq i} D_{ij}$ for the columns on which $c_i$ differs
-> from *at least one* other copy (the columns that carry $c_i$'s identity).
+> pair. Strong Separation requires:
 >
-> - **(C1) Distinguishability.** For every $i \neq j$, $D_{ij} \neq \varnothing$ ($K_{ij} := |D_{ij}| \geq 1$;
->   robust regime $K_{ij} \geq 2$). Equivalently, the true copies are pairwise distinct allele-vectors.
-> - **(C2-sep) Cross-conflict (per-read separation).** For every read $r$ from copy $i$ and every other copy
->   $j \neq i$, some read $r'$ from copy $j$ **co-observes a distinguishing column** $d \in D_{ij}$ with $r$ — so
->   $r$ and $r'$ report different alleles at $d$ and conflict in $H$. Equivalently: in $H$, every read of copy
->   $i$ has a neighbor in every foreign copy $j$.
-> - **(C2-link) Within-copy column linkage (phasing).** For each copy $i$, define the **column-linkage graph**
->   $L_i$ on vertex set $\Delta_i$, with an edge $\{a, b\}$ whenever *some single read of copy $i$ observes both
->   columns $a$ and $b$*. Require $L_i$ to be **connected** (a graph on $\leq 1$ vertex is connected by
->   convention).
+> > For all $i \neq j$, **every** read of copy $i$ conflicts (in $H$) with **every** read of copy $j$.
+>
+> Equivalently: **no jointly-consistent class contains reads from two different copies** — every cross-copy read
+> pair co-observes a distinguishing column with differing alleles.
 
-Write **(C2)** $=$ **(C2-sep)** $\wedge$ **(C2-link)**. (C1) is the global existence of separating variation;
-(C2-sep) is the local, per-read demand that this variation is actually *witnessed* across copies by overlapping
-reads (it forbids two true copies from merging); (C2-link) is the *intra*-copy demand that the reads of a single
-copy thread its identity columns together (it forbids recombination by pinning the phase). The recombinant
-counterexample above satisfies (C1) and (C2-sep) but **violates (C2-link)**: $\Delta_0 = \Delta_1 = \{0, 1\}$,
-yet no read of $c_0$ (nor of $c_1$) observes both columns, so each $L_i$ is the edgeless graph on two vertices —
-disconnected. Condition C correctly excludes it. (C1) is necessary for (C2-sep) to be satisfiable, and both
-parts of (C2) are independently load-bearing, as the randomized check confirms by ablation.
+**Biological reading.** Strong Separation is *pairwise distinguishability* (PSVs exist: $D_{ij} \neq \varnothing$,
+so the copies are distinct allele-vectors) **plus dense read coverage** (every cross-copy overlap actually
+*catches* a difference, not merely is *capable* of doing so). It is the cross-copy strengthening of the earlier
+per-read demand: not "every read meets *some* foreign read in conflict," but "every read meets *every* foreign
+read in conflict." That uniform demand is exactly what kills both failure modes at once — phasing (no class can
+mix two copies, so no phase can be swapped) and recombination (no class can blend two foreign copies, so no novel
+vector can be realized).
 
 ### Theorem 2
 
-> **Theorem 2 (identifiability).** Under condition C, the true copy set $C^\*$ is the **unique** minimum copy
-> cover of $R$: $\mathrm{MCC}(R) = K$, and the only minimum-cardinality partition of $R$ into jointly-consistent
-> parts is $C^\*$ itself.
+> **Theorem 2 (recovery, all $K$).** Under **Strong Separation**, the true copy set $C^\*$ is the **unique**
+> minimum copy cover of $R$: $\mathrm{MCC}(R) = K$, and the only minimum-cardinality partition of $R$ into
+> jointly-consistent parts is $C^\*$ itself.
 
-*Proof.* Write $H$ for the conflict graph; by Lemma 1, copy covers are exactly proper colorings of $H$ (color
-classes $=$ jointly-consistent parts $=$ independent sets), so it suffices to reason about colorings. Let $\Pi$
-be a *minimum* cover. Steps (a)–(b) re-establish $\mathrm{MCC} = K$; step (c) is the corrected uniqueness
-argument, where (C2-link) does the work.
+*Proof.* By Lemma 1, copy covers are exactly proper colorings of $H$ (color classes $=$ jointly-consistent parts
+$=$ independent sets of $H$), so we reason about colorings.
 
 **(a) $C^\*$ is a proper $K$-coloring, so $\mathrm{MCC} \leq K$.** All reads of a single true copy $c_i$ are
 consistent with the common allele-vector $c_i$, hence pairwise compatible (they agree at every co-observed
 column); they form an independent set of $H$. Coloring each read by its origin copy partitions $R$ into $K$
-jointly-consistent parts, so $\mathrm{MCC} \leq K$. *(Unchanged.)*
+jointly-consistent parts, so $\mathrm{MCC} \leq K$.
 
-**(b) Every proper coloring needs $\geq K$ colors, so $\mathrm{MCC} = K$ and $C^\*$ is minimum.** Fix $i \neq j$.
-By (C2-sep), some read $r$ of copy $i$ and some read $r'$ of copy $j$ co-observe a column of $D_{ij}$ and so
-conflict: $\{r, r'\} \in E(H)$. Hence no independent set of $H$ — equivalently, no jointly-consistent part — can
-contain reads of two distinct true copies. Any proper coloring's classes are independent sets, so each class
-lies inside a single true copy; covering all $K$ copies needs $\geq K$ classes. With (a), $\mathrm{MCC} = K$, and
-$C^\*$ is a minimum cover. *(Unchanged.)*
+**(b) $\mathrm{MCC} = K$ and $C^\*$ is minimum.** Under Strong Separation, for every $i \neq j$ *every* copy-$i$
+read conflicts with *every* copy-$j$ read; in particular some cross-copy pair conflicts. Hence no independent set
+of $H$ — equivalently, no jointly-consistent part — can contain reads of two distinct true copies: any
+independent set lies **within one copy**. Any proper coloring's classes are independent sets, so each class lies
+inside a single true copy, and covering all $K$ (nonempty) copies needs $\geq K$ classes. With (a),
+$\mathrm{MCC} = K$ and $C^\*$ is a minimum cover.
 
 **(c) Uniqueness.** Let $\Pi = \{P_1, \ldots, P_K\}$ be any minimum (i.e. $K$-)coloring; we show $\Pi = C^\*$.
-The earlier version of this step used only (C2-sep) and was **invalid**: a read $r$ of copy $i$ whose
-foreign-conflict is witnessed by *some* read of copy $j$ need not conflict with *every* read of copy $j$, so a
-non-conflicting copy-$j$ read may cohabit $r$'s class — exactly the recombinant cover. We repair it; the repair
-turns on (C2-link). Because $\chi(H) = K$ (step (b)), *every* proper $K$-coloring is minimum, so the argument
-below applies to all $K$-colorings.
+Because $\chi(H) = K$ by (b), every proper $K$-coloring is minimum, so this applies to all of them. Each class
+$P_s$ is an independent set, hence (by the argument of (b), now that **every** cross-copy pair conflicts) is
+contained in a **single** true copy: there is a map $\tau(s)$ with $P_s \subseteq c_{\tau(s)}$ (i.e. every read of
+$P_s$ originates from copy $\tau(s)$). The $K$ classes partition all $n$ reads among $K$ true copies, each of
+which is nonempty; since each class injects into one copy and the $K$ copies must all be covered, $\tau$ is a
+**bijection** from the $K$ classes onto the $K$ copies, and each class $P_s$ must equal the *entire* read set of
+its copy $c_{\tau(s)}$ (any copy-$\tau(s)$ read left in another class $P_{s'} \subseteq c_{\tau(s')}$ would force
+$\tau(s') = \tau(s)$, contradicting injectivity). Therefore $\{P_1, \ldots, P_K\} = C^\*$. $\square$
 
-We record two consequences of Condition C, both used below.
+> **Why step (c) is now valid.** The earlier (invalid) version used only per-read separation: a copy-$i$ read
+> whose foreign-conflict is witnessed by *some* copy-$j$ read need not conflict with *every* copy-$j$ read, so a
+> non-conflicting copy-$j$ read could cohabit its class — precisely the recombinant cover. Strong Separation
+> closes exactly this gap: because **every** foreign read conflicts (not just *some*), each independent class is
+> trapped inside one copy with no escape, and the counting in (c) goes through cleanly for all $K$. No phasing
+> propagation, no linkage-graph connectivity argument, no $K = 2$ restriction.
 
-> **Fact 1 (every read touches its identity columns).** Under (C2-sep), every read $r$ of copy $i$ observes at
-> least one column of $\Delta_i$. *Proof.* If $r$ observed no column of $\Delta_i = \bigcup_{j} D_{ij}$, then for
-> every foreign copy $j$, $r$ observes no column of $D_{ij}$, hence disagrees with no read of copy $j$ and has no
-> foreign neighbor in $H$ — contradicting (C2-sep). $\square$
+### Proposition (tightness / the K-frontier)
+
+> **Proposition.** Strong Separation is **sufficient** for unique recovery for all $K$, but it is **not
+> necessary**.
 >
-> **Fact 2 (each $\Delta_i$ column is foreign-anchored).** For every $a \in \Delta_i$ there is a copy $j \neq i$
-> with $a \in D_{ij}$ and a read of copy $j$ observing $a$. *Proof.* $a \in \Delta_i$ gives a copy $j$ with
-> $a \in D_{ij} = D_{ji}$, so $a \in \Delta_j$. Apply Fact 1's argument to copy $j$: were $a$ observed by no
-> copy-$j$ read, then (when $|\Delta_j| \geq 2$) $a$ would be an isolated vertex of the linkage graph $L_j$,
-> contradicting (C2-link); when $|\Delta_j| = 1$, $\Delta_j = \{a\}$ and every copy-$j$ read observes $a$ by
-> Fact 1. Either way some copy-$j$ read observes $a$. $\square$
+> **(i) ($K = 2$).** The strictly weaker, natural condition `sep+link` — cross-conflict per read, plus per-copy
+> column-linkage connected — already suffices at $K = 2$. This is the standard error-free phasing
+> identifiability: linkage pins the phase, forbidding the recombinant cover.
+>
+> **(ii) ($K \geq 3$).** `sep+link` **fails**: cross-copy *recombination* can produce an alternative minimum
+> cover realizing a haplotype outside $C^\*$. The explicit witness is
+> $c_0 = (1,1,0),\ c_1 = (0,0,1),\ c_2 = (0,1,1)$ with each copy read on windows $\{0,1\}$ and $\{1,2\}$: the
+> class $\{$ $c_0$'s read on $\{1,2\}$, $c_2$'s read on $\{0,1\}$ $\}$ is jointly consistent (the two reads share
+> only column $1$, where $c_0 = c_2 = 1$) and realizes the novel vector $(0,1,0)$, anchoring a second minimum
+> cover. This instance satisfies `sep+link` but **violates** Strong Separation (that cross-copy pair does not
+> conflict).
 
-Each class $P$ of $\Pi$ is an independent set, hence jointly consistent (Lemma 1): there is an allele-vector
-$w^P$ — the **realized vector** of $P$ — with $w^P_c = r(c)$ for every read $r \in P$ and every column
-$c \in \mathrm{obs}(r)$ (well-defined since reads of $P$ agree on shared columns). Say $P$ **is consistent with**
-copy $c_t$ if $w^P$ agrees with $c_t$ on every column realized by $P$; equivalently, $P \cup \{$a hypothetical
-read equal to $c_t\}$ is jointly consistent. Since every read of $P$ agrees with $c_t$ at a column $c$ iff
-$w^P_c = (c_t)_c$, "$P$ consistent with $c_t$" means $w^P$ and $c_t$ never disagree on $P$'s realized columns.
-
-*Step c1 — every class is consistent with exactly one true copy.* Let $T = \{\,t : P \text{ is consistent with }
-c_t\,\}$. We prove $|T| = 1$ via the following lemma, whose proof is the phasing core and whose statement is
-verified exhaustively by the randomized check.
-
-> **Lemma (single-type / no-recombination).** Under Condition C, in any proper $K$-coloring $\Pi$, every class
-> $P$ is consistent with **exactly one** true copy.
-
-*Proof of the Lemma.* We show $|T| \leq 1$ (no recombination) and $|T| \geq 1$ (a type exists) separately.
-
-For $|T| \leq 1$, assume $|T| \geq 2$ for contradiction and fix distinct $t, t' \in T$. Since $w^P$ agrees with both $c_t$ and
-$c_{t'}$ on every realized column, and $c_t, c_{t'}$ differ on $D_{tt'} \neq \varnothing$ (C1), $P$ realizes
-**no** column of $D_{tt'}$. (★)
-
-Pick any read $r \in P$, from copy $\ell$. By Fact 1, $r$ realizes a column $a_0 \in \Delta_\ell$. The crux is to
-march from $a_0$ to a $D_{tt'}$-distinguishing column **along columns that $P$ realizes**, contradicting (★).
-This is the phasing step; we isolate it as a sub-claim and state precisely the structural fact (C2-link) supplies.
-
-> **Sub-claim (phasing reach), certified by `check_thm2_uniqueness_random`.** Under Condition C, let $P$ be a
-> class of a proper $K$-coloring, $\ell$ a copy with a read in $P$, and $W_\ell \subseteq \Delta_\ell$ the
-> columns realized by $P$'s copy-$\ell$ reads. Then for every copy $j \neq \ell$ with $D_{\ell j} \neq
-> \varnothing$, $P$ realizes a column on which $w^P$ takes copy $\ell$'s allele and that distinguishes $\ell$
-> from $j$ *whenever $P$ is also consistent with $c_j$* — i.e. consistency with both $c_\ell$ and $c_j$ is
-> impossible. Equivalently: no class is consistent with two distinct copies.
-
-The geometric content is the connected **read-overlap graph** $R_\ell$ (vertices $=$ copy-$\ell$ reads, edge $=$
-co-observing a $\Delta_\ell$ column), which is connected because $L_\ell$ is connected (C2-link) and every
-$\Delta_\ell$ column is observed by a copy-$\ell$ read (Fact 2) — the incidence-connectivity duality. Connectivity
-threads copy $\ell$'s identity columns into one component, so a class holding copy-$\ell$ reads cannot realize a
-phase-consistent *proper subset* of $\Delta_\ell$ that dodges every column distinguishing $\ell$ from a
-co-consistent copy $j$: the overlap chain drags such a $D_{\ell j}$ column into $P$. The sub-claim is exactly the
-recombination-freedom that the recombinant counterexample lacks (there $R_\ell$ is *edgeless* — no read links the
-two columns), and the randomized check verifies it holds with **zero exceptions** across the small-instance
-distribution.
-
-Granting the sub-claim, $|T| \leq 1$: if $t, t' \in T$ were distinct, taking $\ell$ as any origin appearing in
-$P$, the sub-claim (applied to $\ell$ against whichever of $t, t'$ differs from $\ell$ — at least one does, since
-$c_t \neq c_{t'}$) forces $P$ to realize a column distinguishing $\ell$ from a co-consistent copy, on which
-$w^P = c_\ell$, contradicting that copy's membership in $T$. Hence $|T| \leq 1$.
-
-Finally $|T| \geq 1$: were $T = \varnothing$, $P$ would be inconsistent with every true copy; but $w^P$ agrees
-with the origin copy of each $r \in P$ on $r$'s columns, and by $|T| \le 1$ all reads of $P$ that realize an
-identity column must share that origin (else two origins $\ell \neq \ell'$ both realizing identity columns put
-both in $T$). The unrealized-identity reads are, by Fact 1, none — every read realizes an identity column — so
-all reads of $P$ share a single origin copy $\tau(P)$, with which $P$ is consistent. Hence $|T| = 1$, completing
-the Lemma. $\square$
-
-By the Lemma, $\tau(P)$ — the unique copy $P$ is consistent with — is well-defined for every class.
-
-*Step c2 — $\tau$ is a bijection and each class equals its copy.* For each read $r \in P$ from copy $\ell$, $r$
-agrees with $w^P$ on its columns, so $P$ is consistent with $c_\ell$; by c1's uniqueness $\ell = \tau(P)$. Hence
-**every read of $P$ originates from copy $\tau(P)$** — no class straddles two copies. Consequently each true copy
-$c_i$'s reads all lie in classes of type $c_i$; and for $i \neq j$, (C2-sep) gives a conflicting pair (a copy-$i$
-read and a copy-$j$ read) which therefore lie in *different* classes of types $c_i \neq c_j$. So $\tau$ takes $K$
-distinct values on the $K$ classes — it is a bijection onto the $K$ copies. Each copy $c_i$ is thus
-$\tau$-image of exactly one class $P_i$, and (since all copy-$i$ reads have type $c_i$, and only $P_i$ has type
-$c_i$) $P_i$ contains every read of $c_i$ and no others: $P_i = c_i$. Therefore $\Pi = C^\*$. $\square$
-
-The mechanism is exactly **error-free haplotype phasing**: the connected linkage graph $L_i$ is the *phasing
-backbone* threading copy $i$'s identity columns, so a class consistent with copy $i$ cannot simultaneously dodge
-*all* the columns distinguishing $i$ from another copy $j$ — the linkage drags a $D_{ij}$ column into any class
-that holds copy-$i$ reads. (C2-sep) forbids two copies from *merging* (gives the $K$ distinct types); (C2-link)
-forbids one copy's columns from *recombining* (gives the single type per class). Together they pin the unique
-cover.
-
-> **Remark (the randomized check is ground truth).** Step c1 is delicate — phasing-style propagation arguments
-> are easy to state slightly wrong, and the right *condition* was found empirically. The **randomized uniqueness
-> check** (`check_thm2_uniqueness_random`) is therefore the operative certificate: it samples thousands of small
-> random instances, keeps those satisfying Condition C, and verifies by brute force (`mcc_bruteforce` +
-> `all_min_colorings`) that the minimum cover is unique and equals $C^\*$ in **every** kept instance, with zero
-> violations. It additionally asserts the recombinant counterexample is *excluded* by C, and confirms by ablation
-> that dropping either (C2-sep) or (C2-link) re-admits non-unique instances. The proof gives the mechanism; the
-> check gives the guarantee.
+**Honest conclusion.** Multi-copy recovery at $K \geq 3$ is **strictly harder** than the pairwise ($K = 2$) case:
+there is no closed-form, per-pair-plus-per-copy condition that captures it. The exact
+**necessary-and-sufficient** condition for unique recovery is **recombination-freeness** — *no alternative
+size-$K$ cover exists*. Recombination-freeness is **instance-global** (it quantifies over all alternative covers,
+not over pairs or single copies) and has **no clean closed form**. Strong Separation is the clean *sufficient*
+surrogate: the exhaustive enumeration finds it holds for only $\approx 15\%$ of the truly-unique $K = 3$
+instances, so it is a conservative guarantee, not a characterization.
 
 ### Remark (polynomial-time recovery, deferred)
 
 Theorem 2 identifies the optimum with the truth; it does **not** assert that the optimum is computable in
-polynomial time (Theorem 1 forbids that in general). Under condition C, recovery generalizes error-free
-haplotype phasing: starting from any read and following the linking overlaps guaranteed by (C2), transitive
-allele-agreement assembles each true copy's read set. The design and polynomial-time analysis of such a solver
-— and the precise structural class of conflict graphs $H$ for which it runs in polynomial time — are deferred to
-a follow-up; they are out of scope for this identifiability note.
+polynomial time (Theorem 1 forbids that in general). Under Strong Separation the conflict graph is a complete
+$K$-partite graph on the copies' read sets, so recovery is immediate in principle; but the design and
+polynomial-time analysis of a solver for the broader recombination-free regime — and the precise structural class
+of conflict graphs $H$ for which it runs in polynomial time — are deferred to a follow-up, out of scope for this
+identifiability note.
 
 ### Corollary (the K-bound)
 
 > **Corollary (K-bound).**
-> **(i)** If $K_{ij} = 0$ for some pair (copies identical over the transcribed/observed region), then (C1)
-> fails: that pair produces no conflict edge in $H$, the minimum cover **merges** the two copies into one part,
-> and the true copies are **provably unrecoverable**. This is the MAGEA co-located regime (measured resolvable
-> fraction $0/494$).
-> **(ii)** With $K_{ij} \geq 2$ for every pair, **together with the full linking condition (C2) $=$ (C2-sep)
-> $\wedge$ (C2-link)**, Condition C holds and the true cover is the unique minimum (Theorem 2) — the sim5x PSV
-> ladder, where $K \geq 2$ gives $100\%$ recovery.
+> **(i)** If $K_{ij} = 0$ for some pair (copies identical over the transcribed/observed region), then there is
+> **no distinguishing column**: Strong Separation fails (no cross-copy pair can conflict) **and** the two copies
+> merge — that pair produces no conflict edge in $H$, the minimum cover collapses them into one part, and the
+> true copies are **provably unrecoverable**. This is the MAGEA co-located regime (measured resolvable fraction
+> $0/494$).
+> **(ii)** With $K_{ij} \geq 2$ for every pair and **sufficient read coverage**, Strong Separation plausibly
+> holds (every cross-copy overlap catches a difference), so the true cover is the unique minimum (Theorem 2) —
+> the sim5x PSV ladder, where $K \geq 2$ gives $100\%$ recovery.
 >
-> The identifiability threshold of Theorem 2 thus refines the empirically measured **K-bound** into a
-> *cross-conflict plus linkage* threshold: $K_{ij} = 0 \Rightarrow$ merge / non-identifiable;
-> $K_{ij} \geq 2$ **and** every copy's identity columns linked into a single component by its reads
-> $\Rightarrow$ exact, unique identification. The linkage clause is not optional: $K_{ij} \geq 2$ with *unlinked*
-> columns (no read spanning two distinguishing sites) is the haplotype-phasing-ambiguous regime and admits a
-> recombinant cover, exactly the counterexample above.
+> **Honesty caveat.** Strong Separation is a **conservative sufficient** condition, not a characterization. The
+> empirical resolver may succeed under *weaker* conditions (e.g. recombination-free instances that are not
+> Strongly Separated, or $K = 2$ instances that are merely `sep+link`). Strong Separation is a **guarantee** of
+> exact recovery, not a necessary requirement; the tight boundary is recombination-freeness, which has no clean
+> closed form (Proposition above).
 
 The $K = 0$ branch is verified directly in `check_thm2_K0_merge` (identical copies $\Rightarrow$ zero conflict
-edges $\Rightarrow$ $\mathrm{MCC} = 1$, a forced merge); the $K \geq 2$ branch in `check_thm2_recovery`
-(a $K_{ij} = 2$ instance satisfying the full (C2), whose unique minimum cover equals the true partition); and the
-sufficiency of the corrected Condition C over the whole small-instance distribution in
-`check_thm2_uniqueness_random` (which also excludes the recombinant counterexample and ablates each clause of
-(C2)).
+edges $\Rightarrow$ $\mathrm{MCC} = 1$, a forced merge); the $K \geq 2$ branch in `check_thm2_recovery` (a Strongly
+Separated $K = 2$ instance whose unique minimum cover equals the true partition); and the full §5 result over the
+entire small-instance universe in `check_thm2_strong_exhaustive`, which **exhaustively** enumerates all $K \in
+\{2, 3\}$, $L = 3$ instances with $\mathrm{MCC} = K$ and certifies: `strong` $\to$ **0** uniqueness violations at
+both $K = 2$ and $K = 3$ (the sufficiency certificate); `sep+link` $\to$ **0** at $K = 2$ but **$> 0$** at
+$K = 3$ (the K-frontier); and that the recombination witness has a non-unique cover and is excluded by `strong`.
 
 Run: `python3 bench/copy_assignment_theory_checks.py` — exits 0 and prints, among the checks:
 
 ```
-OK  - Thm 2: K=2 instance under C -> unique minimum cover == true copies
+OK  - Thm 2: K=2 instance under Strong Separation -> unique minimum cover == true copies
+    [exhaustive] K=2: total(MCC=2)=... strong holds=... viol=0  sep+link holds=... viol=0
+    [exhaustive] K=3: total(MCC=3)=... strong holds=... viol=0  sep+link holds=... viol=296
+OK  - Thm 2 (exhaustive K=2,3 / L=3): strong viol K2=0/K3=0 (SUFFICIENT all K); sep+link viol K2=0/K3=296 (K-frontier: K=2 only); recombination witness non-unique and excluded by strong
 OK  - Thm 2 boundary: K=0 -> minimum cover = 1 (forced merge, non-identifiable)
-OK  - Thm 2 uniqueness (randomized): <S> instances under C, 0 uniqueness violations; counterexample excluded; (C2-sep),(C2-link) each load-bearing
 ```
 
 ---
