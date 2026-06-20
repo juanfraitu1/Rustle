@@ -19,7 +19,7 @@ use super::denovo_assemble::{
 use super::family_detect::{collapse_loci, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
 use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
-use super::read_conflict::{as_tie_edges, conflict_edges, conflict_families, ConflictParams, Placement, ReadPlacements};
+use super::read_conflict::{as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, ConflictParams, Placement, ReadPlacements};
 use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
 
@@ -339,9 +339,10 @@ pub fn detect_and_assign(
             .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end)).collect();
         let edge_weights: Vec<usize> = c_edges.iter()
             .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b)).map(|&(_, _, w)| w).collect();
+        let (mq_support, mq_both0) = family_mapq0_support(&placements, fam, &cfg.conflict);
         eprintln!(
-            "  conflict-fam{fi} n={} reads_linking={:?}: {} @ {}",
-            fam.len(), edge_weights, members.join(","), coords.join(" | "),
+            "  conflict-fam{fi} n={} reads_linking={:?} mapq0_frac={}/{}: {} @ {}",
+            fam.len(), edge_weights, mq_both0, mq_support, members.join(","), coords.join(" | "),
         );
     }
     let split = conflict_to_split_families(&c_fams, &c_edges, &cfg.split);

@@ -221,8 +221,10 @@ fn cigar_kind_to_char(k: Kind) -> char {
 }
 
 /// A mapped alignment for copy assignment: its `AlignedRead`, reference name, mapping quality (the
-/// silver-standard "unique mapper" signal: `mapq > 0`), read name (any ground-truth label), and the `AS:i`
-/// alignment score (the conflict-graph tie criterion; 0 if absent from the BAM record).
+/// silver-standard "unique mapper" signal: `mapq > 0`), read name (any ground-truth label), the `AS:i`
+/// alignment score (the conflict-graph tie criterion; 0 if absent from the BAM record), the `de:f`
+/// gap-compressed per-base divergence (the de-tie conflict criterion; 0.0 if absent), and
+/// `is_supplementary` (chimeric/split flag — excluded from conflict placements).
 #[derive(Clone, Debug)]
 pub struct BamRead {
     pub chrom: String,
@@ -255,6 +257,9 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, 
     let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
     let as_score = record_as(record).unwrap_or(0);
+    // `de` is universally present on minimap2 output; absent → 0.0 is a fail-soft default.
+    // Two genuinely-absent placements would both be 0.0 and would tie, but this is acceptable because
+    // `de` is always present on the production BAM. A de-less BAM cannot use the de-tie criterion.
     let de = record_de(record).unwrap_or(0.0);
     let is_supplementary = record.flags().is_supplementary();
     Some((AlignedRead { ref_start, cigar, seq }, mapq, name, as_score, de, is_supplementary))

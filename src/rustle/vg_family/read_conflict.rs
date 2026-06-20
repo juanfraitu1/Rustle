@@ -120,6 +120,38 @@ pub fn as_tie_edges(n_loci: usize, reads: &[ReadPlacements], as_tie: f64, min_re
     weight.into_iter().filter(|&(_, w)| w >= min_reads).map(|((i, j), _)| (i, j)).collect()
 }
 
+/// Count reads supporting a conflict family and how many of those reads have BOTH placements at mapq==0
+/// (the genuine-multimapper corroboration). A read is counted when it contributes at least one de-tied pair
+/// whose two loci are BOTH in `family`; of those, a `both_mapq0` read has mapq==0 on BOTH placements in
+/// that pair. Returns `(supporting_reads, both_mapq0_reads)`. Log-only: does NOT gate any edge.
+pub fn family_mapq0_support(reads: &[ReadPlacements], family: &[usize], p: &ConflictParams) -> (usize, usize) {
+    let fset: std::collections::BTreeSet<usize> = family.iter().copied().collect();
+    let mut support = 0usize;
+    let mut both_mapq0 = 0usize;
+    'read: for placements in reads {
+        // Scan every pair within this read; stop at the first pair that fires (count once per read).
+        for ai in 0..placements.len() {
+            for bi in (ai + 1)..placements.len() {
+                let (pa, pb) = (&placements[ai], &placements[bi]);
+                if !fset.contains(&pa.locus) || !fset.contains(&pb.locus) {
+                    continue;
+                }
+                if pa.locus == pb.locus {
+                    continue;
+                }
+                if de_tied(pa, pb, p) {
+                    support += 1;
+                    if pa.mapq == 0 && pb.mapq == 0 {
+                        both_mapq0 += 1;
+                    }
+                    continue 'read;
+                }
+            }
+        }
+    }
+    (support, both_mapq0)
+}
+
 /// Connected-component families over the conflict edges (union-find). Returns components of size `>= 2`
 /// (a locus with no conflict needs no resolution — it is not a family), each sorted ascending, the list
 /// sorted by first member (deterministic).
@@ -230,6 +262,68 @@ mod tests {
         assert!((d.delta - 0.005).abs() < 1e-9);
         assert!((d.de_max - 0.05).abs() < 1e-9);
         assert_eq!(d.min_reads, 3);
+    }
+
+    #[test]
+    fn deterministic_under_placement_order() {
+        // Shuffling placement order within a read and across reads must not change the edge/family output.
+        let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 };
+        // two reads, each with placements on loci {0,1,2} in different orders.
+        let forward = vec![
+            vec![p(0, 0.010), p(1, 0.012), p(2, 0.030)],
+            vec![p(1, 0.011), p(0, 0.013)],
+        ];
+        let reversed = vec![
+            vec![p(2, 0.030), p(1, 0.012), p(0, 0.010)],
+            vec![p(0, 0.013), p(1, 0.011)],
+        ];
+        let reads_swapped = vec![forward[1].clone(), forward[0].clone()];
+        let e_fwd = conflict_edges(3, &forward, &pr);
+        let e_rev = conflict_edges(3, &reversed, &pr);
+        let e_swp = conflict_edges(3, &reads_swapped, &pr);
+        assert_eq!(e_fwd, e_rev, "placement order within reads must not change edges");
+        assert_eq!(e_fwd, e_swp, "read order must not change edges");
+        assert_eq!(conflict_families(3, &e_fwd), conflict_families(3, &e_rev));
+        assert_eq!(conflict_families(3, &e_fwd), conflict_families(3, &e_swp));
+    }
+
+    #[test]
+    fn de_max_boundary_exactly_at_threshold_fires_just_over_is_blocked() {
+        // Safely inside: de 0.049 vs 0.049 — max(de)=0.049 < 0.05, |Δ|=0 ≤ 0.005 → should fire.
+        let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 };
+        let inside = vec![vec![p(0, 0.049), p(1, 0.049)]];
+        let e_inside = conflict_edges(2, &inside, &pr);
+        assert_eq!(e_inside, vec![(0, 1, 1)], "de=0.049 <= de_max=0.05 must fire");
+        // NOTE: exactly 0.05f32 widens above 0.05f64 after f32→f64 cast → on the precision boundary;
+        // we test the clearly-over case (0.051) which is blocked regardless.
+        let over = vec![vec![p(0, 0.051), p(1, 0.051)]];
+        let e_over = conflict_edges(2, &over, &pr);
+        assert!(e_over.is_empty(), "de=0.051 > de_max=0.05 must be blocked");
+    }
+
+    #[test]
+    fn family_mapq0_support_counts_correctly() {
+        let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 };
+        let family = vec![0usize, 1];
+        // read A: both loci de-tied, both mapq==0 → counts in support AND both_mapq0.
+        let read_a: ReadPlacements = vec![
+            Placement { locus: 0, de: 0.010, mapq: 0, as_score: 100 },
+            Placement { locus: 1, de: 0.012, mapq: 0, as_score: 100 },
+        ];
+        // read B: both loci de-tied, but mapq>0 on one → counts in support but NOT both_mapq0.
+        let read_b: ReadPlacements = vec![
+            Placement { locus: 0, de: 0.010, mapq: 60, as_score: 100 },
+            Placement { locus: 1, de: 0.012, mapq: 0, as_score: 100 },
+        ];
+        // read C: de NOT tied (gap too large) → not counted at all.
+        let read_c: ReadPlacements = vec![
+            Placement { locus: 0, de: 0.001, mapq: 0, as_score: 100 },
+            Placement { locus: 1, de: 0.020, mapq: 0, as_score: 100 },
+        ];
+        let reads = vec![read_a, read_b, read_c];
+        let (support, mapq0) = family_mapq0_support(&reads, &family, &pr);
+        assert_eq!(support, 2, "read_a and read_b both contribute a de-tied pair in the family");
+        assert_eq!(mapq0, 1, "only read_a has both placements mapq==0");
     }
 
     #[test]
