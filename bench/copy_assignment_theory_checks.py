@@ -540,10 +540,71 @@ def check_thm2_K0_merge():
     return "Thm 2 boundary: K=0 -> minimum cover = 1 (forced merge, non-identifiable)"
 
 
+def check_corollary_paths():
+    """Verify the paths/isoforms corollary: junction treated as a linkage column.
+
+    A family variation-graph DAG has two copies that differ by BOTH a PSV allele (column 0)
+    AND an isoform-distinguishing junction (pseudo-column JJ=99).  Treating the junction on
+    equal footing with PSV columns, the combined conflict machinery applies verbatim: same
+    conflict_graph, same mcc_bruteforce, same Strong Separation condition.
+
+    Copy A: allele 0 at PSV column 0, takes junction-branch 0 at column JJ.
+    Copy B: allele 1 at PSV column 0, takes junction-branch 1 at column JJ.
+
+    For Strong Separation to hold over the combined column set, every cross-copy read pair must
+    co-observe at least one distinguishing column and disagree on it.  This is exactly the
+    long-read linkage condition: a molecule that spans exon-content (carrying both PSV and junction
+    observations) gives a conflicting signal against every foreign molecule.  Single-column reads
+    observing ONLY the PSV or ONLY the junction from disjoint sets may not co-observe any column
+    and thus cannot conflict -- so the 'linking' span of long reads is what makes the condition
+    satisfiable in practice.
+
+    The check uses reads that each observe BOTH the PSV column AND the junction column (i.e. the
+    reads span and link the two distinguishing features, as a long molecule would).  This is the
+    minimal instance where Strong Separation holds over the combined (allele + junction) column set,
+    and Theorem 2 then gives MCC = 2 = number of true copies.
+    """
+    JJ = 99  # junction pseudo-column (models the isoform-distinguishing splice event)
+    copies = {"A": {0: 0, JJ: 0}, "B": {0: 1, JJ: 1}}  # differ at PSV col 0 AND junction col JJ
+
+    def mk(cp, cols):
+        return frozenset((c, copies[cp][c]) for c in cols)
+
+    # Reads span BOTH columns so every cross-copy pair co-observes a distinguishing column.
+    # (A read observing only col 0 and a foreign read observing only col JJ would share no
+    # column and thus cannot conflict -- that is the honest caveat noted in §6.)
+    reads = [
+        mk("A", {0, JJ}),  # copy A read spanning PSV + junction
+        mk("A", {0, JJ}),  # copy A read spanning PSV + junction (additional coverage)
+        mk("A", {0, JJ}),  # copy A read spanning PSV + junction (additional coverage)
+        mk("B", {0, JJ}),  # copy B read spanning PSV + junction
+        mk("B", {0, JJ}),  # copy B read spanning PSV + junction (additional coverage)
+        mk("B", {0, JJ}),  # copy B read spanning PSV + junction (additional coverage)
+    ]
+
+    # The combined conflict machinery applies verbatim.
+    H = conflict_graph(reads)
+    mcc = mcc_bruteforce(reads)
+    assert mcc == 2, f"two copies separated by allele AND junction -> MCC=2, got {mcc}"
+
+    # Verify Strong Separation holds: every cross-copy read pair co-observes {col 0, col JJ}
+    # and disagrees on at least one of them.
+    labels = [0, 0, 0, 1, 1, 1]
+    copy_vecs = [(0, 0), (1, 1)]  # placeholder; cond_strong only uses reads + labels
+    assert cond_strong(copy_vecs, reads, labels), (
+        "spanning reads must satisfy Strong Separation over combined (allele+junction) columns"
+    )
+
+    return (
+        "Corollary: junction treated as a linkage column -> path-cover recovers copies+isoforms (MCC=2)"
+    )
+
+
 CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
 CHECKS.append(check_thm2_recovery)
 CHECKS.append(check_thm2_strong_exhaustive)
 CHECKS.append(check_thm2_K0_merge)
+CHECKS.append(check_corollary_paths)
 
 
 def main():

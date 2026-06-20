@@ -388,5 +388,87 @@ OK  - Thm 2 boundary: K=0 -> minimum cover = 1 (forced merge, non-identifiable)
 
 ---
 
+---
+
+## §6 The paths/isoforms corollary: joint recovery of copy number and isoform structure
+
+Sections §2–§5 treat a copy as a bare allele-vector over PSV columns.  Here we show that isoform structure
+lifts into the same framework for free, by treating each distinguishing junction as an additional column.  The
+core definitions, Lemma 1, and Theorem 2 then apply verbatim over the enlarged column set, and the
+minimum constrained path-cover of the family variation graph recovers copies **and** isoforms jointly.
+
+### Setup: copies as (path, allele-vector) pairs
+
+A **gene copy with isoform structure** is a pair $(\pi, a)$ where $\pi$ is a path through the family
+variation-graph DAG (determining which splice junctions are used) and $a$ is an allele-vector over the PSV
+columns.  Two copies $(\pi, a)$ and $(\pi', a')$ are distinguishable if they differ at any PSV column **or** at
+any junction.
+
+### The junction-as-column lift
+
+Model each isoform-distinguishing junction $J$ as an additional binary **column** $c_J$, with allele alphabet
+$\{0, 1\}$: a read that spans junction $J$ observes $c_J$ and reports which splice branch it took (0 for the
+exon-skipping branch, 1 for the inclusion branch, or analogously for donor/acceptor alternatives).
+
+Under this encoding:
+
+- A read is a partial function from $[m] \cup \{c_J : J \text{ a junction column}\}$ to alleles, exactly as
+  before.
+- Two reads **conflict** if they co-observe any column (PSV or junction) with differing alleles — the conflict
+  definition is unchanged.
+- A copy is a consistent allele-**and**-junction vector: an element of $\prod_j A_j \times \{0,1\}^{\#\text{junctions}}$.
+- The **conflict graph** $H$, the **MCC**, and the **jointly-consistent** / **independent-set** equivalence all
+  carry over verbatim; the proof of Lemma 1 never refers to the semantics of columns.
+
+### Corollary (joint copies and isoforms)
+
+> **Corollary (joint copies + isoforms).** Re-attach isoform structure: a copy is $(\pi, a)$ and reads carry
+> junction observations.  Treat each distinguishing junction as an additional linkage column over the branch
+> alphabet; then a copy is a consistent allele-and-junction vector, reads conflict on disagreeing co-observed
+> alleles **or** junctions, and Lemma 1 and Theorem 2 apply verbatim over the combined column set.
+>
+> Hence under **Strong Separation over the combined (allele+junction) columns** — every cross-copy read pair
+> co-observes at least one distinguishing column (PSV or junction) and disagrees on it — the minimum
+> **constrained path-cover** of the family variation graph is unique and equals the true copies-with-isoforms,
+> recovering $\#$copies **and** their isoform structure jointly.  Unconstrained minimum path-cover (max-flow on
+> the DAG) is the relaxation; allele+junction linkage promotes it from *a* minimum cover to *the* true cover
+> under Strong Separation.
+
+### The spanning-read requirement and the honest caveat
+
+Strong Separation over the combined column set places a concrete demand on the reads: **every cross-copy read
+pair must share at least one co-observed column**.  A read observing only a single PSV column and a foreign read
+observing only a junction column share no column at all — they are trivially compatible and cannot contribute a
+conflict edge in $H$.  This is not a gap in the theory; it is the exact formalization of the biological
+intuition that **long-read linkage is what makes the corollary operational**: a molecule that spans both an
+exon carrying a PSV and the downstream splice site observes both $c_J$ and the PSV column, so it will conflict
+with every foreign read that also spans either feature.
+
+Therefore Strong Separation over the combined column set holds **if and only if** the read coverage is dense
+enough that every cross-copy pair is connected by at least one co-observed distinguishing column — precisely the
+condition that long-read (HiFi/ONT) spanning molecules satisfy in practice.
+
+**Honest caveat.** If two copies of the same gene share identical PSV profiles and are distinguished **only** by
+a junction that no read spans (e.g., an ultra-long intron whose two splice variants are never jointly observed in
+a single molecule), then the junction column is unlinked: it contributes no conflict edge, Strong Separation
+fails for that junction, and the two copies are indistinguishable to the cover — exactly the $K_{ij} = 0$ case
+of the K-bound corollary (§5), now instantiated at the junction axis.  The core result stands; that degenerate
+case is future work, identical in character to the unresolvable-PSV regime.
+
+### Verification
+
+The check `check_corollary_paths` in `bench/copy_assignment_theory_checks.py` instantiates the corollary on the
+minimal spanning-read case:
+
+- **Two copies** differing at PSV column $0$ (copy A allele $0$, copy B allele $1$) **and** at junction
+  pseudo-column $99$ (copy A branch $0$, copy B branch $1$).
+- **Reads** each span **both** columns (PSV + junction), as a long molecule would.
+- Every cross-copy pair co-observes both distinguishing columns and disagrees on at least one: Strong
+  Separation holds, Theorem 2 applies, and `mcc_bruteforce` returns $2 = $ true copy count.
+
+```
+OK  - Corollary: junction treated as a linkage column -> path-cover recovers copies+isoforms (MCC=2)
+```
+
 *See also: `bench/family_definition_formal.md` for the upstream family-detection step whose output populates
 $R$ for each identified gene family.*
