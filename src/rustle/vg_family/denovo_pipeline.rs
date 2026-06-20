@@ -186,6 +186,8 @@ pub struct FamilyAssignment {
     /// conversion events (breakpoint recurs across molecules) — the enriched per-molecule multimapper signal.
     pub mosaic_reads: usize,
     pub conversions: Vec<crate::vg_family::mosaic::ConversionEvent>,
+    /// copy-level historical gene conversions (a copy whose PSV-allele vector is a mosaic of two others).
+    pub copy_conversions: Vec<crate::vg_family::copy_assign_pipeline::CopyConversion>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
@@ -377,6 +379,7 @@ pub fn detect_and_assign(
             copy_abundance_ci: detail.copy_abundance_ci.clone(),
             mosaic_reads: detail.mosaic_reads,
             conversions: detail.conversions.clone(),
+            copy_conversions: detail.copy_conversions.clone(),
         };
         for r in detail.results {
             let resolvable_psv = r.psv.n_decisive >= 1;

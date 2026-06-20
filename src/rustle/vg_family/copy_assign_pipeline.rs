@@ -304,6 +304,63 @@ pub struct FamilyDetail {
     /// family-confirmed gene conversions: the breakpoint RECURS across independent molecules (vs a one-off
     /// chimera). The enriched per-molecule signal the multimappers carry beyond presence/abundance.
     pub conversions: Vec<super::mosaic::ConversionEvent>,
+    /// COPY-level historical gene conversions: a de-novo copy whose PSV-allele vector is itself a mosaic of two
+    /// OTHER copies (the APOBEC3/RFPL signal — baked into the copy sequence, invisible to the read-level scan).
+    pub copy_conversions: Vec<CopyConversion>,
+}
+
+/// One de-novo COPY whose PSV-allele vector is a MOSAIC of two other copies — a HISTORICAL gene conversion
+/// (the converted copy resembles donor A over its 5' tract, donor B over its 3' tract). Distinct from the
+/// read-level recombinant-molecule scan: this is the copy-level signal the famous conversion families carry.
+#[derive(Clone, Debug)]
+pub struct CopyConversion {
+    pub copy_c: usize,
+    pub copy_a: usize,
+    pub copy_b: usize,
+    pub breakpoint: (u64, u64),
+    pub n_decisive: usize,
+}
+
+/// For each copy in a (>=3-copy) family, ask whether its PSV-allele vector switches from matching one copy to
+/// another at a breakpoint = a historical gene conversion. Runs the same `detect_mosaic` primitive on the COPY
+/// consensus (self excluded from the match set, else it trivially matches itself). `col_gpos[col]` = the
+/// column's canonical genomic position (for ordering + the breakpoint frame).
+pub fn scan_copy_conversions(
+    profiles: &[CopyProfile],
+    col_gpos: &[Option<u64>],
+    p: &super::mosaic::MosaicParams,
+) -> Vec<CopyConversion> {
+    use super::mosaic::{detect_mosaic, SiteObs};
+    let n = profiles.len();
+    if n < 3 {
+        return Vec::new(); // a copy can only be a mosaic of two OTHERS if there are >= 3 copies
+    }
+    let mut out = Vec::new();
+    for c in 0..n {
+        let mut site_obs: Vec<SiteObs> = Vec::new();
+        for col in 0..col_gpos.len() {
+            let Some(rpos) = col_gpos[col] else { continue };
+            let Some(ca) = profiles[c].alleles.get(col).copied().flatten() else { continue };
+            let match_bits = (0..n).map(|o| o != c && profiles[o].alleles[col] == Some(ca)).collect();
+            site_obs.push(SiteObs { ref_pos: rpos, match_bits });
+        }
+        site_obs.sort_by_key(|s| s.ref_pos);
+        // a copy consensus is fully decisive at every PSV (no read error), so a divergent family yields
+        // thousands of sites -> stride-sample to bound `detect_mosaic` (breakpoint detection needs spread, not
+        // every column).
+        const MAX_CONV_SITES: usize = 300;
+        if site_obs.len() > MAX_CONV_SITES {
+            let stride = site_obs.len() / MAX_CONV_SITES + 1;
+            site_obs = site_obs.into_iter().step_by(stride).collect();
+        }
+        let call = detect_mosaic(&site_obs, n, 0.01, p);
+        if let (true, Some(a), Some(b), Some(bp)) =
+            (call.is_mosaic(), call.copy_a, call.copy_b, call.breakpoint_ref)
+        {
+            out.push(CopyConversion { copy_c: c, copy_a: a, copy_b: b, breakpoint: bp, n_decisive: call.n_decisive });
+        }
+    }
+    out
 }
 
 /// Default per-base error for the soft-quant likelihood (HiFi-ish; match prob `1-e`, each mismatch `e/3`).
@@ -381,10 +438,12 @@ pub fn assign_family_detailed(
             copy_abundance_ci: Vec::new(),
             mosaic_reads: 0,
             conversions: Vec::new(),
+            copy_conversions: Vec::new(),
         };
     }
     use super::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
     const MOSAIC_EPS: f64 = 0.01; // HiFi per-base error for the mosaic likelihood
+    const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
     let fp = build_family_profiles(copies);
     // canonical column -> genomic position (first copy that has the column) so every read's switch breakpoints
     // are in ONE frame and `aggregate_family` can cluster recurrences across molecules.
@@ -411,6 +470,10 @@ pub fn assign_family_detailed(
             }
         }
         site_obs.sort_by_key(|s| s.ref_pos);
+        if site_obs.len() > MAX_MOSAIC_SITES {
+            let stride = site_obs.len() / MAX_MOSAIC_SITES + 1;
+            site_obs = site_obs.into_iter().step_by(stride).collect();
+        }
         let mcall = detect_mosaic(&site_obs, copies.len(), MOSAIC_EPS, &mparams);
         if mcall.is_mosaic() {
             mosaic_reads += 1;
@@ -423,12 +486,22 @@ pub fn assign_family_detailed(
         results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined });
     }
     let conversions = aggregate_family(&mosaic_calls, &mparams);
+    // copy-level historical conversions: is any copy's PSV-allele vector a mosaic of two others?
+    let copy_conversions = scan_copy_conversions(&fp.profiles, &col_canon, &mparams);
     // soft per-copy abundance (EM) + a normal-approx 95% CI half-width (theta(1-theta)/N).
     let copy_alleles: Vec<Vec<Option<u8>>> = fp.profiles.iter().map(|pr| pr.alleles.clone()).collect();
     let copy_abundance = soft_quantify_em(&read_obs, &copy_alleles, QUANT_ERROR, 100);
     let n = read_obs.len().max(1) as f64;
     let copy_abundance_ci = copy_abundance.iter().map(|&t| 1.96 * (t * (1.0 - t) / n).sqrt()).collect();
-    FamilyDetail { results, n_cols: fp.n_cols, copy_abundance, copy_abundance_ci, mosaic_reads, conversions }
+    FamilyDetail {
+        results,
+        n_cols: fp.n_cols,
+        copy_abundance,
+        copy_abundance_ci,
+        mosaic_reads,
+        conversions,
+        copy_conversions,
+    }
 }
 
 /// Assign every read over a co-located family to a copy. Each read is mapped to the copy whose genomic span
@@ -755,6 +828,26 @@ mod tests {
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb };
         let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default());
         assert!(detail.mosaic_reads >= 1, "recombinant flagged as mosaic; got {}", detail.mosaic_reads);
+    }
+
+    #[test]
+    fn copy_level_conversion_detected() {
+        // 3 copies: A (allele X at all 8 PSVs), B (allele Y), and C = a MOSAIC (matches A over the first 4
+        // PSVs, B over the last 4) -- a historical gene conversion baked into copy C's sequence.
+        let base = rand_seq(300, 0x0C0C_0001);
+        let psv = [30usize, 60, 90, 120, 150, 180, 210, 240];
+        let (mut sa, mut sb, mut sc) = (base.clone(), base.clone(), base);
+        for (i, &p) in psv.iter().enumerate() {
+            sa[p] = b'A';
+            sb[p] = b'C';
+            sc[p] = if i < 4 { b'A' } else { b'C' };
+        }
+        let ca = copy_tx("A", 0, 300, '+', &[], sa);
+        let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
+        let cc = copy_tx("C", 2000, 2300, '+', &[], sc);
+        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default());
+        assert_eq!(detail.copy_conversions.len(), 1, "exactly copy C is a mosaic of two others");
+        assert_eq!(detail.copy_conversions[0].copy_c, 2, "copy C (index 2) is the converted copy");
     }
 
     #[test]

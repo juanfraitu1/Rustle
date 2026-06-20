@@ -125,6 +125,16 @@ struct MosaicRow {
     dispersion: u64,
     confirmed: bool,
 }
+/// One COPY-level historical gene-conversion row (a copy that is a mosaic of two others).
+struct CopyConvRow {
+    family_id: String,
+    copy_c: String,
+    copy_a: usize,
+    copy_b: usize,
+    bp_lo: u64,
+    bp_hi: u64,
+    n_decisive: usize,
+}
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -157,6 +167,7 @@ fn main() -> Result<()> {
     let mut assign_rows: Vec<AssignRow> = Vec::new();
     let mut quant_rows: Vec<QuantRow> = Vec::new();
     let mut mosaic_rows: Vec<MosaicRow> = Vec::new();
+    let mut copyconv_rows: Vec<CopyConvRow> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
@@ -211,6 +222,18 @@ fn main() -> Result<()> {
                         n_reads: ev.n_supporting_reads,
                         dispersion: ev.breakpoint_dispersion,
                         confirmed: ev.confirmed,
+                    });
+                }
+                // copy-level historical conversions (a copy whose PSV vector is a mosaic of two others)
+                for cv in &fa.copy_conversions {
+                    copyconv_rows.push(CopyConvRow {
+                        family_id: fid.clone(),
+                        copy_c: fa.copy_tids.get(cv.copy_c).cloned().unwrap_or_else(|| cv.copy_c.to_string()),
+                        copy_a: cv.copy_a,
+                        copy_b: cv.copy_b,
+                        bp_lo: cv.breakpoint.0,
+                        bp_hi: cv.breakpoint.1,
+                        n_decisive: cv.n_decisive,
                     });
                 }
                 family_rows.push(FamilyRow {
@@ -278,8 +301,25 @@ fn main() -> Result<()> {
         }
         let conf = mosaic_rows.iter().filter(|r| r.confirmed).count();
         eprintln!(
-            "[copy_assign] {} gene-conversion event(s) ({} confirmed by recurrence) -> {}.mosaic.tsv",
+            "[copy_assign] {} read-level gene-conversion event(s) ({} confirmed by recurrence) -> {}.mosaic.tsv",
             mosaic_rows.len(), conf, args.out
+        );
+    }
+
+    // copy-level historical gene conversions (a de-novo copy whose PSV-allele vector is a mosaic of two
+    // others) -- the APOBEC3/RFPL signal, baked into the copy sequence. Written only when found.
+    if !copyconv_rows.is_empty() {
+        let mut ch = std::fs::File::create(format!("{}.copy_conversions.tsv", args.out))?;
+        writeln!(ch, "family_id\tconverted_copy\tdonor_a\tdonor_b\tbreakpoint_lo\tbreakpoint_hi\tn_decisive")?;
+        for r in &copyconv_rows {
+            writeln!(
+                ch, "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                r.family_id, r.copy_c, r.copy_a, r.copy_b, r.bp_lo, r.bp_hi, r.n_decisive
+            )?;
+        }
+        eprintln!(
+            "[copy_assign] {} COPY-level historical gene conversion(s) -> {}.copy_conversions.tsv",
+            copyconv_rows.len(), args.out
         );
     }
 

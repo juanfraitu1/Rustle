@@ -25,7 +25,7 @@
 //!      then a reverse-complement fallback for copies assembled on the opposite
 //!      strand). Rescue iff the contiguous-core coverage `>= T_CORE = 0.13`.
 
-use super::family_graph::contiguous_core_coverage;
+use super::family_graph::contiguous_core_coverage_bounded;
 use crate::types::DetHashSet;
 use crate::vg::reverse_complement;
 
@@ -217,10 +217,10 @@ pub fn rescue_thin_locus(
     // python `_poa_rescue` RC retry).
     let thin_up = thin_seq.to_ascii_uppercase();
     let mem_up = m.seq.to_ascii_uppercase();
-    let mut core_recip = contiguous_core_coverage(&thin_up, &mem_up);
+    let mut core_recip = contiguous_core_coverage_bounded(&thin_up, &mem_up, p.len_cap);
     let mut orientation = Orientation::Forward;
     if core_recip < p.t_core {
-        let rc = contiguous_core_coverage(&thin_up, &reverse_complement(&mem_up));
+        let rc = contiguous_core_coverage_bounded(&thin_up, &reverse_complement(&mem_up), p.len_cap);
         if rc > core_recip {
             core_recip = rc;
             orientation = Orientation::ReverseComplement;
