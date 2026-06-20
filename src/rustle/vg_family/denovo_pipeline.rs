@@ -19,7 +19,7 @@ use super::denovo_assemble::{
 use super::family_detect::{collapse_loci, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
 use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
-use super::read_conflict::{conflict_edges, conflict_families, ConflictParams, ReadPlacements};
+use super::read_conflict::{as_tie_edges, conflict_edges, conflict_families, ConflictParams, Placement, ReadPlacements};
 use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
 
@@ -40,7 +40,7 @@ impl Default for DenovoConfig {
             gate: GateParams::default(),
             detect: DetectParams::default(),
             split: SplitParams::default(),
-            conflict: ConflictParams { as_tie: 0.9, min_reads: 2 },
+            conflict: ConflictParams::from_env(),
         }
     }
 }
@@ -225,19 +225,25 @@ pub struct FallbackEdge {
 /// with the read.  This prevents uniquely-mapped reads that happen to span two coordinate-adjacent or
 /// nested rep loci from producing spurious conflict edges: a genuine conflict requires a read to appear
 /// TWICE in the BAM (once at each locus), not just to overlap two loci from a single alignment.
+/// Supplementary (chimeric/split) records are excluded — they are not multimapping alternative placements.
+/// The de-tie criterion uses `de` (gap-compressed divergence) to discriminate tied from resolvable placements.
 pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscript]) -> Vec<ReadPlacements> {
     use std::collections::BTreeMap;
-    let mut by_name: BTreeMap<&str, Vec<(usize, i32)>> = BTreeMap::new();
+    let mut by_name: BTreeMap<&str, Vec<Placement>> = BTreeMap::new();
     for br in bam_reads {
+        if br.is_supplementary {
+            continue; // chimeric/split read is not a multimapping alternative placement
+        }
         let read_end = read_ref_end(&br.read);
-        // Best-fit: the rep locus whose span has the largest intersection with this alignment.
         let best = reps
             .iter()
             .enumerate()
             .filter(|(_, rep)| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_end > rep.start)
             .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
         if let Some((li, _)) = best {
-            by_name.entry(br.name.as_str()).or_default().push((li, br.as_score));
+            by_name.entry(br.name.as_str()).or_default().push(Placement {
+                locus: li, de: br.de, mapq: br.mapq, as_score: br.as_score,
+            });
         }
     }
     by_name.into_values().collect()
@@ -320,19 +326,19 @@ pub fn detect_and_assign(
     let placements = build_read_placements(bam_reads, &reps);
     let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
     let c_fams = conflict_families(reps.len(), &c_edges);
+    // audit: the de-tie edge set must be a subset of the AS-tie edge set (the bake-off invariant).
+    let as_edges = as_tie_edges(reps.len(), &placements, 0.9, cfg.conflict.min_reads);
+    let de_subset = c_edges.iter().all(|&(i, j, _)| as_edges.contains(&(i, j)));
     eprintln!(
-        "[detect_and_assign] conflict-graph: {} edges -> {} families",
-        c_edges.len(), c_fams.len(),
+        "[detect_and_assign] conflict-graph (de-tie): {} edges -> {} families | de⊆AS={} (AS edges={})",
+        c_edges.len(), c_fams.len(), de_subset, as_edges.len(),
     );
     for (fi, fam) in c_fams.iter().enumerate() {
         let members: Vec<&str> = fam.iter().map(|&i| reps[i].tid.as_str()).collect();
         let coords: Vec<String> = fam.iter()
-            .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end))
-            .collect();
+            .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end)).collect();
         let edge_weights: Vec<usize> = c_edges.iter()
-            .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b))
-            .map(|&(_, _, w)| w)
-            .collect();
+            .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b)).map(|&(_, _, w)| w).collect();
         eprintln!(
             "  conflict-fam{fi} n={} reads_linking={:?}: {} @ {}",
             fam.len(), edge_weights, members.join(","), coords.join(" | "),
@@ -604,18 +610,22 @@ mod tests {
         // a copyB read aligned to copyA's genomic region: seq = copyB's spliced transcript.
         let copyb_spliced = cat(&[&fb1, &core_b, &fb2]);
         let copya_spliced = cat(&[&fa1, &core_a, &fa2]);
-        // readB: primary maps to copyA's locus (0), secondary to copyB's locus (1000). AS tied → conflict.
-        let ar_primary = AlignedRead { ref_start: 0,    cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced.clone() };
-        let ar_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced.clone() };
-        // readC: same pattern as readB (second conflicting multimapper; satisfies min_reads=2 edge guard).
-        let ar_c_primary   = AlignedRead { ref_start: 0,    cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
-        let ar_c_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced };
-        let bam = vec![
-            BamRead { chrom: "c1".into(), read: ar_primary,     mapq: 60, name: "readB".into(), as_score: 380, de: 0.01, is_supplementary: false },
-            BamRead { chrom: "c1".into(), read: ar_secondary,   mapq:  0, name: "readB".into(), as_score: 379, de: 0.01, is_supplementary: false },
-            BamRead { chrom: "c1".into(), read: ar_c_primary,   mapq: 60, name: "readC".into(), as_score: 380, de: 0.01, is_supplementary: false },
-            BamRead { chrom: "c1".into(), read: ar_c_secondary, mapq:  0, name: "readC".into(), as_score: 379, de: 0.01, is_supplementary: false },
-        ];
+        // Three multimappers (readB/readC/readD): each primary at locus 0, secondary at locus 1000.
+        // de 0.010/0.012 (both < 0.05, |Δ|=0.002 < 0.005) -> de-tied -> conflict edge. min_reads=3 satisfied.
+        let mk = |name: &str, primary_seq: Vec<u8>, secondary_seq: Vec<u8>| {
+            vec![
+                BamRead { chrom: "c1".into(),
+                    read: AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: primary_seq },
+                    mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false },
+                BamRead { chrom: "c1".into(),
+                    read: AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: secondary_seq },
+                    mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false },
+            ]
+        };
+        let mut bam = Vec::new();
+        for nm in ["readB", "readC", "readD"] {
+            bam.extend(mk(nm, copyb_spliced.clone(), copya_spliced.clone()));
+        }
         (genome, primary, bam)
     }
 
@@ -690,9 +700,9 @@ mod tests {
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
-        // Four BamRecords: readB primary+secondary + readC primary+secondary; all overlap the family.
-        assert_eq!(fa.n_reads, 4);
-        assert_eq!(fa.assignments.len(), 4);
+        // Six BamRecords: readB/readC/readD each primary+secondary; all overlap the family.
+        assert_eq!(fa.n_reads, 6);
+        assert_eq!(fa.assignments.len(), 6);
         // copies sorted by start: copyA=0, copyB=1.
         // Primary (ref_start=0, seq=copyb_spliced) -> assigned to copyB (best_copy=1).
         let primary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 1)
@@ -933,18 +943,13 @@ mod tests {
         eprintln!("candidate_pairs accepts: {cps:?}");
     }
 
-    fn bam_read(chrom: &str, start: u64, end: u64, name: &str, as_score: i32, is_secondary: bool) -> BamRead {
-        // mapq=0 for secondaries (as minimap2 does), non-zero for primaries.
+    fn bam_read(chrom: &str, start: u64, end: u64, name: &str, de: f32, is_secondary: bool) -> BamRead {
         let mapq = if is_secondary { 0 } else { 60 };
         let len = (end - start) as u64;
         BamRead {
             chrom: chrom.into(),
             read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize] },
-            mapq,
-            name: name.into(),
-            as_score,
-            de: 0.01,
-            is_supplementary: false,
+            mapq, name: name.into(), as_score: 500, de, is_supplementary: false,
         }
     }
 
@@ -961,74 +966,78 @@ mod tests {
         }
     }
 
-    // These tests use ConflictParams::default() (min_reads=1) to isolate placement logic and graph
-    // topology. The end-to-end test uses DenovoConfig::default().conflict (min_reads=2) to exercise
-    // the production threshold.
-    /// Multimapper (tied primary + secondary at two distinct loci) -> conflict edge -> family.
     #[test]
     fn build_read_placements_multimapper_forms_conflict_family() {
         let reps = vec![rep("c1", 0, 200), rep("c1", 1000, 1200)];
-        // read_X maps to locus 0 (primary, AS=500) and locus 1 (secondary, AS=498) — tied.
         let bam = vec![
-            bam_read("c1", 0, 200, "read_X", 500, false),
-            bam_read("c1", 1000, 1200, "read_X", 498, true),
+            bam_read("c1", 0, 200, "read_X", 0.010, false),
+            bam_read("c1", 1000, 1200, "read_X", 0.012, true),
         ];
         let placements = build_read_placements(&bam, &reps);
-        let edges = super::super::read_conflict::conflict_edges(2, &placements, &ConflictParams::default());
-        assert!(!edges.is_empty(), "tied cross-locus read must produce a conflict edge");
-        let fams = conflict_families(2, &edges);
-        assert_eq!(fams, vec![vec![0, 1]], "tied multimapper merges the two loci into one family");
+        let edges = super::super::read_conflict::conflict_edges(
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        assert!(!edges.is_empty(), "de-tied cross-locus read must produce a conflict edge");
+        assert_eq!(conflict_families(2, &edges), vec![vec![0, 1]]);
     }
 
-    /// Domain-sharer: a read covers a shared exon and maps to ONE locus only -> no conflict -> no family.
     #[test]
     fn build_read_placements_domain_sharer_is_no_family() {
         let reps = vec![rep("c1", 0, 200), rep("c1", 1000, 1200)];
-        // read_Y maps only to locus 0 (no secondary at locus 1, because the shared exon is at locus 0).
-        let bam = vec![bam_read("c1", 0, 200, "read_Y", 480, false)];
+        let bam = vec![bam_read("c1", 0, 200, "read_Y", 0.010, false)];
         let placements = build_read_placements(&bam, &reps);
-        let edges = super::super::read_conflict::conflict_edges(2, &placements, &ConflictParams::default());
-        assert!(edges.is_empty(), "domain-sharer single-placement read makes no conflict edge");
+        let edges = super::super::read_conflict::conflict_edges(
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        assert!(edges.is_empty());
         assert!(conflict_families(2, &edges).is_empty());
     }
 
-    /// Uniquely-mapped read whose span overlaps two nested loci (one contained in the other) must NOT
-    /// produce a conflict edge.  The read has ONE BAM record — attributed to the better-overlapping locus
-    /// only — so the other locus gets no placement and no edge is formed.
     #[test]
     fn build_read_placements_nested_loci_unique_read_no_conflict() {
-        // locus0 = large (0-1000), locus1 = nested inside it (400-600).
         let reps = vec![rep("c1", 0, 1000), rep("c1", 400, 600)];
-        // One unique read at 450-550 — ONE BAM record, no secondary.
-        let bam = vec![bam_read("c1", 450, 550, "unique_read", 480, false)];
+        let bam = vec![bam_read("c1", 450, 550, "unique_read", 0.010, false)];
         let placements = build_read_placements(&bam, &reps);
-        // The read's overlap with locus1 (400-600) is 100 bp and with locus0 (0-1000) is also 100 bp.
-        // max_by_key picks one; crucially, there is only ONE BAM record so only ONE placement total.
-        let total_placements: usize = placements.iter().map(|p| p.len()).sum();
-        assert_eq!(total_placements, 1, "one BAM record -> one placement -> no cross-locus pair");
-        let edges = super::super::read_conflict::conflict_edges(2, &placements, &ConflictParams::default());
-        assert!(edges.is_empty(), "unique read spanning nested loci must not produce a conflict edge");
+        let total: usize = placements.iter().map(|p| p.len()).sum();
+        assert_eq!(total, 1, "one record -> one best-overlap placement -> no cross-locus pair");
+        let edges = super::super::read_conflict::conflict_edges(
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        assert!(edges.is_empty());
     }
 
-    /// Untied secondary (AS far below primary) -> not a conflict even though the read cross-maps.
     #[test]
-    fn build_read_placements_untied_secondary_is_no_conflict() {
+    fn build_read_placements_diverged_secondary_is_no_conflict() {
+        // read fits copy 0 (de 0.001) far better than copy 1 (de 0.020): resolvable, no edge.
         let reps = vec![rep("c1", 0, 200), rep("c1", 1000, 1200)];
         let bam = vec![
-            bam_read("c1", 0, 200, "read_Z", 500, false),
-            bam_read("c1", 1000, 1200, "read_Z", 200, true), // AS=200 << 500*0.9 -> untied
+            bam_read("c1", 0, 200, "read_Z", 0.001, false),
+            bam_read("c1", 1000, 1200, "read_Z", 0.020, true),
         ];
         let placements = build_read_placements(&bam, &reps);
-        let edges = super::super::read_conflict::conflict_edges(2, &placements, &ConflictParams::default());
-        assert!(edges.is_empty(), "large AS gap means the aligner resolved the read uniquely — no conflict");
+        let edges = super::super::read_conflict::conflict_edges(
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        assert!(edges.is_empty(), "diverged secondary (large de gap) is resolvable, not a conflict");
+    }
+
+    #[test]
+    fn build_read_placements_excludes_supplementary() {
+        // a supplementary (chimeric) record on the second locus must NOT create a conflict edge.
+        let reps = vec![rep("c1", 0, 200), rep("c1", 1000, 1200)];
+        let mut supp = bam_read("c1", 1000, 1200, "read_S", 0.010, true);
+        supp.is_supplementary = true;
+        let bam = vec![bam_read("c1", 0, 200, "read_S", 0.010, false), supp];
+        let placements = build_read_placements(&bam, &reps);
+        let total: usize = placements.iter().map(|p| p.len()).sum();
+        assert_eq!(total, 1, "supplementary record excluded -> only the primary placement remains");
+        let edges = super::super::read_conflict::conflict_edges(
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        assert!(edges.is_empty());
     }
 
     #[test]
     fn denovoconfig_default_conflict_params_are_sane() {
         let cfg = DenovoConfig::default();
-        // as_tie=0.9 means a 10% AS margin still counts as tied; min_reads=2 guards single spurious secondaries.
-        assert!((cfg.conflict.as_tie - 0.9).abs() < 1e-9);
-        assert_eq!(cfg.conflict.min_reads, 2);
+        assert!((cfg.conflict.delta - 0.005).abs() < 1e-9);
+        assert!((cfg.conflict.de_max - 0.05).abs() < 1e-9);
+        assert_eq!(cfg.conflict.min_reads, 3);
     }
 
     #[test]

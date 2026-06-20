@@ -19,59 +19,105 @@
 //! (edges → connected-component families). The remaining integration is plumbing per-locus secondary
 //! placements (`secondary_index` / `tied_secondary_reads_in_region`) into the detection stage.
 
-/// One read's placements over the family's candidate loci: `(locus index, alignment score)` for the read's
-/// primary + secondary alignments that landed on a candidate locus. Built from the BAM by the adapter.
-pub type ReadPlacements = Vec<(usize, i32)>;
+/// One read's placement on a candidate locus: the locus index plus the signals the conflict criterion uses —
+/// `de` (gap-compressed divergence, the tie discriminant), `mapq` (both-0 = genuine-multimapper corroboration),
+/// and `as_score` (kept only to log the `de-tie ⊆ AS-tie` invariant).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placement {
+    pub locus: usize,
+    pub de: f32,
+    pub mapq: u8,
+    pub as_score: i32,
+}
 
-/// Tunables for the read-conflict criterion.
+/// One read's placements over the family's candidate loci. Built from the BAM by the adapter.
+pub type ReadPlacements = Vec<Placement>;
+
+/// Tunables for the read-conflict criterion (de-tie). Defaults are the bake-off operating point
+/// (`bench/family_criterion_bakeoff.md`); env-overridable via `RUSTLE_CONFLICT_DE_DELTA/DE_MAX/MIN_READS`.
 #[derive(Clone, Copy, Debug)]
 pub struct ConflictParams {
-    /// A pair of placements is a conflict iff `min(AS) >= as_tie * max(AS)` (the alignment-score tie that
-    /// defines genuine ambiguity). `1.0` = exact tie; `0.9` admits a 10% margin.
-    pub as_tie: f64,
-    /// Minimum number of conflicting reads for an edge to be kept (guards against a lone spurious secondary).
+    /// Two placements conflict iff their divergences are within `delta` AND both `<= de_max` (both fit).
+    pub delta: f64,
+    pub de_max: f64,
+    /// Minimum conflicting-read count for an edge (guards the noise floor).
     pub min_reads: usize,
 }
 
 impl Default for ConflictParams {
     fn default() -> Self {
-        ConflictParams { as_tie: 0.9, min_reads: 1 }
+        ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3 }
     }
 }
 
-/// `min(a,b) >= as_tie * max(a,b)`, with non-positive scores treated as no-tie.
+impl ConflictParams {
+    /// Read overrides from `RUSTLE_CONFLICT_DE_DELTA`, `RUSTLE_CONFLICT_DE_MAX`, `RUSTLE_CONFLICT_MIN_READS`.
+    pub fn from_env() -> Self {
+        let d = Self::default();
+        let f = |k: &str, v: f64| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(v);
+        let u = |k: &str, v: usize| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(v);
+        ConflictParams {
+            delta: f("RUSTLE_CONFLICT_DE_DELTA", d.delta),
+            de_max: f("RUSTLE_CONFLICT_DE_MAX", d.de_max),
+            min_reads: u("RUSTLE_CONFLICT_MIN_READS", d.min_reads),
+        }
+    }
+}
+
+/// de-tie: `|de_a − de_b| <= delta` AND `max(de_a, de_b) <= de_max` (the read fits both copies, comparably).
+fn de_tied(a: &Placement, b: &Placement, p: &ConflictParams) -> bool {
+    let (da, db) = (a.de as f64, b.de as f64);
+    (da - db).abs() <= p.delta && da.max(db) <= p.de_max
+}
+
+/// `min(a,b) >= as_tie * max(a,b)` — the legacy AS-tie predicate, kept only for the audit edge-set.
 fn as_tied(a: i32, b: i32, as_tie: f64) -> bool {
     let (hi, lo) = (a.max(b), a.min(b));
     hi > 0 && (lo as f64) >= as_tie * (hi as f64)
 }
 
-/// Build the read-conflict edges over `n_loci`. For each read, every pair of its placements whose alignment
-/// scores are TIED contributes one conflict observation to that locus pair. Returns `(i, j, weight)` with
-/// `i < j` for pairs whose conflict count `>= p.min_reads`, sorted (deterministic). A placement appearing
-/// twice on the same locus is ignored (no self-edge). `O(reads * placements^2)`.
+/// Build the read-conflict edges over `n_loci` under the **de-tie** criterion. For each read, every pair of its
+/// placements that de-ties contributes one conflict observation to that locus pair. Returns `(i, j, weight)`
+/// with `i < j` for pairs whose count `>= p.min_reads`, sorted. Self-pairs (same locus) ignored.
 pub fn conflict_edges(n_loci: usize, reads: &[ReadPlacements], p: &ConflictParams) -> Vec<(usize, usize, usize)> {
     use std::collections::BTreeMap;
     let mut weight: BTreeMap<(usize, usize), usize> = BTreeMap::new();
     for placements in reads {
         for a in 0..placements.len() {
             for b in (a + 1)..placements.len() {
-                let (la, sa) = placements[a];
-                let (lb, sb) = placements[b];
-                if la == lb || la >= n_loci || lb >= n_loci {
+                let (pa, pb) = (&placements[a], &placements[b]);
+                if pa.locus == pb.locus || pa.locus >= n_loci || pb.locus >= n_loci {
                     continue;
                 }
-                if as_tied(sa, sb, p.as_tie) {
-                    let key = (la.min(lb), la.max(lb));
+                if de_tied(pa, pb, p) {
+                    let key = (pa.locus.min(pb.locus), pa.locus.max(pb.locus));
                     *weight.entry(key).or_insert(0) += 1;
                 }
             }
         }
     }
-    weight
-        .into_iter()
-        .filter(|&(_, w)| w >= p.min_reads)
-        .map(|((i, j), w)| (i, j, w))
-        .collect()
+    weight.into_iter().filter(|&(_, w)| w >= p.min_reads).map(|((i, j), w)| (i, j, w)).collect()
+}
+
+/// AS-tie edge node-pairs over `n_loci` — the legacy criterion, used only to log that the de-tie edge set is a
+/// subset of the AS-tie edge set (`de-tie ⊆ AS-tie`, the portable regression invariant from the bake-off).
+pub fn as_tie_edges(n_loci: usize, reads: &[ReadPlacements], as_tie: f64, min_reads: usize) -> std::collections::BTreeSet<(usize, usize)> {
+    use std::collections::BTreeMap;
+    let mut weight: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    for placements in reads {
+        for a in 0..placements.len() {
+            for b in (a + 1)..placements.len() {
+                let (pa, pb) = (&placements[a], &placements[b]);
+                if pa.locus == pb.locus || pa.locus >= n_loci || pb.locus >= n_loci {
+                    continue;
+                }
+                if as_tied(pa.as_score, pb.as_score, as_tie) {
+                    *weight.entry((pa.locus.min(pb.locus), pa.locus.max(pb.locus))).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    weight.into_iter().filter(|&(_, w)| w >= min_reads).map(|((i, j), _)| (i, j)).collect()
 }
 
 /// Connected-component families over the conflict edges (union-find). Returns components of size `>= 2`
@@ -116,70 +162,86 @@ pub fn conflict_families(n_loci: usize, edges: &[(usize, usize, usize)]) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn p(locus: usize, de: f32) -> Placement { Placement { locus, de, mapq: 0, as_score: 100 } }
 
     #[test]
-    fn tied_placements_make_an_edge_and_a_family() {
-        // one read cross-maps loci 0 and 1 with tied scores -> one edge -> one 2-member family.
-        let reads = vec![vec![(0usize, 100i32), (1usize, 98i32)]];
-        let edges = conflict_edges(2, &reads, &ConflictParams::default());
+    fn de_tied_placements_make_an_edge_and_a_family() {
+        // both copies fit comparably (de 0.010 vs 0.012, both < 0.05) -> tie -> edge -> family.
+        let reads = vec![vec![p(0, 0.010), p(1, 0.012)]];
+        let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
         assert_eq!(edges, vec![(0, 1, 1)]);
         assert_eq!(conflict_families(2, &edges), vec![vec![0, 1]]);
     }
 
     #[test]
-    fn untied_placement_is_not_a_conflict() {
-        // the secondary is far below the primary (read resolves uniquely) -> no edge -> no family.
-        let reads = vec![vec![(0usize, 100i32), (1usize, 50i32)]];
-        let edges = conflict_edges(2, &reads, &ConflictParams::default());
+    fn divergence_gap_beyond_delta_is_not_a_conflict() {
+        // read fits copy 0 (de 0.001) far better than copy 1 (de 0.020): |Δ|=0.019 > 0.005 -> resolvable.
+        let reads = vec![vec![p(0, 0.001), p(1, 0.020)]];
+        let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
         assert!(edges.is_empty());
-        assert!(conflict_families(2, &edges).is_empty());
+    }
+
+    #[test]
+    fn both_high_divergence_blocked_by_ceiling() {
+        // de_a 0.06 ~ de_b 0.061 (tied within delta) but both exceed de_max 0.05 -> read fits neither.
+        let reads = vec![vec![p(0, 0.060), p(1, 0.061)]];
+        let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        assert!(edges.is_empty());
     }
 
     #[test]
     fn single_placement_read_is_a_singleton_not_a_family() {
-        // a read over a shared exon maps to ONE locus (the domain-sharer case) -> no alternative placement.
-        let reads = vec![vec![(0usize, 100i32)], vec![(1usize, 100i32)]];
-        let edges = conflict_edges(2, &reads, &ConflictParams::default());
+        let reads = vec![vec![p(0, 0.01)], vec![p(1, 0.01)]];
+        let edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
         assert!(edges.is_empty());
         assert!(conflict_families(2, &edges).is_empty());
     }
 
     #[test]
-    fn min_reads_threshold_drops_a_lone_conflict() {
-        let reads = vec![vec![(0usize, 100i32), (1usize, 99i32)]];
-        let p = ConflictParams { as_tie: 0.9, min_reads: 2 };
-        assert!(conflict_edges(2, &reads, &p).is_empty());
-        // two conflicting reads clear it.
-        let reads2 = vec![reads[0].clone(), vec![(0usize, 100i32), (1usize, 99i32)]];
-        assert_eq!(conflict_edges(2, &reads2, &p), vec![(0, 1, 2)]);
+    fn min_reads_threshold_drops_thin_conflicts() {
+        let one = vec![vec![p(0, 0.01), p(1, 0.012)]];
+        let pr = ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3 };
+        assert!(conflict_edges(2, &one, &pr).is_empty());
+        let three = vec![one[0].clone(), one[0].clone(), one[0].clone()];
+        assert_eq!(conflict_edges(2, &three, &pr), vec![(0, 1, 3)]);
     }
 
     #[test]
     fn transitive_conflict_closes_into_one_family() {
-        // A~B tied and B~C tied (no read directly links A~C) -> all three are ONE family (the closure).
-        let reads = vec![vec![(0usize, 100i32), (1usize, 98i32)], vec![(1usize, 100i32), (2usize, 97i32)]];
-        let edges = conflict_edges(3, &reads, &ConflictParams::default());
+        let reads = vec![vec![p(0, 0.010), p(1, 0.012)], vec![p(1, 0.010), p(2, 0.013)]];
+        let edges = conflict_edges(3, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
         assert_eq!(conflict_families(3, &edges), vec![vec![0, 1, 2]]);
     }
 
     #[test]
     fn disjoint_conflicts_form_separate_families() {
-        // {0,1} and {2,3} cross-map internally but never to each other -> two families, 4 is a singleton.
         let reads = vec![
-            vec![(0usize, 100i32), (1usize, 99i32)],
-            vec![(2usize, 100i32), (3usize, 99i32)],
-            vec![(4usize, 100i32)],
+            vec![p(0, 0.01), p(1, 0.012)],
+            vec![p(2, 0.01), p(3, 0.012)],
+            vec![p(4, 0.01)],
         ];
-        let edges = conflict_edges(5, &reads, &ConflictParams::default());
+        let edges = conflict_edges(5, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
         assert_eq!(conflict_families(5, &edges), vec![vec![0, 1], vec![2, 3]]);
     }
 
     #[test]
-    fn deterministic_under_placement_order() {
-        let r1 = vec![vec![(2usize, 100i32), (0usize, 98i32)], vec![(0usize, 100i32), (1usize, 99i32)]];
-        let r2 = vec![vec![(0usize, 98i32), (2usize, 100i32)], vec![(1usize, 99i32), (0usize, 100i32)]];
-        let p = ConflictParams::default();
-        assert_eq!(conflict_families(3, &conflict_edges(3, &r1, &p)),
-                   conflict_families(3, &conflict_edges(3, &r2, &p)));
+    fn default_params_are_the_operating_point() {
+        let d = ConflictParams::default();
+        assert!((d.delta - 0.005).abs() < 1e-9);
+        assert!((d.de_max - 0.05).abs() < 1e-9);
+        assert_eq!(d.min_reads, 3);
+    }
+
+    #[test]
+    fn as_tie_edges_superset_of_de_edges() {
+        // AS ties two placements that de SPLITS (de 0.001 vs 0.020): AS-edge exists, de-edge does not.
+        let reads = vec![vec![
+            Placement { locus: 0, de: 0.001, mapq: 0, as_score: 500 },
+            Placement { locus: 1, de: 0.020, mapq: 0, as_score: 498 },
+        ]];
+        let de_edges = conflict_edges(2, &reads, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+        let as_edges = as_tie_edges(2, &reads, 0.9, 1);
+        assert!(de_edges.is_empty());
+        assert_eq!(as_edges, std::collections::BTreeSet::from([(0, 1)]));
     }
 }
