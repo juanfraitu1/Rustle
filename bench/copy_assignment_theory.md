@@ -319,7 +319,8 @@ $\tau(s') = \tau(s)$, contradicting injectivity). Therefore $\{P_1, \ldots, P_K\
 > **Proposition.** Strong Separation is **sufficient** for unique recovery for all $K$, but it is **not
 > necessary**.
 >
-> **(i) ($K = 2$).** The strictly weaker, natural condition `sep+link` — cross-conflict per read, plus per-copy
+> **(i) ($K = 2$).** The alternative natural condition `sep+link` (incomparable to Strong Separation at $K = 2$,
+> not strictly weaker) — cross-conflict per read, plus per-copy
 > column-linkage connected — already suffices at $K = 2$. This is the standard error-free phasing
 > identifiability: linkage pins the phase, forbidding the recombinant cover.
 >
@@ -336,8 +337,9 @@ there is no closed-form, per-pair-plus-per-copy condition that captures it. The 
 **necessary-and-sufficient** condition for unique recovery is **recombination-freeness** — *no alternative
 size-$K$ cover exists*. Recombination-freeness is **instance-global** (it quantifies over all alternative covers,
 not over pairs or single copies) and has **no clean closed form**. Strong Separation is the clean *sufficient*
-surrogate: the exhaustive enumeration finds it holds for only $\approx 15\%$ of the truly-unique $K = 3$
-instances, so it is a conservative guarantee, not a characterization.
+surrogate: the exhaustive enumeration finds it holds for only a minority of the truly-unique $K = 3$ instances
+($\approx 15\%$ over the full $L = 3$ enumeration; $808/2992 \approx 27\%$ over the bounded re-run shipped in the
+check), so it is a conservative guarantee, not a characterization.
 
 ### Remark (polynomial-time recovery, deferred)
 
@@ -378,9 +380,9 @@ Run: `python3 bench/copy_assignment_theory_checks.py` — exits 0 and prints, am
 
 ```
 OK  - Thm 2: K=2 instance under Strong Separation -> unique minimum cover == true copies
-    [exhaustive] K=2: total(MCC=2)=... strong holds=... viol=0  sep+link holds=... viol=0
-    [exhaustive] K=3: total(MCC=3)=... strong holds=... viol=0  sep+link holds=... viol=296
-OK  - Thm 2 (exhaustive K=2,3 / L=3): strong viol K2=0/K3=0 (SUFFICIENT all K); sep+link viol K2=0/K3=296 (K-frontier: K=2 only); recombination witness non-unique and excluded by strong
+    [exhaustive] K=2: total(MCC=2)=10728 unique=3864  strong holds=1944 viol=0  sep+link holds=1728 viol=0
+    [exhaustive] K=3: total(MCC=3)=11112 unique=2992  strong holds=808 viol=0  sep+link holds=3240 viol=248
+OK  - Thm 2 (exhaustive K=2,3 / L=3): strong viol K2=0/K3=0 (SUFFICIENT all K); sep+link viol K2=0/K3=248 (K-frontier: K=2 only); recombination witness non-unique and excluded by strong
 OK  - Thm 2 boundary: K=0 -> minimum cover = 1 (forced merge, non-identifiable)
 ```
 
