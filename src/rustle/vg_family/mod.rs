@@ -24,6 +24,7 @@ pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV 
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
 pub mod family_split; // De-novo family DECOMPOSITION: connected components + weighted-modularity Louvain.
+pub mod read_conflict; // OPERATIONAL family criterion: read cross-mapping conflict graph (mutual-mappability).
 pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + general-purpose assemble gate.
 pub mod denovo_pipeline; // Integration: de-novo family DETECTION driver (pass1->gate->collapse->detect->split).
 pub mod copy_assign_pipeline; // Integration: per-read COPY ASSIGNMENT driver (PSV + junction, discover+assign).

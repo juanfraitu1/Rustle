@@ -50,8 +50,26 @@ better definition for this thesis than sequence similarity, because (a) it never
 domain-sharers, (b) it has no tuned threshold, and (c) it picks out precisely the families the downstream
 machinery (PSV/junction assignment, the identifiability theorem) exists to resolve.
 
+## Secondary-cap exposure (`secondary_cap_exposure.py`)
+The BAM was built with `minimap2 -ax splice:hq` (no `-N`) → default **N=5 secondaries (≤6 placements/read)**.
+For a co-located array all of a read's placements fall in one region, so records-per-read = multimapping degree;
+a spike at 6 = saturation (a read may have MORE unreported placements → potentially missed conflict edges).
+
+| region | multimappers | saturated (≥6) | max degree |
+|---|---|---|---|
+| TSPY array (>6 copies) | 44 | **36 (82%)** | 6 |
+| RBMY1 array | 127 | 9 (7%) | 6 |
+| chrY amplicon | 8 | 0 | 2 |
+| APOBEC3 / RABL2 / RFPL / DSFAM38 (≤7 copies) | ≤15 | **0 (0%)** | ≤2 |
+
+Verdict: the cap bites only **>6-copy co-located arrays** (TSPY-class). Even there the family is a connected
+*component* — each read still carries 6 placements, over-connecting the array — so missing edges don't fragment
+it; only edge *weights* and the inclusion of a perpetually-marginal copy are at risk. For every ≤6-copy family
+(all validated ones), exposure is zero. → safe to port; flag edge weights as lower bounds in mega-arrays.
+
 ## Next step (implementation)
 Port the criterion into `detect_edges`: keep POA contiguous-core as a cheap homology *prefilter* (necessary to
 cross-map), but **confirm and weight each edge by read cross-mapping** (the AS-tied secondary index already
-exists: `tied_secondary_reads`). Families become the conflict-graph components. Honest caveat: minimap2 caps
-reported secondaries, so very high-copy families may under-count cross-mappings — worth measuring how often.
+exists: `tied_secondary_reads`). Families become the conflict-graph components. The portable kernel
+(`read_conflict.rs`: AS-tied conflict edges + connected-component families) is TDD'd in the Rust tree; the
+remaining integration is plumbing per-locus secondary placements into the detection stage.
