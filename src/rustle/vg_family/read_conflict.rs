@@ -124,6 +124,10 @@ pub fn as_tie_edges(n_loci: usize, reads: &[ReadPlacements], as_tie: f64, min_re
 /// (the genuine-multimapper corroboration). A read is counted when it contributes at least one de-tied pair
 /// whose two loci are BOTH in `family`; of those, a `both_mapq0` read has mapq==0 on BOTH placements in
 /// that pair. Returns `(supporting_reads, both_mapq0_reads)`. Log-only: does NOT gate any edge.
+///
+/// For a read with placements on >=3 family loci the mapq0 check is applied to the FIRST qualifying pair by
+/// iteration order, so the `both_mapq0` count is CONSERVATIVE for multi-copy families (it can undercount but
+/// never overstate multimapper evidence) — exact for the common 2-locus family.
 pub fn family_mapq0_support(reads: &[ReadPlacements], family: &[usize], p: &ConflictParams) -> (usize, usize) {
     let fset: std::collections::BTreeSet<usize> = family.iter().copied().collect();
     let mut support = 0usize;
