@@ -307,7 +307,7 @@ pub fn articulation_points(n: usize, edges: &[(usize, usize)]) -> Vec<usize> {
 }
 
 /// Structural diagnostics of the subgraph induced by `members` (global node ids) over `edges`.
-pub fn community_stats(members: &[usize], edges: &[(usize, usize, f64)]) -> CommunityStats {
+pub(crate) fn community_stats(members: &[usize], edges: &[(usize, usize, f64)]) -> CommunityStats {
     let set: BTreeSet<usize> = members.iter().copied().collect();
     let n = set.len();
     let mut n_edges = 0usize;
