@@ -188,6 +188,12 @@ pub struct FamilyAssignment {
     pub conversions: Vec<crate::vg_family::mosaic::ConversionEvent>,
     /// copy-level historical gene conversions (a copy whose PSV-allele vector is a mosaic of two others).
     pub copy_conversions: Vec<crate::vg_family::copy_assign_pipeline::CopyConversion>,
+    /// PSV genotype-matrix visualization data: column → forward-genome position, per-copy alleles, and per-read
+    /// PSV observations (`read_psv_obs[i]` aligns with `assignments[i]`) — the raw per-molecule evidence that
+    /// proves each copy assignment (a read carries one copy's alleles across its covered PSVs).
+    pub psv_col_pos: Vec<Option<u64>>,
+    pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
+    pub read_psv_obs: Vec<Vec<Option<u8>>>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
@@ -380,6 +386,9 @@ pub fn detect_and_assign(
             mosaic_reads: detail.mosaic_reads,
             conversions: detail.conversions.clone(),
             copy_conversions: detail.copy_conversions.clone(),
+            psv_col_pos: detail.psv_col_pos.clone(),
+            copy_psv_alleles: detail.copy_psv_alleles.clone(),
+            read_psv_obs: Vec::with_capacity(detail.results.len()),
         };
         for r in detail.results {
             let resolvable_psv = r.psv.n_decisive >= 1;
@@ -393,6 +402,7 @@ pub fn detect_and_assign(
                 fa.uniq += 1;
                 fa.uniq_agree += (r.combined.best_copy == r.mapped_copy) as usize;
             }
+            fa.read_psv_obs.push(r.psv_obs);
             fa.assignments.push((idx_map[r.read_index], r.combined));
         }
         out.push(fa);

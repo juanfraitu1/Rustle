@@ -287,6 +287,9 @@ pub struct ReadResult {
     pub mapped_copy: usize,
     pub psv: Assignment,
     pub combined: Assignment,
+    /// this read's base at each PSV column (None = uncovered) — the raw per-molecule evidence the assignment
+    /// is built from (for the assignment-proof genotype visualization).
+    pub psv_obs: Vec<Option<u8>>,
 }
 
 /// Two-pass assignment detail for a family: the per-read results + the PSV-column count + the SOFT per-copy
@@ -307,6 +310,12 @@ pub struct FamilyDetail {
     /// COPY-level historical gene conversions: a de-novo copy whose PSV-allele vector is itself a mosaic of two
     /// OTHER copies (the APOBEC3/RFPL signal — baked into the copy sequence, invisible to the read-level scan).
     pub copy_conversions: Vec<CopyConversion>,
+    /// PSV column `j` → canonical forward-genome position (the column frame shared by reads + copies) — for the
+    /// genotype-matrix visualization that proves the per-read assignment.
+    pub psv_col_pos: Vec<Option<u64>>,
+    /// `copy_psv_alleles[c][j]` = copy `c`'s allele at PSV column `j` (None = gapped) — the per-copy reference
+    /// the reads are matched against in the genotype matrix.
+    pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
 }
 
 /// One de-novo COPY whose PSV-allele vector is a MOSAIC of two other copies — a HISTORICAL gene conversion
@@ -439,6 +448,8 @@ pub fn assign_family_detailed(
             mosaic_reads: 0,
             conversions: Vec::new(),
             copy_conversions: Vec::new(),
+            psv_col_pos: Vec::new(),
+            copy_psv_alleles: Vec::new(),
         };
     }
     use super::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
@@ -480,10 +491,11 @@ pub fn assign_family_detailed(
         }
         mosaic_calls.push(mcall);
         let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
-        read_obs.push(feats.psv_obs.clone());
+        let obs = feats.psv_obs.clone();
+        read_obs.push(obs.clone());
         let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, junctions: vec![] };
         let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
-        results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined });
+        results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined, psv_obs: obs });
     }
     let conversions = aggregate_family(&mosaic_calls, &mparams);
     // copy-level historical conversions: is any copy's PSV-allele vector a mosaic of two others?
@@ -501,6 +513,8 @@ pub fn assign_family_detailed(
         mosaic_reads,
         conversions,
         copy_conversions,
+        psv_col_pos: col_canon,
+        copy_psv_alleles: copy_alleles,
     }
 }
 

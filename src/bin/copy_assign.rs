@@ -63,6 +63,11 @@ struct Args {
     /// (1.0 = exact tie; 0.98 admits a 2% margin). Guards against homology-shadow spillover.
     #[arg(long, default_value_t = 0.98)]
     as_ratio: f64,
+    /// Also dump the per-read PSV GENOTYPE MATRIX — `<out>.psv_reads.tsv` (each read's base at every PSV column
+    /// + its assignment), `<out>.psv_copies.tsv` (each copy's PSV alleles), `<out>.psv_cols.tsv` (column →
+    /// genome position). The raw per-molecule evidence behind each assignment, for the proof visualization.
+    #[arg(long, default_value_t = false)]
+    dump_psv: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -168,6 +173,9 @@ fn main() -> Result<()> {
     let mut quant_rows: Vec<QuantRow> = Vec::new();
     let mut mosaic_rows: Vec<MosaicRow> = Vec::new();
     let mut copyconv_rows: Vec<CopyConvRow> = Vec::new();
+    let mut psv_read_lines: Vec<String> = Vec::new(); // --dump-psv: per-read genotype (alleles at every PSV col)
+    let mut psv_copy_lines: Vec<String> = Vec::new(); // --dump-psv: per-copy PSV alleles
+    let mut psv_col_lines: Vec<String> = Vec::new(); // --dump-psv: PSV column -> genome position
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
@@ -235,6 +243,26 @@ fn main() -> Result<()> {
                         bp_hi: cv.breakpoint.1,
                         n_decisive: cv.n_decisive,
                     });
+                }
+                // raw per-molecule PSV genotype evidence (the assignment-proof matrix)
+                if args.dump_psv {
+                    let allele_str = |v: &Vec<Option<u8>>| -> String {
+                        v.iter().map(|o| o.map(|b| b as char).unwrap_or('.')).collect()
+                    };
+                    for ((ri, a), obs) in fa.assignments.iter().zip(fa.read_psv_obs.iter()) {
+                        psv_read_lines.push(format!(
+                            "{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
+                            bam_reads[*ri].name, fid, a.best_copy, status_str(a.status), a.log_lr_margin,
+                            a.n_decisive, allele_str(obs)
+                        ));
+                    }
+                    for (ci, tid) in fa.copy_tids.iter().enumerate() {
+                        let alleles = fa.copy_psv_alleles.get(ci).map(allele_str).unwrap_or_default();
+                        psv_copy_lines.push(format!("{}\t{}\t{}\t{}", fid, ci, tid, alleles));
+                    }
+                    for (col, pos) in fa.psv_col_pos.iter().enumerate() {
+                        psv_col_lines.push(format!("{}\t{}\t{}", fid, col, pos.map(|x| x as i64).unwrap_or(-1)));
+                    }
                 }
                 family_rows.push(FamilyRow {
                     family_id: fid,
@@ -320,6 +348,30 @@ fn main() -> Result<()> {
         eprintln!(
             "[copy_assign] {} COPY-level historical gene conversion(s) -> {}.copy_conversions.tsv",
             copyconv_rows.len(), args.out
+        );
+    }
+
+    // --dump-psv: the raw per-molecule PSV genotype matrix (the assignment-proof evidence). reads × PSV columns
+    // (each read's base + its assignment), the per-copy alleles, and the column→genome map — for the figure.
+    if args.dump_psv {
+        let mut rh = std::fs::File::create(format!("{}.psv_reads.tsv", args.out))?;
+        writeln!(rh, "read_name\tfamily_id\tassigned_copy\tstatus\tmargin\tn_decisive\talleles")?;
+        for l in &psv_read_lines {
+            writeln!(rh, "{l}")?;
+        }
+        let mut ch = std::fs::File::create(format!("{}.psv_copies.tsv", args.out))?;
+        writeln!(ch, "family_id\tcopy_index\tcopy_tid\talleles")?;
+        for l in &psv_copy_lines {
+            writeln!(ch, "{l}")?;
+        }
+        let mut lh = std::fs::File::create(format!("{}.psv_cols.tsv", args.out))?;
+        writeln!(lh, "family_id\tcol_index\tgenome_pos")?;
+        for l in &psv_col_lines {
+            writeln!(lh, "{l}")?;
+        }
+        eprintln!(
+            "[copy_assign] dumped PSV genotype matrix: {} read rows, {} copy rows -> {}.psv_reads.tsv/.psv_copies.tsv/.psv_cols.tsv",
+            psv_read_lines.len(), psv_copy_lines.len(), args.out
         );
     }
 
