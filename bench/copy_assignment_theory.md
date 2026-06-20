@@ -1,21 +1,89 @@
-# Copy-assignment theory: model, definitions, and the MCC = χ(H) core
+# Copy-assignment theory: identifiability, hardness, and the K-frontier
 
 *This note develops the combinatorial foundation for the read-to-copy assignment problem in multi-copy gene
-families. §1 situates the problem. §2 fixes the model and notation. §3 proves that the minimum number of copies
-needed to explain a set of reads equals the chromatic number of the conflict graph — the theorem that makes the
-assignment problem tractable.*
+families. §1 situates the problem and its place in the multimapping-resolution lineage. §2 fixes the model and
+notation. §3 (Lemma 1) proves MCC = χ(H). §4 (Theorem 1) establishes NP-hardness via coloring reduction. §5
+(Theorem 2) proves unique recovery under Strong Separation, and the Proposition identifies the K-frontier where
+pairwise conditions fail for K ≥ 3. §6 lifts the framework to joint copy + isoform recovery. §7 cites empirical
+corroboration. §8 discusses the dichotomy as a through-line across the three research interests.*
 
 ---
 
-## §1 Introduction (stub — to be expanded)
+## §1 Introduction
 
-Long-read RNA sequencing resolves full isoform structures, but reads from paralogous gene-family members are
-often alignment-ambiguous: a single molecule may map with equal or near-equal quality to two or more distinct
-genomic loci. The downstream assembly then faces a **copy-assignment** problem: given a set of reads and their
-observed allelic evidence, partition the reads so that each part is explained by a single gene-copy
-(allele-vector). The minimum number of copies required to explain the data is the central quantity. This note
-gives a formal model, defines that quantity precisely, and proves it equals the chromatic number of a naturally
-arising conflict graph — a result that both bounds the complexity of the problem and guides efficient algorithms.
+### Context and motivation
+
+Long-read RNA sequencing (HiFi IsoSeq, Oxford Nanopore) resolves full isoform structures in a single molecule,
+but reads from paralogous gene-family members are often **alignment-ambiguous**: a single molecule may map with
+equal or near-equal quality to two or more distinct genomic loci. The downstream assembly then faces a
+**copy-assignment** problem: given a set of reads and their observed allelic evidence, partition the reads so that
+each part is explained by a single gene-copy (allele-vector).
+
+Copy-assignment sits at the intersection of three active research interests:
+
+1. **Family detection** (interest #1): which expressed loci form a confusion group? A multi-copy gene family
+   is defined as a connected component of the read-conflict graph — the maximal set of loci among which reads
+   are genuinely confused (see `bench/family_definition_formal.md`). Copy-assignment is the unit of work that
+   is performed *inside* each family component output by detection; it is logically downstream of interest #1.
+
+2. **Copy assignment under ambiguity** (interest #2, this note): given a confirmed family component, how should
+   reads be partitioned across copies? When is the truth the *unique* minimum-cost solution, and when is
+   attribution provably arbitrary?
+
+3. **Allele-specific junctions** (interest #3, §6 and §8): long-read molecules that span both a PSV column and
+   a splice junction simultaneously carry *joint* allele+isoform evidence. The junction-as-column lift (§6)
+   shows that the copy-assignment framework extends directly to recover isoform structure jointly with copy
+   identity — the substrate for downstream allele-specific junction analysis.
+
+### The multimapping-resolution lineage
+
+The copy-assignment problem has a precise lineage in the multimapping literature. Canzar et al. (2016) frame
+multi-read (multimapping) conflict as a **Maximum Facility Location** problem: each read is a client that must
+be assigned to one of its feasible placements (facilities), and the objective is to maximize the number of
+reads assigned consistently with their neighbours. Their LP-rounding algorithm achieves a provable
+$(1 - 1/e)$-approximation with a $0.19$-approximation guarantee, and they establish that the unweighted version
+is NP-hard to approximate beyond a constant factor.
+
+The present note operates in a complementary regime. Rather than the *weighted* conflict-resolution objective
+(maximize consistent assignments), we study the **parsimony** objective: minimize the number of distinct copies
+needed to explain all reads without error. The two objectives are hard for different reasons — conflict
+resolution is hard because the assignment landscape is rough, parsimony is hard because minimum coloring of an
+arbitrary conflict graph is NP-complete (Theorem 1 below). Both hardness results are **robust across objective
+functions**, making the general problem doubly intractable.
+
+The Minimum Error Correction (MEC) problem [Lippert et al. 2002] is the standard genomic haplotype-assembly
+variant: fix $k$ haplotypes and minimize allele flip count. MEC is NP-hard already at $k = 2$. Our MCC
+(Minimum Copy Cover) is the parsimony analogue for the multi-copy ($k$-copy) RNA-family setting.
+
+### This note's contribution
+
+This note develops the combinatorial foundation for copy-assignment in three parts:
+
+- **Model and MCC = χ(H) (§2–§3).** We fix the formal model (reads as partial allele functions over PSV
+  columns, copies as consistent allele-vectors, conflict as pairwise disagreement). Lemma 1 proves that the
+  Minimum Copy Cover equals the chromatic number of the conflict graph — a tight combinatorial identity that
+  makes the assignment problem graph-theoretically natural and connects it to coloring complexity.
+
+- **Hardness/recovery dichotomy (§4–§5).** Theorem 1 (hardness) and Theorem 2 (recovery) form the central
+  dichotomy. Theorem 1 shows MCC is NP-hard via a polynomial-time reduction from graph $k$-colorability.
+  Theorem 2 shows that under **Strong Separation** — a uniform pairwise distinguishability condition — the true
+  copy set is the *unique* minimum cover, a recoverable optimum despite the general hardness.
+
+- **K-frontier finding (§5 Proposition).** Strong Separation is sufficient for all $K$, but the weaker
+  `sep+link` condition (per-read cross-conflict plus per-copy column-linkage) already suffices at $K = 2$ and
+  **fails at $K \geq 3$** through cross-copy recombination. Multi-copy recovery is strictly harder than the
+  pairwise case: no per-pair-plus-per-copy condition captures it. This is not a gap in the theory — it is a
+  genuine structural finding, certified by exhaustive enumeration over all small instances (§5 checks).
+
+- **Paths/isoforms (§6).** The junction-as-column lift extends the model to joint (allele + isoform) recovery,
+  directly connecting the copy-assignment identifiability result to the allele-specific junction substrate
+  (interest #3).
+
+The recovery condition's threshold — positive distinguishing PSV count ($K_{ij} \geq 1$, plausibly $K_{ij}
+\geq 2$ for dense coverage) — matches the empirically measured K-bound from the sim5x PSV ladder and the GGO
+silver-standard panel (§7). This correspondence between the theoretical sufficient condition and the observed
+empirical boundary is the main finding: the K-quantity simultaneously governs detection (interest #1),
+assignment (interest #2), and the utility of allele-specific junction evidence (interest #3).
 
 ---
 
@@ -472,3 +540,195 @@ OK  - Corollary: junction treated as a linkage column -> path-cover recovers cop
 
 *See also: `bench/family_definition_formal.md` for the upstream family-detection step whose output populates
 $R$ for each identified gene family.*
+
+---
+
+## §7 Empirical corroboration
+
+This section cites existing experimental results that illustrate the theoretical dichotomy. It does **not**
+claim the experiments prove the theorems; they are independent measurements that are consistent with the theory
+and illuminate where in the K-landscape each regime lies.
+
+### 7.1 Theorem 2 / K ≥ 2: sim5x K-ladder and GGO silver standard
+
+**Sim5x K-ladder.** The synthetic benchmark (`bench/sim_reads.py`,
+`/home/juanfra/winloci_scratch/sim5x/`) constructs five near-identical tandem copies of a target gene and
+sweeps the PSV count K across $\{0, 1, 2, 3, 4, 5, 6, 7, 8\}$ by introducing controlled SNVs at paralog-
+specific variant sites. The measured copy-assignment accuracy is:
+
+- $K = 0$: 0% correct assignment (MAPQ 0 throughout; attribution is intrinsically arbitrary — this is the
+  forced-merge regime of the K-bound corollary).
+- $K = 1$: partial recovery (borderline; single-PSV coverage is often insufficient to achieve Strong
+  Separation on every cross-copy read pair at realistic coverage depths).
+- $K \geq 2$: **100% correct assignment** across all tested coverage depths.
+
+The empirical threshold $K \geq 2$ is consistent with Theorem 2: with two or more distinguishing columns per
+copy pair and sufficient read coverage, Strong Separation plausibly holds and the unique minimum cover equals
+the truth.
+
+**GGO silver standard.** On the real GGO HiFi IsoSeq panel, the `detect_and_assign` MAGEA smoke run reports
+**1026/1026 (100%)** reads correctly assigned in the K ≥ 2 families (RABL2, AK6, CCDC196). These families are
+all in the well-separated regime (MAPQ > 0, divergence-gap decisive), where Strong Separation holds by the
+aligner's own evidence; the coverage condition is met at ≥ 47 de-conflict reads per family.
+
+**Honest caveat.** Strong Separation is a conservative *sufficient* condition. The empirical resolver may
+succeed in K ≥ 2 instances that are not Strongly Separated but are recombination-free (the tighter necessary-
+and-sufficient condition of the Proposition). The 100% recovery figure is consistent with Strong Separation
+holding on these instances; it is not a proof that the condition is tight.
+
+### 7.2 Theorem 2 boundary / K = 0: MAGEA co-located arrays
+
+The K = 0 case is directly measured in `bench/resolution_improvement_bound.md` on the MAGEA co-located tandem
+arrays:
+
+- **494 ambiguous reads** across the MAGEA co-located pairs (MAGd1/2/3, MAGEA_dn0–dn3). Of these, **0/494
+  lie in a K ≥ 2 family**: per-read edit distances are *identical* against both copies (NM_A = NM_B,
+  1–3 mismatches = HiFi error floor). **0/311 reads differ between copies on MAGEA_p3.**
+- The copies are **sequence-identical over the transcribed exonic region** — the 67–72% genomic divergence is
+  entirely intronic/intergenic. No PSV column can adjudicate; there is no conflict edge in $H$; the minimum
+  copy cover collapses the two copies into one.
+- **Resolvable fraction: 0/494** (the exact prediction of the K = 0 branch of the K-bound corollary, §5).
+
+This is the theorem made concrete: where K = 0 (copies identical over the observed columns), MCC = 1 regardless
+of the true copy count, and attribution is provably arbitrary — exactly the forced-merge prediction.
+
+### 7.3 Shared condition with detection (interest #1): the family as conflict-graph component
+
+The upstream family-detection step (interest #1, `bench/family_definition_formal.md`) defines a multi-copy
+gene family as a **connected component of the read-conflict graph** under the divergence-tie (`de`) edge
+criterion. This is the same conflict-graph object that underlies the copy-assignment theory:
+
+- The conflict graph $G = (V, E)$ used in detection has expressed loci as vertices and de-tied cross-mapping
+  reads as edges; the family is the connected component.
+- The conflict graph $H = (R, E)$ used in this note has the reads themselves as vertices and pairwise
+  disagreement as edges; copy covers are colorings of $H$.
+
+The two graphs are related: $G$ is the "locus-level summary" (which loci are confused) and $H$ is the
+"read-level instance" (how to partition the confused reads). $G$'s components determine which reads populate
+each $H$; the assignment problem then runs inside each component separately. Property P2 in
+`bench/family_definition_formal.md` verifies this separation directly: **0 reads connect two distinct
+multi-locus $G$-components**, so the assignment problems are independent across families — exactly the
+prerequisite for running Theorem 2 per-family.
+
+On the GGO panel: **TP = 7, TN = 10, FP = 0, FN = 0** (precision = recall = 1.000) in the ≤6-copy regime,
+using the `de`-tie criterion with $\Delta = 0.005$. The same K quantity governs both detection (whether a
+family is found) and assignment (whether the assignment is unique): copies with no PSV-distinguishing reads
+(K = 0) form a family but yield a non-unique assignment; copies with K ≥ 2 form a family and yield a unique
+assignment (under Strong Separation). Detection and assignment share the same identifiability boundary.
+
+---
+
+## §8 Discussion
+
+### 8.1 The dichotomy as the through-line across interests #1, #2, and #3
+
+The hardness/recovery dichotomy of Theorems 1 and 2 provides a single organizing principle across all three
+research interests:
+
+**Interest #1 (family detection).** The conflict graph $G$ on loci defines the family as the unit of
+confusion. The K quantity that governs detection (whether two loci are in the same component, i.e., do they
+share de-tied reads?) is exactly the same K that governs assignment identifiability. A family with K = 0
+(copies identical over transcribed exons) is detectable via read-ambiguity — the reads are confused — but
+unassignable: the minimum cover is non-unique, no algorithm can do better than arbitrary attribution. A family
+with K ≥ 2 is detectable and, under adequate coverage, uniquely assignable. Detection and assignment are not
+two separate problems; they share a boundary.
+
+**Interest #2 (copy assignment, this note).** The dichotomy is the central result: the general problem is
+NP-hard (Theorem 1), but the biologically relevant regime — copies with enough distinguishing variation and
+reads covering those distinctions — falls under Strong Separation, where the truth is the unique minimum cover
+(Theorem 2). The K-frontier Proposition sharpens this: the pairwise ($K = 2$) case is captured by the simpler
+`sep+link` condition, but multi-copy ($K \geq 3$) requires the strictly stronger Strong Separation because
+cross-copy recombination can assemble spurious alternative covers from fragments of three or more true copies.
+
+**Interest #3 (allele-specific junctions).** The junction-as-column lift (§6) shows that the same formalism
+extends to recover isoform structure jointly with copy identity. A long read spanning both a PSV and a splice
+junction is a molecule that simultaneously assigns its copy (via the PSV column) and its isoform (via the
+junction column). When Strong Separation holds over the combined (allele + junction) column set, the minimum
+constrained path-cover of the family variation graph recovers copies **and** isoforms jointly — the exact
+substrate for allele-specific junction analysis. Conversely, when K = 0 (copies identical over transcribed
+exons), even a molecule spanning many junctions carries no PSV linkage; junction usage cannot be attributed to
+a specific copy, and allele-specific junction analysis reduces to average-over-copies — a strictly weaker
+signal. The K boundary governs the utility of interest #3's analysis.
+
+### 8.2 The K = 0 frontier: when RNA alone cannot resolve
+
+The K = 0 regime — copies sequence-identical over all transcribed exonic columns — is the frontier where RNA
+alone provably cannot resolve copy attribution. This is not an algorithmic limitation; it is a fundamental
+information-theoretic constraint: there is simply no signal in the reads that distinguishes the copies.
+
+In this regime, the conflict graph $H$ has **no edges** between cross-copy reads (they are pairwise
+compatible), so $\chi(H) = 1$: the minimum cover assigns all reads to a single copy, collapsing the true
+copies into an undistinguishable group. No coloring/assignment algorithm can recover $K > 1$ copies from a
+graph with chromatic number 1.
+
+The levers available at the K = 0 frontier are necessarily *non-RNA*:
+
+- **Longer molecules** (ultra-long ONT reads) that extend into flanking intronic or intergenic regions where
+  the copies *do* diverge. If a molecule spans from a transcribed exon into a flanking intron that is
+  divergent between copies, it observes a new PSV column and breaks the K = 0 barrier for that read.
+- **Allele-specific junctions** (interest #3): if two copies share identical exonic PSV profiles but differ in
+  their splicing patterns at specific junctions, a molecule spanning such a junction observes a junction column
+  ($c_J$) that distinguishes the copies. This is the *only* RNA-accessible lever at K = 0 over the PSV
+  columns — junction columns can restore K ≥ 1 over the combined column set even when the PSV columns alone
+  give K = 0. Interest #3 is therefore not merely a downstream analysis step; it is an information-theoretic
+  escape from the K = 0 regime for copies whose distinguishing variation is exclusively splicing-level.
+- **Genomic phasing** (long-range haplotype) that carries extrinsic copy identity not observable in the
+  transcript.
+
+The MAGEA co-located arrays (§7.2, 0/494 resolvable reads) are the concrete instance of this wall. They are
+not a failure of the algorithm — they are a demonstration that the wall exists and that RNA-level copy
+resolution is genuinely impossible for this family on this substrate.
+
+### 8.3 The K ≥ 3 cross-copy recombination obstruction: multi-copy is strictly harder than pairwise
+
+The K-frontier Proposition (§5) is a genuine structural finding: **multi-copy ($K \geq 3$) recovery is
+strictly harder than pairwise ($K = 2$)** in the following precise sense. There exists a natural and sufficient
+condition for pairwise recovery (`sep+link`) that provably fails for three or more copies. The failure mode is
+cross-copy *recombination*: a jointly-consistent class can be assembled from fragments of two different foreign
+copies, realizing a novel allele-vector that is not any true copy, yet achieving a minimum-size cover.
+
+The explicit witness (§5 Proposition (ii)) is:
+$$
+c_0 = (1,1,0),\quad c_1 = (0,0,1),\quad c_2 = (0,1,1)
+$$
+with each copy contributing reads on windows $\{0,1\}$ and $\{1,2\}$. The class $\{c_0\text{'s read on }\{1,2\},
+\ c_2\text{'s read on }\{0,1\}\}$ is jointly consistent (they share only column 1, where $c_0 = c_2 = 1$) and
+realizes the novel vector $(0,1,0)$. The cover $\bigl\{\{c_0\text{'s }\{1,2\}, c_2\text{'s }\{0,1\}\},
+\ldots\bigr\}$ is a valid alternative minimum cover of size 3, so the assignment is non-unique despite
+`sep+link` holding.
+
+This finding has a practical consequence: haplotype-assembly algorithms designed for the diploid ($K = 2$)
+regime — which standardly invoke the `sep+link` / error-free-phasing identifiability result — cannot be
+directly lifted to the $K \geq 3$ multi-copy-family setting. The condition that suffices for all $K$ (Strong
+Separation) is strictly stronger than `sep+link`, and the gap is not merely a proof artefact: the exhaustive
+enumeration (§5) finds that `sep+link` has 248 uniqueness violations at $K = 3$ over the full $L = 3$
+instance universe, while Strong Separation has zero violations at both $K = 2$ and $K = 3$.
+
+The exact **necessary-and-sufficient** condition for unique recovery is **recombination-freeness** — no
+alternative size-$K$ cover exists — which is instance-global and has no clean closed form (Proposition). Strong
+Separation is the clean sufficient surrogate; whether there is a more permissive closed-form condition between
+`sep+link` and Strong Separation that still works for all $K$ is an open question.
+
+### 8.4 The deferred polynomial-recovery algorithm
+
+Theorem 2 identifies the optimum with the truth (under Strong Separation, the true cover is the unique minimum
+cover) but makes no claim about how to find it efficiently. Theorem 1 forecloses polynomial-time algorithms in
+the general case.
+
+Under Strong Separation the conflict graph $H$ is a **complete $K$-partite graph**: every cross-copy pair
+conflicts (Strong Separation) and every same-copy pair is compatible (reads from the same true copy agree at
+every co-observed column). A complete $K$-partite graph is $K$-colorable by construction (one color class per
+part) and the minimum coloring is trivially the partition into the $K$ parts — the true copies. So recovery
+under Strong Separation is easy *in principle*: find the $K$-partite structure.
+
+The practical challenge is that the conflict graph is not explicitly given as complete $K$-partite; it is
+computed from reads whose copy origin is unknown. However, the complete $K$-partite structure is
+recognizable in polynomial time (the complement of a complete $K$-partite graph is a disjoint union of cliques
+— i.e. the complement's connected components are the copy classes), so a spanning-read algorithm that achieves
+Strong Separation can be expected to run in polynomial time.
+
+The design and polynomial-time analysis of a concrete solver for the broader **recombination-free** regime —
+instances where the minimum cover is unique but Strong Separation may not hold — and the identification of the
+structural class of conflict graphs for which polynomial recovery is possible, are deferred to a follow-up.
+This note's contribution is the identifiability statement (uniqueness of the optimum under Strong Separation)
+and the complexity lower bound (NP-hardness in the general case), not the algorithmic upper bound.
