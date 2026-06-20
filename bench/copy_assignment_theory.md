@@ -183,7 +183,7 @@ conflict graph is a 5-cycle $C_5$.
 
 **Construction.** Label 5 reads $r_0, \ldots, r_4$. Use 5 columns $e_{01}, e_{12}, e_{23}, e_{34}, e_{40}$, one
 per edge of $C_5$. Read $r_w$ observes exactly the two columns corresponding to edges incident to $w$ in $C_5$,
-with opposite alleles: $r_w(e_{w,w'}) = 0$ and $r_w(e_{w',w}) = 1$ (where $w' = w-1 \bmod 5$, $w'' = w+1 \bmod 5$).
+with opposite alleles: $r_w(e_{w,w'}) = 0$ and $r_w(e_{w',w}) = 1$ (where $w' = w-1 \bmod 5$).
 Adjacent reads $r_w, r_{w+1}$ share column $e_{w,w+1}$ with opposite alleles, so they conflict. Non-adjacent
 reads share no column, so they are compatible. The conflict graph is exactly $C_5$.
 
@@ -206,7 +206,7 @@ OK  - Lemma 1 (MCC=chi) verified on C5: MCC=3=chi(C5)
 The MCC = χ(H) identity (Lemma 1) immediately yields NP-hardness of MCC via a reduction from graph
 coloring, one of Karp's original 21 NP-complete problems.
 
-**Theorem 1.** MCC is NP-hard. (Hence CMCPC, which contains MCC as the single-backbone case, is NP-hard.)
+**Theorem 1.** MCC is NP-hard. (Hence the Constrained Minimum Copy-Path-Cover (CMCPC) of §6 — which contains MCC as the single-backbone, allele-only case — is NP-hard.)
 
 *Proof.* We reduce graph k-colorability to MCC in polynomial time.
 
