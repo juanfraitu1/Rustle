@@ -163,7 +163,89 @@ def check_thm1_reduction():
     return "Thm 1: conflict graph == source graph and MCC == chi on 4 instances"
 
 
+def reads_from_copies(copies, windows):
+    """copies: list of allele-vectors (tuples in {0,1}^L). windows: list of (copy_index, set-of-columns)
+    describing each read's origin copy and which columns it observes. Returns reads + true labels."""
+    reads, labels = [], []
+    for ci, cols in windows:
+        reads.append(frozenset((j, copies[ci][j]) for j in cols))
+        labels.append(ci)
+    return reads, labels
+
+
+def all_min_colorings(H, k):
+    """All proper k-colorings of H (raw label tuples) -- tiny graphs only (k^n enumeration)."""
+    n = H.number_of_nodes()
+    out = []
+    for assign in itertools.product(range(k), repeat=n):
+        if all(assign[u] != assign[v] for u, v in H.edges()):
+            out.append(assign)
+    return out
+
+
+def partition_of(labels):
+    """Canonical partition (set of frozensets of read-indices) from a labeling."""
+    parts = {}
+    for i, l in enumerate(labels):
+        parts.setdefault(l, set()).add(i)
+    return frozenset(frozenset(p) for p in parts.values())
+
+
+def check_thm2_recovery():
+    """Verify Theorem 2 (identifiability) on a K=2 instance over L=3 columns satisfying condition C.
+
+    Two copies differ at columns 0 and 2 (K_{ij} = 2, robust regime).  The reads tile the columns so
+    that every read conflicts (in H) with at least one read of the foreign copy -- the per-read
+    condition C2.  Theorem 2 then predicts: MCC = 2 AND the true partition is the UNIQUE minimum cover.
+    """
+    copies = [(0, 0, 0), (1, 0, 1)]  # differ at cols 0 and 2; agree at col 1
+    # Each copy contributes 3 reads tiling all column-pairs {0,1},{1,2},{0,2}.
+    windows = [
+        (0, {0, 1}), (0, {1, 2}), (0, {0, 2}),
+        (1, {0, 1}), (1, {1, 2}), (1, {0, 2}),
+    ]
+    reads, labels = reads_from_copies(copies, windows)
+    H = conflict_graph(reads)
+
+    # Per-read condition C2: every read conflicts with >=1 read of every foreign copy.
+    adj = {node: set(H.neighbors(node)) for node in H.nodes()}
+    for i, li in enumerate(labels):
+        for fj in set(labels) - {li}:
+            foreign = {k for k, lk in enumerate(labels) if lk == fj}
+            assert adj[i] & foreign, f"C2 violated: read {i} (copy {li}) has no conflict with copy {fj}"
+
+    k = mcc_bruteforce(reads)
+    assert k == 2, f"MCC should be 2, got {k}"
+
+    true_part = partition_of(labels)
+    colorings = {partition_of(c) for c in all_min_colorings(H, 2)}
+    assert colorings == {true_part}, (
+        f"the true partition must be the UNIQUE minimum cover under C; got {colorings}"
+    )
+    return "Thm 2: K=2 instance under C -> unique minimum cover == true copies"
+
+
+def check_thm2_K0_merge():
+    """Verify the K=0 boundary of the K-bound corollary: identical copies are non-identifiable.
+
+    When two copies are identical over every observed column (K_{ij} = 0), condition C1 fails: the
+    reads produce no conflict edge, the minimum cover merges them into one part, and the true copies
+    are provably unrecoverable (the MAGEA co-located regime, resolvable fraction 0/494).
+    """
+    copies = [(0, 1, 0), (0, 1, 0)]  # identical over all columns -> K_{ij} = 0
+    windows = [(0, {0, 1}), (0, {1, 2}), (1, {0, 1}), (1, {1, 2})]
+    reads, _ = reads_from_copies(copies, windows)
+    H = conflict_graph(reads)
+    assert H.number_of_edges() == 0, "identical copies produce no conflict edges"
+    assert mcc_bruteforce(reads) == 1, (
+        "K=0: minimum cover merges all reads into ONE copy (true copies unrecoverable)"
+    )
+    return "Thm 2 boundary: K=0 -> minimum cover = 1 (forced merge, non-identifiable)"
+
+
 CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
+CHECKS.append(check_thm2_recovery)
+CHECKS.append(check_thm2_K0_merge)
 
 
 def main():
