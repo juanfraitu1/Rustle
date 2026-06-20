@@ -611,10 +611,10 @@ mod tests {
         let ar_c_primary   = AlignedRead { ref_start: 0,    cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copyb_spliced };
         let ar_c_secondary = AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: copya_spliced };
         let bam = vec![
-            BamRead { chrom: "c1".into(), read: ar_primary,     mapq: 60, name: "readB".into(), as_score: 380 },
-            BamRead { chrom: "c1".into(), read: ar_secondary,   mapq:  0, name: "readB".into(), as_score: 379 },
-            BamRead { chrom: "c1".into(), read: ar_c_primary,   mapq: 60, name: "readC".into(), as_score: 380 },
-            BamRead { chrom: "c1".into(), read: ar_c_secondary, mapq:  0, name: "readC".into(), as_score: 379 },
+            BamRead { chrom: "c1".into(), read: ar_primary,     mapq: 60, name: "readB".into(), as_score: 380, de: 0.01, is_supplementary: false },
+            BamRead { chrom: "c1".into(), read: ar_secondary,   mapq:  0, name: "readB".into(), as_score: 379, de: 0.01, is_supplementary: false },
+            BamRead { chrom: "c1".into(), read: ar_c_primary,   mapq: 60, name: "readC".into(), as_score: 380, de: 0.01, is_supplementary: false },
+            BamRead { chrom: "c1".into(), read: ar_c_secondary, mapq:  0, name: "readC".into(), as_score: 379, de: 0.01, is_supplementary: false },
         ];
         (genome, primary, bam)
     }
@@ -943,6 +943,8 @@ mod tests {
             mapq,
             name: name.into(),
             as_score,
+            de: 0.01,
+            is_supplementary: false,
         }
     }
 
