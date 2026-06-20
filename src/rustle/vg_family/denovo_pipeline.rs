@@ -18,7 +18,7 @@ use super::denovo_assemble::{
 };
 use super::family_detect::{collapse_loci, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
 use super::family_rescue::{FamilyMember, RescueParams};
-use super::family_split::{decompose_families, FamilyClass, SplitFamily, SplitParams};
+use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
 use super::read_conflict::{conflict_edges, conflict_families, ConflictParams, ReadPlacements};
 use super::rescue_pipeline::{rescue_thin_loci_iterative, thin_loci, MemberSpan, RESCUE_MIN_SUPPORT};
 use crate::genome::GenomeIndex;
@@ -241,6 +241,33 @@ pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscr
         }
     }
     by_name.into_values().collect()
+}
+
+/// Convert the read-conflict kernel's component output to `SplitFamily` objects that `colocated_families`
+/// consumes. Edge weights (read counts) are cast to `f64` for `community_stats`; class follows the same
+/// size+density rule as the POA path so large, sparse conflict components can still be flagged as Webs.
+fn conflict_to_split_families(
+    families: &[Vec<usize>],
+    c_edges: &[(usize, usize, usize)],
+    p: &SplitParams,
+) -> Vec<SplitFamily> {
+    let float_edges: Vec<(usize, usize, f64)> =
+        c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+    let mut out: Vec<SplitFamily> = families
+        .iter()
+        .map(|members| {
+            let mut m = members.clone();
+            m.sort_unstable();
+            let stats = community_stats(&m, &float_edges);
+            let class = classify(stats.n, stats.density, p);
+            SplitFamily { members: m, stats, class }
+        })
+        .collect();
+    // deterministic: size desc, then smallest member.
+    out.sort_by(|a, b| {
+        b.members.len().cmp(&a.members.len()).then_with(|| a.members[0].cmp(&b.members[0]))
+    });
+    out
 }
 
 /// Collapsed-copy recovery PAST the family gate. The genuinely collapsed tandem arrays (DAZ-type) don't form
@@ -989,5 +1016,23 @@ mod tests {
         // as_tie=0.9 means a 10% AS margin still counts as tied; min_reads=2 guards single spurious secondaries.
         assert!((cfg.conflict.as_tie - 0.9).abs() < 1e-9);
         assert_eq!(cfg.conflict.min_reads, 2);
+    }
+
+    #[test]
+    fn conflict_to_split_families_produces_one_family_per_component() {
+        // Two disjoint conflict components: {0,1} linked by 5 reads, {2,3} by 3 reads.
+        let families = vec![vec![0usize, 1], vec![2usize, 3]];
+        let c_edges = vec![(0usize, 1usize, 5usize), (2, 3, 3)];
+        let p = SplitParams::default();
+        let split = conflict_to_split_families(&families, &c_edges, &p);
+        assert_eq!(split.len(), 2);
+        assert!(split.iter().all(|sf| sf.class == FamilyClass::Family));
+        // members are sorted ascending within each family.
+        assert_eq!(split[0].members, vec![0, 1]);
+        assert_eq!(split[1].members, vec![2, 3]);
+        // density of a 2-node clique (1 edge / 1 possible) = 1.0.
+        for sf in &split {
+            assert!((sf.stats.density - 1.0).abs() < 1e-9, "2-node clique density must be 1.0");
+        }
     }
 }
