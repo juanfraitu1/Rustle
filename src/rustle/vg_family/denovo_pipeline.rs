@@ -959,6 +959,9 @@ mod tests {
         }
     }
 
+    // These tests use ConflictParams::default() (min_reads=1) to isolate placement logic and graph
+    // topology. The end-to-end test uses DenovoConfig::default().conflict (min_reads=2) to exercise
+    // the production threshold.
     /// Multimapper (tied primary + secondary at two distinct loci) -> conflict edge -> family.
     #[test]
     fn build_read_placements_multimapper_forms_conflict_family() {
