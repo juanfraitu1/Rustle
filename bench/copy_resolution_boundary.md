@@ -14,23 +14,22 @@ whose entire mature transcript is identical between copies, so no spliced read c
 
 ## The census (definitive prevalence)
 
-Across all 1130 de-novo multi-copy families we formed 6362 co-located copy pairs and kept the **258 that are
-*assignment-relevant*** — i.e. have ≥3 cross-mapping MAPQ-0 reads, so copy assignment is actually at issue
-(97 families, 49,856 classified reads). Each pair is K=0 (per-read unresolvable) iff its cross-mapping reads
-have `NM_A == NM_B` (the spliced read aligns equally to both copies' exons). Script + per-pair results:
-`bench/copy_resolution_census.py`, `bench/copy_resolution_census.json`.
+Across all 1130 de-novo multi-copy families we formed all co-located copy pairs and kept the
+**assignment-relevant** ones (≥3 cross-mapping MAPQ-0 reads, so copy assignment is actually at issue):
+**236** pairs across **97** families (**42,313** classified reads). Each pair is K=0 (per-read unresolvable)
+iff its cross-mapping reads have `NM_A == NM_B` (the spliced read aligns equally to both copies' exons).
+Script + per-family results: `bench/copy_resolution_census.py`, `bench/copy_resolution_census.tsv`.
 
 | class | pairs | fraction |
 |---|---|---|
-| **resolvable** (exonic PSVs, `NM_A ≠ NM_B`) | 200 | **77.5%** |
-| K=0 (≥95% reads NM-identical) | 31 | 12.0% |
-| K=0 strict (100% identical) | 8 | 3.1% |
-| ambiguous (low support) | 19 | 7.4% |
+| **resolvable** (exonic PSVs, `NM_A ≠ NM_B`) | 206 | **87%** |
+| K=0 (≥95% reads NM-identical) | 30 | 13% |
+| K=0 strict (100% identical) | 7 | 3% |
 
-**83.2%** of all 49,856 cross-mapping reads carry resolving evidence. K=0 is monotonically confined to the
+**84%** of all 42,313 cross-mapping reads carry resolving evidence. K=0 is monotonically confined to the
 highest-identity tail: K=0 pairs have **median 0.000% exonic divergence** vs **0.42%** for resolvable pairs.
 
-**What the K=0 residual *is* (39 pairs / 11 families):** overwhelmingly the X-chromosome (NC_073247.2)
+**What the K=0 residual *is* (30 pairs / 11 families):** overwhelmingly the X-chromosome (NC_073247.2)
 cancer-testis-antigen region — `MAGEA9` and the `LOC129529xxx` / `LOC1011xxxxx` tandem clusters (DNFAM1,
 DNFAM14, DNFAM160, …), plus a few autosomal recent dups (`ZNF793`, scattered LOC pairs). These are recent
 **inverted** segmental duplications. The big co-located families one might fear — protocadherins, keratins,
@@ -38,14 +37,14 @@ tubulins, APOBEC, APOL, BTN2A — are all in the *resolvable* majority.
 
 ## The two tiers
 
-### Tier 1 — Resolvable majority (~77% of pairs / ~83% of reads)
+### Tier 1 — Resolvable majority (~87% of pairs / ~84% of reads)
 
 The copies carry exonic PSVs; a read covering one fits its true copy better (`NM_A ≠ NM_B`). This is the regime
 of **Theorem 2/3** (`copy_assignment_theory.md`): under the identifiability condition the true copies are the
 unique minimum cover and are recovered in polynomial time. The shipped per-read PSV + junction assigner handles
 this tier (sim K-ladder K≥2 → 100%, GGO silver-standard 100%). **This is the headline: the method works.**
 
-### Tier 2 — K=0 residual: splice divergence is real in the reference but per-read-masked (~15-18% of pairs)
+### Tier 2 — K=0 residual: splice divergence is real in the reference but per-read-masked (~13% of pairs)
 
 The exons are identical, so per-base PSVs give 0. The *introns* do diverge (4–60 SNPs/indels across the
 duplicated block), and where that lands at a splice site it shifts a junction (e.g. MAGEA pair0's 3 bp
@@ -66,9 +65,10 @@ individual mature read.)
 
 Exons identical **and** splice sites identical: the byte-identical block extends through the splice signals and
 into the proximal intron, so every junction is `GT-AG` at both copies (`MAGEA pair2/pair3`-class). The 4–60
-distinguishing SNPs all sit in introns/flanks a spliced FLNC read never covers; verified **0/485 junction-reads
-resolvable**. Because FLNC reads are already full-length mature transcripts, **no read-length or chemistry
-improvement helps** — the entire mature transcript is identical, so the information is simply not in the RNA.
+distinguishing SNPs all sit in introns/flanks a spliced FLNC read never covers; verified **0 of the 372
+junction-reads at the splice-identical pairs (pair2 300 + pair3 72) resolvable**
+(`bench/splice_divergence_resolver.py`). Because FLNC reads are already full-length mature transcripts,
+**no read-length or chemistry improvement helps** — the entire mature transcript is identical, so the information is simply not in the RNA.
 This is the identifiability theorem's K=0 floor instantiated: the distinguishing-column set is empty.
 
 For this core the correct output is **not** a forced per-read assignment but a **co-quantified ambiguity set** —
@@ -90,9 +90,9 @@ duplication rather than an assembly false-duplication or same-locus comparison.
 ```
 multi-copy family with cross-mapping reads
         │
-        ├─ exonic PSVs (NM_A≠NM_B)         → Tier 1  ~77%  → per-read PSV assignment (Thm 2/3)        [interest #2]
+        ├─ exonic PSVs (NM_A≠NM_B)         → Tier 1  ~87%  → per-read PSV assignment (Thm 2/3)        [interest #2]
         │
-        └─ K=0 (exons identical)            ~15-18%
+        └─ K=0 (exons identical)            ~13%
               → splice divergence is reference-real but per-read-masked (minimap2 snaps junctions)
               → Tier 2 has NO per-read rescue → co-quantified ambiguity set (Tier 3)                  [interest #3]
 ```
@@ -104,7 +104,7 @@ assignment), and the same identifiability quantity (the distinguishing-column co
 
 ## Reproducibility
 
-- Census: `python3 bench/copy_resolution_census.py` (classifier) → `bench/copy_resolution_census.json` (258 pairs).
+- Census: `python3 bench/copy_resolution_census.py` (classifier) → `bench/copy_resolution_census.tsv` (per-family).
 - Theory: `bench/copy_assignment_theory.md` (+ `bench/copy_assignment_theory_checks.py`).
 - K=0 frontier attack + splice-site mechanism: workflows `wf_e36e46e4-aa1`, `wf_0c7be571-7ed`;
   `bench/resolution_improvement_bound.md`.

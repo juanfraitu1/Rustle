@@ -614,7 +614,7 @@ This is the identifiability theorem's K=0 floor in the quantification frame: the
 distinguishing-column set that forbids per-read assignment (Theorem 2 corollary) flattens the per-copy
 likelihood. The honest Tier-3 output is therefore the **family aggregate** (identifiable) plus a
 prior-conditioned per-copy split whose uncertainty set is the entire simplex. (Read error perturbs each $p_r$
-but not the $a$-independence of the mixture term, so the unidentifiability is robust to symmetric error.)
+but not the $a$-independence of the mixture term, so the unidentifiability is robust to copy-independent error.)
 `check_tier3_coquant_unidentifiable` is the executable witness: every apportionment of a fixed $N$ yields
 identical likelihood.
 
