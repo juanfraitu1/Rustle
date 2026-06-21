@@ -427,7 +427,7 @@ is an edge of $\bar H$ iff $r$ and $r'$ do **not** conflict (they agree at every
 > set each component's allele-vector to the union of its reads' observations — returns the true copy set $C^\*$
 > in $O(n^2 m)$ time ($n = |R|$, $m$ the number of columns).
 
-*Proof.* By Theorem 2 (and its structural core), Strong Separation makes $H$ the **complete $K$-partite** graph
+*Proof.* The proof of Theorem 2 establishes that Strong Separation makes $H$ the **complete $K$-partite** graph
 whose parts are the true read-classes $P_1, \ldots, P_K$. The complement of a complete $K$-partite graph is the
 **disjoint union of $K$ cliques**, one per part: within a part $P_i$ there are no $H$-edges, so every pair is a
 $\bar H$-edge (a clique); across parts every pair is an $H$-edge, so no $\bar H$-edge. Hence the connected
@@ -437,12 +437,23 @@ consistent with every read of $P_i$ — i.e. the true copy $c_i$. Building $\bar
 $\binom{n}{2}$ read pairs over at most $m$ co-observed columns ($O(n^2 m)$); connected components and the
 per-component union are dominated by this. $\square$
 
-**Self-certifying recovery.** `RECOVER` can verify Strong Separation on its own input in the same $O(n^2)$ by
-checking that $\bar H$ is a disjoint union of cliques — every connected component is internally complete. When
-this fails the input is *not* Strong-Separated (e.g. the $K = 0$ regime, or the $K \geq 3$ recombination witness,
-where $\bar H$ has a connected-but-incomplete component), and `RECOVER` reports *not identifiable* rather than
-returning a partition Theorem 3 does not guarantee. The algorithm thus knows exactly when it is entitled to its
-answer.
+**Self-certifying recovery.** `RECOVER` verifies, as part of the same $O(n^2 m)$ computation (the incremental
+clique-check on the already-built $\bar H$ costs only an additional $O(n^2)$), whether $\bar H$ is a **disjoint
+union of cliques** — equivalently, whether the compatible relation is transitive. This property certifies that
+`RECOVER`'s partition is the **unique minimum copy cover of the reads**: no same-size partition exists.
+Strong Separation is a *sufficient condition* for this property (Strong Sep $\Rightarrow$ $\bar H$ is a disjoint
+union of cliques, by the proof above), but the property is weaker than Strong Separation — it can hold on
+instances Strong Separation excludes. When the check **fails** — the $K \geq 3$ cross-copy recombination regime,
+where some connected component of $\bar H$ is connected but *not* a clique — `RECOVER` refuses, reporting *not
+identifiable*; the minimum cover is not unique in that case, and no partition can be guaranteed.
+
+A subtlety worth noting: at $K = 0$ (copies identical over all observed columns), every read is compatible with
+every other ($H$ has no edges), so $\bar H$ is the complete graph — a single clique, hence trivially a disjoint
+union of cliques. The certifier **passes**, and `RECOVER` returns one component (merging the indistinguishable
+copies). This is the correct unique minimum cover of the observed data; it reflects an information-theoretic
+floor (the copies cannot be told apart), not an algorithm failure. The certifier therefore guarantees
+*unique minimum cover of the reads*; Strong Separation upgrades that further to *equals the true copies* (since
+under Strong Separation the components are forced to coincide with the true read-classes, Theorem 2).
 
 **Verification.** `check_thm3_recovery_algorithm` enumerates every Strong-Separation instance over $K \in \{2,3\}$,
 $L = 3$ and confirms `RECOVER` returns the true partition on **all** of them, the self-certifier accepts each, and
@@ -757,17 +768,21 @@ the true copy set $C^\*$ in $O(n^2 m)$ time.
 The key structural fact, established in the Theorem 3 proof (§5), is that Strong Separation makes $H$ a
 **complete $K$-partite graph**, whose complement $\bar H$ is therefore a **disjoint union of $K$ cliques** — one
 clique per true copy read-class. The connected components of $\bar H$ are exactly those read-classes, so
-`RECOVER` extracts the truth directly from graph structure in quadratic time. The self-certifying variant (§5)
-additionally verifies that $\bar H$ is a disjoint union of cliques in $O(n^2)$; when this check fails, the input
-is not Strong-Separated and `RECOVER` reports *not identifiable* rather than returning a partition it cannot
-guarantee.
+`RECOVER` extracts the truth directly from graph structure in $O(n^2 m)$ time. The self-certifying variant (§5)
+additionally verifies, with an $O(n^2)$ incremental clique-check on the already-built $\bar H$, that $\bar H$ is
+a disjoint union of cliques — certifying that `RECOVER`'s partition is the **unique minimum copy cover of the
+reads** (not merely that the input is Strong-Separated; the property is weaker than Strong Separation). When
+this check fails the input is **not** a disjoint-clique-union (the $K \geq 3$ recombination regime), and
+`RECOVER` reports *not identifiable* rather than returning a partition it cannot guarantee.
+
+**Honest caveat.** Strong Separation is a conservative *sufficient* condition for the disjoint-clique-union
+property (and hence for the certifier passing). The empirical resolver may succeed under weaker conditions — e.g.
+recombination-free instances that are not Strongly Separated, or $K = 2$ instances that are merely `sep+link`.
+Theorem 3 is about the *certified* regime: when the disjoint-clique-union check passes (an $O(n^2)$ incremental
+test on the already-built $\bar H$), `RECOVER` is provably correct and its partition is the unique minimum cover;
+Strong Separation additionally guarantees that cover equals the true copies. The design of a polynomial-time solver
+for the broader **recombination-free** regime — instances where the minimum cover is unique but the certifier may
+not pass — remains an open question.
 
 The dichotomy is therefore fully closed on both axes: **NP-hard in the general case** (Theorem 1); **unique
 optimum and polynomial recovery** under Strong Separation (Theorems 2 and 3).
-
-**Honest caveat.** Strong Separation is a conservative *sufficient* condition. The empirical resolver may
-succeed under weaker conditions — e.g. recombination-free instances that are not Strongly Separated, or $K = 2$
-instances that are merely `sep+link`. Theorem 3 is about the *certified* regime: when Strong Separation holds
-(checkable in $O(n^2)$ by the self-certifier), `RECOVER` is provably correct and polynomial. The design of a
-polynomial-time solver for the broader **recombination-free** regime — instances where the minimum cover is
-unique but Strong Separation may not hold — remains an open question.
