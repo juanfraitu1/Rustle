@@ -213,15 +213,24 @@ def write_summary(rows, xc):
     coloc = [r for r in rows if r["co_located"] and r["psv_exonic"] != "NA"]
     res = sum(1 for r in coloc if r["verdict"] == "resolvable")
     k0  = sum(1 for r in coloc if r["verdict"] == "genuine_k0")
-    na  = sum(1 for r in rows if r["psv_exonic"] == "NA")
+    unaln = sum(1 for r in rows if r["verdict"] == "unaligned")
+    unann = sum(1 for r in rows if r["verdict"] == "unannotated")
     L = ["# DNA-derived PSV identifiability catalog (Phase 1)\n",
          f"- co-located classified pairs: **{len(coloc)}** -> resolvable **{res}** "
-         f"({100*res/max(1,len(coloc)):.0f}%), genuine-K=0 **{k0}** ({100*k0/max(1,len(coloc)):.0f}%)",
-         f"- pairs with no exon annotation (NA): {na}",
+         f"({100*res/max(1,len(coloc)):.0f}%), genuine-K=0 **{k0}** ({100*k0/max(1,len(coloc)):.0f}%). "
+         f"NOTE: this is the DNA reference universe (all aligned co-located pairs, including unexpressed "
+         f"identical tandem copies the RNA census never observes); on the **{xc['n']}** pairs the RNA census "
+         f"actually classifies, DNA and RNA agree **{100*xc['concordance']:.0f}%** and both find that "
+         f"expressed subset mostly resolvable.",
+         f"- pairs excluded from K: **{unaln}** unaligned (copy did not align to ref0 — divergent/short paralog), "
+         f"**{unann}** unannotated (no overlapping GFF exon)",
          f"- **cross-check DNA-K=0 vs RNA-K0** on {xc['n']} census-classified pairs: "
          f"concordance **{100*xc['concordance']:.0f}%** (confusion {xc['conf']})",
-         f"- discordant DNA-K≥1 ∧ RNA-tied (expressible-but-not-expressed): {len(xc['discord']['dna_k_rna_tied'])}",
-         f"- discordant DNA-K=0 ∧ RNA-resolvable (pseudo-K=0 / indel): {len(xc['discord']['dna_k0_rna_resolv'])}\n"]
+         f"- discordant DNA-K=0 ∧ RNA-resolvable: **{len(xc['discord']['dna_k0_rna_resolv'])}** "
+         f"(candidate: indel / splice-shift pseudo-K=0 — substitution-only PSVs miss it; "
+         f"Phase-2 private_exon_bp will test this)",
+         f"- discordant DNA-K≥1 ∧ RNA-tied: **{len(xc['discord']['dna_k_rna_tied'])}** "
+         f"(candidate: PSV in a poorly-expressed exon — reference identifiability ≥ read identifiability)\n"]
     open(OUT_MD, "w").write("\n".join(L) + "\n")
 
 def check():
