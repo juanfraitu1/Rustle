@@ -98,9 +98,9 @@ multi-copy family with cross-mapping reads
 ```
 
 This unifies the three advisor interests under one measured boundary: detection (#1) forms the family, PSV
-assignment (#2) resolves the majority, allele-specific junctions (#3) extend resolution into part of the K=0
-residual, and the same identifiability quantity (the distinguishing-column count) governs all three — with a
-tiny, characterized, provably-irreducible core that should be co-quantified, not force-assigned.
+assignment (#2) resolves the majority, the K=0 residual is shown per-read-unresolvable and co-quantifies
+under the family graph (#3 — allele-specific junctions remain relevant at the copy-*model* level, not per-read
+assignment), and the same identifiability quantity (the distinguishing-column count) governs all three.
 
 ## Reproducibility
 

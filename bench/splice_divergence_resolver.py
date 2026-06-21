@@ -44,7 +44,7 @@ def probe_pair(bam_path, fasta_path, locusA, locusB):
                 continue
             if min(r.reference_end, e) - max(r.reference_start, s) < 200:
                 continue
-            d.setdefault(r.query_name, r)   # one alignment per query at this locus
+            d.setdefault(r.query_name, r)   # one alignment per query at this locus; secondaries kept on purpose (a cross-mapping read is secondary at the homolog)
         return d
 
     A, B = reads_at(cA, sA, eA), reads_at(cB, sB, eB)
@@ -57,6 +57,7 @@ def probe_pair(bam_path, fasta_path, locusA, locusB):
         n_junction += 1
         # (1) DETECTABLE divergence: intron-length multiset differs between the two alignments.
         #     Reflection preserves intron lengths, so a length difference is a genuine splice divergence.
+        # assumes full-length (FLNC) reads spanning the locus; partial-overlap reads could differ for non-divergence reasons (negligible here)
         if sorted(a - d for d, a in ia) != sorted(a - d for d, a in ib):
             n_chain_div += 1
         # (2) per-read DIRECTION via canonicality -> ~0: minimap2 snaps BOTH copies to canonical sites.
