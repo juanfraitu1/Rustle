@@ -695,12 +695,32 @@ def check_thm3_recovery_algorithm():
     return f"Thm 3: RECOVER == true partition on all {n_strong} strong instances (exhaustive K=2,3/L=3); witness rejected"
 
 
+import math as _math
+
+
+def check_tier3_coquant_unidentifiable():
+    """Tier-3 witness: under K=0 (copies identical over the transcript) the mixture log-likelihood is CONSTANT
+    over the per-copy abundance simplex (per-copy split unidentifiable), while the aggregate N is fixed."""
+    N = 10
+    p = 0.3  # P(read | copy) — identical across copies because the copies are identical
+    def loglik(a0, a1):
+        assert abs((a0 + a1) - N) < 1e-9
+        per_read = _math.log((a0 / N) * p + (a1 / N) * p)  # = log(p), independent of (a0, a1)
+        return N * per_read
+    splits = [(N, 0), (N / 2, N / 2), (1, N - 1), (3, N - 3)]
+    vals = [loglik(*s) for s in splits]
+    assert max(vals) - min(vals) < 1e-9, f"likelihood must be flat over the simplex, spread={max(vals)-min(vals)}"
+    assert abs(loglik(N, 0) - loglik(0, N)) < 1e-9
+    return "Tier-3: K=0 per-copy split unidentifiable (flat likelihood over the simplex); aggregate identifiable"
+
+
 CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
 CHECKS.append(check_thm2_recovery)
 CHECKS.append(check_thm2_strong_exhaustive)
 CHECKS.append(check_thm2_K0_merge)
 CHECKS.append(check_corollary_paths)
 CHECKS.append(check_thm3_recovery_algorithm)
+CHECKS.append(check_tier3_coquant_unidentifiable)
 
 
 def main():

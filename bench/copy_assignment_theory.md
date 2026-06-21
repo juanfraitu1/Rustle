@@ -591,6 +591,35 @@ $R$ for each identified gene family.*
 
 ---
 
+## §6b Tier-3: co-quantification of the irreducible core
+
+For copies identical over the entire transcribed region (the K=0 / Strong-Separation-fails regime), per-read
+assignment is impossible (no distinguishing column). The natural fallback is per-copy *quantification* — but the
+same identical-sequence condition makes that unidentifiable too, in a precise sense.
+
+> **Proposition (Tier-3 unidentifiability).** Let a family have copies $c_1,\ldots,c_K$ identical over the
+> transcribed region, and let reads $R$ ($|R| = N$) each be consistent with every copy. Under the mixture
+> likelihood $L(a) = \prod_{r\in R}\sum_{k=1}^{K}\frac{a_k}{N}\,P(r\mid c_k)$ with per-copy abundances
+> $a=(a_1,\ldots,a_K)$, $a_k\ge 0$, $\sum_k a_k = N$, the likelihood $L(a)$ is **constant** on the simplex
+> $\{a:\sum_k a_k=N\}$: the per-copy split is statistically **unidentifiable** from RNA. The aggregate $N=|R|$
+> is identifiable (a sufficient statistic). Under a copy-number / dosage prior $\pi(a)$, the MAP estimate is
+> well-posed and equals the mode of $\pi$ scaled to $N$ — RNA contributes nothing to the per-copy direction.
+
+*Proof.* The copies are identical, so $P(r\mid c_k)=p_r$ is the same for every $k$. Each read's mixture term is
+$\sum_k\frac{a_k}{N}p_r = p_r\frac{\sum_k a_k}{N}=p_r$, independent of $a$. Hence $L(a)=\prod_r p_r$ is constant
+in $a$; it factors through $N$ alone, so $N$ is identifiable and $a$ is not. With prior $\pi$, the posterior is
+$\propto \pi(a)\,L(a)\propto\pi(a)$ on the simplex, so the MAP is the mode of $\pi$ (scaled to $N$). $\square$
+
+This is the identifiability theorem's K=0 floor in the quantification frame: the same emptiness of the
+distinguishing-column set that forbids per-read assignment (Theorem 2 corollary) flattens the per-copy
+likelihood. The honest Tier-3 output is therefore the **family aggregate** (identifiable) plus a
+prior-conditioned per-copy split whose uncertainty set is the entire simplex. (Read error perturbs each $p_r$
+but not the $a$-independence of the mixture term, so the unidentifiability is robust to symmetric error.)
+`check_tier3_coquant_unidentifiable` is the executable witness: every apportionment of a fixed $N$ yields
+identical likelihood.
+
+---
+
 ## §7 Empirical corroboration
 
 This section cites existing experimental results that illustrate the theoretical dichotomy. It does **not**
