@@ -1,6 +1,6 @@
 import pysam, re, collections, json, random
 random.seed(42)
-bam=pysam.AlignmentFile("GGO.bam","rb")
+bam=pysam.AlignmentFile("/home/juanfra/winloci_scratch/GGO.bam","rb")
 DN=re.compile(r'DN_(N[CW]_\d+\.\d+)_(\d+)_(\d+)$')
 
 # Locus span: from the DN start, find read cluster extent. Reads at de-novo loci
@@ -77,27 +77,103 @@ for (s1,s2) in [(161251228,161458538),(164381222,164442447),(164397061,164426194
     r=classify_pair("NC_073247.2",s1,s2)
     print("MAGEA",s1,s2,"->",{k:r[k] for k in('n_xmap','nm_same','nm_diff','frac_same')} if r and r['n_xmap']>0 else r)
 
-# ---- Full run over co-located pairs that actually cross-map ----
-pair_list=json.load(open('/tmp/coloc_pairs.json'))
-print("total coloc pairs:",len(pair_list))
-# Sample broadly but cap to keep runtime sane; iterate until we have >=300 cross-mapping pairs
-random.shuffle(pair_list)
-results=[]
-xmap_pairs=[]   # pairs with >=1 cross-mapping MAPQ0 read (assignment-relevant)
-checked=0
-MIN_XMAP=3      # need at least 3 cross-mapping reads to classify
-for (fid,chrom,sA,sB) in pair_list:
-    if len(xmap_pairs)>=400: break
-    checked+=1
-    try:
-        r=classify_pair(chrom,sA,sB)
-    except Exception as e:
-        continue
-    if r is None: continue
-    if r['n_xmap']>=MIN_XMAP:
-        r['fid']=fid
-        xmap_pairs.append(r)
-    if checked%200==0:
-        print(f"checked {checked}, xmap_pairs {len(xmap_pairs)}", flush=True)
-print("CHECKED:",checked,"ASSIGNMENT-RELEVANT (>=%d xmap MAPQ0 reads):"%MIN_XMAP,len(xmap_pairs))
-json.dump(xmap_pairs, open('/tmp/xmap_results.json','w'))
+import re as _re, os as _os, subprocess as _sub
+
+FAM_TSV = "/mnt/c/Users/jfris/Desktop/Rustle/bench/denovo_families.tsv"
+GFF     = "/home/juanfra/winloci_scratch/GGO_genomic.gff"
+OUT_TSV = "/mnt/c/Users/jfris/Desktop/Rustle/bench/copy_resolution_census.tsv"
+
+# Memoize the BAM-fetch hot path. classify_pair calls fetch_locus by global name (late binding),
+# so rebinding the global here makes exhaustive pairing bounded by distinct loci, not pair count.
+_fetch_cache = {}
+_orig_fetch_locus = fetch_locus
+def fetch_locus(chrom, span):
+    key = (chrom, span)
+    if key not in _fetch_cache:
+        _fetch_cache[key] = _orig_fetch_locus(chrom, span)
+    return _fetch_cache[key]
+
+def _parse_member(m):
+    mm = _re.match(r"DN_(N[CW]_\d+\.\d+)_(\d+)_(\d+)$", m)
+    return (mm.group(1), int(mm.group(2))) if mm else None
+
+def _pair_class(p):
+    if p["n_xmap"] < 3: return "low_support"
+    if p["frac_same"] >= 1.0: return "k0_strict"
+    if p["frac_same"] >= 0.95: return "k0"
+    return "resolvable"
+
+def per_family_census(win=2_000_000):
+    """Per-family K=0 labels over ALL co-located copy pairs (same chrom, within `win`, threshold n_xmap>=1).
+    low_support pairs (n_xmap<3) are counted in n_colocated_pairs but excluded from the family verdict."""
+    rows, all_pairs = [], []
+    for line in open(FAM_TSV):
+        if line.startswith("family_id"): continue
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) < 3: continue
+        fid, ncopies, members = parts[0], parts[1], parts[2]
+        locs = [x for x in (_parse_member(m) for m in members.split(",")) if x]
+        by_chrom = {}
+        for c, s in locs: by_chrom.setdefault(c, []).append(s)
+        classed = []
+        for c, starts in by_chrom.items():
+            starts = sorted(set(starts))
+            for i in range(len(starts)):
+                for j in range(i + 1, len(starts)):
+                    if starts[j] - starts[i] > win: break  # sorted -> no closer pair beyond the window
+                    try:
+                        p = classify_pair(c, starts[i], starts[j])
+                    except Exception:
+                        continue
+                    if p is None or p["n_xmap"] < 1: continue
+                    p["fid"] = fid
+                    classed.append(p); all_pairs.append(p)
+        if not classed: continue
+        cls   = [_pair_class(p) for p in classed]
+        n_k0  = cls.count("k0") + cls.count("k0_strict")
+        n_k0s = cls.count("k0_strict")
+        n_res = cls.count("resolvable")
+        n_ar  = n_k0 + n_res
+        if   n_ar == 0:      verdict = "not_assignment_relevant"
+        elif n_k0 == n_ar:   verdict = "k0"
+        elif n_res == n_ar:  verdict = "resolvable"
+        else:                verdict = "mixed"
+        k0_pairs = ";".join(
+            f"{p['chrom']}:{p['spanA'][0]}-{p['spanA'][1]}~{p['spanB'][0]}-{p['spanB'][1]}"
+            for p, k in zip(classed, cls) if k in ("k0", "k0_strict"))
+        rows.append(dict(family_id=fid, n_copies=int(ncopies), n_colocated_pairs=len(classed),
+                         n_assignment_relevant=n_ar, n_resolvable=n_res, n_k0=n_k0, n_k0_strict=n_k0s,
+                         family_verdict=verdict, k0_pairs=k0_pairs))
+    cols = ["family_id","n_copies","n_colocated_pairs","n_assignment_relevant","n_resolvable",
+            "n_k0","n_k0_strict","family_verdict","k0_pairs"]
+    with open(OUT_TSV, "w") as fh:
+        fh.write("\t".join(cols) + "\n")
+        for r in rows:
+            fh.write("\t".join(str(r[c]) for c in cols) + "\n")
+    return rows, all_pairs
+
+def check_census():
+    rows, pairs = per_family_census()
+    ar   = [p for p in pairs if _pair_class(p) in ("k0", "k0_strict", "resolvable")]  # n_xmap>=3
+    n    = len(ar)
+    res  = sum(1 for p in ar if _pair_class(p) == "resolvable")
+    k0   = sum(1 for p in ar if _pair_class(p) in ("k0", "k0_strict"))
+    reads = sum(p["n_xmap"] for p in ar); diff = sum(p["nm_diff"] for p in ar)
+    assert n >= 200, f"expected a broad assignment-relevant set, got {n}"
+    assert 0.70 <= res / n <= 0.85, f"resolvable fraction off: {res/n:.2f}"
+    assert 0.78 <= diff / reads <= 0.88, f"read-level resolvable off: {diff/reads:.2f}"
+    dnfam1 = [r for r in rows if r["family_id"] == "DNFAM1"]
+    assert dnfam1, "DNFAM1 missing from census"
+    assert dnfam1[0]["family_verdict"] in ("k0", "mixed"), f"DNFAM1 verdict={dnfam1[0]['family_verdict']}"
+    assert dnfam1[0]["n_k0"] >= 2, f"DNFAM1 must carry >=2 K0 pairs (pair2/pair3), got n_k0={dnfam1[0]['n_k0']}"
+    for r in rows:
+        assert r["n_resolvable"] + r["n_k0"] == r["n_assignment_relevant"], f"{r['family_id']} verdict-count mismatch"
+        assert r["n_assignment_relevant"] <= r["n_colocated_pairs"]
+        assert r["n_k0_strict"] <= r["n_k0"]
+    print(f"OK  - census: {len(rows)} families; assignment-relevant {n} pairs -> {res} resolvable "
+          f"({100*res/n:.0f}%), {k0} K0; reads {100*diff/reads:.0f}% resolvable; "
+          f"DNFAM1 verdict={dnfam1[0]['family_verdict']} n_k0={dnfam1[0]['n_k0']}")
+    return rows
+
+if __name__ == "__main__":
+    check_census()
