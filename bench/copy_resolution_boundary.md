@@ -1,9 +1,9 @@
 # The copy-resolution boundary: which multi-copy gene families can RNA resolve, and which it provably cannot
 
 *The empirical capstone to the copy-assignment identifiability theory (`bench/copy_assignment_theory.md`).
-Measured on GGO HiFi IsoSeq (FLNC, full-length mature mRNA) against the T2T reference. A clean three-tier
-boundary: a resolvable majority, a thin recent-duplicate residual partly rescued by copy-specific splice sites,
-and a tiny exon-and-splice-identical core that is provably unresolvable from a mature spliced read.*
+Measured on GGO HiFi IsoSeq (FLNC, full-length mature mRNA) against the T2T reference. A clean two-tier
+boundary: a resolvable majority (exonic PSVs), and a K=0 residual that is provably unresolvable per-read —
+splice-site divergence is real in the reference but aligner-masked, so the entire K=0 residual co-quantifies.*
 
 ## Bottom line
 
@@ -36,7 +36,7 @@ DNFAM14, DNFAM160, …), plus a few autosomal recent dups (`ZNF793`, scattered L
 **inverted** segmental duplications. The big co-located families one might fear — protocadherins, keratins,
 tubulins, APOBEC, APOL, BTN2A — are all in the *resolvable* majority.
 
-## The three tiers
+## The two tiers
 
 ### Tier 1 — Resolvable majority (~77% of pairs / ~83% of reads)
 
@@ -45,23 +45,24 @@ of **Theorem 2/3** (`copy_assignment_theory.md`): under the identifiability cond
 unique minimum cover and are recovered in polynomial time. The shipped per-read PSV + junction assigner handles
 this tier (sim K-ladder K≥2 → 100%, GGO silver-standard 100%). **This is the headline: the method works.**
 
-### Tier 2 — K=0 residual, partly rescued by copy-specific splice sites (~15% of pairs)
+### Tier 2 — K=0 residual: splice divergence is real in the reference but per-read-masked (~15-18% of pairs)
 
-Exons identical, so per-base PSVs give 0. But the introns *do* diverge (4–60 SNPs across the duplicated block),
-and where that divergence lands **at a splice site**, it creates a copy-specific junction: one copy's donor is
-canonical `GT`, the homologous position in the other copy is degraded (`CT`), so a read using that junction is
-valid only at its true copy. Confirmed mechanism:
-- **MAGEA pair0**: a 3 bp intronic indel at a 5′ splice site → 18 copy-distinguishing junctions → **33% of its
-  junction-reads resolved** (the donor-side exon flank is byte-identical, the acceptor-side carries the indel —
-  the divergence is purely intronic, exactly the hypothesized mechanism).
-- **DNFAM451** (differentially-used copy-specific intron) and **DNFAM224/DMRTC** (a copy-private 489 bp intron)
-  carry the same soft lever.
+The exons are identical, so per-base PSVs give 0. The *introns* do diverge (4–60 SNPs/indels across the
+duplicated block), and where that lands at a splice site it shifts a junction (e.g. MAGEA pair0's 3 bp
+intronic indel makes copy A's intron 3702 nt and copy B's 3705 nt). One might hope a read using that junction
+betrays its copy — but it does **not, per read**: minimap2's spliced aligner independently snaps every junction
+to the nearest canonical `GT-AG` at *each* copy, so the read is fully canonical at **both** copies and, because
+the indel lives inside the long intron (never in the spliced mature read, and absorbed without an exonic edit),
+NM stays tied. Measured on the panel (`bench/splice_divergence_resolver.py`): per-read splice **resolution = 0
+for every pair, including pair0** — the divergence is *detectable* (pair0's reads carry a different intron-length
+chain at A vs B) but **non-directional** (it cannot say which copy a read came from). The earlier "pair0 ~33%"
+was a reference-level count of junctions whose homologous site differs, not a per-read assignment.
 
-This is **allele-specific junctions (interest #3) applied to copies** — a secondary, opt-in resolver that claws
-back a minority (~3 of ~11 K=0 families) at essentially zero precision cost where it fires. It does **not**
-rescue the most-identical copies.
+So there is **no Tier-2 per-read rescue**: the K=0 residual collapses into Tier-3. (The reference-level splice
+distinguishability remains relevant to copy-*model* / family-graph work — interest #3 — but not to assigning an
+individual mature read.)
 
-### Tier 3 — The irreducible core (~3% strict K=0)
+### Tier 3 — The K=0 core: co-quantify (no per-read assignment)
 
 Exons identical **and** splice sites identical: the byte-identical block extends through the splice signals and
 into the proximal intron, so every junction is `GT-AG` at both copies (`MAGEA pair2/pair3`-class). The 4–60
@@ -72,7 +73,9 @@ This is the identifiability theorem's K=0 floor instantiated: the distinguishing
 
 For this core the correct output is **not** a forced per-read assignment but a **co-quantified ambiguity set** —
 report the copies as a shared-evidence bundle under the family graph and estimate per-copy expression *ratios*
-(with a DNA/copy-number prior), rather than pretending to assign individual reads.
+(with a DNA/copy-number prior), rather than pretending to assign individual reads. With Tier-2 shown to be
+per-read-masked, the *entire* K=0 residual (not only the strict core) lands here: report a co-quantified
+ambiguity set, not forced per-read assignments.
 
 ## Why this is sound (not an artifact)
 
@@ -90,8 +93,8 @@ multi-copy family with cross-mapping reads
         ├─ exonic PSVs (NM_A≠NM_B)         → Tier 1  ~77%  → per-read PSV assignment (Thm 2/3)        [interest #2]
         │
         └─ K=0 (exons identical)            ~15-18%
-              ├─ copy-specific splice site  → Tier 2  → junction-based partial rescue (~3/11 families) [interest #3]
-              └─ splice-identical core      → Tier 3  ~3%  → co-quantified ambiguity set (no per-read)
+              → splice divergence is reference-real but per-read-masked (minimap2 snaps junctions)
+              → Tier 2 has NO per-read rescue → co-quantified ambiguity set (Tier 3)                  [interest #3]
 ```
 
 This unifies the three advisor interests under one measured boundary: detection (#1) forms the family, PSV
@@ -109,5 +112,5 @@ tiny, characterized, provably-irreducible core that should be co-quantified, not
 ## Open / next
 
 - Extend the census beyond the ≥3-read assignment-relevant subset for a fully exhaustive per-family K=0 label.
-- Productize the donor/acceptor homologous-coordinate splice-divergence scan as the opt-in Tier-2 resolver.
+- Splice-divergence is per-read-masked by aligner junction-snapping (`bench/splice_divergence_resolver.py` — negative-result probe); the K=0 residual co-quantifies (Tier-3).
 - Formalize the Tier-3 co-quantification (per-copy expression ratio under the family graph + copy-number prior).
