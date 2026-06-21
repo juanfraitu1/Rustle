@@ -600,11 +600,104 @@ def check_corollary_paths():
     )
 
 
+def compatibility_edges(reads):
+    """Edges of the compatibility graph H-bar (complement of the conflict graph): the pairs of reads that
+    do NOT conflict (they agree at every co-observed column)."""
+    edges = []
+    for i, j in itertools.combinations(range(len(reads)), 2):
+        oi, oj = observed(reads[i]), observed(reads[j])
+        if all(oi[c] == oj[c] for c in (oi.keys() & oj.keys())):
+            edges.append((i, j))
+    return edges
+
+
+def recover(reads):
+    """RECOVER (Theorem 3): connected components of the compatibility graph H-bar, via union-find.
+    Returns the read-partition as a frozenset of frozensets of read indices. O(n^2 * m)."""
+    n = len(reads)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for i, j in compatibility_edges(reads):
+        parent[find(i)] = find(j)
+    comp = {}
+    for i in range(n):
+        comp.setdefault(find(i), set()).add(i)
+    return frozenset(frozenset(c) for c in comp.values())
+
+
+def is_disjoint_clique_union(reads):
+    """Self-certifying check (Theorem 3 addendum): is the compatibility graph a disjoint union of cliques?
+    Equivalently, is every connected component of H-bar internally complete (all pairs compatible)? This
+    holds iff the input satisfies Strong Separation. O(n^2)."""
+    n = len(reads)
+    compat = [[i == j for j in range(n)] for i in range(n)]
+    for i, j in compatibility_edges(reads):
+        compat[i][j] = compat[j][i] = True
+    for cls in recover(reads):
+        members = sorted(cls)
+        for a in range(len(members)):
+            for b in range(a + 1, len(members)):
+                if not compat[members[a]][members[b]]:
+                    return False  # same component but not directly compatible -> not a clique
+    return True
+
+
+def check_thm3_recovery_algorithm():
+    """EXHAUSTIVE certificate of Theorem 3: over every Strong-Separation instance in the K in {2,3}, L=3
+    enumeration, RECOVER returns exactly the TRUE partition, and is_disjoint_clique_union accepts it.
+    Also: the explicit recombination witness (sep+link holds, strong fails) is REJECTED by the certificate."""
+    L = 3
+    cols = list(range(L))
+    all_windows = [frozenset(s) for k in range(1, L + 1) for s in itertools.combinations(cols, k)]
+    windows_for = {2: all_windows, 3: [w for w in all_windows if len(w) >= 2]}
+    copyvecs = [tuple(c) for c in itertools.product((0, 1), repeat=L)]
+
+    n_strong = 0
+    recover_mismatch = 0
+    cert_reject_on_strong = 0
+    for K in (2, 3):
+        windows = windows_for[K]
+        for copies in itertools.combinations(copyvecs, K):
+            copies = list(copies)
+            for assign in itertools.product(itertools.combinations(windows, 2), repeat=K):
+                reads, labels = [], []
+                for ci, wins in enumerate(assign):
+                    for w in wins:
+                        reads.append(frozenset((c, copies[ci][c]) for c in w))
+                        labels.append(ci)
+                if not cond_strong(copies, reads, labels):   # use the file's actual cond_strong signature
+                    continue
+                n_strong += 1
+                if recover(reads) != partition_of(labels):
+                    recover_mismatch += 1
+                if not is_disjoint_clique_union(reads):
+                    cert_reject_on_strong += 1
+
+    assert recover_mismatch == 0, f"RECOVER disagreed with the true partition on {recover_mismatch} strong instances"
+    assert cert_reject_on_strong == 0, f"self-certify wrongly rejected {cert_reject_on_strong} strong instances"
+
+    # Recombination witness: sep+link holds, strong fails -> certificate must REJECT (refuse to recover).
+    wc = [(1, 1, 0), (0, 0, 1), (0, 1, 1)]
+    wwins = [(0, {1, 2}), (0, {0, 1}), (1, {0, 1, 2}), (1, {0, 1}), (2, {0, 1}), (2, {1, 2})]
+    wreads = [frozenset((c, wc[ci][c]) for c in w) for ci, w in wwins]
+    assert not is_disjoint_clique_union(wreads), "certificate must reject the non-strong recombination witness"
+
+    print(f"    [thm3] strong instances={n_strong}: RECOVER==true 100%, self-certify accepts all; witness rejected")
+    return f"Thm 3: RECOVER == true partition on all {n_strong} strong instances (exhaustive K=2,3/L=3); witness rejected"
+
+
 CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
 CHECKS.append(check_thm2_recovery)
 CHECKS.append(check_thm2_strong_exhaustive)
 CHECKS.append(check_thm2_K0_merge)
 CHECKS.append(check_corollary_paths)
+CHECKS.append(check_thm3_recovery_algorithm)
 
 
 def main():
