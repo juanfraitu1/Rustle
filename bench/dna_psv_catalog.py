@@ -4,8 +4,9 @@ docs/superpowers/specs/2026-06-21-dna-psv-catalog-design.md.
 Per family: extract each copy's T2T interval, align every copy to the longest (ref0) with
 minimap2 asm20 --cs, project substitutions onto ref0 coordinates -> allele matrix -> exonic PSV columns ->
 per-pair K (Hamming over exonic PSVs). Cross-check vs the RNA census. Deterministic check() at the bottom."""
-import collections, json, os, re, subprocess, tempfile
+import collections, json, os, re, subprocess, sys, tempfile
 import pysam
+sys.path.insert(0, os.path.dirname(__file__))
 
 FAM_TSV  = "/mnt/c/Users/jfris/Desktop/Rustle/bench/denovo_families.tsv"
 FASTA    = "/home/juanfra/winloci_scratch/GGO.fasta"
@@ -182,10 +183,78 @@ def _panel_pair_K(members, a_lbl, b_lbl):
     exonic = _exonic_localpos(rc, riv, exon_intervals(rc, riv[0], riv[1]))
     return pair_K(matrix, ref0, exonic, a_lbl, b_lbl), ref0
 
+def cross_check(rows):
+    """DNA-K=0 vs RNA-K0 (frac_same>=0.95) on co-located pairs the census can classify. Returns confusion + lists."""
+    import copy_resolution_census as census
+    conf = collections.Counter()         # (dna_k0, rna_k0) -> count
+    discord = {"dna_k_rna_tied": [], "dna_k0_rna_resolv": []}
+    n = 0
+    for r in rows:
+        if not r["co_located"] or r["psv_exonic"] == "NA": continue
+        ca = r["chromA"]; sa = int(r["copyA"].split(":")[1]); sb = int(r["copyB"].split(":")[1])
+        try:
+            cp = census.classify_pair(ca, min(sa, sb), max(sa, sb))
+        except Exception:
+            continue
+        if cp is None or cp.get("n_xmap", 0) < 3 or "frac_same" not in cp: continue
+        dna_k0 = (int(r["psv_exonic"]) == 0)
+        rna_k0 = (cp["frac_same"] >= 0.95)
+        conf[(dna_k0, rna_k0)] += 1; n += 1
+        if dna_k0 != rna_k0:
+            (discord["dna_k_rna_tied"] if (not dna_k0 and rna_k0) else discord["dna_k0_rna_resolv"]).append(
+                dict(family=r["family"], pair=f"{r['copyA']}~{r['copyB']}",
+                     dna_K=r["psv_exonic"], rna_frac_same=round(cp["frac_same"], 3)))
+    concordant = conf[(True, True)] + conf[(False, False)]
+    return dict(n=n, concordant=concordant, conf=dict(conf),
+                discord=discord,
+                concordance=(concordant / n if n else 0.0))
+
+def write_summary(rows, xc):
+    coloc = [r for r in rows if r["co_located"] and r["psv_exonic"] != "NA"]
+    res = sum(1 for r in coloc if r["verdict"] == "resolvable")
+    k0  = sum(1 for r in coloc if r["verdict"] == "genuine_k0")
+    na  = sum(1 for r in rows if r["psv_exonic"] == "NA")
+    L = ["# DNA-derived PSV identifiability catalog (Phase 1)\n",
+         f"- co-located classified pairs: **{len(coloc)}** -> resolvable **{res}** "
+         f"({100*res/max(1,len(coloc)):.0f}%), genuine-K=0 **{k0}** ({100*k0/max(1,len(coloc)):.0f}%)",
+         f"- pairs with no exon annotation (NA): {na}",
+         f"- **cross-check DNA-K=0 vs RNA-K0** on {xc['n']} census-classified pairs: "
+         f"concordance **{100*xc['concordance']:.0f}%** (confusion {xc['conf']})",
+         f"- discordant DNA-K≥1 ∧ RNA-tied (expressible-but-not-expressed): {len(xc['discord']['dna_k_rna_tied'])}",
+         f"- discordant DNA-K=0 ∧ RNA-resolvable (pseudo-K=0 / indel): {len(xc['discord']['dna_k0_rna_resolv'])}\n"]
+    open(OUT_MD, "w").write("\n".join(L) + "\n")
+
+def check():
+    # panel anchors
+    d0 = _panel_pair_K(PANEL_FAMILIES["MAGEA_dn"], "d0a", "d0b")[0]
+    d2 = _panel_pair_K(PANEL_FAMILIES["MAGEA_dn"], "d2a", "d2b")[0]
+    ak = _panel_pair_K(PANEL_FAMILIES["AK6"], "AK6", "LOC")[0]
+    print(f"    panel: MAGEA d0 exonicK={d0[1]} d2 exonicK={d2[1]}  AK6 exonicK={ak[1]}")
+    assert d0[1] == 0, f"MAGEA d0 should be exon-identical (K=0), got {d0[1]}"
+    assert d2[1] == 0, f"MAGEA d2 should be exon-identical (K=0), got {d2[1]}"
+    assert ak[1] is not None and ak[1] >= 1, f"AK6 should be resolvable (K>=1), got {ak[1]}"
+    # Load pre-built catalog from TSV if present; build otherwise
+    if os.path.exists(OUT_TSV):
+        rows = []
+        with open(OUT_TSV) as fh:
+            hdr = fh.readline().rstrip("\n").split("\t")
+            for line in fh:
+                vals = line.rstrip("\n").split("\t")
+                r = dict(zip(hdr, vals))
+                r["co_located"] = int(r["co_located"])
+                rows.append(r)
+    else:
+        rows = build_catalog()
+    for r in rows:
+        if r["psv_exonic"] != "NA":
+            assert int(r["psv_exonic"]) <= int(r["psv_total"]), f"exonic>total in {r['family']}"
+    xc = cross_check(rows); write_summary(rows, xc)
+    print(f"    cross-check: n={xc['n']} concordance={xc['concordance']:.2f} conf={xc['conf']}")
+    assert xc["n"] >= 50, f"too few census-classified co-located pairs to cross-check: {xc['n']}"
+    assert xc["concordance"] >= 0.80, f"DNA/RNA identifiability concordance too low: {xc['concordance']:.2f}"
+    print(f"OK  - dna-catalog: {len(rows)} pairs; "
+          f"co-located resolvable/K0 split + {100*xc['concordance']:.0f}% DNA/RNA concordance")
+    return rows
+
 if __name__ == "__main__":
-    # smoke: two MAGEA copies expected to differ (MAGd1 pair)
-    members = [("A", "NC_073247.2", 161266095), ("B", "NC_073247.2", 161413981)]
-    ref0, rc, riv, matrix, ivs, unaligned = family_allele_matrix(members)
-    nonref = [L for L in ivs if L != ref0][0]
-    print(f"ref0={ref0} {rc}:{riv[0]}-{riv[1]} ({riv[1]-riv[0]}bp); "
-          f"substitution columns {nonref} vs ref0: {len(matrix[nonref])}")
+    check()
