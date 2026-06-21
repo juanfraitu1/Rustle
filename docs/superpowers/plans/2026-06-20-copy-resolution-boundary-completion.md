@@ -176,28 +176,49 @@ git commit -m "$(printf '%s\n' "bench(census): exhaustive per-family K=0 labels 
 
 ---
 
-## Task 2: Splice-divergence resolver
+## Task 2: Splice-divergence negative-result probe (Tier-2 collapses into Tier-3)
+
+> **REFRAMED during execution (user decision).** The original plan tried a per-read splice *resolver*
+> (assign reads via copy-specific splice sites, targeting the prior "MAGEA pair0 ~33%"). Hands-on testing
+> proved that is not achievable per-read: **minimap2's spliced aligner independently snaps every junction to
+> the nearest canonical `GT-AG` at EACH copy**, so a read is fully canonical at *both* copies (intron lengths
+> differing only by the intronic indel, e.g. 3702 nt at A vs 3705 nt at B). The 3 bp indel sits inside the
+> long intron — absent from the spliced mature read, accommodated without an exonic edit — so NM stays tied
+> (these are K=0 by construction) and there is **no per-read direction signal**. The prior "33%" was a
+> reference-level junction count, not a per-read assignment. **Decision: collapse Tier-2 into Tier-3** — the
+> deliverable is an honest negative-result probe + the boundary doc update.
 
 **Files:**
-- Create: `bench/splice_divergence_resolver.py`
+- Modify: `bench/splice_divergence_resolver.py` (a prior commit `5f2517e` created it as a resolver; rewrite to the negative-result probe below)
+- Modify: `bench/copy_resolution_boundary.md` (collapse Tier-2 into Tier-3)
 
 **Interfaces:**
-- Produces: `resolve_pair(bam_path, fasta_path, locusA, locusB) -> dict` where each locus is `(chrom, start, end)`; returns `{n_reads, n_junction_reads, n_resolved, resolved_fraction, distinguishing_junctions, per_read}`.
+- Produces: `probe_pair(bam_path, fasta_path, locusA, locusB) -> dict` where each locus is `(chrom, start, end)`; returns `{n_reads, n_junction_reads, n_resolved, resolved_fraction, n_chain_divergent, chain_divergent_fraction, distinguishing_junctions}`.
 
-**Approach (no cross-copy coordinate mapping needed):** a cross-mapping read has an alignment at locus A and at locus B. Check each alignment's junctions against THAT locus's own reference splice sites (strand-agnostic canonical set, so the inverted copy's minus-strand `CT-AC` counts as canonical). A read is assigned to the copy where its junctions are **fully canonical** while the other copy's homologous alignment carries a **degraded** (non-canonical) junction — exactly the established mechanism (copy A donor `GT`, copy B homologous donor `CT`). Splice-identical pairs (pair2/pair3) are canonical at both → 0, which the check enforces (guards against a strand bug).
+**What the probe shows (the negative result, made rigorous):** for each cross-mapping junction-read it measures TWO things — (1) `resolved_fraction`: per-read direction via canonicality (fully-canonical at one copy, degraded at the other) → **~0 for ALL pairs incl. pair0**, because the aligner snaps; (2) `chain_divergent_fraction`: whether the read's intron-length multiset differs between its A- and B-alignment (reflection preserves intron lengths, so a length difference is a genuine splice divergence) → **HIGH for pair0** (the divergence IS detectable) but **~0 for the splice-identical pair2/pair3**. Conclusion: pair0's divergence is *detectable but non-directional* — no per-read rescue — so the K=0 residual collapses into Tier-3 (co-quantify).
 
-- [ ] **Step 1: Write the resolver + panel-pinned check**
+- [ ] **Step 1: Rewrite the script as the negative-result probe + check**
 
-Create `bench/splice_divergence_resolver.py`:
+Replace the entire contents of `bench/splice_divergence_resolver.py` with:
 
 ```python
-"""Tier-2 resolver: assign K=0 cross-mapping reads via copy-specific splice sites. Intronic divergence at an
-exon-intron boundary makes a junction canonical at one copy but degraded at the other; a read whose junctions
-are fully canonical at copy X while its homologous alignment at copy Y carries a degraded junction came from X."""
+"""Splice-divergence NEGATIVE-RESULT probe (Tier-2 collapses into Tier-3).
+
+For K=0 co-located inverted-dup copies, intronic divergence near a splice site (e.g. the MAGEA pair0 3 bp
+intronic indel) is REAL in the reference but is NOT usable for per-read copy assignment: minimap2's spliced
+aligner independently snaps every junction to the nearest canonical GT-AG site at EACH copy, so a read is
+fully canonical at both copies (intron lengths differing only by the indel, e.g. 3702 nt at A vs 3705 nt at B).
+The indel sits inside the long intron -- absent from the spliced mature read, accommodated without an exonic
+edit -- so NM stays tied (these are K=0 by construction) and there is no per-read direction signal.
+
+This probe quantifies that on the MAGEA panel:
+- resolved_fraction        (per-read canonicality direction)  -> ~0 for ALL pairs incl. pair0 (the negative
+                                                                 result: aligner snapping masks the divergence)
+- chain_divergent_fraction (read's A-intron-length multiset != B's) -> HIGH at pair0 (divergence IS detectable)
+                                                                 but ~0 at splice-identical pair2/pair3
+=> detectable yet NON-DIRECTIONAL: the K=0 residual has no per-read splice rescue; it collapses into Tier-3."""
 import pysam
 
-# canonical splice dinucleotide pairs, strand-agnostic (each major class + its reverse-complement):
-#   GT-AG / CT-AC ;  GC-AG / CT-GC ;  AT-AC / GT-AT
 CANONICAL = {("GT", "AG"), ("CT", "AC"), ("GC", "AG"), ("CT", "GC"), ("AT", "AC"), ("GT", "AT")}
 
 def _introns(read):
@@ -216,7 +237,7 @@ def _splice(fasta, chrom, d, a):
 def _canon(introns, fasta, chrom):
     return sum(1 for (d, a) in introns if _splice(fasta, chrom, d, a) in CANONICAL)
 
-def resolve_pair(bam_path, fasta_path, locusA, locusB):
+def probe_pair(bam_path, fasta_path, locusA, locusB):
     bam = pysam.AlignmentFile(bam_path, "rb"); fasta = pysam.FastaFile(fasta_path)
     cA, sA, eA = locusA; cB, sB, eB = locusB
 
@@ -232,26 +253,33 @@ def resolve_pair(bam_path, fasta_path, locusA, locusB):
 
     A, B = reads_at(cA, sA, eA), reads_at(cB, sB, eB)
     common = set(A) & set(B)
-    per_read, distinguishing, n_junction, n_resolved = {}, set(), 0, 0
+    distinguishing, n_junction, n_resolved, n_chain_div = set(), 0, 0, 0
     for q in common:
         ia, ib = _introns(A[q]), _introns(B[q])
         if not ia and not ib:
             continue
         n_junction += 1
+        # (1) DETECTABLE divergence: intron-length multiset differs between the two alignments.
+        #     Reflection preserves intron lengths, so a length difference is a genuine splice divergence.
+        if sorted(a - d for d, a in ia) != sorted(a - d for d, a in ib):
+            n_chain_div += 1
+        # (2) per-read DIRECTION via canonicality -> ~0: minimap2 snaps BOTH copies to canonical sites.
         ca, cb = _canon(ia, fasta, cA), _canon(ib, fasta, cB)
         if ia and ca == len(ia) and ib and cb < len(ib):        # A fully canonical, B degraded -> copy A
-            per_read[q] = "A"; n_resolved += 1
+            n_resolved += 1
             for (d, a) in ib:
                 if _splice(fasta, cB, d, a) not in CANONICAL:
                     distinguishing.add((cB, d, a))
         elif ib and cb == len(ib) and ia and ca < len(ia):      # B fully canonical, A degraded -> copy B
-            per_read[q] = "B"; n_resolved += 1
+            n_resolved += 1
             for (d, a) in ia:
                 if _splice(fasta, cA, d, a) not in CANONICAL:
                     distinguishing.add((cA, d, a))
     return dict(n_reads=len(common), n_junction_reads=n_junction, n_resolved=n_resolved,
                 resolved_fraction=(n_resolved / n_junction if n_junction else 0.0),
-                distinguishing_junctions=sorted(distinguishing), per_read=per_read)
+                n_chain_divergent=n_chain_div,
+                chain_divergent_fraction=(n_chain_div / n_junction if n_junction else 0.0),
+                distinguishing_junctions=sorted(distinguishing))
 
 
 PANEL = {
@@ -260,41 +288,86 @@ PANEL = {
     "pair3": (("NC_073247.2", 164397061, 164401095), ("NC_073247.2", 164426194, 164430228)),
 }
 
-def check_resolver():
+def check_probe():
     BAM   = "/home/juanfra/winloci_scratch/GGO.bam"
     FASTA = "/home/juanfra/winloci_scratch/GGO.fasta"
-    res = {k: resolve_pair(BAM, FASTA, a, b) for k, (a, b) in PANEL.items()}
+    res = {k: probe_pair(BAM, FASTA, a, b) for k, (a, b) in PANEL.items()}
     for k, r in res.items():
-        print(f"    {k}: junction_reads={r['n_junction_reads']} resolved={r['n_resolved']} "
-              f"({r['resolved_fraction']:.2f}) distinguishing={len(r['distinguishing_junctions'])}")
-    # pair0 carries the copy-specific 5' splice site -> a meaningful fraction resolves;
-    # pair2/pair3 are splice-identical (canonical at both copies) -> ~0 (also guards against a strand bug).
-    assert res["pair0"]["resolved_fraction"] >= 0.15, f"pair0 should resolve a meaningful fraction, got {res['pair0']['resolved_fraction']:.2f}"
-    assert res["pair2"]["resolved_fraction"] <= 0.05, f"pair2 is splice-identical, expected ~0, got {res['pair2']['resolved_fraction']:.2f}"
-    assert res["pair3"]["resolved_fraction"] <= 0.05, f"pair3 is splice-identical, expected ~0, got {res['pair3']['resolved_fraction']:.2f}"
-    print(f"OK  - splice resolver: pair0 {res['pair0']['resolved_fraction']:.2f} resolved "
-          f"({len(res['pair0']['distinguishing_junctions'])} distinguishing junctions); "
-          f"pair2 {res['pair2']['resolved_fraction']:.2f}, pair3 {res['pair3']['resolved_fraction']:.2f} (splice-identical)")
+        print(f"    {k}: junction_reads={r['n_junction_reads']} "
+              f"per-read-resolved={r['resolved_fraction']:.2f} "
+              f"chain-divergent={r['chain_divergent_fraction']:.2f} "
+              f"distinguishing_junc={len(r['distinguishing_junctions'])}")
+    # NEGATIVE RESULT: per-read splice resolution is ~0 for ALL pairs incl. pair0 -- aligner junction-snapping
+    # masks the intronic divergence (the prior "33%" was a reference-level junction count, not per-read).
+    for k in PANEL:
+        assert res[k]["resolved_fraction"] <= 0.05, f"{k} per-read resolved should be ~0 (aligner-masked), got {res[k]['resolved_fraction']:.2f}"
+    # ...but the divergence IS real and DETECTABLE as intron-length divergence at pair0, and ABSENT at the
+    # splice-identical pairs -- detectable yet non-directional (so it cannot rescue per-read assignment).
+    assert res["pair0"]["chain_divergent_fraction"] >= 0.15, f"pair0 divergence should be detectable, got {res['pair0']['chain_divergent_fraction']:.2f}"
+    assert res["pair2"]["chain_divergent_fraction"] <= 0.05, f"pair2 splice-identical, got {res['pair2']['chain_divergent_fraction']:.2f}"
+    assert res["pair3"]["chain_divergent_fraction"] <= 0.05, f"pair3 splice-identical, got {res['pair3']['chain_divergent_fraction']:.2f}"
+    print(f"OK  - splice probe (NEGATIVE per-read): pair0 per-read-resolved={res['pair0']['resolved_fraction']:.2f} "
+          f"but chain-divergent={res['pair0']['chain_divergent_fraction']:.2f} (detectable, non-directional); "
+          f"pair2/3 resolved~0 chain-divergent~0 (splice-identical). Tier-2 -> Tier-3.")
     return res
 
 if __name__ == "__main__":
-    check_resolver()
+    check_probe()
 ```
 
 - [ ] **Step 2: Run the check**
 
 Run: `python3 bench/splice_divergence_resolver.py 2>&1 | tail -6`
-Expected: the per-pair lines, then `OK  - splice resolver: pair0 0.XX resolved (... distinguishing junctions); pair2 0.0X, pair3 0.0X (splice-identical)`. Load-bearing asserts: pair0 `>= 0.15`, pair2/pair3 `<= 0.05`.
+Expected: three per-pair lines (all `per-read-resolved=0.00`; pair0 `chain-divergent` high ≥0.15, pair2/pair3 ~0), then `OK  - splice probe (NEGATIVE per-read): ... Tier-2 -> Tier-3.`. Load-bearing asserts: every pair `resolved_fraction <= 0.05`; pair0 `chain_divergent_fraction >= 0.15`; pair2/pair3 `chain_divergent_fraction <= 0.05`. The run is fast (small windows). If pair0's `chain_divergent_fraction` comes in below 0.15, that contradicts the observed 3702-vs-3705 intron divergence — recheck `_introns` before concluding; do NOT weaken the assert.
 
-- [ ] **Step 3: If pair0 underperforms, diagnose (do NOT weaken the asserts)**
+- [ ] **Step 3: Collapse Tier-2 into Tier-3 in `bench/copy_resolution_boundary.md`**
 
-If `pair0 < 0.15`: the workflow established pair0's copy-specific 5′ splice site (A canonical `GT`, B degraded `CT`) resolves ~33% of junction-reads — a real signal. Check, in order: (a) `_introns` coordinates (donor `ref[d:d+2]`, acceptor `ref[a-2:a]`; `reference_start` is 0-based; pysam `fetch` is 0-based half-open); (b) that the B-locus alignments actually carry `N` CIGAR ops (secondary alignments must have a real CIGAR — confirm with `samtools view /home/juanfra/winloci_scratch/GGO.bam NC_073247.2:161458538-161464324 | awk '$6 ~ /N/' | head`); (c) the `CANONICAL` set includes `CT-AC` (minus-strand, since copy B is an inverted dup) — omitting it would make EVERY copy-B junction look degraded and fire pair2/pair3 too (the `<=0.05` asserts catch that). If `pair2`/`pair3 > 0.05`, that is the strand bug — fix the canonical set, do not relax the assert.
+Make these edits (the section headings are stable match anchors; rewrite each named region, preserving everything else):
+
+(a) **Bottom-line** — the sentence "they are recent inverted segmental duplications … so no spliced read carries copy information." is fine; but in the same "Bottom line" section, if any clause credits splice sites with rescuing the residual, drop it. Then in the **"### Tier 2 …"** section (heading currently `### Tier 2 — K=0 residual, partly rescued by copy-specific splice sites (~15% of pairs)`) REPLACE the entire section (heading + body) with:
+
+```markdown
+### Tier 2 — K=0 residual: splice divergence is real in the reference but per-read-masked (~15-18% of pairs)
+
+The exons are identical, so per-base PSVs give 0. The *introns* do diverge (4–60 SNPs/indels across the
+duplicated block), and where that lands at a splice site it shifts a junction (e.g. MAGEA pair0's 3 bp
+intronic indel makes copy A's intron 3702 nt and copy B's 3705 nt). One might hope a read using that junction
+betrays its copy — but it does **not, per read**: minimap2's spliced aligner independently snaps every junction
+to the nearest canonical `GT-AG` at *each* copy, so the read is fully canonical at **both** copies and, because
+the indel lives inside the long intron (never in the spliced mature read, and absorbed without an exonic edit),
+NM stays tied. Measured on the panel (`bench/splice_divergence_resolver.py`): per-read splice **resolution = 0
+for every pair, including pair0** — the divergence is *detectable* (pair0's reads carry a different intron-length
+chain at A vs B) but **non-directional** (it cannot say which copy a read came from). The earlier "pair0 ~33%"
+was a reference-level count of junctions whose homologous site differs, not a per-read assignment.
+
+So there is **no Tier-2 per-read rescue**: the K=0 residual collapses into Tier-3. (The reference-level splice
+distinguishability remains relevant to copy-*model* / family-graph work — interest #3 — but not to assigning an
+individual mature read.)
+```
+
+(b) **The "## The three tiers" heading** → change to `## The two tiers`. **The Tier-3 heading** (currently `### Tier 3 — The irreducible core (~3% strict K=0)`) → broaden to `### Tier 3 — The K=0 core: co-quantify (no per-read assignment)`, and add one sentence at the end of that section: "With Tier-2 shown to be per-read-masked, the *entire* K=0 residual (not only the strict core) lands here: report a co-quantified ambiguity set, not forced per-read assignments."
+
+(c) **The boundary diagram** (the fenced ```` ``` ```` block under `## The boundary as the result`) — REPLACE its body with:
+
+```
+multi-copy family with cross-mapping reads
+        │
+        ├─ exonic PSVs (NM_A≠NM_B)         → Tier 1  ~77%  → per-read PSV assignment (Thm 2/3)        [interest #2]
+        │
+        └─ K=0 (exons identical)            ~15-18%
+              → splice divergence is reference-real but per-read-masked (minimap2 snaps junctions)
+              → Tier 2 has NO per-read rescue → co-quantified ambiguity set (Tier 3)                  [interest #3]
+```
+
+(d) **Reproducibility** — under the `## Reproducibility` or `## Open / next` list, replace the "Productize the donor/acceptor … splice-divergence scan as the opt-in Tier-2 resolver." bullet with: "Splice-divergence is per-read-masked by aligner junction-snapping (`bench/splice_divergence_resolver.py` — negative-result probe); the K=0 residual co-quantifies (Tier-3)." Leave the other bullets.
+
+After editing, sanity-check: `grep -n "Tier 2\|two tiers\|per-read-masked\|33%" bench/copy_resolution_boundary.md` — there should be no surviving claim that splice sites *rescue* a fraction of reads, and no stale "three tiers".
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add bench/splice_divergence_resolver.py
-git commit -m "$(printf '%s\n' "bench(resolver): splice-divergence Tier-2 resolver (copy-specific splice sites) + panel check" "" "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" "Claude-Session: https://claude.ai/code/session_0193po8vtwu5dbDNComynKAa")"
+git add bench/splice_divergence_resolver.py bench/copy_resolution_boundary.md
+git commit -m "$(printf '%s\n' "bench(splice): negative-result probe — per-read splice resolution is aligner-masked; collapse Tier-2 into Tier-3" "" "minimap2 snaps junctions to canonical at both copies; pair0 intronic indel is detectable (chain divergence) but non-directional (resolution 0). Boundary doc updated to two tiers." "" "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>" "Claude-Session: https://claude.ai/code/session_0193po8vtwu5dbDNComynKAa")"
 ```
 
 ---
@@ -398,7 +471,7 @@ git commit -m "$(printf '%s\n' "theory(copy-assign): Tier-3 co-quantification pr
 
 **Type/name consistency:**
 - `classify_pair` returns `frac_same, nm_diff, n_xmap, spanA, spanB` — used identically by `_pair_class`, `per_family_census`, `check_census`. K=0 thresholds (`frac_same >= 0.95` / `== 1.0`, `n_xmap < 3`) match the Global Constraints and the existing census.
-- `resolve_pair` returns `resolved_fraction, n_reads, n_junction_reads, n_resolved, distinguishing_junctions (list), per_read` — `check_resolver` reads exactly those keys; `resolved_fraction` is over `n_junction_reads` (matching the established "~33% of junction-reads").
+- (Task 2 reframed mid-execution — see the box at its head.) `probe_pair` returns `resolved_fraction, n_chain_divergent, chain_divergent_fraction, …` — `check_probe` pins the NEGATIVE result (per-read `resolved_fraction ≤ 0.05` for all pairs incl. pair0, since the aligner snaps junctions) plus the detectable-but-non-directional divergence (pair0 `chain_divergent_fraction ≥ 0.15`, pair2/3 ≤ 0.05). Tier-2 collapses into Tier-3 in `copy_resolution_boundary.md`.
 - The fetch-cache wrapper relies on Python late binding (`classify_pair` resolves the global `fetch_locus` at call time) — correct, since `classify_pair` references `fetch_locus` by name, not by a captured reference.
 - `check_tier3_coquant_unidentifiable` registered via the existing idiom (Step 1 confirms); the proposition's symbols ($a$, $N$, $p_r$, $\pi$) match the witness's variables (`a0/a1`, `N`, `p`).
 
