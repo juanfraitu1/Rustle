@@ -633,8 +633,11 @@ def recover(reads):
 
 def is_disjoint_clique_union(reads):
     """Self-certifying check (Theorem 3 addendum): is the compatibility graph a disjoint union of cliques?
-    Equivalently, is every connected component of H-bar internally complete (all pairs compatible)? This
-    holds iff the input satisfies Strong Separation. O(n^2)."""
+    Equivalently, is every connected component of H-bar internally complete (all pairs compatible) — i.e. is the
+    compatible relation transitive? This certifies that recover()'s partition is the UNIQUE minimum copy cover of
+    the reads. Strong Separation is sufficient for it but NOT equivalent: at K=0 (copies identical over observed
+    columns) H-bar is one clique, so this returns True (passes) while Strong Separation fails — recover then
+    returns the coarser unique cover that merges the indistinguishable copies. O(n^2 * m) (it builds H-bar)."""
     n = len(reads)
     compat = [[i == j for j in range(n)] for i in range(n)]
     for i, j in compatibility_edges(reads):
