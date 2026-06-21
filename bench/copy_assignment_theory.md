@@ -3,9 +3,10 @@
 *This note develops the combinatorial foundation for the read-to-copy assignment problem in multi-copy gene
 families. §1 situates the problem and its place in the multimapping-resolution lineage. §2 fixes the model and
 notation. §3 (Lemma 1) proves MCC = χ(H). §4 (Theorem 1) establishes NP-hardness via coloring reduction. §5
-(Theorem 2) proves unique recovery under Strong Separation, and the Proposition identifies the K-frontier where
-pairwise conditions fail for K ≥ 3. §6 lifts the framework to joint copy + isoform recovery. §7 cites empirical
-corroboration. §8 discusses the dichotomy as a through-line across the three research interests.*
+(Theorem 2) proves unique recovery under Strong Separation; the Proposition identifies the K-frontier where
+pairwise conditions fail for K ≥ 3; Theorem 3 gives a polynomial-time `RECOVER` algorithm under the same
+condition. §6 lifts the framework to joint copy + isoform recovery. §7 cites empirical corroboration. §8
+discusses the dichotomy as a through-line across the three research interests.*
 
 ---
 
@@ -64,10 +65,13 @@ This note develops the combinatorial foundation for copy-assignment in three par
   Minimum Copy Cover equals the chromatic number of the conflict graph — a tight combinatorial identity that
   makes the assignment problem graph-theoretically natural and connects it to coloring complexity.
 
-- **Hardness/recovery dichotomy (§4–§5).** Theorem 1 (hardness) and Theorem 2 (recovery) form the central
-  dichotomy. Theorem 1 shows MCC is NP-hard via a polynomial-time reduction from graph $k$-colorability.
-  Theorem 2 shows that under **Strong Separation** — a uniform pairwise distinguishability condition — the true
-  copy set is the *unique* minimum cover, a recoverable optimum despite the general hardness.
+- **Hardness/recovery dichotomy (§4–§5).** Theorem 1 (hardness), Theorem 2 (recovery), and Theorem 3
+  (polynomial-time algorithm) form the central dichotomy. Theorem 1 shows MCC is NP-hard via a polynomial-time
+  reduction from graph $k$-colorability. Theorem 2 shows that under **Strong Separation** — a uniform pairwise
+  distinguishability condition — the true copy set is the *unique* minimum cover. Theorem 3 shows that under
+  the same condition the truth is also *computable in polynomial time* via the `RECOVER` algorithm ($O(n^2 m)$,
+  connected components of the compatibility graph) — so the dichotomy is fully closed: NP-hard in general,
+  unique optimum and efficient algorithm under Strong Separation.
 
 - **K-frontier finding (§5 Proposition).** Strong Separation is sufficient for all $K$, but the weaker
   `sep+link` condition (per-read cross-conflict plus per-copy column-linkage) already suffices at $K = 2$ and
@@ -409,14 +413,47 @@ surrogate: the exhaustive enumeration finds it holds for only a minority of the 
 ($\approx 15\%$ over the full $L = 3$ enumeration; $808/2992 \approx 27\%$ over the bounded re-run shipped in the
 check), so it is a conservative guarantee, not a characterization.
 
-### Remark (polynomial-time recovery, deferred)
+### Theorem 3 (polynomial-time recovery)
 
-Theorem 2 identifies the optimum with the truth; it does **not** assert that the optimum is computable in
-polynomial time (Theorem 1 forbids that in general). Under Strong Separation the conflict graph is a complete
-$K$-partite graph on the copies' read sets, so recovery is immediate in principle; but the design and
-polynomial-time analysis of a solver for the broader recombination-free regime — and the precise structural class
-of conflict graphs $H$ for which it runs in polynomial time — are deferred to a follow-up, out of scope for this
-identifiability note.
+Theorem 2 identifies the optimum with the truth; Theorem 3 shows the truth is also *computable* in polynomial
+time under the same condition — so the hardness of the general problem (Theorem 1) gives way, under Strong
+Separation, not merely to a unique optimum but to an efficient algorithm.
+
+Let the **compatibility graph** $\bar H$ be the complement of the conflict graph on the read set: $\{r, r'\}$
+is an edge of $\bar H$ iff $r$ and $r'$ do **not** conflict (they agree at every co-observed column).
+
+> **Theorem 3.** Under Strong Separation, the connected components of $\bar H$ are exactly the true copy
+> read-classes $P_1, \ldots, P_K$. The algorithm `RECOVER` — build $\bar H$, take its connected components, and
+> set each component's allele-vector to the union of its reads' observations — returns the true copy set $C^\*$
+> in $O(n^2 m)$ time ($n = |R|$, $m$ the number of columns).
+
+*Proof.* By Theorem 2 (and its structural core), Strong Separation makes $H$ the **complete $K$-partite** graph
+whose parts are the true read-classes $P_1, \ldots, P_K$. The complement of a complete $K$-partite graph is the
+**disjoint union of $K$ cliques**, one per part: within a part $P_i$ there are no $H$-edges, so every pair is a
+$\bar H$-edge (a clique); across parts every pair is an $H$-edge, so no $\bar H$-edge. Hence the connected
+components of $\bar H$ are exactly $P_1, \ldots, P_K$. Each $P_i$ is internally compatible, so its reads agree
+at every column any of them observes; the union of their observations is therefore a single allele-vector,
+consistent with every read of $P_i$ — i.e. the true copy $c_i$. Building $\bar H$ tests each of the
+$\binom{n}{2}$ read pairs over at most $m$ co-observed columns ($O(n^2 m)$); connected components and the
+per-component union are dominated by this. $\square$
+
+**Self-certifying recovery.** `RECOVER` can verify Strong Separation on its own input in the same $O(n^2)$ by
+checking that $\bar H$ is a disjoint union of cliques — every connected component is internally complete. When
+this fails the input is *not* Strong-Separated (e.g. the $K = 0$ regime, or the $K \geq 3$ recombination witness,
+where $\bar H$ has a connected-but-incomplete component), and `RECOVER` reports *not identifiable* rather than
+returning a partition Theorem 3 does not guarantee. The algorithm thus knows exactly when it is entitled to its
+answer.
+
+**Verification.** `check_thm3_recovery_algorithm` enumerates every Strong-Separation instance over $K \in \{2,3\}$,
+$L = 3$ and confirms `RECOVER` returns the true partition on **all** of them, the self-certifier accepts each, and
+the recombination witness (Strong Separation fails) is **rejected** — exhaustive, not sampled.
+
+### Remark (recovery)
+
+**Remark (recovery).** Polynomial-time recovery under Strong Separation is given by **Theorem 3 above**
+(connected components of the compatibility graph). The general problem remains NP-hard (Theorem 1); the
+dichotomy is therefore fully closed on both axes — hard in general, efficiently solvable under the
+identifiability condition.
 
 ### Corollary (the K-bound)
 
@@ -709,26 +746,28 @@ alternative size-$K$ cover exists — which is instance-global and has no clean 
 Separation is the clean sufficient surrogate; whether there is a more permissive closed-form condition between
 `sep+link` and Strong Separation that still works for all $K$ is an open question.
 
-### 8.4 The deferred polynomial-recovery algorithm
+### 8.4 Polynomial recovery under Strong Separation: Theorem 3
 
 Theorem 2 identifies the optimum with the truth (under Strong Separation, the true cover is the unique minimum
 cover) but makes no claim about how to find it efficiently. Theorem 1 forecloses polynomial-time algorithms in
-the general case.
+the general case. **Theorem 3 closes this gap under Strong Separation**: the algorithm `RECOVER` — build the
+compatibility graph $\bar H$ (the complement of the conflict graph) and take its connected components — returns
+the true copy set $C^\*$ in $O(n^2 m)$ time.
 
-Under Strong Separation the conflict graph $H$ is a **complete $K$-partite graph**: every cross-copy pair
-conflicts (Strong Separation) and every same-copy pair is compatible (reads from the same true copy agree at
-every co-observed column). A complete $K$-partite graph is $K$-colorable by construction (one color class per
-part) and the minimum coloring is trivially the partition into the $K$ parts — the true copies. So recovery
-under Strong Separation is easy *in principle*: find the $K$-partite structure.
+The key structural fact, established in the Theorem 3 proof (§5), is that Strong Separation makes $H$ a
+**complete $K$-partite graph**, whose complement $\bar H$ is therefore a **disjoint union of $K$ cliques** — one
+clique per true copy read-class. The connected components of $\bar H$ are exactly those read-classes, so
+`RECOVER` extracts the truth directly from graph structure in quadratic time. The self-certifying variant (§5)
+additionally verifies that $\bar H$ is a disjoint union of cliques in $O(n^2)$; when this check fails, the input
+is not Strong-Separated and `RECOVER` reports *not identifiable* rather than returning a partition it cannot
+guarantee.
 
-The practical challenge is that the conflict graph is not explicitly given as complete $K$-partite; it is
-computed from reads whose copy origin is unknown. However, the complete $K$-partite structure is
-recognizable in polynomial time (the complement of a complete $K$-partite graph is a disjoint union of cliques
-— i.e. the complement's connected components are the copy classes), so a spanning-read algorithm that achieves
-Strong Separation can be expected to run in polynomial time.
+The dichotomy is therefore fully closed on both axes: **NP-hard in the general case** (Theorem 1); **unique
+optimum and polynomial recovery** under Strong Separation (Theorems 2 and 3).
 
-The design and polynomial-time analysis of a concrete solver for the broader **recombination-free** regime —
-instances where the minimum cover is unique but Strong Separation may not hold — and the identification of the
-structural class of conflict graphs for which polynomial recovery is possible, are deferred to a follow-up.
-This note's contribution is the identifiability statement (uniqueness of the optimum under Strong Separation)
-and the complexity lower bound (NP-hardness in the general case), not the algorithmic upper bound.
+**Honest caveat.** Strong Separation is a conservative *sufficient* condition. The empirical resolver may
+succeed under weaker conditions — e.g. recombination-free instances that are not Strongly Separated, or $K = 2$
+instances that are merely `sep+link`. Theorem 3 is about the *certified* regime: when Strong Separation holds
+(checkable in $O(n^2)$ by the self-certifier), `RECOVER` is provably correct and polynomial. The design of a
+polynomial-time solver for the broader **recombination-free** regime — instances where the minimum cover is
+unique but Strong Separation may not hold — remains an open question.
