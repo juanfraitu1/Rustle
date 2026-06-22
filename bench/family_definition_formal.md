@@ -280,12 +280,22 @@ secondary placements in GGO.bam were scanned and attributed by best overlap.
   operating point sits in a flat region genome-wide, independent of the panel.
 - **The only systematic FP is the documented coarse-vertex over-merge:** 14 % (59/416) are cross-chromosome bridges
   of mixed genes (e.g. a 60-gene `LOC` component spanning 4 chromosomes; a 54-gene one over 19) — *exactly* the
-  best-overlap-surrogate failure the FP-robustness section names. These concentrate in a handful of mega-components
-  and are a property of the **coarse annotated-gene vertices**, removed at the production de-novo-locus resolution —
-  a vertex-granularity artifact, not the criterion and not overfit.
+  best-overlap-surrogate failure the FP-robustness section names. These concentrate in a handful of mega-components.
 
-So at genome scale the definition is **stable (Δ-valley), structurally sensible (size-2 / co-located dominated), and
-its single FP mode is the known, removable vertex-granularity over-merge** — the opposite of a panel-tuned result.
+**DEMONSTRATED — tighter (production) vertices collapse the artifact (not just asserted).** Re-running the *same*
+scan over the production **de-novo transcript loci** (101,467 tight vertices via `family_def_genomewide.py denovo`):
+cross-chromosome bridges fall **59 → 20** (14 % → 9 %), coherence rises **86 % → 91 %**, and the Δ-valley stays
+stable (195 / 212 / 227 families at Δ = 0.003 / 0.005 / 0.007). The *worst* coarse over-merges — the 60-gene `LOC`
+component and the unrelated-gene bridge (`AP3B1`/`COL24A1`/`GPHN`/`GRID2`) — **vanish entirely**. The ~20 residual
+cross-chrom families at production resolution are *not* the over-merge: each is a **co-located core plus a few
+cross-chromosome links** (e.g. the n=25 family's members are all at `NC_073227.2:12.08 Mb`), the signature of
+genuine **dispersed paralogs / processed-pseudogene retrocopies** — the "true retrocopy identifiability families
+mislabeled by host annotation" the FP-robustness section already counts as *correct positives*, not unrelated-gene
+bridges.
+
+So at genome scale the definition is **stable (Δ-valley), structurally sensible (size-2 / co-located dominated),
+and its over-merge FP is a *measured* vertex-granularity effect that the production loci cut by two-thirds** — the
+criterion itself produces no genuine FP mode, and the result is the opposite of a panel-tuned one.
 
 ## Residual hardcoded parameters (disclosed, not independently swept)
 

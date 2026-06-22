@@ -30,6 +30,7 @@ from bisect import bisect_right
 
 BAM = "/mnt/c/Users/jfris/Desktop/GGO.bam"
 GENES_BED = "/home/juanfra/winloci_scratch/unmapped_poc/genes.bed"
+DENOVO_META = "/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv"
 COMPARA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "compara_cache.json")
 
 DELTA = 0.005
@@ -39,15 +40,30 @@ SWEEP = [0.003, 0.004, 0.005, 0.006, 0.007, 0.009, 0.017]
 CIG = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
-def load_genes():
+def load_vertices(kind):
+    """kind='genes': independent annotated genes (coarse). kind='denovo': production de-novo
+    transcript loci (tight). Returns (per-chrom sorted intervals, vertex->chrom)."""
     by_chrom = collections.defaultdict(list)
-    with open(GENES_BED) as f:
-        for line in f:
-            c, s, e, name = line.rstrip("\n").split("\t")
-            by_chrom[c].append((int(s), int(e), name))
+    v2chrom = {}
+    if kind == "genes":
+        with open(GENES_BED) as f:
+            for line in f:
+                c, s, e, name = line.rstrip("\n").split("\t")
+                by_chrom[c].append((int(s), int(e), name))
+                v2chrom.setdefault(name, c)
+    elif kind == "denovo":
+        with open(DENOVO_META) as f:
+            next(f)  # header: id chrom start end strand n_exon n_reads
+            for line in f:
+                p = line.rstrip("\n").split("\t")
+                vid, c, s, e = p[0], p[1], int(p[2]), int(p[3])
+                by_chrom[c].append((s, e, vid))
+                v2chrom[vid] = c
+    else:
+        raise SystemExit(f"unknown vertex kind: {kind}")
     for c in by_chrom:
         by_chrom[c].sort()
-    return by_chrom
+    return by_chrom, v2chrom
 
 
 def ref_span(cigar):
@@ -214,8 +230,9 @@ def compara_is_paralog(comp, ga, gb):
 
 
 def main():
-    by_chrom = load_genes()
-    print(f"genes (vertices): {sum(len(v) for v in by_chrom.values()):,}", flush=True)
+    kind = sys.argv[1] if len(sys.argv) > 1 else "genes"
+    by_chrom, v2chrom = load_vertices(kind)
+    print(f"vertex set: {kind} | vertices: {sum(len(v) for v in by_chrom.values()):,}", flush=True)
     print("scanning GGO.bam (two passes)...", flush=True)
     mm, n_sec, n_prim = scan(by_chrom)
     multimappers = sum(1 for g in mm.values() if len(g) >= 2)
@@ -238,15 +255,10 @@ def main():
         e, fm = components(ev, d, DE_MAX, MIN_READS)
         print(f"  {d:>6} {len(e):>7} {len(fm):>9} {sum(len(c) for c in fm):>13}")
 
-    # gene -> chrom (for coherence: a real paralog family is CO-LOCATED or 2-chrom segdup;
-    # a cross-many-chromosome family of mixed genes is the coarse-vertex over-merge artifact).
-    gene_chrom = {}
-    for c, lst in by_chrom.items():
-        for s, e, name in lst:
-            gene_chrom.setdefault(name, c)
-
+    # vertex -> chrom (for coherence: a real paralog family is CO-LOCATED or 2-chrom segdup;
+    # a cross-many-chromosome family of mixed vertices is the coarse-vertex over-merge artifact).
     def n_chroms(fam):
-        return len({gene_chrom.get(g) for g in fam if gene_chrom.get(g)})
+        return len({v2chrom.get(g) for g in fam if v2chrom.get(g)})
 
     coherent = [c for c in fams if n_chroms(c) <= 2]
     bridge = [c for c in fams if n_chroms(c) >= 3]
