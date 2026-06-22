@@ -1,0 +1,11 @@
+{
+  "baseline_edges": 2829,
+  "concordant_edges": 1676,
+  "tp_base": 1822,
+  "tp_strict": 1189,
+  "precision_base": 0.6440438317426652,
+  "precision_strict": 0.7094272076372315,
+  "real_lost": 719,
+  "junk_lost": 434,
+  "good_to_bad": 1.6566820276497696
+}
