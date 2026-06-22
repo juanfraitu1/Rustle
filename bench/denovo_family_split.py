@@ -61,6 +61,43 @@ def gene_root(tid, meta, ann):
     return re.sub(r"[0-9]+[A-Z]?$", "", best)   # TUBA1C -> TUBA, ZNF577 -> ZNF
 
 
+def dedup_oversplit(members, meta, thr=0.50):
+    """OVER-SPLIT GUARD (output-level). The intron-junction locus collapse leaves
+    near-identical-junction variants at the SAME genomic position as separate "copies"
+    (e.g. PRNP's five 14.60-14.615 Mb fragments). Members whose spans reciprocally
+    overlap >= thr are one locus -> merge, keep the longest-span representative.
+    Applied at OUTPUT only: family DETECTION/decomposition is untouched, so genuinely
+    distinct paralog copies (non-overlapping spans) are preserved -- unlike merging
+    BEFORE POA, which perturbs detection and drops real copies (MAGEA 11->6)."""
+    ms = list(members)
+    par = list(range(len(ms)))
+
+    def f(x):
+        while par[x] != x:
+            par[x] = par[par[x]]
+            x = par[x]
+        return x
+
+    by_c = defaultdict(list)
+    for i, t in enumerate(ms):
+        by_c[meta[t][0]].append(i)
+    for _c, idxs in by_c.items():
+        idxs.sort(key=lambda i: meta[ms[i]][1])
+        for a in range(len(idxs)):
+            ia = idxs[a]; sa, ea = meta[ms[ia]][1], meta[ms[ia]][2]
+            for b in range(a + 1, len(idxs)):
+                ib = idxs[b]; sb, eb = meta[ms[ib]][1], meta[ms[ib]][2]
+                if sb >= ea:                       # sorted by start -> no further overlap
+                    break
+                ov = min(ea, eb) - max(sa, sb)
+                if ov > 0 and ov >= thr * min(ea - sa, eb - sb):
+                    par[f(ia)] = f(ib)
+    groups = defaultdict(list)
+    for i in range(len(ms)):
+        groups[f(i)].append(ms[i])
+    return {max(g, key=lambda t: meta[t][2] - meta[t][1]) for g in groups.values()}
+
+
 def concordance(members, meta, ann):
     roots = [gene_root(t, meta, ann) for t in members]
     roots = [r for r in roots if r]
@@ -137,10 +174,16 @@ def main():
     final.sort(key=len, reverse=True)
     memb2fam = {}
     n_web = 0
+    n_written = 0
+    n_oversplit_dropped = 0
     with open(OUT, "w") as fh:
         fh.write("family_id\tn_copies\tn_chroms\tdominant_gene_root\tname_concordance\t"
                  "density\tavg_core_recip\tn_articulation\tclass\tmembers\n")
         for i, m in enumerate(final):
+            m = dedup_oversplit(m, meta)            # collapse over-split fragments (output-level)
+            if len(m) < 2:                          # all members were one over-split locus (e.g. PRNP)
+                n_oversplit_dropped += 1
+                continue
             top, c = concordance(m, meta, ann)
             nchr = len({meta[t][0] for t in m})
             sub = G.subgraph(m)
@@ -154,9 +197,11 @@ def main():
             fid = f"DSFAM{i}"
             for t in m:
                 memb2fam[t] = fid
+            n_written += 1
             fh.write(f"{fid}\t{len(m)}\t{nchr}\t{top or '(novel)'}\t{c if c is not None else 'NA'}\t"
                      f"{dens:.3f}\t{avgw:.3f}\t{arts}\t{klass}\t{','.join(sorted(m))}\n")
-    print(f"\n[wrote {OUT}]  ({len(final)-n_web} discrete families + {n_web} flagged homology webs)")
+    print(f"\n[wrote {OUT}]  ({n_written-n_web} discrete families + {n_web} flagged homology webs; "
+          f"{n_oversplit_dropped} over-split single-locus 'families' dropped)")
 
     # known-family recovery after split (do they sit in clean, dedicated families now?)
     print("\nknown-family recovery after split:")
