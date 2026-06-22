@@ -383,7 +383,7 @@ precision on the table.
 
 | lever | level | result | mechanism |
 |---|---|---|---|
-| better clustering object (modularity / biconnected / cut-edge) | graph | no clean gain | over-merge is a **vertex** problem |
+| better clustering object (modularity / biconnected / cut-edge / k-truss / k-core / cliques) | graph | no clean gain | over-merge is a sparse multi-edge web (vertex problem); 57 % of families are size-2 (no density) |
 | high query coverage (both placements) | read | net-harmful (good:bad 1.28) | real conflicts on partially-aligned reads |
 | ≥1 intron (both placements) | read | net-harmful (1.83) | real conflicts on non-spliced reads |
 | multi-exon locus | de-novo vertex | **inert** (0 edges) | assembly emits ~100 % multi-exon loci |
