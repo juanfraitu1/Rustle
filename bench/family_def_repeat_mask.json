@@ -1,0 +1,31 @@
+{
+  "thresholds": [
+    {
+      "threshold": 0.3,
+      "edges": 2124,
+      "tp": 1473,
+      "precision": 0.693502824858757,
+      "real_lost": 434,
+      "junk_lost": 271,
+      "good_to_bad": 1.6014760147601477
+    },
+    {
+      "threshold": 0.5,
+      "edges": 2501,
+      "tp": 1710,
+      "precision": 0.6837265093962415,
+      "real_lost": 154,
+      "junk_lost": 174,
+      "good_to_bad": 0.8850574712643678
+    },
+    {
+      "threshold": 0.7,
+      "edges": 2582,
+      "tp": 1748,
+      "precision": 0.6769945778466305,
+      "real_lost": 107,
+      "junk_lost": 140,
+      "good_to_bad": 0.7642857142857142
+    }
+  ]
+}
