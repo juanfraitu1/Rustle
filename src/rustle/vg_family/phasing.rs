@@ -426,6 +426,37 @@ pub fn phase_reads(reads: &[BundleRead], cfg: &PhasingConfig) -> PhasingResult {
     PhasingResult { het_sites: sites, assignments }
 }
 
+/// Return a clone of `reads` with `hp_tag`/`ps_tag` populated, ready for
+/// `split_bundle_by_phase`. If at least `ext_hp_frac` of reads already carry an
+/// external `hp_tag` (e.g. a phased BAM's `HP`/`PS` tags), those are used as-is
+/// (external precedence); otherwise internal MEC phasing runs. Reads that end up
+/// unphased get `hp_tag = None` (they will not be split off).
+pub fn assign_haplotypes(reads: &[BundleRead], cfg: &PhasingConfig) -> Vec<BundleRead> {
+    use std::collections::HashMap;
+    let n = reads.len();
+    let mut out: Vec<BundleRead> = reads.to_vec();
+    let n_ext = reads.iter().filter(|r| r.hp_tag.is_some()).count();
+    if n > 0 && (n_ext as f64) / (n as f64) >= cfg.ext_hp_frac {
+        return out; // external HP tags dominate -> trust the BAM's phasing
+    }
+    let res = phase_reads(reads, cfg);
+    let by_hash: HashMap<u64, (u8, u32)> =
+        res.assignments.iter().map(|a| (a.read_name_hash, (a.hp, a.ps))).collect();
+    for r in out.iter_mut() {
+        match by_hash.get(&r.read_name_hash) {
+            Some(&(hp, ps)) => {
+                r.hp_tag = Some(hp);
+                r.ps_tag = Some(ps);
+            }
+            None => {
+                r.hp_tag = None;
+                r.ps_tag = None;
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,6 +662,43 @@ mod tests {
         assert!(side.iter().all(|s| s.is_some()), "every covered read assigned");
         // ... and the two haplotypes land on opposite sides.
         assert_ne!(side[0], side[1], "the two haplotypes separate");
+    }
+
+    #[test]
+    fn assign_haplotypes_external_tags_take_precedence() {
+        // 12 reads already carry external HP (6 HP1 + 6 HP2) and NO mismatches, so internal
+        // phasing would find nothing — external precedence keeps both haplotypes.
+        let cfg = PhasingConfig::default();
+        let mut reads = Vec::new();
+        for i in 0..6 {
+            let mut r = mk_read(i, 50, 200, vec![]);
+            r.hp_tag = Some(1);
+            reads.push(r);
+        }
+        for i in 6..12 {
+            let mut r = mk_read(i, 50, 200, vec![]);
+            r.hp_tag = Some(2);
+            reads.push(r);
+        }
+        let tagged = assign_haplotypes(&reads, &cfg);
+        assert!(tagged.iter().any(|r| r.hp_tag == Some(1)));
+        assert!(tagged.iter().any(|r| r.hp_tag == Some(2)));
+    }
+
+    #[test]
+    fn assign_haplotypes_internal_when_no_external() {
+        // No external HP -> internal MEC phasing on a clean balanced het at pos 100.
+        let cfg = PhasingConfig::default();
+        let mut reads = Vec::new();
+        for i in 0..6 {
+            reads.push(mk_read(i, 50, 200, vec![(100, b'A')]));
+        }
+        for i in 6..12 {
+            reads.push(mk_read(i, 50, 200, vec![]));
+        }
+        let tagged = assign_haplotypes(&reads, &cfg);
+        assert!(tagged.iter().any(|r| r.hp_tag == Some(1)), "one haplotype");
+        assert!(tagged.iter().any(|r| r.hp_tag == Some(2)), "the other haplotype");
     }
 
     #[test]

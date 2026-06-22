@@ -183,6 +183,14 @@ pub fn write_gtf<W: Write>(
         if let Some(fam_size) = tx.vg_family_size {
             tx_attrs.push_str(&format!(" family_size \"{}\";", fam_size));
         }
+        // Phased assembly (--vg-phase): haplotype + phase-set. Only set on transcripts from
+        // a phase-split sub-bundle; absent otherwise, so default runs are byte-identical.
+        if let Some(hp) = tx.hp_tag {
+            tx_attrs.push_str(&format!(" haplotype \"{}\";", hp));
+        }
+        if let Some(ps) = tx.ps_tag {
+            tx_attrs.push_str(&format!(" phase_set \"{}\";", ps));
+        }
         // copy_confidence = ATTRIBUTION certainty: fraction of this copy's ambiguous reads
         // that are EVIDENCE-decisive winners (pre-prior margin; vg.rs compute_per_copy_confidence).
         // This is the metric to read for "how sure is the copy assignment". Distinct from
@@ -348,6 +356,23 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         write_gtf(&[tx], &mut buf, "STRG").unwrap();
         String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn gtf_emits_haplotype_attrs_when_phased() {
+        let mut tx = one_exon_tx();
+        tx.hp_tag = Some(1);
+        tx.ps_tag = Some(7);
+        let out = render(tx);
+        assert!(out.contains("haplotype \"1\";"), "missing haplotype attr in:\n{out}");
+        assert!(out.contains("phase_set \"7\";"), "missing phase_set attr in:\n{out}");
+    }
+
+    #[test]
+    fn gtf_omits_haplotype_attrs_when_unphased() {
+        let out = render(one_exon_tx()); // hp_tag/ps_tag default None
+        assert!(!out.contains("haplotype "), "unphased tx must not emit haplotype in:\n{out}");
+        assert!(!out.contains("phase_set "), "unphased tx must not emit phase_set in:\n{out}");
     }
 
     #[test]

@@ -12552,7 +12552,49 @@ pub fn run<P: AsRef<Path>>(
             }
             m
         } else { crate::types::DetHashMap::default() };
-    let mut bundles_vec: Vec<(usize, crate::types::Bundle)> = bundles.into_iter().enumerate().collect();
+    // ── Phased assembly (opt-in --vg-phase; default-OFF -> the `else` branch is the
+    //    original line, byte-identical). When on, each phase-eligible bundle is MEC-phased
+    //    and split into HP1/HP2 sub-bundles that REUSE the same bundle_idx (so every
+    //    `bundle_to_vg[idx]` lookup downstream keeps working); a bundle with no diploid
+    //    signal (no het sites, or reads on only one haplotype) is emitted unchanged. ──
+    let mut bundles_vec: Vec<(usize, crate::types::Bundle)> = if config.vg_phase {
+        let phase_cfg = crate::vg_family::phasing::PhasingConfig {
+            max_coverage: std::env::var("RUSTLE_PHASE_MAX_COV")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(15),
+            ext_hp_frac: std::env::var("RUSTLE_PHASE_EXT_FRAC")
+                .ok().and_then(|s| s.parse().ok()).unwrap_or(0.5),
+            ..Default::default()
+        };
+        let mut out: Vec<(usize, crate::types::Bundle)> = Vec::new();
+        for (idx, bundle) in bundles.into_iter().enumerate() {
+            // Eligible = non-synthetic with mismatch data (the het-detection substrate).
+            // Ineligible bundles (and any with no diploid signal) pass through untouched.
+            let eligible = !bundle.synthetic
+                && bundle.reads.iter().any(|r| !r.mismatches.is_empty());
+            if !eligible {
+                out.push((idx, bundle));
+                continue;
+            }
+            let tagged = crate::vg_family::phasing::assign_haplotypes(&bundle.reads, &phase_cfg);
+            let mut phased = bundle.clone();
+            phased.reads = tagged;
+            let splits = crate::vg::split_bundle_by_phase(&phased);
+            if splits.len() <= 1 {
+                out.push((idx, bundle)); // no phasing signal -> original bundle, unchanged
+            } else {
+                for (mut sub, hp) in splits {
+                    // ps for the sub-bundle = smallest phase-set id among its phased reads.
+                    let ps = sub.reads.iter().filter_map(|r| r.ps_tag).min();
+                    sub.hp_tag = hp;
+                    sub.ps_tag = ps;
+                    out.push((idx, sub));
+                }
+            }
+        }
+        out
+    } else {
+        bundles.into_iter().enumerate().collect()
+    };
     // ── RUSTLE_VG_UNION_BASELINE (EXPERIMENTAL, opt-in, default-OFF — NOT recommended) ──
     // GOAL: guarantee VG output ⊇ primary-only baseline so the over-collapse regression
     // (VG dropping primary-backed isoforms under secondary graph pollution) never loses a
@@ -17322,6 +17364,15 @@ pub fn run<P: AsRef<Path>>(
                     if tx.rescue_class == Some(crate::vg_family::diagnostic::RescueClass::TandemCopy) {
                         tx.tandem_copy = Some(true);
                     }
+                }
+            }
+            // Phased assembly (--vg-phase): carry the sub-bundle's haplotype onto its
+            // transcripts so the GTF emits haplotype/phase_set. No-op unless this bundle is a
+            // phase-split sub-bundle (hp_tag set), so default runs are byte-identical.
+            if bundle.hp_tag.is_some() {
+                for tx in bundle_txs.iter_mut() {
+                    tx.hp_tag = bundle.hp_tag;
+                    tx.ps_tag = bundle.ps_tag;
                 }
             }
             stamp_union_baseline_rescue_class(&bundle, &mut bundle_txs);
