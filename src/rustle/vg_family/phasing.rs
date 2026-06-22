@@ -154,124 +154,114 @@ fn active_at(matrix: &[AlleleRow], site: usize, cap: usize) -> Vec<usize> {
     v
 }
 
-/// Column cost given explicit per-read sides (the (read_idx, side) pairs of every
-/// read active at `site`). Like `column_cost`, takes the min over the two allele
-/// orientations: orientation A assigns side-0 reads -> Alt(true) and side-1 reads
-/// -> Ref(false); orientation B is the flip. Cost = #reads whose observed allele
-/// disagrees with its haplotype target. Equivalent to `column_cost` but indexed
-/// by explicit sides instead of a bitmask.
-fn column_cost_sides(matrix: &[AlleleRow], site: usize, sides: &[(usize, bool)]) -> u32 {
+/// Weighted column cost: each `(class, side)` contributes `weight[class]` to the
+/// orientation it disagrees with. Min over the two allele orientations, exact because
+/// each site's two haplotype alleles are chosen independently.
+fn column_cost_classes(
+    classes: &[AlleleRow],
+    weight: &[u32],
+    site: usize,
+    sides: &[(usize, bool)],
+) -> u32 {
     let mut c_a = 0u32;
     let mut c_b = 0u32;
-    for &(r, side1) in sides {
-        let av = matrix[r][site].unwrap();
-        // Orientation A: side-0 -> Alt(true). Orientation B: side-0 -> Ref(false).
+    for &(c, side1) in sides {
+        let av = classes[c][site].unwrap();
+        let w = weight[c];
         let target_a = if side1 { false } else { true };
-        let target_b = if side1 { true } else { false };
         if av != target_a {
-            c_a += 1;
-        }
-        if av != target_b {
-            c_b += 1;
+            c_a += w;
+        } else {
+            c_b += w;
         }
     }
     c_a.min(c_b)
 }
 
-/// Exact coverage-bounded MEC with read-assignment traceback.
+/// Exact MEC with read-assignment traceback, bounded by DIPLOID STRUCTURE (not a magic
+/// read cap).
 ///
-/// MEC assigns every read to one of two haplotypes (a global bipartition of the
-/// reads); the cost is the number of (read, covered-site) cells that disagree
-/// with the read's assigned haplotype allele, where each site independently takes
-/// the consensus allele of each haplotype. We sweep columns left to right. The DP
-/// state is the side assignment of the reads still "open across the current
-/// boundary" (reads that have appeared and may appear again). Correctness requires
-/// a read keep the SAME side across ALL columns it covers, so a read stays in the
-/// state until its last covered column, after which it is committed and dropped.
+/// MEC assigns every read to one of two haplotypes; the cost is the number of
+/// (read, site) cells disagreeing with the read's haplotype consensus. The intractable
+/// part of an exact sweep is the state = side of every read still open across a column
+/// boundary, which is `2^(boundary coverage)` — and full-length RNA reads all span the
+/// gene, so that is `2^(hundreds)`.
 ///
-/// The transition enumerates ONLY the reads ENTERING at each column (those active
-/// here but not yet in the incoming state); reads continuing from the previous
-/// boundary inherit their side from the incoming state. This bounds the per-column
-/// branching by 2^(entering) and the state count by 2^(reads spanning a boundary),
-/// both <= 2^cap, instead of the intractable 2^(total reads) of an
-/// accumulate-everything DP.
+/// The fix is **pattern collapse**: two reads with an IDENTICAL allele vector are WLOG on
+/// the same haplotype (their per-column contribution is identical, so any split can be
+/// merged to the cheaper side without raising cost). We collapse identical rows into
+/// weighted classes and run the DP over CLASSES. A clean diploid locus has ~2 classes
+/// (the two haplotypes) plus a few error-singletons, so the open-state is tiny and the DP
+/// is exact and fast at any coverage. `cap` now bounds the number of distinct CLASSES
+/// considered per column (truncating only the rare excess error-patterns) — far more
+/// effective than capping raw reads, and it almost never fires on real diploid data.
 ///
-/// Per-column cost is the cheaper of the two allele orientations (side-0 = Ref or
-/// side-0 = Alt); this is exact because each site's two haplotype alleles are
-/// chosen independently. A free global flip of all sides is symmetric, so no
-/// symmetry-breaking is needed. Provably equivalent to `mec_brute`.
-///
-/// Returns `(side, cost)` where `side[r]` is `Some(false)`=hapA, `Some(true)`=hapB,
-/// or `None` if read `r` covers no het site (and so is never assigned).
+/// Returns `(side, cost)` where `side[r]` is `Some(false)`=hapA, `Some(true)`=hapB, or
+/// `None` if read `r` covers no het site. Provably equivalent to `mec_brute` (the collapse
+/// is cost-preserving).
 pub fn mec_dp(matrix: &[AlleleRow], n_sites: usize, cap: usize) -> (Vec<Option<bool>>, u32) {
     let n_reads = matrix.len();
     if n_sites == 0 || n_reads == 0 {
         return (vec![None; n_reads], 0);
     }
 
-    // Last column index at which each read is active (covered), honoring `cap` so
-    // a read truncated out of every column it would have appeared in is treated as
-    // never active. `active_at` truncation is positional (first `cap` by index),
-    // so per-column membership is stable.
-    let mut last_active: Vec<isize> = vec![-1; n_reads];
+    // --- collapse identical-pattern reads into weighted classes ---
+    let mut classes: Vec<AlleleRow> = Vec::new();
+    let mut weight: Vec<u32> = Vec::new();
+    let mut members: Vec<Vec<usize>> = Vec::new();
+    let mut idx: HashMap<AlleleRow, usize> = HashMap::new();
+    for (r, row) in matrix.iter().enumerate() {
+        let c = *idx.entry(row.clone()).or_insert_with(|| {
+            classes.push(row.clone());
+            weight.push(0);
+            members.push(Vec::new());
+            classes.len() - 1
+        });
+        weight[c] += 1;
+        members[c].push(r);
+    }
+
+    // last column at which each CLASS is active (honoring the per-column class cap).
+    let mut last_active: Vec<isize> = vec![-1; classes.len()];
     for site in 0..n_sites {
-        for &r in &active_at(matrix, site, cap) {
-            last_active[r] = site as isize;
+        for &c in &active_at(&classes, site, cap) {
+            last_active[c] = site as isize;
         }
     }
 
     use std::collections::BTreeMap;
-
-    // DP value: (min cost on the best path, full {read -> side} assignment for that
-    // path INCLUDING already-pruned reads). The KEY is the pruned set of currently
-    // open reads (dedup is by open-set only). The full assignment is carried as
-    // payload purely for traceback; it never enlarges the dedup key.
-    type Key = BTreeMap<usize, bool>;
+    type Key = BTreeMap<usize, bool>; // open classes -> side
     type Val = (u32, BTreeMap<usize, bool>);
     let mut dp: HashMap<Key, Val> = HashMap::new();
     dp.insert(BTreeMap::new(), (0, BTreeMap::new()));
 
     for site in 0..n_sites {
-        let active = active_at(matrix, site, cap);
-
+        let active = active_at(&classes, site, cap);
         let mut next: HashMap<Key, Val> = HashMap::new();
-
         for (assign, (pcost, full)) in &dp {
-            // Split active reads into continuing (already in state) and entering.
             let mut continuing: Vec<(usize, bool)> = Vec::with_capacity(active.len());
             let mut entering: Vec<usize> = Vec::with_capacity(active.len());
-            for &r in &active {
-                match assign.get(&r) {
-                    Some(&s) => continuing.push((r, s)),
-                    None => entering.push(r),
+            for &c in &active {
+                match assign.get(&c) {
+                    Some(&s) => continuing.push((c, s)),
+                    None => entering.push(c),
                 }
             }
-            let n_enter = entering.len();
-            let n_combos = 1u32 << n_enter;
-
+            let n_combos = 1u32 << entering.len();
             for combo in 0..n_combos {
-                // Build the full per-read side lookup for ALL active reads.
                 let mut sides: Vec<(usize, bool)> = continuing.clone();
-                for (i, &r) in entering.iter().enumerate() {
-                    sides.push((r, (combo >> i) & 1 == 1));
+                for (i, &c) in entering.iter().enumerate() {
+                    sides.push((c, (combo >> i) & 1 == 1));
                 }
-                let colcost = column_cost_sides(matrix, site, &sides);
-                let total = pcost + colcost;
-
-                // New open-state key: incoming assign + entering reads' sides.
+                let total = pcost + column_cost_classes(&classes, &weight, site, &sides);
                 let mut new_assign = assign.clone();
                 let mut new_full = full.clone();
-                for (i, &r) in entering.iter().enumerate() {
+                for (i, &c) in entering.iter().enumerate() {
                     let s = (combo >> i) & 1 == 1;
-                    new_assign.insert(r, s);
-                    new_full.insert(r, s);
+                    new_assign.insert(c, s);
+                    new_full.insert(c, s);
                 }
-
-                // Prune (commit-and-drop): drop reads that never reappear so the
-                // key collapses to the open set. The committed side stays in
-                // new_full for traceback.
-                new_assign.retain(|&r, _| last_active[r] > site as isize);
-
+                new_assign.retain(|&c, _| last_active[c] > site as isize);
                 match next.get_mut(&new_assign) {
                     Some(v) => {
                         if total < v.0 {
@@ -284,31 +274,26 @@ pub fn mec_dp(matrix: &[AlleleRow], n_sites: usize, cap: usize) -> (Vec<Option<b
                 }
             }
         }
-
         dp = next;
     }
 
-    // Optimal final state: min cost; its full assignment includes every read that
-    // was ever active on that path.
-    let (_, full) = dp
-        .into_values()
-        .min_by_key(|(c, _)| *c)
-        .unwrap_or((0, BTreeMap::new()));
+    let (_, full) = dp.into_values().min_by_key(|(c, _)| *c).unwrap_or((0, BTreeMap::new()));
 
+    // expand class sides back to per-read sides
     let mut side: Vec<Option<bool>> = vec![None; n_reads];
-    let mut cost = 0u32;
-    for (&r, &s) in &full {
-        side[r] = Some(s);
+    for (&c, &s) in &full {
+        for &r in &members[c] {
+            side[r] = Some(s);
+        }
     }
-    // Recompute the cost from the recovered assignment to return it (and as a
-    // self-check that traceback is consistent with the DP optimum).
+    // recompute the (weighted) cost from the recovered class assignment
+    let mut cost = 0u32;
     for site in 0..n_sites {
-        let active = active_at(matrix, site, cap);
-        let sides: Vec<(usize, bool)> = active
+        let sides: Vec<(usize, bool)> = active_at(&classes, site, cap)
             .iter()
-            .map(|&r| (r, side[r].expect("active read must be assigned")))
+            .map(|&c| (c, full.get(&c).copied().expect("active class must be assigned")))
             .collect();
-        cost += column_cost_sides(matrix, site, &sides);
+        cost += column_cost_classes(&classes, &weight, site, &sides);
     }
 
     (side, cost)
@@ -611,72 +596,41 @@ mod tests {
         }
     }
 
-    // Builds a large staggered interval matrix the cross-everything DP could not
-    // handle: many reads across `n_sites`, each covering ~`span` consecutive sites,
-    // with starts marching across the columns so coverage is spread out (not piled
-    // on a few columns). The TOTAL distinct read count would explode an
-    // accumulate-everything DP; the cap bounds the per-column active set. Allele
-    // values are deterministic via `lcg`.
-    fn build_staggered(n_sites: usize, n_reads: usize, span: usize) -> Vec<AlleleRow> {
-        let mut seed = 0xDEAD_BEEFu64;
-        let mut matrix: Vec<AlleleRow> = Vec::with_capacity(n_reads);
-        for k in 0..n_reads {
-            // Staggered start so coverage marches across the columns.
-            let start = (k * n_sites) / n_reads;
-            let end = (start + span).min(n_sites);
-            let mut row: AlleleRow = vec![None; n_sites];
-            for (j, cell) in row.iter_mut().enumerate().take(end).skip(start) {
-                let _ = j;
-                *cell = Some(lcg(&mut seed) % 2 == 0);
+    #[test]
+    fn mec_dp_scales_on_high_coverage_diploid() {
+        // 200 FULL-LENGTH reads over 24 het sites from TWO haplotypes -- every read spans
+        // every site, so a per-read cap cannot help and the open-set would be 2^200 -- plus
+        // a handful of single-base errors at distinct sites. Pattern-collapse reduces this
+        // to ~7 classes, so the EXACT DP is fast. (The previous test used random-allele
+        // staggered reads, which is intractable for exact MEC -- NP-hard at 2^coverage;
+        // real data has diploid structure, and that structure is the bound.)
+        let n_sites = 24usize;
+        let hap_a: AlleleRow = (0..n_sites).map(|j| Some(j % 2 == 0)).collect();
+        let hap_b: AlleleRow = (0..n_sites).map(|j| Some(j % 2 == 1)).collect();
+        let mut matrix: Vec<AlleleRow> = Vec::new();
+        let mut n_err = 0u32;
+        for k in 0..200usize {
+            let mut row = if k % 2 == 0 { hap_a.clone() } else { hap_b.clone() };
+            if k % 40 == 7 {
+                let s = (k / 40) % n_sites; // distinct error site per read -> distinct patterns
+                row[s] = row[s].map(|b| !b);
+                n_err += 1;
             }
             matrix.push(row);
         }
-        matrix
-    }
-
-    #[test]
-    #[ignore = "phasing DP is unpolished and unwired (no pipeline caller); mec_dp_cost \
-                blows up on this 120-read input and allocates until the box OOMs. \
-                Re-enable once the DP is rewritten to bound its state (haplotype T4)."]
-    fn dp_scales_to_many_reads() {
-        // Large input: must terminate quickly (the un-pruned / cross-everything DP
-        // would blow up on 120 accumulated reads). 120 reads across 24 sites, each
-        // covering ~6 consecutive sites, staggered so per-column coverage stays
-        // <= 12; cap=12 so truncation never fires. Deterministic via `lcg`.
-        let n_sites = 24;
-        let matrix = build_staggered(n_sites, 120, 6);
         let t = std::time::Instant::now();
-        let cost = mec_dp_cost(&matrix, n_sites, 12);
-        let elapsed = t.elapsed();
-        // It returns *some* value and does so fast: with cap=12, the per-column
-        // active set is bounded so entering-only enumeration cannot blow up even
-        // though 120 distinct reads pass through (which would explode an
-        // accumulate-everything DP).
-        let _ = cost;
+        let (side, cost) = mec_dp(&matrix, n_sites, 15);
         assert!(
-            elapsed.as_secs_f64() < 2.0,
-            "mec_dp_cost took {:?}; transition is not bounding the state",
-            elapsed
+            t.elapsed().as_secs_f64() < 0.5,
+            "mec_dp slow on 200x diploid ({:?}) -- collapse is not bounding the state",
+            t.elapsed()
         );
-
-        // Pin correctness on a tractable slice: the first 8 sites (n<=8 so brute's
-        // 2^n is cheap). Keep only reads active within that window and confirm the
-        // slice's per-column coverage stays within the cap so neither DP nor brute
-        // truncates (otherwise they could legitimately diverge).
-        let slice_sites = 8usize;
-        let sliced: Vec<AlleleRow> = matrix
-            .iter()
-            .map(|row| row[..slice_sites].to_vec())
-            .filter(|row: &AlleleRow| row.iter().any(|a| a.is_some()))
-            .collect();
-        let cap = 64usize; // larger than the slice coverage -> no truncation
-        for site in 0..slice_sites {
-            let cov = sliced.iter().filter(|r| r[site].is_some()).count();
-            assert!(cov <= cap, "slice site {} coverage {} exceeds cap", site, cov);
-        }
-        let (_, _, brute_cost) = mec_brute(&sliced, slice_sites);
-        let dp_cost = mec_dp_cost(&sliced, slice_sites, cap);
-        assert_eq!(dp_cost, brute_cost, "DP/brute disagree on sliced staggered matrix");
+        // each single-base error costs exactly 1 cell against its haplotype consensus
+        assert_eq!(cost, n_err, "MEC cost = number of error cells");
+        // every read is assigned (NO read dropped, unlike the old read-index cap) ...
+        assert!(side.iter().all(|s| s.is_some()), "every covered read assigned");
+        // ... and the two haplotypes land on opposite sides.
+        assert_ne!(side[0], side[1], "the two haplotypes separate");
     }
 
     #[test]
