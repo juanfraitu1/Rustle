@@ -28,16 +28,21 @@ Let the substrate be a set of long reads $R$ (GGO HiFi IsoSeq, polyA-selected) a
 **Vertices.** $V$ = de-novo *expressed* loci — the per-transcript intervals the upstream `detect_and_assign`
 pipeline emits, not annotated gene spans. (This vertex resolution is load-bearing; see P1 and Limitations.)
 
-**Best-overlap placement.** For a read $r$ and a locus $i=(c_i,s_i,e_i)$, let $\mathrm{place}(r,i)$ be the single
-alignment of $r$ on chromosome $c_i$ that maximizes overlap length with $[s_i,e_i]$ (or $\varnothing$ if none
-overlaps). This is a *function*: at most one placement per (read, locus). Let $de_i(r)$ be its `de:f` divergence.
+**Record-attributed placement (no distance guard).** Each alignment *record* $\rho$ of a read $r$ (primary or
+secondary; supplementary/chimeric records excluded as they are split-read pieces, not alternative placements) is
+attributed to the single locus it best overlaps, $\mathrm{loc}(\rho)=\arg\max_i \mathrm{overlap}\big(\rho,[s_i,e_i]\big)$.
+The read's *placement set* is $P(r)=\{(\mathrm{loc}(\rho),\,de(\rho)) : \rho \in \mathrm{records}(r)\}$ — at most one
+entry per record, $de$ from the record's `de:f` tag. **Consequence (the principled replacement for the panel
+demo's $<200$ bp guard):** two entries of $P(r)$ on *distinct* loci necessarily come from *distinct alignment
+records* — a genuine multimapping — **by construction**; a single alignment spanning nested loci is attributed to
+one locus and yields one entry, so it can never self-conflict. There is no distance threshold. This is the
+shipped Rust formulation (`build_read_placements`), which supersedes the demo's coordinate guard.
 
 **De-tie conflict predicate.** Fix $\Delta = 0.005$, $\mathrm{DE_{max}} = 0.05$. A read $r$ *conflicts* on the
-ordered pair $(i,j)$, written $\mathrm{conf}(r,i,j)$, iff both placements exist, are physically distinct
-(same-locus guard: not $c_i=c_j \wedge |s_{\mathrm{place}(r,i)}-s_{\mathrm{place}(r,j)}|<200\,\text{bp}$), and
-their divergences are **tied at the HiFi error floor**:
+unordered pair $(i,j)$, $i\ne j$, written $\mathrm{conf}(r,i,j)$, iff $P(r)$ contains entries $(i,de_i)$ and
+$(j,de_j)$ whose divergences are **tied at the HiFi error floor**:
 $$
-|de_i(r) - de_j(r)| \le \Delta \quad\wedge\quad \max\!\big(de_i(r),\,de_j(r)\big) \le \mathrm{DE_{max}}.
+|de_i - de_j| \le \Delta \quad\wedge\quad \max\!\big(de_i,\,de_j\big) \le \mathrm{DE_{max}}.
 $$
 The read fits *both* loci comparably; `minimap2` cannot decide. This uses raw divergence `de`, **not** the
 aligner's composite score `AS` — the latter folds in length and is the source of the avoided false positives.
@@ -52,6 +57,26 @@ $$
 the unit on which the downstream copy-assignment problem (Canzar-style conflict resolution) operates. It is
 explicitly **not** a claim about evolutionary paralogy: a true paralog whose reads place uniquely (RFPL1/2/3)
 is correctly excluded, and a retrocopy whose reads are decidable (EEF1A1) is correctly excluded.
+
+**Why this definition is airtight (three structural robustnesses).** The conflict-graph object is immune *by
+construction* to the three artifacts that defeat a sequence-similarity family definition (POA contiguous-core,
+`family_detect`):
+
+- *Over-split fragments.* Near-identical isoform-variants the locus collapse leaves at one genomic position
+  (e.g. the five PRNP 14.60–14.615 Mb fragments) cannot form a family: each record attributes to its single
+  best-overlap locus, so co-positioned fragments share no conflicting read. A *similarity* definition does group
+  them — measured on GGO, **~42 % of the de-tie similarity "families" (495/1,190) were one over-split locus**,
+  needing a separate output-level member-merge (commit `19b348d`); the conflict definition needs none.
+- *Domain-sharers.* Loci sharing only a protein domain are crossed by *uniquely-placing* reads, which produce no
+  conflict edge (validated: 0 conflict on 7/7 Compara domain-sharers).
+- *Retrocopies / decidable paralogs.* A read that fits one copy decisively (large $|de_i-de_j|$, or $de$ above
+  $\mathrm{DE_{max}}$ on the worse copy) does not tie, so EEF1A1's 3347-read retrocopy is excluded — where the
+  composite `AS` score, folding in length/gap penalties, falsely ties it (`de`-tie $\subsetneq$ `AS`-tie, the
+  shipped regression invariant).
+
+The only free parameters are the two principled de-tie constants $\Delta,\mathrm{DE_{max}}$ (disclosed below);
+the former $<200$ bp coordinate guard is **eliminated** — it was an artifact of per-locus (not per-record)
+placement and is structurally unnecessary.
 
 ## Verified formal properties
 
@@ -205,7 +230,9 @@ coarse vertices *can* break the best-overlap surrogate.
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
 $\Delta=0.005$ sits in a validated valley but established only against the panel's 3 resolvable decoys (a
-genome-wide decoy population could narrow it). $\mathrm{DE_{max}}=0.05$ and the 200 bp co-location guard are two
-further constants; ~3% of within-family per-read $de$ exceed $\mathrm{DE_{max}}$, and neither was swept for its
-own valley. Truth labels are human-assigned priors — the cross-mapping *evidence* was verified consistent with
-each label, but ground-truth paralogy was not established from an external orthology source.
+genome-wide decoy population could narrow it). $\mathrm{DE_{max}}=0.05$ is the one further constant; ~3% of
+within-family per-read $de$ exceed it, and it was not swept for its own valley. These two de-tie constants are
+now the **only** free parameters: the former 200 bp co-location guard has been removed (record-attributed
+placement makes it structurally unnecessary; see "Record-attributed placement"). Truth labels are human-assigned
+priors — the cross-mapping *evidence* was verified consistent with each label, but ground-truth paralogy was not
+established from an external orthology source.

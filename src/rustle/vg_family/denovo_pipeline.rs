@@ -1005,6 +1005,29 @@ mod tests {
     }
 
     #[test]
+    fn build_read_placements_oversplit_fragments_form_no_family() {
+        // Over-split robustness (airtight property): two near-identical co-positioned loci —
+        // one gene the locus collapse left as two fragments (the PRNP case). Because each
+        // record attributes to its single best-overlap locus, co-positioned fragments share
+        // no conflicting read, so they cannot form a conflict family — even with many
+        // error-floor-de reads. A sequence-similarity definition WOULD group them (~42% of
+        // GGO similarity "families" were one over-split locus); the conflict definition needs
+        // no over-split guard. See bench/family_definition_formal.md.
+        let reps = vec![rep("c1", 1000, 6000), rep("c1", 1005, 6000)];
+        let bam: Vec<BamRead> = (0..20)
+            .map(|i| bam_read("c1", 1000, 6000, &format!("frag_read_{i}"), 0.004, false))
+            .collect();
+        let placements = build_read_placements(&bam, &reps);
+        assert!(placements.iter().all(|p| p.len() == 1),
+            "each record attributes to one best-overlap locus -> no cross-locus pair");
+        let edges = super::super::read_conflict::conflict_edges(
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3 });
+        assert!(edges.is_empty(), "over-split fragments must not form a conflict edge");
+        assert!(conflict_families(2, &edges).is_empty(),
+            "an over-split single locus is not a multi-copy family");
+    }
+
+    #[test]
     fn build_read_placements_diverged_secondary_is_no_conflict() {
         // read fits copy 0 (de 0.001) far better than copy 1 (de 0.020): resolvable, no edge.
         let reps = vec![rep("c1", 0, 200), rep("c1", 1000, 1200)];
