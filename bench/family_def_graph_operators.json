@@ -1,0 +1,38 @@
+[
+  {
+    "name": "CC (current)",
+    "families": 416,
+    "size2": 238,
+    "xchrom_bridges": 59,
+    "genes": 1698,
+    "dna_purity": 0.2808860232945091,
+    "rabl2": true
+  },
+  {
+    "name": "biconnected",
+    "families": 644,
+    "size2": 480,
+    "xchrom_bridges": 56,
+    "genes": 1926,
+    "dna_purity": 0.408206958073149,
+    "rabl2": true
+  },
+  {
+    "name": "cut-edge-pruned",
+    "families": 454,
+    "size2": 265,
+    "xchrom_bridges": 59,
+    "genes": 1696,
+    "dna_purity": 0.3161440787768852,
+    "rabl2": true
+  },
+  {
+    "name": "modularity",
+    "families": 530,
+    "size2": 280,
+    "xchrom_bridges": 77,
+    "genes": 1698,
+    "dna_purity": 0.5459715639810426,
+    "rabl2": true
+  }
+]
