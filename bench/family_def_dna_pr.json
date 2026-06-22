@@ -1,0 +1,57 @@
+{
+  "min_id": 0.9,
+  "min_cov": 0.3,
+  "recip_cov": 0.5,
+  "rna_edges": 2829,
+  "results": {
+    "loose": {
+      "name": "vs LOOSE DNA (all genes)",
+      "tp": 1822,
+      "fp": 1007,
+      "fn": 15588,
+      "precision": 0.6440438317426652,
+      "recall": 0.10465249856404366,
+      "dna": 17410
+    },
+    "whole": {
+      "name": "vs WHOLE-GENE DNA (all genes)",
+      "tp": 1288,
+      "fp": 1541,
+      "fn": 7410,
+      "precision": 0.45528455284552843,
+      "recall": 0.14808001839503335,
+      "dna": 8698
+    },
+    "loose_expr": {
+      "name": "vs LOOSE DNA (expressed only)",
+      "tp": 1169,
+      "fp": 1660,
+      "fn": 3088,
+      "precision": 0.4132202191587133,
+      "recall": 0.2746065304204839,
+      "dna": 4257
+    },
+    "whole_expr": {
+      "name": "vs WHOLE-GENE DNA (expressed only)",
+      "tp": 822,
+      "fp": 2007,
+      "fn": 830,
+      "precision": 0.29056203605514314,
+      "recall": 0.4975786924939467,
+      "dna": 1652
+    }
+  },
+  "funnel": {
+    "1_unexpressed (>=1 copy no RNA)": 12500,
+    "2_no_cross_map (reads place uniquely)": 2141,
+    "3_resolvable (cross-map, de-decidable)": 524,
+    "4_sub_quorum (tied 1-2)": 423
+  },
+  "rna_only_homology": {
+    "no_cDNA_homology": 757,
+    "real_homology_id>=.80 (sub-bar)": 212,
+    "weak_id<.80": 38
+  },
+  "recall_crossmap": 0.6579992777175876,
+  "recall_tied": 0.8115812917594655
+}

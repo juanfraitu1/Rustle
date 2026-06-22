@@ -20,6 +20,7 @@ from pptx.enum.text import PP_ALIGN
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIG_CONFLICT = os.path.join(HERE, "family_definition_figure.png")  # (A) graph + (B) ledger
 FIG_GW = os.path.join(HERE, "family_def_genomewide_fig.png")
+FIG_DNA_PR = os.path.join(HERE, "family_def_dna_pr_fig.png")  # recall funnel + non-separation
 OUT = os.path.join(HERE, "family_definition_slides.pptx")
 
 NAVY = RGBColor(0x1F, 0x2D, 0x5A)
@@ -242,6 +243,42 @@ def build():
         FIG_GW,
         "34k independent gene vertices → 416 families, 57% size-2, 86% co-located; Δ flat to ±7%; "
         "production de-novo loci collapse the coarse over-merge bridges 59→20 (worst mega-bridges vanish).")
+
+    # ---- precision/recall vs a DNA-sequence ground truth (advisor follow-up) ----
+    add_content_slide(prs, "Precision / recall vs a DNA-sequence ground truth", [
+        B("Independent DNA 'ground truth': all-vs-all cDNA homology over the SAME 34k gene vertices,", 0),
+        B("edge iff identity ≥ 90% AND aligned fraction ≥ 30% (the pinned paralogy bar) → 17,410 paralog edges / 1,460 families. No reads used.", 1),
+        B("Edge-level vs the RNA de-tie graph (2,829 edges):   raw precision = 0.64,   raw recall = 0.10.", 0, NAVY),
+        B("every number independently re-derived from the raw alignments — 0 discrepancies.", 1),
+        B("But raw P/R are NOT error rates — both axes are dominated by DEFINITIONAL differences:", 0, TEAL),
+        B("the two definitions answer different questions, and the DNA bar has its own threshold incoherence.", 1),
+    ], note="DNA truth = minimap2 asm20 all-vs-all of the longest cDNA per gene; same vertices as the RNA graph.")
+
+    add_figure_slide(
+        prs, "What the raw numbers hide — the honest decomposition",
+        FIG_DNA_PR,
+        "(A) 80% of 'missed' DNA paralog pairs are transcriptionally SILENT; of expressed co-mapping pairs the method links 0.66.   "
+        "(B) no clean coverage cut separates real paralogs (RABL2) from domain-sharers (CREB1~METTL21A) — distributions overlap.")
+
+    add_content_slide(prs, "The honest read — recall and precision", [
+        B("RECALL: 80% of 'missed' DNA paralog pairs are transcriptionally SILENT (≥1 copy unexpressed → invisible to RNA).", 0, NAVY),
+        B("of expressed, co-mapping paralog pairs the method links 0.66 (the honest single figure);", 1),
+        B("residual = 423 sub-quorum (1–2 tied reads) + 524 resolvable (reads place decisively).", 1),
+        B("PRECISION: 21% of nominal 'false' edges (212) are real paralogs JUST under the arbitrary 90%/30% bar", 0, NAVY),
+        B("(e.g. TBC1D1~LOC at id 0.8975, 293 reads) → DNA-truth under-detection; effective precision ≥ 0.72.", 1),
+        B("'Family' = read-indistinguishable locus pair  ⊋  paralogy: high-evidence cross-chrom edges (OCLN~SEPTIN7, 3,369 reads)", 0, ORANGE),
+        B("are retrocopies / pseudogenes / read-through fusions — which the cDNA-vs-cDNA truth ALSO cannot represent (mutual blind spot).", 1),
+    ])
+
+    add_content_slide(prs, "Orthogonal, not nested — and the one clean win", [
+        B("The two graphs CROSS: 830 whole-gene paralog pairs the RNA graph misses vs 1,130 RNA edges that are not whole-gene paralogs.", 0),
+        B("→ the read-conflict graph is NOT a proxy for a static coverage threshold; it conditions on transcribed, co-mapping evidence.", 1, TEAL),
+        B("No single coverage cut separates cleanly: RNA-confirmed reciprocal-cov median 0.75 vs DNA-only 0.27 (overlapping).", 0),
+        B("the reciprocal bar DROPS RABL2 (real, 0.34) yet KEEPS CREB1~METTL21A (domain-sharer, 0.54).", 1),
+        B("THE CLEAN WIN — domain-sharers: 5/5 nested/adjacent genes sharing ONE domain at mapq 0,", 0, NAVY),
+        B("over-called as families by ANY DNA homology bar, correctly excluded by read best-overlap attribution.", 1, NAVY),
+        B("Bottom line: a P/R number exists, but it measures definitional overlap — read-confusability is an orthogonal, expression-conditioned axis.", 0, TEAL),
+    ])
 
     add_content_slide(prs, "Honest limits (disclosed up front)", [
         B("FN=0 holds for ≤6-copy families: minimap2's default secondary cap (N=5) fragments LARGER arrays.", 0, ORANGE),

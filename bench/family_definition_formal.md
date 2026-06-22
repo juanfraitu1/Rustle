@@ -275,9 +275,11 @@ secondary placements in GGO.bam were scanned and attributed by best overlap.
   (which would not co-locate). Co-location is the genome-wide real-signal proxy (most members are uncharacterized
   `LOC` arrays no orthology DB annotates, so genome-wide Compara enrichment is not computable; the *characterized*
   panel families RABL2/MAGEA are Compara-confirmed separately, above).
-- **Δ is a genome-wide valley, not a panel fit.** Family count is **388 / 416 / 436** at Δ = 0.003 / 0.005 / 0.007 —
-  a ±7 % band straddling the operating point — and only reaches 538 at the far decoy threshold Δ = 0.017. The Δ=0.005
-  operating point sits in a flat region genome-wide, independent of the panel.
+- **Δ is flat genome-wide (±7 % band), not a panel fit.** Family count is **388 / 416 / 436** at Δ = 0.003 / 0.005 /
+  0.007 — a ±7 % band straddling the operating point — and only reaches 538 at the far decoy threshold Δ = 0.017.
+  (The count rises monotonically with Δ, so this is an *insensitivity* band, not a literal local minimum; "valley" is
+  reserved for the panel correctness plateau, where 0.005 is correct and the first error appears at 0.007.) The
+  Δ=0.005 operating point sits in this flat region genome-wide, independent of the panel.
 - **The only systematic FP is the documented coarse-vertex over-merge:** 14 % (59/416) are cross-chromosome bridges
   of mixed genes (e.g. a 60-gene `LOC` component spanning 4 chromosomes; a 54-gene one over 19) — *exactly* the
   best-overlap-surrogate failure the FP-robustness section names. These concentrate in a handful of mega-components.
@@ -293,9 +295,84 @@ genuine **dispersed paralogs / processed-pseudogene retrocopies** — the "true 
 mislabeled by host annotation" the FP-robustness section already counts as *correct positives*, not unrelated-gene
 bridges.
 
-So at genome scale the definition is **stable (Δ-valley), structurally sensible (size-2 / co-located dominated),
-and its over-merge FP is a *measured* vertex-granularity effect that the production loci cut by two-thirds** — the
-criterion itself produces no genuine FP mode, and the result is the opposite of a panel-tuned one.
+So at genome scale the definition is **stable (Δ flat to ±7 %), structurally sensible (size-2 / co-located
+dominated), and its over-merge FP is a *measured* vertex-granularity effect that the production loci cut by
+two-thirds** — the criterion itself produces no genuine FP mode, and the result is the opposite of a panel-tuned one.
+
+## Precision/recall against a DNA-sequence ground truth (`bench/family_def_dna_pr.py`)
+
+A natural advisor question: *put a precision/recall number on the RNA family definition against the "biological"
+(DNA-sequence) definition.* We can — but the honest result is that the two definitions **answer different
+questions**, so the raw numbers are not error rates; they are decomposed below. Every number here was independently
+re-derived from the raw alignments by an adversarial verification pass (**0 discrepancies**); the per-edge audit
+table is `bench/family_def_dna_pr_edges.tsv`.
+
+**DNA ground truth (independent of reads).** All-vs-all alignment (`minimap2 asm20`) of the longest cDNA per gene over
+the *same* 34,114 gene vertices. For each unordered pair we keep the best identity and the aligned fraction in each
+direction (`cov_a`, `cov_b`).
+- **LOOSE** paralog edge: $\mathrm{id}\ge 0.90 \wedge \max(cov_a,cov_b)\ge 0.30$ (the pinned `config.sh`
+  MIN_IDENTITY/MIN_COV_FRAC; one-directional, because real paralogs' UTRs diverge — RABL2A/B align over only 34–38 %
+  of the mRNA). → **17,410 edges / 1,460 families**.
+- **WHOLE-GENE** paralog edge (reciprocal): $\mathrm{id}\ge 0.90 \wedge \min(cov_a,cov_b)\ge 0.50$ — meant to exclude
+  domain-sharers. → **8,698 edges / 895 families** (a strict subset of LOOSE).
+
+**Edge-level precision/recall** of the RNA de-tie graph (2,829 edges) against this truth:
+
+| DNA truth | TP | FP | FN | precision | recall |
+|---|---|---|---|---|---|
+| LOOSE, all genes | 1822 | 1007 | 15588 | 0.644 | 0.105 |
+| WHOLE-GENE, all genes | 1288 | 1541 | 7410 | 0.455 | 0.148 |
+| LOOSE, expressed only | 1169 | 1660 | 3088 | 0.413 | 0.275 |
+| WHOLE-GENE, expressed only | 822 | 2007 | 830 | 0.291 | 0.498 |
+
+Both axes are dominated by **definitional difference**, not error:
+
+**Recall — 80 % of "missed" DNA paralog pairs are transcriptionally SILENT.** Decomposing the 15,588 LOOSE-DNA edges
+the RNA graph does not carry: **12,500 (80.2 %)** have ≥1 *unexpressed* copy (no RNA evidence — out of scope by
+definition); **2,141** have reads that place uniquely (RNA-distinguishable copies); **524** are *resolvable*
+(reads cross-map but the divergence gap exceeds Δ, the APOBEC3 principle); **423** are *sub-quorum* (genuinely tied
+but at only 1–2 reads, below MIN_READS=3). The honest single recall figure is therefore **recall | cross-mapping
+universe = 0.658** (of expressed paralog pairs whose reads actually co-map, the fraction linked). The often-quoted
+0.812 ("tied universe") is reached only by *additionally* defining the 524 resolvable pairs as out-of-scope — a
+modelling choice that must be argued, not folded in silently. **Note (anti-circularity):** "genuine miss = 0" (no
+expressed pair with ≥3 tied reads is unlinked) is *true but by construction* — an RNA edge **is** a pair with ≥3
+codivergent reads — so it is **not** presented as an empirical validation; the operative recall loss is the
+sub-quorum (423) and resolvable (524) buckets.
+
+**Precision — the DNA bar is the threshold-dependent one, and it under-detects.** Of the 1,007 RNA-only edges,
+**212 (21 %)** have real cDNA homology $\mathrm{id}\ge 0.80$ but fall *just* under the arbitrary 0.90/0.30 bar — e.g.
+`TBC1D1~LOC134756953` (id 0.8975, covA 0.94, **293** tied reads) and `RABL2B~LOC134756389` (id 0.85, 37 reads): real
+paralogs the bar rejects. Crediting these gives **effective precision = (1822+212)/2829 = 0.719**. Of the remaining
+**757 zero-homology** RNA-only edges, only **131** are tandem (<1 Mb) — defensible local paralogs whose longest-cDNA
+representative failed to align (e.g. `GSTM2~LOC115933235`, a 118 kb tandem in the real GSTM cluster); the 245
+same-chrom-far and 381 cross-chrom are unvalidated. The **highest-evidence** cross-chrom edges are *not* spurious
+noise: `OCLN~SEPTIN7` (**3,369** tied reads) and `BCAS4~CCDC30` (**962**) are **processed-pseudogene/retrocopy** and
+**read-through/chimeric** loci.
+
+**The definitional crux — "family" ⊋ paralogy.** The read-conflict criterion detects *read-indistinguishable locus
+pairs*, a **superset** of sequence paralogy: it also fires on retrocopies, processed pseudogenes, and read-through
+fusions. A cDNA-vs-cDNA DNA truth structurally cannot represent these either, so they are a **mutual blind spot**, not
+an RNA error.
+
+**Orthogonal, not nested.** On the expressed universe the RNA graph and the whole-gene DNA graph **cross**: 830
+whole-gene paralog pairs the RNA graph misses (silent/resolvable) vs 1,130 RNA edges that are not whole-gene
+paralogs. So the read-conflict graph is **not a proxy for a static coverage threshold** — it conditions on actual
+transcribed, co-mapping evidence. And no single coverage cut separates the classes cleanly: among LOOSE-expressed
+edges, RNA-confirmed pairs have median reciprocal coverage **0.75** vs **0.27** for DNA-only — shifted but
+overlapping. The reciprocal-coverage bar **drops RABL2A~RABL2B** (real, recip 0.34) yet **keeps CREB1~METTL21A**
+(domain-sharer, recip 0.54).
+
+**The one clean win — domain-sharers.** All five panel domain-sharers (`CREB1~METTL21A`, `GCA~KCNH7`, `CASP8~FLACC1`,
+`ASDURF~ASNSD1`, `GPR39~LYPD1`) are genomically nested/adjacent genes sharing **one** homologous domain at mapq 0;
+**all five pass the LOOSE DNA bar** (and `CREB1~METTL21A` passes even the reciprocal whole-gene bar), yet the RNA
+best-overlap attribution **correctly excludes all five** (`in_rna=0`). A DNA homology bar over-calls them as families;
+the read-conflict criterion does not.
+
+**Conclusion.** A precision/recall number against DNA exists and reproduces exactly, but it measures the *overlap of
+two different definitions*. Read-confusability is an **orthogonal, expression-conditioned evidence axis**,
+non-redundant with — and non-nested in — cDNA-homology thresholds: a clean advantage on domain-sharers, a
+complementary blind spot (and a unique strength) on retrocopies/pseudogenes, and a recall ceiling set entirely by
+transcriptional silence and the read-evidence quorum, not by mis-calls.
 
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
