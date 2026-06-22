@@ -446,6 +446,39 @@ de-novo resolution the residual 20 cross-chrom bridges are between multi-exon lo
 paralogs. The precision residual is therefore architectural (vertex resolution) plus a modest repeat-mask gain, not a
 missing read predicate.
 
+### VG structural validation — the sequence-graph lever that rejects repeat-bridges (`bench/family_def_vg_validation.py`)
+
+The read-conflict graph is a *discovery* layer (which loci are confusable); it discards the **sequence structure**. The
+variation graph is the *validation* layer: a real family's copies are **long parallel paths** sharing a backbone
+(PSVs = inter-copy variation), whereas a repeat-bridge shares only a short bubble. This is the one lever that reaches the
+contamination the read-features could not — and it is built natively from sequence, so it sidesteps the gene-label
+(vertex) problem.
+
+**Isoform aggregation is a definitional requirement, not a detail.** A *copy* is a gene; its reads are *isoforms*. If the
+graph is built from raw isoforms, alternative splicing within one copy masquerades as extra copies. So each copy must be
+the **exon-union of all its isoform reads** ("the full gene minus introns"; retained introns appear where reads span
+them), and the graph must separate **inter-copy variation (PSVs → copies)** from **intra-copy variation (splicing →
+isoforms)**. This is also a *sensitivity* gain: the longest-single-isoform cDNA truth under-detects paralogy (the 212
+sub-bar / 757 no-homology edges); the all-isoform exon-union recovers it.
+
+Proof of concept on 8 candidate edges (all-isoform exon-union per copy → align copies → backbone):
+- **True repeat-bridges are cleanly rejected** — `OCLN~SEPTIN7` (max backbone coverage **0.05**) and `BCAS4~CCDC30`
+  (**0.09**): the marquee bridges that *no* read-feature could remove now show **no backbone in either direction**.
+- **Real families confirmed as parallel paths** — `RABL2A~RABL2B` 0.94, `CCDC196~LOC` 0.97, `RABL2B~LOC134756389` 0.81
+  (the last recovered from sub-bar by isoform aggregation).
+- **Isoform aggregation works and recovers copies** — 100s–1000s of distinct isoforms collapse to **one** exon-union per
+  copy (no pollution); fragmentary annotations are completed from reads (`LOC134756953` 3.5 kb → 11 kb); and
+  `GSTM2~LOC115933235`, labelled *no-homology* by the longest-cDNA truth, is **recovered** (coverage 0.98) as a real
+  co-located GSTM-cluster paralog the truth missed.
+- **Asymmetric cases point back to vertex granularity** — `AK6`, `GSTM2`, `TBC1D1` have coarse annotation spans
+  (250 kb – 1.18 Mb) that inflate the larger copy's exon-union and break reciprocal coverage; de-novo loci give clean
+  exon-unions. So VG validation **composes** with vertex resolution rather than replacing it.
+
+So the cleanest definition has three composed layers: **read-conflict graph** (discovery) over **de-novo loci** (vertex
+resolution) → **VG validation** with **all-isoform exon-union** copies (reject no-backbone repeat-bridges, count copies
+by PSV haplotype not isoform). VG validation is the structural lever for the repeat-bridge population that the read/locus
+predicates could not separate; the `--vg` family-graph machinery already builds exactly this object.
+
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
 The two de-tie constants $\Delta,\mathrm{DE_{max}}$ are now the **only** free parameters (the former 200 bp
