@@ -374,19 +374,21 @@ non-redundant with — and non-nested in — cDNA-homology thresholds: a clean a
 complementary blind spot (and a unique strength) on retrocopies/pseudogenes, and a recall ceiling set entirely by
 transcriptional silence and the read-evidence quorum, not by mis-calls.
 
-### Sharpening levers tested and REJECTED — the definition is at its clean frontier
+### Sharpening levers tested — only repeat-masking helps, and only modestly
 
-Four natural ways to "sharpen" the definition were each implemented and scored against the DNA homology truth. **All
-fail, for one common reason**, which is itself the strongest evidence the definition is not leaving easy precision on
-the table.
+Five natural ways to "sharpen" the definition were each implemented and scored against the DNA homology truth with
+the same `good:bad` metric (real-paralog edges lost per junk edge lost; want < 1). **Four fail for one common reason;
+only repeat-masking is net-positive** — the survey is the strongest evidence the definition is not leaving easy
+precision on the table.
 
-| lever | level | result | mechanism of failure |
+| lever | level | result | mechanism |
 |---|---|---|---|
 | better clustering object (modularity / biconnected / cut-edge) | graph | no clean gain | over-merge is a **vertex** problem |
 | high query coverage (both placements) | read | net-harmful (good:bad 1.28) | real conflicts on partially-aligned reads |
 | ≥1 intron (both placements) | read | net-harmful (1.83) | real conflicts on non-spliced reads |
 | multi-exon locus | de-novo vertex | **inert** (0 edges) | assembly emits ~100 % multi-exon loci |
 | multi-exon gene | gene vertex | net-harmful (2.53) | many real families *are* single-exon |
+| **repeat-masking** (drop majority-soft-masked placements) | read/genome | **net-POSITIVE (good:bad 0.76–0.89)** | bridges are TE/satellite-driven, not genic |
 
 **(1) A different graph object does not help** (`bench/family_def_graph_operators.py`). Replacing the connected
 component with biconnected components, modularity communities, or cut-edge pruning was tested with a
@@ -410,13 +412,27 @@ edges are multi-exon↔multi-exon), and over annotated-gene vertices it is net-h
 real paralog families are single-exon** (histones, olfactory receptors, interferons) — single-exon-ness is not
 specific to the contamination.
 
-**Why they all fail — and why that is the point.** The contamination (retrocopies, processed pseudogenes,
-repeat-bridges) is, read-wise, *indistinguishable from real paralogy*: full-length, spliced, multi-exon, densely
-cross-mapping. That is not a coincidence — it **is** the definition of read-indistinguishability, so any predicate
-built from read or locus structure removes real paralogs at least as fast as artifacts. The only lever that cleanly
-works is **vertex granularity** (de-novo loci, bridges 59→20), and it is already in place; at de-novo resolution the
-residual 20 cross-chrom bridges are between multi-exon loci, i.e. largely *correct* dispersed paralogs, not artifact.
-The precision residual is therefore architectural (vertex resolution) and small, not a missing predicate.
+**(4) Repeat-masking is the one net-positive lever** (`bench/family_def_repeat_mask.py`). The NCBI gorilla assembly is
+already soft-masked (lowercase = TE / satellite / low-complexity; **segmental duplications are NOT masked**, so real
+segdup paralogs are preserved). A conflicting-read placement is "repeat-driven" if its aligned exonic (M/=/X) blocks
+are majority soft-masked; dropping those before the graph build is the **first** lever with `good:bad < 1`
+(0.89 at threshold 0.5, 0.76 at 0.7), raising precision 0.644 → 0.684. The mechanism is confirmed directly: no-homology
+bridge edges have mean placement repeat-fraction **0.34** vs **0.21** for real DNA paralogs — the spurious
+cross-mapping is genuinely driven by shared masked repeats, not genic homology. The gain is **modest** (+0.04) because
+the distributions overlap (real paralogs also carry ~21 % repeat content), so no threshold separates them cleanly; but
+it is principled, mechanism-specific, and segdup-safe, and is the only structural predicate worth adopting (as a
+preprocessing step, threshold ≈ 0.5).
+
+**Why the structural filters fail — and why repeat-masking is the exception.** The contamination (retrocopies,
+processed pseudogenes, repeat-bridges) is, read-wise, *indistinguishable from real paralogy*: full-length, spliced,
+multi-exon, densely cross-mapping. That is not a coincidence — it **is** the definition of read-indistinguishability,
+so any predicate built from read or locus *structure* removes real paralogs at least as fast as artifacts.
+Repeat-masking is the lone exception because it adds *external* information (the genome's repeat annotation) that is
+correlated with the contamination mechanism rather than with read structure — yet even it only partly separates the
+classes. The dominant clean lever remains **vertex granularity** (de-novo loci, bridges 59→20), already in place; at
+de-novo resolution the residual 20 cross-chrom bridges are between multi-exon loci, i.e. largely *correct* dispersed
+paralogs. The precision residual is therefore architectural (vertex resolution) plus a modest repeat-mask gain, not a
+missing read predicate.
 
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
