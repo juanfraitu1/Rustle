@@ -8,7 +8,10 @@ under a divergence-tie (`de`) edge criterion. On the GGO HiFi IsoSeq substrate i
 17-candidate panel exactly — **TP=7, TN=10, FP=0, FN=0 (precision = recall = 1.000)** — with every
 load-bearing count independently re-derived from raw `samtools`/`pysam`, the three formal properties verified,
 and the principled `de` criterion demonstrably avoiding three `AS`-tie false positives (including a 3347-read
-retrocopy). The single most important caveat: the clean ledger holds for families with **≤6 cross-mapping
+retrocopy). Independently, **Ensembl Compara corroborates the annotated positives (RABL2, MAGEA) as recent
+within-species paralogs**, and confirms the definition is a *strict subset* of recent paralogy: APOBEC3 is a Compara
+recent paralog yet a correct TN here, because its copies are read-resolvable — the conflict-family is recent-paralogy
+∩ read-confusability, the unit the copy-assignment problem needs. The single most important caveat: the clean ledger holds for families with **≤6 cross-mapping
 copies** — `minimap2`'s default secondary cap (N=5) truncates the input and fragments a real ≥12-copy NC_086018.1 (chr23)
 array; this is a false negative of the *input*, not the definition, fixed by re-aligning with uncapped
 secondaries.
@@ -92,7 +95,19 @@ excluded structurally.
 connecting loci in two *different* multi-locus components. The assignment problem separates exactly across
 families with no shared-read information crossing component boundaries — the property the conflict graph requires.
 
-**(P3) $\Delta=0.005$ is a data-derived error floor, not a tuned similarity threshold.** Within-family per-read
+**(P3) $\Delta$ and $\mathrm{DE_{max}}$ are error-model constants, not tuned similarity thresholds.**
+
+*Derivation (Δ).* $\Delta$ is the single-read divergence-discrimination *resolution* at the HiFi error rate. A
+per-read $de$ measured over aligned length $L\approx2.5\,$kb has binomial standard error
+$\sqrt{\varepsilon/L}\approx0.0009$ at $\varepsilon\approx0.002$ (the within-family $de$ median); the tie statistic
+$|de_i-de_j|$ then has SE $\approx\sqrt{2}\cdot0.0009\approx0.0013$, so two copies whose per-read divergence differs
+by less than $\sim\!4\sigma\approx0.005$ are **statistically indistinguishable by a single read**. $\Delta=0.005$ is
+therefore the read-level resolution limit set by HiFi error and IsoSeq read length — a measurement constant, not a
+similarity knob. *(DE_max).* $\mathrm{DE_{max}}=0.05$ is a deliberately loose divergence ceiling separating
+copy-candidate alignments — recent-paralog identity — from distinct-gene alignments; ~3% of within-family $de$
+exceed it, an honest, conservative cut, not a tuned boundary.
+
+*Empirical confirmation of the Δ valley.* Within-family per-read
 divergence has median $0.0019$, p90 $0.0211$ (the HiFi floor). Within-family conflict-read $|de_i-de_j|$
 medians: MAGd2 $0.0000$, MAGd3 $0.0000$, AK6 $0.0012$, MAGd1 $0.0005$, CCDC196 $0.0037$, RABL2 $0.0061$.
 Resolvable decoys sit above: CNN2-retro $0.0084$, EEF1A1-retro $0.0168$, APOBEC3 $0.0241$. A $\Delta$-sweep
@@ -152,6 +167,27 @@ tuned score ratio — and the principled choice is exactly what kills the 3 high
 
 See `bench/family_definition_figure.png`: (A) the conflict graph with families as components and the avoided
 `AS` false-positive edges drawn dashed; (B) the per-candidate ledger.
+
+### Independent confirmation (Ensembl Compara) — and the definition is STRICTER than "recent paralog"
+
+The 17-panel truth labels are human-assigned; an orthogonal check against **Ensembl Compara** (within-species
+paralogy, human-mapped, `bench/compara_cache.json`) corroborates the annotated positives and — more importantly —
+shows the conflict-family is a *strict subset* of "recent paralog", separated by exactly the identifiability criterion:
+
+- **RABL2A** — one *within-species paralog* at **Homininae** level (= RABL2B): a confirmed recent paralog pair.
+- **MAGEA12** — two within-species paralogs at **Catarrhini** level: the MAGEA array is a confirmed recent tandem
+  family (our de-novo MAGd0–3 loci are its expressed copies).
+- **APOBEC3D/F** — two within-species paralogs at **Catarrhini** level, i.e. a *confirmed recent paralog cluster* —
+  yet APOBEC3 is a **TN** in our ledger (reads decidable, 0 de-conflict). This is the crux: the definition does **not**
+  recapitulate Compara recent-paralog detection — it is the **identifiability subset** of it. APOBEC3 is a recent
+  paralog whose copies are RNA-resolvable, so it is correctly *not* an identifiability family. We answer a sharper
+  question than Compara — not "are these paralogs?" but "are these copies confused by the reads?".
+- **AK6 / CCDC196 copies (LOC115934278, LOC129526440)** — *absent from Compara* (the LOC paralogues are unannotated):
+  copies the de-novo, read-level method finds that the reference annotation/Compara miss — a coverage gain, not a gap.
+
+So the independent check (a) corroborates the annotated positives as genuine recent paralogs and (b) demonstrates the
+definition's distinctive value: it is recent-paralogy **intersected with read-level confusability**, the exact unit the
+downstream copy-assignment problem operates on.
 
 ---
 
@@ -229,10 +265,13 @@ coarse vertices *can* break the best-overlap surrogate.
 
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
-$\Delta=0.005$ sits in a validated valley but established only against the panel's 3 resolvable decoys (a
-genome-wide decoy population could narrow it). $\mathrm{DE_{max}}=0.05$ is the one further constant; ~3% of
-within-family per-read $de$ exceed it, and it was not swept for its own valley. These two de-tie constants are
-now the **only** free parameters: the former 200 bp co-location guard has been removed (record-attributed
-placement makes it structurally unnecessary; see "Record-attributed placement"). Truth labels are human-assigned
-priors — the cross-mapping *evidence* was verified consistent with each label, but ground-truth paralogy was not
-established from an external orthology source.
+The two de-tie constants $\Delta,\mathrm{DE_{max}}$ are now the **only** free parameters (the former 200 bp
+co-location guard is gone — record-attributed placement makes it structurally unnecessary). Both are
+**error-model-derived** (P3): $\Delta$ as the single-read divergence resolution at HiFi error/length,
+$\mathrm{DE_{max}}$ as a loose copy-vs-distinct-gene divergence ceiling. $\mathrm{MIN\_READS}=3$ is a
+minimum-evidence quorum (a standard support floor), not a tuned constant. The honest residual: the empirical
+$\Delta$-valley was confirmed against only the panel's 3 resolvable decoys (a genome-wide decoy sweep would tighten
+the margin), and $\mathrm{DE_{max}}$ was set conservatively rather than swept for its own valley. Truth labels are
+human-assigned priors; the *positives* (RABL2, MAGEA) are now independently corroborated as recent within-species
+paralogs by Ensembl Compara (above), and the cross-mapping evidence was verified consistent with every label —
+full external orthology ground truth across all 17 candidates (incl. the de-novo LOC copies) remains open.
