@@ -1,0 +1,21 @@
+{
+  "candidate_families": 416,
+  "candidate_edges": 2829,
+  "rejected": 836,
+  "validated_families": 377,
+  "kept_edges": 1993,
+  "precision_before": 0.6440438317426652,
+  "precision_after": 0.7084796788760662,
+  "rejected_classes": {
+    "no_homology": 346,
+    "DNA_paralog": 410,
+    "sub_bar": 68,
+    "weak": 12
+  },
+  "kept_classes": {
+    "no_homology": 411,
+    "DNA_paralog": 1412,
+    "sub_bar": 144,
+    "weak": 26
+  }
+}
