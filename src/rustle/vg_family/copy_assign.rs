@@ -30,6 +30,10 @@ pub struct CopyProfile {
 pub struct ReadFeatures {
     /// Observed base per PSV column (`None` = the read does not span that column).
     pub psv_obs: Vec<Option<u8>>,
+    /// Phred quality of the observed base per PSV column, parallel to `psv_obs`. `None` (or a
+    /// shorter/empty vector) -> the likelihood uses the flat `error_rate` for that column;
+    /// `Some(q)` -> the column is weighted by its own per-base error `10^(-q/10)`.
+    pub psv_qual: Vec<Option<u8>>,
     /// The read's intron-boundary offsets (transcription-spliced space).
     pub junctions: Vec<i64>,
 }
@@ -84,18 +88,23 @@ pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams
     if n == 0 {
         return None;
     }
-    let lp_match = (1.0 - p.error_rate).ln();
-    let lp_mis = (p.error_rate / 3.0).ln();
     let mut logl = vec![0.0f64; n];
     let mut n_decisive = 0usize;
 
-    // --- PSV term ---
+    // --- PSV term (each column weighted by its own base quality when available) ---
     let n_cols = read.psv_obs.len();
     for j in 0..n_cols {
         let obs = match read.psv_obs[j] {
             Some(b) => b,
             None => continue, // read does not span this column
         };
+        // per-base error: the column's QV if the read carried one, else the flat default.
+        let e = match read.psv_qual.get(j).copied().flatten() {
+            Some(q) => super::copy_split::phred_err(q),
+            None => p.error_rate,
+        };
+        let lp_match = (1.0 - e).ln();
+        let lp_mis = (e / 3.0).ln();
         // decisive iff the copies disagree at this column (among those with a defined allele)
         let mut seen: Option<u8> = None;
         let mut differ = false;
@@ -184,7 +193,7 @@ mod tests {
         CopyProfile { copy_id, alleles: alleles.to_vec(), junctions: junctions.to_vec() }
     }
     fn rf(psv: &[Option<u8>], junctions: &[i64]) -> ReadFeatures {
-        ReadFeatures { psv_obs: psv.to_vec(), junctions: junctions.to_vec() }
+        ReadFeatures { psv_obs: psv.to_vec(), psv_qual: vec![], junctions: junctions.to_vec() }
     }
     const A: u8 = b'A';
     const C: u8 = b'C';
@@ -200,6 +209,29 @@ mod tests {
         assert!(a.resolvable);
         assert_eq!(a.n_decisive, 1);
         assert_eq!(a.status, AssignStatus::Assigned);
+    }
+
+    /// Per-base QV weights the PSV likelihood: the SAME matched allele is far more decisive at
+    /// high quality (Q40, e~1e-4) than at low quality (Q3 -> capped e=0.25), i.e. a low-QV base
+    /// at a decisive column is trusted less. An empty/None QV falls back to the flat error rate
+    /// (legacy behaviour), so existing callers are unchanged.
+    #[test]
+    fn per_base_quality_weights_psv_likelihood() {
+        let copies = [cp(0, &[Some(A)], &[]), cp(1, &[Some(C)], &[])];
+        let p = AssignParams::default();
+        let mk = |q: u8| ReadFeatures { psv_obs: vec![Some(A)], psv_qual: vec![Some(q)], junctions: vec![] };
+        let hi = assign_read(&mk(40), &copies, &p).unwrap();
+        let lo = assign_read(&mk(3), &copies, &p).unwrap();
+        assert_eq!(hi.best_copy, 0);
+        assert_eq!(lo.best_copy, 0);
+        assert!(hi.log_lr_margin > lo.log_lr_margin + 5.0,
+            "Q40 margin {} should dominate Q3 margin {}", hi.log_lr_margin, lo.log_lr_margin);
+        // a missing QV (None / empty psv_qual) == the flat default error rate
+        let flat = assign_read(&rf(&[Some(A)], &[]), &copies, &p).unwrap();
+        let none_q = assign_read(
+            &ReadFeatures { psv_obs: vec![Some(A)], psv_qual: vec![None], junctions: vec![] },
+            &copies, &p).unwrap();
+        assert!((flat.log_lr_margin - none_q.log_lr_margin).abs() < 1e-9);
     }
 
     #[test]
@@ -327,7 +359,7 @@ mod tests {
     #[test]
     fn read_psv_obs_reuses_cigar_bridge() {
         // 5M2N5M over ref_start 10: positions 10..15 and 17..22 matched; 15,16 inside the intron.
-        let read = AlignedRead { ref_start: 10, cigar: vec![('M', 5), ('N', 2), ('M', 5)], seq: b"AAAAACCCCC".to_vec() };
+        let read = AlignedRead { ref_start: 10, cigar: vec![('M', 5), ('N', 2), ('M', 5)], seq: b"AAAAACCCCC".to_vec(), qual: vec![] };
         let obs = read_psv_obs(&read, &[12, 16, 18]);
         assert_eq!(obs, vec![Some(b'A'), None, Some(b'C')]);
     }

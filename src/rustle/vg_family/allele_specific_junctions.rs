@@ -584,7 +584,7 @@ mod tests {
         };
         let mut seq = vec![b'A'; seqlen];
         seq[anchor as usize] = base; // anchor is in the first exon (ref==query offset there)
-        AlignedRead { ref_start: 0, cigar, seq }
+        AlignedRead { ref_start: 0, cigar, seq, qual: vec![] }
     }
 
     #[test]
@@ -627,7 +627,7 @@ mod tests {
             let mut seq = vec![b'A'; slen];
             seq[30] = b;
             seq[50] = b;
-            AlignedRead { ref_start: 0, cigar, seq }
+            AlignedRead { ref_start: 0, cigar, seq, qual: vec![] }
         };
         let mut reads = Vec::new();
         for _ in 0..7 {
@@ -658,7 +658,7 @@ mod tests {
             let mut seq = vec![b'A'; slen];
             seq[30] = b;
             seq[50] = b;
-            AlignedRead { ref_start: 0, cigar, seq }
+            AlignedRead { ref_start: 0, cigar, seq, qual: vec![] }
         };
         let mut reads = Vec::new();
         for _ in 0..10 {

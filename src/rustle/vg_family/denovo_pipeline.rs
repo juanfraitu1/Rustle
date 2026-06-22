@@ -616,10 +616,10 @@ mod tests {
         let mk = |name: &str, primary_seq: Vec<u8>, secondary_seq: Vec<u8>| {
             vec![
                 BamRead { chrom: "c1".into(),
-                    read: AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: primary_seq },
+                    read: AlignedRead { ref_start: 0, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: primary_seq, qual: vec![] },
                     mapq: 60, name: name.into(), as_score: 380, de: 0.010, is_supplementary: false },
                 BamRead { chrom: "c1".into(),
-                    read: AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: secondary_seq },
+                    read: AlignedRead { ref_start: 1000, cigar: vec![('M', 200), ('N', 20), ('M', 200)], seq: secondary_seq, qual: vec![] },
                     mapq: 0, name: name.into(), as_score: 379, de: 0.012, is_supplementary: false },
             ]
         };
@@ -949,7 +949,7 @@ mod tests {
         let len = (end - start) as u64;
         BamRead {
             chrom: chrom.into(),
-            read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize] },
+            read: AlignedRead { ref_start: start, cigar: vec![('M', len)], seq: vec![b'A'; len as usize], qual: vec![] },
             mapq, name: name.into(), as_score: 500, de, is_supplementary: false,
         }
     }

@@ -254,6 +254,9 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, 
         .map(|op| (cigar_kind_to_char(op.kind()), op.len() as u64))
         .collect();
     let seq: Vec<u8> = record.sequence().as_ref().to_vec();
+    // Per-base Phred qualities, parallel to `seq` (both keep soft-clips). Empty if the BAM
+    // carried no quality string -> the PSV likelihood falls back to the flat error rate.
+    let qual: Vec<u8> = record.quality_scores().as_ref().to_vec();
     let mapq = record.mapping_quality().map(|q| q.get()).unwrap_or(0);
     let name = record.name().map(|n| n.to_string()).unwrap_or_default();
     let as_score = record_as(record).unwrap_or(0);
@@ -262,7 +265,7 @@ pub fn aligned_read_from_record(record: &RecordBuf) -> Option<(AlignedRead, u8, 
     // `de` is always present on the production BAM. A de-less BAM cannot use the de-tie criterion.
     let de = record_de(record).unwrap_or(0.0);
     let is_supplementary = record.flags().is_supplementary();
-    Some((AlignedRead { ref_start, cigar, seq }, mapq, name, as_score, de, is_supplementary))
+    Some((AlignedRead { ref_start, cigar, seq, qual }, mapq, name, as_score, de, is_supplementary))
 }
 
 /// Scan every mapped alignment in a BAM into `BamRead`s (the copy-assignment read input). I/O driver,

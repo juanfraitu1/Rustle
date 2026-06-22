@@ -209,7 +209,13 @@ pub fn assign_one_read(
 /// Fill `psv_obs[col] = Some(base)` for the read's base at each `(col, genomic-position)` (sorted by
 /// position) in a SINGLE CIGAR walk — O(cigar + positions) instead of O(cigar * positions). `None` is left
 /// for positions inside an intron/deletion or outside the read. `minus` reverse-complements the base.
-fn fill_psv_obs(read: &AlignedRead, gpos: &[(usize, u64)], minus: bool, psv_obs: &mut [Option<u8>]) {
+fn fill_psv_obs(
+    read: &AlignedRead,
+    gpos: &[(usize, u64)],
+    minus: bool,
+    psv_obs: &mut [Option<u8>],
+    psv_qual: &mut [Option<u8>],
+) {
     let mut pi = 0;
     while pi < gpos.len() && gpos[pi].1 < read.ref_start {
         pi += 1; // before the read
@@ -225,8 +231,11 @@ fn fill_psv_obs(read: &AlignedRead, gpos: &[(usize, u64)], minus: bool, psv_obs:
                 let block_end = ref_cur + len;
                 while pi < gpos.len() && gpos[pi].1 < block_end {
                     let (col, g) = gpos[pi];
-                    if let Some(&b) = read.seq.get((seq_cur + (g - ref_cur)) as usize) {
+                    let idx = (seq_cur + (g - ref_cur)) as usize;
+                    if let Some(&b) = read.seq.get(idx) {
                         psv_obs[col] = Some(if minus { rc_base(b) } else { b });
+                        // QV is per physical base, unaffected by the minus-strand RC of the base.
+                        psv_qual[col] = read.qual.get(idx).copied();
                     }
                     pi += 1;
                 }
@@ -250,7 +259,8 @@ fn fill_psv_obs(read: &AlignedRead, gpos: &[(usize, u64)], minus: bool, psv_obs:
 /// (reverse-complemented for a `-` copy, single CIGAR walk) + intron boundaries via the cached `gen2off`.
 fn read_features(read: &AlignedRead, mc: usize, fp: &FamilyProfiles) -> ReadFeatures {
     let mut psv_obs = vec![None; fp.n_cols];
-    fill_psv_obs(read, &fp.copy_gpos[mc], fp.strand[mc] == '-', &mut psv_obs);
+    let mut psv_qual = vec![None; fp.n_cols];
+    fill_psv_obs(read, &fp.copy_gpos[mc], fp.strand[mc] == '-', &mut psv_obs, &mut psv_qual);
     // intron boundaries in the mapped copy's spliced space, via the cached gen2off. `checked_sub` (not
     // saturating) so a donor at genome coord 0 yields no key — exactly like python's `g2o.get(d0 - 1)`.
     let g2o = &fp.gen2off[mc];
@@ -261,7 +271,7 @@ fn read_features(read: &AlignedRead, mc: usize, fp: &FamilyProfiles) -> ReadFeat
             junctions.push(o1.max(o2) as i64);
         }
     }
-    ReadFeatures { psv_obs, junctions }
+    ReadFeatures { psv_obs, psv_qual, junctions }
 }
 
 /// The copy whose genomic span the read overlaps most (`None` if it overlaps none).
@@ -493,7 +503,7 @@ pub fn assign_family_detailed(
         let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
         let obs = feats.psv_obs.clone();
         read_obs.push(obs.clone());
-        let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, junctions: vec![] };
+        let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
         let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
         results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined, psv_obs: obs });
     }
@@ -605,6 +615,30 @@ mod tests {
         assert_eq!(copy_boundaries(&m), vec![4, 7]);
     }
 
+    #[test]
+    fn fill_psv_obs_carries_per_base_quality() {
+        // read covers ref 10..20 with per-base QVs; a PSV column at genome pos 13 -> col 0.
+        let read = AlignedRead {
+            ref_start: 10,
+            cigar: vec![('M', 10)],
+            seq: b"ACGTACGTAC".to_vec(),
+            qual: vec![20, 21, 22, 40, 24, 25, 26, 27, 28, 29], // QV 40 at offset 3 (ref 13)
+        };
+        let gpos = vec![(0usize, 13u64)];
+        let mut obs = vec![None];
+        let mut q = vec![None];
+        fill_psv_obs(&read, &gpos, false, &mut obs, &mut q);
+        assert_eq!(obs[0], Some(b'T'), "base at ref 13 is seq[3]='T'");
+        assert_eq!(q[0], Some(40), "QV travels with the base (qual[3]=40)");
+        // empty qual -> None (flat-rate fallback), base still resolved
+        let read2 = AlignedRead { qual: vec![], ..read.clone() };
+        let mut obs2 = vec![None];
+        let mut q2 = vec![None];
+        fill_psv_obs(&read2, &gpos, false, &mut obs2, &mut q2);
+        assert_eq!(obs2[0], Some(b'T'));
+        assert_eq!(q2[0], None);
+    }
+
     // ---- discover_psvs ----
 
     #[test]
@@ -641,7 +675,7 @@ mod tests {
         let ca = copy_tx("A", 0, 300, '+', &[], sa);
         let cb = copy_tx("B", 1000, 1300, '+', &[], sb.clone());
         let copies = [&ca, &cb];
-        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: sb };
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: sb, qual: vec![] };
         let res = assign_family(&copies, &[read], &AssignParams::default());
         assert_eq!(res.len(), 1);
         let (ri, a) = &res[0];
@@ -660,7 +694,7 @@ mod tests {
         let cb = copy_tx("B", 1000, 1400, '+', &[(1150, 1250)], spliced.clone());
         let copies = [&ca, &cb];
         // read aligned to copyA's region with copyA's intron structure (boundary at spliced offset 100).
-        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced };
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced, qual: vec![] };
         let detail = assign_family_detailed(&copies, &[read], &AssignParams::default());
         assert_eq!(detail.n_cols, 0, "identical sequences -> no PSV columns");
         assert_eq!(detail.results.len(), 1);
@@ -685,7 +719,7 @@ mod tests {
         let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
         let copies = [&ca, &cb];
         // read covers [0,150): spans none of the PSV columns (all >= 210).
-        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec() };
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec(), qual: vec![] };
         let res = assign_family(&copies, &[read], &AssignParams::default());
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.status, AssignStatus::Tied, "spans no decisive feature");
@@ -796,7 +830,7 @@ mod tests {
         let copies = [&ca, &cb];
         // a true-copyB read aligned to copyB's region: forward-genome seq = revcomp(transcription seq).
         let fwd_b: Vec<u8> = sb_txn.iter().rev().map(|&b| rc_base(b)).collect();
-        let read = AlignedRead { ref_start: 1000, cigar: vec![('M', 240)], seq: fwd_b };
+        let read = AlignedRead { ref_start: 1000, cigar: vec![('M', 240)], seq: fwd_b, qual: vec![] };
         let res = assign_family(&copies, &[read], &AssignParams::default());
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.best_copy, 1, "minus-strand read RC'd to transcription space -> copyB");
@@ -839,7 +873,7 @@ mod tests {
         for &p in &psv[4..] {
             recomb[p] = b'C'; // ...then switch to copy B at the last 4 PSVs
         }
-        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb };
+        let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb, qual: vec![] };
         let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default());
         assert!(detail.mosaic_reads >= 1, "recombinant flagged as mosaic; got {}", detail.mosaic_reads);
     }

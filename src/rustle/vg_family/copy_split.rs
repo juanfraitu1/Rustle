@@ -152,12 +152,56 @@ pub fn split_readchain_by_psv(
 
 /// One read's spliced alignment (minimal model): ref_start (0-based), CIGAR ops as (op,len)
 /// with op in {'M','I','D','N','S'} (match/ins/del/intron/softclip; '=','X' treated as M),
-/// and the read sequence (no hard-clipped bases).
+/// the read sequence (no hard-clipped bases), and the per-base Phred qualities parallel to
+/// `seq`. `qual` is empty when the BAM carried no quality string — callers then fall back to
+/// a flat per-base error; a populated `qual` lets the PSV likelihood weight each base by its
+/// own quality (a HiFi read's distal per-base signal).
 #[derive(Clone, Debug)]
 pub struct AlignedRead {
     pub ref_start: u64,
     pub cigar: Vec<(char, u64)>,
     pub seq: Vec<u8>,
+    pub qual: Vec<u8>,
+}
+
+/// Phred quality `q` -> per-base error probability `10^(-q/10)`, clamped to `[1e-4, 0.25]`
+/// (HiFi QVs run very high; the floor avoids `ln(0)` and the cap avoids over-trusting a
+/// pathologically low QV). A missing/zero QV maps to the cap, i.e. maximally uninformative.
+pub fn phred_err(q: u8) -> f64 {
+    if q == 0 {
+        return 0.25;
+    }
+    (10f64.powf(-(q as f64) / 10.0)).clamp(1e-4, 0.25)
+}
+
+/// Like [`allele_at`], but also returns the Phred quality of the aligned base (or `None` when
+/// `qual` is empty/short). Walks the CIGAR once.
+pub fn allele_qual_at(read: &AlignedRead, ref_pos: u64) -> (Option<u8>, Option<u8>) {
+    let mut ref_cur = read.ref_start;
+    let mut seq_cur: u64 = 0;
+    for &(op, len) in &read.cigar {
+        match op {
+            'M' | '=' | 'X' => {
+                if ref_pos >= ref_cur && ref_pos < ref_cur + len {
+                    let idx = (seq_cur + (ref_pos - ref_cur)) as usize;
+                    return (read.seq.get(idx).copied(), read.qual.get(idx).copied());
+                }
+                ref_cur += len;
+                seq_cur += len;
+            }
+            'N' | 'D' => {
+                if ref_pos >= ref_cur && ref_pos < ref_cur + len {
+                    return (None, None);
+                }
+                ref_cur += len;
+            }
+            'I' | 'S' => {
+                seq_cur += len;
+            }
+            _ => {}
+        }
+    }
+    (None, None)
 }
 
 /// Read base aligned to reference position ref_pos (0-based), or None if ref_pos is not a
@@ -645,6 +689,7 @@ mod tests {
             ref_start,
             cigar: cigar.to_vec(),
             seq: seq.to_vec(),
+            qual: vec![],
         }
     }
 
