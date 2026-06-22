@@ -388,6 +388,7 @@ precision on the table.
 | ≥1 intron (both placements) | read | net-harmful (1.83) | real conflicts on non-spliced reads |
 | multi-exon locus | de-novo vertex | **inert** (0 edges) | assembly emits ~100 % multi-exon loci |
 | multi-exon gene | gene vertex | net-harmful (2.53) | many real families *are* single-exon |
+| junction concordance (same exon architecture at both loci) | read structure | real signal, **steep cost** (good:bad 1.66) | separation 0.56 vs 0.41 too weak; mislabeled paralogs splice concordantly |
 | **repeat-masking** (drop majority-soft-masked placements) | read/genome | **net-POSITIVE (good:bad 0.76–0.89)** | bridges are TE/satellite-driven, not genic |
 
 **(1) A different graph object does not help** (`bench/family_def_graph_operators.py`). Replacing the connected
@@ -423,10 +424,21 @@ the distributions overlap (real paralogs also carry ~21 % repeat content), so no
 it is principled, mechanism-specific, and segdup-safe, and is the only structural predicate worth adopting (as a
 preprocessing step, threshold ≈ 0.5).
 
-**Why the structural filters fail — and why repeat-masking is the exception.** The contamination (retrocopies,
-processed pseudogenes, repeat-bridges) is, read-wise, *indistinguishable from real paralogy*: full-length, spliced,
-multi-exon, densely cross-mapping. That is not a coincidence — it **is** the definition of read-indistinguishability,
-so any predicate built from read or locus *structure* removes real paralogs at least as fast as artifacts.
+**(5) Junction concordance — the spliced-structure lever — is a real but too-weak signal**
+(`bench/family_def_junction_concordance.py`). Requiring a conflicting read to recover the *same exon architecture*
+(matching exon-length signature) at both loci produces the **largest raw precision gain** (0.644 → 0.709), and the
+mechanism is real: DNA paralogs splice concordantly at rate **0.56** vs **0.41** for no-homology bridges. But the
+separation is too weak for a hard filter — good:bad **1.66** (~35 % recall cost) — because real paralogs read
+discordantly via alternative splicing / partially-aligned diverged copies, while the bridges that are *mislabeled real
+paralogs* splice perfectly concordantly and survive. So it is a legitimate soft signal, not an adoptable filter.
+
+**Why the structural filters fail — and why repeat-masking is the exception.** This exposes the unifying reason: the
+spurious contamination is **two distinct populations**. (a) *Genuine repeats / retrocopies* — caught by repeat-masking
+(external genome annotation) and partly by junction-*discordance*. (b) *Mislabeled real paralogs* (coarse-vertex
+attribution) — read-wise *indistinguishable from real paralogy* (full-length, spliced, multi-exon, junction-concordant,
+distributed homology) because they **are** paralogy, only attributed to the wrong gene; no substring / Jaccard /
+coverage / junction feature can separate them, and only **vertex resolution** can. So any predicate built from read or
+locus *structure* removes real paralogs at least as fast as artifacts.
 Repeat-masking is the lone exception because it adds *external* information (the genome's repeat annotation) that is
 correlated with the contamination mechanism rather than with read structure — yet even it only partly separates the
 classes. The dominant clean lever remains **vertex granularity** (de-novo loci, bridges 59→20), already in place; at
