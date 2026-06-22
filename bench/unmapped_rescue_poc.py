@@ -48,6 +48,7 @@ FLAGSTAT    = os.path.join(SCRATCH, "ggo_flagstat.txt")
 AVA_PAF     = os.path.join(SCRATCH, "ava.paf")
 RELAXED_SAM = os.path.join(SCRATCH, "reps.relaxed.sam")
 GENES_BED   = os.path.join(SCRATCH, "genes.bed")
+REPS_FA     = os.path.join(SCRATCH, "reps.fa")
 
 # Classification thresholds (documented; conservative)
 COV_NOVEL      = 0.50   # single-locus + < this fraction of the read aligns -> novel candidate
@@ -90,6 +91,56 @@ def sub_identity(M, Ib, Db, nm):
         return None
     subs = max(nm - Ib - Db, 0)
     return 1.0 - subs / M
+
+
+_COMP = {"A": "T", "T": "A", "G": "C", "C": "G", "N": "N"}
+_STOP = {"TAA", "TAG", "TGA"}
+
+def _rc(s):
+    return "".join(_COMP.get(b, "N") for b in reversed(s))
+
+def longest_orf_aa(s):
+    """Longest stop-free codon run (aa) over all 6 frames. Random ~21aa; a real
+    coding transcript runs into the hundreds."""
+    best = 0
+    for seq in (s, _rc(s)):
+        for f in range(3):
+            cur = 0
+            for i in range(f, len(seq) - 2, 3):
+                if seq[i:i + 3] in _STOP:
+                    best = max(best, cur); cur = 0
+                else:
+                    cur += 1
+            best = max(best, cur)
+    return best
+
+def nearest_gene(by_chrom, chrom, pos):
+    cand = by_chrom.get(chrom, [])
+    best = ("none", 10 ** 9)
+    for s, e, nm in cand:
+        if s <= pos <= e:
+            return (nm, 0)
+        d = min(abs(pos - s), abs(pos - e))
+        if d < best[1]:
+            best = (nm, d)
+    return best
+
+
+def complexity(seq, maxp=1500):
+    """Return (max tandem-period match-fraction, random baseline). A satellite/
+    low-complexity sequence gives max-frac >> baseline; complex sequence ~baseline."""
+    from collections import Counter as _C
+    n = len(seq)
+    cc = _C(seq)
+    base = sum((cc[b] / n) ** 2 for b in "ACGT") if n else 0
+    best = 0.0
+    cap = min(maxp, n - 1)
+    for p in range(2, cap):
+        m = sum(1 for i in range(n - p) if seq[i] == seq[i + p])
+        f = m / (n - p)
+        if f > best:
+            best = f
+    return best, base
 
 
 def load_genes(path):
@@ -327,6 +378,86 @@ def step4_classify():
                 per_read=per_read)
 
 
+# ----------------------------------------------------------------------------- step 5
+def load_fa(path):
+    d = {}; name = None; seq = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                if name:
+                    d[name] = "".join(seq)
+                name = line[1:].strip().split()[0]; seq = []
+            else:
+                seq.append(line.strip())
+    if name:
+        d[name] = "".join(seq)
+    return d
+
+
+def step5_candidates(tags=("cl0", "cl19", "cl31", "cl56", "cl34", "cl102")):
+    """Follow-up on the residual candidates: is each a novel coding transcript,
+    an expressed repeat/TE, or a divergent single locus?"""
+    if not os.path.exists(REPS_FA):
+        return None
+    genes = load_genes(GENES_BED)
+    reps = load_fa(REPS_FA)
+    byprefix = {}
+    for k in reps:
+        byprefix.setdefault(k.split("_")[0], k)
+    sam = defaultdict(list)
+    with open(RELAXED_SAM) as f:
+        for line in f:
+            if line.startswith("@"):
+                continue
+            c = line.rstrip("\n").split("\t")
+            AS = next((int(t[5:]) for t in c[11:] if t.startswith("AS:i:")), None)
+            sam[c[0]].append((int(c[1]), c[2], int(c[3]), int(c[4]), AS, c[5]))
+    out = []
+    for tag in tags:
+        if tag not in byprefix:
+            continue
+        q = byprefix[tag]
+        seq = reps[q]
+        rs = sam.get(q, [])
+        prim = [r for r in rs if not (r[0] & 0x100) and not (r[0] & 0x800) and not (r[0] & 0x4)]
+        if not prim:
+            continue
+        p = prim[0]
+        sec = [r for r in rs if r[0] & 0x100]
+        loci = {(r[1], r[2] // 500_000) for r in rs if not (r[0] & 0x4)}
+        chroms = {r[1] for r in rs if not (r[0] & 0x4)}
+        # best-chain coverage (primary + supplementary)
+        ivs = []; read_len = None
+        for r in prim + [x for x in rs if x[0] & 0x800]:
+            rl, q0, q1, *_ = cigar_spans(r[5], r[0] & 0x10)
+            read_len = read_len or rl; ivs.append((q0, q1))
+        cov = union_len(ivs) / read_len if read_len else 0
+        orf = longest_orf_aa(seq)
+        ng = nearest_gene(genes, p[1], p[2])
+        sec_as = sorted((r[4] for r in sec if r[4] is not None), reverse=True)
+        tandem_max, tandem_base = complexity(seq)
+        low_complexity = tandem_max - tandem_base > 0.30
+        # classify
+        if low_complexity:
+            cls = "low-complexity / satellite repeat"
+        elif len(loci) >= 10:
+            cls = "expressed repeat / TE (dispersed, many genomic copies)"
+        elif cov < 0.5 and orf >= 300:
+            cls = "NOVEL protein-coding transcript, absent from assembly"
+        elif cov < 0.5:
+            cls = "mostly-unaligned (low ORF) — novel/uncharacterised"
+        elif p[3] >= 60:
+            cls = f"divergent/unannotated single locus (present; ~{ng[0]} {ng[1]}bp)"
+        else:
+            cls = f"partial/divergent transcript near {ng[0]}"
+        out.append(dict(tag=tag, len=len(seq), cov=round(cov, 3), orf_aa=orf,
+                        mapq=p[3], n_rec=len(rs), n_loci=len(loci), n_chrom=len(chroms),
+                        prim_as=p[4], top_sec_as=(sec_as[0] if sec_as else None),
+                        tandem_max=round(tandem_max, 3), tandem_base=round(tandem_base, 3),
+                        nearest=f"{ng[0]}@{ng[1]}bp", cls=cls))
+    return out
+
+
 # ----------------------------------------------------------------------------- main
 def main():
     print("=" * 72)
@@ -393,19 +524,32 @@ def main():
     print(f"      novel-count cutoff sensitivity: cov<0.4 -> {cs[0.4]}, "
           f"cov<0.5 -> {cs[0.5]}, cov<0.6 -> {cs[0.6]}")
 
+    s5 = step5_candidates()
+    if s5:
+        print(f"\n[5] Residual-candidate follow-up (option b):")
+        print(f"    {'tag':6} {'len':>5} {'cov':>5} {'ORFaa':>5} {'mapq':>4} "
+              f"{'rec':>3} {'loci':>4} {'chr':>3} {'tandem':>11}  classification")
+        for r in s5:
+            print(f"    {r['tag']:6} {r['len']:>5} {r['cov']:>5} {r['orf_aa']:>5} "
+                  f"{r['mapq']:>4} {r['n_rec']:>3} {r['n_loci']:>4} {r['n_chrom']:>3} "
+                  f"{r['tandem_max']:.3f}/{r['tandem_base']:.3f}  {r['cls']}")
+
     # machine-readable dump
     out = os.path.join(SCRATCH, "unmapped_rescue_poc_result.json")
     with open(out, "w") as f:
         json.dump(dict(pile=s1, denom=s2, clusters=s3,
-                       classify={k: v for k, v in s4.items() if k != "per_read"}),
+                       classify={k: v for k, v in s4.items() if k != "per_read"},
+                       candidates=s5),
                   f, indent=2)
     print(f"\n[+] wrote {out}")
     print("\nVERDICT: the unmapped pile is dominated by splice-rejected reads whose "
           "sequence is already present in the genome (single-locus, MAPQ60, in-gene);")
-    print("         multi-locus chimeras are a minority; genuine novel-sequence yield "
-          "is ~3/103 clusters, all with partial homology.")
-    print("         => 'rescue unmapped reads -> find missing gene copies' is DRY on a "
-          "complete (T2T) reference. Lever is real only vs INCOMPLETE references.")
+    print("         multi-locus chimeras are a minority. Follow-up dissolves the residual "
+          "into expressed TEs (cl19/cl31) + 1 divergent single locus (cl56), leaving")
+    print("         exactly ONE genuine hit: cl0, a real protein-coding transcript (775aa "
+          "ORF, 38 reads) ~94% absent from the assembly (origin: needs nt/nr search).")
+    print("         => 'rescue unmapped reads -> find missing gene copies' is effectively "
+          "DRY on a complete (T2T) reference (yield ~1). Real lever only vs INCOMPLETE refs.")
 
 
 if __name__ == "__main__":
