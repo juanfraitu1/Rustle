@@ -1,0 +1,76 @@
+{
+  "configs": [
+    {
+      "filter": "baseline (no filter)",
+      "qcov": 0.0,
+      "intron": 0,
+      "edges": 2829,
+      "tp": 1822,
+      "precision": 0.6440438317426652,
+      "eff_precision": 0.71898197242842,
+      "real_lost": 0,
+      "junk_lost": 0,
+      "good_to_bad_removed": Infinity
+    },
+    {
+      "filter": ">=1 intron, both",
+      "qcov": 0.0,
+      "intron": 1,
+      "edges": 1972,
+      "tp": 1307,
+      "precision": 0.6627789046653144,
+      "eff_precision": 0.7505070993914807,
+      "real_lost": 554,
+      "junk_lost": 303,
+      "good_to_bad_removed": 1.8283828382838283
+    },
+    {
+      "filter": "qcov>=0.5, both",
+      "qcov": 0.5,
+      "intron": 0,
+      "edges": 2672,
+      "tp": 1738,
+      "precision": 0.6504491017964071,
+      "eff_precision": 0.7282934131736527,
+      "real_lost": 88,
+      "junk_lost": 69,
+      "good_to_bad_removed": 1.2753623188405796
+    },
+    {
+      "filter": "qcov>=0.8, both",
+      "qcov": 0.8,
+      "intron": 0,
+      "edges": 2624,
+      "tp": 1717,
+      "precision": 0.6543445121951219,
+      "eff_precision": 0.7313262195121951,
+      "real_lost": 115,
+      "junk_lost": 90,
+      "good_to_bad_removed": 1.2777777777777777
+    },
+    {
+      "filter": "qcov>=0.8 & >=1 intron",
+      "qcov": 0.8,
+      "intron": 1,
+      "edges": 1927,
+      "tp": 1287,
+      "precision": 0.6678775298391282,
+      "eff_precision": 0.755059678256357,
+      "real_lost": 579,
+      "junk_lost": 323,
+      "good_to_bad_removed": 1.7925696594427245
+    },
+    {
+      "filter": "qcov>=0.5 & >=1 intron",
+      "qcov": 0.5,
+      "intron": 1,
+      "edges": 1960,
+      "tp": 1303,
+      "precision": 0.664795918367347,
+      "eff_precision": 0.7515306122448979,
+      "real_lost": 561,
+      "junk_lost": 308,
+      "good_to_bad_removed": 1.8214285714285714
+    }
+  ]
+}

@@ -374,6 +374,30 @@ non-redundant with — and non-nested in — cDNA-homology thresholds: a clean a
 complementary blind spot (and a unique strength) on retrocopies/pseudogenes, and a recall ceiling set entirely by
 transcriptional silence and the read-evidence quorum, not by mis-calls.
 
+### Tested and rejected — read-level coverage / intron filters do NOT sharpen precision (`bench/family_def_read_filters.py`)
+
+A natural sharpening: require each conflicting read to (i) align over a **high fraction of its own length** at both
+placements, and (ii) be **spliced (≥1 intron)** at both — intending to drop intronless retrocopy/pseudogene and
+shared-repeat cross-mapping. **It is net-harmful.** Sweeping the predicate over the BAM and scoring each edge against
+the DNA homology truth (`good:bad` = real-paralog edges lost per junk edge lost; want < 1):
+
+| filter | edges | TP | precision | good:bad lost |
+|---|---|---|---|---|
+| baseline | 2829 | 1822 | 0.644 | — |
+| ≥1 intron (both) | 1972 | 1307 | 0.663 | **1.83** |
+| qcov ≥ 0.8 (both) | 2624 | 1717 | 0.654 | 1.28 |
+| qcov ≥ 0.8 ∧ ≥1 intron | 1927 | 1287 | 0.668 | 1.79 |
+
+Every configuration removes genuine paralog edges **faster** than artifacts (good:bad > 1) for a precision gain of
+≤ 0.024. Two mechanisms: (1) the intron requirement kills 554 real paralog edges (reads carrying a genuine
+cross-copy conflict often do **not** cross a splice junction at *both* copies — intra-exonic divergence,
+single-junction reads, or a clipped diverged secondary); (2) the marquee spurious bridge `OCLN~SEPTIN7` (3,369 reads,
+zero cDNA homology) is **kept** under the strictest filter because those reads *are* full-length and spliced — it is a
+**coarse-vertex mislabel** of a real OCLN-retrocopy locus, not a read-quality artifact. Gene-level multi-exon
+filtering also fails (OCLN, SEPTIN7, and all panel domain-sharers are multi-exon genes). The lever for these spurious
+edges is therefore **vertex granularity** (the de-novo loci that collapse the bridges 59→20), not read-level quality
+filtering — which confirms the precision residual is architectural, not a missing predicate.
+
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
 The two de-tie constants $\Delta,\mathrm{DE_{max}}$ are now the **only** free parameters (the former 200 bp
