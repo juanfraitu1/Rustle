@@ -1,0 +1,18 @@
+{
+  "loci": 93373,
+  "multiexon": 93372,
+  "baseline": {
+    "edges": 2040,
+    "families": 212,
+    "coloc": 192,
+    "bridges": 20
+  },
+  "filtered": {
+    "edges": 2040,
+    "families": 212,
+    "coloc": 192,
+    "bridges": 20
+  },
+  "crosschrom_singleexon_rate": 0.0,
+  "samechrom_singleexon_rate": 0.0
+}

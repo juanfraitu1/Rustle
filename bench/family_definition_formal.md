@@ -374,29 +374,49 @@ non-redundant with — and non-nested in — cDNA-homology thresholds: a clean a
 complementary blind spot (and a unique strength) on retrocopies/pseudogenes, and a recall ceiling set entirely by
 transcriptional silence and the read-evidence quorum, not by mis-calls.
 
-### Tested and rejected — read-level coverage / intron filters do NOT sharpen precision (`bench/family_def_read_filters.py`)
+### Sharpening levers tested and REJECTED — the definition is at its clean frontier
 
-A natural sharpening: require each conflicting read to (i) align over a **high fraction of its own length** at both
-placements, and (ii) be **spliced (≥1 intron)** at both — intending to drop intronless retrocopy/pseudogene and
-shared-repeat cross-mapping. **It is net-harmful.** Sweeping the predicate over the BAM and scoring each edge against
-the DNA homology truth (`good:bad` = real-paralog edges lost per junk edge lost; want < 1):
+Four natural ways to "sharpen" the definition were each implemented and scored against the DNA homology truth. **All
+fail, for one common reason**, which is itself the strongest evidence the definition is not leaving easy precision on
+the table.
 
-| filter | edges | TP | precision | good:bad lost |
-|---|---|---|---|---|
-| baseline | 2829 | 1822 | 0.644 | — |
-| ≥1 intron (both) | 1972 | 1307 | 0.663 | **1.83** |
-| qcov ≥ 0.8 (both) | 2624 | 1717 | 0.654 | 1.28 |
-| qcov ≥ 0.8 ∧ ≥1 intron | 1927 | 1287 | 0.668 | 1.79 |
+| lever | level | result | mechanism of failure |
+|---|---|---|---|
+| better clustering object (modularity / biconnected / cut-edge) | graph | no clean gain | over-merge is a **vertex** problem |
+| high query coverage (both placements) | read | net-harmful (good:bad 1.28) | real conflicts on partially-aligned reads |
+| ≥1 intron (both placements) | read | net-harmful (1.83) | real conflicts on non-spliced reads |
+| multi-exon locus | de-novo vertex | **inert** (0 edges) | assembly emits ~100 % multi-exon loci |
+| multi-exon gene | gene vertex | net-harmful (2.53) | many real families *are* single-exon |
 
-Every configuration removes genuine paralog edges **faster** than artifacts (good:bad > 1) for a precision gain of
-≤ 0.024. Two mechanisms: (1) the intron requirement kills 554 real paralog edges (reads carrying a genuine
-cross-copy conflict often do **not** cross a splice junction at *both* copies — intra-exonic divergence,
-single-junction reads, or a clipped diverged secondary); (2) the marquee spurious bridge `OCLN~SEPTIN7` (3,369 reads,
-zero cDNA homology) is **kept** under the strictest filter because those reads *are* full-length and spliced — it is a
-**coarse-vertex mislabel** of a real OCLN-retrocopy locus, not a read-quality artifact. Gene-level multi-exon
-filtering also fails (OCLN, SEPTIN7, and all panel domain-sharers are multi-exon genes). The lever for these spurious
-edges is therefore **vertex granularity** (the de-novo loci that collapse the bridges 59→20), not read-level quality
-filtering — which confirms the precision residual is architectural, not a missing predicate.
+**(1) A different graph object does not help** (`bench/family_def_graph_operators.py`). Replacing the connected
+component with biconnected components, modularity communities, or cut-edge pruning was tested with a
+*confound-free* metric — the DNA-paralog rate of CUT vs KEPT edges (granularity mechanically inflates within-family
+purity, so raw purity is not trustworthy). Modularity's higher purity (0.55 vs CC 0.28) is granularity-gaming: it
+cuts edges that are **53 %** real paralogs (ratio 1.27). Only cut-edge pruning cuts the *right* edges (30 % vs 65 %
+paralog, ratio 2.16) but reaches just **40** of them — the over-merge mega-components are **2-edge-connected** (a read
+confused among many loci via one shared element makes a *dense web* of sparse edges, not a single cut-edge), so no
+clustering operator removes them.
+
+**(2) Read-level coverage / intron filters are net-harmful** (`bench/family_def_read_filters.py`). Requiring each
+conflicting read to be high-coverage and spliced at *both* placements removes genuine paralog edges faster than
+artifacts (good:bad lost 1.28–1.83) for ≤ 0.024 precision: real cross-copy conflicts are often carried by reads that
+do not cross a junction at both copies, while the marquee spurious bridge `OCLN~SEPTIN7` (3,369 reads) is *kept*
+because its reads *are* full-length and spliced.
+
+**(3) The vertex-level intron filter is inert or net-harmful** (`bench/family_def_denovo_intron.py`). The "retrocopy =
+intronless locus" intuition is correct biologically but does not separate the classes: over the production de-novo
+loci it removes **0** edges (the assembly emits 93,372/93,373 multi-exon loci; all 632 cross-chrom de-novo bridge
+edges are multi-exon↔multi-exon), and over annotated-gene vertices it is net-harmful (good:bad 2.53) because **many
+real paralog families are single-exon** (histones, olfactory receptors, interferons) — single-exon-ness is not
+specific to the contamination.
+
+**Why they all fail — and why that is the point.** The contamination (retrocopies, processed pseudogenes,
+repeat-bridges) is, read-wise, *indistinguishable from real paralogy*: full-length, spliced, multi-exon, densely
+cross-mapping. That is not a coincidence — it **is** the definition of read-indistinguishability, so any predicate
+built from read or locus structure removes real paralogs at least as fast as artifacts. The only lever that cleanly
+works is **vertex granularity** (de-novo loci, bridges 59→20), and it is already in place; at de-novo resolution the
+residual 20 cross-chrom bridges are between multi-exon loci, i.e. largely *correct* dispersed paralogs, not artifact.
+The precision residual is therefore architectural (vertex resolution) and small, not a missing predicate.
 
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
