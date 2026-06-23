@@ -1,0 +1,45 @@
+{
+  "tau_C": 0.2,
+  "multicopy_B": 154,
+  "validated_C": 149,
+  "pruned": 5,
+  "sharpened": 1,
+  "detail": [
+    {
+      "family": 24,
+      "copies": 3,
+      "effect": "SPLIT -> 1 cores, 1 members dropped",
+      "cov_frac": 0.08
+    },
+    {
+      "family": 64,
+      "copies": 2,
+      "effect": "PRUNED (all edges fragment-only)",
+      "cov_frac": 0.15
+    },
+    {
+      "family": 124,
+      "copies": 2,
+      "effect": "PRUNED (all edges fragment-only)",
+      "cov_frac": 0.1
+    },
+    {
+      "family": 138,
+      "copies": 2,
+      "effect": "PRUNED (all edges fragment-only)",
+      "cov_frac": 0.09
+    },
+    {
+      "family": 150,
+      "copies": 2,
+      "effect": "PRUNED (all edges fragment-only)",
+      "cov_frac": 0.05
+    },
+    {
+      "family": 153,
+      "copies": 2,
+      "effect": "PRUNED (all edges fragment-only)",
+      "cov_frac": 0.08
+    }
+  ]
+}
