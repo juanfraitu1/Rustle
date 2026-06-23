@@ -1,0 +1,78 @@
+{
+  "n_copy": 350,
+  "n_bridge": 117,
+  "ranking": [
+    {
+      "feature": "rl_frac__mag",
+      "bimod_sep": 7.863,
+      "dna_auc": 0.7761172161172161
+    },
+    {
+      "feature": "aln_ratio",
+      "bimod_sep": 4.22,
+      "dna_auc": 0.8288400488400488
+    },
+    {
+      "feature": "de__mag",
+      "bimod_sep": 4.012,
+      "dna_auc": 0.6781440781440782
+    },
+    {
+      "feature": "mm_rate__mag",
+      "bimod_sep": 3.599,
+      "dna_auc": 0.6672771672771672
+    },
+    {
+      "feature": "indel_rate__tie",
+      "bimod_sep": 3.172,
+      "dna_auc": 0.8208547008547008
+    },
+    {
+      "feature": "nm_rate__tie",
+      "bimod_sep": 3.164,
+      "dna_auc": 0.816996336996337
+    },
+    {
+      "feature": "mm_rate__tie",
+      "bimod_sep": 3.012,
+      "dna_auc": 0.7554090354090354
+    },
+    {
+      "feature": "rl_frac__tie",
+      "bimod_sep": 2.953,
+      "dna_auc": 0.8586080586080586
+    },
+    {
+      "feature": "de__tie",
+      "bimod_sep": 2.839,
+      "dna_auc": 0.7556532356532356
+    },
+    {
+      "feature": "nm_rate__mag",
+      "bimod_sep": 2.623,
+      "dna_auc": 0.7358241758241758
+    },
+    {
+      "feature": "indel_rate__mag",
+      "bimod_sep": 2.577,
+      "dna_auc": 0.789035409035409
+    },
+    {
+      "feature": "indelcnt_rate__mag",
+      "bimod_sep": 2.21,
+      "dna_auc": 0.7608302808302808
+    },
+    {
+      "feature": "as_ratio",
+      "bimod_sep": 2.131,
+      "dna_auc": 0.8181440781440781
+    },
+    {
+      "feature": "indelcnt_rate__tie",
+      "bimod_sep": 2.023,
+      "dna_auc": 0.8255189255189255
+    }
+  ],
+  "perm_p": 0.0,
+  "note": "EXTERNAL DNA-paralogy label (cDNA all-vs-all, NOT recip-cov). Genuine per-record crossmap edges. De-circularizes the ~B validation."
+}

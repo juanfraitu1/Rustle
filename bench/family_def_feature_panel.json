@@ -1,0 +1,92 @@
+{
+  "n_copy": 7,
+  "n_bridge": 5,
+  "pairs": [
+    "RABL2",
+    "AK6",
+    "CCDC196",
+    "APOBEC3",
+    "RFPL1_2",
+    "RFPL1_3",
+    "RFPL2_3",
+    "ASDURF_ds",
+    "CASP8_ds",
+    "CREB1_ds",
+    "GCA_ds",
+    "GPR39_ds"
+  ],
+  "feature_auc": [
+    {
+      "feature": "aln_ratio",
+      "bimod_sep": 7.407,
+      "compara_auc": 1.0
+    },
+    {
+      "feature": "indelcnt_rate__mag",
+      "bimod_sep": 6.131,
+      "compara_auc": 0.8285714285714285
+    },
+    {
+      "feature": "mm_rate__mag",
+      "bimod_sep": 4.723,
+      "compara_auc": 1.0
+    },
+    {
+      "feature": "rl_frac__mag",
+      "bimod_sep": 4.654,
+      "compara_auc": 0.6
+    },
+    {
+      "feature": "rl_frac__tie",
+      "bimod_sep": 4.583,
+      "compara_auc": 0.5428571428571428
+    },
+    {
+      "feature": "de__mag",
+      "bimod_sep": 4.395,
+      "compara_auc": 1.0
+    },
+    {
+      "feature": "nm_rate__mag",
+      "bimod_sep": 3.561,
+      "compara_auc": 1.0
+    },
+    {
+      "feature": "indel_rate__mag",
+      "bimod_sep": 3.336,
+      "compara_auc": 0.8
+    },
+    {
+      "feature": "indel_rate__tie",
+      "bimod_sep": 3.28,
+      "compara_auc": 0.5714285714285714
+    },
+    {
+      "feature": "nm_rate__tie",
+      "bimod_sep": 3.277,
+      "compara_auc": 0.8571428571428572
+    },
+    {
+      "feature": "indelcnt_rate__tie",
+      "bimod_sep": 3.115,
+      "compara_auc": 0.5714285714285714
+    },
+    {
+      "feature": "as_ratio",
+      "bimod_sep": 2.858,
+      "compara_auc": 1.0
+    },
+    {
+      "feature": "de__tie",
+      "bimod_sep": 2.84,
+      "compara_auc": 0.8571428571428572
+    },
+    {
+      "feature": "mm_rate__tie",
+      "bimod_sep": 2.671,
+      "compara_auc": 0.8571428571428572
+    }
+  ],
+  "perm_p": 0.0172,
+  "note": "External Compara labels (not ~B). Bimodality from the large unlabeled set; AUC on the panel handful. n is tiny \u2014 read directionally, with the permutation null."
+}
