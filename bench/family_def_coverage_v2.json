@@ -1,0 +1,38 @@
+{
+  "qaln_min": 0.9,
+  "multicopy_B": 154,
+  "n_paralog_edges": 235,
+  "n_bridge_edges": 81,
+  "sweep": [
+    {
+      "T": 0.3,
+      "bridge_cut": 19,
+      "paralog_cut": 34
+    },
+    {
+      "T": 0.4,
+      "bridge_cut": 28,
+      "paralog_cut": 41
+    },
+    {
+      "T": 0.5,
+      "bridge_cut": 30,
+      "paralog_cut": 59
+    },
+    {
+      "T": 0.6,
+      "bridge_cut": 34,
+      "paralog_cut": 62
+    },
+    {
+      "T": 0.7,
+      "bridge_cut": 42,
+      "paralog_cut": 69
+    },
+    {
+      "T": 0.8,
+      "bridge_cut": 51,
+      "paralog_cut": 80
+    }
+  ]
+}
