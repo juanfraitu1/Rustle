@@ -1,0 +1,85 @@
+[
+  {
+    "label": "RABL2 (2 copies)",
+    "reads": 200,
+    "multimappers": 195,
+    "psvs": 67,
+    "copies": 2,
+    "resolvable_groups": 2,
+    "groups": [
+      [
+        "RABL2A"
+      ],
+      [
+        "RABL2B"
+      ]
+    ],
+    "assignment": {
+      "resolved to ONE copy": 58,
+      "unassignable (no PSV covered)": 123,
+      "unexplained (novel/error)": 19
+    },
+    "per_copy": {
+      "RABL2B": 48,
+      "RABL2A": 10
+    },
+    "validation": "58/58",
+    "agree": 58,
+    "utot": 58,
+    "mm_resolved": 58,
+    "copy_names": [
+      "RABL2A",
+      "RABL2B"
+    ],
+    "haplotypes": {
+      "RABL2A": "CGGTAGGCTTAGTGACTATGTCACATTTATAGATCGGAGCAGAGCGTGGCCGGAACTGGGCGGCTGC",
+      "RABL2B": "GCACCAATCCGACAGTGTAACGCTGCGCCCGAGGAACCCTGACATTCTTTAAAGGACAAATAAGCCA"
+    }
+  },
+  {
+    "label": "RFPL4A array (5 copies)",
+    "reads": 35,
+    "multimappers": 34,
+    "psvs": 18,
+    "copies": 5,
+    "resolvable_groups": 2,
+    "groups": [
+      [
+        "RFPL4A"
+      ],
+      [
+        "copy2",
+        "copy3",
+        "copy4",
+        "copy5"
+      ]
+    ],
+    "assignment": {
+      "resolved to a COLLAPSED group": 5,
+      "unexplained (novel/error)": 5,
+      "resolved to ONE copy": 6,
+      "unassignable (no PSV covered)": 19
+    },
+    "per_copy": {
+      "RFPL4A": 6
+    },
+    "validation": "6/6",
+    "agree": 6,
+    "utot": 6,
+    "mm_resolved": 5,
+    "copy_names": [
+      "RFPL4A",
+      "copy2",
+      "copy3",
+      "copy4",
+      "copy5"
+    ],
+    "haplotypes": {
+      "RFPL4A": "ACAATTTCGCACGGTTTC",
+      "copy2": "GGGGGACTCGGTAAAGGG",
+      "copy3": "GGGGGACTCGGTAAAGGG",
+      "copy4": "GGGGGACTCGGTAAAGGG",
+      "copy5": "GGGGGACTCGGTAAAGGG"
+    }
+  }
+]
