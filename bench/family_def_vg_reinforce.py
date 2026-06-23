@@ -76,8 +76,8 @@ def build_model(bam, genome, chrom, start, end):
     except (ValueError, KeyError):
         return "", 0
     for r in it:
-        if r.is_unmapped or r.is_supplementary:
-            continue
+        if r.is_unmapped or r.is_supplementary or r.is_secondary:
+            continue  # primary only: the new -N50 -p0.1 BAM has 65x more secondaries that would pollute S(v)
         if r.reference_end is None or r.reference_end < start or r.reference_start > end:
             continue
         b = r.get_blocks()

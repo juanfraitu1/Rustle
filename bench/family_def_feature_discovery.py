@@ -29,7 +29,7 @@ from family_def_genomewide import best_gene, ref_span, DELTA, DE_MAX, MIN_READS
 from family_def_newbam_validate import load_denovo, build_model, recip_cov, load_models, GENOME, OLD, COV_MIN
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-NEW = "/mnt/c/Users/jfris/Desktop/GGO_mm.bam"
+NEW = "/home/juanfra/winloci_scratch/GGO_mm.bam"
 SAM = "/home/juanfra/miniforge3/bin/samtools"
 CIG = re.compile(r"(\d+)([=XIDNMS])")
 

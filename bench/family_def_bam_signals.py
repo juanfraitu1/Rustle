@@ -25,7 +25,7 @@ from family_def_genomewide import de_of, best_gene, ref_span, DELTA, DE_MAX, MIN
 from family_def_newbam_validate import (load_denovo, build_model, recip_cov, load_models,
                                         GENOME, OLD, COV_MIN)
 
-NEW = "/mnt/c/Users/jfris/Desktop/GGO_mm.bam"
+NEW = "/home/juanfra/winloci_scratch/GGO_mm.bam"
 SAM = "/home/juanfra/miniforge3/bin/samtools"
 
 

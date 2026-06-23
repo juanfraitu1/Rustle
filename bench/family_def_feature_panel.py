@@ -21,7 +21,7 @@ import pysam
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from family_def_feature_discovery import edge_features, auc
 
-NEW = "/mnt/c/Users/jfris/Desktop/GGO_mm.bam"
+NEW = "/home/juanfra/winloci_scratch/GGO_mm.bam"
 HERE = os.path.dirname(os.path.abspath(__file__))
 DE_MAX = 0.05
 
