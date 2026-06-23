@@ -1,0 +1,76 @@
+{
+  "survivors": 85,
+  "n_true": 76,
+  "n_false": 9,
+  "feature_auc": [
+    {
+      "feature": "qaln_min",
+      "auc": 0.7660818713450293
+    },
+    {
+      "feature": "qaln_tie",
+      "auc": 0.6257309941520468
+    },
+    {
+      "feature": "cov_frac_min",
+      "auc": 0.7923976608187134
+    }
+  ],
+  "perm_p": 0.0075,
+  "false_detail": [
+    {
+      "ga": "LOC115930170",
+      "gb": "LOC129527050",
+      "qaln_min": 0.708,
+      "cov_frac_min": 0.462
+    },
+    {
+      "ga": "LOC129527298",
+      "gb": "LOC129527300",
+      "qaln_min": 1.0,
+      "cov_frac_min": 1.0
+    },
+    {
+      "ga": "LOC115933073",
+      "gb": "LOC129527335",
+      "qaln_min": 1.0,
+      "cov_frac_min": 1.0
+    },
+    {
+      "ga": "LOC115930779",
+      "gb": "LOC129527023",
+      "qaln_min": 0.844,
+      "cov_frac_min": 0.184
+    },
+    {
+      "ga": "LOC101151050",
+      "gb": "LOC129527017",
+      "qaln_min": 1.0,
+      "cov_frac_min": 0.312
+    },
+    {
+      "ga": "LOC134757293",
+      "gb": "LOC134757296",
+      "qaln_min": 0.877,
+      "cov_frac_min": 0.15
+    },
+    {
+      "ga": "LOC134757292",
+      "gb": "LOC134757293",
+      "qaln_min": 0.808,
+      "cov_frac_min": 0.103
+    },
+    {
+      "ga": "LOC134757293",
+      "gb": "LOC134757298",
+      "qaln_min": 0.998,
+      "cov_frac_min": 0.127
+    },
+    {
+      "ga": "LOC115931586",
+      "gb": "ZNF91",
+      "qaln_min": 0.693,
+      "cov_frac_min": 0.023
+    }
+  ]
+}
