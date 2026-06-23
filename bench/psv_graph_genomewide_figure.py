@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Figure for the genome-wide PSV resolution scan (VERIFIED numbers).
-Reads psv_graph_verify.json (cross-family-deduped, no_psv-triaged).
+"""Figure for the genome-wide PSV resolution scan (authoritative EXON-UNION numbers).
+Reads psv_graph_exonunion_all.json (exon-union copy models, cross-family-deduped).
 Panel A: refined family-class split. Panel B: identifiability frontier (#copies vs K).
 Panel C: read assignment over unique families.
 Run: /home/juanfra/miniforge3/bin/python bench/psv_graph_genomewide_figure.py
@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAVY, TEAL, ORANGE, GREY, RED = "#1F2D5A", "#127A6E", "#D96B27", "#9aa0a6", "#B23B3B"
-v = json.load(open(os.path.join(HERE, "psv_graph_verify.json")))
+v = json.load(open(os.path.join(HERE, "psv_graph_exonunion_all.json")))
 fams = v["families_refined"]
 N = v["unique_families"]
 nres = v["resolvable"]
@@ -92,8 +92,8 @@ axC.set_title(f"C  {v['total_reads']:,} reads threaded\n"
 for sp in ("top", "right"):
     axC.spines[sp].set_visible(False)
 
-fig.suptitle("PSV-aware variation graphs, genome-wide: where great-ape gene-family copies are "
-             "read-resolvable — and where they hit the K-frontier",
-             fontsize=12.5, weight="bold", color=NAVY, y=1.05)
+fig.suptitle("PSV-aware variation graphs over exon-union copy models, genome-wide: where great-ape "
+             "gene-family copies are read-resolvable — and where they hit the K-frontier",
+             fontsize=12, weight="bold", color=NAVY, y=1.05)
 fig.savefig(os.path.join(HERE, "psv_graph_genomewide.png"), dpi=150, bbox_inches="tight")
 print("[+] wrote psv_graph_genomewide.png")

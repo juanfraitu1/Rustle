@@ -1,0 +1,74 @@
+{
+  "mode": "controls",
+  "results": [
+    {
+      "family": 18,
+      "n_copies": 9,
+      "copies_aligned": 9,
+      "psvs": 150,
+      "K": 9,
+      "cls": "fully_resolvable",
+      "reads": 510,
+      "assign": {
+        "unassignable_no_psv": 107,
+        "one_copy": 266,
+        "ambiguous": 135,
+        "unexplained": 2
+      },
+      "agree": 262,
+      "utot": 266
+    },
+    {
+      "family": 0,
+      "n_copies": 7,
+      "copies_aligned": 7,
+      "psvs": 309,
+      "K": 7,
+      "cls": "fully_resolvable",
+      "reads": 1342,
+      "assign": {
+        "ambiguous": 364,
+        "unassignable_no_psv": 473,
+        "one_copy": 476,
+        "unexplained": 29
+      },
+      "agree": 298,
+      "utot": 476
+    },
+    {
+      "family": 4,
+      "n_copies": 7,
+      "copies_aligned": 7,
+      "psvs": 296,
+      "K": 7,
+      "cls": "fully_resolvable",
+      "reads": 3837,
+      "assign": {
+        "unassignable_no_psv": 39,
+        "one_copy": 3761,
+        "ambiguous": 34,
+        "unexplained": 3
+      },
+      "agree": 3746,
+      "utot": 3761
+    },
+    {
+      "family": 62,
+      "n_copies": 4,
+      "copies_aligned": 4,
+      "psvs": 37,
+      "K": 3,
+      "cls": "partial",
+      "reads": 224,
+      "assign": {
+        "one_copy": 77,
+        "collapsed_group": 58,
+        "unassignable_no_psv": 64,
+        "ambiguous": 13,
+        "unexplained": 12
+      },
+      "agree": 75,
+      "utot": 77
+    }
+  ]
+}
