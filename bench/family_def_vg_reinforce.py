@@ -177,6 +177,18 @@ def main():
                 rejected_members.append(v)
 
     n_bridge1 = sum(1 for c in validated if len({chrom_of(g) for g in c}) >= 3)
+
+    # dump the VALIDATED families' member loci (id + coords) so the genome-wide PSV
+    # resolution scan can rebuild each family's variation graph (psv_graph_genomewide.py).
+    fam_dump = "/home/juanfra/winloci_scratch/validated_families.tsv"
+    with open(fam_dump, "w") as o:
+        o.write("family\tlocus\tchrom\tstart\tend\tnreads\n")
+        for fi, fam in enumerate(sorted(validated, key=lambda c: -len(c))):
+            for v in sorted(fam, key=lambda x: info[x][:3]):
+                c, s, e, nr = info[v]
+                o.write(f"{fi}\t{v}\t{c}\t{s}\t{e}\t{nr}\n")
+    print(f"  [+] wrote {fam_dump} ({len(validated)} families)")
+
     print("\n[4/4 result]")
     print(f"  candidate families   : {len(fams)}   ({n_bridge0} cross-chrom bridges)")
     print(f"  VALIDATED families   : {len(validated)} (backbone-reinforced cores)   "
