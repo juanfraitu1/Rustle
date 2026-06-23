@@ -41,7 +41,7 @@ MAX_READS = 3000
 GUARD_READS = 20      # below this, a model is "unvalidatable" -> never rejected (guard)
 MIN_LEN = 300
 ID_MIN = 0.80
-RECIP_COV_MIN = 0.30  # backbone edge: id>=.80 AND BOTH copies aligned >= this
+COV_MIN = 0.30        # backbone edge: id>=.80 AND max-coverage of the pair >= this
 
 
 def load_denovo():
@@ -103,25 +103,34 @@ def main():
     print(f"  candidate: {len(fams)} families, {len(edges)} edges, {len(member_loci)} loci; "
           f"cross-chrom bridges={n_bridge0}", flush=True)
 
-    print(f"[2/4 build] exon-union copy models for {len(member_loci)} member loci ...", flush=True)
-    bam = pysam.AlignmentFile(BAM, "rb"); genome = pysam.FastaFile(GENOME)
-    nreads = {}; built = 0
-    with open(SEQS, "w") as out:
-        for i, v in enumerate(member_loci):
-            c, s, e, _ = info[v]
-            seq, nr = build_model(bam, genome, c, s, e)
-            nreads[v] = nr
-            if len(seq) >= MIN_LEN:
-                out.write(f">{v}\n{seq}\n"); built += 1
-            if (i + 1) % 300 == 0:
-                print(f"    ... {i+1}/{len(member_loci)} ({built} models)", flush=True)
-    bam.close(); genome.close()
-    print(f"  built {built} models", flush=True)
+    models_present = set()
+    if os.path.exists(SEQS):
+        print("[2/4 build] CACHED: reusing existing copy models (loci are deterministic)", flush=True)
+        for line in open(SEQS):
+            if line.startswith(">"):
+                models_present.add(line[1:].strip())
+    else:
+        print(f"[2/4 build] exon-union copy models for {len(member_loci)} member loci ...", flush=True)
+        bam = pysam.AlignmentFile(BAM, "rb"); genome = pysam.FastaFile(GENOME)
+        with open(SEQS, "w") as out:
+            for i, v in enumerate(member_loci):
+                c, s, e, _ = info[v]
+                seq, _ = build_model(bam, genome, c, s, e)
+                if len(seq) >= MIN_LEN:
+                    out.write(f">{v}\n{seq}\n"); models_present.add(v)
+                if (i + 1) % 300 == 0:
+                    print(f"    ... {i+1}/{len(member_loci)}", flush=True)
+        bam.close(); genome.close()
+    print(f"  {len(models_present)} copy models", flush=True)
+    # guard: a de-novo locus is "validatable" (trustworthy enough to reject on) iff it has
+    # a model AND >= GUARD_READS reads (from the meta n_reads, info[v][3]).
+    nreads = {v: (info[v][3] if v in models_present else 0) for v in member_loci}
 
-    print("[3/4 reinforce] backbone alignment + per-family reinforcement subgraph ...", flush=True)
-    with open(PAF, "w") as pf:
-        subprocess.run(["minimap2", "-cx", "asm20", "-N", "30", "-p", "0.05", "-t", "6",
-                        SEQS, SEQS], stdout=pf, stderr=subprocess.DEVNULL)
+    print("[3/4 reinforce] backbone alignment + intersection graph (~R ∩ ~B) ...", flush=True)
+    if not os.path.exists(PAF):
+        with open(PAF, "w") as pf:
+            subprocess.run(["minimap2", "-cx", "asm20", "-N", "30", "-p", "0.05", "-t", "6",
+                            SEQS, SEQS], stdout=pf, stderr=subprocess.DEVNULL)
     H = {}
     with open(PAF) as f:
         for line in f:
@@ -141,11 +150,18 @@ def main():
                 r["cb"] = max(r["cb"], cov)
 
     def backbone(a, b):
+        # ~B: the two copies share a backbone (reciprocal homology over a real fraction
+        # of both). Repeat-bridges fail it (one side aligns only over a short element).
         r = H.get((a, b) if a < b else (b, a))
-        return bool(r and r["id"] >= ID_MIN and min(r["ca"], r["cb"]) >= RECIP_COV_MIN)
+        return bool(r and r["id"] >= ID_MIN and min(r["ca"], r["cb"]) >= COV_MIN)
 
-    validated = []          # backbone-reinforced families (>=2)
-    rejected_members = []   # validatable loci with NO backbone link to family-mates
+    # THE DEFINITION (two-stage): a candidate family is an ~R-component; the VALIDATED
+    # family is its ~B-connected core. A member is kept iff it shares a backbone with
+    # SOME family-mate (membership is defined w.r.t. the family, not a specific edge),
+    # so a repeat-bridge member -- backbone-linked to no one -- falls out, while real
+    # copies stay connected even where an individual conflict edge has a weak backbone.
+    validated = []
+    rejected_members = []
     for fam in fams:
         members = sorted(fam)
         BG = nx.Graph(); BG.add_nodes_from(members)
@@ -156,8 +172,7 @@ def main():
         for comp in nx.connected_components(BG):
             if len(comp) >= 2:
                 validated.append(set(comp))
-        # isolated (backbone-degree 0) AND validatable -> confident bridge reject
-        for v in members:
+        for v in members:                    # isolated in ~B AND validatable -> bridge
             if BG.degree[v] == 0 and nreads.get(v, 0) >= GUARD_READS:
                 rejected_members.append(v)
 
@@ -197,17 +212,19 @@ def main():
             return "sub_bar" if r["id"] >= 0.80 else "weak"
         rej_set = set(rejected_members)
         rej_edges = [(a, b) for a, b, n in edges if a in rej_set or b in rej_set]
-        rc = collections.Counter(cls_edge(a, b) for a, b in rej_edges)
+        rc = dict(collections.Counter(cls_edge(a, b) for a, b in rej_edges))
         print("\n  rejected-member edges by DNA class (want mostly no_homology):")
-        for k, v in rc.most_common():
+        for k, v in sorted(rc.items(), key=lambda kv: -kv[1]):
             print(f"     {v:5d}  {k}")
     except Exception as ex:
+        rc = {"error": str(ex)}
         print(f"  (DNA audit skipped: {ex})")
 
     json.dump(dict(candidate_families=len(fams), validated_families=len(validated),
                    rejected_members=len(rejected_members),
                    bridges_before=n_bridge0, bridges_after=n_bridge1,
-                   size2_before=sizes0[2], size2_after=sizes1[2]),
+                   size2_before=sizes0[2], size2_after=sizes1[2],
+                   rejected_edge_dna_classes=rc),
               open(os.path.join(HERE, "family_def_vg_reinforce.json"), "w"), indent=2)
     print(f"\n[+] wrote {os.path.join(HERE,'family_def_vg_reinforce.json')}")
 

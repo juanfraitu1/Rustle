@@ -1,9 +1,14 @@
 {
   "candidate_families": 212,
   "validated_families": 196,
-  "rejected_members": 163,
+  "rejected_members": 14,
   "bridges_before": 20,
   "bridges_after": 12,
   "size2_before": 80,
-  "size2_after": 73
+  "size2_after": 73,
+  "rejected_edge_dna_classes": {
+    "sub_bar": 3,
+    "no_homology": 9,
+    "DNA_paralog": 9
+  }
 }
