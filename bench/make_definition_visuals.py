@@ -191,6 +191,117 @@ def fig3():
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- fig 6: alignment algorithm
+def fig6():
+    rng = np.random.default_rng(1)
+    fig, ax = plt.subplots(1, 3, figsize=(13.5, 4.0))
+    # 1. SEED: minimizers shared between read and reference
+    ax[0].set_title("1. SEED\nshared minimizers (k=15, w=5)", fontsize=11, weight="bold", color=NAVY)
+    ax[0].plot([0, 10], [2, 2], color=NAVY, lw=4); ax[0].plot([0, 10], [0, 0], color=GREY, lw=4)
+    ax[0].text(-0.3, 2, "read", ha="right", va="center", fontsize=9, color=NAVY)
+    ax[0].text(-0.3, 0, "copy", ha="right", va="center", fontsize=9, color=GREY)
+    for p in [1.2, 2.6, 4.1, 5.0, 6.8, 8.3]:
+        ax[0].plot([p, p + rng.uniform(-0.15, 0.15)], [2, 0], color=TEAL, lw=1.3, alpha=0.8)
+        ax[0].scatter([p], [2], s=22, color=TEAL); ax[0].scatter([p], [0], s=22, color=TEAL)
+    ax[0].set_xlim(-1.5, 11); ax[0].set_ylim(-1.2, 3.2); ax[0].axis("off")
+    # 2. CHAIN: collinear anchors
+    ax[1].set_title("2. CHAIN\ncollinear anchors (DP)", fontsize=11, weight="bold", color=NAVY)
+    xs = np.array([1.2, 2.6, 4.1, 5.0, 6.8, 8.3]); ys = xs * 0.9 + rng.uniform(-0.15, 0.15, len(xs))
+    ax[1].plot(xs, ys, "-", color=TEAL, lw=1.0, alpha=0.6)
+    ax[1].scatter(xs, ys, s=40, color=NAVY, zorder=3)
+    ax[1].scatter([3.5, 6.0], [7.5, 1.2], s=30, color="#ccc")  # off-diagonal noise anchors
+    ax[1].set_xlabel("read position"); ax[1].set_ylabel("copy position")
+    ax[1].set_xlim(0, 9.5); ax[1].set_ylim(0, 9.5)
+    # 3. ALIGN: banded base-level DP fills the gaps between anchors
+    ax[2].set_title("3. ALIGN\nbanded affine-gap DP (only the gaps)", fontsize=11, weight="bold", color=NAVY)
+    ax[2].add_patch(Rectangle((0, 0), 8, 8, facecolor="#f3f3f3", edgecolor="none"))
+    ax[2].plot([0.5, 7.5], [0.5, 7.5], color=NAVY, lw=2)
+    for off in (-1, 1):
+        ax[2].plot([0.5, 7.5], [0.5 + off, 7.5 + off], color=TEAL, lw=0.7, ls="--", alpha=0.6)
+    ax[2].text(4, 6.6, "band = chain ± a few bp\n(not the full N×M matrix)", fontsize=8.5,
+               color=NAVY, ha="center")
+    ax[2].set_xlabel("read"); ax[2].set_ylabel("copy"); ax[2].set_xlim(0, 8); ax[2].set_ylim(0, 8)
+    ax[2].set_xticks([]); ax[2].set_yticks([])
+    fig.suptitle("How the alignment is computed — minimap2 'seed–chain–align', NOT a full Needleman–Wunsch matrix",
+                 fontsize=12.5, weight="bold", color=NAVY, y=1.04)
+    fig.text(0.5, -0.10,
+             "scoring (splice:hq preset):  match +1 · mismatch −4 · gap two-piece affine (open −6/−24, extend −1/0) · "
+             "non-canonical splice −5 · intron ≤ 200 kb\n"
+             "→ mismatch ≫ match, so the aligner minimises differences; two-piece gaps make long introns cheap; "
+             "canonical GT–AG splice sites are preferred.  The only number WE add downstream is Δ.",
+             ha="center", fontsize=9.5, color="#333")
+    fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig6_algo.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ----------------------------------------------------------------- fig 7: error vs recurrence
+def fig7():
+    rng = np.random.default_rng(2)
+    fig, ax = plt.subplots(figsize=(12.5, 5.2))
+    nreads, L = 11, 40
+    err_col, psv_col = 12, 27
+    for row in range(nreads):
+        y = nreads - row
+        ax.add_patch(Rectangle((0, y - 0.32), L, 0.64, facecolor="#eef", edgecolor="#ccd"))
+    # one-off error: a single read differs at err_col
+    ax.add_patch(Rectangle((err_col, nreads - 4 - 0.32), 1, 0.64, facecolor="#c00"))
+    # PSV: a consistent subset (copies) differ at psv_col
+    for row in [1, 3, 5, 8]:
+        ax.add_patch(Rectangle((psv_col, nreads - row - 0.32), 1, 0.64, facecolor=ORANGE))
+    ax.annotate("1 read only, random position\n→ SEQUENCING ERROR → ignored",
+                xy=(err_col + 0.5, nreads - 4), xytext=(err_col - 9, nreads + 1.6),
+                fontsize=10, color="#c00", weight="bold",
+                arrowprops=dict(arrowstyle="->", color="#c00"))
+    ax.annotate("same difference in MANY reads, same position\n→ a REAL variant (a PSV)",
+                xy=(psv_col + 0.5, nreads - 5), xytext=(psv_col - 4, -2.3),
+                fontsize=10, color=ORANGE, weight="bold",
+                arrowprops=dict(arrowstyle="->", color=ORANGE))
+    ax.text(L / 2, nreads + 3.0, "reads stacked at one position (each row = one read; column = one base)",
+            ha="center", fontsize=10, color=GREY)
+    ax.set_xlim(-10, L + 1); ax.set_ylim(-3.2, nreads + 4); ax.axis("off")
+    ax.set_title("Is a difference an ERROR or REAL?  —  decided by RECURRENCE across reads, never one read",
+                 fontsize=12.5, weight="bold", color=NAVY)
+    fig.text(0.5, -0.04,
+             "HiFi error ≈ 0.1–0.5 % · de is GAP-COMPRESSED (a homopolymer indel — the main HiFi error — counts once) · "
+             "an edge needs a QUORUM (k ≥ 3 tied reads) · Δ = 0.005 ≈ 4σ of single-read divergence noise → "
+             "one read's errors cannot make a false tie.", ha="center", fontsize=9.5, color="#333")
+    fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig7_error.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ----------------------------------------------------------------- fig 8: CIGAR -> exons
+def fig8():
+    fig, ax = plt.subplots(figsize=(12.5, 4.4))
+    # real read: 79M 1755N 295M 509N 823M  at copy-2 (positions in kb, shifted to 0)
+    base = 67785198
+    exons = [(67785198, 67785277, "79M"), (67787032, 67787327, "295M"), (67787836, 67788659, "823M")]
+    introns = [(67785277, 67787032, "1755N"), (67787327, 67787836, "509N")]
+    def X(p): return (p - base) / 1000.0
+    y = 1.0
+    for (s, e, lab) in exons:
+        ax.add_patch(Rectangle((X(s), y - 0.22), X(e) - X(s), 0.44, facecolor=NAVY, edgecolor="none"))
+        ax.text((X(s) + X(e)) / 2, y + 0.42, lab, ha="center", fontsize=9, color=NAVY, weight="bold")
+        ax.text((X(s) + X(e)) / 2, y, "exon", ha="center", va="center", color="white", fontsize=8)
+    for (s, e, lab) in introns:
+        ax.plot([X(s), X(e)], [y, y], color=GREY, lw=1.0)
+        ax.text((X(s) + X(e)) / 2, y - 0.30, f"{lab}  (intron, skipped)", ha="center", fontsize=8.5, color=GREY)
+    ax.text(X(base) - 0.15, y, "one read →", ha="right", va="center", fontsize=10, weight="bold", color=NAVY)
+    ax.text(X(base), y + 1.05,
+            "the read's CIGAR is its blueprint:   M = aligned to genome = EXON     N = skipped = INTRON",
+            fontsize=10.5, color=NAVY, weight="bold")
+    ax.text(X(base), -0.15,
+            "exons = the M-blocks.  A splice junction (an N boundary) is kept only if MANY reads place it identically "
+            "(recurrence) AND it is canonical GT–AG;", fontsize=9.5, color="#333")
+    ax.text(X(base), -0.55,
+            "a one-read junction is dropped as mis-splicing.   Then the copy model = UNION of all reads' exon blocks (prev. slide).",
+            fontsize=9.5, color=ORANGE, weight="bold")
+    ax.set_xlim(X(base) - 0.6, X(67788659) + 0.3); ax.set_ylim(-0.9, 2.4); ax.axis("off")
+    ax.set_title("How a read is digested into exons (and how junctions are trusted)",
+                 fontsize=12.5, weight="bold", color=NAVY)
+    fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig8_cigar.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 REPCDNA = "/home/juanfra/winloci_scratch/rep_cdna.fa"
 
 
@@ -284,7 +395,7 @@ def fig5():
 
 
 # ----------------------------------------------------------------- picture-first deck
-def build_deck():
+def build_deck(out_name="family_definition_visual.pptx"):
     from pptx import Presentation
     from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
@@ -346,11 +457,30 @@ def build_deck():
         p = tf.paragraphs[0] if i==0 else tf.add_paragraph(); p.text=t; p.font.size=Pt(sz); p.font.color.rgb=c; p.space_after=Pt(10)
         if i<2: p.font.bold=True
 
-    prs.save(os.path.join(HERE, "family_definition_visual.pptx"))
-    print(f"[+] wrote family_definition_visual.pptx ({len(prs.slides._sldIdLst)} slides)")
+    # ---- appendix: "how it actually works" (for the literal questions) ----
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    bx = s.shapes.add_textbox(Inches(0.8), Inches(2.8), Inches(11.7), Inches(2)); tf = bx.text_frame; tf.word_wrap=True
+    p = tf.paragraphs[0]; p.text = "Appendix — how it actually works"
+    p.font.size = Pt(34); p.font.bold = True; p.font.color.rgb = cNAVY
+    p2 = tf.add_paragraph(); p2.text = "the alignment algorithm & scoring · error vs. real difference · digesting a read into exons"
+    p2.font.size = Pt(17); p2.font.color.rgb = cGREY
+    fig_slide("How the alignment is computed (not Needleman–Wunsch)", "fig6_algo.png",
+              "minimap2 seed–chain–align: minimizer seeds → collinear chaining → banded affine-gap DP. Scoring = the splice:hq preset.")
+    fig_slide("Error or real? — by recurrence across reads", "fig7_error.png",
+              "A difference in one read = error (ignored); the same difference in many reads = a real variant. Edges need a quorum (k≥3).")
+    fig_slide("Digesting a read into exons (CIGAR → exons → union)", "fig8_cigar.png",
+              "Each read's CIGAR marks exons (M) and introns (N); junctions are trusted by recurrence + canonical GT–AG; exons are then unioned.")
+
+    try:
+        prs.save(os.path.join(HERE, out_name))
+        print(f"[+] wrote {out_name} ({len(prs.slides._sldIdLst)} slides)")
+    except PermissionError:
+        alt = out_name.replace(".pptx", "_FULL.pptx")
+        prs.save(os.path.join(HERE, alt))
+        print(f"[!] {out_name} was locked; wrote {alt} ({len(prs.slides._sldIdLst)} slides) instead")
 
 
 if __name__ == "__main__":
-    fig1(); fig2(); fig3(); fig4(); fig5()
-    print("[+] wrote fig1..fig5 (reads, exon-union, graph, read-align, dotplot)")
+    fig1(); fig2(); fig3(); fig4(); fig5(); fig6(); fig7(); fig8()
+    print("[+] wrote fig1..fig8")
     build_deck()
