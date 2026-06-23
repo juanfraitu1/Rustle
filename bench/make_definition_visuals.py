@@ -191,6 +191,60 @@ def fig3():
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- fig 9: results table
+def fig9():
+    fig, ax = plt.subplots(figsize=(13, 6.6)); ax.axis("off"); ax.set_xlim(0, 12); ax.set_ylim(0, 13)
+    ax.text(6, 12.5, "What the method finds — precision / recall on the 17-candidate panel",
+            ha="center", fontsize=14, weight="bold", color=NAVY)
+    # FOUND table
+    ax.text(0.2, 11.6, "FAMILIES FOUND  (true positives)", fontsize=11.5, weight="bold", color=TEAL)
+    found = [
+        ("RABL2  (RABL2A ~ RABL2B)", "recent paralog, separate chromosomes", "47"),
+        ("AK6  (~ LOC copy)", "high-identity cross-chromosome copy", "24"),
+        ("CCDC196  (~ LOC copy)", "high-identity cross-chromosome copy", "24"),
+        ("MAGEA array  (4 co-located copies)", "tandem array of de-novo loci", "75–303"),
+    ]
+    ax.add_patch(Rectangle((0.2, 10.7), 11.6, 0.55, facecolor=NAVY))
+    for x, t in [(0.4, "gene family"), (5.6, "type"), (10.2, "tied reads (~R)")]:
+        ax.text(x, 10.97, t, color="white", fontsize=9.5, weight="bold", va="center")
+    for i, (fam, typ, ev) in enumerate(found):
+        y = 10.15 - i * 0.62
+        ax.add_patch(Rectangle((0.2, y - 0.27), 11.6, 0.54, facecolor="#eef5f4" if i % 2 else "#fff",
+                     edgecolor="#dde"))
+        ax.text(0.4, y, fam, fontsize=9.5, va="center", color=NAVY, weight="bold")
+        ax.text(5.6, y, typ, fontsize=9, va="center", color="#333")
+        ax.text(10.6, y, ev, fontsize=9.5, va="center", color=TEAL, weight="bold")
+    # headline P/R
+    ax.add_patch(FancyBboxPatch((0.2, 6.0), 11.6, 1.0, boxstyle="round,pad=0.05",
+                 facecolor="#eef5f4", edgecolor=TEAL, linewidth=1.5))
+    ax.text(6, 6.5, "Precision = 7 / 7 = 1.00  (0 false families)        Recall = 7 / 7 = 1.00  (0 real families missed)",
+            ha="center", fontsize=13, weight="bold", color=NAVY)
+    # REJECTED summary
+    ax.text(0.2, 5.3, "CORRECTLY REJECTED  (true negatives — neither relation, or read-resolvable)",
+            fontsize=11, weight="bold", color=ORANGE)
+    rej = [
+        "APOBEC3, RFPL — recent paralogs, but the reads place uniquely (read-resolvable → not ~R)",
+        "EEF1A1, CNN2 — processed-pseudogene retrocopies (0–1 ties, no quorum)",
+        "CREB1~METTL21A, GCA~KCNH7, CASP8~FLACC1, ASDURF~ASNSD1, GPR39~LYPD1 — domain-sharers (0 ties → not ~R)",
+        "MAGEA annotated genes — resolvable",
+    ]
+    for i, r in enumerate(rej):
+        ax.text(0.5, 4.7 - i * 0.55, "•  " + r, fontsize=9.5, color="#333", va="center")
+    # honest genome-wide / DNA footnote
+    ax.add_patch(Rectangle((0.2, 0.2), 11.6, 1.7, facecolor="#f6f6f6", edgecolor="#ddd"))
+    ax.text(0.4, 1.55, "Beyond the panel (honest context):", fontsize=10, weight="bold", color=GREY)
+    ax.text(0.4, 1.05,
+            "• Genome-wide: 196 validated families (de-novo loci).",
+            fontsize=9.5, color="#333")
+    ax.text(0.4, 0.55,
+            "• vs an independent DNA-homology truth: precision 0.64 (0.72 crediting real homology just under the bar); recall is "
+            "expression-limited — the two\n   definitions measure different things (read-confusability vs sequence homology), so this is an "
+            "orthogonal comparison, not an error rate.",
+            fontsize=9.0, color="#333")
+    fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig9_results.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- fig 6: alignment algorithm
 def fig6():
     rng = np.random.default_rng(1)
@@ -437,8 +491,8 @@ def build_deck(out_name="family_definition_visual.pptx"):
               "minimap2 aligns the read to each copy; de = differences per base. Two copies within Δ of each other = a tie = one ~R vote.")
     fig_slide("Sum the exons of all isoforms  →  one copy model", "fig2_exonunion.png",
               "A copy's many isoforms (grey) sum to one exon-union (orange) — so splicing can't masquerade as extra copies.")
-    fig_slide("How we align the copies: a dot-plot  →  backbone or not (~B)", "fig5_dotplot.png",
-              "Align the copy models to each other; a diagonal = a shared backbone over most of both. Bridge: no diagonal → ~B fails.")
+    fig_slide("Aligning the copies: a dot-plot  →  backbone or not (~B)", "fig5_dotplot.png",
+              "We run minimap2 to align the copy models; a diagonal = a shared backbone over most of both. Bridge: no diagonal → ~B fails.")
     fig_slide("Ties → edges → graph (~R), confirmed by the backbone (~B)  =  FAMILY", "fig3_graph.png",
               "Left: every pair ties AND shares a backbone → one 5-copy family.   Right: a bridge ties but shares no backbone → cut.")
 
@@ -457,15 +511,22 @@ def build_deck(out_name="family_definition_visual.pptx"):
         p = tf.paragraphs[0] if i==0 else tf.add_paragraph(); p.text=t; p.font.size=Pt(sz); p.font.color.rgb=c; p.space_after=Pt(10)
         if i<2: p.font.bold=True
 
+    # results table
+    fig_slide("Results: gene families found  (precision / recall)", "fig9_results.png",
+              "On the 17-candidate panel with hand-checked ground truth: precision = recall = 1.00 (0 false families, 0 missed).")
+
     # ---- appendix: "how it actually works" (for the literal questions) ----
     s = prs.slides.add_slide(prs.slide_layouts[6])
-    bx = s.shapes.add_textbox(Inches(0.8), Inches(2.8), Inches(11.7), Inches(2)); tf = bx.text_frame; tf.word_wrap=True
+    bx = s.shapes.add_textbox(Inches(0.8), Inches(2.5), Inches(11.7), Inches(2.5)); tf = bx.text_frame; tf.word_wrap=True
     p = tf.paragraphs[0]; p.text = "Appendix — how it actually works"
     p.font.size = Pt(34); p.font.bold = True; p.font.color.rgb = cNAVY
     p2 = tf.add_paragraph(); p2.text = "the alignment algorithm & scoring · error vs. real difference · digesting a read into exons"
     p2.font.size = Pt(17); p2.font.color.rgb = cGREY
-    fig_slide("How the alignment is computed (not Needleman–Wunsch)", "fig6_algo.png",
-              "minimap2 seed–chain–align: minimizer seeds → collinear chaining → banded affine-gap DP. Scoring = the splice:hq preset.")
+    p3 = tf.add_paragraph()
+    p3.text = "What is minimap2's vs ours:  minimap2 does the ALIGNMENT (reads → placements, de, CIGAR — we do not implement an aligner). Our method is everything downstream — the two relations, the graph, the definition."
+    p3.font.size = Pt(13); p3.font.color.rgb = cORANGE; p3.font.bold = True
+    fig_slide("How the alignment works (minimap2's job, not ours; not Needleman–Wunsch)", "fig6_algo.png",
+              "minimap2 — not us — does seed–chain–align (minimizer seeds → chaining → banded affine-gap DP). We only consume its output.")
     fig_slide("Error or real? — by recurrence across reads", "fig7_error.png",
               "A difference in one read = error (ignored); the same difference in many reads = a real variant. Edges need a quorum (k≥3).")
     fig_slide("Digesting a read into exons (CIGAR → exons → union)", "fig8_cigar.png",
@@ -481,6 +542,6 @@ def build_deck(out_name="family_definition_visual.pptx"):
 
 
 if __name__ == "__main__":
-    fig1(); fig2(); fig3(); fig4(); fig5(); fig6(); fig7(); fig8()
-    print("[+] wrote fig1..fig8")
+    fig1(); fig2(); fig3(); fig4(); fig5(); fig6(); fig7(); fig8(); fig9()
+    print("[+] wrote fig1..fig9")
     build_deck()
