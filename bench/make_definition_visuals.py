@@ -254,7 +254,54 @@ def fig9():
     plt.close(fig)
 
 
-# ----------------------------------------------------------------- fig 6: alignment algorithm
+# ----------------------------------------------------------------- fig_pair: what to align & how
+def fig_pair():
+    fig, ax = plt.subplots(1, 2, figsize=(13.5, 5.6))
+    # LEFT: the reads decide WHAT to align
+    ax[0].set_title("1.  The READS decide what to align", fontsize=12.5, weight="bold", color=NAVY)
+    ax[0].add_patch(Rectangle((1.0, 8.3), 8.0, 0.6, facecolor=NAVY))
+    ax[0].text(5.0, 8.6, "one multimapping read", ha="center", va="center", color="white",
+               fontsize=10, weight="bold")
+    loci = [(1.2, "locus A"), (4.3, "locus B"), (7.4, "locus C")]
+    for x, nm in loci:
+        ax[0].add_patch(Rectangle((x, 4.2), 1.4, 0.7, facecolor="#cfe0f0", edgecolor=NAVY))
+        ax[0].text(x + 0.7, 4.55, nm, ha="center", va="center", fontsize=9, weight="bold", color=NAVY)
+        ax[0].plot([5.0, x + 0.7], [8.3, 4.9], color=ORANGE, lw=1.6, alpha=0.85)
+    ax[0].add_patch(FancyBboxPatch((0.7, 3.7), 8.5, 1.7, boxstyle="round,pad=0.05",
+                    facecolor="none", edgecolor=TEAL, lw=1.6, linestyle="--"))
+    ax[0].text(5.0, 3.35, "read-coupled candidate group  (~R)", ha="center", fontsize=10,
+               weight="bold", color=TEAL)
+    ax[0].text(5.0, 1.9, "A read that fits several loci → they MIGHT be copies.\n"
+               "This is HOW we know what to align — we only compare loci the reads\nalready link, never the whole genome.",
+               ha="center", fontsize=9.5, color="#333")
+    ax[0].set_xlim(0, 10); ax[0].set_ylim(0, 9.6); ax[0].axis("off")
+    # RIGHT: align the candidates pairwise
+    ax[1].set_title("2.  Align the candidates pairwise (within the group only)", fontsize=12.5, weight="bold", color=NAVY)
+    ys = {"A": 8.2, "B": 7.2, "C": 6.2}
+    for nm, y in ys.items():
+        ax[1].add_patch(Rectangle((0.8, y - 0.18), 4.2, 0.36, facecolor=NAVY))
+        ax[1].text(0.5, y, nm, ha="right", va="center", fontsize=9.5, weight="bold", color=NAVY)
+        ax[1].text(5.2, y, "exon-union copy sequence", va="center", fontsize=8.5, color="#555")
+    ax[1].annotate("", xy=(3, 5.5), xytext=(3, 6.0), arrowprops=dict(arrowstyle="-|>", color="#888", lw=1.4))
+    ax[1].text(3, 5.05, "minimap2  -cx asm20   (all-vs-all, just these 3)", ha="center",
+               fontsize=9.5, weight="bold", color=NAVY)
+    # tiny result graph
+    pos = {"A": (1.5, 2.6), "B": (4.5, 2.6), "C": (3.0, 1.0)}
+    for a, b in [("A", "B"), ("A", "C"), ("B", "C")]:
+        ax[1].plot([pos[a][0], pos[b][0]], [pos[a][1], pos[b][1]], color=TEAL, lw=2.2)
+    for nm, (x, y) in pos.items():
+        ax[1].scatter([x], [y], s=520, color=NAVY, zorder=3)
+        ax[1].text(x, y, nm, color="white", ha="center", va="center", fontsize=9, weight="bold", zorder=4)
+    ax[1].text(6.8, 1.8, "reciprocal coverage ≥ τ\n→  ~B edge  (backbone shared)", fontsize=9.5,
+               color=TEAL, weight="bold", va="center")
+    ax[1].set_xlim(0, 11); ax[1].set_ylim(0, 9.6); ax[1].axis("off")
+    fig.suptitle("What do we align, and how do we know what to align to?  —  the reads pre-select; minimap2 does the alignment",
+                 fontsize=12.5, weight="bold", color=NAVY, y=1.02)
+    fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig_pair.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ----------------------------------------------------------------- fig 6: alignment algorithm (UNUSED in deck)
 def fig6():
     rng = np.random.default_rng(1)
     fig, ax = plt.subplots(1, 3, figsize=(13.5, 4.0))
@@ -529,13 +576,13 @@ def build_deck(out_name="family_definition_visual.pptx"):
     bx = s.shapes.add_textbox(Inches(0.8), Inches(2.5), Inches(11.7), Inches(2.5)); tf = bx.text_frame; tf.word_wrap=True
     p = tf.paragraphs[0]; p.text = "Appendix — how it actually works"
     p.font.size = Pt(34); p.font.bold = True; p.font.color.rgb = cNAVY
-    p2 = tf.add_paragraph(); p2.text = "the alignment algorithm & scoring · error vs. real difference · digesting a read into exons"
+    p2 = tf.add_paragraph(); p2.text = "what we align & how we know what to align to · error vs. real difference · digesting a read into exons"
     p2.font.size = Pt(17); p2.font.color.rgb = cGREY
     p3 = tf.add_paragraph()
-    p3.text = "What is minimap2's vs ours:  minimap2 does the ALIGNMENT (reads → placements, de, CIGAR — we do not implement an aligner). Our method is everything downstream — the two relations, the graph, the definition."
+    p3.text = "minimap2 does the ALIGNMENT (reads → placements, de, CIGAR — we do not implement an aligner). Our method is everything downstream — choosing WHAT to align, the two relations, the graph, the definition."
     p3.font.size = Pt(13); p3.font.color.rgb = cORANGE; p3.font.bold = True
-    fig_slide("How the alignment works (minimap2's job, not ours; not Needleman–Wunsch)", "fig6_algo.png",
-              "minimap2 — not us — does seed–chain–align (minimizer seeds → chaining → banded affine-gap DP). We only consume its output.")
+    fig_slide("What do we align — and how do we know what to align to?", "fig_pair.png",
+              "The reads pre-select: a multimapping read says which loci might be copies (~R); we align only those, copy-vs-copy (minimap2 asm20) → ~B.")
     fig_slide("Error or real? — by recurrence across reads", "fig7_error.png",
               "A difference in one read = error (ignored); the same difference in many reads = a real variant. Edges need a quorum (k≥3).")
     fig_slide("Digesting a read into exons (CIGAR → exons → union)", "fig8_cigar.png",
@@ -551,6 +598,6 @@ def build_deck(out_name="family_definition_visual.pptx"):
 
 
 if __name__ == "__main__":
-    fig1(); fig2(); fig3(); fig4(); fig5(); fig6(); fig7(); fig8(); fig9()
-    print("[+] wrote fig1..fig9")
+    fig1(); fig2(); fig3(); fig4(); fig5(); fig_pair(); fig7(); fig8(); fig9()
+    print("[+] wrote fig1..fig9 + fig_pair")
     build_deck()
