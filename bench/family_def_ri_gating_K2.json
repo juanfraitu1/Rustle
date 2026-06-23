@@ -1,4 +1,13 @@
 {
+  "summary": {
+    "K_supported": 2,
+    "n_size2": 111,
+    "edge_median_k1": 0.4162,
+    "edge_median_kgated": 0.5011,
+    "edge_crossed_0p55": 16,
+    "control_destabilized_gt0p1": "15/41",
+    "median_model_shrink": 0.3376
+  },
   "rows": [
     {
       "family": 5,

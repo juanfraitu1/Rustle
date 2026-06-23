@@ -115,7 +115,16 @@ def main():
 
     edge = [r for r in rows if 0.30 <= r["recip_k1"] <= 0.55]
     high = [r for r in rows if r["recip_k1"] > 0.55]
-    json.dump(dict(rows=rows), open(os.path.join(HERE, "family_def_ri_gating.json"), "w"), indent=2)
+    # the verifier's key correction: controls are DESTABILIZED, not preserved
+    ctrl_destab = sum(1 for r in high if r["delta"] < -0.10)
+    summary = dict(K_supported=K_SUP, n_size2=len(rows),
+                   edge_median_k1=round(st.median(r["recip_k1"] for r in edge), 4) if edge else None,
+                   edge_median_kgated=round(st.median(r["recip_k3"] for r in edge), 4) if edge else None,
+                   edge_crossed_0p55=sum(1 for r in edge if r["recip_k1"] <= 0.55 < r["recip_k3"]),
+                   control_destabilized_gt0p1=f"{ctrl_destab}/{len(high)}",
+                   median_model_shrink=round(st.median(r["shrink"] for r in rows), 4))
+    json.dump(dict(summary=summary, rows=rows),
+              open(os.path.join(HERE, f"family_def_ri_gating_K{K_SUP}.json"), "w"), indent=2)
 
     def report(g, name):
         if not g:
@@ -129,9 +138,11 @@ def main():
               f"crossed 0.55: {offedge}; median model shrink={st.median(r['shrink'] for r in g):.3f}")
 
     print("=== (a) read-supported block gating (K=1 all-blocks vs K=3 read-supported) ===")
-    print(f"  size-2 families assessed: {len(rows)}")
+    print(f"  size-2 families assessed: {len(rows)}  (K_supported={K_SUP})")
     report(edge, "TAU-EDGE families (recip_k1 in [0.30,0.55])")
     report(high, "HIGH-recip families (recip_k1>0.55, control)")
+    print(f"  *** CONTROL DESTABILIZATION: {ctrl_destab}/{len(high)} clean families lose >0.10 recip "
+          f"(gating prunes copies asymmetrically; not preserved) ***")
     print("\n  edge families detail (family: K1 -> K3, shrink):")
     for r in sorted(edge, key=lambda x: x["recip_k1"])[:15]:
         print(f"    fam{r['family']}: {r['recip_k1']:.3f} -> {r['recip_k3']:.3f}  "

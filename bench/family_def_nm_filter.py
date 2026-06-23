@@ -88,9 +88,13 @@ def main():
     # well-explained by BOTH copies). Edge NM-tie signal = median read |diff|.
     print("\n  NM-TIE edge-level (flag bridge if median read |NM_rate_i - NM_rate_j| > T):")
     print(f"  {'T_tie':>7} {'bridge_recall':>13} {'copy_FP':>9} {'kept_copies':>12} {'killed_bridges':>15}")
+    nmtie_rows = []
     for T in [0.0010, 0.0015, 0.0020, 0.0025, 0.0030, 0.0040]:
         br = sum(1 for e in bridges if st.median(e[2]) > T)
         cf = sum(1 for e in copies if st.median(e[2]) > T)
+        nmtie_rows.append(dict(T=T, bridge_recall=round(br / max(len(bridges), 1), 3),
+                               copy_fp=round(cf / max(len(copies), 1), 3),
+                               killed_bridges=br, false_dropped_copies=cf))
         print(f"  {T:>7.4f} {br/max(len(bridges),1):>13.2f} {cf/max(len(copies),1):>9.2f} "
               f"{len(copies)-cf:>12} {br:>15}")
 
@@ -103,9 +107,13 @@ def main():
         print(f"  {T:>7.4f} {bd:>6}/{len(bridges):<3} ({100*bd/max(len(bridges),1):>4.0f}%) "
               f"      {cd:>6}/{len(copies):<3} ({100*cd/max(len(copies),1):>4.0f}%)")
 
-    out = dict(n_copy=len(copies), n_bridge=len(bridges),
-               best_edge_op=dict(zip(["T_nm", "bridge_recall", "copy_fp", "killed_bridges", "killed_copies"],
-                                     best)) if best else None)
+    out = dict(chroms=chroms, n_copy=len(copies), n_bridge=len(bridges),
+               nm_magnitude_best_edge_op=dict(zip(
+                   ["T_nm", "bridge_recall", "copy_fp", "killed_bridges", "killed_copies"], best)) if best else None,
+               nm_tie_edge_sweep=nmtie_rows,
+               note="NM-tie >> NM-magnitude. 7%/46% is a chrom-mixture COMPOSITE; per-chrom range "
+                    "21-65% recall, 0-9% FP (load-bearing NC_073240.2 = 9% FP). 7% FPs are genuine "
+                    "indel-divergent copies. ~B catches the ~54% NM-tie misses (recip<0.10).")
     json.dump(out, open(os.path.join(HERE, "family_def_nm_filter.json"), "w"), indent=2)
     if best:
         print(f"\n  BEST edge operating point (copy-FP<=5%): T_nm={best[0]:.4f} -> removes "

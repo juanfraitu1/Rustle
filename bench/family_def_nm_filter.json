@@ -1,5 +1,55 @@
 {
+  "chroms": [
+    "NC_073240.2",
+    "NC_073244.2",
+    "NC_073248.2"
+  ],
   "n_copy": 106,
   "n_bridge": 104,
-  "best_edge_op": null
+  "nm_magnitude_best_edge_op": null,
+  "nm_tie_edge_sweep": [
+    {
+      "T": 0.001,
+      "bridge_recall": 0.692,
+      "copy_fp": 0.17,
+      "killed_bridges": 72,
+      "false_dropped_copies": 18
+    },
+    {
+      "T": 0.0015,
+      "bridge_recall": 0.606,
+      "copy_fp": 0.113,
+      "killed_bridges": 63,
+      "false_dropped_copies": 12
+    },
+    {
+      "T": 0.002,
+      "bridge_recall": 0.5,
+      "copy_fp": 0.094,
+      "killed_bridges": 52,
+      "false_dropped_copies": 10
+    },
+    {
+      "T": 0.0025,
+      "bridge_recall": 0.481,
+      "copy_fp": 0.075,
+      "killed_bridges": 50,
+      "false_dropped_copies": 8
+    },
+    {
+      "T": 0.003,
+      "bridge_recall": 0.462,
+      "copy_fp": 0.066,
+      "killed_bridges": 48,
+      "false_dropped_copies": 7
+    },
+    {
+      "T": 0.004,
+      "bridge_recall": 0.356,
+      "copy_fp": 0.028,
+      "killed_bridges": 37,
+      "false_dropped_copies": 3
+    }
+  ],
+  "note": "NM-tie >> NM-magnitude. 7%/46% is a chrom-mixture COMPOSITE; per-chrom range 21-65% recall, 0-9% FP (load-bearing NC_073240.2 = 9% FP). 7% FPs are genuine indel-divergent copies. ~B catches the ~54% NM-tie misses (recip<0.10)."
 }

@@ -1,0 +1,95 @@
+{
+  "n_copy": 106,
+  "n_bridge": 104,
+  "ranking": [
+    {
+      "feature": "aln_ratio",
+      "bimod_sep": 7.407,
+      "sarle_bc": 0.906,
+      "auc": 0.8322750362844702
+    },
+    {
+      "feature": "indelcnt_rate__mag",
+      "bimod_sep": 6.131,
+      "sarle_bc": 0.814,
+      "auc": 0.5559687953555879
+    },
+    {
+      "feature": "mm_rate__mag",
+      "bimod_sep": 4.723,
+      "sarle_bc": 0.771,
+      "auc": 0.5651306240928883
+    },
+    {
+      "feature": "rl_frac__mag",
+      "bimod_sep": 4.654,
+      "sarle_bc": 0.814,
+      "auc": 0.5566037735849056
+    },
+    {
+      "feature": "rl_frac__tie",
+      "bimod_sep": 4.583,
+      "sarle_bc": 0.874,
+      "auc": 0.7630624092888244
+    },
+    {
+      "feature": "de__mag",
+      "bimod_sep": 4.395,
+      "sarle_bc": 0.737,
+      "auc": 0.5590529753265603
+    },
+    {
+      "feature": "nm_rate__mag",
+      "bimod_sep": 3.561,
+      "sarle_bc": 0.862,
+      "auc": 0.6445936139332366
+    },
+    {
+      "feature": "indel_rate__mag",
+      "bimod_sep": 3.336,
+      "sarle_bc": 0.863,
+      "auc": 0.6235486211901307
+    },
+    {
+      "feature": "indel_rate__tie",
+      "bimod_sep": 3.28,
+      "sarle_bc": 0.87,
+      "auc": 0.7177068214804064
+    },
+    {
+      "feature": "nm_rate__tie",
+      "bimod_sep": 3.277,
+      "sarle_bc": 0.87,
+      "auc": 0.7538098693759071
+    },
+    {
+      "feature": "indelcnt_rate__tie",
+      "bimod_sep": 3.115,
+      "sarle_bc": 1.429,
+      "auc": 0.7207910014513788
+    },
+    {
+      "feature": "as_ratio",
+      "bimod_sep": 2.858,
+      "sarle_bc": 0.739,
+      "auc": 0.7645137880986937
+    },
+    {
+      "feature": "de__tie",
+      "bimod_sep": 2.84,
+      "sarle_bc": 0.66,
+      "auc": 0.6657293178519593
+    },
+    {
+      "feature": "mm_rate__tie",
+      "bimod_sep": 2.671,
+      "sarle_bc": 0.552,
+      "auc": 0.6766146589259797
+    }
+  ],
+  "best_feature": "aln_ratio",
+  "best_auc": 0.832,
+  "perm_null_p": 0.0,
+  "perm_null_95": 0.613,
+  "note": "Bimodality ranking is LABEL-FREE; ~B (recip-cov>=0.30) used only to ORIENT/validate (a proxy label; external Compara labels would make it fully unbiased). Permutation null uses max-AUC-over-features to control the small-n multiple-comparison overfit."
+}
