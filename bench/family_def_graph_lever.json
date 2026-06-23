@@ -1,0 +1,56 @@
+{
+  "n_paralog": 383,
+  "n_bridge": 207,
+  "nodes": 287,
+  "edges": 711,
+  "ranking": [
+    {
+      "feature": "jaccard_nbr",
+      "bimod": 4.072,
+      "dna_auc": 0.8252418612277848
+    },
+    {
+      "feature": "adamic_adar",
+      "bimod": 3.488,
+      "dna_auc": 0.8127420188948171
+    },
+    {
+      "feature": "resource_alloc",
+      "bimod": 3.373,
+      "dna_auc": 0.8058677362798148
+    },
+    {
+      "feature": "common_neighbors",
+      "bimod": 3.678,
+      "dna_auc": 0.7904668205496903
+    },
+    {
+      "feature": "triangles",
+      "bimod": 3.678,
+      "dna_auc": 0.7904668205496903
+    },
+    {
+      "feature": "deg_min",
+      "bimod": 3.724,
+      "dna_auc": 0.7444406604356655
+    },
+    {
+      "feature": "deg_prod",
+      "bimod": 4.432,
+      "dna_auc": 0.7221780754531351
+    },
+    {
+      "feature": "deg_max",
+      "bimod": 4.241,
+      "dna_auc": 0.6741716174114858
+    },
+    {
+      "feature": "in_triangle",
+      "bimod": 1000000.0,
+      "dna_auc": 0.5930298558292655
+    }
+  ],
+  "perm_p": 0.0,
+  "B_survivors": 97,
+  "B_residual_bridges": 15
+}
