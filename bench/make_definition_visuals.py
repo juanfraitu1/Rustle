@@ -191,57 +191,59 @@ def fig3():
     plt.close(fig)
 
 
-# ----------------------------------------------------------------- fig 9: results table
+# ----------------------------------------------------------------- fig 9: results table (per-copy coords)
 def fig9():
-    fig, ax = plt.subplots(figsize=(13, 6.6)); ax.axis("off"); ax.set_xlim(0, 12); ax.set_ylim(0, 13)
-    ax.text(6, 12.5, "What the method finds — precision / recall on the 17-candidate panel",
-            ha="center", fontsize=14, weight="bold", color=NAVY)
-    # FOUND table
-    ax.text(0.2, 11.6, "FAMILIES FOUND  (true positives)", fontsize=11.5, weight="bold", color=TEAL)
-    found = [
-        ("RABL2  (RABL2A ~ RABL2B)", "recent paralog, separate chromosomes", "47"),
-        ("AK6  (~ LOC copy)", "high-identity cross-chromosome copy", "24"),
-        ("CCDC196  (~ LOC copy)", "high-identity cross-chromosome copy", "24"),
-        ("MAGEA array  (4 co-located copies)", "tandem array of de-novo loci", "75–303"),
+    families = [   # (family label, tied reads, [(copy, "chrom:start-end"), ...])
+        ("RABL2", "47", [("RABL2A", "NC_073235.2:15,131,652–15,147,533"),
+                         ("RABL2B", "NC_086018.1:48,818,439–48,832,011")]),
+        ("AK6", "24", [("AK6", "NC_073243.2:40,875,016–40,892,984"),
+                       ("LOC115934278", "NC_073227.2:47,415,193–47,415,981")]),
+        ("CCDC196", "24", [("CCDC196", "NC_073239.2:83,376,334–83,388,628"),
+                           ("LOC129526440", "NC_073238.2:33,024,133–33,036,450")]),
+        ("MAGEA array #0", "103", [("de-novo locus 0a", "NC_073247.2:161,251,228–161,257,000"),
+                                   ("de-novo locus 0b", "NC_073247.2:161,458,538–161,464,324")]),
+        ("MAGEA array #1", "83", [("de-novo locus 1a", "NC_073247.2:161,266,095–161,270,014"),
+                                  ("de-novo locus 1b", "NC_073247.2:161,413,981–161,453,484")]),
+        ("MAGEA array #2", "303", [("de-novo locus 2a", "NC_073247.2:164,381,222–164,384,848"),
+                                   ("de-novo locus 2b", "NC_073247.2:164,442,447–164,446,101")]),
+        ("MAGEA array #3", "75", [("de-novo locus 3a", "NC_073247.2:164,397,061–164,401,095"),
+                                  ("de-novo locus 3b", "NC_073247.2:164,426,194–164,430,228")]),
     ]
-    ax.add_patch(Rectangle((0.2, 10.7), 11.6, 0.55, facecolor=NAVY))
-    for x, t in [(0.4, "gene family"), (5.6, "type"), (10.2, "tied reads (~R)")]:
-        ax.text(x, 10.97, t, color="white", fontsize=9.5, weight="bold", va="center")
-    for i, (fam, typ, ev) in enumerate(found):
-        y = 10.15 - i * 0.62
-        ax.add_patch(Rectangle((0.2, y - 0.27), 11.6, 0.54, facecolor="#eef5f4" if i % 2 else "#fff",
-                     edgecolor="#dde"))
-        ax.text(0.4, y, fam, fontsize=9.5, va="center", color=NAVY, weight="bold")
-        ax.text(5.6, y, typ, fontsize=9, va="center", color="#333")
-        ax.text(10.6, y, ev, fontsize=9.5, va="center", color=TEAL, weight="bold")
-    # headline P/R
-    ax.add_patch(FancyBboxPatch((0.2, 6.0), 11.6, 1.0, boxstyle="round,pad=0.05",
+    fig, ax = plt.subplots(figsize=(13, 8.4)); ax.axis("off")
+    ax.set_xlim(0, 13); ax.set_ylim(0, 21)
+    ax.text(6.5, 20.4, "Families found — every copy with its coordinates  (17-candidate panel)",
+            ha="center", fontsize=14.5, weight="bold", color=NAVY)
+    ax.add_patch(FancyBboxPatch((0.2, 19.0), 12.6, 0.85, boxstyle="round,pad=0.05",
                  facecolor="#eef5f4", edgecolor=TEAL, linewidth=1.5))
-    ax.text(6, 6.5, "Precision = 7 / 7 = 1.00  (0 false families)        Recall = 7 / 7 = 1.00  (0 real families missed)",
-            ha="center", fontsize=13, weight="bold", color=NAVY)
-    # REJECTED summary
-    ax.text(0.2, 5.3, "CORRECTLY REJECTED  (true negatives — neither relation, or read-resolvable)",
-            fontsize=11, weight="bold", color=ORANGE)
-    rej = [
-        "APOBEC3, RFPL — recent paralogs, but the reads place uniquely (read-resolvable → not ~R)",
-        "EEF1A1, CNN2 — processed-pseudogene retrocopies (0–1 ties, no quorum)",
-        "CREB1~METTL21A, GCA~KCNH7, CASP8~FLACC1, ASDURF~ASNSD1, GPR39~LYPD1 — domain-sharers (0 ties → not ~R)",
-        "MAGEA annotated genes — resolvable",
-    ]
-    for i, r in enumerate(rej):
-        ax.text(0.5, 4.7 - i * 0.55, "•  " + r, fontsize=9.5, color="#333", va="center")
-    # honest genome-wide / DNA footnote
-    ax.add_patch(Rectangle((0.2, 0.2), 11.6, 1.7, facecolor="#f6f6f6", edgecolor="#ddd"))
-    ax.text(0.4, 1.55, "Beyond the panel (honest context):", fontsize=10, weight="bold", color=GREY)
-    ax.text(0.4, 1.05,
-            "• Genome-wide: 196 validated families (de-novo loci).",
-            fontsize=9.5, color="#333")
-    ax.text(0.4, 0.55,
-            "• vs an independent DNA-homology truth: precision 0.64 (0.72 crediting real homology just under the bar); recall is "
-            "expression-limited — the two\n   definitions measure different things (read-confusability vs sequence homology), so this is an "
-            "orthogonal comparison, not an error rate.",
-            fontsize=9.0, color="#333")
-    fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig9_results.png"), dpi=150, bbox_inches="tight")
+    ax.text(6.5, 19.42, "Precision = 7 / 7 = 1.00   ·   Recall = 7 / 7 = 1.00   (0 false families, 0 real families missed)",
+            ha="center", fontsize=12.5, weight="bold", color=NAVY)
+    # header
+    ax.add_patch(Rectangle((0.2, 18.0), 12.6, 0.6, facecolor=NAVY))
+    for x, t in [(0.35, "family"), (3.0, "copy / locus"), (6.0, "coordinates"), (11.6, "tied reads")]:
+        ax.text(x, 18.3, t, color="white", fontsize=10, weight="bold", va="center")
+    y = 17.55
+    for fi, (fam, ties, copies) in enumerate(families):
+        shade = "#eef5f4" if fi % 2 == 0 else "#ffffff"
+        ax.add_patch(Rectangle((0.2, y - len(copies) * 0.62 + 0.31), 12.6, len(copies) * 0.62,
+                     facecolor=shade, edgecolor="#dde"))
+        ax.text(0.35, y - 0.31, fam, fontsize=10, va="center", color=NAVY, weight="bold")
+        ax.text(11.6, y - 0.31, ties, fontsize=10.5, va="center", color=TEAL, weight="bold")
+        for ci, (cp, co) in enumerate(copies):
+            yy = y - ci * 0.62
+            ax.text(3.0, yy, cp, fontsize=9.5, va="center", color="#222")
+            ax.text(6.0, yy, co, fontsize=9.3, va="center", color="#222", family="monospace")
+        y -= len(copies) * 0.62 + 0.05
+    # rejected + context
+    ax.text(0.25, y - 0.2, "Correctly REJECTED (10 candidates, 0 false positives): APOBEC3 & RFPL (read-resolvable), "
+            "EEF1A1 & CNN2 (retrocopies),", fontsize=9.3, color=ORANGE, weight="bold", va="top")
+    ax.text(0.25, y - 0.72, "CREB1~METTL21A · GCA~KCNH7 · CASP8~FLACC1 · ASDURF~ASNSD1 · GPR39~LYPD1 (domain-sharers) · "
+            "MAGEA annotated genes (resolvable).", fontsize=9.3, color=ORANGE, va="top")
+    ax.text(0.25, y - 1.5,
+            "Beyond the panel:  genome-wide = 196 validated families.  vs an independent DNA-homology truth: precision 0.64 "
+            "(0.72 crediting real homology just under the bar);\nrecall is expression-limited — read-confusability vs sequence "
+            "homology are different questions, so this is an orthogonal comparison, not an error rate.",
+            fontsize=8.8, color="#444", va="top")
+    fig.savefig(os.path.join(HERE, "fig9_results.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -492,7 +494,7 @@ def build_deck(out_name="family_definition_visual.pptx"):
     fig_slide("Sum the exons of all isoforms  →  one copy model", "fig2_exonunion.png",
               "A copy's many isoforms (grey) sum to one exon-union (orange) — so splicing can't masquerade as extra copies.")
     fig_slide("Aligning the copies: a dot-plot  →  backbone or not (~B)", "fig5_dotplot.png",
-              "We run minimap2 to align the copy models; a diagonal = a shared backbone over most of both. Bridge: no diagonal → ~B fails.")
+              "A SECOND, separate minimap2 run aligns copy-vs-copy (not the read 'de' tag): diagonal = shared backbone (~B ✓); bridge = none (~B ✗).")
     fig_slide("Ties → edges → graph (~R), confirmed by the backbone (~B)  =  FAMILY", "fig3_graph.png",
               "Left: every pair ties AND shares a backbone → one 5-copy family.   Right: a bridge ties but shares no backbone → cut.")
 
