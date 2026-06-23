@@ -1,0 +1,687 @@
+{
+  "survivors": 85,
+  "n_true": 76,
+  "n_false": 9,
+  "detail": [
+    {
+      "ga": "LOC115934544",
+      "gb": "LOC134757324",
+      "dna_paralog": true,
+      "recip_raw": 0.357,
+      "recip_masked": 0.482,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC101136352",
+      "gb": "LOC101152610",
+      "dna_paralog": true,
+      "recip_raw": 0.542,
+      "recip_masked": 0.621,
+      "recip_exonic": 0.998
+    },
+    {
+      "ga": "LOC115930170",
+      "gb": "LOC129527050",
+      "dna_paralog": false,
+      "recip_raw": 0.505,
+      "recip_masked": 0.499,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC129527298",
+      "gb": "LOC129527300",
+      "dna_paralog": false,
+      "recip_raw": 0.311,
+      "recip_masked": 0.313,
+      "recip_exonic": 0.883
+    },
+    {
+      "ga": "LOC129527066",
+      "gb": "LOC129527244",
+      "dna_paralog": true,
+      "recip_raw": 0.365,
+      "recip_masked": 0.412,
+      "recip_exonic": 0.645
+    },
+    {
+      "ga": "LOC115933073",
+      "gb": "LOC129527335",
+      "dna_paralog": false,
+      "recip_raw": 0.573,
+      "recip_masked": 0.564,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC109023386",
+      "gb": "LOC115930830",
+      "dna_paralog": true,
+      "recip_raw": 0.589,
+      "recip_masked": 0.633,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC115932683",
+      "gb": "TUBGCP5",
+      "dna_paralog": true,
+      "recip_raw": 0.511,
+      "recip_masked": 0.58,
+      "recip_exonic": 0.121
+    },
+    {
+      "ga": "LOC101144925",
+      "gb": "LOC129523481",
+      "dna_paralog": true,
+      "recip_raw": 0.422,
+      "recip_masked": 0.428,
+      "recip_exonic": 0.569
+    },
+    {
+      "ga": "LOC101150678",
+      "gb": "LOC129527057",
+      "dna_paralog": true,
+      "recip_raw": 0.991,
+      "recip_masked": 0.992,
+      "recip_exonic": 0.991
+    },
+    {
+      "ga": "LOC101150678",
+      "gb": "LOC129527071",
+      "dna_paralog": true,
+      "recip_raw": 0.957,
+      "recip_masked": 1.0,
+      "recip_exonic": 0.95
+    },
+    {
+      "ga": "LOC101153918",
+      "gb": "LOC129527017",
+      "dna_paralog": true,
+      "recip_raw": 0.419,
+      "recip_masked": 0.423,
+      "recip_exonic": 0.563
+    },
+    {
+      "ga": "LOC115930779",
+      "gb": "LOC129527176",
+      "dna_paralog": true,
+      "recip_raw": 0.459,
+      "recip_masked": 0.453,
+      "recip_exonic": 0.205
+    },
+    {
+      "ga": "LOC115930779",
+      "gb": "LOC134757307",
+      "dna_paralog": true,
+      "recip_raw": 0.427,
+      "recip_masked": 0.407,
+      "recip_exonic": 0.475
+    },
+    {
+      "ga": "LOC129527017",
+      "gb": "LOC129527175",
+      "dna_paralog": true,
+      "recip_raw": 0.593,
+      "recip_masked": 0.652,
+      "recip_exonic": 0.636
+    },
+    {
+      "ga": "LOC129527017",
+      "gb": "LOC129527176",
+      "dna_paralog": true,
+      "recip_raw": 0.834,
+      "recip_masked": 0.841,
+      "recip_exonic": 0.401
+    },
+    {
+      "ga": "LOC129527057",
+      "gb": "LOC129527071",
+      "dna_paralog": true,
+      "recip_raw": 0.949,
+      "recip_masked": 0.994,
+      "recip_exonic": 0.943
+    },
+    {
+      "ga": "LOC129527175",
+      "gb": "LOC129527176",
+      "dna_paralog": true,
+      "recip_raw": 0.634,
+      "recip_masked": 0.682,
+      "recip_exonic": 0.224
+    },
+    {
+      "ga": "LOC129527176",
+      "gb": "LOC134757307",
+      "dna_paralog": true,
+      "recip_raw": 0.348,
+      "recip_masked": 0.35,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC101150678",
+      "gb": "LOC129527171",
+      "dna_paralog": true,
+      "recip_raw": 0.46,
+      "recip_masked": 0.53,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC101151050",
+      "gb": "LOC129527057",
+      "dna_paralog": true,
+      "recip_raw": 0.577,
+      "recip_masked": 0.6,
+      "recip_exonic": 0.577
+    },
+    {
+      "ga": "LOC129527057",
+      "gb": "LOC129527171",
+      "dna_paralog": true,
+      "recip_raw": 0.457,
+      "recip_masked": 0.526,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC129527071",
+      "gb": "LOC129527171",
+      "dna_paralog": true,
+      "recip_raw": 0.46,
+      "recip_masked": 0.53,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC101150678",
+      "gb": "LOC101151050",
+      "dna_paralog": true,
+      "recip_raw": 0.573,
+      "recip_masked": 0.592,
+      "recip_exonic": 0.573
+    },
+    {
+      "ga": "LOC101151050",
+      "gb": "LOC129527071",
+      "dna_paralog": true,
+      "recip_raw": 0.584,
+      "recip_masked": 0.632,
+      "recip_exonic": 0.574
+    },
+    {
+      "ga": "LOC115930779",
+      "gb": "LOC129527023",
+      "dna_paralog": false,
+      "recip_raw": 0.395,
+      "recip_masked": 0.41,
+      "recip_exonic": 0.427
+    },
+    {
+      "ga": "LOC101151050",
+      "gb": "LOC101153918",
+      "dna_paralog": true,
+      "recip_raw": 0.913,
+      "recip_masked": 0.876,
+      "recip_exonic": 0.913
+    },
+    {
+      "ga": "LOC101151050",
+      "gb": "LOC129527017",
+      "dna_paralog": false,
+      "recip_raw": 0.41,
+      "recip_masked": 0.4,
+      "recip_exonic": 0.553
+    },
+    {
+      "ga": "LOC134757293",
+      "gb": "LOC134757296",
+      "dna_paralog": false,
+      "recip_raw": 0.455,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.242
+    },
+    {
+      "ga": "LOC134757293",
+      "gb": "LOC134757360",
+      "dna_paralog": true,
+      "recip_raw": 1.0,
+      "recip_masked": 0.0,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC134757292",
+      "gb": "LOC134757293",
+      "dna_paralog": false,
+      "recip_raw": 1.0,
+      "recip_masked": 0.0,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC134757292",
+      "gb": "LOC134757296",
+      "dna_paralog": true,
+      "recip_raw": 0.455,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.242
+    },
+    {
+      "ga": "LOC134757240",
+      "gb": "LOC134757241",
+      "dna_paralog": true,
+      "recip_raw": 0.382,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.382
+    },
+    {
+      "ga": "LOC134757292",
+      "gb": "LOC134757298",
+      "dna_paralog": true,
+      "recip_raw": 1.0,
+      "recip_masked": 0.0,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC134757293",
+      "gb": "LOC134757298",
+      "dna_paralog": false,
+      "recip_raw": 1.0,
+      "recip_masked": 0.0,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC134757296",
+      "gb": "LOC134757298",
+      "dna_paralog": true,
+      "recip_raw": 0.455,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.242
+    },
+    {
+      "ga": "LOC115930772",
+      "gb": "LOC115930818",
+      "dna_paralog": true,
+      "recip_raw": 0.559,
+      "recip_masked": 0.572,
+      "recip_exonic": 0.433
+    },
+    {
+      "ga": "LOC101139171",
+      "gb": "LOC115930844",
+      "dna_paralog": true,
+      "recip_raw": 0.49,
+      "recip_masked": 0.26,
+      "recip_exonic": 0.436
+    },
+    {
+      "ga": "LOC129528485",
+      "gb": "LOC134757744",
+      "dna_paralog": true,
+      "recip_raw": 0.313,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.129
+    },
+    {
+      "ga": "LOC134757744",
+      "gb": "LOC134757747",
+      "dna_paralog": true,
+      "recip_raw": 0.502,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.742
+    },
+    {
+      "ga": "LOC115931586",
+      "gb": "ZNF91",
+      "dna_paralog": false,
+      "recip_raw": 0.579,
+      "recip_masked": 0.906,
+      "recip_exonic": 0.753
+    },
+    {
+      "ga": "LOC129528606",
+      "gb": "LOC129528611",
+      "dna_paralog": true,
+      "recip_raw": 0.983,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.983
+    },
+    {
+      "ga": "LOC129528613",
+      "gb": "LOC129528614",
+      "dna_paralog": true,
+      "recip_raw": 0.926,
+      "recip_masked": 0.0,
+      "recip_exonic": 0.926
+    },
+    {
+      "ga": "LOC101151087",
+      "gb": "LOC109024957",
+      "dna_paralog": true,
+      "recip_raw": 0.786,
+      "recip_masked": 0.781,
+      "recip_exonic": 0.999
+    },
+    {
+      "ga": "LOC129528711",
+      "gb": "LOC129528712",
+      "dna_paralog": true,
+      "recip_raw": 1.0,
+      "recip_masked": 0.964,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC129528711",
+      "gb": "LOC129528713",
+      "dna_paralog": true,
+      "recip_raw": 0.941,
+      "recip_masked": 0.777,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC129528711",
+      "gb": "LOC129528714",
+      "dna_paralog": true,
+      "recip_raw": 0.821,
+      "recip_masked": 0.869,
+      "recip_exonic": 0.816
+    },
+    {
+      "ga": "LOC129528712",
+      "gb": "LOC129528713",
+      "dna_paralog": true,
+      "recip_raw": 1.0,
+      "recip_masked": 0.788,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC129528712",
+      "gb": "LOC129528714",
+      "dna_paralog": true,
+      "recip_raw": 0.82,
+      "recip_masked": 0.869,
+      "recip_exonic": 0.816
+    },
+    {
+      "ga": "LOC129528713",
+      "gb": "LOC129528714",
+      "dna_paralog": true,
+      "recip_raw": 0.449,
+      "recip_masked": 0.495,
+      "recip_exonic": 0.816
+    },
+    {
+      "ga": "LOC101151087",
+      "gb": "LOC129528715",
+      "dna_paralog": true,
+      "recip_raw": 0.397,
+      "recip_masked": 0.413,
+      "recip_exonic": 0.955
+    },
+    {
+      "ga": "LOC129528711",
+      "gb": "RFPL4A",
+      "dna_paralog": true,
+      "recip_raw": 1.0,
+      "recip_masked": 0.972,
+      "recip_exonic": 0.949
+    },
+    {
+      "ga": "LOC129528712",
+      "gb": "RFPL4A",
+      "dna_paralog": true,
+      "recip_raw": 0.512,
+      "recip_masked": 0.534,
+      "recip_exonic": 0.949
+    },
+    {
+      "ga": "LOC129528713",
+      "gb": "RFPL4A",
+      "dna_paralog": true,
+      "recip_raw": 0.942,
+      "recip_masked": 0.944,
+      "recip_exonic": 0.949
+    },
+    {
+      "ga": "LOC109024957",
+      "gb": "LOC129528715",
+      "dna_paralog": true,
+      "recip_raw": 0.397,
+      "recip_masked": 0.413,
+      "recip_exonic": 0.955
+    },
+    {
+      "ga": "LOC129528714",
+      "gb": "RFPL4A",
+      "dna_paralog": true,
+      "recip_raw": 0.425,
+      "recip_masked": 0.47,
+      "recip_exonic": 0.794
+    },
+    {
+      "ga": "LOC129530238",
+      "gb": "LOC129530240",
+      "dna_paralog": true,
+      "recip_raw": 0.316,
+      "recip_masked": 0.356,
+      "recip_exonic": 0.231
+    },
+    {
+      "ga": "LOC129530239",
+      "gb": "LOC129530240",
+      "dna_paralog": true,
+      "recip_raw": 0.652,
+      "recip_masked": 0.623,
+      "recip_exonic": 1.0
+    },
+    {
+      "ga": "LOC129530256",
+      "gb": "LOC129530259",
+      "dna_paralog": true,
+      "recip_raw": 0.384,
+      "recip_masked": 0.156,
+      "recip_exonic": 0.191
+    },
+    {
+      "ga": "LOC129530243",
+      "gb": "LOC129530249",
+      "dna_paralog": true,
+      "recip_raw": 0.476,
+      "recip_masked": 0.411,
+      "recip_exonic": 0.304
+    },
+    {
+      "ga": "LOC129530256",
+      "gb": "LOC129530266",
+      "dna_paralog": true,
+      "recip_raw": 0.642,
+      "recip_masked": 0.596,
+      "recip_exonic": 0.995
+    },
+    {
+      "ga": "LOC129530249",
+      "gb": "LOC129530261",
+      "dna_paralog": true,
+      "recip_raw": 0.611,
+      "recip_masked": 0.305,
+      "recip_exonic": 0.984
+    },
+    {
+      "ga": "LOC129530239",
+      "gb": "LOC129530242",
+      "dna_paralog": true,
+      "recip_raw": 0.383,
+      "recip_masked": 0.395,
+      "recip_exonic": 0.446
+    },
+    {
+      "ga": "LOC129530240",
+      "gb": "LOC129530242",
+      "dna_paralog": true,
+      "recip_raw": 0.466,
+      "recip_masked": 0.467,
+      "recip_exonic": 0.446
+    },
+    {
+      "ga": "LOC129530243",
+      "gb": "LOC129530256",
+      "dna_paralog": true,
+      "recip_raw": 0.383,
+      "recip_masked": 0.309,
+      "recip_exonic": 0.304
+    },
+    {
+      "ga": "LOC129530249",
+      "gb": "LOC129530256",
+      "dna_paralog": true,
+      "recip_raw": 0.406,
+      "recip_masked": 0.351,
+      "recip_exonic": 0.998
+    },
+    {
+      "ga": "LOC129530243",
+      "gb": "LOC129530266",
+      "dna_paralog": true,
+      "recip_raw": 0.45,
+      "recip_masked": 0.383,
+      "recip_exonic": 0.198
+    },
+    {
+      "ga": "LOC129530242",
+      "gb": "LOC129530266",
+      "dna_paralog": true,
+      "recip_raw": 0.353,
+      "recip_masked": 0.37,
+      "recip_exonic": 0.344
+    },
+    {
+      "ga": "LOC129530239",
+      "gb": "LOC129530256",
+      "dna_paralog": true,
+      "recip_raw": 0.642,
+      "recip_masked": 0.596,
+      "recip_exonic": 0.998
+    },
+    {
+      "ga": "LOC129530240",
+      "gb": "LOC129530256",
+      "dna_paralog": true,
+      "recip_raw": 0.452,
+      "recip_masked": 0.403,
+      "recip_exonic": 0.998
+    },
+    {
+      "ga": "LOC129530241",
+      "gb": "LOC129530261",
+      "dna_paralog": true,
+      "recip_raw": 0.344,
+      "recip_masked": 0.355,
+      "recip_exonic": 0.969
+    },
+    {
+      "ga": "LOC129530239",
+      "gb": "LOC129530266",
+      "dna_paralog": true,
+      "recip_raw": 0.997,
+      "recip_masked": 0.996,
+      "recip_exonic": 0.992
+    },
+    {
+      "ga": "LOC129530240",
+      "gb": "LOC129530266",
+      "dna_paralog": true,
+      "recip_raw": 0.637,
+      "recip_masked": 0.587,
+      "recip_exonic": 0.992
+    },
+    {
+      "ga": "LOC129530249",
+      "gb": "LOC129530266",
+      "dna_paralog": true,
+      "recip_raw": 0.405,
+      "recip_masked": 0.349,
+      "recip_exonic": 0.993
+    },
+    {
+      "ga": "LOC129530241",
+      "gb": "LOC129530259",
+      "dna_paralog": true,
+      "recip_raw": 0.303,
+      "recip_masked": 0.317,
+      "recip_exonic": 0.0
+    },
+    {
+      "ga": "LOC129530242",
+      "gb": "LOC129530259",
+      "dna_paralog": true,
+      "recip_raw": 0.462,
+      "recip_masked": 0.093,
+      "recip_exonic": 0.401
+    },
+    {
+      "ga": "LOC129530275",
+      "gb": "LOC129530277",
+      "dna_paralog": true,
+      "recip_raw": 0.547,
+      "recip_masked": 0.546,
+      "recip_exonic": 0.969
+    },
+    {
+      "ga": "LOC129530275",
+      "gb": "LOC129530278",
+      "dna_paralog": true,
+      "recip_raw": 0.405,
+      "recip_masked": 0.394,
+      "recip_exonic": 0.973
+    },
+    {
+      "ga": "LOC129530275",
+      "gb": "LOC129530279",
+      "dna_paralog": true,
+      "recip_raw": 0.978,
+      "recip_masked": 0.977,
+      "recip_exonic": 0.978
+    },
+    {
+      "ga": "LOC129530275",
+      "gb": "LOC129530280",
+      "dna_paralog": true,
+      "recip_raw": 0.995,
+      "recip_masked": 0.996,
+      "recip_exonic": 0.994
+    },
+    {
+      "ga": "LOC129530277",
+      "gb": "LOC129530279",
+      "dna_paralog": true,
+      "recip_raw": 0.547,
+      "recip_masked": 0.546,
+      "recip_exonic": 0.99
+    },
+    {
+      "ga": "LOC129530277",
+      "gb": "LOC129530280",
+      "dna_paralog": true,
+      "recip_raw": 0.547,
+      "recip_masked": 0.546,
+      "recip_exonic": 0.972
+    },
+    {
+      "ga": "LOC129530278",
+      "gb": "LOC129530279",
+      "dna_paralog": true,
+      "recip_raw": 0.405,
+      "recip_masked": 0.394,
+      "recip_exonic": 0.995
+    },
+    {
+      "ga": "LOC129530278",
+      "gb": "LOC129530280",
+      "dna_paralog": true,
+      "recip_raw": 0.405,
+      "recip_masked": 0.394,
+      "recip_exonic": 0.97
+    },
+    {
+      "ga": "LOC129530279",
+      "gb": "LOC129530280",
+      "dna_paralog": true,
+      "recip_raw": 0.979,
+      "recip_masked": 0.98,
+      "recip_exonic": 0.976
+    }
+  ]
+}
