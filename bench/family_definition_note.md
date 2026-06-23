@@ -32,8 +32,9 @@ Fix a set of spliced long reads aligned to a genome.
   through (a retained intron appears where reads span it). A *copy* is a locus, and its isoforms **aggregate** into one
   $S(v)$ — so alternative splicing within a copy is one model, not several copies.
 - **Divergence.** Each alignment of a read $r$ to a locus carries gap-compressed per-base divergence $d(r,v)$
-  (minimap2 `de`). Each alignment **record** is attributed to its single best-overlap locus, so a read's placement set
-  has at most one entry per record.
+  (minimap2 `de`). Each alignment **record** is attributed to its single best-overlap locus — ties broken toward the
+  *smallest containing* locus, which makes the attribution single-valued and routes a record enclosed by a larger
+  nesting locus to the most specific one — so a read's placement set has at most one entry per record.
 
 ---
 
@@ -50,10 +51,21 @@ iff $i,j$ lie in the same connected component of $\sim_R$.
 
 **Backbone-homology $\sim_B$** — the loci are the same gene over a real fraction of *both* copies:
 $$
-i \sim_B j \iff \mathrm{identity}\big(S(i),S(j)\big)\ge \iota \ \wedge\ \min\!\big(\mathrm{cov}_i,\mathrm{cov}_j\big)\ge \tau ,
+i \sim_B j \iff \min\!\big(\mathrm{cov}_i,\mathrm{cov}_j\big)\ge \tau ,
 $$
-with $\mathrm{cov}_i$ the aligned fraction of $S(i)$. Reciprocal coverage is what distinguishes a shared backbone
-(both copies largely homologous) from a shared element (one copy aligns only over a short insert).
+with $\mathrm{cov}_i$ the aligned fraction of $S(i)$ (minimap2 `asm20`). Reciprocal coverage is what distinguishes a
+shared backbone (both copies largely homologous) from a shared element (one copy aligns only over a short insert).
+A separate identity floor is unnecessary: the aligned region is intrinsically high-identity — every pair clearing
+$\tau$ has alignment identity $\ge 0.96$ (measured, $n=393$) — so identity never binds independently and is **not a
+free parameter** (§6).
+
+> **Granularity (resolves an apparent code/note discrepancy).** $\sim_B$ is a **copy-level** relation: one alignment
+> of the whole exon-union models $S(i),S(j)$, scored by reciprocal coverage. The production family-graph builder
+> *additionally* applies a **contiguous-core** test at the **exon level** (per shared exon node). The two are
+> complementary, not competing — copy-level coverage certifies "these loci are copies"; exon-level contiguity governs
+> which individual exons fuse into one shared graph node. Contiguous-core is **not** substitutable at the copy level:
+> on whole exon-union models it fragments at exon boundaries and rejects real copies (measured: it drops ~20 % of clean
+> two-copy families that are 99 % identical over 80 % of their length).
 
 ---
 
@@ -66,6 +78,13 @@ with $\mathrm{cov}_i$ the aligned fraction of $S(i)$. Reciprocal coverage is wha
 Equivalently and operationally: take the connected components of $\sim_R$ (read-coupled candidate families); within
 each, keep the connected components of $\sim_B$ (the backbone-coherent cores). A locus that is read-coupled to a group
 but shares a backbone with no member of it is in no family.
+
+*Why these coincide (and why $R^\*$, not $\sim_R$).* $R^\*$ is an equivalence relation, so every $\sim_B\cap R^\*$ edge
+lies within a single $R^\*$-class and connectivity cannot cross classes; within a class $\sim_B\cap R^\*=\sim_B$. Hence
+$\mathrm{components}(V,\sim_B\cap R^\*)=\bigcup_\text{classes}\mathrm{components}(\sim_B|_\text{class})$. The closure is
+load-bearing: the analogous statement with the *direct* relation $\sim_R$ is false — in a $>\!2$-copy array whose
+distal copies never co-place within one read's placement set, $\sim_R$ would fragment a coupled group that $R^\*$
+keeps whole so $\sim_B$ can re-knit it.
 
 ---
 
@@ -90,11 +109,14 @@ $\sim_B$ edge inside its coupled group (no density required).
 
 ## 5. Properties
 
-**Structural — hold by construction.**
+**Structural — hold by construction** (P1 additionally requires tight vertices, P6).
 
-- **P1 (domain-sharers excluded).** Single-valued per-record best-overlap gives nested/adjacent single-domain genes
-  $0$ conflicting reads ⟹ not $\sim_R$ ⟹ no family. *Panel: 5/5 domain-sharers excluded, though they pass DNA
-  homology.*
+- **P1 (domain-sharers excluded) — by construction *given* tight vertices (P6).** Single-valued per-record best-overlap
+  gives nested/adjacent single-domain genes $0$ conflicting reads ⟹ not $\sim_R$ ⟹ no family. The *implication* is
+  structural, but its premise — best-overlap is single-valued and faithful — holds only when vertices are tight
+  transcription units; under coarse vertices best-overlap can mis-attribute and manufacture domain-sharer edges, so
+  **P1 inherits P6's conditionality** (it is structural-given-P6, not unconditional). *Panel: 5/5 domain-sharers
+  excluded, though they pass DNA homology.*
 - **P3 (no isoform pollution).** Copies are exon-unions, so within-copy alternative splicing is an intra-copy bubble,
   never an extra copy. *100s–1000s of isoforms per locus collapse to one $S(v)$.*
 - **P4 (pairs admitted).** A genuine pair is a single $\sim_B$ edge inside its coupled group — no triangle or density
@@ -124,21 +146,31 @@ $\sim_B$ edge inside its coupled group (no density required).
 |---|---|---|---|
 | $\Delta$ | $\sim_R$ tie tolerance | 0.005 | single-read divergence resolution at HiFi error: per-read SE $\sqrt{\epsilon/L}\approx0.0009$, tie statistic $\sqrt{2\epsilon/L}\approx0.0013$, $\sim 4\sigma$ |
 | $\mathrm{DE_{max}}$ | $\sim_R$ divergence ceiling | 0.05 | loose copy-vs-distinct-gene ceiling |
-| $k$ | $\sim_R$ quorum | 3 | minimum-evidence floor (not tuned) |
-| $\iota$ | $\sim_B$ identity | 0.80 | recent-paralog identity floor |
-| $\tau$ | $\sim_B$ reciprocal coverage | 0.30 | the one data-calibrated constant: set in the wide empty gap between repeat-bridges (one-sided coverage $\le 0.1$) and real copies ($\ge 0.5$), not tuned to a target |
+| $k$ | $\sim_R$ quorum | 3 | **quorum classifier, load-bearing** (not an inert floor): it admits true positives the per-read tie test alone misses — RABL2's median per-read $|\Delta d|=0.0061>\Delta$, so only the quorum of $k$ tied reads carries it (§5, P5) |
+| $\tau$ | $\sim_B$ reciprocal coverage | 0.30 | the one data-calibrated threshold: set in the empty gap between repeat-bridges (one-sided coverage $\le 0.1$) and validated copies ($\ge 0.31$ genome-wide). $\tau=0.30$ sits at the gap's lower-copy edge — permissive (it admits partial-coverage copies); it could be centred lower in the gap at a small recall cost |
+| $\mathrm{GUARD}$ | $\sim_B$ rejection guard | 20 reads | a backbone-isolated locus is rejected as a bridge only with $\ge\mathrm{GUARD}$ reads (enough to model confidently); below it the locus is held out as unmodelled, not rejected |
 
-$\Delta$ is a measurement constant, $\iota$ and $k$ are floors; $\tau$ is the single empirical threshold and is placed
-in a measured gap, not on a slope.
+An identity floor $\iota$ is **omitted as measured-inert**: every pair clearing $\tau$ already has alignment identity
+$\ge 0.96$ ($n=393$, min $0.963$), so identity never binds independently. $\Delta$ is a measurement constant; $k$ is a
+load-bearing quorum classifier; $\tau$ is the single empirical threshold, placed in a measured gap. $\mathrm{GUARD}$
+gates *rejections* only, so §3/§4's "a backbone-less locus is in no family" is exact for well-expressed loci and a
+hold-out (not a rejection) for sparse ones.
 
 ---
 
 ## 7. Evidence (summary; full record and the rejected-alternatives survey in `family_definition_formal.md`)
 
 - **Panel.** 17 hand-labelled IsoSeq candidates: **TP = 7, TN = 10, FP = 0, FN = 0**.
-- **$\sim_B$ is the decisive lever.** Per-candidate, backbone coverage cleanly separates repeat/retro bridges
-  ($\le 0.1$) from real copies ($\ge 0.8$) — the population no read-level predicate (coverage, intron, junction
-  concordance) could separate, because that contamination is read-indistinguishable from real paralogy.
+- **$\sim_B$ is the decisive lever.** Backbone coverage separates repeat/retro bridges (one-sided coverage $\le 0.1$)
+  from validated copies — the clean panel cases sit high (RABL2A~RABL2B $0.94$), and genome-wide the lowest validated
+  copies reach $\ge 0.31$, so the gap is $[0.1,\,0.31]$ with $\tau=0.30$ at its upper edge. This is the population no
+  read-level predicate (coverage, intron, junction concordance) could separate, because that contamination is
+  read-indistinguishable from real paralogy.
+- **Robust to multimapper sampling (new $-N\,50\,-p\,0.1$ BAM).** The old alignment used minimap2's default secondary
+  cap, undersampling $\sim_R$. Re-aligning with $-N\,50\,-p\,0.1$ surfaces $12$–$65\times$ more cross-mapping; $\sim_R$
+  then *recovers* hidden dispersed paralogs (per-chrom $\sim_B$-validated copies grow, e.g. chrY $21\to35$) while
+  $\sim_B$ prunes every extra bridge (e.g. $10\to59$ on one chromosome). Family identity tracks copy-model homology,
+  not read counts (`family_def_newbam_validation.md`).
 - **Genome-wide, OOM-safe** (memory > 15 GB free throughout; copy models built only for the ~1,300 family loci,
   reads capped, streamed). Over de-novo loci: **212 candidate → 196 validated families**; cross-chromosome bridges
   (components spanning $\ge 3$ chromosomes) **20 → 12**; **14** well-modelled backbone-less members rejected as
