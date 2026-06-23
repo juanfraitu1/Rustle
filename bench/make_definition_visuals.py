@@ -442,7 +442,7 @@ def fig5():
     ax[1].set_xlim(0, len(o)); ax[1].set_ylim(0, len(sp))
     for a_ in ax:
         a_.grid(alpha=0.2)
-    fig.suptitle("How we align the COPIES: a dot-plot — every dot is a shared 12-mer; a diagonal is a shared backbone",
+    fig.suptitle("Aligning the COPIES (minimap2): a dot-plot — every dot is a shared 12-mer; a diagonal is a shared backbone",
                  fontsize=12.5, weight="bold", color=NAVY, y=1.02)
     fig.tight_layout(); fig.savefig(os.path.join(HERE, "fig5_dotplot.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
