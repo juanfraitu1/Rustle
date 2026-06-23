@@ -1,0 +1,19 @@
+{
+  "n_par": 385,
+  "n_brg": 207,
+  "n_features": 9,
+  "n_groups": 57,
+  "single_auc": {
+    "recip_cov": 0.539,
+    "aln_ratio": 0.84,
+    "cov_frac_min": 0.564,
+    "qaln_min": 0.824,
+    "jaccard_nbr": 0.818,
+    "adamic_adar": 0.812,
+    "rl_frac": 0.777,
+    "nm_tie": 0.778,
+    "de_mag": 0.692
+  },
+  "joint_cv_auc": 0.796,
+  "best_single": 0.84
+}
