@@ -1,0 +1,10 @@
+{
+  "dna_families": 1460,
+  "dna_member_genes": 5517,
+  "expressed": 1624,
+  "recovered": 291,
+  "silent": 3893,
+  "expressed_not_recovered": 1333,
+  "detectable_families": 315,
+  "recovered_detectable": 94
+}
