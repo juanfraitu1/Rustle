@@ -193,21 +193,21 @@ def fig3():
 
 # ----------------------------------------------------------------- fig 9: results table (per-copy coords)
 def fig9():
-    families = [   # (family label, tied reads, [(copy, "chrom:start-end"), ...])
+    families = [   # (family label, tied reads, [(copy [+function], "chrom:start-end"), ...])
         ("RABL2", "47", [("RABL2A", "NC_073235.2:15,131,652–15,147,533"),
                          ("RABL2B", "NC_086018.1:48,818,439–48,832,011")]),
         ("AK6", "24", [("AK6", "NC_073243.2:40,875,016–40,892,984"),
-                       ("LOC115934278", "NC_073227.2:47,415,193–47,415,981")]),
+                       ("LOC115934278  (adenylate kinase 6)", "NC_073227.2:47,415,193–47,415,981")]),
         ("CCDC196", "24", [("CCDC196", "NC_073239.2:83,376,334–83,388,628"),
-                           ("LOC129526440", "NC_073238.2:33,024,133–33,036,450")]),
-        ("MAGEA array #0", "103", [("de-novo locus 0a", "NC_073247.2:161,251,228–161,257,000"),
-                                   ("de-novo locus 0b", "NC_073247.2:161,458,538–161,464,324")]),
-        ("MAGEA array #1", "83", [("de-novo locus 1a", "NC_073247.2:161,266,095–161,270,014"),
-                                  ("de-novo locus 1b", "NC_073247.2:161,413,981–161,453,484")]),
-        ("MAGEA array #2", "303", [("de-novo locus 2a", "NC_073247.2:164,381,222–164,384,848"),
-                                   ("de-novo locus 2b", "NC_073247.2:164,442,447–164,446,101")]),
-        ("MAGEA array #3", "75", [("de-novo locus 3a", "NC_073247.2:164,397,061–164,401,095"),
-                                  ("de-novo locus 3b", "NC_073247.2:164,426,194–164,430,228")]),
+                           ("LOC129526440  (CCDC196)", "NC_073238.2:33,024,133–33,036,450")]),
+        ("MAGEA9", "103", [("MAGEA9", "NC_073247.2:161,458,541–161,464,324"),
+                           ("LOC129530018  (MAGE-A9)", "NC_073247.2:161,251,220–161,257,000")]),
+        ("MAGEA3", "303", [("LOC129529976  (MAGE-A3)", "NC_073247.2:164,381,205–164,384,846"),
+                           ("LOC129529986  (MAGE-A3)", "NC_073247.2:164,442,447–164,446,088")]),
+        ("MAGEA2", "75", [("LOC129529978  (MAGE-A2)", "NC_073247.2:164,397,066–164,401,096"),
+                          ("LOC129529983  (MAGE-A2)", "NC_073247.2:164,426,195–164,430,223")]),
+        ("TMEM185A *", "83", [("TMEM185A", "NC_073247.2:161,414,170–161,449,443"),
+                              ("LOC129530020  (TMEM185A-like)", "NC_073247.2:161,266,101–161,270,121")]),
     ]
     fig, ax = plt.subplots(figsize=(13, 8.4)); ax.axis("off")
     ax.set_xlim(0, 13); ax.set_ylim(0, 21)
@@ -219,30 +219,37 @@ def fig9():
             ha="center", fontsize=12.5, weight="bold", color=NAVY)
     # header
     ax.add_patch(Rectangle((0.2, 18.0), 12.6, 0.6, facecolor=NAVY))
-    for x, t in [(0.35, "family"), (3.0, "copy / locus"), (6.0, "coordinates"), (11.6, "tied reads")]:
-        ax.text(x, 18.3, t, color="white", fontsize=10, weight="bold", va="center")
+    for x, t in [(0.35, "family"), (2.45, "copy / locus  (annotation function)"), (7.05, "coordinates"), (12.0, "ties")]:
+        ax.text(x, 18.3, t, color="white", fontsize=9.5, weight="bold", va="center")
     y = 17.55
     for fi, (fam, ties, copies) in enumerate(families):
         shade = "#eef5f4" if fi % 2 == 0 else "#ffffff"
         ax.add_patch(Rectangle((0.2, y - len(copies) * 0.62 + 0.31), 12.6, len(copies) * 0.62,
                      facecolor=shade, edgecolor="#dde"))
-        ax.text(0.35, y - 0.31, fam, fontsize=10, va="center", color=NAVY, weight="bold")
-        ax.text(11.6, y - 0.31, ties, fontsize=10.5, va="center", color=TEAL, weight="bold")
+        ax.text(0.35, y - 0.31, fam, fontsize=9.5, va="center", color=NAVY, weight="bold")
+        ax.text(12.0, y - 0.31, ties, fontsize=10, va="center", color=TEAL, weight="bold")
         for ci, (cp, co) in enumerate(copies):
             yy = y - ci * 0.62
-            ax.text(3.0, yy, cp, fontsize=9.5, va="center", color="#222")
-            ax.text(6.0, yy, co, fontsize=9.3, va="center", color="#222", family="monospace")
+            ax.text(2.45, yy, cp, fontsize=8.2, va="center", color="#222")
+            ax.text(7.05, yy, co, fontsize=7.7, va="center", color="#222", family="monospace")
         y -= len(copies) * 0.62 + 0.05
-    # rejected + context
-    ax.text(0.25, y - 0.2, "Correctly REJECTED (10 candidates, 0 false positives): APOBEC3 & RFPL (read-resolvable), "
-            "EEF1A1 & CNN2 (retrocopies),", fontsize=9.3, color=ORANGE, weight="bold", va="top")
-    ax.text(0.25, y - 0.72, "CREB1~METTL21A · GCA~KCNH7 · CASP8~FLACC1 · ASDURF~ASNSD1 · GPR39~LYPD1 (domain-sharers) · "
-            "MAGEA annotated genes (resolvable).", fontsize=9.3, color=ORANGE, va="top")
-    ax.text(0.25, y - 1.5,
+    # honest notes (answering: what are these really?)
+    ax.text(0.25, y - 0.15,
+            "*  TMEM185A is a DISTINCT duplicated family sitting inside the MAGEA region — not a MAGE gene (correctly its own family).",
+            fontsize=8.8, color=NAVY, weight="bold", va="top")
+    ax.text(0.25, y - 0.62,
+            "The chrX hits are 3 SEPARATE MAGEA sub-families (A2, A3, A9) — A2/A3/A9 are divergent enough that reads don't cross-map between "
+            "them, so they are correctly NOT merged. Most copies carry LOC (uncharacterized) symbols; the annotation still names them by "
+            "function (MAGE-A2/A3/A9, adenylate kinase 6, CCDC196) — the method recovers real, not-yet-symbol'd paralogs.",
+            fontsize=8.3, color="#333", va="top", wrap=True)
+    ax.text(0.25, y - 1.62, "Correctly REJECTED (10 candidates, 0 false positives): APOBEC3 & RFPL (read-resolvable), "
+            "EEF1A1 & CNN2 (retrocopies), 5 domain-sharers, MAGEA annotated genes.",
+            fontsize=8.6, color=ORANGE, weight="bold", va="top")
+    ax.text(0.25, y - 2.25,
             "Beyond the panel:  genome-wide = 196 validated families.  vs an independent DNA-homology truth: precision 0.64 "
-            "(0.72 crediting real homology just under the bar);\nrecall is expression-limited — read-confusability vs sequence "
+            "(0.72 crediting real homology just under the bar); recall is expression-limited —\nread-confusability vs sequence "
             "homology are different questions, so this is an orthogonal comparison, not an error rate.",
-            fontsize=8.8, color="#444", va="top")
+            fontsize=8.3, color="#444", va="top")
     fig.savefig(os.path.join(HERE, "fig9_results.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
 
