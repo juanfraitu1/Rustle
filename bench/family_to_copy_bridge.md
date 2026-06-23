@@ -114,6 +114,39 @@ family definition already carries; the bridge adds none.
 
 ---
 
+## 7. In the code — the bridge is the production pipeline
+
+Every object above already exists in the Rust path (`src/rustle/vg_family/`), and the copy-assignment driver `run_layer2`
+(`layer2.rs:537`) walks exactly this chain:
+
+| formal object (this note) | Rust function | location |
+|---|---|---|
+| **$\sim_B$ family** (copies share a backbone) | `contiguous_core_coverage` $\ge$ `T_CORE` (= the family criterion) | `family_detect.rs:15,31`; `family_graph.rs:933,1046` |
+| **columns = bubbles** (PSVs from the copy backbone) | `psv_columns_from_reference` (POA-aligns the copies' exon sequences, emits a column per divergent position) | `psv_linkage.rs:159` |
+| (node-shared PSVs, the co-located case) | `psv_columns_for_family` | `psv_linkage.rs:53` |
+| **copies = allele-vectors / paths** | `PsvColumn.per_copy` (`PsvCopyAllele`) | `psv_linkage.rs:21,31` |
+| **reads = partial allele-vectors** | `genotype_family_reads` → `ReadGenotype.psv_votes` (2nd BAM pass) | `psv_linkage.rs:517,420` |
+| **assignment** (thread reads → copies) | `assemble_psv_isoforms` | `psv_linkage.rs:798` |
+| **K-frontier gate** (skip if $<$ `min_psv_columns`) | `family_identifiability_gated` / `psv_columns_and_identifiable` | `psv_linkage.rs:340,350,372` |
+| **entry point** (end to end) | `run_layer2` | `layer2.rs:537,985` |
+
+So the abstraction and the implementation are the *same object*: `psv_columns_from_reference` POA-aligning the copies' exon
+sequences **is** the $\sim_B$ backbone yielding the bubbles; `genotype_family_reads` + `assemble_psv_isoforms` **is**
+threading reads to paths; `family_identifiability` **is** the K-frontier cut. The PSV-aware variation graph is not a future
+plan — it is what the `--vg` layer-2 path runs, and it is unit-tested (`family_graph.rs` tests:
+`family_merge_default_merges_near_identical_paralogs`, `fragment_in_larger_exon_does_not_merge_under_jaccard_default`,
+`shared_low_complexity_tract_does_not_merge_at_default`).
+
+**The one open lever (a deliberate flip, not a gap).** The copy-assignment *family-merge* step still gates the $\sim_B$
+backbone-coverage check **opt-in** — `family_min_core_coverage()` defaults to `0.0` (off), enabled by
+`RUSTLE_VG_FAMILY_MIN_CORE_COVERAGE` (`family_graph.rs:416,447,1066`) — for byte-identical-default discipline, even though
+`family_detect.rs` already uses the same $\sim_B$ test as *the* criterion. Making it the production default is a single
+threshold flip ($\tau$), but it changes output, so it is owned by a genome-wide validation pass (the byte-identical-off
+discipline), not a blind change. That validation is the last step to make the formalized $\sim_B$ definition the *default*
+substrate of assignment, rather than the available one.
+
+---
+
 ## Summary
 
 The family definition does not merely *precede* copy assignment — it **constructs its input**. The $\sim_B$ backbone is
