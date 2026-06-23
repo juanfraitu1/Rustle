@@ -479,17 +479,21 @@ resolution) → **VG validation** with **all-isoform exon-union** copies (reject
 by PSV haplotype not isoform). VG validation is the structural lever for the repeat-bridge population that the read/locus
 predicates could not separate; the `--vg` family-graph machinery already builds exactly this object.
 
-**Genome-wide, OOM-safe, validated** (`bench/family_def_vg_reinforce.py`). The three layers were run genome-wide
-(de-novo loci → candidate families → per-family **backbone-reinforcement subgraph**: a member is kept only if it shares
-an exon-union backbone with a family-mate, so isolated repeat-bridge members fall out and size-2 families survive iff the
-pair reinforces itself; a guard never rejects a model too sparse to validate). Memory stayed > 15 GB free throughout
-(copy models built only for the ~1,300 family loci, reads capped, streamed). Result: **212 candidate → 196 validated
-families**, **163 bridge members rejected**, cross-chrom bridges **20 → 12**, size-2 families **80 → 73** (the 7 dropped
-are the size-2 bridges). The rejection is cleanly net-positive — rejected-member edges are **201 no-homology vs 47
-DNA-paralog + 45 sub-bar (good:bad 0.46)**, versus the naïve gene-vertex pairwise variant (`family_def_vg_pipeline.py`)
-which over-rejected (good:bad 1.33) because coarse annotation spans inflate the exon-union. Both ingredients are
-load-bearing: de-novo vertices remove annotation inflation, and the reinforcement subgraph supplies the mutual support
-that isolates true bridges while preserving pairwise (size-2) families.
+**Genome-wide, OOM-safe, validated** (`bench/family_def_vg_reinforce.py`). The three layers were run genome-wide:
+de-novo loci → read-coupled candidate families ($\sim_R$ components) → **$\sim_B$-connected core** (a member is kept iff
+it shares an exon-union backbone with a family-mate, so isolated bridge members fall out and size-2 families survive iff
+the pair shares a backbone; a guard rejects *only* well-modelled backbone-less loci, never on inability to validate).
+Memory stayed > 15 GB free throughout (copy models built only for the ~1,300 family loci, reads capped, streamed).
+Result: **212 candidate → 196 validated families**, cross-chromosome bridges (≥3-chromosome components) **20 → 12**,
+**14 well-modelled backbone-less members rejected**, size-2 families **80 → 73**. The genome-wide refinement is *modest*
+(de-novo candidates are already mostly coherent, so $\sim_B$ mainly clears the residual cross-chromosome bridges); the
+*decisive* evidence for $\sim_B$ is the per-candidate separation (repeat/retro bridges ≤ 0.1 vs real copies ≥ 0.8). The
+formal object is the $\sim_B$-connected component within a read-coupled group (components of $\sim_B \cap R^\*$), **not**
+the direct edge-intersection $\sim_R\cap\sim_B$ (which over-rejects, fragmenting real arrays at any weak-backbone edge),
+and **not** the gene-vertex pairwise variant (`family_def_vg_pipeline.py`, good:bad 1.33, coarse annotation inflates the
+exon-union). Both ingredients are load-bearing: de-novo vertices remove annotation inflation; the within-family
+backbone connectivity isolates bridges while preserving pairwise (size-2) families. The closed-form statement is in
+`family_definition_note.md`.
 
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
