@@ -479,6 +479,18 @@ resolution) → **VG validation** with **all-isoform exon-union** copies (reject
 by PSV haplotype not isoform). VG validation is the structural lever for the repeat-bridge population that the read/locus
 predicates could not separate; the `--vg` family-graph machinery already builds exactly this object.
 
+**Genome-wide, OOM-safe, validated** (`bench/family_def_vg_reinforce.py`). The three layers were run genome-wide
+(de-novo loci → candidate families → per-family **backbone-reinforcement subgraph**: a member is kept only if it shares
+an exon-union backbone with a family-mate, so isolated repeat-bridge members fall out and size-2 families survive iff the
+pair reinforces itself; a guard never rejects a model too sparse to validate). Memory stayed > 15 GB free throughout
+(copy models built only for the ~1,300 family loci, reads capped, streamed). Result: **212 candidate → 196 validated
+families**, **163 bridge members rejected**, cross-chrom bridges **20 → 12**, size-2 families **80 → 73** (the 7 dropped
+are the size-2 bridges). The rejection is cleanly net-positive — rejected-member edges are **201 no-homology vs 47
+DNA-paralog + 45 sub-bar (good:bad 0.46)**, versus the naïve gene-vertex pairwise variant (`family_def_vg_pipeline.py`)
+which over-rejected (good:bad 1.33) because coarse annotation spans inflate the exon-union. Both ingredients are
+load-bearing: de-novo vertices remove annotation inflation, and the reinforcement subgraph supplies the mutual support
+that isolates true bridges while preserving pairwise (size-2) families.
+
 ## Residual hardcoded parameters (disclosed, not independently swept)
 
 The two de-tie constants $\Delta,\mathrm{DE_{max}}$ are now the **only** free parameters (the former 200 bp
