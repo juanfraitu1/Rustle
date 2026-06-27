@@ -479,9 +479,15 @@ pub(crate) fn freeze_merge(stage1: &[ReadResult], stage2: Vec<ReadResult>, n_ref
             if frozen {
                 let r1 = s1[&r2.read_index];
                 // Stage-1 only saw the ref copies (`best_copy < n_ref`), so the frozen decision is valid in
-                // the copies2 frame; never `discovery_coupled` (it predates the absent copy).
+                // the copies2 frame; never `discovery_coupled` (it predates the absent copy). Restore the WHOLE
+                // assignment side — combined, psv AND mapped_copy — to Stage-1's, so the silver/collapsed
+                // diagnostics (`best_copy == mapped_copy`, `by_copy[mapped_copy]`) stay Stage-1-consistent and
+                // a frozen read's mapped_copy can't flip to a Stage-2 absent index.
                 r2.combined = r1.combined.clone();
                 r2.psv = r1.psv.clone();
+                r2.mapped_copy = r1.mapped_copy;
+                // NOTE: do NOT touch `r2.psv_obs` — it must stay the Stage-2 (copies2-frame) observations, which
+                // the abundance EM in `assign_family_detailed` consumes over the full copies2 column frame.
             } else if r2.combined.status == AssignStatus::Assigned && r2.combined.best_copy >= n_ref {
                 r2.combined.discovery_coupled = true;
             }
@@ -1462,13 +1468,25 @@ mod tests {
     #[test]
     fn freeze_keeps_stage1_assigned_at_multi_ref() {
         // n_ref=2. read 0 was Stage-1 Assigned to copy 0; Stage-2 (with an absent copy) would move it to 1.
-        // Multi-ref => Stage-1 wins (frozen), best_copy stays 0, NOT discovery_coupled.
-        let stage1 = vec![rr(0, 0, asg(0, AssignStatus::Assigned))];
-        let stage2 = vec![rr(0, 1, asg(1, AssignStatus::Assigned))];
+        // Multi-ref => Stage-1 wins (frozen): the WHOLE assignment side (best_copy AND mapped_copy) is restored
+        // to Stage-1's, NOT discovery_coupled. read 1 was Stage-1 Tied => non-frozen, keeps Stage-2's
+        // mapped_copy. Stage-1/Stage-2 carry DIFFERENT mapped_copy values to prove the freeze.
+        let stage1 = vec![
+            rr(0, 0, asg(0, AssignStatus::Assigned)),
+            rr(1, 0, asg(0, AssignStatus::Tied)),
+        ];
+        let stage2 = vec![
+            rr(0, 1, asg(1, AssignStatus::Assigned)),
+            rr(1, 2, asg(2, AssignStatus::Assigned)),
+        ];
         let merged = freeze_merge(&stage1, stage2, 2);
-        let r = by_idx(&merged, 0);
-        assert_eq!(r.combined.best_copy, 0, "Stage-1 assignment frozen");
-        assert!(!r.combined.discovery_coupled);
+        let r0 = by_idx(&merged, 0);
+        assert_eq!(r0.combined.best_copy, 0, "Stage-1 assignment frozen");
+        assert_eq!(r0.mapped_copy, 0, "frozen read also restores Stage-1 mapped_copy");
+        assert!(!r0.combined.discovery_coupled);
+        let r1 = by_idx(&merged, 1);
+        assert_eq!(r1.mapped_copy, 2, "non-frozen read keeps Stage-2 mapped_copy");
+        assert!(r1.combined.discovery_coupled, "non-frozen read assigned to absent copy 2 is coupled");
     }
 
     #[test]
