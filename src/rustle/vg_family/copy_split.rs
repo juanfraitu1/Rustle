@@ -389,6 +389,68 @@ fn distinct_columns(a: &[Option<u8>], b: &[Option<u8>]) -> usize {
         .count()
 }
 
+/// Overlay `iso.allele_vector` (parallel to `psv_pos`, genome coords) onto an ALREADY-spliced host sequence
+/// `host` (with its `exon_map`), returning a synthetic transcript carrying the collapsed copy's distinguishing
+/// bases. Substitution-only (v1): a PSV whose genome position is not in the host's exon map (intron/indel) is
+/// SKIPPED and the copy is flagged via `None` return when ANY allele cannot be placed (caller routes to
+/// DNA-needs). Forward-genome coords; the host's own strand/RC is already baked into `host.seq`.
+fn collapsed_copy_to_transcript_from_host_seq(
+    iso: &CopyIsoform,
+    psv_pos: &[u64],
+    host: &crate::vg_family::family_detect::DenovoTranscript,
+) -> Option<crate::vg_family::family_detect::DenovoTranscript> {
+    use crate::vg_family::copy_assign_pipeline::exon_map;
+    if iso.allele_vector.len() != psv_pos.len() {
+        return None; // parallel-vector invariant violated
+    }
+    let emap = exon_map(host); // spliced offset -> forward-genome coord
+    // invert: forward-genome coord -> spliced offset
+    let mut g2o: BTreeMap<u64, usize> = BTreeMap::new();
+    for (off, &g) in emap.iter().enumerate() {
+        g2o.insert(g, off);
+    }
+    let mut seq = host.seq.clone();
+    let mut placed = 0usize;
+    for (k, &pos) in psv_pos.iter().enumerate() {
+        if let Some(base) = iso.allele_vector[k] {
+            match g2o.get(&pos) {
+                Some(&off) if off < seq.len() => {
+                    seq[off] = base.to_ascii_uppercase();
+                    placed += 1;
+                }
+                _ => return None, // PSV not placeable in host exon frame -> DNA-needs (indel/intron)
+            }
+        }
+    }
+    if placed == 0 {
+        return None; // no distinguishing base placed -> not a usable synthetic copy
+    }
+    Some(crate::vg_family::family_detect::DenovoTranscript {
+        tid: format!("AC_{}_{}", host.chrom, host.start),
+        chrom: host.chrom.clone(),
+        start: host.start,
+        end: host.end,
+        n_reads: iso.read_count as u32,
+        strand: host.strand,
+        introns: iso.intron_chain.clone(),
+        seq,
+    })
+}
+
+/// Public wrapper: fetch the host's spliced sequence from the genome (using the COPY's intron chain), then
+/// overlay the discovered alleles. Returns None if the host sequence can't be built or any allele can't be placed.
+pub fn collapsed_copy_to_transcript(
+    iso: &CopyIsoform,
+    psv_pos: &[u64],
+    host: &crate::vg_family::family_detect::DenovoTranscript,
+    genome: &crate::genome::GenomeIndex,
+) -> Option<crate::vg_family::family_detect::DenovoTranscript> {
+    use crate::vg_family::denovo_assemble::build_spliced_seq;
+    let (seq, strand) = build_spliced_seq(genome, &host.chrom, host.start, host.end, &iso.intron_chain)?;
+    let host_spliced = crate::vg_family::family_detect::DenovoTranscript { seq, strand, ..host.clone() };
+    collapsed_copy_to_transcript_from_host_seq(iso, psv_pos, &host_spliced)
+}
+
 /// Per-column majority allele over a merged chain-group; None where no read observes the column
 /// or no strict majority exists. Deterministic (BTreeMap tally, lowest base wins ties).
 fn consensus_haplotype(group: &[&ReadObs], n_psv_columns: usize) -> Vec<Option<u8>> {
@@ -413,6 +475,43 @@ fn consensus_haplotype(group: &[&ReadObs], n_psv_columns: usize) -> Vec<Option<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vg_family::copy_assign_pipeline::exon_map;
+    use crate::vg_family::family_detect::DenovoTranscript;
+
+    #[test]
+    fn collapsed_copy_to_transcript_overlays_alleles_at_psv_positions() {
+        // host: single-exon transcript on '+', chrom "c1", spliced seq fetched from a tiny genome.
+        // Build a GenomeIndex stub via the existing test helper (see how other tests build it);
+        // here we exercise the OVERLAY arithmetic with a host whose exon_map is identity.
+        let host = DenovoTranscript {
+            tid: "H".into(), chrom: "c1".into(), start: 100, end: 110, n_reads: 9,
+            strand: '+', introns: vec![], seq: b"AAAAAAAAAA".to_vec(),
+        };
+        // PSV at genome positions 102 and 107 → spliced offsets 2 and 7 (identity exon_map for a single exon).
+        let psv_pos = vec![102u64, 107u64];
+        let iso = CopyIsoform {
+            intron_chain: vec![],
+            allele_vector: vec![Some(b'C'), Some(b'G')],
+            read_count: 5,
+            identifiable: true,
+        };
+        // Overlay directly against the host seq (no genome fetch needed for a single-exon identity map):
+        let t = collapsed_copy_to_transcript_from_host_seq(&iso, &psv_pos, &host)
+            .expect("transcript built");
+        assert_eq!(t.seq, b"AACAAAAGAA".to_vec(), "C at offset 2, G at offset 7, rest = host");
+        assert_eq!(t.seq.len(), exon_map(&t).len(), "seq/exon_map length invariant");
+        assert_eq!(t.chrom, "c1");
+        assert_eq!(t.strand, '+');
+    }
+
+    #[test]
+    fn collapsed_copy_to_transcript_none_when_allele_unplaceable() {
+        let host = DenovoTranscript { tid: "H".into(), chrom: "c1".into(), start: 100, end: 105,
+            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
+        let psv_pos = vec![999u64]; // not in host exon frame
+        let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![Some(b'C')], read_count: 5, identifiable: true };
+        assert!(collapsed_copy_to_transcript_from_host_seq(&iso, &psv_pos, &host).is_none());
+    }
 
     fn obs(chain: &[(u64, u64)], alleles: &[Option<u8>]) -> ReadObs {
         ReadObs {
