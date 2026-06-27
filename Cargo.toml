@@ -12,8 +12,10 @@ path = "src/rustle/lib.rs"
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1.0"
 
-# BAM/SAM parsing - pure Rust, no system dependencies
-noodles = { version = "0.85", features = ["bam", "sam"] }
+# BAM/SAM/CRAM parsing - pure Rust, no system dependencies. The cram + fasta features
+# come from the SAME noodles 0.85 group as noodles-sam 0.66, so RecordBuf types unify
+# across all three input formats (native SAM/BAM/CRAM via one RecordBuf pipeline).
+noodles = { version = "0.85", features = ["bam", "sam", "cram", "fasta"] }
 noodles-bam = "0.70"
 noodles-bgzf = "0.33"
 noodles-sam = "0.66"
@@ -92,6 +94,10 @@ path = "src/bin/index_bam.rs"
 [[bin]]
 name = "copy_assign"
 path = "src/bin/copy_assign.rs"
+
+[[bin]]
+name = "gw_family_catalog"
+path = "src/bin/gw_family_catalog.rs"
 
 [[bin]]
 name = "asj"

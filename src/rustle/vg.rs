@@ -4511,6 +4511,7 @@ fn detect_and_report_mosaics(
     let n_copies = fp.n_copies;
     let trace = std::env::var_os("RUSTLE_VG_MOSAIC_TRACE").is_some();
     let mut calls = Vec::new();
+    let mut call_chroms: Vec<&str> = Vec::new(); // chrom of each call's breakpoint frame (parallel to `calls`)
     // Each copy's locus = (chrom, start, end) of its family bundle. The family bundle is
     // reduced to ~the multi-mapping reads, but a recombinant is detectable at its PRIMARY
     // alignment whether or not it multimaps — so scan the FULL bundles array for every
@@ -4552,6 +4553,7 @@ fn detect_and_report_mosaics(
                         call.tract_a_sites, call.tract_b_sites, call.lr_switch, call.threshold_used);
                 }
                 calls.push(call);
+                call_chroms.push(chrom.as_str());
             }
         }
         if trace {
@@ -4560,7 +4562,7 @@ fn detect_and_report_mosaics(
         }
     }
     let n_mosaic = calls.iter().filter(|c| c.is_mosaic()).count();
-    let events = aggregate_family(&calls, &params);
+    let events = aggregate_family(&calls, &call_chroms, &params);
     let n_conf = events.iter().filter(|e| e.confirmed).count();
     for ev in &events {
         eprintln!(
@@ -6713,7 +6715,7 @@ mod tests {
 
     fn conv_event(confirmed: bool, br: (u64, u64), n: usize, disp: u64) -> crate::vg_family::mosaic::ConversionEvent {
         crate::vg_family::mosaic::ConversionEvent {
-            copy_a: 0, copy_b: 1, breakpoint_ref: br,
+            copy_a: 0, copy_b: 1, chrom: "c1".to_string(), breakpoint_ref: br,
             n_supporting_reads: n, breakpoint_dispersion: disp, confirmed,
         }
     }

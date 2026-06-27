@@ -43,6 +43,44 @@ outlier at ~93–96%. A genuine identity gradient, as expected for a young ampli
 
 **5 of 6 copies are assembled.** The 6th (c6) has only 2 reads.
 
+> ## ⚠️ CORRECTION #2 (2026-06-04) — the "collapses into ONE bundle" claim is FALSE in current code
+>
+> Re-measured 2026-06-04 with `RUSTLE_BUNDLE_STATS=1` on the full ampliconic
+> contig (`NC_073248.2`, 11,333 reads). **The RBMY array does NOT collapse into
+> one bundle.** It splits into clean per-copy bundles whose spans match the
+> reference copy coordinates almost exactly:
+>
+> | copy | ref coords | bundle (default `-L`) | reads | tx | bundle (`--vg`) | reads | tx |
+> |---|---|---|---|---|---|---|---|
+> | c1 | 19,602,754–19,616,644 | 19602755–19616647 | 9 | 2 | 19599833–19616892 | 71 | 8 |
+> | c2 | 19,625,715–19,639,621 | 19625716–19639637 | 9 | 4 | 19625715–19639859 | 106 | 8 |
+> | c3 | 19,648,670–19,662,577 | 19648671–19662590 | 13 | 3 | 19648670–19662812 | 99 | 9 |
+> | c4 | 19,671,638–19,685,525 | 19671639–19685492 | 6 | 1 | 19671638–19685780 | 97 | 11 |
+> | c5 | 19,694,606–19,708,531 | 19694606–19708553 | 42 | 6 | 19694606–19731181 | 169 | 19 |
+> | c6 | 19,717,578–19,730,926 | 19720059–19730114 | 2 | 0 | *(merged into c5 bundle)* | | |
+>
+> **Why the 2026-06-03 trace was wrong:** the secondary-bridging→mega-bundle
+> mechanism only applies when secondaries are *retained*, and rustle **drops
+> secondary/supplementary long-read alignments in default `-L` mode**
+> (`drop_sec_supp_for_mode`, `bundle.rs:1428`). Secondaries are kept only under
+> `--vg` (`vg_include_secondary`, `bundle.rs:1422`). So in the headline pipeline
+> the array was *always* splitting per-copy — the collapse was a VG-mode-only
+> observation, and even that no longer reproduces: in `--vg` the copies still
+> mostly split (c1–c4 separate; only c5+c6 merge), and **VG family discovery
+> fires** — `[VG] Discovered 15 gene family groups (78 linked bundles, 474
+> multi-map reads) → 9 families after quality filter → EM reweighting complete:
+> 26 reads adjusted across 6 families`. The "RBMY → 0 families" claim is stale.
+>
+> **Net:** rustle is NOT merging the repetitive RBMY array. The per-copy bundle
+> split is faithful in both modes. (The remaining VG-side gap is over-enumeration
+> from retained secondaries — c5 bundle emits 19 tx — and whether the EM families
+> actually cover the RBMY bundles vs other contig families; that is a
+> resolution-quality question, not a bundling-merge bug.) Genome-region
+> mega-bundle scan the same day: only 2/461 chrY-amp bundles and 24/3405 chr19
+> bundles swallow ≥2 gene loci, and every one matches StringTie transcript-for-
+> transcript (read-through transcription both tools call, or gap-grouping where
+> assembly still separates the genes). See [[project_cutoff_bundle_investigation]].
+
 > ## ⚠️ CORRECTION (2026-06-03) — read before citing this
 >
 > The original framing below ("5/6 copies, each anchored `capacity_confidence

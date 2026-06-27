@@ -438,9 +438,17 @@ impl ReadGenotype {
 /// when several copies tie for the top vote no copy can beat the runner-up by the
 /// margin, so the result is `None`.
 ///
-/// `min_psv` is the per-READ floor (env `RUSTLE_VG_LAYER2_PSV_MIN`, default 3) — the
-/// ~3-PSV/0.997-identity sequencing-error floor; it is DISTINCT from the family
-/// gate's `min_psv_columns`.
+/// `min_psv` is the per-READ floor (env `RUSTLE_VG_LAYER2_PSV_MIN`, default 1) — the
+/// identifiability gate (`n_decisive >= 1`: the read covered >= 1 distinguishing
+/// column, since every PSV column is decisive by construction). It is DISTINCT from
+/// the family gate's `min_psv_columns`.
+///
+/// The pair (`min_psv = 1`, `margin = 1`) is the calibrated decisive-margin gate
+/// tau = ln((1-p)/p): at HiFi error e=0.003 the per-read log-likelihood-ratio margin
+/// equals `dominance * ln(3(1-e)/e) = dominance * 6.90`, so requiring a 1-vote
+/// dominance == tau 6.9 == a per-read misassignment bound p = 1e-3 (the PSV-space
+/// restatement of Eichler's AS>=10). `min_psv = 3` restores the old conservative
+/// 3-PSV error floor (which discarded the 1-2 PSV near-identical tail wholesale).
 pub fn assign_read_to_copy(g: &ReadGenotype, min_psv: usize, margin: usize) -> Option<usize> {
     // Find the top-voted copy and the best vote among all OTHER copies. We scan in a
     // single deterministic pass; ties for the top are detected via the runner-up.
@@ -1328,6 +1336,30 @@ mod tests {
             }],
         };
         assert_eq!(assign_read_to_copy(&dominant, 3, 1), Some(0));
+    }
+
+    #[test]
+    fn near_identical_tail_recovered_at_default_floor() {
+        // The 1-2 PSV near-identical tandem tail: a read covering a SINGLE distinguishing
+        // column, matching copy1's allele and no sibling's. Under the NEW default floor
+        // (min_psv=1 = the identifiability gate n_decisive>=1, == tau 6.9 at HiFi error)
+        // it is confidently assigned; under the OLD 3-PSV error floor it was discarded.
+        // This is the headroom the new default recovers (the population Eichler's AS>=10
+        // and the old floor both threw away).
+        let g = ReadGenotype {
+            read_name_hash: 12,
+            psv_votes: vec![(0, 0), (1, 1)],
+            per_locus: vec![LocusChain { copy_id: 1, junctions: vec![], exons: vec![(100, 200)] }],
+        };
+        assert_eq!(assign_read_to_copy(&g, 1, 1), Some(1), "new default (floor=1) assigns the single-PSV dominant read");
+        assert_eq!(assign_read_to_copy(&g, 3, 1), None, "old floor (=3) discarded it");
+        // A single-PSV TIE is still never guessed at any floor (no strict dominance).
+        let tie = ReadGenotype {
+            read_name_hash: 13,
+            psv_votes: vec![(0, 1), (1, 1)],
+            per_locus: vec![LocusChain { copy_id: 0, junctions: vec![], exons: vec![(100, 200)] }],
+        };
+        assert_eq!(assign_read_to_copy(&tie, 1, 1), None, "ties stay unassigned even at floor=1");
     }
 
     #[test]

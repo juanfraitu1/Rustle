@@ -10517,11 +10517,12 @@ pub fn run<P: AsRef<Path>>(
     let mut chrom_arc_cache: HashMap<String, Arc<str>> = Default::default();
     let mut consensus_cache: LruCache<SpliceConsensusKey, bool> =
         LruCache::new(consensus_cache_capacity());
-    // In VG mode with a FASTA, eagerly load the genome and thread it to
-    // bundle ingest so per-read mismatches vs reference can be extracted
-    // for SNP-based copy scoring. Same genome index is later passed to
-    // family discovery and novel-copy scan.
-    let vg_snp_genome: Option<crate::genome::GenomeIndex> = if config.vg_mode
+    // In VG mode (or --vg-phase) with a FASTA, eagerly load the genome and thread it to
+    // bundle ingest so per-read mismatches vs reference can be extracted. --vg uses them for
+    // SNP-based copy scoring; --vg-phase uses them as the heterozygous-site substrate for
+    // haplotype phasing (without this the bundle reads carry no mismatches and phasing is inert).
+    // Same genome index is later passed to family discovery and novel-copy scan.
+    let vg_snp_genome: Option<crate::genome::GenomeIndex> = if (config.vg_mode || config.vg_phase)
         && config.genome_fasta.is_some()
     {
         let path = config.genome_fasta.as_ref().unwrap();
@@ -12566,14 +12567,24 @@ pub fn run<P: AsRef<Path>>(
             ..Default::default()
         };
         let mut out: Vec<(usize, crate::types::Bundle)> = Vec::new();
+        let dbg = std::env::var_os("RUSTLE_PHASE_DBG").is_some();
+        let (mut d_tot, mut d_mm, mut d_elig, mut d_hets, mut d_split) = (0usize, 0usize, 0usize, 0usize, 0usize);
         for (idx, bundle) in bundles.into_iter().enumerate() {
             // Eligible = non-synthetic with mismatch data (the het-detection substrate).
             // Ineligible bundles (and any with no diploid signal) pass through untouched.
-            let eligible = !bundle.synthetic
-                && bundle.reads.iter().any(|r| !r.mismatches.is_empty());
+            d_tot += 1;
+            let mm_reads = bundle.reads.iter().filter(|r| !r.mismatches.is_empty()).count();
+            if mm_reads > 0 {
+                d_mm += 1;
+            }
+            let eligible = !bundle.synthetic && mm_reads > 0;
             if !eligible {
                 out.push((idx, bundle));
                 continue;
+            }
+            d_elig += 1;
+            if dbg {
+                d_hets += crate::vg_family::phasing::detect_het_sites(&bundle.reads, &phase_cfg).len();
             }
             let tagged = crate::vg_family::phasing::assign_haplotypes(&bundle.reads, &phase_cfg);
             let mut phased = bundle.clone();
@@ -12582,6 +12593,7 @@ pub fn run<P: AsRef<Path>>(
             if splits.len() <= 1 {
                 out.push((idx, bundle)); // no phasing signal -> original bundle, unchanged
             } else {
+                d_split += 1;
                 for (mut sub, hp) in splits {
                     // ps for the sub-bundle = smallest phase-set id among its phased reads.
                     let ps = sub.reads.iter().filter_map(|r| r.ps_tag).min();
@@ -12590,6 +12602,12 @@ pub fn run<P: AsRef<Path>>(
                     out.push((idx, sub));
                 }
             }
+        }
+        if dbg {
+            eprintln!(
+                "[VG-PHASE-DBG] bundles={} with_mismatch={} eligible={} het_sites_total={} split={}",
+                d_tot, d_mm, d_elig, d_hets, d_split
+            );
         }
         out
     } else {
@@ -19958,12 +19976,40 @@ pub fn run<P: AsRef<Path>>(
     // this block finds nothing and is a no-op.) Emits ONE recombinant per distinct confirmed
     // event, each hosted on its participant copy and carrying its own breakpoint/copies.
     if std::env::var_os("RUSTLE_VG_MOSAIC_EMIT").is_some() {
+        use crate::vg_family::mosaic::{classify_event, Classification};
         let mut fam_ids: Vec<usize> = family_conversions.keys().copied().collect();
         fam_ids.sort_unstable();
         let mut recombinants: Vec<crate::path_extract::Transcript> = Vec::new();
+        let mut suppressed_rt = 0usize;
         for fam_id in fam_ids {
             let events = &family_conversions[&fam_id];
-            recombinants.extend(crate::vg::emit_family_recombinants(&all_transcripts, events, fam_id));
+            // Unified discriminator (gene conversion vs RT/template-switch): do NOT promote an event
+            // whose breakpoint carries the template-switch microhomology signature to a gene-conversion
+            // isoform. Recurrence alone (`confirmed`) cannot tell them apart; the genome microhomology
+            // leg can. DNA leg = None here (catalog lookup is a separate follow-up). When no genome is
+            // loaded, fall back to the prior behavior (emit all confirmed events).
+            let kept: Vec<crate::vg_family::mosaic::ConversionEvent> = match &genome {
+                Some(g) => events
+                    .iter()
+                    .filter(|ev| {
+                        let mh = crate::vg_family::copy_assign_pipeline::event_microhomology(g, ev);
+                        let keep = classify_event(ev, mh, None) != Classification::RtSwitchArtifact;
+                        if !keep {
+                            suppressed_rt += 1;
+                        }
+                        keep
+                    })
+                    .cloned()
+                    .collect(),
+                None => events.clone(),
+            };
+            recombinants.extend(crate::vg::emit_family_recombinants(&all_transcripts, &kept, fam_id));
+        }
+        if suppressed_rt > 0 {
+            eprintln!(
+                "[VG-MOSAIC-EMIT] suppressed {} RT/template-switch artifact event(s) (microhomology breakpoint) from emission",
+                suppressed_rt
+            );
         }
         if !recombinants.is_empty() {
             eprintln!(

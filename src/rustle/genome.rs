@@ -229,6 +229,53 @@ impl GenomeIndex {
             && up.eq_ignore_ascii_case(&dn)
             && !up.iter().any(|&b| b == b'N' || b == b'n')
     }
+
+    /// Microhomology (direct-repeat) at a recombination breakpoint bracket `(left, right)` — the
+    /// template-switch signature applied to an arbitrary switch point, not only a splice junction.
+    /// Returns true if ANY repeat length in `[k_min, k_max]` shows a direct repeat (the `is_rt_switch`
+    /// test) whose matched window is NOT low-complexity. A confirmed mosaic that carries this signature
+    /// is more likely an RT/template-switch artifact than a biological gene conversion. Widening beyond
+    /// the old fixed 8 bp (the documented `is_rt_switch` limitation) raises sensitivity to hotspots.
+    ///
+    /// LOW-COMPLEXITY GUARD: a homopolymer / dinucleotide-repeat window (e.g. `AAAAAA`, `ATATAT`)
+    /// trivially matches a direct repeat almost everywhere, so without this filter a true gene
+    /// conversion near a simple repeat would be wrongly demoted to an artifact (the error direction
+    /// SUPPRESSES real conversions). We require the matched window to carry ≥ 3 distinct bases, which
+    /// keeps informative repeats (`CGTACGTA`) and rejects the uninformative low-complexity ones.
+    pub fn breakpoint_microhomology(&self, chrom: &str, left: u64, right: u64, k_min: u64, k_max: u64) -> bool {
+        (k_min..=k_max).any(|k| {
+            if !self.is_rt_switch(chrom, left, right, k) || left < k {
+                return false;
+            }
+            // is_rt_switch already proved left-window == right-window; check the left window's complexity.
+            match self.fetch_sequence(chrom, left - k, left) {
+                Some(w) => !is_low_complexity_window(&w),
+                None => false,
+            }
+        })
+    }
+}
+
+/// A window is low-complexity (uninformative for a direct-repeat call) if it carries fewer than 3
+/// distinct bases — i.e. a homopolymer (1) or a dinucleotide repeat (2). Such windows match a direct
+/// repeat almost everywhere, so they must not trigger a microhomology call.
+fn is_low_complexity_window(w: &[u8]) -> bool {
+    let mut seen = [false; 4];
+    let mut distinct = 0usize;
+    for &b in w {
+        let idx = match b.to_ascii_uppercase() {
+            b'A' => 0,
+            b'C' => 1,
+            b'G' => 2,
+            b'T' => 3,
+            _ => continue,
+        };
+        if !seen[idx] {
+            seen[idx] = true;
+            distinct += 1;
+        }
+    }
+    distinct < 3
 }
 
 #[cfg(test)]
@@ -408,6 +455,34 @@ mod tests {
         seq[16..20].copy_from_slice(b"TGCA");
         let g = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
         assert!(!g.is_rt_switch("c1", 8, 20, 4), "differing flanks => not RT-switch");
+    }
+
+    #[test]
+    fn breakpoint_microhomology_scans_k_range() {
+        // An EXACTLY-4 bp direct repeat ([4,8)==[16,20)) bounded by DIFFERING flank bases (seq[3]!=seq[15])
+        // so it does not extend: found when the k-range includes 4, missed when the range starts above 4.
+        let mut seq = vec![b'A'; 24];
+        seq[3] = b'G';
+        seq[15] = b'T'; // distinct flanks just outside the repeat -> repeat length is exactly 4
+        seq[4..8].copy_from_slice(b"CGTC");
+        seq[16..20].copy_from_slice(b"CGTC");
+        let g = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+        assert!(g.breakpoint_microhomology("c1", 8, 20, 4, 6), "k-range covering 4 finds the repeat");
+        assert!(!g.breakpoint_microhomology("c1", 8, 20, 5, 6), "k-range above the 4bp repeat misses it");
+    }
+
+    #[test]
+    fn breakpoint_microhomology_rejects_low_complexity_window() {
+        // Two poly-A loci: the windows ending at 100 and 200 are both "AAAA..." -> is_rt_switch would
+        // call a direct repeat, but the low-complexity guard rejects it (homopolymer => 1 distinct base),
+        // so a real conversion near a poly-A tract is NOT wrongly demoted to an RT-switch artifact.
+        let seq = vec![b'A'; 300];
+        let g = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+        assert!(g.is_rt_switch("c1", 100, 200, 8), "poly-A trivially matches as a direct repeat");
+        assert!(
+            !g.breakpoint_microhomology("c1", 100, 200, 6, 12),
+            "low-complexity (homopolymer) window must NOT count as microhomology"
+        );
     }
 
     #[test]

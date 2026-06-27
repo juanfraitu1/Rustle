@@ -591,12 +591,25 @@ pub fn run_layer2(
     // agreeing-PSV floor (N); `psv_min_linked` = distinct linked-read floor per
     // junction/chain (K); `psv_family_min` = family distinguishing-column floor
     // (the (E) identifiability gate); `psv_margin` = strict-dominance margin.
+    //
+    // DEFAULT GATE = the identifiability theorem (n_decisive >= 1), not a 3-PSV error
+    // floor. `psv_min` and `psv_family_min` default to 1: a family is resolvable iff it
+    // carries >= 1 distinguishing column, and a read is assigned iff it covers >= 1 such
+    // column AND strictly dominates the runner-up by `psv_margin`. This is the calibrated
+    // decisive-margin gate tau = ln((1-p)/p): at HiFi error e=0.003 the per-read
+    // log-likelihood-ratio margin is dominance * ln(3(1-e)/e) = dominance * 6.90, so a
+    // 1-vote dominance == tau 6.9 == a per-read misassignment bound p = 1e-3 (the
+    // PSV-space restatement of Eichler's AS>=10). It recovers the 1-2 PSV near-identical
+    // tandem tail that the old 3-PSV floor discarded wholesale. Set
+    // RUSTLE_VG_LAYER2_PSV_MIN=3 and RUSTLE_VG_LAYER2_PSV_FAMILY_MIN=3 to restore the old
+    // conservative floor. (Per-read robustness is still enforced by the dominance margin;
+    // real PSV columns clear the >=3-read recurrence test in column extraction.)
     let psv_min: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_MIN")
-        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(3);
+        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(1);
     let psv_min_linked: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_MIN_LINKED")
         .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(2);
     let psv_family_min: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_FAMILY_MIN")
-        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(3);
+        .ok().and_then(|v| v.parse().ok()).filter(|&n| n >= 1).unwrap_or(1);
     let psv_margin: usize = std::env::var("RUSTLE_VG_LAYER2_PSV_MARGIN")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
 

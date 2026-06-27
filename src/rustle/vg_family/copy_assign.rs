@@ -56,9 +56,59 @@ pub struct Assignment {
     pub n_decisive: usize,
     pub resolvable: bool,
     pub status: AssignStatus,
+    /// IsoCon certificate: P(this assignment by error if the read were the least-distinguishable competitor).
+    pub p_value: f64,
+    /// Identifiability bound: the best attainable `p_value` (read supports `best` at every distinguishing
+    /// position) against the hardest competitor. `>= alpha` ⇒ the read is unresolvable (`Tied`).
+    pub min_p_value: f64,
 }
 
-/// Tunable assignment parameters (defaults mirror the Python prototype: HiFi error, jw=5, tol=4, margin=2).
+/// The decisive log-likelihood-ratio margin `τ` for a target per-read misassignment rate `p`.
+///
+/// `τ(p) = ln((1-p)/p)` is the Bayes-optimal decision threshold: accept the top copy iff its
+/// log-LR over the runner-up exceeds `τ`, giving posterior misassignment ≤ `p` on the resolved reads.
+/// This makes `margin` a PRINCIPLED operating point (the user chooses `p`), not an arbitrary number —
+/// the two values seen in the codebase are simply two choices of `p`:
+///   * `p = 1e-3 → τ ≈ 6.90` — conservative, the PSV-space analog of Eichler's AS ≥ 10 (precision mode).
+///   * `p ≈ 0.119 → τ = 2.0` — the permissive default inherited from the Python prototype (recall mode).
+/// At flat HiFi error the vote-count gate is algebraically equivalent (`τ ≈ votes · ln(3(1-e)/e)`),
+/// which is why the production vote engine's `margin = 1` ≡ `τ ≈ 6.9` (kill-test, 16/16).
+pub fn tau_from_p(p: f64) -> f64 {
+    ((1.0 - p) / p).ln()
+}
+
+/// Inverse of [`tau_from_p`]: the target per-read misassignment rate implied by a margin `τ`.
+pub fn p_from_tau(tau: f64) -> f64 {
+    1.0 / (1.0 + tau.exp())
+}
+
+/// Exact upper tail of a Poisson-binomial: `P(Σ Bernoulli(probs[i]) >= k)`. O(n^2) DP convolution of the
+/// per-trial success probabilities (the number of trials = distinguishing positions, typically < ~100, so
+/// exact is cheap and avoids any normal-approximation error). Conventions: `k == 0 -> 1.0`; `k > probs.len()
+/// -> 0.0` (also `k > 0` with no trials). Probabilities are clamped to `[0, 1]`.
+pub(crate) fn poisson_binomial_upper_tail(k: usize, probs: &[f64]) -> f64 {
+    if k == 0 {
+        return 1.0;
+    }
+    if k > probs.len() {
+        return 0.0;
+    }
+    // dp[s] = P(exactly s successes) after the processed trials. Iterate s downward so dp[s-1] is still the
+    // pre-trial value when read.
+    let mut dp = vec![0.0f64; probs.len() + 1];
+    dp[0] = 1.0;
+    for &p in probs {
+        let p = p.clamp(0.0, 1.0);
+        for s in (0..dp.len()).rev() {
+            let from_prev = if s > 0 { dp[s - 1] * p } else { 0.0 };
+            dp[s] = dp[s] * (1.0 - p) + from_prev;
+        }
+    }
+    dp[k..].iter().sum()
+}
+
+/// Tunable assignment parameters. `margin` is the decisive log-LR threshold `τ` — see [`tau_from_p`];
+/// set it via [`AssignParams::for_target_misassignment`] to choose the operating point by `p` directly.
 #[derive(Clone, Copy, Debug)]
 pub struct AssignParams {
     /// Per-base PSV error rate used in the likelihood (HiFi ~ 0.003).
@@ -67,13 +117,55 @@ pub struct AssignParams {
     pub junction_weight: f64,
     /// Junction-boundary match tolerance (bp) for splice-site jitter.
     pub boundary_tol: i64,
-    /// Minimum log-likelihood-ratio over the runner-up to call ASSIGNED.
+    /// Decisive log-LR threshold `τ` over the runner-up to call ASSIGNED = `tau_from_p(p)` for the
+    /// chosen target per-read misassignment rate `p`. NOT an arbitrary constant — an operating point.
     pub margin: f64,
+    /// Significance level / target per-read false-assignment rate for the IsoCon gate. Default 1e-3.
+    pub alpha: f64,
+    /// Per-distinguishing-junction error probability ε used in the significance test (junctions are sharp).
+    pub junction_err: f64,
+    /// Revert to the legacy τ-margin gate (for reproducing legacy numbers / the A/B comparison). Default false.
+    pub use_margin_gate: bool,
+    /// RNA-editing filter: when on, a distinguishing PSV column flagged as an A-to-I editing site (passed as
+    /// `editing_cols` to `assign_read_editing`) gets its εⱼ inflated to `edit_rate` in the significance test,
+    /// so an edited base cannot fake copy-support. Default true (acts only on detected-heterogeneous A↔G
+    /// columns — genuine A/G paralog SNVs are unaffected).
+    pub rna_editing_filter: bool,
+    /// εⱼ used for an editing-flagged distinguishing column (the rate at which a true base shows the other
+    /// allele by editing rather than sequencing error). Default 0.2 — downweights the flagged column to
+    /// near-uninformative for the certificate while leaving the likelihood ranking intact.
+    pub edit_rate: f64,
 }
 
 impl Default for AssignParams {
     fn default() -> Self {
-        AssignParams { error_rate: 0.003, junction_weight: 5.0, boundary_tol: 4, margin: 2.0 }
+        // margin = 2.0 ≡ p ≈ 0.119 (recall mode, the Python-prototype operating point). Kept as the
+        // default for behavioral continuity; use `for_target_misassignment(1e-3)` for the conservative
+        // τ ≈ 6.9 / Eichler-AS≥10 precision operating point.
+        AssignParams {
+            error_rate: 0.003,
+            junction_weight: 5.0,
+            boundary_tol: 4,
+            margin: 2.0,
+            alpha: 1e-3,
+            junction_err: 1e-4,
+            use_margin_gate: false,
+            rna_editing_filter: true,
+            edit_rate: 0.2,
+        }
+    }
+}
+
+impl AssignParams {
+    /// Construct with the decisive margin set from a target per-read misassignment rate `p` (the
+    /// principled knob): `margin = tau_from_p(p)`. e.g. `p = 1e-3` → the conservative τ ≈ 6.9.
+    pub fn for_target_misassignment(p: f64) -> Self {
+        AssignParams { margin: tau_from_p(p), ..Self::default() }
+    }
+
+    /// Construct with the significance level set directly (the IsoCon-gate knob): `alpha = p`.
+    pub fn for_alpha(alpha: f64) -> Self {
+        AssignParams { alpha, ..Self::default() }
     }
 }
 
@@ -84,6 +176,20 @@ fn boundary_present(jb: i64, junctions: &[i64], tol: i64) -> bool {
 /// Assign a read to its most likely copy. Returns `None` only if `copies` is empty.
 /// Deterministic: copies are scored in slice order and ties resolve to the earliest (lowest index).
 pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams) -> Option<Assignment> {
+    assign_read_editing(read, copies, p, &[])
+}
+
+/// Like [`assign_read`], but `editing_cols[j] == true` marks PSV column `j` as an A-to-I RNA-editing site
+/// (detected by `copy_assign_pipeline::detect_editing_columns`). When `p.rna_editing_filter` is on, such a
+/// column gets its εⱼ inflated to `p.edit_rate` in the significance certificate — an edited base then cannot
+/// fake copy-support. The likelihood ranking is unchanged; only the certificate stops trusting the column.
+/// `editing_cols` may be shorter than the PSV columns (missing = not an editing site).
+pub fn assign_read_editing(
+    read: &ReadFeatures,
+    copies: &[CopyProfile],
+    p: &AssignParams,
+    editing_cols: &[bool],
+) -> Option<Assignment> {
     let n = copies.len();
     if n == 0 {
         return None;
@@ -159,15 +265,98 @@ pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams
         }
     }
     let margin = if n > 1 { logl[best] - second } else { f64::INFINITY };
-    let resolvable = n_decisive >= 1;
-    let status = if !resolvable {
-        AssignStatus::Tied
-    } else if margin >= p.margin {
-        AssignStatus::Assigned
+
+    // --- IsoCon significance certificate: test `best` vs each competitor on their DISTINGUISHING obs ---
+    // p_read = least-significant (max) pairwise p; min_p = identifiability bound (best attainable p).
+    let (mut p_read, mut min_p) = (0.0f64, 0.0f64);
+    for c in 0..n {
+        if c == best {
+            continue;
+        }
+        let mut eps: Vec<f64> = Vec::new();
+        let mut k = 0usize;
+        // distinguishing PSV columns the read spans
+        for j in 0..n_cols {
+            let obs = match read.psv_obs[j] {
+                Some(b) => b,
+                None => continue,
+            };
+            let ba = copies[best].alleles.get(j).copied().flatten();
+            let ca = copies[c].alleles.get(j).copied().flatten();
+            if let (Some(ba), Some(ca)) = (ba, ca) {
+                if ba != ca {
+                    let e = match read.psv_qual.get(j).copied().flatten() {
+                        Some(q) => super::copy_split::phred_err(q),
+                        None => p.error_rate,
+                    };
+                    let mut eps_j = (e / 3.0).clamp(0.0, 1.0);
+                    // A-to-I editing: a flagged column's base can be edited, not just a sequencing error,
+                    // so a read showing the other allele there is weak evidence -> inflate εⱼ to edit_rate.
+                    if p.rna_editing_filter && editing_cols.get(j).copied().unwrap_or(false) {
+                        eps_j = eps_j.max(p.edit_rate).clamp(0.0, 1.0);
+                    }
+                    eps.push(eps_j);
+                    if obs == ba {
+                        k += 1;
+                    }
+                }
+            }
+        }
+        // distinguishing junctions (from the read's own junction set)
+        for &jb in &read.junctions {
+            let in_best = boundary_present(jb, &copies[best].junctions, p.boundary_tol);
+            let in_c = boundary_present(jb, &copies[c].junctions, p.boundary_tol);
+            if in_best != in_c {
+                eps.push(p.junction_err.clamp(0.0, 1.0));
+                if in_best {
+                    k += 1; // read carries a junction `best` has and `c` lacks -> supports best
+                }
+            }
+        }
+        let pbc = poisson_binomial_upper_tail(k, &eps);
+        if pbc > p_read {
+            p_read = pbc;
+        }
+        // best attainable p for this pair = Π ε  (empty distinguishing set -> 1.0 -> forces Tied)
+        let attain = if eps.is_empty() { 1.0 } else { eps.iter().product::<f64>() };
+        if attain > min_p {
+            min_p = attain;
+        }
+    }
+    let (resolvable, status) = if p.use_margin_gate {
+        let resolvable = n_decisive >= 1;
+        let status = if !resolvable {
+            AssignStatus::Tied
+        } else if margin >= p.margin {
+            AssignStatus::Assigned
+        } else {
+            AssignStatus::Ambiguous
+        };
+        (resolvable, status)
     } else {
-        AssignStatus::Ambiguous
+        // Bonferroni: `best` is the argmax over n copies, so to bound the FAMILY-WIDE misassignment rate at
+        // alpha the per-competitor certificate must clear alpha/(n-1) (union over the n-1 competitors).
+        let thr = p.alpha / (n.saturating_sub(1).max(1) as f64);
+        let resolvable = min_p < thr;
+        let status = if !resolvable {
+            AssignStatus::Tied
+        } else if p_read < thr && margin > 0.0 {
+            AssignStatus::Assigned
+        } else {
+            AssignStatus::Ambiguous
+        };
+        (resolvable, status)
     };
-    Some(Assignment { best_copy: copies[best].copy_id, log_lr_margin: margin, n_decisive, resolvable, status })
+
+    Some(Assignment {
+        best_copy: copies[best].copy_id,
+        log_lr_margin: margin,
+        n_decisive,
+        resolvable,
+        status,
+        p_value: p_read,
+        min_p_value: min_p,
+    })
 }
 
 /// Build the PSV-observation vector for a read aligned in the frame of `psv_positions` (genomic, 0-based,
@@ -202,9 +391,11 @@ mod tests {
 
     #[test]
     fn two_copies_one_psv_resolves() {
+        // Legacy τ-margin gate: one PSV at flat error resolves (margin >> τ=2).
         let copies = [cp(0, &[Some(A)], &[]), cp(1, &[Some(C)], &[])];
         let r = rf(&[Some(A)], &[]);
-        let a = assign_read(&r, &copies, &AssignParams::default()).unwrap();
+        let p = AssignParams { use_margin_gate: true, ..AssignParams::default() };
+        let a = assign_read(&r, &copies, &p).unwrap();
         assert_eq!(a.best_copy, 0);
         assert!(a.resolvable);
         assert_eq!(a.n_decisive, 1);
@@ -256,7 +447,8 @@ mod tests {
 
     #[test]
     fn junction_only_resolves() {
-        // no PSV spanned; copy0 has a copy-specific junction at 100, copy1 does not
+        // A single copy-specific junction resolves under the significance gate now that
+        // junction_err=1e-4 < alpha=1e-3 (one clean junction => p_read=1e-4 < alpha, margin >> 0).
         let copies = [cp(0, &[None], &[100]), cp(1, &[None], &[500])];
         let r = rf(&[None], &[100]);
         let a = assign_read(&r, &copies, &AssignParams::default()).unwrap();
@@ -282,13 +474,19 @@ mod tests {
     #[test]
     fn five_copies_two_psv_unique() {
         // sim5x K=2 analogue: base-4 allele vectors over 2 columns give 5 distinct copies.
+        // Two Q40 PSVs: each competitor pair has at least one distinguishing column with eps~3.3e-5
+        // so min_p <= 3.3e-5 << alpha=1e-3 (resolvable) and p_read <= 3.3e-5 < alpha (Assigned).
         let bases = [A, C, G, T];
         let allele = |c: usize, j: usize| bases[(c / 4usize.pow(j as u32)) % 4];
         let copies: Vec<CopyProfile> = (0..5)
             .map(|c| cp(c, &[Some(allele(c, 0)), Some(allele(c, 1))], &[]))
             .collect();
-        // a read carrying copy 3's alleles, spanning both columns -> uniquely copy 3
-        let r = rf(&[Some(allele(3, 0)), Some(allele(3, 1))], &[]);
+        // a read carrying copy 3's alleles at Q40 -> uniquely copy 3
+        let r = ReadFeatures {
+            psv_obs: vec![Some(allele(3, 0)), Some(allele(3, 1))],
+            psv_qual: vec![Some(40), Some(40)],
+            junctions: vec![],
+        };
         let a = assign_read(&r, &copies, &AssignParams::default()).unwrap();
         assert_eq!(a.best_copy, 3);
         assert_eq!(a.status, AssignStatus::Assigned);
@@ -297,6 +495,10 @@ mod tests {
     #[test]
     fn five_copies_one_column_ambiguous_for_collision() {
         // K=1 collision: copies 0 and 4 share allele A at column 0 (base-4: 0%4==0, 4%4==0).
+        // Legacy τ-margin gate: the column is decisive (copies 1,2,3 differ) but margin=0 < τ=2 -> Ambiguous.
+        // Under the significance gate, copy0 and copy4 are pairwise indistinguishable (no distinguishing
+        // column between them) -> Tied, which is semantically more correct; use_margin_gate to preserve
+        // the original Ambiguous assertion.
         let bases = [A, C, G, T];
         let allele = |c: usize, j: usize| bases[(c / 4usize.pow(j as u32)) % 4];
         let copies: Vec<CopyProfile> = (0..5)
@@ -304,7 +506,8 @@ mod tests {
             .collect();
         // a read from copy 4 spanning only column 0 -> allele A matches copy0 AND copy4 -> ambiguous
         let r = rf(&[Some(allele(4, 0))], &[]);
-        let a = assign_read(&r, &copies, &AssignParams::default()).unwrap();
+        let p = AssignParams { use_margin_gate: true, ..AssignParams::default() };
+        let a = assign_read(&r, &copies, &p).unwrap();
         assert!(a.resolvable); // the column IS decisive (copies 1,2,3 differ)
         assert_eq!(a.status, AssignStatus::Ambiguous); // but copy0/copy4 tie -> margin 0 < 2
     }
@@ -321,7 +524,7 @@ mod tests {
 
     #[test]
     fn boundary_tolerance_matches_jitter() {
-        // read junction at 102 vs copy junction at 100, tol=4 -> present
+        // Single junction at junction_err=1e-4 < alpha resolves under the default gate; this asserts the boundary tolerance (102 vs 100 within tol=4) is what makes the junction match.
         let copies = [cp(0, &[None], &[100]), cp(1, &[None], &[900])];
         let r = rf(&[None], &[102]);
         let a = assign_read(&r, &copies, &AssignParams::default()).unwrap();
@@ -332,10 +535,12 @@ mod tests {
     #[test]
     fn copy_matching_ref_allele_inherits_it() {
         // the Python bug guard: a copy that matches the ref allele must carry that base, not None.
-        // copy0=(A,A), copy1=(C,A): a read (A,C) must NOT be mis-assigned to a copy with a None at col1.
+        // copy0=(A,A), copy1=(A,C): a read (A,C) must NOT be mis-assigned; only col1 is decisive.
+        // Legacy τ-margin gate: one decisive PSV at flat error gives margin >> τ=2.
         let copies = [cp(0, &[Some(A), Some(A)], &[]), cp(1, &[Some(A), Some(C)], &[])];
         let r = rf(&[Some(A), Some(C)], &[]); // matches copy1 at col1 (the decisive one)
-        let a = assign_read(&r, &copies, &AssignParams::default()).unwrap();
+        let p = AssignParams { use_margin_gate: true, ..AssignParams::default() };
+        let a = assign_read(&r, &copies, &p).unwrap();
         assert_eq!(a.best_copy, 1);
         assert_eq!(a.status, AssignStatus::Assigned);
     }
@@ -362,5 +567,255 @@ mod tests {
         let read = AlignedRead { ref_start: 10, cigar: vec![('M', 5), ('N', 2), ('M', 5)], seq: b"AAAAACCCCC".to_vec(), qual: vec![] };
         let obs = read_psv_obs(&read, &[12, 16, 18]);
         assert_eq!(obs, vec![Some(b'A'), None, Some(b'C')]);
+    }
+
+    #[test]
+    fn poisson_binomial_matches_binomial_for_equal_probs() {
+        // n=4, p=0.5: P(X>=2) = (6+4+1)/16 = 11/16.
+        let probs = [0.5_f64; 4];
+        let got = poisson_binomial_upper_tail(2, &probs);
+        assert!((got - 11.0 / 16.0).abs() < 1e-12, "got {got}");
+    }
+
+    #[test]
+    fn poisson_binomial_edge_cases() {
+        assert_eq!(poisson_binomial_upper_tail(0, &[]), 1.0); // P(>=0) = 1
+        assert_eq!(poisson_binomial_upper_tail(1, &[]), 0.0); // 0 trials cannot reach 1
+        assert_eq!(poisson_binomial_upper_tail(1, &[0.0, 0.0]), 0.0); // no possible success
+        assert!((poisson_binomial_upper_tail(1, &[1.0]) - 1.0).abs() < 1e-12); // certain success
+        // k == n: tail equals the product of probs (all must succeed)
+        let probs = [0.1_f64, 0.2, 0.05];
+        let prod: f64 = probs.iter().product();
+        assert!((poisson_binomial_upper_tail(3, &probs) - prod).abs() < 1e-12);
+    }
+
+    #[test]
+    fn poisson_binomial_monotone_in_k() {
+        let probs = [0.3_f64, 0.4, 0.2, 0.6];
+        let mut prev = poisson_binomial_upper_tail(0, &probs);
+        for k in 1..=probs.len() {
+            let cur = poisson_binomial_upper_tail(k, &probs);
+            assert!(cur <= prev + 1e-12, "P(>={k}) must not exceed P(>={})", k - 1);
+            prev = cur;
+        }
+    }
+
+    #[test]
+    fn assign_params_alpha_defaults_and_constructor() {
+        let d = AssignParams::default();
+        assert_eq!(d.alpha, 1e-3);
+        assert_eq!(d.junction_err, 1e-4);
+        assert!(!d.use_margin_gate);
+        let a = AssignParams::for_alpha(0.05);
+        assert_eq!(a.alpha, 0.05);
+        assert_eq!(a.error_rate, d.error_rate); // other fields inherit the default
+    }
+
+    fn two_copies_2psv() -> Vec<CopyProfile> {
+        vec![
+            CopyProfile { copy_id: 0, alleles: vec![Some(b'A'), Some(b'C')], junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: vec![Some(b'G'), Some(b'T')], junctions: vec![] },
+        ]
+    }
+
+    #[test]
+    fn sig_two_highq_psv_supporting_best_is_assigned() {
+        let r = ReadFeatures { psv_obs: vec![Some(b'A'), Some(b'C')], psv_qual: vec![Some(40), Some(40)], junctions: vec![] };
+        let a = assign_read(&r, &two_copies_2psv(), &AssignParams::default()).unwrap();
+        assert_eq!(a.best_copy, 0);
+        assert_eq!(a.status, AssignStatus::Assigned);
+        assert!(a.p_value < 1e-3, "p_value {} should clear alpha", a.p_value);
+    }
+
+    #[test]
+    fn sig_no_distinguishing_columns_is_tied() {
+        let r = ReadFeatures { psv_obs: vec![None, None], psv_qual: vec![None, None], junctions: vec![] };
+        let a = assign_read(&r, &two_copies_2psv(), &AssignParams::default()).unwrap();
+        assert_eq!(a.status, AssignStatus::Tied);
+        assert!(a.min_p_value >= 1e-3);
+    }
+
+    #[test]
+    fn sig_conflicting_support_is_ambiguous() {
+        let r = ReadFeatures { psv_obs: vec![Some(b'A'), Some(b'T')], psv_qual: vec![Some(40), Some(40)], junctions: vec![] };
+        let a = assign_read(&r, &two_copies_2psv(), &AssignParams::default()).unwrap();
+        assert_eq!(a.status, AssignStatus::Ambiguous);
+        assert!(a.min_p_value < 1e-3, "two Q40 columns CAN resolve in principle");
+        assert!(a.p_value < 1e-3, "best-support IS significant, but the LLR margin is 0 (balanced) -> abstain");
+    }
+
+    #[test]
+    fn sig_legacy_margin_gate_still_selectable() {
+        let copies = vec![
+            CopyProfile { copy_id: 0, alleles: vec![Some(b'A')], junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: vec![Some(b'G')], junctions: vec![] },
+        ];
+        let r = ReadFeatures { psv_obs: vec![Some(b'A')], psv_qual: vec![Some(40)], junctions: vec![] };
+        let p = AssignParams { use_margin_gate: true, ..AssignParams::default() };
+        let a = assign_read(&r, &copies, &p).unwrap();
+        assert_eq!(a.status, AssignStatus::Assigned);
+    }
+
+    #[test]
+    fn editing_params_defaults() {
+        let d = AssignParams::default();
+        assert!(d.rna_editing_filter);
+        assert_eq!(d.edit_rate, 0.2);
+    }
+
+    #[test]
+    fn sig_editing_col_downweights_to_abstain() {
+        // two copies differing at ONE A<->G column. A high-Q read resolves it normally; flagging the column
+        // as an editing site inflates εⱼ to edit_rate so the certificate abstains (the edited base can't be
+        // trusted as copy-distinguishing). Disabling the filter restores the assignment.
+        let copies = vec![
+            CopyProfile { copy_id: 0, alleles: vec![Some(b'G')], junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: vec![Some(b'A')], junctions: vec![] },
+        ];
+        let r = ReadFeatures { psv_obs: vec![Some(b'G')], psv_qual: vec![Some(40)], junctions: vec![] };
+        let a = assign_read_editing(&r, &copies, &AssignParams::default(), &[]).unwrap();
+        assert_eq!(a.status, AssignStatus::Assigned, "unflagged single PSV resolves");
+        let a2 = assign_read_editing(&r, &copies, &AssignParams::default(), &[true]).unwrap();
+        assert_eq!(a2.status, AssignStatus::Tied, "flagged editing column can't resolve -> Tied");
+        assert!(a2.min_p_value >= 1e-3);
+        let p_off = AssignParams { rna_editing_filter: false, ..AssignParams::default() };
+        let a3 = assign_read_editing(&r, &copies, &p_off, &[true]).unwrap();
+        assert_eq!(a3.status, AssignStatus::Assigned, "filter off ignores the flag");
+        // assign_read wrapper == assign_read_editing with empty flags
+        assert_eq!(assign_read(&r, &copies, &AssignParams::default()).unwrap().status, AssignStatus::Assigned);
+    }
+
+    #[test]
+    fn tau_calibration_operating_points() {
+        // the two operating points seen in the codebase are just two choices of p:
+        assert!((tau_from_p(1e-3) - 6.9068).abs() < 1e-3, "p=1e-3 => tau~6.9 (Eichler AS>=10 analog)");
+        assert!((tau_from_p(0.1192029) - 2.0).abs() < 1e-3, "tau=2.0 => p~0.119 (recall mode)");
+        // round-trip
+        for &p in &[1e-4, 1e-3, 0.05, 0.119, 0.3] {
+            assert!((p_from_tau(tau_from_p(p)) - p).abs() < 1e-9);
+        }
+        // the constructor wires margin = tau(p)
+        assert!((AssignParams::for_target_misassignment(1e-3).margin - 6.9068).abs() < 1e-3);
+        // monotone: stricter p => larger margin
+        assert!(tau_from_p(1e-4) > tau_from_p(1e-2));
+    }
+
+    #[test]
+    fn sig_gate_bonferroni_controls_familywide_error() {
+        // 11 copies; each competitor c=1..10 differs from the true copy (copy0) at ONE column -> a low-power,
+        // many-competitor regime (the K>=3 / 1-PSV tail). Without the Bonferroni correction the argmax winner's
+        // curse inflates realized misassignment to ~K*(e/3) > alpha; with it (threshold alpha/(n-1)) the gate
+        // abstains on the marginal reads and keeps realized misassignment <= alpha.
+        let n_comp = 10usize;
+        let m = n_comp; // one distinguishing column per competitor
+        let mk = |c: usize| -> Vec<Option<u8>> {
+            (0..m).map(|j| if c >= 1 && j == c - 1 { Some(b'C') } else { Some(b'A') }).collect()
+        };
+        let copies: Vec<CopyProfile> =
+            (0..=n_comp).map(|c| CopyProfile { copy_id: c, alleles: mk(c), junctions: vec![] }).collect();
+        let bases = [b'A', b'C', b'G', b'T'];
+        let q = 30u8;
+        let e = 10f64.powf(-(q as f64) / 10.0);
+        let run = |alpha: f64| -> (usize, usize) {
+            let mut state = 0x9E3779B97F4A7C15u64;
+            let mut next = || {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                state
+            };
+            let p = AssignParams::for_alpha(alpha);
+            let (mut assigned, mut wrong) = (0usize, 0usize);
+            for _ in 0..50_000 {
+                let psv_obs: Vec<Option<u8>> = (0..m)
+                    .map(|_| {
+                        if (next() as f64 / u64::MAX as f64) < e {
+                            Some(bases[(next() % 4) as usize])
+                        } else {
+                            Some(b'A')
+                        }
+                    })
+                    .collect();
+                let r = ReadFeatures { psv_obs, psv_qual: vec![Some(q); m], junctions: vec![] };
+                let a = assign_read(&r, &copies, &p).unwrap();
+                if a.status == AssignStatus::Assigned {
+                    assigned += 1;
+                    if a.best_copy != 0 {
+                        wrong += 1; // all reads are truly copy0
+                    }
+                }
+            }
+            (assigned, wrong)
+        };
+        // Corrected default alpha=1e-3 -> internal threshold 1e-3/10 = 1e-4: the marginal reads abstain, error controlled.
+        let (a_corr, w_corr) = run(1e-3);
+        let rate_corr = if a_corr > 0 { w_corr as f64 / a_corr as f64 } else { 0.0 };
+        assert!(rate_corr <= 1e-3, "Bonferroni gate realized misassignment {rate_corr} must respect alpha=1e-3");
+        // alpha=1e-2 -> internal threshold 1e-2/10 = 1e-3 (= the UN-corrected per-pair level): reproduces the
+        // winner's-curse inflation the correction removes.
+        let (a_unc, w_unc) = run(1e-2);
+        let rate_unc = if a_unc > 0 { w_unc as f64 / a_unc as f64 } else { 0.0 };
+        assert!(a_unc > 1000, "under-corrected level should assign the marginal reads ({a_unc})");
+        assert!(rate_unc > 1e-3, "without the correction the union-bound inflation exceeds alpha ({rate_unc})");
+    }
+
+    #[test]
+    fn sig_gate_is_calibrated_realized_error_tracks_alpha() {
+        // Two copies differing at 6 PSV columns. Simulate reads from a known true copy, inject errors at a
+        // realistic HiFi rate, run the gate, and check the realized misassignment among ASSIGNED reads.
+        let m = 6usize;
+        let copy0: Vec<Option<u8>> = (0..m).map(|_| Some(b'A')).collect();
+        let copy1: Vec<Option<u8>> = (0..m).map(|_| Some(b'C')).collect();
+        let copies = vec![
+            CopyProfile { copy_id: 0, alleles: copy0.clone(), junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: copy1.clone(), junctions: vec![] },
+        ];
+        // deterministic xorshift RNG
+        let mut state = 0x2545F4914F6CDD1Du64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let bases = [b'A', b'C', b'G', b'T'];
+        let q = 30u8; // e = 1e-3
+        let e = 10f64.powf(-(q as f64) / 10.0); // inline (phred_err's path differs inside mod tests)
+        let run = |alpha: f64, next: &mut dyn FnMut() -> u64| -> (usize, usize) {
+            let p = AssignParams::for_alpha(alpha);
+            let (mut assigned, mut wrong) = (0usize, 0usize);
+            for _ in 0..20_000 {
+                let truth = (next() % 2) as usize;
+                let template = if truth == 0 { &copy0 } else { &copy1 };
+                let psv_obs: Vec<Option<u8>> = template
+                    .iter()
+                    .map(|t| {
+                        let tb = t.unwrap();
+                        if (next() as f64 / u64::MAX as f64) < e {
+                            Some(bases[(next() % 4) as usize])
+                        } else {
+                            Some(tb)
+                        }
+                    })
+                    .collect();
+                let r = ReadFeatures { psv_obs, psv_qual: vec![Some(q); m], junctions: vec![] };
+                let a = assign_read(&r, &copies, &p).unwrap();
+                if a.status == AssignStatus::Assigned {
+                    assigned += 1;
+                    if a.best_copy != truth {
+                        wrong += 1;
+                    }
+                }
+            }
+            (assigned, wrong)
+        };
+        let (a_hi, w_hi) = run(1e-2, &mut next);
+        let (a_lo, w_lo) = run(1e-4, &mut next);
+        assert!(a_hi > 1000 && a_lo > 1000, "should assign a substantial fraction ({a_hi}, {a_lo})");
+        let rate_hi = w_hi as f64 / a_hi as f64;
+        let rate_lo = w_lo as f64 / a_lo as f64;
+        assert!(rate_hi <= 3e-2, "alpha=1e-2 realized {rate_hi}");
+        assert!(rate_lo <= 3e-4, "alpha=1e-4 realized {rate_lo}");
+        assert!(rate_lo <= rate_hi + 1e-9, "stricter alpha must not increase error ({rate_lo} vs {rate_hi})");
     }
 }

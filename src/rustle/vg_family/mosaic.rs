@@ -255,6 +255,7 @@ pub fn detect_mosaic(obs: &[SiteObs], n_copies: usize, eps: f64, p: &MosaicParam
 pub struct ConversionEvent {
     pub copy_a: usize,
     pub copy_b: usize,
+    pub chrom: String,              // chromosome the breakpoint coordinates live on (for the microhomology check)
     pub breakpoint_ref: (u64, u64), // consensus bracket (min last-A, max first-B)
     pub n_supporting_reads: usize,
     pub breakpoint_dispersion: u64, // spread of per-read breakpoint midpoints
@@ -266,30 +267,37 @@ pub struct ConversionEvent {
 /// to distinct molecules first). Clusters by oriented (a→b) pair and breakpoint midpoint
 /// within `breakpoint_tol`; confirms a cluster with ≥ `family_min_supporting_reads` molecules
 /// and tight dispersion.
-pub fn aggregate_family(calls: &[MosaicCall], p: &MosaicParams) -> Vec<ConversionEvent> {
-    let mut mosaics: Vec<(usize, usize, u64, (u64, u64))> = calls
+pub fn aggregate_family(calls: &[MosaicCall], chroms: &[&str], p: &MosaicParams) -> Vec<ConversionEvent> {
+    // `chroms[i]` is the chromosome `calls[i]`'s breakpoint coordinates live on (parallel array). The
+    // chrom is part of the cluster KEY: breakpoints at coincidentally-similar positions on DIFFERENT
+    // chromosomes (multi-chrom paralog families, e.g. RABL2A/RABL2B) must not cluster together, and the
+    // emitted event needs its chrom for the downstream microhomology check.
+    let mut mosaics: Vec<(usize, usize, &str, u64, (u64, u64))> = calls
         .iter()
-        .filter(|c| c.is_mosaic())
-        .filter_map(|c| match (c.copy_a, c.copy_b, c.breakpoint_ref) {
-            (Some(a), Some(b), Some(br)) => Some((a, b, (br.0 + br.1) / 2, br)),
+        .enumerate()
+        .filter(|(_, c)| c.is_mosaic())
+        .filter_map(|(i, c)| match (c.copy_a, c.copy_b, c.breakpoint_ref) {
+            (Some(a), Some(b), Some(br)) => {
+                Some((a, b, chroms.get(i).copied().unwrap_or(""), (br.0 + br.1) / 2, br))
+            }
             _ => None,
         })
         .collect();
-    // Stable order by (a, b, midpoint).
-    mosaics.sort_by_key(|&(a, b, mid, _)| (a, b, mid));
+    // Stable order by (a, b, chrom, midpoint).
+    mosaics.sort_by(|x, y| (x.0, x.1, x.2, x.3).cmp(&(y.0, y.1, y.2, y.3)));
 
     let mut events: Vec<ConversionEvent> = Vec::new();
     let mut i = 0usize;
     while i < mosaics.len() {
-        let (a, b, _, _) = mosaics[i];
-        // Greedily grow a cluster of same oriented pair within breakpoint_tol of the running mean.
+        let (a, b, chrom, _, _) = mosaics[i];
+        // Greedily grow a cluster of same oriented pair ON THE SAME CHROM within breakpoint_tol.
         let mut j = i;
         let mut mids: Vec<u64> = Vec::new();
         let mut br_lo = u64::MAX;
         let mut br_hi = 0u64;
         while j < mosaics.len() {
-            let (aj, bj, midj, brj) = mosaics[j];
-            if aj != a || bj != b {
+            let (aj, bj, chromj, midj, brj) = mosaics[j];
+            if aj != a || bj != b || chromj != chrom {
                 break;
             }
             if let Some(&last) = mids.last() {
@@ -308,6 +316,7 @@ pub fn aggregate_family(calls: &[MosaicCall], p: &MosaicParams) -> Vec<Conversio
         events.push(ConversionEvent {
             copy_a: a,
             copy_b: b,
+            chrom: chrom.to_string(),
             breakpoint_ref: (br_lo, br_hi),
             n_supporting_reads: n,
             breakpoint_dispersion: dispersion,
@@ -316,6 +325,65 @@ pub fn aggregate_family(calls: &[MosaicCall], p: &MosaicParams) -> Vec<Conversio
         i = j;
     }
     events
+}
+
+/// Unified gene-conversion-vs-artifact verdict for a mosaic family event. `aggregate_family`'s
+/// `confirmed` flag captures only ONE leg (recurrence across molecules); but recurrence alone is
+/// insufficient — a sequence-driven template-switch hotspot (microhomology at the same point)
+/// produces RT-switch chimeras that ALSO recur, so they pass the recurrence gate. The discriminator
+/// therefore needs two ORTHOGONAL legs in addition to recurrence:
+///   * **microhomology** at the breakpoint = the RT/template-switch signature (a direct repeat
+///     flanking the switch point — `genome::is_rt_switch` applied to the breakpoint bracket);
+///   * **DNA support** = heritability: a real (historical) gene conversion is in the genome and so
+///     recurs in matched DNA reads; an RT/template switch is an RNA-library artifact, absent from DNA.
+/// Both legs are passed in as `Option<bool>` so "no evidence available" (`None`) is distinct from
+/// "negative evidence" (`Some(false)`). The DNA leg can act as a **veto** (`Some(false)` → `Ambiguous`)
+/// when a RELIABLE absence source exists; this lets the two cheap legs (recurrence + microhomology)
+/// ship without the DNA catalog wired, while a reliable DNA source strengthens or vetoes the call.
+///
+/// MEASURED (bench/mosaic_discriminator/dna_support.py, T2T DNA PSV catalog): the catalog signal is
+/// real (42% of multi-copy families show a heritable-conversion DNA mosaic) but SPARSE and ref0-centric
+/// (only ~2.9% of the genome is in a ref0 interval; localized mosaics return "absent" almost everywhere
+/// even in families that HAVE one). So catalog "absent" is UNRELIABLE negative evidence — a catalog-
+/// backed DNA closure must return `Some(true)` / `None` only (positive corroboration), NEVER
+/// `Some(false)`, or it would wrongly downgrade real conversions. The production paths pass `None`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Classification {
+    /// recurrent + present in DNA + no template-switch signature → real biological gene conversion.
+    GeneConversion,
+    /// direct-repeat/microhomology at the breakpoint and NOT DNA-confirmed → RT/template-switch artifact.
+    RtSwitchArtifact,
+    /// sporadic (did not recur) with no template-switch signature → one-off chimera, lean artifact.
+    ChimeraSuspect,
+    /// conflicting or insufficient evidence (e.g. microhomology AND DNA support; or recurrent but DNA unknown).
+    Ambiguous,
+}
+
+/// Classify one family event from the three orthogonal legs (recurrence via `ev.confirmed`,
+/// `microhomology`, `dna_supported`). Pure: the caller supplies the two genome/DNA-derived signals.
+/// Evaluation order matters — the microhomology-artifact rule fires BEFORE the gene-conversion rule,
+/// so a recurrent-but-RT-signature event is correctly called an artifact rather than a conversion.
+pub fn classify_event(
+    ev: &ConversionEvent,
+    microhomology: Option<bool>,
+    dna_supported: Option<bool>,
+) -> Classification {
+    let mh = microhomology == Some(true);
+    let dna_present = dna_supported == Some(true);
+    let dna_absent = dna_supported == Some(false);
+    if mh && !dna_present {
+        // template-switch signature, not rescued by positive DNA support → artifact (even if it recurs).
+        Classification::RtSwitchArtifact
+    } else if ev.confirmed && !mh && !dna_absent {
+        // recurrent + no template signature + DNA not contradicting (present or unchecked) → conversion.
+        Classification::GeneConversion
+    } else if !ev.confirmed && !mh {
+        // sporadic, no signature → one-off chimera.
+        Classification::ChimeraSuspect
+    } else {
+        // microhomology∧DNA-present conflict, or recurrent-but-DNA-absent (heritability contradicted).
+        Classification::Ambiguous
+    }
 }
 
 #[cfg(test)]
@@ -435,17 +503,194 @@ mod tests {
         let calls: Vec<MosaicCall> = (0..3)
             .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
             .collect();
-        let events = aggregate_family(&calls, &p());
+        let events = aggregate_family(&calls, &vec!["c1"; calls.len()], &p());
         assert_eq!(events.len(), 1);
         assert!(events[0].confirmed);
         assert_eq!(events[0].n_supporting_reads, 3);
     }
 
     #[test]
+    fn family_event_carries_its_chrom() {
+        let calls: Vec<MosaicCall> = (0..3)
+            .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
+            .collect();
+        let events = aggregate_family(&calls, &vec!["chrX"; calls.len()], &p());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].chrom, "chrX");
+    }
+
+    #[test]
+    fn same_breakpoint_on_different_chroms_does_not_cluster() {
+        // 3 reads on chrom A + 3 reads on chrom B, all with the IDENTICAL switch/midpoint. They must
+        // form TWO separate events (one per chrom), not one merged cluster — the multi-chrom paralog
+        // (e.g. RABL2A/RABL2B) case. Chrom is part of the cluster key.
+        let calls: Vec<MosaicCall> = (0..6)
+            .map(|_| detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p()))
+            .collect();
+        let chroms = ["cA", "cA", "cA", "cB", "cB", "cB"];
+        let events = aggregate_family(&calls, &chroms, &p());
+        assert_eq!(events.len(), 2, "different chroms must not cluster together");
+        let mut cs: Vec<&str> = events.iter().map(|e| e.chrom.as_str()).collect();
+        cs.sort();
+        assert_eq!(cs, vec!["cA", "cB"]);
+        assert!(events.iter().all(|e| e.confirmed && e.n_supporting_reads == 3));
+    }
+
+    #[test]
     fn family_rejects_singleton_as_chimera_suspect() {
         let calls = vec![detect_mosaic(&obs_from("000111", 2), 2, 0.005, &p())];
-        let events = aggregate_family(&calls, &p());
+        let events = aggregate_family(&calls, &vec!["c1"; calls.len()], &p());
         assert_eq!(events.len(), 1);
         assert!(!events[0].confirmed); // 1 molecule < family_min_supporting_reads
+    }
+
+    // ----- classify_event (unified gene-conversion-vs-artifact discriminator) -----
+
+    fn ev(confirmed: bool) -> ConversionEvent {
+        ConversionEvent {
+            copy_a: 0,
+            copy_b: 1,
+            chrom: "c1".to_string(),
+            breakpoint_ref: (1000, 1010),
+            n_supporting_reads: if confirmed { 5 } else { 1 },
+            breakpoint_dispersion: 0,
+            confirmed,
+        }
+    }
+
+    #[test]
+    fn classify_recurrent_dna_no_microhomology_is_gene_conversion() {
+        assert_eq!(
+            classify_event(&ev(true), Some(false), Some(true)),
+            Classification::GeneConversion
+        );
+    }
+
+    #[test]
+    fn classify_microhomology_without_dna_is_rt_switch_even_if_recurrent() {
+        // the load-bearing case: recurrence ALONE would have called this confirmed, but the
+        // template-switch signature (microhomology) + no DNA support overrides it to artifact.
+        assert_eq!(
+            classify_event(&ev(true), Some(true), Some(false)),
+            Classification::RtSwitchArtifact
+        );
+        assert_eq!(
+            classify_event(&ev(true), Some(true), None),
+            Classification::RtSwitchArtifact
+        );
+    }
+
+    #[test]
+    fn classify_sporadic_no_signature_is_chimera_suspect() {
+        assert_eq!(
+            classify_event(&ev(false), Some(false), None),
+            Classification::ChimeraSuspect
+        );
+    }
+
+    #[test]
+    fn classify_microhomology_and_dna_conflict_is_ambiguous() {
+        // direct repeat AND present in DNA: could be a real conversion at a repeat-prone site — abstain.
+        assert_eq!(
+            classify_event(&ev(true), Some(true), Some(true)),
+            Classification::Ambiguous
+        );
+    }
+
+    #[test]
+    fn classify_recurrent_no_microhomology_dna_unchecked_is_gene_conversion() {
+        // DNA is a VETO, not a requirement: unchecked (None) does not block the two cheap legs.
+        assert_eq!(
+            classify_event(&ev(true), Some(false), None),
+            Classification::GeneConversion
+        );
+    }
+
+    #[test]
+    fn classify_recurrent_but_dna_absent_is_ambiguous() {
+        // DNA was CHECKED and the breakpoint is ABSENT from the genome → contradicts heritability.
+        assert_eq!(
+            classify_event(&ev(true), Some(false), Some(false)),
+            Classification::Ambiguous
+        );
+    }
+
+    // ----- ground-truth confusion matrix: full real path (detect -> aggregate -> genome
+    //       microhomology -> classify), BOTH directions, over a constructed genome -----
+
+    /// Build N recurrent recombinant reads that switch copy 0 -> copy 1 at site index `bp`, with
+    /// their breakpoint bracket placed at genome positions `(left, right)` (so the genome's sequence
+    /// at those coords decides microhomology). Returns the aggregated (single) confirmed event.
+    fn recurrent_event_at(bp_left: u64, bp_right: u64, n_reads: usize) -> ConversionEvent {
+        // 6 decisive sites in ASCENDING genomic order: three copy-0 sites ending exactly at `bp_left`,
+        // then three copy-1 sites starting exactly at `bp_right` = a clean "000111" 0->1 switch whose
+        // breakpoint bracket is (bp_left, bp_right).
+        let positions = [
+            (bp_left - 20, 0usize),
+            (bp_left - 10, 0),
+            (bp_left, 0),
+            (bp_right, 1),
+            (bp_right + 10, 1),
+            (bp_right + 20, 1),
+        ];
+        let mut calls = Vec::new();
+        for _ in 0..n_reads {
+            let obs: Vec<SiteObs> = positions
+                .iter()
+                .map(|&(ref_pos, copy)| {
+                    let mut mb = vec![false; 2];
+                    mb[copy] = true;
+                    SiteObs { ref_pos, match_bits: mb }
+                })
+                .collect();
+            calls.push(detect_mosaic(&obs, 2, 0.005, &p()));
+        }
+        let mut events = aggregate_family(&calls, &vec!["c1"; calls.len()], &p());
+        assert_eq!(events.len(), 1, "one oriented breakpoint cluster");
+        let ev = events.pop().unwrap();
+        assert!(ev.confirmed, "recurrent across {} molecules -> confirmed", n_reads);
+        ev
+    }
+
+    #[test]
+    fn ground_truth_conversion_vs_rt_switch_confusion_matrix() {
+        use crate::genome::GenomeIndex;
+        // One genome, two breakpoint loci:
+        //  * CONVERSION locus: breakpoint flanks DIFFER -> no microhomology -> GeneConversion.
+        //  * RT-SWITCH locus: breakpoint sits at an exact direct repeat -> microhomology -> artifact.
+        let mut seq = vec![b'A'; 400];
+        // RT-switch direct repeat: 8 bp ending at 200 == 8 bp ending at 240.
+        seq[192..200].copy_from_slice(b"CGTACGTA");
+        seq[232..240].copy_from_slice(b"CGTACGTA");
+        // Conversion locus: flanks ending at 300 vs 340 deliberately DIFFER.
+        seq[292..300].copy_from_slice(b"CGTACGTA");
+        seq[332..340].copy_from_slice(b"TTGGAACC");
+        let g = GenomeIndex::from_seqs(&[("c1", &seq[..])]);
+
+        let mh = |left: u64, right: u64| g.breakpoint_microhomology("c1", left, right, 6, 12);
+
+        // RT-switch breakpoint bracket (200, 240): direct repeat present.
+        let rt_ev = recurrent_event_at(200, 240, 5);
+        assert!(mh(200, 240), "direct repeat at the RT-switch breakpoint");
+        assert_eq!(
+            classify_event(&rt_ev, Some(mh(200, 240)), None),
+            Classification::RtSwitchArtifact,
+            "recurrent + microhomology + DNA-unchecked -> artifact (recurrence alone would have mis-called it)"
+        );
+
+        // Conversion breakpoint bracket (300, 340): no direct repeat.
+        let gc_ev = recurrent_event_at(300, 340, 5);
+        assert!(!mh(300, 340), "no direct repeat at the conversion breakpoint");
+        assert_eq!(
+            classify_event(&gc_ev, Some(mh(300, 340)), None),
+            Classification::GeneConversion,
+            "recurrent + no microhomology + DNA-not-contradicting -> gene conversion"
+        );
+
+        // DNA leg as a veto: same clean conversion, but ABSENT from DNA -> downgraded to Ambiguous.
+        assert_eq!(
+            classify_event(&gc_ev, Some(mh(300, 340)), Some(false)),
+            Classification::Ambiguous,
+        );
     }
 }

@@ -781,6 +781,52 @@ fn cluster_single_exon_spans(
 /// (Sn 86.2->84.3, Pr 57.7->50.2) — single-exon loci on this data are spurious and no
 /// abundance gate separates them. The switch is now live (previously dead) for inputs
 /// where single-exon isoforms are real.
+/// Effective terminal boundaries for a read-coherence chain group (opt-in trim). The collapse
+/// otherwise sets the first-exon 5' and last-exon 3' boundaries to the EXTREME read extent
+/// (`min_start`/`max_end`) over all reads sharing the intron chain, so a single run-on /
+/// intra-primed molecule inflates the terminal exon. Here we cluster the per-read terminal
+/// positions (`start_positions`/`end_positions`, each `(pos, weight)`) and snap each terminal to
+/// the most-extreme cluster that clears a SUPPORT FLOOR, dropping minority runaway ends while
+/// preserving genuinely-supported length.
+///
+/// The floor is RELATIVE to the group's OWN read weight (the summed position weights) with an
+/// absolute minimum, so thin groups find no surviving cluster and fall back to the extreme
+/// (conservative). `first_donor` / `last_acceptor` bound the terminal exons so the result always
+/// keeps a positive-length terminal exon (`eff_start < first_donor`, `eff_end > last_acceptor`);
+/// otherwise the extreme is kept. Returns `(eff_start, eff_end)`.
+fn effective_terminal_boundaries(
+    start_positions: &[(u64, f64)],
+    end_positions: &[(u64, f64)],
+    min_start: u64,
+    max_end: u64,
+    first_donor: u64,
+    last_acceptor: u64,
+    trim_frac: f64,
+    trim_minabs: f64,
+) -> (u64, u64) {
+    let pos_w: f64 = start_positions.iter().map(|(_, w)| w).sum();
+    let floor = ((trim_frac * pos_w).max(trim_minabs)).ceil().max(2.0) as u64;
+    let sc =
+        crate::tss_tts::cluster_positions_with_counts(start_positions, crate::tss_tts::CPAS_POS_BIN, floor);
+    let ec =
+        crate::tss_tts::cluster_positions_with_counts(end_positions, crate::tss_tts::CPAS_POS_BIN, floor);
+    let mut eff_start = min_start;
+    let mut eff_end = max_end;
+    // 5' start: most-upstream surviving cluster (sc is ascending by position).
+    if let Some(&(c, _)) = sc.first() {
+        if c >= min_start && c < first_donor {
+            eff_start = c;
+        }
+    }
+    // 3' end: most-downstream surviving cluster.
+    if let Some(&(c, _)) = ec.last() {
+        if c <= max_end && c > last_acceptor {
+            eff_end = c;
+        }
+    }
+    (eff_start, eff_end)
+}
+
 pub fn extract_transcripts_readchain(
     graph: &Graph,
     transfrags: &mut [GraphTransfrag],
@@ -789,15 +835,31 @@ pub fn extract_transcripts_readchain(
     config: &RunConfig,
 ) -> Vec<Transcript> {
     let debug = std::env::var_os("RUSTLE_READCHAIN_DEBUG").is_some();
+    // Terminal effective-boundary trim (opt-in; default OFF => byte-identical). When on, the first/last
+    // exon boundaries are snapped from the EXTREME read extent (min_start/max_end) to the most-extreme
+    // per-read terminal CLUSTER that clears a support floor, dropping minority runaway ends. `frac` is
+    // the relative support floor (fraction of the group's own read weight); `minabs` the absolute floor.
+    let trim_terminal = std::env::var_os("RUSTLE_READCHAIN_TRIM_TERMINAL").is_some();
+    let trim_frac: f64 = std::env::var("RUSTLE_READCHAIN_TRIM_FRAC")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.10);
+    let trim_minabs: f64 = std::env::var("RUSTLE_READCHAIN_TRIM_MINABS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
     let source_id = graph.source_id;
     let sink_id = graph.sink_id;
     let min_flow = config.readthr.max(EPSILON);
 
     // Group long-read transfrags by intron chain.
-    // Value: (total_abundance, min_start, max_end, representative_node_ids)
+    // Value: (total_abundance, min_start, max_end, representative_node_ids,
+    //         per-read first-exon starts [(pos,weight)], per-read last-exon ends [(pos,weight)]).
+    // The two position vectors are populated only when `trim_terminal` is set (otherwise they stay
+    // empty and unused, keeping the default path byte-identical).
     let mut chain_groups: std::collections::HashMap<
         Vec<(u64, u64)>,
-        (f64, u64, u64, Vec<usize>),
+        (f64, u64, u64, Vec<usize>, Vec<(u64, f64)>, Vec<(u64, f64)>),
     > = std::collections::HashMap::new();
 
     // Pass 1: collect each long-read transfrag's intron chain + span + abundance.
@@ -887,13 +949,18 @@ pub fn extract_transcripts_readchain(
         };
         let entry = chain_groups
             .entry(key)
-            .or_insert((0.0, tf_start, tf_end, inner));
+            .or_insert((0.0, tf_start, tf_end, inner, Vec::new(), Vec::new()));
         entry.0 += abund;
         if tf_start < entry.1 {
             entry.1 = tf_start;
         }
         if tf_end > entry.2 {
             entry.2 = tf_end;
+        }
+        if trim_terminal {
+            // Keep this read's own terminal positions for effective-boundary clustering at emit time.
+            entry.4.push((tf_start, abund));
+            entry.5.push((tf_end, abund));
         }
     }
 
@@ -977,8 +1044,10 @@ pub fn extract_transcripts_readchain(
     // Tie-break on the intron-chain coordinates so equal-abundance chains have a
     // total order independent of HashMap iteration order — without this the
     // depletion order (and thus the emitted transcript set) varied run-to-run.
-    let mut sorted_chains: Vec<(&Vec<(u64, u64)>, &(f64, u64, u64, Vec<usize>))> =
-        chain_groups.iter().collect();
+    let mut sorted_chains: Vec<(
+        &Vec<(u64, u64)>,
+        &(f64, u64, u64, Vec<usize>, Vec<(u64, f64)>, Vec<(u64, f64)>),
+    )> = chain_groups.iter().collect();
     sorted_chains.sort_by(|a, b| {
         b.1 .0
             .partial_cmp(&a.1 .0)
@@ -986,7 +1055,9 @@ pub fn extract_transcripts_readchain(
             .then_with(|| a.0.cmp(b.0))
     });
 
-    for (chain, (total_abund, min_start, max_end, rep_nodes)) in sorted_chains {
+    for (chain, (total_abund, min_start, max_end, rep_nodes, start_positions, end_positions)) in
+        sorted_chains
+    {
         if *total_abund < isofrac_threshold {
             if debug {
                 eprintln!(
@@ -997,15 +1068,49 @@ pub fn extract_transcripts_readchain(
             continue;
         }
 
+        // Terminal effective-boundary trim (opt-in; default off => eff_* == min_start/max_end, so the
+        // emitted exons are byte-identical). The collapse otherwise sets the first-exon 5' and last-exon
+        // 3' boundaries to the EXTREME read extent over all reads sharing the intron chain, so one
+        // run-on / intra-primed molecule inflates the terminal exon. Cluster the per-read terminal
+        // positions and snap each terminal to the most-extreme cluster that clears a SUPPORT FLOOR,
+        // dropping minority runaway ends while preserving genuinely-supported length. The floor is
+        // RELATIVE to the group's own read weight (sum of the position-vector weights) -- NOT
+        // total_abund, which the degrade-collapse inflates with folded-fragment abundance whose
+        // positions are not in these vectors -- with an absolute minimum, so thin groups find no
+        // surviving cluster and fall back to the extreme (conservative). Internal exons are untouched.
+        let (mut eff_start, mut eff_end) = (*min_start, *max_end);
+        if trim_terminal {
+            let (s, e) = effective_terminal_boundaries(
+                start_positions,
+                end_positions,
+                *min_start,
+                *max_end,
+                chain[0].0,
+                chain.last().unwrap().1,
+                trim_frac,
+                trim_minabs,
+            );
+            eff_start = s;
+            eff_end = e;
+            if debug && (eff_start != *min_start || eff_end != *max_end) {
+                let pos_w: f64 = start_positions.iter().map(|(_, w)| w).sum();
+                eprintln!(
+                    "[READCHAIN_TRIM] start {}->{} (-{}) end {}->{} (-{}) pos_w={:.1}",
+                    min_start, eff_start, eff_start - *min_start,
+                    max_end, eff_end, *max_end - eff_end, pos_w
+                );
+            }
+        }
+
         // Build exon list from intron chain + span.
         // Internal exon boundaries are fully determined by (acceptor_{i-1}, donor_i);
         // only the first-exon start and last-exon end vary across reads.
         let mut exons: Vec<(u64, u64)> = Vec::new();
-        exons.push((*min_start, chain[0].0)); // first exon
+        exons.push((eff_start, chain[0].0)); // first exon
         for i in 1..chain.len() {
             exons.push((chain[i - 1].1, chain[i].0)); // internal exons
         }
-        exons.push((chain.last().unwrap().1, *max_end)); // last exon
+        exons.push((chain.last().unwrap().1, eff_end)); // last exon
 
         // Validate: all exons must have positive length.
         if exons.iter().any(|(s, e)| e <= s) {
@@ -2130,6 +2235,87 @@ mod single_exon_cluster_tests {
     fn input_order_independent() {
         let a = cluster_single_exon_spans(&[(100, 200, 1.0), (150, 250, 1.0), (500, 600, 1.0)], 0);
         let b = cluster_single_exon_spans(&[(500, 600, 1.0), (150, 250, 1.0), (100, 200, 1.0)], 0);
+        assert_eq!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod terminal_trim_tests {
+    use super::effective_terminal_boundaries;
+
+    /// Build a per-read position vector from (position, read_count) groups (unit weights).
+    fn positions(groups: &[(u64, usize)]) -> Vec<(u64, f64)> {
+        let mut v = Vec::new();
+        for &(p, n) in groups {
+            for _ in 0..n {
+                v.push((p, 1.0));
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn no_trim_when_terminals_are_clean() {
+        // 6 reads share one TSS and one TES -> a single supported cluster each -> no trim.
+        let (s, e) = effective_terminal_boundaries(
+            &positions(&[(1000, 6)]), &positions(&[(3000, 6)]),
+            1000, 3000, 2000, 2500, 0.10, 2.0,
+        );
+        assert_eq!((s, e), (1000, 3000));
+    }
+
+    #[test]
+    fn lone_5p_runaway_is_trimmed_to_supported_tss() {
+        // 1 runaway read 400 bp upstream + 5 at the real TSS; floor=2 drops the singleton.
+        let (s, e) = effective_terminal_boundaries(
+            &positions(&[(600, 1), (1000, 5)]), &positions(&[(3000, 6)]),
+            600, 3000, 2000, 2500, 0.10, 2.0,
+        );
+        assert_eq!(s, 1000, "5' boundary should snap to the supported cluster");
+        assert_eq!(e, 3000, "3' boundary untouched");
+    }
+
+    #[test]
+    fn thin_group_falls_back_to_extreme() {
+        // 2 reads, both singleton clusters -> nothing clears floor=2 -> keep the extreme (conservative).
+        let (s, e) = effective_terminal_boundaries(
+            &positions(&[(500, 1), (1500, 1)]), &positions(&[(3000, 1), (4000, 1)]),
+            500, 4000, 2000, 2500, 0.10, 2.0,
+        );
+        assert_eq!((s, e), (500, 4000));
+    }
+
+    #[test]
+    fn supported_minority_alt_tss_is_preserved() {
+        // upstream alt-TSS with 5 reads (>= floor=3) is real, not a runaway -> preserved, not trimmed.
+        let (s, _e) = effective_terminal_boundaries(
+            &positions(&[(700, 5), (1000, 25)]), &positions(&[(3000, 30)]),
+            700, 3000, 2000, 2500, 0.10, 2.0,
+        );
+        assert_eq!(s, 700, "a terminal supported by >= floor reads must be preserved");
+    }
+
+    #[test]
+    fn never_moves_boundary_past_the_junction() {
+        // Degenerate: the only cluster center lands at/after the donor (and before the acceptor) ->
+        // guard rejects the move and keeps the extreme, so the terminal exon stays well-defined.
+        let (s, e) = effective_terminal_boundaries(
+            &positions(&[(2500, 5)]), &positions(&[(2400, 5)]),
+            2500, 2400, 2000, 2500, 0.10, 2.0,
+        );
+        assert_eq!((s, e), (2500, 2400));
+    }
+
+    #[test]
+    fn input_order_independent() {
+        let a = effective_terminal_boundaries(
+            &positions(&[(600, 1), (1000, 5)]), &positions(&[(3000, 6)]),
+            600, 3000, 2000, 2500, 0.10, 2.0,
+        );
+        let b = effective_terminal_boundaries(
+            &positions(&[(1000, 5), (600, 1)]), &positions(&[(3000, 6)]),
+            600, 3000, 2000, 2500, 0.10, 2.0,
+        );
         assert_eq!(a, b);
     }
 }

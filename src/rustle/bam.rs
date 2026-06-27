@@ -868,6 +868,133 @@ pub fn open_bam<P: AsRef<Path>>(
     Ok(reader)
 }
 
+/// Input alignment format, detected from magic bytes (filename extension as a fallback).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlnFormat {
+    Bam,
+    Sam,
+    Cram,
+}
+
+/// Detect SAM/BAM/CRAM by peeking the file's leading bytes. BAM and bgzipped SAM both begin with the
+/// BGZF/gzip magic (0x1f 0x8b) and are told apart by the first *decompressed* bytes (`BAM\1` => BAM).
+/// CRAM begins with the ASCII `CRAM` container magic. Anything else (plain text) is treated as SAM.
+pub fn detect_format<P: AsRef<Path>>(path: P) -> Result<AlnFormat> {
+    use std::io::Read;
+    let path = path.as_ref();
+    let mut magic = Vec::new();
+    std::fs::File::open(path)?.take(4).read_to_end(&mut magic)?;
+    if magic == b"CRAM" {
+        return Ok(AlnFormat::Cram);
+    }
+    if magic.len() >= 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+        // BGZF/gzip container: decompress the first block and look for the BAM magic.
+        let file = std::fs::File::open(path)?;
+        let mut bgzf = noodles_bgzf::Reader::new(io::BufReader::new(file));
+        let mut head = Vec::new();
+        let _ = bgzf.by_ref().take(4).read_to_end(&mut head);
+        return Ok(if head == b"BAM\x01" {
+            AlnFormat::Bam
+        } else {
+            AlnFormat::Sam // bgzipped SAM
+        });
+    }
+    // Plain text (or empty); fall back to the extension for odd cases, else assume SAM.
+    Ok(match path.extension().and_then(|e| e.to_str()) {
+        Some("bam") => AlnFormat::Bam,
+        Some("cram") => AlnFormat::Cram,
+        _ => AlnFormat::Sam,
+    })
+}
+
+/// A temporary BAM file that is deleted when dropped. Created when the input is SAM/CRAM and
+/// transcoded to BAM so the (multi-pass, multithreaded) BAM pipeline can run unchanged.
+pub struct TempBam {
+    path: std::path::PathBuf,
+}
+
+impl TempBam {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn path_string(&self) -> String {
+        self.path.to_string_lossy().into_owned()
+    }
+}
+
+impl Drop for TempBam {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// Transcode a SAM or CRAM input to a temporary BAM (pure noodles — no external tools), returning a
+/// guard that deletes the temp file on drop. The pipeline streams the alignments multiple times via
+/// the fast multithreaded BAM reader, so a single up-front transcode is cheaper and far less invasive
+/// than re-plumbing every read loop. BAM is losslessly the same record set, so the assembly is
+/// identical to running on an equivalent BAM. CRAM requires an indexed reference FASTA (`cram_ref`,
+/// which the caller defaults to `--genome-fasta`); the FASTA must have a sibling `.fai`.
+pub fn transcode_to_temp_bam<P: AsRef<Path>>(
+    src: P,
+    format: AlnFormat,
+    cram_ref: Option<&str>,
+    _threads: usize,
+) -> Result<TempBam> {
+    use noodles_sam::alignment::io::Write as _; // brings write_alignment_record into scope
+    let src = src.as_ref();
+    let out_path = std::env::temp_dir().join(format!(
+        "rustle_input_{}_{}.bam",
+        std::process::id(),
+        src.file_name().and_then(|s| s.to_str()).unwrap_or("input")
+    ));
+    let out_file = std::fs::File::create(&out_path)?;
+    let mut writer = noodles_bam::io::Writer::new(out_file);
+
+    match format {
+        AlnFormat::Bam => anyhow::bail!("transcode_to_temp_bam called on a BAM input"),
+        AlnFormat::Sam => {
+            let mut reader = noodles::sam::io::reader::Builder::default()
+                .build_from_path(src)
+                .map_err(|e| anyhow::anyhow!("opening SAM {}: {e}", src.display()))?;
+            let header = reader.read_header()?;
+            writer.write_header(&header)?;
+            let mut rec = RecordBuf::default();
+            while reader.read_record_buf(&header, &mut rec)? != 0 {
+                writer.write_alignment_record(&header, &rec)?;
+            }
+        }
+        AlnFormat::Cram => {
+            let ref_path = cram_ref.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "CRAM input requires a reference FASTA: pass --cram-ref <ref.fa> (or \
+                     --genome-fasta). The FASTA must be indexed (a sibling .fai; run \
+                     `samtools faidx <ref.fa>`)."
+                )
+            })?;
+            let index_reader = noodles::fasta::io::indexed_reader::Builder::default()
+                .build_from_path(ref_path)
+                .map_err(|e| {
+                    anyhow::anyhow!("opening CRAM reference {ref_path} (needs a .fai index): {e}")
+                })?;
+            let repository = noodles::fasta::Repository::new(
+                noodles::fasta::repository::adapters::IndexedReader::new(index_reader),
+            );
+            let mut reader = noodles::cram::io::reader::Builder::default()
+                .set_reference_sequence_repository(repository)
+                .build_from_path(src)
+                .map_err(|e| anyhow::anyhow!("opening CRAM {}: {e}", src.display()))?;
+            let header = reader.read_header()?;
+            writer.write_header(&header)?;
+            for result in reader.records(&header) {
+                let record = result?;
+                writer.write_alignment_record(&header, &record)?;
+            }
+        }
+    }
+    writer.try_finish()?;
+    Ok(TempBam { path: out_path })
+}
+
 /// Reference contigs that have >=1 mapped read in `bam_path`, read cheaply from
 /// the `.bai` index (no BAM scan). Used to scope the genome FASTA for --vg so a
 /// region-slice BAM (whose header still lists every chromosome) doesn't trigger a

@@ -13,16 +13,54 @@ reads/allele) → partition reads by the allele they carry. Per junction (seen �
 each allele AND spanning the junction, compute **PSI = used/spanning**; **Fisher exact** on the 2×2
 (allele × uses-junction); effect = |ΔPSI|. **BH-FDR** genome-wide; **ASJ = q<0.05 AND |ΔPSI|≥0.3**.
 
+### Definition (PSI / ΔPSI, as implemented in `vg_family/allele_specific_junctions.rs`)
+
+Fix a balanced heterozygous **anchor SNP** with alleles $x,y$, and partition the reads covering it by
+the allele each molecule carries (per-molecule, from the same HiFi read — no statistical phasing). For
+a candidate junction $j=(d,a)$ (donor $d$, acceptor $a$) and allele $x$, define over the reads carrying
+allele $x$:
+
+$$S_x(j)=\#\{\,r : \mathrm{ref\_start}(r)\le d \ \wedge\ \mathrm{ref\_end}(r)\ge a\,\}\qquad\text{(spanning — denominator)}$$
+$$U_x(j)=\#\{\,r \text{ spanning} : (d,a)\in \mathrm{intron\_chain}(r)\,\}\qquad\text{(using — numerator)}$$
+$$\boxed{\ \mathrm{PSI}_x(j)=\frac{U_x(j)}{S_x(j)}\in[0,1]\ }\qquad
+\Delta\mathrm{PSI}(j)=\big|\,\mathrm{PSI}_x(j)-\mathrm{PSI}_y(j)\,\big|.$$
+
+$\mathrm{PSI}_x(j)$ is the fraction of allele-$x$ molecules that *span* the junction locus which actually
+*splice out* $j$. A junction is called **allele-specific** when the Fisher exact test on
+
+$$\begin{pmatrix} U_x & S_x-U_x\\[2pt] U_y & S_y-U_y\end{pmatrix}$$
+
+passes genome-wide Benjamini–Hochberg FDR ($q<q^\*$) **and** $\Delta\mathrm{PSI}\ge\Delta\mathrm{PSI}_{\min}$
+(defaults $q^\*=0.05$, $\Delta\mathrm{PSI}_{\min}=0.30$). Guards: $\ge$ `min_span` ($5$) spanning reads
+**per allele**, junction seen $\ge$ `min_j` ($3$) times; junctions constitutive in *both* alleles
+($\mathrm{PSI}\ge0.98$ on both, or $\le0.02$ on both) are skipped as un-testable.
+
+This is a **junction-level, per-allele** PSI (inclusion ratio of one splice junction among the
+molecules of that allele which span it) — same used/(used+skipped) family as the classic
+percent-spliced-in, but the unit is a junction and the denominator is allele-specific spanning reads,
+which is what makes it a true per-molecule allele→junction linkage rather than a phased/sQTL estimate.
+
 ## Result
 - **7,898** phaseable het genes; **74,674** alternatively-spliced junctions tested.
-- **475 allele-specific junctions (FDR q<0.05, |ΔPSI|≥0.3) across 235 genes.**
-- Strong effects: median |ΔPSI| **0.64**; **213** ≥0.7; **56** full switches (ΔPSI=1.0).
-- **120** have a **transversion** anchor → unambiguously **genetic** (not RNA-editing); 59 genes.
+- **Headline (the genetic core): 120 allele-specific junctions with a TRANSVERSION anchor** (FDR q<0.05,
+  |ΔPSI|≥0.3, 59 genes) — unambiguously **genetic** (a transversion anchor cannot be an A→I RNA-edit
+  site), so these are allele-specific by construction, not editing-coupled.
+- **475 total candidates** across 235 genes (median |ΔPSI| **0.64**; **213** ≥0.7; **56** full switches
+  ΔPSI=1.0) — but the other **355 have transition (A/G, C/T) anchors** that *could* be RNA-edit-coupled
+  splicing (real, but not *genetic* allele-specificity). Lead with the 120; the 475 is the full
+  candidate set including the edit-confoundable transitions.
 
 ## Verification (deterministic + mechanistic — stronger than an LLM pass here)
-- **Collapsed-paralog masquerade ruled out:** all 475 are **uniquely mapped** (frac_mq0<0.1) — the
-  anchors are genuine heterozygous sites, not paralog copies. (0 collapsed.)
-- **Editing controlled:** transversion anchors (120) cannot be RNA-edit sites; transitions flagged.
+- **Collapsed-paralog masquerade — partially controlled, honestly bounded.** The `frac_mq0<0.1` filter
+  removed **0/475** (the called anchors all sit in uniquely-mappable flank), so it is **not a binding
+  control** — it cannot, by construction, separate a 50/50 *het* from a 50/50 *two-copy PSV* whose flank
+  is uniquely mappable. ~36% of the called genes are `LOC*` paralog loci where this ambiguity is live.
+  The clean separator is the existing `scan_gene_copy_specific_junctions` (copy-specific vs het),
+  which should be run on the LOC* loci and reported as a **separate within-gene-het vs paralog-locus
+  count** (TODO). The **120 transversion / ~20 splice-proximal** core is unaffected (mechanism is
+  base-level, see below).
+- **Editing controlled (this is the load-bearing control):** transversion anchors (120) cannot be
+  RNA-edit sites; the 355 transition anchors are flagged as edit-confoundable.
 - **Mechanism — textbook splice-site variants.** 20 high-confidence ASJ are splice-proximal (anchor
   ≤100bp from the junction); the cleanest sit **on the canonical splice dinucleotide**, with the
   per-molecule split confirming disruption:
@@ -33,6 +71,13 @@ each allele AND spanning the junction, compute **PSI = used/spanning**; **Fisher
   one anchor (itself a splice-site SNP) flips a whole *set* of junctions up to 15–100 kb away (ΔPSI=1.0),
   i.e. the allele selects an entire transcript structure. Real (uniquely mapped, anchor at a splice site)
   but a distinct phenomenon from local splice-disruption; long-span ones are also lower-power.
+  > ⚠ **Chimera-not-excluded class.** The ASJ path has **no RT/template-switch guard**. The ~23 distal,
+  > full-switch (|ΔPSI|=1.0, anchor far from the junction) calls — 17 of them `LOC*` loci, 7 reaching the
+  > high-confidence column — are exactly the class an RT/template-switch chimera (or trans-association)
+  > could mimic, since a single molecule carrying both the distal allele and the switched junction is the
+  > artifact's own signature. These should be tagged **chimera-not-excluded** in the TSV (and could carry
+  > the microhomology-signature flag that already exists in `copy_assign`); the local splice-proximal core
+  > (120 transversion / ~20 dinucleotide) is unaffected because its mechanism is base-level at the junction.
 
 ## Honest caveats
 - **Single-anchor phasing:** one balanced het SNP per gene; a junction is tested only among reads

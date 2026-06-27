@@ -264,6 +264,47 @@ error objective counts allele mismatches.  Theorem 1 (hardness via coloring, par
 and MEC-hardness (error objective) together show that hardness is **robust across both objective
 functions**: minimizing the number of copies and minimizing allele flips are both NP-hard.
 
+#### Definition (MEC, as implemented in `vg_family/phasing.rs`)
+
+Encode the reads over the $m$ heterozygous sites of a locus as an allele matrix
+
+$$M \in \{0,1,\bot\}^{n\times m}, \qquad
+M[r][j]=\begin{cases}\text{allele of read } r \text{ at site } j\\[2pt] \bot & \text{if } r \text{ does not cover } j,\end{cases}$$
+
+with $n$ reads (rows) and $m$ het sites (columns). The **Minimum Error Correction** value is
+
+$$\mathrm{MEC}(M)=\min_{\substack{h_A,h_B\in\{0,1\}^m\\ \sigma:[n]\to\{A,B\}}}\
+\sum_{r=1}^{n}\ \sum_{j:\,M[r][j]\neq\bot}\ \mathbb{1}\!\big[\,M[r][j]\neq h_{\sigma(r)}[j]\,\big],$$
+
+i.e. the minimum number of **(read, site) cells** that must be flipped so that every read agrees
+perfectly, over its covered sites, with its assigned haplotype. NP-hard already at $k=2$
+[Lippert et al. 2002; Cilibrasi et al. 2005].
+
+Two structural commitments make the implementation **exact** (not heuristic):
+
+1. **Diploid complementarity.** At a *heterozygous* site the two haplotypes carry opposite alleles, so
+   the code fixes $h_B=\lnot h_A$ (`mec_brute`). This restricts the search to the $2^m$ choices of
+   $h_A$, not $2^{2m}$; and for fixed $h_A$ each read *independently* joins the cheaper of
+   $\{h_A,\lnot h_A\}$, so $h_A$ determines the optimal $\sigma$. Hence
+   $\mathrm{MEC}(M)=\min_{h_A}\sum_r \min\!\big(d_H(M[r],h_A),\,d_H(M[r],\lnot h_A)\big)$, with $d_H$
+   the covered-cell Hamming distance.
+
+2. **Pattern collapse ⇒ coverage-independent exactness.** Full-length RNA reads all span the gene, so a
+   naive column-sweep DP carries state $2^{\text{boundary coverage}}=2^{\Theta(n)}$. But two reads with
+   an identical allele row are WLOG on the same haplotype (identical per-column contribution ⇒ any split
+   merges to the cheaper side without raising cost), so identical rows are collapsed into **weighted
+   classes** and the DP runs over classes. A clean diploid locus has $\approx 2$ classes (the two
+   haplotypes) plus a few error-singletons, so the open state is $O(1)$ and the DP is exact at any
+   coverage. The DP is proven equivalent to `mec_brute`; the unit test asserts $\text{cost}=$ number of
+   error cells. The `max_coverage` cap bounds *distinct classes per column*, not raw reads, and rarely
+   fires on real diploid data.
+
+**Scope.** MEC here is the **within-copy diploid het phasing** run by `--phase` (one copy at a time,
+$k=2$). It is distinct from the family-level copy-assignment objective $\mathrm{MCC}=\chi(H)$
+(§3–§5): MCC minimizes the *number of copies* (parsimony/coloring) over the whole family variation
+graph, whereas MEC minimizes *allele flips* against the two complementary haplotypes of a single copy.
+The note's point is that **both** objectives are NP-hard, so intractability is objective-robust.
+
 ---
 
 ## §5 Identifiability: Strong Separation and Theorem 2
@@ -648,6 +689,14 @@ the truth.
 all in the well-separated regime (MAPQ > 0, divergence-gap decisive), where Strong Separation holds by the
 aligner's own evidence; the coverage condition is met at ≥ 47 de-conflict reads per family.
 
+> ⚠ **What this figure is and is NOT.** It is a *consistency check in the EASY (MAPQ > 0) regime* — and
+> the "silver" truth is the aligner's own primary placement, so the metric is **circular by construction**
+> (it confirms the resolver agrees with minimap2 exactly where minimap2 was already confident). It says
+> nothing about the hard MAPQ-0 regime the thesis is actually about, and 100% here is expected, not
+> impressive. The **load-bearing identifiability evidence is the sim5x labeled-truth K-ladder above**
+> (0%@K=0 → 100%@K≥2 against *planted* per-read copy labels, not alignment), which has a non-circular
+> ground truth. Cite the ladder, not the 1026/1026, as the empirical spine of Theorem 2.
+
 **Honest caveat.** Strong Separation is a conservative *sufficient* condition. The empirical resolver may
 succeed in K ≥ 2 instances that are not Strongly Separated but are recombination-free (the tighter necessary-
 and-sufficient condition of the Proposition). The 100% recovery figure is consistent with Strong Separation
@@ -815,3 +864,15 @@ not pass — remains an open question.
 
 The dichotomy is therefore fully closed on both axes: **NP-hard in the general case** (Theorem 1); **unique
 optimum and polynomial recovery** under Strong Separation (Theorems 2 and 3).
+
+---
+
+## References
+
+- **Lippert, R., Schwartz, R., Lancia, G., & Istrail, S.** (2002). Algorithmic strategies for the
+  single nucleotide polymorphism haplotype assembly problem. *Briefings in Bioinformatics*, 3(1),
+  23–31. — Introduces the Minimum Error Correction (MEC) formulation of haplotype assembly.
+- **Cilibrasi, R., van Iersel, L., Kelk, S., & Tromp, J.** (2005). On the complexity of several
+  haplotyping problems. In *Algorithms in Bioinformatics (WABI 2005)*, LNCS 3692, 128–139. (Journal
+  version: *Algorithmica* 49(1):13–36, 2007.) — Establishes NP-hardness/APX-hardness of MEC, including
+  at $k = 2$.

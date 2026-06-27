@@ -68,6 +68,42 @@ struct Args {
     /// genome position). The raw per-molecule evidence behind each assignment, for the proof visualization.
     #[arg(long, default_value_t = false)]
     dump_psv: bool,
+    /// Decisive-margin τ: the minimum log-likelihood-ratio over the runner-up copy to call a read ASSIGNED
+    /// (else AMBIGUOUS); the single calibrated knob that replaces the vote-count (min_psv, margin) integers.
+    /// τ = ln((1−p)/p) for a target per-read misassignment p (τ=6.9 default ≈ p 1e-3, the Eichler AS≥10
+    /// analog; τ=2.0 ≈ p 0.12). The identifiability gate (n_decisive≥1) is independent of τ and always applied.
+    #[arg(long, default_value_t = 6.9)]
+    margin: f64,
+    /// Per-base PSV error rate used in the likelihood when a read carries no per-base quality (HiFi ~0.003).
+    #[arg(long, default_value_t = 0.003)]
+    error_rate: f64,
+    /// IsoCon significance level α for the DEFAULT gate: assign iff the per-read certificate p < α/(n−1)
+    /// (Bonferroni over the n−1 competitors) AND the read is the strict MLE. α is the FAMILY-WIDE
+    /// misassignment rate over assigned reads (1e-3 ≈ the τ=6.9 / Eichler AS≥10 precision point). Ignored
+    /// when `--margin-gate` is set.
+    #[arg(long, default_value_t = 1e-3)]
+    alpha: f64,
+    /// Use the LEGACY τ-margin gate (the `--margin` knob) instead of the IsoCon significance gate. For
+    /// reproducing pre-significance-gate numbers and the gate A/B comparison.
+    #[arg(long, default_value_t = false)]
+    margin_gate: bool,
+    /// Disable the RNA-editing filter (Clair3-RNA): by default, A↔G PSV columns showing within-copy
+    /// heterogeneity are flagged as A-to-I editing sites and downweighted in the certificate so an edited
+    /// base cannot fake copy-support. This reverts to trusting every PSV column uniformly.
+    #[arg(long, default_value_t = false)]
+    no_editing_filter: bool,
+    /// εⱼ used for an editing-flagged PSV column in the certificate (the rate a base shows the other allele
+    /// by editing rather than sequencing error). Default 0.2.
+    #[arg(long, default_value_t = 0.2)]
+    edit_rate: f64,
+    /// Emit FACULTATIVE long-read PHASING (dependency-free; no external phaser, no CNN). Phases reads into
+    /// copy-HAPLOTYPES from their linked PSV evidence — the N-copy generalisation of read-backed phasing
+    /// (min-path-cover over the PSV graph). Writes `<out>.phase_blocks.tsv` (one PHASE SET per family),
+    /// `<out>.phased_haplotypes.tsv` (each haplotype's `pos:allele` variant string — the phased alleles),
+    /// and `<out>.phased_reads.tsv` (read → haplotype HAPLOTAG with the decisive-margin confidence;
+    /// haplotype = -1 when the read is ambiguous/tied = unphased). Block ≙ PS tag, haplotype ≙ HP tag.
+    #[arg(long, default_value_t = false)]
+    phase: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -93,6 +129,8 @@ struct AssignRow {
     status: &'static str,
     n_decisive: usize,
     margin: f64,
+    p_value: f64,
+    min_p_value: f64,
 }
 /// One family-table row.
 struct FamilyRow {
@@ -167,7 +205,16 @@ fn main() -> Result<()> {
 
     let mut cfg = DenovoConfig::default();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
-    let params = AssignParams::default();
+    let params = AssignParams {
+        margin: args.margin,
+        error_rate: args.error_rate,
+        alpha: args.alpha,
+        use_margin_gate: args.margin_gate,
+        rna_editing_filter: !args.no_editing_filter,
+        edit_rate: args.edit_rate,
+        ..AssignParams::default()
+    };
+    eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut assign_rows: Vec<AssignRow> = Vec::new();
     let mut quant_rows: Vec<QuantRow> = Vec::new();
@@ -176,6 +223,14 @@ fn main() -> Result<()> {
     let mut psv_read_lines: Vec<String> = Vec::new(); // --dump-psv: per-read genotype (alleles at every PSV col)
     let mut psv_copy_lines: Vec<String> = Vec::new(); // --dump-psv: per-copy PSV alleles
     let mut psv_col_lines: Vec<String> = Vec::new(); // --dump-psv: PSV column -> genome position
+    let mut phase_block_lines: Vec<String> = Vec::new();  // --phase: one phase set (PS) per family
+    let mut phased_hap_lines: Vec<String> = Vec::new();   // --phase: each haplotype's PSV variant string
+    let mut phased_read_lines: Vec<String> = Vec::new();  // --phase: read -> haplotype (HP) haplotag
+    // --phase: a self-contained variation graph (GFA) of the phasing — PSV columns = BUBBLES
+    // (one segment per allele), copies = PATHS through the bubbles. Loadable in Bandage/vg.
+    let mut gfa_segs: HashSet<String> = HashSet::new();        // dedup'd S-lines (shared allele = shared node = bubble anchor)
+    let mut gfa_links: HashSet<(String, String)> = HashSet::new();
+    let mut gfa_paths: Vec<String> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
@@ -206,6 +261,8 @@ fn main() -> Result<()> {
                         status: status_str(a.status),
                         n_decisive: a.n_decisive,
                         margin: a.log_lr_margin,
+                        p_value: a.p_value,
+                        min_p_value: a.min_p_value,
                     });
                 }
                 // soft per-copy abundance (+ the hard read count for comparison)
@@ -264,6 +321,72 @@ fn main() -> Result<()> {
                         psv_col_lines.push(format!("{}\t{}\t{}", fid, col, pos.map(|x| x as i64).unwrap_or(-1)));
                     }
                 }
+                // FACULTATIVE phasing: phase set = family; haplotypes = its copies; read->haplotype =
+                // the PSV assignment. A read is phased iff it clears the decisive-margin gate (Assigned);
+                // Ambiguous/Tied reads are emitted with haplotype = -1 (unphaseable = K-frontier).
+                if args.phase {
+                    let n_phased = fa
+                        .assignments
+                        .iter()
+                        .filter(|(_, a)| matches!(a.status, AssignStatus::Assigned))
+                        .count();
+                    phase_block_lines.push(format!(
+                        "{}\t{}\t{}\t{}\t{}\t{}",
+                        fid, fa.chrom, fa.n_copies, fa.psv_cols, n_phased,
+                        fa.assignments.len() - n_phased
+                    ));
+                    for (ci, tid) in fa.copy_tids.iter().enumerate() {
+                        let mut vs = String::new();
+                        if let Some(alleles) = fa.copy_psv_alleles.get(ci) {
+                            for (col, a) in alleles.iter().enumerate() {
+                                if let (Some(b), Some(Some(pos))) = (a, fa.psv_col_pos.get(col)) {
+                                    if !vs.is_empty() {
+                                        vs.push(';');
+                                    }
+                                    vs.push_str(&format!("{}:{}", pos, *b as char));
+                                }
+                            }
+                        }
+                        let n_sup = fa
+                            .assignments
+                            .iter()
+                            .filter(|(_, a)| a.best_copy == ci && matches!(a.status, AssignStatus::Assigned))
+                            .count();
+                        phased_hap_lines.push(format!("{}\t{}\t{}\t{}\t{}", fid, ci, tid, n_sup, vs));
+
+                        // VG view: this copy is a PATH through the PSV bubbles. A node id is
+                        // (family, column, allele) — copies sharing an allele at a column share the
+                        // node (a bubble anchor); where they differ the path forks (the bubble).
+                        if let Some(alleles) = fa.copy_psv_alleles.get(ci) {
+                            let mut path_nodes: Vec<String> = Vec::new();
+                            for (col, a) in alleles.iter().enumerate() {
+                                if let (Some(b), Some(Some(pos))) = (a, fa.psv_col_pos.get(col)) {
+                                    let nid = format!("{}_c{}_{}", fid, col, *b as char);
+                                    gfa_segs.insert(format!("S\t{}\t{}\tPO:i:{}", nid, *b as char, pos));
+                                    if let Some(prev) = path_nodes.last() {
+                                        gfa_links.insert((prev.clone(), nid.clone()));
+                                    }
+                                    path_nodes.push(nid);
+                                }
+                            }
+                            if !path_nodes.is_empty() {
+                                let p: Vec<String> = path_nodes.iter().map(|n| format!("{}+", n)).collect();
+                                gfa_paths.push(format!("P\t{}_copy{}\t{}\t*", fid, ci, p.join(",")));
+                            }
+                        }
+                    }
+                    for (ri, a) in &fa.assignments {
+                        let hap: i64 = if matches!(a.status, AssignStatus::Assigned) {
+                            a.best_copy as i64
+                        } else {
+                            -1
+                        };
+                        phased_read_lines.push(format!(
+                            "{}\t{}\t{}\t{}\t{:.3}\t{}",
+                            bam_reads[*ri].name, fid, hap, a.n_decisive, a.log_lr_margin, status_str(a.status)
+                        ));
+                    }
+                }
                 family_rows.push(FamilyRow {
                     family_id: fid,
                     chrom: fa.chrom.clone(),
@@ -298,12 +421,12 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value")?;
     for r in &assign_rows {
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}",
-            r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}",
+            r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value
         )?;
     }
 
@@ -313,6 +436,48 @@ fn main() -> Result<()> {
     writeln!(qh, "family_id\tcopy_index\tcopy_tid\tabundance\tci95_halfwidth\tn_reads_hard")?;
     for r in &quant_rows {
         writeln!(qh, "{}\t{}\t{}\t{:.4}\t{:.4}\t{}", r.family_id, r.copy_index, r.copy_tid, r.abundance, r.ci, r.n_hard)?;
+    }
+
+    // FACULTATIVE long-read phasing output (dependency-free): phase set (PS) per family, each haplotype's
+    // PSV variant string, and read -> haplotype (HP) haplotag. Only written under --phase.
+    if args.phase {
+        let mut pb = std::fs::File::create(format!("{}.phase_blocks.tsv", args.out))?;
+        writeln!(pb, "block_id\tchrom\tn_haplotypes\tn_psv_sites\tn_reads_phased\tn_unphased")?;
+        for l in &phase_block_lines {
+            writeln!(pb, "{}", l)?;
+        }
+        let mut ph = std::fs::File::create(format!("{}.phased_haplotypes.tsv", args.out))?;
+        writeln!(ph, "block_id\thaplotype\tcopy_tid\tn_support_reads\tvariants")?;
+        for l in &phased_hap_lines {
+            writeln!(ph, "{}", l)?;
+        }
+        let mut pr = std::fs::File::create(format!("{}.phased_reads.tsv", args.out))?;
+        writeln!(pr, "read_name\tblock_id\thaplotype\tn_psv_spanned\tmargin\tstatus")?;
+        for l in &phased_read_lines {
+            writeln!(pr, "{}", l)?;
+        }
+        // self-contained variation graph of the phasing (copies = paths, PSVs = bubbles)
+        let mut gf = std::fs::File::create(format!("{}.phase.gfa", args.out))?;
+        writeln!(gf, "H\tVN:Z:1.0")?;
+        let mut segs: Vec<&String> = gfa_segs.iter().collect();
+        segs.sort();
+        for s in segs {
+            writeln!(gf, "{}", s)?;
+        }
+        let mut links: Vec<&(String, String)> = gfa_links.iter().collect();
+        links.sort();
+        for (a, b) in links {
+            writeln!(gf, "L\t{}\t+\t{}\t+\t0M", a, b)?;
+        }
+        for p in &gfa_paths {
+            writeln!(gf, "{}", p)?;
+        }
+        let n_phased = phased_read_lines.iter().filter(|l| !l.contains("\t-1\t")).count();
+        eprintln!(
+            "[copy_assign] phasing: {} blocks, {} haplotypes, {}/{} reads phased -> {}.phased_*.tsv + {}.phase.gfa ({} bubble-nodes, {} copy-paths)",
+            phase_block_lines.len(), phased_hap_lines.len(), n_phased, phased_read_lines.len(),
+            args.out, args.out, gfa_segs.len(), gfa_paths.len()
+        );
     }
 
     // gene-conversion events: per-molecule PSV-path switches confirmed by RECURRENCE across reads (vs one-off

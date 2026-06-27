@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::copy_assign::{assign_read, AssignParams, Assignment, CopyProfile, ReadFeatures};
+use super::copy_assign::{assign_read, assign_read_editing, AssignParams, Assignment, CopyProfile, ReadFeatures};
 use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
 use super::family_graph::poa_msa_with_costs;
@@ -98,6 +98,130 @@ pub fn copy_boundaries(t: &DenovoTranscript) -> Vec<i64> {
 /// this column, or `None` if the copy is gapped here.
 pub type PsvColumn = Vec<Option<(u64, u8)>>;
 
+/// Pairwise alignment of `other` (query) to `ref_seq` (target) via **minimap2 asm20** (`-c --eqx`),
+/// returned in the SAME 2-row gapped-MSA format as `poa_msa_with_costs` (`[gapped_ref, gapped_other]`,
+/// `b'-'` = gap) so `discover_psvs` can consume it unchanged. minimap2 (heuristic seed-chain-align) is
+/// far faster than poasta (exact Dijkstra DP) on the long (~10 kb) near-identical copy transcripts, and
+/// yields the same substitution columns. Opt in with RUSTLE_PSV_MINIMAP2=1.
+///
+/// Unaligned ends (minimap2 may clip divergent termini) are rendered as separate ref-only / query-only
+/// gap blocks so the offset walk in `discover_psvs` stays correct (ro spans `0..ref.len()`, oo spans
+/// `0..other.len()`); only the aligned core has both-non-gap columns, so no spurious PSV is created in
+/// a clipped end. A reverse-strand or absent alignment returns `Err` → the caller skips that pair (same
+/// as a poasta failure).
+fn minimap2_msa_pair(ref_seq: &[u8], other: &[u8]) -> anyhow::Result<Vec<Vec<u8>>> {
+    use std::io::Write;
+    let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    let nonce = ref_seq.len().wrapping_mul(1000003) ^ other.len();
+    let tpath = dir.join(format!("rustle_psv_t_{pid}_{nonce}.fa"));
+    let qpath = dir.join(format!("rustle_psv_q_{pid}_{nonce}.fa"));
+    struct Cleanup(std::path::PathBuf, std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+            let _ = std::fs::remove_file(&self.1);
+        }
+    }
+    let _cl = Cleanup(tpath.clone(), qpath.clone());
+    {
+        let mut t = std::fs::File::create(&tpath)?;
+        t.write_all(b">t\n")?;
+        t.write_all(ref_seq)?;
+        t.write_all(b"\n")?;
+        let mut q = std::fs::File::create(&qpath)?;
+        q.write_all(b">q\n")?;
+        q.write_all(other)?;
+        q.write_all(b"\n")?;
+    }
+    let out = std::process::Command::new(&mm2)
+        .args(["-c", "--eqx", "-x", "asm20", "-t", "1", "--secondary=no"])
+        .arg(&tpath)
+        .arg(&qpath)
+        .output()?;
+    if !out.status.success() {
+        anyhow::bail!("minimap2 failed");
+    }
+    // pick the alignment line with the longest target span (te-ts); forward strand only.
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut best: Option<(usize, usize, u64, &str)> = None; // (ts, qs, span, cigar)
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 {
+            continue;
+        }
+        if f[4] != "+" {
+            continue; // reverse-strand: copies are same orientation; skip (caller `continue`s)
+        }
+        let (qs, ts, te) = (
+            f[2].parse::<usize>().unwrap_or(0),
+            f[7].parse::<usize>().unwrap_or(0),
+            f[8].parse::<usize>().unwrap_or(0),
+        );
+        let cigar = f.iter().find_map(|x| x.strip_prefix("cg:Z:")).unwrap_or("");
+        if cigar.is_empty() {
+            continue;
+        }
+        let span = (te - ts) as u64;
+        if best.map_or(true, |b| span > b.2) {
+            best = Some((ts, qs, span, cigar));
+        }
+    }
+    let (ts, qs, _span, cigar) = best.ok_or_else(|| anyhow::anyhow!("no forward minimap2 alignment"))?;
+    Ok(cigar_to_gapped_msa(ref_seq, other, ts, qs, cigar))
+}
+
+/// Reconstruct the 2-row gapped MSA (`[gapped_ref, gapped_other]`, `b'-'` = gap) from a minimap2 PAF
+/// alignment: target-start `ts`, query-start `qs`, and the `cg:Z` CIGAR (`=`/`X`/`M` consume both; `I` =
+/// query insertion → ref gap; `D` = query deletion → query gap). Unaligned ends become separate ref-only
+/// and query-only gap blocks so the walk in `discover_psvs` yields the correct absolute offsets
+/// (`ro ∈ 0..ref.len`, `oo ∈ 0..other.len`) with both-non-gap columns only in the aligned core. Pure +
+/// binary-free — unit-tested directly.
+fn cigar_to_gapped_msa(ref_seq: &[u8], other: &[u8], ts: usize, qs: usize, cigar: &str) -> Vec<Vec<u8>> {
+    let mut rrow: Vec<u8> = Vec::with_capacity(ref_seq.len() + other.len());
+    let mut orow: Vec<u8> = Vec::with_capacity(ref_seq.len() + other.len());
+    // prefix: unaligned ref[0:ts] vs ref-gaps, then unaligned other[0:qs] vs query-gaps (no both-non-gap).
+    rrow.extend_from_slice(&ref_seq[..ts]);
+    orow.extend(std::iter::repeat(b'-').take(ts));
+    rrow.extend(std::iter::repeat(b'-').take(qs));
+    orow.extend_from_slice(&other[..qs]);
+    let (mut ro, mut oo) = (ts, qs);
+    let mut num = 0usize;
+    for ch in cigar.bytes() {
+        if ch.is_ascii_digit() {
+            num = num * 10 + (ch - b'0') as usize;
+            continue;
+        }
+        match ch {
+            b'=' | b'X' | b'M' => {
+                rrow.extend_from_slice(&ref_seq[ro..ro + num]);
+                orow.extend_from_slice(&other[oo..oo + num]);
+                ro += num;
+                oo += num;
+            }
+            b'I' => {
+                rrow.extend(std::iter::repeat(b'-').take(num));
+                orow.extend_from_slice(&other[oo..oo + num]);
+                oo += num;
+            }
+            b'D' => {
+                rrow.extend_from_slice(&ref_seq[ro..ro + num]);
+                orow.extend(std::iter::repeat(b'-').take(num));
+                ro += num;
+            }
+            _ => {}
+        }
+        num = 0;
+    }
+    // suffix: unaligned ref[te:] vs gaps, then unaligned other[qe:] vs gaps.
+    rrow.extend_from_slice(&ref_seq[ro..]);
+    orow.extend(std::iter::repeat(b'-').take(ref_seq.len() - ro));
+    rrow.extend(std::iter::repeat(b'-').take(other.len() - oo));
+    orow.extend_from_slice(&other[oo..]);
+    vec![rrow, orow]
+}
+
 /// Discover PSV columns by all-pairs alignment of every copy vs copy[0]: columns are ref offsets where
 /// `>= 1` copy's aligned base differs. EVERY copy gets its aligned `(genomic, base)` at a column (a copy
 /// matching the ref inherits that base, not `None` — the python bug guard). `exon_maps[c] = exon_map(copies[c])`.
@@ -112,12 +236,20 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
         return Vec::new();
     }
     let ref_seq = &copies[0].seq;
+    // PSV-column alignment engine: poasta (exact DP, default) or minimap2 asm20 (heuristic, fast on long
+    // copies — opt in RUSTLE_PSV_MINIMAP2=1). Both return the same 2-row gapped-MSA format.
+    let use_mm2 = std::env::var_os("RUSTLE_PSV_MINIMAP2").is_some();
     // for each non-ref copy: amap (ref_off -> other_off) over both-non-gap columns; collect differing offs.
     let mut amaps: Vec<BTreeMap<usize, usize>> = vec![BTreeMap::new(); n]; // index 0 unused
     let mut diff_off: BTreeSet<usize> = BTreeSet::new();
     for other in 1..n {
         // strong gap-open anchors the conserved core column-for-column (same config as contiguous_core_coverage).
-        let msa = match poa_msa_with_costs(&[ref_seq.clone(), copies[other].seq.clone()], GapAffine::new(1, 1, 32)) {
+        let aln = if use_mm2 {
+            minimap2_msa_pair(ref_seq, &copies[other].seq)
+        } else {
+            poa_msa_with_costs(&[ref_seq.clone(), copies[other].seq.clone()], GapAffine::new(1, 1, 32))
+        };
+        let msa = match aln {
             Ok(m) if m.len() == 2 => m,
             _ => continue,
         };
@@ -317,6 +449,9 @@ pub struct FamilyDetail {
     /// family-confirmed gene conversions: the breakpoint RECURS across independent molecules (vs a one-off
     /// chimera). The enriched per-molecule signal the multimappers carry beyond presence/abundance.
     pub conversions: Vec<super::mosaic::ConversionEvent>,
+    /// per-`conversions` unified verdict (gene conversion vs RT/template-switch artifact vs chimera/ambiguous)
+    /// from the recurrence + microhomology + DNA legs. Empty unless the caller classifies (genome-dependent).
+    pub conversion_class: Vec<super::mosaic::Classification>,
     /// COPY-level historical gene conversions: a de-novo copy whose PSV-allele vector is itself a mosaic of two
     /// OTHER copies (the APOBEC3/RFPL signal — baked into the copy sequence, invisible to the read-level scan).
     pub copy_conversions: Vec<CopyConversion>,
@@ -441,6 +576,83 @@ pub fn soft_quantify_em(
     theta
 }
 
+/// A copy must show the MINOR A/G allele at >= this fraction AND read count among its reads for a column to be
+/// called an A-to-I editing site — far above the ~3e-4 sequencing-error rate, so genuine A/G paralog SNVs
+/// (each copy monomorphic) and sequencing error never trip it.
+const EDIT_MIN_FRAC: f64 = 0.05;
+const EDIT_MIN_READS: u32 = 2;
+
+/// Flag the PSV columns that are A-to-I RNA-editing sites (Clair3-RNA-style), so `assign_read_editing`
+/// downweights them in the significance certificate. PSV alleles are in transcription orientation, so editing
+/// is uniformly A→G. A column `j` is flagged iff (1) it is an **A↔G** column — the copy-consensus alleles at
+/// `j` are exactly `{A, G}` — and (2) some copy shows **within-copy A/G heterogeneity**: provisionally assign
+/// each read to its argmax-match copy (real PSVs dominate the editing-column minority), then a copy with both
+/// alleles present at `j` (minor `>= EDIT_MIN_READS` and `>= EDIT_MIN_FRAC`) marks editing. A real A/G paralog
+/// SNV has each copy monomorphic at `j` → not flagged. `reads_obs[r][j]` = read `r`'s base at column `j`.
+pub(crate) fn detect_editing_columns(reads_obs: &[Vec<Option<u8>>], copies: &[CopyProfile]) -> Vec<bool> {
+    let n = copies.len();
+    let n_cols = copies.iter().map(|c| c.alleles.len()).max().unwrap_or(0);
+    let mut flag = vec![false; n_cols];
+    if n == 0 || n_cols == 0 {
+        return flag;
+    }
+    // per (copy, column) -> (n_A, n_G) among reads provisionally assigned to that copy.
+    let mut counts = vec![vec![(0u32, 0u32); n_cols]; n];
+    for obs in reads_obs {
+        let (mut best, mut best_m) = (0usize, -1i64);
+        for (ci, c) in copies.iter().enumerate() {
+            let mut m = 0i64;
+            for j in 0..n_cols {
+                if let (Some(ob), Some(al)) = (obs.get(j).copied().flatten(), c.alleles.get(j).copied().flatten()) {
+                    if ob == al {
+                        m += 1;
+                    }
+                }
+            }
+            if m > best_m {
+                best_m = m;
+                best = ci;
+            }
+        }
+        for j in 0..n_cols {
+            match obs.get(j).copied().flatten() {
+                Some(b'A') => counts[best][j].0 += 1,
+                Some(b'G') => counts[best][j].1 += 1,
+                _ => {}
+            }
+        }
+    }
+    for j in 0..n_cols {
+        // (1) A<->G column: copy-consensus alleles at j are exactly {A, G} (both present, nothing else).
+        let (mut has_a, mut has_g, mut other) = (false, false, false);
+        for c in copies {
+            match c.alleles.get(j).copied().flatten() {
+                Some(b'A') => has_a = true,
+                Some(b'G') => has_g = true,
+                Some(_) => other = true,
+                None => {}
+            }
+        }
+        if other || !(has_a && has_g) {
+            continue;
+        }
+        // (2) within-copy A/G heterogeneity in some copy
+        for ci in 0..n {
+            let (na, ng) = counts[ci][j];
+            let tot = na + ng;
+            if tot == 0 {
+                continue;
+            }
+            let minor = na.min(ng);
+            if minor >= EDIT_MIN_READS && (minor as f64 / tot as f64) >= EDIT_MIN_FRAC {
+                flag[j] = true;
+                break;
+            }
+        }
+    }
+    flag
+}
+
 /// Like `assign_family` but returns the TWO-PASS detail per read so callers can report how many reads a
 /// copy-specific junction resolved that PSVs alone could not (`junction_only`), and — with read mapq — the
 /// silver-standard unique-mapper agreement. Reads overlapping no copy are skipped.
@@ -457,6 +669,7 @@ pub fn assign_family_detailed(
             copy_abundance_ci: Vec::new(),
             mosaic_reads: 0,
             conversions: Vec::new(),
+            conversion_class: Vec::new(),
             copy_conversions: Vec::new(),
             psv_col_pos: Vec::new(),
             copy_psv_alleles: Vec::new(),
@@ -475,6 +688,22 @@ pub fn assign_family_detailed(
         }
     }
     let mparams = MosaicParams::from_env();
+    // RNA-editing filter (Clair3-RNA): a pre-pass flags A↔G columns with within-copy heterogeneity so the
+    // significance certificate downweights them. Built once from all reads' PSV observations.
+    let editing_cols: Vec<bool> = if p.rna_editing_filter {
+        let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
+        for read in reads {
+            if let Some(mc) = best_overlap_copy(read, copies) {
+                let mut psv_obs = vec![None; fp.n_cols];
+                let mut psv_qual = vec![None; fp.n_cols];
+                fill_psv_obs(read, &fp.copy_gpos[mc], fp.strand[mc] == '-', &mut psv_obs, &mut psv_qual);
+                all_obs.push(psv_obs);
+            }
+        }
+        detect_editing_columns(&all_obs, &fp.profiles)
+    } else {
+        Vec::new()
+    };
     let mut results = Vec::new();
     let mut read_obs: Vec<Vec<Option<u8>>> = Vec::new(); // per-read PSV observations for the soft EM
     let mut mosaic_calls = Vec::new();
@@ -500,21 +729,39 @@ pub fn assign_family_detailed(
             mosaic_reads += 1;
         }
         mosaic_calls.push(mcall);
-        let Some(combined) = assign_read(&feats, &fp.profiles, p) else { continue };
+        let Some(combined) = assign_read_editing(&feats, &fp.profiles, p, &editing_cols) else { continue };
         let obs = feats.psv_obs.clone();
         read_obs.push(obs.clone());
         let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
-        let Some(psv) = assign_read(&psv_feats, &fp.profiles, p) else { continue };
+        let Some(psv) = assign_read_editing(&psv_feats, &fp.profiles, p, &editing_cols) else { continue };
         results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined, psv_obs: obs });
     }
-    let conversions = aggregate_family(&mosaic_calls, &mparams);
+    // Breakpoints are in the shared `col_canon` frame (the co-located family's chromosome), so stamp
+    // every call with the family chrom so each emitted event carries it (for the microhomology check).
+    let fam_chrom = copies.first().map(|c| c.chrom.as_str()).unwrap_or("");
+    let mosaic_chroms = vec![fam_chrom; mosaic_calls.len()];
+    let conversions = aggregate_family(&mosaic_calls, &mosaic_chroms, &mparams);
     // copy-level historical conversions: is any copy's PSV-allele vector a mosaic of two others?
     let copy_conversions = scan_copy_conversions(&fp.profiles, &col_canon, &mparams);
-    // soft per-copy abundance (EM) + a normal-approx 95% CI half-width (theta(1-theta)/N).
+    // soft per-copy abundance (EM) + a normal-approx 95% CI half-width.
     let copy_alleles: Vec<Vec<Option<u8>>> = fp.profiles.iter().map(|pr| pr.alleles.clone()).collect();
     let copy_abundance = soft_quantify_em(&read_obs, &copy_alleles, QUANT_ERROR, 100);
-    let n = read_obs.len().max(1) as f64;
-    let copy_abundance_ci = copy_abundance.iter().map(|&t| 1.96 * (t * (1.0 - t) / n).sqrt()).collect();
+    // L8: the CI must track INFORMATIVE-PSV coverage (reads carrying >= 1 decisive feature), NOT the raw
+    // read count. With raw N the half-width shrinks as 1/sqrt(N) even in the K=0 / non-identifiable regime
+    // (all reads Tied, n_decisive=0) where the per-copy fractions are unidentifiable — false precision on
+    // a default user-facing output. So: n_eff = #reads with a decisive (PSV-or-junction) feature; when
+    // n_eff = 0 the abundance is unidentifiable and the CI is the full-simplex half-width (0.5); otherwise
+    // clamp to 0.5 so it never claims more certainty than the [0,1] interval allows.
+    let n_eff = results.iter().filter(|r| r.combined.n_decisive >= 1).count();
+    let copy_abundance_ci: Vec<f64> = if n_eff == 0 {
+        vec![0.5; copy_abundance.len()]
+    } else {
+        let n = n_eff as f64;
+        copy_abundance
+            .iter()
+            .map(|&t| (1.96 * (t * (1.0 - t) / n).sqrt()).min(0.5))
+            .collect()
+    };
     FamilyDetail {
         results,
         n_cols: fp.n_cols,
@@ -522,9 +769,43 @@ pub fn assign_family_detailed(
         copy_abundance_ci,
         mosaic_reads,
         conversions,
+        conversion_class: Vec::new(), // populated by the caller via classify_conversions (genome-dependent)
         copy_conversions,
         psv_col_pos: col_canon,
         copy_psv_alleles: copy_alleles,
+    }
+}
+
+/// Classify each confirmed conversion event with the unified discriminator (recurrence already in the
+/// event's `confirmed`; microhomology from the genome at the breakpoint bracket; DNA support optional).
+/// Genome-dependent, so it runs at the pipeline call site (not inside `assign_family_detailed`). Each
+/// event carries its own `chrom` (set by `aggregate_family`). The `dna_support` closure maps an event →
+/// `Some(true/false)` if a DNA catalog was consulted, else `None`.
+pub fn classify_conversions(
+    detail: &super::copy_assign_pipeline::FamilyDetail,
+    genome: &crate::genome::GenomeIndex,
+    dna_support: impl Fn(&super::mosaic::ConversionEvent) -> Option<bool>,
+) -> Vec<super::mosaic::Classification> {
+    detail
+        .conversions
+        .iter()
+        .map(|ev| super::mosaic::classify_event(ev, event_microhomology(genome, ev), dna_support(ev)))
+        .collect()
+}
+
+/// Microhomology leg for one event: the template-switch direct-repeat signature at the breakpoint
+/// bracket, on the event's own chromosome. `None` when the bracket is unusable (coord 0).
+pub fn event_microhomology(
+    genome: &crate::genome::GenomeIndex,
+    ev: &super::mosaic::ConversionEvent,
+) -> Option<bool> {
+    const MH_KMIN: u64 = 6;
+    const MH_KMAX: u64 = 12;
+    let (lo, hi) = ev.breakpoint_ref;
+    if lo > 0 && hi > 0 {
+        Some(genome.breakpoint_microhomology(&ev.chrom, lo, hi, MH_KMIN, MH_KMAX))
+    } else {
+        None
     }
 }
 
@@ -616,6 +897,49 @@ mod tests {
     }
 
     #[test]
+    fn detect_editing_columns_flags_editing_not_real_psv() {
+        // 2 copies, 2 A↔G columns. col0 = a REAL PSV (copy0=A monomorphic, copy1=G monomorphic).
+        // col1 = an EDITING site: copy0-assigned reads carry A but ~30% show an edited G.
+        let copies = vec![
+            CopyProfile { copy_id: 0, alleles: vec![Some(b'A'), Some(b'A')], junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: vec![Some(b'G'), Some(b'G')], junctions: vec![] },
+        ];
+        let mut reads_obs: Vec<Vec<Option<u8>>> = Vec::new();
+        for _ in 0..7 {
+            reads_obs.push(vec![Some(b'A'), Some(b'A')]); // copy0, unedited
+        }
+        for _ in 0..3 {
+            reads_obs.push(vec![Some(b'A'), Some(b'G')]); // copy0, edited at col1
+        }
+        for _ in 0..10 {
+            reads_obs.push(vec![Some(b'G'), Some(b'G')]); // copy1
+        }
+        let flag = detect_editing_columns(&reads_obs, &copies);
+        assert_eq!(flag, vec![false, true], "col0 real PSV not flagged; col1 editing flagged");
+    }
+
+    #[test]
+    fn detect_editing_columns_ignores_sequencing_error() {
+        // a real PSV where a couple of error G's appear in copy0's reads must NOT be flagged (frac < 0.05).
+        let copies = vec![
+            CopyProfile { copy_id: 0, alleles: vec![Some(b'A')], junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: vec![Some(b'G')], junctions: vec![] },
+        ];
+        let mut reads_obs: Vec<Vec<Option<u8>>> = Vec::new();
+        for _ in 0..98 {
+            reads_obs.push(vec![Some(b'A')]); // copy0
+        }
+        for _ in 0..2 {
+            reads_obs.push(vec![Some(b'G')]); // 2 error G's among 100 copy0 reads = 2% < EDIT_MIN_FRAC (5%)
+        }
+        for _ in 0..50 {
+            reads_obs.push(vec![Some(b'G')]); // copy1
+        }
+        // the 2 error-G reads argmax to copy1 (they match G), so copy0's reads stay monomorphic A -> not flagged.
+        assert_eq!(detect_editing_columns(&reads_obs, &copies), vec![false]);
+    }
+
+    #[test]
     fn fill_psv_obs_carries_per_base_quality() {
         // read covers ref 10..20 with per-base QVs; a PSV column at genome pos 13 -> col 0.
         let read = AlignedRead {
@@ -658,6 +982,73 @@ mod tests {
         assert_eq!(cols[1], vec![Some((120, a120)), Some((1120, b120))]);
     }
 
+    #[test]
+    fn cigar_to_gapped_msa_reconstructs_alignment() {
+        // CIGAR-walk reconstruction (no minimap2 binary). ref has a 3bp insert vs query and one mismatch.
+        // ref:  A C G T A C G T   (8)        cigar (target-relative): 4= 3D 1X
+        // query:A C G T  - - - C   -> wait: build a clear case below.
+        let r = b"ACGTACGT".to_vec(); // 8
+        let q = b"ACGTC".to_vec(); // 5: matches ref[0:4], deletes ref[4:7], mismatch at ref[7] (T->C)
+        // ts=0 qs=0 cigar: 4= (ACGT) 3D (ref ACG, query gap) 1X (ref T vs query C)
+        let msa = cigar_to_gapped_msa(&r, &q, 0, 0, "4=3D1X");
+        assert_eq!(msa.len(), 2);
+        // both rows equal length; ref row has no gaps (global over ref), query row has the 3 deletion gaps.
+        assert_eq!(msa[0].len(), msa[1].len());
+        assert_eq!(msa[0], b"ACGTACGT", "ref row = full ref, no gaps");
+        assert_eq!(msa[1], b"ACGT---C", "query row: matched core, 3 gaps for the deletion, mismatch C at end");
+        // walking both-non-gap columns recovers exactly the mismatch at ref offset 7.
+        let diff: Vec<usize> = (0..msa[0].len())
+            .filter(|&c| msa[0][c] != b'-' && msa[1][c] != b'-' && msa[0][c] != msa[1][c])
+            .collect();
+        // column 7 in the alignment == ref offset 7 (no insertions before it)
+        assert_eq!(diff, vec![7], "the lone PSV is at ref offset 7");
+    }
+
+    #[test]
+    fn cigar_to_gapped_msa_handles_clipped_ends() {
+        // ts=2, qs=1: ref[0:2] and query[0:1] are unaligned ends -> rendered as gap blocks, offsets stay correct.
+        let r = b"GGACGT".to_vec(); // ref, aligned core starts at ts=2 (ACGT)
+        let q = b"TACGT".to_vec(); // query, aligned core starts at qs=1 (ACGT)
+        let msa = cigar_to_gapped_msa(&r, &q, 2, 1, "4=");
+        assert_eq!(msa[0].len(), msa[1].len());
+        // ref row contains all of ref (no ref base lost); query row contains all of query.
+        assert_eq!(msa[0].iter().filter(|&&b| b != b'-').count(), r.len());
+        assert_eq!(msa[1].iter().filter(|&&b| b != b'-').count(), q.len());
+        // no spurious PSV: the only both-non-gap columns are the aligned ACGT core (all matches).
+        let diff = (0..msa[0].len())
+            .filter(|&c| msa[0][c] != b'-' && msa[1][c] != b'-' && msa[0][c] != msa[1][c])
+            .count();
+        assert_eq!(diff, 0, "clipped divergent ends produce NO spurious PSV");
+    }
+
+    /// minimap2 PSV-discovery must find the SAME columns as poasta. Needs the minimap2 binary + long
+    /// enough seqs to seed (asm20), so it is ignored by default; run with `--ignored` where minimap2 is on
+    /// PATH (or RUSTLE_MINIMAP2 set). Validates the gapped-MSA reconstruction from the minimap2 CIGAR.
+    #[test]
+    #[ignore = "needs the minimap2 binary"]
+    fn minimap2_psv_discovery_matches_poasta() {
+        // ~3 kb near-identical copies with 4 planted substitutions (asm20 seeds on this length).
+        let sa = rand_seq(3000, 0x9E1);
+        let mut sb = sa.clone();
+        let flips = [300usize, 1100, 1900, 2600];
+        for &p in &flips {
+            sb[p] = match sa[p] { b'A' => b'C', b'C' => b'A', b'G' => b'T', _ => b'G' };
+        }
+        let ca = copy_tx("A", 0, 3000, '+', &[], sa);
+        let cb = copy_tx("B", 10000, 13000, '+', &[], sb);
+        let copies = [&ca, &cb];
+        let maps = [exon_map(&ca), exon_map(&cb)];
+        let poasta = discover_psvs(&copies, &maps);
+        std::env::set_var("RUSTLE_PSV_MINIMAP2", "1");
+        let mm2 = discover_psvs(&copies, &maps);
+        std::env::remove_var("RUSTLE_PSV_MINIMAP2");
+        let off = |cols: &[PsvColumn]| -> Vec<u64> {
+            cols.iter().filter_map(|c| c[0].map(|(g, _)| g)).collect()
+        };
+        assert_eq!(off(&poasta), off(&mm2), "minimap2 finds the SAME PSV ref-genome positions as poasta");
+        assert_eq!(mm2.len(), flips.len(), "all 4 planted substitutions found");
+    }
+
     // ---- assign_family (end to end) ----
 
     #[test]
@@ -695,6 +1086,8 @@ mod tests {
         let copies = [&ca, &cb];
         // read aligned to copyA's region with copyA's intron structure (boundary at spliced offset 100).
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced, qual: vec![] };
+        // junction_err=1e-4 < alpha=1e-3: a single copy-specific junction resolves under the
+        // significance gate (p_read=1e-4 < 1e-3, margin >> 0 -> Assigned).
         let detail = assign_family_detailed(&copies, &[read], &AssignParams::default());
         assert_eq!(detail.n_cols, 0, "identical sequences -> no PSV columns");
         assert_eq!(detail.results.len(), 1);
@@ -723,6 +1116,33 @@ mod tests {
         let res = assign_family(&copies, &[read], &AssignParams::default());
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.status, AssignStatus::Tied, "spans no decisive feature");
+    }
+
+    #[test]
+    fn abundance_ci_is_full_simplex_when_unidentifiable() {
+        // L8: when NO read carries a decisive feature (K=0 regime), the per-copy abundance is
+        // unidentifiable; the CI must be the full-simplex half-width (0.5), NOT a sqrt(N)-shrunk false
+        // precision. Two copies differing only at offsets >= 200; all reads cover only [0,150) -> tied.
+        let base = rand_seq(300, 0xC10);
+        let mut sa = base.clone();
+        let mut sb = base.clone();
+        for &p in &[210usize, 250, 290] {
+            sa[p] = b'A';
+            sb[p] = b'C';
+        }
+        let ca = copy_tx("A", 0, 300, '+', &[], sa);
+        let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
+        let copies = [&ca, &cb];
+        // 30 reads, all spanning no decisive feature -> n_eff = 0 despite N=30.
+        let reads: Vec<AlignedRead> = (0..30)
+            .map(|_| AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec(), qual: vec![] })
+            .collect();
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default());
+        assert!(
+            detail.copy_abundance_ci.iter().all(|&ci| (ci - 0.5).abs() < 1e-9),
+            "unidentifiable (no decisive reads) -> CI = 0.5 full-simplex, got {:?}",
+            detail.copy_abundance_ci
+        );
     }
 
     /// Ground-truth validation on the sim5x 5-copy synthetic dataset (the python `copy_assign.py sim5x`

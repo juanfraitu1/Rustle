@@ -57,26 +57,54 @@ pub struct Skeleton {
 /// `start`/`end` are the min `ref_start` / max `ref_end` over the group. Deterministic (sorted by
 /// `(chrom, introns)`). Mirrors `twopass_denovo_gw_pass1.py`.
 pub fn pass1_skeletons(reads: &[PrimaryRead], min_reads: u32) -> Vec<Skeleton> {
+    pass1_skeletons_robust(reads, min_reads, 1)
+}
+
+/// Like `pass1_skeletons`, but the transcript EXTENT must be reached by at least `min_terminal_support`
+/// reads, so a single runaway read (a chimeric / intra-primed / mis-clipped terminal exon) cannot
+/// artificially inflate the length. With `min_terminal_support == 1` this is exactly `pass1_skeletons`
+/// (the union min-start / max-end). With `k > 1` the 5' boundary is the `k`-th smallest read start and the
+/// 3' boundary is the `k`-th largest read end (the furthest position SUPPORTED by `k` reads), trimming the
+/// outermost `k-1` outlier reads at each end. For FLNC IsoSeq (full-length reads), the true ends are reached
+/// by many reads, so a small `k` trims only runaways and leaves real boundaries intact. If a group has fewer
+/// than `k` reads the boundary falls back to the outermost available read.
+pub fn pass1_skeletons_robust(reads: &[PrimaryRead], min_reads: u32, min_terminal_support: u32) -> Vec<Skeleton> {
     use std::collections::BTreeMap;
-    // key = (chrom, intron-chain); val = (n_reads, min_start, max_end).
-    let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, u64, u64)> = BTreeMap::new();
+    let k = min_terminal_support.max(1) as usize;
+    // key = (chrom, intron-chain); val = (n_reads, k-smallest starts asc, k-largest ends desc).
+    let mut groups: BTreeMap<(&str, Vec<(u64, u64)>), (u32, Vec<u64>, Vec<u64>)> = BTreeMap::new();
     for r in reads {
         let e = groups
             .entry((r.chrom.as_str(), r.introns.clone()))
-            .or_insert((0, u64::MAX, 0));
+            .or_insert((0, Vec::new(), Vec::new()));
         e.0 += 1;
-        e.1 = e.1.min(r.ref_start);
-        e.2 = e.2.max(r.ref_end);
+        // keep the k smallest starts (ascending)
+        let pos = e.1.partition_point(|&x| x <= r.ref_start);
+        if pos < k {
+            e.1.insert(pos, r.ref_start);
+            e.1.truncate(k);
+        }
+        // keep the k largest ends (descending)
+        let pos = e.2.partition_point(|&x| x >= r.ref_end);
+        if pos < k {
+            e.2.insert(pos, r.ref_end);
+            e.2.truncate(k);
+        }
     }
     groups
         .into_iter()
         .filter(|(_, (n, _, _))| *n >= min_reads)
-        .map(|((chrom, introns), (n, start, end))| Skeleton {
-            chrom: chrom.to_string(),
-            start,
-            end,
-            n_reads: n,
-            introns,
+        .map(|((chrom, introns), (n, starts, ends))| {
+            // robust boundary = the k-th supported value (or the outermost available if the group is smaller).
+            let si = k.min(starts.len()).saturating_sub(1);
+            let ei = k.min(ends.len()).saturating_sub(1);
+            Skeleton {
+                chrom: chrom.to_string(),
+                start: starts[si],
+                end: ends[ei],
+                n_reads: n,
+                introns,
+            }
         })
         .collect()
 }
@@ -728,6 +756,22 @@ mod tests {
         ];
         let sk = pass1_skeletons(&reads, 2);
         assert_eq!(sk, vec![skel("c1", 100, 520, 2, &[(200, 300)])]);
+    }
+
+    #[test]
+    fn pass1_robust_trims_a_runaway_terminal_read() {
+        // four FLNC reads agree on the locus ~100..520; one runaway read extends far on both ends. With
+        // k=2 the boundary is the 2nd-most-extreme position, so the single runaway cannot inflate the length.
+        let reads = [
+            pr("c1", 100, 500, &[(200, 300)]),
+            pr("c1", 102, 515, &[(200, 300)]),
+            pr("c1", 105, 520, &[(200, 300)]),
+            pr("c1", 1, 9000, &[(200, 300)]), // runaway: starts way left, ends way right
+        ];
+        // k=1 (legacy union) lets the runaway dominate: 1..9000.
+        assert_eq!(pass1_skeletons_robust(&reads, 2, 1), vec![skel("c1", 1, 9000, 4, &[(200, 300)])]);
+        // k=2 trims it to the 2nd-smallest start (100) and 2nd-largest end (520).
+        assert_eq!(pass1_skeletons_robust(&reads, 2, 2), vec![skel("c1", 100, 520, 4, &[(200, 300)])]);
     }
 
     #[test]

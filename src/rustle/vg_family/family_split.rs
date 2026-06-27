@@ -21,8 +21,18 @@ pub const MIN_DECOMP: usize = 6;
 pub const RESOLUTION: f64 = 1.0;
 /// A final community of `>= WEB_MIN_SIZE` nodes ...
 pub const WEB_MIN_SIZE: usize = 10;
-/// ... and `< WEB_MAX_DENSITY` density is flagged a homology web, not a family.
-pub const WEB_MAX_DENSITY: f64 = 0.15;
+/// ... and `< WEB_MAX_DENSITY` density is flagged a homology web (a sparse domain-sharing over-merge),
+/// not a family — and Web families are EXCLUDED from copy-assignment (denovo_pipeline.rs).
+///
+/// Set to 0.30 to ALIGN with the validated DNA cDNA-homology manifest bar (`make_dna_family_manifest.py`
+/// drops `overmerge_sparse` at `density < 0.30`). Measured on the real de-novo split (698 families): the
+/// family-density distribution is BIMODAL — median 1.000 (cliques) with NOTHING legitimate in the
+/// [0.15, 0.30) band; the only 4 large (n>=10) families there are multi-chromosome domain-sharing
+/// over-merges (DSFAM0 = a 164-member ZNF spanning 19 chromosomes, etc.) that the old 0.15 bar let
+/// through as "families." `WEB_MIN_SIZE` stays 10 (not the manifest's 4) ON PURPOSE: a SMALL sparse
+/// group can be a real divergent family (e.g. a 7-copy single-chrom MAGEB at density 0.24), so only
+/// LARGE-and-sparse is called a web. See loose end L2 in bench/LOOSE_ENDS_AUDIT.md.
+pub const WEB_MAX_DENSITY: f64 = 0.30;
 
 /// Tunable decomposition parameters (defaults mirror `denovo_family_split.py`).
 #[derive(Clone, Copy, Debug)]
@@ -493,10 +503,14 @@ mod tests {
 
     #[test]
     fn classify_web_vs_family() {
-        let p = SplitParams::default();
+        let p = SplitParams::default(); // web_max_density = 0.30, web_min_size = 10
         assert_eq!(classify(10, 0.10, &p), FamilyClass::Web); // size>=10 & sparse
-        assert_eq!(classify(10, 0.20, &p), FamilyClass::Family); // dense
-        assert_eq!(classify(5, 0.10, &p), FamilyClass::Family); // too small
+        assert_eq!(classify(12, 0.167, &p), FamilyClass::Web); // the DSFAM0-class over-merge (164 ZNF/19 chr): was Family at the old 0.15 bar
+        assert_eq!(classify(10, 0.29, &p), FamilyClass::Web); // just under the aligned 0.30 bar
+        assert_eq!(classify(10, 0.40, &p), FamilyClass::Family); // dense -> family
+        assert_eq!(classify(10, 1.00, &p), FamilyClass::Family); // clique
+        assert_eq!(classify(5, 0.10, &p), FamilyClass::Family); // too SMALL -> family even if sparse (small divergent fam, e.g. MAGEB)
+        assert_eq!(classify(7, 0.24, &p), FamilyClass::Family); // n<10 stays family (the MAGEB-class protection)
     }
 
     // ---- decompose_families ----

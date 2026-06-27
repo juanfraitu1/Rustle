@@ -942,10 +942,42 @@ pub fn run_cli() -> anyhow::Result<()> {
         return run_merge(&merge_inputs, output, &config);
     }
 
-    let bam = args
+    let bam_input = args
         .bam
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("bam path required"))?;
+
+    // Native SAM/BAM/CRAM input. The pipeline streams the alignments multiple times via the fast
+    // multithreaded BAM reader, so a SAM or CRAM input is transcoded ONCE to a temporary BAM (pure
+    // noodles, no external tools); BAM input is used directly and untouched. The temp file is deleted
+    // when `_input_guard` drops at the end of this function (after `run` returns).
+    let mut _input_guard: Option<rustle::bam::TempBam> = None;
+    let bam_owned: String = match rustle::bam::detect_format(bam_input)? {
+        rustle::bam::AlnFormat::Bam => bam_input.to_string(),
+        fmt => {
+            let cram_ref = args.cram_ref.as_deref().or(config.genome_fasta.as_deref());
+            let tmp = rustle::bam::transcode_to_temp_bam(
+                bam_input,
+                fmt,
+                cram_ref,
+                config.threads.max(1),
+            )?;
+            let tmp_mb = std::fs::metadata(tmp.path())
+                .map(|m| m.len() / (1 << 20))
+                .unwrap_or(0);
+            eprintln!(
+                "[input] {:?} input detected -> transcoded to temporary BAM ({} MB) in $TMPDIR: {} \
+                 (single-threaded; deleted on exit, but not on SIGKILL/OOM)",
+                fmt,
+                tmp_mb,
+                tmp.path().display()
+            );
+            let p = tmp.path_string();
+            _input_guard = Some(tmp);
+            p
+        }
+    };
+    let bam = bam_owned.as_str();
     let genome_fasta_owned = config.genome_fasta.clone();
     let genome_fasta_ref = genome_fasta_owned.as_deref();
     run(
