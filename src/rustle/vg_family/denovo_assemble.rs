@@ -364,6 +364,55 @@ fn reads_in_region_indexed(
     Ok((primary, bam_reads))
 }
 
+/// A reusable indexed-BAM handle that parses the `.bai` index and header ONCE, so a long sequence of region
+/// queries (the per-region copy-assignment loop, thousands of regions at genome scale) does not re-parse the
+/// multi-MB index for every region. Re-opening the file handle per query is ~free; parsing the index is not.
+/// `reads_in_region` returns exactly what the free function [`reads_in_region`]'s indexed path returns.
+pub struct BamIndexCache {
+    header: noodles_sam::Header,
+    index: noodles_bam::bai::Index,
+}
+
+impl BamIndexCache {
+    /// Parse `{bam_path}.bai` and the header once. Errs (so the caller can fall back to per-region opens or a
+    /// full scan) when the index is missing or unreadable.
+    pub fn open(bam_path: &str) -> Result<Self> {
+        let bai_path = format!("{bam_path}.bai");
+        anyhow::ensure!(std::path::Path::new(&bai_path).exists(), "no .bai index");
+        let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+        let header = reader.read_header()?;
+        let index = noodles_bam::bai::read(&bai_path)?;
+        Ok(Self { header, index })
+    }
+
+    /// Query one region using the cached header+index (the reader seeks via the index, independent of the
+    /// freshly-opened handle's position). Byte-identical to `reads_in_region_indexed`'s output.
+    pub fn reads_in_region(
+        &self,
+        bam_path: &str,
+        chrom: &str,
+        lo: u64,
+        hi: u64,
+    ) -> Result<(Vec<PrimaryRead>, Vec<BamRead>)> {
+        let mut reader = noodles_bam::io::reader::Builder::default().build_from_path(bam_path)?;
+        let region: noodles_core::Region = format!("{chrom}:{}-{}", lo + 1, hi).parse()?;
+        let query = reader.query(&self.header, &self.index, &region)?;
+        let mut primary = Vec::new();
+        let mut bam_reads = Vec::new();
+        for result in query {
+            let record = result?;
+            let rb = RecordBuf::try_from_alignment_record(&self.header, &record)?;
+            if let Some(pr) = primary_read_from_record(&rb, chrom) {
+                primary.push(pr);
+            }
+            if let Some((read, mapq, name, as_score, de, is_supplementary)) = aligned_read_from_record(&rb) {
+                bam_reads.push(BamRead { chrom: chrom.to_string(), read, mapq, name, as_score, de, is_supplementary });
+            }
+        }
+        Ok((primary, bam_reads))
+    }
+}
+
 /// Collect AS-TIED SECONDARY reads overlapping `[lo, hi)` on `chrom`, as `PrimaryRead`s — the starved-copy
 /// read support for collapsed-copy recovery (see [`tied_secondary_reads`]). Indexed query; errs without a
 /// `.bai`. These augment the RESCUE input only (additive), never the primary-only main detection pass.

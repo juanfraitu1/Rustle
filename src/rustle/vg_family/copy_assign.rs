@@ -199,11 +199,13 @@ pub fn assign_read_editing(
 
     // --- PSV term (each column weighted by its own base quality when available) ---
     let n_cols = read.psv_obs.len();
-    for j in 0..n_cols {
-        let obs = match read.psv_obs[j] {
-            Some(b) => b,
-            None => continue, // read does not span this column
-        };
+    // Columns this read actually spans (psv_obs = Some). Built once and reused by the PSV term and the
+    // significance gate below, so neither re-scans the full (often thousands-wide) column set per copy.
+    // Reads span a small slice of the family's columns, so this turns the gate's per-competitor O(n_cols)
+    // scan into O(spanned) — same observations, same arithmetic, just no walking over absent columns.
+    let spanned: Vec<usize> = (0..n_cols).filter(|&j| read.psv_obs[j].is_some()).collect();
+    for &j in &spanned {
+        let obs = read.psv_obs[j].expect("spanned column carries an observation");
         // per-base error: the column's QV if the read carried one, else the flat default.
         let e = match read.psv_qual.get(j).copied().flatten() {
             Some(q) => super::copy_split::phred_err(q),
@@ -276,11 +278,8 @@ pub fn assign_read_editing(
         let mut eps: Vec<f64> = Vec::new();
         let mut k = 0usize;
         // distinguishing PSV columns the read spans
-        for j in 0..n_cols {
-            let obs = match read.psv_obs[j] {
-                Some(b) => b,
-                None => continue,
-            };
+        for &j in &spanned {
+            let obs = read.psv_obs[j].expect("spanned column carries an observation");
             let ba = copies[best].alleles.get(j).copied().flatten();
             let ca = copies[c].alleles.get(j).copied().flatten();
             if let (Some(ba), Some(ca)) = (ba, ca) {

@@ -393,6 +393,16 @@ pub fn detect_and_assign(
     p: &AssignParams,
     rescue_extra: &[PrimaryRead],
 ) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>) {
+    let timing = std::env::var_os("RUSTLE_TIMING").is_some();
+    let mut t_lap = std::time::Instant::now();
+    macro_rules! lap {
+        ($name:expr) => {
+            if timing {
+                eprintln!("[timing]   {}: {:.1}s", $name, t_lap.elapsed().as_secs_f64());
+                t_lap = std::time::Instant::now();
+            }
+        };
+    }
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
     let rep_idx = collapse_loci(&transcripts);
@@ -404,8 +414,10 @@ pub fn detect_and_assign(
         transcripts.len(),
         reps.len()
     );
+    lap!("pass1+gate+collapse");
     // Conflict-graph: AUTHORITATIVE family criterion
     let placements = build_read_placements(bam_reads, &reps);
+    lap!(format!("build_read_placements ({} reads x {} reps)", bam_reads.len(), reps.len()));
     let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
     let c_fams = conflict_families(reps.len(), &c_edges);
     // audit: the de-tie edge set must be a subset of the AS-tie edge set (the bake-off invariant).
@@ -445,6 +457,7 @@ pub fn detect_and_assign(
         poa_edges.len(), fallback_pairs.len(),
         if skip_poa { " [SKIPPED via RUSTLE_SKIP_POA_DIAGNOSTIC]" } else { "" },
     );
+    lap!("conflict-graph + POA homology diagnostic");
     let fallback: Vec<FallbackEdge> = fallback_pairs
         .iter()
         .map(|&(a, b)| FallbackEdge {

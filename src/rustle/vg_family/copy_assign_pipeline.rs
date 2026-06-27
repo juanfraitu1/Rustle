@@ -14,6 +14,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rayon::prelude::*;
+
 use super::copy_assign::{assign_read, assign_read_editing, AssignParams, Assignment, CopyProfile, ReadFeatures};
 use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
@@ -239,38 +241,55 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
     // PSV-column alignment engine: poasta (exact DP, default) or minimap2 asm20 (heuristic, fast on long
     // copies — opt in RUSTLE_PSV_MINIMAP2=1). Both return the same 2-row gapped-MSA format.
     let use_mm2 = std::env::var_os("RUSTLE_PSV_MINIMAP2").is_some();
-    // for each non-ref copy: amap (ref_off -> other_off) over both-non-gap columns; collect differing offs.
-    let mut amaps: Vec<BTreeMap<usize, usize>> = vec![BTreeMap::new(); n]; // index 0 unused
-    let mut diff_off: BTreeSet<usize> = BTreeSet::new();
-    for other in 1..n {
+    // Align each non-ref copy against the ref (the per-pair poasta DP is the dominant per-family cost — an
+    // exact O(len^2) alignment of two long divergent transcripts). The (n-1) alignments are INDEPENDENT, so
+    // run them concurrently and merge: each yields its own `amap` (ref_off -> other_off) plus the ref offsets
+    // where the two bases DIFFER. The merge is order-independent (per-index amaps + a set-union of diffs), so
+    // the result is byte-identical to the serial walk. poasta is a pure function (thread-safe); the opt-in
+    // minimap2 path stays serial (its temp-file nonce can collide between equal-length copies under threads).
+    let align_one = |other: usize| -> (BTreeMap<usize, usize>, BTreeSet<usize>) {
         // strong gap-open anchors the conserved core column-for-column (same config as contiguous_core_coverage).
         let aln = if use_mm2 {
             minimap2_msa_pair(ref_seq, &copies[other].seq)
         } else {
             poa_msa_with_costs(&[ref_seq.clone(), copies[other].seq.clone()], GapAffine::new(1, 1, 32))
         };
-        let msa = match aln {
-            Ok(m) if m.len() == 2 => m,
-            _ => continue,
-        };
-        let (r0, r1) = (&msa[0], &msa[1]);
-        let (mut ro, mut oo) = (0usize, 0usize);
-        for c in 0..r0.len().min(r1.len()) {
-            let (ca, cb) = (r0[c], r1[c]);
-            let (a_gap, b_gap) = (ca == b'-', cb == b'-');
-            if !a_gap && !b_gap {
-                amaps[other].insert(ro, oo);
-                if is_acgt(ca) && is_acgt(cb) && ca != cb {
-                    diff_off.insert(ro);
+        let mut amap = BTreeMap::new();
+        let mut diffs = BTreeSet::new();
+        if let Ok(msa) = aln {
+            if msa.len() == 2 {
+                let (r0, r1) = (&msa[0], &msa[1]);
+                let (mut ro, mut oo) = (0usize, 0usize);
+                for c in 0..r0.len().min(r1.len()) {
+                    let (ca, cb) = (r0[c], r1[c]);
+                    let (a_gap, b_gap) = (ca == b'-', cb == b'-');
+                    if !a_gap && !b_gap {
+                        amap.insert(ro, oo);
+                        if is_acgt(ca) && is_acgt(cb) && ca != cb {
+                            diffs.insert(ro);
+                        }
+                    }
+                    if !a_gap {
+                        ro += 1;
+                    }
+                    if !b_gap {
+                        oo += 1;
+                    }
                 }
             }
-            if !a_gap {
-                ro += 1;
-            }
-            if !b_gap {
-                oo += 1;
-            }
         }
+        (amap, diffs)
+    };
+    let per_copy: Vec<(BTreeMap<usize, usize>, BTreeSet<usize>)> = if use_mm2 {
+        (1..n).map(&align_one).collect()
+    } else {
+        (1..n).into_par_iter().map(&align_one).collect()
+    };
+    let mut amaps: Vec<BTreeMap<usize, usize>> = vec![BTreeMap::new(); n]; // index 0 unused
+    let mut diff_off: BTreeSet<usize> = BTreeSet::new();
+    for (other, (amap, diffs)) in (1..n).zip(per_copy.into_iter()) {
+        amaps[other] = amap;
+        diff_off.extend(diffs);
     }
     diff_off
         .into_iter()
@@ -599,10 +618,13 @@ pub(crate) fn detect_editing_columns(reads_obs: &[Vec<Option<u8>>], copies: &[Co
     // per (copy, column) -> (n_A, n_G) among reads provisionally assigned to that copy.
     let mut counts = vec![vec![(0u32, 0u32); n_cols]; n];
     for obs in reads_obs {
+        // Columns this read spans — both the argmax match-count and the A/G tally only depend on spanned
+        // columns, so iterate those instead of re-walking every column for every copy (identical result).
+        let spanned: Vec<usize> = (0..n_cols).filter(|&j| obs.get(j).copied().flatten().is_some()).collect();
         let (mut best, mut best_m) = (0usize, -1i64);
         for (ci, c) in copies.iter().enumerate() {
             let mut m = 0i64;
-            for j in 0..n_cols {
+            for &j in &spanned {
                 if let (Some(ob), Some(al)) = (obs.get(j).copied().flatten(), c.alleles.get(j).copied().flatten()) {
                     if ob == al {
                         m += 1;
@@ -614,7 +636,7 @@ pub(crate) fn detect_editing_columns(reads_obs: &[Vec<Option<u8>>], copies: &[Co
                 best = ci;
             }
         }
-        for j in 0..n_cols {
+        for &j in &spanned {
             match obs.get(j).copied().flatten() {
                 Some(b'A') => counts[best][j].0 += 1,
                 Some(b'G') => counts[best][j].1 += 1,
@@ -678,7 +700,17 @@ pub fn assign_family_detailed(
     use super::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
     const MOSAIC_EPS: f64 = 0.01; // HiFi per-base error for the mosaic likelihood
     const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
+    let timing = std::env::var_os("RUSTLE_TIMING").is_some();
+    let t_psv = std::time::Instant::now();
     let fp = build_family_profiles(copies);
+    if timing {
+        eprintln!(
+            "[timing]     build_family_profiles/discover_psvs ({} copies, {} cols): {:.1}s",
+            copies.len(),
+            fp.n_cols,
+            t_psv.elapsed().as_secs_f64()
+        );
+    }
     // canonical column -> genomic position (first copy that has the column) so every read's switch breakpoints
     // are in ONE frame and `aggregate_family` can cluster recurrences across molecules.
     let mut col_canon: Vec<Option<u64>> = vec![None; fp.n_cols];
@@ -704,37 +736,77 @@ pub fn assign_family_detailed(
     } else {
         Vec::new()
     };
+    if timing {
+        eprintln!("[timing]     editing-filter pre-pass: {:.1}s", t_psv.elapsed().as_secs_f64());
+    }
+    let t_assign = std::time::Instant::now();
+    // Per-read assignment is independent across reads, so compute it in parallel and merge in read order
+    // (rayon's indexed collect preserves order, keeping output identical to the serial loop). The merge
+    // reproduces the serial sequencing exactly: a read with an overlap copy always contributes a mosaic
+    // call; it adds an EM observation only if `combined` assigns; and a `ReadResult` only if `psv` also
+    // assigns.
+    struct PerRead {
+        mcall: super::mosaic::MosaicCall,
+        obs_for_em: Option<Vec<Option<u8>>>,
+        result: Option<ReadResult>,
+    }
+    let per_read: Vec<Option<PerRead>> = reads
+        .par_iter()
+        .enumerate()
+        .map(|(ri, read)| {
+            let mc = best_overlap_copy(read, copies)?;
+            let feats = read_features(read, mc, &fp);
+            // gene-conversion / mosaic: does this molecule's per-PSV copy match SWITCH mid-read?
+            let mut site_obs: Vec<SiteObs> = Vec::new();
+            for col in 0..fp.n_cols {
+                if let (Some(ob), Some(rp)) = (feats.psv_obs[col], col_canon[col]) {
+                    let match_bits = fp.profiles.iter().map(|pr| pr.alleles[col] == Some(ob)).collect();
+                    site_obs.push(SiteObs { ref_pos: rp, match_bits });
+                }
+            }
+            site_obs.sort_by_key(|s| s.ref_pos);
+            if site_obs.len() > MAX_MOSAIC_SITES {
+                let stride = site_obs.len() / MAX_MOSAIC_SITES + 1;
+                site_obs = site_obs.into_iter().step_by(stride).collect();
+            }
+            let mcall = detect_mosaic(&site_obs, copies.len(), MOSAIC_EPS, &mparams);
+            let Some(combined) = assign_read_editing(&feats, &fp.profiles, p, &editing_cols) else {
+                return Some(PerRead { mcall, obs_for_em: None, result: None });
+            };
+            let obs = feats.psv_obs.clone();
+            let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
+            let Some(psv) = assign_read_editing(&psv_feats, &fp.profiles, p, &editing_cols) else {
+                return Some(PerRead { mcall, obs_for_em: Some(obs), result: None });
+            };
+            Some(PerRead {
+                mcall,
+                obs_for_em: Some(obs.clone()),
+                result: Some(ReadResult { read_index: ri, mapped_copy: mc, psv, combined, psv_obs: obs }),
+            })
+        })
+        .collect();
+    if timing {
+        eprintln!(
+            "[timing]     parallel per-read assign ({} reads): {:.1}s",
+            reads.len(),
+            t_assign.elapsed().as_secs_f64()
+        );
+    }
     let mut results = Vec::new();
     let mut read_obs: Vec<Vec<Option<u8>>> = Vec::new(); // per-read PSV observations for the soft EM
     let mut mosaic_calls = Vec::new();
     let mut mosaic_reads = 0usize;
-    for (ri, read) in reads.iter().enumerate() {
-        let Some(mc) = best_overlap_copy(read, copies) else { continue };
-        let feats = read_features(read, mc, &fp);
-        // gene-conversion / mosaic: does this molecule's per-PSV copy match SWITCH mid-read?
-        let mut site_obs: Vec<SiteObs> = Vec::new();
-        for col in 0..fp.n_cols {
-            if let (Some(ob), Some(rp)) = (feats.psv_obs[col], col_canon[col]) {
-                let match_bits = fp.profiles.iter().map(|pr| pr.alleles[col] == Some(ob)).collect();
-                site_obs.push(SiteObs { ref_pos: rp, match_bits });
-            }
-        }
-        site_obs.sort_by_key(|s| s.ref_pos);
-        if site_obs.len() > MAX_MOSAIC_SITES {
-            let stride = site_obs.len() / MAX_MOSAIC_SITES + 1;
-            site_obs = site_obs.into_iter().step_by(stride).collect();
-        }
-        let mcall = detect_mosaic(&site_obs, copies.len(), MOSAIC_EPS, &mparams);
-        if mcall.is_mosaic() {
+    for pr in per_read.into_iter().flatten() {
+        if pr.mcall.is_mosaic() {
             mosaic_reads += 1;
         }
-        mosaic_calls.push(mcall);
-        let Some(combined) = assign_read_editing(&feats, &fp.profiles, p, &editing_cols) else { continue };
-        let obs = feats.psv_obs.clone();
-        read_obs.push(obs.clone());
-        let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
-        let Some(psv) = assign_read_editing(&psv_feats, &fp.profiles, p, &editing_cols) else { continue };
-        results.push(ReadResult { read_index: ri, mapped_copy: mc, psv, combined, psv_obs: obs });
+        mosaic_calls.push(pr.mcall);
+        if let Some(o) = pr.obs_for_em {
+            read_obs.push(o);
+        }
+        if let Some(r) = pr.result {
+            results.push(r);
+        }
     }
     // Breakpoints are in the shared `col_canon` frame (the co-located family's chromosome), so stamp
     // every call with the family chrom so each emitted event carries it (for the microhomology check).

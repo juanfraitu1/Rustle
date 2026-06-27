@@ -14,7 +14,7 @@ use std::io::Write;
 
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
-use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region};
+use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache};
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge};
 
 #[derive(Parser, Debug)]
@@ -104,6 +104,15 @@ struct Args {
     /// haplotype = -1 when the read is ambiguous/tied = unphased). Block ≙ PS tag, haplotype ≙ HP tag.
     #[arg(long, default_value_t = false)]
     phase: bool,
+
+    /// Skip the POA homology DIAGNOSTIC pass. It is the dominant per-region cost (the poasta all-pairs
+    /// alignment over candidate rep pairs — ~85% of wall-clock on dense families) but is purely diagnostic:
+    /// families come from the de-tie conflict graph, so the emitted families/assignments/abundance are
+    /// BYTE-IDENTICAL with or without it. Only the `.fallback.tsv` report and the POA edge counts in the log
+    /// are lost. STRONGLY recommended for genome-wide sweeps (measured ~6.8× faster on the heaviest family).
+    /// Equivalent to setting `RUSTLE_SKIP_POA_DIAGNOSTIC=1`.
+    #[arg(long, default_value_t = false)]
+    skip_poa_diagnostic: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -234,21 +243,45 @@ fn main() -> Result<()> {
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
+    // `--skip-poa-diagnostic` is read by `detect_and_assign` via this env var (it is purely diagnostic and
+    // does not change the emitted families/assignments — see the flag's help).
+    if args.skip_poa_diagnostic {
+        std::env::set_var("RUSTLE_SKIP_POA_DIAGNOSTIC", "1");
+    }
+    let timing = std::env::var_os("RUSTLE_TIMING").is_some();
+    // Parse the BAM index + header ONCE and reuse across every region (the per-region path re-parses the
+    // multi-MB `.bai` otherwise). None => no usable index; fall back to the per-region open (which scans).
+    let bam_cache = BamIndexCache::open(&args.bam).ok();
     for (contig, ranges) in &by_contig {
         // load this contig once; it is dropped (freed) before the next contig.
         let contigs: HashSet<String> = std::iter::once(contig.clone()).collect();
         let genome = GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)
             .with_context(|| format!("loading {} for {contig}", args.fasta))?;
         for &(lo, hi) in ranges {
-            let (primary, bam_reads) = reads_in_region(&args.bam, contig, lo, hi, args.threads)
-                .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
+            let t_read = std::time::Instant::now();
+            let (primary, bam_reads) = match &bam_cache {
+                Some(c) => c.reads_in_region(&args.bam, contig, lo, hi),
+                None => reads_in_region(&args.bam, contig, lo, hi, args.threads),
+            }
+            .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
+            if timing {
+                eprintln!(
+                    "[timing] reads_in_region {contig}:{lo}-{hi} ({} reads): {:.1}s",
+                    bam_reads.len(),
+                    t_read.elapsed().as_secs_f64()
+                );
+            }
             let extra = if args.recover_copies {
                 tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio).unwrap_or_default()
             } else {
                 Vec::new()
             };
+            let t_da = std::time::Instant::now();
             let (fams, fallback) =
                 detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra);
+            if timing {
+                eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
+            }
             fallback_all.extend(fallback);
             for fa in &fams {
                 let fid = format!("CAFAM{gfam}");

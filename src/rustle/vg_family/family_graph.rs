@@ -790,29 +790,21 @@ pub fn poa_msa(seqs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
 /// elsewhere in the family graph.
 ///
 /// `GapAffine::new(cost_mismatch, cost_gap_extend, cost_gap_open)`.
-pub fn poa_msa_with_costs(
-    seqs: &[Vec<u8>],
-    gap_costs: poasta::aligner::scoring::GapAffine,
-) -> Result<Vec<Vec<u8>>> {
+/// Build a POA graph by progressively aligning each sequence under the given poasta `AlignmentConfig`.
+/// Generic over the config so `poa_msa_with_costs` can pick exact Dijkstra or exact-A* (`AffineMinGapCost`)
+/// without duplicating the loop — both compute the same OPTIMAL-cost alignment (A* only prunes the search).
+fn build_poa_graph<C>(seqs: &[Vec<u8>], config: C) -> Result<poasta::graphs::poa::POAGraph<u32>>
+where
+    C: poasta::aligner::config::AlignmentConfig,
+{
     use anyhow::anyhow;
-    use poasta::graphs::poa::{POAGraph, POANodeIndex};
-    use poasta::aligner::PoastaAligner;
-    use poasta::aligner::config::AffineDijkstra;
     use poasta::aligner::scoring::AlignmentType;
-    use poasta::io::fasta::poa_graph_to_fasta;
+    use poasta::aligner::PoastaAligner;
+    use poasta::graphs::poa::{POAGraph, POANodeIndex};
 
-    if seqs.len() < 2 {
-        return Err(anyhow!("poa_msa requires at least 2 sequences"));
-    }
-
-    // Build a POA graph by aligning each sequence progressively, using the
-    // caller-supplied affine-gap Dijkstra costs (no A* heuristic).
-    let aligner: PoastaAligner<'_, AffineDijkstra> =
-        PoastaAligner::new(AffineDijkstra(gap_costs), AlignmentType::Global);
-
+    let aligner = PoastaAligner::new(config, AlignmentType::Global);
     let mut graph: POAGraph<u32> = POAGraph::new();
     let unit_weights: Vec<usize> = vec![1; seqs.iter().map(|s| s.len()).max().unwrap_or(0)];
-
     for (i, seq) in seqs.iter().enumerate() {
         let w = &unit_weights[..seq.len()];
         if graph.is_empty() {
@@ -833,6 +825,33 @@ pub fn poa_msa_with_costs(
                 .map_err(|e| anyhow!("poasta add_alignment_with_weights failed: {e}"))?;
         }
     }
+    Ok(graph)
+}
+
+pub fn poa_msa_with_costs(
+    seqs: &[Vec<u8>],
+    gap_costs: poasta::aligner::scoring::GapAffine,
+) -> Result<Vec<Vec<u8>>> {
+    use anyhow::anyhow;
+    use poasta::aligner::config::{AffineDijkstra, AffineMinGapCost};
+    use poasta::graphs::poa::POAGraph;
+    use poasta::io::fasta::poa_graph_to_fasta;
+
+    if seqs.len() < 2 {
+        return Err(anyhow!("poa_msa requires at least 2 sequences"));
+    }
+
+    // Exact gap-affine global alignment. Default = AffineDijkstra (uniform-cost search). RUSTLE_POA_ASTAR=1
+    // swaps in AffineMinGapCost = the SAME optimal-cost search with an admissible min-gap-cost A* heuristic,
+    // which prunes states on near-diagonal (low-divergence) paralog pairs. A* guarantees the same optimal
+    // COST, not a unique co-optimal traceback, so the resulting columns must be diffed vs Dijkstra before
+    // trusting it as output-identical (it is a candidate speedup, gated until verified on real families).
+    let astar = std::env::var_os("RUSTLE_POA_ASTAR").is_some();
+    let graph: POAGraph<u32> = if astar {
+        build_poa_graph(seqs, AffineMinGapCost(gap_costs))?
+    } else {
+        build_poa_graph(seqs, AffineDijkstra(gap_costs))?
+    };
 
     // Extract the MSA rows by using poasta's public poa_graph_to_fasta function,
     // which walks the graph in topological order and writes aligned FASTA records.
