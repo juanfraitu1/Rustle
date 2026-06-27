@@ -409,7 +409,7 @@ fn distinct_columns(a: &[Option<u8>], b: &[Option<u8>]) -> usize {
 /// bases. Substitution-only (v1): a PSV whose genome position is not in the host's exon map (intron/indel) is
 /// SKIPPED and the copy is flagged via `None` return when ANY allele cannot be placed (caller routes to
 /// DNA-needs). Forward-genome coords; the host's own strand/RC is already baked into `host.seq`.
-fn collapsed_copy_to_transcript_from_host_seq(
+pub(crate) fn collapsed_copy_to_transcript_from_host_seq(
     iso: &CopyIsoform,
     psv_pos: &[u64],
     host: &crate::vg_family::family_detect::DenovoTranscript,

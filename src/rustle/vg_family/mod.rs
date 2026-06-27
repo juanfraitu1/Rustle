@@ -20,6 +20,7 @@ pub mod layer2;
 pub mod psv_linkage; // Layer-2 "C": within-molecule PSV->junction linkage (PSV-column extraction).
 pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a molecule's het-SNP allele.
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
+pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
