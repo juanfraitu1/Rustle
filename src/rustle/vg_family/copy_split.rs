@@ -491,6 +491,37 @@ fn consensus_haplotype(group: &[&ReadObs], n_psv_columns: usize) -> Vec<Option<u
     out
 }
 
+/// `min_p` identifiability bound (the same construction the assignment gate uses, copy_assign.rs:320):
+/// Π over distinguishing columns of (error_rate/3). `< alpha` ⇒ certifiably distinct.
+pub fn min_p_distinct(cand: &[Option<u8>], reference: &[Option<u8>], error_rate: f64, alpha: f64) -> bool {
+    let eps = (error_rate / 3.0).clamp(0.0, 1.0);
+    let mut prod = 1.0f64;
+    let mut any = false;
+    for (a, b) in cand.iter().zip(reference.iter()) {
+        if let (Some(x), Some(y)) = (a, b) {
+            if x != y { prod *= eps; any = true; }
+        }
+    }
+    any && prod < alpha
+}
+
+/// Reject candidates whose differing columns are ALL A->G (plus-strand) — the RNA-editing signature
+/// (Clair3-RNA). PSV alleles are in transcription orientation, so editing shows as A->G uniformly.
+/// Returns true (=keep) iff at least one differing column is NOT A->G.
+pub fn strand_symmetric_spectrum(host_alleles: &[Option<u8>], cand_alleles: &[Option<u8>]) -> bool {
+    let mut diffs = 0usize;
+    let mut non_ag = 0usize;
+    for (h, c) in host_alleles.iter().zip(cand_alleles.iter()) {
+        if let (Some(hb), Some(cb)) = (h, c) {
+            if hb != cb {
+                diffs += 1;
+                if !(*hb == b'A' && *cb == b'G') { non_ag += 1; }
+            }
+        }
+    }
+    diffs > 0 && non_ag > 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1033,5 +1064,31 @@ mod tests {
             vec![Some(b'G'), None, Some(b'G')],
             "[exon1 base, intron None, exon2 base]"
         );
+    }
+
+    // ---- Task 3: Discovery discriminators (min_p_distinct, strand_symmetric_spectrum) ----
+
+    #[test]
+    fn min_p_distinct_requires_enough_columns() {
+        // 1 distinguishing column: min_p = e/3 ≈ 1e-3 -> NOT < alpha=1e-3 -> false
+        let cand = vec![Some(b'C'), Some(b'A')];
+        let reference = vec![Some(b'A'), Some(b'A')];
+        assert!(!min_p_distinct(&cand, &reference, 0.003, 1e-3), "1 column insufficient at alpha=1e-3");
+        // 3 distinguishing columns: min_p ≈ (1e-3)^3 << alpha -> true
+        let cand3 = vec![Some(b'C'), Some(b'C'), Some(b'C')];
+        let ref3 = vec![Some(b'A'), Some(b'A'), Some(b'A')];
+        assert!(min_p_distinct(&cand3, &ref3, 0.003, 1e-3), "3 columns sufficient");
+    }
+
+    #[test]
+    fn strand_symmetric_rejects_pure_a_to_g() {
+        // every difference is A->G: editing-like -> reject (false)
+        let host = vec![Some(b'A'), Some(b'A')];
+        let cand = vec![Some(b'G'), Some(b'G')];
+        assert!(!strand_symmetric_spectrum(&host, &cand), "pure A->G is editing-like");
+        // mixed spectrum (A->C, C->T): real divergence -> accept (true)
+        let host2 = vec![Some(b'A'), Some(b'C')];
+        let cand2 = vec![Some(b'C'), Some(b'T')];
+        assert!(strand_symmetric_spectrum(&host2, &cand2), "mixed spectrum is divergence-like");
     }
 }
