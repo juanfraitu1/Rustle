@@ -1,5 +1,31 @@
 # Copy-assignment recompute on the COMPLETE multimapping BAM (GGO_mm.bam)
 
+## ⭐ DEFINITIVE O2 headline (2026-06-27 — refined catalog + IsoCon significance gate + Clair3-RNA editing filter)
+
+The final end-to-end run with all the principled defaults, on the proper MAPQ-0 substrate (79 co-located
+same-chrom ≥2-copy families from the homology-refined catalog; cross-chrom families are MAPQ>0 and not this
+substrate). `copy_assign --regions o2_regions.txt --min-copies 2` on `GGO_mm.bam` → 74 families, **43,239
+unique reads**:
+
+| metric | value |
+|---|---|
+| **assigned** | **75.1%** (certificate median p≈0, 90th-pct 2e-17, max 6.9e-4 — all < the Bonferroni α/(n−1)) |
+| ambiguous | **0.0%** (20 reads) |
+| **tied** (certified-unresolvable identifiability floor) | **24.8%** (`min_p_value` median **1.00** = no distinguishing feature) |
+| of **decisive** reads (carry ≥1 distinguishing feature) | **99.9% assigned** |
+| silver-standard unique-mapper agreement | **24,660/24,682 = 99.9%** |
+| collapsed copies recovered | **905** (207 total copies) |
+
+**Reading:** of every read carrying *any* copy-distinguishing evidence, 99.9% are assigned with a calibrated
+per-read certificate; the 24.8% abstained are **certified unresolvable** (exonically-identical / no PSV/junction,
+`min_p=1.0`) — abstained, not guessed (no 1/k). The gate cleanly **bifurcates** (resolvable→assigned vs
+unresolvable→tied), so the retired τ-gate's fuzzy 6.4%-ambiguous band → ~0%. This replaces every intermediate
+assignment headline. (Non-circular accuracy = the sim5x labeled ladder, where the gate ≡ the τ-gate and K=0 →
+100% Tied; silver is the circular proxy.) Data: `o2_definitive.*`. Reproduce: `copy_assign --bam GGO_mm.bam
+--fasta GGO.fasta --regions o2_regions.txt --out o2_definitive --min-copies 2`.
+
+---
+
 **Why a recompute.** The original `GGO.bam` was the multimapping UNDERCOUNT (minimap2 default `-N` cap →
 few secondaries). The correct substrate is **`GGO_mm.bam`** (`minimap2 -ax splice:hq -uf --eqx -Y -N 50
 -p 0.1 --secondary=yes`) — chr19 alone has **63% secondary alignments** vs nearly none before. Copy
