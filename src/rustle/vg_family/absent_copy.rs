@@ -209,12 +209,16 @@ pub fn admit_candidate(
 /// (`identity = 1 − x`), falling back to `matches / aln_block_len` (PAF cols 10/11).
 fn remap_identity_minimap2(query_seq: &[u8], fasta_path: &str) -> Option<f64> {
     use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Process-global monotonic counter so concurrent calls (even with equal-length queries) get
+    // disjoint temp paths; `pid` keeps distinct processes disjoint from each other.
+    static REMAP_NONCE: AtomicUsize = AtomicUsize::new(0);
 
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let dir = std::env::temp_dir();
     let pid = std::process::id();
-    // Nonce derived from content length so concurrent calls with different queries don't collide.
-    let nonce = query_seq.len().wrapping_mul(1_000_003usize);
+    let nonce = REMAP_NONCE.fetch_add(1, Ordering::Relaxed);
     let qpath = dir.join(format!("rustle_absent_q_{pid}_{nonce}.fa"));
 
     struct Cleanup(std::path::PathBuf);
@@ -502,6 +506,42 @@ mod tests {
                 assert_eq!(r.n_clusters, 1);
                 assert_eq!(r.read_count, 12);
             }
+            _ => panic!("expected DnaNeeds"),
+        }
+    }
+
+    /// Gate 4 fires: a PSV position (999) is NOT in the host exon frame, so
+    /// `collapsed_copy_to_transcript_from_host_seq` returns None → DnaNeeds("...unplaceable...").
+    /// The two in-frame columns (102, 104) carry distinct, non-A->G alleles so gates 1-3 pass;
+    /// the remap closure should never be reached.
+    #[test]
+    fn admit_rejects_unplaceable_consensus_as_dna_needs() {
+        let cand = CollapsedCandidate {
+            host_tid: "H".into(),
+            chrom: "c1".into(),
+            start: 100,
+            end: 110,
+            iso: CopyIsoform {
+                intron_chain: vec![],
+                // distinct, non-A->G at the in-frame columns; an allele at the off-frame column.
+                allele_vector: vec![Some(b'C'), Some(b'T'), Some(b'C')],
+                read_count: 5,
+                identifiable: true,
+            },
+            // 102 and 104 are in the host exon frame; 999 is NOT -> gate 4 None.
+            psv_pos: vec![102, 104, 999],
+            n_clusters: 3,
+        };
+        let p = AbsentCopyParams::default();
+        let got = admit_candidate_with_remap(&cand, &host(), &p, |_seq| {
+            panic!("remap must not be reached when gate 4 fails")
+        });
+        match got {
+            Admission::DnaNeeds(r) => assert!(
+                r.reason.contains("unplaceable"),
+                "expected 'unplaceable' in reason, got: {}",
+                r.reason
+            ),
             _ => panic!("expected DnaNeeds"),
         }
     }
