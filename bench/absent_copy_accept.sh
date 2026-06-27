@@ -74,10 +74,12 @@ else
   fail "A2  expected 8 columns, got $N_COLS"
 fi
 
-# A3: diff vs frozen o2_definitive (filter to the small region's family)
-grep "$FAMILY" "$O2_DEF" | sort > "$SCRATCH/def_fam.tsv"
-grep "$FAMILY" "$SCRATCH/off.assignments.tsv" | sort > "$SCRATCH/off_fam.tsv"
-DIFF_LINES=$(diff "$SCRATCH/def_fam.tsv" "$SCRATCH/off_fam.tsv" | wc -l)
+# A3: diff vs frozen o2_definitive (field-exact filter to the small region's family_id, col 2)
+awk -F'\t' -v f="$FAMILY" '$2==f' "$O2_DEF" | sort > "$SCRATCH/def_fam.tsv"
+awk -F'\t' -v f="$FAMILY" '$2==f' "$SCRATCH/off.assignments.tsv" | sort > "$SCRATCH/off_fam.tsv"
+# NB: `|| true` — under `set -e -o pipefail`, `diff` exits 1 when files differ, which would abort
+# the script BEFORE fail()/the summary could report the regression. Capture the count, then branch.
+DIFF_LINES=$(diff "$SCRATCH/def_fam.tsv" "$SCRATCH/off_fam.tsv" | wc -l || true)
 if [ "$DIFF_LINES" -eq 0 ]; then
   pass "A3  OFF assignments byte-identical to o2_definitive for $FAMILY (diff=0)"
 else
@@ -109,7 +111,8 @@ else
 fi
 
 # B2: assignments diff=0 vs OFF run (ON==OFF when nothing admitted)
-ON_DIFF=$(diff <(sort "$SCRATCH/off.assignments.tsv") <(sort "$SCRATCH/on.assignments.tsv") | wc -l)
+# `|| true` for the same set -e/pipefail reason as A3: a real diff must reach fail(), not abort.
+ON_DIFF=$(diff <(sort "$SCRATCH/off.assignments.tsv") <(sort "$SCRATCH/on.assignments.tsv") | wc -l || true)
 if [ "$ON_DIFF" -eq 0 ]; then
   pass "B2  ON assignments == OFF assignments (diff=0, freeze guarantee holds)"
 else
@@ -117,9 +120,14 @@ else
   diff <(sort "$SCRATCH/off.assignments.tsv") <(sort "$SCRATCH/on.assignments.tsv") | head -10
 fi
 
-# B3: no AC_* copies admitted (this region has no collapsed copies)
-if grep -q "^AC_" "$SCRATCH/on.quant.tsv" 2>/dev/null; then
-  fail "B3  unexpected AC_* copy admitted for this reference region"
+# B3: no AC_* copies admitted (this region has no collapsed copies).
+# quant.tsv rows are `family_id<TAB>copy_index<TAB>copy_tid<TAB>...`, so an AC_* copy is the
+# copy_tid FIELD (col 3) — NEVER at line start. Match the field, not `^AC_` (which can't fire and
+# would make this guard pass unconditionally / miss a real spurious admission).
+N_AC=$(awk -F'\t' '$3 ~ /^AC_/' "$SCRATCH/on.quant.tsv" 2>/dev/null | wc -l || true)
+if [ "$N_AC" -ne 0 ]; then
+  fail "B3  unexpected AC_* copy admitted for this reference region ($N_AC found)"
+  awk -F'\t' '$3 ~ /^AC_/' "$SCRATCH/on.quant.tsv" | head -5
 else
   pass "B3  no AC_* copies admitted (expected for this reference region)"
 fi

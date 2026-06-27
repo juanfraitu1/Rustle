@@ -56,18 +56,17 @@ def main() -> int:
     for (read_name, family_id), off_rows in off.items():
         on_rows = on.get((read_name, family_id))
         if on_rows is None:
-            # read+family pair completely absent from ON — assigned read disappeared
-            for r in off_rows:
-                missing.append((read_name, family_id))
+            # read+family pair completely absent from ON — assigned read disappeared.
+            # Record the KEY ONCE (not once per duplicate row) so the violation count is not inflated.
+            missing.append((read_name, family_id))
             continue
-        # Compare assigned copy for each off row — ON may have more rows (newly assigned reads)
-        # so we only check that every OFF assigned row is present in ON (same copy).
-        off_copies = sorted(r["assigned_copy"] for r in off_rows)
-        on_copies  = sorted(r["assigned_copy"] for r in on_rows if r.get("status") == "assigned")
-        # OFF copies must be a SUBSET of ON copies.
-        for c in off_copies:
-            if c not in on_copies:
-                flips.append((read_name, family_id, c, ",".join(on_copies) if on_copies else "<absent>"))
+        # Compare assigned copies SET-wise: every distinct copy this read+family was assigned to in
+        # OFF must still be an ON-assigned copy (dedup so duplicate rows can't inflate flips either).
+        off_copies = {r["assigned_copy"] for r in off_rows}
+        on_copies  = {r["assigned_copy"] for r in on_rows if r.get("status") == "assigned"}
+        for c in sorted(off_copies - on_copies):
+            flips.append((read_name, family_id, c,
+                          ",".join(sorted(on_copies)) if on_copies else "<absent>"))
 
     n_off_assigned = sum(len(v) for v in off.values())
     n_on_assigned  = sum(

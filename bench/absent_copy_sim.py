@@ -6,14 +6,22 @@ Builds a minimal synthetic genome + BAM where:
   SIM_COLL contig  (2-locus conflict family, 3 collapsed haplotypes at locus A)
   ─────────────────────────────────────────────────────────────────────────────
   Locus A (pos   0-600, intron 200-300):
-    - Copy A0 (host/ref): exactly matches the reference exons.
+    - Copy A0 (host/ref): exactly matches the reference exons. Primary at A,
+      secondary at B (host-sequence bridge read → de-tie conflict edge A–B).
     - Copy A1 (absent-1): 15 PSV substitutions in the mRNA → 3 % divergence → remap
-      identity ~97 % < 98 % → passes gate 5 → ADMITTED as AC_ copy.
-    - Copy A2 (absent-2): 15 different PSV substitutions → also ADMITTED.
+      identity ~97 % < 98 % → passes gate 5 → ADMITTED as the single AC_ copy.
+      Placed UNIQUELY at locus A (no record at B) so no mirror copy is admitted at B.
+    - Copy A2 (absent-2): 15 different PSV substitutions, also UNIQUE at A → makes
+      locus A split into >=3 haplotypes (clears gate-1 n_clusters>=3). A2 itself may
+      be admitted or routed to DnaNeeds by the remap gate; only A1 is asserted.
   Locus B (pos 700-1300, intron 900-1000): IDENTICAL exon sequences to A.
     - B0 reads: primary at B, secondary at A → gives B its primary read pile
-      (needed for the de-novo locus detector) AND creates the de-tie conflict
-      edge A–B (MAPQ-0 reads confused between identical loci).
+      (needed for the de-novo locus detector) AND completes the de-tie conflict
+      edge A–B. B sees only host-sequence reads → never admits a mirror AC copy.
+
+  Because the absent haplotype lives at exactly ONE locus, an A1 read is Stage-1
+  TIED over the two identical reference copies (not frozen) yet Stage-2 DECISIVE for
+  the single admitted absent copy → it is ASSIGNED to AC_SIM_COLL_0 (discovery_coupled).
 
   SIM_HET contig  (2-locus conflict family, 2 haplotypes at locus D → DnaNeeds)
   ─────────────────────────────────────────────────────────────────────────────
@@ -22,8 +30,11 @@ Builds a minimal synthetic genome + BAM where:
   → n_clusters=2 < 3 → gate-1 fires → DnaNeeds record emitted to dna_needs.tsv.
 
 Assertions:
-  1. At least one AC_* copy in <out>.quant.tsv  (absent copy admitted)
-  2. At least one row in <out>.dna_needs.tsv beyond the header  (DnaNeeds fired)
+  P1. At least one AC_* copy in <out>.quant.tsv               (absent copy admitted)
+  P2. At least one row in <out>.dna_needs.tsv beyond header   (DnaNeeds fired)
+  P3. At least one read status=assigned to an AC_* copy in <out>.assignments.tsv
+                                                              (reference-absent read PLACED)
+  P4. SIM_HET (2-haplotype het) -> DnaNeeds with '<3 clusters' (het NOT made a copy)
 
 Run:
   python3 bench/absent_copy_sim.py [--out-dir /path/to/scratch] [--binary /path/to/copy_assign]
@@ -305,41 +316,41 @@ def build_bam_records_for_contig(
             primary_at="A",
         ))
 
-    # --- A1 reads: absent copy 1, primary at A, secondary at B ---
+    # --- A1 reads: absent copy 1, UNIQUE at locus A (single record, NO secondary at B) ---
+    # ASYMMETRY (vs a naive A=B mirror): the absent-haplotype reads are placed ONLY at locus A.
+    # Locus B's collapse-recovery pile therefore never sees the A1/A2 haplotypes, so NO mirror
+    # `AC_..._700` copy is ever admitted at B. With a SINGLE absent copy (anchored at A) the
+    # per-read IsoCon gate is no longer torn between two degenerate mirror copies, so an A1 read
+    # decisively matches the one admitted absent copy → `status=assigned` (discovery_coupled).
+    # The A↔B conflict EDGE (which the >=2-copy family gate needs) is still supplied by the
+    # host-sequence A0/B0 bridge reads below, which DO carry an A and a B placement.
     seq_a1 = apply_psvs(mrna, psv_a1)
     n_mm_a1 = sum(seq_a1[p] != mrna[p] for p in range(mrna_len))
     as_a1 = as_for_n_mm(n_mm_a1)
     de_a1 = de_val(n_mm_a1)
     for i in range(n_reads):
-        recs.extend(make_paired_records(
+        recs.append(make_bam_record(
             name=f"{contig}_A1_r{i}",
-            ref_id_a=ref_id, ref_start_a=a_ref_start,
-            ref_id_b=ref_id, ref_start_b=b_ref_start,
-            cigar_a=cigar_a, cigar_b=cigar_b,
-            seq=seq_a1,
-            mapq=0,
-            as_a=as_a1, as_b=as_a1,   # same divergence vs A=B
-            de_a=de_a1, de_b=de_a1,
-            primary_at="A",
+            ref_id=ref_id, ref_start=a_ref_start,
+            seq=seq_a1, cigar_str=cigar_a,
+            flag=0, mapq=0, as_score=as_a1, de=de_a1,
         ))
 
-    # --- A2 reads: absent copy 2, primary at A, secondary at B ---
+    # --- A2 reads: absent copy 2, UNIQUE at locus A (single record, NO secondary at B) ---
+    # Needed so locus A splits into >=3 haplotypes (host + A1 + A2) and clears gate-1
+    # (n_clusters >= min_clusters=3). A2 itself may be admitted or routed to DnaNeeds by the
+    # remap gate depending on how minimap2 chains its PSVs; only the A1 admission is asserted.
     if psv_a2:
         seq_a2 = apply_psvs(mrna, psv_a2)
         n_mm_a2 = sum(seq_a2[p] != mrna[p] for p in range(mrna_len))
         as_a2 = as_for_n_mm(n_mm_a2)
         de_a2 = de_val(n_mm_a2)
         for i in range(n_reads):
-            recs.extend(make_paired_records(
+            recs.append(make_bam_record(
                 name=f"{contig}_A2_r{i}",
-                ref_id_a=ref_id, ref_start_a=a_ref_start,
-                ref_id_b=ref_id, ref_start_b=b_ref_start,
-                cigar_a=cigar_a, cigar_b=cigar_b,
-                seq=seq_a2,
-                mapq=0,
-                as_a=as_a2, as_b=as_a2,
-                de_a=de_a2, de_b=de_a2,
-                primary_at="A",
+                ref_id=ref_id, ref_start=a_ref_start,
+                seq=seq_a2, cigar_str=cigar_a,
+                flag=0, mapq=0, as_score=as_a2, de=de_a2,
             ))
 
     # --- B0 reads: primary at B, secondary at A ---
@@ -538,22 +549,34 @@ def main() -> int:
     if dna_rows:
         print(f"       First: {dna_rows[0].strip()}")
 
-    # P3: AC_* copies have nonzero n_reads_hard in quant.tsv
-    # (demonstrates absent copies are actually used for read quantification).
-    # NOTE: the A=B symmetric construction means AC_0 and AC_700 have degenerate
-    # PSV profiles → per-read IsoCon gate shows "tied" (margin=0 between the two
-    # AC copies), but the EM still distributes fractional read support and gives
-    # nonzero n_reads_hard for the AC copy with primary reads at locus A.
-    ac_hard = 0
+    # P3: at least one read is DECISIVELY ASSIGNED to an AC_* copy in assignments.tsv.
+    # `assigned_copy` in assignments.tsv is a per-family copy INDEX (= best_copy), not a tid;
+    # map (family_id, index) -> copy_tid via quant.tsv, then require >=1 status=assigned row
+    # landing on a tid that starts with "AC_". This is the real efficacy proof (a read placed
+    # on a reference-absent copy), strictly stronger than EM n_reads_hard alone.
+    idx_to_tid: dict[tuple[str, str], str] = {}
     with open(quant_path) as fh:
         for line in fh:
-            parts = line.strip().split("\t")
-            if len(parts) >= 6 and "AC_" in parts[2]:
-                try:
-                    ac_hard += int(parts[5])
-                except ValueError:
-                    pass
-    check(ac_hard > 0, f"P3  AC_* copies have n_reads_hard={ac_hard} > 0 (absent reads quantified)")
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 3 and parts[0] != "family_id":
+                idx_to_tid[(parts[0], parts[1])] = parts[2]  # (family_id, copy_index) -> tid
+    assigned_to_ac = []
+    with open(assign_path) as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 4 or parts[0] == "read_name":
+                continue
+            read_name, fam, copy_idx, status = parts[0], parts[1], parts[2], parts[3]
+            if status == "assigned":
+                tid = idx_to_tid.get((fam, copy_idx), "")
+                if tid.startswith("AC_"):
+                    assigned_to_ac.append((read_name, tid))
+    n_ac_assigned = len(assigned_to_ac)
+    check(n_ac_assigned > 0,
+          f"P3  >=1 read status=assigned to an AC_* copy ({n_ac_assigned} reads)")
+    if assigned_to_ac:
+        ex_read, ex_tid = assigned_to_ac[0]
+        print(f"       e.g. {ex_read} -> {ex_tid} (assigned)")
 
     # P4: HET locus generates DnaNeeds with gate-1 reason (<3 clusters)
     het_gate1 = [l for l in dna_rows if "clusters" in l and "SIM_HET" in l]
