@@ -13,6 +13,7 @@ use std::collections::HashSet;
 use std::io::Write;
 
 use rustle::genome::GenomeIndex;
+use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache};
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge};
@@ -113,6 +114,12 @@ struct Args {
     /// Equivalent to setting `RUSTLE_SKIP_POA_DIAGNOSTIC=1`.
     #[arg(long, default_value_t = false)]
     skip_poa_diagnostic: bool,
+
+    /// Discover reference-ABSENT (collapsed) copies from reads and re-thread the abstain pool against them
+    /// (two-stage freeze; default OFF = byte-identical). Candidates failing the admission gate are written
+    /// to `<out>.dna_needs.tsv`.
+    #[arg(long, default_value_t = false)]
+    absent_copies: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -241,6 +248,7 @@ fn main() -> Result<()> {
     let mut gfa_links: HashSet<(String, String)> = HashSet::new();
     let mut gfa_paths: Vec<String> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
+    let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut gfam = 0usize; // global family counter (unique ids across regions)
 
     // `--skip-poa-diagnostic` is read by `detect_and_assign` via this env var (it is purely diagnostic and
@@ -277,15 +285,15 @@ fn main() -> Result<()> {
                 Vec::new()
             };
             let t_da = std::time::Instant::now();
-            let (fams, fallback) = detect_and_assign(
+            let (fams, fallback, dna_needs) = detect_and_assign(
                 &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
-                // Task 5 wiring: absent-copy discovery stays OFF here; Task 6 flips this to a CLI flag.
-                false, &args.fasta,
+                args.absent_copies, &args.fasta,
             );
             if timing {
                 eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
             }
             fallback_all.extend(fallback);
+            dna_needs_rows.extend(dna_needs);
             for fa in &fams {
                 let fid = format!("CAFAM{gfam}");
                 gfam += 1;
@@ -599,6 +607,21 @@ fn main() -> Result<()> {
             "[copy_assign] {} family edge(s) confirmed via the large-seq LCS fallback (transcript > --max-poa-len={}); wrote {}.fallback.tsv",
             fallback_all.len(),
             args.max_poa_len,
+            args.out
+        );
+    }
+
+    // --absent-copies: surface candidates that failed the admission gate and need DNA-level validation.
+    // Only written when --absent-copies is set so an OFF run produces exactly the same output files.
+    if args.absent_copies {
+        let mut dh = std::fs::File::create(format!("{}.dna_needs.tsv", args.out))?;
+        writeln!(dh, "chrom\tstart\tend\tn_clusters\tread_count\treason")?;
+        for r in &dna_needs_rows {
+            writeln!(dh, "{}\t{}\t{}\t{}\t{}\t{}", r.chrom, r.start, r.end, r.n_clusters, r.read_count, r.reason)?;
+        }
+        eprintln!(
+            "[copy_assign] {} DNA-needs candidate(s) -> {}.dna_needs.tsv",
+            dna_needs_rows.len(),
             args.out
         );
     }

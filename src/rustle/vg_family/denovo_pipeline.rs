@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use anyhow::Result;
 
-use super::absent_copy::{self, AbsentCopyParams, Admission};
+use super::absent_copy::{self, AbsentCopyParams, Admission, DnaNeedsRecord};
 use super::copy_assign::{Assignment, AssignParams, AssignStatus};
 use super::copy_assign_pipeline::{assign_family_detailed, freeze_merge, read_ref_end};
 use super::copy_split::{
@@ -432,7 +432,7 @@ pub fn detect_and_assign(
     rescue_extra: &[PrimaryRead],
     absent_copies: bool,
     fasta_path: &str,
-) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>) {
+) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>, Vec<DnaNeedsRecord>) {
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let mut t_lap = std::time::Instant::now();
     macro_rules! lap {
@@ -515,6 +515,7 @@ pub fn detect_and_assign(
         );
     }
     let mut out = Vec::new();
+    let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
     for cf in colocated_families(&reps, &split, win, min_copies) {
         // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
         // and ADD them to the copy set, so reads can be assigned to them too. Iterative (bridge-aware).
@@ -582,8 +583,8 @@ pub fn detect_and_assign(
                 if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
                     match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default()) {
                         Admission::Copy(t) => admitted.push(t),
-                        // Task 6 surfaces the DNA-needs records; for now drop them (counted via the candidate set).
-                        Admission::DnaNeeds(_r) => {}
+                        // Task 6: collect DNA-needs records for the caller to surface as <out>.dna_needs.tsv.
+                        Admission::DnaNeeds(r) => dna_needs.push(r),
                     }
                 }
             }
@@ -674,7 +675,7 @@ pub fn detect_and_assign(
         }
         out.push(fa);
     }
-    (out, fallback)
+    (out, fallback, dna_needs)
 }
 
 /// I/O wrapper: load primary reads from a BAM and the genome from a FASTA (scoped via `.fai` to only the
@@ -1502,7 +1503,7 @@ mod tests {
         contigs.insert(chrom.to_string());
         let genome = GenomeIndex::from_fasta_contigs(&fasta, &contigs).expect("fasta");
         eprintln!("region {chrom}:{lo}-{hi}: {} primary reads, {} mapped reads", primary.len(), bam_reads.len());
-        let (fas, fallback) = detect_and_assign(
+        let (fas, fallback, _dna_needs) = detect_and_assign(
             &primary,
             &bam_reads,
             &genome,
@@ -1536,7 +1537,7 @@ mod tests {
     #[test]
     fn detect_and_assign_resolves_multimapper_end_to_end() {
         let (genome, primary, aligned) = two_paralogs_with_psvs();
-        let (fas, fallback) = detect_and_assign(
+        let (fas, fallback, dna_needs) = detect_and_assign(
             &primary,
             &aligned,
             &genome,
@@ -1549,6 +1550,7 @@ mod tests {
             "",
         );
         assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
+        assert!(dna_needs.is_empty(), "absent_copies=false must return empty dna_needs vec");
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");
         let fa = &fas[0];
         assert_eq!(fa.n_copies, 2);
@@ -1564,6 +1566,30 @@ mod tests {
         let secondary_assign = fa.assignments.iter().find(|(_, a)| a.best_copy == 0)
             .expect("secondary read (copyA seq at locus 1000) should resolve to copyA (copy 0)");
         assert_eq!(secondary_assign.1.status, super::super::copy_assign::AssignStatus::Assigned);
+    }
+
+    /// When `absent_copies=false`, the third element of `detect_and_assign`'s return tuple must
+    /// always be empty — the admission block is entirely skipped, so no `DnaNeedsRecord`s are
+    /// produced regardless of how many collapsed-copy candidates exist at the loci.
+    #[test]
+    fn detect_and_assign_absent_copies_off_returns_empty_dna_needs() {
+        let (genome, primary, aligned) = two_paralogs_with_psvs();
+        let (_, _, dna_needs) = detect_and_assign(
+            &primary,
+            &aligned,
+            &genome,
+            &DenovoConfig::default(),
+            5_000_000,
+            2,
+            &super::super::copy_assign::AssignParams::default(),
+            &[],
+            false, // OFF — the admission block must be completely skipped
+            "",
+        );
+        assert!(
+            dna_needs.is_empty(),
+            "absent_copies=false must yield an empty dna_needs vec (byte-identical OFF path)"
+        );
     }
 
     #[test]
