@@ -12,7 +12,9 @@ use anyhow::Result;
 
 use super::copy_assign::{Assignment, AssignParams, AssignStatus};
 use super::copy_assign_pipeline::{assign_family_detailed, read_ref_end};
-use super::copy_split::{split_locus_copies, AlignedRead};
+use super::copy_split::{
+    split_locus_copies, discover_locus_psvs, AlignedRead, CollapsedCandidate, CopyIsoform,
+};
 use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam, reads_in_region,
     BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
@@ -358,14 +360,17 @@ fn conflict_to_split_families(
     out
 }
 
-/// Collapsed-copy recovery PAST the family gate. The genuinely collapsed tandem arrays (DAZ-type) don't form
-/// a co-located family to rescue into, so this runs the PSV copy-split directly on EACH rep's overlapping
-/// reads (`bam_reads` already include the secondary multimappers). Returns the number of EXTRA
-/// PSV-DISTINGUISHABLE copies found beyond one-per-rep. The phantom safeguard is intrinsic: a fully-tied
-/// (identical) locus does not split (`split_locus_copies` requires copy-specific PSVs), so only copies with
-/// real distinguishing evidence are counted — the identifiability gate the user asked for, for free.
-fn recover_collapsed_copies(reps: &[DenovoTranscript], bam_reads: &[BamRead]) -> usize {
-    let mut recovered = 0usize;
+/// Emit every non-host identifiable collapsed copy at each locus as a [`CollapsedCandidate`].
+///
+/// For each representative transcript in `reps`, overlapping BAM reads are collected and fed to
+/// [`split_locus_copies`]. When ≥2 identifiable copies are found the most-supported copy is treated
+/// as the "host" (reference-anchored) copy and skipped; the rest become candidates for the
+/// downstream admission gate. `psv_pos` is returned parallel to each `iso.allele_vector`.
+///
+/// The phantom safeguard is intrinsic: a fully-tied locus does not split (copy-specific PSVs are
+/// required), so only copies with real distinguishing evidence enter the candidate list.
+fn recover_collapsed_candidates(reps: &[DenovoTranscript], bam_reads: &[BamRead]) -> Vec<CollapsedCandidate> {
+    let mut out: Vec<CollapsedCandidate> = Vec::new();
     for rep in reps {
         let reads: Vec<AlignedRead> = bam_reads
             .iter()
@@ -375,12 +380,44 @@ fn recover_collapsed_copies(reps: &[DenovoTranscript], bam_reads: &[BamRead]) ->
         if reads.len() < 6 {
             continue;
         }
+        let psv_pos = discover_locus_psvs(&reads, 3);
         let copies = split_locus_copies(&reads, 3, 2, 3);
-        if copies.len() >= 2 {
-            recovered += copies.len() - 1;
+        if copies.len() < 2 {
+            continue;
+        }
+        let n_clusters = copies.iter().filter(|c| c.identifiable).count();
+        // Emit every identifiable copy EXCEPT the most-supported one (treated as the host/ref copy).
+        // Sort descending by read_count so skip(1) drops the host; ties broken by allele_vector for
+        // determinism (BTreeMap-order allele_vector is a reliable secondary key).
+        let mut ids: Vec<&CopyIsoform> = copies.iter().filter(|c| c.identifiable).collect();
+        ids.sort_by(|a, b| {
+            b.read_count
+                .cmp(&a.read_count)
+                .then_with(|| a.allele_vector.cmp(&b.allele_vector))
+        });
+        for iso in ids.into_iter().skip(1) {
+            out.push(CollapsedCandidate {
+                host_tid: rep.tid.clone(),
+                chrom: rep.chrom.clone(),
+                start: rep.start,
+                end: rep.end,
+                iso: iso.clone(),
+                psv_pos: psv_pos.clone(),
+                n_clusters,
+            });
         }
     }
-    recovered
+    out
+}
+
+/// Collapsed-copy recovery PAST the family gate. The genuinely collapsed tandem arrays (DAZ-type) don't form
+/// a co-located family to rescue into, so this runs the PSV copy-split directly on EACH rep's overlapping
+/// reads (`bam_reads` already include the secondary multimappers). Returns the number of EXTRA
+/// PSV-DISTINGUISHABLE copies found beyond one-per-rep. The phantom safeguard is intrinsic: a fully-tied
+/// (identical) locus does not split (`split_locus_copies` requires copy-specific PSVs), so only copies with
+/// real distinguishing evidence are counted — the identifiability gate the user asked for, for free.
+fn recover_collapsed_copies(reps: &[DenovoTranscript], bam_reads: &[BamRead]) -> usize {
+    recover_collapsed_candidates(reps, bam_reads).len()
 }
 
 pub fn detect_and_assign(

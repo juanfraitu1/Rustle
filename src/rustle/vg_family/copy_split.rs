@@ -32,6 +32,21 @@ pub struct CopyIsoform {
     pub identifiable: bool,             // true if produced by a PSV split; false if a merged (non-identifiable) chain group
 }
 
+/// A candidate collapsed copy discovered at a locus, ready for the downstream admission gate.
+/// `psv_pos` is parallel to `iso.allele_vector` (same indexing by the discovered PSV columns at
+/// `min_allele_reads=3`).  `n_clusters` is the total number of identifiable copies found at this
+/// locus (including the most-supported host copy that is NOT emitted as a candidate).
+#[derive(Clone, Debug)]
+pub struct CollapsedCandidate {
+    pub host_tid: String,
+    pub chrom: String,
+    pub start: u64,
+    pub end: u64,
+    pub iso: CopyIsoform,
+    pub psv_pos: Vec<u64>, // parallel to iso.allele_vector (genome coords)
+    pub n_clusters: usize, // # identifiable copies discovered at this locus
+}
+
 /// Joint read-coherence + PSV decomposition.
 /// 1. group reads by EXACT intron_chain (read-coherence).
 /// 2. within a chain-group: among reads that span the PSVs, form candidate copies = distinct
@@ -943,6 +958,36 @@ mod tests {
     fn bridge_intron_chain_single() {
         let read = aligned(100, &[('M', 5), ('N', 100), ('M', 5)], b"AAAAACCCCC");
         assert_eq!(intron_chain_of(&read), vec![(105, 205)]);
+    }
+
+    // ---- Task-2: parallel-vector invariant (PSV positions || allele_vector) ----
+
+    #[test]
+    fn split_and_positions_are_parallel_vectors() {
+        // Build N AlignedReads at one locus with two co-varying alleles at 2 positions; assert the
+        // discovered PSV positions length == each emitted CopyIsoform.allele_vector length.
+        let reads = make_two_copy_locus_reads(); // helper: 6+ reads, A/C split at 2 cols
+        let pos = discover_locus_psvs(&reads, 3);
+        let copies = split_locus_copies(&reads, 3, 2, 3);
+        assert!(copies.len() >= 2, "two identifiable copies");
+        for c in &copies {
+            assert_eq!(c.allele_vector.len(), pos.len(), "allele_vector parallel to discovered positions");
+        }
+    }
+
+    /// Two interleaved haplotypes: A-reads and C-reads, each carrying allele at genome 130 and 160,
+    /// with a constant background of G elsewhere.  8 reads total (4+4), ≥ min_allele_reads=3 each.
+    fn make_two_copy_locus_reads() -> Vec<AlignedRead> {
+        let mut reads = Vec::new();
+        for base in [b'A', b'C'] {
+            for _ in 0..4 {
+                let mut s = vec![b'G'; 100];
+                s[30] = base; // genome pos 100+30 = 130
+                s[60] = base; // genome pos 100+60 = 160
+                reads.push(pile_read(100, &s));
+            }
+        }
+        reads
     }
 
     /// intron_chain over two introns, with a deletion that must NOT split the chain.
