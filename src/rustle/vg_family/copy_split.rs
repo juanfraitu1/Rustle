@@ -399,16 +399,13 @@ fn collapsed_copy_to_transcript_from_host_seq(
     psv_pos: &[u64],
     host: &crate::vg_family::family_detect::DenovoTranscript,
 ) -> Option<crate::vg_family::family_detect::DenovoTranscript> {
-    use crate::vg_family::copy_assign_pipeline::exon_map;
+    use crate::vg_family::copy_assign_pipeline::gen2off;
     if iso.allele_vector.len() != psv_pos.len() {
         return None; // parallel-vector invariant violated
     }
-    let emap = exon_map(host); // spliced offset -> forward-genome coord
-    // invert: forward-genome coord -> spliced offset
-    let mut g2o: BTreeMap<u64, usize> = BTreeMap::new();
-    for (off, &g) in emap.iter().enumerate() {
-        g2o.insert(g, off);
-    }
+    // forward-genome coord -> spliced offset (inverse of exon_map), computed from host.introns so it
+    // MUST match the chain that built host.seq (the wrapper passes the copy's chain in both).
+    let g2o = gen2off(host);
     let mut seq = host.seq.clone();
     let mut placed = 0usize;
     for (k, &pos) in psv_pos.iter().enumerate() {
@@ -447,7 +444,14 @@ pub fn collapsed_copy_to_transcript(
 ) -> Option<crate::vg_family::family_detect::DenovoTranscript> {
     use crate::vg_family::denovo_assemble::build_spliced_seq;
     let (seq, strand) = build_spliced_seq(genome, &host.chrom, host.start, host.end, &iso.intron_chain)?;
-    let host_spliced = crate::vg_family::family_detect::DenovoTranscript { seq, strand, ..host.clone() };
+    // `seq` follows the COPY's intron chain, so `host_spliced.introns` MUST be that same chain for
+    // `exon_map`/`gen2off` to agree with the seq bytes (the host's own chain may differ — private junction).
+    let host_spliced = crate::vg_family::family_detect::DenovoTranscript {
+        seq,
+        strand,
+        introns: iso.intron_chain.clone(),
+        ..host.clone()
+    };
     collapsed_copy_to_transcript_from_host_seq(iso, psv_pos, &host_spliced)
 }
 
@@ -510,6 +514,66 @@ mod tests {
             n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
         let psv_pos = vec![999u64]; // not in host exon frame
         let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![Some(b'C')], read_count: 5, identifiable: true };
+        assert!(collapsed_copy_to_transcript_from_host_seq(&iso, &psv_pos, &host).is_none());
+    }
+
+    /// REGRESSION: the public wrapper must compute `exon_map` from the COPY's intron chain (the chain that
+    /// built the spliced seq), NOT the host's. When the collapsed copy carries a PRIVATE junction differing
+    /// from the host's, a PSV exonic under the copy chain falls inside the host's intron — placing it via the
+    /// host chain would wrongly return None (or misplace the base). Host intron [105,115); copy intron
+    /// [108,112); PSV at genome 106 is exonic (offset 6) under the copy chain but inside the host intron.
+    #[test]
+    fn collapsed_copy_to_transcript_uses_copy_intron_chain_for_exon_map() {
+        use crate::genome::GenomeIndex;
+        // Genome c1: all 'A' except the COPY intron [108,112) carrying a canonical GT..AG '+'-junction.
+        let mut s = vec![b'A'; 130];
+        s[108] = b'G';
+        s[109] = b'T'; // donor GT
+        s[110] = b'A';
+        s[111] = b'G'; // acceptor AG
+        let genome = GenomeIndex::from_seqs(&[("c1", &s)]);
+        // Host's own chain differs from the collapsed copy's (private-junction case).
+        let host = DenovoTranscript {
+            tid: "H".into(), chrom: "c1".into(), start: 100, end: 120, n_reads: 9,
+            strand: '+', introns: vec![(105, 115)], seq: vec![],
+        };
+        // Copy chain: exon1 [100,108), exon2 [112,120). PSV genome 106 -> copy offset 6.
+        let iso = CopyIsoform {
+            intron_chain: vec![(108, 112)],
+            allele_vector: vec![Some(b'C')],
+            read_count: 5,
+            identifiable: true,
+        };
+        let psv_pos = vec![106u64];
+        let t = collapsed_copy_to_transcript(&iso, &psv_pos, &host, &genome)
+            .expect("copy-chain exon_map places the exonic PSV");
+        assert_eq!(t.seq.len(), exon_map(&t).len(), "seq/exon_map length invariant");
+        let mut expect = vec![b'A'; 16]; // 8 + 8 exon bases
+        expect[6] = b'C'; // overlaid allele at the COPY-chain offset
+        assert_eq!(t.seq, expect, "C placed at the copy-chain offset 6, rest = reference");
+        assert_eq!(t.introns, vec![(108, 112)], "emitted transcript carries the copy intron chain");
+        assert_eq!(t.strand, '+');
+    }
+
+    /// The length-mismatch invariant branch: `allele_vector` and `psv_pos` of unequal length -> None.
+    #[test]
+    fn collapsed_copy_to_transcript_none_on_length_mismatch() {
+        let host = DenovoTranscript { tid: "H".into(), chrom: "c1".into(), start: 100, end: 105,
+            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
+        let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![Some(b'C'), Some(b'G')],
+            read_count: 5, identifiable: true };
+        let psv_pos = vec![102u64]; // 1 position vs 2 alleles
+        assert!(collapsed_copy_to_transcript_from_host_seq(&iso, &psv_pos, &host).is_none());
+    }
+
+    /// The all-None branch: every allele is unobserved -> nothing placed -> not a usable copy -> None.
+    #[test]
+    fn collapsed_copy_to_transcript_none_when_all_alleles_none() {
+        let host = DenovoTranscript { tid: "H".into(), chrom: "c1".into(), start: 100, end: 105,
+            n_reads: 9, strand: '+', introns: vec![], seq: b"AAAAA".to_vec() };
+        let psv_pos = vec![102u64, 103u64];
+        let iso = CopyIsoform { intron_chain: vec![], allele_vector: vec![None, None],
+            read_count: 5, identifiable: true };
         assert!(collapsed_copy_to_transcript_from_host_seq(&iso, &psv_pos, &host).is_none());
     }
 
