@@ -276,6 +276,13 @@ fn main() -> Result<()> {
                         n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
                     });
                 }
+                // gene-conversion: report per-read candidate switches (RT-switch-like) vs recurrence-confirmed
+                // events, so the discriminator's anti-artifact gate is visible on real data.
+                eprintln!(
+                    "[mosaic] {fid}: {} reads showed a candidate copy-switch -> {} recurrence-confirmed conversion event(s)",
+                    fa.mosaic_reads,
+                    fa.conversions.iter().filter(|e| e.confirmed).count()
+                );
                 // gene-conversion events (per-molecule PSV-path switches that recur across reads)
                 for ev in &fa.conversions {
                     mosaic_rows.push(MosaicRow {
