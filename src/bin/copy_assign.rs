@@ -277,8 +277,11 @@ fn main() -> Result<()> {
                 Vec::new()
             };
             let t_da = std::time::Instant::now();
-            let (fams, fallback) =
-                detect_and_assign(&primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra);
+            let (fams, fallback) = detect_and_assign(
+                &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
+                // Task 5 wiring: absent-copy discovery stays OFF here; Task 6 flips this to a CLI flag.
+                false, &args.fasta,
+            );
             if timing {
                 eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
             }

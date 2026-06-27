@@ -16,7 +16,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use rayon::prelude::*;
 
-use super::copy_assign::{assign_read, assign_read_editing, AssignParams, Assignment, CopyProfile, ReadFeatures};
+use super::copy_assign::{
+    assign_read, assign_read_editing, AssignParams, AssignStatus, Assignment, CopyProfile, ReadFeatures,
+};
 use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
 use super::family_graph::poa_msa_with_costs;
@@ -451,6 +453,41 @@ pub struct ReadResult {
     /// this read's base at each PSV column (None = uncovered) — the raw per-molecule evidence the assignment
     /// is built from (for the assignment-proof genotype visualization).
     pub psv_obs: Vec<Option<u8>>,
+}
+
+/// Two-stage freeze for reference-ABSENT (collapsed) copy admission.
+///
+/// `stage1` is the per-read assignment over the `n_ref` reference copies only; `stage2` is the re-assignment
+/// over the ref copies (indices `0..n_ref`, unchanged) PLUS the admitted absent copies (indices `>= n_ref`).
+/// The result is `stage2`-based EXCEPT that a read which was **Stage-1 Assigned at a multi-ref-copy family**
+/// keeps its Stage-1 `combined`/`psv` (frozen — its decision was already certified against the ref copies and
+/// must not be perturbed by adding a copy). Reads that were Stage-1 `Tied`/`Ambiguous`, reads absent from
+/// Stage-1, and ALL reads when the family had a single ref copy (`n_ref <= 1`, where there was nothing to
+/// freeze) keep their Stage-2 result. Any surviving Stage-2 assignment to an absent copy (`best_copy >=
+/// n_ref`) is flagged `discovery_coupled`. Matched by `read_index` (NOT zip position — adding a copy changes
+/// which reads get a result, so the two stages are not position-aligned). Deterministic (`BTreeMap` index).
+pub(crate) fn freeze_merge(stage1: &[ReadResult], stage2: Vec<ReadResult>, n_ref: usize) -> Vec<ReadResult> {
+    let single_ref = n_ref <= 1;
+    let s1: BTreeMap<usize, &ReadResult> = stage1.iter().map(|r| (r.read_index, r)).collect();
+    stage2
+        .into_iter()
+        .map(|mut r2| {
+            let frozen = !single_ref
+                && s1
+                    .get(&r2.read_index)
+                    .is_some_and(|r1| r1.combined.status == AssignStatus::Assigned);
+            if frozen {
+                let r1 = s1[&r2.read_index];
+                // Stage-1 only saw the ref copies (`best_copy < n_ref`), so the frozen decision is valid in
+                // the copies2 frame; never `discovery_coupled` (it predates the absent copy).
+                r2.combined = r1.combined.clone();
+                r2.psv = r1.psv.clone();
+            } else if r2.combined.status == AssignStatus::Assigned && r2.combined.best_copy >= n_ref {
+                r2.combined.discovery_coupled = true;
+            }
+            r2
+        })
+        .collect()
 }
 
 /// Two-pass assignment detail for a family: the per-read results + the PSV-column count + the SOFT per-copy
@@ -1398,5 +1435,116 @@ mod tests {
         let reads = vec![vec![None; 2]; 40];
         let theta = soft_quantify_em(&reads, &copy_alleles, QUANT_ERROR, 100);
         assert!((theta[0] - 0.5).abs() < 1e-9 && (theta[1] - 0.5).abs() < 1e-9, "uniform: {theta:?}");
+    }
+
+    // ---- freeze_merge (two-stage freeze) ----
+
+    fn asg(best: usize, status: AssignStatus) -> Assignment {
+        Assignment {
+            best_copy: best,
+            log_lr_margin: 0.0,
+            n_decisive: 1,
+            resolvable: status != AssignStatus::Tied,
+            status,
+            p_value: 0.0,
+            min_p_value: 0.0,
+            discovery_coupled: false,
+        }
+    }
+    fn rr(read_index: usize, mapped_copy: usize, combined: Assignment) -> ReadResult {
+        ReadResult { read_index, mapped_copy, psv: combined.clone(), combined, psv_obs: vec![] }
+    }
+    /// fetch the merged result for a given read_index (matching is by read_index, not position).
+    fn by_idx(v: &[ReadResult], idx: usize) -> &ReadResult {
+        v.iter().find(|r| r.read_index == idx).expect("read_index present")
+    }
+
+    #[test]
+    fn freeze_keeps_stage1_assigned_at_multi_ref() {
+        // n_ref=2. read 0 was Stage-1 Assigned to copy 0; Stage-2 (with an absent copy) would move it to 1.
+        // Multi-ref => Stage-1 wins (frozen), best_copy stays 0, NOT discovery_coupled.
+        let stage1 = vec![rr(0, 0, asg(0, AssignStatus::Assigned))];
+        let stage2 = vec![rr(0, 1, asg(1, AssignStatus::Assigned))];
+        let merged = freeze_merge(&stage1, stage2, 2);
+        let r = by_idx(&merged, 0);
+        assert_eq!(r.combined.best_copy, 0, "Stage-1 assignment frozen");
+        assert!(!r.combined.discovery_coupled);
+    }
+
+    #[test]
+    fn freeze_tied_read_takes_stage2_absent_and_flags_coupled() {
+        // n_ref=2. read 1 was Stage-1 Tied; Stage-2 resolves it to absent copy index 2 (>= n_ref).
+        // => take Stage-2, flag discovery_coupled.
+        let stage1 = vec![rr(1, 0, asg(0, AssignStatus::Tied))];
+        let stage2 = vec![rr(1, 2, asg(2, AssignStatus::Assigned))];
+        let merged = freeze_merge(&stage1, stage2, 2);
+        let r = by_idx(&merged, 1);
+        assert_eq!(r.combined.best_copy, 2, "Stage-2 absent assignment kept");
+        assert!(r.combined.discovery_coupled, "assigned to absent copy => coupled");
+    }
+
+    #[test]
+    fn freeze_stage2_to_ref_copy_is_not_coupled() {
+        // Stage-1 Ambiguous read resolves under Stage-2 to a REF copy (best_copy 1 < n_ref=2) => not coupled.
+        let stage1 = vec![rr(3, 0, asg(0, AssignStatus::Ambiguous))];
+        let stage2 = vec![rr(3, 1, asg(1, AssignStatus::Assigned))];
+        let merged = freeze_merge(&stage1, stage2, 2);
+        let r = by_idx(&merged, 3);
+        assert_eq!(r.combined.best_copy, 1);
+        assert!(!r.combined.discovery_coupled, "ref-copy assignment is never discovery_coupled");
+    }
+
+    #[test]
+    fn freeze_single_ref_takes_all_stage2() {
+        // n_ref=1 (single ref copy): nothing to freeze, even a Stage-1-Assigned read takes Stage-2.
+        let stage1 = vec![rr(0, 0, asg(0, AssignStatus::Assigned))];
+        let stage2 = vec![rr(0, 1, asg(1, AssignStatus::Assigned))];
+        let merged = freeze_merge(&stage1, stage2, 1);
+        let r = by_idx(&merged, 0);
+        assert_eq!(r.combined.best_copy, 1, "single_ref => Stage-2 wins");
+        assert!(r.combined.discovery_coupled, "best_copy 1 >= n_ref 1 => coupled");
+    }
+
+    #[test]
+    fn freeze_matches_by_read_index_not_position() {
+        // Stage-1 and Stage-2 disagree on membership AND order, to prove matching is by read_index:
+        //   stage1 = [read 0 Assigned->0, read 3 Assigned->1]   (read 3 only exists in Stage-1)
+        //   stage2 = [read 2 ->0, read 0 ->1, read 1 Tied]      (read 0 sits at position 1)
+        // read 0 must freeze to Stage-1's best_copy 0 (by index), NOT to position-1's Stage-1 read 3 (best 1).
+        let stage1 = vec![
+            rr(0, 0, asg(0, AssignStatus::Assigned)),
+            rr(3, 1, asg(1, AssignStatus::Assigned)),
+        ];
+        let stage2 = vec![
+            rr(2, 0, asg(0, AssignStatus::Assigned)),
+            rr(0, 1, asg(1, AssignStatus::Assigned)),
+            rr(1, 0, asg(0, AssignStatus::Tied)),
+        ];
+        let merged = freeze_merge(&stage1, stage2, 2);
+        // Stage-2 order/membership preserved (read 3 from Stage-1 is dropped; Stage-2 is the base).
+        assert_eq!(merged.iter().map(|r| r.read_index).collect::<Vec<_>>(), vec![2, 0, 1]);
+        // read 0 frozen to Stage-1 best_copy 0 (index match), not position-1's read-3 value (1).
+        assert_eq!(by_idx(&merged, 0).combined.best_copy, 0);
+        // read 2 has no Stage-1 entry => keeps Stage-2 (best 0, ref copy, not coupled).
+        let r2 = by_idx(&merged, 2);
+        assert_eq!(r2.combined.best_copy, 0);
+        assert!(!r2.combined.discovery_coupled);
+        // read 1 has no Stage-1 entry and Stage-2 left it Tied => unchanged Tied.
+        assert_eq!(by_idx(&merged, 1).combined.status, AssignStatus::Tied);
+    }
+
+    #[test]
+    fn freeze_overwrites_psv_too_when_frozen() {
+        // freezing replaces BOTH combined and psv with Stage-1's.
+        let mut s1_combined = asg(0, AssignStatus::Assigned);
+        s1_combined.log_lr_margin = 7.5; // a Stage-1 signature to detect
+        let mut s1 = rr(5, 0, s1_combined);
+        s1.psv = asg(0, AssignStatus::Assigned);
+        s1.psv.log_lr_margin = 3.3;
+        let stage2 = vec![rr(5, 1, asg(1, AssignStatus::Assigned))];
+        let merged = freeze_merge(&[s1], stage2, 2);
+        let r = by_idx(&merged, 5);
+        assert_eq!(r.combined.log_lr_margin, 7.5, "combined frozen from Stage-1");
+        assert_eq!(r.psv.log_lr_margin, 3.3, "psv frozen from Stage-1");
     }
 }

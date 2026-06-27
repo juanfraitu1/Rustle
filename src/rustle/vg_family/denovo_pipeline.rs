@@ -10,8 +10,9 @@ use std::collections::{BTreeSet, HashSet};
 
 use anyhow::Result;
 
+use super::absent_copy::{self, AbsentCopyParams, Admission};
 use super::copy_assign::{Assignment, AssignParams, AssignStatus};
-use super::copy_assign_pipeline::{assign_family_detailed, read_ref_end};
+use super::copy_assign_pipeline::{assign_family_detailed, freeze_merge, read_ref_end};
 use super::copy_split::{
     split_locus_copies, discover_locus_psvs, AlignedRead, CollapsedCandidate, CopyIsoform,
 };
@@ -429,6 +430,8 @@ pub fn detect_and_assign(
     min_copies: usize,
     p: &AssignParams,
     rescue_extra: &[PrimaryRead],
+    absent_copies: bool,
+    fasta_path: &str,
 ) -> (Vec<FamilyAssignment>, Vec<FallbackEdge>) {
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let mut t_lap = std::time::Instant::now();
@@ -554,7 +557,6 @@ pub fn detect_and_assign(
                 seq: rc.seq.clone(),
             });
         }
-        let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
         // reads on this family's chrom overlapping its span (assign overlaps by coord, so pre-filter chrom).
         let mut idx_map = Vec::new();
         let mut region = Vec::new();
@@ -566,7 +568,43 @@ pub fn detect_and_assign(
                 region_mapq.push(br.mapq);
             }
         }
-        let mut detail = assign_family_detailed(&copies, &region, p);
+        // Stage-1: assign over the reference copies only (borrow scoped so `all_copies` stays reassignable).
+        let mut detail = {
+            let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
+            assign_family_detailed(&copies, &region, p)
+        };
+        // Task 5 (opt-in): two-stage freeze for reference-ABSENT (collapsed) copies. OFF => this whole block
+        // is skipped, so the loop below is byte-for-byte the pre-Task-5 path (`all_copies`/`detail` unchanged).
+        if absent_copies {
+            let cands = recover_collapsed_candidates(&all_copies, bam_reads);
+            let mut admitted: Vec<DenovoTranscript> = Vec::new();
+            for cand in &cands {
+                if let Some(host) = all_copies.iter().find(|t| t.tid == cand.host_tid) {
+                    match absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default()) {
+                        Admission::Copy(t) => admitted.push(t),
+                        // Task 6 surfaces the DNA-needs records; for now drop them (counted via the candidate set).
+                        Admission::DnaNeeds(_r) => {}
+                    }
+                }
+            }
+            if !admitted.is_empty() {
+                let n_ref = all_copies.len();
+                let mut copies2_owned = all_copies.clone();
+                copies2_owned.extend(admitted);
+                // Stage-2: re-assign over ref (indices 0..n_ref) + admitted absent copies, then FREEZE: a read
+                // Stage-1-Assigned at a multi-ref family keeps its Stage-1 result; the rest take Stage-2 (a
+                // surviving absent-copy assignment is flagged `discovery_coupled`). Matched by read_index.
+                {
+                    let copies2: Vec<&DenovoTranscript> = copies2_owned.iter().collect();
+                    let mut d2 = assign_family_detailed(&copies2, &region, p);
+                    d2.results = freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
+                    detail = d2;
+                }
+                // The ref copies keep indices 0..n_ref, so every per-read `best_copy` stays valid; the augmented
+                // set now drives copy_tids / abundance / by_copy below.
+                all_copies = copies2_owned;
+            }
+        }
         // Unified gene-conversion-vs-artifact discriminator: tag each confirmed event by recurrence
         // (already in `confirmed`) + microhomology at the breakpoint (RT/template-switch signature,
         // from the genome) + DNA support (catalog leg = None here; the bench harness adds it).
@@ -585,7 +623,7 @@ pub fn detect_and_assign(
         }
         // collapsed-copy recovery: group the reads by their mapped copy/locus and split each by within-locus
         // PSV haplotype; >= 2 identifiable copies at one locus means extra (collapsed) copies were merged.
-        let mut by_copy: Vec<Vec<AlignedRead>> = vec![Vec::new(); copies.len()];
+        let mut by_copy: Vec<Vec<AlignedRead>> = vec![Vec::new(); all_copies.len()];
         for r in &detail.results {
             by_copy[r.mapped_copy].push(region[r.read_index].clone());
         }
@@ -1473,6 +1511,8 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
             &[],
+            false,
+            &fasta,
         );
         if !fallback.is_empty() {
             eprintln!("family edges via large-seq fallback (auditable): {}", fallback.len());
@@ -1505,6 +1545,8 @@ mod tests {
             2,
             &super::super::copy_assign::AssignParams::default(),
             &[],
+            false,
+            "",
         );
         assert!(fallback.is_empty(), "small paralogs use the exact poasta path, no fallback");
         assert_eq!(fas.len(), 1, "one co-located 2-copy family");

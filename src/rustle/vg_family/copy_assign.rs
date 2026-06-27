@@ -61,6 +61,10 @@ pub struct Assignment {
     /// Identifiability bound: the best attainable `p_value` (read supports `best` at every distinguishing
     /// position) against the hardest competitor. `>= alpha` ⇒ the read is unresolvable (`Tied`).
     pub min_p_value: f64,
+    /// Set when this read was assigned to a reference-ABSENT (collapsed) copy that was admitted only because
+    /// the absent-copy discovery feature was on — i.e. the assignment is COUPLED to that discovery and would
+    /// not exist in the frozen ref-only result. Always `false` on the default (absent-copy-OFF) path.
+    pub discovery_coupled: bool,
 }
 
 /// The decisive log-likelihood-ratio margin `τ` for a target per-read misassignment rate `p`.
@@ -355,6 +359,7 @@ pub fn assign_read_editing(
         status,
         p_value: p_read,
         min_p_value: min_p,
+        discovery_coupled: false,
     })
 }
 
