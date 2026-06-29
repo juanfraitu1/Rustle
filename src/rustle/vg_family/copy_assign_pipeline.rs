@@ -308,6 +308,107 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
         .collect()
 }
 
+/// INTRON-RETENTION lever (opt-in, `RUSTLE_INTRON_PSV=1`): discover PSV columns that fall in INTRONS, where
+/// copies that are exon-identical may still differ. A read that RETAINS an intron carries M-aligned bases at
+/// these genomic positions (a spliced read has none — it is `None`, the same as an unspanned column), so the
+/// existing per-read CIGAR sweep fills them automatically and the significance gate uses them as extra
+/// distinguishing columns. This is the last RNA-intrinsic lever for the K=0 (exon-identical) Tied reads.
+///
+/// Aligns each copy's FORWARD genomic span (exons + introns, fetched from `genome`) vs copy[0], keeps the
+/// substitution columns whose copy[0] position is intronic, and emits `PsvColumn`s with forward-genome
+/// positions and alleles in transcription orientation (complemented for a `-` copy, matching the read-base
+/// reader's reverse-complement). Returns empty if the genome lookup fails or a span is too long for the aligner.
+pub fn discover_intron_psvs(
+    copies: &[&DenovoTranscript],
+    genome: &crate::genome::GenomeIndex,
+) -> Vec<PsvColumn> {
+    let n = copies.len();
+    if n < 2 {
+        return Vec::new();
+    }
+    // forward genomic spans (exons + introns), uppercased
+    let spans: Vec<Vec<u8>> = copies
+        .iter()
+        .map(|c| {
+            genome
+                .fetch_sequence(&c.chrom, c.start, c.end)
+                .map(|s| s.to_ascii_uppercase())
+                .unwrap_or_default()
+        })
+        .collect();
+    if spans[0].is_empty() {
+        return Vec::new();
+    }
+    let c0 = copies[0];
+    let ref_span = &spans[0];
+    let is_intronic = |gpos: u64| c0.introns.iter().any(|&(d, a)| gpos >= d && gpos < a);
+    let comp = |b: u8| match b {
+        b'A' => b'T',
+        b'T' => b'A',
+        b'C' => b'G',
+        b'G' => b'C',
+        x => x,
+    };
+    use poasta::aligner::scoring::GapAffine;
+    const POA_CAP: usize = 20_000; // poasta is exact but O(n^2); above this, fall back to minimap2 (which needs
+                                   // >~200 bp to seed, so poasta covers the short cases minimap2 cannot).
+    let mut amaps: Vec<BTreeMap<usize, usize>> = vec![BTreeMap::new(); n];
+    let mut diff_off: BTreeSet<usize> = BTreeSet::new();
+    for other in 1..n {
+        if spans[other].is_empty() {
+            continue;
+        }
+        let aln = if ref_span.len().max(spans[other].len()) <= POA_CAP {
+            poa_msa_with_costs(&[ref_span.clone(), spans[other].clone()], GapAffine::new(1, 1, 32))
+        } else {
+            minimap2_msa_pair(ref_span, &spans[other])
+        };
+        if let Ok(msa) = aln {
+            if msa.len() == 2 {
+                let (r0, r1) = (&msa[0], &msa[1]);
+                let (mut ro, mut oo) = (0usize, 0usize);
+                for c in 0..r0.len().min(r1.len()) {
+                    let (ca, cb) = (r0[c], r1[c]);
+                    let (a_gap, b_gap) = (ca == b'-', cb == b'-');
+                    if !a_gap && !b_gap {
+                        amaps[other].insert(ro, oo);
+                        if is_acgt(ca) && is_acgt(cb) && ca != cb && is_intronic(c0.start + ro as u64) {
+                            diff_off.insert(ro);
+                        }
+                    }
+                    if !a_gap {
+                        ro += 1;
+                    }
+                    if !b_gap {
+                        oo += 1;
+                    }
+                }
+            }
+        }
+    }
+    diff_off
+        .into_iter()
+        .map(|ro| {
+            let mut rec: PsvColumn = vec![None; n];
+            let g0 = c0.start + ro as u64;
+            let b0 = if c0.strand == '-' { comp(ref_span[ro]) } else { ref_span[ro] };
+            rec[0] = Some((g0, b0));
+            for other in 1..n {
+                if let Some(&oo) = amaps[other].get(&ro) {
+                    let gc = copies[other].start + oo as u64;
+                    let bc = if copies[other].strand == '-' {
+                        comp(spans[other][oo])
+                    } else {
+                        spans[other][oo]
+                    };
+                    rec[other] = Some((gc, bc));
+                }
+            }
+            rec
+        })
+        .collect()
+}
+
 /// Per-copy assignment profiles + cached frames (so reading a read costs no per-read map rebuilds).
 pub struct FamilyProfiles {
     pub profiles: Vec<CopyProfile>,
@@ -323,9 +424,19 @@ pub struct FamilyProfiles {
 
 /// Build the per-copy `CopyProfile`s (PSV alleles + intron boundaries), the genomic PSV positions, and the
 /// per-copy `gen2off`/strand — everything a read needs, computed ONCE per family (not per read).
-pub fn build_family_profiles(copies: &[&DenovoTranscript]) -> FamilyProfiles {
+pub fn build_family_profiles(
+    copies: &[&DenovoTranscript],
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> FamilyProfiles {
     let exon_maps: Vec<Vec<u64>> = copies.iter().map(|c| exon_map(c)).collect();
-    let cols = discover_psvs(copies, &exon_maps);
+    let mut cols = discover_psvs(copies, &exon_maps);
+    // INTRON-RETENTION lever (opt-in): append intronic PSV columns so reads that retain an intron can use the
+    // intronic sequence. OFF (env unset / no genome) => `cols` is unchanged => byte-identical to the exon-only gate.
+    if let Some(g) = genome {
+        if std::env::var_os("RUSTLE_INTRON_PSV").is_some() {
+            cols.extend(discover_intron_psvs(copies, g));
+        }
+    }
     let n = copies.len();
     let mut profiles = Vec::with_capacity(n);
     let mut copy_gpos: Vec<Vec<(usize, u64)>> = vec![Vec::new(); n];
@@ -725,6 +836,7 @@ pub fn assign_family_detailed(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
+    genome: Option<&crate::genome::GenomeIndex>,
 ) -> FamilyDetail {
     if copies.len() < 2 {
         return FamilyDetail {
@@ -745,7 +857,7 @@ pub fn assign_family_detailed(
     const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let t_psv = std::time::Instant::now();
-    let fp = build_family_profiles(copies);
+    let fp = build_family_profiles(copies, genome);
     if timing {
         eprintln!(
             "[timing]     build_family_profiles/discover_psvs ({} copies, {} cols): {:.1}s",
@@ -931,11 +1043,12 @@ pub fn assign_family(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
+    genome: Option<&crate::genome::GenomeIndex>,
 ) -> Vec<(usize, Assignment)> {
     if copies.len() < 2 {
         return Vec::new();
     }
-    let fp = build_family_profiles(copies);
+    let fp = build_family_profiles(copies, genome);
     let mut out = Vec::new();
     for (ri, read) in reads.iter().enumerate() {
         if let Some(mc) = best_overlap_copy(read, copies) {
@@ -1182,7 +1295,7 @@ mod tests {
         let cb = copy_tx("B", 1000, 1300, '+', &[], sb.clone());
         let copies = [&ca, &cb];
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: sb, qual: vec![] };
-        let res = assign_family(&copies, &[read], &AssignParams::default());
+        let res = assign_family(&copies, &[read], &AssignParams::default(), None);
         assert_eq!(res.len(), 1);
         let (ri, a) = &res[0];
         assert_eq!(*ri, 0);
@@ -1203,7 +1316,7 @@ mod tests {
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 100), ('N', 100), ('M', 200)], seq: spliced, qual: vec![] };
         // junction_err=1e-4 < alpha=1e-3: a single copy-specific junction resolves under the
         // significance gate (p_read=1e-4 < 1e-3, margin >> 0 -> Assigned).
-        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default());
+        let detail = assign_family_detailed(&copies, &[read], &AssignParams::default(), None);
         assert_eq!(detail.n_cols, 0, "identical sequences -> no PSV columns");
         assert_eq!(detail.results.len(), 1);
         let r = &detail.results[0];
@@ -1228,7 +1341,7 @@ mod tests {
         let copies = [&ca, &cb];
         // read covers [0,150): spans none of the PSV columns (all >= 210).
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec(), qual: vec![] };
-        let res = assign_family(&copies, &[read], &AssignParams::default());
+        let res = assign_family(&copies, &[read], &AssignParams::default(), None);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.status, AssignStatus::Tied, "spans no decisive feature");
     }
@@ -1252,7 +1365,7 @@ mod tests {
         let reads: Vec<AlignedRead> = (0..30)
             .map(|_| AlignedRead { ref_start: 0, cigar: vec![('M', 150)], seq: base[0..150].to_vec(), qual: vec![] })
             .collect();
-        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default());
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None);
         assert!(
             detail.copy_abundance_ci.iter().all(|&ci| (ci - 0.5).abs() < 1e-9),
             "unidentifiable (no decisive reads) -> CI = 0.5 full-simplex, got {:?}",
@@ -1311,11 +1424,11 @@ mod tests {
                 })
                 .collect();
             let copies: Vec<&DenovoTranscript> = copies_owned.iter().collect();
-            let fp = build_family_profiles(&copies);
+            let fp = build_family_profiles(&copies, None);
             let reads = aligned_reads_from_bam(&bam, 4).expect("bam");
             let names: Vec<String> = reads.iter().map(|br| br.name.clone()).collect();
             let ars: Vec<AlignedRead> = reads.into_iter().map(|br| br.read).collect();
-            let assigns = assign_family(&copies, &ars, &AssignParams::default());
+            let assigns = assign_family(&copies, &ars, &AssignParams::default(), None);
             let (mut n, mut resolvable, mut assigned, mut tied) = (0usize, 0usize, 0usize, 0usize);
             let (mut corr_assigned, mut corr_argmax) = (0usize, 0usize);
             for (ri, a) in &assigns {
@@ -1383,7 +1496,7 @@ mod tests {
         // a true-copyB read aligned to copyB's region: forward-genome seq = revcomp(transcription seq).
         let fwd_b: Vec<u8> = sb_txn.iter().rev().map(|&b| rc_base(b)).collect();
         let read = AlignedRead { ref_start: 1000, cigar: vec![('M', 240)], seq: fwd_b, qual: vec![] };
-        let res = assign_family(&copies, &[read], &AssignParams::default());
+        let res = assign_family(&copies, &[read], &AssignParams::default(), None);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].1.best_copy, 1, "minus-strand read RC'd to transcription space -> copyB");
         assert_eq!(res[0].1.status, AssignStatus::Assigned);
@@ -1426,7 +1539,7 @@ mod tests {
             recomb[p] = b'C'; // ...then switch to copy B at the last 4 PSVs
         }
         let read = AlignedRead { ref_start: 0, cigar: vec![('M', 300)], seq: recomb, qual: vec![] };
-        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default());
+        let detail = assign_family_detailed(&[&ca, &cb], &[read], &AssignParams::default(), None);
         assert!(detail.mosaic_reads >= 1, "recombinant flagged as mosaic; got {}", detail.mosaic_reads);
     }
 
@@ -1445,7 +1558,7 @@ mod tests {
         let ca = copy_tx("A", 0, 300, '+', &[], sa);
         let cb = copy_tx("B", 1000, 1300, '+', &[], sb);
         let cc = copy_tx("C", 2000, 2300, '+', &[], sc);
-        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default());
+        let detail = assign_family_detailed(&[&ca, &cb, &cc], &[], &AssignParams::default(), None);
         assert_eq!(detail.copy_conversions.len(), 1, "exactly copy C is a mosaic of two others");
         assert_eq!(detail.copy_conversions[0].copy_c, 2, "copy C (index 2) is the converted copy");
     }
@@ -1566,6 +1679,72 @@ mod tests {
         assert!(!r2.combined.discovery_coupled);
         // read 1 has no Stage-1 entry and Stage-2 left it Tied => unchanged Tied.
         assert_eq!(by_idx(&merged, 1).combined.status, AssignStatus::Tied);
+    }
+
+    #[test]
+    fn intron_psv_finds_a_divergent_intron_column_when_exons_are_identical() {
+        // The intron-retention lever: two copies with IDENTICAL exons but a DIVERGENT intron. discover_psvs
+        // (exon-only) finds nothing; discover_intron_psvs finds the intronic distinguishing column.
+        use crate::genome::GenomeIndex;
+        let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".into());
+        let ok = std::process::Command::new(&mm2).arg("--version").output().map(|o| o.status.success());
+        if !matches!(ok, Ok(true)) {
+            return; // minimap2 not runnable -> skip (discover_intron_psvs aligns the genomic spans with it)
+        }
+        // deterministic pseudo-random ACGT (non-repetitive, so minimap2 seeds the 200 bp spans cleanly)
+        let rseq = |n: usize, seed: u64| -> Vec<u8> {
+            let mut x = seed;
+            (0..n)
+                .map(|_| {
+                    x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    b"ACGT"[((x >> 33) & 3) as usize]
+                })
+                .collect()
+        };
+        let exon1 = rseq(60, 1);
+        let exon2 = rseq(40, 2);
+        let mut intron_a = rseq(100, 3);
+        let mut intron_b = intron_a.clone();
+        intron_a[50] = b'A';
+        intron_b[50] = b'C'; // the single divergent intronic position (span offset 60+50 = 110)
+        // contig = A-span(200) + filler(20) + B-span(200)
+        let mut contig = Vec::new();
+        contig.extend_from_slice(&exon1);
+        contig.extend_from_slice(&intron_a);
+        contig.extend_from_slice(&exon2); // A span [0,200)
+        contig.extend_from_slice(&rseq(20, 9));
+        let b_start = contig.len() as u64; // 220
+        contig.extend_from_slice(&exon1);
+        contig.extend_from_slice(&intron_b);
+        contig.extend_from_slice(&exon2); // B span [220,420)
+        let fa = std::env::temp_dir().join(format!("rustle_intronpsv_{}.fa", std::process::id()));
+        std::fs::write(&fa, format!(">c1\n{}\n", String::from_utf8(contig).unwrap())).unwrap();
+        let genome = GenomeIndex::from_fasta(fa.to_str().unwrap()).unwrap();
+        let spliced: Vec<u8> = exon1.iter().chain(exon2.iter()).cloned().collect(); // identical for both copies
+        let mk = |start: u64| DenovoTranscript {
+            tid: format!("c{start}"),
+            chrom: "c1".into(),
+            start,
+            end: start + 200,
+            n_reads: 0,
+            strand: '+',
+            introns: vec![(start + 60, start + 160)],
+            seq: spliced.clone(),
+        };
+        let a = mk(0);
+        let b = mk(b_start);
+        let copies = [&a, &b];
+        // exon-only PSVs: none (exons identical)
+        let exon_maps: Vec<Vec<u64>> = copies.iter().map(|c| exon_map(c)).collect();
+        assert!(discover_psvs(&copies, &exon_maps).is_empty(), "exons are identical -> no exonic PSV");
+        // intronic PSV: exactly one, at A:110 / B:330, with differing bases
+        let icols = discover_intron_psvs(&copies, &genome);
+        let _ = std::fs::remove_file(&fa);
+        assert_eq!(icols.len(), 1, "one divergent intron column expected");
+        let col = &icols[0];
+        assert_eq!(col[0].unwrap().0, 110, "copy A intronic PSV genomic pos");
+        assert_eq!(col[1].unwrap().0, 330, "copy B intronic PSV genomic pos");
+        assert_ne!(col[0].unwrap().1, col[1].unwrap().1, "the intronic bases differ (A vs G)");
     }
 
     #[test]

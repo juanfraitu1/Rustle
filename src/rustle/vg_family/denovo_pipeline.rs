@@ -580,7 +580,7 @@ pub fn detect_and_assign(
         // Stage-1: assign over the reference copies only (borrow scoped so `all_copies` stays reassignable).
         let mut detail = {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            assign_family_detailed(&copies, &region, p)
+            assign_family_detailed(&copies, &region, p, Some(genome))
         };
         // Task 5 (opt-in): two-stage freeze for reference-ABSENT (collapsed) copies. OFF => this whole block
         // is skipped, so the loop below is byte-for-byte the pre-Task-5 path (`all_copies`/`detail` unchanged).
@@ -605,7 +605,7 @@ pub fn detect_and_assign(
                 // surviving absent-copy assignment is flagged `discovery_coupled`). Matched by read_index.
                 {
                     let copies2: Vec<&DenovoTranscript> = copies2_owned.iter().collect();
-                    let mut d2 = assign_family_detailed(&copies2, &region, p);
+                    let mut d2 = assign_family_detailed(&copies2, &region, p, Some(genome));
                     d2.results = freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
                     detail = d2;
                 }

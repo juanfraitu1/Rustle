@@ -52,3 +52,26 @@ effectively one locus and stay tied no matter what.)
 *potentially* touchable by intronic sequence — but with a coverage-not-divergence mechanism, so the achievable
 rescue is modest and bounded. The principled endpoint (abstain with a certificate) remains correct; intron-PSV
 assignment is a bounded improvement to *try*, not a floor-breaker.
+
+## Implemented under a flag (`RUSTLE_INTRON_PSV=1`) — and measured
+
+To attack the unassignable with every available lever, the intron-PSV path is now implemented:
+`copy_assign_pipeline::discover_intron_psvs` aligns each copy's FORWARD genomic span (exons + introns) vs copy[0]
+(poasta ≤20 kb, minimap2 above), keeps the substitution columns whose position is **intronic**, and appends them
+to the family profile. A read that retains an intron already carries M-aligned bases there, so the existing
+per-read CIGAR sweep fills them and the significance gate uses them as extra distinguishing columns — no other
+change. Threaded as `Option<&GenomeIndex>` through `assign_family[_detailed]`/`build_family_profiles`; **default
+OFF = byte-identical** (env unset → `discover_intron_psvs` not called). TDD: `intron_psv_finds_a_divergent_intron_
+column_when_exons_are_identical`; full lib suite 688 green.
+
+**Measured rescue (GWFAM10 region, 8,783 reads):**
+| | tied | assigned |
+|---|---|---|
+| OFF (exon-only) | 5267 | 3067 |
+| ON (`RUSTLE_INTRON_PSV=1`) | 5261 | **3094** |
+
+**+27 reads rescued (≈0.5% of the unassignable mass; 6 from strictly-Tied, 21 from ambiguous).** Exactly as the
+introns-not-more-divergent finding predicted: the lever is real and now demonstrable, but the gain is sub-1%
+because GGO's K=0 copies are uniformly diverged (the intron is "more of the same," not a faster signal). The K=0
+floor is near-irreducible even with intronic sequence; abstain-with-certificate remains the right default, and
+the flag exists to show the floor was attacked with the last RNA-intrinsic lever.
