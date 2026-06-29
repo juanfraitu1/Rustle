@@ -120,6 +120,12 @@ struct Args {
     /// to `<out>.dna_needs.tsv`.
     #[arg(long, default_value_t = false)]
     absent_copies: bool,
+    /// Emit `<out>.posterior.tsv`: per read, the soft per-copy POSTERIOR and the consistent ZONE (the genomic
+    /// region of the copies it is compatible with) — the Bayesian complement to the hard assign/abstain, so an
+    /// unassignable (Tied) read is localized to a zone with a distribution instead of a bare flag. The prior is
+    /// uniform by default; set `RUSTLE_POSTERIOR_PRIOR=abundance` to weight by the EM copy abundance. Default off.
+    #[arg(long, default_value_t = false)]
+    posterior: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -233,6 +239,15 @@ fn main() -> Result<()> {
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);
     let mut family_rows: Vec<FamilyRow> = Vec::new();
     let mut assign_rows: Vec<AssignRow> = Vec::new();
+    let mut posterior_lines: Vec<String> = Vec::new();
+    // EM-abundance prior for the posterior (else uniform).
+    let prior_abundance = std::env::var("RUSTLE_POSTERIOR_PRIOR").ok().as_deref() == Some("abundance");
+    // locus from a de-novo tid `DN_<chrom>_<start>_<n>` (chrom may contain `_`, so split from the right).
+    fn parse_locus(tid: &str) -> Option<(String, u64)> {
+        let rest = tid.strip_prefix("DN_")?;
+        let parts: Vec<&str> = rest.rsplitn(3, '_').collect(); // [n, start, chrom]
+        Some((parts.get(2)?.to_string(), parts.get(1)?.parse().ok()?))
+    }
     let mut quant_rows: Vec<QuantRow> = Vec::new();
     let mut mosaic_rows: Vec<MosaicRow> = Vec::new();
     let mut copyconv_rows: Vec<CopyConvRow> = Vec::new();
@@ -308,6 +323,48 @@ fn main() -> Result<()> {
                         p_value: a.p_value,
                         min_p_value: a.min_p_value,
                     });
+                }
+                // soft per-copy POSTERIOR + consistent ZONE (opt-in): localize even the unassignable reads.
+                if args.posterior {
+                    const FLOOR: f64 = 0.01; // a copy is in the consistent ZONE if its posterior exceeds this
+                    let loci: Vec<Option<(String, u64)>> =
+                        fa.copy_tids.iter().map(|t| parse_locus(t)).collect();
+                    for (ri, a) in &fa.assignments {
+                        if a.posterior.len() != fa.copy_tids.len() {
+                            continue; // posterior frame must line up with the copy roster (e.g. post-freeze)
+                        }
+                        // apply the prior (uniform = posterior as-is; else weight by EM abundance), renormalize.
+                        let mut post: Vec<f64> = a.posterior.clone();
+                        if prior_abundance {
+                            for (c, x) in post.iter_mut().enumerate() {
+                                *x *= fa.copy_abundance.get(c).copied().unwrap_or(0.0).max(1e-9);
+                            }
+                            let z: f64 = post.iter().sum();
+                            if z > 0.0 {
+                                for x in &mut post {
+                                    *x /= z;
+                                }
+                            }
+                        }
+                        // consistent zone = copies above the floor; its genomic extent + the posterior string.
+                        let mut idx: Vec<usize> = (0..post.len()).filter(|&c| post[c] > FLOOR).collect();
+                        idx.sort_by(|&a2, &b2| post[b2].partial_cmp(&post[a2]).unwrap());
+                        let zone: Vec<u64> = idx.iter().filter_map(|&c| loci[c].as_ref().map(|l| l.1)).collect();
+                        let chrom = idx
+                            .iter()
+                            .find_map(|&c| loci[c].as_ref().map(|l| l.0.clone()))
+                            .unwrap_or_default();
+                        let (zs, ze) = (zone.iter().min().copied().unwrap_or(0), zone.iter().max().copied().unwrap_or(0));
+                        let pstr = idx
+                            .iter()
+                            .map(|&c| format!("{}:{:.3}", c, post[c]))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        posterior_lines.push(format!(
+                            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                            bam_reads[*ri].name, fid, status_str(a.status), idx.len(), chrom, zs, ze, pstr
+                        ));
+                    }
                 }
                 // soft per-copy abundance (+ the hard read count for comparison)
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
@@ -479,6 +536,17 @@ fn main() -> Result<()> {
             "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}",
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value
         )?;
+    }
+
+    // per-read posterior + consistent zone (opt-in via --posterior).
+    if args.posterior {
+        let mut ph = std::fs::File::create(format!("{}.posterior.tsv", args.out))?;
+        writeln!(ph, "read_name\tfamily_id\tstatus\tn_consistent\tzone_chrom\tzone_start\tzone_end\tposterior")?;
+        for line in &posterior_lines {
+            writeln!(ph, "{line}")?;
+        }
+        eprintln!("[copy_assign] wrote {}.posterior.tsv ({} reads, prior={})",
+            args.out, posterior_lines.len(), if prior_abundance { "abundance" } else { "uniform" });
     }
 
     // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for

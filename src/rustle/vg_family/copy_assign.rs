@@ -65,6 +65,12 @@ pub struct Assignment {
     /// the absent-copy discovery feature was on — i.e. the assignment is COUPLED to that discovery and would
     /// not exist in the frozen ref-only result. Always `false` on the default (absent-copy-OFF) path.
     pub discovery_coupled: bool,
+    /// Per-copy POSTERIOR over the candidate copies, `softmax(logl)` (likelihood-normalized, i.e. a UNIFORM
+    /// prior), indexed parallel to the `copies` slice. For an *assigned* read it is ~one-hot at `best_copy`;
+    /// for a *Tied* read it spreads over the consistent ZONE (the copies the read cannot be distinguished
+    /// from) — the soft/Bayesian complement to the hard assign/abstain. An informative prior (copy abundance,
+    /// DNA parCN) is applied downstream by re-weighting and renormalizing. Empty for `n == 0`.
+    pub posterior: Vec<f64>,
 }
 
 /// The decisive log-likelihood-ratio margin `τ` for a target per-read misassignment rate `p`.
@@ -351,6 +357,20 @@ pub fn assign_read_editing(
         (resolvable, status)
     };
 
+    // Per-copy posterior under a UNIFORM prior = softmax(logl), parallel to `copies`. (Likelihood-normalized;
+    // an informative prior is applied downstream.) For a Tied read this spreads over the consistent zone.
+    let posterior = {
+        let m = logl.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut e: Vec<f64> = logl.iter().map(|&l| (l - m).exp()).collect();
+        let z: f64 = e.iter().sum();
+        if z > 0.0 {
+            for x in &mut e {
+                *x /= z;
+            }
+        }
+        e
+    };
+
     Some(Assignment {
         best_copy: copies[best].copy_id,
         log_lr_margin: margin,
@@ -360,6 +380,7 @@ pub fn assign_read_editing(
         p_value: p_read,
         min_p_value: min_p,
         discovery_coupled: false,
+        posterior,
     })
 }
 

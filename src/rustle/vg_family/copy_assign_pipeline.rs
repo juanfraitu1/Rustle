@@ -1585,6 +1585,7 @@ mod tests {
             p_value: 0.0,
             min_p_value: 0.0,
             discovery_coupled: false,
+            posterior: vec![],
         }
     }
     fn rr(read_index: usize, mapped_copy: usize, combined: Assignment) -> ReadResult {
