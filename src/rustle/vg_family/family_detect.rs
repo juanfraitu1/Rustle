@@ -300,6 +300,76 @@ pub fn detect_edges(reps: &[DenovoTranscript], p: &DetectParams) -> Vec<(usize, 
     detect_edges_reporting(reps, p).0
 }
 
+/// POA-CORE COMPLETION — extend read-conflict families with loosely-related paralogs at NEW loci.
+///
+/// The read-conflict graph links only copies that reads CONFUSE (empirically down to ~87% identity); a
+/// divergent paralog at another locus (reads resolve it, so it raises no conflict edge) is missed. Seeded by
+/// the conflict families ("when assignment is determined needed"), this attaches any genome rep that shares a
+/// contiguous POA core `>= p.t_core` with a family member — reaching paralogs that retain ONE conserved
+/// exon-core even as their flanks diverge (the loosely-related case the conflict graph cannot reach).
+///
+/// BOUNDED ("only when needed"): `candidate_pairs` (the minimizer-LSH prefilter) restricts the expensive POA
+/// `confirm_edge` to homologous candidate pairs, and we grade ONLY pairs with exactly one endpoint already in
+/// a conflict family (the other a FREE rep) — so POA never runs all-pairs, and free-vs-free pairs (which would
+/// be NEW families, not seeded by read-conflict) are skipped. A free rep matching several families is attached
+/// to the one with the strongest core.
+///
+/// `families[f]` = the rep indices of conflict family `f`. Returns `adds[f]` = the extra rep indices to append
+/// to family `f` (the homology-extension copies, distinct from the confusable core).
+pub fn poa_core_completion_adds(
+    reps: &[DenovoTranscript],
+    families: &[Vec<usize>],
+    p: &DetectParams,
+) -> Vec<Vec<usize>> {
+    use std::collections::HashMap;
+    let mut in_fam: HashMap<usize, usize> = HashMap::new();
+    for (f, members) in families.iter().enumerate() {
+        for &m in members {
+            in_fam.insert(m, f);
+        }
+    }
+    // FAST contiguous-core confirm: the longest-common-substring / min-len — the LINEAR-MEMORY faithful
+    // equivalent of `contiguous_core_coverage`'s "longest ungapped equal run" (see `longest_common_substring`
+    // docs). Using poasta (`confirm_edge`) here is too slow genome-wide (the documented POA bottleneck); LCS
+    // is O(n) per pair, so the family-adjacent grading stays cheap. Checks both orientations.
+    let core_cov = |a: &[u8], b: &[u8]| -> f64 {
+        let minlen = a.len().min(b.len());
+        if minlen == 0 {
+            return 0.0;
+        }
+        let au = a.to_ascii_uppercase();
+        let bu = b.to_ascii_uppercase();
+        let fwd = crate::vg_family::family_graph::longest_common_substring(&au, &bu);
+        let rev = crate::vg_family::family_graph::longest_common_substring(&au, &reverse_complement(&bu));
+        fwd.max(rev) as f64 / minlen as f64
+    };
+    // best (family, core) per FREE rep over all family-adjacent candidate pairs that confirm a POA core.
+    let mut best: HashMap<usize, (usize, f64)> = HashMap::new();
+    for (i, j) in candidate_pairs(reps, p) {
+        let (fam, free) = match (in_fam.get(&i), in_fam.get(&j)) {
+            (Some(&f), None) => (f, j),
+            (None, Some(&f)) => (f, i),
+            _ => continue, // both in families (no merge here) or both free (not seeded by read-conflict)
+        };
+        let member = if free == j { i } else { j };
+        let core = core_cov(&reps[member].seq, &reps[free].seq);
+        if core >= p.t_core {
+            let e = best.entry(free).or_insert((fam, 0.0));
+            if core > e.1 {
+                *e = (fam, core);
+            }
+        }
+    }
+    let mut adds: Vec<Vec<usize>> = vec![Vec::new(); families.len()];
+    for (free, (fam, _)) in best {
+        adds[fam].push(free);
+    }
+    for a in &mut adds {
+        a.sort_unstable();
+    }
+    adds
+}
+
 /// Like [`detect_edges`] but ALSO returns the candidate pairs whose larger transcript exceeded the poasta
 /// memory threshold (`p.len_cap`) and were therefore confirmed via the memory-bounded longest-common-substring
 /// FALLBACK rather than the exact poasta path. These edges are still produced (the fallback confirms them — no
@@ -503,6 +573,23 @@ mod tests {
             tx("r2", "c1", 0, 560, 5, &[], rand_seq(560, 0xDEAD)),
         ];
         assert_eq!(candidate_pairs(&reps, &DetectParams::default()), vec![(0, 1)]);
+    }
+
+    #[test]
+    fn poa_core_completion_attaches_a_divergent_paralog_at_a_new_locus() {
+        // read-conflict family {r0,r1} (share the conserved core). r2 is a FREE rep that ALSO shares the
+        // conserved core but at a new locus (divergent flanks) — the loosely-related paralog the read-conflict
+        // graph misses; the completion attaches it. r3 (unrelated) is not added; free-vs-free is not seeded.
+        let core = rand_seq(400, 0x0C0FE);
+        let reps = [
+            homolog_tx("r0", 0xA1, &core, 0xA2, 5),
+            homolog_tx("r1", 0xB1, &core, 0xB2, 5),
+            homolog_tx("r2", 0xC1, &core, 0xC2, 5),
+            tx("r3", "c1", 0, 560, 5, &[], rand_seq(560, 0xDEAD)),
+        ];
+        let families = vec![vec![0usize, 1usize]];
+        let adds = poa_core_completion_adds(&reps, &families, &DetectParams::default());
+        assert_eq!(adds, vec![vec![2usize]], "r2 attaches via the conserved core; r3 does not");
     }
 
     #[test]

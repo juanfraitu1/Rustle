@@ -39,6 +39,11 @@ pub struct DenovoConfig {
     pub detect: DetectParams,
     pub split: SplitParams,
     pub conflict: ConflictParams,
+    /// POA-CORE COMPLETION (default false = OFF, byte-identical): after building the read-conflict families,
+    /// attach loosely-related paralogs at NEW loci whose contiguous POA core to a family member clears
+    /// `detect.t_core` — reaching divergent copies the conflict graph (confusable-only) misses. Bounded +
+    /// seeded by the conflict families (`family_detect::poa_core_completion_adds`).
+    pub complete_poa_core: bool,
 }
 
 impl Default for DenovoConfig {
@@ -50,6 +55,7 @@ impl Default for DenovoConfig {
             detect: DetectParams::default(),
             split: SplitParams::default(),
             conflict: ConflictParams::from_env(),
+            complete_poa_core: false,
         }
     }
 }
@@ -887,6 +893,32 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
         min_copies,
         n_xchrom
     );
+
+    // POA-CORE COMPLETION (opt-in): attach loosely-related paralogs at NEW loci the read-conflict graph misses
+    // (it links only copies reads confuse). Seeded by the families above ("when assignment is determined
+    // needed"); bounded by the minimizer prefilter to family-adjacent candidates. Default OFF -> no-op.
+    if cfg.complete_poa_core {
+        let tid2idx: std::collections::HashMap<&str, usize> =
+            reps.iter().enumerate().map(|(i, r)| (r.tid.as_str(), i)).collect();
+        let fam_repidx: Vec<Vec<usize>> = out
+            .iter()
+            .map(|fam| fam.iter().filter_map(|c| tid2idx.get(c.tid.as_str()).copied()).collect())
+            .collect();
+        let adds = crate::vg_family::family_detect::poa_core_completion_adds(&reps, &fam_repidx, &cfg.detect);
+        let mut n_added = 0usize;
+        for (f, extra) in adds.iter().enumerate() {
+            for &ri in extra {
+                out[f].push(reps[ri].clone());
+                n_added += 1;
+            }
+        }
+        eprintln!(
+            "[gw-catalog-xchrom] POA-core completion (t_core={:.2}): +{} loosely-related paralog copies attached to {} families",
+            cfg.detect.t_core,
+            n_added,
+            adds.iter().filter(|a| !a.is_empty()).count()
+        );
+    }
     Ok(out)
 }
 

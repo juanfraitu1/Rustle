@@ -64,11 +64,18 @@ struct Args {
     /// asm20 (id>=0.80) baseline. For reproducing the exact asm20-only catalog.
     #[arg(long, default_value_t = false)]
     no_sensitive: bool,
+    /// POA-CORE COMPLETION (cross-chrom only): after the read-conflict families are built, attach
+    /// loosely-related paralogs at NEW loci whose contiguous POA core to a family member clears `t_core` —
+    /// reaching divergent copies the conflict graph (confusable-only, ~>=87% identity) misses. Bounded +
+    /// seeded by the conflict families. Default off.
+    #[arg(long, default_value_t = false)]
+    complete_core: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let cfg = DenovoConfig::default();
+    let mut cfg = DenovoConfig::default();
+    cfg.complete_poa_core = args.complete_core;
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path.
     let raw: Vec<Vec<DenovoTranscript>> = if args.cross_chrom {
         detect_conflict_catalog_genome_wide_xchrom(&args.bam, &args.fasta, args.threads, args.min_copies, &cfg)?
