@@ -1,3 +1,138 @@
+# Dna Protein Validation (consolidated)
+
+> Merged from 5 source docs (verbatim, git keeps the originals' history). Each section below was a separate `bench/*.md`.
+
+**Contents:** [dna_psv_catalog_summary](#dna-psv-catalog-summary) · [dna_rna_overlay](#dna-rna-overlay) · [compara_fetch](#compara-fetch) · [compara_validation](#compara-validation) · [transcript_validation](#transcript-validation)
+
+
+---
+
+## dna_psv_catalog_summary
+
+# DNA-derived PSV identifiability catalog (Phase 1)
+
+- co-located classified pairs: **1387** -> resolvable **331** (24%), genuine-K=0 **1056** (76%). NOTE: this is the DNA reference universe (all aligned co-located pairs, including unexpressed identical tandem copies the RNA census never observes); on the **137** pairs the RNA census actually classifies, DNA and RNA agree **86%** and both find that expressed subset mostly resolvable.
+- pairs excluded from K: **14262** unaligned (copy did not align to ref0 — divergent/short paralog), **14** unannotated (no overlapping GFF exon)
+- **cross-check DNA-K=0 vs RNA-K0** on 137 census-classified pairs: concordance **86%** (confusion {(True, False): 14, (True, True): 8, (False, False): 110, (False, True): 5})
+- discordant DNA-K=0 ∧ RNA-resolvable: **14** (candidate: indel / splice-shift pseudo-K=0 — substitution-only PSVs miss it; Phase-2 private_exon_bp will test this)
+- discordant DNA-K≥1 ∧ RNA-tied: **5** (candidate: PSV in a poorly-expressed exon — reference identifiability ≥ read identifiability)
+
+
+---
+
+## dna_rna_overlay
+
+# Two-tier overlay: RNA layer on DNA/protein-defined multi-copy families
+
+**DNA tier** = protein clusters (mmseqs2 easy-cluster, ≥30% id / 50% cov, on translated CDS) →
+formal multi-copy families, INCLUDING ancient/diverged families the RNA-similarity definition
+missed. **RNA overlay** = per copy, is it transcribed (real GGO IsoSeq), and how well.
+
+- DNA multi-copy families (protein clusters ≥2): **3,587** (14,545 gene copies)
+- RNA-tier families (POA, for comparison): 1,337
+
+## What actually transcribes (genome vs transcriptome)
+- of 14,545 copies in DNA-defined families: **transcribed (≥5 reads): 10,490 (72%)** ; well-expressed (≥40): 6,824 (47%) ; **silent: 4,055 (28%)**
+- i.e. the DNA tier enumerates every copy; the RNA layer shows which are live — many copies are
+  present in the genome but transcriptionally silent.
+
+## Ancient-family gain (the whole point of the DNA tier)
+- curated families recovered by the DNA tier that the RNA tier MISSED: **DEFB*, SIGLEC***
+| family | DNA tier | RNA tier | DNA copies | transcribed |
+|---|---|---|---|---|
+| APOBEC3 | YES | YES | 4 | 4 |
+| CRYBG (ANCIENT) | no | no | 0 | 0 |
+| DAZ | no | YES | 1 | 1 |
+| DEFB* (ANCIENT) | YES | no | 4 | 0 |
+| MAGEA* | YES | YES | 5 | 5 |
+| PRAMEF* | YES | YES | 4 | 0 |
+| RABL2 | YES | YES | 2 | 2 |
+| RFPL | YES | YES | 4 | 3 |
+| SIGLEC* (ANCIENT) | YES | no | 3 | 2 |
+| TAS2R* (ANCIENT) | YES | YES | 18 | 7 |
+
+## Per-family 3-number summary (sample: largest + curated)
+| DNA family | copies | transcribed | well-expressed | example members |
+|---|---|---|---|---|
+| DFAM0 | 501 | 83 | 4 | LOC101123691, LOC101123789, LOC101123793, LOC101124039, LOC101124044… |
+| DFAM1 | 229 | 219 | 180 | KRBOX5, LOC101123988, LOC101124084, LOC101124732, LOC101124778… |
+| DFAM2 | 136 | 134 | 108 | LOC101126065, LOC101126415, LOC101127631, LOC101128844, LOC101129578… |
+| DFAM3 | 93 | 82 | 50 | CDC42, IFT27, LOC101128843, LOC101133567, LOC101142457… |
+| DFAM4 | 74 | 19 | 8 | BFSP2, DES, GFAP, GHAA, INA… |
+| DFAM5 | 64 | 31 | 2 | ACR, CELA1, CFD, CTRL, F10… |
+| DFAM6 | 47 | 12 | 1 | LOC101124648, LOC101136188, LOC101144932, LOC101146296, LOC101147007… |
+| DFAM7 | 47 | 0 | 0 | LHB, LOC101123748, LOC101124600, LOC101154318, LOC109024055… |
+| DFAM8 | 46 | 42 | 31 | CDK1, CDK10, CDK14, CDK15, CDK16… |
+| DFAM9 | 45 | 26 | 13 | ACKR2, ACKR4, AGTR1, APLNR, CCR10… |
+| DFAM10 | 44 | 0 | 0 | LOC101123968, LOC101128508, LOC115932853, LOC115932855, LOC129523578… |
+| DFAM11 | 43 | 17 | 0 | LOC101126783, LOC101127524, LOC129524344, LOC129524346, LOC129524347… |
+
+## Honest scope
+- DNA tier = protein clustering of annotated CODING genes → catches ancient coding families +
+  currently-silent coding copies. Non-coding/pseudogene + UNANNOTATED copies need a genomic
+  self-alignment pass (next extension).
+- 'transcribed' uses the REAL IsoSeq (not the ideal-coverage synthetic) — so silent = silent in
+  this sample; ideal-coverage GGO would test detectability, not biology.
+- copy-resolvability (which transcribed copies are distinguishable per-read) follows from the
+  identifiability theorem: dispersed copies resolve by locus; co-located need PSVs (rare here).
+
+
+---
+
+## compara_fetch
+
+# Ensembl Compara paralogy fetch — coverage report
+
+Non-circular validation prep. This phase ONLY fetches/caches Ensembl Compara paralogy for the NAMED universe genes; the comparison vs our family grouping is the next phase.
+
+- Cache: `bench/compara_cache.json` (keyed by `endpoint|symbol`, resumable; reruns fetch only missing).
+
+- Relation summary: `bench/compara_paralog_relation.json`
+
+- Source universe: `bench/copy_recovery_eval/results/universe.tsv`
+
+
+## Universe gene inventory
+
+| metric | count |
+| --- | --- |
+| total distinct gene_ids | 195 |
+| named genes (not `^LOC[0-9]+`) | 41 |
+| LOC-only genes | 154 |
+| families | 62 |
+
+## Mapping coverage (named genes)
+
+| metric | count | of named |
+| --- | --- | --- |
+| got ENSG id | 40 | 41 |
+| got paralogue data (HTTP ok) | 37 | 41 |
+| non-empty paralogue set | 32 | 41 |
+| unmapped (symbol not in Ensembl) | 0 | 41 |
+| persistent fetch errors | 5 | 41 |
+
+## Family-level checkability
+
+| metric | count | of 62 families |
+| --- | --- | --- |
+| families with >=2 NAMED genes | 11 | 62 |
+| families with >=2 MAPPED genes (checkable within-family pair) | 10 | 62 |
+
+Within-universe symmetric paralog pairs (both genes mapped, Compara-linked): **5**
+
+
+### Symbols with persistent fetch errors (rerun to retry)
+
+`CREB1`, `GP1BB`, `NCAPH2`, `RABL2B`, `USP18`
+
+
+Deterministic given the cache. Fetched 82 new API responses this run.
+
+
+---
+
+## compara_validation
+
 # Non-circular validation: Ensembl Compara vs our paralog families
 _Deterministic (no RNG). Minimizer k=15, w=10, canonical blake2b-64. Generated by `bench/compara_validation.py`. Compara release: `vertebrates`, `https://rest.ensembl.org`._
 ## Headline (the non-circular number)
@@ -71,3 +206,27 @@ The JSON records **5** within-universe symmetric Compara paralog pairs (both gen
 - **Recall vs Compara is intentionally NOT the metric.** Compara lumping ancient paralogs we correctly split is expected granularity, not error (see the framing section). We report granularity as an observation only.
 - **Small N.** Only 10 families / 12 pairs are checkable. The headline is an exact count on a small sample, not a generalized rate; treat it as a directional, independent sanity check rather than a population estimate.
 - **Determinism.** No RNG anywhere (the full mapped set is evaluated; no sampling). Minimizer hash is blake2b. Output is byte-stable.
+
+
+---
+
+## transcript_validation
+
+# De-novo transcript validation (intron-chain Sn/Pr vs RefSeq)
+
+Realigned all 101,467 de-novo transcripts (`denovo_transcripts.fa`) to the genome with minimap2
+(`-ax splice:hq -uf`, low-mem `-I 1G --split-prefix`, MALLOC_ARENA_MAX=2 — the ulimit -v VIRTUAL cap
+false-triggered 3×, drop it), `bam_to_gtf.py` → GTF, `gffcompare -r GGO_genomic.gff`. 100% mapped.
+
+## Verdict: REAL + defensible
+- **Intron-level precision 86%** (`-R -Q` 86.1) — posited splice junctions are genuine annotated sites.
+- **Class codes: 98.9% overlap a KNOWN gene** (=20.7% FSM, c=31.0% ISM, j=30.9% novel-iso-of-known,
+  m/n/k=16.4% retained/containment); only **0.5% `u` intergenic-novel** (artifact-suspect), ~0.6% antisense/intronic.
+- **Sensitivity (where it looks, -R -Q): 76.6% of introns, 76.7% of loci recovered.** Genome-wide intron Sn 53%.
+- Intron-CHAIN FSM only ~21% — NOT artifacts: long-read novel/partial isoforms (one novel junction in a
+  ~9-exon chain fails whole-chain match). Expected annotation-incompleteness + novel-isoform discovery.
+- CAVEAT: 31% ISM + 13% retained-intron => a real fraction are PARTIAL/incomplete (5' degradation / pre-mRNA),
+  typical of read-derived assembly.
+
+Artifacts in /home/juanfra/winloci_scratch/validate/ (dn_realigned.bam, dn_gw*.stats/.tmap).
+
