@@ -5,8 +5,11 @@ Two confounds the raw FDR cannot see:
   COLLAPSED-PARALOG MASQUERADE: at a multimapping locus the two 'alleles' are paralog copies, so
     'allele-specific' junctions are really copy-specific isoforms. Control: MAPQ-0 fraction at the
     anchor (uniquely mapped => genuine within-gene heterozygosity).
-  MECHANISM PLAUSIBILITY: a SNP AT/near a splice site (<=~100bp) is a canonical splice-disrupting
-    variant (cleanest ASS); a DISTAL anchor flipping a junction fully (dPSI=1.0) is more likely two
+  MECHANISM PLAUSIBILITY: a SNP within ~100bp of a splice site is splice-PROXIMAL (more plausibly
+    splice-modulating) — NOTE this is proximity only, NOT "on the canonical GT-AG dinucleotide": 0/475
+    anchors land on a core splice dinucleotide; even the flagship PSMD2/DAXX sit at donor-1 / the exon
+    boundary (splice-REGION / extended-consensus variants, the core dinucleotide intact — see
+    bench/asj_motif_check.py). A DISTAL anchor flipping a junction fully (dPSI=1.0) is more likely two
     distinct transcript populations than allele-modulated splicing of one gene.
 
 Adds frac_mq0 + anchor-junction distance to each call; reports the confound-controlled high-confidence

@@ -1,0 +1,31 @@
+==============================================================================
+REGIME: indel    (72 reads total)
+==============================================================================
+
+Graph structure:
+  nodes=81  A-excl=12 (310bp)  B-excl=3 (10bp)  flipped/inversion nodes=0 (0bp)
+
+--- ACCURACY by read class ---
+class (n)      | GRAPH                  | LINEAR-AS              | LINEAR-NAIVE-PRIM     
+-----------------------------------------------------------------------------------------
+full (24)      | 24/24 cor (0wr 0amb)   | 24/24 cor (0wr 0amb)   | 24/24 cor (0wr 0amb)  
+nospan_nosnp [UNRESOLVABLE] (12) | 0/12 cor (0wr 12amb)   | 0/12 cor (0wr 12amb)   | 3/12 cor (9wr 0amb)   
+nospan_snp (12) | 12/12 cor (0wr 0amb)   | 12/12 cor (0wr 0amb)   | 12/12 cor (0wr 0amb)  
+span (24)      | 24/24 cor (0wr 0amb)   | 24/24 cor (0wr 0amb)   | 24/24 cor (0wr 0amb)  
+
+--- HEADLINE (resolvable reads only, n=60) ---
+  GRAPH                  60/60 correct  0 wrong  0 ambiguous  margin min=1 mean=5.4 max=12
+  LINEAR-AS              60/60 correct  0 wrong  0 ambiguous  margin min=6 mean=498.1 max=936
+  LINEAR-NAIVE-PRIMARY   60/60 correct  0 wrong  0 ambiguous
+
+--- NAIVE split / soft-clip diagnostics (inversion focus) ---
+  span reads n=24:  with supplementary=0  with secondary=8  primary softclip>=50bp=0
+  span primary soft-clip bp: min=0 mean=0.0 max=1
+  span reads where naive PRIMARY mis-assigned: 0
+
+--- DECISION MARGINS by class ---
+class            | GRAPH node-vote gap        | LINEAR-AS gap             
+full             | min=3 mean=7.4 max=12      | min=336 mean=627.4 max=936
+nospan_nosnp     | n/a                        | n/a                       
+nospan_snp       | min=1 mean=1.0 max=1       | min=6 mean=6.0 max=6      
+span             | min=1 mean=5.5 max=10      | min=288 mean=615.0 max=918

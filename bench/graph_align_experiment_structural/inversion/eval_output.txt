@@ -1,0 +1,29 @@
+==============================================================================
+REGIME: inversion    (76 reads total)
+==============================================================================
+
+Graph structure:
+  nodes=65  A-excl=4 (18bp)  B-excl=3 (18bp)  flipped/inversion nodes=6 (184bp)
+
+--- ACCURACY by read class ---
+class (n)      | GRAPH                  | LINEAR-AS              | LINEAR-NAIVE-PRIM     
+-----------------------------------------------------------------------------------------
+full (30)      | 30/30 cor (0wr 0amb)   | 30/30 cor (0wr 0amb)   | 30/30 cor (0wr 0amb)  
+nospan_snp (16) | 16/16 cor (0wr 0amb)   | 16/16 cor (0wr 0amb)   | 16/16 cor (0wr 0amb)  
+span (30)      | 30/30 cor (0wr 0amb)   | 30/30 cor (0wr 0amb)   | 30/30 cor (0wr 0amb)  
+
+--- HEADLINE (resolvable reads only, n=76) ---
+  GRAPH                  76/76 correct  0 wrong  0 ambiguous  margin min=1 mean=6.9 max=10
+  LINEAR-AS              76/76 correct  0 wrong  0 ambiguous  margin min=6 mean=610.6 max=1938
+  LINEAR-NAIVE-PRIMARY   76/76 correct  0 wrong  0 ambiguous
+
+--- NAIVE split / soft-clip diagnostics (inversion focus) ---
+  span reads n=30:  with supplementary=0  with secondary=1  primary softclip>=50bp=0
+  span primary soft-clip bp: min=0 mean=0.0 max=0
+  span reads where naive PRIMARY mis-assigned: 0
+
+--- DECISION MARGINS by class ---
+class            | GRAPH node-vote gap        | LINEAR-AS gap             
+full             | min=9 mean=9.5 max=10      | min=586 mean=915.7 max=1938
+nospan_snp       | min=1 mean=1.0 max=1       | min=6 mean=6.0 max=6      
+span             | min=7 mean=7.5 max=8       | min=526 mean=627.8 max=842

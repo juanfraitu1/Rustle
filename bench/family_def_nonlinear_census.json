@@ -1,0 +1,421 @@
+{
+  "records": [
+    {
+      "family": "RCF_135",
+      "n": 3,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 270,
+      "edges": 281,
+      "max_mult": 2,
+      "mult_values": [
+        1,
+        2
+      ],
+      "rearrangement": true,
+      "rep_len": 373,
+      "rep_complexity": 0.84,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_13",
+      "n": 8,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 256,
+      "edges": 296,
+      "max_mult": 2,
+      "mult_values": [
+        1,
+        2
+      ],
+      "rearrangement": true,
+      "rep_len": 658,
+      "rep_complexity": 0.81,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_212",
+      "n": 10,
+      "status": "msga_failed"
+    },
+    {
+      "family": "RCF_275",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 798,
+      "edges": 996,
+      "max_mult": 8,
+      "mult_values": [
+        1,
+        8
+      ],
+      "rearrangement": true,
+      "rep_len": 588,
+      "rep_complexity": 0.78,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_277",
+      "n": 6,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 1566,
+      "edges": 2075,
+      "max_mult": 7,
+      "mult_values": [
+        1,
+        2,
+        6,
+        7
+      ],
+      "rearrangement": true,
+      "rep_len": 137,
+      "rep_complexity": 0.84,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_287",
+      "n": 3,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 844,
+      "edges": 1079,
+      "max_mult": 8,
+      "mult_values": [
+        1,
+        4,
+        8
+      ],
+      "rearrangement": true,
+      "rep_len": 2019,
+      "rep_complexity": 0.83,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_288",
+      "n": 4,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 882,
+      "edges": 976,
+      "max_mult": 1,
+      "mult_values": [
+        1
+      ],
+      "rearrangement": false,
+      "rep_len": 0,
+      "rep_complexity": 1.0,
+      "cls": "LINEAR",
+      "distinguishing": false
+    },
+    {
+      "family": "RCF_30",
+      "n": 9,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 839,
+      "edges": 1030,
+      "max_mult": 2,
+      "mult_values": [
+        1,
+        2
+      ],
+      "rearrangement": true,
+      "rep_len": 12,
+      "rep_complexity": 0.78,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_311",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 662,
+      "edges": 799,
+      "max_mult": 5,
+      "mult_values": [
+        1,
+        5
+      ],
+      "rearrangement": true,
+      "rep_len": 1153,
+      "rep_complexity": 0.8,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_362",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 218,
+      "edges": 278,
+      "max_mult": 5,
+      "mult_values": [
+        1,
+        5
+      ],
+      "rearrangement": true,
+      "rep_len": 92,
+      "rep_complexity": 0.82,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_363",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 143,
+      "edges": 163,
+      "max_mult": 3,
+      "mult_values": [
+        1,
+        3
+      ],
+      "rearrangement": true,
+      "rep_len": 290,
+      "rep_complexity": 0.76,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_102",
+      "n": 6,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 6629,
+      "edges": 7036,
+      "max_mult": 76,
+      "mult_values": [
+        1,
+        2,
+        4,
+        6,
+        36,
+        76
+      ],
+      "rearrangement": true,
+      "rep_len": 2377,
+      "rep_complexity": 0.82,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_489",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 104,
+      "edges": 104,
+      "max_mult": 1,
+      "mult_values": [
+        1
+      ],
+      "rearrangement": false,
+      "rep_len": 0,
+      "rep_complexity": 1.0,
+      "cls": "LINEAR",
+      "distinguishing": false
+    },
+    {
+      "family": "RCF_5",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 836,
+      "edges": 1044,
+      "max_mult": 43,
+      "mult_values": [
+        1,
+        43
+      ],
+      "rearrangement": true,
+      "rep_len": 448,
+      "rep_complexity": 0.8,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_518",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 498,
+      "edges": 541,
+      "max_mult": 4,
+      "mult_values": [
+        1,
+        4
+      ],
+      "rearrangement": true,
+      "rep_len": 312,
+      "rep_complexity": 0.75,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_53",
+      "n": 10,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 1614,
+      "edges": 1926,
+      "max_mult": 7,
+      "mult_values": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7
+      ],
+      "rearrangement": true,
+      "rep_len": 1702,
+      "rep_complexity": 0.8,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_432",
+      "n": 10,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 672,
+      "edges": 953,
+      "max_mult": 37,
+      "mult_values": [
+        1,
+        5,
+        6,
+        13,
+        16,
+        31,
+        37
+      ],
+      "rearrangement": true,
+      "rep_len": 277,
+      "rep_complexity": 0.96,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_611",
+      "n": 4,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 143,
+      "edges": 183,
+      "max_mult": 3,
+      "mult_values": [
+        1,
+        2,
+        3
+      ],
+      "rearrangement": true,
+      "rep_len": 150,
+      "rep_complexity": 0.84,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_718",
+      "n": 7,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 540,
+      "edges": 721,
+      "max_mult": 6,
+      "mult_values": [
+        1,
+        2,
+        3,
+        4,
+        6
+      ],
+      "rearrangement": true,
+      "rep_len": 308,
+      "rep_complexity": 0.84,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_719",
+      "n": 2,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 157,
+      "edges": 201,
+      "max_mult": 3,
+      "mult_values": [
+        1,
+        3
+      ],
+      "rearrangement": true,
+      "rep_len": 154,
+      "rep_complexity": 0.78,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_721",
+      "n": 3,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 213,
+      "edges": 265,
+      "max_mult": 2,
+      "mult_values": [
+        1,
+        2
+      ],
+      "rearrangement": true,
+      "rep_len": 58,
+      "rep_complexity": 0.77,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_6",
+      "n": 10,
+      "status": "ok",
+      "cyclic": true,
+      "nodes": 3441,
+      "edges": 4603,
+      "max_mult": 11,
+      "mult_values": [
+        1,
+        3,
+        4,
+        7,
+        9,
+        10,
+        11
+      ],
+      "rearrangement": true,
+      "rep_len": 2226,
+      "rep_complexity": 0.84,
+      "cls": "CYCLE_CNV",
+      "distinguishing": true
+    },
+    {
+      "family": "RCF_181",
+      "n": 10,
+      "status": "msga_failed"
+    }
+  ],
+  "by_class": {
+    "CYCLE_CNV": 19,
+    "LINEAR": 2
+  },
+  "distinguishing": 19,
+  "low_complexity": 0
+}

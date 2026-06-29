@@ -1,0 +1,63 @@
+{
+  "summary": {
+    "resolvable_families": 3,
+    "noPSV_reads_in_resolvable_families": 3617,
+    "noPSV_single_exon": 2237,
+    "noPSV_shared_junctions_only": 19,
+    "noPSV_rescuable_decisive": 198,
+    "noPSV_rescuable_ambiguous": 1163,
+    "pct_decisive_of_noPSV": 5.5,
+    "pct_lost_of_noPSV": 62.4,
+    "rescue_validation": "191/198",
+    "rescue_validation_pct": 96.5
+  },
+  "families": [
+    {
+      "family": 1,
+      "resolvable": true,
+      "n_copies": 7,
+      "n_psvs": 51,
+      "n_distinguishing_junctions": 32,
+      "cats": {
+        "noPSV_single_exon": 871,
+        "noPSV_rescuable_ambiguous": 1046,
+        "noPSV_rescuable_decisive": 139,
+        "noPSV_shared_junctions_only": 10,
+        "has_psv": 9
+      },
+      "rescue_agree": 133,
+      "rescue_tot": 139
+    },
+    {
+      "family": 14,
+      "resolvable": true,
+      "n_copies": 4,
+      "n_psvs": 46,
+      "n_distinguishing_junctions": 29,
+      "cats": {
+        "noPSV_single_exon": 1105,
+        "has_psv": 344,
+        "noPSV_rescuable_ambiguous": 76,
+        "noPSV_shared_junctions_only": 9,
+        "noPSV_rescuable_decisive": 5
+      },
+      "rescue_agree": 5,
+      "rescue_tot": 5
+    },
+    {
+      "family": 75,
+      "resolvable": true,
+      "n_copies": 3,
+      "n_psvs": 121,
+      "n_distinguishing_junctions": 19,
+      "cats": {
+        "noPSV_rescuable_decisive": 54,
+        "noPSV_single_exon": 261,
+        "noPSV_rescuable_ambiguous": 41,
+        "has_psv": 22
+      },
+      "rescue_agree": 53,
+      "rescue_tot": 54
+    }
+  ]
+}

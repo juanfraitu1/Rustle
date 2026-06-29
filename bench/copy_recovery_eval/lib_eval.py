@@ -88,21 +88,64 @@ def recovery_set(classification_rows, universe_tx):
     return rec
 
 
-def head_to_head(rustle_rec, stringtie_rec, authentic, family_of):
-    """rustle_rec / stringtie_rec: {ref_tx: {'fsm','ism'}}. authentic: {ref_tx: bool}
-    (only meaningful for rustle recoveries). family_of: {ref_tx: family_id}.
-    Returns the headline split as sorted lists + counts."""
+AUTHENTIC = "authentic"
+PHANTOM = "phantom"
+UNRESOLVABLE = "unresolvable"
+
+
+def classify_authenticity(n_decisive, n_tied, k_decisive=2, k_tied=1):
+    """Three-bucket authenticity from own-copy read evidence.
+
+    - n_decisive: reads whose best alignment is *strictly better* on this copy than
+      on any sister copy (or that map uniquely to it) -> the copy genuinely owns them.
+    - n_tied: reads that align *equally well* to this copy and a sister -> genuinely
+      undecidable (the DAZ inverted-backbone case).
+
+    Buckets:
+      authentic    -- n_decisive >= k_decisive (proven recovery).
+      unresolvable -- not authentic but n_tied >= k_tied (real-or-not undecidable;
+                      do NOT call it a phantom, that would lose true matches).
+      phantom      -- neither: whatever coverage exists is sister spillover that the
+                      sister owns decisively (the fabrication case, e.g. prim=0 copies).
+
+    A *count* of primary alignments is deliberately NOT used: minimap2's primary flag
+    among MAPQ-0 multimappers is a coin-flip, so it both over-credits phantoms (a copy
+    that wins the flip) and can starve real copies whose reads all tie.
+    """
+    if n_decisive >= k_decisive:
+        return AUTHENTIC
+    if n_tied >= k_tied:
+        return UNRESOLVABLE
+    return PHANTOM
+
+
+def _coerce_status(v):
+    """Accept either a status string or a legacy bool (True->authentic, False->phantom)."""
+    if isinstance(v, bool):
+        return AUTHENTIC if v else PHANTOM
+    return v
+
+
+def head_to_head(rustle_rec, stringtie_rec, status, family_of):
+    """rustle_rec / stringtie_rec: {ref_tx: {'fsm','ism'}}.
+    status: {ref_tx: 'authentic'|'phantom'|'unresolvable'} (legacy bools accepted)
+    for rustle recoveries. family_of: {ref_tx: family_id}.
+    Returns the headline split (authentic wins / phantom / unresolvable) + counts."""
     def fsm_set(rec):
         return {tx for tx, v in rec.items() if v["fsm"]}
     r_fsm = fsm_set(rustle_rec)
     s_fsm = fsm_set(stringtie_rec)
     rustle_only = r_fsm - s_fsm
-    auth = sorted(tx for tx in rustle_only if authentic.get(tx, False))
-    phantom = sorted(tx for tx in rustle_only if not authentic.get(tx, False))
+    st = {tx: _coerce_status(status.get(tx, PHANTOM)) for tx in rustle_only}
+    auth = sorted(tx for tx in rustle_only if st[tx] == AUTHENTIC)
+    phantom = sorted(tx for tx in rustle_only if st[tx] == PHANTOM)
+    unresolvable = sorted(tx for tx in rustle_only if st[tx] == UNRESOLVABLE)
     return {
         "rustle_only_fsm_authentic": auth,
         "rustle_only_fsm_phantom": phantom,
+        "rustle_only_fsm_unresolvable": unresolvable,
         "n_win": len(auth),
         "n_phantom": len(phantom),
+        "n_unresolvable": len(unresolvable),
         "families_won": sorted({family_of.get(tx, "NA") for tx in auth}),
     }

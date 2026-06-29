@@ -211,3 +211,32 @@ reuses `discover_psvs`'s existing ref-vs-ref alignment output directly or recomp
 - Scope: collapsed route only; divergent + VG-indel explicitly deferred (§5).
 - Ambiguity: the consensus-`.seq` method and K threshold are the two genuine forks — captured as Open
   Questions with a recommended v1 default, not left implicit.
+
+---
+
+## Post-merge follow-ups (from the final whole-branch review, 2026-06-27)
+
+The v1 feature is merge-ready (READY TO MERGE; OFF byte-identical airtight; positive demo shows a read decisively
+assigned to a reference-absent `AC_*` copy + a het rejected). Deferred items, in priority order:
+
+1. **[Important, gates at-scale ON efficacy] Gate-5 remap uses a non-spliced preset.** `absent_copy.rs`
+   `remap_identity_minimap2` shells `minimap2 -cx asm20` with the SPLICED synthetic copy as query against the
+   intron-bearing genome. On the tiny-intron sim asm20 bridges the intron as a deletion (acceptance passes), but
+   on real multi-kb introns asm20 cannot chain across the gap → partial/None alignment → real collapsed copies
+   get routed to DnaNeeds. It FAILS SAFE (never fabricates a copy) so it does not block merge, and the at-scale ON
+   path is already cluster-deferred — but switch to `-x splice` (or remap exon-by-exon / against a transcriptome)
+   before trusting ON-path admission on real data. Re-run `bench/absent_copy_sim.py` after the change.
+2. **[Minor] `AC_*` tid collision.** `collapsed_copy_to_transcript` builds `tid = AC_{chrom}_{start}`; two admitted
+   copies from the same host get identical tids (copy *indices* stay unique so freeze/quant are functionally
+   correct, but `quant.tsv` then has two rows sharing `copy_tid`). Suffix with the copy index or an allele-vector
+   hash.
+3. **[Minor, ON-path] Abundance vs freeze.** `assign_family_detailed` computes `copy_abundance` from the pre-freeze
+   Stage-2 EM, then `freeze_merge` overwrites the per-read results — so on the ON path soft abundance reflects
+   unfrozen Stage-2 while hard `n_reads_hard` reflects post-freeze. OFF unaffected. Recompute abundance post-freeze
+   if it matters, or document.
+4. **[Polish] freeze_merge `debug_assert!`** documenting the (proven-unreachable) Stage-1-Assigned-not-in-Stage-2
+   invariant; one-line comment on why `strand_symmetric_spectrum` checks A→G only; tab/newline-sanitize the
+   `reason` string in the dna_needs.tsv writer (all current reasons are literals).
+5. **[Perf, cluster] ON-path cost.** `recover_collapsed_candidates` runs `split_locus_copies` over all reads per
+   rep + a minimap2 remap per candidate, so the ON path does not finish on a 20k-read family on WSL2. At-scale ON
+   is off-WSL2/cluster work.

@@ -1,28 +1,48 @@
 # Copy-assignment recompute on the COMPLETE multimapping BAM (GGO_mm.bam)
 
-## ⭐ DEFINITIVE O2 headline (2026-06-27 — refined catalog + IsoCon significance gate + Clair3-RNA editing filter)
+## ⭐ O2 headline — two catalogs, one decision rule (2026-06-28; relabeled for defense-honesty)
 
-The final end-to-end run with all the principled defaults, on the proper MAPQ-0 substrate (79 co-located
-same-chrom ≥2-copy families from the homology-refined catalog; cross-chrom families are MAPQ>0 and not this
-substrate). `copy_assign --regions o2_regions.txt --min-copies 2` on `GGO_mm.bam` → 74 families, **43,239
-unique reads**:
+**Lead with the GENOME-WIDE number on the PRINCIPLED threshold-free conflict-graph catalog** (the elegant
+artifact — no similarity threshold; this closes the build-vs-run gap, so the headline and the principled method
+are the *same object*). `copy_assign --skip-poa-diagnostic` on the 82-family `gw_conflict_catalog` (→ 106
+families within their spans, 206,186 reads; data `p1_conflict_o2.*`):
 
-| metric | value |
-|---|---|
-| **assigned** | **75.1%** (certificate median p≈0, 90th-pct 2e-17, max 6.9e-4 — all < the Bonferroni α/(n−1)) |
-| ambiguous | **0.0%** (20 reads) |
-| **tied** (certified-unresolvable identifiability floor) | **24.8%** (`min_p_value` median **1.00** = no distinguishing feature) |
-| of **decisive** reads (carry ≥1 distinguishing feature) | **99.9% assigned** |
-| silver-standard unique-mapper agreement | **24,660/24,682 = 99.9%** |
-| collapsed copies recovered | **905** (207 total copies) |
+| metric | **principled conflict-graph catalog (GENOME-WIDE)** | annotation-refined co-located SUBSET |
+|---|---|---|
+| **assigned** | **63.9%** | 75.1% |
+| ambiguous | 0.5% | 0.0% |
+| certified-tied | **35.7%** | 24.8% |
+| of **decisive** reads assigned | **99.3%** | 99.9% |
+| silver-standard | 99.8% | 99.9% |
 
-**Reading:** of every read carrying *any* copy-distinguishing evidence, 99.9% are assigned with a calibrated
-per-read certificate; the 24.8% abstained are **certified unresolvable** (exonically-identical / no PSV/junction,
-`min_p=1.0`) — abstained, not guessed (no 1/k). The gate cleanly **bifurcates** (resolvable→assigned vs
-unresolvable→tied), so the retired τ-gate's fuzzy 6.4%-ambiguous band → ~0%. This replaces every intermediate
-assignment headline. (Non-circular accuracy = the sim5x labeled ladder, where the gate ≡ the τ-gate and K=0 →
-100% Tied; silver is the circular proxy.) Data: `o2_definitive.*`. Reproduce: `copy_assign --bam GGO_mm.bam
---fasta GGO.fasta --regions o2_regions.txt --out o2_definitive --min-copies 2`.
+**Reading (the honest claim).** The DECISION RULE is identical on both catalogs — **99.3–99.9% of reads carrying
+any copy-distinguishing evidence are assigned with a calibrated per-read certificate; the rest are
+certified-tied (abstained, not guessed; no 1/k).** Only the *tied fraction* moves: the unrefined principled
+catalog keeps more genuinely-unresolvable (K=0 / exonically-identical) families. Therefore:
+- **Genome-wide, principled (the headline): 63.9% assigned / 35.7% certified-tied / 99.3% of decisive / silver 99.8%.**
+- The **75.1%** is the *annotation-refined co-located SUBSET* (refinement drops Alu-bridge over-merges + harder
+  families → fewer tied). Label it as such — **NOT** "the genome-wide O2." (Subset data: `o2_definitive.*`.)
+
+**The tied certificate, split honestly (per Theorem 4, the bridge §5b).** Only `min_p = 1.0` (δ = 0, no
+distinguishing feature spanned) is an **impossibility certificate** — the read is genuinely unassignable. The
+band `α/(n−1) ≤ min_p < 1.0` is **power-limited abstention** (the read *does* distinguish, but below significance
+α). Report these two separately; do not call the whole tied mass "certified-unresolvable."
+
+**Silver is a CIRCULAR consistency check, NOT accuracy** — it measures agreement with minimap2's own primary
+placement where minimap2 was already confident. The **NON-circular accuracy** is the CI-pinned sim5x labeled
+ladder (`bench/P1_P4_RESULTS.md`): K≥2 → **acc|assigned = 1.000** on the ~20% of reads that are *resolvable*;
+K=0 → 100% Tied. ("100%" there is accuracy on the resolvable reads, never "all reads resolve.")
+
+**Held-out-PSV cross-validation (H3 — a second, ground-truth-free non-circular check; `copy_assign.py crossval`).**
+The deepest circularity worry is that the gate uses the *same* PSVs that defined the copies, so any
+self-agreement is built-in. To break that loop: for each read, split the distinguishing PSV columns it spans
+into two **disjoint** halves (even/odd by index); assign using only the TRAIN half; then ask whether the TEST
+half — which played **no** role in the call — independently ranks the same copy first. No ground truth is
+used. On sim5x the held-out half confirms the train-only call at **80%** across K∈{2,4,8}, i.e. **1.6× / 3.2×
+/ 6.4× above the 1/K chance baseline** (50% / 25% / 12.5%). Disjoint evidence corroborating the call at up to
+6.4× chance is the non-circular signal the silver standard cannot give. (The absolute rate is ~80% rather than
+~100% because each half carries only half the PSVs; the point is the enrichment over chance, from columns the
+call never saw.)
 
 ---
 
@@ -202,9 +222,11 @@ confirmed alignments are 98–99% over multi-kb extents, not fragment artifacts;
 > independent content (introns/flanks) dominates only for intron-rich families (RABL2, the 4-exon/19kb
 > cross-chrom arrays) and is minor for compact many-exon families. Report **89.2% as a lower bound on
 > segdup-grade homology.** The genuinely independent check — a genome-wide SEDEF/BISER segdup map — is
-> **blocked**: BISER's precompiled aligner segfaults under WSL2 (its unrefined putative SDs are Alu-repeat
-> noise that link gene loci to repeats, not to their paralogs), so the gold-standard map remains TODO
-> (build SEDEF from source, or run BISER off-WSL2).
+> **status (2026-06-28, corrected):** NOT a WSL2 wall — SEDEF **builds and runs locally** (the BISER `-11` was a
+> runtime crash in its Codon-compiled binary, not WSL2; SEDEF compiled with the local g++ + boost and ran
+> search→align→merge correctly; see `bench/SEDEF_BUILD.md`). The only obstacle is wall-clock: a full 3.5 Gb
+> mammalian self-alignment is ~a day on 2 cores and WSL2 rebooted mid-run at 46% — so the **full map is
+> cluster-scale** (the partial output is resumable). Then `bench/validate_segdup.py` for the orthogonal precision.
 > - The 17 genomic-silent families are **partial/structurally-divergent HIGH-identity paralogs failing on
 >   coverage, NOT retrocopies** (0/17 intronless; mean n_exon 9.26 ≥ confirmed 8.29 — the retrocopy
 >   hypothesis is rejected).
@@ -213,14 +235,21 @@ confirmed alignments are 98–99% over multi-kb extents, not fragment artifacts;
 >   same-strand-only distinct-locus rule lets through (the antisense-overlap edge case; a minority-strand
 >   collapse would remove it).
 
-### Independent (orthogonal) confirmation of the refined catalog
+### Annotation confirmation of the refined catalog — a FLOOR, not orthogonal precision
 
-Of 141 RefSeq-mappable refined families, **100 (70.9%) are confirmed by orthogonal evidence**
-(gene-name root / Compara / mmseqs protein homology fident≥0.40 & qcov,tcov≥0.50) — **flat across same-chrom
-(71.4%) and cross-chrom (69.8%): cross-chrom families are NOT enriched for false merges.** The 41 unconfirmed
-are non-coding (lncRNA/snRNA, absent from the protein DB) or protein-coding paralogs sitting just under the
-0.50 coverage gate; re-checked at the nucleotide level, **all 41 are themselves homologous — zero genuine
-false merges in the sample.**
+> ⚠ **This is an annotation-coverage FLOOR, not a precision number, and not an external check.** The
+> gene-name/Compara/protein-homology checks reuse *homology* — the same criterion the catalog is built on — so
+> they are **partly circular**: they confirm internal consistency, not that the families are correct against an
+> independent oracle. The genuine external check is an assembly-only **SEDEF segmental-duplication map** (now
+> builds + runs locally — see `bench/SEDEF_BUILD.md`; full mammalian run is cluster-scale) via
+> `bench/validate_segdup.py`. Report the numbers below as a **floor / lower bound**, never as "precision".
+
+Of 141 RefSeq-mappable refined families, **100 (70.9%, a FLOOR) are confirmed by annotation/homology evidence**
+(gene-name root / Compara / mmseqs protein homology fident≥0.40 & qcov,tcov≥0.50) — flat across same-chrom
+(71.4%) and cross-chrom (69.8%). The 41 unconfirmed are non-coding (lncRNA/snRNA, absent from the protein DB) or
+protein-coding paralogs just under the 0.50 coverage gate; re-checked at the nucleotide level all 41 are
+themselves homologous — **"zero false merges" here means zero by the catalog's OWN homology criterion (a
+self-consistency check), NOT zero against an external segdup map.**
 
 ## Robustness fixes (post-review) — corrected catalog = 152 families
 

@@ -43,7 +43,9 @@ MIN_COV_FRAC="${MIN_COV_FRAC:-0.30}"   # U3 aln length-coverage floor. 0.30 (not
                                        # 90% identity over >=30% length is still a strong,
                                        # conservative paralogy bar (48->62 families on the
                                        # 2-chrom smoke; no flood).
-GUARD_K="${GUARD_K:-1}"                # U5 min primary reads for authentic
+GUARD_K="${GUARD_K:-1}"                # (legacy) min primary reads
+GUARD_K_DECISIVE="${GUARD_K_DECISIVE:-2}"  # U5: min DECISIVE own-copy reads -> authentic
+GUARD_K_TIED="${GUARD_K_TIED:-1}"          # U5: min tied reads -> unresolvable (else phantom)
 # Restrict expensive runs to one chrom for smoke tests (empty = whole genome):
 CHROM_SUBSET="${CHROM_SUBSET:-}"
 

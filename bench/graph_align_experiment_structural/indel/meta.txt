@@ -1,0 +1,11 @@
+LEFT=1000
+RIGHT=1000
+INS=300
+ins_start=1000
+ins_end=1300
+snpL_A=300
+snpL_B=300
+snpR_A=2000
+snpR_B=1700
+lenA=2300
+lenB=2000

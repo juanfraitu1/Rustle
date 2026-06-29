@@ -8,7 +8,8 @@ Run with /home/juanfra/miniforge3/bin/python.
 import pysam
 from collections import defaultdict
 
-BAM = "/home/juanfra/winloci_scratch/GGO.bam"
+BAM = "/home/juanfra/winloci_scratch/GGO_mm.bam"  # the COMPLETE -N50 -p0.1 multimapping BAM (the old
+                                                   # GGO.bam was the undercount; recompute against this)
 OUT = "/home/juanfra/winloci_scratch/denovo_skeletons.tsv"
 MIN_READS = 2
 

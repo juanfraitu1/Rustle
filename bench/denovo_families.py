@@ -17,6 +17,17 @@ Pipeline:
 
 Frames the result as a GENERAL assembler (all transcripts) with a specialized family/copy layer on the
 multi-copy subset. Run with /home/juanfra/miniforge3/bin/python (Bio.Align + numpy). Parallel POA.
+
+⚠ PROVENANCE / SCOPE (read before citing the catalog). This genome-wide catalog (denovo_families.tsv)
+is produced by the SIMILARITY criterion core_recip >= T_CORE (= 0.13), an ARBITRARY threshold. It is
+NOT the principled de-tie READ-CONFLICT-GRAPH family definition (the thesis's interest-I criterion,
+family = clique / connected-component of the read-conflict graph, no similarity threshold). That
+conflict definition exists and is TDD'd, but currently runs only PER-REGION
+(src/rustle/vg_family/denovo_pipeline.rs detect_and_assign over local windows; family_def_readconflict.tsv
+= a 12-pair labelled panel only) and has NEVER been run genome-wide. Consequence: this 0.13 catalog still
+contains the over-merges the conflict criterion is meant to remove (e.g. DNFAM0 = 728 members spanning
+chr1..chrY). When reporting family numbers, state which criterion produced them; the de-tie genome-wide
+catalog is an open TODO.
 """
 import multiprocessing as mp
 import os

@@ -1,0 +1,938 @@
+{
+  "per_gene": {
+    "EEF1A1": {
+      "n_exon": 8,
+      "n_intron": 7,
+      "strand": "-",
+      "phases": [
+        0,
+        0,
+        0,
+        1,
+        0,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        1454,
+        364,
+        108,
+        83,
+        87,
+        89,
+        93
+      ]
+    },
+    "RABL2A": {
+      "n_exon": 10,
+      "n_intron": 9,
+      "strand": "+",
+      "phases": [
+        2,
+        2,
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      "motifs": [
+        "GT-AG",
+        "GC-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GC-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        455,
+        610,
+        4213,
+        1201,
+        827,
+        5450,
+        347,
+        330,
+        166
+      ]
+    },
+    "GPR39": {
+      "n_exon": 2,
+      "n_intron": 1,
+      "strand": "+",
+      "phases": [
+        1
+      ],
+      "motifs": [
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG"
+      ],
+      "ilen": [
+        228339
+      ]
+    },
+    "LYPD1": {
+      "n_exon": 4,
+      "n_intron": 3,
+      "strand": "-",
+      "phases": [
+        1,
+        1,
+        1
+      ],
+      "motifs": [
+        "GC-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GC-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        127,
+        1340,
+        26972
+      ]
+    },
+    "GCA": {
+      "n_exon": 9,
+      "n_intron": 8,
+      "strand": "+",
+      "phases": [
+        0,
+        0,
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        182,
+        32297,
+        5792,
+        4038,
+        276,
+        2148,
+        337,
+        662
+      ]
+    },
+    "KCNH7": {
+      "n_exon": 17,
+      "n_intron": 16,
+      "strand": "-",
+      "phases": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        0,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        1,
+        2,
+        0
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        1676,
+        299123,
+        18751,
+        4966,
+        431,
+        7548,
+        56382,
+        10356,
+        11962,
+        22981,
+        3244,
+        2238,
+        9463,
+        4666,
+        6222,
+        1369
+      ]
+    },
+    "ASDURF": {
+      "n_exon": 4,
+      "n_intron": 3,
+      "strand": "+",
+      "phases": [
+        0,
+        0,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        2287,
+        1426,
+        544
+      ]
+    },
+    "ASNSD1": {
+      "n_exon": 3,
+      "n_intron": 2,
+      "strand": "+",
+      "phases": [
+        0,
+        2
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        176,
+        2505
+      ]
+    },
+    "CASP8": {
+      "n_exon": 9,
+      "n_intron": 8,
+      "strand": "+",
+      "phases": [
+        1,
+        2,
+        0,
+        1,
+        1,
+        0,
+        1,
+        2
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        8065,
+        4737,
+        1027,
+        122,
+        1942,
+        1880,
+        5047,
+        1142
+      ]
+    },
+    "FLACC1": {
+      "n_exon": 17,
+      "n_intron": 16,
+      "strand": "-",
+      "phases": [
+        2,
+        2,
+        0,
+        0,
+        2,
+        0,
+        2,
+        1,
+        0,
+        1,
+        0,
+        0,
+        0,
+        2
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        1421,
+        10830,
+        509,
+        2430,
+        109,
+        1424,
+        2244,
+        1738,
+        11542,
+        213,
+        21219,
+        1528,
+        8216,
+        9453,
+        128,
+        675
+      ]
+    },
+    "CREB1": {
+      "n_exon": 9,
+      "n_intron": 8,
+      "strand": "+",
+      "phases": [
+        0,
+        0,
+        0,
+        2,
+        1,
+        1,
+        2
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        40003,
+        4497,
+        742,
+        6282,
+        2615,
+        4953,
+        2041,
+        19312
+      ]
+    },
+    "METTL21A": {
+      "n_exon": 6,
+      "n_intron": 5,
+      "strand": "-",
+      "phases": [
+        0,
+        1,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        862,
+        2311,
+        22395,
+        3724,
+        11113
+      ]
+    },
+    "LOC129524764": {
+      "n_exon": 1,
+      "n_intron": 0,
+      "strand": "-",
+      "phases": [],
+      "motifs": [],
+      "mclass": [],
+      "ilen": []
+    },
+    "LOC109023808": {
+      "n_exon": 1,
+      "n_intron": 0,
+      "strand": "+",
+      "phases": [],
+      "motifs": [],
+      "mclass": [],
+      "ilen": []
+    },
+    "CNN2": {
+      "n_exon": 7,
+      "n_intron": 6,
+      "strand": "+",
+      "phases": [
+        0,
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        4451,
+        1195,
+        100,
+        2879,
+        169,
+        1186
+      ]
+    },
+    "RFPL1": {
+      "n_exon": 4,
+      "n_intron": 3,
+      "strand": "+",
+      "phases": [
+        1,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        18000,
+        4283,
+        2399
+      ]
+    },
+    "RFPL2": {
+      "n_exon": 5,
+      "n_intron": 4,
+      "strand": "-",
+      "phases": [
+        2,
+        2,
+        1,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        6115,
+        1613,
+        1126,
+        1559
+      ]
+    },
+    "RFPL3": {
+      "n_exon": 3,
+      "n_intron": 2,
+      "strand": "+",
+      "phases": [
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        4285,
+        1807
+      ]
+    },
+    "APOBEC3D": {
+      "n_exon": 7,
+      "n_intron": 6,
+      "strand": "+",
+      "phases": [
+        2,
+        0,
+        1,
+        2,
+        0,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "AT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "other",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        1286,
+        2022,
+        208,
+        3672,
+        2194,
+        224
+      ]
+    },
+    "APOBEC3F": {
+      "n_exon": 7,
+      "n_intron": 6,
+      "strand": "+",
+      "phases": [
+        2,
+        0,
+        1,
+        2,
+        0,
+        1
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        1966,
+        1850,
+        207,
+        3866,
+        2469,
+        223
+      ]
+    },
+    "RABL2B": {
+      "n_exon": 10,
+      "n_intron": 9,
+      "strand": "-",
+      "phases": [
+        2,
+        2,
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      "motifs": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "mclass": [
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG",
+        "GT-AG"
+      ],
+      "ilen": [
+        214,
+        687,
+        2858,
+        1202,
+        827,
+        5415,
+        346,
+        330,
+        166
+      ]
+    }
+  },
+  "rows": [
+    [
+      "RABL2",
+      "real",
+      "RABL2A",
+      "RABL2B",
+      0.9880043620501636,
+      9,
+      9,
+      false,
+      0,
+      1.0,
+      7,
+      1.0,
+      7,
+      true
+    ],
+    [
+      "APOBEC3",
+      "real",
+      "APOBEC3D",
+      "APOBEC3F",
+      0.9016493585827734,
+      6,
+      6,
+      false,
+      0,
+      1.0,
+      6,
+      1.0,
+      4,
+      true
+    ],
+    [
+      "RFPL",
+      "real",
+      "RFPL1",
+      "RFPL2",
+      0.9472140762463344,
+      3,
+      4,
+      false,
+      1,
+      1.0,
+      2,
+      1.0,
+      3,
+      true
+    ],
+    [
+      "RFPL",
+      "real",
+      "RFPL1",
+      "RFPL3",
+      0.9422492401215805,
+      3,
+      2,
+      false,
+      1,
+      1.0,
+      1,
+      1.0,
+      2,
+      true
+    ],
+    [
+      "RFPL",
+      "real",
+      "RFPL2",
+      "RFPL3",
+      0.942481511914544,
+      4,
+      2,
+      false,
+      2,
+      1.0,
+      1,
+      1.0,
+      2,
+      true
+    ],
+    [
+      "EEF1A1_retro",
+      "retrocopy",
+      "EEF1A1",
+      "LOC109023808",
+      0.9827160493827161,
+      7,
+      0,
+      true,
+      7,
+      0.0,
+      0,
+      0.0,
+      0,
+      false
+    ],
+    [
+      "CNN2_retro",
+      "retrocopy",
+      "CNN2",
+      "LOC129524764",
+      0.994328922495274,
+      6,
+      0,
+      true,
+      6,
+      0.0,
+      0,
+      0.0,
+      0,
+      false
+    ],
+    [
+      "ASDURF_ds",
+      "domainshare",
+      "ASDURF",
+      "ASNSD1",
+      1.0,
+      3,
+      2,
+      false,
+      1,
+      0.5,
+      2,
+      1.0,
+      2,
+      false
+    ],
+    [
+      "CASP8_ds",
+      "domainshare",
+      "CASP8",
+      "FLACC1",
+      1.0,
+      8,
+      16,
+      false,
+      8,
+      1.0,
+      1,
+      1.0,
+      8,
+      false
+    ],
+    [
+      "CREB1_ds",
+      "domainshare",
+      "CREB1",
+      "METTL21A",
+      1.0,
+      8,
+      5,
+      false,
+      3,
+      0.6666666666666666,
+      3,
+      1.0,
+      5,
+      false
+    ],
+    [
+      "GPR39_ds",
+      "domainshare",
+      "GPR39",
+      "LYPD1",
+      1.0,
+      1,
+      3,
+      false,
+      2,
+      1.0,
+      1,
+      1.0,
+      1,
+      false
+    ],
+    [
+      "GCA_ds",
+      "domainshare",
+      "GCA",
+      "KCNH7",
+      1.0,
+      8,
+      16,
+      false,
+      8,
+      1.0,
+      1,
+      1.0,
+      8,
+      false
+    ]
+  ]
+}

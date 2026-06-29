@@ -1,0 +1,12 @@
+case	kind	members	airtight	min_id	min_cov	edges	pairs	overlaps
+RABL2	real	RABL2A,RABL2B	1	0.99	0.34	1	1	0
+APOBEC3	real	APOBEC3D,APOBEC3F	1	0.9	0.34	1	1	0
+RFPL	real	RFPL1,RFPL2,RFPL3	1	0.94	0.42	3	3	0
+CASP8~FLACC1 (domain-sharer)	counter	CASP8,FLACC1	1	1.0	0.26	0	1	1
+ASDURF~ASNSD1 (domain-sharer)	counter	ASDURF,ASNSD1	1	1.0	0.13	0	1	1
+CREB1~METTL21A (domain-sharer)	counter	CREB1,METTL21A	1	1.0	0.54	0	1	1
+GPR39~LYPD1 (domain-sharer)	counter	GPR39,LYPD1	1	1.0	0.36	0	1	1
+NDUFS (name-coincidence)	counter	NDUFS1,NDUFS2,NDUFS3	1	0.0	0.0	0	3	0
+NDUFA (name-coincidence)	counter	NDUFA2,NDUFA5,NDUFA10	1	0.0	0.0	0	3	0
+COX (name-coincidence)	counter	COX1,COX2,COX3	1	0.0	0.0	0	3	0
+GBA	pseudo_limitation	GBA1,GBAP1	0	0.0	0.0	0	1	0

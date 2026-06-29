@@ -1,0 +1,71 @@
+{
+  "filters": {
+    "B0 baseline": {
+      "edges": 17410,
+      "dropped": 0,
+      "families": 1460,
+      "maxcomp": 389,
+      "genes_in_fam": 5517,
+      "mega_internal_dropped": 0,
+      "mega_external_dropped": 0,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      }
+    },
+    "Bloci disjoint-loci": {
+      "edges": 17103,
+      "dropped": 307,
+      "families": 1227,
+      "maxcomp": 382,
+      "genes_in_fam": 5017,
+      "mega_internal_dropped": 12,
+      "mega_external_dropped": 295,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      }
+    },
+    "Bsplice retro-filter": {
+      "edges": 12212,
+      "dropped": 5198,
+      "families": 1032,
+      "maxcomp": 238,
+      "genes_in_fam": 3948,
+      "mega_internal_dropped": 196,
+      "mega_external_dropped": 5002,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      }
+    },
+    "Bboth loci&splice": {
+      "edges": 11970,
+      "dropped": 5440,
+      "families": 833,
+      "maxcomp": 238,
+      "genes_in_fam": 3530,
+      "mega_internal_dropped": 200,
+      "mega_external_dropped": 5240,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      }
+    }
+  },
+  "mega_breakup_splice": {
+    "subsizes": [
+      201,
+      140,
+      2
+    ],
+    "singletons": 46,
+    "kept_edges": 1326
+  },
+  "retro_edges": 5198,
+  "retro_id_median": 0.9755713159968479
+}

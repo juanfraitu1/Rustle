@@ -1,0 +1,18 @@
+family	regime	truth_is_family	our_verdict	de_conflict_reads	as_conflict_reads
+RABL2	recent paralog, separate chrom	1	TP	47	190
+AK6	high-identity cross-chrom copy	1	TP	24	13
+CCDC196	high-identity cross-chrom copy	1	TP	24	27
+APOBEC3	diverged paralog (resolvable)	0	TN	0	6
+RFPL	paralog, reads place uniquely	0	TN	0	0
+EEF1A1_retro	processed-pseudogene retrocopy	0	TN	0	3347
+CNN2_retro	processed-pseudogene retrocopy	0	TN	1	121
+ASDURF_ds	domain-sharer (nested genes)	0	TN	0	0
+CASP8_ds	domain-sharer	0	TN	0	0
+CREB1_ds	domain-sharer	0	TN	0	0
+GCA_ds	domain-sharer	0	TN	0	0
+GPR39_ds	domain-sharer	0	TN	0	0
+MAGEA_dn0	co-located array (de-novo loci)	1	TP	103	104
+MAGEA_dn1	co-located array (de-novo loci)	1	TP	83	38
+MAGEA_dn2	co-located array (de-novo loci)	1	TP	303	311
+MAGEA_dn3	co-located array (de-novo loci)	1	TP	75	75
+MAGEA_annot	annotated array genes (resolvable)	0	TN	0	0

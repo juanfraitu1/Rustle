@@ -536,21 +536,17 @@ def build_deck(out_name="family_definition_visual.pptx"):
     bx = s.shapes.add_textbox(Inches(0.7), Inches(2.4), Inches(12), Inches(2.6)); tf = bx.text_frame; tf.word_wrap=True
     p = tf.paragraphs[0]; p.text = "What is a multi-copy gene family?"
     p.font.size = Pt(40); p.font.bold = True; p.font.color.rgb = cNAVY
-    p2 = tf.add_paragraph(); p2.text = "Loci whose reads can't be told apart  (~R)   AND   whose copies share a backbone  (~B)."
+    p2 = tf.add_paragraph(); p2.text = "Copies that share a whole-gene backbone  (~B)  —  a structural fact, expressed or not."
     p2.font.size = Pt(20); p2.font.color.rgb = cTEAL
-    p3 = tf.add_paragraph(); p3.text = "Shown on one real family — the RFPL4A array, 5 tandem copies."
-    p3.font.size = Pt(16); p3.font.color.rgb = cGREY
+    p3 = tf.add_paragraph(); p3.text = "Today: defining the family (~B).   Next meeting: telling the copies apart (identifiability, PSVs)."
+    p3.font.size = Pt(16); p3.font.color.rgb = cORANGE
+    p4 = tf.add_paragraph(); p4.text = "Illustrated on one real family — the RFPL4A array, 5 tandem copies."
+    p4.font.size = Pt(14); p4.font.color.rgb = cGREY
 
-    fig_slide("Reads can't tell the copies apart  →  the relation ~R", "fig1_reads.png",
-              "5 copies, all expressed; 32 reads fit several copies equally well (orange) — each such read links two copies.")
-    fig_slide("How a read aligns: the number 'de', and what a 'tie' is", "fig4_align.png",
-              "minimap2 aligns the read to each copy; de = differences per base. Two copies within Δ of each other = a tie = one ~R vote.")
-    fig_slide("Sum the exons of all isoforms  →  one copy model", "fig2_exonunion.png",
-              "A copy's many isoforms (grey) sum to one exon-union (orange) — so splicing can't masquerade as extra copies.")
-    fig_slide("Aligning the copies: a dot-plot  →  backbone or not (~B)", "fig5_dotplot.png",
-              "A SECOND, separate minimap2 run aligns copy-vs-copy (not the read 'de' tag): diagonal = shared backbone (~B ✓); bridge = none (~B ✗).")
-    fig_slide("Ties → edges → graph (~R), confirmed by the backbone (~B)  =  FAMILY", "fig3_graph.png",
-              "Left: every pair ties AND shares a backbone → one 5-copy family.   Right: a bridge ties but shares no backbone → cut.")
+    fig_slide("From reads to a copy model: sum the exons of all isoforms", "fig2_exonunion.png",
+              "A copy's many isoforms (grey) sum to one exon-union (orange) = its copy model — so splicing can't masquerade as extra copies. This is what ~B aligns.")
+    fig_slide("The family test: align the copy models  →  shared backbone? (~B)", "fig5_dotplot.png",
+              "Copy-vs-copy minimap2 (not the read 'de' tag): a diagonal over the whole of each = shared backbone (~B ✓, one family); a bridge with no diagonal = ~B ✗ (cut).")
 
     # definition (one line, big)
     s = prs.slides.add_slide(prs.slide_layouts[6])
@@ -559,17 +555,51 @@ def build_deck(out_name="family_definition_visual.pptx"):
     tb.text_frame.paragraphs[0].font.size = Pt(26); tb.text_frame.paragraphs[0].font.bold=True; tb.text_frame.paragraphs[0].font.color.rgb=cNAVY
     bx = s.shapes.add_textbox(Inches(0.8), Inches(1.8), Inches(11.7), Inches(4)); tf = bx.text_frame; tf.word_wrap=True
     for i,(t,c,sz) in enumerate([
-        ("A multi-copy gene family = a set of de-novo loci that is", cNAVY, 22),
-        ("read-coupled (~R: ≥3 reads tie each link)   AND   backbone-connected (~B: copies align reciprocally).", cTEAL, 20),
-        ("", cGREY, 10),
-        ("Built only from reads:  align → loci → count ties → ~R graph → components → exon-union copies → align → ~B → family.", cGREY, 15),
+        ("A multi-copy gene family = a set of gene loci whose copies", cNAVY, 22),
+        ("share a WHOLE-GENE backbone (~B: copy models align reciprocally).", cTEAL, 21),
+        ("", cGREY, 8),
+        ("A structural property — it holds whether or not the family is expressed.", cNAVY, 17),
+        ("Expression (observed / silent) and identifiability (can we resolve the copies?) are LABELS, not gates.", cGREY, 15),
+        ("Identifiability — telling the copies apart — is the NEXT step (PSVs, copy-assignment).", cORANGE, 15),
     ]):
-        p = tf.paragraphs[0] if i==0 else tf.add_paragraph(); p.text=t; p.font.size=Pt(sz); p.font.color.rgb=c; p.space_after=Pt(10)
-        if i<2: p.font.bold=True
+        p = tf.paragraphs[0] if i==0 else tf.add_paragraph(); p.text=t; p.font.size=Pt(sz); p.font.color.rgb=c; p.space_after=Pt(9)
+        if i<2 or i==5: p.font.bold=True
 
     # results table
     fig_slide("Results: gene families found  (precision / recall)", "fig9_results.png",
               "On the 17-candidate panel with hand-checked ground truth: precision = recall = 1.00 (0 false families, 0 missed).")
+
+    # ---- Part 2: the complete family definition (~B); identifiability is next meeting ----
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    bx = s.shapes.add_textbox(Inches(0.8), Inches(2.5), Inches(11.7), Inches(2.5)); tf = bx.text_frame; tf.word_wrap=True
+    p = tf.paragraphs[0]; p.text = "Part 2 — the complete family definition (~B)"
+    p.font.size = Pt(34); p.font.bold = True; p.font.color.rgb = cNAVY
+    p2 = tf.add_paragraph(); p2.text = "~B DEFINES the family · all families, expressed or silent · good vs bad alignment · the named families it covers"
+    p2.font.size = Pt(16); p2.font.color.rgb = cGREY
+    p3 = tf.add_paragraph(); p3.text = "A family is a structural fact (~B): ~1,000 families, ~half expressed, ~half silent. Identifiability — resolving the copies — is the NEXT meeting (PSVs)."
+    p3.font.size = Pt(13); p3.font.color.rgb = cORANGE; p3.font.bold = True
+    fig_slide("The complete definition — ~B defines the family", "fig_complete.png",
+              "~B (copies share a whole-gene backbone) DEFINES the family — a structural fact. Expression (495 seen / 518 silent) and identifiability (can we resolve the copies?) are LABELS, not gates. Identifiability is next meeting.")
+    fig_slide("Good vs bad ~B alignment — real dot-plots + the criteria", "fig_alncrit.png",
+              "~B is a copy-vs-copy alignment. GOOD = one continuous diagonal over ≥30% of BOTH at ≥~85% id (array copies). BAD = a domain-only partial diagonal (CD200R1~CD200R1L), scatter, or — below ~80% id — no alignment (OCLN~SEPTIN7).")
+    fig_slide("From pairwise ~B to the family — a clique, not a chain", "fig_clique.png",
+              "~B is pairwise; the family is the set whose members ALL mutually share a backbone (a clique / dense cluster). 81% of families are full cliques. A bridge member shares with only PART → it never joins the clique → cut, so a single bridge can't merge two families.")
+    fig_slide("Real families the definition covers", "fig_gallery.png",
+              "Validated named families — tandem arrays (RFPL4A, MAGEA), dispersed paralogs (RABL2, APOBEC3, AK6), immune loci — and the bridges it correctly excludes. Each a real paralog set.")
+
+    # ---- Next meeting preview: identifiability (resolving the copies) ----
+    s = prs.slides.add_slide(prs.slide_layouts[6])
+    bx = s.shapes.add_textbox(Inches(0.8), Inches(2.5), Inches(11.7), Inches(2.5)); tf = bx.text_frame; tf.word_wrap=True
+    p = tf.paragraphs[0]; p.text = "Next meeting — identifiability: resolving the copies"
+    p.font.size = Pt(34); p.font.bold = True; p.font.color.rgb = cORANGE
+    p2 = tf.add_paragraph(); p2.text = "Today we DEFINED the families (~B). Next: within a family, which copies can reads actually tell apart — and how do we assign the ambiguous reads?"
+    p2.font.size = Pt(17); p2.font.color.rgb = cGREY
+    p3 = tf.add_paragraph(); p3.text = "The tool: PSVs (copy-distinguishing variants) + copy-assignment. A preview of the read signal follows."
+    p3.font.size = Pt(14); p3.font.color.rgb = cNAVY; p3.font.bold = True
+    fig_slide("Preview: reads that can't tell the copies apart  (~R)", "fig1_reads.png",
+              "Within a family, some reads fit several copies equally well (orange) — these are the reads copy-assignment must resolve. ~R measures how confusable the copies are.  [next meeting]")
+    fig_slide("Preview: the read signal — 'de' and a 'tie'", "fig4_align.png",
+              "minimap2's de = differences per base; two copies within Δ of each other on a read = a tie = read-confusable. This identifiability signal is where PSVs come in.  [next meeting]")
 
     # ---- appendix: "how it actually works" (for the literal questions) ----
     s = prs.slides.add_slide(prs.slide_layouts[6])
@@ -600,4 +630,8 @@ def build_deck(out_name="family_definition_visual.pptx"):
 if __name__ == "__main__":
     fig1(); fig2(); fig3(); fig4(); fig5(); fig_pair(); fig7(); fig8(); fig9()
     print("[+] wrote fig1..fig9 + fig_pair")
+    # Part 2 figures (reads-only definition at scale + orthogonal validation)
+    import make_definition_genomescale as gs
+    gs.fig_complete(); gs.fig_alncrit(); gs.fig_clique(); gs.fig_gallery()
+    print("[+] wrote Part-2 figures (complete, alncrit, clique, gallery)")
     build_deck()

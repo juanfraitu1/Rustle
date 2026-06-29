@@ -1,0 +1,32 @@
+label	gene_a	gene_b	same_chrom	n_shared	n_as	n_nm	n_de	edge_as	edge_nm	edge_de
+paralog	APOBEC3D	APOBEC3F	1	18	6	0	3	1	0	1
+paralog	RFPL1	RFPL2	1	0	0	0	0	0	0	0
+paralog	RFPL1	RFPL3	1	0	0	0	0	0	0	0
+paralog	RFPL2	RFPL3	1	0	0	0	0	0	0	0
+paralog	RABL2A	RABL2B	0	195	190	191	195	1	1	1
+domain-sharer	ASDURF	ASNSD1	1	942	0	0	0	0	0	0
+domain-sharer	CASP8	FLACC1	1	104	0	0	0	0	0	0
+domain-sharer	CCDC188	ZDHHC8	1	12	0	0	0	0	0	0
+domain-sharer	CDPF1	PPARA	1	33	0	0	0	0	0	0
+domain-sharer	CREB1	METTL21A	1	192	0	0	0	0	0	0
+domain-sharer	GCA	KCNH7	1	429	0	0	0	0	0	0
+domain-sharer	GPR39	LYPD1	1	17	0	0	0	0	0	0
+crosschrom	ADH5	LOC101125574	0	3	3	0	0	1	0	0
+crosschrom	AK6	LOC115934278	0	24	13	22	24	1	1	1
+crosschrom	ATP5MF	LOC101136485	0	0	0	0	0	0	0	0
+crosschrom	CCDC196	LOC129526440	0	27	27	26	27	1	1	1
+crosschrom	CNN2	LOC129524764	0	127	121	125	125	1	1	1
+crosschrom	EEF1A1	LOC109023808	0	3410	3347	3359	3384	1	1	1
+crosschrom	ELF2	LOC115933780	0	0	0	0	0	0	0	0
+
+# arrays
+family	criterion	n_members	n_edges	n_components	connected
+MAGEA	as	5	0	5	0
+MAGEA	nm	5	0	5	0
+MAGEA	de	5	0	5	0
+PRAMEF	as	4	0	4	0
+PRAMEF	nm	4	0	4	0
+PRAMEF	de	4	0	4	0
+XAGE	as	3	0	3	0
+XAGE	nm	3	0	3	0
+XAGE	de	3	0	3	0

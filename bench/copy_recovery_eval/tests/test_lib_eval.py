@@ -74,3 +74,32 @@ def test_head_to_head_splits_authentic_and_phantom():
     assert res["rustle_only_fsm_phantom"] == ["rna-B1"]
     assert res["n_win"] == 1
     assert res["n_phantom"] == 1
+
+
+def test_classify_authenticity_three_buckets():
+    # decisive own-copy reads -> authentic
+    assert lib_eval.classify_authenticity(5, 0, k_decisive=2) == lib_eval.AUTHENTIC
+    assert lib_eval.classify_authenticity(2, 0, k_decisive=2) == lib_eval.AUTHENTIC
+    # not enough decisive but tied reads exist -> unresolvable (NOT phantom)
+    assert lib_eval.classify_authenticity(1, 30, k_decisive=2) == lib_eval.UNRESOLVABLE
+    assert lib_eval.classify_authenticity(0, 1, k_decisive=2) == lib_eval.UNRESOLVABLE
+    # no own evidence and no ties (sister spillover only) -> phantom
+    assert lib_eval.classify_authenticity(0, 0, k_decisive=2) == lib_eval.PHANTOM
+    assert lib_eval.classify_authenticity(1, 0, k_decisive=2) == lib_eval.PHANTOM
+
+
+def test_head_to_head_three_way_status():
+    rustle = {
+        "A1": {"fsm": True, "ism": False},   # authentic -> win
+        "B1": {"fsm": True, "ism": False},   # phantom
+        "U1": {"fsm": True, "ism": False},   # unresolvable
+    }
+    stringtie = {}
+    status = {"A1": lib_eval.AUTHENTIC, "B1": lib_eval.PHANTOM, "U1": lib_eval.UNRESOLVABLE}
+    fam = {"A1": "FAM1", "B1": "FAM2", "U1": "FAM3"}
+    res = lib_eval.head_to_head(rustle, stringtie, status, fam)
+    assert res["rustle_only_fsm_authentic"] == ["A1"]
+    assert res["rustle_only_fsm_phantom"] == ["B1"]
+    assert res["rustle_only_fsm_unresolvable"] == ["U1"]
+    assert (res["n_win"], res["n_phantom"], res["n_unresolvable"]) == (1, 1, 1)
+    assert res["families_won"] == ["FAM1"]

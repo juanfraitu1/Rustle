@@ -242,6 +242,81 @@ def validate_sim5x():
     return rows
 
 
+def crossval_sim5x():
+    """HELD-OUT-PSV CROSS-VALIDATION (rebuts the O2 circularity objection).
+
+    The silver-standard "accuracy" on real data is circular: it scores the gate against minimap2's primary,
+    and the gate uses the same PSVs that defined the copies. This test breaks that loop WITHOUT ground truth:
+    for each read, split the distinguishing PSV columns it spans into two DISJOINT halves (even/odd by column
+    index) -- TRAIN and TEST. Assign the read using TRAIN columns only, then ask whether the TEST columns,
+    which played no role in the call, independently rank the same copy first ("held-out confirmation"). High
+    confirmation means the call generalizes across disjoint evidence -- it is not memorizing the PSVs that
+    built the profile. On sim5x we additionally have ground truth, so we report TRAIN-only accuracy too.
+    """
+    print("HELD-OUT-PSV cross-validation (assign on TRAIN half, confirm on disjoint TEST half):")
+    print(f"{'K':>2} {'reads_CV':>8} {'heldout_confirm%':>16} {'chance(1/K)%':>13} {'enrich':>7} {'train_acc%(truth)':>17}")
+    rows = []
+    for K in (2, 4, 8):
+        ref = f"{SIM5X}/sim5x_K{K}.ref.fa"
+        bam = f"{SIM5X}/sim5x_K{K}.bam"
+        if not os.path.exists(bam):
+            continue
+        fa = pysam.FastaFile(ref)
+        copies, unit = sim5x_copies(fa, K)
+        seqs = read_copy_seqs(fa, copies)
+        off2gen = {c[0]: (lambda cp: (lambda off: seqoff_to_genomic(cp, off)))(c) for c in copies}
+        cols = discover_psvs(copies, seqs, off2gen)
+        copy_vecs = {c[0]: {} for c in copies}
+        copy_gpos = {c[0]: {} for c in copies}
+        for j, rec in enumerate(cols):
+            for name, v in rec.items():
+                if v is not None:
+                    copy_vecs[name][j] = v[1]
+                    copy_gpos[name][j] = v[0]
+        # decisive columns = columns where >=2 distinct alleles among copies
+        decisive = {j for j in range(len(cols))
+                    if len({copy_vecs[n].get(j) for n in copy_vecs if copy_vecs[n].get(j) is not None}) > 1}
+
+        def argmax_set(obs):
+            _, _, _, _, logL = assign_read(obs, copy_vecs)
+            top = max(logL.values())
+            return {n for n, v in logL.items() if abs(v - top) < 1e-9}
+
+        b = pysam.AlignmentFile(bam, "rb")
+        n_cv = confirm = train_correct = 0
+        for aln in b.fetch():
+            if aln.is_secondary or aln.is_supplementary or aln.is_unmapped:
+                continue
+            true_c = int(aln.query_name.split("_c")[1].split("_")[0])
+            mapped_c = aln.reference_start // unit
+            mc = f"copy{mapped_c}"
+            base_at, _ = read_bases_and_introns(aln, set(copy_gpos[mc].values()))
+            gpos2col = {g: j for j, g in copy_gpos[mc].items()}
+            obs = {gpos2col[g]: base_at[g] for g in base_at if g in gpos2col}
+            # spanned DECISIVE columns, deterministically ordered, split even/odd
+            span_dec = sorted(c for c in obs if c in decisive and obs[c] is not None)
+            if len(span_dec) < 2:
+                continue                      # need >=1 train AND >=1 test decisive column
+            train = {c: obs[c] for i, c in enumerate(span_dec) if i % 2 == 0}
+            test = {c: obs[c] for i, c in enumerate(span_dec) if i % 2 == 1}
+            if not train or not test:
+                continue
+            n_cv += 1
+            best_train, _, _, _, _ = assign_read(train, copy_vecs)
+            train_correct += (int(best_train.replace("copy", "")) == true_c)
+            # held-out confirmation: TEST columns (unused in the call) rank best_train first (allow ties)
+            confirm += (best_train in argmax_set(test))
+        cr = (100 * confirm / n_cv) if n_cv else float("nan")
+        ta = (100 * train_correct / n_cv) if n_cv else float("nan")
+        chance = 100.0 / K
+        enrich = cr / chance if chance else float("nan")
+        print(f"{K:>2} {n_cv:>8} {cr:>15.1f}% {chance:>12.1f}% {enrich:>6.1f}x {ta:>16.1f}%")
+        rows.append((K, n_cv, cr, chance, ta))
+    print("\nheldout_confirm% = of reads, the DISJOINT held-out PSVs independently rank the TRAIN-assigned copy")
+    print("first (no ground truth used) -> non-circular. train_acc% = TRAIN-only call vs the simulated true copy.")
+    return rows
+
+
 # --------------------------------------------------------------------------- real GGO families
 GGO_FA = "/home/juanfra/winloci_scratch/GGO.fasta"
 GGO_BAM = "/home/juanfra/winloci_scratch/GGO.bam"
@@ -484,13 +559,15 @@ def validate_real(limit=25):
     print(f"  PSV+junction:  resolvable={100*agg['resolvable_j']/N:.0f}%  assigned={100*agg['assigned_j']/N:.0f}%"
           f"  (+{agg['junction_only']:,} reads resolved by a copy-specific junction where PSVs alone could not)")
     print(f"  unique-mapper agreement (PSV+junction): {agg['uniq_agree_j']:,}/{agg['uniq_j']:,} "
-          f"({100*agg['uniq_agree_j']/max(agg['uniq_j'],1):.1f}%)  <- silver-standard accuracy")
+          f"({100*agg['uniq_agree_j']/max(agg['uniq_j'],1):.1f}%)  <- silver = CIRCULAR self-consistency w/ minimap2 primary, NOT accuracy")
 
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "sim5x"
     if mode == "sim5x":
         validate_sim5x()
+    elif mode == "crossval":
+        crossval_sim5x()
     elif mode == "real":
         validate_real()
     else:

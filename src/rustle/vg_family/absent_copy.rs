@@ -203,10 +203,21 @@ pub fn admit_candidate(
 // minimap2 remap helper
 // ---------------------------------------------------------------------------
 
-/// Shell minimap2 (`-cx asm20 --eqx`) to remap `query_seq` against `fasta_path`.
+/// Shell minimap2 (`-cx splice --eqx`) to remap `query_seq` against `fasta_path`.
+/// The query is a SPLICED copy consensus (exons concatenated); the target genome contains introns, so the
+/// SPLICED preset (`-x splice`) is required — `asm20` (non-spliced) cannot chain across real multi-kb introns
+/// and would fail to align a genuine multi-exon copy (routing real copies wrongly to DnaNeeds). With splice,
+/// the `de:f:` divergence reflects the EXONIC divergence (introns are spliced out, not counted as mismatch).
 /// Returns `Some(identity)` for the best alignment (by alignment block length), `None` if there
 /// is no alignment.  Identity is derived from the `de:f:<x>` divergence tag when present
 /// (`identity = 1 − x`), falling back to `matches / aln_block_len` (PAF cols 10/11).
+///
+/// PERFORMANCE (H4): a genome-wide O4 pass calls this once per candidate copy, and minimap2 re-indexes
+/// the whole genome FASTA on every call (~seconds for a 3 Gb gorilla genome). Set `RUSTLE_ABSENT_MMI` to a
+/// pre-built splice index (`minimap2 -x splice -d genome.splice.mmi genome.fasta`) and it is used as the
+/// target instead of re-reading the FASTA — minimap2 loads the `.mmi` directly, collapsing per-call indexing
+/// to a one-time cost. When the env var is unset the target is `fasta_path` exactly as before (byte-identical
+/// behaviour; the `.mmi` must be built with the SAME `-x splice` preset or minimap2's k/w would mismatch).
 fn remap_identity_minimap2(query_seq: &[u8], fasta_path: &str) -> Option<f64> {
     use std::io::Write;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -236,9 +247,12 @@ fn remap_identity_minimap2(query_seq: &[u8], fasta_path: &str) -> Option<f64> {
         q.write_all(b"\n").ok()?;
     }
 
+    // Use a pre-built splice `.mmi` when provided (one-time index instead of per-call genome re-read);
+    // defaults to `fasta_path` so behaviour is byte-identical when the env var is unset (H4).
+    let target = std::env::var("RUSTLE_ABSENT_MMI").unwrap_or_else(|_| fasta_path.to_string());
     let out = std::process::Command::new(&mm2)
-        .args(["-cx", "asm20", "--eqx", "--secondary=no", "-t", "1"])
-        .arg(fasta_path)
+        .args(["-cx", "splice", "--eqx", "--secondary=no", "-t", "1"])
+        .arg(&target)
         .arg(&qpath)
         .output()
         .ok()?;
@@ -264,7 +278,7 @@ fn remap_identity_minimap2(query_seq: &[u8], fasta_path: &str) -> Option<f64> {
         if aln_block_len == 0 {
             continue;
         }
-        // Prefer the de:f: divergence tag (more accurate for asm20 output).
+        // Prefer the de:f: divergence tag (exonic divergence under the spliced alignment).
         let id = if let Some(de_str) = f.iter().find_map(|x| x.strip_prefix("de:f:")) {
             let div: f64 = de_str.parse().unwrap_or(1.0);
             1.0 - div

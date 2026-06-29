@@ -1264,8 +1264,10 @@ mod tests {
     /// oracle): each read name encodes its TRUE copy, so we can report assignment accuracy. K = PSVs per
     /// copy (the identifiability ladder): K=0 has no PSVs → all tied; K>=2 → ~100% accurate. Ignored by
     /// default; run in release with RUSTLE_SIM5X_DIR set.
+    // PINNED in CI (P3): runs in the normal suite. Early-returns (passes) when RUSTLE_SIM5X_DIR is unset, so
+    // it is a no-op without the data; when the sim5x dir IS present it ASSERTS the identifiability ladder
+    // invariants (K=0 -> 100% tied; K>=2 -> acc|assigned >= 0.99). This is the non-circular accuracy point.
     #[test]
-    #[ignore = "needs sim5x data via RUSTLE_SIM5X_DIR"]
     fn smoke_sim5x_ground_truth() {
         use crate::genome::GenomeIndex;
         use crate::vg_family::denovo_assemble::aligned_reads_from_bam;
@@ -1344,6 +1346,21 @@ mod tests {
                 acc(corr_argmax, resolvable),
                 pct(tied),
             );
+            // PINNED INVARIANTS (the identifiability ladder; assert when sim5x data is present):
+            //   K=0  -> exonically identical, no PSVs => 100% Tied, 0 assigned.
+            //   K>=2 -> reads span >=2 distinguishing PSVs => near-perfect accuracy on the ASSIGNED reads.
+            if n > 0 {
+                if k == 0 {
+                    assert_eq!(resolvable, 0, "sim5x K=0 must be 100% tied (no PSVs); got {resolvable} resolvable / {n}");
+                    assert_eq!(assigned, 0, "sim5x K=0 must assign 0 reads; got {assigned}");
+                } else if k >= 2 && assigned > 0 {
+                    let acc_assigned = corr_assigned as f64 / assigned as f64;
+                    assert!(
+                        acc_assigned >= 0.99,
+                        "sim5x K={k}: acc|assigned {acc_assigned:.4} < 0.99 ({corr_assigned}/{assigned} correct)"
+                    );
+                }
+            }
         }
     }
 

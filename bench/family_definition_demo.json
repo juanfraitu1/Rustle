@@ -1,0 +1,346 @@
+{
+ "operating_point": {
+  "delta": 0.005,
+  "de_max": 0.05,
+  "min_reads": 3
+ },
+ "confusion": {
+  "tp": 7,
+  "tn": 10,
+  "fp": 0,
+  "fn": 0
+ },
+ "de_components": [
+  [
+   "AK6",
+   "LOC115934278"
+  ],
+  [
+   "CCDC196",
+   "LOC129526440"
+  ],
+  [
+   "MAGEA9",
+   "MAGd0a",
+   "MAGd0b"
+  ],
+  [
+   "MAGd1a",
+   "MAGd1b"
+  ],
+  [
+   "MAGd2a",
+   "MAGd2b"
+  ],
+  [
+   "MAGd3a",
+   "MAGd3b"
+  ],
+  [
+   "RABL2A",
+   "RABL2B"
+  ]
+ ],
+ "as_components": [
+  [
+   "AK6",
+   "LOC115934278"
+  ],
+  [
+   "APOBEC3D",
+   "APOBEC3F"
+  ],
+  [
+   "CCDC196",
+   "LOC129526440"
+  ],
+  [
+   "CNN2",
+   "LOC129524764"
+  ],
+  [
+   "EEF1A1",
+   "LOC109023808"
+  ],
+  [
+   "MAGEA9",
+   "MAGd0a",
+   "MAGd0b"
+  ],
+  [
+   "MAGd1a",
+   "MAGd1b"
+  ],
+  [
+   "MAGd2a",
+   "MAGd2b"
+  ],
+  [
+   "MAGd3a",
+   "MAGd3b"
+  ],
+  [
+   "RABL2A",
+   "RABL2B"
+  ]
+ ],
+ "rows": [
+  {
+   "name": "RABL2",
+   "regime": "recent paralog, separate chrom",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 47,
+   "as_reads": 190
+  },
+  {
+   "name": "AK6",
+   "regime": "high-identity cross-chrom copy",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 24,
+   "as_reads": 13
+  },
+  {
+   "name": "CCDC196",
+   "regime": "high-identity cross-chrom copy",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 24,
+   "as_reads": 27
+  },
+  {
+   "name": "APOBEC3",
+   "regime": "diverged paralog (resolvable)",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 6
+  },
+  {
+   "name": "RFPL",
+   "regime": "paralog, reads place uniquely",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  },
+  {
+   "name": "EEF1A1_retro",
+   "regime": "processed-pseudogene retrocopy",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 3347
+  },
+  {
+   "name": "CNN2_retro",
+   "regime": "processed-pseudogene retrocopy",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 1,
+   "as_reads": 121
+  },
+  {
+   "name": "ASDURF_ds",
+   "regime": "domain-sharer (nested genes)",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  },
+  {
+   "name": "CASP8_ds",
+   "regime": "domain-sharer",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  },
+  {
+   "name": "CREB1_ds",
+   "regime": "domain-sharer",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  },
+  {
+   "name": "GCA_ds",
+   "regime": "domain-sharer",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  },
+  {
+   "name": "GPR39_ds",
+   "regime": "domain-sharer",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  },
+  {
+   "name": "MAGEA_dn0",
+   "regime": "co-located array (de-novo loci)",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 103,
+   "as_reads": 104
+  },
+  {
+   "name": "MAGEA_dn1",
+   "regime": "co-located array (de-novo loci)",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 83,
+   "as_reads": 38
+  },
+  {
+   "name": "MAGEA_dn2",
+   "regime": "co-located array (de-novo loci)",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 303,
+   "as_reads": 311
+  },
+  {
+   "name": "MAGEA_dn3",
+   "regime": "co-located array (de-novo loci)",
+   "truth": true,
+   "linked": true,
+   "verdict": "TP",
+   "de_reads": 75,
+   "as_reads": 75
+  },
+  {
+   "name": "MAGEA_annot",
+   "regime": "annotated array genes (resolvable)",
+   "truth": false,
+   "linked": false,
+   "verdict": "TN",
+   "de_reads": 0,
+   "as_reads": 0
+  }
+ ],
+ "pair_counts": {
+  "AK6~LOC115934278": {
+   "shared": 24,
+   "n_de": 24,
+   "n_as": 13,
+   "both_mapq0": 1
+  },
+  "APOBEC3D~APOBEC3F": {
+   "shared": 18,
+   "n_de": 0,
+   "n_as": 6,
+   "both_mapq0": 0
+  },
+  "ASDURF~ASNSD1": {
+   "shared": 942,
+   "n_de": 0,
+   "n_as": 0,
+   "both_mapq0": 0
+  },
+  "CASP8~FLACC1": {
+   "shared": 104,
+   "n_de": 0,
+   "n_as": 0,
+   "both_mapq0": 0
+  },
+  "CCDC196~LOC129526440": {
+   "shared": 27,
+   "n_de": 24,
+   "n_as": 27,
+   "both_mapq0": 0
+  },
+  "CNN2~LOC129524764": {
+   "shared": 127,
+   "n_de": 1,
+   "n_as": 121,
+   "both_mapq0": 0
+  },
+  "CREB1~METTL21A": {
+   "shared": 192,
+   "n_de": 0,
+   "n_as": 0,
+   "both_mapq0": 0
+  },
+  "EEF1A1~LOC109023808": {
+   "shared": 3410,
+   "n_de": 0,
+   "n_as": 3347,
+   "both_mapq0": 0
+  },
+  "GCA~KCNH7": {
+   "shared": 429,
+   "n_de": 0,
+   "n_as": 0,
+   "both_mapq0": 0
+  },
+  "GPR39~LYPD1": {
+   "shared": 17,
+   "n_de": 0,
+   "n_as": 0,
+   "both_mapq0": 0
+  },
+  "MAGEA9~MAGd0a": {
+   "shared": 104,
+   "n_de": 103,
+   "n_as": 104,
+   "both_mapq0": 102
+  },
+  "MAGEA9~MAGd0b": {
+   "shared": 104,
+   "n_de": 0,
+   "n_as": 0,
+   "both_mapq0": 0
+  },
+  "MAGd0a~MAGd0b": {
+   "shared": 104,
+   "n_de": 103,
+   "n_as": 104,
+   "both_mapq0": 102
+  },
+  "MAGd1a~MAGd1b": {
+   "shared": 101,
+   "n_de": 83,
+   "n_as": 38,
+   "both_mapq0": 1
+  },
+  "MAGd2a~MAGd2b": {
+   "shared": 311,
+   "n_de": 303,
+   "n_as": 311,
+   "both_mapq0": 302
+  },
+  "MAGd3a~MAGd3b": {
+   "shared": 75,
+   "n_de": 75,
+   "n_as": 75,
+   "both_mapq0": 75
+  },
+  "RABL2A~RABL2B": {
+   "shared": 195,
+   "n_de": 47,
+   "n_as": 190,
+   "both_mapq0": 44
+  }
+ }
+}

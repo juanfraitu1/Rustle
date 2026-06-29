@@ -24,10 +24,13 @@ for arm in stringtie rustle_vg; do
     --universe "$OUTDIR/universe.tsv" --out "$OUTDIR/${arm}_recovery.tsv"
 done
 
-# U5 — authenticity guard (rustle-VG recoveries only).
+# U5 — authenticity guard (rustle-VG recoveries only): decisive own-copy evidence
+# vs sister copies -> authentic / unresolvable / phantom.
 $PY "$D/50_authenticity_guard.py" --bam "$BAM" \
   --recovery "$OUTDIR/rustle_vg_recovery.tsv" --exons "$OUTDIR/exons.tsv" \
-  --k "$GUARD_K" --out "$OUTDIR/authenticity.tsv"
+  --universe "$OUTDIR/universe.tsv" \
+  --k-decisive "$GUARD_K_DECISIVE" --k-tied "$GUARD_K_TIED" \
+  --out "$OUTDIR/authenticity.tsv"
 
 # U6 — head-to-head + report.
 $PY "$D/60_headtohead.py" \

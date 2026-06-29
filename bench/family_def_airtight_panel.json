@@ -1,0 +1,136 @@
+{
+  "rows": [
+    {
+      "case": "RABL2",
+      "kind": "real",
+      "airtight": true,
+      "pres": 2,
+      "tot": 2,
+      "mn_id": 0.99,
+      "mn_cov": 0.34,
+      "n_edge": 1,
+      "n_pairs": 1,
+      "n_overlap": 0
+    },
+    {
+      "case": "APOBEC3",
+      "kind": "real",
+      "airtight": true,
+      "pres": 2,
+      "tot": 2,
+      "mn_id": 0.9,
+      "mn_cov": 0.34,
+      "n_edge": 1,
+      "n_pairs": 1,
+      "n_overlap": 0
+    },
+    {
+      "case": "RFPL",
+      "kind": "real",
+      "airtight": true,
+      "pres": 3,
+      "tot": 3,
+      "mn_id": 0.94,
+      "mn_cov": 0.42,
+      "n_edge": 3,
+      "n_pairs": 3,
+      "n_overlap": 0
+    },
+    {
+      "case": "CASP8~FLACC1 (domain-sharer)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 2,
+      "tot": 2,
+      "mn_id": 1.0,
+      "mn_cov": 0.26,
+      "n_edge": 0,
+      "n_pairs": 1,
+      "n_overlap": 1
+    },
+    {
+      "case": "ASDURF~ASNSD1 (domain-sharer)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 2,
+      "tot": 2,
+      "mn_id": 1.0,
+      "mn_cov": 0.13,
+      "n_edge": 0,
+      "n_pairs": 1,
+      "n_overlap": 1
+    },
+    {
+      "case": "CREB1~METTL21A (domain-sharer)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 2,
+      "tot": 2,
+      "mn_id": 1.0,
+      "mn_cov": 0.54,
+      "n_edge": 0,
+      "n_pairs": 1,
+      "n_overlap": 1
+    },
+    {
+      "case": "GPR39~LYPD1 (domain-sharer)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 2,
+      "tot": 2,
+      "mn_id": 1.0,
+      "mn_cov": 0.36,
+      "n_edge": 0,
+      "n_pairs": 1,
+      "n_overlap": 1
+    },
+    {
+      "case": "NDUFS (name-coincidence)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 3,
+      "tot": 3,
+      "mn_id": 0.0,
+      "mn_cov": 0.0,
+      "n_edge": 0,
+      "n_pairs": 3,
+      "n_overlap": 0
+    },
+    {
+      "case": "NDUFA (name-coincidence)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 3,
+      "tot": 3,
+      "mn_id": 0.0,
+      "mn_cov": 0.0,
+      "n_edge": 0,
+      "n_pairs": 3,
+      "n_overlap": 0
+    },
+    {
+      "case": "COX (name-coincidence)",
+      "kind": "counter",
+      "airtight": true,
+      "pres": 3,
+      "tot": 3,
+      "mn_id": 0.0,
+      "mn_cov": 0.0,
+      "n_edge": 0,
+      "n_pairs": 3,
+      "n_overlap": 0
+    },
+    {
+      "case": "GBA",
+      "kind": "pseudo_limitation",
+      "airtight": false,
+      "pres": 1,
+      "tot": 2,
+      "mn_id": 0.0,
+      "mn_cov": 0.0,
+      "n_edge": 0,
+      "n_pairs": 1,
+      "n_overlap": 0
+    }
+  ]
+}

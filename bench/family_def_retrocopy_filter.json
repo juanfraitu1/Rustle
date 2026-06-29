@@ -1,0 +1,15 @@
+{
+  "provenance": {
+    "filter_retrocopy": true,
+    "total_homology_edges": 17410,
+    "retrocopy_dropped": 1931,
+    "both_intronless_kept": 3267,
+    "both_spliced_kept": 12212,
+    "unknown_kept": 0
+  },
+  "families_pre": 1460,
+  "families_post": 1216,
+  "maxcomp_pre": 389,
+  "maxcomp_post": 238,
+  "panel_all_connected": true
+}

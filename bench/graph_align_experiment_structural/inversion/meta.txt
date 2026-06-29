@@ -1,0 +1,6 @@
+LEFT=800
+INV=200
+RIGHT=800
+inv_start=800
+inv_end=1000
+snp_positions=200,1600

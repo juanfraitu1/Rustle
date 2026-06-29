@@ -1,0 +1,301 @@
+{
+  "panel": [
+    {
+      "case": "RABL2",
+      "kind": "real",
+      "ref_gene": "RABL2A",
+      "ref_introns": 9,
+      "shared_backbone_introns": 4,
+      "shared_backbone_fraction": 0.444,
+      "min_member_fraction": 0.444,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "RABL2A",
+          "introns": 9,
+          "co_threaded": 9,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "RABL2B",
+          "introns": 9,
+          "co_threaded": 4,
+          "frac": 0.4444444444444444,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "RABL2A": 9,
+        "RABL2B": 9
+      }
+    },
+    {
+      "case": "APOBEC3",
+      "kind": "real",
+      "ref_gene": "APOBEC3D",
+      "ref_introns": 6,
+      "shared_backbone_introns": 3,
+      "shared_backbone_fraction": 0.5,
+      "min_member_fraction": 0.5,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "APOBEC3D",
+          "introns": 6,
+          "co_threaded": 6,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "APOBEC3F",
+          "introns": 6,
+          "co_threaded": 3,
+          "frac": 0.5,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "APOBEC3D": 6,
+        "APOBEC3F": 6
+      }
+    },
+    {
+      "case": "RFPL",
+      "kind": "real",
+      "ref_gene": "RFPL2",
+      "ref_introns": 4,
+      "shared_backbone_introns": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "RFPL1",
+          "introns": 3,
+          "co_threaded": 1,
+          "frac": 0.25,
+          "is_ref": false
+        },
+        {
+          "gene": "RFPL2",
+          "introns": 4,
+          "co_threaded": 4,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "RFPL3",
+          "introns": 2,
+          "co_threaded": 0,
+          "frac": 0.0,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "RFPL1": 3,
+        "RFPL2": 4,
+        "RFPL3": 2
+      }
+    },
+    {
+      "case": "CASP8~FLACC1",
+      "kind": "domain",
+      "ref_gene": "FLACC1",
+      "ref_introns": 16,
+      "shared_backbone_introns": 3,
+      "shared_backbone_fraction": 0.188,
+      "min_member_fraction": 0.188,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "CASP8",
+          "introns": 9,
+          "co_threaded": 3,
+          "frac": 0.1875,
+          "is_ref": false
+        },
+        {
+          "gene": "FLACC1",
+          "introns": 16,
+          "co_threaded": 16,
+          "frac": 1.0,
+          "is_ref": true
+        }
+      ],
+      "member_intron_counts": {
+        "CASP8": 9,
+        "FLACC1": 16
+      }
+    },
+    {
+      "case": "ASDURF~ASNSD1",
+      "kind": "domain",
+      "ref_gene": "ASDURF",
+      "ref_introns": 3,
+      "shared_backbone_introns": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "ASDURF",
+          "introns": 3,
+          "co_threaded": 3,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "ASNSD1",
+          "introns": 2,
+          "co_threaded": 0,
+          "frac": 0.0,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "ASDURF": 3,
+        "ASNSD1": 2
+      }
+    },
+    {
+      "case": "CREB1~METTL21A",
+      "kind": "domain",
+      "ref_gene": "CREB1",
+      "ref_introns": 8,
+      "shared_backbone_introns": 2,
+      "shared_backbone_fraction": 0.25,
+      "min_member_fraction": 0.25,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "CREB1",
+          "introns": 8,
+          "co_threaded": 8,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "METTL21A",
+          "introns": 5,
+          "co_threaded": 2,
+          "frac": 0.25,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "CREB1": 8,
+        "METTL21A": 5
+      }
+    },
+    {
+      "case": "GPR39~LYPD1",
+      "kind": "domain",
+      "ref_gene": "LYPD1",
+      "ref_introns": 3,
+      "shared_backbone_introns": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless_member": false,
+      "members": [
+        {
+          "gene": "GPR39",
+          "introns": 1,
+          "co_threaded": 0,
+          "frac": 0.0,
+          "is_ref": false
+        },
+        {
+          "gene": "LYPD1",
+          "introns": 3,
+          "co_threaded": 3,
+          "frac": 1.0,
+          "is_ref": true
+        }
+      ],
+      "member_intron_counts": {
+        "GPR39": 1,
+        "LYPD1": 3
+      }
+    },
+    {
+      "case": "EEF1A1_retro",
+      "kind": "retro",
+      "ref_gene": "EEF1A1",
+      "ref_introns": 7,
+      "shared_backbone_introns": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless_member": true,
+      "members": [
+        {
+          "gene": "EEF1A1",
+          "introns": 7,
+          "co_threaded": 7,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "LOC109023808",
+          "introns": 0,
+          "co_threaded": 0,
+          "frac": 0.0,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "EEF1A1": 7,
+        "LOC109023808": 0
+      }
+    },
+    {
+      "case": "CNN2_retro",
+      "kind": "retro",
+      "ref_gene": "CNN2",
+      "ref_introns": 6,
+      "shared_backbone_introns": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless_member": true,
+      "members": [
+        {
+          "gene": "CNN2",
+          "introns": 6,
+          "co_threaded": 6,
+          "frac": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "LOC129524764",
+          "introns": 0,
+          "co_threaded": 0,
+          "frac": 0.0,
+          "is_ref": false
+        }
+      ],
+      "member_intron_counts": {
+        "CNN2": 6,
+        "LOC129524764": 0
+      }
+    }
+  ],
+  "summary": {
+    "real": [
+      0.0,
+      0.444,
+      0.5
+    ],
+    "domain": [
+      0.0,
+      0.0,
+      0.188,
+      0.25
+    ],
+    "retro": [
+      0.0,
+      0.0
+    ],
+    "margin_real_minus_domain": -0.25,
+    "margin_real_minus_retro": 0.0
+  }
+}

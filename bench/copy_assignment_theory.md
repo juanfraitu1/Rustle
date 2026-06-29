@@ -70,8 +70,10 @@ This note develops the combinatorial foundation for copy-assignment in three par
   reduction from graph $k$-colorability. Theorem 2 shows that under **Strong Separation** — a uniform pairwise
   distinguishability condition — the true copy set is the *unique* minimum cover. Theorem 3 shows that under
   the same condition the truth is also *computable in polynomial time* via the `RECOVER` algorithm ($O(n^2 m)$,
-  connected components of the compatibility graph) — so the dichotomy is fully closed: NP-hard in general,
-  unique optimum and efficient algorithm under Strong Separation.
+  connected components of the compatibility graph) — so the dichotomy is closed for the *combinatorial* recovery
+  problem: NP-hard in general, unique optimum and efficient algorithm under Strong Separation. (The shipped
+  pipeline does not run `RECOVER`; **Theorem 4 (§5b, the bridge)** is the production-side certifier — a sound
+  per-read identifiability certifier for all K≥1.)
 
 - **K-frontier finding (§5 Proposition).** Strong Separation is sufficient for all $K$, but the weaker
   `sep+link` condition (per-read cross-conflict plus per-copy column-linkage) already suffices at $K = 2$ and
@@ -504,8 +506,9 @@ the recombination witness (Strong Separation fails) is **rejected** — exhausti
 
 **Remark (recovery).** Polynomial-time recovery under Strong Separation is given by **Theorem 3 above**
 (connected components of the compatibility graph). The general problem remains NP-hard (Theorem 1); the
-dichotomy is therefore fully closed on both axes — hard in general, efficiently solvable under the
-identifiability condition.
+dichotomy is therefore closed for the *combinatorial* recovery problem — hard in general, efficiently solvable
+under the identifiability condition. The shipped pipeline does not run `RECOVER`; **Theorem 4 (§5b, the
+bridge)** is the production-side certifier: a sound per-read identifiability certifier for all K≥1.
 
 ### Corollary (the K-bound)
 
@@ -542,6 +545,80 @@ OK  - Thm 2: K=2 instance under Strong Separation -> unique minimum cover == tru
 OK  - Thm 2 (exhaustive K=2,3 / L=3): strong viol K2=0/K3=0 (SUFFICIENT all K); sep+link viol K2=0/K3=248 (K-frontier: K=2 only); recombination witness non-unique and excluded by strong
 OK  - Thm 2 boundary: K=0 -> minimum cover = 1 (forced merge, non-identifiable)
 ```
+
+### §5b The bridge: the production gate's `min_p` is a sound per-read identifiability certificate (Theorem 4)
+
+Theorems 2–3 concern *family-level* recovery of the whole copy set (the minimum cover / `RECOVER`), NP-hard in
+general (Theorem 1). The shipped pipeline does **not** run `RECOVER`; it runs a *per-read statistical* gate
+(`copy_assign.rs`): given the copy set $C$ (from the family layer), each read $r$ is **assigned** to a copy,
+**ambiguous**, or certified **tied** by an IsoCon-style significance test with a family-wide Bonferroni threshold
+$\alpha/(n-1)$. Its identifiability bound is
+$$\mathrm{min\_p}(r)=\max_{c\neq b}\ \prod_{j\in\mathrm{obs}(r)\cap D_{bc}}\varepsilon_j,$$
+where $b$ is $r$'s MLE copy, $D_{bc}$ the distinguishing columns of $b,c$, and $\varepsilon_j$ the per-column
+error proxy; $r$ is certified **tied** iff $\mathrm{min\_p}(r)\ge\alpha/(n-1)$. Until now the theory touched the
+gate only at the degenerate $K=0$ vertex ($\mathrm{min\_p}=1$). Theorem 4 connects $\mathrm{min\_p}$ to the
+combinatorics for **all** $K\ge1$, making the running gate load-bearing. Write
+$$\delta(r)=\min_{c\neq b}\ \bigl\lvert\mathrm{obs}(r)\cap D_{bc}\bigr\rvert$$
+for the number of distinguishing columns $r$ spans against its **closest** competitor copy.
+
+> **Theorem 4 (Bridge).** In the error-free core (each read consistent with its origin copy) **and under the
+> completeness precondition $\mathrm{origin}(r)\in C$** (the given copy set contains $r$'s true origin copy —
+> equivalently, $C$ passes the §5 self-certifier so no copy is missing), for every read $r$:
+> **(i)** with uniform $\varepsilon_j=\varepsilon<1$, $\ \mathrm{min\_p}(r)=\varepsilon^{\,\delta(r)}$ (this holds
+> unconditionally; only (ii) needs the precondition).
+> **(ii) (soundness)** $\delta(r)\ge1\iff b$ is the **unique** copy in $C$ consistent with $r$; then, *because
+> $\mathrm{origin}(r)\in C$*, that unique copy $b$ is $r$'s origin, so the gate's argmax assignment is **correct** —
+> the gate never assigns a wrong copy. **The precondition is necessary and tight:** if $\mathrm{origin}(r)\notin C$
+> (the reference-absent / O4 regime), a *partial* read can be uniquely consistent with a wrong $b\in C$ ($\delta\ge1$,
+> $\mathrm{min\_p}<1$) and be silently, confidently misassigned (machine-checked B6: 2,616 witnesses). This is exactly
+> why the O4 two-stage freeze **abstains** at stage 1 and re-threads the abstain pool against $C\cup\{$absent copies$\}$;
+> a read that observes *all* columns of an absent origin is consistent with **no** copy in $C$ and is flagged novel —
+> only partial reads are at risk.
+> **(iii) (abstention $=$ ambiguity)** $\delta(r)=0\iff\ \ge2$ copies are consistent with $r$ ($r$ is genuinely
+> unassignable), and $\mathrm{min\_p}(r)=1$ certifies it **tied**.
+> **(iv) (boundary recovery)** if $K_{ij}=0$ for some pair (copies identical over the observed columns — the
+> Theorem-2 unrecoverable case), then **every** read of that pair has $\delta=0$, $\mathrm{min\_p}=1$, certified
+> **tied**. The gate thus recovers exactly the Theorem-2 non-identifiable mass, **per read, in
+> $O(\text{reads}\cdot\text{copies}\cdot\text{columns})$**, without computing the (NP-hard) minimum cover.
+
+*Proof.* **(i)** $\prod_{j\in\mathrm{obs}(r)\cap D_{bc}}\varepsilon=\varepsilon^{\lvert\mathrm{obs}(r)\cap D_{bc}\rvert}$;
+as $\varepsilon<1$ the max over $c$ is at the smallest exponent $\min_c\lvert\mathrm{obs}(r)\cap D_{bc}\rvert=\delta(r)$.
+**(ii)** ($\Leftarrow$) if $b$ is the only consistent copy, each $c\neq b$ has some $j\in\mathrm{obs}(r)$ with
+$r(j)\neq c_j$; since $r(j)=b_j$, $b_j\neq c_j$, so $j\in\mathrm{obs}(r)\cap D_{bc}$ and $\delta(r)\ge1$.
+($\Rightarrow$, contrapositive) if some $c\neq b$ is also consistent, then for all $j\in\mathrm{obs}(r)$,
+$r(j)=b_j=c_j$, so $\mathrm{obs}(r)\cap D_{bc}=\varnothing$ and $\delta(r)=0$. Finally, **by the precondition
+$o=\mathrm{origin}(r)\in C$**, and $r$ is consistent with $o$, so $o$ is in the consistent set; uniqueness forces
+$o=b$ (the error-free MLE picks a consistent copy). *(Without the precondition this last step fails — $o\notin C$
+means the unique consistent copy in $C$ need not be the origin; B6 exhibits the misassignment.)*
+**(iii)** $r$ always has $\ge1$ consistent copy (its origin), so $\delta(r)=0\iff$ not-unique $\iff\ge2$ consistent;
+$\mathrm{min\_p}=\varepsilon^0=1\ge\alpha/(n-1)$. **(iv)** $K_{ij}=0\Rightarrow D_{ij}=\varnothing\Rightarrow c_i=c_j$;
+a copy-$i$ read is consistent with both, so $\ge2$ consistent and (iii) applies; only the per-read scan is used. $\square$
+
+> **What it buys, and what it does not.** Theorem 4 makes the *running* gate load-bearing: via $\mathrm{min\_p}$
+> it is a **sound** per-read certifier of the combinatorial identifiability condition (unique consistency) for
+> **all** $K\ge1$ *given a complete $C$* — *assigned* $\Rightarrow$ combinatorially determined (no guess);
+> *tied at $\delta=0$* $\Rightarrow$ genuinely ambiguous; the Theorem-2 $K=0$ boundary recovered per read without
+> `RECOVER`. It is **per-read** (it takes $C$ as input; it is not family recovery, and does not resolve the
+> $K\ge3$ recombination non-uniqueness, which concerns the *cover*, not a single read's assignment — B7
+> exhibits a read set with several distinct minimum covers on which the per-read gate is nonetheless sound
+> *within each fixed $C$*, confirming Theorem 4's scope is per-read-given-$C$, not cover recovery). Its two
+> standing hypotheses are the **error-free core** and **completeness $\mathrm{origin}(r)\in C$**; the latter is
+> discharged operationally by the O4 abstain-and-re-thread stage, not assumed away. The statistical gate adds error tolerance: with
+> threshold $\tau=\lfloor\log(\alpha/(n-1))/\log\varepsilon\rfloor$ it abstains whenever $\delta(r)\le\tau$, so it
+> is sound but **conservative** — it may tie a combinatorially-determined read whose evidence is below significance
+> $\alpha$ (e.g. a lone distinguishing column at $\alpha=10^{-3}$). Soundness (never misassign) is the guarantee;
+> completeness is bounded by $\alpha$.
+
+**Verification.** `check_bridge_theorem` (`bench/bridge_theorem_check.py`, integrated into the suite)
+**exhaustively** enumerates all copy sets and reads for $K\le3$, $m\le3$, $\lvert A\rvert\le3$ (3,400 copy-sets /
+67,320 reads) plus the full $K_{ij}=0$ boundary universe, certifying (i)–(iv): $\mathrm{min\_p}=\varepsilon^{\delta}$;
+$\delta\ge1\Leftrightarrow$ unique-consistent; soundness (assignment $=$ origin); $\delta=0\Leftrightarrow$ ambiguous;
+and $K_{ij}=0\Rightarrow$ all-tied. Two further checks pin the theorem's hypotheses: **B6** (precondition
+necessity) drops $\mathrm{origin}(r)\in C$ and finds 2,616 instances where the gate confidently *misassigns* a
+read whose origin is absent — and certifies the escape, that a full-column read of an absent origin is consistent
+with no copy in $C$ (flagged novel); **B7** (recombinant cover) exhibits a read set with several distinct minimum
+covers of size $\ge3$ (the $K\ge3$ recombination obstruction) on which the per-read gate stays sound within each
+fixed $C$, confirming Theorem 4 is per-read-given-$C$, not cover recovery.
 
 ---
 
@@ -862,8 +939,10 @@ Strong Separation additionally guarantees that cover equals the true copies. The
 for the broader **recombination-free** regime — instances where the minimum cover is unique but the certifier may
 not pass — remains an open question.
 
-The dichotomy is therefore fully closed on both axes: **NP-hard in the general case** (Theorem 1); **unique
-optimum and polynomial recovery** under Strong Separation (Theorems 2 and 3).
+The dichotomy is therefore closed for the *combinatorial* recovery problem: **NP-hard in the general case**
+(Theorem 1); **unique optimum and polynomial recovery** under Strong Separation (Theorems 2 and 3). The shipped
+pipeline does not run `RECOVER`; **Theorem 4 (§5b, the bridge)** is the production-side certifier — a sound
+per-read identifiability certifier for all K≥1.
 
 ---
 

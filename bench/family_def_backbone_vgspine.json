@@ -1,0 +1,321 @@
+{
+  "panel": [
+    {
+      "case": "RABL2",
+      "kind": "real",
+      "ref_gene": "RABL2A",
+      "ref_junctions": 9,
+      "shared_backbone_junctions": 8,
+      "shared_backbone_fraction": 0.889,
+      "min_member_fraction": 0.889,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "RABL2A",
+          "njunc": 9,
+          "co": 9,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "RABL2B",
+          "njunc": 9,
+          "co": 8,
+          "frac": 0.8888888888888888,
+          "aln_cov": 0.71,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "RABL2A": 9,
+        "RABL2B": 9
+      }
+    },
+    {
+      "case": "APOBEC3",
+      "kind": "real",
+      "ref_gene": "APOBEC3D",
+      "ref_junctions": 6,
+      "shared_backbone_junctions": 4,
+      "shared_backbone_fraction": 0.667,
+      "min_member_fraction": 0.667,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "APOBEC3D",
+          "njunc": 6,
+          "co": 6,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "APOBEC3F",
+          "njunc": 6,
+          "co": 4,
+          "frac": 0.6666666666666666,
+          "aln_cov": 0.387,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "APOBEC3D": 6,
+        "APOBEC3F": 6
+      }
+    },
+    {
+      "case": "RFPL",
+      "kind": "real",
+      "ref_gene": "RFPL2",
+      "ref_junctions": 4,
+      "shared_backbone_junctions": 2,
+      "shared_backbone_fraction": 0.5,
+      "min_member_fraction": 0.5,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "RFPL1",
+          "njunc": 3,
+          "co": 2,
+          "frac": 0.5,
+          "aln_cov": 0.691,
+          "is_ref": false
+        },
+        {
+          "gene": "RFPL2",
+          "njunc": 4,
+          "co": 4,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "RFPL3",
+          "njunc": 2,
+          "co": 2,
+          "frac": 0.5,
+          "aln_cov": 0.858,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "RFPL1": 3,
+        "RFPL2": 4,
+        "RFPL3": 2
+      }
+    },
+    {
+      "case": "CASP8~FLACC1",
+      "kind": "domain",
+      "ref_gene": "FLACC1",
+      "ref_junctions": 16,
+      "shared_backbone_junctions": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "CASP8",
+          "njunc": 9,
+          "co": 0,
+          "frac": 0.0,
+          "aln_cov": 0.458,
+          "is_ref": false
+        },
+        {
+          "gene": "FLACC1",
+          "njunc": 16,
+          "co": 16,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        }
+      ],
+      "junc_counts": {
+        "CASP8": 9,
+        "FLACC1": 16
+      }
+    },
+    {
+      "case": "ASDURF~ASNSD1",
+      "kind": "domain",
+      "ref_gene": "ASDURF",
+      "ref_junctions": 3,
+      "shared_backbone_junctions": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "ASDURF",
+          "njunc": 3,
+          "co": 3,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "ASNSD1",
+          "njunc": 2,
+          "co": 0,
+          "frac": 0.0,
+          "aln_cov": 0.128,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "ASDURF": 3,
+        "ASNSD1": 2
+      }
+    },
+    {
+      "case": "CREB1~METTL21A",
+      "kind": "domain",
+      "ref_gene": "CREB1",
+      "ref_junctions": 8,
+      "shared_backbone_junctions": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "CREB1",
+          "njunc": 8,
+          "co": 8,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "METTL21A",
+          "njunc": 5,
+          "co": 0,
+          "frac": 0.0,
+          "aln_cov": 0.0,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "CREB1": 8,
+        "METTL21A": 5
+      }
+    },
+    {
+      "case": "GPR39~LYPD1",
+      "kind": "domain",
+      "ref_gene": "LYPD1",
+      "ref_junctions": 3,
+      "shared_backbone_junctions": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless": false,
+      "members": [
+        {
+          "gene": "GPR39",
+          "njunc": 1,
+          "co": 0,
+          "frac": 0.0,
+          "aln_cov": 0.363,
+          "is_ref": false
+        },
+        {
+          "gene": "LYPD1",
+          "njunc": 3,
+          "co": 3,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        }
+      ],
+      "junc_counts": {
+        "GPR39": 1,
+        "LYPD1": 3
+      }
+    },
+    {
+      "case": "EEF1A1_retro",
+      "kind": "retro",
+      "ref_gene": "EEF1A1",
+      "ref_junctions": 7,
+      "shared_backbone_junctions": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless": true,
+      "members": [
+        {
+          "gene": "EEF1A1",
+          "njunc": 7,
+          "co": 7,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "LOC109023808",
+          "njunc": 0,
+          "co": 0,
+          "frac": 0.0,
+          "aln_cov": 0.0,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "EEF1A1": 7,
+        "LOC109023808": 0
+      }
+    },
+    {
+      "case": "CNN2_retro",
+      "kind": "retro",
+      "ref_gene": "CNN2",
+      "ref_junctions": 6,
+      "shared_backbone_junctions": 0,
+      "shared_backbone_fraction": 0.0,
+      "min_member_fraction": 0.0,
+      "any_intronless": true,
+      "members": [
+        {
+          "gene": "CNN2",
+          "njunc": 6,
+          "co": 6,
+          "frac": 1.0,
+          "aln_cov": 1.0,
+          "is_ref": true
+        },
+        {
+          "gene": "LOC129524764",
+          "njunc": 0,
+          "co": 0,
+          "frac": 0.0,
+          "aln_cov": 0.0,
+          "is_ref": false
+        }
+      ],
+      "junc_counts": {
+        "CNN2": 6,
+        "LOC129524764": 0
+      }
+    }
+  ],
+  "junc_tol": 12,
+  "summary": {
+    "real": [
+      0.5,
+      0.667,
+      0.889
+    ],
+    "domain": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "retro": [
+      0.0,
+      0.0
+    ],
+    "margin_real_minus_domain": 0.5,
+    "margin_real_minus_retro": 0.5
+  }
+}

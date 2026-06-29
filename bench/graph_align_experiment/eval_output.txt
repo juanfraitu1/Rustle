@@ -1,0 +1,37 @@
+================================================================
+GRAPH STATS
+  nodes       : 125
+  A_path      : 96
+  B_path      : 95
+  shared      : 66
+  A_excl      : 30
+  B_excl      : 29
+  A_excl_bp   : 35
+  B_excl_bp   : 31
+
+================================================================
+ACCURACY ON uniq_* READS (n correct / n total ; ambiguous)
+  method          correct  total   amb     acc
+  graph (GAF)          75     75     0  100.0%
+  linear (mm2)         75     75     0  100.0%
+
+  uniq_A* (truth A)   graph 50/50 (amb 0)   linear 50/50 (amb 0)
+  uniq_B* (truth B)   graph 25/25 (amb 0)   linear 25/25 (amb 0)
+
+================================================================
+MULTI-MAPPER SPLIT (truth derivable: multi=A, multi_r=B)
+  multi   (truth A)
+     graph : A=14 B=0 amb=0   correct 14/14
+     linear: A=14 B=0 amb=0   correct 14/14
+  multi_r (truth B)
+     graph : A=0 B=14 amb=0   correct 14/14
+     linear: A=0 B=14 amb=0   correct 14/14
+
+================================================================
+OVERALL ACCURACY (all 103 reads, truth from names)
+  graph : 103/103  (100.0%)  ambiguous=0
+  linear: 103/103  (100.0%)  ambiguous=0
+
+================================================================
+ERRORS / DISAGREEMENTS (read  truth  graph(a,b)  linear(a,b))
+  (none beyond those listed)

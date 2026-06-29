@@ -1,0 +1,107 @@
+{
+  "baseline": {
+    "edges": 17410,
+    "families": 1460,
+    "maxcomp": 389,
+    "mega": 389
+  },
+  "auc_intron_count_ratio": 0.8833333333333333,
+  "pos": [
+    1.0,
+    1.0,
+    0.75,
+    0.5,
+    0.6666666666666666
+  ],
+  "neg": [
+    0.5625,
+    0.6666666666666666,
+    0.5555555555555556,
+    0.3333333333333333,
+    0.0,
+    0.0
+  ],
+  "ladder": {
+    "both_spliced": {
+      "edges": 12212,
+      "families": 1032,
+      "maxcomp": 238,
+      "mega_drop": 196,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      },
+      "real_kept": 5,
+      "dom_kept": 4
+    },
+    "ratio>=0.50": {
+      "edges": 8642,
+      "families": 772,
+      "maxcomp": 217,
+      "mega_drop": 645,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      },
+      "real_kept": 5,
+      "dom_kept": 3
+    },
+    "ratio>=0.60": {
+      "edges": 6895,
+      "families": 688,
+      "maxcomp": 204,
+      "mega_drop": 923,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "CONN"
+      },
+      "real_kept": 4,
+      "dom_kept": 1
+    },
+    "ratio>=0.67": {
+      "edges": 5984,
+      "families": 654,
+      "maxcomp": 154,
+      "mega_drop": 1027,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "SPLIT"
+      },
+      "real_kept": 3,
+      "dom_kept": 0
+    },
+    "ratio>=0.75": {
+      "edges": 5749,
+      "families": 645,
+      "maxcomp": 150,
+      "mega_drop": 1050,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "SPLIT"
+      },
+      "real_kept": 3,
+      "dom_kept": 0
+    },
+    "ratio>=1.0": {
+      "edges": 3932,
+      "families": 565,
+      "maxcomp": 37,
+      "mega_drop": 1193,
+      "panel": {
+        "RABL2": "CONN",
+        "APOBEC3": "CONN",
+        "RFPL": "N/A"
+      },
+      "real_kept": 2,
+      "dom_kept": 0
+    }
+  },
+  "retro_edges": 5198,
+  "retro_in_mega": 196,
+  "retro_only_families": 431
+}

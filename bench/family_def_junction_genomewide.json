@@ -1,0 +1,126 @@
+{
+  "baseline": {
+    "edges": 17410,
+    "families": 1460,
+    "maxcomp": 389,
+    "mega": 389,
+    "mega_edges": 1522
+  },
+  "criteria": {
+    "C0": {
+      "edges": 17410,
+      "dropped": 0,
+      "families": 1460,
+      "maxcomp": 389,
+      "mega_edge_drop": 0,
+      "mega_kept": 1522,
+      "panel": {
+        "RABL2": "CONNECTED",
+        "APOBEC3": "CONNECTED",
+        "RFPL": "CONNECTED"
+      },
+      "top_sizes": [
+        389,
+        254,
+        84,
+        50,
+        47,
+        46,
+        45,
+        45
+      ]
+    },
+    "Cspliced": {
+      "edges": 12212,
+      "dropped": 5198,
+      "families": 1032,
+      "maxcomp": 238,
+      "mega_edge_drop": 196,
+      "mega_kept": 1326,
+      "panel": {
+        "RABL2": "CONNECTED",
+        "APOBEC3": "CONNECTED",
+        "RFPL": "CONNECTED"
+      },
+      "top_sizes": [
+        238,
+        201,
+        140,
+        84,
+        47,
+        46,
+        43,
+        34
+      ]
+    },
+    "Ccount": {
+      "edges": 6461,
+      "dropped": 10949,
+      "families": 669,
+      "maxcomp": 168,
+      "mega_edge_drop": 818,
+      "mega_kept": 704,
+      "panel": {
+        "RABL2": "CONNECTED",
+        "APOBEC3": "CONNECTED",
+        "RFPL": "CONNECTED"
+      },
+      "top_sizes": [
+        168,
+        78,
+        46,
+        34,
+        33,
+        25,
+        25,
+        24
+      ]
+    },
+    "Carch": {
+      "edges": 2601,
+      "dropped": 14809,
+      "families": 350,
+      "maxcomp": 32,
+      "mega_edge_drop": 1446,
+      "mega_kept": 76,
+      "panel": {
+        "RABL2": "N/A(<2 in graph: present=['RABL2A'])",
+        "APOBEC3": "N/A(<2 in graph: present=[])",
+        "RFPL": "N/A(<2 in graph: present=[])"
+      },
+      "top_sizes": [
+        32,
+        24,
+        22,
+        22,
+        15,
+        14,
+        12,
+        12
+      ]
+    }
+  },
+  "base_panel": {
+    "RABL2": "CONNECTED",
+    "APOBEC3": "CONNECTED",
+    "RFPL": "CONNECTED"
+  },
+  "mega_breakup_Carch": {
+    "subfamilies": 17,
+    "sizes": [
+      10,
+      5,
+      4,
+      3,
+      3,
+      3,
+      2,
+      2,
+      2,
+      2
+    ],
+    "singletons": 339
+  },
+  "intronless_in_mega": 41,
+  "il_incident_edges": 196
+}

@@ -714,6 +714,70 @@ def check_tier3_coquant_unidentifiable():
     return "Tier-3: K=0 per-copy split unidentifiable (flat likelihood over the simplex); aggregate identifiable"
 
 
+def check_bridge_theorem():
+    """Theorem 4 (Bridge, §5b): the production gate's identifiability bound min_p = eps^delta is a SOUND
+    per-read combinatorial certificate, connecting the running statistical gate to Theorem 2 for ALL K>=1.
+    EXHAUSTIVE over K<=3, m<=3, |A|<=3 + the K_{ij}=0 boundary universe. (Standalone twin:
+    bench/bridge_theorem_check.py.)"""
+    EPS = 1e-3
+    def gate(read_obs, copies):
+        n = len(copies)
+        def sc(c):  # error-free MLE: #match - #mismatch over observed cols; argmax, lowest idx on ties
+            m = sum(1 for j, a in read_obs.items() if copies[c][j] == a)
+            return (m - (len(read_obs) - m), -c)
+        best = max(range(n), key=sc)
+        minp, delta = 0.0, None
+        for c in range(n):
+            if c == best:
+                continue
+            span = sum(1 for j in read_obs if copies[best][j] != copies[c][j])
+            minp = max(minp, EPS ** span)
+            delta = span if delta is None else min(delta, span)
+        return minp, best, (10 ** 9 if delta is None else delta)
+    ninst = nreads = 0
+    for m in range(1, 4):
+        vecs = list(itertools.product(range(3), repeat=m))
+        for K in (2, 3):
+            for copies in itertools.combinations(vecs, K):  # distinct copies
+                ninst += 1
+                for o in range(K):
+                    for sz in range(1, m + 1):
+                        for S in itertools.combinations(range(m), sz):
+                            ro = {j: copies[o][j] for j in S}
+                            nreads += 1
+                            minp, best, delta = gate(ro, copies)
+                            cons = [c for c in range(K) if all(copies[c][j] == a for j, a in ro.items())]
+                            assert delta >= 10 ** 8 or abs(minp - EPS ** delta) < 1e-18, "B1 min_p=eps^delta"
+                            assert (delta >= 1) == (len(cons) == 1), "B2 delta>=1 <=> unique-consistent"
+                            if delta >= 1:
+                                assert cons == [o] and best == o, "B3 soundness: assignment=origin"
+                            assert (delta == 0) == (len(cons) >= 2), "B4 delta=0 <=> ambiguous"
+    # (B5) K_{ij}=0 boundary: identical pair => every read of it is delta=0 / min_p=1 / Tied
+    nb = 0
+    for m in range(1, 4):
+        for v in itertools.product(range(2), repeat=m):
+            for w in itertools.product(range(2), repeat=m):
+                copies = (v, v, w)
+                for sz in range(1, m + 1):
+                    for S in itertools.combinations(range(m), sz):
+                        ro = {j: copies[0][j] for j in S}
+                        minp, best, delta = gate(ro, copies)
+                        assert delta == 0 and abs(minp - 1.0) < 1e-18, "B5 K0 boundary => all-tied"
+                        nb += 1
+    # (B6) precondition necessity + (B7) recombinant-cover orthogonality (standalone exhaustive checks)
+    import bridge_theorem_check as btc
+    wit, escape_viol = btc.check_precondition_necessity()
+    assert wit, "B6: expected >=1 confident-misassignment witness when origin(r) not in C"
+    assert not escape_viol, "B6: full-read escape violated (absent-origin full read consistent with C)"
+    nonuniq, sz, ncov, sound = btc.check_recombinant_cover()
+    assert nonuniq, f"B7: expected >=2 distinct minimum covers of size>=3 (got size={sz}, count={ncov})"
+    assert sound, "B7: per-read soundness violated within a fixed cover"
+    return (f"Theorem 4 (Bridge): min_p=eps^delta sound per-read certifier, all K>=1 — exhaustive "
+            f"{ninst} copy-sets/{nreads} reads + {nb} K0-boundary reads; B1-B7 hold (assigned=>determined, "
+            f"delta=0/K0=>tied; B6 precondition origin in C NECESSARY [{len(wit)} witnesses]; "
+            f"B7 {ncov} non-unique covers size {sz}, per-read sound within each; no RECOVER)")
+
+
 CHECKS = [check_lemma_mcc_equals_chromatic, check_thm1_reduction]
 CHECKS.append(check_thm2_recovery)
 CHECKS.append(check_thm2_strong_exhaustive)
@@ -721,6 +785,7 @@ CHECKS.append(check_thm2_K0_merge)
 CHECKS.append(check_corollary_paths)
 CHECKS.append(check_thm3_recovery_algorithm)
 CHECKS.append(check_tier3_coquant_unidentifiable)
+CHECKS.append(check_bridge_theorem)
 
 
 def main():

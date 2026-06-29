@@ -1,0 +1,53 @@
+[
+ {
+  "gene": "gene-RABL2A",
+  "region": "NC_073235.2:15116653-15162533,NC_086018.1:48803440-48847011",
+  "genuine": [
+   "rna-XM_055379901.1",
+   "rna-XM_055379919.2",
+   "rna-XM_055379922.2"
+  ],
+  "owner_frac": 0.56,
+  "pure": 0,
+  "strict": 28,
+  "reads": 50,
+  "gene_name": "RABL2A"
+ },
+ {
+  "gene": "gene-LOC129523511",
+  "region": "NC_073227.2:212270014-212315835,NC_086018.1:48803440-48847011",
+  "genuine": [
+   "rna-XM_055384089.2",
+   "rna-XM_055384090.2"
+  ],
+  "owner_frac": 0.409,
+  "pure": 0,
+  "strict": 27,
+  "reads": 66,
+  "gene_name": "LOC129523511"
+ },
+ {
+  "gene": "gene-LOC115933307",
+  "region": "NC_073237.2:29850112-30115545,NC_073237.2:23677563-23936564",
+  "genuine": [
+   "rna-XM_055351714.2"
+  ],
+  "owner_frac": 0.133,
+  "pure": 0,
+  "strict": 11,
+  "reads": 83,
+  "gene_name": "LOC115933307"
+ },
+ {
+  "gene": "gene-ZC3H7A",
+  "region": "NC_073242.2:15372798-15429682,NC_073242.2:35770099-35847757",
+  "genuine": [
+   "rna-XM_063699488.1"
+  ],
+  "owner_frac": 0.12,
+  "pure": 1,
+  "strict": 41,
+  "reads": 341,
+  "gene_name": "ZC3H7A"
+ }
+]

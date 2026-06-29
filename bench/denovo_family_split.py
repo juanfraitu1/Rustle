@@ -170,7 +170,12 @@ def main():
 
     # write split families with structural diagnostics. A discrete recent-duplicate family is DENSE and
     # mutually homologous; a non-discretizable homology web (e.g. the KRAB-ZNF continuum) is SPARSE with
-    # many articulation points. We FLAG webs (size>=10 & density<0.15) rather than claim them as families.
+    # many articulation points. We FLAG webs (size>=10 & density<0.30) rather than claim them as families.
+    # NB: 0.30 ALIGNS with the validated DNA-manifest bar (make_dna_family_manifest.py overmerge_sparse)
+    # and with src/rustle/vg_family/family_split.rs::WEB_MAX_DENSITY. Measured: the family-density
+    # distribution is bimodal (median 1.0); the only families in [0.15,0.30) are multi-chromosome
+    # domain-sharing over-merges (DSFAM0 = 164-member ZNF / 19 chroms). web_min_size stays 10 so a SMALL
+    # sparse group (a real divergent family, e.g. MAGEB n=7 density 0.24) is NOT dropped. See L2.
     final.sort(key=len, reverse=True)
     memb2fam = {}
     n_web = 0
@@ -191,7 +196,7 @@ def main():
             dens = 2 * e / (n * (n - 1)) if n > 1 else 1.0
             avgw = (sum(d["weight"] for *_, d in sub.edges(data=True)) / e) if e else 0.0
             arts = len(list(nx.articulation_points(sub))) if n > 2 else 0
-            klass = "web" if (n >= 10 and dens < 0.15) else "family"
+            klass = "web" if (n >= 10 and dens < 0.30) else "family"  # 0.30 = aligned DNA-manifest bar (L2)
             if klass == "web":
                 n_web += 1
             fid = f"DSFAM{i}"
