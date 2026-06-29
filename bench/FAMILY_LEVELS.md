@@ -77,6 +77,28 @@ exactly why the levels are kept separate.
 
 `final.bed` = SEDEF run on the GGO genome (cluster, 253,030 segdup pairs), at `~/Desktop/final.bed`.
 
+## DNA copy-number axis (famCN / parCN): scope and why deferred
+
+SEDEF, famCN, and parCN answer **different** questions — they are not substitutes:
+
+| | answers | status |
+|---|---|---|
+| **SEDEF** | *where* are the duplications ("are these two loci a segmental duplication of each other?") — structural map from the assembly | ✅ used — the family-reality check (73% of RNA families confirmed; closed the defense P0) |
+| **famCN** | *how many* copies of a family exist genome-wide (read-depth over the family) | not run — but covered: SEDEF gives a structural copy count, and the cross-level famCN observation (RNA captured 2 of a 9–11-copy DNA family) already gives the expression-restriction story |
+| **parCN** | *how many of each specific paralog, per individual* (paralog-distinguishing k-mers across a cohort) | not run — it is the **copy-vs-allele** resolver |
+
+**Was SEDEF enough? For this thesis's claim, yes.** The thesis claims an RNA-level family *definition* +
+copy-*assignment*; the orthogonal validation that needs is "are the families real paralog groups?", which SEDEF
+answers independently. famCN would add a count, not a confirmation, and is already covered qualitatively.
+
+**parCN is the one genuinely-additional thing, deferred for a principled reason:** it is the DNA paralog-CN axis
+(Soto / QuicK-mer2), not the RNA contribution, and it is precisely what would *resolve* the copy-vs-allele
+boundary this work flags rather than guesses. It needs **DNA WGS + a population/cohort** (Soto used SGDP + 4
+archaics), which is a separate data acquisition from one gorilla's IsoSeq + the T2T assembly. Clean positioning:
+*RNA assignment answers which copies are transcribed and how they splice; parCN answers how many exist in DNA per
+individual — complementary, cited to Soto/QuicK-mer2, required only to close copy-vs-allele.* So parCN is named
+**future work / DNA-side collaboration**, not a gap in the RNA result.
+
 ## Why separate
 Keeping the levels independent means: (a) the RNA definition stays the clean thesis object (no protein/DNA
 dependency baked in); (b) each level is a falsifiable orthogonal check of the others; (c) when asked for the DNA
