@@ -135,6 +135,22 @@ copy-specific junction reversal** (dPSI 0.918, q = 2.6e-151) — the property *b
   min-path-cover on the haplotype-junction bigraph.
 - **Airtight gap:** cross-individual replication + DNA parCN for the 4 MHC copies (the copy-vs-allele
   resolver).
+- **⭐ GROUND-TRUTH STARVED-COPY RESCUE (the planted proof of the discovery — `sim_starved.py`).** The
+  old StringTie-era idea — *use the multimapping reads to rescue a copy starved of primaries* — survives,
+  reframed as rescue-then-assign-or-abstain. Plant 3 near-identical copies (6 PSVs); two healthy (40
+  reads), one **starved to 1 expressed read**. minimap2 reproduces the textbook signature — the starved
+  copy gets **1 primary / 80 secondary** (its siblings' reads pile on its locus). The pipeline recovers it
+  as **`RC_sc_48446` at exactly the planted locus**, quantifies it as the **minor** copy (abundance 0.012,
+  *not* inflated by the 80 shadow secondaries), and **assigns its own read to it** — all driven by the
+  multimapping evidence + the 6 distinguishing PSVs. Two honest refinements this exhibit pins down: (a)
+  the **default** collapsed-copy rescue already gets the 1-primary copy (`--recover-copies` is byte-identical
+  here — it earns its keep only in the **0-primary** regime); (b) a fully-0-primary copy is essentially the
+  **reference-absent / collapsed** case, because *minimap2 spreads primaries across in-reference duplicates*
+  (the K0tandem identical trio splits 40/37/43) — which is why the real-data version is `--absent-copies`
+  (O4) and lives in the GGO 905-collapsed-copy result. **Guard:** the copy is admitted only because it has
+  genuine PSVs + its own read; a locus carrying *only* sibling shadow (no real expression) is rejected by
+  the admission gate — the multimapping reads cannot fabricate a copy. Reframed, never **1/k**. Reproduce:
+  `bash bench/sim_starved_run.sh`.
 
 ## Build order (smallest → highest value)
 1. **Render RABL2 + RFPL4A GFAs side by side** with χ(H)/min-path-cover — the flagship topological
