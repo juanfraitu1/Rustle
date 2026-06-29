@@ -326,8 +326,10 @@ pub(super) fn build_read_placements(bam_reads: &[BamRead], reps: &[DenovoTranscr
             .filter(|(_, rep)| br.chrom == rep.chrom && br.read.ref_start < rep.end && read_end > rep.start)
             .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
         if let Some((li, _)) = best {
+            let aln_len = br.read.cigar.iter()
+                .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
             by_name.entry(br.name.as_str()).or_default().push(Placement {
-                locus: li, de: br.de, mapq: br.mapq, as_score: br.as_score,
+                locus: li, de: br.de, mapq: br.mapq, as_score: br.as_score, aln_len,
             });
         }
     }
@@ -832,11 +834,14 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
                 .filter(|(_, rep)| br.read.ref_start < rep.end && read_end > rep.start)
                 .max_by_key(|(_, rep)| rep.end.min(read_end) - rep.start.max(br.read.ref_start));
             if let Some((gi, _)) = best {
+                let aln_len = br.read.cigar.iter()
+                    .filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32;
                 name_map.entry(br.name.clone()).or_default().push(Placement {
                     locus: *gi,
                     de: br.de,
                     mapq: br.mapq,
                     as_score: br.as_score,
+                    aln_len,
                 });
             }
         }
@@ -2022,7 +2027,7 @@ mod tests {
         ];
         let placements = build_read_placements(&bam, &reps);
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
         assert!(!edges.is_empty(), "de-tied cross-locus read must produce a conflict edge");
         assert_eq!(conflict_families(2, &edges), vec![vec![0, 1]]);
     }
@@ -2033,7 +2038,7 @@ mod tests {
         let bam = vec![bam_read("c1", 0, 200, "read_Y", 0.010, false)];
         let placements = build_read_placements(&bam, &reps);
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
         assert!(edges.is_empty());
         assert!(conflict_families(2, &edges).is_empty());
     }
@@ -2046,7 +2051,7 @@ mod tests {
         let total: usize = placements.iter().map(|p| p.len()).sum();
         assert_eq!(total, 1, "one record -> one best-overlap placement -> no cross-locus pair");
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
         assert!(edges.is_empty());
     }
 
@@ -2067,7 +2072,7 @@ mod tests {
         assert!(placements.iter().all(|p| p.len() == 1),
             "each record attributes to one best-overlap locus -> no cross-locus pair");
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3 });
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 3, sig: None });
         assert!(edges.is_empty(), "over-split fragments must not form a conflict edge");
         assert!(conflict_families(2, &edges).is_empty(),
             "an over-split single locus is not a multi-copy family");
@@ -2083,7 +2088,7 @@ mod tests {
         ];
         let placements = build_read_placements(&bam, &reps);
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
         assert!(edges.is_empty(), "diverged secondary (large de gap) is resolvable, not a conflict");
     }
 
@@ -2098,7 +2103,7 @@ mod tests {
         let total: usize = placements.iter().map(|p| p.len()).sum();
         assert_eq!(total, 1, "supplementary record excluded -> only the primary placement remains");
         let edges = super::super::read_conflict::conflict_edges(
-            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1 });
+            2, &placements, &ConflictParams { delta: 0.005, de_max: 0.05, min_reads: 1, sig: None });
         assert!(edges.is_empty());
     }
 
