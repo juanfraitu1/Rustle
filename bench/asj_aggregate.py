@@ -3,8 +3,17 @@
 ASJ (q<0.05 AND |dPSI|>=DPSI), characterize, and flag the editing confound (a transition anchor
 A/G or C/T could be an RNA-edit site phasing by edit-status, not allele; a TRANSVERSION anchor is
 unambiguously genetic). Writes bench/asj_results.md + asj_calls.tsv.
+
+Strand-bias gate: every call is annotated with a GATK StrandOddsRatio (SOR) computed from the BAM
+(see bench/asj_strand_bias.py for the formula + longcallR rationale, Nat Methods 2026: reject
+allele-specific junctions whose usage is strand-confounded). SOR/sor_pass are ANNOTATED on every
+call so existing outputs are not silently changed; calls are HARD-filtered only when --max-sor is
+passed (default behaviour leaves the call set identical to before this gate existed). Annotation
+needs --bam + pysam (miniforge python); without it SOR is left blank and nothing is dropped.
 """
+import argparse
 import glob
+import math
 import os
 from collections import defaultdict
 
@@ -14,9 +23,55 @@ Q = 0.05
 OUT_MD = os.path.join(os.path.dirname(__file__), "asj_results.md")
 OUT_TSV = os.path.join(os.path.dirname(__file__), "asj_calls.tsv")
 TRANSITION = ({"A", "G"}, {"C", "T"})
+DEFAULT_BAM = "/home/juanfra/winloci_scratch/GGO_mm.bam"
+
+
+def _introns(aln):
+    """CIGAR-derived intron chain (ref coords of each N block); mirrors allele_specific_junctions.py."""
+    out = []
+    rpos = aln.reference_start
+    for op, length in aln.cigartuples:
+        if op == 3:
+            out.append((rpos, rpos + length)); rpos += length
+        elif op in (0, 2, 7, 8):
+            rpos += length
+    return out
+
+
+def _sor_for_call(bam, refs, chrom, donor, acceptor):
+    """GATK StrandOddsRatio for one junction (used/notused x fwd/rev, +1 pseudocount).
+    Reuses the logic of bench/asj_strand_bias.py — see that module for the formula + citation."""
+    if donor > acceptor:
+        donor, acceptor = acceptor, donor
+    if chrom not in refs:
+        return float("nan")
+    rf = rr = af = ar = 0
+    j = (donor, acceptor)
+    for aln in bam.fetch(chrom, donor, acceptor + 1):
+        if aln.is_unmapped or aln.is_secondary or aln.is_supplementary or aln.cigartuples is None:
+            continue
+        if aln.reference_start > donor or aln.reference_end < acceptor:
+            continue
+        used = j in _introns(aln)
+        if used:
+            rr += aln.is_reverse; rf += not aln.is_reverse
+        else:
+            ar += aln.is_reverse; af += not aln.is_reverse
+    rp, rm, ap, am = rf + 1.0, rr + 1.0, af + 1.0, ar + 1.0
+    ratio = (rp * am) / (ap * rm)
+    sym = ratio + 1.0 / ratio
+    return math.log(sym) + math.log(min(rp, rm) / max(rp, rm)) - math.log(min(ap, am) / max(ap, am))
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--bam", default=DEFAULT_BAM,
+                    help="BAM for SOR strand-bias annotation (needs pysam); '' to skip annotation")
+    ap.add_argument("--max-sor", type=float, default=None,
+                    help="if set, HARD-DROP calls with SOR > this (GATK SNV cutoff ~3.0, "
+                         "longcallR-strict ~2.0); default None = annotate only, drop nothing")
+    args = ap.parse_args()
+
     rows = []
     for p in sorted(glob.glob(os.path.join(GW, "asj_*.tsv"))):
         with open(p) as fh:
@@ -43,6 +98,30 @@ def main():
         rows[i]["q"] = q[i]
 
     asj = [r for r in rows if r["q"] < Q and r["dPSI"] >= DPSI]
+
+    # Strand-bias (SOR) annotation + optional hard-filter (see module docstring / asj_strand_bias.py).
+    n_sor_drop = 0
+    if args.bam:
+        try:
+            import pysam
+            bam = pysam.AlignmentFile(args.bam, "rb")
+            refs = set(bam.references)
+            for r in asj:
+                s = _sor_for_call(bam, refs, r["chrom"], int(r["donor"]), int(r["acceptor"]))
+                r["sor"] = s
+                r["sor_pass"] = int(not math.isnan(s) and s < 3.0)
+            if args.max_sor is not None:
+                before = len(asj)
+                asj = [r for r in asj if math.isnan(r["sor"]) or r["sor"] <= args.max_sor]
+                n_sor_drop = before - len(asj)
+        except ImportError:
+            print("[warn] pysam unavailable; skipping SOR annotation (use miniforge python)")
+            for r in asj:
+                r["sor"] = float("nan"); r["sor_pass"] = ""
+    else:
+        for r in asj:
+            r["sor"] = float("nan"); r["sor_pass"] = ""
+
     genes_tested = {r["gene"] for r in rows}
     genes_asj = {r["gene"] for r in asj}
     transversion_asj = [r for r in asj
@@ -103,13 +182,21 @@ def main():
     with open(OUT_MD, "w") as fh:
         fh.write("\n".join(L) + "\n")
     with open(OUT_TSV, "w") as fh:
-        fh.write("gene\tchrom\tanchor\talleleX\talleleY\tdonor\tacceptor\tpsiX\tpsiY\tdPSI\tpval\tq\tanchor_type\n")
+        fh.write("gene\tchrom\tanchor\talleleX\talleleY\tdonor\tacceptor\tpsiX\tpsiY\tdPSI\tpval\tq\t"
+                 "anchor_type\tsor\tsor_pass\n")
         for r in sorted(asj, key=lambda r: (-r["dPSI"], r["q"])):
             at = "transition" if {r["alleleX"], r["alleleY"]} in TRANSITION else "transversion"
+            sor = r.get("sor", float("nan"))
+            sor_s = "" if (isinstance(sor, float) and math.isnan(sor)) else f"{sor:.3f}"
             fh.write(f"{r['gene']}\t{r['chrom']}\t{r['anchor']}\t{r['alleleX']}\t{r['alleleY']}\t"
                      f"{r['donor']}\t{r['acceptor']}\t{r['psiX']}\t{r['psiY']}\t{r['dPSI']:.3f}\t"
-                     f"{r['pval']:.3e}\t{r['q']:.3e}\t{at}\n")
+                     f"{r['pval']:.3e}\t{r['q']:.3e}\t{at}\t{sor_s}\t{r.get('sor_pass', '')}\n")
     print("\n".join(L))
+    if args.bam:
+        n_pass = sum(1 for r in asj if r.get("sor_pass") == 1)
+        print(f"[SOR strand-bias] annotated {len(asj)} calls; {n_pass} pass SOR<3.0"
+              + (f"; --max-sor={args.max_sor} dropped {n_sor_drop}" if args.max_sor is not None else
+                 " (annotate-only; nothing dropped)"))
     print(f"\n[wrote {OUT_MD} and {OUT_TSV}]")
 
 
