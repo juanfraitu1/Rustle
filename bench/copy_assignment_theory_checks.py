@@ -788,6 +788,24 @@ CHECKS.append(check_tier3_coquant_unidentifiable)
 CHECKS.append(check_bridge_theorem)
 
 
+def check_mwca_capstone():
+    """Theorems 5-7 (§5c): MWCA as facility location. Submodular f; greedy >= (1-1/e)OPT and LP >= OPT on the
+    full small PSV universe; Strong-Sep => LP integral + exact + min_p certificate. (bench/mwca_approximation_check.py)"""
+    import mwca_approximation_check as mw
+    f1, n1 = mw.check_submodular_and_bound()
+    f2, n2 = mw.check_strong_sep_integrality()
+    ok3, g3, opt3, lp3 = mw.check_classic_tight()
+    assert not f1, f"MWCA submodular/(1-1/e)/LP failures: {f1[:3]}"
+    assert not f2, f"MWCA Strong-Sep integrality failures: {f2[:3]}"
+    assert ok3, f"MWCA classic-gap witness failed: greedy={g3} opt={opt3} lp={lp3}"
+    return (f"Theorems 5-7 (MWCA / facility location): f submodular; greedy>=(1-1/e)OPT & LP>=OPT on {n1} PSV "
+            f"instance/K (gap witness greedy {g3:.0f}<{opt3:.0f}); Strong-Sep LP integral+exact+cert on {n2} "
+            f"instances. Capstone: NP-hard -> (1-1/e) rounding -> exact-under-Strong-Sep -> min_p dual witness.")
+
+
+CHECKS.append(check_mwca_capstone)
+
+
 def main():
     for fn in CHECKS:
         print("OK  -", fn())

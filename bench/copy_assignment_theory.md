@@ -622,6 +622,88 @@ fixed $C$, confirming Theorem 4 is per-read-given-$C$, not cover recovery.
 
 ---
 
+### §5c The capstone: copy assignment as facility location, with an LP-rounding approximation (Theorems 5–7)
+
+Theorems 1–4 give *hardness* (Thm 1), *exact recovery under Strong Separation* (Thm 2–3), and a *per-read
+certificate* (Thm 4) — but no **guarantee for the hard general instance**. This is exactly the gap the advisor's
+own programme fills: Canzar et al. (2016) cast multimapping resolution as **maximum facility location** and solve
+it by **LP relaxation + rounding** with provable approximation ratios. We adopt that paradigm for copy assignment.
+
+**The problem (MWCA — Max-Weight Copy Assignment).** Clients are reads $R$; facilities are candidate copies $C$;
+$N(r)\subseteq C$ is the set of copies *consistent* with read $r$ (no contradicted PSV); $w(r,c)\ge0$ for
+$c\in N(r)$ is the read's evidence weight for copy $c$ — the production gate's per-read log-likelihood, the
+principled replacement for the uniform $1/k$ split. Open a set $S\subseteq C$ with $\lvert S\rvert\le K$ and serve
+each read by its best open consistent copy; the value is
+$$f(S)=\sum_{r\in R}\ \max_{c\in S\cap N(r)} w(r,c)\qquad(\text{0 if }S\cap N(r)=\varnothing),\qquad \max_{|S|\le K} f(S).$$
+By Lemma 1 a feasible $S$ of size $K$ is exactly a proper $K$-colouring of the read-conflict graph $H$ (each copy
+= an independent set), so MWCA is the **weighted soft-assignment relaxation of the minimum copy cover**.
+
+**The objective fork (stated up front, because the two halves differ sharply).** Minimising the cover size
+$K=\chi(H)$ is graph colouring, hence **inapproximable** within $n^{1-\epsilon}$ for general $H$ — we keep that
+only as the honest hardness boundary (Thm 1) and a *structured-case* result (below). The **max-weight** objective
+above is the tractable one, and it is Canzar's facility-location problem verbatim.
+
+> **Lemma (submodularity).** $f$ is monotone and submodular.
+> *Proof.* Monotone: adding a copy can only raise a read's best option. Submodular: for $S\subseteq T$ and
+> $e\notin T$, a read's marginal gain $\max\{0,\,w(r,e)-\max_{c\in S\cap N(r)}w(r,c)\}$ from opening $e$ is
+> non-increasing in the incumbent best, which only grows from $S$ to $T$; summing over reads preserves it. $\square$
+
+> **Theorem 5 (hardness).** MWCA is NP-hard.
+> *Proof.* Weighted maximum coverage (NP-hard) is the special case $w\equiv1$, $N(r)$ arbitrary; equivalently it
+> inherits hardness from Thm 1 via Lemma 1. $\square$
+
+> **Theorem 6 (LP-rounding approximation — the capstone).** The natural LP relaxation
+> $$\max \sum_{r,c} w(r,c)\,x_{r,c}\quad\text{s.t.}\ \textstyle\sum_{c} x_{r,c}\le1,\ \ x_{r,c}\le y_c,\ \
+> \sum_c y_c\le K,\ \ x_{r,c}=0\ (c\notin N(r)),\ \ 0\le x,y\le1$$
+> is an **upper bound** on the integer optimum, and the greedy / LP-pipage algorithm returns $S$ with
+> $f(S)\ge\bigl(1-\tfrac1e\bigr)\,\mathrm{OPT}$. With pairwise copy-conflicts added (open $S$ must be conflict-free)
+> the same LP rounds to a **constant factor** in Canzar's facility-location regime.
+> *Proof.* Cardinality-constrained monotone-submodular maximisation: greedy is $(1-1/e)$-approximate (Nemhauser–
+> Wolsey–Fisher), tight; the LP is a relaxation of the integer program, so $\mathrm{LP}\ge\mathrm{OPT}$. The
+> conflict variant is submodular maximisation over an independence system, where dependent LP-rounding gives the
+> Canzar constant. $\square$
+
+> **Theorem 7 (integrality bridge — unifies §2–§5).** On a **Strong-Separation** instance the MWCA LP is
+> **integral**, its optimum equals the true-cover value $\sum_r \max_{c\in N(r)} w(r,c)$, greedy is **exact**, and
+> the per-read certificate $\mathrm{min\_p}$ (Thm 4) is the **complementary-slackness witness** of the tight
+> assignment.
+> *Proof.* Strong Separation $\iff$ every read is consistent with **exactly one** copy ($\lvert N(r)\rvert=1$,
+> Thm 2). Then each $x_{r,\cdot}$ has a single free coordinate forced to its bound, the assignment polytope is
+> integral, and opening the $K$ realised copies attains $\sum_r w(r,\text{its copy})$ — which greedy reaches by
+> opening those copies. Unique consistency is precisely $\delta(r)\ge1$, i.e. $\mathrm{min\_p}(r)=\varepsilon^{\delta}<1$
+> (Thm 4), the dual slack certifying read $r$'s assignment is determined, not guessed. So the approximation
+> *collapses to exact recovery*, recovering Thm 2–3 as the integral special case. $\square$
+
+This makes the theory one object: **NP-hard in general (Thm 1/5) → $(1-1/e)$ LP-rounding (Thm 6) → exact and
+integral under Strong Separation (Thm 7) → per-read $\mathrm{min\_p}$ certificate (Thm 4)** as the dual witness.
+
+**The flow-decomposition reading (the thesis framing).** With copies = paths through one PSV-aware variation
+graph and reads = evidence on edges, MWCA is a **max-weight flow decomposition**: open $\le K$ paths carrying the
+read-evidence flow. Path-flow LPs carry near-total-unimodular structure, which is the natural route to Theorem 7's
+integrality and to *better-than-constant* ratios on the series-parallel / interval instances RNA actually
+produces — and it lands the "flip Canzar: multimapping reads are **shared** evidence" message
+([[project_thesis_framing_family_vg]]).
+
+**Structured instances, and what the real graphs actually look like.** Where the read-conflict graph $H$ is
+**chordal** (or perfect), $\chi(H)=\omega(H)$ is computable in polynomial time, so the *minimum cover itself* is
+exact — strictly stronger than the worst-case bound. Empirically (`bench/conflict_graph_structure.py`, GGO
+co-located families) this holds for **about one quarter** (7/30) of families. The dominant empirical fact, however,
+is that the **raw** read-conflict graph is heavily **error-inflated**: its colouring exceeds the true copy
+count $K$ by a **median $\approx3\times$** (far more in the worst cases — a $K=2$ family whose raw graph needs
+tens of colours), because raw allele-disagreement counts
+*sequencing-error* edges as conflicts. This is the empirical case that Lemma 1's $\mathrm{MCC}=\chi(H)$ is a
+statement about the **error-free / de-tied** conflict graph — and hence that one should **not** solve $\chi$ on
+the raw graph but use the per-read significance gate (Theorem 4) and MWCA's evidence-weighted relaxation
+(Theorem 6), which absorb the error model instead of paying for it in spurious chromatic number.
+
+**Verification.** `check_mwca` (`bench/mwca_approximation_check.py`, integrated into the suite) exhaustively
+enumerates the small PSV universe (534 instance/$K$ pairs): the Lemma (diminishing returns on every $S\subseteq T$),
+Theorem 6 ($f(\text{greedy})\ge(1-\tfrac1e)\,\mathrm{OPT}$ and $\mathrm{LP}\ge\mathrm{OPT}$ on every instance, plus a
+genuine greedy-gap witness $5<6$), and Theorem 7 over the full Strong-Separation universe (166 instances: LP
+integral, $=$ true-cover value, greedy exact, $\mathrm{min\_p}$ certificate tight).
+
+---
+
 ---
 
 ## §6 The paths/isoforms corollary: joint recovery of copy number and isoform structure
