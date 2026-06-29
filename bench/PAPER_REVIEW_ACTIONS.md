@@ -116,3 +116,35 @@ This is exactly consistent with the spec's stated scope; the experiment **pins i
 divergent route; but it **root-caused and confirmed O4's exact scope** (collapsed-within-family only) on real
 data — a sharper, more honest O4 boundary than before, and a concrete spec for the next step (the divergent
 route: assemble the collapsed pile and call it a distinct copy even with one reference locus).
+
+## F3 — DNA-supervised copy decoding = non-circular O2 accuracy (`bench/dna_supervised_decode.py`)
+**Paper:** Vollger/SDA 2019 — DNA pre-phases PSVs→copies; our identifiability theory gives the conditions under
+which that recovery is exact. The consequence (and the answer to the defense audit's "what's your real-data
+accuracy?", since silver is circular and sim5x is synthetic): build per-copy PSV **signatures from the T2T DNA
+catalog** (copies AND their distinguishing columns defined independently of the RNA reads), decode RNA reads
+against them, and validate with a **held-out-DNA-column cross-validation** — split each read's DNA-defined PSV
+columns into a TRAIN half (drives the call) and a TEST half (confirms it). Non-circular on every axis: the
+copies are not RNA-assembled, the columns are not RNA-discovered, and there is no minimap2-primary silver label.
+
+**Method:** per co-located DNA-catalog family (≤3 Mb span, 2–8 members), load `{fid}.json` (ref0 + the per-copy
+substitution matrix), take the **exonic** PSV columns (genomic pos = ref0 start + local pos), build per-copy
+allele signatures, **realign the family's RNA reads to ref0** (one common frame — sidesteps cross-copy
+projection), read each read's allele at each PSV position, decode with the production significance gate
+(`copy_assign.assign_read`), and run the held-out CV.
+
+**Result (genome-wide, 87 families, 23,504 reads):**
+- **Reads decoded (margin-pass): 21,468 / 23,504 (91.3%).**
+- **Held-out-DNA-column confirmation: 19,986 / 20,568 = 97.2%** (reads with ≥2 DNA PSV columns), vs a weighted
+  1/K chance of 43.2% → **2.2× chance** (enrichment is modest only because the genome-wide set is K=2-dominated,
+  where chance is 50%; on the K≥3-richer validation subset it was **95.6% = 3.9× chance**).
+- Per-family: DNFAM483 (K=2) 99.8% on 3,769 reads, DNFAM92 (K=3) 100%, DNFAM21 (K=6) 99.9%, DNFAM55 (K=4) 100%;
+  the hardest, DNFAM19 (K=8) 77.2% (more copies → more competitors → lower per-column confirmation, as expected).
+
+**Why it matters:** this is the **first non-circular, real-data O2 accuracy**. The silver standard (99.9%) only
+shows agreement with minimap2 where minimap2 was already confident, using RNA-assembled profiles — circular on
+both the profile and the label. Here the reference is built entirely from DNA, and held-out DNA columns confirm
+the per-read call at **97.2%**. It also realises the SDA/Vollger "supervised nearest-signature decode" the DNA-
+catalog spec deferred as Phase 2 — turning NP-hard unsupervised phasing into a supervised classification when a
+DNA reference exists. Honest scope: co-located DNA-catalog families with ≥2 exonic PSVs; the DNA signatures and
+the RNA reads share exon sequence (not orthogonal to *sequence*), but the held-out split + DNA-defined copies/
+columns remove the RNA-self-assembly and silver-label circularity that the audit flagged.

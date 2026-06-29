@@ -39,7 +39,12 @@ longcallR, Sahlin 2018 IsoCon, Zheng 2025 Clair3-RNA, family-detection prior-art
   families that is *not* circular with the RNA conflict graph, and it's the exact method our own key reference
   (Soto) uses — strong to cite. Gets most of the SEDEF value without the cluster.
 
-### F3 — O2 non-circular accuracy via the DNA-derived PSV catalog as a SUPERVISED prior  **[GAP]  value HIGH · effort MED-HIGH**
+### F3 — O2 non-circular accuracy via the DNA-derived PSV catalog as a SUPERVISED prior  **[EXECUTED 2026-06-28]  value HIGH · effort MED-HIGH**
+> **DONE — `bench/dna_supervised_decode.py`.** Decode RNA reads against DNA-derived per-copy PSV signatures
+> (copies + distinguishing columns from the T2T DNA catalog, not RNA), validated by held-out-DNA-column CV.
+> Result genome-wide in `bench/PAPER_REVIEW_ACTIONS.md` (validation subset: **95.6% held-out confirmation = 3.9×
+> the 1/K chance** — non-circular: no RNA self-assembly, no minimap2-primary silver).
+
 - **Paper:** Vollger SDA 2019 — DNA reads pre-phase PSVs→paralogs by correlation clustering; our identifiability
   theory proves the conditions under which that recovery is *exact*. The natural consequence (noted in memory):
   DNA **pre-phases PSVs→copies, turning the NP-hard RNA phasing into a supervised nearest-signature lookup.**
