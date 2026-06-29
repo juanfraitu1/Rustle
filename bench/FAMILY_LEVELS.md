@@ -39,6 +39,44 @@ protein-homology edges (`fident≥0.50`, `min(qcov,tcov)≥0.50`). Reports three
   100% (e.g. GWFAM36~37, 57~58) = near-identical paralogs read-conflict split because reads don't cross-map
   between their loci. These are the candidates a protein-level family definition would merge.
 
+## ⭐ Authoritative cross-tab — every read-conflict family × {protein, DNA, SEDEF} (`family_levels_crosstab.py`)
+
+The single FP/FN artifact: each `gw_off` family scored at all three levels at once — **protein** (ORF→mmseqs),
+**DNA** (Soto pairwise asm20, ≥200 bp/≥90% block), **SEDEF** (its two copies are the two ends of a segmental-
+duplication pair in the independent `final.bed` segdup map, which never saw the RNA catalog).
+
+| protein | DNA | SEDEF | families | % |
+|:---:|:---:|:---:|---:|---:|
+| ✓ | ✓ | ✓ | 20 | 25% |
+| ✓ | ✓ | ✗ | 4 | 5% |
+| ✗ | ✓ | ✓ | 26 | 32% |
+| ✗ | ✓ | ✗ | 6 | 7% |
+| ✗ | ✗ | ✓ | 13 | 16% |
+| ✗ | ✗ | ✗ | **12** | **15%** |
+
+Marginals: **protein 30% · DNA 69% · SEDEF-pair 73% · SEDEF-≥2-copies-in-segdup 90%.**
+**Confirmed by ANY level (a real duplication family): 69/81 = 85%. By ALL three: 25%. By NONE: 12/81 = 15%.**
+
+**What this resolves about FP/FN:**
+- **The read-conflict catalog is ~85% confirmed as real duplications** by at least one orthogonal level; **SEDEF
+  alone — the most independent check (DNA segdup map, built without the RNA catalog) — confirms 73%** as segdup
+  pairs and 90% as sitting in duplicated regions. So the **false-positive ceiling is ~15%** (the 12 families no
+  level confirms = shared non-coding / one exon / repeat — identifiability-only, not a duplication).
+- **The protein-only 30% was MISLEADING.** The cross-tab shows why: 26/81 (32%) are DNA✓ **and** SEDEF✓ but
+  protein✗ — they are **real segmental duplications that don't encode a conserved protein** (non-coding /
+  pseudogene / UTR duplications). That is a **protein-level FN (protein is blind to non-coding copies)**, NOT a
+  read-conflict FP. SEDEF/DNA, not protein, are the right arbiters of "is this a real duplication."
+- **SEDEF > DNA-pairwise (73% vs 69%)** because SEDEF's Jaccard+chaining is more sensitive than end-to-end asm20
+  — it recovers 13 families the pairwise check missed.
+
+**Verdict:** as a *duplication-family* detector the read-conflict definition is ~85% precise (≤15% FP), not the
+~70%-wrong the protein-only number implied. As an *identifiability* detector (its actual purpose) it is sound
+(0 FP on labeled domain-sharers, FN-by-design on resolvable copies). The "errors" are mostly the LEVELS
+measuring different things (protein blind to non-coding; nucleotide RNA blind to >87%-divergent), which is
+exactly why the levels are kept separate.
+
+`final.bed` = SEDEF run on the GGO genome (cluster, 253,030 segdup pairs), at `~/Desktop/final.bed`.
+
 ## Why separate
 Keeping the levels independent means: (a) the RNA definition stays the clean thesis object (no protein/DNA
 dependency baked in); (b) each level is a falsifiable orthogonal check of the others; (c) when asked for the DNA
