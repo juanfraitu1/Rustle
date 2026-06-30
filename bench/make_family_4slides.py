@@ -5,6 +5,7 @@ methods table, runaway-read defense.
 Output: bench/slides/three_slides.pptx (+ PNGs). Run: /home/juanfra/miniforge3/bin/python bench/make_3slide_deck.py
 """
 import os
+import textwrap
 
 import matplotlib
 matplotlib.use("Agg")
@@ -60,17 +61,18 @@ def fig_pipeline():
         ax.annotate("", (x1, by + bh / 2), (x0, by + bh / 2), arrowprops=dict(arrowstyle="-|>", color=NH, lw=2.5))
     for i, (x0, x1) in enumerate(arrow_x):
         ax.text((x0 + x1) / 2, by + bh / 2 + 0.25, f"{['①','②','③'][i]}", ha="center", fontsize=15, weight="bold", color=RED)
-    # legend (the mechanism of each arrow, code functions named)
-    ax.add_patch(plt.Rectangle((0.2, -1.35), 12.35, 1.55, fc="#f6f6f6", ec=GREY))
-    ax.text(0.4, -0.1, "①  group primary reads by EXACT intron chain → de-novo skeletons; keep ≥3 reads + all-canonical "
-            "GT–AG junctions; collapse isoforms sharing a junction into one gene LOCUS.   (pass1_skeletons → assemble_gate → collapse_loci)",
-            fontsize=10.5, va="top", color="#141414")
-    ax.text(0.4, -0.62, "②  for each read, list its placements across the loci; draw an EDGE between two loci when a read "
-            "DE-TIES — |Δde| ≤ δ AND both alignments fit (≤ de_max), ≥3 such reads.   (conflict_edges)",
-            fontsize=10.5, va="top", color="#141414")
-    ax.text(0.4, -1.14, "③  a family = a connected component of that graph (no global core, no similarity bar).   (conflict_families)",
-            fontsize=10.5, va="top", color="#141414")
-    ax.set_xlim(-0.1, 12.9); ax.set_ylim(-1.5, 5.25)
+    # legend (the mechanism of each arrow, code functions named) — one auto-sizing bbox that WRAPS the text
+    items = [
+        "①  group primary reads by EXACT intron chain → de-novo skeletons; keep ≥3 reads + all-canonical GT–AG "
+        "junctions; collapse isoforms sharing a junction into one gene LOCUS.   (pass1_skeletons → assemble_gate → collapse_loci)",
+        "②  for each read, list its placements across the loci; draw an EDGE between two loci when a read DE-TIES — "
+        "|Δde| ≤ δ AND both alignments fit (≤ de_max), ≥3 such reads.   (conflict_edges)",
+        "③  a family = a connected component of that graph (no global core, no similarity bar).   (conflict_families)",
+    ]
+    legend = "\n".join(textwrap.fill(it, 112, subsequent_indent="      ") for it in items)
+    ax.text(0.2, -0.05, legend, fontsize=10.3, va="top", ha="left", color="#141414",
+            bbox=dict(boxstyle="round,pad=0.6", fc="#f6f6f6", ec=GREY))
+    ax.set_xlim(-0.1, 12.9); ax.set_ylim(-1.6, 5.25)
     return savefig("s_pipeline.png")
 
 
@@ -134,18 +136,17 @@ def fig_singlecore():
     ax.text(gx + 1.55, (ny["A"] + ny["D"]) / 2, "A⋯D:\nNO direct tie", ha="left", va="center", fontsize=9.5, color=GREY)
     ax.text(gx, ny["D"] - 0.62, "1 connected component\n= ONE family", ha="center", va="top",
             fontsize=10, color="#146e14", weight="bold")
-    # two interpretations
-    ax.add_patch(plt.Rectangle((0.4, -1.95), 9.8, 2.85, fc="#f4f4f4", ec=GREY))
-    ax.text(0.6, 0.65, "Single core (longest common substring / highest-Jaccard block, shared by ALL):",
-            fontsize=12.5, weight="bold", color="#b01515")
-    ax.text(0.6, 0.2, "the all-copies intersection SHRINKS as members diverge → high θ drops the divergent tail\n"
-            "(UNDER-merge); low θ rewards a shared domain/repeat present in unrelated genes (OVER-merge). Either way it fails.",
-            fontsize=11.5, va="top")
-    ax.text(0.6, -0.85, "Read-conflict / pairwise POA-core → connected component (union-find):",
-            fontsize=12.5, weight="bold", color="#146e14")
-    ax.text(0.6, -1.3, "membership = a PAIRWISE tie to ANY existing member → the chain A–B–C–D is ONE family,\n"
-            "even though A and D share NO common core and are not directly similar. Transitivity, not a global block.",
-            fontsize=11.5, va="top")
+    # two interpretations — each an AUTO-SIZING bbox that wraps its own text (red = single-core, green = conflict)
+    sc = "Single core (longest common substring / highest-Jaccard block, shared by ALL):\n" + textwrap.fill(
+        "the all-copies intersection SHRINKS as members diverge → high θ drops the divergent tail (UNDER-merge); "
+        "low θ rewards a shared domain/repeat present in unrelated genes (OVER-merge). Either way it fails.", 90)
+    ax.text(0.5, 0.85, sc, fontsize=11, va="top", ha="left", color="#7a1010",
+            bbox=dict(boxstyle="round,pad=0.4", fc="#fbeeee", ec="#b01515"))
+    rc = "Read-conflict / pairwise POA-core → connected component (union-find):\n" + textwrap.fill(
+        "membership = a PAIRWISE tie to ANY existing member → the chain A–B–C–D is ONE family, even though A and D "
+        "share NO common core and are not directly similar. Transitivity, not a global block.", 90)
+    ax.text(0.5, -1.0, rc, fontsize=11, va="top", ha="left", color="#0d5a0d",
+            bbox=dict(boxstyle="round,pad=0.4", fc="#eef7ee", ec="#146e14"))
     ax.set_xlim(-1.0, 12.6); ax.set_ylim(-2.1, 5.45)
     return savefig("s_singlecore.png")
 
@@ -174,15 +175,17 @@ def fig_runaway():
     ax.annotate("read-through / chimera / mis-clip:\novershoots e3 + adds a PHANTOM junction", (8.5, yr + 0.4),
                 (6.7, 0.9), fontsize=11, color=RED, ha="left", arrowprops=dict(arrowstyle="->", color=RED))
     # the two defenses
-    ax.add_patch(plt.Rectangle((0.4, -1.45), 9.6, 1.85, fc="#f4f4f4", ec=GREY))
-    ax.text(0.6, 0.1, "Two defenses (de-novo assembly, denovo_assemble.rs):", fontsize=12.5, weight="bold", color="#14285a")
-    ax.text(0.6, -0.35, "①  EXACT intron-chain key — the runaway's chain (extra phantom junction) ≠ the real chain →\n"
-            "     it forms its OWN skeleton; a lone runaway fails the ≥3-read quorum → DROPPED. It never extends the real chain.",
-            fontsize=11.5, va="top")
-    ax.text(0.6, -1.0, "②  Terminal boundary = the k-th-SUPPORTED end (k=2), not the union (max-end) → a single read's\n"
-            "     overshoot of e3 is trimmed to the 2nd-furthest position. Verified: pass1_robust_trims_a_runaway_terminal_read.",
-            fontsize=11.5, va="top")
-    ax.set_xlim(-1.2, 10.4); ax.set_ylim(-1.6, 5.0)
+    # two defenses — one auto-sizing bbox that wraps its text
+    defenses = ("Two defenses (de-novo assembly, denovo_assemble.rs):\n"
+                + textwrap.fill("①  EXACT intron-chain key — the runaway's chain (extra phantom junction) ≠ the real chain "
+                                "→ it forms its OWN skeleton; a lone runaway fails the ≥3-read quorum → DROPPED. It never "
+                                "extends the real chain.", 92, subsequent_indent="     ")
+                + "\n" + textwrap.fill("②  Terminal boundary = the k-th-SUPPORTED end (k=2), not the union (max-end) → a "
+                                       "single read's overshoot of e3 is trimmed to the 2nd-furthest position. Verified: "
+                                       "pass1_robust_trims_a_runaway_terminal_read.", 92, subsequent_indent="     "))
+    ax.text(0.4, 0.35, defenses, fontsize=11, va="top", ha="left", color="#141414",
+            bbox=dict(boxstyle="round,pad=0.5", fc="#f4f4f4", ec=GREY))
+    ax.set_xlim(-1.2, 10.6); ax.set_ylim(-1.7, 5.0)
     return savefig("s_runaway.png")
 
 
@@ -230,7 +233,11 @@ def build():
 
     # Slide 2 — the pipeline: from BAM alignments to families
     s = prs.slides.add_slide(blank); title(s, "2 · From reads (BAM alignments) to families — the pipeline")
-    fig(s, fig_pipeline(), top=1.5, maxh=5.5)
+    fig(s, fig_pipeline(), top=1.35, maxh=5.0)
+    tb(s, "isoform = a distinct splice variant of a gene — a particular intron chain (which exons are joined). "
+          "One gene can express several isoforms; step ① collapses isoforms that share a junction into ONE gene LOCUS, "
+          "so a family is a set of loci (genes/copies), not of isoforms.",
+       0.55, 6.75, 12.25, 0.7, 13, italic=True, color=(90, 90, 90))
 
     # Slide 3 — why a single common core cannot find all members
     s = prs.slides.add_slide(blank); title(s, "3 · Why a single common core can't discover all members")
