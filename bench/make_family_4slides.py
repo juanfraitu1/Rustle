@@ -1,8 +1,6 @@
 #!/usr/bin/env python
-"""A focused 3-slide deck:
-  1) what a multi-copy gene family IS in our definition (read-conflict graph),
-  2) a table of methods to detect multi-copy gene families (the gathered related-work),
-  3) how a runaway read overlapping the last exon is prevented from wrongly extending the intron chain.
+"""A focused family-definition deck (5 slides): definition, BAM->families pipeline, single-core limit,
+methods table, runaway-read defense.
 
 Output: bench/slides/three_slides.pptx (+ PNGs). Run: /home/juanfra/miniforge3/bin/python bench/make_3slide_deck.py
 """
@@ -27,6 +25,53 @@ BLUE, RED, GREEN, GREY, NAVY = "#377eb8", "#e41a1c", "#4daf4a", "#999999", (20, 
 def savefig(name):
     p = os.path.join(OUT, name)
     plt.savefig(p, bbox_inches="tight", facecolor="white"); plt.close(); return p
+
+
+def fig_pipeline():
+    from matplotlib.patches import FancyBboxPatch
+    fig, ax = plt.subplots(figsize=(12.6, 5.2)); ax.axis("off")
+    NH = "#14285a"
+    boxes = [
+        (0.2, "BAM alignments", "each read: intron chain\n(CIGAR) · de/NM · MAPQ\nprimary + secondary"),
+        (3.45, "de-novo loci", "group reads by intron\nchain → gate → collapse\nisoforms into gene loci"),
+        (6.7, "read-conflict graph", "loci = nodes\na de-tie = an edge\n(a read fits both loci)"),
+        (9.95, "multi-copy\nFAMILIES", "connected\ncomponents\n(|C| ≥ 2)"),
+    ]
+    bw, bh, by = 2.6, 1.7, 2.5
+    for (x, title, sub) in boxes:
+        ax.add_patch(FancyBboxPatch((x, by), bw, bh, boxstyle="round,pad=0.04,rounding_size=0.18",
+                                    fc="#eef3fb", ec=NH, lw=2.2))
+        ax.text(x + bw / 2, by + bh - 0.34, title, ha="center", va="center", fontsize=13.5, weight="bold", color=NH)
+        ax.text(x + bw / 2, by + 0.55, sub, ha="center", va="center", fontsize=10.3, color="#282828")
+    # mini read-stack on box 1
+    for k, yy in enumerate([4.55, 4.78, 5.01]):
+        ax.add_patch(plt.Rectangle((0.45, yy), 0.7, 0.07, fc=GREY, ec="black"))
+        ax.add_patch(plt.Rectangle((1.4, yy), 0.7, 0.07, fc=GREY, ec="black"))
+    ax.plot([1.15, 1.4], [4.62, 4.62], color=GREY, lw=0.7)  # splice gap hint
+    # mini conflict graph on box 4 (2 components)
+    gx, gy = 11.25, 4.9
+    ax.plot([gx, gx + .5], [gy, gy + .25], color=BLUE, lw=2); ax.plot([gx, gx + .5], [gy, gy - .25], color=BLUE, lw=2)
+    ax.plot([gx + .5, gx + .5], [gy + .25, gy - .25], color=BLUE, lw=2)
+    for px, py in [(gx, gy), (gx + .5, gy + .25), (gx + .5, gy - .25)]:
+        ax.add_patch(plt.Circle((px, py), .08, fc=BLUE, ec="black", zorder=3))
+    # arrows + numbered mechanism labels
+    arrow_x = [(2.8, 3.45), (6.05, 6.7), (9.3, 9.95)]
+    for (x0, x1) in arrow_x:
+        ax.annotate("", (x1, by + bh / 2), (x0, by + bh / 2), arrowprops=dict(arrowstyle="-|>", color=NH, lw=2.5))
+    for i, (x0, x1) in enumerate(arrow_x):
+        ax.text((x0 + x1) / 2, by + bh / 2 + 0.25, f"{['①','②','③'][i]}", ha="center", fontsize=15, weight="bold", color=RED)
+    # legend (the mechanism of each arrow, code functions named)
+    ax.add_patch(plt.Rectangle((0.2, -1.35), 12.35, 1.55, fc="#f6f6f6", ec=GREY))
+    ax.text(0.4, -0.1, "①  group primary reads by EXACT intron chain → de-novo skeletons; keep ≥3 reads + all-canonical "
+            "GT–AG junctions; collapse isoforms sharing a junction into one gene LOCUS.   (pass1_skeletons → assemble_gate → collapse_loci)",
+            fontsize=10.5, va="top", color="#141414")
+    ax.text(0.4, -0.62, "②  for each read, list its placements across the loci; draw an EDGE between two loci when a read "
+            "DE-TIES — |Δde| ≤ δ AND both alignments fit (≤ de_max), ≥3 such reads.   (conflict_edges)",
+            fontsize=10.5, va="top", color="#141414")
+    ax.text(0.4, -1.14, "③  a family = a connected component of that graph (no global core, no similarity bar).   (conflict_families)",
+            fontsize=10.5, va="top", color="#141414")
+    ax.set_xlim(-0.1, 12.9); ax.set_ylim(-1.5, 5.25)
+    return savefig("s_pipeline.png")
 
 
 def fig_conflict():
@@ -183,12 +228,16 @@ def build():
        0.7, 1.15, 11.9, 0.9, 18, italic=True, color=(60, 60, 60))
     fig(s, fig_conflict(), top=2.05, maxh=4.6)
 
-    # Slide 2 — why a single common core cannot find all members
-    s = prs.slides.add_slide(blank); title(s, "2 · Why a single common core can't discover all members")
+    # Slide 2 — the pipeline: from BAM alignments to families
+    s = prs.slides.add_slide(blank); title(s, "2 · From reads (BAM alignments) to families — the pipeline")
+    fig(s, fig_pipeline(), top=1.5, maxh=5.5)
+
+    # Slide 3 — why a single common core cannot find all members
+    s = prs.slides.add_slide(blank); title(s, "3 · Why a single common core can't discover all members")
     fig(s, fig_singlecore(), top=1.4, maxh=5.6)
 
-    # Slide 3 — methods table
-    s = prs.slides.add_slide(blank); title(s, "3 · Methods to detect multi-copy gene families (gathered)")
+    # Slide 4 — methods table
+    s = prs.slides.add_slide(blank); title(s, "4 · Methods to detect multi-copy gene families (gathered)")
     rows, cols = len(METHODS), 4
     gt = s.shapes.add_table(rows, cols, Inches(0.35), Inches(1.35), Inches(12.6), Inches(5.7)).table
     gt.columns[0].width = Inches(2.5); gt.columns[1].width = Inches(2.0); gt.columns[2].width = Inches(4.2); gt.columns[3].width = Inches(3.9)
@@ -208,11 +257,11 @@ def build():
     tb(s, "The RNA / long-read / de-novo / copy-level niche was empty — IsoCon is the closest, but only WITHIN a known family.",
        0.4, 7.05, 12.5, 0.4, 11.5, italic=True, color=(110, 110, 110))
 
-    # Slide 4 — runaway read
-    s = prs.slides.add_slide(blank); title(s, "4 · A runaway read can't wrongly extend the intron chain")
+    # Slide 5 — runaway read
+    s = prs.slides.add_slide(blank); title(s, "5 · A runaway read can't wrongly extend the intron chain")
     fig(s, fig_runaway(), top=1.35, maxh=5.5)
 
-    path = os.path.join(OUT, "three_slides.pptx"); prs.save(path); return path
+    path = os.path.join(OUT, "family_slides.pptx"); prs.save(path); return path
 
 
 if __name__ == "__main__":
