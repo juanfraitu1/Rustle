@@ -98,16 +98,27 @@ the 3 PSV dumps diff = 0). Chunking bounds peak memory to ~N regions' reads (the
 why it is opt-in). The temp files of the opt-in minimap2 PSV path were made process-unique (atomic nonce) so
 all alignment helpers are thread-safe.
 
-**Measured (11-family heavy contig `NC_073228.2`, incl. GAGE, on `GGO_mm.bam`):** serial **18:19** (2.4 GB) →
-`--region-threads 6` **9:50** (3.9 GB) = **1.86×**, byte-identical. The speedup is bounded by the *single
-heaviest family* (Amdahl) — region-parallelism overlaps the lighter families under its shadow but cannot split
-it — so expect **~2× wherever heavy families share a contig**, not linear. The densest contigs (12/11/11/7
-families) hold most of the heavy work, so per-contig parallelism captures the bulk of the available win.
+**CROSS-CONTIG (the shipped design).** Regions are FLATTENED across all contigs and processed out-of-order in
+one pool, so the globally-heaviest families — which live on *different* contigs — overlap (a single-family
+contig no longer wastes the pool). A **bounded LRU cache of loaded contig genomes** (`lru`, capacity ≈
+`region_threads`) lets any worker reuse an already-loaded chromosome and caps resident genome sequences (the
+memory bound; `Arc` keeps a genome alive while an evicting worker still holds it). The heavy read SEQUENCES are
+dropped inside each worker — the output stage needs only read NAMES (everything else is in the computed
+assignments) — so collecting every region's result out-of-order stays lightweight. Output is still drained in
+the original flat order, so `CAFAM` ids and all rows are byte-identical.
 
-Scope: parallelism is **within a contig** (genome loaded one contig at a time = memory-safe). Overlapping the
-globally-heaviest families *across* contigs would need a bounded LRU genome-contig cache + out-of-order
-processing (a separate, larger change to the output path). Use the largest `N` your memory allows on a heavy
-sweep; keep `N=1` when memory-bound.
+**The ceiling is the single globally-heaviest family** (≈ one 80 s poasta DP here): no region-parallelism can
+split it (it is already internally parallel). So `parallel_wall ≈ max(heaviest_family, total_work / N)`:
+- small/dominated sets (one giant family) → modest ratio (a 3-family chr19 set and an 8-contig set were
+  bounded near the lone heavy family);
+- the **full genome-wide sweep** (~3854 s total, heaviest family ≈ 80 s) → `total/N` dominates, so it
+  approaches **~N×** up to the heaviest-family floor — the real win.
+
+**Verified byte-identical** at every step: serial vs `--region-threads 3/6` on chr19, an 11-family contig, and
+an **8-DISTINCT-contig** set → families / assignments / quant / posterior / mosaic / all 3 PSV dumps diff = 0.
+Use the largest `N` your memory allows on a heavy sweep (peak ≈ `N` regions' reads + ≈`N` contig genomes);
+keep `N=1` (the exact serial path) when memory-bound. `--dump-psv` at genome scale accumulates all regions'
+PSV matrices in memory — prefer smaller `N` or per-region runs for that opt-in mode.
 
 
 ---

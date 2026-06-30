@@ -9,23 +9,31 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use lru::LruCache;
 use std::collections::HashSet;
 use std::io::Write;
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
-use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead};
+use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache};
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
 
 /// The expensive, independent per-region work (BAM read + `detect_and_assign`, which holds the dominant
-/// poasta alignment). Computed possibly in parallel across regions, then drained SERIALLY in region order so
-/// `CAFAM` ids and every output row stay byte-identical to the serial sweep.
+/// poasta alignment). Computed possibly in parallel across regions (any contig), then drained SERIALLY in the
+/// original region order so `CAFAM` ids and every output row stay byte-identical to the serial sweep.
+///
+/// The heavy read SEQUENCES (`BamRead`) are dropped inside the worker — the output stage needs only the read
+/// NAMES (everything else lives in `fams`) — so collecting all regions' results out-of-order is lightweight.
 struct RegionWork {
+    contig: String,
     lo: u64,
     hi: u64,
-    bam_reads: Vec<BamRead>,
+    read_names: Vec<String>,
+    n_mapped: usize,
     fams: Vec<FamilyAssignment>,
     fallback: Vec<FallbackEdge>,
     dna_needs: Vec<DnaNeedsRecord>,
@@ -62,14 +70,16 @@ struct Args {
     /// BAM-reading threads.
     #[arg(long, default_value_t = 4)]
     threads: usize,
-    /// REGION-PARALLEL sweep: process this many regions (independent families) concurrently. Each family is
-    /// an independent unit (`detect_and_assign` is pure; `BamIndexCache`/genome are read-only), so the heavy
-    /// per-family poasta alignment of N families overlaps on N cores. Output is collected in the SAME order
-    /// and `CAFAM` ids are assigned serially afterward, so the result is BYTE-IDENTICAL to the serial run.
-    /// Regions are processed in chunks of this size, so peak memory is bounded to ~N regions' reads (raise it
+    /// REGION-PARALLEL sweep: process this many regions (independent families) concurrently, ACROSS contigs.
+    /// Each family is an independent unit (`detect_and_assign` is pure; `BamIndexCache`/genome are read-only),
+    /// so the heavy per-family poasta alignments of N families — even on different chromosomes — overlap on N
+    /// cores; a bounded LRU cache of loaded contig genomes (capacity ≈ N) avoids reloads and caps resident
+    /// chromosomes. Output is collected and `CAFAM` ids assigned in the SAME (serial) order afterward, so the
+    /// result is BYTE-IDENTICAL to the serial run. Peak memory ≈ N regions' reads + ≈N contig genomes (raise N
     /// for speed on a many-core box, lower it if memory-bound; the documented genome-wide OOM is why this is
-    /// opt-in). `1` (default) = the exact serial path. The thread pool is sized to N and shared with the
-    /// inner per-copy alignment parallelism.
+    /// opt-in). `1` (default) = the exact serial path. The pool is sized to N and shared with the inner
+    /// per-copy alignment parallelism. Speedup ceiling = the single heaviest family (already internally
+    /// parallel); on a full genome-wide sweep this approaches ~N×.
     #[arg(long, default_value_t = 1)]
     region_threads: usize,
     /// poasta memory threshold (bp) for POA homology confirmation. A candidate family pair whose larger
@@ -310,63 +320,91 @@ fn main() -> Result<()> {
     } else {
         None
     };
-    for (contig, ranges) in &by_contig {
-        // load this contig once; it is dropped (freed) before the next contig.
-        let contigs: HashSet<String> = std::iter::once(contig.clone()).collect();
-        let genome = GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)
-            .with_context(|| format!("loading {} for {contig}", args.fasta))?;
-        // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta
-        // alignment lives here). Pure w.r.t. the read-only `genome`/`bam_cache`, so a chunk of regions runs
-        // concurrently; the output is then assembled SERIALLY below in region order (byte-identical).
-        let compute = |lo: u64, hi: u64| -> Result<RegionWork> {
-            let t_read = std::time::Instant::now();
-            let (primary, bam_reads) = match &bam_cache {
-                Some(c) => c.reads_in_region(&args.bam, contig, lo, hi),
-                None => reads_in_region(&args.bam, contig, lo, hi, args.threads),
-            }
-            .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
-            if timing {
-                eprintln!(
-                    "[timing] reads_in_region {contig}:{lo}-{hi} ({} reads): {:.1}s",
-                    bam_reads.len(),
-                    t_read.elapsed().as_secs_f64()
-                );
-            }
-            let extra = if args.recover_copies {
-                tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio).unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            let t_da = std::time::Instant::now();
-            let (fams, fallback, dna_needs) = detect_and_assign(
-                &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
-                args.absent_copies, &args.fasta,
+    // FLAT region list across ALL contigs, in the deterministic by_contig order (sorted contig, file-order
+    // ranges). Out-of-order parallel processing over this flat list lets the globally-heaviest families —
+    // which live on DIFFERENT contigs — overlap, while the serial drain below (in this same order) keeps
+    // CAFAM ids + every row byte-identical to the serial sweep.
+    let flat: Vec<(&String, u64, u64)> = by_contig
+        .iter()
+        .flat_map(|(c, ranges)| ranges.iter().map(move |&(lo, hi)| (c, lo, hi)))
+        .collect();
+    // Bounded LRU cache of loaded contig genomes — so a worker on any contig reuses an already-loaded genome
+    // instead of reloading, and at most ~capacity contig sequences are resident (the memory bound; Arc keeps
+    // a genome alive while an evicting worker still uses it). Capacity tracks the concurrency.
+    let genome_cap = NonZeroUsize::new((args.region_threads + 1).max(2)).unwrap();
+    let genome_cache: Arc<Mutex<LruCache<String, Arc<GenomeIndex>>>> =
+        Arc::new(Mutex::new(LruCache::new(genome_cap)));
+    let genome_for = |contig: &str| -> Result<Arc<GenomeIndex>> {
+        if let Some(g) = genome_cache.lock().unwrap().get(contig).cloned() {
+            return Ok(g);
+        }
+        // load OUTSIDE the lock (a chromosome load is seconds; never block other workers on it). A rare
+        // double-load on a concurrent miss is harmless — the second insert just wins.
+        let contigs: HashSet<String> = std::iter::once(contig.to_string()).collect();
+        let g = Arc::new(
+            GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)
+                .with_context(|| format!("loading {} for {contig}", args.fasta))?,
+        );
+        genome_cache.lock().unwrap().put(contig.to_string(), g.clone());
+        Ok(g)
+    };
+    // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta alignment
+    // lives here). Pure w.r.t. the read-only genome/bam_cache. The heavy read SEQUENCES are dropped here —
+    // only the read NAMES + computed `fams` are returned — so collecting every region's result is lightweight.
+    let compute = |contig: &String, lo: u64, hi: u64| -> Result<RegionWork> {
+        let genome = genome_for(contig)?;
+        let t_read = std::time::Instant::now();
+        let (primary, bam_reads) = match &bam_cache {
+            Some(c) => c.reads_in_region(&args.bam, contig, lo, hi),
+            None => reads_in_region(&args.bam, contig, lo, hi, args.threads),
+        }
+        .with_context(|| format!("reading {contig}:{lo}-{hi}"))?;
+        if timing {
+            eprintln!(
+                "[timing] reads_in_region {contig}:{lo}-{hi} ({} reads): {:.1}s",
+                bam_reads.len(),
+                t_read.elapsed().as_secs_f64()
             );
-            if timing {
-                eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
-            }
-            Ok(RegionWork { lo, hi, bam_reads, fams, fallback, dna_needs })
+        }
+        let extra = if args.recover_copies {
+            tied_secondary_reads_in_region(&args.bam, contig, lo, hi, args.as_ratio).unwrap_or_default()
+        } else {
+            Vec::new()
         };
-        // Process regions in chunks of `region_threads` (bounds peak memory to that many regions' reads);
-        // within a chunk the heavy work runs concurrently when region_threads > 1.
-        for chunk in ranges.chunks(args.region_threads.max(1)) {
-            let works: Vec<RegionWork> = match &region_pool {
-                Some(pool) => pool.install(|| {
-                    chunk.par_iter().map(|&(lo, hi)| compute(lo, hi)).collect::<Result<Vec<_>>>()
-                })?,
-                None => chunk.iter().map(|&(lo, hi)| compute(lo, hi)).collect::<Result<Vec<_>>>()?,
-            };
-            // SERIAL drain in region order — every row push + the `gfam` id counter is exactly the serial path.
-            for work in works {
-                let RegionWork { lo, hi, bam_reads, fams, fallback, dna_needs } = work;
-                fallback_all.extend(fallback);
-                dna_needs_rows.extend(dna_needs);
-                for fa in &fams {
+        let t_da = std::time::Instant::now();
+        let (fams, fallback, dna_needs) = detect_and_assign(
+            &primary, &bam_reads, &genome, &cfg, args.win, args.min_copies, &params, &extra,
+            args.absent_copies, &args.fasta,
+        );
+        if timing {
+            eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
+        }
+        let read_names: Vec<String> = bam_reads.iter().map(|r| r.name.clone()).collect();
+        let n_mapped = bam_reads.len();
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, n_mapped, fams, fallback, dna_needs })
+    };
+    // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
+    let works: Vec<RegionWork> = match &region_pool {
+        Some(pool) => pool.install(|| {
+            flat.par_iter().map(|&(c, lo, hi)| compute(c, lo, hi)).collect::<Result<Vec<_>>>()
+        })?,
+        None => flat.iter().map(|&(c, lo, hi)| compute(c, lo, hi)).collect::<Result<Vec<_>>>()?,
+    };
+    // SERIAL drain in the original region order — every row push + the `gfam` id counter is exactly the
+    // serial path, so the output is byte-identical.
+    {
+        for work in works {
+            let RegionWork { contig, lo, hi, read_names, n_mapped, fams, fallback, dna_needs } = work;
+            let contig = &contig;
+            let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
+            fallback_all.extend(fallback);
+            dna_needs_rows.extend(dna_needs);
+            for fa in &fams {
                 let fid = format!("CAFAM{gfam}");
                 gfam += 1;
                 for (ri, a) in &fa.assignments {
                     assign_rows.push(AssignRow {
-                        read_name: bam_reads[*ri].name.clone(),
+                        read_name: bam_reads[*ri].clone(),
                         family_id: fid.clone(),
                         assigned_copy: a.best_copy,
                         status: status_str(a.status),
@@ -414,7 +452,7 @@ fn main() -> Result<()> {
                             .join(",");
                         posterior_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                            bam_reads[*ri].name, fid, status_str(a.status), idx.len(), chrom, zs, ze, pstr
+                            bam_reads[*ri], fid, status_str(a.status), idx.len(), chrom, zs, ze, pstr
                         ));
                     }
                 }
@@ -469,7 +507,7 @@ fn main() -> Result<()> {
                     for ((ri, a), obs) in fa.assignments.iter().zip(fa.read_psv_obs.iter()) {
                         psv_read_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{:.3}\t{}\t{}",
-                            bam_reads[*ri].name, fid, a.best_copy, status_str(a.status), a.log_lr_margin,
+                            bam_reads[*ri], fid, a.best_copy, status_str(a.status), a.log_lr_margin,
                             a.n_decisive, allele_str(obs)
                         ));
                     }
@@ -543,7 +581,7 @@ fn main() -> Result<()> {
                         };
                         phased_read_lines.push(format!(
                             "{}\t{}\t{}\t{}\t{:.3}\t{}",
-                            bam_reads[*ri].name, fid, hap, a.n_decisive, a.log_lr_margin, status_str(a.status)
+                            bam_reads[*ri], fid, hap, a.n_decisive, a.log_lr_margin, status_str(a.status)
                         ));
                     }
                 }
@@ -563,10 +601,9 @@ fn main() -> Result<()> {
                     rescued_copies: fa.rescued_copies,
                 });
             }
-            eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", bam_reads.len(), fams.len());
-            } // for work in works (serial drain, region order)
-        } // for chunk (region-parallel)
-    }
+            eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", n_mapped, fams.len());
+        } // for work in works (serial drain, region order)
+    } // serial-drain block
 
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     writeln!(
