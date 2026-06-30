@@ -1,0 +1,146 @@
+cid	chrom	start	end	divergence	n_loci	sedef_partners	protein	call	reason
+NC_073224.2_116807774	NC_073224.2	116807774	116847210	71.2	None	45	LOC129525599	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=45) — structurally a copy
+NC_073224.2_117489966	NC_073224.2	117489966	117529051	15.1	12	44	LOC129525331	AMBIGUOUS	multi-copy (n_loci=12, sedef_partners=44) AND het-range div=15.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073224.2_124254598	NC_073224.2	124254598	124347827	15.2	11	84	LOC115932735	AMBIGUOUS	multi-copy (n_loci=11, sedef_partners=84) AND het-range div=15.2% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073224.2_130011266	NC_073224.2	130011266	130080187	21.8	None	20	LOC101126097	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=20) — structurally a copy
+NC_073224.2_239511912	NC_073224.2	239511912	239565347	7.5	1	0	CDK11B	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=7.5% — a het variant of a one-copy gene
+NC_073224.2_42258427	NC_073224.2	42258427	42453811	5.7	1	55	TIGD1	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=55) AND het-range div=5.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073224.2_45327469	NC_073224.2	45327469	45379775	7.8	None	17	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=17) AND het-range div=7.8% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073224.2_63992094	NC_073224.2	63992094	64010610	13.9	1	0	LOC109027270	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=13.9% — a het variant of a one-copy gene
+NC_073224.2_6827750	NC_073224.2	6827750	6872337	3.5	2	5	LOC101124243	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=5) AND het-range div=3.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073227.2_138707546	NC_073227.2	138707546	138780623	6.4	1	0	PRSS12	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=6.4% — a het variant of a one-copy gene
+NC_073227.2_139053638	NC_073227.2	139053638	139225281	8.9	1	0	SYNPO2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=8.9% — a het variant of a one-copy gene
+NC_073227.2_174237338	NC_073227.2	174237338	174372512	7.5	1	4	TRIM2	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=4) AND het-range div=7.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073227.2_204398881	NC_073227.2	204398881	204427731	4.3	1	0	CHN1	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=4.3% — a het variant of a one-copy gene
+NC_073227.2_208632617	NC_073227.2	208632617	208674896	13.1	2	1	ZDHHC13	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=1) AND het-range div=13.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073227.2_210005207	NC_073227.2	210005207	210049158	9.2	None	0	NO-HIT	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=9.2% — a het variant of a one-copy gene
+NC_073227.2_22580407	NC_073227.2	22580407	22736808	3.5	1	3	LOC129534172	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=3) AND het-range div=3.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073227.2_36265854	NC_073227.2	36265854	36545762	74.5	None	71	NO-HIT	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=71) — structurally a copy
+NC_073228.2_111658883	NC_073228.2	111658883	112183378	8.9	2	8	CMTM7	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=8) AND het-range div=8.9% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073228.2_11708010	NC_073228.2	11708010	11769380	11.1	1	0	SLC26A11	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=11.1% — a het variant of a one-copy gene
+NC_073228.2_144645073	NC_073228.2	144645073	144848266	19.0	None	14	LOC101141132	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=14) AND het-range div=19.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073228.2_145157314	NC_073228.2	145157314	145343542	14.7	1	51	LOC101128585	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=51) AND het-range div=14.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073228.2_177789227	NC_073228.2	177789227	177907979	3.1	1	2	NSG2	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=3.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073228.2_17861469	NC_073228.2	17861469	17917649	40.3	None	0	NO-HIT	DIVERGENT-NOVEL	single locus, no SEDEF, div=40.3% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073228.2_21847044	NC_073228.2	21847044	21893022	31.7	None	2	E2F6	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=2) — structurally a copy
+NC_073229.2_164331546	NC_073229.2	164331546	164376616	46.3	None	1	LOC129525654	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=1) — structurally a copy
+NC_073229.2_18073875	NC_073229.2	18073875	18312763	10.0	None	2	LOC115931578	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=2) AND het-range div=10.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073229.2_181351545	NC_073229.2	181351545	181381413	21.6	None	0	ARID1B	DIVERGENT-NOVEL	single locus, no SEDEF, div=21.6% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073229.2_20874296	NC_073229.2	20874296	20924049	4.7	None	0	LOC134757596	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=4.7% — a het variant of a one-copy gene
+NC_073229.2_74962769	NC_073229.2	74962769	75437156	11.1	1	21	RAB23	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=21) AND het-range div=11.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073230.2_164524994	NC_073230.2	164524994	164582667	55.2	None	0	SH3BGRL2	DIVERGENT-NOVEL	single locus, no SEDEF, div=55.2% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073230.2_165840202	NC_073230.2	165840202	165861376	4.7	2	1	NOM1	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=1) AND het-range div=4.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073230.2_167930813	NC_073230.2	167930813	168043118	10.0	None	3	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=3) AND het-range div=10.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073230.2_168287264	NC_073230.2	168287264	168315378	9.7	None	13	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=13) AND het-range div=9.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073230.2_22601670	NC_073230.2	22601670	22842316	26.3	None	1	AGMO	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=1) — structurally a copy
+NC_073230.2_37489449	NC_073230.2	37489449	37519267	4.7	None	1	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=1) AND het-range div=4.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073230.2_41333848	NC_073230.2	41333848	41583256	3.1	1	0	BMPER	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.1% — a het variant of a one-copy gene
+NC_073230.2_47186239	NC_073230.2	47186239	47265740	3.3	1	10	UBE2D1	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=10) AND het-range div=3.3% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073230.2_7606300	NC_073230.2	7606300	7612608	26.6	None	0	NO-HIT	DIVERGENT-NOVEL	single locus, no SEDEF, div=26.6% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073231.2_17091306	NC_073231.2	17091306	17164559	15.5	1	0	WDR82	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=15.5% — a het variant of a one-copy gene
+NC_073231.2_39477379	NC_073231.2	39477379	39719282	73.6	None	163	NO-HIT	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=163) — structurally a copy
+NC_073231.2_4861523	NC_073231.2	4861523	4914672	12.2	None	1	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=1) AND het-range div=12.2% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073231.2_5862495	NC_073231.2	5862495	6099490	13.1	None	4	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=4) AND het-range div=13.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073231.2_65184475	NC_073231.2	65184475	65394711	10.6	1	4	XKR4	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=4) AND het-range div=10.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073231.2_95446522	NC_073231.2	95446522	95650344	14.4	1	13	RIPK2	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=13) AND het-range div=14.4% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073232.2_144274196	NC_073232.2	144274196	144328240	23.7	None	4	PPP2R2B	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=4) — structurally a copy
+NC_073232.2_99589336	NC_073232.2	99589336	99747746	17.6	None	50	SH3BGRL2	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=50) AND het-range div=17.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073233.2_113941584	NC_073233.2	113941584	113990333	19.9	1	0	KBTBD3	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=19.9% — a het variant of a one-copy gene
+NC_073233.2_12653514	NC_073233.2	12653514	12668539	11.0	1	0	CAVIN3	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=11.0% — a het variant of a one-copy gene
+NC_073233.2_133023968	NC_073233.2	133023968	133041307	4.1	1	0	TMEM218	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=4.1% — a het variant of a one-copy gene
+NC_073233.2_137548997	NC_073233.2	137548997	137751522	4.4	1	20	LOC129524615	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=20) AND het-range div=4.4% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073233.2_14003549	NC_073233.2	14003549	14017083	3.6	1	0	LOC101134045	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.6% — a het variant of a one-copy gene
+NC_073233.2_45380640	NC_073233.2	45380640	45516376	28.0	None	15	NO-HIT	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=15) — structurally a copy
+NC_073233.2_93425668	NC_073233.2	93425668	93538180	10.9	1	74	TMEM126B	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=74) AND het-range div=10.9% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073234.2_139370404	NC_073234.2	139370404	139406520	7.8	1	0	CCDC92	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=7.8% — a het variant of a one-copy gene
+NC_073234.2_143793491	NC_073234.2	143793491	144181462	5.5	1	3	TMEM132C	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=3) AND het-range div=5.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073234.2_27052843	NC_073234.2	27052843	27291823	25.6	None	1	NO-HIT	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=1) — structurally a copy
+NC_073234.2_27746178	NC_073234.2	27746178	27950123	7.2	1	3	DUSP16	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=3) AND het-range div=7.2% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073234.2_69501458	NC_073234.2	69501458	69573135	30.3	None	0	AMN1	DIVERGENT-NOVEL	single locus, no SEDEF, div=30.3% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073234.2_69638301	NC_073234.2	69638301	69846085	12.0	None	13	DENND5B	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=13) AND het-range div=12.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073234.2_79607745	NC_073234.2	79607745	79626238	3.2	1	0	LOC129525150	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.2% — a het variant of a one-copy gene
+NC_073234.2_87153506	NC_073234.2	87153506	87240996	7.1	1	2	TBC1D15	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=7.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073234.2_87500533	NC_073234.2	87500533	87981748	54.0	None	43	TRHDE	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=43) — structurally a copy
+NC_073235.2_102948110	NC_073235.2	102948110	103131729	6.4	1	17	SGO2	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=17) AND het-range div=6.4% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073235.2_107578994	NC_073235.2	107578994	108227649	57.4	None	28	PARD3B	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=28) — structurally a copy
+NC_073235.2_109351808	NC_073235.2	109351808	109410337	12.1	1	0	FASTKD2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=12.1% — a het variant of a one-copy gene
+NC_073235.2_139705999	NC_073235.2	139705999	139794450	8.4	None	0	NO-HIT	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=8.4% — a het variant of a one-copy gene
+NC_073235.2_54611666	NC_073235.2	54611666	54740389	6.8	None	122	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=122) AND het-range div=6.8% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073235.2_61469647	NC_073235.2	61469647	61733782	16.7	1	6	TANC1	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=6) AND het-range div=16.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073236.2_108326754	NC_073236.2	108326754	108384160	4.4	1	0	SRD5A2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=4.4% — a het variant of a one-copy gene
+NC_073236.2_136389939	NC_073236.2	136389939	136394857	25.2	None	0	NO-HIT	DIVERGENT-NOVEL	single locus, no SEDEF, div=25.2% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073236.2_139051025	NC_073236.2	139051025	139225258	7.0	None	5	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=5) AND het-range div=7.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073236.2_139329520	NC_073236.2	139329520	139333311	9.1	None	8	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=8) AND het-range div=9.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073236.2_31151610	NC_073236.2	31151610	31182107	30.7	None	6	NO-HIT	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=6) — structurally a copy
+NC_073236.2_43122786	NC_073236.2	43122786	43166427	38.6	None	0	TGFBRAP1	DIVERGENT-NOVEL	single locus, no SEDEF, div=38.6% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073236.2_44341131	NC_073236.2	44341131	44542729	9.0	None	32	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=32) AND het-range div=9.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073236.2_45309982	NC_073236.2	45309982	45313228	10.5	None	1	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=1) AND het-range div=10.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073236.2_47672269	NC_073236.2	47672269	47731251	9.3	3	6	LOC109025447	AMBIGUOUS	multi-copy (n_loci=3, sedef_partners=6) AND het-range div=9.3% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073237.2_106907810	NC_073237.2	106907810	107039112	3.5	1	1	MUSK	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=1) AND het-range div=3.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073237.2_109499325	NC_073237.2	109499325	109614364	23.4	None	73	FKBP15	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=73) — structurally a copy
+NC_073237.2_112096187	NC_073237.2	112096187	112323553	11.2	None	0	NO-HIT	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=11.2% — a het variant of a one-copy gene
+NC_073237.2_132109476	NC_073237.2	132109476	132199876	40.1	None	0	KCNT1	DIVERGENT-NOVEL	single locus, no SEDEF, div=40.1% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073237.2_24097071	NC_073237.2	24097071	24154058	4.0	None	11	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=11) AND het-range div=4.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073237.2_29407910	NC_073237.2	29407910	29453726	4.2	3	33	LOC101142783	AMBIGUOUS	multi-copy (n_loci=3, sedef_partners=33) AND het-range div=4.2% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073237.2_86746091	NC_073237.2	86746091	86874556	4.0	None	0	LOC129530108	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=4.0% — a het variant of a one-copy gene
+NC_073237.2_92253383	NC_073237.2	92253383	92464551	25.9	None	1	LOC115931578	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=1) — structurally a copy
+NC_073238.2_101504720	NC_073238.2	101504720	101569974	19.0	None	0	NO-HIT	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=19.0% — a het variant of a one-copy gene
+NC_073238.2_32266743	NC_073238.2	32266743	32352771	67.6	None	57	SH3BGRL2	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=57) — structurally a copy
+NC_073238.2_52980396	NC_073238.2	52980396	53174873	7.4	1	2	FREM2	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=7.4% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073239.2_118930933	NC_073239.2	118930933	119017154	46.1	None	0	DYNC1H1	DIVERGENT-NOVEL	single locus, no SEDEF, div=46.1% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073239.2_94194199	NC_073239.2	94194199	94333049	24.6	None	0	VIPAS39	DIVERGENT-NOVEL	single locus, no SEDEF, div=24.6% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073240.2_33599393	NC_073240.2	33599393	33797797	3.3	1	0	FMN1	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.3% — a het variant of a one-copy gene
+NC_073240.2_34675462	NC_073240.2	34675462	34856484	5.8	1	0	AVEN	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=5.8% — a het variant of a one-copy gene
+NC_073240.2_38615657	NC_073240.2	38615657	38781813	4.2	1	1	TMCO5A	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=1) AND het-range div=4.2% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073240.2_52516524	NC_073240.2	52516524	52581880	20.9	None	0	TMOD2	DIVERGENT-NOVEL	single locus, no SEDEF, div=20.9% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073240.2_69714094	NC_073240.2	69714094	69763087	3.2	1	0	SH3BGRL2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.2% — a het variant of a one-copy gene
+NC_073240.2_75001464	NC_073240.2	75001464	75043553	3.5	5	10	TAB3	AMBIGUOUS	multi-copy (n_loci=5, sedef_partners=10) AND het-range div=3.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073240.2_81806342	NC_073240.2	81806342	82002972	13.7	1	0	ARNT2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=13.7% — a het variant of a one-copy gene
+NC_073241.2_105729386	NC_073241.2	105729386	105859752	6.5	None	0	NO-HIT	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=6.5% — a het variant of a one-copy gene
+NC_073241.2_38333496	NC_073241.2	38333496	38489537	4.6	1	2	GNAL	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=4.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073242.2_107132656	NC_073242.2	107132656	107402189	25.9	None	5	LOC115935585	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=5) — structurally a copy
+NC_073242.2_115154945	NC_073242.2	115154945	115173983	6.5	1	0	KLHL36	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=6.5% — a het variant of a one-copy gene
+NC_073242.2_115967411	NC_073242.2	115967411	116194659	10.3	1	1	GSE1	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=1) AND het-range div=10.3% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073242.2_117905753	NC_073242.2	117905753	117962625	6.6	1	1	FBXO31	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=1) AND het-range div=6.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073242.2_18569043	NC_073242.2	18569043	18599318	13.9	None	66	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=66) AND het-range div=13.9% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073242.2_22663046	NC_073242.2	22663046	22748219	43.9	None	0	USP31	DIVERGENT-NOVEL	single locus, no SEDEF, div=43.9% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073242.2_4907880	NC_073242.2	4907880	4913621	3.2	1	0	LOC129527496	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.2% — a het variant of a one-copy gene
+NC_073242.2_6233163	NC_073242.2	6233163	6310917	25.3	None	35	KCTD5	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=35) — structurally a copy
+NC_073242.2_93456069	NC_073242.2	93456069	93480588	7.8	1	0	CADM2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=7.8% — a het variant of a one-copy gene
+NC_073243.2_15595463	NC_073243.2	15595463	15599446	15.5	1	0	LIAT1	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=15.5% — a het variant of a one-copy gene
+NC_073243.2_27312208	NC_073243.2	27312208	27435624	43.2	None	5	CERS5	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=5) — structurally a copy
+NC_073243.2_30120917	NC_073243.2	30120917	30246526	70.6	None	0	NO-HIT	DIVERGENT-NOVEL	single locus, no SEDEF, div=70.6% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_073243.2_30720094	NC_073243.2	30720094	30848095	5.8	2	19	TVP23B	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=19) AND het-range div=5.8% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073243.2_88364350	NC_073243.2	88364350	88384441	13.5	2	1	PRDM9	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=1) AND het-range div=13.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073244.2_14850327	NC_073244.2	14850327	14875512	3.7	1	2	ZNF558	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=3.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073244.2_15355286	NC_073244.2	15355286	15415343	22.2	None	78	ZNF559	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=78) — structurally a copy
+NC_073244.2_17846595	NC_073244.2	17846595	17944006	10.1	1	81	LOC101130507	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=81) AND het-range div=10.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073244.2_18096775	NC_073244.2	18096775	18109820	5.2	1	5	LOC101128712	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=5) AND het-range div=5.2% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073244.2_27131194	NC_073244.2	27131194	27170012	5.5	None	75	LOC115931578	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=75) AND het-range div=5.5% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073244.2_28431147	NC_073244.2	28431147	28544467	13.6	4	104	ZNF208	AMBIGUOUS	multi-copy (n_loci=4, sedef_partners=104) AND het-range div=13.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073244.2_29626893	NC_073244.2	29626893	29718700	24.6	None	113	ZNF91	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=113) — structurally a copy
+NC_073244.2_47964367	NC_073244.2	47964367	48057184	3.3	11	52	LOC101127117	AMBIGUOUS	multi-copy (n_loci=11, sedef_partners=52) AND het-range div=3.3% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073245.2_28784637	NC_073245.2	28784637	28792549	6.9	1	0	INO80C	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=6.9% — a het variant of a one-copy gene
+NC_073245.2_56146489	NC_073245.2	56146489	56301093	16.9	None	2	LOC129524615	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=2) AND het-range div=16.9% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073245.2_68632998	NC_073245.2	68632998	68670110	10.1	None	5	AURKA	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=5) AND het-range div=10.1% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073245.2_76044575	NC_073245.2	76044575	76134719	17.0	1	0	ZBTB46	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=17.0% — a het variant of a one-copy gene
+NC_073245.2_76557745	NC_073245.2	76557745	76577792	3.6	2	1	PCMTD2	AMBIGUOUS	multi-copy (n_loci=2, sedef_partners=1) AND het-range div=3.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073246.2_18281654	NC_073246.2	18281654	18611650	4.7	None	62	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=62) AND het-range div=4.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073246.2_30485798	NC_073246.2	30485798	30793069	30.7	None	15	N6AMT1	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=15) — structurally a copy
+NC_073246.2_35973819	NC_073246.2	35973819	36044082	4.7	1	2	SLC5A3	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=4.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073246.2_41077635	NC_073246.2	41077635	41207838	6.4	1	5	BRWD1	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=5) AND het-range div=6.4% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_073246.2_47124660	NC_073246.2	47124660	47147320	9.2	1	0	POFUT2	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=9.2% — a het variant of a one-copy gene
+NC_073246.2_47151614	NC_073246.2	47151614	47157988	6.9	None	0	NO-HIT	ALLELE/HET	single locus (n_loci=None, no SEDEF partner) + het-range div=6.9% — a het variant of a one-copy gene
+NC_073246.2_48214082	NC_073246.2	48214082	48358513	3.0	1	2	PCNT	AMBIGUOUS	multi-copy (n_loci=1, sedef_partners=2) AND het-range div=3.0% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_086017.1_108627629	NC_086017.1	108627629	108782434	23.5	None	0	CRYBG3	DIVERGENT-NOVEL	single locus, no SEDEF, div=23.5% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_086017.1_118126517	NC_086017.1	118126517	118216154	21.8	None	47	LOC129532516	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=47) — structurally a copy
+NC_086017.1_124836956	NC_086017.1	124836956	124962316	26.8	None	0	QTRT2	DIVERGENT-NOVEL	single locus, no SEDEF, div=26.8% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_086017.1_14081636	NC_086017.1	14081636	14265325	26.8	None	29	LOC101150774	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=29) — structurally a copy
+NC_086017.1_162591122	NC_086017.1	162591122	162602762	3.5	1	0	IGSF10	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=3.5% — a het variant of a one-copy gene
+NC_086017.1_18814921	NC_086017.1	18814921	19083444	8.0	1	0	SRGAP3	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=8.0% — a het variant of a one-copy gene
+NC_086017.1_200221528	NC_086017.1	200221528	200275635	5.3	1	0	LOC129524615	ALLELE/HET	single locus (n_loci=1, no SEDEF partner) + het-range div=5.3% — a het variant of a one-copy gene
+NC_086017.1_22582872	NC_086017.1	22582872	22591526	17.6	None	1	NO-HIT	AMBIGUOUS	multi-copy (n_loci=None, sedef_partners=1) AND het-range div=17.6% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_086017.1_87520213	NC_086017.1	87520213	87692596	29.8	None	0	ROBO2	DIVERGENT-NOVEL	single locus, no SEDEF, div=29.8% too divergent for a het — a paralog the T2T lacks OR an artifact (needs DNA / 2nd haplotype)
+NC_086018.1_15590312	NC_086018.1	15590312	15646604	5.7	3	0	ATP6V1E1	AMBIGUOUS	multi-copy (n_loci=3, sedef_partners=0) AND het-range div=5.7% — could be a new copy OR an allele of an existing copy (MHC-class)
+NC_086018.1_19667916	NC_086018.1	19667916	19705312	74.3	None	30	NO-HIT	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=30) — structurally a copy
+NC_086018.1_44781834	NC_086018.1	44781834	45190771	27.5	None	5	TBC1D22A	COPY	assembly resolves >=2 loci (n_loci=None, sedef_partners=5) — structurally a copy

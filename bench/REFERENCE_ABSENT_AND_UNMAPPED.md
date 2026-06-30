@@ -136,6 +136,32 @@ strength does not predict a copy; the assembly + genome-homology + protein gate 
 > run** (no committed output). Report as "4 expressed divergent MHC haplotype candidates pending DNA"; the same
 > applies to the "15 dispersed" and "905 collapsed" figures (mechanism-detected, not copy-validated).
 
+### ⭐ STRUCTURAL copy-vs-allele on the T2T genome (the review-#4 close, NO DNA reads) — `bench/copy_vs_allele_structural.py`
+
+True read-depth parCN (Soto/QuicK-mer2) needs gorilla **DNA WGS reads, which we do not have** (only RNA IsoSeq +
+the haploid T2T `GCF_029281585.2`). But a **complete HAPLOID T2T** answers copy-vs-allele *structurally*: a real
+COPY is resolved as a **second locus** in the assembly; an ALLELE is the absent **second haplotype** (no second
+locus). Two assembly-structure signals, the second **independent of the reads**: (1) `n_loci` = how many genome
+loci the consensus maps to; (2) **SEDEF** segdup-partner (genome self-alignment, `final.bed`, never sees reads).
+
+**On the 145 reference-absent candidates** (`copy_vs_allele_structural.tsv`):
+
+| call | n (%) | basis |
+|---|---|---|
+| **COPY** | 26 (18%) | a 2nd locus (SEDEF partner / n_loci≥2); mostly >20%-divergent paralogs in segdup regions |
+| **ALLELE/HET** | 38 (26%) | single locus, no SEDEF partner, 2–20% divergence = a het of a one-copy gene |
+| **AMBIGUOUS (MHC-class)** | 65 (45%) | region IS duplicated AND variant is het-range → a NEW copy vs an ALLELE of an existing copy is structurally undecidable without per-copy depth |
+| **DIVERGENT-NOVEL** | 16 (11%) | single locus, >20% divergent → too divergent for a het, no 2nd locus (paralog the T2T lacks / artifact) |
+
+- **SEDEF (read-independent) confirmed a segdup partner for 90/145**, and **revealed 28 of the read-called
+  "single-locus" candidates ARE in segdups** — the read-based `n_loci` UNDER-counted copies. All 15
+  "dispersed-paralog" candidates fall to **AMBIGUOUS**.
+- **Honest verdict:** the structural test cleanly resolves **~44%** (26 copies + 38 alleles) and confirms **~45%
+  are genuinely ambiguous without DNA** — so the review's "copy-vs-allele needs DNA" **stands for the MHC-class**,
+  while the bulk of the "reference-absent copies" headline **downgrades**: only 18% are clean copies, 26% are
+  alleles. The 65 ambiguous + 16 divergent-novel are what a **DNA read-depth parCN** (Soto/QuicK-mer2) or the
+  **mGorGor1 alternate haplotype** would settle — both need a data fetch on the cluster (not on disk).
+
 ## Genome-wide extension (`hidden_copy_scan_genomewide.py` + `promote_genomewide.py`)
 
 Scan ALL 12,793 expressed de-novo loci (not just the 70 families) — so a single-copy reference gene
