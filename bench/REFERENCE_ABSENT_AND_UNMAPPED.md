@@ -96,7 +96,7 @@ Promotion artifacts: `promote_hidden_copies.py` · `promote_evidence_plus.py` ·
 
 ## Locking the 4 copies (annotation + protein BLAST; `blastx` vs the 22,614-protein gorilla proteome)
 
-**The 4 reference-absent copies are all MHC genes**, clustered in the gorilla MHC on NC_073229.2
+**The 4 reference-absent copy CANDIDATES are all MHC genes**, clustered in the gorilla MHC on NC_073229.2
 49–50 Mb — the single most polymorphic / copy-number-variable / reference-divergent region in the
 genome, exactly where reference-absent expressed copies are expected:
 
@@ -124,9 +124,17 @@ yields consensuses mapping to their loci at only **59–68 % identity** with wea
 carried the **highest** raw alt-column counts (235/123/35) yet is the **least** real — raw flag
 strength does not predict a copy; the assembly + genome-homology + protein gate is the filter.
 
-**Final locked result:** **4 endogenous reference-absent divergent MHC paralog copies** (named,
-protein-confirmed) + 4 DNA-resolvable CNV candidates (PRAME/MAGE, ZNF766, uS5m, +1). Locking artifacts:
-`promote_evidence_plus.py` · `blastx.tsv` · the `proteindb` gorilla-proteome BLAST DB.
+**Final result:** **4 expressed endogenous divergent MHC paralog CANDIDATES** (named, protein-confirmed
+*endogenous* — protein homology does NOT establish copy-vs-allele) + 4 DNA-resolvable CNV candidates
+(PRAME/MAGE, ZNF766, uS5m, +1). Locking artifacts: `promote_evidence_plus.py` · `blastx.tsv` · the
+`proteindb` gorilla-proteome BLAST DB.
+> ⚠ **Corrected (adversarial review #4):** these are **candidates, not confirmed copies**. (i) Protein BLAST
+> confirms gorilla-MHC *endogeneity*, not copy status. (ii) The "divergence ⟹ copy" rule is **circular** — the
+> reads are SELECTED for ≥12 reference-divergent ALT columns, so the consensus is divergent *by construction*.
+> (iii) All 4 sit in the most hyperpolymorphic region of the genome (MHC), where a 3–20% divergent second
+> **haplotype** is the *expected* diploid het, not a copy. The copy-vs-allele resolver (DNA parCN) was **never
+> run** (no committed output). Report as "4 expressed divergent MHC haplotype candidates pending DNA"; the same
+> applies to the "15 dispersed" and "905 collapsed" figures (mechanism-detected, not copy-validated).
 
 ## Genome-wide extension (`hidden_copy_scan_genomewide.py` + `promote_genomewide.py`)
 
@@ -169,9 +177,10 @@ intronless signature only appears where the retrocopy's own locus exists in the 
 by definition). Only 2/58 single-locus were intronless (single-exon genes). So the multi-mapping test is
 the one that discriminates; intronless cannot promote absent retrocopies from RNA→parent mapping.
 
-**FULL CATALOG:** 4 confirmed MHC copies (family-scoped) + **15 dispersed-paralog reference-absent
-copies** (genome-wide; PRDM9/ZNF208/…) + 58 single-locus & 8 family-CNV candidates needing DNA. The
-copies land — as biology predicts — in immune (MHC), recombination (PRDM9), and zinc-finger/segdup
+**FULL CATALOG (all CANDIDATES — copy-vs-allele pending DNA, review #4):** 4 family-scoped MHC candidates +
+**15 dispersed-paralog reference-absent candidates** (genome-wide; PRDM9/ZNF208/…) + 58 single-locus & 8
+family-CNV candidates needing DNA. The candidates land — as biology predicts — in immune (MHC),
+recombination (PRDM9), and zinc-finger/segdup
 families. Discriminator artifacts: `gw_promoted/{clean73.paf,gw_discriminated.json}`.
 
 
