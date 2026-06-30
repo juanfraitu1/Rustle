@@ -19,8 +19,25 @@ use rayon::prelude::*;
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
-use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache};
+use rustle::vg_family::denovo_assemble::{
+    assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache,
+};
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
+use rustle::vg_family::family_detect::collapse_loci_groups;
+
+/// One assembled isoform (FLAIR-style intron-chain collapse), kept for the optional `--gtf` emit. `gene_tid`
+/// is the locus this isoform collapses into (shared-junction gene); a family copy is its own gene, so a
+/// family-copy gene_tid matches a `copy_tid` in the assignment output and is tagged `multicopy` in the GTF.
+struct TranscriptRec {
+    tid: String,
+    gene_tid: String,
+    chrom: String,
+    start: u64,
+    end: u64,
+    strand: char,
+    introns: Vec<(u64, u64)>,
+    n_reads: u32,
+}
 
 /// The expensive, independent per-region work (BAM read + `detect_and_assign`, which holds the dominant
 /// poasta alignment). Computed possibly in parallel across regions (any contig), then drained SERIALLY in the
@@ -37,6 +54,7 @@ struct RegionWork {
     fams: Vec<FamilyAssignment>,
     fallback: Vec<FallbackEdge>,
     dna_needs: Vec<DnaNeedsRecord>,
+    transcripts: Vec<TranscriptRec>, // FLAIR-style isoforms for the --gtf emit (empty unless --gtf)
 }
 
 #[derive(Parser, Debug)]
@@ -82,6 +100,14 @@ struct Args {
     /// parallel); on a full genome-wide sweep this approaches ~N×.
     #[arg(long, default_value_t = 1)]
     region_threads: usize,
+    /// FLAIR-LIKE ASSEMBLY emit: also write `<out>.gtf` — every de-novo isoform in the swept regions as a
+    /// transcript+exon GTF (IGV-loadable), grouped into genes by shared junctions. Multi-copy family copies
+    /// appear as separate genes at their own loci, tagged `family_id`/`copy_index`/`multicopy "true"`; all
+    /// other loci are ordinary isoforms (`multicopy "false"`). Annotation-free (intron-chain collapse + the
+    /// canonical-junction gate; no short-read junction correction). Independent of the assignment outputs;
+    /// default off. Pair with `bench/igv_tracks.py` for the copy-coloured reads.
+    #[arg(long, default_value_t = false)]
+    gtf: bool,
     /// poasta memory threshold (bp) for POA homology confirmation. A candidate family pair whose larger
     /// transcript exceeds this is confirmed via the linear-memory longest-common-substring FALLBACK instead of
     /// poasta (which OOMs on long sequences); those edges are recorded in `<out>.fallback.tsv`. Lower it (e.g.
@@ -298,6 +324,7 @@ fn main() -> Result<()> {
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
     let mut gfam = 0usize; // global family counter (unique ids across regions)
+    let mut gtf_lines: Vec<String> = Vec::new(); // --gtf: FLAIR-style isoform GTF (transcript + exon rows)
 
     // `--skip-poa-diagnostic` is read by `detect_and_assign` via this env var (it is purely diagnostic and
     // does not change the emitted families/assignments — see the flag's help).
@@ -379,9 +406,31 @@ fn main() -> Result<()> {
         if timing {
             eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
         }
+        // FLAIR-style isoform assembly for the optional GTF (intron-chain collapse -> gate -> gene grouping).
+        // Recomputed here only under --gtf (cheap: pass1/gate are ~0s); independent of the assignment.
+        let transcripts: Vec<TranscriptRec> = if args.gtf {
+            let skeletons = pass1_skeletons(&primary, cfg.pass1_min_reads);
+            let iso = assemble_gate(&skeletons, &genome, &cfg.gate);
+            let groups = collapse_loci_groups(&iso);
+            iso.iter()
+                .enumerate()
+                .map(|(i, t)| TranscriptRec {
+                    tid: t.tid.clone(),
+                    gene_tid: iso[groups[i]].tid.clone(),
+                    chrom: t.chrom.clone(),
+                    start: t.start,
+                    end: t.end,
+                    strand: t.strand,
+                    introns: t.introns.clone(),
+                    n_reads: t.n_reads,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let read_names: Vec<String> = bam_reads.iter().map(|r| r.name.clone()).collect();
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, n_mapped, fams, fallback, dna_needs })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, n_mapped, fams, fallback, dna_needs, transcripts })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -394,14 +443,21 @@ fn main() -> Result<()> {
     // serial path, so the output is byte-identical.
     {
         for work in works {
-            let RegionWork { contig, lo, hi, read_names, n_mapped, fams, fallback, dna_needs } = work;
+            let RegionWork { contig, lo, hi, read_names, n_mapped, fams, fallback, dna_needs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
             dna_needs_rows.extend(dna_needs);
+            // --gtf: gene_tid (a copy's own locus) -> (family id, copy index), filled as fids are assigned below.
+            let mut copy_gene: std::collections::HashMap<String, (String, usize)> = std::collections::HashMap::new();
             for fa in &fams {
                 let fid = format!("CAFAM{gfam}");
                 gfam += 1;
+                if args.gtf {
+                    for (ci, tid) in fa.copy_tids.iter().enumerate() {
+                        copy_gene.insert(tid.clone(), (fid.clone(), ci));
+                    }
+                }
                 for (ri, a) in &fa.assignments {
                     assign_rows.push(AssignRow {
                         read_name: bam_reads[*ri].clone(),
@@ -602,9 +658,43 @@ fn main() -> Result<()> {
                 });
             }
             eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", n_mapped, fams.len());
+            // --gtf: emit every isoform of this region (transcript + exon rows), tagging family-copy genes.
+            for t in &transcripts {
+                let (fam_attr, multicopy) = match copy_gene.get(&t.gene_tid) {
+                    Some((fid, ci)) => (format!(" family_id \"{fid}\"; copy_index \"{ci}\";"), "true"),
+                    None => (String::new(), "false"),
+                };
+                let gs = t.start + 1; // GTF is 1-based, end-inclusive (our coords are 0-based half-open)
+                gtf_lines.push(format!(
+                    "{}\trustle\ttranscript\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; reads \"{}\"; multicopy \"{}\";{}",
+                    t.chrom, gs, t.end, t.strand, t.gene_tid, t.tid, t.n_reads, multicopy, fam_attr
+                ));
+                // exons = the gene span minus the introns (the read's spliced structure)
+                let mut prev = t.start;
+                let mut exons: Vec<(u64, u64)> = Vec::new();
+                for &(d, a) in &t.introns {
+                    exons.push((prev, d));
+                    prev = a;
+                }
+                exons.push((prev, t.end));
+                for (k, (es, ee)) in exons.iter().enumerate() {
+                    gtf_lines.push(format!(
+                        "{}\trustle\texon\t{}\t{}\t.\t{}\t.\tgene_id \"{}\"; transcript_id \"{}\"; exon_number \"{}\";",
+                        t.chrom, es + 1, ee, t.strand, t.gene_tid, t.tid, k + 1
+                    ));
+                }
+            }
         } // for work in works (serial drain, region order)
     } // serial-drain block
 
+    if args.gtf {
+        let mut gh = std::fs::File::create(format!("{}.gtf", args.out))?;
+        for line in &gtf_lines {
+            writeln!(gh, "{line}")?;
+        }
+        eprintln!("[copy_assign] wrote {}.gtf ({} GTF rows = FLAIR-style isoforms; family copies tagged multicopy)",
+            args.out, gtf_lines.len());
+    }
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     writeln!(
         fh,

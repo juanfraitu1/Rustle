@@ -165,6 +165,46 @@ pub fn collapse_loci(transcripts: &[DenovoTranscript]) -> Vec<usize> {
     reps
 }
 
+/// Like `collapse_loci`, but returns the GENE rep index for EVERY transcript (transcript i belongs to the
+/// gene whose representative is `groups[i]`) — so a FLAIR-style emitter can group isoforms under one
+/// `gene_id`. Same union-find on shared `(chrom, donor, acceptor)` junctions and the same rep tie-break as
+/// `collapse_loci`, so the chosen reps are identical; this just also reports the membership.
+pub fn collapse_loci_groups(transcripts: &[DenovoTranscript]) -> Vec<usize> {
+    let n = transcripts.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    let mut junc_owner: BTreeMap<(&str, u64, u64), usize> = BTreeMap::new();
+    for (i, t) in transcripts.iter().enumerate() {
+        for &(d, a) in &t.introns {
+            match junc_owner.get(&(t.chrom.as_str(), d, a)) {
+                Some(&owner) => uf_union(&mut parent, i, owner),
+                None => {
+                    junc_owner.insert((t.chrom.as_str(), d, a), i);
+                }
+            }
+        }
+    }
+    let mut comp: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for i in 0..n {
+        let r = uf_find(&mut parent, i);
+        comp.entry(r).or_default().push(i);
+    }
+    let mut group = vec![0usize; n];
+    for members in comp.values() {
+        let rep = *members
+            .iter()
+            .max_by(|&&a, &&b| {
+                let ka = (transcripts[a].n_reads, transcripts[a].end - transcripts[a].start);
+                let kb = (transcripts[b].n_reads, transcripts[b].end - transcripts[b].start);
+                ka.cmp(&kb).then_with(|| b.cmp(&a))
+            })
+            .unwrap();
+        for &m in members {
+            group[m] = rep;
+        }
+    }
+    group
+}
+
 /// (2) Candidate homologous rep pairs. Exact canonical-k-mer ownership pre-filter (family-informative =
 /// owned by `[cnt_min, cnt_max]` reps; a rep needs `>= k_share` informative k-mers) + contiguous-span
 /// filter (shared informative-k-mer position span `>= t_core * min(len)`). Returns `(i, j)` index pairs
@@ -434,6 +474,21 @@ mod tests {
             introns: introns.to_vec(),
             seq,
         }
+    }
+    #[test]
+    fn collapse_loci_groups_maps_isoforms_to_their_gene_rep() {
+        // two isoforms of gene A share the junction (100,200); a third transcript at a disjoint locus is its
+        // own gene. groups[i] must be the rep index of i's gene (rep = most reads, here A_iso1 with 10).
+        let txs = vec![
+            tx("A_iso1", "c1", 0, 300, 10, &[(100, 200)], vec![b'A'; 50]),
+            tx("A_iso2", "c1", 0, 400, 4, &[(100, 200), (250, 320)], vec![b'A'; 60]),
+            tx("B_iso1", "c1", 1000, 1300, 8, &[(1100, 1200)], vec![b'C'; 50]),
+        ];
+        let g = collapse_loci_groups(&txs);
+        assert_eq!(g[0], g[1], "isoforms sharing a junction collapse to one gene");
+        assert_ne!(g[0], g[2], "a disjoint locus is its own gene");
+        assert_eq!(g[0], 0, "gene rep = the higher-read isoform (A_iso1)");
+        assert_eq!(g[2], 2, "B is its own rep");
     }
     fn homolog_tx_flank(tid: &str, fs1: u64, core: &[u8], fs2: u64, flank: usize, n: u32) -> DenovoTranscript {
         let seq = cat(&[&rand_seq(flank, fs1), core, &rand_seq(flank, fs2)]);

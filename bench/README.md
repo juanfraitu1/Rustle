@@ -27,6 +27,12 @@ To recover any original: `git log --follow --diff-filter=D -- bench/<old-name>.m
 `git show <rev>^:bench/<old-name>.md`.
 
 ## IGV visualization
+- **`copy_assign --gtf`** — FLAIR-like assembly emit: writes `<out>.gtf`, an IGV-loadable transcriptome of all
+  de-novo isoforms in the swept regions (intron-chain collapse → gene grouping, annotation-free). Multi-copy
+  family copies appear as separate genes tagged `family_id`/`copy_index`/`multicopy "true"`; everything else is
+  an ordinary isoform. Purely additive — the assignment outputs are byte-identical with or without it.
 - **igv_tracks.py** — turns a `copy_assign` result into IGV tracks: `<out>.tagged.bam` (reads auto-coloured by
   assigned copy via the `YC` tag, grouped by `cp`, tied reads grey) + `<out>.copies.bed` (per-copy loci track).
   `python bench/igv_tracks.py --assignments OUT.assignments.tsv --bam reads.bam --regions regions.txt --out OUT`
+- Together: load `<out>.gtf` (the transcripts, families flagged) + `<out>.tagged.bam` (reads coloured by copy) +
+  the genome FASTA in IGV — the family copies as a transcript track above the copy-coloured reads.
