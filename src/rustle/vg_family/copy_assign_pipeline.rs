@@ -118,7 +118,12 @@ fn minimap2_msa_pair(ref_seq: &[u8], other: &[u8]) -> anyhow::Result<Vec<Vec<u8>
     let mm2 = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
     let dir = std::env::temp_dir();
     let pid = std::process::id();
-    let nonce = ref_seq.len().wrapping_mul(1000003) ^ other.len();
+    // A PROCESS-UNIQUE nonce (atomic counter), not a length-derived one: two regions aligning equal-length
+    // copies concurrently (region-parallel sweep) would otherwise collide on the same temp path. `pid` keeps
+    // distinct processes disjoint. The filename does not affect alignment output, so this is byte-identical.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static PSV_NONCE: AtomicUsize = AtomicUsize::new(0);
+    let nonce = PSV_NONCE.fetch_add(1, Ordering::Relaxed);
     let tpath = dir.join(format!("rustle_psv_t_{pid}_{nonce}.fa"));
     let qpath = dir.join(format!("rustle_psv_q_{pid}_{nonce}.fa"));
     struct Cleanup(std::path::PathBuf, std::path::PathBuf);
@@ -248,7 +253,8 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
     // run them concurrently and merge: each yields its own `amap` (ref_off -> other_off) plus the ref offsets
     // where the two bases DIFFER. The merge is order-independent (per-index amaps + a set-union of diffs), so
     // the result is byte-identical to the serial walk. poasta is a pure function (thread-safe); the opt-in
-    // minimap2 path stays serial (its temp-file nonce can collide between equal-length copies under threads).
+    // minimap2 path also stays serial HERE (kept simple), though its temp files are now process-unique
+    // (atomic nonce) so it is safe under the region-parallel sweep.
     let align_one = |other: usize| -> (BTreeMap<usize, usize>, BTreeSet<usize>) {
         // strong gap-open anchors the conserved core column-for-column (same config as contiguous_core_coverage).
         let aln = if use_mm2 {

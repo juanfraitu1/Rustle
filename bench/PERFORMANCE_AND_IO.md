@@ -81,6 +81,34 @@ Genome-wide / cluster sweeps: run `copy_assign … --skip-poa-diagnostic`. The p
 per-read assignment are automatic. Keep poasta (default) for the PSV columns — it is the accurate engine the
 O2 numbers are computed with. Use `RUSTLE_TIMING=1` to re-profile if a region is unexpectedly slow.
 
+## Region-parallel sweep — `--region-threads N` (2026-06-29, byte-identical, opt-in)
+
+After `--skip-poa-diagnostic`, the dominant remaining cost is the **exact poasta DP in `discover_psvs`** (~37 s
+for the 5-copy/3,238-column GAGE family; ~64 s for a 2-copy/3,874-column chr19 family). That DP is irreducible
+for byte-identical output (the heuristic minimap2 PSV engine changes the columns) and its `(n−1)` per-copy
+alignments are *already* internally parallel — so a *single* heavy family cannot be sped up further.
+
+The untapped axis is **across families**: the sweep processed regions serially, so on a many-core box a 2-copy
+family ran one alignment on one core while the rest idled. `--region-threads N` (default 1 = the exact serial
+path) processes a contig's regions in **chunks of N concurrently** — each family is independent
+(`detect_and_assign` is pure; `BamIndexCache` opens a fresh reader per call and is `Sync`; the genome is
+read-only). Output is collected and `CAFAM` ids assigned **in region order afterward**, so the result is
+**byte-identical** (verified: serial vs `--region-threads 3/6` → all of families/assignments/quant/posterior/
+the 3 PSV dumps diff = 0). Chunking bounds peak memory to ~N regions' reads (the documented genome-wide OOM is
+why it is opt-in). The temp files of the opt-in minimap2 PSV path were made process-unique (atomic nonce) so
+all alignment helpers are thread-safe.
+
+**Measured (11-family heavy contig `NC_073228.2`, incl. GAGE, on `GGO_mm.bam`):** serial **18:19** (2.4 GB) →
+`--region-threads 6` **9:50** (3.9 GB) = **1.86×**, byte-identical. The speedup is bounded by the *single
+heaviest family* (Amdahl) — region-parallelism overlaps the lighter families under its shadow but cannot split
+it — so expect **~2× wherever heavy families share a contig**, not linear. The densest contigs (12/11/11/7
+families) hold most of the heavy work, so per-contig parallelism captures the bulk of the available win.
+
+Scope: parallelism is **within a contig** (genome loaded one contig at a time = memory-safe). Overlapping the
+globally-heaviest families *across* contigs would need a bounded LRU genome-contig cache + out-of-order
+processing (a separate, larger change to the output path). Use the largest `N` your memory allows on a heavy
+sweep; keep `N=1` when memory-bound.
+
 
 ---
 

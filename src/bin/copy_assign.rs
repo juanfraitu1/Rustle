@@ -12,11 +12,24 @@ use clap::Parser;
 use std::collections::HashSet;
 use std::io::Write;
 
+use rayon::prelude::*;
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
-use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache};
-use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge};
+use rustle::vg_family::denovo_assemble::{reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead};
+use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
+
+/// The expensive, independent per-region work (BAM read + `detect_and_assign`, which holds the dominant
+/// poasta alignment). Computed possibly in parallel across regions, then drained SERIALLY in region order so
+/// `CAFAM` ids and every output row stay byte-identical to the serial sweep.
+struct RegionWork {
+    lo: u64,
+    hi: u64,
+    bam_reads: Vec<BamRead>,
+    fams: Vec<FamilyAssignment>,
+    fallback: Vec<FallbackEdge>,
+    dna_needs: Vec<DnaNeedsRecord>,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -49,6 +62,16 @@ struct Args {
     /// BAM-reading threads.
     #[arg(long, default_value_t = 4)]
     threads: usize,
+    /// REGION-PARALLEL sweep: process this many regions (independent families) concurrently. Each family is
+    /// an independent unit (`detect_and_assign` is pure; `BamIndexCache`/genome are read-only), so the heavy
+    /// per-family poasta alignment of N families overlaps on N cores. Output is collected in the SAME order
+    /// and `CAFAM` ids are assigned serially afterward, so the result is BYTE-IDENTICAL to the serial run.
+    /// Regions are processed in chunks of this size, so peak memory is bounded to ~N regions' reads (raise it
+    /// for speed on a many-core box, lower it if memory-bound; the documented genome-wide OOM is why this is
+    /// opt-in). `1` (default) = the exact serial path. The thread pool is sized to N and shared with the
+    /// inner per-copy alignment parallelism.
+    #[arg(long, default_value_t = 1)]
+    region_threads: usize,
     /// poasta memory threshold (bp) for POA homology confirmation. A candidate family pair whose larger
     /// transcript exceeds this is confirmed via the linear-memory longest-common-substring FALLBACK instead of
     /// poasta (which OOMs on long sequences); those edges are recorded in `<out>.fallback.tsv`. Lower it (e.g.
@@ -275,12 +298,27 @@ fn main() -> Result<()> {
     // Parse the BAM index + header ONCE and reuse across every region (the per-region path re-parses the
     // multi-MB `.bai` otherwise). None => no usable index; fall back to the per-region open (which scans).
     let bam_cache = BamIndexCache::open(&args.bam).ok();
+    // Region-parallel pool (opt-in via --region-threads > 1). Sized to region_threads; the inner per-copy
+    // poasta parallelism (discover_psvs) composes on the SAME pool, so total concurrency is bounded to N.
+    let region_pool = if args.region_threads > 1 {
+        Some(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(args.region_threads)
+                .build()
+                .context("building region thread pool")?,
+        )
+    } else {
+        None
+    };
     for (contig, ranges) in &by_contig {
         // load this contig once; it is dropped (freed) before the next contig.
         let contigs: HashSet<String> = std::iter::once(contig.clone()).collect();
         let genome = GenomeIndex::from_fasta_contigs(&args.fasta, &contigs)
             .with_context(|| format!("loading {} for {contig}", args.fasta))?;
-        for &(lo, hi) in ranges {
+        // The expensive, INDEPENDENT per-region work: BAM read + detect_and_assign (the dominant poasta
+        // alignment lives here). Pure w.r.t. the read-only `genome`/`bam_cache`, so a chunk of regions runs
+        // concurrently; the output is then assembled SERIALLY below in region order (byte-identical).
+        let compute = |lo: u64, hi: u64| -> Result<RegionWork> {
             let t_read = std::time::Instant::now();
             let (primary, bam_reads) = match &bam_cache {
                 Some(c) => c.reads_in_region(&args.bam, contig, lo, hi),
@@ -307,9 +345,23 @@ fn main() -> Result<()> {
             if timing {
                 eprintln!("[timing] detect_and_assign {contig}:{lo}-{hi}: {:.1}s", t_da.elapsed().as_secs_f64());
             }
-            fallback_all.extend(fallback);
-            dna_needs_rows.extend(dna_needs);
-            for fa in &fams {
+            Ok(RegionWork { lo, hi, bam_reads, fams, fallback, dna_needs })
+        };
+        // Process regions in chunks of `region_threads` (bounds peak memory to that many regions' reads);
+        // within a chunk the heavy work runs concurrently when region_threads > 1.
+        for chunk in ranges.chunks(args.region_threads.max(1)) {
+            let works: Vec<RegionWork> = match &region_pool {
+                Some(pool) => pool.install(|| {
+                    chunk.par_iter().map(|&(lo, hi)| compute(lo, hi)).collect::<Result<Vec<_>>>()
+                })?,
+                None => chunk.iter().map(|&(lo, hi)| compute(lo, hi)).collect::<Result<Vec<_>>>()?,
+            };
+            // SERIAL drain in region order — every row push + the `gfam` id counter is exactly the serial path.
+            for work in works {
+                let RegionWork { lo, hi, bam_reads, fams, fallback, dna_needs } = work;
+                fallback_all.extend(fallback);
+                dna_needs_rows.extend(dna_needs);
+                for fa in &fams {
                 let fid = format!("CAFAM{gfam}");
                 gfam += 1;
                 for (ri, a) in &fa.assignments {
@@ -512,7 +564,8 @@ fn main() -> Result<()> {
                 });
             }
             eprintln!("[copy_assign]   {contig}:{lo}-{hi}: {} mapped reads -> {} families", bam_reads.len(), fams.len());
-        }
+            } // for work in works (serial drain, region order)
+        } // for chunk (region-parallel)
     }
 
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
