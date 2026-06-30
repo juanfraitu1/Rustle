@@ -1594,3 +1594,35 @@ het-from-copy and absolute copy number requires DNA, which we do not claim from 
 4. External-truth adjudication (#1) — days, caps how strongly genome-wide counts can be asserted.
 5. One reproducible pipeline (#9) — days, makes it a thesis artifact not a script pile.
 
+
+---
+
+## ALIGNMENT / MAPPING ERROR — measured, not modeled (2026-06-29)
+
+Answers the advisor's recurring "how do you know X isn't an error?" for the *alignment* error mode (a spurious
+PSV column from a copy-vs-copy mis-alignment, distinct from sequencing error). We considered an
+`--align-error-model` flag that down-weights "noisy" columns, then **measured whether it would help** — and the
+answer is no, on non-circular DNA truth. Two probes:
+
+**`bench/align_error_probe.py`** (per-column coherence on a `--dump-psv` triple). On GAGE (5 copies, 3238 cols,
+5805 assigned reads): 8.3% of columns are "low coherence" (>3% of assigned reads disagree with their copy's
+allele). But the controls show these are **load-bearing, not artifacts**: dropping them flips **35.8%** of
+assignments vs **4.7%** for the same number of *random* columns (31% excess) — i.e. they are the hard
+**discriminative columns at the K-frontier** (reads disagree more there because the call is genuinely
+uncertain), plus 28% that are A↔G/C↔T **RNA editing** (already handled by the editing filter). The naive
+down-weight would discard the columns doing the work.
+
+**`bench/align_error_dna_test.py`** (the decisive non-circular test). A column is "suspect" by **off-signature
+rate** — a read base that *no DNA copy* has there (a clean artifact signature, defined without reference to any
+assignment). For each read, split its CLEAN columns into TRAIN + a held-out TEST; decode WITH vs WITHOUT the
+read's suspect columns; let the held-out CLEAN columns (DNA-derived signatures = non-circular truth) adjudicate.
+**45 families / 17,376 reads:** genuine artifacts are **1.0% of columns** (56/5632) and change **6/17,376 =
+0.03% of calls** — essentially inert; on the few that change, the held-out DNA evidence never favors dropping
+them.
+
+**Verdict: don't build the flag.** Genuine alignment artifacts are rare (~1%) and inert (0.03% of calls); the
+broad "noisy" set is load-bearing real signal, so a blanket down-weight would hurt. Alignment error is already
+handled correctly — the significance gate **abstains** rather than calling on unreliable evidence, the editing
+filter targets the one recurrent biological artifact (A→I), and **substitution-only** columns make indel
+mis-alignment fall out as gaps. The measurement itself is the airtight answer: *alignment error does not drive
+assignment*, verified against held-out DNA truth.
