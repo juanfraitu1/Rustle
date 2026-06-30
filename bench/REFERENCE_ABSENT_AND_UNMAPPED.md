@@ -162,6 +162,17 @@ loci the consensus maps to; (2) **SEDEF** segdup-partner (genome self-alignment,
   alleles. The 65 ambiguous + 16 divergent-novel are what a **DNA read-depth parCN** (Soto/QuicK-mer2) or the
   **mGorGor1 alternate haplotype** would settle — both need a data fetch on the cluster (not on disk).
 
+**QuicK-mer2 parCN — installed, builds, runs; full pipeline gated on the cluster (`bench/quickmer2_parcn.sh`).**
+QuicK-mer2 (the Soto/Eichler gold-standard parCN tool) was installed and built from source (no DNA dependency in
+its own code; deps `jellyfish`/`bedtools` via mamba) and **verified to run** — `search` on a 20 Mb slice in 74 s,
+producing the single-copy-k-mer window map. Two independent off-box requirements block the full run on the dev
+box: (1) the genome `search` (read-free, reusable index) needs **~40 GB RAM** (`-s 1G` already used 10.7 GB on
+20 Mb; the 3.5 Gb genome needs `-s ~4G`) vs the box's 19 GB; (2) `count`/`est` need **gorilla DNA WGS reads**
+(only RNA IsoSeq on disk). `quickmer2_parcn.sh` is the turnkey pipeline (search → count → est → per-candidate
+CN call, cross-checked against `copy_vs_allele_structural.tsv`) — one command on a ≥48 GB node with the public
+mGorGor1/Kamilah HiFi-DNA. parCN there gives the decisive per-copy depth (CN≈2 ⇒ allele/het, CN≥3 ⇒ copy) that
+settles the 65 ambiguous candidates the read-free test could not.
+
 ## Genome-wide extension (`hidden_copy_scan_genomewide.py` + `promote_genomewide.py`)
 
 Scan ALL 12,793 expressed de-novo loci (not just the 70 families) — so a single-copy reference gene
