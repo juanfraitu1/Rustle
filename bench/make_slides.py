@@ -109,8 +109,8 @@ def fig_dna():
     b = ax.bar(["chance\n(1/K)", "our gate\n(held-out DNA)"], [43.2, 97.2], color=[GREY, GREEN], ec="black", width=.55)
     ax.bar_label(b, labels=["43.2%", "97.2%"], padding=4, fontsize=14, weight="bold")
     ax.set_ylim(0, 112); ax.set_ylabel("held-out DNA-column confirmation (%)")
-    ax.annotate("2.2× over chance\n(K≥3 subset: 3.9×)", (1, 97.2), (0.35, 70), fontsize=12, color=GREEN,
-                weight="bold", arrowprops=dict(arrowstyle="->", color=GREEN))
+    ax.annotate("2.2× over chance\n(K≥3 subset: 3.9×)", (1, 97.2), (-0.1, 64), fontsize=11.5, color=GREEN,
+                weight="bold", ha="left", arrowprops=dict(arrowstyle="->", color=GREEN))
     ax.set_title("DNA-supervised decode — real gorilla data\n(column allele VALUES from DNA; held-out-column confirmation, not accuracy)",
                  fontsize=12, weight="bold")
     return savefig("fig_dna.png")
