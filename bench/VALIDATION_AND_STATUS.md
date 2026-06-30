@@ -292,14 +292,20 @@ divergent route; but it **root-caused and confirmed O4's exact scope** (collapse
 data — a sharper, more honest O4 boundary than before, and a concrete spec for the next step (the divergent
 route: assemble the collapsed pile and call it a distinct copy even with one reference locus).
 
-## F3 — DNA-supervised copy decoding = non-circular O2 accuracy (`bench/dna_supervised_decode.py`)
+## F3 — DNA-supervised copy decoding = held-out DNA-column CONFIRMATION (not external accuracy) (`bench/dna_supervised_decode.py`)
+> ⚠ **Scope (adversarial review #4):** this is a **held-out-column self-consistency / enrichment** check, NOT a
+> true-origin accuracy. There is no external true-copy label: the train/test halves come from the **same read**,
+> the read SET is still fetched/selected via minimap2, and the copies are the DNA catalog (independent) but a
+> read from a catalog-absent copy can force-match and self-confirm. Report it as "97.2% held-out confirmation =
+> 2.2× over 1/K chance", never as "real-data O2 accuracy".
 **Paper:** Vollger/SDA 2019 — DNA pre-phases PSVs→copies; our identifiability theory gives the conditions under
 which that recovery is exact. The consequence (and the answer to the defense audit's "what's your real-data
 accuracy?", since silver is circular and sim5x is synthetic): build per-copy PSV **signatures from the T2T DNA
 catalog** (copies AND their distinguishing columns defined independently of the RNA reads), decode RNA reads
 against them, and validate with a **held-out-DNA-column cross-validation** — split each read's DNA-defined PSV
-columns into a TRAIN half (drives the call) and a TEST half (confirms it). Non-circular on every axis: the
-copies are not RNA-assembled, the columns are not RNA-discovered, and there is no minimap2-primary silver label.
+columns into a TRAIN half (drives the call) and a TEST half (confirms it). Much **less** circular than silver:
+the columns are DNA-derived (not RNA-discovered) and there is no minimap2-primary label — but it is still a
+**self-consistency** check (train/test halves of the same read) over the catalog's copies, not a true-origin accuracy.
 
 **Method:** per co-located DNA-catalog family (≤3 Mb span, 2–8 members), load `{fid}.json` (ref0 + the per-copy
 substitution matrix), take the **exonic** PSV columns (genomic pos = ref0 start + local pos), build per-copy
@@ -315,10 +321,12 @@ projection), read each read's allele at each PSV position, decode with the produ
 - Per-family: DNFAM483 (K=2) 99.8% on 3,769 reads, DNFAM92 (K=3) 100%, DNFAM21 (K=6) 99.9%, DNFAM55 (K=4) 100%;
   the hardest, DNFAM19 (K=8) 77.2% (more copies → more competitors → lower per-column confirmation, as expected).
 
-**Why it matters:** this is the **first non-circular, real-data O2 accuracy**. The silver standard (99.9%) only
-shows agreement with minimap2 where minimap2 was already confident, using RNA-assembled profiles — circular on
-both the profile and the label. Here the reference is built entirely from DNA, and held-out DNA columns confirm
-the per-read call at **97.2%**. It also realises the SDA/Vollger "supervised nearest-signature decode" the DNA-
+**Why it matters:** this is the **strongest real-data *confirmation*** we have (DNA-derived columns, held out),
+and it is much less circular than silver — but it is **NOT a true-origin accuracy** (see the scope warning above:
+self-consistency over a read's own columns, no external true-copy label). The silver standard (99.9%) is weaker
+still: it only shows agreement with minimap2 where minimap2 was already confident (MAPQ>0), using RNA-assembled
+profiles — circular on both the profile and the label. Here the reference columns are built from DNA, and held-out
+DNA columns confirm the per-read call at **97.2% (= 2.2× chance)**. It also realises the SDA/Vollger "supervised nearest-signature decode" the DNA-
 catalog spec deferred as Phase 2 — turning NP-hard unsupervised phasing into a supervised classification when a
 DNA reference exists. Honest scope: co-located DNA-catalog families with ≥2 exonic PSVs; the DNA signatures and
 the RNA reads share exon sequence (not orthogonal to *sequence*), but the held-out split + DNA-defined copies/

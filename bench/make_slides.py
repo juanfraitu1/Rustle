@@ -87,7 +87,7 @@ def fig_detie():
         ax.set_title(title, color=col, fontsize=13, weight="bold")
     a1.text(0.011, -0.7, "|Δde| ≤ δ  &  both fit", fontsize=11, color=GREEN)
     a2.text(0.012, -0.7, "|Δde| ≫ δ  → one clear winner", fontsize=11, color=RED)
-    fig.suptitle("The de-tie criterion — the boundary is a property of the data, not a cutoff", fontsize=13)
+    fig.suptitle("The de-tie criterion — a relational tie (no absolute-similarity bar), with a small tuned tolerance δ", fontsize=12.5)
     return savefig("fig_detie.png")
 
 
@@ -111,8 +111,8 @@ def fig_dna():
     ax.set_ylim(0, 112); ax.set_ylabel("held-out DNA-column confirmation (%)")
     ax.annotate("2.2× over chance\n(K≥3 subset: 3.9×)", (1, 97.2), (0.35, 70), fontsize=12, color=GREEN,
                 weight="bold", arrowprops=dict(arrowstyle="->", color=GREEN))
-    ax.set_title("DNA-supervised decode — non-circular, REAL gorilla data\n(copies & columns from DNA, no RNA self-reference)",
-                 fontsize=12.5, weight="bold")
+    ax.set_title("DNA-supervised decode — real gorilla data\n(column allele VALUES from DNA; held-out-column confirmation, not accuracy)",
+                 fontsize=12, weight="bold")
     return savefig("fig_dna.png")
 
 
@@ -177,7 +177,7 @@ def build(figs):
     s = prs.slides.add_slide(blank)
     textbox(s, "Multi-copy gene families at the RNA level", 0.8, 2.4, 11.7, 1.3, 40, bold=True, color=(20, 40, 90), align=PP_ALIGN.CENTER)
     textbox(s, "What the definition is  ·  and how we corroborate it", 0.8, 3.8, 11.7, 0.8, 22, italic=True, align=PP_ALIGN.CENTER, color=(90, 90, 90))
-    textbox(s, "gorilla HiFi / Iso-Seq  ·  annotation-free  ·  threshold-free", 0.8, 4.6, 11.7, 0.6, 16, align=PP_ALIGN.CENTER, color=(120, 120, 120))
+    textbox(s, "gorilla HiFi / Iso-Seq  ·  annotation-free  ·  relational (no absolute-similarity bar)", 0.8, 4.6, 11.7, 0.6, 16, align=PP_ALIGN.CENTER, color=(120, 120, 120))
 
     # 2 problem
     fig_slide("The problem: near-identical copies confuse the aligner", figs["problem"],
@@ -189,16 +189,16 @@ def build(figs):
         ("Build a graph: nodes = loci; an edge = some read fits BOTH loci about equally (a 'tie').", 0, False, (20, 20, 20)),
         ("A family = a connected component of that read-conflict graph.", 0, True, (20, 20, 20)),
         ("A locus with no tie stands alone — it needs no resolution, so it is not a 'family'.", 0, False, (20, 20, 20)),
-        ("No similarity cutoff — the boundary is decided by the data, not a threshold.", 0, True, (200, 30, 30)),
+        ("No ABSOLUTE-similarity cutoff — a relational alignment-score tie (with a small tuned tolerance), not a '≥X% identical' bar.", 0, True, (200, 30, 30)),
     ])
 
     # 4 conflict graph fig
     fig_slide("The read-conflict graph", figs["graph"],
-              "Tied loci form families; single-copy genes and domain-sharers (one shared exon, no tie) are correctly left out.")
+              "Tied loci form families; single-copy genes and domain-sharers (one shared exon, no tie) are left out. (Downstream homology filters guard residual repeat-bridge over-merges at scale.)")
 
     # 5 de-tie
-    fig_slide("Threshold-free: the de-tie criterion", figs["detie"],
-              "Two placements tie iff their divergences are within δ AND both fit (≤ de_max). The tie IS the data, not a tuned cutoff.")
+    fig_slide("A relational criterion: the de-tie", figs["detie"],
+              "Two placements tie iff their divergences are within δ AND both fit (≤ de_max). Relational, not an absolute similarity bar — δ is a small tuned tolerance, not a similarity cutoff.")
 
     # 6 what we use from the BAM
     bullets_slide("What we read from the BAM", [
@@ -212,18 +212,18 @@ def build(figs):
     # 7 corroboration overview
     bullets_slide("How we corroborate it — four independent axes", [
         ("Simulated PLANTED genome — non-circular ground truth (we know every answer).", 0, True, (20, 120, 20)),
-        ("DNA-supervised decode — real gorilla data, copies/columns from DNA, held-out CV.", 0, True, (30, 80, 160)),
+        ("DNA-supervised decode — real data; DNA supplies the column allele values (copies from the RNA catalog), held-out CV.", 0, True, (30, 80, 160)),
         ("Cross-level — does an RNA family correspond to a DNA segduplication / protein orthogroup?", 0, True, (200, 110, 0)),
         ("Error controls — is a 'copy difference' real, or sequencing / alignment error?", 0, True, (150, 30, 130)),
     ])
 
     # 8 sim
-    fig_slide("Corroboration 1 — simulated ground truth", figs["sim"],
-              "Plant the genome, label every read, run the unmodified pipeline. 100% accuracy where resolvable; the identical floor certified Tied; zero false merges.")
+    fig_slide("Corroboration 1 — SYNTHETIC planted ground truth", figs["sim"],
+              "Plant the genome, label every read, run the unmodified pipeline. True-origin labels (the only place real accuracy is measured), but synthetic — tests the mechanism, not real-RNA noise. 100% where resolvable; identical floor certified Tied; 0 false merges.")
 
     # 9 dna
-    fig_slide("Corroboration 2 — DNA-supervised (non-circular, real data)", figs["dna"],
-              "Copies & distinguishing columns come from DNA, never from the RNA itself; held-out DNA columns confirm 97.2% of calls.")
+    fig_slide("Corroboration 2 — DNA-supervised decode (real data)", figs["dna"],
+              "The distinguishing columns' allele VALUES come from DNA; the copy set is the RNA catalog. Held-out DNA columns confirm 97.2% — a self-consistency / enrichment check (2.2× chance), not external accuracy.")
 
     # 10 levels
     fig_slide("Corroboration 3 — the RNA families are real duplications", figs["levels"],
@@ -238,11 +238,20 @@ def build(figs):
         ("So we MODEL error (calibrated, abstain) — we never correct or trust a single read.", 0, True, (20, 40, 90)),
     ])
 
-    # 12 summary
+    # 12 limitations (the honest scope — added per adversarial review #4)
+    bullets_slide("Honest scope & limitations", [
+        ("No single EXTERNAL real-data true-origin accuracy for O2: every real-data route loops through minimap2 or the RNA catalog.", 0, True, (200, 30, 30)),
+        ("Support is by TRIANGULATION of differently-biased partial witnesses — planted sim (synthetic), DNA-derived signatures (held-out, 2.2× chance), and a source-orthogonal SEDEF segdup map (grouping only).", 0, False, (20, 20, 20)),
+        ("'Silver' (minimap2-primary agreement) is NOT accuracy — it is easy-regime (MAPQ>0) consistency with the very aligner we improve on.", 0, False, (20, 20, 20)),
+        ("The definition removes the ABSOLUTE-similarity bar but retains tuned constants (δ, de_max, min_reads) — named, not eliminated.", 0, False, (20, 20, 20)),
+        ("Outstanding: a true-origin external oracle (cluster SEDEF/BISER or gorilla Compara) + DNA parCN for copy-vs-allele.", 0, True, (20, 40, 90)),
+    ])
+
+    # 13 summary
     bullets_slide("Summary", [
-        ("Definition: a family = a connected component of the read-conflict graph — threshold-free, annotation-free.", 0, True, (20, 40, 90)),
-        ("It picks out exactly the loci where copy assignment is needed; excludes single-copy & domain-sharers by construction.", 0, False, (20, 20, 20)),
-        ("Corroborated four independent, largely non-circular ways: planted sim, DNA decode, cross-level, error controls.", 0, True, (20, 120, 20)),
+        ("Definition: a family = a connected component of the read-conflict graph — RELATIONAL (no absolute-similarity bar), annotation-free.", 0, True, (20, 40, 90)),
+        ("It picks out exactly the loci where copy assignment is needed; excludes single-copy & domain-sharers (with downstream homology guards at scale).", 0, False, (20, 20, 20)),
+        ("Theory + calibrated gate delivered; abstentions provably the identifiability floor; resolving-power shown on synthetic ground truth + DNA enrichment.", 0, True, (20, 120, 20)),
         ("View it in IGV: copy_assign --gtf (transcripts, families flagged) + reads coloured by assigned copy.", 0, False, (110, 110, 110)),
     ])
 

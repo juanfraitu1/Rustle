@@ -24,7 +24,10 @@ GENOME = f"{SCRATCH}/GGO.fasta"
 MMSEQS = os.environ.get("RUSTLE_MMSEQS", "/home/juanfra/miniforge3/bin/mmseqs")
 MM2 = os.environ.get("RUSTLE_MINIMAP2", "/home/juanfra/miniforge3/bin/minimap2")
 PREFIX = sys.argv[1] if len(sys.argv) > 1 else f"{SCRATCH}/gw_off"
-SEDEF = sys.argv[2] if len(sys.argv) > 2 else "/mnt/c/Users/jfris/Desktop/Rustle/final.bed"
+# default SEDEF map: the real 107 MB segdup map lives one dir up at Desktop/final.bed (NOT Rustle/final.bed —
+# the old default pointed at a path that does not exist and crashed from a clean run). Pick the first present.
+_SEDEF_CANDIDATES = ["/mnt/c/Users/jfris/Desktop/final.bed", "/mnt/c/Users/jfris/Desktop/Rustle/final.bed"]
+SEDEF = sys.argv[2] if len(sys.argv) > 2 else next((p for p in _SEDEF_CANDIDATES if os.path.exists(p)), _SEDEF_CANDIDATES[0])
 MIN_AA, MIN_FIDENT, MIN_COV = 40, 0.50, 0.50
 DNA_BLOCK_BP, DNA_ID = 200, 0.90
 
