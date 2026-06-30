@@ -25,3 +25,8 @@ Each doc merges several former `*.md` verbatim under `## <name>` sections.
 
 To recover any original: `git log --follow --diff-filter=D -- bench/<old-name>.md` then
 `git show <rev>^:bench/<old-name>.md`.
+
+## IGV visualization
+- **igv_tracks.py** — turns a `copy_assign` result into IGV tracks: `<out>.tagged.bam` (reads auto-coloured by
+  assigned copy via the `YC` tag, grouped by `cp`, tied reads grey) + `<out>.copies.bed` (per-copy loci track).
+  `python bench/igv_tracks.py --assignments OUT.assignments.tsv --bam reads.bam --regions regions.txt --out OUT`
