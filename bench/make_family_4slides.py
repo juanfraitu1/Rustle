@@ -52,6 +52,59 @@ def fig_conflict():
     return savefig("s_conflict.png")
 
 
+def fig_singlecore():
+    fig, ax = plt.subplots(figsize=(11, 5.4)); ax.axis("off")
+    # 4 copies as sequence bars; consecutive copies share a homology block in SHIFTING positions.
+    GR, BL, OR = "#4daf4a", "#377eb8", "#ff7f00"
+    bars = {  # copy -> list of (x0, x1, colour, label)
+        "A": [(1.0, 4.0, GR, ""), (4.0, 8.0, GREY, "")],
+        "B": [(1.0, 4.0, GR, ""), (4.0, 6.0, BL, ""), (6.0, 8.0, GREY, "")],
+        "C": [(1.0, 4.0, GREY, ""), (4.0, 6.0, BL, ""), (6.0, 8.0, OR, "")],
+        "D": [(1.0, 6.0, GREY, ""), (6.0, 8.0, OR, "")],
+    }
+    ys = {"A": 4.0, "B": 3.2, "C": 2.4, "D": 1.6}
+    for cp, segs in bars.items():
+        y = ys[cp]
+        for (x0, x1, c, _) in segs:
+            ax.add_patch(plt.Rectangle((x0, y), x1 - x0, 0.5, fc=c, ec="black"))
+        ax.text(0.8, y + 0.25, f"copy {cp}", ha="right", va="center", fontsize=12, weight="bold")
+    ax.text(2.5, 4.78, "homology A↔B", ha="center", color=GR, fontsize=11, weight="bold")
+    ax.text(5.0, 1.35, "homology C↔D", ha="center", color=OR, fontsize=11, weight="bold")
+    ax.text(5.0, 3.0, "B↔C", ha="center", color=BL, fontsize=10.5, weight="bold")
+    ax.text(4.0, 5.15, "no block spans all 4 copies  →  common core = ∅", ha="center", color=RED, fontsize=11.5, weight="bold")
+
+    # INSET: the family as a union-find CHAIN — consecutive ties solid, A⋯D NOT directly tied (transitive closure).
+    gx = 9.6
+    ny = {n: ys[n] + 0.25 for n in "ABCD"}
+    for (u, v), c in {("A", "B"): GR, ("B", "C"): BL, ("C", "D"): OR}.items():
+        ax.plot([gx, gx], [ny[u], ny[v]], color=c, lw=3.5, zorder=1)
+        ax.text(gx + 0.2, (ny[u] + ny[v]) / 2, "tie", fontsize=8.5, color=c, va="center")
+    for n in "ABCD":  # dotted leader from each bar to its node
+        ax.plot([8.05, gx - 0.17], [ny[n], ny[n]], color=GREY, lw=0.8, ls=":", zorder=0)
+        ax.add_patch(plt.Circle((gx, ny[n]), 0.17, fc="#14285a", ec="black", zorder=2))
+        ax.text(gx, ny[n], n, ha="center", va="center", color="white", fontsize=10, weight="bold", zorder=3)
+    # A⋯D dashed NON-edge, arcing out to the right
+    ax.annotate("", (gx, ny["D"]), (gx, ny["A"]), zorder=1,
+                arrowprops=dict(arrowstyle="-", color=GREY, ls="--", lw=1.6, connectionstyle="arc3,rad=-0.55"))
+    ax.text(gx + 1.55, (ny["A"] + ny["D"]) / 2, "A⋯D:\nNO direct tie", ha="left", va="center", fontsize=9.5, color=GREY)
+    ax.text(gx, ny["D"] - 0.62, "1 connected component\n= ONE family", ha="center", va="top",
+            fontsize=10, color="#146e14", weight="bold")
+    # two interpretations
+    ax.add_patch(plt.Rectangle((0.4, -1.95), 9.8, 2.85, fc="#f4f4f4", ec=GREY))
+    ax.text(0.6, 0.65, "Single core (longest common substring / highest-Jaccard block, shared by ALL):",
+            fontsize=12.5, weight="bold", color="#b01515")
+    ax.text(0.6, 0.2, "the all-copies intersection SHRINKS as members diverge → high θ drops the divergent tail\n"
+            "(UNDER-merge); low θ rewards a shared domain/repeat present in unrelated genes (OVER-merge). Either way it fails.",
+            fontsize=11.5, va="top")
+    ax.text(0.6, -0.85, "Read-conflict / pairwise POA-core → connected component (union-find):",
+            fontsize=12.5, weight="bold", color="#146e14")
+    ax.text(0.6, -1.3, "membership = a PAIRWISE tie to ANY existing member → the chain A–B–C–D is ONE family,\n"
+            "even though A and D share NO common core and are not directly similar. Transitivity, not a global block.",
+            fontsize=11.5, va="top")
+    ax.set_xlim(-1.0, 12.6); ax.set_ylim(-2.1, 5.45)
+    return savefig("s_singlecore.png")
+
+
 def fig_runaway():
     fig, ax = plt.subplots(figsize=(11, 5.2)); ax.axis("off")
     # reference transcript: 3 exons (boxes) joined by introns (lines). terminal = exon 3.
@@ -130,8 +183,12 @@ def build():
        0.7, 1.15, 11.9, 0.9, 18, italic=True, color=(60, 60, 60))
     fig(s, fig_conflict(), top=2.05, maxh=4.6)
 
-    # Slide 2 — methods table
-    s = prs.slides.add_slide(blank); title(s, "2 · Methods to detect multi-copy gene families (gathered)")
+    # Slide 2 — why a single common core cannot find all members
+    s = prs.slides.add_slide(blank); title(s, "2 · Why a single common core can't discover all members")
+    fig(s, fig_singlecore(), top=1.4, maxh=5.6)
+
+    # Slide 3 — methods table
+    s = prs.slides.add_slide(blank); title(s, "3 · Methods to detect multi-copy gene families (gathered)")
     rows, cols = len(METHODS), 4
     gt = s.shapes.add_table(rows, cols, Inches(0.35), Inches(1.35), Inches(12.6), Inches(5.7)).table
     gt.columns[0].width = Inches(2.5); gt.columns[1].width = Inches(2.0); gt.columns[2].width = Inches(4.2); gt.columns[3].width = Inches(3.9)
@@ -151,8 +208,8 @@ def build():
     tb(s, "The RNA / long-read / de-novo / copy-level niche was empty — IsoCon is the closest, but only WITHIN a known family.",
        0.4, 7.05, 12.5, 0.4, 11.5, italic=True, color=(110, 110, 110))
 
-    # Slide 3 — runaway read
-    s = prs.slides.add_slide(blank); title(s, "3 · A runaway read can't wrongly extend the intron chain")
+    # Slide 4 — runaway read
+    s = prs.slides.add_slide(blank); title(s, "4 · A runaway read can't wrongly extend the intron chain")
     fig(s, fig_runaway(), top=1.35, maxh=5.5)
 
     path = os.path.join(OUT, "three_slides.pptx"); prs.save(path); return path
