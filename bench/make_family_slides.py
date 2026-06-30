@@ -171,7 +171,7 @@ def build():
         B("Conflict predicate (read r on loci i,j):   |de_i − de_j| ≤ Δ   AND   max(de_i,de_j) ≤ DE_max", 0, NAVY),
         B("tied at the HiFi error floor: minimap2 cannot decide which copy the read came from.", 1),
         B("Edge: ≥ MIN_READS = 3 conflicting reads.    Family: connected component, |C| ≥ 2.", 0),
-    ], note="Δ=0.005, DE_max=0.05, MIN_READS=3 — derived, not tuned (see later slide).")
+    ], note="Δ=0.005, DE_max=0.05, MIN_READS=3 — error-model-MOTIVATED operating points near a knife-edge (see later slide); not eliminated.")
 
     add_content_slide(prs, "Worked example — one read becomes one edge", [
         B("Take a single HiFi molecule r that minimap2 places twice:", 0),
@@ -217,22 +217,23 @@ def build():
         B("reads decidable: |de diff| 0.016 > Δ → no tie.", 1),
     ])
 
-    add_content_slide(prs, "Three structural robustnesses — by construction, not by threshold", [
-        B("Domain-sharers: single-valued best-overlap → 0 cross-locus edges (verified 0/192, 0/429)."),
+    add_content_slide(prs, "Three structural robustnesses — strong on the tested panel (homology guard at scale)", [
+        B("Domain-sharers: single-valued best-overlap → 0 cross-locus edges (verified 0/192, 0/429 on the panel)."),
         B("Over-split fragments: co-positioned isoforms share no conflicting read.", 0),
-        B("a sequence-SIMILARITY definition made 42% false families here; the conflict definition needs no guard.", 1),
+        B("a sequence-SIMILARITY definition made 42% false families here; the conflict definition needs no SIMILARITY guard.", 1),
         B("Retrocopies / decidable paralogs: decisive reads don't tie → excluded.", 0),
-        B("None of these depend on Δ — they hold for any threshold, GIVEN tight per-locus vertices.", 0, TEAL),
+        B("⚠ At GENOME scale, Alu/repeat bridges DO over-merge (e.g. OCLN/SEPTIN7) — so not 'by construction' universally;", 0, TEAL),
+        B("the production catalog adds a downstream exon-sum homology refine (asm20 id≥0.80/cov≥0.50) to remove them.", 1, TEAL),
         B("The one precondition: vertices must be per-transcript loci (the production unit).", 1),
         B("coarse gene-span vertices reintroduce over-merge — and that bridge is exactly what collapses 59→20", 1),
         B("when we move to de-novo loci (next slide). So the only knob is vertex resolution, and it is pinned.", 1),
     ])
 
-    add_content_slide(prs, "The thresholds are DERIVED, not tuned", [
-        B("Δ = 0.005 = the single-read divergence-discrimination RESOLUTION at HiFi error.", 0, NAVY),
-        B("per-read de has SE √(ε/L) ≈ 0.0009; the TIE statistic |de_i − de_j| has SE √(2ε/L) ≈ 0.0013.", 1),
-        B("⇒ two copies differing < ~4σ ≈ 0.005 are indistinguishable by one read — a measurement constant.", 1),
-        B("the panel Δ-sweep plateau (correct down to 0.005, first error at 0.007) CONFIRMS it empirically.", 1),
+    add_content_slide(prs, "The thresholds are error-model-MOTIVATED operating points (named, not eliminated)", [
+        B("Δ = 0.005 ≈ the single-read divergence-discrimination RESOLUTION at HiFi error — a motivated scale, not arbitrary.", 0, NAVY),
+        B("per-read de has SE √(ε/L) ≈ 0.0009; the TIE statistic |de_i − de_j| has SE √(2ε/L) ≈ 0.0013 → ~4σ ≈ 0.005.", 1),
+        B("⚠ BUT it is a knife-edge operating point, NOT 'derived': 0.01 re-admits CNN2, 0.02 re-admits EEF1A1;", 1, TEAL),
+        B("the Δ-sweep 'first error at 0.007' is consistency vs the SAME catalog (circular), not an independent confirmation.", 1, TEAL),
         B("DE_max = 0.05: loose copy-vs-distinct-gene ceiling.   MIN_READS = 3: minimum-evidence quorum.", 0),
         B("Independent Ensembl Compara: RABL2 (Homininae), MAGEA (Catarrhini) confirmed recent paralogs;", 0),
         B("APOBEC3 confirms the strict-subset (recent paralog, yet correctly excluded).", 1),
@@ -290,10 +291,10 @@ def build():
         B("RABL2's recovery is quorum-carried (recent-paralog regime: MIN_READS, not a per-read tie).", 0),
     ])
 
-    add_content_slide(prs, "Summary — an airtight, RNA-derived family definition", [
+    add_content_slide(prs, "Summary — a relational, RNA-derived family definition", [
         B("Family = connected component of the read-conflict graph  =  recent-paralogy ∩ read-confusability.", 0, NAVY),
-        B("No tuned similarity threshold — the boundary is the HiFi error-model resolution.", 0),
-        B("Three structural robustnesses BY CONSTRUCTION (domain-sharer · over-split · retrocopy).", 0),
+        B("No ABSOLUTE-similarity bar — a relational tie at the HiFi error-model resolution (with a small tuned tolerance Δ).", 0),
+        B("Three structural robustnesses on the panel (domain-sharer · over-split · retrocopy); homology refine guards scale.", 0),
         B("TP=7  TN=10  FP=0  FN=0  on the panel; genome-wide stable and de-novo-clean.", 0, TEAL),
         B("It is the exact unit the read-to-copy assignment problem operates on.", 0, TEAL),
     ])
