@@ -1,0 +1,123 @@
+{
+  "non_circular": "PARTIAL / shared-substrate. Reads supply locus existence + exon architecture + strand, but denovo_assemble_gate.py:58 builds the 'transcript' SEQUENCE by fetching GGO.fasta substrings at those exon coords -- the same reference bytes SEDEF self-aligns. So the POA-similarity grouping and SEDEF share their sequence substrate; the 200-440x lift is substrate-inflated, NOT independent-of-genome. Read-derived signal that survives: which loci exist, expression, exon/spliced structure. See bench/GENOME_RNA_OVERLAY.md L1.",
+  "n_rna_families": 1130,
+  "n_rna_members": 3636,
+  "n_members_missing_meta": 10,
+  "headline_precision": 0.12497761862130707,
+  "headline_n_linked": 698,
+  "headline_n_tested": 5585,
+  "pairs_possible_precap": 204515,
+  "pair_cap": 100000,
+  "per_family_cap": 3000,
+  "precision_excl_DNFAM0": 0.2700193423597679,
+  "precision_excl_DNFAM0_counts": [
+    698,
+    2585
+  ],
+  "family_equal_coherent_fraction": 0.31784386617100374,
+  "family_coherent_counts": [
+    171,
+    538
+  ],
+  "locus_cover_rule": 0.5,
+  "per_stratum_precision": {
+    "trans": [
+      299,
+      4229
+    ],
+    "cis_bin4": [
+      63,
+      539
+    ],
+    "cis_bin3": [
+      137,
+      377
+    ],
+    "cis_bin1": [
+      96,
+      211
+    ],
+    "cis_bin2": [
+      92,
+      214
+    ],
+    "cis_bin0": [
+      11,
+      15
+    ]
+  },
+  "null_background": 0.00061,
+  "null_counts": [
+    61,
+    100000
+  ],
+  "lift": 204.88134200214276,
+  "fisher_p_greater": 0.0,
+  "binomial_p_greater": 0.0,
+  "permutation_p": 0.000999000999000999,
+  "permutation_B": 1000,
+  "permutation_size": 2000,
+  "per_stratum_null": {
+    "trans": [
+      0,
+      75678
+    ],
+    "cis_bin3": [
+      11,
+      6746
+    ],
+    "cis_bin4": [
+      0,
+      9771
+    ],
+    "cis_bin1": [
+      43,
+      3745
+    ],
+    "cis_bin2": [
+      6,
+      3765
+    ],
+    "cis_bin0": [
+      1,
+      295
+    ]
+  },
+  "per_stratum_lift": {
+    "cis_bin3": 222.86,
+    "cis_bin4": Infinity,
+    "cis_bin0": 216.33,
+    "cis_bin1": 39.63,
+    "cis_bin2": 269.77,
+    "trans": Infinity
+  },
+  "sensitivity_midpoint_rule": {
+    "precision": 0.12963294538943598,
+    "precision_excl_DNFAM0": 0.2800773694390716,
+    "background": 0.00076,
+    "lift": 170.56966498609998,
+    "counts": [
+      724,
+      5585
+    ],
+    "null_counts": [
+      38,
+      50000
+    ]
+  },
+  "pc_families_total": 538,
+  "pc_families_expr_ge2": 186,
+  "pc_families_recovered": 113,
+  "conditioned_recall": 0.6075268817204301,
+  "annot_precision": 0.12549019607843137,
+  "annot_counts": [
+    480,
+    3825
+  ],
+  "prior_reconcile": {
+    "prior_precision_raw": 0.644,
+    "prior_precision_eff": 0.719,
+    "prior_recall": 0.105,
+    "note": "prior used cDNA-homology truth (partly circular, shares lineage with reads); this overlay replaces it with read-independent SEDEF segdup linkage."
+  }
+}

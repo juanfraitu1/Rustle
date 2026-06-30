@@ -1,0 +1,17 @@
+{
+  "genes": 34114,
+  "segdup_pairs": 253029,
+  "edges": 91247,
+  "catalogA_families": 623,
+  "catalogA_member_genes": 5162,
+  "catalogA_cross_chrom": 261,
+  "catalogPC_families": 538,
+  "catalogPC_member_genes": 3340,
+  "catalogPC_cross_chrom": 223,
+  "catalogB_blocks": 285,
+  "units": 30377,
+  "A_named_ge2": 112,
+  "A_compara_confirmed": 3,
+  "A_in_single_B_block": 580,
+  "cover_frac": 0.5
+}
