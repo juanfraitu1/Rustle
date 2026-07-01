@@ -230,6 +230,88 @@ This reframe re-reads that result and restores the separation:
 
 The **shipped family catalog should be the homology / `denovo_families` grouping ($E_r$), not the read-conflict graph.** `src/rustle/vg_family/read_conflict.rs` is **unchanged** — it correctly stays the **O2** carrier (the de-tie / sig-tie graph, `MCC=χ(H)`, the exact-decomposition unit). The family-*definition* output should be the $\gamma$-quasi-clique-refined `denovo_families` catalog (with $R$ applied to dissolve DNFAM0), and the read-conflict graph should be consumed **within** each such family as the O2 resolvability structure. Concretely: O1 emits the ~1,130 (post-$R$) transcript-homology families; O2 runs `read_conflict` + the SUN ladder + the assign-or-abstain gate *inside* each, reporting $\chi(H)\le\Lambda$ and abstaining on the Tier-3 / K-frontier ~18%.
 
+### 7.4 The copy *number* re-enters O1: $\chi(H)$ counts copies, including the unassignable ones (count vs. assign)
+
+The demotion in §5–§7.3 moved the whole read-conflict *object* to O2. That is right for **assignment** but goes one
+step too far for **counting**: it discards the family-level fact that the conflict graph also tells us **how many
+copies a family has** — a quantity that is well-defined **even for copies the reads cannot assign**. We therefore
+**re-promote the count** (not the assignment) to O1, and enrich the O1 family object accordingly. This is not a
+reversal of the reframe: membership (*which* loci) stays the $E_r$ transcript-homology component; we add the
+conflict-derived **multiplicity** as a family-level property, sitting beside $\Lambda(C)$.
+
+The distinction is theorem-level (`THEORY.md` §3 Remark, Lemma 1 / Theorem 2 / Theorem 4):
+
+- **Counting** copies $=\mathrm{MCC}=\chi(H)$ (chromatic number of the copy-conflict graph $H$). Needs **only** the
+  conflict structure; defined even when **no read can be assigned**. On the **de-tied / significance-gated
+  (copy-consensus)** graph and in the **full-span** regime, $\chi(H)$ is a **lower bound** on the true copy number
+  (on the *raw* allele-disagreement read graph the error edges inflate the colouring to $\approx3\times K$, so the
+  gate / copy-consensus is a *precondition* for the bound — `THEORY.md` §3 Lemma).
+- **Assigning** is strictly harder, and splits into two theorems the family-level shorthand must keep **distinct**:
+  **(i) single-read** assignability of a read $r$ ($\lvert N(r)\rvert=1$) needs a single-position Strong-Separation
+  witness — a **SUN** — which is **Theorem 4(ii) / the Bridge** (the per-read certificate, and exactly the Tier-1
+  property, a *per-copy* fact); **(ii) family-wide unique-cover** recovery needs **Strong Separation** (Theorem 2), a
+  **coverage-dependent** condition. The **SUN / Tier-1** core is therefore **not** the same object as Strong
+  Separation (an all-Tier-1 family with short reads can still fail Strong Separation) — the per-read assign
+  certificate is **Theorem 4**, and Theorem 2 is reserved for the family-wide **cover** uniqueness.
+
+So a family is **counted** as $\chi(H)$ copies while only the Tier-1 subset is single-read **assignable** — the
+Tier-2 copies (distinct hap-vector, no single-position SUN witness) are **counted but not assignable**, and they
+**matter**: they are real copies the family has, that the per-read gate must abstain on. The **enriched O1 family
+object** is therefore the triple
+
+$$
+\text{family}\ =\ \big(\ \underbrace{C=R(\kappa)\subseteq V_R}_{\text{which loci: }E_r\text{ homology, }|C|=\Lambda(C)}\ ,\ \ \underbrace{K=\chi(H)}_{\text{how many copies (conflict-derived, incl. unassignable)}}\ ,\ \ \underbrace{(n_{\text{res}},\,n_{\text{c.u.}},\,\text{coll})}_{\text{3-tier hierarchy}}\ \big),
+$$
+
+with the **SUN 3-tier ladder** stratifying the copies:
+
+| tier | definition | counted by $\chi(H)$? | single-read assignable? | who counts it |
+|---|---|:---:|:---:|---|
+| **Tier-1** RESOLVABLE | SUN-identifiable / Strong-Sep | yes (own color) | **yes** | $\chi(H)$ — the nice O2 core |
+| **Tier-2** DISTINGUISHABLE-BUT-UNASSIGNABLE | unique hap-vector, **no** SUN | yes (own color) | **no** (needs $\ge2$-PSV co-observation) | $\chi(H)$ — the advisor's "important" copies |
+| **Tier-3** IDENTICAL / collapsed | share a hap-vector, no distinguishing PSV | **no** ($\chi(H)$ collapses them) | no | read-**depth** / DNA (K=0 frontier, parCN / O4) |
+
+**Exact per-family metrics** (`bench/copy_number_catalog.py` → `bench/copy_number_catalog.tsv/.json`; all identities
+machine-checked, all 154 families):
+
+- $n_{\text{loci}}$ — distinct co-located reference copies fed to the conflict graph $=\text{Tier1}+\text{Tier2}+\text{Tier3}$.
+- $\chi(H)=K$ — number of distinct copy hap-vectors (colors) $=\text{Tier1}+\text{Tier2}+(\#\text{non-singleton groups})$.
+- $n_{\text{resolvable}}=\text{Tier1}$ — counted **and** single-read assignable (Strong-Sep, the O2 core).
+- $n_{\text{counted\_unassignable}}=\chi(H)-n_{\text{resolvable}}=\text{Tier2}+(\#\text{non-singleton groups})$ — copies $\chi(H)$ counts but a single read cannot pin (Tier-2 + one representative per collapsed group).
+- $\text{collapsed\_excess}=\sum_{\text{non-singleton groups}}(\text{size}-1)=\text{Tier3}-(\#\text{non-singleton groups})$ — **identical copies $\chi(H)$ misses** (need depth/DNA).
+- $\text{true\_copy\_lower\_bound}=\chi(H)+\text{collapsed\_excess}=n_{\text{loci}}$ (reference-resolved regime).
+
+**Honest bound chain** (the crux; note the direction — $\chi(H)$ *under*-counts here because minimap2 pre-splits
+distinct reference loci, so identical loci collapse):
+
+$$
+\underbrace{n_{\text{resolvable}}}_{\text{Tier-1}}\ \le\ \underbrace{\chi(H)}_{\text{conflict count}}\ \le\ \underbrace{n_{\text{loci}}=\text{true\_copy\_lower\_bound}}_{\chi(H)+\text{collapsed\_excess}}\ \le\ \text{true copy number},
+$$
+
+last gap $=$ reference-**absent** copies (O4). The advisor's dual statement $n_{\text{loci}}\le\chi(H)$ is the
+complementary **reference-collapsed** regime (one reference locus hiding several hap-vectors — the Vollger/SDA
+collapsed-segdup case; `reference_sda_vollger`), where the reads reveal *more* copies than the reference shows; the
+unified statement is $\max(n_{\text{loci}},\chi(H))\le\text{true copy number}$, and the O1 object carries **both**
+numbers plus $\text{true\_copy\_lower\_bound}$.
+
+**Genome-wide (GGO, 154 co-located families / 412 copies):** the **read-observed** conflict count (`psv_graph_genomewide.json`, the directly-plumbed $\chi(H)$ of the complete-multipartite Lemma, `THEORY.md` §3) is $\sum\chi(H)=354=322$ **read-level** singleton parts $+\,32$ collapsed parts, so $354+58=412=\sum n_{\text{loci}}$ and **58** identical (Tier-3) copies go uncounted across **30/154** strictly-under-counting families (the read-level singleton count **322** is a read-sampling quantity and is **not** the tier count: the SUN tiers are defined on the copy-consensus graph, where Tier-1 $\uplus$ Tier-2 $=339$, differing from 322 by 17 over the 11 divergent families); the depth-independent **copy-consensus** count (`copyonly_K`, authoritative for the O1 count — see *Which conflict graph* below) is $\sum\chi(H)=361=338\ (\text{Tier-1})+1\ (\text{Tier-2})+22\ (\text{collapsed-group reps})$, missing **51** Tier-3 copies. Both obey the chain against $\sum n_{\text{loci}}=\sum\text{true\_copy\_lower\_bound}=412$: the identical copies counted only by reference-locus multiplicity, not by the conflict count, are the exact Tier-3 mass that needs read-depth/DNA. Exemplars: **fam 0** (GSTM2) $n_{\text{loci}}=\chi(H)=7$, all Tier-1 (fully counted **and** assignable); **fam 1** $n_{\text{loci}}=7,\ \chi(H)=1$ (all identical, collapsed\_excess $=6$ — $\chi(H)$ under-counts $7\!\to\!1$); **fam 42** $n_{\text{loci}}=\chi(H)=8$ but $n_{\text{resolvable}}=7$, $n_{\text{counted\_unassignable}}=1$ — the single Tier-2 copy the family *has* and *counts* but no single read can assign (the advisor's case in one row).
+
+**Which conflict graph defines the O1 count.** $\chi(H)$ is taken on the **copy-consensus** conflict graph
+(`sun_identifiability` `copyonly_K`): it counts copies distinguishable **in principle** from the assembled copy
+sequences, independent of read-sampling depth, and is **tier-consistent** (singleton groups $=$ Tier1+Tier2). The
+**read-level** graph (`psv_graph_genomewide.json` `K`) is the **assignment-realized** count — what *this* read set
+resolves — and is carried as a cross-check. They agree on **143/154** families and diverge on **11**, in both
+directions (the count-vs-assign split made concrete at the graph level): **fam 22** the read-level graph *over*-splits
+($K=4$ vs copyonly $1$; read-level PSVs from within-copy noise not fixed between copy consensuses), and **10**
+families (IKBKG/30, 46, 68, 94, 96, 101, 145, 151, 168, 195) the copy-consensus splits *more* (copyonly $2$ vs
+read-level $1$; the copies carry consensus SUN but the reads never co-observed the distinguishing column). For the
+O1 **count** the copy-consensus graph is authoritative; the read-level divergence is an O2 read-sampling fact.
+**Reconciliation:** the read-observed $\sum\chi(H)=354$ and copy-consensus $\sum\chi(H)=361$ differ by exactly $+7$
+over these 11 families (10 consensus-over-splits at $+1$ each, minus fam 22's read-over-split of $-3$); both
+instantiate the complete-multipartite Lemma of `THEORY.md` §3 ($\chi(H)=n_{\text{groups}}$, and the
+count-needs-only-conflict Proposition beside it), so the choice between them is a graph-substrate choice, not a
+change to the $O1$ invariant.
+
 ---
 
 ## Appendix A — verification log (2026-06-30)
@@ -250,5 +332,7 @@ The **shipped family catalog should be the homology / `denovo_families` grouping
 | shipped oracle | `denovo_families.py:T_CORE` | core_recip $\ge$ **0.13** (canonical + RC POA retry) — the hard-floored $E_r$ |
 | read-conflict predicate | `read_conflict.rs:86–106` | `de_tied`/`sig_tied` use only `de`, `aln_len`; **no partner-exon check** $\Rightarrow$ $E_r$ must be asymmetric for $E_c\subseteq E_r$ |
 | operator $R$ | `genome_family_def.refine_families` | shared $\gamma$-quasi-clique ($\gamma=0.20$) + $\Lambda\ge2$; imported by DNA and protein notes |
+| **O1 copy number** $K=\chi(H)$ (§7.4) | `bench/copy_number_catalog.py` (all-tier columns) + `bench/family_copy_number.py` (hap-vector verification companion) → `copy_number_catalog.tsv/.json`, `family_copy_number.tsv/.json` (all 154 fams, identities machine-checked, byte-deterministic, numerically identical on shared columns) | read-observed (`psv_graph`) $\sum\chi(H)=\mathbf{354}=322$ **read-level** singleton parts $+32$ collapsed parts, **58** Tier-3 uncounted, **30/154** strict; copy-consensus (`copyonly_K`, O1-authoritative) $\sum\chi(H)=\mathbf{361}=338$ Tier-1 $+1$ Tier-2 $+22$ collapsed-group reps, **51** uncounted (read-level singleton **322** $\ne$ copy-consensus Tier-1$\uplus$Tier-2 $=339$; tiers are defined on copy-consensus); $\sum n_{\text{loci}}=\sum\text{true\_copy\_lower\_bound}=\mathbf{412}$; reference-resolved chains $338\le354\le412$ and $338\le361\le412$; **22** families carry counted-but-unassignable copies, **21** need depth/DNA; the two substrates differ by $+7$ over 11 divergent families |
+| copy count: consensus vs read-level | `sun_identifiability` `copyonly_K` vs `psv_graph_genomewide.json` `K` | agree **143/154**; diverge **11** (fam 22 read over-splits $4$ vs $1$; 10 fams consensus over-splits $2$ vs $1$) — count-vs-assign at the graph level; O1 count uses copy-consensus |
 
-**Definitional one-liner for the thesis body.** An *RNA-level multi-copy gene family* is a **cohesive community of the transcript-homology graph** $G_R=(V_R,E_r)$ meeting the **same cohesion certificate** as the DNA/protein levels: a block $C=R(\kappa)$ that is a $\gamma$-quasi-clique ($\rho_{\mathrm{in}}\ge\gamma=0.20$) with $\ge2$ distinct expressed loci, where $E_r$ = significant spliced-transcript self-alignment ($\alpha_r$ / core_recip $\ge0.13$). It is the **fourth homology oracle** ($E_a$—$E_b$—$E_r$—$E_p$), **includes read-resolvable copies**, and **contains the read-conflict graph as its within-family O2 substructure** ($E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$, the sole clean containment, now the tightest since it shares $V_R$). Read-ambiguity ($E_c$) and the SUN 3-tier ladder are **O2 resolvability, not O1 family definition** — the correction that recovers the **~30% of multi-copy families / ~1/4 of copies** the prior $E_c$-as-definition silently dropped as easily-solvable.
+**Definitional one-liner for the thesis body.** An *RNA-level multi-copy gene family* is a **cohesive community of the transcript-homology graph** $G_R=(V_R,E_r)$ meeting the **same cohesion certificate** as the DNA/protein levels: a block $C=R(\kappa)$ that is a $\gamma$-quasi-clique ($\rho_{\mathrm{in}}\ge\gamma=0.20$) with $\ge2$ distinct expressed loci, where $E_r$ = significant spliced-transcript self-alignment ($\alpha_r$ / core_recip $\ge0.13$). It is the **fourth homology oracle** ($E_a$—$E_b$—$E_r$—$E_p$), **includes read-resolvable copies**, **carries a family-level copy number $K=\chi(H)$** (the conflict-derived count on the de-tied / copy-consensus graph — a lower bound on the true copy number that counts even the Tier-2 *unassignable* copies; reference-resolved chain $n_{\text{res}}\le\chi(H)\le n_{\text{loci}}=\text{true\_copy\_lower\_bound}\le\text{true}$, general form $\max(n_{\text{loci}},\chi(H))\le\text{true}$; §7.4, `bench/copy_number_catalog.py` / `bench/family_copy_number.py`), and **contains the read-conflict graph as its within-family O2 *assignment* substructure** ($E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$, the sole clean containment, now the tightest since it shares $V_R$) — the **count** is O1, the **assignment** is O2. Read-ambiguity ($E_c$) and the SUN 3-tier ladder are **O2 resolvability for *assignment*, not the O1 family *boundary*** — but the ladder's per-tier **counts** ($n_{\text{res}}$, $n_{\text{c.u.}}$, collapsed\_excess) **are** O1 attributes of the enriched family object (§7.4). This is the correction that recovers the **~30% of multi-copy families / ~1/4 of copies** the prior $E_c$-as-definition silently dropped as easily-solvable.

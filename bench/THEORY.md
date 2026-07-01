@@ -36,8 +36,10 @@ Copy-assignment sits at the intersection of three active research interests:
 1. **Family detection** (interest #1): which expressed loci are copies of one another? A multi-copy gene
    family is defined as an $R$-refined connected component of the **transcript-homology graph $E_r$** (the RNA
    homology oracle; see `bench/family_definition_formal.md`). The **read-conflict (de-tie) graph is *not* the
-   family boundary** — it is demoted to the **within-family O2 copy-assignment** structure (`MCC=χ(H)`), the
-   confusion decomposition *inside* a fixed family. Copy-assignment is the unit of work performed *inside* each
+   family boundary** — it is demoted to the **within-family O2 copy-assignment *decomposition*** (the confusion
+   partition *inside* a fixed family). Its **cardinality** $\chi(H)=\mathrm{MCC}$, by contrast, is **re-promoted to
+   an O1 family property** — the copy *count*, including the unassignable copies (§3 Remark;
+   `bench/family_definition_formal.md` §7.4). Copy-assignment is the unit of work performed *inside* each
    family; it is logically downstream of interest #1.
 
 2. **Copy assignment under ambiguity** (interest #2, this note): given a confirmed family component, how should
@@ -215,6 +217,70 @@ Run: `python3 bench/copy_assignment_theory_checks.py` — exits 0 and prints:
 ```
 OK  - Lemma 1 (MCC=chi) verified on C5: MCC=3=chi(C5)
 ```
+
+### Remark (counting vs. assigning): χ(H) is a copy *count*, well-defined even when reads are unassignable
+
+Lemma 1 separates two questions that Theorem 2 later ties together, and the separation is load-bearing for the
+family-level (O1) reading of the conflict graph:
+
+- **Counting copies** = $\mathrm{MCC} = \chi(H)$ — a function of the **conflict structure alone**. It is defined
+  for *every* instance, with no separation hypothesis, and in particular **even when no read can be assigned to a
+  specific copy**. It answers "how many copies must exist to explain these reads?"
+- **Assigning reads** to named copies requires the **Strong-Separation** hypothesis of Theorem 2 (§5); that is the
+  *resolvable* / SUN-identifiable core, a strictly stronger demand than counting.
+
+> **Proposition (count needs only conflict; assignment needs Strong Separation).** $\chi(H)$ is a functional of the
+> conflict relation $\sim$ **alone** — invariant under any relabelling of per-read origins, evaluable with no
+> Strong-Separation hypothesis, no SUN, and no coverage condition; in particular it is defined even when **no** read
+> of the family is assignable. *Single-read* assignability of a read $r$ ($\lvert N(r)\rvert=1$, Theorem 4(ii)) is a
+> **strictly stronger** demand: it requires a single-position Strong-Separation witness (a SUN, §5·SUN), which
+> Tier-2 copies lack by definition. Counting therefore consumes strictly less information than assigning — the
+> count survives where the assignment abstains. This is the load-bearing separation: **the conflict says how many
+> copies there are even when they are not resolvable; the resolvable subset is the nice core; the counted-but-
+> unassignable copies are real and matter.**
+
+> **Lemma (χ(H) = number of distinct observed hap-vectors = `psv_graph`'s $K$ *on the chosen H-substrate*).**
+> ($\chi(H)$ is **substrate-dependent** but a **single invariant on one $H$**: the read-level `psv_graph` graph
+> gives the *assignment-realized* count $\sum=354$, while the depth-independent **copy-consensus** graph
+> (`copyonly_K`) gives the O1-authoritative count $\sum=361$; these are two substrates of the *same* Lemma, not two
+> invariants — the O1 copy number uses copy-consensus, see §7.4 and the reconciliation below.) In the full-span regime
+> (each read spans the family's PSV columns — the long-RNA case), group the reads by realized PSV hap-vector. Two
+> reads with the **same** hap-vector agree at every co-observed column ⇒ non-adjacent; two reads with **distinct**
+> hap-vectors differ at $\ge1$ co-observed column ⇒ adjacent. Hence $H$ — taken on the **de-tied / significance-
+> gated** graph, **not** the raw allele-disagreement graph, whose error edges inflate the colouring to a median
+> $\approx3\times K$ (`bench/conflict_graph_structure.py`) — is **complete multipartite** on the hap-vector groups,
+> so $\chi(H)=n_{\text{groups}}$: precisely the per-family $K$ that `psv_graph_genomewide.json` already emits (its
+> `group_sizes` are the multipartite parts; singleton parts $=$ Tier-1 $\uplus$ Tier-2, non-singleton parts $=$
+> Tier-3 collapse). The O1 copy number is thus a field the pipeline already computes. (Partial reads only weaken
+> this to $\chi(H)\le n_{\text{groups}}$ via recombinant covers — the $K\ge3$ non-uniqueness of the §5 Proposition;
+> RNA long-reads sit near the full-span equality case.)
+
+Hence a family can be **counted** as $\chi(H)$ copies while only a **subset** is single-read **assignable**: the
+distinct-hap-vector copies that carry no single-position Strong-Separation witness (Tier-2, §5·SUN) are counted by
+$\chi(H)$ yet are not single-read taggable. Because merging can only *reduce* the number of colors, $\chi(H)$ is a
+**lower bound** on the true copy number: identical copies that share a hap-vector (Tier-3, the K-frontier) collapse
+to one color, so $\chi(H)$ under-counts them by exactly $\sum_{\text{collapsed groups}}(\text{size}-1)$; recovering
+those needs read-**depth** / DNA (parCN). The full honest chain is
+
+$$
+\underbrace{n_{\text{resolvable}}}_{\text{Tier-1, assignable}}\ \le\ \underbrace{\chi(H)}_{\text{conflict count (incl. Tier-2 unassignable)}}\ \le\ \underbrace{\chi(H)+\text{collapsed\_excess}}_{\text{= }n_{\text{loci}}\text{ (reference-resolved) = true\_copy\_lower\_bound}}\ \le\ \text{true copy number},
+$$
+
+with the last gap = reference-**absent** copies (O4). (The two middle terms swap order in the reference-*collapsed*
+regime — a single reference locus hiding several hap-vectors, the SDA/Vollger case — where $n_{\text{loci}}\le\chi(H)$;
+the general statement is $\max(n_{\text{loci}},\chi(H))\le\text{true}$.) This is why $\chi(H)$ is promoted to an **O1
+family property** (the copy number) in `bench/family_definition_formal.md` §7.4, while read→copy assignment stays
+O2. Genome-wide on GGO (154 co-located families / 412 copies, `bench/copy_number_catalog.py`), on two instantiations of
+$H$ that agree on **143/154** families. On the **read-observed** graph (`psv_graph_genomewide.json`, the Lemma's
+directly-plumbed $\chi$): $\sum\chi(H)=354=322$ **read-level** singleton parts $+\,32$ collapsed parts, so
+$354+58=412$ and **58** identical (Tier-3) copies go uncounted across **30/154** strictly-under-counting families
+(the read-level singleton count **322** is a read-sampling quantity, **not** the tier count — the SUN tiers are
+defined on the copy-consensus graph, where Tier-1 $\uplus$ Tier-2 $=339\ne322$, the gap being the 11 divergent families).
+On the depth-independent **copy-consensus** graph (`copyonly_K`, read-sampling-invariant, authoritative for the O1
+count): $\sum\chi(H)=361=338$ Tier-1 $+\,1$ Tier-2 $+\,22$ collapsed-group reps, missing **51** Tier-3 copies. The
+two differ by exactly $+7$ over the 11 divergent families (10 consensus-over-splits at $+1$ each, minus fam 22's
+read-over-split of $-3$); both obey $\chi(H)\le\sum n_{\text{loci}}=412$, so the choice is a graph-substrate choice,
+not a change to the invariant.
 
 ---
 
