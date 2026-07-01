@@ -34,23 +34,37 @@ cross-chromosome paralog pairs are first-class. Whole genome (253 k segdup pairs
 
 Refined protein-coding view: `genome_families_protein_coding.tsv`.
 
+## Segdup edge filter (default = raw/broad; Bailey SD(·) via `--bailey-sedef`)
+
+This graph is an independent **oracle**, and its value is **recall** of real paralog families — so by
+**default** `load_sedef_pairs` uses SEDEF's full ~50%-floor superset (all 253,029 pairs). The strict
+Bailey-2002 predicate `SD(·)` (identity ≥ 90%, col 21; aln_len ≥ 1 kb, col 12; non-TE = uppercaseMatches/
+aln_matches ≥ 0.50, col 28/29) is available via **`--bailey-sedef`** and keeps only **27,623 / 253,029
+(10.9%)**. But `SD(·)` is a **narrower, incomparable oracle** (see `bench/SEGDUP_DEFINITION_FORMAL.md`):
+it removes the repeat-*bridged* over-merge yet **drops divergent paralog families** that fall below the 90%
+genomic-segdup cliff — verified losses: **CEACAM5/6/7, KRAB-ZNF (ZNF716…), IFITM1/2, ULBP1/3** all vanish
+under `SD(·)` (the APOBEC3D/F = 88.4% case generalizes) — **and** it does *not* fix the transitive
+single-linkage over-merge (max family still 317). That precision/recall trade is why the default is the
+high-recall superset; the over-merge it admits is cosmetic noise filtered per-component when corroborating.
+
 ## Results
 
 ```
-RAW (all biotypes)      623 families, 5162 genes, 261 cross-chrom
-REFINED protein-coding  538 families, 3340 genes, 223 cross-chrom
-CATALOG B (de-novo)     285 duplication blocks (≥2 units & ≥2 genes), 30,377 units
+                     DEFAULT (raw superset)        --bailey-sedef (SD(·))
+all-biotype          623 fam / 5162 genes / 261xc  446 / 3625 / 205
+protein-coding       538 fam / 3340 genes / 223xc  390 / 2405 / 185
+CATALOG B (de-novo)  285 blocks / 30,377 units      294 / 8,906
 ```
 
-**Over-merge, stated honestly.** The raw catalog is dominated by a few mega-components that are tRNA /
-snRNA / rRNA / repeat-derived-lncRNA arrays bridged by shared repeats (TRNAV-CAC ×173, an rRNA cluster
-×70, a repeat-lncRNA ×1547) — the same Alu/repeat-bridge over-merge we refine on the RNA side. Restricting
-to `gene_biotype=protein_coding` removes the RNA-gene arrays. A short tail of large protein-coding
-components remains (8 families ≥50; e.g. LOC109029187 ×464) — repeat/transposon-derived ORF expansions or
-genuine large paralog clusters (the K-frontier / over-merge regime).
+**Over-merge (default, honest).** The raw superset's mega-components are tRNA/snRNA/rRNA/repeat-lncRNA arrays
+repeat-bridged together. `--bailey-sedef` removes the repeat-bridged edges but the transitive single-linkage
+chaining **persists** (max 317): a mosaic SD sharing a valid ≥90% block with family X and another with Y
+chains X–Y through two individually-valid edges. Per the formal note (§3.3), `SD(·)` is **necessary but not
+sufficient**; the proper fix is the ≥2-distinct-loci / homology-component refinement the RNA side carries.
 
-**Protein-coding size distribution** (538 families): size 2 → 295, 3–4 → 124, 5–9 → 76, 10–49 → 35, ≥50 → 8
-(median 2, p90 8). The catalog is mostly clean small paralog families with a short heavy tail.
+**Protein-coding size distribution** (default, 538 families): size 2 → 295, 3–4 → 124, 5–9 → 76, 10–49 → 35,
+≥50 → 8 (median 2, p90 8). Mostly clean small paralog families with a short heavy tail (the repeat-bridged
+mega-components, removable by `--bailey-sedef` or component refinement).
 
 **Recovers textbook families from the genome alone** (named, small, clean): CEACAM5/6/7, **MAGEA1 /
 MAGEA12 / CSAG1** (the same MAGE-A family validated on the RNA side), ZNF716/722/735/679 (KRAB-ZNF), PRSS1/2/3

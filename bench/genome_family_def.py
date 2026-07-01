@@ -76,21 +76,43 @@ def load_genes(gff):
     return genes, by
 
 
-def load_sedef_pairs(path):
-    """final.bed -> list of (cA,sA,eA,cB,sB,eB). Each line is one self-alignment segdup pair."""
+def load_sedef_pairs(path, bailey=False):
+    """final.bed -> (list of (cA,sA,eA,cB,sB,eB), n_total, n_kept). Each line is one SEDEF pair.
+
+    DEFAULT (bailey=False) = the raw ~50%-floor SEDEF superset, chosen for the family-ORACLE purpose:
+    HIGH RECALL of divergent paralog families (CEACAM5/6/7, KRAB-ZNF, PRSS1/2/3, IFITM, ULBP all fall
+    BELOW the 90% genomic-segdup cliff and are LOST under SD(.)). The repeat-array over-merge it admits is
+    cosmetic noise filtered per-component downstream; the divergent-family loss is a real recall hit.
+
+    bailey=True applies the Bailey-2002 segmental-duplication predicate SD(.) -- a NARROWER 'recent segdup'
+    oracle (see bench/SEGDUP_DEFINITION_FORMAL.md Check F): fracMatch (col 21) >= 0.90 AND aln_len (col 12)
+    >= 1000 AND not a high-copy interspersed repeat (TE-exclusion: uppercaseMatches/aln_matches, col 28/29,
+    >= 0.50). Keeps 27,623/253,029 (10.9%); removes the repeat-BRIDGED over-merge but NOT the transitive
+    single-linkage chaining (max family still 317), and drops the divergent families above. Use for the
+    'what is a recent high-identity segdup' view, not as the default family oracle."""
     pairs = []
+    n_total = 0
     with open(path) as fh:
         for ln in fh:
             if ln.startswith("#"):
                 continue
-            f = ln.split("\t")
+            f = ln.rstrip("\n").split("\t")
             if len(f) < 6:
                 continue
             try:
-                pairs.append((f[0], int(f[1]), int(f[2]), f[3], int(f[4]), int(f[5])))
+                rec = (f[0], int(f[1]), int(f[2]), f[3], int(f[4]), int(f[5]))
             except ValueError:
                 continue
-    return pairs
+            n_total += 1
+            if bailey:
+                try:                                  # SD(.): identity, length, TE-exclusion
+                    aln_len, frac, um, am = int(f[11]), float(f[20]), int(f[27]), int(f[28])
+                except (ValueError, IndexError):
+                    continue
+                if not (frac >= 0.90 and aln_len >= 1000 and am > 0 and um / am >= 0.50):
+                    continue
+            pairs.append(rec)
+    return pairs, n_total, len(pairs)
 
 
 # ----------------------------- overlap query -----------------------------
@@ -189,6 +211,10 @@ def _units_for_contig(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--threads", type=int, default=min(16, (os.cpu_count() or 4)))
+    ap.add_argument("--bailey-sedef", action="store_true",
+                    help="apply the Bailey SD(.) filter (>=90%% id, >=1kb, non-TE) instead of the default "
+                         "raw ~50%%-floor superset. NARROWER 'recent segdup' oracle: cleaner repeat-wise but "
+                         "DROPS divergent paralog families (CEACAM/KRAB-ZNF/PRSS fall below the 90%% cliff).")
     args = ap.parse_args()
     assert SEDEF, "final.bed (SEDEF self-alignment) not found"
     bench = os.path.dirname(__file__)
@@ -197,9 +223,10 @@ def main():
     genes, genes_by = load_genes(GFF)
     gstarts = {c: [x[0] for x in v] for c, v in genes_by.items()}
     print(f"       {len(genes)} genes over {len(genes_by)} contigs")
-    print(f"[load] sedef  {SEDEF}")
-    pairs = load_sedef_pairs(SEDEF)
-    print(f"       {len(pairs)} segdup pairs")
+    print(f"[load] sedef  {SEDEF}  (filter: {'Bailey SD(.)' if args.bailey_sedef else 'RAW superset (default, high-recall oracle)'})")
+    pairs, n_total, n_kept = load_sedef_pairs(SEDEF, bailey=args.bailey_sedef)
+    print(f"       {n_kept} segdup pairs kept of {n_total} "
+          f"({100*n_kept/max(1,n_total):.1f}%{' pass >=90%/>=1kb/non-TE' if args.bailey_sedef else ' (raw superset)'})")
 
     # shard pairs by side-A contig for parallel edge emission
     pairs_by_cA = defaultdict(list)

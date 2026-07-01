@@ -1,0 +1,140 @@
+{
+  "primary": {
+    "psvs_raw": {
+      "rho": -0.32939683835499994,
+      "p": 3.0270136675063272e-05,
+      "n": 154
+    },
+    "psv_per_kb": {
+      "rho": -0.44257921260383276,
+      "p": 9.077116660424951e-09,
+      "n": 154
+    },
+    "K_per_copy": {
+      "rho": -0.10256413545818975,
+      "p": 0.20559958936143727,
+      "n": 154
+    }
+  },
+  "confound_structure": {
+    "mean_copy_len": {
+      "rho": 0.3838094336265136,
+      "p": 8.939171526572283e-07
+    },
+    "reads_coverage": {
+      "rho": 0.2781102532713927,
+      "p": 0.0004788896514651146
+    },
+    "n_copies": {
+      "rho": 0.2385451141603815,
+      "p": 0.0028892568561924964
+    }
+  },
+  "partial_spearman": {
+    "rho": -0.41242254423853436,
+    "p": 1.0675841947804698e-07,
+    "controls": [
+      "log10_reads",
+      "n_copies",
+      "mean_len"
+    ]
+  },
+  "stratified_ncopies2": {
+    "rho": -0.45560012563049074,
+    "p": 5.048063885805328e-07,
+    "n": 111
+  },
+  "coverage_tertiles": {
+    "low": {
+      "rho": -0.36043893663480164,
+      "p": 0.00866858596615156,
+      "n": 52
+    },
+    "mid": {
+      "rho": -0.5070085712864082,
+      "p": 0.00014658464350061762,
+      "n": 51
+    },
+    "high": {
+      "rho": -0.422852741566013,
+      "p": 0.0019926082397767396,
+      "n": 51
+    }
+  },
+  "permutation_join_null": {
+    "p": 0.0001999600079984003,
+    "mean_abs_rho": 0.06523086617009421,
+    "max_abs_rho": 0.2719594126750773,
+    "B": 5000
+  },
+  "pure_read_base_axis": {
+    "all_linked": {
+      "rho": -0.13824147085612806,
+      "p": 0.08730773007343154,
+      "n": 154
+    },
+    "non_no_psv": {
+      "rho": -0.10892001325919895,
+      "p": 0.22285936567051165,
+      "n": 127
+    },
+    "verdict": "weak_nonsignificant_coverage_confounded"
+  },
+  "kfrontier_mannwhitney": {
+    "n_no_psv": 27,
+    "n_full": 124,
+    "median_no_psv": 0.9919890000000001,
+    "median_full": 0.9888815,
+    "mean_no_psv": 0.9841822456378461,
+    "mean_full": 0.9814809563360041,
+    "U": 1927.0,
+    "p_one_sided": 0.11006190216071299,
+    "rank_biserial": 0.15113500597371554,
+    "auc": 0.5755675029868578
+  },
+  "kfrontier_K1_vs_K2": {
+    "n_K1": 27,
+    "n_K2": 127,
+    "median_K1": 0.9919890000000001,
+    "median_K2": 0.9888870000000001,
+    "p": 0.12313588513391222,
+    "rank_biserial": 0.1426071741032371
+  },
+  "secondary_membership_overlay": {
+    "precision": 0.8296146044624746,
+    "n_linked": 409,
+    "n_tested": 493,
+    "background": 0.00706,
+    "null_linked": 706,
+    "null_tested": 100000,
+    "lift": 117.50915077372161,
+    "perm_p": 0.000999000999000999,
+    "flag": "membership-reference-shared: family membership AND SEDEF are both reference homology; precision is high BY CONSTRUCTION and carries less read-independence than the prior RNA-POA overlay"
+  },
+  "differential": {
+    "prior_precision_excl_DNFAM0": 0.2700193423597679,
+    "prior_lift": 204.88134200214276,
+    "prior_axis": "binary_link_presence_no_gradient",
+    "increment_within_linked_rho": -0.44257921260383276,
+    "increment_within_linked_p": 9.077116660424951e-09,
+    "increment_n": 154,
+    "increment_interpretation": "graded SEDEF-identity<->read-PSV-density correlation, invisible to the prior's binary presence axis; membership held constant so prior signal is a constant",
+    "honest_bound": "SEDEF range compressed (median 0.99); graded axis is read-gated/reference-seeded; purest read-base axis (assign rate) weak/NS"
+  },
+  "meta": {
+    "n_families": 154,
+    "n_linked": 154,
+    "n_no_link": 0,
+    "n_sedef_rows": 253029,
+    "dedup_reproduces_n_copies": "154/154",
+    "sedef_identity_dist": {
+      "min": 0.8371041368649255,
+      "q25": 0.983053024793885,
+      "median": 0.9892270000000001,
+      "q75": 0.99459725,
+      "max": 0.9995849999999998
+    },
+    "provenance_note": "psvs/K/cls = read-GATED, reference-SEEDED (asm20). assign_rate/agree = read-BASE. membership = reference-derived. SEDEF = reference self-align (no reads)."
+  },
+  "headline": "Cross-modal corroboration CONFIRMED, MODERATE: SEDEF reference %identity correlates NEGATIVELY with read-PSV density (Spearman -0.443, p=9.1e-09, n=154); survives partial (-0.412) + n_copies==2 (-0.456) + join-permutation (p=0.0002). K-frontier no_psv families ARE higher-identity (med 0.9920 vs 0.9889) directionally but NOT significantly (p=0.11; SEDEF ceiling-saturated). CAVEAT: the strong axis is read-GATED/reference-SEEDED; the purest read-BASE axis (assign rate) is weak/NS (-0.138). Genuine cross-modal increment over the prior (different code+interval), but bounded; NOT a fully read-discovered corroboration."
+}

@@ -1,0 +1,17 @@
+{
+  "n": 154,
+  "gated_per_kb_vs_sedef": {
+    "rho": -0.44257921260383276,
+    "p": 9.077116660424951e-09
+  },
+  "ungated_per_kb_vs_sedef": {
+    "rho": -0.419591824727281,
+    "p": 6.071823334609216e-08
+  },
+  "gated_vs_ungated_psv": {
+    "rho": 0.9075913039638692
+  },
+  "mean_frac_columns_kept_by_read_gate": 0.358622476842933,
+  "total_gated": 9089,
+  "total_ungated": 30893
+}
