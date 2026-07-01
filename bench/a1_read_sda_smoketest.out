@@ -1,0 +1,8 @@
+A1 READ-HETEROGENEITY PSV CALLER (SDA, no asm20) -- SMOKE TEST
+params: MIN_BQ=20 MIN_DEPTH=12 MIN_MINOR_CNT=4 MIN_VAF=0.2 PHI_LINK=0.6 MIN_LINKED=2 READ_MATCH=0.8
+null = alleles shuffled ACROSS reads within each column (destroys co-segregation)
+
+ fam gene            nloci asm20  meddp  cand link   phi Kread | nullink nullphi nullK | clusters
+   1 LOC109025447        7     0    398    89   89 0.855     2 |       0     0.0     0 | [419, 317]
+  14 LOC115930164        4     0   1132    80   79 0.809     2 |      32   0.671     1 | [635, 504]
+  11 LOC101130894        4    13     89     6    5 0.873     2 |       0     0.0     0 | [47, 45]
