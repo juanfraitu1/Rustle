@@ -33,10 +33,12 @@ each part is explained by a single gene-copy (allele-vector).
 
 Copy-assignment sits at the intersection of three active research interests:
 
-1. **Family detection** (interest #1): which expressed loci form a confusion group? A multi-copy gene family
-   is defined as a connected component of the read-conflict graph — the maximal set of loci among which reads
-   are genuinely confused (see `bench/family_definition_formal.md`). Copy-assignment is the unit of work that
-   is performed *inside* each family component output by detection; it is logically downstream of interest #1.
+1. **Family detection** (interest #1): which expressed loci are copies of one another? A multi-copy gene
+   family is defined as an $R$-refined connected component of the **transcript-homology graph $E_r$** (the RNA
+   homology oracle; see `bench/family_definition_formal.md`). The **read-conflict (de-tie) graph is *not* the
+   family boundary** — it is demoted to the **within-family O2 copy-assignment** structure (`MCC=χ(H)`), the
+   confusion decomposition *inside* a fixed family. Copy-assignment is the unit of work performed *inside* each
+   family; it is logically downstream of interest #1.
 
 2. **Copy assignment under ambiguity** (interest #2, this note): given a confirmed family component, how should
    reads be partitioned across copies? When is the truth the *unique* minimum-cost solution, and when is
@@ -1041,23 +1043,27 @@ arrays:
 This is the theorem made concrete: where K = 0 (copies identical over the observed columns), MCC = 1 regardless
 of the true copy count, and attribution is provably arbitrary — exactly the forced-merge prediction.
 
-### 7.3 Shared condition with detection (interest #1): the family as conflict-graph component
+### 7.3 Shared condition with detection (interest #1): the O2 conflict-graph decomposition inside a family
 
 The upstream family-detection step (interest #1, `bench/family_definition_formal.md`) defines a multi-copy
-gene family as a **connected component of the read-conflict graph** under the divergence-tie (`de`) edge
-criterion. This is the same conflict-graph object that underlies the copy-assignment theory:
+gene family as an $R$-refined **connected component of the transcript-homology graph $E_r$** (the O1 homology
+oracle). The **read-conflict (de-tie) graph is *not* the O1 family boundary** — it is the **O2**
+copy-assignment decomposition *inside* a fixed $E_r$ family (`family_definition_formal.md` §5, with
+$E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$). That O2 conflict-graph object is what
+underlies the copy-assignment theory here:
 
-- The conflict graph $G = (V, E)$ used in detection has expressed loci as vertices and de-tied cross-mapping
-  reads as edges; the family is the connected component.
+- The conflict graph $G = (V, E)$ (an **O2 object, one per $E_r$ family**) has that family's expressed loci as
+  vertices and de-tied cross-mapping reads as edges; its components are the exact-decomposition units of
+  assignment.
 - The conflict graph $H = (R, E)$ used in this note has the reads themselves as vertices and pairwise
   disagreement as edges; copy covers are colorings of $H$.
 
-The two graphs are related: $G$ is the "locus-level summary" (which loci are confused) and $H$ is the
-"read-level instance" (how to partition the confused reads). $G$'s components determine which reads populate
-each $H$; the assignment problem then runs inside each component separately. Property P2 in
-`bench/family_definition_formal.md` verifies this separation directly: **0 reads connect two distinct
-multi-locus $G$-components**, so the assignment problems are independent across families — exactly the
-prerequisite for running Theorem 2 per-family.
+The two graphs are related: $G$ is the "locus-level summary" (which loci are confused, **inside one $E_r$
+family**) and $H$ is the "read-level instance" (how to partition the confused reads). $G$'s components
+determine which reads populate each $H$; the assignment problem then runs inside each component separately.
+Property P2 verifies this separation directly: **0 reads connect two distinct multi-locus $G$-components**, so
+the O2 assignment sub-problems are independent across those components (and a fortiori across the
+homology-disjoint $E_r$ families) — exactly the prerequisite for running Theorem 2 per O2-component.
 
 On the GGO panel: **TP = 7, TN = 10, FP = 0, FN = 0** (precision = recall = 1.000) in the ≤6-copy regime,
 using the `de`-tie criterion with $\Delta = 0.005$. The same K quantity governs both detection (whether a

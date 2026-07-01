@@ -4,7 +4,7 @@
 
 - `bench/SEGDUP_DEFINITION_FORMAL.md` — the segdup predicate $\mathrm{SD}(\cdot)$ and the genomic edge oracle $E_a$, the exonic-homology oracle $E_b$, the read-ambiguity oracle $E_c$, and the lattice $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_b$ with $E_a$ incomparable.
 - `bench/DNA_FAMILY_DEFINITION_FORMAL.md` — the DNA-level family: the cohesion-refinement operator $R$ ($\gamma$-quasi-clique + $\ge 2$-distinct-loci) applied to a raw $E_a$ component. **This note reuses that $R$ verbatim** (`genome_family_def.refine_families`, imported).
-- `bench/family_definition_formal` (in `bench/FAMILY_DEF.md`) — the RNA read-conflict family: component of $E_c$, refined by $E_c^{\mathrm{sig}}\subseteq E_c$, with copy count $\mathrm{MCC}=\chi(H)$.
+- `bench/family_definition_formal.md` — the RNA (transcript) family $E_r$: a $\gamma$-quasi-clique-refined component of the transcript-homology graph $G_R=(V_R,E_r)$ (the fourth homology oracle, same skeleton/operator $R$). The read-conflict graph $E_c$, copy count $\mathrm{MCC}=\chi(H)$, and the SUN 3-tier ladder are the within-family **O2** copy-assignment substructure there, with $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$.
 
 The **skeleton is shared** across all four (nodes = gene loci, edge = a homology tie, family = refined connected component with $|C|\ge 2$); **the only thing that differs is the edge oracle**. What this note adds is the **protein oracle $E_p$** — the *biological* axis, orthogonal to the genomic ($E_a$), exonic ($E_b$) and read ($E_c$) *nucleotide* axes — the level that captures **ancient / WGD-era paralogs the segdup recency filter structurally misses** (globin witness) and **excludes the non-coding segdup over-merge blob** (DGCR6/DRD5), so the thesis's **operational** family — the read-conflict unit $E_c$, **restricted to its coding-both core** — is a **subset/refinement of the biological family** $E_p$ (a *conditional* containment: $E_c$ and $E_p$ are **incomparable** in general, §4.3).
 
@@ -137,7 +137,9 @@ Comparing our $\gamma$-community (refined $E_p$) families against the mmseqs-clu
 
 ---
 
-## 4. The four-level lattice: $E_p$ / $E_a$ / $E_b$ / $E_c$
+## 4. The lattice: the protein oracle $E_p$ vs $E_a$ / $E_b$ / $E_c$ (with $E_r$ the RNA O1 oracle)
+
+> **Reframe alignment (2026-06-30).** Post-`bench/family_definition_formal.md`, the **O1 homology lattice is the four *homology* oracles $E_a$—$E_b$—$E_r$—$E_p$** (genomic, exonic, spliced-transcript, protein — all read-independent, pairwise incomparable). The **read-conflict oracle $E_c$ is *not* a co-equal O1 oracle**; it is demoted to the within-$E_r$-family **O2** copy-assignment substructure, with $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}\subseteq_{\mathrm{proj}}E_b^{\mathrm{asym}}$. This section still compares $E_p$ against $E_c$ (§4.3) because the thesis's **operational** family's coding core is the $E_c$-derived unit; read those results as "$E_p$ vs the RNA **O2** substructure." The segdup note's "$E_c\subseteq E_b^{\mathrm{asym}}$ is the only unconditional containment" is now superseded **as the tightest** by $E_c\subseteq E_r^{\mathrm{asym}}$ (which shares the node set $V_R$; $E_c\subseteq E_b^{\mathrm{asym}}$ stays valid by projection) — and it is a containment across the O1/O2 boundary, not *within* the O1 homology lattice, whose four members $E_a,E_b,E_r,E_p$ are all pairwise incomparable. $E_r$ itself is not compared to $E_p$ here (the $E_p$ vs $E_a/E_b/E_c$ witnesses below are unaffected); $E_r$ vs $E_p$ = non-coding-lncRNA-dup $E_r\setminus E_p$ + twilight-globin $E_p\setminus E_r$ (`family_definition_formal.md` §6).
 
 **Four oracles on one shared node set $V$** (34,114 gene loci; 22,614 with a protein, all mapping with zero mapping). Same skeleton (nodes, edge = homology tie, family = refined component $|C|\ge2$), differ **only** in the edge oracle:
 
@@ -148,7 +150,7 @@ Comparing our $\gamma$-community (refined $E_p$) families against the mmseqs-clu
 | $E_b$ (exonic) | shared segment exonic at $\ge1$ endpoint, genomically homologous at the other | exonic | read-independent |
 | $E_c$ (RNA) | a read de-ties the two loci (read-conflict tie) | expressed | **read-derived** |
 
-$E_p$ is the **biological axis, orthogonal to the three nucleotide axes** ($E_a$ genomic, $E_b$ exonic, $E_c$ read). The segdup note's clean chain $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_b^{\mathrm{asym}}$ (its **only** unconditional containment; $E_a$ incomparable) is preserved **unchanged**; $E_p$ adds **no new unconditional containment** — it is incomparable with $E_a$, $E_b$ and $E_c$ — only one **conditional** result: $E_c$ restricted to coding-both endpoints $\subseteq E_p$ (§4.3).
+$E_p$ is the **biological axis, orthogonal to the three nucleotide axes** ($E_a$ genomic, $E_b$ exonic, $E_c$ read). The segdup note's clean chain $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_b^{\mathrm{asym}}$ (its only unconditional containment, now tightest via $E_c\subseteq E_r^{\mathrm{asym}}$ — §4 Update; $E_a$ incomparable) is preserved **unchanged**; $E_p$ adds **no new unconditional containment** — it is incomparable with $E_a$, $E_b$ and $E_c$ — only one **conditional** result: $E_c$ restricted to coding-both endpoints $\subseteq E_p$ (§4.3).
 
 ### 4.1 $E_p$ vs $E_a$ — INCOMPARABLE; $E_p\setminus E_a$ witness = the GLOBINS (ancient paralogs $E_a$ misses)
 
@@ -209,10 +211,10 @@ i.e. **the operational family, restricted to its coding-both core, is a subset o
 
 ### 4.5 Lattice summary and edge-level overlaps
 
-**Precise structure.** The segdup note's clean chain is preserved **unchanged**, and its **only unconditional containment stays the only one** — $E_c\subseteq E_b^{\mathrm{asym}}$. $E_p$ is a new circle **incomparable with all three** existing oracles:
+**Precise structure.** The segdup note's clean chain is preserved **unchanged**, and its **only unconditional containment stays the only one** — $E_c\subseteq E_b^{\mathrm{asym}}$, now with tightest form $E_c\subseteq E_r^{\mathrm{asym}}$ (§4 Update; a cross-O1/O2 containment, not one *within* the four-member O1 homology lattice $E_a,E_b,E_r,E_p$). $E_p$ is a new circle **incomparable with all three** existing oracles:
 
 $$
-E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_b^{\mathrm{asym}}\qquad(\text{the ONLY unconditional containment in the lattice}),
+E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}\subseteq_{\mathrm{proj}} E_b^{\mathrm{asym}}\qquad(\text{the only unconditional containment; }E_c\subseteq E_r^{\mathrm{asym}}\text{ tightest}),
 $$
 $$
 E_p\ \text{incomparable with}\ E_a,\ E_b,\ E_c;\qquad E_a\ \text{incomparable with}\ E_b,\ E_c,\ E_p.
@@ -254,7 +256,7 @@ So the statement is **not** $E_a\subseteq E_p$ ($E_a$ is incomparable — the bl
 - **Reproduces the field standard (honestly weighted):** vs mmseqs easy-cluster (10,154 clusters, OrthoFinder/MCL analog), **gene-weighted** dominant purity **0.860** (per-family mean 0.965, inflated by the 1,562 size-2 families; large $\ge30$-gene families, $n=44$, mean **0.719**), **89.2%** of $E_p$ families nested in one cluster, ARI **0.553** — the residual is the disclosed superfamily-granularity axis.
 - **Captures ancient paralogs $E_a$ misses:** the globin superfamily (PRFAM135), 5 chromosomes, down to 24% aa identity, **0/21 segdup pairs, 0/21 Bailey$\ge$90% pairs** — $E_p\setminus E_a$ non-empty and biologically real.
 - **Excludes the segdup over-merge blob by construction:** the 22q11 six-gene probe → **6 distinct $E_p$ families (0/15 co-family)** vs **15/15 in $E_a$** — an independent, non-circular confirmation that the blob is a segdup artifact; hence $E_p$ is **cleaner than the raw $E_a$ superset** (0 vs 9 `repeat_mosaic`).
-- **Positions the operational family:** the *conditional* containment $E_c\cap\{\text{coding-both}\}\subseteq E_p$ (both real $E_c$ edges confirm it, 2/2), and 77.4% of coding DNA families sit inside one $E_p$ family — the operational copy-assignment **coding core** is a **subset/refinement of the biological protein family**. Lattice: $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_b^{\mathrm{asym}}$ is the **only** unconditional containment; $E_p$ and $E_a$ are incomparable with all other oracles.
+- **Positions the operational family:** the *conditional* containment $E_c\cap\{\text{coding-both}\}\subseteq E_p$ (both real $E_c$ edges confirm it, 2/2), and 77.4% of coding DNA families sit inside one $E_p$ family — the operational copy-assignment **coding core** is a **subset/refinement of the biological protein family**. Lattice: the four O1 homology oracles $E_a$—$E_b$—$E_r$—$E_p$ are pairwise incomparable; the sole unconditional containment is $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}\subseteq_{\mathrm{proj}}E_b^{\mathrm{asym}}$ (tightest via $E_r$; a cross-O1/O2 link, $E_c$ being the RNA O2 substructure — §4 Update).
 
 ### 5.2 Limitations (honest)
 
