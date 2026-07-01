@@ -717,6 +717,159 @@ integral, $=$ true-cover value, greedy exact, $\mathrm{min\_p}$ certificate tigh
 
 ---
 
+## §5·SUN — the single-position private-allele witness (Sudmant 2010)
+
+Strong Separation (§5) and the `min_p` bridge (§5b, Theorem 4) both turn on the per-read predicate
+$\lvert N(r)\rvert=1$ (a read consistent with **exactly one** copy; Theorem 7). Sudmant et al. (2010, *Science*
+330:641, doi:10.1126/science.1197005) named the concrete, single-position object that forces this predicate from
+**one** read: the **Singly Unique Nucleotide (SUN)** — a position where one paralog's base is *unique* among all
+copies of the family (a private/singleton allele). In their read-depth pipeline (→ QuicK-mer2 / fastCN,
+Eichler lab) depth over SUNs yields **paralog-specific copy number** (parCN); they identified 4.1M SUN positions
+genome-wide. We import the SUN as the concrete, checkable, single-read witness for **per-copy** identifiability,
+sitting one level below the family-level Strong Separation / K-frontier objects.
+
+**Definition (SUN / column-private allele).** Fix the family's copies $C^\*=\{c_1,\dots,c_K\}$ as allele-vectors
+over the PSV columns $[m]$ (§2). Column $p\in[m]$ is a **SUN for copy $c$** if $c$'s allele is unique among all
+copies at $p$:
+$$ \mathrm{SUN}(c,p)\iff \forall c'\neq c:\ (c)_p\neq(c')_p \iff p\in\bigcap_{c'\neq c} D_{c,c'}. $$
+i.e. at $p$ the base $(c)_p$ is a **singleton** among the $K$ copy-alleles (a PSV column, §2, has $\ge2$ distinct
+alleles; a SUN column additionally has one copy *alone* against the rest). A copy $c$ is **SUN-identifiable** if
+it has $\ge1$ SUN column. This depends **only on the copy sequences** (asm20 self-alignment) — no reads, no SEDEF.
+
+*Scope of "unique".* Uniqueness is **within-family and conditional on catalog completeness**: unique among the
+family's *enumerated* copies $C^\*$, not genome-wide. Sudmant's SUNs are genome-wide-unique; a called SUN here is
+genome-wide-unique only if $C^\*$ is complete — a missing paralog carrying $(c)_p$ would demote it. The columns
+come from an **all-to-longest-copy (star) projection**, not a true multiple-sequence alignment, and record only
+aligned substitution columns (`matches_only`); this is **conservative** — it can only *under*-count SUNs (it drops
+gap/ambiguous columns and copy-private indels, themselves excellent paralog markers).
+
+**Lemma (SUN $\Rightarrow$ single-read determinism $=$ the $\lvert N(r)\rvert=1$ witness).** If $\mathrm{SUN}(c,p)$
+then every read $r$ with $p\in\mathrm{obs}(r)$ and $r(p)=(c)_p$ is consistent with $c$ and **inconsistent with every
+other copy**: $N(r)=\{c\}$, $\lvert N(r)\rvert=1$.
+*Proof.* For $c'\neq c$, $(c')_p\neq(c)_p=r(p)$, so $r$ contradicts $c'$ at $p$; and $r$ agrees with $c$ everywhere
+a $c$-read observes. $\square$
+A SUN therefore discharges the Theorem 7 hypothesis and (Theorem 4(ii)) the **per-read gate** assigns $r$ to $c$
+with $\mathrm{min\_p}=\varepsilon^{\delta(r)}<1$ **soundly from one position, one read** — no co-observation, no
+phasing, no linkage — and $r$ can **never be misassigned to another true copy**. This is a **per-read** guarantee
+(the gate, Thm 4); it is the *coverage-free* strengthening of Strong Separation's per-read demand. It is **not**
+a cover-level guarantee about the *copy* (see "The recombination link" below): the copy can still be dissolved by
+an alternative minimum cover in the NP-hard `RECOVER`/MCC problem — which is precisely why production runs the
+per-read gate, not `RECOVER`.
+
+**Honest relation to Strong Separation (NOT iff).** SUN is neither sufficient nor necessary for *family-level*
+Strong Separation:
+- **SUN $\not\Rightarrow$ family Strong Sep.** Strong Separation is an all-pairs, coverage-dependent property
+  (every cross-copy read pair conflicts). A single copy's private column constrains only $c$-vs-others at $p$;
+  another pair $(c',c'')$ may share every column a read observes and stay unseparated. (Witness
+  $c_0{=}(1,0),c_1{=}(0,0),c_2{=}(0,1)$: $c_0$ has a SUN at col 0, but the $(c_1,c_2)$ pair is under-separated for
+  reads that miss col 1.)
+- **Strong Sep $\not\Rightarrow$ SUN.** A Strong-Separated copy need not carry a private column — its identity can
+  be a **combination** of individually-shared alleles. Machine-checked witness $c_0{=}(0,0),c_1{=}(0,1),c_2{=}(1,0)$:
+  all three hap-unique and Strong-Separated under full-length reads, yet **$c_0$** has **no** SUN (col 0 shared with
+  $c_1$, col 1 with $c_2$) — so *some* copy is Strong-Separated without a SUN (SUN not necessary; here $c_1,c_2$ do
+  have SUNs). A genuine **all-no-SUN** Strong-Separated family needs $K\ge4$: $\{(0,0),(0,1),(1,0),(1,1)\}$ — every
+  column's two symbols each appear twice, so **no** copy has a SUN, yet all four vectors are distinct (S4).
+
+  So SUN is a **one-directional, single-position, single-read sufficient witness** for the per-read
+  identifiability predicate $\lvert N(r)\rvert=1$ that Strong Separation (Thm 2/7) and the gate (Thm 4) rely on —
+  *locally stronger* (one read / one column) than Strong Separation, *globally weaker* (silent about other pairs and
+  coverage). $\mathrm{SUN}(c)\Rightarrow$ [$c$ is single-position-separated from all others] $\wedge$ [reads over the
+  SUN are deterministically $c$]; the converse fails in both directions.
+
+**The 3-tier per-copy identifiability ladder (refines psv_graph's family $K$).** `psv_graph_genomewide.py`
+reports, per family, $K=$ the number of distinct copy hap-vectors (`n_groups`); a copy is "resolvable" iff its full
+hap-row is a **singleton** group. The SUN lens splits each copy:
+1. **SUN-identifiable (Tier 1):** $\exists$ SUN column. Single-read **gate-deterministic** — a read over the SUN
+   column certifies $\lvert N(r)\rvert=1$ (Thm 4/7) and is **never misassigned to another true copy**. (This is
+   per-read immunity, **not** cover-level immunity of the copy — see "The recombination link" below.)
+2. **hap-vector-unique-only (Tier 2):** full hap-row is a singleton group but the copy has **no** SUN. Uniqueness is
+   *combination-based* $\Rightarrow$ **no single read pins it**; resolving it needs a read/class **co-observing
+   $\ge2$ PSVs** (linkage/phasing). At the per-read gate a single-column read on this copy is always ambiguous
+   ($\lvert N(r)\rvert\ge2$), and its multi-PSV identity is exactly the fragment a **recombinant** read can spoof.
+3. **K-frontier / unresolvable (Tier 3):** full hap-row equals another copy's (non-singleton group) $\Rightarrow$
+   PSV-identical, `NM:i:0` collapse; Strong Sep fails on that pair; Thm 4(iv) certifies $\mathrm{min\_p}=1$ (tied).
+
+The ladder is a **strict refinement** of $K$: {resolvable copies} $=$ Tier 1 $\uplus$ Tier 2 (the singleton groups
+`psv_graph` already counts), {frontier} $=$ Tier 3. **SUN-identifiable $\subsetneq$ hap-vector-unique** whenever
+Tier 2 is nonempty (unique-but-no-private-column copies exist). $\mathrm{SUN}(c)\Rightarrow$ $c$'s hap-vector is
+unique (Tier 1 $\subseteq$ singleton), machine-checked with **0** violations.
+
+**The recombination link — per-read immunity, NOT cover-level immunity (Proposition).** A SUN gives $c$
+**per-read gate immunity**: any read over the SUN column $p$ is pinned to $c$ ($\lvert N(r)\rvert=1$, Lemma) and
+the gate (Thm 4) can never route it to another *true* copy. Equivalently, at the **read** level,
+$$\{\text{reads ambiguous among }\ge2\text{ true copies}\}\ \subseteq\ \{\text{reads carrying no copy's SUN allele}\}$$
+(if $r$ carries any copy's private allele it is single-read pinned; contrapositive of the Lemma, machine-checked
+S2). This is a statement about **reads** and the **per-read gate**.
+
+It does **not** upgrade to **cover-level** immunity of the *copy* in the NP-hard `RECOVER`/MCC problem (§5,
+Theorem 2). The naive claim — "no alternative cover can realize $c$'s private allele, so a SUN copy is unspoofable"
+— is **false**: a phantom class can carry $(c)_p$ by absorbing $c$'s **own** SUN-covering reads. On the theory's
+canonical $K=3$ witness $c_0{=}(1,1,0),\,c_1{=}(0,0,1),\,c_2{=}(0,1,1)$ with its exact 6-read set (each copy on
+windows $\{0,1\},\{1,2\}$), $\mathrm{MCC}=3$ admits a **second** minimum cover
+$$\{\underbrace{(0,0,1)}_{=c_1}\},\ \{\underbrace{(0,1,0)}_{\text{phantom}}\},\ \{\underbrace{(1,1,1)}_{\text{phantom}}\}$$
+that **dissolves $c_0$** — even though $c_0$ has SUNs at **both** cols 0 and 2. The phantom $(1,1,1)$ carries
+$c_0$'s private $0{\to}1$ at col 0 and $(0,1,0)$ carries $c_0$'s private col-2 allele, precisely because $c_0$'s own
+reads ($c_0$ on $\{0,1\}$ and on $\{1,2\}$) are absorbed into them. So there is **no** cover-level containment
+$\{\text{spoofable}\}\subseteq\{\text{no-SUN}\}$, and no "hijacked copy is exactly $c_2$" reading: across the two
+minimum covers, $c_0$ (SUN-rich) and $c_2$ (no SUN) **both** dissolve; $c_1$ happens to survive here but that is
+incidental, not proven general.
+
+**The right conclusion (and why it matters for the pipeline).** SUN determinism lives at the **per-read gate**
+(Thm 4), which the shipped pipeline runs — not in the NP-hard `RECOVER`/MCC cover, which no SUN protects. This is a
+positive argument *for* the gate over cover-recovery: the gate inherits SUN's single-read soundness ($\lvert
+N(r)\rvert=1$), whereas the minimum-cover objective is genuinely ambiguous under the $K\ge3$ recombination
+obstruction regardless of how many private columns a copy has. Tier 1 vs Tier 2 is therefore a **per-read**
+distinction (single read pins it vs needs $\ge2$-PSV co-observation), not a cover-survival guarantee.
+
+**Verification.** `bench/sun_theory_check.py` (exhaustive over distinct copy sets $K\in\{2,3,4\}$, $m\in\{1,2,3\}$,
+$\lvert A\rvert=3$): **(S1)** SUN $\Rightarrow$ unique hap-vector — **0 violations / 1,252,380 SUN-copies**;
+**(S2)** every read over a SUN column carrying the private allele has $N(r)=\{c\}$ — **0 violations / 6,675,294
+reads** (per-read gate immunity); **(S3)** the canonical $K\ge3$ witness — factual report only: recombinant class
+realizes the novel vector $(0,1,0)$, unique no-SUN copy $=c_2$ (reported as a *value*, not read as an immunity
+claim); **(S3\_cover)** the **load-bearing counterexample** — enumerates all minimum covers of the 6-read set,
+confirms $\mathrm{MCC}=3$, exhibits the alternative cover that **dissolves the SUN-rich $c_0$** with phantoms
+carrying $c_0$'s private alleles, and simultaneously confirms per-read gate immunity still holds
+(`cover_level_copy_immunity_FALSE=true`, `per_read_gate_immunity_holds=true`); **(S4)** NOT-iff both directions —
+a Strong-Separated hap-unique copy with **no** SUN (SUN not necessary), plus a $K=4$ instance
+$\{(0,0),(0,1),(1,0),(1,1)\}$ where **no** copy has a SUN yet the family is fully Strong-Separated. All green.
+
+The real-family catalog `bench/sun_catalog_fast.py` (copy-only asm20 aligned-pairs, no reads/SEDEF) tiers every copy
+of the **154** GGO validated multi-copy families (**412 copies**): **Tier 1 SUN-identifiable = 338 (82.0%)**,
+**Tier 2 hap-vector-unique-only = 1**, **Tier 3 frontier/collapsed = 73 (17.7%)**. It re-checks
+$\mathrm{SUN}\Rightarrow$ unique-hap with **0 violations** on real data, and the strict subset
+**SUN-identifiable $\subsetneq$ hap-vector-unique** ($338<339$) is witnessed by exactly **1** Tier-2 copy. The
+**empirical** message is sharp and honest: on this substrate the Tier-1/Tier-2 gap is nearly vacuous — essentially
+every resolvable gorilla copy earns its uniqueness through at least one *single-position private allele*, so **82%
+of copies are single-read gate-deterministic** (a read over the private column is never misassigned to another true
+copy) and the $K\ge3$ Tier-2 regime — where no single read pins the copy and $\ge2$-PSV co-observation is needed —
+is empirically rare (1/339). (This copy-level catalog drops `psv_graph`'s read-support gate, so it is a
+*superset* of the observed catalog: 135 families carry a SUN-identifiable copy at the sequence level vs the 126
+read-supported in `psv_graph_genomewide.json`; identifiability is a property of the copies, observability of the
+reads.) See `bench/sun_identifiability_catalog.json`.
+
+**Canonical deliverable + on-real-data Strong-Sep machine-check.** `bench/sun_identifiability.py` is the
+consolidated per-copy catalog (copy coordinates + gene annotation), emitting `bench/sun_identifiability.tsv`
+(per-copy: family, copy, chrom, start, end, gene, n_psv, n_sun, tier, hap_unique, group_size) and
+`bench/sun_identifiability.json` (genome-wide tier breakdown, K-refinement, examples). Beyond the exhaustive
+abstract check `sun_theory_check.py` (S1–S4, S3_cover), it runs a **self-consistency** machine-check on the real
+families: for every copy it recomputes — from the raw allele dicts, *not* from the `has_sun` flag — the
+single-position Strong-Separation witness set $W(c)=\{p:\forall c'\neq c,\ (c)_p\neq(c')_p\}=\bigcap_{c'\neq
+c}D_{c,c'}$, and verifies (i) $W(c)\neq\varnothing\iff c$ is SUN-identifiable, (ii) every read over a $p\in W(c)$
+carrying $(c)_p$ has $N(r)=\{c\}$, $\lvert N(r)\rvert=1$, (iii) SUN $\Rightarrow$ singleton hap-vector. Result on
+the 412 copies: **338 SUN-identifiable $=$ 338 with a single-position Strong-Sep witness**
+(`SUN_equals_witness=true`), **0** violations of any kind (`all_green=true`). **Honest scope:** the
+witness recompute uses `all(hap[c]\neq hap[c'])` while `has_sun` uses `count(hap[c])==1` — these are the **same
+predicate** (copy $c$ contributes exactly one occurrence to a column), so `SUN_equals_witness` is true **by
+construction**: a no-coding-bug / internal-consistency check, **not** independent corroboration of SUN. Genuine
+independence comes from the abstract checks (S1/S2/S3_cover) and from re-deriving the tier counts from raw
+sequence. K-refinement: exactly **1** family (`family 42`, an 8-copy `LOC129529768`/`LOC129529*` block, 49 PSVs)
+is `fully_resolvable` by `psv_graph`'s $K$ yet contains a Tier-2 copy (`copy4`, `LOC129529774`: unique hap-vector,
+`n_sun=0`, `n_witness=0`) — the lone copy with no single-position private allele, whose resolvability needs
+multi-PSV co-observation; $K$ over-counts the single-read gate-taggable copies by exactly that 1. Output is
+byte-identical across re-runs (deterministic asm20).
+
+---
+
 ## §6 The paths/isoforms corollary: joint recovery of copy number and isoform structure
 
 Sections §2–§5 treat a copy as a bare allele-vector over PSV columns.  Here we show that isoform structure
@@ -1048,6 +1201,14 @@ per-read identifiability certifier for all K≥1.
   haplotyping problems. In *Algorithms in Bioinformatics (WABI 2005)*, LNCS 3692, 128–139. (Journal
   version: *Algorithmica* 49(1):13–36, 2007.) — Establishes NP-hardness/APX-hardness of MEC, including
   at $k = 2$.
+- **Sudmant, P. H., Kitzman, J. O., Antonacci, F., Alkan, C., Malig, M., Tsalenko, A., Sampas, N.,
+  Bruhn, L., Shendure, J., & Eichler, E. E.** (2010). Diversity of human copy number variation and
+  multicopy genes. *Science*, 330(6004), 641–646. doi:[10.1126/science.1197005](https://doi.org/10.1126/science.1197005)
+  (PMID 21030649). — Defines the **Singly Unique Nucleotide (SUN)**: a position where one paralog's base
+  is unique among the copies of a highly-identical gene family. Identifies **4.1 million** SUN positions
+  genome-wide and uses short-read depth over them to genotype **paralog-specific copy number** (parCN) —
+  the marker later systematized by QuicK-mer2 / fastCN (Eichler lab). §5·SUN imports the SUN as the
+  concrete single-position, single-read witness for the per-copy identifiability predicate $\lvert N(r)\rvert=1$.
 
 
 ---
