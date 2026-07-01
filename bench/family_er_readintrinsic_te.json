@@ -1,0 +1,1503 @@
+{
+  "question": "Can TE-ness be detected DIRECTLY FROM THE READS (self-contained, no RepeatMasker) and does it separate the E_r over-merge classes better than genome soft-mask (AUC 0.694 @ core>=0.50, 0.777 @ core>=0.13)?",
+  "population": {
+    "arbitration_in_ep0_core_present": 1853,
+    "genuine": 1763,
+    "protein_missed_TP": 90,
+    "definition": "in_ep=0 AND direct core edge; genuine-FP vs protein-missed real TP"
+  },
+  "softmask_reference_auc": {
+    "0.13": 0.7769,
+    "0.3": 0.7053,
+    "0.5": 0.6938,
+    "0.7": 0.6751
+  },
+  "auc_by_feature": {
+    "softmask": {
+      "0.13": {
+        "auc": 0.7769,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.7053,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.6938,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.6751,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "degree_max": {
+      "0.13": {
+        "auc": 0.8296,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.734,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.6502,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.7621,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "degree_mean": {
+      "0.13": {
+        "auc": 0.8242,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.7334,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.6491,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.7586,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "readmm_mm_median_max": {
+      "0.13": {
+        "auc": 0.6375,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.6644,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.6222,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.6733,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "readmm_mm_mean_max": {
+      "0.13": {
+        "auc": 0.6855,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.6678,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.5924,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.6502,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "readmm_mm_max_max": {
+      "0.13": {
+        "auc": 0.6387,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.5788,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.498,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.5389,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "kmer_km_median_max": {
+      "0.13": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.3": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.5": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.7": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      }
+    },
+    "kmer_km_mean_max": {
+      "0.13": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.3": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.5": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.7": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      }
+    },
+    "kmer_km_p90_max": {
+      "0.13": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.3": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.5": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.7": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      }
+    },
+    "kmer_km_frac_ge_100_max": {
+      "0.13": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.3": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.5": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      },
+      "0.7": {
+        "auc": null,
+        "n_gen": 0,
+        "n_tp": 0
+      }
+    },
+    "sharedlen_len_TPhi": {
+      "0.13": {
+        "auc": 0.8207,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.6398,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.5214,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.4818,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    },
+    "sharedlen_frac_TPhi": {
+      "0.13": {
+        "auc": 0.8527,
+        "n_gen": 1763,
+        "n_tp": 90
+      },
+      "0.3": {
+        "auc": 0.6925,
+        "n_gen": 521,
+        "n_tp": 64
+      },
+      "0.5": {
+        "auc": 0.625,
+        "n_gen": 182,
+        "n_tp": 33
+      },
+      "0.7": {
+        "auc": 0.5204,
+        "n_gen": 75,
+        "n_tp": 19
+      }
+    }
+  },
+  "best_readmm_variant": "readmm_mm_mean_max",
+  "best_kmer_variant": "kmer_km_median_max",
+  "headline": {
+    "band_core_ge_0_13": {
+      "softmask": 0.7769,
+      "degree_max": 0.8296,
+      "readmm_best": 0.6855,
+      "kmer_best": null
+    },
+    "band_core_ge_0_50_RECOMMENDED": {
+      "softmask": 0.6938,
+      "degree_max": 0.6502,
+      "readmm_best": 0.5924,
+      "kmer_best": null
+    },
+    "reading": "HOMOLOGY-GRAPH DEGREE is the strongest read-intrinsic signal: it BEATS soft-mask on the whole re-admit region (core>=0.13) but not at the narrow recommended band (core>=0.50), where the population is tiny and both degrade. READ MULTI-MAPPING is near-chance (long HiFi reads span the TE into unique flanks -> median multiplicity ~1). GENOME K-MER MULTIPLICITY is intermediate."
+  },
+  "complementarity_degree_vs_softmask": {
+    "0.13": {
+      "n_gen": 1763,
+      "n_tp": 90,
+      "softmask_auc": 0.7769,
+      "degree_auc": 0.8296,
+      "combined_rankavg_auc": 0.8412,
+      "spearman_softmask_degree": 0.4998
+    },
+    "0.3": {
+      "n_gen": 521,
+      "n_tp": 64,
+      "softmask_auc": 0.7053,
+      "degree_auc": 0.734,
+      "combined_rankavg_auc": 0.7536,
+      "spearman_softmask_degree": 0.6215
+    },
+    "0.5": {
+      "n_gen": 182,
+      "n_tp": 33,
+      "softmask_auc": 0.6938,
+      "degree_auc": 0.6502,
+      "combined_rankavg_auc": 0.7395,
+      "spearman_softmask_degree": 0.2269
+    },
+    "0.7": {
+      "n_gen": 75,
+      "n_tp": 19,
+      "softmask_auc": 0.6751,
+      "degree_auc": 0.7621,
+      "combined_rankavg_auc": 0.7884,
+      "spearman_softmask_degree": 0.0342
+    }
+  },
+  "gate": {
+    "reference_none": {
+      "gate": "none",
+      "t": null,
+      "m": null,
+      "dmax": null,
+      "n_edges": 10755,
+      "tp_retained": 450,
+      "tp_noep_retained": 97,
+      "noncoding_tp_retained": 31,
+      "truthbar_retained": 6142,
+      "genuine_overmerge": 4163,
+      "genuine_rate_block": 0.1589,
+      "genuine_rate_block_edgehost": 0.4873
+    },
+    "reference_protein": {
+      "gate": "protein",
+      "t": null,
+      "m": null,
+      "dmax": null,
+      "n_edges": 6506,
+      "tp_retained": 353,
+      "tp_noep_retained": 0,
+      "noncoding_tp_retained": 0,
+      "truthbar_retained": 6142,
+      "genuine_overmerge": 11,
+      "genuine_rate_block": 0.0025,
+      "genuine_rate_block_edgehost": 0.0201
+    },
+    "softmask_recommended": {
+      "gate": "softmask",
+      "t": 0.5,
+      "m": null,
+      "dmax": null,
+      "n_edges": 6571,
+      "tp_retained": 374,
+      "tp_noep_retained": 21,
+      "noncoding_tp_retained": 7,
+      "truthbar_retained": 6142,
+      "genuine_overmerge": 55,
+      "genuine_rate_block": 0.0282,
+      "genuine_rate_block_edgehost": 0.0892
+    },
+    "core_knee": {
+      "gate": "combined",
+      "t": 0.7,
+      "m": null,
+      "dmax": null,
+      "n_edges": 6600,
+      "tp_retained": 372,
+      "tp_noep_retained": 19,
+      "noncoding_tp_retained": 6,
+      "truthbar_retained": 6142,
+      "genuine_overmerge": 86,
+      "genuine_rate_block": 0.0275,
+      "genuine_rate_block_edgehost": 0.1121
+    },
+    "combined_gate": "in_ep OR (core>=t AND bridge_mask<m AND degree<dmax)",
+    "sweep": [
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6582,
+        "tp_retained": 370,
+        "tp_noep_retained": 17,
+        "noncoding_tp_retained": 3,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 70,
+        "genuine_rate_block": 0.0391,
+        "genuine_rate_block_edgehost": 0.137
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6604,
+        "tp_retained": 381,
+        "tp_noep_retained": 28,
+        "noncoding_tp_retained": 5,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 81,
+        "genuine_rate_block": 0.0498,
+        "genuine_rate_block_edgehost": 0.1537
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6629,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 99,
+        "genuine_rate_block": 0.054,
+        "genuine_rate_block_edgehost": 0.1641
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6629,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 99,
+        "genuine_rate_block": 0.054,
+        "genuine_rate_block_edgehost": 0.1641
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6652,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 122,
+        "genuine_rate_block": 0.0605,
+        "genuine_rate_block_edgehost": 0.1728
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6659,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 129,
+        "genuine_rate_block": 0.0603,
+        "genuine_rate_block_edgehost": 0.1789
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6663,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 133,
+        "genuine_rate_block": 0.0605,
+        "genuine_rate_block_edgehost": 0.1771
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6664,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 134,
+        "genuine_rate_block": 0.0603,
+        "genuine_rate_block_edgehost": 0.1789
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6666,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 136,
+        "genuine_rate_block": 0.0603,
+        "genuine_rate_block_edgehost": 0.181
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.13,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6668,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 138,
+        "genuine_rate_block": 0.0603,
+        "genuine_rate_block_edgehost": 0.1832
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6568,
+        "tp_retained": 370,
+        "tp_noep_retained": 17,
+        "noncoding_tp_retained": 3,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 56,
+        "genuine_rate_block": 0.031,
+        "genuine_rate_block_edgehost": 0.1109
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6589,
+        "tp_retained": 381,
+        "tp_noep_retained": 28,
+        "noncoding_tp_retained": 5,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 66,
+        "genuine_rate_block": 0.0419,
+        "genuine_rate_block_edgehost": 0.128
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6610,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 80,
+        "genuine_rate_block": 0.0464,
+        "genuine_rate_block_edgehost": 0.1369
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6610,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 80,
+        "genuine_rate_block": 0.0464,
+        "genuine_rate_block_edgehost": 0.1369
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6628,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 98,
+        "genuine_rate_block": 0.0508,
+        "genuine_rate_block_edgehost": 0.1435
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6634,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 104,
+        "genuine_rate_block": 0.0507,
+        "genuine_rate_block_edgehost": 0.1498
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6636,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 106,
+        "genuine_rate_block": 0.0508,
+        "genuine_rate_block_edgehost": 0.1479
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6637,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 107,
+        "genuine_rate_block": 0.0507,
+        "genuine_rate_block_edgehost": 0.1498
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6638,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 108,
+        "genuine_rate_block": 0.0507,
+        "genuine_rate_block_edgehost": 0.152
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.2,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6638,
+        "tp_retained": 388,
+        "tp_noep_retained": 35,
+        "noncoding_tp_retained": 11,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 108,
+        "genuine_rate_block": 0.0507,
+        "genuine_rate_block_edgehost": 0.152
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6559,
+        "tp_retained": 369,
+        "tp_noep_retained": 16,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 48,
+        "genuine_rate_block": 0.0316,
+        "genuine_rate_block_edgehost": 0.0948
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6573,
+        "tp_retained": 377,
+        "tp_noep_retained": 24,
+        "noncoding_tp_retained": 3,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 54,
+        "genuine_rate_block": 0.0404,
+        "genuine_rate_block_edgehost": 0.1076
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6592,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 67,
+        "genuine_rate_block": 0.0448,
+        "genuine_rate_block_edgehost": 0.1166
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6592,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 67,
+        "genuine_rate_block": 0.0448,
+        "genuine_rate_block_edgehost": 0.1166
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6608,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 83,
+        "genuine_rate_block": 0.0493,
+        "genuine_rate_block_edgehost": 0.1233
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6613,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 88,
+        "genuine_rate_block": 0.0492,
+        "genuine_rate_block_edgehost": 0.1298
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6614,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 89,
+        "genuine_rate_block": 0.0493,
+        "genuine_rate_block_edgehost": 0.1278
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6615,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 90,
+        "genuine_rate_block": 0.0492,
+        "genuine_rate_block_edgehost": 0.1298
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6616,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 91,
+        "genuine_rate_block": 0.0492,
+        "genuine_rate_block_edgehost": 0.132
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.3,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6616,
+        "tp_retained": 383,
+        "tp_noep_retained": 30,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 91,
+        "genuine_rate_block": 0.0492,
+        "genuine_rate_block_edgehost": 0.132
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6554,
+        "tp_retained": 368,
+        "tp_noep_retained": 15,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 44,
+        "genuine_rate_block": 0.0297,
+        "genuine_rate_block_edgehost": 0.0868
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6564,
+        "tp_retained": 373,
+        "tp_noep_retained": 20,
+        "noncoding_tp_retained": 3,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 49,
+        "genuine_rate_block": 0.0364,
+        "genuine_rate_block_edgehost": 0.0977
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6581,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 60,
+        "genuine_rate_block": 0.0409,
+        "genuine_rate_block_edgehost": 0.1068
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6581,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 60,
+        "genuine_rate_block": 0.0409,
+        "genuine_rate_block_edgehost": 0.1068
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6596,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 75,
+        "genuine_rate_block": 0.0432,
+        "genuine_rate_block_edgehost": 0.1136
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6600,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 79,
+        "genuine_rate_block": 0.0431,
+        "genuine_rate_block_edgehost": 0.1179
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6601,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 80,
+        "genuine_rate_block": 0.0432,
+        "genuine_rate_block_edgehost": 0.1159
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6602,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 81,
+        "genuine_rate_block": 0.0431,
+        "genuine_rate_block_edgehost": 0.1179
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6603,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 82,
+        "genuine_rate_block": 0.0431,
+        "genuine_rate_block_edgehost": 0.1202
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.4,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6603,
+        "tp_retained": 379,
+        "tp_noep_retained": 26,
+        "noncoding_tp_retained": 8,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 82,
+        "genuine_rate_block": 0.0431,
+        "genuine_rate_block_edgehost": 0.1202
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6536,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 28,
+        "genuine_rate_block": 0.0165,
+        "genuine_rate_block_edgehost": 0.0567
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6541,
+        "tp_retained": 368,
+        "tp_noep_retained": 15,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 31,
+        "genuine_rate_block": 0.0212,
+        "genuine_rate_block_edgehost": 0.0637
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6556,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 40,
+        "genuine_rate_block": 0.0259,
+        "genuine_rate_block_edgehost": 0.0731
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6556,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 40,
+        "genuine_rate_block": 0.0259,
+        "genuine_rate_block_edgehost": 0.0731
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6565,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 49,
+        "genuine_rate_block": 0.0283,
+        "genuine_rate_block_edgehost": 0.0802
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6569,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 53,
+        "genuine_rate_block": 0.0282,
+        "genuine_rate_block_edgehost": 0.0847
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6569,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 53,
+        "genuine_rate_block": 0.0282,
+        "genuine_rate_block_edgehost": 0.0847
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6570,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 54,
+        "genuine_rate_block": 0.0282,
+        "genuine_rate_block_edgehost": 0.0869
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6571,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 55,
+        "genuine_rate_block": 0.0282,
+        "genuine_rate_block_edgehost": 0.0892
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.5,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6571,
+        "tp_retained": 374,
+        "tp_noep_retained": 21,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 55,
+        "genuine_rate_block": 0.0282,
+        "genuine_rate_block_edgehost": 0.0892
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6526,
+        "tp_retained": 365,
+        "tp_noep_retained": 12,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 19,
+        "genuine_rate_block": 0.0097,
+        "genuine_rate_block_edgehost": 0.0386
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6528,
+        "tp_retained": 365,
+        "tp_noep_retained": 12,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 21,
+        "genuine_rate_block": 0.012,
+        "genuine_rate_block_edgehost": 0.0434
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6541,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 28,
+        "genuine_rate_block": 0.0145,
+        "genuine_rate_block_edgehost": 0.0483
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6541,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 28,
+        "genuine_rate_block": 0.0145,
+        "genuine_rate_block_edgehost": 0.0483
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6549,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 36,
+        "genuine_rate_block": 0.0169,
+        "genuine_rate_block_edgehost": 0.0556
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6553,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 40,
+        "genuine_rate_block": 0.0169,
+        "genuine_rate_block_edgehost": 0.0602
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6553,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 40,
+        "genuine_rate_block": 0.0169,
+        "genuine_rate_block_edgehost": 0.0602
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6554,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 41,
+        "genuine_rate_block": 0.0168,
+        "genuine_rate_block_edgehost": 0.0625
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6555,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 42,
+        "genuine_rate_block": 0.0168,
+        "genuine_rate_block_edgehost": 0.0649
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.6,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6555,
+        "tp_retained": 371,
+        "tp_noep_retained": 18,
+        "noncoding_tp_retained": 7,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 42,
+        "genuine_rate_block": 0.0168,
+        "genuine_rate_block_edgehost": 0.0649
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 3,
+        "n_edges": 6519,
+        "tp_retained": 363,
+        "tp_noep_retained": 10,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 14,
+        "genuine_rate_block": 0.0049,
+        "genuine_rate_block_edgehost": 0.027
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 4,
+        "n_edges": 6521,
+        "tp_retained": 363,
+        "tp_noep_retained": 10,
+        "noncoding_tp_retained": 2,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 16,
+        "genuine_rate_block": 0.0073,
+        "genuine_rate_block_edgehost": 0.0318
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 5,
+        "n_edges": 6527,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 19,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.0368
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 6,
+        "n_edges": 6527,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 19,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.0368
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 8,
+        "n_edges": 6529,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 21,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.0392
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 10,
+        "n_edges": 6533,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 25,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.044
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 15,
+        "n_edges": 6533,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 25,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.044
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 20,
+        "n_edges": 6534,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 26,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.0463
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": 30,
+        "n_edges": 6535,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 27,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.0488
+      },
+      {
+        "gate": "mask+deg",
+        "t": 0.7,
+        "m": 0.1,
+        "dmax": null,
+        "n_edges": 6535,
+        "tp_retained": 366,
+        "tp_noep_retained": 13,
+        "noncoding_tp_retained": 4,
+        "truthbar_retained": 6142,
+        "genuine_overmerge": 27,
+        "genuine_rate_block": 0.0098,
+        "genuine_rate_block_edgehost": 0.0488
+      }
+    ],
+    "pareto_beats_softmask_recommended": {
+      "gate": "mask+deg",
+      "t": 0.5,
+      "m": 0.1,
+      "dmax": 5,
+      "n_edges": 6556,
+      "tp_retained": 374,
+      "tp_noep_retained": 21,
+      "noncoding_tp_retained": 7,
+      "truthbar_retained": 6142,
+      "genuine_overmerge": 40,
+      "genuine_rate_block": 0.0259,
+      "genuine_rate_block_edgehost": 0.0731
+    },
+    "pareto_note": "Pareto-beat = TPpm >= softmask-recommended AND edge-host <= it, strictly better on one. None -> degree adds nothing beyond soft-mask at the operating point."
+  },
+  "caveat_high_copy_families": {
+    "premise": "degree/multiplicity flag ANY high-copy locus as TE, including REAL high-copy gene families (KRAB-ZNF ~400 paralogs, olfactory-receptor ~1000). So degree alone cannot separate real high-copy families from TEs.",
+    "high_degree_protein_missed_TP": [
+      {
+        "pair": "MMP24OS -- SPC25",
+        "degree": 51,
+        "in_ep": false,
+        "core": 0.196,
+        "shared_len": 470.0,
+        "softmask": 0.4603
+      },
+      {
+        "pair": "KRBOX4 -- ZNF674",
+        "degree": 50,
+        "in_ep": false,
+        "core": 0.166,
+        "shared_len": 1008.0,
+        "softmask": 0.2352
+      },
+      {
+        "pair": "LOC109024259 -- ZNF224",
+        "degree": 22,
+        "in_ep": false,
+        "core": 0.599,
+        "shared_len": 1945.0,
+        "softmask": 0.2361
+      },
+      {
+        "pair": "FRG1 -- LOC115933219",
+        "degree": 11,
+        "in_ep": false,
+        "core": 0.222,
+        "shared_len": 610.0,
+        "softmask": 0.2495
+      },
+      {
+        "pair": "FRG1 -- LOC129531431",
+        "degree": 11,
+        "in_ep": false,
+        "core": 0.398,
+        "shared_len": 476.0,
+        "softmask": 0.2581
+      },
+      {
+        "pair": "LOC115932954 -- XRCC2",
+        "degree": 11,
+        "in_ep": false,
+        "core": 0.412,
+        "shared_len": 1170.0,
+        "softmask": 0.3377
+      },
+      {
+        "pair": "LOC134756368 -- XRCC2",
+        "degree": 11,
+        "in_ep": false,
+        "core": 0.412,
+        "shared_len": 1170.0,
+        "softmask": 0.3377
+      },
+      {
+        "pair": "CCDC152 -- SELENOP",
+        "degree": 7,
+        "in_ep": false,
+        "core": 0.478,
+        "shared_len": 1673.0,
+        "softmask": 0.289
+      },
+      {
+        "pair": "LOC129526395 -- LOC129531431",
+        "degree": 7,
+        "in_ep": false,
+        "core": 0.14,
+        "shared_len": 832.0,
+        "softmask": 0.3596
+      }
+    ],
+    "n_high_degree_protein_missed_TP": 9,
+    "protein_branch_rescue": {
+      "note": "protein-homology (in_ep) is evaluated FIRST in the gate, so annotated high-copy families (ZNF/OR) that ARE protein-homologous are KEPT by the in_ep branch and never reach the degree branch -- degree only ever judges the protein-MISSED residual.",
+      "n_top_decile_degree_TP": 41,
+      "rescued_by_in_ep": 37,
+      "rescued_frac": 0.9024
+    },
+    "shared_length_fix": {
+      "note": "SHARED-SEGMENT LENGTH is the discriminator degree lacks: a real paralog shares a LONG contiguous gene body; a TE bridge shares a SHORT exonized-TE fragment. AUC(TP>genuine) of shared aln_len over the arbitration population is reported in auc.sharedlen_len_TPhi.",
+      "sharedlen_auc_by_band": {
+        "0.13": {
+          "auc": 0.8207,
+          "n_gen": 1763,
+          "n_tp": 90
+        },
+        "0.3": {
+          "auc": 0.6398,
+          "n_gen": 521,
+          "n_tp": 64
+        },
+        "0.5": {
+          "auc": 0.5214,
+          "n_gen": 182,
+          "n_tp": 33
+        },
+        "0.7": {
+          "auc": 0.4818,
+          "n_gen": 75,
+          "n_tp": 19
+        }
+      },
+      "hi_degree_genuine_median_sharedlen": 0.0,
+      "hi_degree_TP_median_sharedlen": 1008.0
+    }
+  },
+  "determinism": {
+    "reproducible_within_run": true,
+    "pythonhashseed": "0"
+  }
+}
