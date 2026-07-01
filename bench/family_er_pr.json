@@ -1,0 +1,259 @@
+{
+  "params": {
+    "gamma": 0.2,
+    "seed": 0,
+    "alpha_p": 1e-05,
+    "c_p": 0.5,
+    "mega_min": 500,
+    "id_min": 0.5,
+    "cov_min": 0.6,
+    "ov_floor": 0.2,
+    "mega_prfam": [
+      "PRFAM0",
+      "PRFAM1"
+    ]
+  },
+  "er": {
+    "raw_families": 1130,
+    "members": 3636,
+    "distinct_dn": 3636,
+    "mapped_to_gene": 3462,
+    "mapped_to_gene_prefloor": 3488,
+    "dropped_by_floor": 26,
+    "missing_from_meta": 10,
+    "refined_blocks": 858,
+    "blocks_ge2_gene": 703,
+    "raw_gene_pairs": 170411,
+    "refined_gene_pairs": 10755,
+    "refined_gene_pairs_prefloor": 10801,
+    "represented_genes": 2374
+  },
+  "overlap_floor": {
+    "ov_floor": 0.2,
+    "mapped_prefloor": 3488,
+    "mapped_floored": 3462,
+    "dropped_by_floor": 26,
+    "prefloor_maps_lt50pct": 57,
+    "prefloor_maps_lt20pct": 26,
+    "genuine_over_merge_prefloor": 4209,
+    "genuine_over_merge_floored": 4163,
+    "floor_removed_genuine": 46
+  },
+  "determinism": {
+    "seed0_reproducible": true,
+    "block_counts": {
+      "0": 858,
+      "1": 857,
+      "2": 859
+    },
+    "pair_counts": {
+      "0": 10755,
+      "1": 10661,
+      "2": 11240
+    }
+  },
+  "precision_raw": {
+    "n": 170411,
+    "tp_cdna": 460,
+    "fp": 169951,
+    "prec_cdna": 0.00269935626221312,
+    "prec_ep": 0.24273080963083368,
+    "genuine": 129059,
+    "truthbar": 40892,
+    "genuine_prec": 0.24266039164138464
+  },
+  "precision_refined": {
+    "n": 10755,
+    "tp_cdna": 450,
+    "fp": 10305,
+    "prec_cdna": 0.04184100418410042,
+    "prec_ep": 0.6139470013947002,
+    "genuine": 4163,
+    "truthbar": 6142,
+    "genuine_prec": 0.6129242212924222
+  },
+  "fp_split_refined": {
+    "total_fp": 10305,
+    "genuine_over_merge": 4163,
+    "genuine_rate": 0.3871,
+    "real_divergent_paralog": 6142,
+    "paralog_rate": 0.596,
+    "genuine_both_pc": 2363,
+    "genuine_one_pc": 1536,
+    "genuine_neither_pc": 264,
+    "genuine_mega_cofam": 759,
+    "genuine_znf_znf": 420,
+    "clean_both_pc_genuine_nonmega": 1604,
+    "paralog_tier1_direct": 6099,
+    "paralog_tier2_nonmega": 43
+  },
+  "block_over_merge": {
+    "refined_blocks": 858,
+    "ep_impure_blocks": 115,
+    "impure_rate": 0.134
+  },
+  "recall": {
+    "shared_expr_crossmap": {
+      "overall": {
+        "n": 2116,
+        "er": 0.1498,
+        "ec": 0.5525,
+        "er_ct": 317,
+        "ec_ct": 1169
+      },
+      "strata": {
+        "0.90-0.95": {
+          "n": 305,
+          "er": 0.1902,
+          "ec": 0.3672,
+          "er_ct": 58,
+          "ec_ct": 112
+        },
+        "0.95-0.99": {
+          "n": 940,
+          "er": 0.1277,
+          "ec": 0.4053,
+          "er_ct": 120,
+          "ec_ct": 381
+        },
+        ">=0.99": {
+          "n": 871,
+          "er": 0.1596,
+          "ec": 0.7761,
+          "er_ct": 139,
+          "ec_ct": 676
+        },
+        "<0.90": {
+          "n": 0,
+          "er": null,
+          "ec": null,
+          "er_ct": 0,
+          "ec_ct": 0
+        },
+        "na": {
+          "n": 0,
+          "er": null,
+          "ec": null,
+          "er_ct": 0,
+          "ec_ct": 0
+        }
+      }
+    },
+    "expressed_only": {
+      "overall": {
+        "n": 4257,
+        "er": 0.1057,
+        "ec": 0.2746,
+        "er_ct": 450,
+        "ec_ct": 1169
+      },
+      "strata": {
+        "0.90-0.95": {
+          "n": 1428,
+          "er": 0.0959,
+          "ec": 0.0784,
+          "er_ct": 137,
+          "ec_ct": 112
+        },
+        "0.95-0.99": {
+          "n": 1621,
+          "er": 0.0888,
+          "ec": 0.235,
+          "er_ct": 144,
+          "ec_ct": 381
+        },
+        ">=0.99": {
+          "n": 1208,
+          "er": 0.1399,
+          "ec": 0.5596,
+          "er_ct": 169,
+          "ec_ct": 676
+        },
+        "<0.90": {
+          "n": 0,
+          "er": null,
+          "ec": null,
+          "er_ct": 0,
+          "ec_ct": 0
+        },
+        "na": {
+          "n": 0,
+          "er": null,
+          "ec": null,
+          "er_ct": 0,
+          "ec_ct": 0
+        }
+      }
+    },
+    "reachable_expr_crossmap": {
+      "overall": {
+        "n": 334,
+        "er": 0.9491,
+        "ec": 0.6856,
+        "er_ct": 317,
+        "ec_ct": 229
+      },
+      "strata": {
+        "0.90-0.95": {
+          "n": 61,
+          "er": 0.9508,
+          "ec": 0.3279,
+          "er_ct": 58,
+          "ec_ct": 20
+        },
+        "0.95-0.99": {
+          "n": 130,
+          "er": 0.9231,
+          "ec": 0.6077,
+          "er_ct": 120,
+          "ec_ct": 79
+        },
+        ">=0.99": {
+          "n": 143,
+          "er": 0.972,
+          "ec": 0.9091,
+          "er_ct": 139,
+          "ec_ct": 130
+        },
+        "<0.90": {
+          "n": 0,
+          "er": null,
+          "ec": null,
+          "er_ct": 0,
+          "ec_ct": 0
+        },
+        "na": {
+          "n": 0,
+          "er": null,
+          "ec": null,
+          "er_ct": 0,
+          "ec_ct": 0
+        }
+      }
+    },
+    "reachable_expr_only": {
+      "overall": {
+        "n": 489,
+        "er": 0.9202,
+        "ec": 0.4683,
+        "er_ct": 450,
+        "ec_ct": 229
+      }
+    },
+    "reachability_conditioning": {
+      "note": "(a)->(c) cut drops pairs outside E_r's de-novo footprint; E_r loses 0 TP by construction (in_er => both genes represented => reachable), E_c loses the pairs it correctly grouped outside that footprint. (c) isolates the CRITERION on a convenient denominator; it is not absolute recall. Absolute recall (subsets a/b) has E_r BELOW E_c.",
+      "dropped_pairs": 1782,
+      "ec_lost_tp": 940,
+      "er_lost_tp": 0,
+      "representation_ceiling_refined": 0.137,
+      "representation_ceiling_raw": 0.1423
+    }
+  },
+  "truth_coverage": {
+    "dna_loose_genes": 5517,
+    "represented_genes_refined": 2374,
+    "represented_genes_raw": 2702,
+    "dna_loose_genes_represented_refined": 756,
+    "dna_loose_genes_represented_raw": 785
+  }
+}
