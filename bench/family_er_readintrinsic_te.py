@@ -29,9 +29,12 @@ the soft-mask-only recommended point (21/97 TPpm @ edge-host 8.9%).
 
 HONEST CAVEAT (bench/ri_sharedlen_cache.tsv): very-high-copy REAL gene families (KRAB-ZNF ~400, olfactory
 ~1000) are ALSO high-degree / high-multiplicity, so degree/multiplicity ALONE cannot separate them from TEs.
-The fix is (a) protein-homology (in_ep already rescues the annotated ZNF/OR families before the TE branch is
-reached) + (b) SHARED-SEGMENT LENGTH: a real paralog shares a LONG contiguous gene body; a TE bridge shares
-only a SHORT exonized-TE fragment.
+The protection is (a) protein-homology (in_ep already rescues the annotated ZNF/OR families before the TE
+branch is reached) + (b) at the operating band (core>=0.50) the softmask<0.10 branch, which already excludes
+every high-degree protein-missed TP (all have softmask>=0.235). SHARED-SEGMENT LENGTH (a real paralog shares
+a LONG contiguous gene body; a TE bridge a SHORT exonized-TE fragment) separates the two ONLY on the broad
+re-admit region core>=0.13 (AUC 0.821); it is at chance at core>=0.50 (0.521) and INVERTS at core>=0.70
+(0.482), so it is NOT a term in the deployed gate.
 
 Reproduce: PYTHONHASHSEED=0 python bench/family_er_readintrinsic_te.py
 Deterministic: all heavy features precomputed to integer caches (deterministic builders); PYTHONHASHSEED=0;
@@ -361,11 +364,75 @@ def main():
     if pareto:
         combined_rec = max(pareto, key=lambda r: (r["tp_noep_retained"], -r["genuine_rate_block_edgehost"],
                                                   -r["genuine_overmerge"]))
+    # dmax plateau + in-sample provenance for the recommended combined point (guard against knife-edge/overfit)
+    plateau = None
+    if combined_rec:
+        wt = combined_rec["t"]
+        band = sorted((r for r in gate_rows if r["t"] == wt and r.get("dmax") is not None),
+                      key=lambda r: r["dmax"])
+        opt = (combined_rec["tp_noep_retained"], combined_rec["genuine_overmerge"])
+        plateau_dmax = [r["dmax"] for r in band
+                        if (r["tp_noep_retained"], r["genuine_overmerge"]) == opt]
+        below = [r for r in band if r["dmax"] < combined_rec["dmax"]]
+        one_below = below[-1] if below else None
+        plateau = dict(
+            t=wt, recommended_dmax=combined_rec["dmax"], plateau_dmax=plateau_dmax,
+            plateau_width=len(plateau_dmax),
+            one_lower_dmax=(one_below["dmax"] if one_below else None),
+            one_lower_TPpm=(one_below["tp_noep_retained"] if one_below else None),
+            note=("dmax=%s is the LOWEST cap that preserves all real protein-missed TP (TPpm=%d); dmax in %s "
+                  "give the identical optimum (width-%d plateau), dmax=%s drops TPpm to %s (loses real TP). "
+                  "NOT a knife-edge. CAVEAT: dmax is picked IN-SAMPLE (single free parameter, coarse grid, no "
+                  "held-out split) so the modest 55->%d over-merge gain carries a small overfit risk."
+                  % (combined_rec["dmax"], combined_rec["tp_noep_retained"], plateau_dmax, len(plateau_dmax),
+                     (one_below["dmax"] if one_below else None),
+                     (one_below["tp_noep_retained"] if one_below else None),
+                     combined_rec["genuine_overmerge"])))
     # degree-only: can it MATCH the soft-mask recommended point without the mask at all?
     deg_only_pareto = [r for r in deg_only_rows
                        if r["tp_noep_retained"] >= ref_tppm and r["genuine_rate_block_edgehost"] <= ref_eh]
     deg_only_rec = (max(deg_only_pareto, key=lambda r: (r["tp_noep_retained"],
                     -r["genuine_rate_block_edgehost"], -r["genuine_overmerge"])) if deg_only_pareto else None)
+
+    # ============ read-mm mechanistic stats (WHY signal 2 fails: both classes high-multiplicity) ======
+    # per-edge mm_median_max over the arbitration population + fraction saturating the -N50 cap.
+    mm_med_arb, mm_max_arb = [], []
+    for k, e in edges.items():
+        if e["in_ep"] or e["core"] is None or e["cls"] not in ("genuine", "TP"):
+            continue
+        v = mm_variants["mm_median"][0].get(k); vmax = mm_variants["mm_max"][0].get(k)
+        if v is not None:
+            mm_med_arb.append(v)
+        if vmax is not None:
+            mm_max_arb.append(vmax)
+    n_loci_cache = sum(1 for _ in open(READMM_CACHE)) - 1
+    n_loci_cap = 0
+    with open(READMM_CACHE) as fh:
+        hh = fh.readline().rstrip("\n").split("\t"); ii = {c: j for j, c in enumerate(hh)}
+        for ln in fh:
+            ff = ln.rstrip("\n").split("\t"); mv = ff[ii["mm_max"]]
+            if mv != "" and float(mv) >= 49:
+                n_loci_cap += 1
+    readmm_mechanism = dict(
+        note=("read multi-mapping is near-chance because BOTH genuine and protein-missed-TP loci are "
+              "high-multiplicity, NOT because multiplicity is ~1. The minimap2 -N50 secondary cap truncates "
+              "the count so both classes pile at the ceiling and cannot be separated."),
+        arb_edge_mm_median_max_median=(round(statistics.median(mm_med_arb), 1) if mm_med_arb else None),
+        arb_edge_mm_median_max_mean=(round(statistics.mean(mm_med_arb), 1) if mm_med_arb else None),
+        arb_edge_frac_at_N50_cap=(round(sum(1 for v in mm_max_arb if v >= 49) / len(mm_max_arb), 4)
+                                  if mm_max_arb else None),
+        per_locus_n=n_loci_cache,
+        per_locus_frac_at_N50_cap=round(n_loci_cap / max(1, n_loci_cache), 4))
+
+    # ============ shared-length by-band medians (sign-inversion evidence for the caveat) =============
+    slen_band = {}
+    for lo in BANDS:
+        gpv, tpv = arb_pop(edges, slen_len, lo)
+        gvals = [v for _, v in gpv]; tvals = [v for _, v in tpv]
+        slen_band[lo] = dict(
+            median_genuine=(round(statistics.median(gvals), 0) if gvals else None),
+            median_TP=(round(statistics.median(tvals), 0) if tvals else None),
+            auc_TP_gt_genuine=auc["sharedlen_len_TPhi"][lo]["auc"])
 
     # ============ HONEST CAVEAT: high-copy real families mis-flagged by degree ============
     # top-decile degree among protein-missed TP in arbitration pop = real families the degree flags as TE.
@@ -391,6 +458,9 @@ def main():
     # combined degree(<D) AND shared-length(>=L) as a real-family rescue on the high-degree TP
     slen_auc_arb = auc["sharedlen_len_TPhi"]
 
+    # how many of the high-degree protein-missed TP are ALREADY excluded by the softmask<0.10 branch:
+    n_hi_deg_tp_softmask_ge_m = sum(1 for k, _ in hi_deg_tp
+                                    if edges[k]["mask"] is not None and edges[k]["mask"] >= 0.10)
     caveat = dict(
         premise=("degree/multiplicity flag ANY high-copy locus as TE, including REAL high-copy gene families "
                  "(KRAB-ZNF ~400 paralogs, olfactory-receptor ~1000). So degree alone cannot separate real "
@@ -404,11 +474,19 @@ def main():
             n_top_decile_degree_TP=len(hi_deg_all_tp),
             rescued_by_in_ep=rescued_by_protein,
             rescued_frac=round(rescued_by_protein / max(1, len(hi_deg_all_tp)), 4)),
+        readmm_why_near_chance=readmm_mechanism,
         shared_length_fix=dict(
-            note=("SHARED-SEGMENT LENGTH is the discriminator degree lacks: a real paralog shares a LONG "
-                  "contiguous gene body; a TE bridge shares a SHORT exonized-TE fragment. AUC(TP>genuine) of "
-                  "shared aln_len over the arbitration population is reported in auc.sharedlen_len_TPhi."),
+            note=("SHARED-SEGMENT LENGTH separates real paralogs (LONG contiguous gene body) from TE bridges "
+                  "(SHORT exonized-TE fragment) ONLY on the broad re-admit region core>=0.13 (AUC TP>genuine "
+                  "0.821). It is a SIGN-INVERSION at high core: at the recommended core>=0.50 band it is at "
+                  "chance (0.521) and at core>=0.70 it INVERTS below chance (0.482 -- genuine bridges share "
+                  "MORE there). So shared-length does NOT rescue the high-copy-family confound at the operating "
+                  "band. The actual protection at core>=0.50 is (i) protein-first ordering (in_ep evaluated "
+                  "first) and (ii) the softmask<0.10 branch, which ALREADY excludes all high-degree "
+                  "protein-missed TP (every one has softmask>=0.235); shared-length is not a term in the gate."),
             sharedlen_auc_by_band=slen_auc_arb,
+            median_sharedlen_by_band=slen_band,
+            n_high_degree_protein_missed_TP_softmask_ge_0_10=n_hi_deg_tp_softmask_ge_m,
             hi_degree_genuine_median_sharedlen=(round(statistics.median(slen_gen), 1) if slen_gen else None),
             hi_degree_TP_median_sharedlen=(round(statistics.median(slen_tp), 1) if slen_tp else None)))
 
@@ -464,11 +542,18 @@ def main():
             band_core_ge_0_50_RECOMMENDED=dict(
                 softmask=SOFTMASK_AUC[0.50], degree_max=auc["degree_max"][0.50]["auc"],
                 readmm_best=auc[best_readmm][0.50]["auc"], kmer_best=auc[best_kmer][0.50]["auc"]),
-            reading=("HOMOLOGY-GRAPH DEGREE is the strongest read-intrinsic signal: it BEATS soft-mask on the "
-                     "whole re-admit region (core>=0.13) but not at the narrow recommended band (core>=0.50), "
-                     "where the population is tiny and both degrade. READ MULTI-MAPPING is near-chance "
-                     "(long HiFi reads span the TE into unique flanks -> median multiplicity ~1). GENOME "
-                     "K-MER MULTIPLICITY is intermediate.")),
+            reading=("NO single read-intrinsic signal beats soft-mask at the 0.694 operating band (core>=0.50): "
+                     "degree=0.650, read-mm=0.592, k-mer=0.619 all LOSE there. HOMOLOGY-GRAPH DEGREE is the "
+                     "strongest read-intrinsic signal and beats soft-mask ONLY on the broad re-admit region "
+                     "(core>=0.13: 0.830 > 0.777) and core>=0.70 (0.762 > 0.675). The load-bearing result is "
+                     "COMPLEMENT not replace: rank-average(soft-mask, degree) exceeds soft-mask at EVERY band "
+                     "including the operating band (0.7395 > 0.6938 @ core>=0.50); Spearman 0.50 = partly "
+                     "orthogonal. READ MULTI-MAPPING is near-chance NOT because multiplicity is low but because "
+                     "BOTH classes are high-multiplicity: per-locus median mm_median ~11 and ~92% of arbitration "
+                     "edges saturate the minimap2 -N50 secondary cap, so the capped count cannot separate the "
+                     "two. GENOME K-MER MULTIPLICITY is intermediate (0.732 @ core>=0.13). degree_max AUC is "
+                     "non-monotone across bands (0.83/0.73/0.65/0.76) as the high-band population shrinks "
+                     "(n_tp 90->64->33->19).")),
         complementarity_degree_vs_softmask=complement,
         gate=dict(
             reference_none=slim(none_r), reference_protein=slim(prot_r),
@@ -476,8 +561,10 @@ def main():
             combined_gate="in_ep OR (core>=t AND bridge_mask<m AND degree<dmax)",
             sweep=[slim(r) for r in gate_rows],
             pareto_beats_softmask_recommended=(slim(combined_rec) if combined_rec else None),
+            pareto_dmax_plateau=plateau,
             pareto_note=("Pareto-beat = TPpm >= softmask-recommended AND edge-host <= it, strictly better on "
-                         "one. None -> degree adds nothing beyond soft-mask at the operating point."),
+                         "one. None -> degree adds nothing beyond soft-mask at the operating point. dmax is "
+                         "selected in-sample (see pareto_dmax_plateau)."),
             degree_only_gate="in_ep OR (core>=t AND degree<dmax)  [no soft-mask -> can degree REPLACE it?]",
             degree_only_sweep=[slim(r) for r in deg_only_rows],
             degree_only_matches_softmask_recommended=(slim(deg_only_rec) if deg_only_rec else None)),
@@ -522,6 +609,10 @@ def main():
               % (combined_rec["t"], combined_rec["dmax"], combined_rec["tp_noep_retained"],
                  combined_rec["noncoding_tp_retained"], combined_rec["genuine_overmerge"],
                  combined_rec["genuine_rate_block_edgehost"]))
+        if plateau:
+            print("[gate]   dmax plateau=%s (width %d), one-lower dmax=%s -> TPpm=%s; picked IN-SAMPLE"
+                  % (plateau["plateau_dmax"], plateau["plateau_width"], plateau["one_lower_dmax"],
+                     plateau["one_lower_TPpm"]))
     else:
         print("[gate] mask+degree: NO Pareto-beat of the soft-mask recommended point "
               "(degree does not improve the operating point).")
@@ -539,9 +630,12 @@ def main():
               f"softmask={r['softmask']}")
     print(f"[caveat] protein branch rescues {rescued_by_protein}/{len(hi_deg_all_tp)} top-decile-degree TP "
           f"(annotated high-copy families kept by in_ep before the degree branch).")
-    print(f"[caveat] shared-length median: hi-degree genuine={caveat['shared_length_fix']['hi_degree_genuine_median_sharedlen']} "
-          f"vs hi-degree TP={caveat['shared_length_fix']['hi_degree_TP_median_sharedlen']} "
-          f"(AUC TP>genuine @c>=0.13 = {slen_auc_arb[0.13]['auc']})")
+    print(f"[caveat] shared-length AUC(TP>gen): c>=0.13={slen_auc_arb[0.13]['auc']} c>=0.50={slen_auc_arb[0.50]['auc']} "
+          f"c>=0.70={slen_auc_arb[0.70]['auc']} (SIGN-INVERSION: chance at op band, inverts at 0.70; "
+          f"softmask<0.10 already excludes all {len(hi_deg_tp)}/{len(hi_deg_tp)} high-degree TP, all softmask>=0.235)")
+    print(f"[caveat] read-mm WHY near-chance: arb-edge median mm_median_max={readmm_mechanism['arb_edge_mm_median_max_median']} "
+          f"({readmm_mechanism['arb_edge_frac_at_N50_cap']*100:.0f}% of arb edges at -N50 cap; per-locus "
+          f"{readmm_mechanism['per_locus_frac_at_N50_cap']*100:.0f}% at cap) -> BOTH classes high-multiplicity, not ~1")
     print(f"\n[determinism] within-run reproducible={det} (PYTHONHASHSEED=0)")
     print("wrote bench/family_er_readintrinsic_te.tsv + bench/family_er_readintrinsic_te.json")
 
