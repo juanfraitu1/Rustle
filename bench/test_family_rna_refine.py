@@ -16,6 +16,15 @@ Asserts:
       truthbar (real / borderline-real) edges are cut.
   (h) RNA-only / LIBRARY-FREE guard: repeat-hub features = {min_shared_mult, cyclic}, disjoint from
       every soft-mask / RepeatMasker / DNA column.
+  (i) DEFAULT (no flag) catalog is BYTE-IDENTICAL to the pre-change golden TSV (md5) and its JSON
+      records gamma=0.20 with NO high_precision block.
+  (j) --high-precision (== env RUSTLE_HIGH_PRECISION=1) swaps gamma 0.20 -> 0.40
+      (PRECISION_RECALL_FRONTIER.md): JSON records the active gamma, the catalog is DIFFERENT +
+      deterministic, n_families -> 623 (frontier gamma=0.40 row), the collapsed-array OVERSIZE blobs
+      MPHOSPH8 + LOC134758618 are removed (oversize residual 3 -> 1), and the HONEST off-oracle
+      KRAB-ZNF + MAGE-floor caveats are carried in the JSON (not dropped).
+  (k) --legacy still opts out even with --high-precision; --high-precision composes with
+      --no-repeat-gate (gamma=0.40 AND the gate ablated).
 
 Run: /home/juanfra/miniforge3/bin/python bench/test_family_rna_refine.py
 """
@@ -32,6 +41,10 @@ OUT_TSV = os.path.join(BENCH, "family_rna_refine.tsv")
 OUT_JSON = os.path.join(BENCH, "family_rna_refine.json")
 SHIPPED = os.path.join(BENCH, "denovo_families.py")
 PY = sys.executable
+
+# md5 of the pre-change committed DEFAULT catalog (gamma=0.20, 606 families).  The --high-precision
+# flag must NOT perturb the default: `family_rna_refine.py` with no flag must reproduce this exactly.
+GOLDEN_DEFAULT_TSV_MD5 = "f94f387e4f3a53a69e9d8a2d0b1f497a"
 
 # fam17 = the 27-gene / 16-protein-family EXTREME repeat-bridge hub (VG_REPEAT_CATALOG.md sec 3).
 FAM17 = ["C9H11orf65", "COPS9", "DCAF16", "DCP1B", "GIMAP4", "KLHL33", "LIPA", "LOC109024560",
@@ -107,6 +120,21 @@ def test_default_deterministic():
     assert _md5(OUT_TSV) == tsv1, "TSV not byte-identical across runs"
     assert _md5(OUT_JSON) == json1, "JSON not byte-identical across runs"
     print("(b) default deterministic (default == --rna-oracle == env=1; byte-identical) : OK")
+
+
+def test_default_byte_identical_to_golden():
+    r = _run([])                                   # DEFAULT: no flag
+    assert r.returncode == 0, r.stderr
+    got = _md5(OUT_TSV)
+    assert got == GOLDEN_DEFAULT_TSV_MD5, \
+        f"default catalog drifted from the pre-change golden {GOLDEN_DEFAULT_TSV_MD5}: {got}"
+    d = json.load(open(OUT_JSON))
+    assert d["rule"]["gamma"] == 0.2, f"default JSON gamma != 0.20: {d['rule']['gamma']}"
+    assert d["guards"]["gamma"] == 0.2, f"default guards gamma != 0.20: {d['guards']['gamma']}"
+    assert d["n_families"] == 606, f"default n_families != 606: {d['n_families']}"
+    assert "high_precision" not in d, "default JSON must NOT carry the high_precision block"
+    print(f"(i) default (no flag) byte-identical to pre-change golden TSV (md5 {GOLDEN_DEFAULT_TSV_MD5}); "
+          f"gamma=0.20, no high_precision block : OK")
 
 
 def test_allele_demote_removes_known_fp():
@@ -218,12 +246,85 @@ def test_rna_only_guard():
     print("(h) RNA-only / library-free guard (repeat gate = min_shared_mult/cyclic; no soft-mask/DNA) : OK")
 
 
+def test_high_precision_gamma_040():
+    """--high-precision swaps gamma 0.20 -> 0.40 (PRECISION_RECALL_FRONTIER.md): DIFFERENT +
+    deterministic catalog, JSON records the active gamma, n_families -> 623 (frontier row), the two
+    collapsed-array OVERSIZE blobs (MPHOSPH8 + LOC134758618) are removed, and the HONEST off-oracle
+    KRAB-ZNF + MAGE-floor caveats are carried in the JSON (not dropped).  env == flag."""
+    # default reference
+    r = _run([]);  assert r.returncode == 0, r.stderr
+    default_tsv = _md5(OUT_TSV);  d_def = json.load(open(OUT_JSON))
+    # --high-precision (flag)
+    r1 = _run(["--high-precision"]);  assert r1.returncode == 0, r1.stderr
+    hp_tsv, hp_json = _md5(OUT_TSV), _md5(OUT_JSON);  d = json.load(open(OUT_JSON))
+    # (j) records gamma=0.40 everywhere it reports gamma
+    assert d["rule"]["gamma"] == 0.4, f"rule gamma != 0.40: {d['rule']['gamma']}"
+    assert d["guards"]["gamma"] == 0.4, f"guards gamma != 0.40: {d['guards']['gamma']}"
+    assert d["high_precision"]["active_gamma"] == 0.4, d["high_precision"]["active_gamma"]
+    assert d["high_precision"]["default_gamma"] == 0.2, d["high_precision"]["default_gamma"]
+    # (j) DIFFERENT catalog vs default (gamma actually applied)
+    assert hp_tsv != default_tsv, "high-precision catalog identical to default (gamma not applied)"
+    # (j) deterministic across two runs
+    r2 = _run(["--high-precision"]);  assert r2.returncode == 0, r2.stderr
+    assert _md5(OUT_TSV) == hp_tsv and _md5(OUT_JSON) == hp_json, "high-precision not byte-identical across runs"
+    # (j) env form == flag form
+    r3 = _run([], env_extra={"RUSTLE_HIGH_PRECISION": "1"});  assert r3.returncode == 0, r3.stderr
+    assert _md5(OUT_TSV) == hp_tsv and _md5(OUT_JSON) == hp_json, "RUSTLE_HIGH_PRECISION=1 != --high-precision"
+    # (j) precision impact: n_families toward the frontier's 623, oversize residual drops (blobs removed)
+    assert d["n_families"] == 623, f"high-precision n_families {d['n_families']} != frontier gamma=0.40 row 623"
+    assert d["n_families"] > d_def["n_families"], "high-precision did not split toward the frontier"
+    rem_hp, rem_def = d["residual_fp"]["residual_remaining"], d_def["residual_fp"]["residual_remaining"]
+    assert rem_hp["oversize"] < rem_def["oversize"], \
+        f"high-precision did not reduce oversize residual: {rem_def['oversize']} -> {rem_hp['oversize']}"
+    assert rem_hp["oversize"] == 1, f"expected oversize residual 1 (MAGE X-array only), got {rem_hp['oversize']}"
+    ex_hp = " ".join(d["residual_fp"]["residual_examples"]["oversize"])
+    assert "MPHOSPH8" not in ex_hp and "LOC134758618" not in ex_hp, f"OVERSIZE blobs not removed: {ex_hp}"
+    assert "LOC129529978" in ex_hp, f"MAGE X-array DNA-only floor missing (should survive): {ex_hp}"
+    # (j) HONEST caveats carried, not dropped
+    hp = d["high_precision"]
+    for key in ("precision_impact", "offoracle_krabznf_cost", "mage_floor", "over_split_cost",
+                "frontier_row_gamma040", "live_precision_signal", "source"):
+        assert hp.get(key), f"high_precision field missing: {key}"
+    assert "KRAB-ZNF" in hp["offoracle_krabznf_cost"] and "MAGE" in hp["mage_floor"], "caveats hollowed out"
+    print(f"(j) --high-precision gamma=0.40 (JSON records it); n_families {d_def['n_families']} -> "
+          f"{d['n_families']} (frontier 623); oversize residual {rem_def['oversize']} -> {rem_hp['oversize']} "
+          f"(MPHOSPH8 + LOC134758618 removed, MAGE floor survives); deterministic; env==flag; caveats carried : OK")
+    _run([])   # restore DEFAULT catalog for any downstream test
+
+
+def test_flags_compose():
+    """--legacy still opts out even with --high-precision; --high-precision composes with --no-repeat-gate."""
+    # --legacy wins (opt-out) even alongside --high-precision -> nothing written
+    for p in (OUT_TSV, OUT_JSON):
+        if os.path.exists(p):
+            os.remove(p)
+    r = _run(["--legacy", "--high-precision"])
+    assert r.returncode == 0 and r.stdout.startswith("legacy:"), repr(r.stdout)
+    assert not os.path.exists(OUT_TSV) and not os.path.exists(OUT_JSON), "legacy+high-precision wrote outputs"
+    # --high-precision composes with --no-repeat-gate: gamma=0.40 AND the repeat gate ablated
+    r = _run(["--high-precision", "--no-repeat-gate"]);  assert r.returncode == 0, r.stderr
+    d = json.load(open(OUT_JSON))
+    assert d["rule"]["gamma"] == 0.4, f"gamma not 0.40 under compose: {d['rule']['gamma']}"
+    assert d["rule"]["repeat_gate_enabled"] is False, "--no-repeat-gate not applied under --high-precision"
+    assert d["edges"]["n_dn_cross_gene_cut_by_repeat_gate"] == 0, "repeat gate still cut under --no-repeat-gate"
+    assert "high_precision" in d, "high_precision block missing when composing with --no-repeat-gate"
+    hp_norg = _md5(OUT_TSV)
+    # sanity: ablating the gate under high-precision changes the catalog vs high-precision-with-gate
+    r = _run(["--high-precision"]);  assert r.returncode == 0, r.stderr
+    assert _md5(OUT_TSV) != hp_norg, "--no-repeat-gate had no effect under --high-precision"
+    print("(k) --legacy opts out even with --high-precision; --high-precision + --no-repeat-gate compose : OK")
+    _run([])   # restore DEFAULT catalog
+
+
 if __name__ == "__main__":
     test_legacy_opt_out_writes_nothing()
     test_default_deterministic()
+    test_default_byte_identical_to_golden()
     test_allele_demote_removes_known_fp()
     test_residual_removed_matches_recall_preserving_row()
     test_repeat_gate_shatters_fam17_spares_controls()
     test_repeat_gate_recall_cost_is_genuine_only()
     test_rna_only_guard()
+    test_high_precision_gamma_040()
+    test_flags_compose()
     print("\nALL TESTS PASSED")

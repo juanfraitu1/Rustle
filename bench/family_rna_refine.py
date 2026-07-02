@@ -71,14 +71,26 @@ env RUSTLE_RNA_ORACLE=0 (prints one line, exits 0 without writing; run bench/den
 for the legacy catalog).  Because this stage never edits denovo_families.py, the legacy path
 remains bit-for-bit reproducible.
 
+HIGH-PRECISION (opt in with --high-precision / RUSTLE_HIGH_PRECISION=1)
+----------------------------------------------------------------------
+--high-precision swaps ONLY the gamma-quasi-clique cohesion from the recall-preserving default
+GAMMA=0.20 to HIGH_PRECISION_GAMMA=0.40 (bench/PRECISION_RECALL_FRONTIER.md recommended point);
+core/aln thresholds, the repeat-hub gate and the allele demote are UNCHANGED.  It removes the two
+collapsed-array OVERSIZE blobs (MPHOSPH8, LOC134758618) -> distinct FP 6->4, P_fixed48 0.917,
+recall held 48/57 (nFam 606 -> 623).  HONEST costs, carried in the summary JSON + report (not
+dropped): off-oracle KRAB-ZNF over-split (gamma>=0.27) and the MAGE X-array DNA-only floor that
+survives at every RNA point.  Default (no flag) stays byte-identical; --high-precision writes the
+gamma=0.40 catalog and records the active gamma + caveats in the summary.
+
 DETERMINISM
 -----------
 PYTHONHASHSEED=0 (re-exec), fixed gamma=0.20 seed=0, sorted writes.  Re-runs are
 byte-identical (see bench/test_family_rna_refine.py).
 
 Writes: bench/family_rna_refine.tsv (family_id -> member loci/genes) + bench/family_rna_refine.json
-Run:    /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py             (default: refined catalog)
-legacy: /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py --legacy    (opt out -> nothing written)
+Run:    /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py                   (default: refined catalog)
+hi-prec:/home/juanfra/miniforge3/bin/python bench/family_rna_refine.py --high-precision  (gamma=0.40 catalog)
+legacy: /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py --legacy          (opt out -> nothing written)
 """
 import os
 import sys
@@ -120,6 +132,45 @@ REPEAT_MULT_MIN = 20     # VG min_shared_mult cut (library-free minimizer multip
 DEMOTE_BAL_MIN = 0.90    # balanced_frac >= 0.90  (~0.5 minor-allele = diploid het)
 DEMOTE_COPY_MAX = 0.10   # copy_like    <= 0.10  (not ~1/K = a real copy)
 
+# HIGH-PRECISION operating point (bench/PRECISION_RECALL_FRONTIER.md recommended point; do NOT
+# re-derive).  --high-precision (or env RUSTLE_HIGH_PRECISION=1) swaps ONLY the gamma-quasi-clique
+# cohesion from the recall-preserving default GAMMA=0.20 to HIGH_PRECISION_GAMMA=0.40.  Everything
+# else (core/aln thresholds, repeat-hub gate, allele demote) is UNCHANGED.  From the frontier
+# (gamma=0.40 row):
+#   - removes the two collapsed-array OVERSIZE blobs MPHOSPH8 + LOC134758618 (the fam17 repeat-hubs
+#     are ALREADY removed by the default-on repeat gate in BOTH modes): distinct over-merge FP
+#     blocks 6 -> 4, fixed-denominator precision P_fixed48 0.875 -> 0.917 (moving P_dedup 0.920);
+#   - recall HELD at 48/57 recovered, ZERO on-oracle genes lost (nFam 606 -> 623).
+# HONEST costs (carried in the summary JSON + report; do NOT drop them):
+#   - OFF-ORACLE KRAB-ZNF cost: gamma>=0.27 trips the ZNF716/KRAB-ZNF knife-edge (family density
+#     0.261) and over-splits divergent KRAB-ZNF paralog families the sparse high-CN diploid oracle
+#     cannot see (NOT captured by the recovered-somewhere recall metric); default gamma=0.20 keeps them;
+#   - over-split surrogates: undersize 33 -> 37 (+4), 15 divergent-paralog (TRUTHBAR) pairs cut;
+#   - MAGE floor: the dense-uniform X-array LOC129529978+LOC129529986 (Q=-0.001) SURVIVES at every
+#     RNA operating point -- the DNA-only cardinality floor; no gamma removes it.
+# best-2-cut is NOT wired (DOMINATED: net-zero distinct-FP, cosmetic GSTM2 relabel at over-split cost).
+HIGH_PRECISION_GAMMA = 0.40     # frontier high-precision gamma-quasi-clique cohesion
+HIGH_PRECISION_NOTE = dict(
+    source="bench/PRECISION_RECALL_FRONTIER.md (recommended high-precision operating point)",
+    default_gamma=GAMMA,
+    high_precision_gamma=HIGH_PRECISION_GAMMA,
+    frontier_row_gamma040=("nFam~623, distinct over-merge FP blocks 4 (down from 6), "
+                           "P_fixed48 0.917 (vs 0.875 default), moving P_dedup 0.920, "
+                           "R 0.842 (48/57), zero on-oracle genes lost"),
+    precision_impact=("gamma=0.40 removes the two collapsed-array OVERSIZE blobs MPHOSPH8 + "
+                      "LOC134758618 (fam17 repeat-hubs already removed by the default-on repeat "
+                      "gate in both modes) -> distinct FP 6->4 / P_fixed48 0.917"),
+    offoracle_krabznf_cost=("HONEST off-oracle cost: gamma>=0.27 trips the ZNF716/KRAB-ZNF "
+                            "knife-edge (family density 0.261) and over-splits divergent KRAB-ZNF "
+                            "paralog families the sparse high-CN diploid oracle cannot see; NOT "
+                            "captured by the recovered-somewhere recall metric. Default gamma=0.20 "
+                            "preserves them."),
+    over_split_cost="undersize 33->37 (+4); 15 divergent-paralog (TRUTHBAR) co-membership pairs cut",
+    mage_floor=("MAGE-class dense-uniform X-array LOC129529978+LOC129529986 (Q=-0.001) SURVIVES at "
+                "every RNA operating point -- the DNA-only cardinality floor; no gamma removes it"),
+    best2cut="NOT wired -- DOMINATED (net-zero distinct-FP, cosmetic GSTM2 relabel at over-split cost)",
+)
+
 # RNA-only / library-free inference feature contract (hard-asserted):
 EDGE_DECISION_FEATURES = ("core_recip", "aln_frac")            # alignment edge decision
 REPEAT_GATE_FEATURES = ("min_shared_mult", "cyclic")          # VG minimizer multiplicity (library-free)
@@ -145,6 +196,7 @@ OUT_JSON = os.path.join(BENCH, "family_rna_refine.json")
 
 assert abs(GAMMA - 0.20) < 1e-9 and SEED == 0, "gamma/seed drifted from the shipped constants"
 assert REPEAT_MULT_MIN == 20, "REPEAT_MULT_MIN drifted from the VG_REPEAT_CATALOG.md tail (20)"
+assert abs(HIGH_PRECISION_GAMMA - 0.40) < 1e-9, "HIGH_PRECISION_GAMMA drifted from the frontier point (0.40)"
 
 
 # --------------------------------------------------------------------------- guards
@@ -201,10 +253,12 @@ def load_repeat_mult():
 
 
 # --------------------------------------------------------------------------- build (RNA-only)
-def build_catalog(repeat_gate=True):
+def build_catalog(repeat_gate=True, gamma=GAMMA):
     """Apply the recall-preserving RNA-only gate + repeat-hub gate + shipped gamma refinement +
     allele demote.  Returns dict with the multi-copy catalog and the RNA-only bookkeeping.  No DNA
-    read here.  repeat_gate=False ablates ONLY the repeat-hub gate (keeps core+aln+gamma+demote)."""
+    read here.  repeat_gate=False ablates ONLY the repeat-hub gate (keeps core+aln+gamma+demote).
+    gamma selects the gamma-quasi-clique cohesion: default GAMMA=0.20 (recall-preserving) or
+    HIGH_PRECISION_GAMMA=0.40 (--high-precision; PRECISION_RECALL_FRONTIER.md).  Nothing else changes."""
     rna_only_guard()
 
     # ---- RNA features (exact oracle loaders) ----
@@ -261,9 +315,9 @@ def build_catalog(repeat_gate=True):
             if keep_ca and repeat_only:               # cut SPECIFICALLY by the repeat-hub gate
                 n_dn_cross_cut_repeat += 1; repeat_cut_pairs.add(k)
 
-    # ---- shipped gamma-quasi-clique refinement (unchanged operator, gamma=0.20 seed=0) ----
+    # ---- shipped gamma-quasi-clique refinement (unchanged operator; gamma threaded, seed=0) ----
     comps = SW.components_from_edges(all_nodes, kept)
-    refined = G.refine_families(comps, [tuple(e) for e in kept], genes, GAMMA, SEED)
+    refined = G.refine_families(comps, [tuple(e) for e in kept], genes, gamma, SEED)
 
     # ---- allele DEMOTE (RNA read signal only; exact oracle logic) ----
     def demote_gene(g):
@@ -288,7 +342,7 @@ def build_catalog(repeat_gate=True):
     return dict(
         catalog=catalog, demotions=demotions,
         gene_of_dn=gene_of_dn2, genes=genes, raw_fams=raw_fams, edge_pairs=edge_pairs,
-        repeat_gate=repeat_gate,
+        repeat_gate=repeat_gate, gamma=gamma,
         n_dn_edges_total=Gr.number_of_edges(),
         n_dn_within=n_dn_within, n_dn_cross_kept=n_dn_cross_kept, n_dn_cross_cut=n_dn_cross_cut,
         n_dn_cross_cut_repeat=n_dn_cross_cut_repeat,
@@ -354,6 +408,7 @@ def validate(built):
 # --------------------------------------------------------------------------- write
 def write_outputs(built, val):
     catalog = built["catalog"]; gene_of_dn = built["gene_of_dn"]; genes = built["genes"]
+    gamma = built["gamma"]
     # deterministic family_id: sort families by their sorted member tuple, then long-format rows
     fams_sorted = sorted(catalog, key=lambda b: tuple(sorted(b)))
     with open(OUT_TSV, "w") as out:
@@ -376,7 +431,7 @@ def write_outputs(built, val):
                        % (CORE_MIN, ALN_MIN, REPEAT_MULT_MIN),
                   core_recip_min=CORE_MIN, aln_frac_min=ALN_MIN,
                   repeat_gate_enabled=repeat_gate, repeat_mult_min=REPEAT_MULT_MIN,
-                  gamma=GAMMA, seed=SEED,
+                  gamma=gamma, seed=SEED,
                   demote="balanced_frac>=%.2f AND copy_like<=%.2f" % (DEMOTE_BAL_MIN, DEMOTE_COPY_MAX),
                   demote_balanced_frac_min=DEMOTE_BAL_MIN, demote_copy_like_max=DEMOTE_COPY_MAX),
         n_families=len(catalog),
@@ -408,7 +463,7 @@ def write_outputs(built, val):
             no_dna_in_inference=True,
             repeat_gate_library_free=True,
             no_softmask_in_repeat_gate=True,
-            gamma=GAMMA, seed=SEED),
+            gamma=gamma, seed=SEED),
         inputs=dict(
             edges="bench/denovo_family_edges.tsv",
             aln_frac="bench/ri_sharedlen_universal.tsv",
@@ -417,6 +472,20 @@ def write_outputs(built, val):
         outputs=dict(catalog_tsv="bench/family_rna_refine.tsv",
                      summary_json="bench/family_rna_refine.json"),
     )
+    # HIGH-PRECISION disclosure: only present when the flag/env selects gamma=0.40 (keeps the
+    # default catalog byte-identical).  Carries the frontier's precision impact AND its HONEST
+    # off-oracle KRAB-ZNF + MAGE-floor caveats -- do NOT drop these.
+    if abs(gamma - GAMMA) > 1e-9:
+        summary["high_precision"] = dict(
+            active=True, active_gamma=gamma, n_families=len(catalog),
+            live_precision_signal=(
+                "residual oversize %d (default gamma=%.2f: 3 = MPHOSPH8 + LOC134758618 + MAGE "
+                "X-array); gamma=%.2f removes the two collapsed-array OVERSIZE blobs "
+                "MPHOSPH8 + LOC134758618, leaving only the MAGE X-array DNA-only floor"
+                % (val["residual_remaining"]["oversize"], GAMMA, gamma)),
+            oracle_genes_recovered=val["oracle_genes_recovered"],
+            **HIGH_PRECISION_NOTE,
+        )
     with open(OUT_JSON, "w") as out:
         json.dump(summary, out, sort_keys=True, indent=1,
                   default=lambda x: None if (isinstance(x, float) and x != x) else x)
@@ -424,8 +493,8 @@ def write_outputs(built, val):
 
 
 # --------------------------------------------------------------------------- driver
-def run(write=True, repeat_gate=True):
-    built = build_catalog(repeat_gate=repeat_gate)
+def run(write=True, repeat_gate=True, gamma=GAMMA):
+    built = build_catalog(repeat_gate=repeat_gate, gamma=gamma)
     val = validate(built)
     summary = write_outputs(built, val) if write else None
     return built, val, summary
@@ -434,10 +503,13 @@ def run(write=True, repeat_gate=True):
 def _report(built, val, summary):
     P = print
     rg = built["repeat_gate"]
-    P("\n==================== RNA-ONLY FAMILY REFINEMENT (default) ====================")
+    gm = built["gamma"]
+    hp = abs(gm - GAMMA) > 1e-9
+    P("\n==================== RNA-ONLY FAMILY REFINEMENT (%s) ===================="
+      % ("HIGH-PRECISION gamma=%.2f" % gm if hp else "default"))
     P(f"rule : KEEP iff core_recip>={CORE_MIN:.2f} AND aln_frac>={ALN_MIN:.2f} AND "
       f"NOT(min_shared_mult>={REPEAT_MULT_MIN}) [repeat-hub gate {'ON' if rg else 'OFF (ablated)'}]  ->  "
-      f"gamma-refine (gamma={GAMMA}, seed={SEED})  ->  allele-demote "
+      f"gamma-refine (gamma={gm}{' [HIGH-PRECISION]' if hp else ''}, seed={SEED})  ->  allele-demote "
       f"(balanced_frac>={DEMOTE_BAL_MIN:.2f} AND copy_like<={DEMOTE_COPY_MAX:.2f})")
     P(f"DN edges         : total={built['n_dn_edges_total']}  within-gene kept={built['n_dn_within']}  "
       f"cross-gene kept={built['n_dn_cross_kept']}  cross-gene CUT={built['n_dn_cross_cut']}  "
@@ -460,6 +532,15 @@ def _report(built, val, summary):
       f"multifam {val['named_removed_breakdown']['multifam']})")
     P(f"oracle recovery  : shipped {val['oracle_genes_recovered_shipped']} -> "
       f"RNA-only {val['oracle_genes_recovered']}")
+    if hp:
+        P(f"HIGH-PRECISION   : gamma {GAMMA} -> {gm} (PRECISION_RECALL_FRONTIER.md); "
+          f"n_families -> {len(built['catalog'])} (frontier gamma=0.40 row: ~623)")
+        P(f"  precision      : {HIGH_PRECISION_NOTE['precision_impact']}")
+        P(f"                   live residual oversize -> {val['residual_remaining']['oversize']} "
+          f"(default 3: MPHOSPH8 + LOC134758618 + MAGE X-array)")
+        P(f"  CAVEAT off-orc : {HIGH_PRECISION_NOTE['offoracle_krabznf_cost']}")
+        P(f"  CAVEAT oversplt: {HIGH_PRECISION_NOTE['over_split_cost']}")
+        P(f"  CAVEAT MAGE flr: {HIGH_PRECISION_NOTE['mage_floor']}")
     if summary is not None:
         P(f"wrote {OUT_TSV}\nwrote {OUT_JSON}")
     P("============================================================================")
@@ -477,6 +558,14 @@ def main(argv=None):
                     help="ablation: DISABLE just the repeat-hub gate (min_shared_mult>=%d cut); "
                          "keeps core+aln+gamma+demote and recovers the pre-repeat-gate catalog "
                          "(also RUSTLE_NO_REPEAT_GATE=1)" % REPEAT_MULT_MIN)
+    ap.add_argument("--high-precision", action="store_true",
+                    help="HIGH-PRECISION operating point: swap ONLY the gamma-quasi-clique cohesion "
+                         "GAMMA=%.2f -> %.2f (PRECISION_RECALL_FRONTIER.md); everything else "
+                         "(core/aln thresholds, repeat gate, demote) UNCHANGED. Removes the two "
+                         "collapsed-array OVERSIZE blobs (MPHOSPH8, LOC134758618): distinct FP 6->4, "
+                         "P_fixed48 0.917, recall held 48/57 (nFam 606 -> 623). HONEST costs: "
+                         "off-oracle KRAB-ZNF over-split (gamma>=0.27) + MAGE X-array DNA-only floor "
+                         "survives. Also RUSTLE_HIGH_PRECISION=1." % (GAMMA, HIGH_PRECISION_GAMMA))
     ap.add_argument("--no-write", action="store_true",
                     help="run + report but do NOT write outputs (used by the self-check)")
     args = ap.parse_args(argv)
@@ -488,7 +577,10 @@ def main(argv=None):
         return 0
     # DEFAULT-ON repeat-hub gate; --no-repeat-gate / RUSTLE_NO_REPEAT_GATE=1 ablates ONLY the gate.
     repeat_gate = not (args.no_repeat_gate or os.environ.get("RUSTLE_NO_REPEAT_GATE") == "1")
-    built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate)
+    # HIGH-PRECISION: --high-precision / RUSTLE_HIGH_PRECISION=1 swaps ONLY gamma (0.20 -> 0.40).
+    high_precision = args.high_precision or os.environ.get("RUSTLE_HIGH_PRECISION") == "1"
+    gamma = HIGH_PRECISION_GAMMA if high_precision else GAMMA
+    built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma)
     _report(built, val, summary)
     return 0
 
