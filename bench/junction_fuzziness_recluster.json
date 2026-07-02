@@ -1,0 +1,1462 @@
+{
+  "collapse": {
+    "adjacent_tandem_pass": {
+      "collapse_rate_by_N": {
+        "0": {
+          "exact_present_collapse_pairs": 2,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 2
+        },
+        "10": {
+          "exact_present_collapse_pairs": 2,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 2
+        },
+        "2": {
+          "exact_present_collapse_pairs": 2,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 2
+        },
+        "20": {
+          "exact_present_collapse_pairs": 2,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 2
+        },
+        "5": {
+          "exact_present_collapse_pairs": 2,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 2
+        }
+      },
+      "families": [
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073229.2",
+              "end": 49424704,
+              "start": 49412576
+            },
+            {
+              "chrom": "NC_073229.2",
+              "end": 49433125,
+              "start": 49424706
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "102",
+          "gene": "NA",
+          "n_blocks": 2,
+          "n_reads": 3217,
+          "n_spliced": 140,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 2
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073242.2",
+              "end": 6232974,
+              "start": 6159400
+            },
+            {
+              "chrom": "NC_073242.2",
+              "end": 6297099,
+              "start": 6233195
+            }
+          ],
+          "exact_collapse_pairs": 1,
+          "fam": "177",
+          "gene": "NA",
+          "n_blocks": 2,
+          "n_reads": 144,
+          "n_spliced": 99,
+          "per_N": {
+            "0": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 221
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073247.2",
+              "end": 59705136,
+              "start": 59696701
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59715078,
+              "start": 59706220
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59724620,
+              "start": 59715729
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59733595,
+              "start": 59725264
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59751694,
+              "start": 59744368
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59761248,
+              "start": 59753367
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59781277,
+              "start": 59772963
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59789847,
+              "start": 59782481
+            }
+          ],
+          "exact_collapse_pairs": 1,
+          "fam": "42",
+          "gene": "LOC129529768",
+          "n_blocks": 8,
+          "n_reads": 243,
+          "n_spliced": 242,
+          "per_N": {
+            "0": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 644
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073236.2",
+              "end": 46675998,
+              "start": 46642885
+            },
+            {
+              "chrom": "NC_073236.2",
+              "end": 47731251,
+              "start": 47672319
+            },
+            {
+              "chrom": "NC_073236.2",
+              "end": 47781829,
+              "start": 47732210
+            },
+            {
+              "chrom": "NC_073236.2",
+              "end": 50034304,
+              "start": 49989275
+            },
+            {
+              "chrom": "NC_073236.2",
+              "end": 51224381,
+              "start": 51160955
+            },
+            {
+              "chrom": "NC_073236.2",
+              "end": 51458530,
+              "start": 51437835
+            },
+            {
+              "chrom": "NC_073236.2",
+              "end": 52845980,
+              "start": 52783029
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "1",
+          "gene": "LOC109025447",
+          "n_blocks": 7,
+          "n_reads": 1386,
+          "n_spliced": 1222,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 959
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073237.2",
+              "end": 109460140,
+              "start": 109453117
+            },
+            {
+              "chrom": "NC_073237.2",
+              "end": 109468401,
+              "start": 109461576
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "161",
+          "gene": "NA",
+          "n_blocks": 2,
+          "n_reads": 52,
+          "n_spliced": 24,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 1436
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073242.2",
+              "end": 3791552,
+              "start": 3790652
+            },
+            {
+              "chrom": "NC_073242.2",
+              "end": 3795361,
+              "start": 3794469
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "176",
+          "gene": "LOC115931067",
+          "n_blocks": 2,
+          "n_reads": 8,
+          "n_spliced": 8,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 2917
+        }
+      ],
+      "min_inter_copy_gap_bp": 2,
+      "n_families": 6,
+      "note": "TANDEM_GAP=0 (merge only overlapping loci); every non-overlapping DN-locus group is a candidate copy-block; families with >=2 same-chrom blocks < TANDEM_MAX_GAP=5000bp apart. Each fine-block is a superset-of-a-true-copy candidate, so any fuzzy-induced cross-block merge is an UPPER BOUND on true distinct-copy collapse."
+    },
+    "distant_copy_pass": {
+      "collapse_rate_by_N": {
+        "0": {
+          "exact_present_collapse_pairs": 1,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 1
+        },
+        "10": {
+          "exact_present_collapse_pairs": 1,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 1
+        },
+        "2": {
+          "exact_present_collapse_pairs": 1,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 1
+        },
+        "20": {
+          "exact_present_collapse_pairs": 1,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 1
+        },
+        "5": {
+          "exact_present_collapse_pairs": 1,
+          "fuzzy_induced_adjacent_tandem": 0,
+          "fuzzy_induced_collapse": 0,
+          "fuzzy_induced_distinct_copy_loss": 0,
+          "total_collapse_components": 1
+        }
+      },
+      "families": [
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073248.2",
+              "end": 16427389,
+              "start": 16416010
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 19616647,
+              "start": 19602755
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 19639637,
+              "start": 19625716
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 19662590,
+              "start": 19648671
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 19685492,
+              "start": 19671639
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 19708553,
+              "start": 19694606
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 25716342,
+              "start": 25704431
+            },
+            {
+              "chrom": "NC_073248.2",
+              "end": 25739264,
+              "start": 25725363
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "38",
+          "gene": "NA",
+          "n_blocks": 8,
+          "n_reads": 108,
+          "n_spliced": 106,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 9021
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073247.2",
+              "end": 59733595,
+              "start": 59696701
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59761248,
+              "start": 59744368
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 59789847,
+              "start": 59772963
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "42",
+          "gene": "LOC129529768",
+          "n_blocks": 3,
+          "n_reads": 243,
+          "n_spliced": 242,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 10773
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073247.2",
+              "end": 62669073,
+              "start": 62664032
+            },
+            {
+              "chrom": "NC_073247.2",
+              "end": 62685316,
+              "start": 62680288
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "93",
+          "gene": "LOC115932194",
+          "n_blocks": 2,
+          "n_reads": 36,
+          "n_spliced": 33,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 11215
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073229.2",
+              "end": 49598228,
+              "start": 49583451
+            },
+            {
+              "chrom": "NC_073229.2",
+              "end": 49624707,
+              "start": 49609902
+            }
+          ],
+          "exact_collapse_pairs": 1,
+          "fam": "26",
+          "gene": "NA",
+          "n_blocks": 2,
+          "n_reads": 241,
+          "n_spliced": 240,
+          "per_N": {
+            "0": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 1,
+              "exact_collapse_pairs": 1,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 11674
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073228.2",
+              "end": 182572979,
+              "start": 182513642
+            },
+            {
+              "chrom": "NC_073228.2",
+              "end": 182622585,
+              "start": 182587557
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "55",
+          "gene": "NA",
+          "n_blocks": 2,
+          "n_reads": 104,
+          "n_spliced": 90,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 14578
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073224.2",
+              "end": 101587069,
+              "start": 101585057
+            },
+            {
+              "chrom": "NC_073224.2",
+              "end": 101607689,
+              "start": 101602135
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "124",
+          "gene": "LOC101127437",
+          "n_blocks": 2,
+          "n_reads": 15,
+          "n_spliced": 14,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 15066
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073234.2",
+              "end": 24963123,
+              "start": 24956987
+            },
+            {
+              "chrom": "NC_073234.2",
+              "end": 24995089,
+              "start": 24978856
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "105",
+          "gene": "LOC109029264",
+          "n_blocks": 2,
+          "n_reads": 119,
+          "n_spliced": 114,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 15733
+        },
+        {
+          "block_coords": [
+            {
+              "chrom": "NC_073239.2",
+              "end": 122617135,
+              "start": 122615409
+            },
+            {
+              "chrom": "NC_073239.2",
+              "end": 122635806,
+              "start": 122634080
+            }
+          ],
+          "exact_collapse_pairs": 0,
+          "fam": "171",
+          "gene": "NA",
+          "n_blocks": 2,
+          "n_reads": 116,
+          "n_spliced": 115,
+          "per_N": {
+            "0": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "10": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "2": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "20": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            },
+            "5": {
+              "collapse_components": 0,
+              "exact_collapse_pairs": 0,
+              "fuzzy_induced_collapse": 0,
+              "fuzzy_induced_details": []
+            }
+          },
+          "tightest_gap_bp": 16945
+        }
+      ],
+      "min_inter_copy_gap_bp": 9021,
+      "n_families": 8,
+      "note": "copies merged within BLOCK_GAP=5000bp -> tightest surviving gap is a FLOOR imposed by that pre-merge, not an empirical minimum; adjacent tandems are hidden here and tested in the tandem pass."
+    }
+  },
+  "meta": {
+    "N_sweep": [
+      0,
+      2,
+      5,
+      10,
+      20
+    ],
+    "bam": "/home/juanfra/winloci_scratch/GGO_mm.bam",
+    "block_gap_bp": 5000,
+    "collapse_families_selected": 8,
+    "deterministic": true,
+    "note": "RNA-only (junctions from read CIGAR N ops); DNA oracle = target/collapse truth only. N=0 reproduces the shipped exact identical-(chrom,donor,acceptor) union-find RULE (denovo_families.py:149-183). N>0 = FLAIR-style support-anchored donor/acceptor consensus snapping within +/-N bp (strictly within-chromosome), then union-find. CAVEAT: the baseline operates at the READ level (CIGAR N ops), one level BELOW the shipped assembled-transcript collapse -- it reproduces the union-find RULE, not the literally-same shipped loci, and so probes only fragmentation from junction wobble (read->ref alignment), not any introduced by the assembly step itself. Collapse is tested TWICE: a DISTANT-copy pass (BLOCK_GAP=5000 pre-merge, top-8 by tightest gap) and an ADJACENT-TANDEM pass (no 5kb pre-merge; sub-5kb tandems, the only real risk the distant pass structurally hides).",
+    "pythonhashseed": "0",
+    "script": "bench/junction_fuzziness_recluster.py",
+    "tandem_gap_bp": 0,
+    "tandem_max_gap_bp": 5000
+  },
+  "net": {
+    "best_N": 0,
+    "by_N": {
+      "0": {
+        "collapse_cost_adjacent_tandem_merge": 0,
+        "collapse_cost_distant_distinct_copy_loss": 0,
+        "collapse_cost_total": 0,
+        "net_score": 0,
+        "recall_gain_copies_rescued": 0,
+        "recall_secondary_newborn_loci": 0,
+        "recall_spliced_orphans_recovered": 0
+      },
+      "10": {
+        "collapse_cost_adjacent_tandem_merge": 0,
+        "collapse_cost_distant_distinct_copy_loss": 0,
+        "collapse_cost_total": 0,
+        "net_score": 0,
+        "recall_gain_copies_rescued": 0,
+        "recall_secondary_newborn_loci": 0,
+        "recall_spliced_orphans_recovered": 2
+      },
+      "2": {
+        "collapse_cost_adjacent_tandem_merge": 0,
+        "collapse_cost_distant_distinct_copy_loss": 0,
+        "collapse_cost_total": 0,
+        "net_score": 0,
+        "recall_gain_copies_rescued": 0,
+        "recall_secondary_newborn_loci": 1,
+        "recall_spliced_orphans_recovered": 2
+      },
+      "20": {
+        "collapse_cost_adjacent_tandem_merge": 0,
+        "collapse_cost_distant_distinct_copy_loss": 0,
+        "collapse_cost_total": 0,
+        "net_score": 0,
+        "recall_gain_copies_rescued": 0,
+        "recall_secondary_newborn_loci": 0,
+        "recall_spliced_orphans_recovered": 3
+      },
+      "5": {
+        "collapse_cost_adjacent_tandem_merge": 0,
+        "collapse_cost_distant_distinct_copy_loss": 0,
+        "collapse_cost_total": 0,
+        "net_score": 0,
+        "recall_gain_copies_rescued": 0,
+        "recall_secondary_newborn_loci": 1,
+        "recall_spliced_orphans_recovered": 3
+      }
+    },
+    "verdict": "WASH / NOT-A-FUZZINESS-ARTIFACT: junction fuzziness recovers 0 missed copies (every expressed paralog copy is already admitted under EXACT; the one unadmitted spliced target, LOC115934629 own, has junction chains that stay distinct even at +/-20bp -> genuine isoform diversity, not wobble) and causes 0 fuzzy-induced distinct-copy collapses in EITHER the distant-copy pass OR the adjacent-tandem stress pass (sub-5kb tandems, tightest 2bp). best_N = 0 (shipped exact) is optimal. The recall gap is NOT a clustering-fuzziness artifact."
+  },
+  "recall": {
+    "aggregate_by_N": {
+      "0": {
+        "copies_rescued": 0,
+        "frag_merges": 0,
+        "newborn_loci": 0,
+        "spliced_orphans_recovered": 0,
+        "total_loci": 350
+      },
+      "10": {
+        "copies_rescued": 0,
+        "frag_merges": 2,
+        "newborn_loci": 0,
+        "spliced_orphans_recovered": 2,
+        "total_loci": 348
+      },
+      "2": {
+        "copies_rescued": 0,
+        "frag_merges": 1,
+        "newborn_loci": 1,
+        "spliced_orphans_recovered": 2,
+        "total_loci": 349
+      },
+      "20": {
+        "copies_rescued": 0,
+        "frag_merges": 3,
+        "newborn_loci": 0,
+        "spliced_orphans_recovered": 3,
+        "total_loci": 347
+      },
+      "5": {
+        "copies_rescued": 0,
+        "frag_merges": 2,
+        "newborn_loci": 1,
+        "spliced_orphans_recovered": 3,
+        "total_loci": 348
+      }
+    },
+    "genes_recovered": [],
+    "n_targets": 23,
+    "n_targets_admitted_at_exact": 20,
+    "recovered_loci": [],
+    "targets": [
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC101141440",
+        "multi_loci_at_exact": 2,
+        "n_reads": 180,
+        "n_single": 61,
+        "n_spliced": 119,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073232.2:92105557-92238799",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC101141440",
+        "multi_loci_at_exact": 1,
+        "n_reads": 6,
+        "n_single": 2,
+        "n_spliced": 4,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073232.2:99608839-99618116",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 1,
+        "n_reads": 8,
+        "n_single": 4,
+        "n_spliced": 4,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073238.2:29962908-29994153",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 1,
+        "n_reads": 76,
+        "n_single": 55,
+        "n_spliced": 21,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 1,
+          "20": 0,
+          "5": 1
+        },
+        "region": "NC_073238.2:32266743-32352771",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 1,
+        "n_reads": 51,
+        "n_single": 35,
+        "n_spliced": 16,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073238.2:33425477-33511623",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 3,
+        "n_reads": 75,
+        "n_single": 26,
+        "n_spliced": 49,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073240.2:20415301-20547757",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": false,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 0,
+        "n_reads": 1,
+        "n_single": 0,
+        "n_spliced": 1,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073240.2:21123901-21134037",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 1,
+        "n_reads": 34,
+        "n_single": 9,
+        "n_spliced": 25,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073240.2:22123280-22183941",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115930538",
+        "multi_loci_at_exact": 2,
+        "n_reads": 86,
+        "n_single": 32,
+        "n_spliced": 54,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073240.2:24224495-24300314",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": false,
+        "gene": "LOC115934629",
+        "multi_loci_at_exact": 0,
+        "n_reads": 18,
+        "n_single": 8,
+        "n_spliced": 10,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073228.2:45754758-45835592",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC115934629",
+        "multi_loci_at_exact": 1,
+        "n_reads": 19,
+        "n_single": 6,
+        "n_spliced": 13,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073228.2:46729356-46757824",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": false,
+        "gene": "LOC129534585",
+        "multi_loci_at_exact": 0,
+        "n_reads": 1,
+        "n_single": 1,
+        "n_spliced": 0,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073224.2:15805110-15833058",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC129534585",
+        "multi_loci_at_exact": 1,
+        "n_reads": 61,
+        "n_single": 0,
+        "n_spliced": 61,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073224.2:19016247-19035461",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC129534585",
+        "multi_loci_at_exact": 4,
+        "n_reads": 181,
+        "n_single": 3,
+        "n_spliced": 178,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073224.2:19135994-19352450",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "LOC129534585",
+        "multi_loci_at_exact": 1,
+        "n_reads": 56,
+        "n_single": 0,
+        "n_spliced": 56,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073224.2:29070812-29090914",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "TNK2",
+        "multi_loci_at_exact": 2,
+        "n_reads": 94,
+        "n_single": 7,
+        "n_spliced": 87,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_086017.1:207437719-207533765",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "TNK2",
+        "multi_loci_at_exact": 1,
+        "n_reads": 38,
+        "n_single": 3,
+        "n_spliced": 35,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_086017.1:209194304-209212633",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "UBE2Q2P16",
+        "multi_loci_at_exact": 1,
+        "n_reads": 22,
+        "n_single": 5,
+        "n_spliced": 17,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073240.2:85814027-85868602",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "UBE2Q2P16",
+        "multi_loci_at_exact": 1,
+        "n_reads": 50,
+        "n_single": 11,
+        "n_spliced": 39,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073240.2:86403557-86409251",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "ZNF425",
+        "multi_loci_at_exact": 1,
+        "n_reads": 8,
+        "n_single": 0,
+        "n_spliced": 8,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073229.2:67950085-67956974",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "ZNF425",
+        "multi_loci_at_exact": 1,
+        "n_reads": 90,
+        "n_single": 4,
+        "n_spliced": 86,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073230.2:158066726-158091246",
+        "rescued_at_N": [],
+        "role": "own"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "ZNF425",
+        "multi_loci_at_exact": 1,
+        "n_reads": 19,
+        "n_single": 5,
+        "n_spliced": 14,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_073241.2:83874271-83882657",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      },
+      {
+        "admitted_at_exact": true,
+        "gene": "ZNF425",
+        "multi_loci_at_exact": 3,
+        "n_reads": 59,
+        "n_single": 6,
+        "n_spliced": 53,
+        "newborn_by_N": {
+          "0": 0,
+          "10": 0,
+          "2": 0,
+          "20": 0,
+          "5": 0
+        },
+        "region": "NC_086018.1:27470342-27519978",
+        "rescued_at_N": [],
+        "role": "paralog_copy"
+      }
+    ],
+    "unadmitted_at_exact": [
+      {
+        "gene": "LOC115934629",
+        "multi_at_N20": 0,
+        "n_spliced": 10,
+        "region": "NC_073228.2:45754758-45835592",
+        "rescued": false,
+        "role": "own"
+      }
+    ]
+  }
+}
