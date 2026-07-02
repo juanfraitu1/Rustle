@@ -1,0 +1,722 @@
+{
+ "cached_vs_full": {
+  "cached_partner_regions_vs_K_read": {
+   "p": 0.044101182451465784,
+   "rho": 0.44337240358000085
+  },
+  "full_expected_CN_vs_K_read": {
+   "p": 0.09952331165452799,
+   "rho": 0.3692188189097108
+  },
+  "note": "A1 headline (0.443) reproduces from the cached raw partner count; the FULL final.bed distinct-region count is WEAKER, not stronger."
+ },
+ "confound_matrix": {
+  "K_read__expected_CN": {
+   "p": 0.09952331165452799,
+   "rho": 0.3692188189097108
+  },
+  "K_read__mean_phi": {
+   "p": 3.6903743331150445e-07,
+   "rho": 0.8669185595699815
+  },
+  "K_read__med_depth": {
+   "p": 0.05396359587527721,
+   "rho": 0.4263179949242401
+  },
+  "K_read__n_read_psv": {
+   "p": 1.6894624902364344e-06,
+   "rho": 0.8421290254940711
+  },
+  "K_read__sedef_div": {
+   "p": 0.07946548133884312,
+   "rho": 0.39124119787351147
+  },
+  "K_read__size": {
+   "p": 0.013733415299833619,
+   "rho": 0.5287119947314215
+  },
+  "expected_CN__mean_phi": {
+   "p": 0.05908487400965656,
+   "rho": 0.4183923578350614
+  },
+  "expected_CN__med_depth": {
+   "p": 0.267017820324611,
+   "rho": 0.2537591795892411
+  },
+  "expected_CN__n_read_psv": {
+   "p": 0.15770264382539406,
+   "rho": 0.319722253112544
+  },
+  "expected_CN__sedef_div": {
+   "p": 0.06713665154960441,
+   "rho": 0.406929134836801
+  },
+  "expected_CN__size": {
+   "p": 0.023490192835978932,
+   "rho": 0.4919763996277182
+  },
+  "mean_phi__med_depth": {
+   "p": 0.14983298570274245,
+   "rho": 0.3255583527462607
+  },
+  "mean_phi__n_read_psv": {
+   "p": 5.60463500295799e-05,
+   "rho": 0.763734455242613
+  },
+  "mean_phi__sedef_div": {
+   "p": 0.3537575220322447,
+   "rho": 0.2130686780168617
+  },
+  "mean_phi__size": {
+   "p": 0.013137289373846449,
+   "rho": 0.5315814900923916
+  },
+  "med_depth__n_read_psv": {
+   "p": 0.08460162565381749,
+   "rho": 0.38524153018884144
+  },
+  "med_depth__sedef_div": {
+   "p": 0.4589123058992005,
+   "rho": 0.17089018843404807
+  },
+  "med_depth__size": {
+   "p": 0.9597520954820731,
+   "rho": -0.011730255717963115
+  },
+  "n_read_psv__sedef_div": {
+   "p": 0.07358256390035067,
+   "rho": 0.398480070745159
+  },
+  "n_read_psv__size": {
+   "p": 0.02878731118834442,
+   "rho": 0.47699132600113614
+  },
+  "sedef_div__size": {
+   "p": 0.9955262885361468,
+   "rho": 0.001303361746440346
+  }
+ },
+ "meta": {
+  "B_perm": 20000,
+  "B_shift": 5000,
+  "collapsed_core_n": 21,
+  "core_cls": [
+   "no_psv",
+   "partial"
+  ],
+  "dedup_core_n": 20,
+  "ggo_chroms": [
+   "NC_073224.2",
+   "NC_073227.2",
+   "NC_073228.2",
+   "NC_073229.2",
+   "NC_073230.2",
+   "NC_073231.2",
+   "NC_073232.2",
+   "NC_073233.2",
+   "NC_073234.2",
+   "NC_073235.2",
+   "NC_073236.2",
+   "NC_073237.2",
+   "NC_073238.2",
+   "NC_073239.2",
+   "NC_073240.2",
+   "NC_073241.2",
+   "NC_073242.2",
+   "NC_073243.2",
+   "NC_073244.2",
+   "NC_073245.2",
+   "NC_073246.2",
+   "NC_073247.2",
+   "NC_073248.2",
+   "NC_086017.1",
+   "NC_086018.1"
+  ],
+  "pseudoreplicates": [
+   [
+    170,
+    169
+   ]
+  ],
+  "sedef_div_col": 22,
+  "sedef_ident_col": 20,
+  "seed": 1234
+ },
+ "multiple_testing": {
+  "best_axis": "axis2_nreadpsv_vs_div",
+  "best_perm_p_raw": 0.0744462776861157,
+  "bonferroni_best": 0.2233388330583471,
+  "n_primary_tests": 3,
+  "primary_perm_p_raw": {
+   "axis1_Kread_vs_expectedCN": 0.09939503024848757,
+   "axis2_nreadpsv_vs_div": 0.0744462776861157,
+   "axis2b_meanphi_vs_div": 0.35268236588170593
+  }
+ },
+ "per_locus": [
+  {
+   "K_read": 2,
+   "cached_partner_regions": 9,
+   "chrom": "NC_073236.2",
+   "cls": "no_psv",
+   "collapsed_excess": 6,
+   "end": 46675998,
+   "expected_CN": 6,
+   "family": 1,
+   "gene": "LOC109025447",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.868,
+   "med_depth": 656,
+   "n_distinct_partners": 5,
+   "n_read_psv": 74,
+   "n_sedef_pairs": 5,
+   "sedef_div": 0.0295631,
+   "sedef_ident": 0.971012,
+   "size": 33113,
+   "start": 46642885
+  },
+  {
+   "K_read": 1,
+   "cached_partner_regions": 100,
+   "chrom": "NC_073224.2",
+   "cls": "no_psv",
+   "collapsed_excess": 6,
+   "end": 19243971,
+   "expected_CN": 6,
+   "family": 7,
+   "gene": "LOC129534585",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.843,
+   "med_depth": 43,
+   "n_distinct_partners": 5,
+   "n_read_psv": 23,
+   "n_sedef_pairs": 10,
+   "sedef_div": 0.00860897,
+   "sedef_ident": 0.9914400000000001,
+   "size": 8224,
+   "start": 19235747
+  },
+  {
+   "K_read": 2,
+   "cached_partner_regions": 37,
+   "chrom": "NC_073230.2",
+   "cls": "partial",
+   "collapsed_excess": 2,
+   "end": 86209484,
+   "expected_CN": 8,
+   "family": 11,
+   "gene": "LOC101130894",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.879,
+   "med_depth": 31,
+   "n_distinct_partners": 7,
+   "n_read_psv": 33,
+   "n_sedef_pairs": 9,
+   "sedef_div": 0.0165867,
+   "sedef_ident": 0.983595,
+   "size": 28416,
+   "start": 86181068
+  },
+  {
+   "K_read": 1,
+   "cached_partner_regions": 138,
+   "chrom": "NC_073224.2",
+   "cls": "no_psv",
+   "collapsed_excess": 3,
+   "end": 223518280,
+   "expected_CN": 55,
+   "family": 14,
+   "gene": "LOC115930164",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.884,
+   "med_depth": 18,
+   "n_distinct_partners": 54,
+   "n_read_psv": 163,
+   "n_sedef_pairs": 75,
+   "sedef_div": 0.0827456,
+   "sedef_ident": 0.921656,
+   "size": 40000,
+   "start": 223478280
+  },
+  {
+   "K_read": 3,
+   "cached_partner_regions": 59,
+   "chrom": "NC_073232.2",
+   "cls": "no_psv",
+   "collapsed_excess": 4,
+   "end": 92238799,
+   "expected_CN": 14,
+   "family": 21,
+   "gene": "LOC101141440",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.944,
+   "med_depth": 80,
+   "n_distinct_partners": 13,
+   "n_read_psv": 46,
+   "n_sedef_pairs": 13,
+   "sedef_div": 0.036657,
+   "sedef_ident": 0.964224,
+   "size": 15730,
+   "start": 92223069
+  },
+  {
+   "K_read": 3,
+   "cached_partner_regions": 50,
+   "chrom": "NC_073236.2",
+   "cls": "partial",
+   "collapsed_excess": 5,
+   "end": 32990818,
+   "expected_CN": 12,
+   "family": 22,
+   "gene": "LOC115933254",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.917,
+   "med_depth": 131,
+   "n_distinct_partners": 11,
+   "n_read_psv": 96,
+   "n_sedef_pairs": 11,
+   "sedef_div": 0.101157,
+   "sedef_ident": 0.905368,
+   "size": 4393,
+   "start": 32986425
+  },
+  {
+   "K_read": 4,
+   "cached_partner_regions": 37,
+   "chrom": "NC_073228.2",
+   "cls": "partial",
+   "collapsed_excess": 1,
+   "end": 45726842,
+   "expected_CN": 21,
+   "family": 32,
+   "gene": "LOC115934629",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.957,
+   "med_depth": 118,
+   "n_distinct_partners": 20,
+   "n_read_psv": 206,
+   "n_sedef_pairs": 20,
+   "sedef_div": 0.0994842,
+   "sedef_ident": 0.9068315,
+   "size": 40000,
+   "start": 45686842
+  },
+  {
+   "K_read": 3,
+   "cached_partner_regions": 203,
+   "chrom": "NC_073240.2",
+   "cls": "no_psv",
+   "collapsed_excess": 7,
+   "end": 21147958,
+   "expected_CN": 38,
+   "family": 34,
+   "gene": "LOC115930538",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.794,
+   "med_depth": 35,
+   "n_distinct_partners": 37,
+   "n_read_psv": 101,
+   "n_sedef_pairs": 37,
+   "sedef_div": 0.155409,
+   "sedef_ident": 0.859636,
+   "size": 40000,
+   "start": 21107958
+  },
+  {
+   "K_read": 2,
+   "cached_partner_regions": 15,
+   "chrom": "NC_073240.2",
+   "cls": "no_psv",
+   "collapsed_excess": 3,
+   "end": 24786557,
+   "expected_CN": 15,
+   "family": 62,
+   "gene": "LOC109023386",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.872,
+   "med_depth": 75,
+   "n_distinct_partners": 14,
+   "n_read_psv": 31,
+   "n_sedef_pairs": 14,
+   "sedef_div": 0.135015,
+   "sedef_ident": 0.87644,
+   "size": 21885,
+   "start": 24764672
+  },
+  {
+   "K_read": 3,
+   "cached_partner_regions": 9,
+   "chrom": "NC_073247.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 164384848,
+   "expected_CN": 6,
+   "family": 63,
+   "gene": "LOC129529986",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.878,
+   "med_depth": 992,
+   "n_distinct_partners": 5,
+   "n_read_psv": 252,
+   "n_sedef_pairs": 7,
+   "sedef_div": 0.215274,
+   "sedef_ident": 0.812866,
+   "size": 3626,
+   "start": 164381222
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 2,
+   "chrom": "NC_073247.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 131781439,
+   "expected_CN": 2,
+   "family": 69,
+   "gene": "LOC115932259",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.0,
+   "med_depth": 15,
+   "n_distinct_partners": 1,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 1,
+   "sedef_div": 0.00805404,
+   "sedef_ident": 0.991989,
+   "size": 7583,
+   "start": 131773856
+  },
+  {
+   "K_read": 2,
+   "cached_partner_regions": 6,
+   "chrom": "NC_073243.2",
+   "cls": "no_psv",
+   "collapsed_excess": 2,
+   "end": 82765535,
+   "expected_CN": 6,
+   "family": 75,
+   "gene": "CPLANE1",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.827,
+   "med_depth": 30,
+   "n_distinct_partners": 5,
+   "n_read_psv": 4,
+   "n_sedef_pairs": 5,
+   "sedef_div": 0.0196274,
+   "sedef_ident": 0.980627,
+   "size": 25711,
+   "start": 82739824
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 11,
+   "chrom": "NC_073247.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 62669073,
+   "expected_CN": 8,
+   "family": 93,
+   "gene": "LOC115932194",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.0,
+   "med_depth": 15,
+   "n_distinct_partners": 7,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 8,
+   "sedef_div": 0.2483085,
+   "sedef_ident": 0.7886124999999999,
+   "size": 5041,
+   "start": 62664032
+  },
+  {
+   "K_read": 3,
+   "cached_partner_regions": 10,
+   "chrom": "NC_073247.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 164430228,
+   "expected_CN": 9,
+   "family": 95,
+   "gene": "LOC129529978",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.912,
+   "med_depth": 242,
+   "n_distinct_partners": 8,
+   "n_read_psv": 276,
+   "n_sedef_pairs": 11,
+   "sedef_div": 0.199485,
+   "sedef_ident": 0.824841,
+   "size": 4034,
+   "start": 164426194
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 9,
+   "chrom": "NC_073248.2",
+   "cls": "no_psv",
+   "collapsed_excess": 2,
+   "end": 34739289,
+   "expected_CN": 11,
+   "family": 96,
+   "gene": "LOC129530275",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.0,
+   "med_depth": 4,
+   "n_distinct_partners": 10,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 16,
+   "sedef_div": 0.0863631,
+   "sedef_ident": 0.9193315,
+   "size": 2785,
+   "start": 34736504
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 1,
+   "chrom": "NC_073247.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 84679545,
+   "expected_CN": 2,
+   "family": 122,
+   "gene": "LOC129530010",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.0,
+   "med_depth": 41,
+   "n_distinct_partners": 1,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 3,
+   "sedef_div": 0.00557225,
+   "sedef_ident": 0.994448,
+   "size": 894,
+   "start": 84678651
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 18,
+   "chrom": "NC_073239.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 35469874,
+   "expected_CN": 19,
+   "family": 169,
+   "gene": "LOC101124683",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.0,
+   "med_depth": 898,
+   "n_distinct_partners": 18,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 18,
+   "sedef_div": 0.06586065,
+   "sedef_ident": 0.9369485,
+   "size": 4057,
+   "start": 35465817
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 18,
+   "chrom": "NC_073239.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 35468601,
+   "expected_CN": 19,
+   "family": 170,
+   "gene": "LOC101124683",
+   "is_pseudoreplicate": true,
+   "mean_phi": 0.0,
+   "med_depth": 1019,
+   "n_distinct_partners": 18,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 18,
+   "sedef_div": 0.06586065,
+   "sedef_ident": 0.9369485,
+   "size": 2430,
+   "start": 35466171
+  },
+  {
+   "K_read": 3,
+   "cached_partner_regions": 24,
+   "chrom": "NC_073240.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 85861672,
+   "expected_CN": 22,
+   "family": 175,
+   "gene": "UBE2Q2P16",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.939,
+   "med_depth": 192,
+   "n_distinct_partners": 21,
+   "n_read_psv": 22,
+   "n_sedef_pairs": 23,
+   "sedef_div": 0.0980462,
+   "sedef_ident": 0.908092,
+   "size": 40000,
+   "start": 85821672
+  },
+  {
+   "K_read": 0,
+   "cached_partner_regions": 1,
+   "chrom": "NC_073242.2",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 3791552,
+   "expected_CN": 2,
+   "family": 176,
+   "gene": "LOC115931067",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.0,
+   "med_depth": 9,
+   "n_distinct_partners": 1,
+   "n_read_psv": 0,
+   "n_sedef_pairs": 2,
+   "sedef_div": 0.0847833,
+   "sedef_ident": 0.919833,
+   "size": 900,
+   "start": 3790652
+  },
+  {
+   "K_read": 2,
+   "cached_partner_regions": 14,
+   "chrom": "NC_086018.1",
+   "cls": "no_psv",
+   "collapsed_excess": 1,
+   "end": 1719732,
+   "expected_CN": 14,
+   "family": 191,
+   "gene": "LOC129530554",
+   "is_pseudoreplicate": false,
+   "mean_phi": 0.9,
+   "med_depth": 25,
+   "n_distinct_partners": 13,
+   "n_read_psv": 22,
+   "n_sedef_pairs": 13,
+   "sedef_div": 0.0522679,
+   "sedef_ident": 0.949512,
+   "size": 6436,
+   "start": 1713296
+  }
+ ],
+ "results": {
+  "axis1_Kread_vs_expectedCN": {
+   "dedup": {
+    "n": 20,
+    "p_raw": 0.047002228104785895,
+    "partial_depth": {
+     "n": 20,
+     "p_analytic": 0.07326326796355839,
+     "rho": 0.42018738295865804
+    },
+    "partial_depth_size": {
+     "n": 20,
+     "p_analytic": 0.45965354656042967,
+     "rho": 0.18611203726764017
+    },
+    "spearman_raw": 0.449077489546281
+   },
+   "hypothesis": "more genome copies (distinct SEDEF partners) -> higher K_read",
+   "n": 21,
+   "p_raw": 0.09952331165452799,
+   "partial_depth": {
+    "n": 21,
+    "p_analytic": 0.20137548025975513,
+    "perm_p": 0.1887405629718514,
+    "rho": 0.2983398286783078
+   },
+   "partial_depth_size": {
+    "n": 21,
+    "p_analytic": 0.9831092299674171,
+    "perm_p": 0.9821008949552522,
+    "rho": -0.005210716213684422
+   },
+   "partial_size": {
+    "n": 21,
+    "p_analytic": 0.5344759092105296,
+    "perm_p": 0.51932403379831,
+    "rho": 0.1476439597457961
+   },
+   "perm_p_raw": 0.09939503024848757,
+   "shifted_null": {
+    "n_valid_shuffles": 4995,
+    "shift_perm_p_partial_depth": 0.20656525220176142,
+    "shift_perm_p_raw": 0.09627702161729383
+   },
+   "spearman_raw": 0.3692188189097108,
+   "x": "expected_CN",
+   "y": "K_read"
+  },
+  "axis2_nreadpsv_vs_div": {
+   "dedup": {
+    "n": 20,
+    "p_raw": 0.07135364934450157,
+    "partial_depth": {
+     "n": 20,
+     "p_analytic": 0.1316780532446541,
+     "rho": 0.3585706819510174
+    },
+    "partial_depth_size": {
+     "n": 20,
+     "p_analytic": 0.08140030151423235,
+     "rho": 0.4216063017060056
+    },
+    "spearman_raw": 0.41162410665353943
+   },
+   "hypothesis": "more-divergent segdup partners -> more read PSVs",
+   "n": 21,
+   "p_raw": 0.07358256390035067,
+   "partial_depth": {
+    "n": 21,
+    "p_analytic": 0.112659671731752,
+    "perm_p": 0.10369481525923704,
+    "rho": 0.36585018420517995
+   },
+   "partial_depth_size": {
+    "n": 21,
+    "p_analytic": 0.06838152076693206,
+    "perm_p": 0.05144742762861857,
+    "rho": 0.42681872444927654
+   },
+   "partial_size": {
+    "n": 21,
+    "p_analytic": 0.04505311807469083,
+    "perm_p": 0.039798010099495025,
+    "rho": 0.4526739042048027
+   },
+   "perm_p_raw": 0.0744462776861157,
+   "shifted_null": {
+    "n_valid_shuffles": 4392,
+    "shift_perm_p_partial_depth": 0.5290234463919873,
+    "shift_perm_p_raw": 0.4582290006829046
+   },
+   "spearman_raw": 0.398480070745159,
+   "x": "sedef_div",
+   "y": "n_read_psv"
+  },
+  "axis2b_meanphi_vs_div": {
+   "hypothesis": "divergence vs read linkage coherence (direction-agnostic)",
+   "n": 21,
+   "p_raw": 0.3537575220322447,
+   "partial_depth": {
+    "n": 21,
+    "p_analytic": 0.47631931995641075,
+    "perm_p": 0.4602269886505675,
+    "rho": 0.16899064560101074
+   },
+   "partial_depth_size": {
+    "n": 21,
+    "p_analytic": 0.40519695398690997,
+    "perm_p": 0.38048097595120245,
+    "rho": 0.2027282891698787
+   },
+   "partial_size": {
+    "n": 21,
+    "p_analytic": 0.2862972172265967,
+    "perm_p": 0.2630868456577171,
+    "rho": 0.25073697943764417
+   },
+   "perm_p_raw": 0.35268236588170593,
+   "spearman_raw": 0.2130686780168617,
+   "x": "sedef_div",
+   "y": "mean_phi"
+  }
+ }
+}
