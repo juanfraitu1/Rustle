@@ -1,0 +1,875 @@
+{
+ "params": {
+  "K_ISO": 8,
+  "MAX_CANON_EXONS": 25,
+  "ID_MIN": 0.7,
+  "ALN_MIN": 0.24,
+  "cv_folds": 5,
+  "cv_seed": 0,
+  "weights": {
+   "exon": 2.0,
+   "junc": 1.0,
+   "path": 1.0
+  }
+ },
+ "n_pairs_total": 5571,
+ "n_scored": 5571,
+ "class_counts": {
+  "TP": 416,
+  "truthbar_FP": 3382,
+  "genuine_FP": 1773
+ },
+ "correlation": {
+  "pearson_gga_alnfrac": 0.4326,
+  "spearman_gga_alnfrac": 0.3669,
+  "pearson_aip_alnfrac": 0.1503,
+  "spearman_aip_alnfrac": 0.0289,
+  "pearson_gga_aip": 0.1705
+ },
+ "recall": {
+  "n_real_below_alnfrac": 2873,
+  "recovered_by_all_isoform": 2523,
+  "recovered_by_gga": 1326,
+  "recovered_by_exon_hom": 1601,
+  "gga_beyond_all_isoform": 113,
+  "all_isoform_beyond_gga": 1310,
+  "gga_only_recovered_names": [
+   "CSNK1D|CSNK1E",
+   "OGDH|OGDHL",
+   "CAMK2B|CAMK2G",
+   "CCL8|LOC101134802",
+   "GNB1|GNB2",
+   "ENO2|ENO3",
+   "LOC101124938|LOC101125671",
+   "LOC101124938|LOC101126623",
+   "LOC101124938|LOC101134211",
+   "PPP1CA|PPP1CC",
+   "HARS1|LOC101146509",
+   "RPS6KA1|RPS6KA2",
+   "LOC101125671|LOC101126623",
+   "LOC101125671|LOC101134211",
+   "CBR1|CBR3",
+   "SLC9A6|SLC9A7",
+   "CPNE6|CPNE7",
+   "LOC101153990|TLE2",
+   "ZFP2|ZNF391",
+   "RARA|RARB",
+   "LOC129529768|LOC129529807",
+   "LOC129529767|LOC129529807",
+   "CKB|CKM",
+   "LOC129529765|PAGE1",
+   "LOC129529767|PAGE1",
+   "LOC129529768|PAGE1",
+   "LOC129529769|PAGE1",
+   "LOC129529774|PAGE1",
+   "MAPKAPK2|MAPKAPK3",
+   "ZNF23|ZNF619",
+   "ZFP2|ZNF485",
+   "CLTC|CLTCL1",
+   "MAGOH|MAGOHB",
+   "ATP1A1|ATP1A3",
+   "LOC101132445|PAGE1",
+   "LOC129529771|PAGE1",
+   "CYTH2|CYTH4",
+   "ZNF10|ZNF567",
+   "TRIM21|TRIM6",
+   "LOC129529807|PAGE1",
+   "DNAH17|DNAH9",
+   "PRPS1|PRPS2",
+   "DVL1|DVL3",
+   "ARRB1|ARRB2",
+   "ZFP2|ZNF554",
+   "LOC101148180|ZNF57",
+   "ZNF490|ZNF57",
+   "LOC101153526|ZNF264",
+   "MEIS1|MEIS2",
+   "ENO1|ENO3",
+   "CAMK2D|CAMK2G",
+   "ZFP2|ZNF621",
+   "LOC129529775|PAGE1",
+   "ENO1|ENO2",
+   "LOC101143194|MYH1",
+   "LOC101143194|MYH7B",
+   "RARA|RARG",
+   "DVL2|DVL3",
+   "ZFP2|ZFP90",
+   "PACSIN1|PACSIN2",
+   "LOC101143194|MYH8",
+   "TBX2|TBX3",
+   "CRMP1|DPYSL4",
+   "LOC101130677|ZNF567",
+   "PUM1|PUM2",
+   "NDST1|NDST2",
+   "LOC101153526|ZNF550",
+   "ZFP69B|ZNF514",
+   "LOC101129171|ZNF761",
+   "EHD1|EHD2",
+   "PCBP2|PCBP3",
+   "HSPA1L|HSPA8",
+   "COL1A1|COL2A1",
+   "LOC101130783|TCAF1",
+   "ZFP2|ZNF514",
+   "LIMK1|LIMK2",
+   "LOC101129578|ZNF544",
+   "ZNF16|ZNF544",
+   "ZNF251|ZNF544",
+   "LOC101130137|ZNF582",
+   "GALNT14|GALNT16",
+   "LOC101130137|ZNF471",
+   "LOC101153526|ZNF594",
+   "LOC101129219|ZNF567",
+   "MAP2K1|MAP2K2",
+   "DUSP1|DUSP4",
+   "LOC101129171|ZNF766",
+   "EZR|MSN",
+   "ZNF432|ZNF717",
+   "ZNF251|ZNF70",
+   "ZNF34|ZNF70",
+   "EHD3|EHD4",
+   "MICAL2|MICAL3",
+   "PFKFB3|PFKFB4",
+   "PPP2R2C|PPP2R2D",
+   "GRK2|GRK3",
+   "CORO2A|CORO2B",
+   "TEAD3|TEAD4",
+   "LOC101153526|ZNF667",
+   "RYR2|RYR3",
+   "ELMO1|ELMO2",
+   "ZNF354B|ZNF527",
+   "DAPK2|DAPK3",
+   "ATP1A1|ATP1A2",
+   "RPL39|RPL39L",
+   "LOC101145348|ZNF560",
+   "KRT4|LOC101136203",
+   "CYTH1|CYTH4",
+   "DVL1|DVL2",
+   "MYL6|MYL6B",
+   "LOC101153526|ZNF543",
+   "LOC101153526|ZNF805",
+   "ZNF184|ZNF780A"
+  ],
+  "gga_only_recovered_detail": [
+   {
+    "pair": "CSNK1D|CSNK1E",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.7096
+   },
+   {
+    "pair": "OGDH|OGDHL",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6893
+   },
+   {
+    "pair": "CAMK2B|CAMK2G",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6887
+   },
+   {
+    "pair": "CCL8|LOC101134802",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6751
+   },
+   {
+    "pair": "GNB1|GNB2",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6461
+   },
+   {
+    "pair": "ENO2|ENO3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6324
+   },
+   {
+    "pair": "LOC101124938|LOC101125671",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.625
+   },
+   {
+    "pair": "LOC101124938|LOC101126623",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.625
+   },
+   {
+    "pair": "LOC101124938|LOC101134211",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.625
+   },
+   {
+    "pair": "PPP1CA|PPP1CC",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6053
+   },
+   {
+    "pair": "HARS1|LOC101146509",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.222,
+    "aip": 0.222,
+    "gga": 0.6048
+   },
+   {
+    "pair": "RPS6KA1|RPS6KA2",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.6036
+   },
+   {
+    "pair": "LOC101125671|LOC101126623",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5826
+   },
+   {
+    "pair": "LOC101125671|LOC101134211",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5826
+   },
+   {
+    "pair": "CBR1|CBR3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5465
+   },
+   {
+    "pair": "SLC9A6|SLC9A7",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5379
+   },
+   {
+    "pair": "CPNE6|CPNE7",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5343
+   },
+   {
+    "pair": "LOC101153990|TLE2",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5336
+   },
+   {
+    "pair": "ZFP2|ZNF391",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5245
+   },
+   {
+    "pair": "RARA|RARB",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.5115
+   },
+   {
+    "pair": "LOC129529768|LOC129529807",
+    "cls": "TP",
+    "aln_frac": 0.1984,
+    "aip": 0.1984,
+    "gga": 0.5007
+   },
+   {
+    "pair": "LOC129529767|LOC129529807",
+    "cls": "TP",
+    "aln_frac": 0.2008,
+    "aip": 0.2008,
+    "gga": 0.4977
+   },
+   {
+    "pair": "CKB|CKM",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4966
+   },
+   {
+    "pair": "LOC129529765|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4948
+   },
+   {
+    "pair": "LOC129529767|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4948
+   },
+   {
+    "pair": "LOC129529768|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4948
+   },
+   {
+    "pair": "LOC129529769|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4948
+   },
+   {
+    "pair": "LOC129529774|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4948
+   },
+   {
+    "pair": "MAPKAPK2|MAPKAPK3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4912
+   },
+   {
+    "pair": "ZNF23|ZNF619",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4852
+   },
+   {
+    "pair": "ZFP2|ZNF485",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4844
+   },
+   {
+    "pair": "CLTC|CLTCL1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4817
+   },
+   {
+    "pair": "MAGOH|MAGOHB",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4807
+   },
+   {
+    "pair": "ATP1A1|ATP1A3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4801
+   },
+   {
+    "pair": "LOC101132445|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4781
+   },
+   {
+    "pair": "LOC129529771|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4781
+   },
+   {
+    "pair": "CYTH2|CYTH4",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4748
+   },
+   {
+    "pair": "ZNF10|ZNF567",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4716
+   },
+   {
+    "pair": "TRIM21|TRIM6",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4715
+   },
+   {
+    "pair": "LOC129529807|PAGE1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "aip": 0.0,
+    "gga": 0.4695
+   }
+  ],
+  "example_big_lifts_gga": [
+   {
+    "pair": "FRG1|LOC101142904",
+    "cls": "TP",
+    "aln_frac": 0.0,
+    "gga": 1.0,
+    "aip": 0.6807
+   },
+   {
+    "pair": "FRG1|LOC129530552",
+    "cls": "TP",
+    "aln_frac": 0.0,
+    "gga": 1.0,
+    "aip": 0.9941
+   },
+   {
+    "pair": "LOC129526566|MORN5",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.9286,
+    "aip": 1.0
+   },
+   {
+    "pair": "FMO1|FMO4",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8971,
+    "aip": 1.0
+   },
+   {
+    "pair": "SAMD9|SAMD9L",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8929,
+    "aip": 1.0
+   },
+   {
+    "pair": "RAC2|RAC3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8846,
+    "aip": 1.0
+   },
+   {
+    "pair": "SLC7A6|SLC7A7",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8804,
+    "aip": 1.0
+   },
+   {
+    "pair": "ACTN1|ACTN3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.88,
+    "aip": 1.0
+   },
+   {
+    "pair": "MAGEB1|MAGEB3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8786,
+    "aip": 1.0
+   },
+   {
+    "pair": "ZNF70|ZNF79",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8786,
+    "aip": 1.0
+   },
+   {
+    "pair": "DPEP2|DPEP3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "LDHAL6A|LDHC",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "LOC101126623|LOC101134211",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "LOC101134211|MT3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "LOC129530050|SLC25A5",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "MRFAP1|MRFAP1L1",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "TRIM60|TRIM61",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "TSPYL1|TSPYL4",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.875,
+    "aip": 1.0
+   },
+   {
+    "pair": "FZD3|FZD6",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8727,
+    "aip": 1.0
+   },
+   {
+    "pair": "AP1M1|AP1M2",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8636,
+    "aip": 1.0
+   },
+   {
+    "pair": "BTN1A1|BTN2A2",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8542,
+    "aip": 1.0
+   },
+   {
+    "pair": "LOC101141025|LOC115935014",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.85,
+    "aip": 1.0
+   },
+   {
+    "pair": "ZKSCAN5|ZSCAN21",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.85,
+    "aip": 1.0
+   },
+   {
+    "pair": "MX1|MX2",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8492,
+    "aip": 1.0
+   },
+   {
+    "pair": "BIRC2|BIRC3",
+    "cls": "truthbar-FP",
+    "aln_frac": 0.0,
+    "gga": 0.8491,
+    "aip": 1.0
+   }
+  ],
+  "example_all_isoform_saturated": [
+   "ABCA8|ABCA9",
+   "ACTA2|ACTB",
+   "ACTA2|ACTG1",
+   "ACTN1|ACTN3",
+   "ALDH1B1|ALDH2",
+   "ALDH1L1|ALDH1L2",
+   "ALDH2|LOC129524687",
+   "AP1B1|AP2B1",
+   "AP1M1|AP1M2",
+   "AP2A1|AP2A2",
+   "ATP12A|ATP1A2",
+   "ATP2A1|ATP2A2",
+   "ATP2B3|ATP2B4",
+   "ATP6V0A2|TCIRG1",
+   "ATP9A|ATP9B",
+   "BEX3|BEX5",
+   "BIRC2|BIRC3",
+   "BRD1|BRPF1",
+   "BTN1A1|BTN2A2",
+   "BTRC|FBXW11",
+   "CAMK1|CAMK1G",
+   "CCT6A|CCT6B",
+   "CLK1|CLK4",
+   "COMP|THBS4",
+   "CORO1A|CORO1B"
+  ]
+ },
+ "fp_cost": {
+  "n_genuineFP_below_alnfrac": 1022,
+  "genuineFP_lifted_by_all_isoform": 869,
+  "genuineFP_lifted_by_gga": 436,
+  "real_lift_rate_gga": 0.4615,
+  "genuineFP_lift_rate_gga": 0.4266,
+  "real_lift_rate_all_isoform": 0.8782,
+  "genuineFP_lift_rate_all_isoform": 0.8503,
+  "genuineFP_gga_only_count": 28,
+  "real_gga_only_rate": 0.0393,
+  "genuineFP_gga_only_rate": 0.0274
+ },
+ "saturated_set_discrimination": {
+  "n_saturated": 4668,
+  "frac_of_scored": 0.8379,
+  "mean_gga_TP": 0.663,
+  "mean_gga_truthbarFP": 0.2602,
+  "mean_gga_genuineFP": 0.3225,
+  "auc_gga_tpstrict_vs_genuineFP": 0.8123,
+  "auc_gga_real_vs_genuineFP": 0.4826,
+  "auc_aip_tpstrict_vs_genuineFP": 0.4799,
+  "structure_over_exonhom_helps": 19,
+  "structure_over_exonhom_hurts": 523,
+  "note": "Within the aip>=0.99 saturated set the proxy is random (auc_aip~0.48) yet gga still ranks TP far above genuine-FP (auc_gga_tpstrict~0.81; mean_gga_TP>>mean_gga_genuineFP): graph structure is genuine signal, NOT aln_frac relabeled, and it RESTORES the discrimination the saturating proxy destroys. But junction+path structure beyond bare exon homology net-SUPPRESSES recovery at the shipped line (helps << hurts), and gga still does not beat aln_frac on the workhorse."
+ },
+ "auc_pooled": {
+  "real_vs_genuineFP": {
+   "auc_alnfrac": 0.3848,
+   "auc_all_isoform": 0.5253,
+   "auc_gga": 0.5006,
+   "auc_exon_hom": 0.4944,
+   "n_pos": 3798,
+   "n_neg": 1773
+  },
+  "tpstrict_vs_genuineFP": {
+   "auc_alnfrac": 0.8582,
+   "auc_all_isoform": 0.5109,
+   "auc_gga": 0.8173,
+   "auc_exon_hom": 0.8023,
+   "n_pos": 416,
+   "n_neg": 1773
+  }
+ },
+ "auc_heldout_component_cv": {
+  "real_vs_genuineFP": {
+   "alnfrac": [
+    0.4058,
+    0.0705,
+    5
+   ],
+   "all_isoform": [
+    0.5058,
+    0.0428,
+    5
+   ],
+   "gga": [
+    0.5353,
+    0.065,
+    5
+   ],
+   "exon_hom": [
+    0.5265,
+    0.0553,
+    5
+   ]
+  },
+  "tpstrict_vs_genuineFP": {
+   "alnfrac": [
+    0.835,
+    0.046,
+    5
+   ],
+   "all_isoform": [
+    0.5157,
+    0.0684,
+    5
+   ],
+   "gga": [
+    0.7926,
+    0.0142,
+    5
+   ],
+   "exon_hom": [
+    0.7774,
+    0.0141,
+    5
+   ]
+  }
+ },
+ "matched_precision_recall": {
+  "real_vs_genuineFP": {
+   "aln_frac": {
+    "0.70": 0.0008,
+    "0.80": 0.0,
+    "0.90": 0.0,
+    "base_precision": 0.6817
+   },
+   "gga": {
+    "0.70": 0.0,
+    "0.80": 0.0,
+    "0.90": 0.0,
+    "base_precision": 0.6817
+   },
+   "all_isoform": {
+    "0.70": 0.0,
+    "0.80": 0.0,
+    "0.90": 0.0,
+    "base_precision": 0.6817
+   }
+  },
+  "tpstrict_vs_genuineFP": {
+   "aln_frac": {
+    "0.70": 0.0,
+    "0.80": 0.0,
+    "0.90": 0.0,
+    "base_precision": 0.19
+   },
+   "gga": {
+    "0.70": 0.0,
+    "0.80": 0.0,
+    "0.90": 0.0,
+    "base_precision": 0.19
+   },
+   "all_isoform": {
+    "0.70": 0.0,
+    "0.80": 0.0,
+    "0.90": 0.0,
+    "base_precision": 0.19
+   }
+  }
+ },
+ "missed_oracle": {
+  "LOC101141440": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "LOC115930538": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "LOC115932259": {
+   "n_candidate_edges": 1,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 1,
+   "best_aln_frac": 1.0,
+   "best_all_isoform": 1.0,
+   "best_gga": 0.8571,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "LOC115934629": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "LOC129523567": {
+   "n_candidate_edges": 20,
+   "n_real_candidate_edges": 8,
+   "n_genuineFP_candidate_edges": 12,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 1.0,
+   "best_gga": 0.483,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "LOC129534585": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "TNK2": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "UBE2Q2P16": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  },
+  "ZNF425": {
+   "n_candidate_edges": 0,
+   "n_real_candidate_edges": 0,
+   "n_genuineFP_candidate_edges": 0,
+   "best_aln_frac": 0.0,
+   "best_all_isoform": 0.0,
+   "best_gga": 0.0,
+   "real_edges_lifted_by_gga": 0,
+   "gga_recovers_gene": false
+  }
+ },
+ "verdict": {
+  "rho_gga_alnfrac_spearman": 0.3669,
+  "n_oracle_genes_recovered_by_gga": 0,
+  "n_oracle_genes": 9,
+  "oracle_genes_with_zero_candidate_edges": 7,
+  "gga_is_genuine_structure_not_alnfrac_relabeled": true,
+  "gga_structure_beats_all_isoform_proxy_on_liftcount": false,
+  "gga_structure_beats_all_isoform_proxy_on_discrimination": true,
+  "gga_workhorse_auc_vs_alnfrac": {
+   "gga": 0.7926,
+   "aln_frac": 0.835
+  },
+  "note": "GGA is genuine graph structure (within the saturated proxy set it ranks TP above genuine-FP at auc~0.81 where the single-transcript proxy is random ~0.48 -- NOT aln_frac relabeled). But on the shipped workhorse (TP-strict vs genuine-FP) held-out CV AUC(gga)=0.79 < AUC(aln_frac)=0.84: structure does not BEAT the single representative. Recall lift-rate on real edges ~= lift-rate on genuine over-merges (indiscriminate). Matched-precision recall not improved (no Pareto gain). GGA recovers 0 of the 9 oracle genes (7/9 have zero candidate edges; re-scoring cannot CREATE edges). Value = VG-native formalization elegance only; no measurable recall or FP improvement. Consistent with the honest prior. RECOMMENDATION: keep the shipped aln_frac; adopt GGA only as the formal O1 restatement, not as a scoring replacement."
+ }
+}
