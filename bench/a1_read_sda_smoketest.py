@@ -78,6 +78,17 @@ def call_het_columns(cols, depth):
     return sorted(cands)
 
 
+def is_editing_pair(a, b):
+    """A-to-I RNA-editing signature (Clair3-RNA / Bahn): edited adenosines read as G, so a genomic-A
+    site shows an {A,G} allele mix on the SENSE strand and (reverse-complemented) a {T,C} mix on the
+    ANTISENSE strand. We do NOT know the transcript strand at the raw pileup, so we conservatively
+    treat BOTH canonical orientations -- unordered allele pair == {A,G} or == {T,C} -- as an editing
+    candidate. This over-vetoes (it also removes genuine A/G, T/C transition SNPs, the commonest SNP
+    class), so read structure that SURVIVES the veto (transversion / non-canonical columns only) is a
+    strictly conservative lower bound that cannot be an editing artifact."""
+    return {a, b} == {"A", "G"} or {a, b} == {"T", "C"}
+
+
 def phi(a, b):
     """phi coefficient for two aligned binary vectors (2x2 contingency)."""
     a = np.asarray(a); b = np.asarray(b)
