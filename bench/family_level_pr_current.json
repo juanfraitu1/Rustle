@@ -30,7 +30,7 @@
    ]
   }
  },
- "n_families_current": 607,
+ "n_families_current": 606,
  "n_families_legacy": 858,
  "residual_fp_roster": {
   "allele": [],
@@ -73,53 +73,34 @@
    },
    {
     "block_index": 17,
-    "distinct_loci": 28,
+    "distinct_loci": 20,
     "genes": [
      "C9H11orf65",
      "COPS9",
      "DCAF16",
-     "DCP1B",
      "GIMAP4",
-     "KLHL33",
      "LIPA",
      "LOC109024560",
      "LOC109025730",
-     "LOC109028669",
      "LOC129530096",
-     "LOC129530131",
-     "LOC134756589",
      "LRFN5",
+     "MINPP1",
      "NCALD",
      "NCR3LG1",
      "NFXL1",
      "OXCT1",
      "PDCD5",
-     "SLC11A2",
-     "SMYD3",
      "SPATA33",
      "SPC25",
      "THNSL1",
      "TMEM38B",
-     "TSPAN8",
      "UCHL1"
     ],
-    "n_genes": 27,
-    "n_protein_families": 16,
+    "n_genes": 20,
+    "n_protein_families": 10,
     "protein_families": {
-     "PRFAM10": [
-      "KLHL33"
-     ],
      "PRFAM1321": [
       "OXCT1"
-     ],
-     "PRFAM15": [
-      "LOC129530131"
-     ],
-     "PRFAM1812": [
-      "DCP1B"
-     ],
-     "PRFAM2844": [
-      "SLC11A2"
      ],
      "PRFAM2946": [
       "THNSL1"
@@ -136,9 +117,6 @@
      "PRFAM380": [
       "NFXL1"
      ],
-     "PRFAM39": [
-      "TSPAN8"
-     ],
      "PRFAM44": [
       "LRFN5"
      ],
@@ -150,9 +128,6 @@
      ],
      "PRFAM8": [
       "NCALD"
-     ],
-     "PRFAM919": [
-      "SMYD3"
      ]
     }
    },
@@ -304,6 +279,42 @@
    },
    {
     "block_index": 57,
+    "distinct_loci": 9,
+    "genes": [
+     "DCP1B",
+     "KLHL33",
+     "LOC109028669",
+     "LOC129530131",
+     "LOC134756589",
+     "SLC11A2",
+     "SMYD3",
+     "TSPAN8"
+    ],
+    "n_genes": 8,
+    "n_protein_families": 6,
+    "protein_families": {
+     "PRFAM10": [
+      "KLHL33"
+     ],
+     "PRFAM15": [
+      "LOC129530131"
+     ],
+     "PRFAM1812": [
+      "DCP1B"
+     ],
+     "PRFAM2844": [
+      "SLC11A2"
+     ],
+     "PRFAM39": [
+      "TSPAN8"
+     ],
+     "PRFAM919": [
+      "SMYD3"
+     ]
+    }
+   },
+   {
+    "block_index": 58,
     "distinct_loci": 2,
     "genes": [
      "DEDD",
@@ -321,7 +332,36 @@
     }
    },
    {
-    "block_index": 68,
+    "block_index": 64,
+    "distinct_loci": 10,
+    "genes": [
+     "C3H4orf36",
+     "DLD",
+     "EPPIN",
+     "LOC101145464",
+     "MMP24OS",
+     "NDUFAF2",
+     "SEM1"
+    ],
+    "n_genes": 7,
+    "n_protein_families": 4,
+    "protein_families": {
+     "PRFAM2270": [
+      "SEM1"
+     ],
+     "PRFAM3065": [
+      "EPPIN"
+     ],
+     "PRFAM560": [
+      "LOC101145464"
+     ],
+     "PRFAM646": [
+      "DLD"
+     ]
+    }
+   },
+   {
+    "block_index": 69,
     "distinct_loci": 9,
     "genes": [
      "KLHL3",
@@ -345,7 +385,7 @@
     }
    },
    {
-    "block_index": 74,
+    "block_index": 75,
     "distinct_loci": 6,
     "genes": [
      "KMT2C",
@@ -369,7 +409,7 @@
     }
    },
    {
-    "block_index": 78,
+    "block_index": 79,
     "distinct_loci": 16,
     "genes": [
      "LOC129523822",
@@ -404,7 +444,7 @@
     }
    },
    {
-    "block_index": 91,
+    "block_index": 92,
     "distinct_loci": 11,
     "genes": [
      "LOC101137900",
@@ -430,7 +470,7 @@
     }
    },
    {
-    "block_index": 93,
+    "block_index": 94,
     "distinct_loci": 8,
     "genes": [
      "FAM228B",
@@ -455,7 +495,7 @@
     }
    },
    {
-    "block_index": 110,
+    "block_index": 111,
     "distinct_loci": 2,
     "genes": [
      "NHP2",
@@ -473,7 +513,7 @@
     }
    },
    {
-    "block_index": 115,
+    "block_index": 116,
     "distinct_loci": 2,
     "genes": [
      "CANX",
@@ -491,7 +531,7 @@
     }
    },
    {
-    "block_index": 120,
+    "block_index": 121,
     "distinct_loci": 7,
     "genes": [
      "ARL17A",
@@ -518,7 +558,7 @@
     }
    },
    {
-    "block_index": 127,
+    "block_index": 128,
     "distinct_loci": 4,
     "genes": [
      "SERF2",
@@ -537,7 +577,7 @@
     }
    },
    {
-    "block_index": 143,
+    "block_index": 144,
     "distinct_loci": 2,
     "genes": [
      "LOC115932787",
@@ -555,7 +595,7 @@
     }
    },
    {
-    "block_index": 164,
+    "block_index": 165,
     "distinct_loci": 5,
     "genes": [
      "AKR1C3",
@@ -573,7 +613,7 @@
     }
    },
    {
-    "block_index": 181,
+    "block_index": 182,
     "distinct_loci": 2,
     "genes": [
      "B3GAT2",
@@ -591,7 +631,7 @@
     }
    },
    {
-    "block_index": 186,
+    "block_index": 187,
     "distinct_loci": 6,
     "genes": [
      "LOC101130894",
@@ -619,27 +659,7 @@
     }
    },
    {
-    "block_index": 188,
-    "distinct_loci": 5,
-    "genes": [
-     "DLD",
-     "LOC101145464",
-     "MMP24OS",
-     "NDUFAF2"
-    ],
-    "n_genes": 4,
-    "n_protein_families": 2,
-    "protein_families": {
-     "PRFAM560": [
-      "LOC101145464"
-     ],
-     "PRFAM646": [
-      "DLD"
-     ]
-    }
-   },
-   {
-    "block_index": 197,
+    "block_index": 196,
     "distinct_loci": 3,
     "genes": [
      "LOC115935989",
@@ -659,7 +679,7 @@
     }
    },
    {
-    "block_index": 211,
+    "block_index": 210,
     "distinct_loci": 3,
     "genes": [
      "GALNT17",
@@ -678,7 +698,7 @@
     }
    },
    {
-    "block_index": 217,
+    "block_index": 216,
     "distinct_loci": 2,
     "genes": [
      "LOC115935268",
@@ -696,7 +716,7 @@
     }
    },
    {
-    "block_index": 231,
+    "block_index": 230,
     "distinct_loci": 2,
     "genes": [
      "LOC129525654",
@@ -714,7 +734,7 @@
     }
    },
    {
-    "block_index": 256,
+    "block_index": 255,
     "distinct_loci": 2,
     "genes": [
      "LOC115931432",
@@ -732,7 +752,7 @@
     }
    },
    {
-    "block_index": 260,
+    "block_index": 259,
     "distinct_loci": 2,
     "genes": [
      "CEP57",
@@ -750,7 +770,7 @@
     }
    },
    {
-    "block_index": 266,
+    "block_index": 265,
     "distinct_loci": 2,
     "genes": [
      "BMAL1",
@@ -768,7 +788,7 @@
     }
    },
    {
-    "block_index": 270,
+    "block_index": 269,
     "distinct_loci": 2,
     "genes": [
      "ESRRA",
@@ -786,7 +806,7 @@
     }
    },
    {
-    "block_index": 280,
+    "block_index": 279,
     "distinct_loci": 3,
     "genes": [
      "ACAD10",
@@ -804,7 +824,7 @@
     }
    },
    {
-    "block_index": 286,
+    "block_index": 285,
     "distinct_loci": 2,
     "genes": [
      "SPSB2",
@@ -822,7 +842,7 @@
     }
    },
    {
-    "block_index": 289,
+    "block_index": 288,
     "distinct_loci": 3,
     "genes": [
      "DDX11",
@@ -842,7 +862,7 @@
     }
    },
    {
-    "block_index": 291,
+    "block_index": 290,
     "distinct_loci": 2,
     "genes": [
      "CDK4",
@@ -860,7 +880,7 @@
     }
    },
    {
-    "block_index": 305,
+    "block_index": 304,
     "distinct_loci": 2,
     "genes": [
      "PYROXD1",
@@ -878,7 +898,7 @@
     }
    },
    {
-    "block_index": 312,
+    "block_index": 311,
     "distinct_loci": 4,
     "genes": [
      "LOC101143820",
@@ -900,7 +920,7 @@
     }
    },
    {
-    "block_index": 322,
+    "block_index": 321,
     "distinct_loci": 2,
     "genes": [
      "NT5C1B",
@@ -918,7 +938,7 @@
     }
    },
    {
-    "block_index": 324,
+    "block_index": 323,
     "distinct_loci": 2,
     "genes": [
      "ATP6V1C2",
@@ -936,7 +956,7 @@
     }
    },
    {
-    "block_index": 326,
+    "block_index": 325,
     "distinct_loci": 2,
     "genes": [
      "ACP1",
@@ -954,7 +974,7 @@
     }
    },
    {
-    "block_index": 327,
+    "block_index": 326,
     "distinct_loci": 4,
     "genes": [
      "ABCD1",
@@ -978,7 +998,7 @@
     }
    },
    {
-    "block_index": 337,
+    "block_index": 336,
     "distinct_loci": 2,
     "genes": [
      "RPL31",
@@ -996,7 +1016,7 @@
     }
    },
    {
-    "block_index": 340,
+    "block_index": 339,
     "distinct_loci": 8,
     "genes": [
      "LOC101131768",
@@ -1024,7 +1044,7 @@
     }
    },
    {
-    "block_index": 352,
+    "block_index": 351,
     "distinct_loci": 2,
     "genes": [
      "ASB6",
@@ -1042,7 +1062,7 @@
     }
    },
    {
-    "block_index": 367,
+    "block_index": 366,
     "distinct_loci": 2,
     "genes": [
      "GRTP1",
@@ -1060,7 +1080,7 @@
     }
    },
    {
-    "block_index": 374,
+    "block_index": 373,
     "distinct_loci": 2,
     "genes": [
      "EIF1AX",
@@ -1078,7 +1098,7 @@
     }
    },
    {
-    "block_index": 388,
+    "block_index": 387,
     "distinct_loci": 4,
     "genes": [
      "LOC129530593",
@@ -1099,7 +1119,7 @@
     }
    },
    {
-    "block_index": 392,
+    "block_index": 391,
     "distinct_loci": 2,
     "genes": [
      "CPSF2",
@@ -1117,7 +1137,7 @@
     }
    },
    {
-    "block_index": 404,
+    "block_index": 403,
     "distinct_loci": 2,
     "genes": [
      "LOC101124683",
@@ -1135,7 +1155,7 @@
     }
    },
    {
-    "block_index": 405,
+    "block_index": 404,
     "distinct_loci": 7,
     "genes": [
      "HERC2",
@@ -1157,7 +1177,7 @@
     }
    },
    {
-    "block_index": 421,
+    "block_index": 420,
     "distinct_loci": 8,
     "genes": [
      "APOL2",
@@ -1185,7 +1205,7 @@
     }
    },
    {
-    "block_index": 425,
+    "block_index": 424,
     "distinct_loci": 2,
     "genes": [
      "ACSBG1",
@@ -1203,7 +1223,7 @@
     }
    },
    {
-    "block_index": 426,
+    "block_index": 425,
     "distinct_loci": 2,
     "genes": [
      "HDGFL3",
@@ -1221,7 +1241,7 @@
     }
    },
    {
-    "block_index": 435,
+    "block_index": 434,
     "distinct_loci": 4,
     "genes": [
      "LOC115931054",
@@ -1241,7 +1261,7 @@
     }
    },
    {
-    "block_index": 444,
+    "block_index": 443,
     "distinct_loci": 6,
     "genes": [
      "LOC101131561",
@@ -1264,7 +1284,7 @@
     }
    },
    {
-    "block_index": 445,
+    "block_index": 444,
     "distinct_loci": 3,
     "genes": [
      "LOC101130854",
@@ -1283,7 +1303,7 @@
     }
    },
    {
-    "block_index": 448,
+    "block_index": 447,
     "distinct_loci": 4,
     "genes": [
      "CDR2",
@@ -1304,7 +1324,7 @@
     }
    },
    {
-    "block_index": 453,
+    "block_index": 452,
     "distinct_loci": 3,
     "genes": [
      "GSPT2",
@@ -1322,7 +1342,7 @@
     }
    },
    {
-    "block_index": 456,
+    "block_index": 455,
     "distinct_loci": 2,
     "genes": [
      "JMJD8",
@@ -1340,7 +1360,7 @@
     }
    },
    {
-    "block_index": 486,
+    "block_index": 485,
     "distinct_loci": 2,
     "genes": [
      "DIMT1",
@@ -1358,7 +1378,7 @@
     }
    },
    {
-    "block_index": 487,
+    "block_index": 486,
     "distinct_loci": 2,
     "genes": [
      "MTREX",
@@ -1376,7 +1396,7 @@
     }
    },
    {
-    "block_index": 494,
+    "block_index": 493,
     "distinct_loci": 3,
     "genes": [
      "ECSIT",
@@ -1395,7 +1415,7 @@
     }
    },
    {
-    "block_index": 529,
+    "block_index": 528,
     "distinct_loci": 2,
     "genes": [
      "LOC115933187",
@@ -1413,7 +1433,7 @@
     }
    },
    {
-    "block_index": 566,
+    "block_index": 565,
     "distinct_loci": 2,
     "genes": [
      "FAM236B",
@@ -1431,7 +1451,7 @@
     }
    },
    {
-    "block_index": 576,
+    "block_index": 575,
     "distinct_loci": 2,
     "genes": [
      "ALG1L1P",
@@ -1449,7 +1469,7 @@
     }
    },
    {
-    "block_index": 587,
+    "block_index": 586,
     "distinct_loci": 2,
     "genes": [
      "MKRN2",
@@ -1467,7 +1487,7 @@
     }
    },
    {
-    "block_index": 588,
+    "block_index": 587,
     "distinct_loci": 2,
     "genes": [
      "CAND2",
@@ -1485,7 +1505,7 @@
     }
    },
    {
-    "block_index": 589,
+    "block_index": 588,
     "distinct_loci": 2,
     "genes": [
      "NKIRAS1",
@@ -1503,7 +1523,7 @@
     }
    },
    {
-    "block_index": 599,
+    "block_index": 598,
     "distinct_loci": 4,
     "genes": [
      "BCR",
@@ -1525,7 +1545,7 @@
     }
    },
    {
-    "block_index": 602,
+    "block_index": 601,
     "distinct_loci": 3,
     "genes": [
      "MORC2",
@@ -1543,7 +1563,7 @@
     }
    },
    {
-    "block_index": 603,
+    "block_index": 602,
     "distinct_loci": 3,
     "genes": [
      "APOBEC3C",
@@ -1563,7 +1583,7 @@
     }
    }
   ],
-  "ep_impure_total": 79,
+  "ep_impure_total": 80,
   "multifam": [
    {
     "distinct_loci": 15,
@@ -1625,10 +1645,10 @@
  },
  "truth1_protein_Ep": {
   "current": {
-   "impure_blocks": 79,
-   "precision_Ep": 0.8699,
-   "pure_blocks": 528,
-   "total_blocks": 607
+   "impure_blocks": 80,
+   "precision_Ep": 0.868,
+   "pure_blocks": 526,
+   "total_blocks": 606
   },
   "legacy": {
    "impure_blocks": 115,
@@ -1645,7 +1665,7 @@
    "n_components_recovered": 182,
    "n_multigene_blocks": 432,
    "n_real_dna_components": 187,
-   "pair_projection_precision_nonovermerge": 0.472,
+   "pair_projection_precision_nonovermerge": 0.4953,
    "pair_projection_recall_real_cdna": 0.9217
   },
   "legacy": {

@@ -7,6 +7,15 @@ Asserts:
   (c) The allele demotion removes DHRSX + LOC129530050 (DNA-confirmed).
   (d) The residual-removed count matches RNA_ONLY_EDGE_ORACLE.md's recall-preserving row:
       residual remaining {allele 0, oversize 3, multifam 4}; shipped total 12; 6/12 named FP removed.
+  (e) REPEAT-HUB GATE negative controls: the fam17 16-family repeat-bridge hub is SHATTERED (no
+      longer one block) by default, while GSTM2 + MAGE families are SPARED (largest block byte-
+      identical membership with vs without the gate).
+  (f) --no-repeat-gate / RUSTLE_NO_REPEAT_GATE=1 ABLATION recovers the pre-gate catalog (fam17 one
+      block again) and is itself byte-identical across runs.
+  (g) recall cost: EVERY gene-pair the repeat gate cuts is a VG-'genuine' over-merge -- 0 TP and 0
+      truthbar (real / borderline-real) edges are cut.
+  (h) RNA-only / LIBRARY-FREE guard: repeat-hub features = {min_shared_mult, cyclic}, disjoint from
+      every soft-mask / RepeatMasker / DNA column.
 
 Run: /home/juanfra/miniforge3/bin/python bench/test_family_rna_refine.py
 """
@@ -15,6 +24,7 @@ import json
 import os
 import subprocess
 import sys
+from collections import defaultdict
 
 BENCH = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(BENCH, "family_rna_refine.py")
@@ -23,10 +33,24 @@ OUT_JSON = os.path.join(BENCH, "family_rna_refine.json")
 SHIPPED = os.path.join(BENCH, "denovo_families.py")
 PY = sys.executable
 
+# fam17 = the 27-gene / 16-protein-family EXTREME repeat-bridge hub (VG_REPEAT_CATALOG.md sec 3).
+FAM17 = ["C9H11orf65", "COPS9", "DCAF16", "DCP1B", "GIMAP4", "KLHL33", "LIPA", "LOC109024560",
+         "LOC109025730", "LOC109028669", "LOC129530096", "LOC129530131", "LOC134756589", "LRFN5",
+         "NCALD", "NCR3LG1", "NFXL1", "OXCT1", "PDCD5", "SLC11A2", "SMYD3", "SPATA33", "SPC25",
+         "THNSL1", "TSPAN8", "UCHL1", "TMEM38B"]
+# negative controls: GSTM2 (protein DOMAIN, per-edge max mult 9) + MAGE (cardinality, max mult 8).
+GSTM2 = ["GSTM2", "LOC115930164", "LOC115930576", "LOC101126097", "LOC134756922", "LOC101129940",
+         "SEC22B", "LOC109023809", "TRIP13", "LOC129532045", "LOC134757399", "LOC101131274",
+         "LOC101135585", "LOC115932984", "LOC115933235", "LOC115933241", "LOC129525330",
+         "LOC129525331", "LOC129525599", "LOC134756861"]
+MAGE = ["MAGEA1", "MAGEA4", "MAGEA12", "LOC129529976", "LOC129529978", "LOC129529983",
+        "LOC129529986", "MAGEA9", "LOC129530018", "MAGEB6", "MAGEB6B"]
+
 
 def _run(args, env_extra=None):
     env = dict(os.environ)
     env.pop("RUSTLE_RNA_ORACLE", None)
+    env.pop("RUSTLE_NO_REPEAT_GATE", None)
     if env_extra:
         env.update(env_extra)
     return subprocess.run([PY, SCRIPT] + args, cwd=BENCH, env=env,
@@ -36,6 +60,22 @@ def _run(args, env_extra=None):
 def _md5(path):
     with open(path, "rb") as fh:
         return hashlib.md5(fh.read()).hexdigest()
+
+
+def _fam_to_genes(path):
+    fam = defaultdict(set)
+    with open(path) as fh:
+        hdr = fh.readline().rstrip("\n").split("\t")
+        ix = {h: i for i, h in enumerate(hdr)}
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            fam[f[ix["family_id"]]].add(f[ix["member_gene"]])
+    return fam
+
+
+def _blocks_with(fam, genes):
+    gs = set(genes)
+    return [members for members in fam.values() if members & gs]
 
 
 def test_legacy_opt_out_writes_nothing():
@@ -89,13 +129,93 @@ def test_residual_removed_matches_recall_preserving_row():
     print("(d) residual remaining {allele 0, oversize 3, multifam 4}; 6/12 removed : OK")
 
 
+def test_repeat_gate_shatters_fam17_spares_controls():
+    # default = repeat gate ON
+    r = _run([]);  assert r.returncode == 0, r.stderr
+    on = _fam_to_genes(OUT_TSV);  on_json = json.load(open(OUT_JSON))
+    on_tsv = _md5(OUT_TSV)
+    # ablation = repeat gate OFF (flag form) -- run twice for byte-identical determinism
+    r2 = _run(["--no-repeat-gate"]);  assert r2.returncode == 0, r2.stderr
+    off = _fam_to_genes(OUT_TSV);  off_json = json.load(open(OUT_JSON))
+    off_tsv = _md5(OUT_TSV)
+    r3 = _run([], env_extra={"RUSTLE_NO_REPEAT_GATE": "1"})   # env form == flag form
+    assert r3.returncode == 0 and _md5(OUT_TSV) == off_tsv, "env ablation != flag ablation / not deterministic"
+
+    # the gate MUST change the catalog, and only via the repeat gate
+    assert on_tsv != off_tsv, "repeat gate had no effect on the catalog"
+    assert on_json["edges"]["n_dn_cross_gene_cut_by_repeat_gate"] > 0, "gate cut nothing (ON)"
+    assert off_json["edges"]["n_dn_cross_gene_cut_by_repeat_gate"] == 0, "ablation still cut edges"
+
+    # (a) fam17: ONE block pre-gate -> shattered (>=2 blocks / no longer one block) with the gate
+    off_blocks, on_blocks = _blocks_with(off, FAM17), _blocks_with(on, FAM17)
+    assert len(off_blocks) == 1, f"fam17 not a single block pre-gate: {len(off_blocks)} blocks"
+    assert len(on_blocks) >= 2, f"repeat gate did NOT shatter fam17: still {len(on_blocks)} block(s)"
+
+    # (a) GSTM2 + MAGE SPARED: their largest block is byte-identical membership with vs without the gate
+    for name, gl in (("GSTM2", GSTM2), ("MAGE", MAGE)):
+        bo = max(_blocks_with(off, gl), key=len)
+        bn = max(_blocks_with(on, gl), key=len)
+        assert bo == bn, f"{name} largest block CHANGED by the repeat gate (not spared): {bo ^ bn}"
+    print(f"(e) repeat gate shatters fam17 (1 -> {len(on_blocks)} blocks); GSTM2 + MAGE spared "
+          f"(largest block identical) : OK")
+    print("(f) --no-repeat-gate / env ablation recovers the one-block fam17 + byte-identical : OK")
+    # restore DEFAULT (gate ON) state for any downstream test that reads the catalog
+    _run([])
+
+
+def test_repeat_gate_recall_cost_is_genuine_only():
+    """Every gene-pair the repeat gate cuts is a VG-'genuine' over-merge; 0 TP / 0 truthbar cut."""
+    sys.path.insert(0, BENCH)
+    import family_rna_refine as R
+    gene_of_dn = R.RO.load_gene_of_dn()
+    pair_core = R.RO.load_pair_core(gene_of_dn)
+    univ_aln = R.RO.load_universal_aln()
+    rep = R.load_repeat_mult()
+    # VG per-edge class
+    cls = {}
+    with open(os.path.join(BENCH, "vg_repeat_catalog.tsv")) as fh:
+        in_e, ix = False, None
+        for ln in fh:
+            if ln.startswith("# SECTION edges"):
+                in_e, ix = True, None; continue
+            if not in_e:
+                continue
+            if ln.startswith("gene_a\t"):
+                hdr = ln.rstrip("\n").split("\t"); ix = {h: i for i, h in enumerate(hdr)}; continue
+            if ix is None:
+                continue
+            f = ln.rstrip("\n").split("\t")
+            cls[frozenset((f[ix["gene_a"]], f[ix["gene_b"]]))] = f[ix["cls"]]
+
+    def core_aln_keep(k):
+        return (pair_core.get(k) or 0.0) >= R.CORE_MIN and (univ_aln.get(k) or 0.0) >= R.ALN_MIN
+
+    cut = [k for k, m in rep.items() if m >= R.REPEAT_MULT_MIN and core_aln_keep(k)]
+    labels = [cls.get(k, "NA") for k in cut]
+    assert cut, "repeat gate cut no core+aln-surviving edges"
+    assert all(l == "genuine" for l in labels), \
+        f"repeat gate cut a real/borderline edge: {[sorted(k) for k, l in zip(cut, labels) if l != 'genuine']}"
+    print(f"(g) recall cost: all {len(cut)} repeat-gate-cut pairs are VG-'genuine' over-merge "
+          f"(0 TP / 0 truthbar cut) : OK")
+
+
 def test_rna_only_guard():
     d = json.load(open(OUT_JSON))
     g = d["guards"]
     assert g["edge_decision_features"] == ["core_recip", "aln_frac"], g["edge_decision_features"]
+    assert g["repeat_gate_features"] == ["min_shared_mult", "cyclic"], g["repeat_gate_features"]
     assert g["demote_features"] == ["balanced_frac", "copy_like"], g["demote_features"]
     assert g["no_dna_in_inference"] is True and g["gamma"] == 0.2 and g["seed"] == 0
-    print("(+) RNA-only inference guard (no DNA in decision) : OK")
+    assert g["repeat_gate_library_free"] is True and g["no_softmask_in_repeat_gate"] is True
+    # source-level: the repeat-hub feature set is library-free (VG multiplicity), NOT soft-mask/DNA
+    sys.path.insert(0, BENCH)
+    import family_rna_refine as R
+    R.rna_only_guard()   # must not raise
+    rep = set(R.REPEAT_GATE_FEATURES)
+    assert rep == {"min_shared_mult", "cyclic"}, rep
+    assert not (rep & (R.DNA_FORBIDDEN | R.LIBRARY_FORBIDDEN)), "soft-mask/DNA leaked into repeat gate"
+    assert "softmask" in R.LIBRARY_FORBIDDEN and "mask" in R.LIBRARY_FORBIDDEN
+    print("(h) RNA-only / library-free guard (repeat gate = min_shared_mult/cyclic; no soft-mask/DNA) : OK")
 
 
 if __name__ == "__main__":
@@ -103,5 +223,7 @@ if __name__ == "__main__":
     test_default_deterministic()
     test_allele_demote_removes_known_fp()
     test_residual_removed_matches_recall_preserving_row()
+    test_repeat_gate_shatters_fam17_spares_controls()
+    test_repeat_gate_recall_cost_is_genuine_only()
     test_rna_only_guard()
     print("\nALL TESTS PASSED")

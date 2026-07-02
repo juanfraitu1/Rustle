@@ -23,10 +23,12 @@
   }
  ],
  "edges": {
-  "n_cross_gene_pairs_cut": 7027,
-  "n_cross_gene_pairs_kept": 1457,
-  "n_dn_cross_gene_cut": 8343,
-  "n_dn_cross_gene_kept": 1762,
+  "n_cross_gene_pairs_cut": 7036,
+  "n_cross_gene_pairs_cut_by_repeat_gate": 9,
+  "n_cross_gene_pairs_kept": 1448,
+  "n_dn_cross_gene_cut": 8354,
+  "n_dn_cross_gene_cut_by_repeat_gate": 11,
+  "n_dn_cross_gene_kept": 1751,
   "n_dn_edges_total": 11400,
   "n_dn_within_gene_kept": 1295
  },
@@ -41,15 +43,22 @@
   ],
   "gamma": 0.2,
   "no_dna_in_inference": true,
+  "no_softmask_in_repeat_gate": true,
+  "repeat_gate_features": [
+   "min_shared_mult",
+   "cyclic"
+  ],
+  "repeat_gate_library_free": true,
   "seed": 0
  },
  "inputs": {
   "allele": "bench/a1_read_consensus_o1.tsv",
   "aln_frac": "bench/ri_sharedlen_universal.tsv",
-  "edges": "bench/denovo_family_edges.tsv"
+  "edges": "bench/denovo_family_edges.tsv",
+  "repeat_mult": "bench/vg_repeat_catalog.tsv (min_shared_mult; library-free VG multiplicity)"
  },
  "n_alleles_demoted": 3,
- "n_families": 607,
+ "n_families": 606,
  "outputs": {
   "catalog_tsv": "bench/family_rna_refine.tsv",
   "summary_json": "bench/family_rna_refine.json"
@@ -97,9 +106,11 @@
   "demote": "balanced_frac>=0.90 AND copy_like<=0.10",
   "demote_balanced_frac_min": 0.9,
   "demote_copy_like_max": 0.1,
-  "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24",
+  "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24 AND NOT(min_shared_mult>=20)",
   "gamma": 0.2,
+  "repeat_gate_enabled": true,
+  "repeat_mult_min": 20,
   "seed": 0
  },
- "stage": "family_rna_refine (RNA-only recall-preserving refinement; DEFAULT-ON, opt out --legacy)"
+ "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate; DEFAULT-ON, opt out --legacy / ablate gate --no-repeat-gate)"
 }
