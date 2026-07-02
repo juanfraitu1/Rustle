@@ -126,7 +126,7 @@ one cell of a 3-axis × 4-control grid and does not survive multiplicity.
 
 ## 5. Honest limits (n and reference-derivation)
 
-- **n ≈ 21 caps everything.** 6/21 loci have `n_read_psv = 0` (no read heterogeneity) and one pair
+- **n ≈ 21 caps everything.** 7/21 rows (6 distinct loci; 6/20 after dedup) have `n_read_psv = 0` (no read heterogeneity) and one pair
   (families 169/170, the same `LOC101124683` locus, nested backbones — a **pseudo-replicate** now
   flagged in the TSV and dropped in the dedup variant) is a tied zero point, leaving ~14–15 informative
   points. No SEDEF re-parse can add statistical power here.
@@ -161,3 +161,18 @@ with** — it is confound-robust where copy number is not, even though neither c
 produced **byte-identical** `.json`, `.tsv`, and stdout. `expected_CN` = distinct merged GGO partner
 regions + 1; `sedef_div` = median partner divergence (`final.bed` col 22); GGO-only, MT dropped;
 `identity ∈ (0,1]`, `divergence ∈ [0,1]` (perfect-identity segdups retained).
+
+### Independently verified (commit `b9915fc`)
+Re-run + independent re-derivation (this pass) confirm the committed result. (1) The script regenerates
+**byte-identical** `.tsv`/`.json` under `PYTHONHASHSEED=0` (md5 `51fe243c…` / `d44811de…`). (2) All
+headlines reproduce from an **independent** partial-Spearman + permutation implementation on the TSV:
+Axis 1 raw ρ = 0.369 (p = 0.099), partial | depth+size = **−0.005** (vanishes); Axis 2 raw ρ = 0.399,
+partial | size = 0.453 (perm-p ≈ 0.04), partial | depth+size = **0.427** (perm-p ≈ 0.051, boundary);
+Axis 2b NS; confounds size↔expected_CN = 0.492, size↔n_read_psv = 0.477, size↔sedef_div = 0.001;
+cached 0.443 vs full 0.369; Bonferroni × 3 = 0.223. (3) The genome side (`expected_CN`, `sedef_div`) was
+**recomputed from raw `final.bed`** independently and matches exactly (incl. the large-partner case
+fam14 CN = 55, div = 0.0827, 75 pairs); GGO–GGO filtering keeps 252 993 / 253 029, drops all 36 MT rows —
+the very first data row is an MT row and is correctly dropped (no parse leak); identity col 20 is written
+but never used in any statistic. Only fix this pass: §5 prose `6/21 loci` → `7/21 rows (6 distinct loci)`
+(immaterial; ~14 informative points unchanged). **Verdict unchanged: "consistent-not-established"; lead
+the corroboration with the divergence axis, not copy number.**
