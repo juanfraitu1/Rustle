@@ -1,0 +1,284 @@
+{
+  "determinism": {
+    "PYTHONHASHSEED": "0",
+    "biopython": "deterministic global NW",
+    "minimap2": "-t1",
+    "note": "re-run of --json is byte-identical",
+    "seeds": "cost seed=0, fp seed=0"
+  },
+  "diagnosis_tally": {
+    "DIVERGENCE-LIMIT": 2,
+    "PRE-FILTER-BOTTLENECK": 0,
+    "REP-COLLAPSE/PROJECTION": 5
+  },
+  "files": {
+    "cost_log": "/tmp/claude-1000/-mnt-c-Users-jfris-Desktop/03f0156d-63b6-4d0f-bf09-862bddee491c/scratchpad/cost_out.txt",
+    "fp_cache": "/tmp/claude-1000/-mnt-c-Users-jfris-Desktop/03f0156d-63b6-4d0f-bf09-862bddee491c/scratchpad/cgr_fp.json",
+    "json": "/mnt/c/Users/jfris/Desktop/Rustle/bench/candidate_generation_recall.json",
+    "script": "/mnt/c/Users/jfris/Desktop/Rustle/bench/candidate_generation_recall.py",
+    "tsv": "/mnt/c/Users/jfris/Desktop/Rustle/bench/candidate_generation_recall.tsv"
+  },
+  "fp_precision_impact": {
+    "base_pass_frac_shipped": 0.0133,
+    "base_pass_frac_task": 0.01,
+    "expected_extra_overmerge_edges_k13_ci95": 2072177,
+    "expected_extra_overmerge_edges_k13_raw": 0,
+    "extra_core_recip_max": 0.0706,
+    "extra_pass_frac_shipped": 0.0,
+    "extra_pass_frac_task": 0.0,
+    "extra_survivor_core_ident": [],
+    "extra_survivor_examples": [],
+    "extra_survivors_shipped": 0,
+    "n_poa_base": 300,
+    "n_poa_extra": 300,
+    "n_transcripts": 94192,
+    "poa_time_base_s": 173.0,
+    "poa_time_extra_s": 200.4,
+    "pool_sizes": {
+      "base_k18": 157618,
+      "extra_k13_only": 358441,
+      "loosened_k13": 516059
+    },
+    "seed": 0,
+    "shipped_gate": "core_recip>=0.13",
+    "summary": "EXTRA (k13-only) candidate pairs survive the shipped POA gate (core_recip>=0.13) at 0.0% (0/300, max core_recip 0.0706), BELOW the 1.3% survival of the k18 baseline candidates -- the loosened-only pairs are the more-divergent tail and POA rejects them. Point-estimate expected extra over-merge edges over the ~207M extra raw k13 candidate pairs = 0; rule-of-3 95%-CI upper bound <= 2072177.",
+    "target_n": 80,
+    "task_gate": "core_recip>=0.19 & aln_frac>=0.24"
+  },
+  "loosening_cost": {
+    "extra_candidate_pairs_raw": {
+      "k11": 3291892660,
+      "k13": 207217691,
+      "k15": 51311092
+    },
+    "extra_poa_cpu_days_raw": {
+      "k11": 8546.0,
+      "k13": 538.0,
+      "k15": 133.2
+    },
+    "fanout_multiplier_vs_k18": {
+      "k11": 36.9,
+      "k13": 3.3,
+      "k15": 1.6,
+      "k18": 1.0
+    },
+    "genomewide_candidate_pairs_raw": {
+      "k11": 3383630958,
+      "k13": 298955989,
+      "k15": 143049390,
+      "k18": 91738298
+    },
+    "n_transcripts": 94192,
+    "per_missed_gene_fanout": {
+      "LOC101141440": [
+        14850,
+        18348,
+        26099,
+        90070
+      ],
+      "LOC115930538": [
+        4581,
+        9444,
+        14350,
+        67449
+      ],
+      "LOC115934629": [
+        8488,
+        12519,
+        17018,
+        78704
+      ],
+      "LOC129534585": [
+        22,
+        26,
+        164,
+        24166
+      ],
+      "TNK2": [
+        15410,
+        19062,
+        22457,
+        72234
+      ],
+      "UBE2Q2P16": [
+        8769,
+        13906,
+        17674,
+        64411
+      ],
+      "ZNF425": [
+        3373,
+        8532,
+        14633,
+        76754
+      ]
+    },
+    "poa_cpu_days_raw": {
+      "k11": 8784.1,
+      "k13": 776.1,
+      "k15": 371.4,
+      "k18": 238.2
+    },
+    "poa_s_per_pair": 0.2243,
+    "random150_mean_fanout": {
+      "k11": 71845.4,
+      "k13": 6347.8,
+      "k15": 3037.4,
+      "k18": 1947.9
+    },
+    "random150_median_fanout": {
+      "k11": 75545,
+      "k13": 2694,
+      "k15": 120,
+      "k18": 30
+    },
+    "sample_n": 150,
+    "seed": 0
+  },
+  "missed_genes": [
+    "LOC101141440",
+    "LOC115930538",
+    "LOC115934629",
+    "LOC129534585",
+    "TNK2",
+    "UBE2Q2P16",
+    "ZNF425"
+  ],
+  "params": {
+    "ALN_PASS_task": 0.24,
+    "CORE_PASS_task": 0.19,
+    "K_SHARE": 6,
+    "T_CORE_shipped_gate": 0.13,
+    "k_ladder": [
+      18,
+      15,
+      13,
+      11
+    ],
+    "minimizer": "(k15,w10)"
+  },
+  "per_gene": {
+    "LOC101141440": {
+      "cause": "REP-COLLAPSE/PROJECTION",
+      "fam_best_18mer_already_proposes": true,
+      "fam_best_aln_frac": 0.9908,
+      "fam_best_core_recip": 0.926,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_073232.2_92223069_5 x DN_NC_073232.2_99722497_5",
+      "fam_best_shared_11mer": 2065,
+      "fam_best_shared_13mer": 2054,
+      "fam_best_shared_18mer": 2019,
+      "fam_passes_scoring": true,
+      "family": "21",
+      "gene_own_copy_best_core_recip": 0.926,
+      "gene_own_copy_links": true,
+      "n_copies": 2,
+      "n_copy_pairs": 1
+    },
+    "LOC115930538": {
+      "cause": "REP-COLLAPSE/PROJECTION",
+      "fam_best_18mer_already_proposes": true,
+      "fam_best_aln_frac": 0.9969,
+      "fam_best_core_recip": 0.9969,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_073238.2_32266743_7 x DN_NC_073238.2_33425477_7",
+      "fam_best_shared_11mer": 5333,
+      "fam_best_shared_13mer": 5344,
+      "fam_best_shared_18mer": 5311,
+      "fam_passes_scoring": true,
+      "family": "34",
+      "gene_own_copy_best_core_recip": 0.12,
+      "gene_own_copy_links": false,
+      "n_copies": 7,
+      "n_copy_pairs": 21
+    },
+    "LOC115934629": {
+      "cause": "REP-COLLAPSE/PROJECTION",
+      "fam_best_18mer_already_proposes": true,
+      "fam_best_aln_frac": 0.8495,
+      "fam_best_core_recip": 0.8499,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_073228.2_45925593_13 x DN_NC_073228.2_46729356_10",
+      "fam_best_shared_11mer": 3706,
+      "fam_best_shared_13mer": 3735,
+      "fam_best_shared_18mer": 3725,
+      "fam_passes_scoring": true,
+      "family": "32",
+      "gene_own_copy_best_core_recip": 0.8499,
+      "gene_own_copy_links": true,
+      "n_copies": 2,
+      "n_copy_pairs": 1
+    },
+    "LOC129534585": {
+      "cause": "REP-COLLAPSE/PROJECTION",
+      "fam_best_18mer_already_proposes": true,
+      "fam_best_aln_frac": 1.0,
+      "fam_best_core_recip": 1.0,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_073224.2_15783681_8 x DN_NC_073224.2_19027212_8",
+      "fam_best_shared_11mer": 1427,
+      "fam_best_shared_13mer": 1421,
+      "fam_best_shared_18mer": 1401,
+      "fam_passes_scoring": true,
+      "family": "7",
+      "gene_own_copy_best_core_recip": 1.0,
+      "gene_own_copy_links": true,
+      "n_copies": 4,
+      "n_copy_pairs": 6
+    },
+    "TNK2": {
+      "cause": "DIVERGENCE-LIMIT",
+      "fam_best_18mer_already_proposes": true,
+      "fam_best_aln_frac": 0.0,
+      "fam_best_core_recip": 0.0533,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_086017.1_207500181_3 x DN_NC_086017.1_209194304_3",
+      "fam_best_shared_11mer": 99,
+      "fam_best_shared_13mer": 95,
+      "fam_best_shared_18mer": 90,
+      "fam_passes_scoring": false,
+      "family": "136",
+      "gene_own_copy_best_core_recip": 0.0533,
+      "gene_own_copy_links": false,
+      "n_copies": 2,
+      "n_copy_pairs": 1
+    },
+    "UBE2Q2P16": {
+      "cause": "DIVERGENCE-LIMIT",
+      "fam_best_18mer_already_proposes": false,
+      "fam_best_aln_frac": 0.0,
+      "fam_best_core_recip": 0.0226,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_073240.2_85821672_6 x DN_NC_073240.2_86403557_3",
+      "fam_best_shared_11mer": 41,
+      "fam_best_shared_13mer": 16,
+      "fam_best_shared_18mer": 0,
+      "fam_passes_scoring": false,
+      "family": "175",
+      "gene_own_copy_best_core_recip": 0.0226,
+      "gene_own_copy_links": false,
+      "n_copies": 2,
+      "n_copy_pairs": 1
+    },
+    "ZNF425": {
+      "cause": "REP-COLLAPSE/PROJECTION",
+      "fam_best_18mer_already_proposes": true,
+      "fam_best_aln_frac": 1.0,
+      "fam_best_core_recip": 0.9992,
+      "fam_best_loosened_proposes": true,
+      "fam_best_pair": "DN_NC_073229.2_67950085_3 x DN_NC_073241.2_83874271_3",
+      "fam_best_shared_11mer": 1265,
+      "fam_best_shared_13mer": 1260,
+      "fam_best_shared_18mer": 1237,
+      "fam_passes_scoring": true,
+      "family": "65",
+      "gene_own_copy_best_core_recip": 0.0293,
+      "gene_own_copy_links": false,
+      "n_copies": 4,
+      "n_copy_pairs": 6
+    }
+  },
+  "question": "Are the 7 zero-candidate-edge missed multi-copy genes (LOC101141440, LOC115930538, LOC115934629, LOC129534585, TNK2, UBE2Q2P16, ZNF425) recoverable by LOOSENING the exact-18-mer candidate-generation pre-filter (shorter k / minimizers), and if so at what genome-wide candidate-blow-up / POA-compute / FP-precision cost?",
+  "recoverable_by_loosening": 0,
+  "verdict": "NOT WORTH IT. Loosening the exact-18-mer pre-filter recovers 0 of the 7 missed multi-copy genes (PRE-FILTER-BOTTLENECK is the ONLY loosening-recoverable class and it is empty). Scoring the ACTUAL validated_families member loci: 2/7 are DIVERGENCE-LIMIT (TNK2, UBE2Q2P16 -- 2-member families whose cleanest cross-copy RNA pair fails the POA gate, core_recip 0.05/0.02; genuinely DNA-bound), and 5/7 are REP-COLLAPSE/PROJECTION (the family HAS a POA-passing, 18-mer-proposed cross-copy member pair -- 2019/5311/3725/1401/1237 shared 18-mers, core_recip 0.85-1.0 -- so candidate-generation AND scoring already succeed; the gene's annotation region is lost DOWNSTREAM to intron-junction rep-collapse + gene_of max-overlap labelling, NOT to a candidate-generation-k gap). For LOC115930538 and ZNF425 the family is recovered from its OTHER near-identical copies while the gene's OWN transcript is a divergent/short-span paralog. NOTE: an earlier version mis-scored 3 of these as DIVERGENCE-LIMIT by re-deriving the per-copy rep as the max-n_reads locus over the copy's genomic SPAN (which on rep-collapsed loci is a non-member readthrough, or a locus in a DIFFERENT family) instead of the actual member; the real members score 0.93-1.0. Either way the recall gap is NOT candidate-generation-k-bound: every family edge is already proposed at k18. Loosening multiplies the candidate/POA load 3.3x at k13 (36.9x at k11, near-saturation) for 0 recovered genes. Precision is NOT the failure mode: POA filters the loosened candidates -- 0/300 k13-only pairs survive the gate (max core_recip 0.0706 << 0.13), so the FP over-merge set does NOT explode. Loosening is thus recall-SAFE but recall-USELESS: pure wasted compute."
+}
