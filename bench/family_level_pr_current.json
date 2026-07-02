@@ -5,6 +5,59 @@
   "pythonhashseed": "0",
   "seed": 0
  },
+ "gene_projection_relabel": {
+  "credited_genes": [
+   "LOC115934629",
+   "LOC129534585"
+  ],
+  "detail": {
+   "LOC115934629": [
+    {
+     "core_recip": "0.8499",
+     "edge": [
+      "DN_NC_073228.2_45925593_13",
+      "DN_NC_073228.2_46729356_10"
+     ],
+     "endpoint_in_multicopy_family": [
+      "DN_NC_073228.2_46729356_10"
+     ]
+    }
+   ],
+   "LOC129534585": [
+    {
+     "core_recip": "1.0",
+     "edge": [
+      "DN_NC_073224.2_15783681_8",
+      "DN_NC_073224.2_19027212_8"
+     ],
+     "endpoint_in_multicopy_family": [
+      "DN_NC_073224.2_15783681_8",
+      "DN_NC_073224.2_19027212_8"
+     ]
+    },
+    {
+     "core_recip": "1.0",
+     "edge": [
+      "DN_NC_073224.2_15783681_8",
+      "DN_NC_073224.2_19135994_8"
+     ],
+     "endpoint_in_multicopy_family": [
+      "DN_NC_073224.2_15783681_8",
+      "DN_NC_073224.2_19135994_8"
+     ]
+    }
+   ]
+  },
+  "mechanism": "recall-numerator-only credit: an oracle multi-copy gene is credited if its OWN de-novo copy sits in a POA-passing cross-copy edge (candidate_generation_recall: touches_gene_copy & passes_scoring) with an endpoint in a multi-copy catalog family -- i.e. the gene's copy IS grouped into a recovered family but is max-overlap-mislabelled after a segdup neighbour. Never touches gene_of / block projection / FP flags / grouping.",
+  "n_newly_credited": 2,
+  "newly_credited": [
+   "LOC115934629",
+   "LOC129534585"
+  ],
+  "note": "ok",
+  "recall_with_relabel": 0.8772,
+  "recall_without_relabel": 0.8421
+ },
  "legacy_crosscheck": {
   "ok": true,
   "pairs": {
@@ -1686,13 +1739,17 @@
    "n_allele": 0,
    "n_multifam": 4,
    "n_oversize": 3,
-   "oracle_genes_recovered": 48,
-   "oracle_genes_recovered_multicopy": 48,
+   "oracle_genes_recovered": 50,
+   "oracle_genes_recovered_multicopy": 50,
    "oracle_mapped_families": 48,
    "oracle_multicopy_genes": 57,
    "precision_oracle_dedup": 0.875,
    "precision_oracle_taskformula": 0.8542,
-   "recall_oracle": 0.8421
+   "recall_oracle": 0.8772,
+   "relabel_credited_genes": [
+    "LOC115934629",
+    "LOC129534585"
+   ]
   },
   "legacy": {
    "distinct_fp_blocks": 11,
@@ -1706,7 +1763,8 @@
    "oracle_multicopy_genes": 57,
    "precision_oracle_dedup": 0.78,
    "precision_oracle_taskformula": 0.76,
-   "recall_oracle": 0.8772
+   "recall_oracle": 0.8772,
+   "relabel_credited_genes": []
   }
  }
 }

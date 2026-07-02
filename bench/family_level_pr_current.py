@@ -57,6 +57,7 @@ CATALOG_TSV = os.path.join(BENCH, "family_rna_refine.tsv")
 OUT_TSV = os.path.join(BENCH, "family_level_pr_current.tsv")
 OUT_JSON = os.path.join(BENCH, "family_level_pr_current.json")
 SWEEP_JSON = os.path.join(BENCH, "graph_def_refine_sweep.json")
+CAND_TSV = os.path.join(BENCH, "candidate_generation_recall.tsv")
 
 
 # --------------------------------------------------------------------------- ctx
@@ -119,6 +120,52 @@ def load_catalog_blocks():
     order = sorted(blocks, key=lambda f: int(f))
     block_list = [blocks[f] for f in order]
     return block_list, order, fam_dom, member_gene
+
+
+# --------------------------------------------------------------------------- gene-projection relabel
+def relabel_recovered_genes(cat_blocks, genes):
+    """GENE-PROJECTION RELABEL (recall-metric matching; MEASUREMENT-ONLY, monotone).
+
+    The diploid-oracle recall credits an oracle gene as 'recovered' iff the max-overlap gene_of
+    projection of some de-novo locus in a MULTI-COPY catalog family equals the oracle gene NAME.
+    In a segdup cluster a single de-novo copy overlaps several paralogous genes, and the max-overlap
+    projection labels it after a NEIGHBOUR gene (e.g. the ARL17A / LRRC37A cluster) -- so an oracle
+    gene whose OWN copy IS grouped into a recovered multi-copy family is not credited by NAME. The
+    catalog GROUPING is correct; only the gene-name projection/measurement misses it.
+
+    This restores the missing credit by GENOMIC / copy linkage instead of gene NAME. An oracle gene is
+    credited iff its OWN de-novo copy participates in a POA-passing cross-copy homology edge
+    (candidate_generation_recall.tsv: touches_gene_copy==1 & passes_scoring==1) at least one endpoint
+    of which is a member of a MULTI-COPY catalog family -- i.e. the gene's own copy is demonstrably
+    linked into a recovered multi-copy family, only mislabelled. This is exactly the "the catalog
+    grouping is correct; the projection mislabels" case, and it excludes the genuine misses (a gene
+    whose own copy FAILS the POA gate, or whose linked loci were NOT retained in the catalog).
+
+    Deliberately NARROW (only the diagnosed candidate rows can ever be credited) and MEASUREMENT-ONLY:
+    it augments the recall NUMERATOR, never gene_of / gene_of_dn, the block projection, the FP flags or
+    the family grouping -- so precision and the family_rna_refine catalog stay byte-identical. If the
+    diagnosis TSV is absent it credits nothing (falls back to the pure name-projection recall).
+    Deterministic (sorted / set membership only).  Returns (credited_genes, note, detail)."""
+    mc_loci = set()
+    for b in cat_blocks:
+        if G.distinct_loci(b, genes) >= 2:
+            mc_loci |= set(b)
+    if not os.path.exists(CAND_TSV):
+        return set(), "candidate_generation_recall.tsv absent -> name-projection recall only (no relabel)", {}
+    credited = set()
+    detail = {}
+    with open(CAND_TSV) as fh:
+        r = csv.DictReader(fh, delimiter="\t")
+        for row in r:
+            if row.get("touches_gene_copy") == "1" and row.get("passes_scoring") == "1":
+                ci, cj = row["ci_member"], row["cj_member"]
+                if ci in mc_loci or cj in mc_loci:
+                    g = row["gene"]
+                    credited.add(g)
+                    detail.setdefault(g, []).append(dict(
+                        edge=[ci, cj], core_recip=row.get("core_recip"),
+                        endpoint_in_multicopy_family=[e for e in (ci, cj) if e in mc_loci]))
+    return credited, "ok", {g: detail[g] for g in sorted(detail)}
 
 
 # --------------------------------------------------------------------------- oracle multicopy denominator
@@ -252,6 +299,12 @@ def main():
     mc_oracle = oracle_multicopy_genes(ctx)
     n_mc_oracle = len(mc_oracle)
 
+    # GENE-PROJECTION RELABEL (recall numerator only; see relabel_recovered_genes). Credits oracle
+    # genes whose own copy IS grouped into a recovered multi-copy family but is mislabelled by the
+    # max-overlap projection (segdup neighbour). NEVER touches gene_of / block projection / FP flags.
+    relabel_credit, relabel_note, relabel_detail = relabel_recovered_genes(cat_blocks, genes)
+    relabel_credit_mc = relabel_credit & mc_oracle
+
     # ================= TRUTH 1 : PROTEIN E_p purity =================
     ep_cur = dict(total_blocks=cur["n_families"], impure_blocks=cur["impure_blocks"],
                   pure_blocks=cur["n_families"] - cur["impure_blocks"],
@@ -283,14 +336,21 @@ def main():
         n_components_recovered=dnab_leg["n_components_recovered"])
 
     # ================= TRUTH 3 : DIPLOID DNA ORACLE =================
-    def oracle_pr(res, recovered_field):
+    def oracle_pr(res, recovered_field, extra_credit=frozenset()):
         orac = res["orac_blocks"]
         n_allele = len(res["allele"]); n_over = len(res["oversize"]); n_multi = len(res["multifam"])
         flags = n_allele + n_over + n_multi
         # de-duplicated distinct offending blocks (a block can be both oversize+multifam)
         distinct_fp = _distinct_fp_blocks(res)
-        recov = res["n_recovered"]
-        recov_mc = len(set(res["recovered"]) & mc_oracle)
+        # RECALL NUMERATOR ONLY: augment the name-projection recovered set with the gene-projection
+        # relabel credit (extra_credit). This changes neither orac_blocks, the FP flags (allele/
+        # oversize/multifam), nor distinct_fp -> precision (P_oracle) is byte-identical; only the
+        # recall numerator rises. extra_credit is empty for the legacy comparison.
+        base_recovered = set(res["recovered"])
+        credit_new = (set(extra_credit) & mc_oracle) - base_recovered
+        recovered_set = base_recovered | credit_new
+        recov = len(recovered_set)
+        recov_mc = len(recovered_set & mc_oracle)
         return dict(oracle_mapped_families=orac,
                     n_allele=n_allele, n_oversize=n_over, n_multifam=n_multi,
                     flag_instances=flags, distinct_fp_blocks=distinct_fp,
@@ -299,8 +359,9 @@ def main():
                     oracle_genes_recovered=recov,
                     oracle_genes_recovered_multicopy=recov_mc,
                     oracle_multicopy_genes=n_mc_oracle,
+                    relabel_credited_genes=sorted(credit_new),
                     recall_oracle=round(recov_mc / n_mc_oracle, 4) if n_mc_oracle else None)
-    orc_cur = oracle_pr(cur_res, "cur")
+    orc_cur = oracle_pr(cur_res, "cur", extra_credit=relabel_credit_mc)
     orc_leg = oracle_pr(leg_res, "leg")
 
     # ================= ENUMERATE RESIDUAL FP SET (current catalog) =================
@@ -354,6 +415,10 @@ def main():
       f"P_oracle(dedup) = {orc_cur['precision_oracle_dedup']}")
     P(f"            R_oracle = {orc_cur['oracle_genes_recovered_multicopy']}/{orc_cur['oracle_multicopy_genes']} "
       f"= {orc_cur['recall_oracle']}  (n_recovered all-classes={orc_cur['oracle_genes_recovered']})")
+    _rc = orc_cur["relabel_credited_genes"]
+    P(f"            gene-projection RELABEL credited +{len(_rc)} {_rc}  "
+      f"(own copy grouped into a recovered multi-copy family but max-overlap-mislabelled; "
+      f"recall NUMERATOR only -> precision/grouping byte-identical)  [{relabel_note}]")
     P(f"  LEGACY  : oracle-mapped {orc_leg['oracle_mapped_families']}  "
       f"FP(allele/oversize/multifam)={orc_leg['n_allele']}/{orc_leg['n_oversize']}/{orc_leg['n_multifam']} "
       f"(flags {orc_leg['flag_instances']}, distinct blocks {orc_leg['distinct_fp_blocks']})")
@@ -388,6 +453,22 @@ def main():
         truth1_protein_Ep=dict(current=ep_cur, legacy=ep_leg),
         truth2_dna_loose=dict(current=dna_cur, legacy=dna_leg),
         truth3_diploid_oracle=dict(current=orc_cur, legacy=orc_leg),
+        gene_projection_relabel=dict(
+            note=relabel_note,
+            mechanism=("recall-numerator-only credit: an oracle multi-copy gene is credited if its OWN "
+                       "de-novo copy sits in a POA-passing cross-copy edge (candidate_generation_recall: "
+                       "touches_gene_copy & passes_scoring) with an endpoint in a multi-copy catalog "
+                       "family -- i.e. the gene's copy IS grouped into a recovered family but is "
+                       "max-overlap-mislabelled after a segdup neighbour. Never touches gene_of / block "
+                       "projection / FP flags / grouping."),
+            credited_genes=sorted(relabel_credit_mc),
+            newly_credited=orc_cur["relabel_credited_genes"],
+            n_newly_credited=len(orc_cur["relabel_credited_genes"]),
+            detail={g: relabel_detail[g] for g in sorted(relabel_detail) if g in mc_oracle},
+            recall_without_relabel=(round(
+                (orc_cur["oracle_genes_recovered_multicopy"] - len(orc_cur["relabel_credited_genes"]))
+                / n_mc_oracle, 4) if n_mc_oracle else None),
+            recall_with_relabel=orc_cur["recall_oracle"]),
         residual_fp_roster=dict(
             multifam=fp_multifam, oversize=fp_oversize, allele=fp_allele,
             ep_impure_not_dna_named=impure_not_dna,
