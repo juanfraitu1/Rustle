@@ -1,0 +1,1308 @@
+{
+ "determinism_reference_realign_ok": true,
+ "params": {
+  "min_ident": 0.9,
+  "cov_frac": 0.5,
+  "locus_gap": 500000,
+  "subthresh_floor": 0.8,
+  "minimap2": "asm20 -N50 -p0.1",
+  "threads": 5
+ },
+ "n_total": 151,
+ "n_collapsed": 145,
+ "n_divergent": 6,
+ "diploid_all": {
+  "NOVEL": 42,
+  "ALLELE": 96,
+  "UNDECIDABLE": 13
+ },
+ "diploid_collapsed": {
+  "NOVEL": 37,
+  "ALLELE": 95,
+  "UNDECIDABLE": 13
+ },
+ "diploid_divergent": {
+  "ALLELE": 1,
+  "NOVEL": 5
+ },
+ "haploid_to_diploid_transition": {
+  "COPY": {
+   "NOVEL": 16,
+   "ALLELE": 8,
+   "UNDECIDABLE": 2
+  },
+  "DIVERGENT-NOVEL": {
+   "NOVEL": 8,
+   "ALLELE": 8
+  },
+  "ALLELE/HET": {
+   "ALLELE": 32,
+   "NOVEL": 6
+  },
+  "AMBIGUOUS": {
+   "ALLELE": 47,
+   "UNDECIDABLE": 11,
+   "NOVEL": 7
+  }
+ },
+ "haploid_ambiguous_resolved": {
+  "ALLELE": 47,
+  "UNDECIDABLE": 11,
+  "NOVEL": 7
+ },
+ "n_copy": 0,
+ "n_allele": 96,
+ "n_novel": 42,
+ "n_undecidable": 13,
+ "copies_total": 0,
+ "copies_independent_of_oracle": 0,
+ "copies_already_in_oracle_collapsed": 0,
+ "copy_max_over_sweep": 0,
+ "sweep_note": "COPY=0 at EVERY (identity 0.80/0.85/0.90, coverage 0.2-0.5, gap 100k-500k) -- the negative is not a threshold/method-capacity artifact",
+ "robustness_sweep": [
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.2,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 10,
+    "ALLELE": 118,
+    "UNDECIDABLE": 23
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.2,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 10,
+    "ALLELE": 117,
+    "UNDECIDABLE": 24
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.3,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 22,
+    "ALLELE": 115,
+    "UNDECIDABLE": 14
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.3,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 19,
+    "ALLELE": 117,
+    "UNDECIDABLE": 15
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.4,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 26,
+    "ALLELE": 110,
+    "UNDECIDABLE": 15
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.4,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 23,
+    "ALLELE": 113,
+    "UNDECIDABLE": 15
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.5,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 38,
+    "ALLELE": 99,
+    "UNDECIDABLE": 14
+   }
+  },
+  {
+   "min_ident": 0.8,
+   "cov_frac": 0.5,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 36,
+    "ALLELE": 102,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.2,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 11,
+    "ALLELE": 118,
+    "UNDECIDABLE": 22
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.2,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 11,
+    "ALLELE": 117,
+    "UNDECIDABLE": 23
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.3,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 23,
+    "ALLELE": 115,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.3,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 20,
+    "ALLELE": 117,
+    "UNDECIDABLE": 14
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.4,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 27,
+    "ALLELE": 110,
+    "UNDECIDABLE": 14
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.4,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 24,
+    "ALLELE": 113,
+    "UNDECIDABLE": 14
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.5,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 39,
+    "ALLELE": 98,
+    "UNDECIDABLE": 14
+   }
+  },
+  {
+   "min_ident": 0.85,
+   "cov_frac": 0.5,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 37,
+    "ALLELE": 101,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.2,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 18,
+    "ALLELE": 111,
+    "UNDECIDABLE": 22
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.2,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 18,
+    "ALLELE": 111,
+    "UNDECIDABLE": 22
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.3,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 29,
+    "ALLELE": 110,
+    "UNDECIDABLE": 12
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.3,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 26,
+    "ALLELE": 112,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.4,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 33,
+    "ALLELE": 105,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.4,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 30,
+    "ALLELE": 108,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.5,
+   "locus_gap": 100000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 44,
+    "ALLELE": 94,
+    "UNDECIDABLE": 13
+   }
+  },
+  {
+   "min_ident": 0.9,
+   "cov_frac": 0.5,
+   "locus_gap": 500000,
+   "copy": 0,
+   "labels": {
+    "NOVEL": 42,
+    "ALLELE": 96,
+    "UNDECIDABLE": 13
+   }
+  }
+ ],
+ "sensitivity_floor": "0 COPY == 0 copy at >= ~80% identity; a genuinely divergent (<~80%) both-hap germline copy would be scored NOVEL/genuinely_absent -- the identity floor of a transcript-copy oracle, stated as a caveat.",
+ "novel_total": 42,
+ "novel_subclasses": {
+  "partial_present": 26,
+  "genuinely_absent": 10,
+  "subthreshold_present": 6
+ },
+ "novel_genuinely_absent": 10,
+ "novel_reference_present_below_gate": 32,
+ "novel_cov_frac_sensitivity": "the NOVEL/ALLELE split is COV_FRAC-sensitive (loci=0 vs 1 at the 50%% boundary); see robustness_sweep. Only COPY=0 is threshold-robust.",
+ "novel_genuinely_absent_list": [
+  {
+   "cid": "NC_086018.1_19667916",
+   "protein": "NO-HIT",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.8726,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.2193
+  },
+  {
+   "cid": "NC_073243.2_30120917",
+   "protein": "NO-HIT",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "NC_073229.2_164331546",
+   "protein": "LOC129525654",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.891,
+   "anyid_mat": 0.891,
+   "anyid_pat": 0.891,
+   "allcov_ref": 0.4481,
+   "allcov_mat": 0.4481,
+   "allcov_pat": 0.4481
+  },
+  {
+   "cid": "NC_073237.2_109499325",
+   "protein": "FKBP15",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "NC_086017.1_118126517",
+   "protein": "LOC129532516",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "UNM_cl19",
+   "protein": null,
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "UNM_cl31",
+   "protein": null,
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "UNM_cl56",
+   "protein": null,
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "UNM_cl34",
+   "protein": null,
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  },
+  {
+   "cid": "UNM_cl102",
+   "protein": null,
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.0
+  }
+ ],
+ "novel_reference_present_list": [
+  {
+   "cid": "NC_073227.2_36265854",
+   "protein": "NO-HIT",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9967,
+   "anyid_mat": 1.0,
+   "anyid_pat": 0.9967,
+   "allcov_ref": 0.0925,
+   "allcov_mat": 0.0925,
+   "allcov_pat": 0.0925
+  },
+  {
+   "cid": "NC_073231.2_39477379",
+   "protein": "NO-HIT",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9042,
+   "anyid_mat": 0.9042,
+   "anyid_pat": 0.9042,
+   "allcov_ref": 0.2223,
+   "allcov_mat": 0.2223,
+   "allcov_pat": 0.2223
+  },
+  {
+   "cid": "NC_073224.2_116807774",
+   "protein": "LOC129525599",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9852,
+   "anyid_mat": 0.0,
+   "anyid_pat": 0.9852,
+   "allcov_ref": 0.1158,
+   "allcov_mat": 0.0,
+   "allcov_pat": 0.1158
+  },
+  {
+   "cid": "NC_073238.2_32266743",
+   "protein": "SH3BGRL2",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9623,
+   "anyid_mat": 0.9623,
+   "anyid_pat": 0.9623,
+   "allcov_ref": 0.2721,
+   "allcov_mat": 0.2721,
+   "allcov_pat": 0.2721
+  },
+  {
+   "cid": "NC_073235.2_107578994",
+   "protein": "PARD3B",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9021,
+   "anyid_mat": 0.9021,
+   "anyid_pat": 0.9061,
+   "allcov_ref": 0.4922,
+   "allcov_mat": 0.4922,
+   "allcov_pat": 0.4922
+  },
+  {
+   "cid": "NC_073234.2_87500533",
+   "protein": "TRHDE",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.991,
+   "anyid_mat": 0.991,
+   "anyid_pat": 0.9928,
+   "allcov_ref": 0.2234,
+   "allcov_mat": 0.2234,
+   "allcov_pat": 0.2234
+  },
+  {
+   "cid": "NC_073239.2_118930933",
+   "protein": "DYNC1H1",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9922,
+   "anyid_mat": 0.9935,
+   "anyid_pat": 0.9922,
+   "allcov_ref": 0.2015,
+   "allcov_mat": 0.2412,
+   "allcov_pat": 0.2015
+  },
+  {
+   "cid": "NC_073243.2_27312208",
+   "protein": "CERS5",
+   "subclass": "subthreshold_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.842,
+   "anyid_mat": 0.842,
+   "anyid_pat": 0.842,
+   "allcov_ref": 0.6566,
+   "allcov_mat": 0.6566,
+   "allcov_pat": 0.6566
+  },
+  {
+   "cid": "NC_073228.2_17861469",
+   "protein": "NO-HIT",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9721,
+   "anyid_mat": 0.9777,
+   "anyid_pat": 0.9721,
+   "allcov_ref": 0.2291,
+   "allcov_mat": 0.2291,
+   "allcov_pat": 0.2291
+  },
+  {
+   "cid": "NC_073228.2_21847044",
+   "protein": "E2F6",
+   "subclass": "subthreshold_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.996,
+   "anyid_mat": 0.996,
+   "anyid_pat": 0.996,
+   "allcov_ref": 0.7837,
+   "allcov_mat": 0.7837,
+   "allcov_pat": 0.7837
+  },
+  {
+   "cid": "NC_073246.2_30485798",
+   "protein": "N6AMT1",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9763,
+   "anyid_mat": 0.9763,
+   "anyid_pat": 0.9778,
+   "allcov_ref": 0.237,
+   "allcov_mat": 0.237,
+   "allcov_pat": 0.237
+  },
+  {
+   "cid": "NC_073234.2_69501458",
+   "protein": "AMN1",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9961,
+   "anyid_mat": 0.9961,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.4299,
+   "allcov_mat": 0.4299,
+   "allcov_pat": 0.4299
+  },
+  {
+   "cid": "NC_086017.1_87520213",
+   "protein": "ROBO2",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9492,
+   "anyid_mat": 0.9499,
+   "anyid_pat": 0.9492,
+   "allcov_ref": 0.4144,
+   "allcov_mat": 0.4144,
+   "allcov_pat": 0.4144
+  },
+  {
+   "cid": "NC_086017.1_14081636",
+   "protein": "LOC101150774",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9966,
+   "anyid_mat": 0.9966,
+   "anyid_pat": 0.9966,
+   "allcov_ref": 0.3333,
+   "allcov_mat": 0.3333,
+   "allcov_pat": 0.3333
+  },
+  {
+   "cid": "NC_073230.2_22601670",
+   "protein": "AGMO",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9846,
+   "anyid_mat": 0.9846,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.283,
+   "allcov_mat": 0.283,
+   "allcov_pat": 0.283
+  },
+  {
+   "cid": "NC_073242.2_107132656",
+   "protein": "LOC115935585",
+   "subclass": "subthreshold_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9958,
+   "anyid_mat": 0.9916,
+   "anyid_pat": 0.9958,
+   "allcov_ref": 0.7902,
+   "allcov_mat": 0.7902,
+   "allcov_pat": 0.7902
+  },
+  {
+   "cid": "NC_073239.2_94194199",
+   "protein": "VIPAS39",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9553,
+   "anyid_mat": 0.9553,
+   "anyid_pat": 0.9553,
+   "allcov_ref": 0.2933,
+   "allcov_mat": 0.2933,
+   "allcov_pat": 0.2933
+  },
+  {
+   "cid": "NC_086017.1_108627629",
+   "protein": "CRYBG3",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9965,
+   "anyid_mat": 0.9971,
+   "anyid_pat": 0.9965,
+   "allcov_ref": 0.4574,
+   "allcov_mat": 0.4574,
+   "allcov_pat": 0.4574
+  },
+  {
+   "cid": "NC_073240.2_52516524",
+   "protein": "TMOD2",
+   "subclass": "subthreshold_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9847,
+   "anyid_mat": 0.9847,
+   "anyid_pat": 0.9847,
+   "allcov_ref": 0.5184,
+   "allcov_mat": 0.5184,
+   "allcov_pat": 0.5184
+  },
+  {
+   "cid": "NC_073238.2_101504720",
+   "protein": "NO-HIT",
+   "subclass": "subthreshold_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9939,
+   "anyid_mat": 0.9939,
+   "anyid_pat": 0.9939,
+   "allcov_ref": 1.0,
+   "allcov_mat": 1.0,
+   "allcov_pat": 1.0
+  },
+  {
+   "cid": "NC_073245.2_56146489",
+   "protein": "LOC129524615",
+   "subclass": "subthreshold_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.8952,
+   "anyid_mat": 0.8952,
+   "anyid_pat": 0.8952,
+   "allcov_ref": 0.9839,
+   "allcov_mat": 0.9839,
+   "allcov_pat": 0.9839
+  },
+  {
+   "cid": "NC_073224.2_117489966",
+   "protein": "LOC129525331",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.2753,
+   "allcov_mat": 0.3149,
+   "allcov_pat": 0.2146
+  },
+  {
+   "cid": "NC_073231.2_95446522",
+   "protein": "RIPK2",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9903,
+   "anyid_mat": 0.9923,
+   "anyid_pat": 0.9903,
+   "allcov_ref": 0.4186,
+   "allcov_mat": 0.4186,
+   "allcov_pat": 0.4186
+  },
+  {
+   "cid": "NC_073235.2_109351808",
+   "protein": "FASTKD2",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 0.991,
+   "allcov_ref": 0.3474,
+   "allcov_mat": 0.3474,
+   "allcov_pat": 0.3474
+  },
+  {
+   "cid": "NC_073228.2_11708010",
+   "protein": "SLC26A11",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9988,
+   "anyid_mat": 0.9989,
+   "anyid_pat": 0.9988,
+   "allcov_ref": 0.3042,
+   "allcov_mat": 0.3042,
+   "allcov_pat": 0.3042
+  },
+  {
+   "cid": "NC_073231.2_65184475",
+   "protein": "XKR4",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9982,
+   "anyid_mat": 0.9982,
+   "anyid_pat": 0.9982,
+   "allcov_ref": 0.4386,
+   "allcov_mat": 0.4386,
+   "allcov_pat": 0.4386
+  },
+  {
+   "cid": "NC_086017.1_18814921",
+   "protein": "SRGAP3",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.4981,
+   "allcov_mat": 0.4981,
+   "allcov_pat": 0.4981
+  },
+  {
+   "cid": "NC_073234.2_87153506",
+   "protein": "TBC1D15",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.4542,
+   "allcov_mat": 0.4542,
+   "allcov_pat": 0.4542
+  },
+  {
+   "cid": "NC_073242.2_115154945",
+   "protein": "KLHL36",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9944,
+   "anyid_mat": 0.9991,
+   "anyid_pat": 0.9944,
+   "allcov_ref": 0.4562,
+   "allcov_mat": 0.4562,
+   "allcov_pat": 0.4562
+  },
+  {
+   "cid": "NC_086018.1_15590312",
+   "protein": "ATP6V1E1",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 0.9476,
+   "anyid_mat": 0.9492,
+   "anyid_pat": 0.9476,
+   "allcov_ref": 0.4378,
+   "allcov_mat": 0.4378,
+   "allcov_pat": 0.4378
+  },
+  {
+   "cid": "NC_073233.2_14003549",
+   "protein": "LOC101134045",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.2953,
+   "allcov_mat": 0.451,
+   "allcov_pat": 0.2953
+  },
+  {
+   "cid": "NC_073246.2_48214082",
+   "protein": "PCNT",
+   "subclass": "partial_present",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.425,
+   "allcov_mat": 0.425,
+   "allcov_pat": 0.425
+  }
+ ],
+ "allele_total": 96,
+ "allele_one_hap_extra_raw": 4,
+ "allele_one_hap_extra_genuine": 3,
+ "allele_one_hap_extra_boundary_artifact": 1,
+ "allele_single_locus_het": 92,
+ "allele_one_hap_extra_genuine_list": [
+  {
+   "cid": "NC_073236.2_31151610",
+   "protein": "NO-HIT",
+   "subclass": "",
+   "ref": 5,
+   "mat": 6,
+   "pat": 5,
+   "anyid_ref": 0.9441,
+   "anyid_mat": 0.9469,
+   "anyid_pat": 0.9441,
+   "allcov_ref": 0.7311,
+   "allcov_mat": 0.7311,
+   "allcov_pat": 0.7311
+  },
+  {
+   "cid": "NC_073245.2_28784637",
+   "protein": "INO80C",
+   "subclass": "",
+   "ref": 1,
+   "mat": 2,
+   "pat": 1,
+   "anyid_ref": 1.0,
+   "anyid_mat": 1.0,
+   "anyid_pat": 1.0,
+   "allcov_ref": 0.9609,
+   "allcov_mat": 1.0,
+   "allcov_pat": 0.9609
+  },
+  {
+   "cid": "UNM_cl0",
+   "protein": null,
+   "subclass": "",
+   "ref": 0,
+   "mat": 1,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.9973,
+   "anyid_pat": 0.0,
+   "allcov_ref": 0.0,
+   "allcov_mat": 0.9998,
+   "allcov_pat": 0.0
+  }
+ ],
+ "allele_boundary_artifact_list": [
+  {
+   "cid": "NC_073224.2_239511912",
+   "protein": "CDK11B",
+   "subclass": "",
+   "ref": 0,
+   "mat": 1,
+   "pat": 0,
+   "anyid_ref": 0.9916,
+   "anyid_mat": 0.9924,
+   "anyid_pat": 0.9916,
+   "allcov_ref": 0.4336,
+   "allcov_mat": 0.5276,
+   "allcov_pat": 0.4336
+  }
+ ],
+ "reference_absent_confirmed_in_diploid": [
+  {
+   "cid": "UNM_cl0",
+   "kind": "divergent_unmapped",
+   "protein": null,
+   "ref": 0,
+   "mat": 1,
+   "pat": 0,
+   "anyid_ref": 0.0,
+   "anyid_mat": 0.9973,
+   "anyid_pat": 0.0,
+   "label": "ALLELE"
+  }
+ ],
+ "n_reference_absent_confirmed_in_diploid": 1,
+ "reference_present_zero_full_excluded": [
+  {
+   "cid": "NC_073227.2_36265854",
+   "protein": "NO-HIT",
+   "anyid_ref": 0.9967,
+   "allcov_ref": 0.0925,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073231.2_39477379",
+   "protein": "NO-HIT",
+   "anyid_ref": 0.9042,
+   "allcov_ref": 0.2223,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073224.2_116807774",
+   "protein": "LOC129525599",
+   "anyid_ref": 0.9852,
+   "allcov_ref": 0.1158,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073238.2_32266743",
+   "protein": "SH3BGRL2",
+   "anyid_ref": 0.9623,
+   "allcov_ref": 0.2721,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073235.2_107578994",
+   "protein": "PARD3B",
+   "anyid_ref": 0.9021,
+   "allcov_ref": 0.4922,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073234.2_87500533",
+   "protein": "TRHDE",
+   "anyid_ref": 0.991,
+   "allcov_ref": 0.2234,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073239.2_118930933",
+   "protein": "DYNC1H1",
+   "anyid_ref": 0.9922,
+   "allcov_ref": 0.2015,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073228.2_17861469",
+   "protein": "NO-HIT",
+   "anyid_ref": 0.9721,
+   "allcov_ref": 0.2291,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073228.2_21847044",
+   "protein": "E2F6",
+   "anyid_ref": 0.996,
+   "allcov_ref": 0.7837,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073246.2_30485798",
+   "protein": "N6AMT1",
+   "anyid_ref": 0.9763,
+   "allcov_ref": 0.237,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073234.2_69501458",
+   "protein": "AMN1",
+   "anyid_ref": 0.9961,
+   "allcov_ref": 0.4299,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_086017.1_87520213",
+   "protein": "ROBO2",
+   "anyid_ref": 0.9492,
+   "allcov_ref": 0.4144,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_086017.1_14081636",
+   "protein": "LOC101150774",
+   "anyid_ref": 0.9966,
+   "allcov_ref": 0.3333,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073230.2_22601670",
+   "protein": "AGMO",
+   "anyid_ref": 0.9846,
+   "allcov_ref": 0.283,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073242.2_107132656",
+   "protein": "LOC115935585",
+   "anyid_ref": 0.9958,
+   "allcov_ref": 0.7902,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073239.2_94194199",
+   "protein": "VIPAS39",
+   "anyid_ref": 0.9553,
+   "allcov_ref": 0.2933,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_086017.1_108627629",
+   "protein": "CRYBG3",
+   "anyid_ref": 0.9965,
+   "allcov_ref": 0.4574,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073240.2_52516524",
+   "protein": "TMOD2",
+   "anyid_ref": 0.9847,
+   "allcov_ref": 0.5184,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073238.2_101504720",
+   "protein": "NO-HIT",
+   "anyid_ref": 0.9939,
+   "allcov_ref": 1.0,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073224.2_117489966",
+   "protein": "LOC129525331",
+   "anyid_ref": 1.0,
+   "allcov_ref": 0.2753,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073231.2_95446522",
+   "protein": "RIPK2",
+   "anyid_ref": 0.9903,
+   "allcov_ref": 0.4186,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073235.2_109351808",
+   "protein": "FASTKD2",
+   "anyid_ref": 1.0,
+   "allcov_ref": 0.3474,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073228.2_11708010",
+   "protein": "SLC26A11",
+   "anyid_ref": 0.9988,
+   "allcov_ref": 0.3042,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073231.2_65184475",
+   "protein": "XKR4",
+   "anyid_ref": 0.9982,
+   "allcov_ref": 0.4386,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_086017.1_18814921",
+   "protein": "SRGAP3",
+   "anyid_ref": 1.0,
+   "allcov_ref": 0.4981,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073224.2_239511912",
+   "protein": "CDK11B",
+   "anyid_ref": 0.9916,
+   "allcov_ref": 0.4336,
+   "label": "ALLELE"
+  },
+  {
+   "cid": "NC_073234.2_87153506",
+   "protein": "TBC1D15",
+   "anyid_ref": 1.0,
+   "allcov_ref": 0.4542,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073242.2_115154945",
+   "protein": "KLHL36",
+   "anyid_ref": 0.9944,
+   "allcov_ref": 0.4562,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_086018.1_15590312",
+   "protein": "ATP6V1E1",
+   "anyid_ref": 0.9476,
+   "allcov_ref": 0.4378,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073233.2_14003549",
+   "protein": "LOC101134045",
+   "anyid_ref": 1.0,
+   "allcov_ref": 0.2953,
+   "label": "NOVEL"
+  },
+  {
+   "cid": "NC_073246.2_48214082",
+   "protein": "PCNT",
+   "anyid_ref": 1.0,
+   "allcov_ref": 0.425,
+   "label": "NOVEL"
+  }
+ ],
+ "candidates_in_oracle_collapsed_family": [
+  {
+   "cid": "NC_073238.2_32266743",
+   "protein": "SH3BGRL2",
+   "oracle_family": "34",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "label": "NOVEL",
+   "subclass": "partial_present"
+  },
+  {
+   "cid": "NC_073224.2_124254598",
+   "protein": "LOC115932735",
+   "oracle_family": "70",
+   "ref": 1,
+   "mat": 0,
+   "pat": 1,
+   "label": "UNDECIDABLE",
+   "subclass": ""
+  }
+ ],
+ "copy_calls": [],
+ "divergent_calls": [
+  {
+   "cid": "UNM_cl0",
+   "label": "ALLELE",
+   "subclass": "",
+   "ref": 0,
+   "mat": 1,
+   "pat": 0,
+   "note": "POC:NOVEL protein-coding transcript, absent "
+  },
+  {
+   "cid": "UNM_cl19",
+   "label": "NOVEL",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "note": "POC:expressed repeat / TE (dispersed, many g"
+  },
+  {
+   "cid": "UNM_cl31",
+   "label": "NOVEL",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "note": "POC:expressed repeat / TE (dispersed, many g"
+  },
+  {
+   "cid": "UNM_cl56",
+   "label": "NOVEL",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "note": "POC:divergent/unannotated single locus (pres"
+  },
+  {
+   "cid": "UNM_cl34",
+   "label": "NOVEL",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "note": "POC:mostly-unaligned (low ORF) \u2014 novel/uncha"
+  },
+  {
+   "cid": "UNM_cl102",
+   "label": "NOVEL",
+   "subclass": "genuinely_absent",
+   "ref": 0,
+   "mat": 0,
+   "pat": 0,
+   "note": "POC:mostly-unaligned (low ORF) \u2014 novel/uncha"
+  }
+ ]
+}
