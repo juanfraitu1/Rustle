@@ -1,0 +1,549 @@
+{
+ "aln_provenance": {
+  "auc_genome": 0.9151,
+  "auc_readcons": 0.9149,
+  "desc": "genome-fetched exon bases (RNA splice structure) vs read-consensus POA bases (no genome)",
+  "gate_agreement_frac": 0.9975,
+  "n": 5571,
+  "spearman_rho": 0.9941
+ },
+ "catalogs": {
+  "gamma_shipped_0.20": {
+   "ge_genuine_cut": 0.3163,
+   "genuine_precision": 0.6129,
+   "impure_blocks": 115,
+   "n_families": 858,
+   "oracle_allele_as_copy": 2,
+   "oracle_allele_examples": [
+    "LOC129530050(dl=3,hapCN=1)",
+    "DHRSX(dl=2,hapCN=1)"
+   ],
+   "oracle_blocks": 50,
+   "oracle_genes_recovered": 52,
+   "oracle_multifam": 6,
+   "oracle_multifam_examples": [
+    "LOC129529978+LOC129529986+MAGEA9(dl=18)",
+    "GSTM2+LOC115930164+LOC115930576(dl=17)",
+    "LOC101142904+LOC129526550(dl=13)",
+    "FOXO1+LOC115933254(dl=10)",
+    "GSTM2+LOC115935025(dl=9)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oracle_oversize_diploid": 4,
+   "oracle_oversize_examples": [
+    "LOC129523567(dl=54,dipCN=4,13.5x)",
+    "LOC129529978+LOC129529986+MAGEA9(dl=18,dipCN=2,9.0x)",
+    "LOC134758618(dl=10,dipCN=6,1.67x)",
+    "MPHOSPH8(dl=10,dipCN=4,2.5x)"
+   ],
+   "oracle_undersize_diploid": 30,
+   "oracle_undersize_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=17,dipCN=38,2.24x)",
+    "LOC134757299(dl=16,dipCN=46,2.88x)",
+    "GSTM2(dl=15,dipCN=38,2.53x)",
+    "LOC101142904+LOC129526550(dl=13,dipCN=26,2.0x)",
+    "GSTM2(dl=11,dipCN=38,3.45x)",
+    "LOC109025447(dl=10,dipCN=20,2.0x)",
+    "GSTM2+LOC115935025(dl=9,dipCN=38,4.22x)",
+    "LOC101130894(dl=7,dipCN=31,4.43x)",
+    "LOC134756389(dl=5,dipCN=10,2.0x)",
+    "LOC129530275(dl=4,dipCN=7,1.75x)",
+    "LOC129531752(dl=4,dipCN=44,11.0x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "GSTM2+LOC101129940(dl=3,dipCN=38,12.67x)",
+    "LOC101130854(dl=3,dipCN=16,5.33x)",
+    "LOC109025132(dl=3,dipCN=8,2.67x)",
+    "LOC109029264(dl=3,dipCN=8,2.67x)",
+    "LOC129523521(dl=3,dipCN=8,2.67x)",
+    "PLEKHM1(dl=3,dipCN=6,2.0x)",
+    "CPLANE1(dl=2,dipCN=12,6.0x)",
+    "LOC101123970(dl=2,dipCN=4,2.0x)",
+    "LOC101124683(dl=2,dipCN=4,2.0x)",
+    "LOC101127437(dl=2,dipCN=4,2.0x)",
+    "LOC101139703(dl=2,dipCN=28,14.0x)",
+    "LOC115931067(dl=2,dipCN=4,2.0x)",
+    "LOC129523519(dl=2,dipCN=6,3.0x)",
+    "LOC129530554(dl=2,dipCN=6,3.0x)",
+    "LOC129534200(dl=2,dipCN=4,2.0x)",
+    "LOC134758386(dl=2,dipCN=4,2.0x)",
+    "MPHOSPH8(dl=2,dipCN=4,2.0x)",
+    "TUBGCP5(dl=2,dipCN=4,2.0x)"
+   ],
+   "overmerge_cut": 0.9677,
+   "tp_retention": 0.9783,
+   "truthbar_retention": 0.1502
+  },
+  "rna_only_heldout_ruleF1": {
+   "ge_genuine_cut": 0.8935,
+   "genuine_precision": 0.5868,
+   "impure_blocks": 33,
+   "n_families": 418,
+   "oracle_allele_as_copy": 2,
+   "oracle_allele_examples": [
+    "DHRSX(dl=2,hapCN=1)",
+    "LOC129530050(dl=2,hapCN=1)"
+   ],
+   "oracle_blocks": 44,
+   "oracle_genes_recovered": 46,
+   "oracle_multifam": 4,
+   "oracle_multifam_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14)",
+    "FOXO1+LOC115933254(dl=10)",
+    "LOC129529978+LOC129529986(dl=7)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oracle_oversize_diploid": 2,
+   "oracle_oversize_examples": [
+    "MPHOSPH8(dl=11,dipCN=4,2.75x)",
+    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+   ],
+   "oracle_undersize_diploid": 30,
+   "oracle_undersize_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14,dipCN=38,2.71x)",
+    "LOC129526550(dl=11,dipCN=26,2.36x)",
+    "LOC134757299(dl=9,dipCN=46,5.11x)",
+    "GSTM2(dl=6,dipCN=38,6.33x)",
+    "LOC134756389(dl=5,dipCN=10,2.0x)",
+    "LOC129530275(dl=4,dipCN=7,1.75x)",
+    "GSTM2+LOC101129940(dl=3,dipCN=38,12.67x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "LOC109025132(dl=3,dipCN=8,2.67x)",
+    "LOC115932756(dl=3,dipCN=20,6.67x)",
+    "LOC129523521(dl=3,dipCN=8,2.67x)",
+    "LOC129527053(dl=3,dipCN=6,2.0x)",
+    "LOC129531752(dl=3,dipCN=44,14.67x)",
+    "CPLANE1(dl=2,dipCN=12,6.0x)",
+    "LOC101123970(dl=2,dipCN=4,2.0x)",
+    "LOC101124683(dl=2,dipCN=4,2.0x)",
+    "LOC101127437(dl=2,dipCN=4,2.0x)",
+    "LOC101139703(dl=2,dipCN=28,14.0x)",
+    "LOC101142904(dl=2,dipCN=6,3.0x)",
+    "LOC109025447(dl=2,dipCN=20,10.0x)",
+    "LOC115931067(dl=2,dipCN=4,2.0x)",
+    "LOC115935025(dl=2,dipCN=6,3.0x)",
+    "LOC129523519(dl=2,dipCN=6,3.0x)",
+    "LOC129523647(dl=2,dipCN=4,2.0x)",
+    "LOC129530554(dl=2,dipCN=6,3.0x)",
+    "LOC129534200(dl=2,dipCN=4,2.0x)",
+    "LOC134758386(dl=2,dipCN=4,2.0x)",
+    "PLEKHM1(dl=2,dipCN=6,3.0x)",
+    "SNRNP25(dl=2,dipCN=4,2.0x)",
+    "TUBGCP5(dl=2,dipCN=4,2.0x)"
+   ],
+   "overmerge_cut": 0.9967,
+   "tp_retention": 0.6543,
+   "truthbar_retention": 0.0073
+  },
+  "rna_only_recall_preserving": {
+   "ge_genuine_cut": 0.6693,
+   "genuine_precision": 0.4716,
+   "impure_blocks": 81,
+   "n_families": 610,
+   "oracle_allele_as_copy": 2,
+   "oracle_allele_examples": [
+    "DHRSX(dl=2,hapCN=1)",
+    "LOC129530050(dl=2,hapCN=1)"
+   ],
+   "oracle_blocks": 51,
+   "oracle_genes_recovered": 51,
+   "oracle_multifam": 4,
+   "oracle_multifam_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=15)",
+    "FOXO1+LOC115933254(dl=10)",
+    "LOC129529978+LOC129529986(dl=7)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oracle_oversize_diploid": 3,
+   "oracle_oversize_examples": [
+    "MPHOSPH8(dl=11,dipCN=4,2.75x)",
+    "LOC134758618(dl=10,dipCN=6,1.67x)",
+    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+   ],
+   "oracle_undersize_diploid": 33,
+   "oracle_undersize_examples": [
+    "LOC134757299(dl=16,dipCN=46,2.88x)",
+    "GSTM2+LOC115930164+LOC115930576(dl=15,dipCN=38,2.53x)",
+    "LOC115932756(dl=11,dipCN=20,1.82x)",
+    "LOC129526550(dl=11,dipCN=26,2.36x)",
+    "LOC109025447(dl=8,dipCN=20,2.5x)",
+    "GSTM2(dl=7,dipCN=38,5.43x)",
+    "LOC101130894(dl=6,dipCN=31,5.17x)",
+    "LOC134756389(dl=5,dipCN=10,2.0x)",
+    "LOC129530275(dl=4,dipCN=7,1.75x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "GSTM2+LOC101129940(dl=3,dipCN=38,12.67x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "LOC101130854(dl=3,dipCN=16,5.33x)",
+    "LOC109025132(dl=3,dipCN=8,2.67x)",
+    "LOC109029264(dl=3,dipCN=8,2.67x)",
+    "LOC129523521(dl=3,dipCN=8,2.67x)",
+    "LOC129531752(dl=3,dipCN=44,14.67x)",
+    "PLEKHM1(dl=3,dipCN=6,2.0x)",
+    "CPLANE1(dl=2,dipCN=12,6.0x)",
+    "LOC101123970(dl=2,dipCN=4,2.0x)",
+    "LOC101124683(dl=2,dipCN=4,2.0x)",
+    "LOC101127437(dl=2,dipCN=4,2.0x)",
+    "LOC101139703(dl=2,dipCN=28,14.0x)",
+    "LOC101142904(dl=2,dipCN=6,3.0x)",
+    "LOC115931067(dl=2,dipCN=4,2.0x)",
+    "LOC115935025(dl=2,dipCN=6,3.0x)",
+    "LOC129523519(dl=2,dipCN=6,3.0x)",
+    "LOC129523647(dl=2,dipCN=4,2.0x)",
+    "LOC129530554(dl=2,dipCN=6,3.0x)",
+    "LOC129534200(dl=2,dipCN=4,2.0x)",
+    "LOC134758386(dl=2,dipCN=4,2.0x)",
+    "MPHOSPH8(dl=2,dipCN=4,2.0x)",
+    "TUBGCP5(dl=2,dipCN=4,2.0x)"
+   ],
+   "overmerge_cut": 0.9895,
+   "tp_retention": 0.9217,
+   "truthbar_retention": 0.0193
+  },
+  "rna_only_ruleF1": {
+   "ge_genuine_cut": 0.8989,
+   "genuine_precision": 0.5937,
+   "impure_blocks": 33,
+   "n_families": 421,
+   "oracle_allele_as_copy": 2,
+   "oracle_allele_examples": [
+    "DHRSX(dl=2,hapCN=1)",
+    "LOC129530050(dl=2,hapCN=1)"
+   ],
+   "oracle_blocks": 45,
+   "oracle_genes_recovered": 47,
+   "oracle_multifam": 4,
+   "oracle_multifam_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14)",
+    "FOXO1+LOC115933254(dl=10)",
+    "LOC129529978+LOC129529986(dl=7)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oracle_oversize_diploid": 2,
+   "oracle_oversize_examples": [
+    "MPHOSPH8(dl=11,dipCN=4,2.75x)",
+    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+   ],
+   "oracle_undersize_diploid": 30,
+   "oracle_undersize_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14,dipCN=38,2.71x)",
+    "LOC129526550(dl=11,dipCN=26,2.36x)",
+    "LOC134757299(dl=9,dipCN=46,5.11x)",
+    "GSTM2(dl=6,dipCN=38,6.33x)",
+    "LOC134756389(dl=5,dipCN=10,2.0x)",
+    "LOC115932756(dl=4,dipCN=20,5.0x)",
+    "LOC129530275(dl=4,dipCN=7,1.75x)",
+    "GSTM2+LOC101129940(dl=3,dipCN=38,12.67x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "LOC109025132(dl=3,dipCN=8,2.67x)",
+    "LOC129523521(dl=3,dipCN=8,2.67x)",
+    "LOC129527053(dl=3,dipCN=6,2.0x)",
+    "LOC129531752(dl=3,dipCN=44,14.67x)",
+    "PLEKHM1(dl=3,dipCN=6,2.0x)",
+    "CPLANE1(dl=2,dipCN=12,6.0x)",
+    "LOC101123970(dl=2,dipCN=4,2.0x)",
+    "LOC101124683(dl=2,dipCN=4,2.0x)",
+    "LOC101127437(dl=2,dipCN=4,2.0x)",
+    "LOC101139703(dl=2,dipCN=28,14.0x)",
+    "LOC101142904(dl=2,dipCN=6,3.0x)",
+    "LOC109025447(dl=2,dipCN=20,10.0x)",
+    "LOC115931067(dl=2,dipCN=4,2.0x)",
+    "LOC115935025(dl=2,dipCN=6,3.0x)",
+    "LOC129523519(dl=2,dipCN=6,3.0x)",
+    "LOC129523647(dl=2,dipCN=4,2.0x)",
+    "LOC129530554(dl=2,dipCN=6,3.0x)",
+    "LOC129534200(dl=2,dipCN=4,2.0x)",
+    "LOC134758386(dl=2,dipCN=4,2.0x)",
+    "SNRNP25(dl=2,dipCN=4,2.0x)",
+    "TUBGCP5(dl=2,dipCN=4,2.0x)"
+   ],
+   "overmerge_cut": 0.9969,
+   "tp_retention": 0.6739,
+   "truthbar_retention": 0.0066
+  },
+  "rna_only_ruleF1_demoted": {
+   "ge_genuine_cut": 0.9005,
+   "genuine_precision": 0.5949,
+   "impure_blocks": 31,
+   "n_families": 418,
+   "oracle_allele_as_copy": 0,
+   "oracle_allele_examples": [],
+   "oracle_blocks": 42,
+   "oracle_genes_recovered": 44,
+   "oracle_multifam": 4,
+   "oracle_multifam_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14)",
+    "FOXO1+LOC115933254(dl=10)",
+    "LOC129529978+LOC129529986(dl=7)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oracle_oversize_diploid": 2,
+   "oracle_oversize_examples": [
+    "MPHOSPH8(dl=11,dipCN=4,2.75x)",
+    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+   ],
+   "oracle_undersize_diploid": 30,
+   "oracle_undersize_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14,dipCN=38,2.71x)",
+    "LOC129526550(dl=11,dipCN=26,2.36x)",
+    "LOC134757299(dl=9,dipCN=46,5.11x)",
+    "GSTM2(dl=6,dipCN=38,6.33x)",
+    "LOC134756389(dl=5,dipCN=10,2.0x)",
+    "LOC115932756(dl=4,dipCN=20,5.0x)",
+    "LOC129530275(dl=4,dipCN=7,1.75x)",
+    "GSTM2+LOC101129940(dl=3,dipCN=38,12.67x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "LOC109025132(dl=3,dipCN=8,2.67x)",
+    "LOC129523521(dl=3,dipCN=8,2.67x)",
+    "LOC129527053(dl=3,dipCN=6,2.0x)",
+    "LOC129531752(dl=3,dipCN=44,14.67x)",
+    "PLEKHM1(dl=3,dipCN=6,2.0x)",
+    "CPLANE1(dl=2,dipCN=12,6.0x)",
+    "LOC101123970(dl=2,dipCN=4,2.0x)",
+    "LOC101124683(dl=2,dipCN=4,2.0x)",
+    "LOC101127437(dl=2,dipCN=4,2.0x)",
+    "LOC101139703(dl=2,dipCN=28,14.0x)",
+    "LOC101142904(dl=2,dipCN=6,3.0x)",
+    "LOC109025447(dl=2,dipCN=20,10.0x)",
+    "LOC115931067(dl=2,dipCN=4,2.0x)",
+    "LOC115935025(dl=2,dipCN=6,3.0x)",
+    "LOC129523519(dl=2,dipCN=6,3.0x)",
+    "LOC129523647(dl=2,dipCN=4,2.0x)",
+    "LOC129530554(dl=2,dipCN=6,3.0x)",
+    "LOC129534200(dl=2,dipCN=4,2.0x)",
+    "LOC134758386(dl=2,dipCN=4,2.0x)",
+    "SNRNP25(dl=2,dipCN=4,2.0x)",
+    "TUBGCP5(dl=2,dipCN=4,2.0x)"
+   ],
+   "overmerge_cut": 0.9969,
+   "tp_retention": 0.6739,
+   "truthbar_retention": 0.0066
+  },
+  "rna_only_ruleF1_readcons": {
+   "ge_genuine_cut": 0.8986,
+   "genuine_precision": 0.5899,
+   "impure_blocks": 32,
+   "n_families": 420,
+   "oracle_allele_as_copy": 2,
+   "oracle_allele_examples": [
+    "DHRSX(dl=2,hapCN=1)",
+    "LOC129530050(dl=2,hapCN=1)"
+   ],
+   "oracle_blocks": 45,
+   "oracle_genes_recovered": 47,
+   "oracle_multifam": 4,
+   "oracle_multifam_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14)",
+    "FOXO1+LOC115933254(dl=10)",
+    "LOC129529978+LOC129529986(dl=7)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oracle_oversize_diploid": 2,
+   "oracle_oversize_examples": [
+    "MPHOSPH8(dl=11,dipCN=4,2.75x)",
+    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+   ],
+   "oracle_undersize_diploid": 30,
+   "oracle_undersize_examples": [
+    "GSTM2+LOC115930164+LOC115930576(dl=14,dipCN=38,2.71x)",
+    "LOC129526550(dl=11,dipCN=26,2.36x)",
+    "LOC134757299(dl=9,dipCN=46,5.11x)",
+    "GSTM2(dl=6,dipCN=38,6.33x)",
+    "LOC134756389(dl=5,dipCN=10,2.0x)",
+    "LOC115932756(dl=4,dipCN=20,5.0x)",
+    "LOC129530275(dl=4,dipCN=7,1.75x)",
+    "GSTM2+LOC101129940(dl=3,dipCN=38,12.67x)",
+    "GSTM2(dl=3,dipCN=38,12.67x)",
+    "LOC109025132(dl=3,dipCN=8,2.67x)",
+    "LOC129523521(dl=3,dipCN=8,2.67x)",
+    "LOC129527053(dl=3,dipCN=6,2.0x)",
+    "LOC129531752(dl=3,dipCN=44,14.67x)",
+    "PLEKHM1(dl=3,dipCN=6,2.0x)",
+    "CPLANE1(dl=2,dipCN=12,6.0x)",
+    "LOC101123970(dl=2,dipCN=4,2.0x)",
+    "LOC101124683(dl=2,dipCN=4,2.0x)",
+    "LOC101127437(dl=2,dipCN=4,2.0x)",
+    "LOC101139703(dl=2,dipCN=28,14.0x)",
+    "LOC101142904(dl=2,dipCN=6,3.0x)",
+    "LOC109025447(dl=2,dipCN=20,10.0x)",
+    "LOC115931067(dl=2,dipCN=4,2.0x)",
+    "LOC115935025(dl=2,dipCN=6,3.0x)",
+    "LOC129523519(dl=2,dipCN=6,3.0x)",
+    "LOC129523647(dl=2,dipCN=4,2.0x)",
+    "LOC129530554(dl=2,dipCN=6,3.0x)",
+    "LOC129534200(dl=2,dipCN=4,2.0x)",
+    "LOC134758386(dl=2,dipCN=4,2.0x)",
+    "SNRNP25(dl=2,dipCN=4,2.0x)",
+    "TUBGCP5(dl=2,dipCN=4,2.0x)"
+   ],
+   "overmerge_cut": 0.9969,
+   "tp_retention": 0.6739,
+   "truthbar_retention": 0.0065
+  }
+ },
+ "demote": {
+  "fired": [
+   {
+    "balanced_frac": 1.0,
+    "copy_like": 0.0,
+    "dna_confirmed": true,
+    "gene": "DHRSX",
+    "n_loci": 2
+   },
+   {
+    "balanced_frac": 1.0,
+    "copy_like": 0.0,
+    "dna_confirmed": false,
+    "gene": "LOC115932259",
+    "n_loci": 2
+   },
+   {
+    "balanced_frac": 1.0,
+    "copy_like": 0.0,
+    "dna_confirmed": true,
+    "gene": "LOC129530050",
+    "n_loci": 2
+   }
+  ],
+  "n_fired": 3,
+  "rule": "balanced_frac>=0.90 AND copy_like<=0.10 (read-consensus O1)"
+ },
+ "dn_edges": {
+  "cross_cut_heldout": 9415,
+  "cross_cut_recall": 8343,
+  "cross_cut_ruleF1": 9451,
+  "total": 11400
+ },
+ "guards": {
+  "demote_features": [
+   "balanced_frac",
+   "copy_like"
+  ],
+  "edge_decision_features": [
+   "core_recip",
+   "aln_frac"
+  ],
+  "gamma": 0.2,
+  "no_dna_in_decision": true,
+  "purity_max_catalog": "rna_only_ruleF1_readcons (aln from read consensus, no genome bases)",
+  "seed": 0
+ },
+ "heldout_noncircular": {
+  "genuine_cut": 1587,
+  "genuine_cut_frac": 0.8946,
+  "genuine_total": 1774,
+  "tp_kept": 240,
+  "tp_kept_frac": 0.5769,
+  "tp_total": 416,
+  "truthbar_cut": 3240,
+  "truthbar_total": 3390
+ },
+ "oversplit_diploid_bound": {
+  "by_class": {
+   "TP": {
+    "cut": 176,
+    "diploid_multicopy": 28,
+    "oracle_covered": 28
+   },
+   "genuine": {
+    "cut": 1587,
+    "diploid_multicopy": 61,
+    "oracle_covered": 61
+   },
+   "truthbar": {
+    "cut": 3240,
+    "diploid_multicopy": 35,
+    "oracle_covered": 35
+   }
+  },
+  "desc": "held-out CUT edges touching a diploid multi-copy locus (dip>=2) = potential real copy split off",
+  "oracle_genes_recovered_rna_only": 44,
+  "oracle_genes_recovered_shipped": 52,
+  "undersize_rna_only": 30,
+  "undersize_shipped": 30
+ },
+ "residual_fp_tracking": {
+  "allele:DHRSX": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": true,
+   "rna_only_recall_preserving": true,
+   "rna_only_ruleF1": true,
+   "rna_only_ruleF1_demoted": false,
+   "rna_only_ruleF1_readcons": true
+  },
+  "allele:LOC129530050": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": true,
+   "rna_only_recall_preserving": true,
+   "rna_only_ruleF1": true,
+   "rna_only_ruleF1_demoted": false,
+   "rna_only_ruleF1_readcons": true
+  },
+  "multifam:FOXO1+LOC115933254": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": true,
+   "rna_only_recall_preserving": true,
+   "rna_only_ruleF1": true,
+   "rna_only_ruleF1_demoted": true,
+   "rna_only_ruleF1_readcons": true
+  },
+  "multifam:GSTM2+*hub*": {
+   "gamma_shipped_0.20": 3,
+   "rna_only_heldout_ruleF1": 2,
+   "rna_only_recall_preserving": 2,
+   "rna_only_ruleF1": 2,
+   "rna_only_ruleF1_demoted": 2,
+   "rna_only_ruleF1_readcons": 2
+  },
+  "multifam:LOC101142904+LOC129526550": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": false,
+   "rna_only_recall_preserving": false,
+   "rna_only_ruleF1": false,
+   "rna_only_ruleF1_demoted": false,
+   "rna_only_ruleF1_readcons": false
+  },
+  "oversize:LOC129523567": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": false,
+   "rna_only_recall_preserving": false,
+   "rna_only_ruleF1": false,
+   "rna_only_ruleF1_demoted": false,
+   "rna_only_ruleF1_readcons": false
+  },
+  "oversize:LOC134758618": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": false,
+   "rna_only_recall_preserving": true,
+   "rna_only_ruleF1": false,
+   "rna_only_ruleF1_demoted": false,
+   "rna_only_ruleF1_readcons": false
+  },
+  "oversize:MAGEA9": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": false,
+   "rna_only_recall_preserving": false,
+   "rna_only_ruleF1": false,
+   "rna_only_ruleF1_demoted": false,
+   "rna_only_ruleF1_readcons": false
+  },
+  "oversize:MPHOSPH8": {
+   "gamma_shipped_0.20": true,
+   "rna_only_heldout_ruleF1": true,
+   "rna_only_recall_preserving": true,
+   "rna_only_ruleF1": true,
+   "rna_only_ruleF1_demoted": true,
+   "rna_only_ruleF1_readcons": true
+  }
+ },
+ "rule": {
+  "final_f1": {
+   "aln_frac": 0.72,
+   "core_recip": 0.26
+  },
+  "form": "KEEP E_r edge iff core_recip>=t1 AND aln_frac>=t2 (RNA-only)",
+  "recall_preserving": {
+   "aln_frac": 0.24,
+   "core_recip": 0.19
+  }
+ }
+}
