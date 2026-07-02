@@ -1,0 +1,105 @@
+{
+ "alleles_demoted": [
+  {
+   "balanced_frac": 1.0,
+   "copy_like": 0.0,
+   "dna_confirmed": true,
+   "gene": "DHRSX",
+   "n_loci": 2
+  },
+  {
+   "balanced_frac": 1.0,
+   "copy_like": 0.0,
+   "dna_confirmed": false,
+   "gene": "LOC115932259",
+   "n_loci": 2
+  },
+  {
+   "balanced_frac": 1.0,
+   "copy_like": 0.0,
+   "dna_confirmed": true,
+   "gene": "LOC129530050",
+   "n_loci": 2
+  }
+ ],
+ "edges": {
+  "n_cross_gene_pairs_cut": 7027,
+  "n_cross_gene_pairs_kept": 1457,
+  "n_dn_cross_gene_cut": 8343,
+  "n_dn_cross_gene_kept": 1762,
+  "n_dn_edges_total": 11400,
+  "n_dn_within_gene_kept": 1295
+ },
+ "guards": {
+  "demote_features": [
+   "balanced_frac",
+   "copy_like"
+  ],
+  "edge_decision_features": [
+   "core_recip",
+   "aln_frac"
+  ],
+  "gamma": 0.2,
+  "no_dna_in_inference": true,
+  "seed": 0
+ },
+ "inputs": {
+  "allele": "bench/a1_read_consensus_o1.tsv",
+  "aln_frac": "bench/ri_sharedlen_universal.tsv",
+  "edges": "bench/denovo_family_edges.tsv"
+ },
+ "n_alleles_demoted": 3,
+ "n_families": 607,
+ "outputs": {
+  "catalog_tsv": "bench/family_rna_refine.tsv",
+  "summary_json": "bench/family_rna_refine.json"
+ },
+ "residual_fp": {
+  "named_removed": 6,
+  "named_removed_breakdown": {
+   "allele": 2,
+   "multifam": 2,
+   "oversize": 2
+  },
+  "note": "12 DNA-confirmed residual FP in shipped gamma (2 allele + 4 oversize + 6 multifam = 12); RNA-only recall-preserving+demote removes 6 named FP (RNA_ONLY_EDGE_ORACLE.md recall-preserving row: oracle_allele 0, oracle_oversize 3, oracle_multifam 4 remaining)",
+  "oracle_genes_recovered": 48,
+  "oracle_genes_recovered_shipped": 52,
+  "residual_examples": {
+   "allele": [],
+   "multifam": [
+    "GSTM2+LOC115930164+LOC115930576(dl=15)",
+    "FOXO1+LOC115933254(dl=10)",
+    "LOC129529978+LOC129529986(dl=7)",
+    "GSTM2+LOC101129940(dl=3)"
+   ],
+   "oversize": [
+    "MPHOSPH8(dl=11,dipCN=4,2.75x)",
+    "LOC134758618(dl=10,dipCN=6,1.67x)",
+    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+   ]
+  },
+  "residual_remaining": {
+   "allele": 0,
+   "multifam": 4,
+   "oversize": 3
+  },
+  "residual_remaining_total": 7,
+  "shipped_residual": {
+   "allele": 2,
+   "multifam": 6,
+   "oversize": 4
+  },
+  "shipped_residual_total": 12
+ },
+ "rule": {
+  "aln_frac_min": 0.24,
+  "core_recip_min": 0.19,
+  "demote": "balanced_frac>=0.90 AND copy_like<=0.10",
+  "demote_balanced_frac_min": 0.9,
+  "demote_copy_like_max": 0.1,
+  "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24",
+  "gamma": 0.2,
+  "seed": 0
+ },
+ "stage": "family_rna_refine (RNA-only recall-preserving refinement; opt-in)"
+}
