@@ -1,0 +1,22 @@
+paralog pairs: 18417  paralog genes: 5778
+
+reads w/ >50k intron in paralog-gene regions: 47652
+  -> PARALOG-COPY fusion (both flanks = known paralog pair): 4736 reads, 64 distinct pairs
+  -> unrelated-neighbor read-through: 1726 reads
+
+top paralog-fusion gene-pairs (reads):
+  3400  ELOVL5 | LOC101127632
+   574  LOC101124180 | LOC115933127
+   173  LOC115930164 | LOC134756448
+   159  LOC101124180 | LOC134757171
+   131  LOC101124180 | LOC115930550
+    64  LOC115933446 | LOC134756775
+    45  ACSL4 | LOC109024752
+    23  LOC101145825 | LOC115931919
+    18  LOC129523531 | LOC129531671
+    17  LOC101124180 | LOC101146834
+    16  LOC129532042 | LOC129534588
+    10  KLF7 | LOC115933749
+     7  LOC134756603 | PPP1R12A
+     6  GALNT17 | LOC134758925
+     6  BHMT | LOC109023884
