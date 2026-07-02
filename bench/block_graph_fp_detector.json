@@ -1,0 +1,591 @@
+{
+  "determinism": {
+    "pythonhashseed": "0",
+    "seed": 0,
+    "hi_core": 0.5,
+    "diploid_margin": 1.5
+  },
+  "n_families": 606,
+  "n_ep_impure": 80,
+  "n_oracle_mapped": 48,
+  "n_oracle_fp": 6,
+  "size_confound_ep_rate": {
+    "n_loci=2": {
+      "n": 470,
+      "impure": 40,
+      "rate": 0.085
+    },
+    "n_loci 3-4": {
+      "n": 84,
+      "impure": 20,
+      "rate": 0.238
+    },
+    "n_loci 5-9": {
+      "n": 37,
+      "impure": 13,
+      "rate": 0.351
+    },
+    "n_loci>=10": {
+      "n": 15,
+      "impure": 7,
+      "rate": 0.467
+    }
+  },
+  "per_feature_auc": {
+    "n_members": {
+      "auc_raw": 0.657,
+      "auc_size_resid": 0.377,
+      "auc_size_resid_quad": 0.511
+    },
+    "n_genes": {
+      "auc_raw": 0.751,
+      "auc_size_resid": 0.52,
+      "auc_size_resid_quad": 0.643
+    },
+    "distinct_loci": {
+      "auc_raw": 0.669,
+      "auc_size_resid": 0.389,
+      "auc_size_resid_quad": 0.497
+    },
+    "n_edges": {
+      "auc_raw": 0.646,
+      "auc_size_resid": 0.335,
+      "auc_size_resid_quad": 0.509
+    },
+    "edge_density": {
+      "auc_raw": 0.33,
+      "auc_size_resid": 0.361,
+      "auc_size_resid_quad": 0.367
+    },
+    "max_degree": {
+      "auc_raw": 0.649,
+      "auc_size_resid": 0.365,
+      "auc_size_resid_quad": 0.444
+    },
+    "mean_degree": {
+      "auc_raw": 0.636,
+      "auc_size_resid": 0.328,
+      "auc_size_resid_quad": 0.442
+    },
+    "clustering": {
+      "auc_raw": 0.572,
+      "auc_size_resid": 0.424,
+      "auc_size_resid_quad": 0.395
+    },
+    "n_communities": {
+      "auc_raw": 0.623,
+      "auc_size_resid": 0.528,
+      "auc_size_resid_quad": 0.548
+    },
+    "fiedler": {
+      "auc_raw": 0.354,
+      "auc_size_resid": 0.35,
+      "auc_size_resid_quad": 0.376
+    },
+    "mincut": {
+      "auc_raw": 0.429,
+      "auc_size_resid": 0.352,
+      "auc_size_resid_quad": 0.391
+    },
+    "frac_in_giant": {
+      "auc_raw": 0.5,
+      "auc_size_resid": 0.655,
+      "auc_size_resid_quad": 0.463
+    },
+    "n_seqclust_hi": {
+      "auc_raw": 0.64,
+      "auc_size_resid": 0.52,
+      "auc_size_resid_quad": 0.565
+    },
+    "loci_per_seqclust": {
+      "auc_raw": 0.485,
+      "auc_size_resid": 0.391,
+      "auc_size_resid_quad": 0.394
+    },
+    "mem_per_seqclust": {
+      "auc_raw": 0.472,
+      "auc_size_resid": 0.393,
+      "auc_size_resid_quad": 0.399
+    },
+    "loci_per_comm": {
+      "auc_raw": 0.636,
+      "auc_size_resid": 0.451,
+      "auc_size_resid_quad": 0.434
+    },
+    "loci_per_gene": {
+      "auc_raw": 0.38,
+      "auc_size_resid": 0.333,
+      "auc_size_resid_quad": 0.34
+    },
+    "mem_per_locus": {
+      "auc_raw": 0.478,
+      "auc_size_resid": 0.665,
+      "auc_size_resid_quad": 0.329
+    },
+    "max_mult": {
+      "auc_raw": 0.692,
+      "auc_size_resid": 0.571,
+      "auc_size_resid_quad": 0.566
+    },
+    "med_mult": {
+      "auc_raw": 0.67,
+      "auc_size_resid": 0.641,
+      "auc_size_resid_quad": 0.655
+    },
+    "max_min_mult": {
+      "auc_raw": 0.676,
+      "auc_size_resid": 0.558,
+      "auc_size_resid_quad": 0.55
+    },
+    "frac_repeat_bridged": {
+      "auc_raw": 0.548,
+      "auc_size_resid": 0.425,
+      "auc_size_resid_quad": 0.397
+    },
+    "frac_ge_gate": {
+      "auc_raw": 0.505,
+      "auc_size_resid": 0.337,
+      "auc_size_resid_quad": 0.335
+    }
+  },
+  "size_baseline_auc": 0.751,
+  "cv_logistic": {
+    "auc_size_only": 0.691,
+    "auc_graph_only": 0.762,
+    "auc_size_plus_graph": 0.755,
+    "delta_graph_over_size": 0.064,
+    "note": "5-fold random split seed 0, pooled out-of-fold AUC(is_Ep_impure)"
+  },
+  "triage_precision_at_K": {
+    "heldout_oof": {
+      "10": {
+        "oracle_fp_captured": "0/6",
+        "recall_oracle_fp": 0.0,
+        "ep_impure_in_topK": "9/10",
+        "precision_ep": 0.9
+      },
+      "20": {
+        "oracle_fp_captured": "1/6",
+        "recall_oracle_fp": 0.167,
+        "ep_impure_in_topK": "13/20",
+        "precision_ep": 0.65
+      },
+      "30": {
+        "oracle_fp_captured": "2/6",
+        "recall_oracle_fp": 0.333,
+        "ep_impure_in_topK": "18/30",
+        "precision_ep": 0.6
+      },
+      "50": {
+        "oracle_fp_captured": "2/6",
+        "recall_oracle_fp": 0.333,
+        "ep_impure_in_topK": "27/50",
+        "precision_ep": 0.54
+      }
+    },
+    "in_sample": {
+      "10": {
+        "oracle_fp_captured": "0/6",
+        "recall_oracle_fp": 0.0,
+        "ep_impure_in_topK": "10/10",
+        "precision_ep": 1.0
+      },
+      "20": {
+        "oracle_fp_captured": "2/6",
+        "recall_oracle_fp": 0.333,
+        "ep_impure_in_topK": "16/20",
+        "precision_ep": 0.8
+      },
+      "30": {
+        "oracle_fp_captured": "2/6",
+        "recall_oracle_fp": 0.333,
+        "ep_impure_in_topK": "22/30",
+        "precision_ep": 0.733
+      },
+      "50": {
+        "oracle_fp_captured": "3/6",
+        "recall_oracle_fp": 0.5,
+        "ep_impure_in_topK": "30/50",
+        "precision_ep": 0.6
+      }
+    }
+  },
+  "oracle_fp_ranks_heldout": [
+    {
+      "family_id": "332",
+      "dominant": "LOC115933254",
+      "cls": "multifam",
+      "distinct_loci": 10,
+      "fp_score": 0.74434,
+      "rank_heldout": 19,
+      "rank_of_N": 606
+    },
+    {
+      "family_id": "37",
+      "dominant": "SVBP",
+      "cls": "oversize",
+      "distinct_loci": 11,
+      "fp_score": 0.69058,
+      "rank_heldout": 22,
+      "rank_of_N": 606
+    },
+    {
+      "family_id": "13",
+      "dominant": "SEC22B",
+      "cls": "multifam",
+      "distinct_loci": 3,
+      "fp_score": 0.22308,
+      "rank_heldout": 52,
+      "rank_of_N": 606
+    },
+    {
+      "family_id": "9",
+      "dominant": "LOC115930164",
+      "cls": "multifam",
+      "distinct_loci": 15,
+      "fp_score": 0.4837,
+      "rank_heldout": 75,
+      "rank_of_N": 606
+    },
+    {
+      "family_id": "549",
+      "dominant": "MAGEA12",
+      "cls": "multifam+oversize",
+      "distinct_loci": 7,
+      "fp_score": 0.01409,
+      "rank_heldout": 563,
+      "rank_of_N": 606
+    },
+    {
+      "family_id": "110",
+      "dominant": "LOC134758618",
+      "cls": "oversize",
+      "distinct_loci": 10,
+      "fp_score": 0.00053,
+      "rank_heldout": 597,
+      "rank_of_N": 606
+    }
+  ],
+  "class_flagging": {
+    "MAGE_block549": {
+      "family_id": "549",
+      "dominant": "MAGEA12",
+      "distinct_loci": 7,
+      "n_genes": 7,
+      "n_protein_families": 1,
+      "is_impure": 0,
+      "oracle_fp": 1,
+      "oracle_cls": "multifam+oversize",
+      "loci_per_seqclust": 2.33,
+      "n_seqclust_hi": 3,
+      "max_min_mult": 4,
+      "max_mult": 10,
+      "frac_repeat_bridged": 0.0,
+      "edge_density": 1.0,
+      "clustering": 1.0,
+      "fp_score": 0.01409,
+      "rank_heldout": 563
+    },
+    "fam17_block17": {
+      "family_id": "17",
+      "dominant": "LOC109025730",
+      "distinct_loci": 20,
+      "n_genes": 20,
+      "n_protein_families": 10,
+      "is_impure": 1,
+      "oracle_fp": 0,
+      "oracle_cls": "",
+      "loci_per_seqclust": 1.0,
+      "n_seqclust_hi": 20,
+      "max_min_mult": 26,
+      "max_mult": 497,
+      "frac_repeat_bridged": 0.93,
+      "edge_density": 0.3,
+      "clustering": 0.87,
+      "fp_score": 0.90279,
+      "rank_heldout": 7
+    },
+    "GSTM2_blocks": [
+      {
+        "family_id": "9",
+        "dominant": "LOC115930164",
+        "distinct_loci": 15,
+        "n_genes": 12,
+        "n_protein_families": 2,
+        "is_impure": 1,
+        "oracle_fp": 1,
+        "oracle_cls": "multifam",
+        "loci_per_seqclust": 7.5,
+        "n_seqclust_hi": 2,
+        "max_min_mult": 7,
+        "max_mult": 426,
+        "frac_repeat_bridged": 0.26,
+        "edge_density": 0.638,
+        "clustering": 0.864,
+        "fp_score": 0.4837,
+        "rank_heldout": 75
+      },
+      {
+        "family_id": "10",
+        "dominant": "LOC101126097",
+        "distinct_loci": 3,
+        "n_genes": 3,
+        "n_protein_families": 3,
+        "is_impure": 1,
+        "oracle_fp": 0,
+        "oracle_cls": "",
+        "loci_per_seqclust": 1.5,
+        "n_seqclust_hi": 2,
+        "max_min_mult": 2,
+        "max_mult": 65,
+        "frac_repeat_bridged": 0.0,
+        "edge_density": 1.0,
+        "clustering": 1.0,
+        "fp_score": 0.19083,
+        "rank_heldout": 76
+      },
+      {
+        "family_id": "13",
+        "dominant": "SEC22B",
+        "distinct_loci": 3,
+        "n_genes": 3,
+        "n_protein_families": 2,
+        "is_impure": 1,
+        "oracle_fp": 1,
+        "oracle_cls": "multifam",
+        "loci_per_seqclust": 1.5,
+        "n_seqclust_hi": 2,
+        "max_min_mult": 2,
+        "max_mult": 236,
+        "frac_repeat_bridged": 0.0,
+        "edge_density": 1.0,
+        "clustering": 1.0,
+        "fp_score": 0.22308,
+        "rank_heldout": 52
+      },
+      {
+        "family_id": "14",
+        "dominant": "LOC109023809",
+        "distinct_loci": 3,
+        "n_genes": 3,
+        "n_protein_families": 2,
+        "is_impure": 1,
+        "oracle_fp": 0,
+        "oracle_cls": "",
+        "loci_per_seqclust": 1.0,
+        "n_seqclust_hi": 3,
+        "max_min_mult": 2,
+        "max_mult": 503,
+        "frac_repeat_bridged": 0.0,
+        "edge_density": 1.0,
+        "clustering": 1.0,
+        "fp_score": 0.26268,
+        "rank_heldout": 222
+      },
+      {
+        "family_id": "23",
+        "dominant": "GSTM2",
+        "distinct_loci": 7,
+        "n_genes": 3,
+        "n_protein_families": 1,
+        "is_impure": 0,
+        "oracle_fp": 0,
+        "oracle_cls": "",
+        "loci_per_seqclust": 1.0,
+        "n_seqclust_hi": 7,
+        "max_min_mult": 7,
+        "max_mult": 83,
+        "frac_repeat_bridged": 0.2,
+        "edge_density": 0.5,
+        "clustering": 0.704,
+        "fp_score": 0.07077,
+        "rank_heldout": 417
+      }
+    ],
+    "FOXO1_blocks": [
+      {
+        "family_id": "332",
+        "dominant": "LOC115933254",
+        "distinct_loci": 10,
+        "n_genes": 7,
+        "n_protein_families": 2,
+        "is_impure": 1,
+        "oracle_fp": 1,
+        "oracle_cls": "multifam",
+        "loci_per_seqclust": 1.67,
+        "n_seqclust_hi": 6,
+        "max_min_mult": 3,
+        "max_mult": 285,
+        "frac_repeat_bridged": 0.0,
+        "edge_density": 0.333,
+        "clustering": 0.829,
+        "fp_score": 0.74434,
+        "rank_heldout": 19
+      }
+    ],
+    "top10_by_cardinality_loci_per_seqclust": [
+      {
+        "family_id": "79",
+        "dominant": "LOC129532808",
+        "loci_per_seqclust": 16.0,
+        "distinct_loci": 16,
+        "oracle_fp": 0,
+        "is_impure": 1
+      },
+      {
+        "family_id": "559",
+        "dominant": "LOC129529765",
+        "loci_per_seqclust": 9.0,
+        "distinct_loci": 9,
+        "oracle_fp": 0,
+        "is_impure": 0
+      },
+      {
+        "family_id": "9",
+        "dominant": "LOC115930164",
+        "loci_per_seqclust": 7.5,
+        "distinct_loci": 15,
+        "oracle_fp": 1,
+        "is_impure": 1
+      },
+      {
+        "family_id": "33",
+        "dominant": "LOC129529226",
+        "loci_per_seqclust": 7.0,
+        "distinct_loci": 7,
+        "oracle_fp": 0,
+        "is_impure": 1
+      },
+      {
+        "family_id": "163",
+        "dominant": "TUBB2A",
+        "loci_per_seqclust": 6.0,
+        "distinct_loci": 6,
+        "oracle_fp": 0,
+        "is_impure": 0
+      },
+      {
+        "family_id": "142",
+        "dominant": "UBC",
+        "loci_per_seqclust": 5.0,
+        "distinct_loci": 5,
+        "oracle_fp": 0,
+        "is_impure": 0
+      },
+      {
+        "family_id": "296",
+        "dominant": "TUBA1C",
+        "loci_per_seqclust": 5.0,
+        "distinct_loci": 10,
+        "oracle_fp": 0,
+        "is_impure": 0
+      },
+      {
+        "family_id": "395",
+        "dominant": "LOC115933240",
+        "loci_per_seqclust": 5.0,
+        "distinct_loci": 5,
+        "oracle_fp": 0,
+        "is_impure": 0
+      },
+      {
+        "family_id": "513",
+        "dominant": "RFPL4A",
+        "loci_per_seqclust": 5.0,
+        "distinct_loci": 5,
+        "oracle_fp": 0,
+        "is_impure": 0
+      },
+      {
+        "family_id": "48",
+        "dominant": "ZNF92",
+        "loci_per_seqclust": 4.38,
+        "distinct_loci": 35,
+        "oracle_fp": 0,
+        "is_impure": 0
+      }
+    ],
+    "top10_by_multiplicity_max_min_mult": [
+      {
+        "family_id": "225",
+        "dominant": "ZNF84",
+        "max_min_mult": 30,
+        "max_mult": 130,
+        "is_impure": 0,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "17",
+        "dominant": "LOC109025730",
+        "max_min_mult": 26,
+        "max_mult": 497,
+        "is_impure": 1,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "48",
+        "dominant": "ZNF92",
+        "max_min_mult": 14,
+        "max_mult": 503,
+        "is_impure": 0,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "69",
+        "dominant": "LOC129532907",
+        "max_min_mult": 14,
+        "max_mult": 426,
+        "is_impure": 1,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "79",
+        "dominant": "LOC129532808",
+        "max_min_mult": 11,
+        "max_mult": 503,
+        "is_impure": 1,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "57",
+        "dominant": "SMYD3",
+        "max_min_mult": 10,
+        "max_mult": 497,
+        "is_impure": 1,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "559",
+        "dominant": "LOC129529765",
+        "max_min_mult": 9,
+        "max_mult": 503,
+        "is_impure": 0,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "65",
+        "dominant": "LOC129532854",
+        "max_min_mult": 8,
+        "max_mult": 28,
+        "is_impure": 0,
+        "oracle_fp": 0
+      },
+      {
+        "family_id": "9",
+        "dominant": "LOC115930164",
+        "max_min_mult": 7,
+        "max_mult": 426,
+        "is_impure": 1,
+        "oracle_fp": 1
+      },
+      {
+        "family_id": "23",
+        "dominant": "GSTM2",
+        "max_min_mult": 7,
+        "max_mult": 83,
+        "is_impure": 0,
+        "oracle_fp": 0
+      }
+    ]
+  }
+}
