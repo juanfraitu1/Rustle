@@ -1,0 +1,10 @@
+primary alignments scanned: 4404440
+  intron 50-100k  chimera_diff_genes   : 2578
+  intron 50-100k  chimera_or_unannot   : 8782
+  intron 50-100k  real_large_intron    : 296773
+  intron >100k    chimera_diff_genes   : 1842
+  intron >100k    chimera_or_unannot   : 4343
+  intron >100k    real_large_intron    : 71250
+
+  >100k introns: 77435 total, 6185 chimera-candidate (8%) <- what -G 100k would break
+  50-100k introns: 308133 total <- additionally broken by -G 50k
