@@ -1,0 +1,1140 @@
+{
+ "computation_1_population": {
+  "catalog_n_families": 607,
+  "catalog_n_members": 1791,
+  "catalog_single_exon_members": 0,
+  "denovo_skeleton_multi_exon_loci": 164769,
+  "denovo_skeleton_single_exon_are_chromosome_buckets": true,
+  "denovo_skeleton_single_exon_loci": 26,
+  "denovo_skeleton_single_exon_rows": [
+   {
+    "chrom": "NC_073224.2",
+    "end": 241556129,
+    "n_reads": 37336,
+    "span": 236034370,
+    "start": 5521759
+   },
+   {
+    "chrom": "NC_073228.2",
+    "end": 191822911,
+    "n_reads": 30453,
+    "span": 182993777,
+    "start": 8829134
+   },
+   {
+    "chrom": "NC_073229.2",
+    "end": 195465426,
+    "n_reads": 27419,
+    "span": 177762393,
+    "start": 17703033
+   },
+   {
+    "chrom": "NC_086017.1",
+    "end": 214185417,
+    "n_reads": 26862,
+    "span": 204939025,
+    "start": 9246392
+   },
+   {
+    "chrom": "NC_073234.2",
+    "end": 149483977,
+    "n_reads": 20915,
+    "span": 133926366,
+    "start": 15557611
+   },
+   {
+    "chrom": "NC_011120.1",
+    "end": 16411,
+    "n_reads": 20869,
+    "span": 16411,
+    "start": 0
+   },
+   {
+    "chrom": "NC_073227.2",
+    "end": 212511392,
+    "n_reads": 20484,
+    "span": 204688288,
+    "start": 7823104
+   },
+   {
+    "chrom": "NC_073232.2",
+    "end": 145957288,
+    "n_reads": 19495,
+    "span": 137468678,
+    "start": 8488610
+   },
+   {
+    "chrom": "NC_073233.2",
+    "end": 144176617,
+    "n_reads": 19408,
+    "span": 138647348,
+    "start": 5529269
+   },
+   {
+    "chrom": "NC_073247.2",
+    "end": 167933561,
+    "n_reads": 18627,
+    "span": 158255711,
+    "start": 9677850
+   },
+   {
+    "chrom": "NC_073230.2",
+    "end": 168912246,
+    "n_reads": 18501,
+    "span": 162663474,
+    "start": 6248772
+   },
+   {
+    "chrom": "NC_073235.2",
+    "end": 146660578,
+    "n_reads": 18193,
+    "span": 131717829,
+    "start": 14942749
+   },
+   {
+    "chrom": "NC_073237.2",
+    "end": 134633674,
+    "n_reads": 17198,
+    "span": 134535173,
+    "start": 98501
+   },
+   {
+    "chrom": "NC_073231.2",
+    "end": 153363282,
+    "n_reads": 17046,
+    "span": 148791891,
+    "start": 4571391
+   },
+   {
+    "chrom": "NC_073239.2",
+    "end": 124878805,
+    "n_reads": 15731,
+    "span": 122258930,
+    "start": 2619875
+   },
+   {
+    "chrom": "NC_073236.2",
+    "end": 140847492,
+    "n_reads": 15618,
+    "span": 136207729,
+    "start": 4639763
+   },
+   {
+    "chrom": "NC_073240.2",
+    "end": 103987826,
+    "n_reads": 14430,
+    "span": 101113635,
+    "start": 2874191
+   },
+   {
+    "chrom": "NC_073242.2",
+    "end": 121272961,
+    "n_reads": 12268,
+    "span": 118407734,
+    "start": 2865227
+   },
+   {
+    "chrom": "NC_073238.2",
+    "end": 129164499,
+    "n_reads": 11913,
+    "span": 129123592,
+    "start": 40907
+   },
+   {
+    "chrom": "NC_073243.2",
+    "end": 112879138,
+    "n_reads": 10723,
+    "span": 97553649,
+    "start": 15325489
+   },
+   {
+    "chrom": "NC_073244.2",
+    "end": 70991406,
+    "n_reads": 10355,
+    "span": 67076487,
+    "start": 3914919
+   },
+   {
+    "chrom": "NC_073245.2",
+    "end": 82462583,
+    "n_reads": 9517,
+    "span": 72878979,
+    "start": 9583604
+   },
+   {
+    "chrom": "NC_073241.2",
+    "end": 115440644,
+    "n_reads": 9383,
+    "span": 115240261,
+    "start": 200383
+   },
+   {
+    "chrom": "NC_086018.1",
+    "end": 48871832,
+    "n_reads": 6745,
+    "span": 47158481,
+    "start": 1713351
+   },
+   {
+    "chrom": "NC_073246.2",
+    "end": 55877695,
+    "n_reads": 4339,
+    "span": 53703686,
+    "start": 2174009
+   },
+   {
+    "chrom": "NC_073248.2",
+    "end": 51283918,
+    "n_reads": 746,
+    "span": 44267223,
+    "start": 7016695
+   }
+  ],
+  "denovo_transcript_fasta_nexon_dist": {
+   "1": 1,
+   "10": 5426,
+   "11": 5176,
+   "12": 4681,
+   "13": 4232,
+   "14": 3828,
+   "15": 3461,
+   "16": 3088,
+   "17": 2845,
+   "18": 2524,
+   "19": 2172,
+   "2": 6104,
+   "20": 1979,
+   "21": 1941,
+   "22": 1585,
+   "23": 1390,
+   "24": 1110,
+   "25": 1016,
+   "26": 808,
+   "27": 682,
+   "28": 596,
+   "29": 511,
+   "3": 6551,
+   "30": 402,
+   "31": 370,
+   "32": 274,
+   "33": 225,
+   "34": 196,
+   "35": 163,
+   "36": 145,
+   "37": 125,
+   "38": 124,
+   "39": 103,
+   "4": 6883,
+   "40": 64,
+   "41": 83,
+   "42": 65,
+   "43": 54,
+   "44": 37,
+   "45": 35,
+   "46": 34,
+   "47": 29,
+   "48": 32,
+   "49": 26,
+   "5": 6863,
+   "50": 16,
+   "51": 20,
+   "52": 33,
+   "53": 9,
+   "54": 9,
+   "55": 3,
+   "56": 9,
+   "57": 6,
+   "58": 4,
+   "6": 6585,
+   "62": 1,
+   "63": 3,
+   "64": 2,
+   "65": 1,
+   "68": 1,
+   "69": 4,
+   "7": 6221,
+   "70": 2,
+   "71": 1,
+   "8": 5925,
+   "9": 5561
+  },
+  "denovo_transcript_fasta_single_exon": 1,
+  "denovo_transcript_fasta_total": 102455,
+  "families_removed_by_exclusion": 0,
+  "family_class_counts": {
+   "mixed": 0,
+   "multi_exon_only": 607,
+   "single_exon_only": 0
+  },
+  "members_removed_by_exclusion": 0
+ },
+ "computation_2_fp_removed": {
+  "GSTM2_hub": {
+   "entries": [
+    {
+     "ann_n_intron": {
+      "GSTM2": 7,
+      "LOC115930164": 15,
+      "LOC115930576": 27
+     },
+     "genes": [
+      "GSTM2",
+      "LOC115930164",
+      "LOC115930576"
+     ],
+     "source": "multifam"
+    },
+    {
+     "ann_n_intron": {
+      "GSTM2": 7,
+      "LOC101129940": 4
+     },
+     "genes": [
+      "GSTM2",
+      "LOC101129940"
+     ],
+     "source": "multifam"
+    }
+   ],
+   "single_exon_removed": false
+  },
+  "fam17_repeat_bridge_hub": {
+   "all_single_exon_denovo": false,
+   "any_single_exon_annotation": true,
+   "block_index": 17,
+   "n_genes": 27,
+   "n_protein_families": 16,
+   "n_single_exon_annotation_genes": 1
+  },
+  "mage_A_subcluster_LOC129529978_986": {
+   "ann_n_intron": {
+    "LOC129529978": 2,
+    "LOC129529986": 2
+   },
+   "denovo_nexon": {
+    "LOC129529978": [
+     3
+    ],
+    "LOC129529986": [
+     2,
+     3
+    ]
+   },
+   "present": true,
+   "single_exon_removed": false
+  },
+  "n_fp_removed_by_exclusion": 0,
+  "n_named_fp_entries": 7,
+  "named_fp_detail": [
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "GSTM2": 7,
+     "LOC115930164": 15,
+     "LOC115930576": 27
+    },
+    "denovo_nexon": {
+     "GSTM2": [
+      2,
+      4,
+      13,
+      21
+     ],
+     "LOC115930164": [
+      8
+     ],
+     "LOC115930576": [
+      23
+     ]
+    },
+    "distinct_loci": 15,
+    "genes": [
+     "GSTM2",
+     "LOC115930164",
+     "LOC115930576"
+    ],
+    "source": "multifam"
+   },
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "FOXO1": 2,
+     "LOC115933254": 21
+    },
+    "denovo_nexon": {
+     "FOXO1": [
+      2
+     ],
+     "LOC115933254": [
+      2,
+      3,
+      11
+     ]
+    },
+    "distinct_loci": 10,
+    "genes": [
+     "FOXO1",
+     "LOC115933254"
+    ],
+    "source": "multifam"
+   },
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "LOC129529978": 2,
+     "LOC129529986": 2
+    },
+    "denovo_nexon": {
+     "LOC129529978": [
+      3
+     ],
+     "LOC129529986": [
+      2,
+      3
+     ]
+    },
+    "distinct_loci": 7,
+    "genes": [
+     "LOC129529978",
+     "LOC129529986"
+    ],
+    "source": "multifam"
+   },
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "GSTM2": 7,
+     "LOC101129940": 4
+    },
+    "denovo_nexon": {
+     "GSTM2": [
+      2,
+      4,
+      13,
+      21
+     ],
+     "LOC101129940": [
+      5
+     ]
+    },
+    "distinct_loci": 3,
+    "genes": [
+     "GSTM2",
+     "LOC101129940"
+    ],
+    "source": "multifam"
+   },
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "LOC129529978": 2,
+     "LOC129529986": 2
+    },
+    "denovo_nexon": {
+     "LOC129529978": [
+      3
+     ],
+     "LOC129529986": [
+      2,
+      3
+     ]
+    },
+    "distinct_loci": 7,
+    "genes": [
+     "LOC129529978",
+     "LOC129529986"
+    ],
+    "source": "oversize"
+   },
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "MPHOSPH8": 16
+    },
+    "denovo_nexon": {
+     "MPHOSPH8": [
+      3,
+      14
+     ]
+    },
+    "distinct_loci": 11,
+    "genes": [
+     "MPHOSPH8"
+    ],
+    "source": "oversize"
+   },
+   {
+    "all_single_exon_annotation": false,
+    "all_single_exon_denovo": false,
+    "ann_n_intron": {
+     "LOC134758618": 4
+    },
+    "denovo_nexon": {
+     "LOC134758618": [
+      5
+     ]
+    },
+    "distinct_loci": 10,
+    "genes": [
+     "LOC134758618"
+    ],
+    "source": "oversize"
+   }
+  ]
+ },
+ "computation_3_recall_cost": {
+  "genuine_se_multicopy_families_fully_lost_upstream": [
+   "IFNA_type_I_interferon",
+   "TAS2R_bitter_taste_GPCR",
+   "H1_linker_histone",
+   "MAGEB_cancer_testis"
+  ],
+  "genuine_se_multicopy_families_not_in_oracle": [
+   {
+    "family": "IFNA_type_I_interferon",
+    "fully_lost_upstream": true,
+    "n_genes_in_annotation": 6,
+    "n_single_exon": 4,
+    "n_single_exon_in_catalog": 0,
+    "single_exon_genes": [
+     "IFNA2",
+     "IFNA21",
+     "IFNA6",
+     "IFNA8"
+    ],
+    "single_exon_in_catalog": []
+   },
+   {
+    "family": "TAS2R_bitter_taste_GPCR",
+    "fully_lost_upstream": true,
+    "n_genes_in_annotation": 18,
+    "n_single_exon": 15,
+    "n_single_exon_in_catalog": 0,
+    "single_exon_genes": [
+     "TAS2R10",
+     "TAS2R13",
+     "TAS2R14",
+     "TAS2R16",
+     "TAS2R20",
+     "TAS2R3",
+     "TAS2R38",
+     "TAS2R39",
+     "TAS2R4",
+     "TAS2R40",
+     "TAS2R50",
+     "TAS2R60",
+     "TAS2R7",
+     "TAS2R8",
+     "TAS2R9"
+    ],
+    "single_exon_in_catalog": []
+   },
+   {
+    "family": "H1_linker_histone",
+    "fully_lost_upstream": true,
+    "n_genes_in_annotation": 6,
+    "n_single_exon": 5,
+    "n_single_exon_in_catalog": 0,
+    "single_exon_genes": [
+     "H1-1",
+     "H1-2",
+     "H1-3",
+     "H1-5",
+     "H1-6"
+    ],
+    "single_exon_in_catalog": []
+   },
+   {
+    "family": "MAGEB_cancer_testis",
+    "fully_lost_upstream": true,
+    "n_genes_in_annotation": 9,
+    "n_single_exon": 2,
+    "n_single_exon_in_catalog": 0,
+    "single_exon_genes": [
+     "MAGEB17",
+     "MAGEB5"
+    ],
+    "single_exon_in_catalog": []
+   },
+   {
+    "family": "PCDHB_protocadherin_beta",
+    "fully_lost_upstream": false,
+    "n_genes_in_annotation": 10,
+    "n_single_exon": 9,
+    "n_single_exon_in_catalog": 3,
+    "single_exon_genes": [
+     "PCDHB1",
+     "PCDHB11",
+     "PCDHB12",
+     "PCDHB14",
+     "PCDHB15",
+     "PCDHB2",
+     "PCDHB5",
+     "PCDHB8",
+     "PCDHB9"
+    ],
+    "single_exon_in_catalog": [
+     "PCDHB15",
+     "PCDHB2",
+     "PCDHB5"
+    ]
+   }
+  ],
+  "oracle_multicopy_genes_named": 57,
+  "oracle_multicopy_single_exon_annotation": 1,
+  "oracle_multicopy_single_exon_genes": [
+   {
+    "ann_n_intron": 0,
+    "asm_hapCN": 2,
+    "catalog_families": [
+     "80"
+    ],
+    "denovo_nexon_of_member": [
+     4
+    ],
+    "gene": "LOC134758386",
+    "lost_by_operational_exclusion": false,
+    "lost_by_strict_annotation_exclusion": true,
+    "recovered_in_catalog": true
+   }
+  ],
+  "oracle_multicopy_touchstones": {
+   "MAGE": [
+    {
+     "ann_n_intron": 4,
+     "asm_hapCN": 2,
+     "gene": "MAGEA9"
+    }
+   ],
+   "histone_H2A": [],
+   "histone_H2B": [],
+   "histone_H3": [],
+   "histone_H4": [],
+   "histone_HIST": [],
+   "interferon_IFNA": []
+  },
+  "recall_cost_operational_named": [],
+  "recall_cost_strict_annotation_named": [
+   "LOC134758386"
+  ]
+ },
+ "computation_4_retrocopy_artifact_split": {
+  "annotation_genes_total": 40703,
+  "annotation_single_exon_fraction": 0.2413,
+  "annotation_single_exon_genes": 9821,
+  "annotation_single_exon_recovered_in_catalog": 28,
+  "denovo_single_exon_loci_are_all_chromosome_aggregation_buckets": true,
+  "denovo_single_exon_resolved_real_loci": 0,
+  "genomewide_retrocopy_filter_edge_split": {
+   "both_intronless_genuine_tandem_kept": 3267,
+   "both_spliced_kept": 12212,
+   "note": "genome-wide cDNA-homology edge split (family_def_retrocopy_filter.json); both-intronless KEPT = genuine single-exon tandems (IFNA/PCDHB/ELOA/HNRNPCL); one-side-intronless = processed retrocopy noise, already dropped by shipped filter",
+   "one_side_intronless_retrocopy_dropped": 1931
+  },
+  "recovered_single_exon_annotation_class_split": {
+   "genuine_single_exon_tandem": 6,
+   "mixed_comembers": 6,
+   "retrocopy_signature": 14,
+   "unknown_comembers": 2
+  },
+  "recovered_single_exon_annotation_detail": [
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     13
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "88"
+    ],
+    "gene": "DCAF4L1"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     12
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "258"
+    ],
+    "gene": "GLUD2"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     22,
+     null
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "453"
+    ],
+    "gene": "GSPT2"
+   },
+   {
+    "cls": "genuine_single_exon_tandem",
+    "comember_ann_intron": [
+     0
+    ],
+    "denovo_nexon": [
+     3
+    ],
+    "families": [
+     "349"
+    ],
+    "gene": "LOC101124026"
+   },
+   {
+    "cls": "mixed_comembers",
+    "comember_ann_intron": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "103"
+    ],
+    "gene": "LOC101126280"
+   },
+   {
+    "cls": "mixed_comembers",
+    "comember_ann_intron": [
+     7,
+     1,
+     0
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "183"
+    ],
+    "gene": "LOC101132881"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     5,
+     4
+    ],
+    "denovo_nexon": [
+     3
+    ],
+    "families": [
+     "60"
+    ],
+    "gene": "LOC101138011"
+   },
+   {
+    "cls": "genuine_single_exon_tandem",
+    "comember_ann_intron": [
+     0
+    ],
+    "denovo_nexon": [
+     3
+    ],
+    "families": [
+     "349"
+    ],
+    "gene": "LOC101141789"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     10
+    ],
+    "denovo_nexon": [
+     4
+    ],
+    "families": [
+     "250"
+    ],
+    "gene": "LOC101143404"
+   },
+   {
+    "cls": "genuine_single_exon_tandem",
+    "comember_ann_intron": [
+     0
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "172"
+    ],
+    "gene": "LOC101150953"
+   },
+   {
+    "cls": "genuine_single_exon_tandem",
+    "comember_ann_intron": [
+     0
+    ],
+    "denovo_nexon": [
+     4
+    ],
+    "families": [
+     "365"
+    ],
+    "gene": "LOC101150998"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     2,
+     2,
+     7
+    ],
+    "denovo_nexon": [
+     3
+    ],
+    "families": [
+     "46"
+    ],
+    "gene": "LOC101153891"
+   },
+   {
+    "cls": "mixed_comembers",
+    "comember_ann_intron": [
+     7,
+     0,
+     1
+    ],
+    "denovo_nexon": [
+     3
+    ],
+    "families": [
+     "183"
+    ],
+    "gene": "LOC109023808"
+   },
+   {
+    "cls": "unknown_comembers",
+    "comember_ann_intron": [
+     null,
+     null
+    ],
+    "denovo_nexon": [
+     2,
+     3
+    ],
+    "families": [
+     "163"
+    ],
+    "gene": "LOC109027217"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     11
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "207"
+    ],
+    "gene": "LOC129523664"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     2,
+     1,
+     4,
+     11,
+     3,
+     16,
+     null,
+     9,
+     7,
+     5
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "37"
+    ],
+    "gene": "LOC129528096"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     4,
+     11,
+     3,
+     8,
+     22,
+     2,
+     8,
+     9,
+     3,
+     5,
+     10,
+     5,
+     2,
+     8,
+     17,
+     9,
+     2,
+     7,
+     5,
+     5,
+     3,
+     2,
+     16,
+     5,
+     null,
+     10,
+     6
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "17"
+    ],
+    "gene": "LOC129530131"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     3
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "34"
+    ],
+    "gene": "LOC129532115"
+   },
+   {
+    "cls": "genuine_single_exon_tandem",
+    "comember_ann_intron": [
+     0
+    ],
+    "denovo_nexon": [
+     4
+    ],
+    "families": [
+     "365"
+    ],
+    "gene": "LOC134756941"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     3,
+     21,
+     13,
+     1,
+     11,
+     16,
+     3,
+     null
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "68"
+    ],
+    "gene": "LOC134756955"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     4
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "347"
+    ],
+    "gene": "LOC134757574"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     2
+    ],
+    "denovo_nexon": [
+     4
+    ],
+    "families": [
+     "80"
+    ],
+    "gene": "LOC134758386"
+   },
+   {
+    "cls": "mixed_comembers",
+    "comember_ann_intron": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     1
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "103"
+    ],
+    "gene": "PCDHB15"
+   },
+   {
+    "cls": "mixed_comembers",
+    "comember_ann_intron": [
+     0,
+     0,
+     1,
+     0,
+     0
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "103"
+    ],
+    "gene": "PCDHB2"
+   },
+   {
+    "cls": "mixed_comembers",
+    "comember_ann_intron": [
+     0,
+     0,
+     0,
+     0,
+     1,
+     0,
+     0
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "103"
+    ],
+    "gene": "PCDHB5"
+   },
+   {
+    "cls": "unknown_comembers",
+    "comember_ann_intron": [],
+    "denovo_nexon": [
+     2,
+     6
+    ],
+    "families": [
+     "585"
+    ],
+    "gene": "SOX2"
+   },
+   {
+    "cls": "genuine_single_exon_tandem",
+    "comember_ann_intron": [
+     0
+    ],
+    "denovo_nexon": [
+     2
+    ],
+    "families": [
+     "172"
+    ],
+    "gene": "TRNAA-AGC"
+   },
+   {
+    "cls": "retrocopy_signature",
+    "comember_ann_intron": [
+     1
+    ],
+    "denovo_nexon": [
+     3
+    ],
+    "families": [
+     "6"
+    ],
+    "gene": "TRNAQ-CUG"
+   }
+  ]
+ },
+ "computation_5_net_pr": {
+  "current_default": {
+   "precision_oracle_dedup": 0.875,
+   "precision_oracle_taskformula": 0.8542,
+   "recall_oracle": 0.8421
+  },
+  "operational_exclusion": {
+   "distinct_fp_blocks": 6,
+   "note": "identical to current default -- 0 single-exon members in catalog, exclusion is a no-op",
+   "oracle_genes_recovered_multicopy": 48,
+   "oracle_mapped_families": 48,
+   "precision_oracle_dedup": 0.875,
+   "precision_oracle_taskformula": 0.8542,
+   "recall_oracle": 0.8421
+  },
+  "strict_annotation_exclusion": {
+   "distinct_fp_blocks": 6,
+   "lost_oracle_genes": [
+    "LOC134758386"
+   ],
+   "note": "counterfactual: drop ANNOTATION-single-exon members. Removes 0 FP, loses 1 real oracle gene(s).",
+   "oracle_genes_recovered_multicopy": 47,
+   "oracle_mapped_families": 47,
+   "precision_oracle_dedup": 0.8723,
+   "precision_oracle_taskformula": 0.8511,
+   "recall_oracle": 0.8246
+  }
+ },
+ "determinism": {
+  "pythonhashseed": "0",
+  "seed": 0
+ },
+ "inputs": {
+  "catalog": "/mnt/c/Users/jfris/Desktop/Rustle/bench/family_rna_refine.tsv",
+  "intron_index": "/home/juanfra/winloci_scratch/gene_intron_index.json",
+  "oracle": "/mnt/c/Users/jfris/Desktop/Rustle/bench/diploid_cn_oracle.tsv",
+  "pr_json": "/mnt/c/Users/jfris/Desktop/Rustle/bench/family_level_pr_current.json",
+  "retro_json": "/mnt/c/Users/jfris/Desktop/Rustle/bench/family_def_retrocopy_filter.json",
+  "skeletons": "/home/juanfra/winloci_scratch/denovo_skeletons.tsv"
+ },
+ "verdict": {
+  "fp_removed": 0,
+  "genuine_se_multicopy_families_fully_lost_upstream": [
+   "IFNA_type_I_interferon",
+   "TAS2R_bitter_taste_GPCR",
+   "H1_linker_histone",
+   "MAGEB_cancer_testis"
+  ],
+  "operational_exclusion_is_noop": true,
+  "operational_recall_cost_named": [],
+  "strict_recall_cost_named": [
+   "LOC134758386"
+  ],
+  "summary": "The de-novo RNA pipeline ALREADY applies single-exon exclusion implicitly (intron-junction collapse + chromosome-span drop): the transcript FASTA feeding the family definition has 1/102455 single-exon transcripts and the 607-family catalog has 0 single-exon members. An explicit single-exon exclusion is therefore a NO-OP on the catalog: it removes 0 families, 0 residual FPs, and costs 0 recall. MAGE-A (3-exon spliced UTR) and GSTM2 (8-exon) are multi-exon and unaffected. The recall cost is REAL but ALREADY PAID by the pipeline and invisible in the catalog: genuinely intronless multi-copy families in THIS gorilla annotation -- IFNA type-I interferon cluster (4 genes), TAS2R bitter-taste GPCRs (15/18 intronless), H1 linker histones (5/6), MAGEB5/MAGEB17 -- are all absent from the 607-family catalog because they carry no splice junction and were dropped upstream, NOT by any explicit exclusion knob."
+ }
+}
