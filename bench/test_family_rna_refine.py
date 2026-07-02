@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Self-check for bench/family_rna_refine.py (the opt-in RNA-only refinement stage).
+"""Self-check for bench/family_rna_refine.py (the DEFAULT-ON RNA-only refinement stage).
 
 Asserts:
-  (a) OPT-OUT writes nothing and the shipped path is untouched (denovo_families.py unchanged).
-  (b) OPT-IN is deterministic (two runs -> byte-identical .tsv/.json md5).
+  (a) LEGACY opt-out (--legacy / RUSTLE_RNA_ORACLE=0) writes nothing; shipped path untouched.
+  (b) DEFAULT (no flag) writes the refined catalog and is deterministic (== --rna-oracle == env=1).
   (c) The allele demotion removes DHRSX + LOC129530050 (DNA-confirmed).
   (d) The residual-removed count matches RNA_ONLY_EDGE_ORACLE.md's recall-preserving row:
       residual remaining {allele 0, oversize 3, multifam 4}; shipped total 12; 6/12 named FP removed.
@@ -38,28 +38,35 @@ def _md5(path):
         return hashlib.md5(fh.read()).hexdigest()
 
 
-def test_opt_out_writes_nothing():
+def test_legacy_opt_out_writes_nothing():
     for p in (OUT_TSV, OUT_JSON):
         if os.path.exists(p):
             os.remove(p)
     shipped_before = _md5(SHIPPED)
-    r = _run([])                                   # no env, no flag
-    assert r.returncode == 0, f"opt-out exit={r.returncode}"
-    assert r.stdout.strip() == "opt-in: set RUSTLE_RNA_ORACLE=1 or --rna-oracle", repr(r.stdout)
-    assert not os.path.exists(OUT_TSV) and not os.path.exists(OUT_JSON), "opt-out wrote outputs"
+    r = _run(["--legacy"])                          # legacy opt-out (flag form)
+    assert r.returncode == 0, f"legacy exit={r.returncode}"
+    assert r.stdout.startswith("legacy:"), repr(r.stdout)
+    assert not os.path.exists(OUT_TSV) and not os.path.exists(OUT_JSON), "legacy wrote outputs"
     assert _md5(SHIPPED) == shipped_before, "denovo_families.py (shipped path) was modified"
-    print("(a) opt-out writes nothing / shipped path untouched : OK")
+    r2 = _run([], env_extra={"RUSTLE_RNA_ORACLE": "0"})   # legacy opt-out (env form)
+    assert r2.returncode == 0 and r2.stdout.startswith("legacy:"), repr(r2.stdout)
+    assert not os.path.exists(OUT_TSV), "env-legacy wrote outputs"
+    print("(a) legacy opt-out (--legacy / env=0) writes nothing / shipped untouched : OK")
 
 
-def test_opt_in_deterministic():
-    r1 = _run(["--rna-oracle"])
+def test_default_deterministic():
+    r1 = _run([])                                  # DEFAULT: no flag -> refined catalog
     assert r1.returncode == 0, r1.stderr
+    assert os.path.exists(OUT_TSV) and os.path.exists(OUT_JSON), "default did not write the catalog"
     tsv1, json1 = _md5(OUT_TSV), _md5(OUT_JSON)
-    r2 = _run([], env_extra={"RUSTLE_RNA_ORACLE": "1"})   # env form of the gate
+    r2 = _run(["--rna-oracle"])                     # deprecated no-op == default
     assert r2.returncode == 0, r2.stderr
+    assert _md5(OUT_TSV) == tsv1 and _md5(OUT_JSON) == json1, "default != --rna-oracle"
+    r3 = _run([], env_extra={"RUSTLE_RNA_ORACLE": "1"})   # explicit-enable == default
+    assert r3.returncode == 0, r3.stderr
     assert _md5(OUT_TSV) == tsv1, "TSV not byte-identical across runs"
     assert _md5(OUT_JSON) == json1, "JSON not byte-identical across runs"
-    print("(b) opt-in deterministic (flag == env; byte-identical) : OK")
+    print("(b) default deterministic (default == --rna-oracle == env=1; byte-identical) : OK")
 
 
 def test_allele_demote_removes_known_fp():
@@ -92,8 +99,8 @@ def test_rna_only_guard():
 
 
 if __name__ == "__main__":
-    test_opt_out_writes_nothing()
-    test_opt_in_deterministic()
+    test_legacy_opt_out_writes_nothing()
+    test_default_deterministic()
     test_allele_demote_removes_known_fp()
     test_residual_removed_matches_recall_preserving_row()
     test_rna_only_guard()

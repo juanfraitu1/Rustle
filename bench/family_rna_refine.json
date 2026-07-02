@@ -101,5 +101,5 @@
   "gamma": 0.2,
   "seed": 0
  },
- "stage": "family_rna_refine (RNA-only recall-preserving refinement; opt-in)"
+ "stage": "family_rna_refine (RNA-only recall-preserving refinement; DEFAULT-ON, opt out --legacy)"
 }

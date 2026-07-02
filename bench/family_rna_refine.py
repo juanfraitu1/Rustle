@@ -8,11 +8,12 @@ family edge iff `core_recip >= 0.13` (edge-CREATION threshold), then families = 
 gamma-quasi-clique refinement (genome_family_def.refine_families, gamma=0.20, seed=0)
 of the connected components.  bench/rna_only_edge_oracle.py + bench/RNA_ONLY_EDGE_ORACLE.md
 LEARNED + VALIDATED an RNA-only refinement gate on top of that.  THIS FILE productionizes
-the RECALL-PRESERVING operating point of that oracle as a clean, opt-in, default-OFF stage.
+the RECALL-PRESERVING operating point of that oracle as the DEFAULT family definition
+(default-ON; opt out with --legacy).
 
-It does NOT touch bench/denovo_families.py, so the shipped byte-identical path is
-untouched by construction.  It re-uses the oracle's exact loaders/thresholds and the
-shipped refiner -- nothing here is re-derived.
+It does NOT touch bench/denovo_families.py, so the LEGACY core_recip>=0.13 path stays
+bit-for-bit reproducible (--legacy / RUSTLE_RNA_ORACLE=0).  It re-uses the oracle's exact
+loaders/thresholds and the shipped refiner -- nothing here is re-derived.
 
 THE RULE (recall-preserving deploy point, RNA_ONLY_EDGE_ORACLE.md sec 2)
 -----------------------------------------------------------------------
@@ -41,10 +42,12 @@ DNA/protein/genome column (in_dna_loose, in_ep, ep_tier, sedef, asm_hapCN, bridg
 ...).  DNA/protein/genome enter ONLY the VALIDATION report (residual-FP scoring), never
 a decision.
 
-OPT-IN, DEFAULT-OFF
--------------------
-Runs only with env RUSTLE_RNA_ORACLE=1 OR flag --rna-oracle.  Otherwise prints one line
-and exits 0 WITHOUT writing anything (the shipped path stays untouched).
+DEFAULT-ON (opt out with --legacy)
+----------------------------------
+The RNA-only refinement is now the DEFAULT family definition -- runs by default.  The legacy
+core_recip>=0.13 catalog is recovered with --legacy OR env RUSTLE_RNA_ORACLE=0 (prints one
+line, exits 0 without writing; run bench/denovo_families.py for the legacy catalog).  Because
+this stage never edits denovo_families.py, the legacy path remains bit-for-bit reproducible.
 
 DETERMINISM
 -----------
@@ -52,8 +55,8 @@ PYTHONHASHSEED=0 (re-exec), fixed gamma=0.20 seed=0, sorted writes.  Re-runs are
 byte-identical (see bench/test_family_rna_refine.py).
 
 Writes: bench/family_rna_refine.tsv (family_id -> member loci/genes) + bench/family_rna_refine.json
-Run:    RUSTLE_RNA_ORACLE=1 /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py
-   or:  /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py --rna-oracle
+Run:    /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py             (default: refined catalog)
+legacy: /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py --legacy    (opt out -> nothing written)
 """
 import os
 import sys
@@ -267,7 +270,7 @@ def write_outputs(built, val):
                           f"{g['chrom']}\t{g['start']}\t{g['end']}\n")
 
     summary = dict(
-        stage="family_rna_refine (RNA-only recall-preserving refinement; opt-in)",
+        stage="family_rna_refine (RNA-only recall-preserving refinement; DEFAULT-ON, opt out --legacy)",
         rule=dict(edge="KEEP iff core_recip>=%.2f AND aln_frac>=%.2f" % (CORE_MIN, ALN_MIN),
                   core_recip_min=CORE_MIN, aln_frac_min=ALN_MIN,
                   gamma=GAMMA, seed=SEED,
@@ -321,7 +324,7 @@ def run(write=True):
 
 def _report(built, val, summary):
     P = print
-    P("\n==================== RNA-ONLY FAMILY REFINEMENT (opt-in) ====================")
+    P("\n==================== RNA-ONLY FAMILY REFINEMENT (default) ====================")
     P(f"rule : KEEP iff core_recip>={CORE_MIN:.2f} AND aln_frac>={ALN_MIN:.2f}  ->  "
       f"gamma-refine (gamma={GAMMA}, seed={SEED})  ->  allele-demote "
       f"(balanced_frac>={DEMOTE_BAL_MIN:.2f} AND copy_like<={DEMOTE_COPY_MAX:.2f})")
@@ -350,15 +353,21 @@ def _report(built, val, summary):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="RNA-only family refinement (opt-in, default-OFF).")
+    ap = argparse.ArgumentParser(
+        description="RNA-only family refinement (DEFAULT-ON; opt out with --legacy).")
+    ap.add_argument("--legacy", action="store_true",
+                    help="opt OUT of the RNA-only refinement: write nothing and recover the "
+                         "legacy core_recip>=0.13 shipped catalog (via bench/denovo_families.py)")
     ap.add_argument("--rna-oracle", action="store_true",
-                    help="enable the opt-in RNA-only refinement stage")
+                    help="(deprecated no-op; the RNA-only refinement is now the default)")
     ap.add_argument("--no-write", action="store_true",
                     help="run + report but do NOT write outputs (used by the self-check)")
     args = ap.parse_args(argv)
-    enabled = args.rna_oracle or os.environ.get("RUSTLE_RNA_ORACLE") == "1"
-    if not enabled:
-        print("opt-in: set RUSTLE_RNA_ORACLE=1 or --rna-oracle")
+    # DEFAULT-ON: the RNA-only refinement IS the family definition unless the legacy opt-out.
+    disabled = args.legacy or os.environ.get("RUSTLE_RNA_ORACLE") == "0"
+    if disabled:
+        print("legacy: RNA-only refinement DISABLED "
+              "(core_recip>=0.13 shipped catalog; run bench/denovo_families.py for the legacy path)")
         return 0
     built, val, summary = run(write=not args.no_write)
     _report(built, val, summary)
