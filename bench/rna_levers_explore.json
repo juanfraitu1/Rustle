@@ -1,0 +1,879 @@
+{
+ "all_levers_added": {
+  "baseline_plus_all_auc": 0.8840837826967765,
+  "beats_0915": false,
+  "lift": -0.01992576193171669
+ },
+ "baseline": {
+  "aln_alone_auc": 0.915233001772627,
+  "core_alone_auc": 0.81525879051719,
+  "oof_logit_core_aln_auc": 0.9040095446284931,
+  "target_reported_0915": 0.915
+ },
+ "coverage": {
+  "block_ident": 5571,
+  "concentration": 5571,
+  "exon_ratio": 5571,
+  "expr_ratio": 5571,
+  "ident_disp": 5571,
+  "intron_cos": 5571,
+  "l4_present": 5580,
+  "log_expr_diff": 5571,
+  "njunc_min": 5571,
+  "npsv_min": 419,
+  "nsun_min": 419,
+  "total_frac": 5571
+ },
+ "levers": {
+  "L1_splice_structural": {
+   "baseline_plus_lever_auc": 0.9129252815348865,
+   "beats_0915": false,
+   "features": [
+    "exon_ratio",
+    "intron_cos",
+    "njunc_min"
+   ],
+   "lift_over_baseline": 0.008915736906393357,
+   "standalone_auc": 0.6025060701304892,
+   "sub_features": {
+    "exon_ratio": {
+     "auc": 0.5535262627769902,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    },
+    "intron_cos": {
+     "auc": 0.6276139203909572,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    },
+    "njunc_min": {
+     "auc": 0.6864580224576587,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    }
+   }
+  },
+  "L2_divergence_spread": {
+   "baseline_plus_lever_auc": 0.9093555886164572,
+   "beats_0915": false,
+   "features": [
+    "block_ident",
+    "concentration",
+    "total_frac",
+    "ident_disp"
+   ],
+   "lift_over_baseline": 0.005346043987964011,
+   "standalone_auc": 0.9044631751623666,
+   "sub_features": {
+    "block_ident": {
+     "auc": 0.910408583899127,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    },
+    "concentration": {
+     "auc": 0.8494031187047676,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    },
+    "ident_disp": {
+     "auc": 0.7496535290606581,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    },
+    "total_frac": {
+     "auc": 0.9104440237260315,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    }
+   }
+  },
+  "L3_expression": {
+   "baseline_plus_lever_auc": 0.9031702466781862,
+   "beats_0915": false,
+   "features": [
+    "expr_ratio",
+    "log_expr_diff"
+   ],
+   "lift_over_baseline": -0.0008392979503069053,
+   "standalone_auc": 0.4073276343621522,
+   "sub_features": {
+    "expr_ratio": {
+     "auc": 0.5691591901066926,
+     "coverage": 5571,
+     "direction": "higher=REAL",
+     "n_neg": 5155,
+     "n_pos": 416
+    },
+    "log_expr_diff": {
+     "auc": 0.4285628683876744,
+     "coverage": 5571,
+     "direction": "higher=FP",
+     "n_neg": 5155,
+     "n_pos": 416
+    }
+   }
+  },
+  "L4_psv_sun_density": {
+   "baseline_plus_lever_auc": 0.8778893634928201,
+   "beats_0915": false,
+   "features": [
+    "npsv_min",
+    "nsun_min",
+    "l4_present"
+   ],
+   "lift_over_baseline": -0.02612018113567305,
+   "standalone_auc": 0.5754281210897932,
+   "sub_features": {
+    "l4_present": {
+     "auc": 0.7087901447893702,
+     "coverage": 5580,
+     "direction": "higher=REAL",
+     "n_neg": 5164,
+     "n_pos": 416
+    },
+    "npsv_min": {
+     "auc": 0.30807176945668135,
+     "coverage": 419,
+     "direction": "higher=FP",
+     "n_neg": 227,
+     "n_pos": 192
+    },
+    "nsun_min": {
+     "auc": 0.4106552863436123,
+     "coverage": 419,
+     "direction": "higher=FP",
+     "n_neg": 227,
+     "n_pos": 192
+    }
+   }
+  }
+ },
+ "population": {
+  "K": 5,
+  "N": 5580,
+  "TP": 416,
+  "seed": 0
+ },
+ "purity": {
+  "base_free_levers": [
+   "L1_splice_structural (exon counts + intron lengths)",
+   "L3_expression (per-locus read counts)",
+   "L4_psv_sun_density (read-called PSV/SUN counts)"
+  ],
+  "feature_name_disjoint_from_labels": true,
+  "l2_base_provenance": {
+   "base_pure_rna": false,
+   "base_source": "genome_reference_GGO.fasta (spliced at RNA-read exon coords)",
+   "byte_identity_probe": {
+    "byte_identical_to_genome": true,
+    "chrom": "NC_011120.1",
+    "end": 16411,
+    "probe": "DN_NC_011120.1_0_1",
+    "start": 0
+   },
+   "is_read_or_poa_consensus": false,
+   "same_provenance_as": "aln_frac (ri_sharedlen_universal.tsv)",
+   "source_fa": "/home/juanfra/winloci_scratch/denovo_transcripts.fa",
+   "structure_source": "RNA read-assembly skeletons (exon coordinates)"
+  },
+  "l2_provenance": "minimap2 re-align of denovo_transcripts.fa == GORILLA GENOME REFERENCE (GGO.fasta) spliced at RNA-read exon coordinates; RNA-STRUCTURE-gated but GENOME-BASE (NOT a read/POA consensus). RETRACTS the earlier 'POA read consensus / NO genome bases / RNA-PURE' label; same base provenance as aln_frac.",
+  "l2_purity_claim_retracted": true,
+  "lever_features": [
+   "exon_ratio",
+   "intron_cos",
+   "njunc_min",
+   "block_ident",
+   "concentration",
+   "total_frac",
+   "ident_disp",
+   "expr_ratio",
+   "log_expr_diff",
+   "npsv_min",
+   "nsun_min",
+   "l4_present"
+  ],
+  "note": "No base-pure sequence lever exists here; L1/L3/L4 are base-free (structure/count only), L2 is genome-base. A genome-base-free sequence lever would require a true per-read POA consensus (not built)."
+ },
+ "residual_crack": {
+  "alnkeep_edges": [
+   {
+    "aln": 0.992,
+    "block_ident": 0.93,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.564,
+    "exon_ratio": 1.0,
+    "intron_cos": 0.602,
+    "pair": [
+     "ANKRD18B",
+     "LOC115933254"
+    ],
+    "total_frac": 0.992,
+    "y": 1
+   },
+   {
+    "aln": 1.001,
+    "block_ident": 0.995,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.38,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC101142904",
+     "LOC129530552"
+    ],
+    "total_frac": 1.001,
+    "y": 1
+   },
+   {
+    "aln": 0.816,
+    "block_ident": 0.932,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.261,
+    "exon_ratio": 0.545,
+    "intron_cos": 0.835,
+    "pair": [
+     "LOC101147259",
+     "LOC115933254"
+    ],
+    "total_frac": 0.816,
+    "y": 1
+   },
+   {
+    "aln": 1.013,
+    "block_ident": 0.957,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.322,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129526550",
+     "LOC129531431"
+    ],
+    "total_frac": 1.013,
+    "y": 1
+   },
+   {
+    "aln": 0.946,
+    "block_ident": 0.916,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.715,
+    "exon_ratio": 0.667,
+    "intron_cos": 0.999,
+    "pair": [
+     "LOC129529976",
+     "LOC129529978"
+    ],
+    "total_frac": 0.946,
+    "y": 1
+   },
+   {
+    "aln": 1.0,
+    "block_ident": 1.0,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 1.0,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529976",
+     "LOC129529986"
+    ],
+    "total_frac": 1.0,
+    "y": 1
+   },
+   {
+    "aln": 1.0,
+    "block_ident": 1.0,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 1.0,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529978",
+     "LOC129529983"
+    ],
+    "total_frac": 1.0,
+    "y": 1
+   },
+   {
+    "aln": 1.01,
+    "block_ident": 0.912,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.703,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529978",
+     "LOC129529986"
+    ],
+    "total_frac": 1.01,
+    "y": 1
+   },
+   {
+    "aln": 0.958,
+    "block_ident": 0.911,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.794,
+    "exon_ratio": 0.667,
+    "intron_cos": 0.999,
+    "pair": [
+     "LOC129529978",
+     "MAGEA12"
+    ],
+    "total_frac": 0.958,
+    "y": 1
+   },
+   {
+    "aln": 1.01,
+    "block_ident": 0.912,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.703,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529983",
+     "LOC129529986"
+    ],
+    "total_frac": 1.01,
+    "y": 1
+   },
+   {
+    "aln": 0.911,
+    "block_ident": 0.911,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.685,
+    "exon_ratio": 0.667,
+    "intron_cos": 0.84,
+    "pair": [
+     "LOC129529986",
+     "MAGEA12"
+    ],
+    "total_frac": 0.911,
+    "y": 1
+   },
+   {
+    "aln": 0.936,
+    "block_ident": 1.0,
+    "cls": "TP",
+    "concentration": 1.0,
+    "core": 0.939,
+    "exon_ratio": 0.75,
+    "intron_cos": 0.999,
+    "pair": [
+     "LOC129530018",
+     "MAGEA9"
+    ],
+    "total_frac": 0.936,
+    "y": 1
+   },
+   {
+    "aln": 0.885,
+    "block_ident": 0.914,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.326,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "FOXO1",
+     "LOC115933254"
+    ],
+    "total_frac": 1.084,
+    "y": 0
+   },
+   {
+    "aln": 0.998,
+    "block_ident": 0.875,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.423,
+    "exon_ratio": 0.765,
+    "intron_cos": 0.855,
+    "pair": [
+     "GSTM2",
+     "LOC101126097"
+    ],
+    "total_frac": 0.998,
+    "y": 0
+   },
+   {
+    "aln": 1.021,
+    "block_ident": 0.975,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.788,
+    "exon_ratio": 0.8,
+    "intron_cos": 0.883,
+    "pair": [
+     "GSTM2",
+     "LOC101129940"
+    ],
+    "total_frac": 1.021,
+    "y": 0
+   },
+   {
+    "aln": 0.971,
+    "block_ident": 0.843,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.17,
+    "exon_ratio": 0.905,
+    "intron_cos": 0.818,
+    "pair": [
+     "GSTM2",
+     "LOC101131274"
+    ],
+    "total_frac": 0.971,
+    "y": 0
+   },
+   {
+    "aln": 1.018,
+    "block_ident": 0.969,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.256,
+    "exon_ratio": 0.929,
+    "intron_cos": 0.998,
+    "pair": [
+     "GSTM2",
+     "LOC109023809"
+    ],
+    "total_frac": 1.018,
+    "y": 0
+   },
+   {
+    "aln": 0.89,
+    "block_ident": 0.89,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.304,
+    "exon_ratio": 0.381,
+    "intron_cos": 0.702,
+    "pair": [
+     "GSTM2",
+     "LOC115930164"
+    ],
+    "total_frac": 0.89,
+    "y": 0
+   },
+   {
+    "aln": 0.97,
+    "block_ident": 0.842,
+    "cls": "genuine",
+    "concentration": 0.763,
+    "core": 0.17,
+    "exon_ratio": 0.913,
+    "intron_cos": 0.816,
+    "pair": [
+     "GSTM2",
+     "LOC115930576"
+    ],
+    "total_frac": 1.271,
+    "y": 0
+   },
+   {
+    "aln": 1.0,
+    "block_ident": 0.994,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.589,
+    "exon_ratio": 0.333,
+    "intron_cos": 0.81,
+    "pair": [
+     "GSTM2",
+     "LOC115933235"
+    ],
+    "total_frac": 1.0,
+    "y": 0
+   },
+   {
+    "aln": 0.815,
+    "block_ident": 0.968,
+    "cls": "genuine",
+    "concentration": 0.825,
+    "core": 0.38,
+    "exon_ratio": 0.905,
+    "intron_cos": 0.764,
+    "pair": [
+     "GSTM2",
+     "LOC115933241"
+    ],
+    "total_frac": 0.988,
+    "y": 0
+   },
+   {
+    "aln": 0.825,
+    "block_ident": 0.975,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.668,
+    "exon_ratio": 0.84,
+    "intron_cos": 0.978,
+    "pair": [
+     "GSTM2",
+     "LOC129525599"
+    ],
+    "total_frac": 0.825,
+    "y": 0
+   },
+   {
+    "aln": 0.825,
+    "block_ident": 0.977,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.668,
+    "exon_ratio": 0.84,
+    "intron_cos": 0.978,
+    "pair": [
+     "GSTM2",
+     "LOC134756861"
+    ],
+    "total_frac": 0.825,
+    "y": 0
+   },
+   {
+    "aln": 1.0,
+    "block_ident": 0.984,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.971,
+    "exon_ratio": 1.0,
+    "intron_cos": 0.998,
+    "pair": [
+     "GSTM2",
+     "LOC134756922"
+    ],
+    "total_frac": 1.0,
+    "y": 0
+   },
+   {
+    "aln": 1.021,
+    "block_ident": 0.964,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.32,
+    "exon_ratio": 0.8,
+    "intron_cos": 0.881,
+    "pair": [
+     "GSTM2",
+     "SEC22B"
+    ],
+    "total_frac": 1.021,
+    "y": 0
+   },
+   {
+    "aln": 0.765,
+    "block_ident": 0.877,
+    "cls": "genuine",
+    "concentration": 1.0,
+    "core": 0.352,
+    "exon_ratio": 0.6,
+    "intron_cos": 0.997,
+    "pair": [
+     "LOC109027124",
+     "MPHOSPH8"
+    ],
+    "total_frac": 0.765,
+    "y": 0
+   },
+   {
+    "aln": 0.805,
+    "block_ident": 0.894,
+    "cls": "truthbar",
+    "concentration": 1.0,
+    "core": 0.132,
+    "exon_ratio": 0.875,
+    "intron_cos": 0.997,
+    "pair": [
+     "LOC129526550",
+     "LOC129530429"
+    ],
+    "total_frac": 0.805,
+    "y": 0
+   },
+   {
+    "aln": 0.884,
+    "block_ident": 0.824,
+    "cls": "truthbar",
+    "concentration": 1.0,
+    "core": 0.464,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529978",
+     "MAGEA1"
+    ],
+    "total_frac": 0.884,
+    "y": 0
+   },
+   {
+    "aln": 0.923,
+    "block_ident": 0.812,
+    "cls": "truthbar",
+    "concentration": 1.0,
+    "core": 0.262,
+    "exon_ratio": 1.0,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529978",
+     "MAGEA4"
+    ],
+    "total_frac": 0.923,
+    "y": 0
+   },
+   {
+    "aln": 0.935,
+    "block_ident": 0.824,
+    "cls": "truthbar",
+    "concentration": 1.0,
+    "core": 0.47,
+    "exon_ratio": 0.667,
+    "intron_cos": 1.0,
+    "pair": [
+     "LOC129529986",
+     "MAGEA1"
+    ],
+    "total_frac": 0.935,
+    "y": 0
+   }
+  ],
+  "alnkeep_label_split": {
+   "overmerge": 18,
+   "real": 12
+  },
+  "best_separator": {
+   "best_any_lever": {
+    "disc": 0.4394,
+    "flipped_auc": 0.9394,
+    "name": "L4_psv_sun_density.npsv_min"
+   },
+   "best_fullcoverage_lever": {
+    "disc": 0.2662,
+    "flipped_auc": 0.7662,
+    "name": "L1_splice_structural.njunc_min"
+   },
+   "core_recip_reference": 0.7731481481481481,
+   "verdict": "No lever beats core_recip (already in the shipped rule); the best full-coverage lever is below core_recip, and the single higher-disc hit (npsv_min/nsun_min) is LOW-COVERAGE and INVERTED-direction, does NOT generalise (full-pop adding L4 lowers AUC by 0.026) -> not a crack."
+  },
+  "full_rule_cut": {
+   "note": "FULL shipped rule core_recip>=0.26 AND aln_frac>=0.72; core threshold already cuts some aln-keep over-merges.",
+   "overmerge_alnkeep": 18,
+   "overmerge_cut_by_core": 4,
+   "overmerge_surviving_full_rule": 14,
+   "real_lost_by_core": 0
+  },
+  "levers": {
+   "L1_splice_structural": {
+    "exon_ratio": {
+     "auc": 0.5949074074074074,
+     "cov": 30,
+     "disc": 0.0949,
+     "flipped_auc": 0.5949,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "intron_cos": {
+     "auc": 0.7222222222222222,
+     "cov": 30,
+     "disc": 0.2222,
+     "flipped_auc": 0.7222,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "njunc_min": {
+     "auc": 0.2337962962962963,
+     "cov": 30,
+     "disc": 0.2662,
+     "flipped_auc": 0.7662,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    }
+   },
+   "L2_divergence_spread": {
+    "block_ident": {
+     "auc": 0.6851851851851852,
+     "cov": 30,
+     "disc": 0.1852,
+     "flipped_auc": 0.6852,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "concentration": {
+     "auc": 0.5555555555555556,
+     "cov": 30,
+     "disc": 0.0556,
+     "flipped_auc": 0.5556,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "ident_disp": {
+     "auc": 0.3333333333333333,
+     "cov": 30,
+     "disc": 0.1667,
+     "flipped_auc": 0.6667,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "total_frac": {
+     "auc": 0.5462962962962963,
+     "cov": 30,
+     "disc": 0.0463,
+     "flipped_auc": 0.5463,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    }
+   },
+   "L3_expression": {
+    "expr_ratio": {
+     "auc": 0.5925925925925926,
+     "cov": 30,
+     "disc": 0.0926,
+     "flipped_auc": 0.5926,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "log_expr_diff": {
+     "auc": 0.41203703703703703,
+     "cov": 30,
+     "disc": 0.088,
+     "flipped_auc": 0.588,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    }
+   },
+   "L4_psv_sun_density": {
+    "l4_present": {
+     "auc": 0.5694444444444444,
+     "cov": 30,
+     "disc": 0.0694,
+     "flipped_auc": 0.5694,
+     "full_cov": true,
+     "n_neg": 18,
+     "n_pos": 12
+    },
+    "npsv_min": {
+     "auc": 0.06060606060606061,
+     "cov": 20,
+     "disc": 0.4394,
+     "flipped_auc": 0.9394,
+     "full_cov": false,
+     "n_neg": 11,
+     "n_pos": 9
+    },
+    "nsun_min": {
+     "auc": 0.08080808080808081,
+     "cov": 20,
+     "disc": 0.4192,
+     "flipped_auc": 0.9192,
+     "full_cov": false,
+     "n_neg": 11,
+     "n_pos": 9
+    }
+   }
+  },
+  "n_alnkeep_edges": 30,
+  "n_residual_edges": 98,
+  "oracle_roster": {
+   "FOXO1": {
+    "asm_hapCN": 2,
+    "klass": "multi_copy",
+    "n_loci_ref": 4
+   },
+   "GSTM2": {
+    "asm_hapCN": 3,
+    "klass": "multi_copy",
+    "n_loci_ref": 2
+   },
+   "LOC101142904": {
+    "asm_hapCN": 3,
+    "klass": "multi_copy",
+    "n_loci_ref": 3
+   },
+   "LOC115933254": {
+    "asm_hapCN": 8,
+    "klass": "multi_copy",
+    "n_loci_ref": 12
+   },
+   "LOC129523567": {
+    "asm_hapCN": 2,
+    "klass": "multi_copy",
+    "n_loci_ref": 3
+   },
+   "LOC129526550": {
+    "asm_hapCN": 13,
+    "klass": "multi_copy",
+    "n_loci_ref": 10
+   },
+   "LOC129529978": {
+    "asm_hapCN": 2,
+    "klass": "multi_copy",
+    "n_loci_ref": 4
+   },
+   "LOC129529986": {
+    "asm_hapCN": 2,
+    "klass": "multi_copy",
+    "n_loci_ref": 6
+   },
+   "LOC134758618": {
+    "asm_hapCN": 3,
+    "klass": "multi_copy",
+    "n_loci_ref": 4
+   },
+   "MAGEA9": {
+    "asm_hapCN": 2,
+    "klass": "multi_copy",
+    "n_loci_ref": 4
+   },
+   "MPHOSPH8": {
+    "asm_hapCN": 2,
+    "klass": "multi_copy",
+    "n_loci_ref": 7
+   }
+  },
+  "reference": {
+   "aln": {
+    "auc": 0.6527777777777778,
+    "n_neg": 18,
+    "n_pos": 12
+   },
+   "core": {
+    "auc": 0.7731481481481481,
+    "n_neg": 18,
+    "n_pos": 12
+   }
+  }
+ }
+}
