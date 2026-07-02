@@ -1,0 +1,79 @@
+{
+  "A_genomewide_noise": {
+    "as_ratio_available": 195981,
+    "as_ratio_hist": {
+      "[0.0,0.1)": 20492,
+      "[0.1,0.2)": 49916,
+      "[0.2,0.3)": 28903,
+      "[0.3,0.4)": 20582,
+      "[0.4,0.5)": 17519,
+      "[0.5,0.6)": 15826,
+      "[0.6,0.7)": 11673,
+      "[0.7,0.8)": 10556,
+      "[0.8,0.9)": 7122,
+      "[0.9,1.0)": 8327,
+      "[1.0,1.0)": 339
+    },
+    "pct_dropped_p05_as": 0.7142,
+    "pct_dropped_p05_s1": 0.766,
+    "pct_dropped_p08_as": 0.9084,
+    "pct_dropped_p08_s1": 0.927,
+    "s1_ratio_available": 195981,
+    "s1_ratio_hist": {
+      "[0.0,0.1)": 1567,
+      "[0.1,0.2)": 74216,
+      "[0.2,0.3)": 33450,
+      "[0.3,0.4)": 22159,
+      "[0.4,0.5)": 18721,
+      "[0.5,0.6)": 13520,
+      "[0.6,0.7)": 10691,
+      "[0.7,0.8)": 7349,
+      "[0.8,0.9)": 6779,
+      "[0.9,1.0)": 6128,
+      "[1.0,1.0)": 351
+    },
+    "secondaries_sampled": 195981
+  },
+  "B_proxy_validation": {
+    "as_ratio_precision": 0.9578,
+    "as_ratio_recall": 0.9361,
+    "exact_setmatch_as": 0.925,
+    "exact_setmatch_s1": 0.99,
+    "real_p08_secondaries": 485,
+    "s1_ratio_precision": 1.0,
+    "s1_ratio_recall": 0.9835,
+    "sample_reads": 200
+  },
+  "C_family_correspondence": {
+    "edges_gate": 2112,
+    "edges_gatekept_but_lost_by_p08": 291,
+    "edges_lost_by_p08": 516,
+    "edges_p01": 2491,
+    "edges_p08": 1975,
+    "ext_primary_reads": 34230,
+    "families_with_multimappers": 165,
+    "frac_p08drops_that_are_gate_junk": 0.6494,
+    "frac_p08drops_that_are_genuine_gatekept_ties": 0.3506,
+    "frac_secondaries_dropped_by_p08": 0.4805,
+    "frac_secondaries_rejected_by_gate": 0.6509,
+    "gate_rejected": 113748,
+    "gatereject_BUT_p08kept_JUNK_GATE_CATCHES": 59224,
+    "mean_degree_p01": 3.131,
+    "mean_degree_p08": 2.103,
+    "multimap_reads": 81722,
+    "p08_dropped": 83967,
+    "p08drop_AND_gatereject": 54524,
+    "p08drop_BUT_gatekept_GENUINE_LOSS": 29443,
+    "secondary_placements": 174749
+  },
+  "params": {
+    "BAM": "/home/juanfra/winloci_scratch/GGO_mm.bam",
+    "DELTA": 0.005,
+    "DE_MAX": 0.05,
+    "MIN_READS": 3,
+    "N_SAMPLE": 200,
+    "POS_TOL": 100,
+    "P_MAIN": 0.8,
+    "SUB_MASK": 31
+  }
+}
