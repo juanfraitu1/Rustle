@@ -1,0 +1,2042 @@
+{
+  "summary": {
+    "families_processed": 119,
+    "families_with_recombinants": 61,
+    "total_recombinant_reads": 2318,
+    "crossover_reads": 1528,
+    "conversion_reads": 790,
+    "by_classification": {
+      "ChimeraSuspect": 197,
+      "GeneConversion": 2121
+    },
+    "by_structural_call": {
+      "sporadic_chimera": 197,
+      "systematic_copy_split": 1447,
+      "localized_tract": 674
+    },
+    "localized_tract_reads": 674,
+    "localized_tract_clusters": 31,
+    "localized_tract_families": [
+      4,
+      10,
+      12,
+      13,
+      16,
+      17,
+      22,
+      31,
+      39,
+      41,
+      47,
+      57,
+      73,
+      90,
+      123,
+      132,
+      135
+    ],
+    "localized_tract_length_bubbles": {
+      "2": 592,
+      "3": 39,
+      "5": 21,
+      "6": 22
+    },
+    "crossover_by_class": {
+      "ChimeraSuspect": 101,
+      "GeneConversion": 1427
+    },
+    "conversion_by_class": {
+      "ChimeraSuspect": 96,
+      "GeneConversion": 694
+    },
+    "real_geneconversion_reads": 2121,
+    "rt_switch_artifact_reads": 0,
+    "chimera_suspect_reads": 197,
+    "ambiguous_reads": 0,
+    "n_real_geneconversion_clusters": 81,
+    "tract_length_bubbles_distribution": {
+      "2": 682,
+      "3": 55,
+      "4": 5,
+      "5": 24,
+      "6": 23,
+      "10": 1
+    },
+    "families_with_recombinants_ids": [
+      0,
+      4,
+      5,
+      8,
+      9,
+      10,
+      12,
+      13,
+      15,
+      16,
+      17,
+      18,
+      19,
+      22,
+      24,
+      26,
+      27,
+      31,
+      33,
+      38,
+      39,
+      41,
+      47,
+      48,
+      49,
+      52,
+      54,
+      55,
+      57,
+      58,
+      59,
+      66,
+      73,
+      74,
+      77,
+      80,
+      81,
+      87,
+      90,
+      100,
+      102,
+      105,
+      106,
+      109,
+      111,
+      114,
+      115,
+      116,
+      123,
+      124,
+      128,
+      129,
+      132,
+      135,
+      137,
+      138,
+      147,
+      150,
+      154,
+      163,
+      171
+    ],
+    "Kge3_families_with_recombinants": [
+      0,
+      4,
+      9,
+      12,
+      13,
+      15,
+      16,
+      17,
+      18,
+      19,
+      22,
+      24,
+      27,
+      31,
+      38,
+      39,
+      41,
+      52,
+      59,
+      74,
+      80,
+      81,
+      87,
+      90,
+      115
+    ],
+    "gate_leaks_force_assigned": 2214,
+    "gate_status_of_recombinant_reads": {
+      "assigned": 2214,
+      "ambiguous": 104
+    },
+    "skipped": {
+      "<2_bubbles": 1
+    },
+    "thresholds": {
+      "MIN_INFO": 4,
+      "MIN_ARM": 2,
+      "MIN_FLANK": 2,
+      "MIN_TRACT": 2,
+      "MIN_SINGLE_MM": 2,
+      "IMPURITY_MAX": 1,
+      "FAMILY_MIN_SUPPORTING_READS": 3,
+      "BREAKPOINT_TOL": 50,
+      "MH_KMIN": 6,
+      "MH_KMAX": 12
+    }
+  },
+  "families": [
+    {
+      "family": 0,
+      "gene": "?",
+      "n_copies": 7,
+      "K": 7,
+      "n_bubbles": 246,
+      "n_recombinant": 194,
+      "n_clusters": 13,
+      "n_crossover": 188,
+      "n_conversion": 6,
+      "classes": {
+        "ChimeraSuspect": 12,
+        "GeneConversion": 182
+      },
+      "n_gate_leak": 194,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 3,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 88,
+      "n_recombinant": 0
+    },
+    {
+      "family": 4,
+      "gene": "?",
+      "n_copies": 7,
+      "K": 7,
+      "n_bubbles": 345,
+      "n_recombinant": 851,
+      "n_clusters": 57,
+      "n_crossover": 788,
+      "n_conversion": 63,
+      "classes": {
+        "ChimeraSuspect": 47,
+        "GeneConversion": 804
+      },
+      "n_gate_leak": 850,
+      "chroms": [
+        "NC_073227.2",
+        "NC_073236.2",
+        "NC_073238.2",
+        "NC_073246.2",
+        "NC_073248.2"
+      ]
+    },
+    {
+      "family": 5,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 33,
+      "n_recombinant": 3,
+      "n_clusters": 1,
+      "n_crossover": 3,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 3
+      },
+      "n_gate_leak": 3,
+      "chroms": [
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 8,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 55,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 1,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073237.2"
+      ]
+    },
+    {
+      "family": 9,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 4,
+      "n_bubbles": 63,
+      "n_recombinant": 79,
+      "n_clusters": 8,
+      "n_crossover": 57,
+      "n_conversion": 22,
+      "classes": {
+        "ChimeraSuspect": 4,
+        "GeneConversion": 75
+      },
+      "n_gate_leak": 28,
+      "chroms": [
+        "NC_073236.2",
+        "NC_073238.2",
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 10,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 67,
+      "n_recombinant": 84,
+      "n_clusters": 7,
+      "n_crossover": 5,
+      "n_conversion": 79,
+      "classes": {
+        "ChimeraSuspect": 5,
+        "GeneConversion": 79
+      },
+      "n_gate_leak": 84,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 11,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 2,
+      "n_bubbles": 13,
+      "n_recombinant": 0
+    },
+    {
+      "family": 12,
+      "gene": "?",
+      "n_copies": 5,
+      "K": 5,
+      "n_bubbles": 362,
+      "n_recombinant": 30,
+      "n_clusters": 5,
+      "n_crossover": 24,
+      "n_conversion": 6,
+      "classes": {
+        "GeneConversion": 28,
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 30,
+      "chroms": [
+        "NC_073242.2"
+      ]
+    },
+    {
+      "family": 13,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 382,
+      "n_recombinant": 310,
+      "n_clusters": 16,
+      "n_crossover": 10,
+      "n_conversion": 300,
+      "classes": {
+        "ChimeraSuspect": 11,
+        "GeneConversion": 299
+      },
+      "n_gate_leak": 309,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 15,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 19,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073236.2",
+        "NC_073238.2",
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 16,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 564,
+      "n_recombinant": 13,
+      "n_clusters": 2,
+      "n_crossover": 0,
+      "n_conversion": 13,
+      "classes": {
+        "ChimeraSuspect": 1,
+        "GeneConversion": 12
+      },
+      "n_gate_leak": 13,
+      "chroms": [
+        "NC_073232.2"
+      ]
+    },
+    {
+      "family": 17,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 119,
+      "n_recombinant": 19,
+      "n_clusters": 6,
+      "n_crossover": 3,
+      "n_conversion": 16,
+      "classes": {
+        "ChimeraSuspect": 6,
+        "GeneConversion": 13
+      },
+      "n_gate_leak": 19,
+      "chroms": [
+        "NC_073232.2"
+      ]
+    },
+    {
+      "family": 18,
+      "gene": "?",
+      "n_copies": 9,
+      "K": 9,
+      "n_bubbles": 72,
+      "n_recombinant": 32,
+      "n_clusters": 8,
+      "n_crossover": 30,
+      "n_conversion": 2,
+      "classes": {
+        "ChimeraSuspect": 6,
+        "GeneConversion": 26
+      },
+      "n_gate_leak": 11,
+      "chroms": [
+        "NC_073227.2",
+        "NC_073230.2",
+        "NC_073232.2",
+        "NC_073237.2",
+        "NC_073239.2",
+        "NC_073240.2",
+        "NC_073242.2",
+        "NC_086017.1"
+      ]
+    },
+    {
+      "family": 19,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 181,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073242.2"
+      ]
+    },
+    {
+      "family": 22,
+      "gene": "ANKRD18",
+      "n_copies": 6,
+      "K": 4,
+      "n_bubbles": 61,
+      "n_recombinant": 10,
+      "n_clusters": 4,
+      "n_crossover": 3,
+      "n_conversion": 7,
+      "classes": {
+        "ChimeraSuspect": 3,
+        "GeneConversion": 7
+      },
+      "n_gate_leak": 7,
+      "chroms": [
+        "NC_073236.2",
+        "NC_073237.2"
+      ]
+    },
+    {
+      "family": 24,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 357,
+      "n_recombinant": 11,
+      "n_clusters": 9,
+      "n_crossover": 1,
+      "n_conversion": 10,
+      "classes": {
+        "ChimeraSuspect": 11
+      },
+      "n_gate_leak": 11,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 25,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 21,
+      "n_recombinant": 0
+    },
+    {
+      "family": 26,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 14,
+      "n_recombinant": 2,
+      "n_clusters": 1,
+      "n_crossover": 2,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073229.2"
+      ]
+    },
+    {
+      "family": 27,
+      "gene": "?",
+      "n_copies": 5,
+      "K": 5,
+      "n_bubbles": 137,
+      "n_recombinant": 5,
+      "n_clusters": 3,
+      "n_crossover": 5,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 2,
+        "GeneConversion": 3
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073236.2",
+        "NC_073238.2",
+        "NC_073239.2",
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 28,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 4,
+      "n_bubbles": 64,
+      "n_recombinant": 0
+    },
+    {
+      "family": 29,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 9,
+      "n_recombinant": 0
+    },
+    {
+      "family": 31,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 99,
+      "n_recombinant": 13,
+      "n_clusters": 4,
+      "n_crossover": 6,
+      "n_conversion": 7,
+      "classes": {
+        "ChimeraSuspect": 1,
+        "GeneConversion": 12
+      },
+      "n_gate_leak": 13,
+      "chroms": [
+        "NC_073229.2",
+        "NC_073234.2",
+        "NC_086017.1"
+      ]
+    },
+    {
+      "family": 32,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 3,
+      "n_bubbles": 31,
+      "n_recombinant": 0
+    },
+    {
+      "family": 33,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 39,
+      "n_recombinant": 35,
+      "n_clusters": 1,
+      "n_crossover": 35,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 35
+      },
+      "n_gate_leak": 35,
+      "chroms": [
+        "NC_073232.2"
+      ]
+    },
+    {
+      "family": 35,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 105,
+      "n_recombinant": 0
+    },
+    {
+      "family": 36,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 15,
+      "n_recombinant": 0
+    },
+    {
+      "family": 37,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 7,
+      "n_recombinant": 0
+    },
+    {
+      "family": 38,
+      "gene": "?",
+      "n_copies": 8,
+      "K": 8,
+      "n_bubbles": 114,
+      "n_recombinant": 20,
+      "n_clusters": 4,
+      "n_crossover": 19,
+      "n_conversion": 1,
+      "classes": {
+        "GeneConversion": 19,
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 5,
+      "chroms": [
+        "NC_073248.2"
+      ]
+    },
+    {
+      "family": 39,
+      "gene": "RABL2",
+      "n_copies": 5,
+      "K": 5,
+      "n_bubbles": 235,
+      "n_recombinant": 71,
+      "n_clusters": 14,
+      "n_crossover": 10,
+      "n_conversion": 61,
+      "classes": {
+        "ChimeraSuspect": 14,
+        "GeneConversion": 57
+      },
+      "n_gate_leak": 68,
+      "chroms": [
+        "NC_073227.2",
+        "NC_073231.2",
+        "NC_073235.2",
+        "NC_073247.2",
+        "NC_086018.1"
+      ]
+    },
+    {
+      "family": 40,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 20,
+      "n_recombinant": 0
+    },
+    {
+      "family": 41,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 4,
+      "n_bubbles": 98,
+      "n_recombinant": 11,
+      "n_clusters": 4,
+      "n_crossover": 0,
+      "n_conversion": 11,
+      "classes": {
+        "ChimeraSuspect": 3,
+        "GeneConversion": 8
+      },
+      "n_gate_leak": 11,
+      "chroms": [
+        "NC_073238.2",
+        "NC_073240.2",
+        "NC_073241.2",
+        "NC_073244.2"
+      ]
+    },
+    {
+      "family": 42,
+      "gene": "?",
+      "n_copies": 8,
+      "K": 8,
+      "n_bubbles": 21,
+      "n_recombinant": 0
+    },
+    {
+      "family": 43,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 3,
+      "n_recombinant": 0
+    },
+    {
+      "family": 44,
+      "gene": "?",
+      "n_copies": 6,
+      "K": 6,
+      "n_bubbles": 45,
+      "n_recombinant": 0
+    },
+    {
+      "family": 47,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 65,
+      "n_recombinant": 30,
+      "n_clusters": 5,
+      "n_crossover": 26,
+      "n_conversion": 4,
+      "classes": {
+        "GeneConversion": 28,
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 29,
+      "chroms": [
+        "NC_073237.2",
+        "NC_073238.2"
+      ]
+    },
+    {
+      "family": 48,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 38,
+      "n_recombinant": 170,
+      "n_clusters": 1,
+      "n_crossover": 170,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 170
+      },
+      "n_gate_leak": 169,
+      "chroms": [
+        "NC_073237.2"
+      ]
+    },
+    {
+      "family": 49,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 32,
+      "n_recombinant": 2,
+      "n_clusters": 1,
+      "n_crossover": 2,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073238.2"
+      ]
+    },
+    {
+      "family": 50,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 18,
+      "n_recombinant": 0
+    },
+    {
+      "family": 52,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 41,
+      "n_recombinant": 2,
+      "n_clusters": 2,
+      "n_crossover": 1,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073242.2"
+      ]
+    },
+    {
+      "family": 54,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 37,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 1,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073227.2",
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 55,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 62,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073228.2"
+      ]
+    },
+    {
+      "family": 57,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 81,
+      "n_recombinant": 12,
+      "n_clusters": 3,
+      "n_crossover": 0,
+      "n_conversion": 12,
+      "classes": {
+        "ChimeraSuspect": 2,
+        "GeneConversion": 10
+      },
+      "n_gate_leak": 12,
+      "chroms": [
+        "NC_073232.2"
+      ]
+    },
+    {
+      "family": 58,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 14,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 1,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073247.2",
+        "NC_073248.2"
+      ]
+    },
+    {
+      "family": 59,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 45,
+      "n_recombinant": 2,
+      "n_clusters": 2,
+      "n_crossover": 0,
+      "n_conversion": 2,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073242.2"
+      ]
+    },
+    {
+      "family": 64,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 178,
+      "n_recombinant": 0
+    },
+    {
+      "family": 65,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 4,
+      "n_bubbles": 59,
+      "n_recombinant": 0
+    },
+    {
+      "family": 66,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 126,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 1,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073238.2"
+      ]
+    },
+    {
+      "family": 67,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 119,
+      "n_recombinant": 0
+    },
+    {
+      "family": 71,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 11,
+      "n_recombinant": 0
+    },
+    {
+      "family": 72,
+      "gene": "?",
+      "n_copies": 4,
+      "K": 4,
+      "n_bubbles": 235,
+      "n_recombinant": 0
+    },
+    {
+      "family": 73,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 27,
+      "n_recombinant": 53,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 53,
+      "classes": {
+        "GeneConversion": 53
+      },
+      "n_gate_leak": 53,
+      "chroms": [
+        "NC_073228.2"
+      ]
+    },
+    {
+      "family": 74,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 51,
+      "n_recombinant": 18,
+      "n_clusters": 5,
+      "n_crossover": 18,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 13,
+        "ChimeraSuspect": 5
+      },
+      "n_gate_leak": 17,
+      "chroms": [
+        "NC_073228.2"
+      ]
+    },
+    {
+      "family": 77,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 12,
+      "n_recombinant": 3,
+      "n_clusters": 1,
+      "n_crossover": 3,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 3
+      },
+      "n_gate_leak": 3,
+      "chroms": [
+        "NC_073230.2"
+      ]
+    },
+    {
+      "family": 78,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 29,
+      "n_recombinant": 0
+    },
+    {
+      "family": 79,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 13,
+      "n_recombinant": 0
+    },
+    {
+      "family": 80,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 171,
+      "n_recombinant": 2,
+      "n_clusters": 2,
+      "n_crossover": 1,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073236.2",
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 81,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 93,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073236.2",
+        "NC_073237.2"
+      ]
+    },
+    {
+      "family": 82,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 85,
+      "n_recombinant": 0
+    },
+    {
+      "family": 83,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 10,
+      "n_recombinant": 0
+    },
+    {
+      "family": 85,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 107,
+      "n_recombinant": 0
+    },
+    {
+      "family": 87,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 117,
+      "n_recombinant": 3,
+      "n_clusters": 2,
+      "n_crossover": 0,
+      "n_conversion": 3,
+      "classes": {
+        "ChimeraSuspect": 3
+      },
+      "n_gate_leak": 3,
+      "chroms": [
+        "NC_073242.2"
+      ]
+    },
+    {
+      "family": 89,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 38,
+      "n_recombinant": 0
+    },
+    {
+      "family": 90,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 26,
+      "n_recombinant": 4,
+      "n_clusters": 2,
+      "n_crossover": 1,
+      "n_conversion": 3,
+      "classes": {
+        "GeneConversion": 3,
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 4,
+      "chroms": [
+        "NC_073246.2",
+        "NC_086018.1"
+      ]
+    },
+    {
+      "family": 91,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 3,
+      "n_recombinant": 0
+    },
+    {
+      "family": 98,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 27,
+      "n_recombinant": 0
+    },
+    {
+      "family": 100,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 29,
+      "n_recombinant": 2,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 2,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073228.2"
+      ]
+    },
+    {
+      "family": 102,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 32,
+      "n_recombinant": 7,
+      "n_clusters": 6,
+      "n_crossover": 3,
+      "n_conversion": 4,
+      "classes": {
+        "ChimeraSuspect": 7
+      },
+      "n_gate_leak": 7,
+      "chroms": [
+        "NC_073229.2"
+      ]
+    },
+    {
+      "family": 105,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 55,
+      "n_recombinant": 21,
+      "n_clusters": 1,
+      "n_crossover": 21,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 21
+      },
+      "n_gate_leak": 21,
+      "chroms": [
+        "NC_073234.2"
+      ]
+    },
+    {
+      "family": 106,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 18,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 1,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073235.2"
+      ]
+    },
+    {
+      "family": 107,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 28,
+      "n_recombinant": 0
+    },
+    {
+      "family": 109,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 55,
+      "n_recombinant": 25,
+      "n_clusters": 1,
+      "n_crossover": 25,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 25
+      },
+      "n_gate_leak": 25,
+      "chroms": [
+        "NC_073237.2"
+      ]
+    },
+    {
+      "family": 110,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 24,
+      "n_recombinant": 0
+    },
+    {
+      "family": 111,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 18,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 1,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073238.2",
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 114,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 10,
+      "n_recombinant": 17,
+      "n_clusters": 2,
+      "n_crossover": 17,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 15,
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 17,
+      "chroms": [
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 115,
+      "gene": "?",
+      "n_copies": 3,
+      "K": 3,
+      "n_bubbles": 18,
+      "n_recombinant": 3,
+      "n_clusters": 2,
+      "n_crossover": 3,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 3
+      },
+      "n_gate_leak": 3,
+      "chroms": [
+        "NC_073240.2"
+      ]
+    },
+    {
+      "family": 116,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 107,
+      "n_recombinant": 2,
+      "n_clusters": 2,
+      "n_crossover": 2,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073241.2",
+        "NC_073246.2"
+      ]
+    },
+    {
+      "family": 117,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 26,
+      "n_recombinant": 0
+    },
+    {
+      "family": 119,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 7,
+      "n_recombinant": 0
+    },
+    {
+      "family": 120,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 6,
+      "n_recombinant": 0
+    },
+    {
+      "family": 121,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 36,
+      "n_recombinant": 0
+    },
+    {
+      "family": 123,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 145,
+      "n_recombinant": 6,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 6,
+      "classes": {
+        "GeneConversion": 6
+      },
+      "n_gate_leak": 6,
+      "chroms": [
+        "NC_073227.2"
+      ]
+    },
+    {
+      "family": 124,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 8,
+      "n_recombinant": 3,
+      "n_clusters": 1,
+      "n_crossover": 3,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 3
+      },
+      "n_gate_leak": 3,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 125,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 51,
+      "n_recombinant": 0
+    },
+    {
+      "family": 128,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 19,
+      "n_recombinant": 3,
+      "n_clusters": 3,
+      "n_crossover": 3,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 3
+      },
+      "n_gate_leak": 3,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 129,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 97,
+      "n_recombinant": 8,
+      "n_clusters": 2,
+      "n_crossover": 8,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 1,
+        "GeneConversion": 7
+      },
+      "n_gate_leak": 8,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 132,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 80,
+      "n_recombinant": 84,
+      "n_clusters": 7,
+      "n_crossover": 5,
+      "n_conversion": 79,
+      "classes": {
+        "ChimeraSuspect": 5,
+        "GeneConversion": 79
+      },
+      "n_gate_leak": 84,
+      "chroms": [
+        "NC_073224.2"
+      ]
+    },
+    {
+      "family": 135,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 38,
+      "n_recombinant": 7,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 7,
+      "classes": {
+        "GeneConversion": 7
+      },
+      "n_gate_leak": 7,
+      "chroms": [
+        "NC_086017.1"
+      ]
+    },
+    {
+      "family": 136,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 105,
+      "n_recombinant": 0
+    },
+    {
+      "family": 137,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 261,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_086017.1"
+      ]
+    },
+    {
+      "family": 138,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 276,
+      "n_recombinant": 2,
+      "n_clusters": 2,
+      "n_crossover": 0,
+      "n_conversion": 2,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073243.2"
+      ]
+    },
+    {
+      "family": 139,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 13,
+      "n_recombinant": 0
+    },
+    {
+      "family": 143,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 41,
+      "n_recombinant": 0
+    },
+    {
+      "family": 146,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 17,
+      "n_recombinant": 0
+    },
+    {
+      "family": 147,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 12,
+      "n_recombinant": 10,
+      "n_clusters": 2,
+      "n_crossover": 10,
+      "n_conversion": 0,
+      "classes": {
+        "ChimeraSuspect": 2,
+        "GeneConversion": 8
+      },
+      "n_gate_leak": 10,
+      "chroms": [
+        "NC_073230.2"
+      ]
+    },
+    {
+      "family": 150,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 133,
+      "n_recombinant": 2,
+      "n_clusters": 2,
+      "n_crossover": 1,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 2,
+      "chroms": [
+        "NC_073230.2"
+      ]
+    },
+    {
+      "family": 152,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 115,
+      "n_recombinant": 0
+    },
+    {
+      "family": 153,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 99,
+      "n_recombinant": 0
+    },
+    {
+      "family": 154,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 194,
+      "n_recombinant": 4,
+      "n_clusters": 1,
+      "n_crossover": 4,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 4
+      },
+      "n_gate_leak": 4,
+      "chroms": [
+        "NC_073232.2"
+      ]
+    },
+    {
+      "family": 156,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 6,
+      "n_recombinant": 0
+    },
+    {
+      "family": 158,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 28,
+      "n_recombinant": 0
+    },
+    {
+      "family": 160,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 58,
+      "n_recombinant": 0
+    },
+    {
+      "family": 161,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 7,
+      "n_recombinant": 0
+    },
+    {
+      "family": 163,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 36,
+      "n_recombinant": 6,
+      "n_clusters": 3,
+      "n_crossover": 6,
+      "n_conversion": 0,
+      "classes": {
+        "GeneConversion": 4,
+        "ChimeraSuspect": 2
+      },
+      "n_gate_leak": 4,
+      "chroms": [
+        "NC_073238.2"
+      ]
+    },
+    {
+      "family": 164,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 22,
+      "n_recombinant": 0
+    },
+    {
+      "family": 165,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 57,
+      "n_recombinant": 0
+    },
+    {
+      "family": 166,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 5,
+      "n_recombinant": 0
+    },
+    {
+      "family": 171,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 39,
+      "n_recombinant": 1,
+      "n_clusters": 1,
+      "n_crossover": 0,
+      "n_conversion": 1,
+      "classes": {
+        "ChimeraSuspect": 1
+      },
+      "n_gate_leak": 1,
+      "chroms": [
+        "NC_073239.2"
+      ]
+    },
+    {
+      "family": 172,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 4,
+      "n_recombinant": 0
+    },
+    {
+      "family": 173,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 114,
+      "n_recombinant": 0
+    },
+    {
+      "family": 174,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 204,
+      "n_recombinant": 0
+    },
+    {
+      "family": 177,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 52,
+      "n_recombinant": 0
+    },
+    {
+      "family": 178,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 133,
+      "n_recombinant": 0
+    },
+    {
+      "family": 181,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 5,
+      "n_recombinant": 0
+    },
+    {
+      "family": 182,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 8,
+      "n_recombinant": 0
+    },
+    {
+      "family": 183,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 24,
+      "n_recombinant": 0
+    },
+    {
+      "family": 189,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 6,
+      "n_recombinant": 0
+    },
+    {
+      "family": 192,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 15,
+      "n_recombinant": 0
+    },
+    {
+      "family": 193,
+      "gene": "?",
+      "n_copies": 2,
+      "K": 2,
+      "n_bubbles": 4,
+      "n_recombinant": 0
+    }
+  ],
+  "evaluation": {
+    "q1_survivors": {
+      "post_veto_classification": {
+        "ChimeraSuspect": 197,
+        "GeneConversion": 2121
+      },
+      "total_recombinant_rows": 2318,
+      "total_recombinant_molecules": 2227,
+      "rt_switch_microhomology_hits": 0,
+      "rt_switch_note": "The ported RT-switch microhomology veto (mosaic.rs::classify_event direct-repeat leg) fires 0/2318 -- INERT for adjacent-PSV paralog switches (it targets DISTAL splice-like donor/acceptor repeats). CONSEQUENCE: RT-template-switch is NOT actually excluded from the survivors; the only working filters are RECURRENCE + recomb-fraction + full-pattern cleanliness, and a recurrent RT/PCR chimera at a homology hotspot (where these live) would pass them. 'Credible' means recurrent-clean-tract-on-a-known-locus, NOT artifact-excluded.",
+      "dna_supported_reads": 0,
+      "dna_note": "DNA UNCHECKED for all reads: the DNFAM catalog uses an independent id-space (DNFAM0..1000+ are DNA families, NOT RNA family ids 0..171); the id-based probe and coordinate join find no reliable match, so no read is DNA-confirmed. Neither the RT-switch veto (0 hits) nor DNA (0 hits) is delivering the artifact separation -- recurrence + structure do, and recurrence alone cannot distinguish real gene conversion from a systematically mis-mapped or unrepresented recombinant paralog copy.",
+      "allele_vs_conversion_note": "Surviving tract columns are ordinary heterozygous sites (e.g. GSTM2 col C:259/T:18) that RNA alone CANNOT distinguish from a heterozygous SNP at one copy's locus without DNA parCN. So 'gene-conversion tract' is a HYPOTHESIS (recurrent, bubble-bounded, on known loci), not a DNA-verified finding.",
+      "structural_split": {
+        "sporadic_chimera": 197,
+        "systematic_copy_split": 1447,
+        "localized_tract": 674
+      },
+      "localized_tract_rows": 674,
+      "localized_tract_molecules": 598,
+      "localized_clean_full_rows": 134,
+      "localized_clean_full_molecules": 134,
+      "localized_noisy_mosaic_rows": 540,
+      "localized_noisy_mosaic_molecules": 464,
+      "credible_real_conversion_rows": 134,
+      "credible_real_conversion_molecules": 134,
+      "credible_real_crossover_reads": 0,
+      "credible_distinct_loci": 10,
+      "survivors_by_locus": [
+        {
+          "locus": 73,
+          "gene": "LOC101131460",
+          "K": 2,
+          "reads": 53,
+          "tract_bubbles": {
+            "2": 53
+          },
+          "tract_bp_median": 26,
+          "recomb_fraction_median": 0.239,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 39,
+          "gene": "LOC134756389",
+          "K": 5,
+          "reads": 36,
+          "tract_bubbles": {
+            "2": 9,
+            "5": 13,
+            "6": 14
+          },
+          "tract_bp_median": 8170,
+          "recomb_fraction_median": 0.339,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 17,
+          "gene": "LOC101146782",
+          "K": 3,
+          "reads": 13,
+          "tract_bubbles": {
+            "2": 13
+          },
+          "tract_bp_median": 32,
+          "recomb_fraction_median": 0.034,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 22,
+          "gene": "LOC115933254",
+          "K": 4,
+          "reads": 7,
+          "tract_bubbles": {
+            "2": 7
+          },
+          "tract_bp_median": 2,
+          "recomb_fraction_median": 0.073,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 135,
+          "gene": "LOC101138917",
+          "K": 2,
+          "reads": 7,
+          "tract_bubbles": {
+            "2": 7
+          },
+          "tract_bp_median": 91,
+          "recomb_fraction_median": 0.184,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 123,
+          "gene": "LOC129533124",
+          "K": 2,
+          "reads": 6,
+          "tract_bubbles": {
+            "2": 6
+          },
+          "tract_bp_median": 591,
+          "recomb_fraction_median": 0.056,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 31,
+          "gene": "LOC109025132",
+          "K": 3,
+          "reads": 5,
+          "tract_bubbles": {
+            "2": 5
+          },
+          "tract_bp_median": 1,
+          "recomb_fraction_median": 0.024,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 47,
+          "gene": "LOC101139703",
+          "K": 2,
+          "reads": 4,
+          "tract_bubbles": {
+            "2": 4
+          },
+          "tract_bp_median": 170,
+          "recomb_fraction_median": 0.039,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 12,
+          "gene": "SMG1",
+          "K": 5,
+          "reads": 2,
+          "tract_bubbles": {
+            "3": 2
+          },
+          "tract_bp_median": 22,
+          "recomb_fraction_median": 0.026,
+          "full_switch_median": 2
+        },
+        {
+          "locus": 13,
+          "gene": "GSTM2",
+          "K": 3,
+          "reads": 1,
+          "tract_bubbles": {
+            "2": 1
+          },
+          "tract_bp_median": 2,
+          "recomb_fraction_median": 0.191,
+          "full_switch_median": 2
+        }
+      ],
+      "recomb_fraction_median_credible": 0.239,
+      "recomb_fraction_median_systematic": 0.739,
+      "full_switch_median_credible": 2,
+      "full_switch_median_noisy": 10,
+      "headline": "RT-switch microhomology veto fires 0/2318 (INERT). Of 2318 raw recombinant rows (2227 distinct molecules), the honest structural filter keeps 674 localized-tract rows and demotes 1447 as systematic copy-ambiguity + 197 as sporadic chimera. Of those localized tracts only 134 rows / 134 molecules pass the FULL-PATTERN cleanliness test (clean_full=1) across 10 distinct loci; the other 540 are noisy A/B mosaics whose clean 2-switch tract is a column-subsetting artifact of unreliable asm20 copy-vectors."
+    },
+    "q2_k_frontier": {
+      "families_carrying_recombinants_by_K": {
+        "K>=3": {
+          "carry": 25,
+          "no_recomb": 9
+        },
+        "K==2": {
+          "carry": 36,
+          "no_recomb": 49
+        },
+        "K<2": {
+          "carry": 0,
+          "no_recomb": 0
+        }
+      },
+      "enrichment_fisher": {
+        "odds_ratio": 3.781,
+        "p_value": 0.002399,
+        "statement": "K>=3 25/34 fams carry recombinants vs K==2 36/85"
+      },
+      "detection_power_confound": {
+        "pearson_nbubbles_vs_nrecombinant": 0.392,
+        "pearson_copypairs_vs_nrecombinant": 0.356,
+        "note": "Part of the K-enrichment is MECHANICAL detection power, not biology: n_recombinant correlates with n_bubbles (r=0.392) and with #copy-pairs C(K,2) (r=0.356). K>=3 families simply offer the pair-fitting detector more bubbles and more copy-pairs to fit, so the concentration is CONSISTENT WITH the recombination obstruction but is not purely biological."
+      },
+      "recombinant_read_mass_by_K": {
+        "K>=3": 1706,
+        "K==2": 612
+      },
+      "credible_molecule_mass_by_K": {
+        "K>=3": 64,
+        "K==2": 70
+      },
+      "kge3_fraction_of_families": 0.286,
+      "kge3_fraction_of_recombinant_read_mass": 0.736,
+      "credible_read_SUN_tier_bridges": {
+        "1|1": 127,
+        "3|3": 7
+      },
+      "copy_level_recomb_vulnerable_families": [
+        42
+      ],
+      "copy_level_recomb_vulnerable_families_carrying_reads": [],
+      "interpretation": "Recombinant reads ARE enriched in K>=3 families (Fisher p=0.002399; K>=3 are 29% of families but carry 74% of recombinant read-mass) -- consistent with recombination as the K>=3 obstruction (more copy-pairs => more spoofable combinations), PARTLY offset by a mechanical detection-power confound (n_recombinant~n_bubbles r=0.392, ~C(K,2) r=0.356). The credible tracts do NOT sit on the COPY-level recomb-vulnerable (SUN Tier-2) copies: the sole genome-wide Tier-2 family (fam42 LOC129529768) carries ZERO recombinant reads, and 127/134 credible reads bridge two Tier-1 SUN-IDENTIFIABLE copies. This exposes a READ-level K-frontier: a single recombinant read carries copy A's private SUN in one arm and copy B's in the other, satisfying TWO Strong-Separation witnesses at once -- impossible for any real single copy. SUN identifiability guarantees a NON-recombinant read is taggable; it does NOT protect against a recombinant read, which belongs to no single copy and must abstain."
+    },
+    "q3_gate": {
+      "gate_status": {
+        "assigned": 2214,
+        "ambiguous": 104
+      },
+      "force_assigned_leak_total": 2214,
+      "abstained_total": 104,
+      "leak_pct_total": 95.5,
+      "by_structural_call": {
+        "localized_tract": {
+          "total": 674,
+          "force_assigned_leak": 674,
+          "abstained": 0,
+          "leak_pct": 100.0
+        },
+        "sporadic_chimera": {
+          "total": 197,
+          "force_assigned_leak": 183,
+          "abstained": 14,
+          "leak_pct": 92.9
+        },
+        "systematic_copy_split": {
+          "total": 1447,
+          "force_assigned_leak": 1357,
+          "abstained": 90,
+          "leak_pct": 93.8
+        }
+      },
+      "credible_clean_conversion_leak": "134/134 (100%)",
+      "payoff": "The significance gate FORCE-ASSIGNS 2214/2318 (96%) recombinant reads to a single copy, including 134/134 (100%) of the credible clean-tract gene-conversion reads -- a concrete per-read mis-assignment. Per the K-frontier these reads spoof a copy combination and belong to no single copy; they SHOULD abstain. The gate's SUN/Strong-Sep match force-assigns to whichever copy's private marker falls in the covered arm = the recombination failure mode. This is the ROBUST, artifact-independent payoff: whether a switched read is real conversion, an unrepresented recombinant paralog, or a recurrent chimera, it conflicts with every single copy by >=2 bubbles and must NOT be force-assigned."
+    },
+    "q4_vs_mosaic_discriminator": {
+      "axis": "mosaic_discriminator (mosaic.rs::classify_event, --vg RtSwitchArtifact suppression) classifies ISOFORM EMISSION -- which junctions to emit; it never touches copy ASSIGNMENT, so it cannot see that a recombinant read is being force-assigned to a copy. VG-native read-path detection lives on the ASSIGNMENT axis -- a genuinely new axis.",
+      "microhomology_leg_inert": "RT-switch microhomology leg fired 0/2318: tuned for DISTAL splice-like donor/acceptor direct repeats, inert for ADJACENT-PSV paralog switches. Run naked, the shipped classifier would label all 2121 confirmed reads GeneConversion.",
+      "new_discriminator": "bubble-bounded RECOMB-FRACTION + FULL-PATTERN cleanliness separate 134 credible clean localized tracts (median frac 0.239) from 1447 systematic copy-ambiguity reads (median frac 0.739) AND from 540 noisy A/B mosaics -- all of which the mosaic discriminator alone would call GeneConversion. Two case classes it misses.",
+      "exact_boundaries": "bubble-bounding makes the tract endpoints EXACT graph objects (first/last switched bubble = named PSV columns) and the recomb-fraction + full-pattern switch count computable; the mosaic breakpoints are approximate donor/acceptor coords +/-breakpoint_tol=50 with no fraction."
+    },
+    "verdict": "VG-native read-path recombination is a REAL but NARROW signal, and the biological headline is WEAKER than the raw counts suggest. Of 2318 raw recombinant rows (2227 distinct molecules), 62% are systematic near-identical-copy ambiguity and CROSSOVERS yield NO credible biological recombination. The 674 recurrent localized tracts shrink further under a FULL-PATTERN cleanliness test: only 134 rows / 134 molecules across 10 distinct loci are clean bi-copy tracts (dominated by THOC3 and RABL2, with ANKRD18/LARP1B/SMG1 minor); notably the previously-flagship GSTM2 conversion-hotspot claim COLLAPSES to 1 clean read of 292 (291 noisy) and is RETRACTED; the remaining 540 localized reads are noisy A/B mosaics whose clean 2-switch tract is a column-subsetting artifact of unreliable asm20 copy-vectors (~49% of fam13 discriminating columns carry a copy allele with ~0 read support). The RT-switch veto is INERT (0/2318) and DNA is unchecked (0/2318), so RT-template-switch is NOT excluded and the tract columns are ordinary het sites RNA cannot separate from allelic SNPs without DNA parCN -- 'gene conversion' is a HYPOTHESIS, not a finding. The K-enrichment (Fisher p=0.002399) is real but partly a mechanical detection-power confound (n_recombinant~n_bubbles r=0.392). The ROBUST, artifact-independent payoff is OPERATIONAL: the gate force-assigns 2214/2318 (96%) recombinant reads -- including 134/134 of the credible clean tracts -- to a single copy; all of them conflict with every single copy and SHOULD ABSTAIN. That is the concrete per-read form of the theory's K-frontier recombination obstruction, and it holds whether the switch is real conversion, an unrepresented recombinant paralog, or a recurrent chimera."
+  }
+}
