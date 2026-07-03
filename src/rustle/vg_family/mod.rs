@@ -5,6 +5,7 @@
 //! k-mer-based novel-copy rescue. See `docs/UNMAPPED_FAMILY_RESCUE.md` for why
 //! the aligner misses the reads this module rescues.
 
+pub mod family_definition; // O1 multi-copy predicate `distinct_loci` (Rust port of genome_family_def.py; byte-parity tested).
 pub mod family_graph;
 pub mod rescue;
 pub mod diagnostic;
