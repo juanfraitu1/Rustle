@@ -1,0 +1,676 @@
+{
+  "schema": "known_family_showcase/v1",
+  "description": "Validation showcase: per-family precision/recall of the RNA multi-copy family DEFINITION (O1) plus the read-to-copy ASSIGNMENT K-frontier (O2) for canonical literature-recognized families, spanning near-identical -> divergent regimes.",
+  "inputs": {
+    "catalog": "family_rna_refine.tsv",
+    "pairs": "family_er_pr.tsv",
+    "edges": "denovo_family_edges.tsv",
+    "sun": "sun_identifiability.tsv",
+    "oracle": "diploid_cn_oracle.tsv",
+    "n_families_catalog": 573,
+    "n_denovo_loci": 3462
+  },
+  "determinism": {
+    "PYTHONHASHSEED": "0",
+    "layout": "deterministic genomic (locus-ordered, no RNG)",
+    "layout_seed": 0,
+    "sorted_iteration": true
+  },
+  "caveats": {
+    "recall_scope": "RECALL is measured among RNA-EXPRESSED/detected loci, NOT vs full genomic copy number.  R=1.0 (RABL2/RGPD8/APOBEC3) means every EXPRESSED copy of the family is grouped into one catalog family -- it does NOT claim every genomic paralog was found (the DNA oracle n_loci_ref column exposes that gap: e.g. RGPD8 n_loci_ref=35 vs 8 expressed, GSTM2 47).",
+    "small_n_recall": "Small truth-set (n_copies_truth < 4) -> R exact but low-n; flagged per-family via recall_small_n.  Only APOBEC3 (3 expressed copies) qualifies.  NOTE GSTM is NOT small-n: its truth-set is 11 (many expressed GSTM copies), so its R=0.27 is a genuine collapse over a large denominator, not an n-artifact.",
+    "o2_vg_vs_o1_family_id": "The copy-assignment VG uses the O2 validated family numbering (psv_graph fam39=RABL2, fam1=RGPD8, fam22=ANKRD18), which is a DISTINCT family object from the O1 catalog family_rna_refine.tsv numbering (fam73=RABL2, fam313=RGPD8, fam306=ANKRD18).  Copy counts differ by object (RGPD8: O1 fam313=8 copies vs O2-VG fam1=7 copy-paths); each is internally correct, they are not the same graph.",
+    "precision_truth": "P_strict uses E_p/DNA whole-protein reciprocal homology (conservative; under-covers single-domain/partial copies); P_bio corrects those truth-artifacts, leaving only genuine over-merges (2/8: FOXO1->ANKRD18, one distal ZNF->ZNF92).  Truth-set is self-anchored on the family's own namesake/E_p/de-novo-homologous members."
+  },
+  "headline": {
+    "n_families": 8,
+    "total_catalog_members": 92,
+    "total_annotated_members": 87,
+    "total_genuine_over_merges": 2,
+    "over_merges": [
+      {
+        "family": "ANKRD18",
+        "catalog_fid": "306",
+        "members": [
+          "FOXO1"
+        ]
+      },
+      {
+        "family": "ZNF92",
+        "catalog_fid": "42",
+        "members": [
+          "LOC129527827"
+        ]
+      }
+    ],
+    "class_counts": {
+      "CLEAN": 2,
+      "FLOOR": 2,
+      "MID": 4
+    },
+    "precision_note": "Only 2 genuine over-merges across 87 annotated grouped members (92 catalog members incl. unannotated de-novo loci); every other apparent impurity is E_p under-coverage of a real single-domain/partial copy."
+  },
+  "figures": {
+    "summary": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_known_families_summary.png",
+    "summary_legacy_alias": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_showcase_summary.png",
+    "per_family": {
+      "RABL2": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_RABL2.png",
+      "APOBEC3": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_APOBEC3.png",
+      "MAGEA": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_MAGEA.png",
+      "ANKRD18": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_ANKRD18.png",
+      "RGPD8": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_RGPD8.png",
+      "ZNF92": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_ZNF92.png",
+      "GSTM": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_GSTM.png",
+      "HERC2": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_HERC2.png"
+    },
+    "flagship_o2_vg": {
+      "RABL2": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam39_RABL2.png",
+      "ANKRD18": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam22_ANKRD18.png",
+      "RGPD8": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam1_RGPD8.png"
+    }
+  },
+  "families": [
+    {
+      "name": "RABL2",
+      "catalog_fid": "73",
+      "present": true,
+      "note": "RAB-like GTPase; cross-chromosomal 5-copy cluster (flagship clean)",
+      "n_copies_catalog": 5,
+      "n_annot": 5,
+      "n_NA": 0,
+      "genes": [
+        "LOC101142457",
+        "LOC129523511",
+        "LOC134756389",
+        "RABL2A",
+        "RABL2B"
+      ],
+      "definition_O1": {
+        "recall": 1.0,
+        "n_copies_truth": 5,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 1.0,
+        "precision_bio_corrected": 1.0,
+        "genuine_over_merge": [],
+        "missed_copies": {}
+      },
+      "identity_regime": {
+        "core_recip_med": 0.4684,
+        "core_recip_max": 0.9992,
+        "frac_edges_near_identical": 0.1,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": "39",
+          "sun_tiers": {
+            "1": 5
+          },
+          "sun_group_sizes": [
+            1
+          ],
+          "n_copies_val": 5,
+          "oracle": {
+            "asm_hapCN": "5",
+            "chi_H": "5",
+            "K_read": "2",
+            "n_loci_ref": "8",
+            "cls": "multi_copy"
+          },
+          "vg": {
+            "n_copies": 5,
+            "K": 5,
+            "cls": "fully_resolvable",
+            "n_bubbles": 235,
+            "n_sun_bubbles": 195,
+            "n_reads": 222,
+            "assigned": 123,
+            "group_sizes": [
+              1,
+              1,
+              1,
+              1,
+              1
+            ]
+          }
+        },
+        "K_frontier_short": "VG K=5/5 (fully_resolvable)"
+      },
+      "classification": {
+        "definition": "clean",
+        "assignment": "resolvable",
+        "overall": "CLEAN",
+        "base": "CLEAN"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_RABL2.png",
+        "o2_vg": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam39_RABL2.png",
+        "o2_vg_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam39_RABL2_graph.png"
+      }
+    },
+    {
+      "name": "APOBEC3",
+      "catalog_fid": "569",
+      "present": true,
+      "note": "APOBEC3 cytidine-deaminase tandem cluster (Bailey/Soto)",
+      "n_copies_catalog": 3,
+      "n_annot": 3,
+      "n_NA": 0,
+      "genes": [
+        "APOBEC3C",
+        "APOBEC3D",
+        "APOBEC3F"
+      ],
+      "definition_O1": {
+        "recall": 1.0,
+        "n_copies_truth": 3,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": true,
+        "precision_strict_EpDNA": 0.6667,
+        "precision_bio_corrected": 1.0,
+        "genuine_over_merge": [],
+        "missed_copies": {}
+      },
+      "identity_regime": {
+        "core_recip_med": 0.303,
+        "core_recip_max": 0.3807,
+        "frac_edges_near_identical": 0.0,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": null
+        },
+        "K_frontier_short": "not in O2 validated set"
+      },
+      "classification": {
+        "definition": "clean",
+        "assignment": "n/a",
+        "overall": "CLEAN",
+        "base": "CLEAN"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_APOBEC3.png",
+        "o2_vg": null,
+        "o2_vg_graph": null
+      }
+    },
+    {
+      "name": "MAGEA",
+      "catalog_fid": "517",
+      "present": true,
+      "note": "MAGE-A cancer/testis X-array (Xq28)",
+      "n_copies_catalog": 11,
+      "n_annot": 11,
+      "n_NA": 0,
+      "genes": [
+        "LOC129529976",
+        "LOC129529978",
+        "LOC129529983",
+        "LOC129529986",
+        "MAGEA1",
+        "MAGEA12",
+        "MAGEA4"
+      ],
+      "definition_O1": {
+        "recall": 0.8462,
+        "n_copies_truth": 13,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 1.0,
+        "precision_bio_corrected": 1.0,
+        "genuine_over_merge": [],
+        "missed_copies": {
+          "515": [
+            "MAGEA9"
+          ],
+          "SINGLETON/not-multicopy": [
+            "MAGEA10"
+          ]
+        }
+      },
+      "identity_regime": {
+        "core_recip_med": 0.6847,
+        "core_recip_max": 1.0,
+        "frac_edges_near_identical": 0.1636,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": "94",
+          "sun_tiers": {
+            "1": 2
+          },
+          "sun_group_sizes": [
+            1
+          ],
+          "n_copies_val": 2,
+          "oracle": {
+            "asm_hapCN": "2",
+            "chi_H": "2",
+            "K_read": "4",
+            "n_loci_ref": "4",
+            "cls": "multi_copy"
+          }
+        },
+        "K_frontier_short": "DNA chi_H=2 asm_hapCN=2 K_read=4"
+      },
+      "classification": {
+        "definition": "mid",
+        "assignment": "resolvable",
+        "overall": "MID",
+        "base": "MID"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_MAGEA.png",
+        "o2_vg": null,
+        "o2_vg_graph": null
+      }
+    },
+    {
+      "name": "ANKRD18",
+      "catalog_fid": "306",
+      "present": true,
+      "note": "ANKRD18A/B ankyrin-repeat segdup (flagship mid / K-frontier)",
+      "n_copies_catalog": 15,
+      "n_annot": 10,
+      "n_NA": 5,
+      "genes": [
+        "ANKRD18A",
+        "ANKRD18B",
+        "FOXO1",
+        "LOC101142783",
+        "LOC101147259",
+        "LOC115933254",
+        "LOC129524732"
+      ],
+      "definition_O1": {
+        "recall": 1.0,
+        "n_copies_truth": 15,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 0.7,
+        "precision_bio_corrected": 0.9,
+        "genuine_over_merge": [
+          "FOXO1"
+        ],
+        "missed_copies": {}
+      },
+      "identity_regime": {
+        "core_recip_med": 0.3383,
+        "core_recip_max": 0.9098,
+        "frac_edges_near_identical": 0.0857,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": "22",
+          "sun_tiers": {
+            "3": 6
+          },
+          "sun_group_sizes": [
+            6
+          ],
+          "n_copies_val": 6,
+          "oracle": {
+            "asm_hapCN": "8",
+            "chi_H": "1",
+            "K_read": "3",
+            "n_loci_ref": "12",
+            "cls": "multi_copy"
+          },
+          "vg": {
+            "n_copies": 6,
+            "K": 4,
+            "cls": "partial (mixed resolvable / collapsed)",
+            "n_bubbles": 61,
+            "n_sun_bubbles": 50,
+            "n_reads": 817,
+            "assigned": 70,
+            "group_sizes": [
+              2,
+              2,
+              1,
+              1
+            ]
+          }
+        },
+        "K_frontier_short": "VG K=4/6 (partial)"
+      },
+      "classification": {
+        "definition": "clean",
+        "assignment": "k-frontier",
+        "overall": "MID/divergent-overmerge",
+        "base": "MID"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_ANKRD18.png",
+        "o2_vg": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam22_ANKRD18.png",
+        "o2_vg_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam22_ANKRD18_graph.png"
+      }
+    },
+    {
+      "name": "RGPD8",
+      "catalog_fid": "313",
+      "present": true,
+      "note": "RANBP2-paralog RGPD cluster (flagship K-frontier FLOOR)",
+      "n_copies_catalog": 8,
+      "n_annot": 8,
+      "n_NA": 0,
+      "genes": [
+        "LOC101131768",
+        "LOC101136692",
+        "LOC101137060",
+        "LOC109025447",
+        "LOC129531666",
+        "LOC129531667",
+        "RGPD8"
+      ],
+      "definition_O1": {
+        "recall": 1.0,
+        "n_copies_truth": 8,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 0.875,
+        "precision_bio_corrected": 1.0,
+        "genuine_over_merge": [],
+        "missed_copies": {}
+      },
+      "identity_regime": {
+        "core_recip_med": 0.4873,
+        "core_recip_max": 1.0,
+        "frac_edges_near_identical": 0.05,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": "1",
+          "sun_tiers": {
+            "3": 7
+          },
+          "sun_group_sizes": [
+            7
+          ],
+          "n_copies_val": 7,
+          "oracle": {
+            "asm_hapCN": "11",
+            "chi_H": "1",
+            "K_read": "2",
+            "n_loci_ref": "35",
+            "cls": "multi_copy"
+          },
+          "vg": {
+            "n_copies": 7,
+            "K": 1,
+            "cls": "no_psv (K-FRONTIER floor)",
+            "n_bubbles": 0,
+            "n_sun_bubbles": 0,
+            "n_reads": 2075,
+            "assigned": 0,
+            "group_sizes": [
+              7
+            ]
+          }
+        },
+        "K_frontier_short": "VG K=1/7 (no_psv)"
+      },
+      "classification": {
+        "definition": "clean",
+        "assignment": "floor",
+        "overall": "FLOOR",
+        "base": "FLOOR"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_RGPD8.png",
+        "o2_vg": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam1_RGPD8.png",
+        "o2_vg_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam1_RGPD8_graph.png"
+      }
+    },
+    {
+      "name": "ZNF92",
+      "catalog_fid": "42",
+      "present": true,
+      "note": "KRAB-zinc-finger cluster (divergent-paralog DEFINITION regime)",
+      "n_copies_catalog": 41,
+      "n_annot": 41,
+      "n_NA": 0,
+      "genes": [
+        "LOC101123988",
+        "LOC101128844",
+        "LOC101129171",
+        "LOC101133668",
+        "LOC101136009",
+        "LOC101137462",
+        "LOC101141027",
+        "LOC101142646",
+        "LOC101144838",
+        "LOC101145945",
+        "LOC101146634",
+        "LOC101147715",
+        "LOC101153126",
+        "LOC115930172",
+        "LOC115931567",
+        "LOC115931568",
+        "LOC115931576",
+        "LOC129527827",
+        "LOC129528947",
+        "ZNF254",
+        "ZNF273",
+        "ZNF429",
+        "ZNF43",
+        "ZNF430",
+        "ZNF486",
+        "ZNF506",
+        "ZNF626",
+        "ZNF675",
+        "ZNF678",
+        "ZNF680",
+        "ZNF681",
+        "ZNF723",
+        "ZNF91",
+        "ZNF92"
+      ],
+      "definition_O1": {
+        "recall": 0.7885,
+        "n_copies_truth": 52,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 0.9024,
+        "precision_bio_corrected": 0.9756,
+        "genuine_over_merge": [
+          "LOC129527827"
+        ],
+        "missed_copies": {
+          "SINGLETON/not-multicopy": [
+            "ZNF727",
+            "ZNF736",
+            "ZNF14",
+            "ZNF682",
+            "LOC101136009",
+            "LOC101136009",
+            "ZNF429",
+            "LOC101128106"
+          ],
+          "191": [
+            "LOC101133668"
+          ],
+          "83": [
+            "ZNF626"
+          ],
+          "22": [
+            "ZNF208"
+          ]
+        }
+      },
+      "identity_regime": {
+        "core_recip_med": 0.305,
+        "core_recip_max": 0.9717,
+        "frac_edges_near_identical": 0.0075,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": null
+        },
+        "K_frontier_short": "not in O2 validated set"
+      },
+      "classification": {
+        "definition": "mid",
+        "assignment": "n/a",
+        "overall": "MID/divergent-overmerge",
+        "base": "MID"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_ZNF92.png",
+        "o2_vg": null,
+        "o2_vg_graph": null
+      }
+    },
+    {
+      "name": "GSTM",
+      "catalog_fid": "18",
+      "present": true,
+      "note": "glutathione-S-transferase Mu tandem cluster; GSTM2 near-identical collapse",
+      "n_copies_catalog": 3,
+      "n_annot": 3,
+      "n_NA": 0,
+      "genes": [
+        "GSTM1",
+        "GSTM4",
+        "GSTM5"
+      ],
+      "definition_O1": {
+        "recall": 0.2727,
+        "n_copies_truth": 11,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 1.0,
+        "precision_bio_corrected": 1.0,
+        "genuine_over_merge": [],
+        "missed_copies": {
+          "SINGLETON/not-multicopy": [
+            "GSTM3"
+          ],
+          "19": [
+            "GSTM1"
+          ],
+          "6": [
+            "GSTM2"
+          ],
+          "7": [
+            "GSTM2"
+          ],
+          "10": [
+            "GSTM2"
+          ],
+          "11": [
+            "GSTM2"
+          ],
+          "20": [
+            "GSTM2",
+            "GSTM2"
+          ]
+        }
+      },
+      "identity_regime": {
+        "core_recip_med": 0.4365,
+        "core_recip_max": 0.4402,
+        "frac_edges_near_identical": 0.0,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": "0",
+          "sun_tiers": {
+            "1": 7
+          },
+          "sun_group_sizes": [
+            1
+          ],
+          "n_copies_val": 7,
+          "oracle": {
+            "asm_hapCN": "19",
+            "chi_H": "7",
+            "K_read": "0",
+            "n_loci_ref": "47",
+            "cls": "multi_copy"
+          }
+        },
+        "K_frontier_short": "DNA chi_H=7 asm_hapCN=19 K_read=0"
+      },
+      "classification": {
+        "definition": "floor",
+        "assignment": "floor",
+        "overall": "FLOOR",
+        "base": "FLOOR"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_GSTM.png",
+        "o2_vg": null,
+        "o2_vg_graph": null
+      }
+    },
+    {
+      "name": "HERC2",
+      "catalog_fid": "388",
+      "present": true,
+      "note": "HERC2 / HERC2P duplicon cluster, chr15 segdup (Eichler)",
+      "n_copies_catalog": 6,
+      "n_annot": 6,
+      "n_NA": 0,
+      "genes": [
+        "HERC2",
+        "LOC109023386",
+        "LOC115930830",
+        "LOC129527072",
+        "LOC134757229"
+      ],
+      "definition_O1": {
+        "recall": 0.8571,
+        "n_copies_truth": 7,
+        "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
+        "recall_small_n": false,
+        "precision_strict_EpDNA": 0.8333,
+        "precision_bio_corrected": 1.0,
+        "genuine_over_merge": [],
+        "missed_copies": {
+          "387": [
+            "HERC2"
+          ]
+        }
+      },
+      "identity_regime": {
+        "core_recip_med": 0.2719,
+        "core_recip_max": 0.3211,
+        "frac_edges_near_identical": 0.0,
+        "regime": "divergent(<0.70)",
+        "regime_short": "divergent"
+      },
+      "assignment_O2": {
+        "summary": {
+          "val_fid": null
+        },
+        "K_frontier_short": "not in O2 validated set"
+      },
+      "classification": {
+        "definition": "mid",
+        "assignment": "n/a",
+        "overall": "MID",
+        "base": "MID"
+      },
+      "figures": {
+        "homology_graph": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_family_HERC2.png",
+        "o2_vg": null,
+        "o2_vg_graph": null
+      }
+    }
+  ]
+}
