@@ -1,0 +1,790 @@
+{
+ "cardinality_blocks": [
+  {
+   "category": "multifam_GSTM2",
+   "fid": 9,
+   "med_cov": 0.875,
+   "med_id": 0.995,
+   "n_members": 15
+  },
+  {
+   "category": "ep_impure",
+   "fid": 12,
+   "med_cov": 0.727,
+   "med_id": 1.0,
+   "n_members": 2
+  },
+  {
+   "category": "multifam_GSTM2",
+   "fid": 13,
+   "med_cov": 0.75,
+   "med_id": 0.994,
+   "n_members": 3
+  },
+  {
+   "category": "ep_impure",
+   "fid": 33,
+   "med_cov": 0.917,
+   "med_id": 1.0,
+   "n_members": 7
+  },
+  {
+   "category": "ep_impure",
+   "fid": 79,
+   "med_cov": 0.75,
+   "med_id": 0.994,
+   "n_members": 16
+  },
+  {
+   "category": "ep_impure",
+   "fid": 144,
+   "med_cov": 0.75,
+   "med_id": 0.978,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 216,
+   "med_cov": 1.0,
+   "med_id": 1.0,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 255,
+   "med_cov": 1.0,
+   "med_id": 0.992,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 326,
+   "med_cov": 1.0,
+   "med_id": 1.0,
+   "n_members": 4
+  },
+  {
+   "category": "oversize_MPHOSPH8",
+   "fid": 374,
+   "med_cov": 0.667,
+   "med_id": 0.994,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 387,
+   "med_cov": 0.833,
+   "med_id": 0.985,
+   "n_members": 4
+  },
+  {
+   "category": "ep_impure",
+   "fid": 403,
+   "med_cov": 1.0,
+   "med_id": 1.0,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 444,
+   "med_cov": 0.867,
+   "med_id": 0.995,
+   "n_members": 3
+  },
+  {
+   "category": "ep_impure",
+   "fid": 528,
+   "med_cov": 0.714,
+   "med_id": 1.0,
+   "n_members": 2
+  },
+  {
+   "category": "mage",
+   "fid": 547,
+   "med_cov": 1.0,
+   "med_id": 1.0,
+   "n_members": 2
+  },
+  {
+   "category": "mage_oversize",
+   "fid": 549,
+   "med_cov": 0.667,
+   "med_id": 0.902,
+   "n_members": 11
+  },
+  {
+   "category": "ep_impure",
+   "fid": 565,
+   "med_cov": 1.0,
+   "med_id": 0.994,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 575,
+   "med_cov": 1.0,
+   "med_id": 0.982,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 598,
+   "med_cov": 0.857,
+   "med_id": 0.993,
+   "n_members": 4
+  }
+ ],
+ "colinear_threshold_sweep": [
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 3,
+   "recombinant_bridges_split": 3,
+   "threshold": 0.5
+  },
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 4,
+   "recombinant_bridges_split": 6,
+   "threshold": 0.55
+  },
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 5,
+   "recombinant_bridges_split": 7,
+   "threshold": 0.6
+  },
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 5,
+   "recombinant_bridges_split": 7,
+   "threshold": 0.65
+  },
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 5,
+   "recombinant_bridges_split": 7,
+   "threshold": 0.7
+  },
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 5,
+   "recombinant_bridges_split": 7,
+   "threshold": 0.75
+  },
+  {
+   "control_false_split_rate": 0.0,
+   "control_false_splits": 0,
+   "recombinant_blocks_split": 10,
+   "recombinant_bridges_split": 12,
+   "threshold": 0.8
+  }
+ ],
+ "disconnected_cross_component_maxid_median": 0.586,
+ "disconnected_note": "members merged by the pairwise oracle share NO full exon at id>=0.70 => real E_r edge is sub-exonic (repeat/low-complexity/Alu bridge), not recombination",
+ "domain_share_blocks": [
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE-BRIDGE",
+   "fid": 19,
+   "n_members": 6
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 39,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 42,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 58,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE-BRIDGE",
+   "fid": 69,
+   "n_members": 9
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE-BRIDGE",
+   "fid": 92,
+   "n_members": 11
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 111,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE-BRIDGE",
+   "fid": 121,
+   "n_members": 7
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 265,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 290,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 304,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 336,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 366,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 424,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 447,
+   "n_members": 4
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 485,
+   "n_members": 2
+  },
+  {
+   "category": "mage",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 554,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 586,
+   "n_members": 2
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 601,
+   "n_members": 4
+  },
+  {
+   "category": "ep_impure",
+   "fam_class": "DOMAIN-SHARE",
+   "fid": 602,
+   "n_members": 3
+  }
+ ],
+ "fam_class_tally": {
+  "CARDINALITY": 19,
+  "DISCONNECTED": 34,
+  "DOMAIN-SHARE": 16,
+  "DOMAIN-SHARE-BRIDGE": 4,
+  "RECOMBINANT-BRIDGE": 10
+ },
+ "n_distributed_mosaic_blocks_vg_would_split": 4,
+ "n_high_confidence_distributed_blocks": 2,
+ "n_readthrough_chimera_blocks_vg_would_split": 1,
+ "n_recombinant_blocks": 10,
+ "n_recombinant_blocks_vg_would_split": 5,
+ "n_target_blocks": 83,
+ "out_tsv": "/mnt/c/Users/jfris/Desktop/Rustle/bench/recombination_bridge_detector.tsv",
+ "params": {
+  "CARD_ID": 0.9,
+  "COLINEAR_COV": 0.6,
+  "ID_THRESH": 0.7,
+  "MIN_EXON": 30,
+  "PYTHONHASHSEED": "0"
+ },
+ "recombinant_blocks": [
+  {
+   "category": "oversize_MPHOSPH8",
+   "fid": 37,
+   "med_id": 0.582,
+   "n_bridges": 1,
+   "n_members": 11,
+   "recomb_bridges": [
+    "NA"
+   ],
+   "vg_splits": 0
+  },
+  {
+   "category": "ep_impure",
+   "fid": 75,
+   "med_id": 0.978,
+   "n_bridges": 1,
+   "n_members": 7,
+   "recomb_bridges": [
+    "LOC129526398"
+   ],
+   "vg_splits": 0
+  },
+  {
+   "category": "ep_impure",
+   "fid": 94,
+   "med_id": 0.571,
+   "n_bridges": 3,
+   "n_members": 8,
+   "recomb_bridges": [
+    "LOC134757313"
+   ],
+   "vg_splits": 1
+  },
+  {
+   "category": "oversize_NLGN1",
+   "fid": 110,
+   "med_id": 0.536,
+   "n_bridges": 2,
+   "n_members": 10,
+   "recomb_bridges": [
+    "LOC134758618",
+    "NA"
+   ],
+   "vg_splits": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 187,
+   "med_id": 0.983,
+   "n_bridges": 1,
+   "n_members": 6,
+   "recomb_bridges": [
+    "LOC115935376"
+   ],
+   "vg_splits": 1
+  },
+  {
+   "category": "ep_impure",
+   "fid": 210,
+   "med_id": 0.993,
+   "n_bridges": 1,
+   "n_members": 3,
+   "recomb_bridges": [
+    "LOC115935264"
+   ],
+   "vg_splits": 1
+  },
+  {
+   "category": "ep_impure",
+   "fid": 288,
+   "med_id": 0.973,
+   "n_bridges": 1,
+   "n_members": 3,
+   "recomb_bridges": [
+    "LOC109029264"
+   ],
+   "vg_splits": 0
+  },
+  {
+   "category": "ep_impure",
+   "fid": 321,
+   "med_id": 1.0,
+   "n_bridges": 2,
+   "n_members": 4,
+   "recomb_bridges": [
+    "RDH14",
+    "RDH14"
+   ],
+   "vg_splits": 2
+  },
+  {
+   "category": "ep_impure",
+   "fid": 339,
+   "med_id": 0.98,
+   "n_bridges": 2,
+   "n_members": 8,
+   "recomb_bridges": [
+    "LOC109025447",
+    "LOC109025447"
+   ],
+   "vg_splits": 0
+  },
+  {
+   "category": "ep_impure",
+   "fid": 443,
+   "med_id": 0.598,
+   "n_bridges": 3,
+   "n_members": 6,
+   "recomb_bridges": [
+    "LOC134757427",
+    "LOC115933250",
+    "LOC115933349"
+   ],
+   "vg_splits": 0
+  }
+ ],
+ "verdict": {
+  "honest_miss": "fid 75 (LOC129526398 = KMT2C exons + TMEM128 exons) is a genuine distributed mosaic but colinear=0.75 (KMT2C covers 6/8 exons) so VG SPARES it at threshold 0.6. Catching it requires threshold>0.75, which would start splitting real alt-first-exon families (fid 288 at 0.75) -> the valley shows 0.6 is the correct precision-preserving choice.",
+  "q1_does_colinearity_split_recombinant_over_merges": "YES for 5/10 recombinant blocks (7 bridges): [94, 110, 187, 210, 321]. These are the transitively-merged barbells the pairwise-edge/gamma-quasi-clique graph cannot break (K-frontier / recombination obstruction). VG splits them; density criteria do not. Of the 5 split blocks, 4 are true DISTRIBUTED exon-shuffles [94, 110, 187, 210] (sub-families Mb apart / different chroms) and 1 are READTHROUGH chimeras [321] (genomically-overlapping adjacent genes = assembly artifact, not reshuffling). High-confidence distributed mosaics (both sub-families annotated, minor block >=2 exons): [187, 210].",
+  "q2_spares_real_families_recall_cost": "YES. false_split_rate=0.0 (0/24 pure single-gene multi-copy families wrongly split at colinear>=0.6, and 0 across the whole 0.50-0.80 sweep). The pure control carries 0 alt-first-exon families, so the alt-first-exon / alt-TSS recall risk is instead demonstrated DIRECTLY by the SPARED recombinant bridges: fid 288 (DDX11 alt-first-exon, colinear 0.75), fid 339/443 (terminal-exon variants, colinear 0.75-0.94) are all correctly SPARED at threshold 0.6. Each would only be wrongly split above its own colinear cover (>=0.75), which is why the sweep's block count jumps 5->10 only at threshold 0.80.",
+  "q3_net_worthwhile": "WORTHWHILE ON ITS NICHE, NOT A HEADLINE LEVER. Reshuffling is REAL but the smallest bucket: 10/83 over-merged blocks are recombinant, of which VG cleanly splits 5 at ZERO recall cost. The flagship is fid 210 (LOC115935264 = LOC101126070 exons + GALNT17 exons), the exact G1-G2-G3 barbell. Residual over-merge is dominated by sub-exonic repeat bridges (34) + cardinality (19) + domain-share (20), which recombination-detection does NOT address. Net precision gain ~5/606 blocks (~0.8 pt)."
+ },
+ "vg_path_level_test": {
+  "alt_variant_recall_probe": [
+   {
+    "bridge_gene": "NA",
+    "colinear": 0.75,
+    "fid": 37,
+    "spared_at_0_6": true,
+    "subfams": "LOC109027124(2);LOC101138261(1)",
+    "would_split_if_threshold_above": 0.75
+   },
+   {
+    "bridge_gene": "LOC129526398",
+    "colinear": 0.75,
+    "fid": 75,
+    "spared_at_0_6": true,
+    "subfams": "TMEM128(2);KMT2C(4)",
+    "would_split_if_threshold_above": 0.75
+   },
+   {
+    "bridge_gene": "LOC109029264",
+    "colinear": 0.75,
+    "fid": 288,
+    "spared_at_0_6": true,
+    "subfams": "LOC115930232(1);DDX11(1)",
+    "would_split_if_threshold_above": 0.75
+   },
+   {
+    "bridge_gene": "LOC109025447",
+    "colinear": 0.889,
+    "fid": 339,
+    "spared_at_0_6": true,
+    "subfams": "LOC101136692(1);LOC101137060(6)",
+    "would_split_if_threshold_above": 0.889
+   },
+   {
+    "bridge_gene": "LOC109025447",
+    "colinear": 0.75,
+    "fid": 339,
+    "spared_at_0_6": true,
+    "subfams": "LOC101136692(6);LOC101137060(1)",
+    "would_split_if_threshold_above": 0.75
+   },
+   {
+    "bridge_gene": "LOC115933250",
+    "colinear": 0.774,
+    "fid": 443,
+    "spared_at_0_6": true,
+    "subfams": "LOC134757427(3);LOC101136480(2)",
+    "would_split_if_threshold_above": 0.774
+   },
+   {
+    "bridge_gene": "LOC115933349",
+    "colinear": 0.875,
+    "fid": 443,
+    "spared_at_0_6": true,
+    "subfams": "LOC134757427(2);LOC101136480(3)",
+    "would_split_if_threshold_above": 0.875
+   },
+   {
+    "bridge_gene": "LOC134757427",
+    "colinear": 0.944,
+    "fid": 443,
+    "spared_at_0_6": true,
+    "subfams": "LOC101136480(4);LOC101131561(1)",
+    "would_split_if_threshold_above": 0.944
+   }
+  ],
+  "blocks_split": [
+   94,
+   110,
+   187,
+   210,
+   321
+  ],
+  "bridges_spared": 8,
+  "bridges_split": 7,
+  "colinear_valley": {
+   "clean_valley": true,
+   "max_colinear_among_split": 0.571,
+   "min_colinear_among_spared": 0.75,
+   "threshold_used": 0.6
+  },
+  "distributed_mosaic_blocks_split": [
+   94,
+   110,
+   187,
+   210
+  ],
+  "high_confidence_distributed_blocks": [
+   187,
+   210
+  ],
+  "readthrough_chimera_blocks_split": [
+   321
+  ],
+  "recombinant_bridges_total": 15,
+  "spared_bridges": [
+   {
+    "best_single_colinear": 0.75,
+    "best_single_neighbor": "MPHOSPH8",
+    "both_annotated": true,
+    "bridge_gene": "NA",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "oversize_MPHOSPH8",
+    "confidence": "LOW",
+    "fid": 37,
+    "minor_matched_exons": 1,
+    "n_exons": 4,
+    "per_exon": "e1:LOC109027124(2)(0.996) e2:LOC101138261(1)(0.738) e3:LOC109027124(2)(0.996) e4:LOC109027124(2)(0.985)",
+    "subfams": "LOC109027124(2);LOC101138261(1)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.75,
+    "best_single_neighbor": "LOC129526385",
+    "both_annotated": true,
+    "bridge_gene": "LOC129526398",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "HIGH",
+    "fid": 75,
+    "minor_matched_exons": 2,
+    "n_exons": 8,
+    "per_exon": "e1:KMT2C(4)(0.996) e2:KMT2C(4)(1.0) e3:KMT2C(4)(0.988) e4:KMT2C(4)(0.982) e5:KMT2C(4)(0.991) e6:KMT2C(4)(0.997) e7:TMEM128(2)(0.972) e8:TMEM128(2)(0.962)",
+    "subfams": "TMEM128(2);KMT2C(4)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.75,
+    "best_single_neighbor": "LOC115930232",
+    "both_annotated": true,
+    "bridge_gene": "LOC109029264",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 288,
+    "minor_matched_exons": 1,
+    "n_exons": 8,
+    "per_exon": "e1:DDX11(1)(0.973) e2:- e3:LOC115930232(1)(0.972) e4:LOC115930232(1)(0.978) e5:LOC115930232(1)(1.0) e6:LOC115930232(1)(0.99) e7:LOC115930232(1)(0.973) e8:LOC115930232(1)(1.0)",
+    "subfams": "LOC115930232(1);DDX11(1)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.889,
+    "best_single_neighbor": "LOC101136692",
+    "both_annotated": true,
+    "bridge_gene": "LOC109025447",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 339,
+    "minor_matched_exons": 1,
+    "n_exons": 9,
+    "per_exon": "e1:LOC101137060(6)(0.995) e2:LOC101136692(1)(0.988) e3:LOC101136692(1)(0.989) e4:LOC101136692(1)(1.0) e5:LOC101136692(1)(1.0) e6:LOC101136692(1)(0.994) e7:LOC101136692(1)(1.0) e8:LOC101136692(1)(1.0) e9:LOC101136692(1)(0.996)",
+    "subfams": "LOC101136692(1);LOC101137060(6)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.75,
+    "best_single_neighbor": "LOC101137060",
+    "both_annotated": true,
+    "bridge_gene": "LOC109025447",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "HIGH",
+    "fid": 339,
+    "minor_matched_exons": 3,
+    "n_exons": 12,
+    "per_exon": "e1:LOC101137060(1)(1.0) e2:LOC101137060(1)(0.863) e3:LOC101137060(1)(1.0) e4:LOC101137060(1)(1.0) e5:LOC101137060(1)(1.0) e6:LOC101137060(1)(0.983) e7:LOC101137060(1)(0.987) e8:LOC101137060(1)(0.991) e9:LOC101137060(1)(0.994) e10:LOC101136692(6)(0.978) e11:LOC101136692(6)(0.995) e12:LOC101136692(6)(0.981)",
+    "subfams": "LOC101136692(6);LOC101137060(1)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.774,
+    "best_single_neighbor": "LOC101136480",
+    "both_annotated": true,
+    "bridge_gene": "LOC115933250",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "HIGH",
+    "fid": 443,
+    "minor_matched_exons": 7,
+    "n_exons": 31,
+    "per_exon": "e1:LOC134757427(3)(1.0) e2:LOC134757427(3)(1.0) e3:LOC134757427(3)(1.0) e4:LOC134757427(3)(0.99) e5:LOC134757427(3)(1.0) e6:LOC134757427(3)(1.0) e7:LOC134757427(3)(0.993) e8:LOC101136480(2)(1.0) e9:LOC101136480(2)(0.989) e10:LOC101136480(2)(1.0) e11:LOC101136480(2)(0.987) e12:LOC101136480(2)(0.989) e13:LOC101136480(2)(0.993) e14:LOC101136480(2)(1.0) e15:LOC101136480(2)(1.0) e16:LOC101136480(2)(1.0) e17:LOC101136480(2)(1.0) e18:LOC101136480(2)(0.979) e19:LOC101136480(2)(1.0) e20:LOC101136480(2)(0.988) e21:LOC101136480(2)(0.994) e22:LOC101136480(2)(0.992) e23:LOC101136480(2)(1.0) e24:LOC101136480(2)(1.0) e25:LOC101136480(2)(0.979) e26:LOC101136480(2)(0.976) e27:LOC101136480(2)(1.0) e28:LOC101136480(2)(0.99) e29:LOC101136480(2)(1.0) e30:LOC101136480(2)(0.989) e31:LOC101136480(2)(0.995)",
+    "subfams": "LOC134757427(3);LOC101136480(2)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.875,
+    "best_single_neighbor": "LOC115933250",
+    "both_annotated": true,
+    "bridge_gene": "LOC115933349",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 443,
+    "minor_matched_exons": 1,
+    "n_exons": 8,
+    "per_exon": "e1:LOC101136480(3)(1.0) e2:LOC101136480(3)(1.0) e3:LOC101136480(3)(1.0) e4:LOC101136480(3)(0.99) e5:LOC101136480(3)(1.0) e6:LOC101136480(3)(1.0) e7:LOC101136480(3)(0.993) e8:LOC134757427(2)(0.997)",
+    "subfams": "LOC134757427(2);LOC101136480(3)",
+    "vg_would_split": 0
+   },
+   {
+    "best_single_colinear": 0.944,
+    "best_single_neighbor": "LOC101131561",
+    "both_annotated": true,
+    "bridge_gene": "LOC134757427",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 443,
+    "minor_matched_exons": 1,
+    "n_exons": 18,
+    "per_exon": "e1:LOC101131561(1)(0.986) e2:LOC101131561(1)(0.946) e3:LOC101131561(1)(0.993) e4:LOC101131561(1)(0.986) e5:LOC101131561(1)(0.967) e6:LOC101131561(1)(0.981) e7:LOC101131561(1)(0.958) e8:LOC101131561(1)(0.981) e9:LOC101131561(1)(0.987) e10:LOC101131561(1)(0.98) e11:LOC101131561(1)(0.969) e12:LOC101131561(1)(0.965) e13:LOC101131561(1)(0.979) e14:LOC101131561(1)(0.986) e15:LOC101131561(1)(0.96) e16:LOC101131561(1)(0.99) e17:LOC101131561(1)(0.981) e18:LOC101136480(4)(0.997)",
+    "subfams": "LOC101136480(4);LOC101131561(1)",
+    "vg_would_split": 0
+   }
+  ],
+  "split_bridges": [
+   {
+    "best_single_colinear": 0.5,
+    "best_single_neighbor": "MTHFD2L",
+    "both_annotated": true,
+    "bridge_gene": "LOC134757313",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 94,
+    "minor_matched_exons": 1,
+    "n_exons": 2,
+    "per_exon": "e1:LOC134757313(1)(1.0) e2:MTHFD2L(5)(0.799)",
+    "subfams": "MTHFD2L(5);LOC134757313(1)",
+    "vg_would_split": 1
+   },
+   {
+    "best_single_colinear": 0.2,
+    "best_single_neighbor": "NA",
+    "both_annotated": false,
+    "bridge_gene": "LOC134758618",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "oversize_NLGN1",
+    "confidence": "LOW",
+    "fid": 110,
+    "minor_matched_exons": 1,
+    "n_exons": 5,
+    "per_exon": "e1:NA(6)(0.879) e2:- e3:- e4:- e5:NA(2)(0.991)",
+    "subfams": "NA(2);NA(6)",
+    "vg_would_split": 1
+   },
+   {
+    "best_single_colinear": 0.5,
+    "best_single_neighbor": "LOC134758618",
+    "both_annotated": false,
+    "bridge_gene": "NA",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "oversize_NLGN1",
+    "confidence": "LOW",
+    "fid": 110,
+    "minor_matched_exons": 1,
+    "n_exons": 2,
+    "per_exon": "e1:NA(1)(0.996) e2:NA(7)(0.991)",
+    "subfams": "NA(7);NA(1)",
+    "vg_would_split": 1
+   },
+   {
+    "best_single_colinear": 0.348,
+    "best_single_neighbor": "LOC101146405",
+    "both_annotated": true,
+    "bridge_gene": "LOC115935376",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "HIGH",
+    "fid": 187,
+    "minor_matched_exons": 3,
+    "n_exons": 23,
+    "per_exon": "e1:- e2:LOC101146405(1)(0.967) e3:LOC129523494(4)(0.989) e4:LOC129523494(4)(0.983) e5:LOC129523494(4)(0.953) e6:- e7:- e8:LOC101146405(1)(0.992) e9:LOC101146405(1)(0.989) e10:LOC101146405(1)(0.991) e11:LOC101146405(1)(0.979) e12:LOC101146405(1)(0.964) e13:LOC101146405(1)(0.979) e14:LOC101146405(1)(0.988) e15:LOC101146405(1)(0.971) e16:LOC101146405(1)(0.973) e17:LOC101146405(1)(0.967) e18:LOC101146405(1)(0.984) e19:LOC101146405(1)(0.938) e20:LOC101146405(1)(0.936) e21:LOC101146405(1)(0.989) e22:LOC101146405(1)(0.957) e23:-",
+    "subfams": "LOC129523494(4);LOC101146405(1)",
+    "vg_would_split": 1
+   },
+   {
+    "best_single_colinear": 0.571,
+    "best_single_neighbor": "LOC101126070",
+    "both_annotated": true,
+    "bridge_gene": "LOC115935264",
+    "bridge_kind": "DISTRIBUTED-MOSAIC",
+    "category": "ep_impure",
+    "confidence": "HIGH",
+    "fid": 210,
+    "minor_matched_exons": 2,
+    "n_exons": 7,
+    "per_exon": "e1:- e2:LOC101126070(1)(0.993) e3:LOC101126070(1)(0.988) e4:LOC101126070(1)(0.978) e5:LOC101126070(1)(0.988) e6:GALNT17(1)(0.994) e7:GALNT17(1)(0.983)",
+    "subfams": "LOC101126070(1);GALNT17(1)",
+    "vg_would_split": 1
+   },
+   {
+    "best_single_colinear": 0.5,
+    "best_single_neighbor": "RDH14",
+    "both_annotated": true,
+    "bridge_gene": "RDH14",
+    "bridge_kind": "READTHROUGH-CHIMERA",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 321,
+    "minor_matched_exons": 1,
+    "n_exons": 2,
+    "per_exon": "e1:NT5C1B(2)(1.0) e2:RDH14(1)(1.0)",
+    "subfams": "NT5C1B(2);RDH14(1)",
+    "vg_would_split": 1
+   },
+   {
+    "best_single_colinear": 0.333,
+    "best_single_neighbor": "NT5C1B",
+    "both_annotated": true,
+    "bridge_gene": "RDH14",
+    "bridge_kind": "READTHROUGH-CHIMERA",
+    "category": "ep_impure",
+    "confidence": "LOW",
+    "fid": 321,
+    "minor_matched_exons": 1,
+    "n_exons": 3,
+    "per_exon": "e1:RDH14(2)(1.0) e2:- e3:NT5C1B(1)(1.0)",
+    "subfams": "NT5C1B(1);RDH14(2)",
+    "vg_would_split": 1
+   }
+  ]
+ },
+ "vg_recall_cost": {
+  "examined": 24,
+  "examples": [],
+  "false_split_rate": 0.0,
+  "n_alt_first_exon_families": 0,
+  "threshold": 0.6,
+  "wrongly_split": 0
+ }
+}
