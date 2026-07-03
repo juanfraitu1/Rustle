@@ -173,6 +173,66 @@ abstain** them. That is the deliverable: a VG-native abstain lever for the copy-
 
 ---
 
+## (5) SHIPPED — the recombinant-abstain gate leg is WIRED (default-on)
+
+The abstain lever is now **wired into the O2 copy-assignment gate** as a **default-on** leg with an
+opt-out, mirroring `--no-repeat-gate` / `--no-split-recombinants`.
+
+- **Assign path wired:** `o2_vg_visualization.materialize_family`, which threads every read through the
+  significance gate `copy_assign.assign_read` (the min_p / margin certificate) and labels the per-read
+  `status`. That per-read `status` is exactly what force-assigned the 2214. The abstain leg runs on the
+  materialized VG (`recombinant_abstain.apply_abstain_to_vg(vg)`) at both `materialize_family` return
+  points. `assign_read` itself is **unchanged** (byte-identity for `validate_sim5x` / `crossval` /
+  `assign_family`), and the o2vg **cache stays the pure-gate assignment** — the leg is applied on read,
+  never baked into the JSON. All Python; the 2214 empirics run through this Python path (no Rust path).
+- **Detection logic reused, not re-derived:** `bench/recombinant_abstain.py` is the single source of
+  `detect_read_recombination` + `full_pattern_switches` (moved verbatim out of the detector, which now
+  IMPORTS them) and adds the reusable `is_recombinant(obs, supported, copy_vecs, names) -> (bool, kind,
+  arms)` predicate + `apply_abstain_to_vg`. The diagnostic detector runs with the leg opted OUT so it
+  always characterizes the raw pure-gate leak.
+- **Opt-out (default-on):** `--no-recombinant-abstain` (sets `RUSTLE_NO_RECOMBINANT_ABSTAIN=1`) makes
+  `apply_abstain_to_vg` a no-op; the assignment output is then byte-identical to the prior pure gate.
+
+**Reads moved assigned → abstain (default-on): 2214, by structural class**
+
+| class | moved (assigned→abstain) | of which clean_full=1 | of which noisy (clean_full=0) |
+|---|---|---|---|
+| systematic_copy_split | 1357 | 425 | 932 |
+| localized_tract | 674 | **134** | 540 |
+| sporadic_chimera | 183 | 62 | 121 |
+| **total** | **2214** | **621** | **1593** |
+
+- The **674 localized_tract** reads (incl **GSTM2 fam13 = 292 localized**, `1 clean / 291 noisy`) all
+  move to abstain. **Honest label:** these are **belongs-to-no-copy reads carrying a subset-clean bi-copy
+  recombinant pattern** — NOT "credible gene-conversion". Only **134/674** localized (and **621/2214**
+  overall) are clean over the full read-supported pattern; the **GSTM2 gene-conversion claim is
+  retracted** (§1 above, same commit).
+- **The leg deliberately does NOT gate on `clean_full`.** Abstaining is correct for the full 2214
+  because **every** abstained read — clean or noisy — conflicts with every single copy by **≥2**
+  read-supported bubbles (`min_single_mm ≥ 2`) = belongs to no single copy. Gating on `clean_full` would
+  wrongly **re-admit** the 540 noisy belongs-to-no-copy reads to force-assignment.
+
+**BYTE-IDENTITY on non-recombinant reads: PASS.** Independent leg-OFF vs leg-ON rerun over the cache
+(**102,224** reads across the flippable families): **2214 flipped**, **0 non-recombinant reads changed**,
+**0 monotonicity violations**. Every flip is exactly `assigned → recombinant` with `best_copy=None`;
+every non-recombinant read (and every already-abstaining read) is bit-for-bit unchanged. It is a **pure
+monotone addition of abstentions** — no copy-swap, no abstain→assign, ever. Opt-out recovers the
+pure-gate baseline byte-for-byte (0 violations). Deterministic under `PYTHONHASHSEED=0` (two leg-ON
+passes, 0 mismatches).
+
+**Coverage-vs-correctness trade (honest).** Across the flippable families (102,224 reads) assigned
+**40,534 → 38,320** (39.65% → 37.49%). Coverage cost = **2214 abstentions = 5.46% of previously-assigned
+reads (2.17 pts)**. Correctness gain = **2214 belongs-to-no-copy force-assignments removed**, incl 100%
+(674/674) of the localized tracts. RNA cannot separate allelic gene-conversion from an unrepresented
+recombinant paralog (needs DNA parCN), but **both classes abstain**, so the leg is correct regardless.
+
+**Tests:** `bench/test_recombinant_abstain.py` — 5 pass: (1) predicate flags crossover not clean
+single-copy; (2) monotone (only the force-assigned recombinant read flips; all others byte-identical);
+(3) opt-out no-op; (4) determinism; (5) data-backed 2214 move (674 localized incl GSTM2, 1357 systematic,
+183 sporadic; 0 byte-identity violations).
+
+---
+
 ### Reproduce
 ```
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_read_path_recombination.py        # build+eval

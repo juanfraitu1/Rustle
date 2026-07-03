@@ -53,6 +53,7 @@ import pysam
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import psv_graph_genomewide as pg   # noqa: E402  (reuse sh / column_alleles / dedup_copies / consts)
 import copy_assign as ca            # noqa: E402  (reuse the REAL per-read gate assign_read)
+import recombinant_abstain as ra    # noqa: E402  (DEFAULT-ON recombinant-read ABSTAIN leg of the gate)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = "/home/juanfra/winloci_scratch/o2vg"
@@ -109,6 +110,7 @@ def materialize_family(fam_id, use_cache=True):
     if use_cache and os.path.exists(cpath):
         vg = json.load(open(cpath))
         vg["tiers"] = {int(k): v for k, v in vg["tiers"].items()}   # JSON stringifies int keys
+        ra.apply_abstain_to_vg(vg)      # DEFAULT-ON abstain leg (no-op under RUSTLE_NO_RECOMBINANT_ABSTAIN=1)
         return vg
 
     tmp = os.path.join(CACHE, f"tmp_fam{fam_id}")
@@ -277,7 +279,8 @@ def materialize_family(fam_id, use_cache=True):
         n_reads=len(best), assignment=dict(cats), per_copy=dict(per_copy),
     )
     genome.close()
-    json.dump(vg, open(cpath, "w"))
+    json.dump(vg, open(cpath, "w"))     # CACHE stays the PURE-gate assignment (abstain leg applied on read)
+    ra.apply_abstain_to_vg(vg)          # DEFAULT-ON abstain leg (no-op under RUSTLE_NO_RECOMBINANT_ABSTAIN=1)
     return vg
 
 
@@ -418,7 +421,8 @@ def render_family(vg, out_png, max_bubbles=30, max_reads=60):
     else:
         # order: assigned (grouped by copy) first, then ambiguous, then tied; drop no_cover (partial
         # reads that reach no PSV column) from the drawn rows -- counted in the annotation instead.
-        order = {"assigned": 0, "ambiguous": 1, "tied": 2, "no_cover": 3}
+        # 'recombinant' = the abstain leg's belongs-to-no-copy call; drawn with the abstainers.
+        order = {"assigned": 0, "ambiguous": 1, "recombinant": 2, "tied": 3, "no_cover": 4}
         drawable = [r for r in reads if r["span_cols"] is not None and r["status"] != "no_cover"]
         drawable.sort(key=lambda r: (order[r["status"]],
                       names.index(r["best_copy"]) if r["best_copy"] else 99, r["span_cols"][0]))
@@ -427,7 +431,7 @@ def render_family(vg, out_png, max_bubbles=30, max_reads=60):
             for r in drawable:
                 by_status[r["status"]].append(r)
             picked = []
-            for st in ("assigned", "ambiguous", "tied"):
+            for st in ("assigned", "ambiguous", "recombinant", "tied"):
                 lst = by_status.get(st, [])
                 if not lst:
                     continue
@@ -572,7 +576,7 @@ def run(fam_id, use_cache=True):
           f"(SUN {vg['n_sun_bubbles']}) K={vg['K']} cls={vg['cls']}")
     print(f"   tiers T1/T2/T3 = {vg['tiers'].get(1,0)}/{vg['tiers'].get(2,0)}/{vg['tiers'].get(3,0)}"
           f"   reads={vg['n_reads']} assigned={a.get('assigned',0)} ambiguous={a.get('ambiguous',0)}"
-          f" tied={a.get('tied',0)} no_cover={a.get('no_cover',0)}")
+          f" recombinant={a.get('recombinant',0)} tied={a.get('tied',0)} no_cover={a.get('no_cover',0)}")
     print(f"   per-copy assigned: {vg['per_copy']}")
     print(f"   -> {base}.png")
     return vg
@@ -582,6 +586,10 @@ if __name__ == "__main__":
     os.environ.setdefault("PYTHONHASHSEED", "0")
     args = sys.argv[1:]
     fresh = "--fresh" in args
+    # DEFAULT-ON recombinant-abstain leg; --no-recombinant-abstain opts out (sets the env the leg reads),
+    # mirroring --no-repeat-gate / --no-split-recombinants.
+    if "--no-recombinant-abstain" in args:
+        os.environ[ra.OPTOUT_ENV] = "1"
     nums = [int(a) for a in args if not a.startswith("--")]
     fam_ids = nums if nums else list(FLAGSHIP)
     for fid in fam_ids:
