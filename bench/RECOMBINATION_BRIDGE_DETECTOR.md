@@ -187,3 +187,25 @@ one textbook barbell.
 - **Verdict:** reshuffling is real but rare (smallest bucket); VG recombination-detection earns its keep on the
   K-frontier niche at zero recall cost, but is a ~0.8 pt precision top-up — the residual over-merge is dominated by
   domain-share + cardinality + sub-exonic-repeat bridges.
+
+## WIRED: recombinant-split gate is now DEFAULT-ON (2026-07-02)
+
+The recall-safe subset is wired into the shipped family definition (`bench/recombinant_split.py`,
+called from `bench/family_rna_refine.py` after the gamma-quasi-clique refine).  **DEFAULT-ON**;
+`--no-split-recombinants` / `RUSTLE_NO_SPLIT_RECOMBINANTS=1` disables it (recovers the 606-family
+pre-split catalog byte-identically, md5 `f94f387e`).
+
+**What it splits:** only the **HIGH-confidence DISTRIBUTED-MOSAIC** subset — both bridged
+sub-families annotated, minor block ≥2 exons, not genomically colocated — which is **2 families**
+(fid 210 `GALNT17`|`LOC101126070`, fid 187) at the new default (605 families, md5 `5e58378a`).
+It deliberately does **not** split the other 3 detector-flagged "recombinant" blocks: fid 321
+(READTHROUGH-chimera — would fragment `RDH14`×3) and fid 110 (NA-dominated OVERSIZE blob — would
+strand `LOC134758618`, a DNA-multi-copy-but-RNA-single-copy spurious co-membership credit).
+
+**Two recall-safety guarantees (RNA-only, no oracle leakage):** (1) reject any split that would
+separate same-gene loci; (2) HIGH-confidence-only.  Together they give **0 oracle-recall cost**
+(R_oracle held 50/57) — an empirical correction to the detector's narrower "0/24 control" claim,
+which did not test the DNA-multi-copy-but-RNA-single-copy co-membership trap.  Precision gain is on
+the **E_p / recombinant axis** (2 distinct-protein-family over-merges removed, e.g. PRFAM2156 vs
+PRFAM86); the diploid-oracle distinct-FP count (6) is unchanged (those merges aren't diploid-CN FPs).
+Second VG-native gate after the repeat-hub gate.  Tests: `test_family_rna_refine.py` (l).

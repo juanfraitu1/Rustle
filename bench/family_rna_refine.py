@@ -253,10 +253,11 @@ def load_repeat_mult():
 
 
 # --------------------------------------------------------------------------- build (RNA-only)
-def build_catalog(repeat_gate=True, gamma=GAMMA):
+def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True):
     """Apply the recall-preserving RNA-only gate + repeat-hub gate + shipped gamma refinement +
-    allele demote.  Returns dict with the multi-copy catalog and the RNA-only bookkeeping.  No DNA
-    read here.  repeat_gate=False ablates ONLY the repeat-hub gate (keeps core+aln+gamma+demote).
+    recombinant-split gate + allele demote.  Returns dict with the multi-copy catalog and the
+    RNA-only bookkeeping.  No DNA read here.  repeat_gate=False ablates ONLY the repeat-hub gate.
+    split_recombinants=False ablates ONLY the recombinant-split gate (keeps core+aln+repeat+gamma+demote).
     gamma selects the gamma-quasi-clique cohesion: default GAMMA=0.20 (recall-preserving) or
     HIGH_PRECISION_GAMMA=0.40 (--high-precision; PRECISION_RECALL_FRONTIER.md).  Nothing else changes."""
     rna_only_guard()
@@ -319,6 +320,22 @@ def build_catalog(repeat_gate=True, gamma=GAMMA):
     comps = SW.components_from_edges(all_nodes, kept)
     refined = G.refine_families(comps, [tuple(e) for e in kept], genes, gamma, SEED)
 
+    # ---- recombinant-split gate (VG path-colinearity; DEFAULT-ON; --no-split-recombinants ablates) ----
+    # Split a family held together by a RECOMBINANT/mosaic bridge (a locus whose exon-chain splits
+    # colinearly into >=2 DIFFERENT sub-families, articulation point, best single-neighbour colinear
+    # cover < 0.60) into its colinear sub-families.  This is the ONE over-merge class the pairwise-edge
+    # graph transitively merges (density-2/3 barbell survives gamma) that only path-level colinearity
+    # catches (RECOMBINATION_BRIDGE_DETECTOR.md; the K-frontier recombination obstruction).  Sub-families
+    # that fall below the >=2-distinct-loci multi-copy predicate after splitting are dropped (not multi-copy).
+    split_info = []
+    n_families_split = 0
+    if split_recombinants:
+        import recombinant_split as RS
+        pre_split_n = len(refined)
+        refined, split_info = RS.split_families(refined, genes, gene_of_dn2)
+        n_families_split = len(split_info)
+        refined = [b for b in refined if G.distinct_loci(b, genes) >= 2]
+
     # ---- allele DEMOTE (RNA read signal only; exact oracle logic) ----
     def demote_gene(g):
         a = allele.get(g)
@@ -343,6 +360,7 @@ def build_catalog(repeat_gate=True, gamma=GAMMA):
         catalog=catalog, demotions=demotions,
         gene_of_dn=gene_of_dn2, genes=genes, raw_fams=raw_fams, edge_pairs=edge_pairs,
         repeat_gate=repeat_gate, gamma=gamma,
+        split_recombinants=split_recombinants, n_families_split=n_families_split, split_info=split_info,
         n_dn_edges_total=Gr.number_of_edges(),
         n_dn_within=n_dn_within, n_dn_cross_kept=n_dn_cross_kept, n_dn_cross_cut=n_dn_cross_cut,
         n_dn_cross_cut_repeat=n_dn_cross_cut_repeat,
@@ -431,10 +449,19 @@ def write_outputs(built, val):
                        % (CORE_MIN, ALN_MIN, REPEAT_MULT_MIN),
                   core_recip_min=CORE_MIN, aln_frac_min=ALN_MIN,
                   repeat_gate_enabled=repeat_gate, repeat_mult_min=REPEAT_MULT_MIN,
+                  split_recombinants_enabled=built["split_recombinants"],
                   gamma=gamma, seed=SEED,
                   demote="balanced_frac>=%.2f AND copy_like<=%.2f" % (DEMOTE_BAL_MIN, DEMOTE_COPY_MAX),
                   demote_balanced_frac_min=DEMOTE_BAL_MIN, demote_copy_like_max=DEMOTE_COPY_MAX),
         n_families=len(catalog),
+        recombinant_split=dict(
+            enabled=built["split_recombinants"],
+            n_families_split=built["n_families_split"],
+            split_families=built["split_info"],
+            note=("VG path-colinearity split of recombinant/mosaic-bridge over-merges (colinear-cover<0.60, "
+                  "articulation point, HIGH-confidence distributed mosaic); RECALL-SAFE (never separates "
+                  "same-gene loci; HIGH-confidence only) -> 0 oracle-recall cost. RECOMBINATION_BRIDGE_DETECTOR.md. "
+                  "--no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1 ablates.")),
         edges=dict(
             n_dn_edges_total=built["n_dn_edges_total"],
             n_dn_within_gene_kept=built["n_dn_within"],
@@ -493,8 +520,8 @@ def write_outputs(built, val):
 
 
 # --------------------------------------------------------------------------- driver
-def run(write=True, repeat_gate=True, gamma=GAMMA):
-    built = build_catalog(repeat_gate=repeat_gate, gamma=gamma)
+def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True):
+    built = build_catalog(repeat_gate=repeat_gate, gamma=gamma, split_recombinants=split_recombinants)
     val = validate(built)
     summary = write_outputs(built, val) if write else None
     return built, val, summary
@@ -516,6 +543,10 @@ def _report(built, val, summary):
       f"(of which by repeat-hub gate={built['n_dn_cross_cut_repeat']})")
     P(f"cross-gene pairs : kept={built['n_cross_pairs_kept']}  cut={built['n_cross_pairs_cut']}  "
       f"(repeat-hub-gate cut pairs={built['n_cross_pairs_cut_repeat']})")
+    P(f"recombinant split: {'ON' if built['split_recombinants'] else 'OFF (ablated)'}  "
+      f"families split={built['n_families_split']}"
+      + ("  " + "; ".join("|".join(g for g in si['subfam_genes'] if g != 'NA')
+                          for si in built['split_info']) if built['split_info'] else ""))
     P(f"n_families       : {len(built['catalog'])}")
     P(f"alleles demoted  : {len(built['demotions'])}  "
       + ", ".join(f"{d['gene']}(dl={d['n_loci']},bal={d['balanced_frac']:.2f},"
@@ -558,6 +589,11 @@ def main(argv=None):
                     help="ablation: DISABLE just the repeat-hub gate (min_shared_mult>=%d cut); "
                          "keeps core+aln+gamma+demote and recovers the pre-repeat-gate catalog "
                          "(also RUSTLE_NO_REPEAT_GATE=1)" % REPEAT_MULT_MIN)
+    ap.add_argument("--no-split-recombinants", action="store_true",
+                    help="ablation: DISABLE just the recombinant-split gate (VG path-colinearity split "
+                         "of recombinant/mosaic-bridge over-merges, e.g. fid 210 GALNT17|LOC101126070); "
+                         "keeps core+aln+repeat+gamma+demote and recovers the pre-split catalog "
+                         "(also RUSTLE_NO_SPLIT_RECOMBINANTS=1)")
     ap.add_argument("--high-precision", action="store_true",
                     help="HIGH-PRECISION operating point: swap ONLY the gamma-quasi-clique cohesion "
                          "GAMMA=%.2f -> %.2f (PRECISION_RECALL_FRONTIER.md); everything else "
@@ -577,10 +613,14 @@ def main(argv=None):
         return 0
     # DEFAULT-ON repeat-hub gate; --no-repeat-gate / RUSTLE_NO_REPEAT_GATE=1 ablates ONLY the gate.
     repeat_gate = not (args.no_repeat_gate or os.environ.get("RUSTLE_NO_REPEAT_GATE") == "1")
+    # DEFAULT-ON recombinant-split gate; --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1 ablates it.
+    split_recombinants = not (args.no_split_recombinants
+                              or os.environ.get("RUSTLE_NO_SPLIT_RECOMBINANTS") == "1")
     # HIGH-PRECISION: --high-precision / RUSTLE_HIGH_PRECISION=1 swaps ONLY gamma (0.20 -> 0.40).
     high_precision = args.high_precision or os.environ.get("RUSTLE_HIGH_PRECISION") == "1"
     gamma = HIGH_PRECISION_GAMMA if high_precision else GAMMA
-    built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma)
+    built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma,
+                              split_recombinants=split_recombinants)
     _report(built, val, summary)
     return 0
 

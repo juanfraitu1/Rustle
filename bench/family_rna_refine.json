@@ -58,10 +58,35 @@
   "repeat_mult": "bench/vg_repeat_catalog.tsv (min_shared_mult; library-free VG multiplicity)"
  },
  "n_alleles_demoted": 3,
- "n_families": 606,
+ "n_families": 605,
  "outputs": {
   "catalog_tsv": "bench/family_rna_refine.tsv",
   "summary_json": "bench/family_rna_refine.json"
+ },
+ "recombinant_split": {
+  "enabled": true,
+  "n_families_split": 2,
+  "note": "VG path-colinearity split of recombinant/mosaic-bridge over-merges (colinear-cover<0.60, articulation point, HIGH-confidence distributed mosaic); RECALL-SAFE (never separates same-gene loci; HIGH-confidence only) -> 0 oracle-recall cost. RECOMBINATION_BRIDGE_DETECTOR.md. --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1 ablates.",
+  "split_families": [
+   {
+    "n_loci": 6,
+    "n_parts": 3,
+    "subfam_genes": [
+     "LOC129523494",
+     "LOC115935376",
+     "LOC101146405"
+    ]
+   },
+   {
+    "n_loci": 3,
+    "n_parts": 3,
+    "subfam_genes": [
+     "LOC101126070",
+     "GALNT17",
+     "LOC115935264"
+    ]
+   }
+  ]
  },
  "residual_fp": {
   "named_removed": 6,
@@ -110,7 +135,8 @@
   "gamma": 0.2,
   "repeat_gate_enabled": true,
   "repeat_mult_min": 20,
-  "seed": 0
+  "seed": 0,
+  "split_recombinants_enabled": true
  },
  "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate; DEFAULT-ON, opt out --legacy / ablate gate --no-repeat-gate)"
 }

@@ -42,9 +42,12 @@ OUT_JSON = os.path.join(BENCH, "family_rna_refine.json")
 SHIPPED = os.path.join(BENCH, "denovo_families.py")
 PY = sys.executable
 
-# md5 of the pre-change committed DEFAULT catalog (gamma=0.20, 606 families).  The --high-precision
-# flag must NOT perturb the default: `family_rna_refine.py` with no flag must reproduce this exactly.
-GOLDEN_DEFAULT_TSV_MD5 = "f94f387e4f3a53a69e9d8a2d0b1f497a"
+# md5 of the DEFAULT catalog (gamma=0.20, repeat-gate + recombinant-split ON, 605 families).  The
+# --high-precision flag must NOT perturb the default: `family_rna_refine.py` with no flag reproduces this.
+GOLDEN_DEFAULT_TSV_MD5 = "5e58378ad3920b94c0048d383dfada29"
+# md5 of the pre-split catalog (--no-split-recombinants, gamma=0.20, repeat-gate ON, 606 families).
+# The recombinant-split gate is DEFAULT-ON; ablating it must recover this exactly (byte-for-byte).
+GOLDEN_NOSPLIT_TSV_MD5 = "f94f387e4f3a53a69e9d8a2d0b1f497a"
 
 # fam17 = the 27-gene / 16-protein-family EXTREME repeat-bridge hub (VG_REPEAT_CATALOG.md sec 3).
 FAM17 = ["C9H11orf65", "COPS9", "DCAF16", "DCP1B", "GIMAP4", "KLHL33", "LIPA", "LOC109024560",
@@ -64,6 +67,7 @@ def _run(args, env_extra=None):
     env = dict(os.environ)
     env.pop("RUSTLE_RNA_ORACLE", None)
     env.pop("RUSTLE_NO_REPEAT_GATE", None)
+    env.pop("RUSTLE_NO_SPLIT_RECOMBINANTS", None)
     if env_extra:
         env.update(env_extra)
     return subprocess.run([PY, SCRIPT] + args, cwd=BENCH, env=env,
@@ -123,18 +127,53 @@ def test_default_deterministic():
 
 
 def test_default_byte_identical_to_golden():
-    r = _run([])                                   # DEFAULT: no flag
+    r = _run([])                                   # DEFAULT: no flag (repeat-gate + recombinant-split ON)
     assert r.returncode == 0, r.stderr
     got = _md5(OUT_TSV)
     assert got == GOLDEN_DEFAULT_TSV_MD5, \
-        f"default catalog drifted from the pre-change golden {GOLDEN_DEFAULT_TSV_MD5}: {got}"
+        f"default catalog drifted from the golden {GOLDEN_DEFAULT_TSV_MD5}: {got}"
     d = json.load(open(OUT_JSON))
     assert d["rule"]["gamma"] == 0.2, f"default JSON gamma != 0.20: {d['rule']['gamma']}"
     assert d["guards"]["gamma"] == 0.2, f"default guards gamma != 0.20: {d['guards']['gamma']}"
-    assert d["n_families"] == 606, f"default n_families != 606: {d['n_families']}"
+    assert d["n_families"] == 605, f"default n_families != 605: {d['n_families']}"
     assert "high_precision" not in d, "default JSON must NOT carry the high_precision block"
-    print(f"(i) default (no flag) byte-identical to pre-change golden TSV (md5 {GOLDEN_DEFAULT_TSV_MD5}); "
-          f"gamma=0.20, no high_precision block : OK")
+    # recombinant-split gate is DEFAULT-ON and splits the 2 recall-safe HIGH-confidence mosaics
+    rs = d["recombinant_split"]
+    assert rs["enabled"] is True and rs["n_families_split"] == 2, \
+        f"default recombinant-split not ON/2: enabled={rs['enabled']} n_split={rs['n_families_split']}"
+    assert d["rule"]["split_recombinants_enabled"] is True
+    print(f"(i) default (no flag) byte-identical to golden TSV (md5 {GOLDEN_DEFAULT_TSV_MD5}); "
+          f"gamma=0.20, 605 families, recombinant-split ON (2 split), no high_precision block : OK")
+
+
+def test_recombinant_split_gate():
+    """recombinant-split DEFAULT-ON splits the 2 recall-safe mosaics (fid 210 GALNT17|LOC101126070
+    + fid 187); --no-split-recombinants recovers the pre-split catalog byte-identically; env==flag;
+    RECALL-SAFE (same-gene copies never separated)."""
+    # DEFAULT: fid 210 split -> GALNT17 and LOC101126070 in DIFFERENT families
+    r = _run([]);  assert r.returncode == 0, r.stderr
+    fam = _fam_to_genes(OUT_TSV)
+    fid_of = {}
+    for f, gs in fam.items():
+        for g in gs:
+            fid_of.setdefault(g, set()).add(f)
+    assert "GALNT17" in fid_of and "LOC101126070" in fid_of, "flagship genes missing from catalog"
+    assert not (fid_of["GALNT17"] & fid_of["LOC101126070"]), \
+        "fid 210 NOT split: GALNT17 + LOC101126070 still co-membered (recombinant mosaic not broken)"
+    # RECALL-SAFETY: no gene's loci are split across families (same-gene copies stay together)
+    multi = {g: fs for g, fs in fid_of.items() if g != "NA" and len(fs) >= 2}
+    assert not multi, f"recall-safety violated: gene(s) split across families: {multi}"
+    # --no-split-recombinants recovers the pre-split golden byte-identically
+    r1 = _run(["--no-split-recombinants"]);  assert r1.returncode == 0, r1.stderr
+    off = _md5(OUT_TSV);  d_off = json.load(open(OUT_JSON))
+    assert off == GOLDEN_NOSPLIT_TSV_MD5, f"--no-split-recombinants drifted from pre-split golden: {off}"
+    assert d_off["n_families"] == 606 and d_off["recombinant_split"]["enabled"] is False
+    # env form == flag form
+    r2 = _run([], env_extra={"RUSTLE_NO_SPLIT_RECOMBINANTS": "1"});  assert r2.returncode == 0, r2.stderr
+    assert _md5(OUT_TSV) == off, "RUSTLE_NO_SPLIT_RECOMBINANTS=1 != --no-split-recombinants"
+    print("(l) recombinant-split ON splits fid 210 (GALNT17|LOC101126070); recall-safe (no same-gene "
+          "split); --no-split-recombinants recovers 606-family pre-split golden; env==flag : OK")
+    _run([])   # restore DEFAULT
 
 
 def test_allele_demote_removes_known_fp():
@@ -158,15 +197,16 @@ def test_residual_removed_matches_recall_preserving_row():
 
 
 def test_repeat_gate_shatters_fam17_spares_controls():
-    # default = repeat gate ON
-    r = _run([]);  assert r.returncode == 0, r.stderr
+    # isolate the REPEAT gate: hold the recombinant-split gate OFF in both arms so the only
+    # difference is the repeat gate (split ON is exercised separately in test_recombinant_split_gate).
+    r = _run(["--no-split-recombinants"]);  assert r.returncode == 0, r.stderr   # repeat ON, split OFF
     on = _fam_to_genes(OUT_TSV);  on_json = json.load(open(OUT_JSON))
     on_tsv = _md5(OUT_TSV)
     # ablation = repeat gate OFF (flag form) -- run twice for byte-identical determinism
-    r2 = _run(["--no-repeat-gate"]);  assert r2.returncode == 0, r2.stderr
+    r2 = _run(["--no-repeat-gate", "--no-split-recombinants"]);  assert r2.returncode == 0, r2.stderr
     off = _fam_to_genes(OUT_TSV);  off_json = json.load(open(OUT_JSON))
     off_tsv = _md5(OUT_TSV)
-    r3 = _run([], env_extra={"RUSTLE_NO_REPEAT_GATE": "1"})   # env form == flag form
+    r3 = _run(["--no-split-recombinants"], env_extra={"RUSTLE_NO_REPEAT_GATE": "1"})   # env form == flag form
     assert r3.returncode == 0 and _md5(OUT_TSV) == off_tsv, "env ablation != flag ablation / not deterministic"
 
     # the gate MUST change the catalog, and only via the repeat gate
@@ -270,8 +310,9 @@ def test_high_precision_gamma_040():
     # (j) env form == flag form
     r3 = _run([], env_extra={"RUSTLE_HIGH_PRECISION": "1"});  assert r3.returncode == 0, r3.stderr
     assert _md5(OUT_TSV) == hp_tsv and _md5(OUT_JSON) == hp_json, "RUSTLE_HIGH_PRECISION=1 != --high-precision"
-    # (j) precision impact: n_families toward the frontier's 623, oversize residual drops (blobs removed)
-    assert d["n_families"] == 623, f"high-precision n_families {d['n_families']} != frontier gamma=0.40 row 623"
+    # (j) precision impact: n_families toward the frontier (623 pre-split; 622 with the default-on
+    # recombinant-split gate, which removes one net family), oversize residual drops (blobs removed)
+    assert d["n_families"] == 622, f"high-precision n_families {d['n_families']} != 622 (frontier 623 - 1 recombinant split)"
     assert d["n_families"] > d_def["n_families"], "high-precision did not split toward the frontier"
     rem_hp, rem_def = d["residual_fp"]["residual_remaining"], d_def["residual_fp"]["residual_remaining"]
     assert rem_hp["oversize"] < rem_def["oversize"], \
@@ -287,7 +328,7 @@ def test_high_precision_gamma_040():
         assert hp.get(key), f"high_precision field missing: {key}"
     assert "KRAB-ZNF" in hp["offoracle_krabznf_cost"] and "MAGE" in hp["mage_floor"], "caveats hollowed out"
     print(f"(j) --high-precision gamma=0.40 (JSON records it); n_families {d_def['n_families']} -> "
-          f"{d['n_families']} (frontier 623); oversize residual {rem_def['oversize']} -> {rem_hp['oversize']} "
+          f"{d['n_families']} (frontier 623 - 1 recombinant split); oversize residual {rem_def['oversize']} -> {rem_hp['oversize']} "
           f"(MPHOSPH8 + LOC134758618 removed, MAGE floor survives); deterministic; env==flag; caveats carried : OK")
     _run([])   # restore DEFAULT catalog for any downstream test
 
