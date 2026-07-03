@@ -1,0 +1,771 @@
+{
+  "boundaries": {
+    "best_exon_id:bam_conf": {
+      "boundary": 0.99,
+      "from_bin": "0.98-0.99",
+      "jump": 0.024907041166751305,
+      "to_bin": "0.99-1.00"
+    },
+    "best_exon_id:margin_conf": {
+      "boundary": 0.99,
+      "from_bin": "0.98-0.99",
+      "jump": 0.12245097259804745,
+      "to_bin": "0.99-1.00"
+    },
+    "core_recip:bam_conf": {
+      "boundary": 0.9,
+      "from_bin": "0.85-0.90",
+      "jump": 0.2354783066510568,
+      "to_bin": "0.90-0.95"
+    },
+    "core_recip:margin_conf": {
+      "boundary": 0.99,
+      "from_bin": "0.98-0.99",
+      "jump": 0.42978971962616824,
+      "to_bin": "0.99-1.00"
+    },
+    "mean_matched_id:bam_conf": {
+      "boundary": 0.99,
+      "from_bin": "0.98-0.99",
+      "jump": 0.023523688322262225,
+      "to_bin": "0.99-1.00"
+    },
+    "mean_matched_id:margin_conf": {
+      "boundary": 0.99,
+      "from_bin": "0.98-0.99",
+      "jump": 0.08609106838622313,
+      "to_bin": "0.99-1.00"
+    },
+    "recip_best_mean:bam_conf": {
+      "boundary": 0.98,
+      "from_bin": "0.95-0.98",
+      "jump": 0.25051517314422544,
+      "to_bin": "0.98-0.99"
+    },
+    "recip_best_mean:margin_conf": {
+      "boundary": 0.98,
+      "from_bin": "0.95-0.98",
+      "jump": 0.29403409090909094,
+      "to_bin": "0.98-0.99"
+    }
+  },
+  "coincidence": {
+    "axis_test_coincide": false,
+    "axis_test_gap": 0.17999999999999994,
+    "boundary_on_floor_axis_recip_best": 0.98,
+    "coincide": false,
+    "corr_confusable_vs_floor_axis_recip_best": 0.30196101622302635,
+    "corr_confusable_vs_segment_axis_mean_matched": 0.08433861801189182,
+    "domain_share_knee": 0.8,
+    "f1_ep_optimal_floor": 0.0,
+    "f1_task_optimal_floor": 0.0,
+    "floor_metric": "recip_best_mean (recip_id_best = matches_best/max(len); the ACTUAL floor metric)",
+    "headline_boundary_wholeread": 0.99,
+    "interpretation": "DO NOT COINCIDE: the floor is an O1 whole-transcript PURITY cut, the boundary is an O2 read-resolvability property. The operative floor CUTS the majority of read-confusable reads (removes exactly the near-identical/segment-local families the method targets), and confusability is a per-exon/per-read shared-segment property no whole-transcript identity floor can cleanly gate. Report the two as SEPARATE objects: O1-precision floor vs O2-read-confusability boundary.",
+    "mass_test_bam_cut_frac": 0.6740273396424816,
+    "mass_test_bam_cut_frac_core_recip_proxy": 0.5394321766561514,
+    "mass_test_coincide": false,
+    "mass_test_margin_cut_frac": 0.5549915397631133,
+    "mass_test_margin_cut_frac_core_recip_proxy": 0.5956006768189509,
+    "operative_floor": 0.8,
+    "scope_claim_supported": "directionally",
+    "shipped_floor": 0.8
+  },
+  "confounds": {
+    "mean_bam_conf": 0.03654478371501272,
+    "mean_margin_conf": 0.0808941475826972,
+    "mean_realn_conf": 0.0360824427480916,
+    "n_fam_with_realn": 393,
+    "r_bam_vs_margin": 0.7659799430207933,
+    "r_bam_vs_realnmapq": 0.9936299490027484,
+    "r_conf_depth": -0.08252892295787424,
+    "r_conf_depth_ctrl_id": -0.07867332597194404,
+    "r_conf_identity": 0.14015504072373272,
+    "r_conf_identity_ctrl_depth": 0.13794903033911077,
+    "r_conf_size": 0.01888717177058034,
+    "r_conf_size_ctrl_id": 0.011503305335904651
+  },
+  "curve_best_exon_id": [
+    {
+      "bam_conf": 0.0020141180081332003,
+      "bin": "0.00-0.50",
+      "margin_conf": 0.05838947706127687,
+      "n_fams": 78,
+      "n_reads": 52132,
+      "n_realn": 3117,
+      "realn_conf": 0.0003208213025344883
+    },
+    {
+      "bam_conf": 0.0,
+      "bin": "0.50-0.85",
+      "margin_conf": 0.0009302325581395349,
+      "n_fams": 27,
+      "n_reads": 20553,
+      "n_realn": 1075,
+      "realn_conf": 0.0
+    },
+    {
+      "bam_conf": 0.0001308301170929548,
+      "bin": "0.85-0.90",
+      "margin_conf": 0.008032128514056224,
+      "n_fams": 19,
+      "n_reads": 15287,
+      "n_realn": 747,
+      "realn_conf": 0.0013386880856760374
+    },
+    {
+      "bam_conf": 0.0,
+      "bin": "0.90-0.95",
+      "margin_conf": 0.0,
+      "n_fams": 25,
+      "n_reads": 40130,
+      "n_realn": 990,
+      "realn_conf": 0.0
+    },
+    {
+      "bam_conf": 0.0011403508771929824,
+      "bin": "0.95-0.98",
+      "margin_conf": 0.010247651579846286,
+      "n_fams": 30,
+      "n_reads": 11400,
+      "n_realn": 1171,
+      "realn_conf": 0.0017079419299743809
+    },
+    {
+      "bam_conf": 0.00020652622883106156,
+      "bin": "0.98-0.99",
+      "margin_conf": 0.00851581508515815,
+      "n_fams": 23,
+      "n_reads": 9684,
+      "n_realn": 822,
+      "realn_conf": 0.0012165450121654502
+    },
+    {
+      "bam_conf": 0.025113567395582365,
+      "bin": "0.99-1.00",
+      "margin_conf": 0.1309667876832056,
+      "n_fams": 191,
+      "n_reads": 108746,
+      "n_realn": 7437,
+      "realn_conf": 0.06696248487293263
+    }
+  ],
+  "curve_core_recip": [
+    {
+      "bam_conf": 0.002822770347469588,
+      "bin": "0.00-0.50",
+      "margin_conf": 0.03692170818505338,
+      "n_fams": 227,
+      "n_reads": 133911,
+      "n_realn": 8992,
+      "realn_conf": 0.0033362989323843417
+    },
+    {
+      "bam_conf": 0.012220798652486717,
+      "bin": "0.50-0.85",
+      "margin_conf": 0.08455513155252059,
+      "n_fams": 127,
+      "n_reads": 111613,
+      "n_realn": 4979,
+      "realn_conf": 0.04077123920465957
+    },
+    {
+      "bam_conf": 0.004191114836546521,
+      "bin": "0.85-0.90",
+      "margin_conf": 0.08955223880597014,
+      "n_fams": 9,
+      "n_reads": 2386,
+      "n_realn": 335,
+      "realn_conf": 0.020895522388059702
+    },
+    {
+      "bam_conf": 0.2396694214876033,
+      "bin": "0.90-0.95",
+      "margin_conf": 0.42783505154639173,
+      "n_fams": 6,
+      "n_reads": 1089,
+      "n_realn": 194,
+      "realn_conf": 0.39690721649484534
+    },
+    {
+      "bam_conf": 0.005756578947368421,
+      "bin": "0.95-0.98",
+      "margin_conf": 0.0948905109489051,
+      "n_fams": 4,
+      "n_reads": 1216,
+      "n_realn": 137,
+      "realn_conf": 0.0364963503649635
+    },
+    {
+      "bam_conf": 0.01107011070110701,
+      "bin": "0.98-0.99",
+      "margin_conf": 0.0375,
+      "n_fams": 2,
+      "n_reads": 271,
+      "n_realn": 80,
+      "realn_conf": 0.0375
+    },
+    {
+      "bam_conf": 0.11146924523233952,
+      "bin": "0.99-1.00",
+      "margin_conf": 0.4672897196261682,
+      "n_fams": 18,
+      "n_reads": 7446,
+      "n_realn": 642,
+      "realn_conf": 0.2772585669781931
+    }
+  ],
+  "curve_mean_matched_id": [
+    {
+      "bam_conf": 0.0017164490359010554,
+      "bin": "0.00-0.50",
+      "margin_conf": 0.06823997725334091,
+      "n_fams": 88,
+      "n_reads": 62338,
+      "n_realn": 3517,
+      "realn_conf": 0.0005686664771111743
+    },
+    {
+      "bam_conf": 0.0010035122930255895,
+      "bin": "0.50-0.85",
+      "margin_conf": 0.0070921985815602835,
+      "n_fams": 53,
+      "n_reads": 41853,
+      "n_realn": 2115,
+      "realn_conf": 0.003309692671394799
+    },
+    {
+      "bam_conf": 0.013970074629609206,
+      "bin": "0.85-0.90",
+      "margin_conf": 0.0366116295764537,
+      "n_fams": 36,
+      "n_reads": 54402,
+      "n_realn": 1393,
+      "realn_conf": 0.022254127781765973
+    },
+    {
+      "bam_conf": 0.013183952922537203,
+      "bin": "0.90-0.95",
+      "margin_conf": 0.06680161943319839,
+      "n_fams": 38,
+      "n_reads": 17673,
+      "n_realn": 1482,
+      "realn_conf": 0.05735492577597841
+    },
+    {
+      "bam_conf": 0.0017263348267499692,
+      "bin": "0.95-0.98",
+      "margin_conf": 0.026228143213988343,
+      "n_fams": 63,
+      "n_reads": 24329,
+      "n_realn": 2402,
+      "realn_conf": 0.0016652789342214821
+    },
+    {
+      "bam_conf": 0.011850978851568127,
+      "bin": "0.98-0.99",
+      "margin_conf": 0.10022438294689603,
+      "n_fams": 34,
+      "n_reads": 15273,
+      "n_realn": 1337,
+      "realn_conf": 0.02318623784592371
+    },
+    {
+      "bam_conf": 0.03537466717383035,
+      "bin": "0.99-1.00",
+      "margin_conf": 0.18631545133311916,
+      "n_fams": 81,
+      "n_reads": 42064,
+      "n_realn": 3113,
+      "realn_conf": 0.11018310311596531
+    }
+  ],
+  "curve_recip_best_mean": [
+    {
+      "bam_conf": 0.002344371415414242,
+      "bin": "0.00-0.50",
+      "margin_conf": 0.041410065831386705,
+      "n_fams": 237,
+      "n_reads": 191096,
+      "n_realn": 9418,
+      "realn_conf": 0.005415162454873646
+    },
+    {
+      "bam_conf": 0.03235061909071653,
+      "bin": "0.50-0.85",
+      "margin_conf": 0.09268645908761766,
+      "n_fams": 106,
+      "n_reads": 51931,
+      "n_realn": 4143,
+      "realn_conf": 0.049239681390296886
+    },
+    {
+      "bam_conf": 0.018984337921214997,
+      "bin": "0.85-0.90",
+      "margin_conf": 0.18653846153846154,
+      "n_fams": 14,
+      "n_reads": 6321,
+      "n_realn": 520,
+      "realn_conf": 0.09230769230769231
+    },
+    {
+      "bam_conf": 0.08,
+      "bin": "0.90-0.95",
+      "margin_conf": 0.20616570327552985,
+      "n_fams": 15,
+      "n_reads": 2550,
+      "n_realn": 519,
+      "realn_conf": 0.14836223506743737
+    },
+    {
+      "bam_conf": 0.04021516393442623,
+      "bin": "0.95-0.98",
+      "margin_conf": 0.296875,
+      "n_fams": 9,
+      "n_reads": 3904,
+      "n_realn": 320,
+      "realn_conf": 0.16875
+    },
+    {
+      "bam_conf": 0.2907303370786517,
+      "bin": "0.98-0.99",
+      "margin_conf": 0.5909090909090909,
+      "n_fams": 3,
+      "n_reads": 712,
+      "n_realn": 88,
+      "realn_conf": 0.5454545454545454
+    },
+    {
+      "bam_conf": 0.03923647932131495,
+      "bin": "0.99-1.00",
+      "margin_conf": 0.24675324675324675,
+      "n_fams": 6,
+      "n_reads": 943,
+      "n_realn": 231,
+      "realn_conf": 0.09090909090909091
+    }
+  ],
+  "determinism": {
+    "from_tsv": "read_confusability_boundary.tsv",
+    "id_edges": [
+      0.0,
+      0.5,
+      0.85,
+      0.9,
+      0.95,
+      0.98,
+      0.99,
+      1.0001
+    ],
+    "margin_min": 10,
+    "mm2_seed": 42,
+    "pythonhashseed": "0",
+    "seed": 0
+  },
+  "divfloor_md_present": false,
+  "divfloor_present": true,
+  "divfloor_source": "/mnt/c/Users/jfris/Desktop/Rustle/bench/divergence_floor.tsv",
+  "divfloor_sweep": [
+    {
+      "E_p_purity": 0.8918,
+      "P_oracle_dedup": 0.9167,
+      "P_oracle_task": 0.8958,
+      "R_oracle": 0.8772,
+      "distinct_fp": 4,
+      "domain_shares_excluded": "0/4",
+      "edges_cut": 0,
+      "floor": 0.0,
+      "floor_label": "off",
+      "n_families": 573
+    },
+    {
+      "E_p_purity": 0.9612,
+      "P_oracle_dedup": 0.9091,
+      "P_oracle_task": 0.8788,
+      "R_oracle": 0.5965,
+      "distinct_fp": 3,
+      "domain_shares_excluded": "3/4",
+      "edges_cut": 1436,
+      "floor": 0.7,
+      "floor_label": "0.70",
+      "n_families": 335
+    },
+    {
+      "E_p_purity": 0.9656,
+      "P_oracle_dedup": 0.9394,
+      "P_oracle_task": 0.9091,
+      "R_oracle": 0.5789,
+      "distinct_fp": 2,
+      "domain_shares_excluded": "3/4",
+      "edges_cut": 1488,
+      "floor": 0.75,
+      "floor_label": "0.75",
+      "n_families": 320
+    },
+    {
+      "E_p_purity": 0.9674,
+      "P_oracle_dedup": 0.9355,
+      "P_oracle_task": 0.9032,
+      "R_oracle": 0.5614,
+      "distinct_fp": 2,
+      "domain_shares_excluded": "4/4",
+      "edges_cut": 1523,
+      "floor": 0.8,
+      "floor_label": "0.80",
+      "n_families": 307
+    },
+    {
+      "E_p_purity": 0.9761,
+      "P_oracle_dedup": 0.9286,
+      "P_oracle_task": 0.8929,
+      "R_oracle": 0.5088,
+      "distinct_fp": 2,
+      "domain_shares_excluded": "4/4",
+      "edges_cut": 1556,
+      "floor": 0.85,
+      "floor_label": "0.85",
+      "n_families": 293
+    },
+    {
+      "E_p_purity": 0.9789,
+      "P_oracle_dedup": 0.963,
+      "P_oracle_task": 0.9259,
+      "R_oracle": 0.4912,
+      "distinct_fp": 1,
+      "domain_shares_excluded": "4/4",
+      "edges_cut": 1581,
+      "floor": 0.9,
+      "floor_label": "0.90",
+      "n_families": 284
+    }
+  ],
+  "exon_dependence": {
+    "best_exon_stronger": false,
+    "div_with_hi_exon_conf": 0.011214285714285715,
+    "div_with_hi_exon_n": 14,
+    "div_with_lo_exon_conf": 0.0028700787401574803,
+    "div_with_lo_exon_n": 127,
+    "divergent_conf_frac": 0.0036985815602836878,
+    "divergent_reads": 104191,
+    "divergent_residual_frac": 0.001430065936597211,
+    "divergent_residual_mapq0": 149,
+    "n_divergent_fams": 141,
+    "r_conf_vs_best_exon": 0.12388277231857797,
+    "r_conf_vs_mean_matched": 0.14015504072373272
+  },
+  "figure_path": "fig_read_confusability_boundary.png",
+  "floor_impact": [
+    {
+      "bam_cut_frac": 0.5285664213109008,
+      "floor": 0.7,
+      "margin_cut_frac": 0.5,
+      "metric": "recip_best_mean"
+    },
+    {
+      "bam_cut_frac": 0.6740273396424816,
+      "floor": 0.8,
+      "margin_cut_frac": 0.5549915397631133,
+      "metric": "recip_best_mean"
+    },
+    {
+      "bam_cut_frac": 0.745881528215913,
+      "floor": 0.85,
+      "margin_cut_frac": 0.6548223350253807,
+      "metric": "recip_best_mean"
+    },
+    {
+      "bam_cut_frac": 0.7879425166491413,
+      "floor": 0.9,
+      "margin_cut_frac": 0.7368866328257191,
+      "metric": "recip_best_mean"
+    }
+  ],
+  "floor_impact_core_recip_proxy": [
+    {
+      "bam_cut_frac": 0.5138450753592709,
+      "floor": 0.7,
+      "margin_cut_frac": 0.5304568527918782,
+      "metric": "core_recip"
+    },
+    {
+      "bam_cut_frac": 0.5394321766561514,
+      "floor": 0.8,
+      "margin_cut_frac": 0.5956006768189509,
+      "metric": "core_recip"
+    },
+    {
+      "bam_cut_frac": 0.6105853487556958,
+      "floor": 0.85,
+      "margin_cut_frac": 0.6370558375634517,
+      "metric": "core_recip"
+    },
+    {
+      "bam_cut_frac": 0.6140904311251314,
+      "floor": 0.9,
+      "margin_cut_frac": 0.6624365482233503,
+      "metric": "core_recip"
+    }
+  ],
+  "mass_concentration": [
+    {
+      "bam": "2704/2853",
+      "bam_frac": 0.9477742726954084,
+      "margin": "927/1182",
+      "margin_frac": 0.7842639593908629,
+      "t": 0.85
+    },
+    {
+      "bam": "1711/2853",
+      "bam_frac": 0.5997195934104451,
+      "margin": "777/1182",
+      "margin_frac": 0.6573604060913706,
+      "t": 0.95
+    },
+    {
+      "bam": "1669/2853",
+      "bam_frac": 0.5849982474588152,
+      "margin": "714/1182",
+      "margin_frac": 0.6040609137055838,
+      "t": 0.98
+    },
+    {
+      "bam": "1488/2853",
+      "bam_frac": 0.5215562565720294,
+      "margin": "580/1182",
+      "margin_frac": 0.4906937394247039,
+      "t": 0.99
+    }
+  ],
+  "n_families": 393,
+  "pr_optimal_floor": {
+    "domain_share_knee": 0.8,
+    "f1_ep_optimal_floor": 0.0,
+    "f1_ep_optimal_value": 0.884439751271905,
+    "f1_task_optimal_floor": 0.0,
+    "f1_task_optimal_value": 0.8864024365482234,
+    "no_interior_f1_optimum": true,
+    "operative_floor": 0.8,
+    "purity_monotone_increasing": true,
+    "rationale": "monotone P/R trade: no interior F1 max (both F1 series peak at floor=off); the shipped floor is a PURITY choice = smallest floor excluding all named domain-shares (O1-precision), not a read-resolvability boundary",
+    "recall_monotone_decreasing": true,
+    "shipped_floor": 0.8,
+    "table": [
+      {
+        "E_p": 0.8918,
+        "P_task": 0.8958,
+        "R_oracle": 0.8772,
+        "dshare": "0/4",
+        "dshare_frac": 0.0,
+        "f1_ep": 0.884439751271905,
+        "f1_task": 0.8864024365482234,
+        "floor": 0.0,
+        "floor_label": "off",
+        "n_families": 573
+      },
+      {
+        "E_p": 0.9612,
+        "P_task": 0.8788,
+        "R_oracle": 0.5965,
+        "dshare": "3/4",
+        "dshare_frac": 0.75,
+        "f1_ep": 0.7361568979906272,
+        "f1_task": 0.7106408188165119,
+        "floor": 0.7,
+        "floor_label": "0.70",
+        "n_families": 335
+      },
+      {
+        "E_p": 0.9656,
+        "P_task": 0.9091,
+        "R_oracle": 0.5789,
+        "dshare": "3/4",
+        "dshare_frac": 0.75,
+        "f1_ep": 0.7238405179669796,
+        "f1_task": 0.7073628897849462,
+        "floor": 0.75,
+        "floor_label": "0.75",
+        "n_families": 320
+      },
+      {
+        "E_p": 0.9674,
+        "P_task": 0.9032,
+        "R_oracle": 0.5614,
+        "dshare": "4/4",
+        "dshare_frac": 1.0,
+        "f1_ep": 0.7104897435897436,
+        "f1_task": 0.692416332104329,
+        "floor": 0.8,
+        "floor_label": "0.80",
+        "n_families": 307
+      },
+      {
+        "E_p": 0.9761,
+        "P_task": 0.8929,
+        "R_oracle": 0.5088,
+        "dshare": "4/4",
+        "dshare_frac": 1.0,
+        "f1_ep": 0.6689200350191932,
+        "f1_task": 0.6482236141827781,
+        "floor": 0.85,
+        "floor_label": "0.85",
+        "n_families": 293
+      },
+      {
+        "E_p": 0.9789,
+        "P_task": 0.9259,
+        "R_oracle": 0.4912,
+        "dshare": "4/4",
+        "dshare_frac": 1.0,
+        "f1_ep": 0.6541537038296715,
+        "f1_task": 0.6418771858019899,
+        "floor": 0.9,
+        "floor_label": "0.90",
+        "n_families": 284
+      }
+    ]
+  },
+  "r_margin_mean_matched": 0.08433861801189182,
+  "r_margin_recip_best": 0.30196101622302635,
+  "segment_local": [
+    {
+      "bam_mapq0": 1,
+      "best_exon": 0.0,
+      "core_recip": 0.2939,
+      "depth": 339,
+      "gene": "RPL7",
+      "margin_conf": 35,
+      "n_realn": 40,
+      "recip_best_mean": 0.1473
+    },
+    {
+      "bam_mapq0": 2,
+      "best_exon": 0.0,
+      "core_recip": 0.5115,
+      "depth": 1439,
+      "gene": "HNRNPA1",
+      "margin_conf": 31,
+      "n_realn": 40,
+      "recip_best_mean": 0.3993
+    },
+    {
+      "bam_mapq0": 17,
+      "best_exon": 0.0,
+      "core_recip": 0.6059,
+      "depth": 190,
+      "gene": "RPL9",
+      "margin_conf": 29,
+      "n_realn": 40,
+      "recip_best_mean": 0.4015
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.7732,
+      "depth": 170,
+      "gene": "RPL10L",
+      "margin_conf": 28,
+      "n_realn": 40,
+      "recip_best_mean": 0.2444
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.4671,
+      "depth": 129,
+      "gene": "LOC101138011",
+      "margin_conf": 20,
+      "n_realn": 40,
+      "recip_best_mean": 0.161
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.2079,
+      "depth": 313,
+      "gene": "LOC101140892",
+      "margin_conf": 11,
+      "n_realn": 40,
+      "recip_best_mean": 0.1981
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.742,
+      "depth": 341,
+      "gene": "RFX6",
+      "margin_conf": 8,
+      "n_realn": 40,
+      "recip_best_mean": 0.174
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.3117,
+      "depth": 1618,
+      "gene": "RBL2",
+      "margin_conf": 6,
+      "n_realn": 40,
+      "recip_best_mean": 0.2305
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.6307,
+      "depth": 368,
+      "gene": "GNG5",
+      "margin_conf": 5,
+      "n_realn": 40,
+      "recip_best_mean": 0.2321
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.4016,
+      "depth": 332,
+      "gene": "LOC101137900",
+      "margin_conf": 3,
+      "n_realn": 40,
+      "recip_best_mean": 0.3566
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.4304,
+      "depth": 143,
+      "gene": "TMCO6",
+      "margin_conf": 2,
+      "n_realn": 40,
+      "recip_best_mean": 0.0999
+    },
+    {
+      "bam_mapq0": 84,
+      "best_exon": 0.0,
+      "core_recip": 0.3318,
+      "depth": 340,
+      "gene": "MED22",
+      "margin_conf": 2,
+      "n_realn": 40,
+      "recip_best_mean": 0.0542
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.2029,
+      "depth": 42,
+      "gene": "LOC101131852",
+      "margin_conf": 1,
+      "n_realn": 40,
+      "recip_best_mean": 0.3345
+    },
+    {
+      "bam_mapq0": 0,
+      "best_exon": 0.0,
+      "core_recip": 0.7331,
+      "depth": 1122,
+      "gene": "GLUD1",
+      "margin_conf": 1,
+      "n_realn": 40,
+      "recip_best_mean": 0.6082
+    }
+  ]
+}
