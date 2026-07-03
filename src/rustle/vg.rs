@@ -1,3 +1,10 @@
+//! SHARED TENDRIL (StringTie-era assembler, slated for removal) -- but the thesis layer
+//! still imports 8 symbols from here: reverse_complement, FamilyGroup, fnv1a64,
+//! graph_exon_seqs, exon_kmer_similarity, enumerate_diagnostic_sites,
+//! discover_family_groups_layer2, build_multimap_index_from_secondary_index.
+//! EXTRACT the family-discovery core into a kept module (e.g. vg_family) BEFORE removing
+//! this file (also bidirectionally coupled: vg.rs itself calls vg_family ~47x).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend the assembler / EM-reweighting body.
 //! Variation graph mode for gene family assembly.
 //!
 //! Links related genomic loci (gene family copies) using multi-mapping read

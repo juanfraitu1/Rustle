@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! trace events for pairwise debugging with the original algorithm.
 //!
 //! Output format matches instrumentation so logs can be grepped,

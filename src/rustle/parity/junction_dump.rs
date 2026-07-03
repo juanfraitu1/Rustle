@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Multi-stage **junction-set** dump for StringTie vs Rustle parity.
 //!
 //! Enable with `RUSTLE_PARITY_JUNCTION_TSV=/path/junctions.tsv`. Each row is one bundle key

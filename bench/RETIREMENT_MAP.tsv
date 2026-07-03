@@ -1,0 +1,99 @@
+module	class	reason
+# ============================================================================
+# Rustle retirement map. Class legend:
+#   DEAD-flow        = pure network-flow (retire FIRST, user priority #1)
+#   DEAD-stringtie   = StringTie-era transcript assembler; slated for removal
+#   SHARED-tendril   = assembler file, but thesis imports a named symbol; EXTRACT that symbol before removal (softer marker)
+#   KEEP-thesis      = multi-copy-family thesis layer (vg_family + thesis bins)
+#   KEEP-foundational= low-level type/IO used by BOTH thesis and assembler; stays
+#   DEAD-orphan      = file present but NOT declared as a module (not compiled)
+# Thesis roots: bins copy_assign / gw_family_catalog / asj / asj_verify -> import ONLY rustle::genome + rustle::vg_family::*
+# ============================================================================
+src/rustle/vg_family/	KEEP-thesis	Whole thesis layer: O1 family detect/split/read_conflict, O2 copy_assign(+pipeline), O3 allele_specific_junctions, O4 absent_copy. Consumed by all 4 thesis bins. DO NOT TOUCH.
+src/rustle/genome.rs	KEEP-thesis	GenomeIndex used 28x across vg_family + directly by copy_assign/asj_verify bins. Depends only on types. Clean keep.
+src/rustle/types.rs	KEEP-foundational	Bundle, BundleRead, DetHashMap, DetHashSet, RunConfig, Junction, JunctionStats used pervasively by thesis. REVERSE TENDRIL: types calls crate::stringtie_parity::stringtie_exact() (2x) + crate::vg_family::* (fine). Relocate stringtie_exact() before deleting stringtie_parity.
+src/rustle/bam.rs	KEEP-foundational	open_bam / exons_from_cigar / record_to_bundle_read / extract_mismatches_vs_fasta used by thesis. REVERSE TENDRIL: `use crate::polya` -> polya::detect_polya_aligned_unaligned (1 call). Relocate that fn before deleting polya.
+src/rustle/util/mod.rs	KEEP-foundational	bitset/bitvec/constants/coord/hard_counters. No crate deps. Needed transitively by types + graph. Keep.
+src/rustle/util/bitset.rs	KEEP-foundational	Low-level bitset. No crate deps.
+src/rustle/util/bitvec.rs	KEEP-foundational	Low-level. No crate deps.
+src/rustle/util/constants.rs	KEEP-foundational	Constants. No crate deps.
+src/rustle/util/coord.rs	KEEP-foundational	Coordinate helpers. No crate deps.
+src/rustle/util/hard_counters.rs	KEEP-foundational	Counters. No crate deps.
+src/rustle/vg.rs	SHARED-tendril	378KB. Thesis imports 8 symbols (reverse_complement, FamilyGroup, fnv1a64, graph_exon_seqs, exon_kmer_similarity, enumerate_diagnostic_sites, discover_family_groups_layer2, build_multimap_index_from_secondary_index). BIDIRECTIONAL: vg.rs itself calls vg_family 47x. Heaviest extraction: split family-discovery core -> kept module, mark EM-reweighting/-G2 body dead.
+src/rustle/graph.rs	SHARED-tendril	Graph + Graph::new used by vg_family::family_graph and layer2. Otherwise assembler graph (also re-exported in lib.rs). Extract/replace Graph usage before removal. Deps: util,types only (clean).
+src/rustle/path_extract.rs	SHARED-tendril	551KB. Thesis imports ONLY the `Transcript` type (used by layer2). Body pulls in max_flow, parse_trflong_st, stringtie_parity, parity (all DEAD). EXTRACT `Transcript` to a kept types module, then delete.
+src/rustle/bundle.rs	SHARED-tendril	101KB. Thesis imports recompute_junction_stats + collect_secondary_index_from_bam (the latter re-exported by vg_family/secondary_index.rs). EXTRACT those 2 fns, then delete. Body pulls bundle_builder/junction_correction/assembly_mode (DEAD).
+src/rustle/max_flow.rs	DEAD-flow	110KB PURE network flow (max-flow seeded path capacity). Zero thesis use (verified). Users: junction_correction, path_extract, killed_junctions, parse_trflong_st, transfrag_process, pipeline, parity. RETIRE FIRST.
+src/rustle/global_flow.rs	DEAD-flow	92KB greedy flow decomposition (RUSTLE_GREEDY_DECOMPOSE). Zero thesis use. Only users: lib.rs + pipeline.rs. RETIRE FIRST.
+src/rustle/pipeline.rs	DEAD-stringtie	952KB assembler orchestrator (rustle::run). Entry of the whole StringTie pipeline. Not thesis-used.
+src/rustle/main.rs	DEAD-stringtie	`rustle` assembler binary. Calls pipeline::run + merge_mode. Legacy entry point; thesis has its own bins.
+src/rustle/transcript_filter.rs	DEAD-stringtie	408KB isofrac/pairwise/runoff/dedup/merge. Assembler filtering.
+src/rustle/transfrag_process.rs	DEAD-stringtie	147KB transfrag creation/processing. Uses max_flow.
+src/rustle/graph_build.rs	DEAD-stringtie	168KB build assembler graph from bundle nodes.
+src/rustle/killed_junctions.rs	DEAD-stringtie	91KB good_junc gate / junction aggregation. Uses max_flow.
+src/rustle/map_reads.rs	DEAD-stringtie	104KB map reads/transfrags onto graph. Only users: pipeline + vg.rs (vg.rs tendril-support until vg extracted).
+src/rustle/bundle_builder.rs	DEAD-stringtie	91KB sub-bundle building. Pulled by bundle.rs (tendril-support).
+src/rustle/longtrim.rs	DEAD-stringtie	53KB long-read boundary trimming.
+src/rustle/junction_graph_st.rs	DEAD-stringtie	53KB StringTie bundlenode graph inference (_st).
+src/rustle/parse_trflong_st.rs	DEAD-stringtie	71KB byte-faithful ST parse_trflong port (_st). Uses max_flow. Pulled by path_extract (tendril-support).
+src/rustle/junction_correction.rs	DEAD-stringtie	32KB sserror junction correction. Uses max_flow. Pulled by junctions/bundle.
+src/rustle/junctions.rs	DEAD-stringtie	Splice-junction data structures. Thesis uses types::Junction NOT this. Only users: pipeline + parity/junction_dump.
+src/rustle/junction_graph.rs	DEAD-stringtie	Exon-endpoint clustering for junction normalization. Assembler.
+src/rustle/coverage_trim.rs	DEAD-stringtie	Coverage-based transcript trimming.
+src/rustle/read_boundaries.rs	DEAD-stringtie	Read boundary inference for bundles.
+src/rustle/cross_strand_predcluster.rs	DEAD-stringtie	Post-pipeline cross-strand KRI (gated, default off).
+src/rustle/parallel_predprune.rs	DEAD-stringtie	Post-pipeline m/k-class pruning (gated, default off).
+src/rustle/single_exon_pileup.rs	DEAD-stringtie	PolyA-driven single-exon detector (gated, opt-in).
+src/rustle/predcluster_st.rs	DEAD-stringtie	RUSTLE_PREDCLUSTER_ST ST-faithful prediction selection (default off).
+src/rustle/stringtie_parity.rs	DEAD-stringtie	RUSTLE_STRINGTIE_EXACT meta-flag scaffold. REVERSE TENDRIL: stringtie_exact() called by types.rs + junctions.rs -> relocate that tiny fn before deleting.
+src/rustle/terminal_oracle.rs	DEAD-stringtie	RUSTLE_TERMINAL_ORACLE inject ST terminal edges (analysis-only, default off).
+src/rustle/ml_filter.rs	DEAD-stringtie	ML isofrac alternative (depth-3 tree). Used by main + pipeline.
+src/rustle/gene_abundance.rs	DEAD-stringtie	Gene-level abundance summary (assembler output).
+src/rustle/merge_transcripts.rs	DEAD-stringtie	Multi-sample transcript merge.
+src/rustle/merge_mode.rs	DEAD-stringtie	Merge mode (multi-sample). Used by main bin only.
+src/rustle/nascent.rs	DEAD-stringtie	Nascent transcript handling.
+src/rustle/polya.rs	DEAD-stringtie	PolyA site detection. REVERSE TENDRIL: bam.rs uses polya::detect_polya_aligned_unaligned -> relocate that fn before deleting.
+src/rustle/tss_tts.rs	DEAD-stringtie	TSS/TTS refinement.
+src/rustle/hard_boundaries.rs	DEAD-stringtie	Hard bundle boundary detection.
+src/rustle/exon_merge.rs	DEAD-stringtie	Exon boundary merging.
+src/rustle/nodecov.rs	DEAD-stringtie	Node coverage accumulation.
+src/rustle/bpcov.rs	DEAD-stringtie	Base-pair coverage prefix sums.
+src/rustle/report_losses.rs	DEAD-stringtie	Diagnostic loss reporting.
+src/rustle/guide_path_fixer.rs	DEAD-stringtie	Verify/reconstruct guide transcript paths (guided assembly).
+src/rustle/per_bnode_graph.rs	DEAD-stringtie	Junction-expanded per-bundlenode graphs.
+src/rustle/assembly_mode.rs	DEAD-stringtie	Assembly mode dispatch. Pulled by bundle (tendril-support).
+src/rustle/treepat.rs	DEAD-stringtie	Tree pattern matching for path patterns.
+src/rustle/gtf.rs	DEAD-stringtie	GTF read/write for assembler output. Not thesis-imported (bins emit TSV/JSON).
+src/rustle/reference_gtf.rs	DEAD-stringtie	Reference annotation loading for guided assembly.
+src/rustle/vg_runtime.rs	DEAD-stringtie	Process-global "--vg active" flag for anchored-coverage channel (assembler -vg mode).
+src/rustle/vg_ingestion.rs	DEAD-stringtie	Legacy GTF/GFF ingestion for template-based family assembly. Only user: pipeline.
+src/rustle/family_manifest.rs	DEAD-stringtie	Legacy TSV-manifest R-family ingestion. Only user: pipeline.
+src/rustle/vg_eval.rs	DEAD-stringtie	Legacy -G2 reports. Only user: pipeline.
+src/rustle/annotation_families.rs	DEAD-stringtie	Legacy -G2 annotation->paralog families. Users: pipeline, vg_eval, vg.rs (vg.rs tendril-support). NOT the thesis O1 catalog.
+src/rustle/psv_fasta.rs	DEAD-stringtie	Legacy opt-in PSV-FASTA emission. Users: pipeline, vg.rs (tendril-support).
+src/rustle/graph_comparison.rs	DEAD-stringtie	Compare de-novo graphs vs reference GTF (diagnosis). Only user: pipeline.
+src/rustle/debug_stage.rs	DEAD-stringtie	Assembler stage debug harness.
+src/rustle/snapshot.rs	DEAD-stringtie	Per-bundle JSONL snapshots for 1:1 ST comparisons.
+src/rustle/futuretr.rs	DEAD-stringtie	Future-transcript tracing helper.
+src/rustle/junction_trace.rs	DEAD-stringtie	Per-junction pipeline tracing for bottleneck diagnosis.
+src/rustle/junction_out.rs	DEAD-stringtie	Junction output helper (assembler).
+src/rustle/strand_resolve.rs	DEAD-orphan	Not declared as a module in lib.rs; not compiled. Assembler-era.
+src/rustle/assembly_constants.rs	DEAD-orphan	Not declared as a module in lib.rs; not compiled. Assembler constants.
+src/rustle/tracing/mod.rs	DEAD-stringtie	Assembler tracing: events + stage TSV dumps + per-reference fate.
+src/rustle/tracing/events.rs	DEAD-stringtie	30KB assembler trace events.
+src/rustle/tracing/pipeline.rs	DEAD-stringtie	Assembler pipeline tracing hooks.
+src/rustle/tracing/reference.rs	DEAD-stringtie	30KB per-reference transcript fate tracing.
+src/rustle/parity/mod.rs	DEAD-stringtie	StringTie-parity dump harness.
+src/rustle/parity/decisions.rs	DEAD-stringtie	Parity decision log.
+src/rustle/parity/flow_iter_dump.rs	DEAD-flow	Dumps max_flow/global_flow iterations for ST parity. Flow-coupled.
+src/rustle/parity/graph_edges_dump.rs	DEAD-stringtie	Parity graph-edges dump.
+src/rustle/parity/junction_dump.rs	DEAD-stringtie	Parity junction dump (uses crate::junctions).
+src/rustle/parity/partition_dump.rs	DEAD-stringtie	Parity partition dump.
+src/rustle/parity/shadow.rs	DEAD-stringtie	Parity shadow-run comparison.
+src/rustle/parity/trace_dump.rs	DEAD-stringtie	Parity trace dump.
+# --- Non-thesis bins (also legacy assembler-era; not the 4 thesis bins) ---
+src/bin/rustle.rs	DEAD-stringtie	Trivial re-exec shim to main.rs assembler.
+src/bin/debug_poa.rs	KEEP-foundational	POA debug helper; harmless standalone. (Optional keep/drop.)
+src/bin/bam_header.rs	KEEP-foundational	BAM header dump utility; standalone.
+src/bin/filter_bam_by_as.rs	KEEP-foundational	Filter BAM by AS tag; standalone utility used in thesis benches.
+src/bin/index_bam.rs	KEEP-foundational	BAM indexer utility; standalone.

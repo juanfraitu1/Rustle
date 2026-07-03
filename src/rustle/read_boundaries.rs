@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Read boundaries for longtrim (lstart/lend; original algorithm collect_read_boundaries).
 //! CPred in has predno (position) and cov; used by longtrim to split nodes at read starts/ends.
 

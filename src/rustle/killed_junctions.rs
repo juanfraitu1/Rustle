@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Killed junctions and witness logic (good_junc strand=0; original algorithm V99 killed_junction_pairs,
 //! killed_junction_orphan; has_lr_witness_two_splices; witness left/right = leftsupport/rightsupport).
 

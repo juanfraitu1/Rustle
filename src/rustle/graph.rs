@@ -1,3 +1,7 @@
+//! SHARED TENDRIL (StringTie-era assembler, slated for removal) -- but the thesis layer
+//! still imports `Graph` (+ `Graph::new`) from here (vg_family::family_graph, layer2).
+//! EXTRACT `Graph` to a kept module BEFORE removing this file (deps: util, types only).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Splice graph: nodes = exon segments, edges = collinear + junction edges.
 
 use crate::util::bitset::NodeSet;

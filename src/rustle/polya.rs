@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! PolyA/T tail detection (reference-style).
 //! Used for strand and boundary evidence.
 //! shorten_terminal_exon: shortenFirstExon/shortenLastExon (trim first/last exon by max_trim bp).

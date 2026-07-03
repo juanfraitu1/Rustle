@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Graph-based merge of transcripts (merge mode: CMTransfrag, process_merge_transfrags,
 //! merge_transfrags, printMergeResults). Builds a splice graph from the union of input exons,
 //! creates one transfrag per transcript, runs process_merge_transfrags and merge_transfrags,

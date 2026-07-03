@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Map bundle reads onto graph -> transfrags (get_fragment_pattern + update_abundance).
 //!
 //! Long-read only: all reads → abundance, longread=true.

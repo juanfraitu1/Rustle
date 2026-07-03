@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! ML-based isofrac filter: depth-3 decision tree trained on GGO_19 transcript features.
 //! Replaces the longunder gate in isofrac_with_summary when --filter-mode ml is set.
 //! Only active in de novo mode (is_guided=false); guided mode always falls back to isofrac.

@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Coverage-based node splitting (find_trims_wsign + trimnode_all).
 //! Splits graph nodes at positions where coverage drops significantly and adds
 //! interior source/sink edges plus synthetic transfrags.

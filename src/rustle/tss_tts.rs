@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! TSS/TTS clustering and trim points (cluster_positions_with_counts, add_cpas_trimpoint).
 
 /// CPAS_POS_BIN (merge positions within this many bp).

@@ -1,3 +1,7 @@
+//! SHARED TENDRIL (StringTie-era assembler, slated for removal) -- but the thesis layer
+//! still imports ONLY the `Transcript` type from here (vg_family::layer2).
+//! EXTRACT `Transcript` to a kept types module BEFORE removing this file.
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Extract transcript paths from transfrags.
 //! Path extension via extend_path_left/right (back_to_source_fast_long / fwd_to_sink_fast_long),
 //! LR witness validation, poly-tail trimming, hardstart/hardend enforcement, and Edmonds-Karp flow.

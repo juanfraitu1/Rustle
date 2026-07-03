@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Splice-graph **edges** dump for cross-tool parity / Python visualizers.
 //!
 //! Enable with `RUSTLE_PARITY_GRAPH_EDGES_TSV=/path/edges.tsv`. Complements

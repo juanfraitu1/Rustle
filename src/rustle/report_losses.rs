@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Parse gffcompare annotation to report where reference transcripts are lost.
 //! Reads ref GTF (transcript IDs) and gffcompare tracking file; reports missed and best class per ref.
 

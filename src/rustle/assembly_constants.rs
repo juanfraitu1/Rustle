@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; ORPHAN (not declared as a module anywhere; not compiled).
+//! Slated for removal. NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Assembly constants — single source of truth for exon extension, trimming, and tolerance.
 //!
 //! ## Constants

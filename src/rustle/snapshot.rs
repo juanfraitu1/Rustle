@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Per-bundle JSONL snapshots for fast, 1:1 comparisons between:
 //! - rustle pipeline internals (bundle -> graph -> transfrags -> transcripts)
 //! - the original algorithm trace-derived “backward” packages (normalized with scripts)

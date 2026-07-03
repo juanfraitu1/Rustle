@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Parse reference GTF for trace mode: load transcripts with exons (0-based start inclusive, end exclusive).
 //! process_refguides: map guides to graph paths and set hardstart/hardend (process_refguides).
 

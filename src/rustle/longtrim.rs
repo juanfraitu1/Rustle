@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Longtrim direct-style node splitting from read-boundary points (lstart/lend).
 //! This mirrors longtrim behavior more closely than simple peak splitting:
 //! scan boundary events in genomic order, split when local coverage contrast supports

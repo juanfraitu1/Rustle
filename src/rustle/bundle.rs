@@ -1,3 +1,8 @@
+//! SHARED TENDRIL (StringTie-era assembler, slated for removal) -- but the thesis layer
+//! still imports two fns from here: `recompute_junction_stats` and
+//! `collect_secondary_index_from_bam` (re-exported by vg_family::secondary_index).
+//! EXTRACT those two fns to a kept module BEFORE removing this file.
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Bundle detection: group reads by chromosome/strand and junction connectivity.
 //! Optional CGroup-based bundlenode construction (union-find grouping).
 

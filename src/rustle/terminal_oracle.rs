@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Injection oracle (analysis-only, default OFF via RUSTLE_TERMINAL_ORACLE=<path>).
 //! On identical-node bundles, override Rustle's synthetic source/sink edge set with
 //! StringTie's captured `graph_edge` set, reconciling the synthetic transfrag abundances,

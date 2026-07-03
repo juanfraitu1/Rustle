@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Byte-faithful port of StringTie's `parse_trflong` and `update_abundance`.
 //!
 //! Goal: produce a Rust translation of the corresponding rlink.cpp logic that,

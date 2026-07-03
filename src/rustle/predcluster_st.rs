@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! StringTie-faithful prediction SELECTION (sub-project 1). Default OFF
 //! (RUSTLE_PREDCLUSTER_ST=1). Runs ST's selection sub-stages in ST's order on the
 //! candidate predictions Rustle's flow already produced. See

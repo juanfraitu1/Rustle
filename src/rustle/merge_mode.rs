@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! GTF merge mode: combine transcript annotations from one or more GTF files.
 //! This is a structural merge (no abundance estimation), intended to mirror the original algorithm-style
 //! merge workflows where transcript models are consolidated into a non-redundant set.

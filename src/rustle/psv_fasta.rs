@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Opt-in PSV-FASTA emission (`RUSTLE_VG_PSV_FASTA`).
 //!
 //! StringTie is sequence-blind: it emits coordinates, never the bases that distinguish paralog

@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era NETWORK FLOW; slated for removal (retire FIRST, user priority #1).
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Global flow extraction layer.
 //!
 //! Modules:

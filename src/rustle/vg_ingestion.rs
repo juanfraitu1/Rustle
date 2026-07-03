@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! GTF/GFF ingestion mode: Parse transcripts and create template families for VG analysis.
 //!
 //! This mode allows Rustle to ingest a reference GTF/GFF file (e.g., StringTie output)

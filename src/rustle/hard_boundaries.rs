@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Annotate graph nodes with polyA/T evidence and hardstart/hardend.
 //!
 //! StringTie-parity port (rlink.cpp:5927-5953, 6162-6171):

@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Junction correction helpers that mirror the original algorithm's inline junction handling.
 //! Rustle intentionally does not keep a separate ratio-cluster rewrite pass here,
 //! because `` performs the relevant demotions inline in the `higherr` block.

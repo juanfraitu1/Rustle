@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! -G2 annotation -> position-agnostic paralog families.
 //! Clusters annotation transcripts into families by SHARED-EXON SEQUENCE similarity
 //! (never coordinate proximity), gated by RunConfig.family_exon_similarity.

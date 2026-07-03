@@ -1,3 +1,6 @@
+//! DEAD CODE -- StringTie-era assembler; slated for removal.
+//! NOT part of the multi-copy-family thesis (O1 family-def / O2 copy-assign / O3 ASJ / O4 absent-copy).
+//! See docs/RETIREMENT_AND_MIGRATION.md. Do not extend.
 //! Optional **multi-kind** trace TSV for StringTie-style parity debugging.
 //!
 //! Enable with `RUSTLE_PARITY_TRACE_TSV=/path/trace.tsv`. Rows use a small fixed header and a
