@@ -2,9 +2,11 @@
 """FAMILY-LEVEL (block-level) precision/recall of the CURRENT DEFAULT family
 definition = the RNA-only recall-preserving refined oracle.
 
-CURRENT DEFAULT catalog  : bench/family_rna_refine.tsv (607 multi-copy families,
+CURRENT DEFAULT catalog  : bench/family_rna_refine.tsv (573 multi-copy families,
                            rule KEEP iff core_recip>=0.19 AND aln_frac>=0.24 ->
-                           gamma-quasi-clique(0.20) -> allele-demote; committed cc472a4).
+                           gamma-quasi-clique(0.20) -> recombinant-split gate ->
+                           multi-repeat-bridge gate (3rd VG-native gate, T=8/C=2;
+                           MULTI_REPEAT_BRIDGE_GATE.md) -> allele-demote).
 We LOAD that catalog directly (member_dn per family) -- we DO NOT re-derive it.
 
 We reuse the SHIPPED eval machinery so the numbers match the committed catalogs:
@@ -27,6 +29,15 @@ THREE clearly-labelled family/BLOCK-level truths:
 
 Legacy comparison = shipped gamma-quasi-clique(core_recip>=0.13, gamma 0.20), recomputed
 here AND cross-checked vs the committed graph_def_refine_sweep.json baseline.
+
+MULTI-REPEAT-BRIDGE GATE SENSITIVITY (honest disclosure).  The 3rd VG-native gate is deployed
+catalog-wide (T=8/C=2 cuts 61 DISCONNECTED families, 605 -> 573).  Its PRECISION headline is the
+diploid-oracle recall R_oracle (truth 3, HELD 50/57 = 0.8772) + E_p purity (truth 1, IMPROVES
+0.8694 -> 0.8918, distinct-FP 6 -> 4).  Both of those are BLIND by construction to the gate's only
+cost -- the single-locus glued passengers dropped by the <2-loci filter (R_oracle sees only the 57
+named diploid genes; E_p excludes mega-families).  That cost is measured HERE by truth (2)
+DNA-loose: pair_projection_recall_real_cdna 0.9196 -> 0.9087 and component_recovery 182/187 ->
+177/182 -- the operative sensitivity probe for this gate.
 
 Deterministic (PYTHONHASHSEED=0).
 Run: PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/family_level_pr_current.py

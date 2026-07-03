@@ -587,6 +587,108 @@ def apply_gate(cat_blocks_by_fid, order, plans, t, several, allowed=None):
     return new_blocks, cut_fids
 
 
+# ===================================================================================================
+# WIRED STAGE -- reusable entry points for bench/family_rna_refine.py (the DEFAULT-ON 3rd VG-native
+# gate).  These REUSE the exact CHARACTERIZE plan (characterize) + gate decision (gate_cut) + full-exon
+# component split (same shape as apply_gate) above -- nothing re-derived.  Mirrors the shape of
+# recombinant_split.split_block / split_families so family_rna_refine can drop it in after the
+# recombinant-split stage.  Deterministic (PYTHONHASHSEED=0; sorted components, cached loaders).
+# ===================================================================================================
+# CONSERVATIVE operating point (bench/MULTI_REPEAT_BRIDGE_GATE.md: the genuine "several-repeat" point
+# = 15/35 removed, P_Ep +0.022, 0 genuine paralogs lost, R_oracle 50/57 held).  Do NOT re-derive.
+WIRED_MULT_MIN = 8       # T: per-node canonical-minimizer multiplicity
+WIRED_COUNT_MIN = 2      # C: >= C distinct cross-component shared VG nodes at mult >= T
+
+_STAGE = None
+
+
+def _stage_loaders():
+    """Load (and cache) the RNA exon-structure + genome + VG-multiplicity inputs the gate needs.
+    Same provenance as the CHARACTERIZE stage; raises a clear error (mirroring the repeat-hub /
+    recombinant-split gates) so the caller can --no-repeat-bridge-gate if an input is missing."""
+    global _STAGE
+    if _STAGE is None:
+        for p in (R.SKEL_TSV, R.META_TSV, R.GENOME, V.GENOME, VG_TSV):
+            if not os.path.exists(p):
+                raise FileNotFoundError(
+                    f"multi-repeat-bridge gate is DEFAULT-ON but {p} is missing; "
+                    f"disable with --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1")
+        mult, cyclic = load_node_mult()
+        _STAGE = dict(R_skel=R.load_skeletons(), strand=R.load_strand(),
+                      vskel=V.load_skeletons(), meta=F.load_meta(),
+                      fa_up=pysam.FastaFile(R.GENOME), fa_mask=pysam.FastaFile(V.GENOME),
+                      mult=mult, cyclic=cyclic)
+    return _STAGE
+
+
+def _block_members(block, genes, gene_of_dn):
+    """member dicts (dn,gene,chrom,start,end) for a block of DN loci -- the SAME shape as
+    recombinant_split._members / recombination_bridge_detector member records (drops DN not in
+    `genes`; family_exons further drops DN without a skeleton -> leftover singletons on split)."""
+    ms = []
+    for dn in sorted(block):
+        g = genes.get(dn)
+        if g is None:
+            continue
+        ms.append(dict(dn=dn, gene=gene_of_dn.get(dn, "NA"),
+                       chrom=g["chrom"], start=g["start"], end=g["end"]))
+    return ms
+
+
+def split_family_repeat_bridge(block, genes, gene_of_dn, t=WIRED_MULT_MIN, several=WIRED_COUNT_MIN,
+                               res=None):
+    """Return a PARTITION of `block` (list of sorted DN-lists).  If the multi-repeat-bridge
+    CONJUNCTION gate fires -- (>=2 full-exon components AND cross-component best-exon-id < ID_THRESH)
+    AND (>= `several` distinct cross-component shared VG minimizer nodes each with global multiplicity
+    >= `t`) AND the same-gene guard (never separate same-gene loci) -- replace the block by its
+    full-exon components (+ leftover no-skeleton singletons); else [sorted(block)].  REUSES
+    characterize() (plan) + gate_cut() (decision) + the apply_gate component-split shape.
+    `plan` is also returned for bookkeeping (or None when the gate does not fire)."""
+    res = res or _stage_loaders()
+    members = _block_members(block, genes, gene_of_dn)
+    if len(members) < 2:
+        return [sorted(block)], None
+    pl = characterize(-1, "wired", "wired", members, res["R_skel"], res["strand"], res["fa_up"],
+                      res["meta"], res["vskel"], res["fa_mask"], res["mult"], res["cyclic"])
+    if pl is None or pl.get("skipped") or not gate_cut(pl, t, several):
+        return [sorted(block)], None
+    covered = set()
+    parts = []
+    for comp in pl["comps_dn"]:                       # full-exon components after cutting the bridges
+        parts.append(sorted(comp)); covered |= set(comp)
+    for dn in sorted(set(block) - covered):           # dropped-by-family_exons members -> singleton
+        parts.append([dn])
+    return sorted((p for p in parts if p), key=lambda c: c[0]), pl
+
+
+def split_families_repeat_bridge(refined, genes, gene_of_dn, t=WIRED_MULT_MIN, several=WIRED_COUNT_MIN):
+    """Apply the multi-repeat-bridge gate to a list of refined family blocks (post recombinant-split).
+    Returns (new_refined, split_info) where split_info lists the families CUT (dominant/gene set +
+    subfam dominants + n_loci/n_parts).  EVERY cut family is DISCONNECTED (no full shared exon) by
+    construction of gate_cut.  Mirrors recombinant_split.split_families.  Cached loaders."""
+    res = _stage_loaders()
+    new_refined = []
+    split_info = []
+    for b in refined:
+        parts, _ = split_family_repeat_bridge(b, genes, gene_of_dn, t, several, res=res)
+        if len(parts) > 1:
+            pre_genes = sorted({gene_of_dn.get(dn) for dn in b
+                                if gene_of_dn.get(dn) not in (None, "NA")})
+            dom = collections.Counter(
+                gene_of_dn.get(dn) for dn in b
+                if gene_of_dn.get(dn) not in (None, "NA")).most_common(1)
+            doms = []
+            for p in parts:
+                gs = [gene_of_dn.get(dn) for dn in p if gene_of_dn.get(dn) not in (None, "NA")]
+                doms.append(collections.Counter(gs).most_common(1)[0][0] if gs else "NA")
+            split_info.append(dict(dominant=(dom[0][0] if dom else "NA"),
+                                   genes=pre_genes, name="+".join(pre_genes) if pre_genes else "NA",
+                                   n_loci=sum(len(p) for p in parts),
+                                   n_parts=len(parts), subfam_genes=doms))
+        new_refined.extend(parts)
+    return new_refined, split_info
+
+
 def _kept_real_pairs(blocks, ctx, SW):
     """set of REAL_cdna gene-pairs surviving inside a multi-copy block of `blocks`."""
     from itertools import combinations

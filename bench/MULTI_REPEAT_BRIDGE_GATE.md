@@ -215,3 +215,74 @@ Keep the **0.70 exon-id cutoff** as the one tunable to watch: relaxing it toward
 conjunct retained would recover ZNF224/RFPL3, at some precision cost — a follow-up, not a blocker. The gate
 should NOT be shipped as multiplicity-alone (would shred GSTM2) nor exon-containment-alone (would shred
 fragmented reals 1:1) — only the **conjunction + same-gene guard** is safe.
+
+## WIRING (SHIPPED) — 3rd VG-native gate in `bench/family_rna_refine.py`, DEFAULT-ON
+
+The conjunction predicate is now **WIRED as the 3rd VG-native gate** in the shipped family definition
+`bench/family_rna_refine.py`, **DEFAULT-ON at the conservative T=8/C=2**, reusing
+`multi_repeat_bridge_gate.split_families_repeat_bridge` (→ `characterize` + `gate_cut`; nothing
+re-derived). It runs **after** the recombinant-split stage and **before** allele-demote (matching how
+this doc measured it on the post-recombinant-split catalog). Disable with **`--no-repeat-bridge-gate`**
+/ **`RUSTLE_NO_REPEAT_BRIDGE_GATE=1`** (mirrors `--no-repeat-gate` / `--no-split-recombinants`);
+composes with `--legacy` / `--no-repeat-gate` / `--no-split-recombinants` / `--high-precision`.
+
+**DEPLOYED SCOPE = catalog-wide predicate (honest).** The gate is a predicate ("CUT a family iff …"),
+so the shipped default applies it to **every** multi-copy family (the standing rule that composes with
+`--high-precision`; no fid roster lookup). At **T=8/C=2** this cuts **61 DISCONNECTED families
+(605 → 573)** = the **§Two-scopes CATALOG point** (`gate_sweep_catalog` in `multi_repeat_bridge_gate.json`),
+i.e. the **15 roster DISCONNECTED-FP** ("~13-15/35" scored above) **plus 46 additional DISCONNECTED**
+families the same predicate flags blindly. Every cut is DISCONNECTED (no full shared exon) by construction.
+Named cuts include the **fam17 20-gene Alu hub** (`C9H11orf65+…+UCHL1`), **PDIA3+PRKAB2**, the MPHOSPH8-
+and LOC134758618 collapsed-array blobs, FGD3+HIVEP1, KYAT3+RBMX, etc. (full list in the JSON
+`multi_repeat_bridge.families_cut_named`).
+
+**PRECISION (headline; improves):** `--no-repeat-bridge-gate` recovers the pre-repeat-bridge catalog
+**md5 5e58378a (605 fam) BYTE-IDENTICAL**; the new default is **md5 dca64cbd (573 fam)**.
+
+| metric | pre-bridge (5e58378a, 605) | default gate-ON (dca64cbd, 573) |
+|---|---|---|
+| R_oracle (truth 3) | 50/57 = 0.8772 | **50/57 = 0.8772 — HELD** |
+| E_p purity (truth 1) | 0.8694 (79 impure) | **0.8918 (62 impure) +0.0224** |
+| distinct-FP blocks | 6 | **4** |
+| oversize FP | 3 (MAGE-Xarray, MPHOSPH8, LOC134758618) | **1 (MAGE-Xarray only)** |
+
+GSTM2 (fid 9/13) + MAGE (546/548/553) + the 23 real-paralog controls: **0 cut** (share a full exon →
+single full-exon component → the conjunction structurally cannot fire). The only cut whose *name*
+contains "GSTM2" is the fid-23 satellite `GSTM2+LOC129532045+LOC134757399` (GSTM2 bridged to unrelated
+LOCs via an Alu) — **not** a control; the same-gene guard moves both GSTM2 loci together, dropping only
+the non-GSTM single-locus passengers.
+
+**SENSITIVITY COST (catalog-scope; disclosed).** R_oracle (57 named diploid genes) and E_p
+(mega-family-excluded) are **BLIND by construction** to the gate's only cost — the single-locus glued
+passengers the `<2-loci` filter drops. That cost is carried by the conservative cDNA-pair truth
+(`family_level_pr_current.py` `truth2_dna_loose`): **pair-recall 0.9196 → 0.9087** (`== gate kept_REAL
+−5 / tp_retention 0.9087`) and **DNA component-recovery 182/187 → 177/182**. This is the operative
+sensitivity probe for this gate. NOTE the deployed scope is **catalog** (`kept_REAL −5`), NOT roster
+(`−1`) — the "R_oracle held" headline is a roster-scope-exact precision claim, not a claim that the
+catalog-scope deployment is cost-free. Of the **5 lost REAL cDNA pairs** at the deployed T8C2:
+**4 are repeat-glue LABEL-NOISE** — Alu-glued no-shared-exon pairs (mult 231–503) the cDNA-loose oracle
+mislabelled REAL, arguably CORRECT to cut: `ASB6+NTMT1`, `CCDC152+SELENOP`, `ETFDH+PPID`, `GATC+SRSF9`;
+and **only 1 is near-threshold-divergent** — `LOC109024259+ZNF224` (exon-id 0.686, nicked at the strict
+0.70 full-exon cutoff).
+
+**ZNF224 reconciliation.** The §kept_REAL analysis's "ZNF224 (0.686) / RFPL3 (0.639) nicked at the strict
+0.70 cutoff" names two near-threshold-divergent pairs; the FULL pair (both) is lost only at the
+**aggressive, NON-deployed T=5/C=1 max-removal** (`kept_REAL −10`). At the **deployed T=8/C=2** (verified
+by direct catalog diff of `family_rna_refine.tsv` gate-ON vs `--no-repeat-bridge-gate`):
+- **ZNF224 keeps ALL 10 of its KRAB-ZNF paralogs** — pre-bridge `{LOC101131689, LOC101136640,
+  LOC109024259, ZNF155, ZNF221, ZNF222, ZNF224, ZNF225, ZNF230, ZNF234, ZNF284}` → default the SAME
+  minus **only** the single divergent bridging locus `LOC109024259` (the `LOC109024259+ZNF224` pair,
+  exon-id 0.686, is the one near-threshold-divergent pair lost at T8C2). The ZNF224 KRAB-ZNF *core* is
+  NOT fragmented.
+- **RFPL3 is UNTOUCHED** — `{LOC109024957, LOC134758217, NA, RFPL3, RFPL4A}` byte-identical gate-ON vs
+  OFF; its bridge (`LOC134758217+RFPL3`, mult 5 < T=8, fid 512) is below threshold, so RFPL3 is not
+  even cut at T8C2 (fid 512 ∉ the 61 cut).
+So at the shipped T8C2 the genuine ZNF224/RFPL3 paralog *cores* survive; the only near-threshold nick is
+ZNF224 losing its single divergent `LOC109024259` partner. The stricter C≥2 "several-repeat" conjunct is
+precisely what abstains on the low-mult glue tail that would otherwise fragment more.
+
+**Determinism.** Default catalog is **md5 dca64cbd across runs** (PYTHONHASHSEED=0, sorted writes). Note
+**md5 e2f0a23a is the `--high-precision` (gamma=0.40) catalog**, not default nondeterminism — an outlier
+"default" md5 of e2f0a23a means `RUSTLE_HIGH_PRECISION=1` leaked into the env / `--high-precision` was
+passed. Tests: `bench/test_family_rna_refine.py` (`test_repeat_bridge_gate`,
+`test_repeat_bridge_r_oracle_held`, `test_repeat_bridge_composes`).

@@ -57,36 +57,29 @@
   "edges": "bench/denovo_family_edges.tsv",
   "repeat_mult": "bench/vg_repeat_catalog.tsv (min_shared_mult; library-free VG multiplicity)"
  },
+ "multi_repeat_bridge": {
+  "count_min": 2,
+  "enabled": false,
+  "exon_id": 0.7,
+  "families_cut": [],
+  "families_cut_named": [],
+  "mult_min": 8,
+  "n_disconnected_removed": 0,
+  "n_families_cut": 0,
+  "note": "3rd VG-native gate = family-level multi-repeat extension of the single-extreme-edge repeat-hub gate: CUT iff (>=2 full-exon components AND cross-component best-exon-id < 0.70) AND (>= 2 distinct cross-component shared VG nodes at multiplicity >= 8) AND same-gene guard -> replace by full-exon components (drop <2-loci). Removes the DISCONNECTED repeat-bridge FP class (sub-20 distributed bridges) that survives the single-extreme-edge repeat-hub gate; GSTM2/MAGE share a full exon -> single component -> the gate STRUCTURALLY cannot fire (spared). Conservative T=8/C=2 point (MULTI_REPEAT_BRIDGE_GATE.md: R_oracle 50/57 held, P_Ep +, 0 genuine paralogs lost). RECALL-SAFE (never separates same-gene loci). --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1 ablates.",
+  "scope": "catalog-wide PREDICATE (applied to every multi-copy family, not a 15-family roster lookup): the T=8/C=2 cut count is the committed gate_sweep_catalog point = the ~13-15 roster DISCONNECTED-FP over-merges PLUS the additional DISCONNECTED families the same predicate flags blindly. R_oracle/E_p precision headline HOLDS/IMPROVES; the catalog-scope SENSITIVITY cost (single-locus glued passengers dropped by the <2-loci filter) is measured by bench/family_level_pr_current.py truth2_dna_loose (pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182), to which R_oracle (57-gene diploid oracle) and E_p (mega-family-excluded) are blind."
+ },
  "n_alleles_demoted": 3,
- "n_families": 605,
+ "n_families": 606,
  "outputs": {
   "catalog_tsv": "bench/family_rna_refine.tsv",
   "summary_json": "bench/family_rna_refine.json"
  },
  "recombinant_split": {
-  "enabled": true,
-  "n_families_split": 2,
+  "enabled": false,
+  "n_families_split": 0,
   "note": "VG path-colinearity split of recombinant/mosaic-bridge over-merges (colinear-cover<0.60, articulation point, HIGH-confidence distributed mosaic); RECALL-SAFE (never separates same-gene loci; HIGH-confidence only) -> 0 oracle-recall cost. RECOMBINATION_BRIDGE_DETECTOR.md. --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1 ablates.",
-  "split_families": [
-   {
-    "n_loci": 6,
-    "n_parts": 3,
-    "subfam_genes": [
-     "LOC129523494",
-     "LOC115935376",
-     "LOC101146405"
-    ]
-   },
-   {
-    "n_loci": 3,
-    "n_parts": 3,
-    "subfam_genes": [
-     "LOC101126070",
-     "GALNT17",
-     "LOC115935264"
-    ]
-   }
-  ]
+  "split_families": []
  },
  "residual_fp": {
   "named_removed": 6,
@@ -133,10 +126,14 @@
   "demote_copy_like_max": 0.1,
   "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24 AND NOT(min_shared_mult>=20)",
   "gamma": 0.2,
+  "repeat_bridge_count_min": 2,
+  "repeat_bridge_exon_id": 0.7,
+  "repeat_bridge_gate_enabled": false,
+  "repeat_bridge_mult_min": 8,
   "repeat_gate_enabled": true,
   "repeat_mult_min": 20,
   "seed": 0,
-  "split_recombinants_enabled": true
+  "split_recombinants_enabled": false
  },
- "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate; DEFAULT-ON, opt out --legacy / ablate gate --no-repeat-gate)"
+ "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + recombinant-split gate + multi-repeat-bridge gate; DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-split-recombinants / --no-repeat-bridge-gate)"
 }

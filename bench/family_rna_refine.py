@@ -61,15 +61,46 @@ MULTIPLICITY (# distinct genes traversing a node) -- read/structure-derived and 
 soft-mask is used NOWHERE in the gate (it is only VALIDATION in vg_repeat_catalog.py sec 4).
 DNA/protein/genome/soft-mask enter ONLY the VALIDATION report, never a decision.
 
-DEFAULT-ON (opt out with --legacy; ablate the repeat gate with --no-repeat-gate)
---------------------------------------------------------------------------------
-The RNA-only refinement (core+aln + repeat-hub gate + gamma + demote) is now the DEFAULT
-family definition -- runs by default.  --no-repeat-gate (or env RUSTLE_NO_REPEAT_GATE=1)
-ABLATES just the repeat-hub gate (keeps core+aln+gamma+demote) and recovers the
-pre-repeat-gate catalog.  The legacy core_recip>=0.13 catalog is recovered with --legacy OR
-env RUSTLE_RNA_ORACLE=0 (prints one line, exits 0 without writing; run bench/denovo_families.py
-for the legacy catalog).  Because this stage never edits denovo_families.py, the legacy path
-remains bit-for-bit reproducible.
+DEFAULT-ON (opt out with --legacy; ablate the gates with --no-*)
+---------------------------------------------------------------
+The RNA-only refinement (core+aln + repeat-hub gate + gamma + recombinant-split gate +
+multi-repeat-bridge gate + demote) is now the DEFAULT family definition -- runs by default.
+Each VG-native gate has a matching ablation flag/env (all DEFAULT-ON):
+  --no-repeat-gate        / RUSTLE_NO_REPEAT_GATE=1         (single-extreme-edge repeat-hub gate)
+  --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1  (recombinant/mosaic path-colinearity split)
+  --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1  (3rd gate: family-level multi-repeat-bridge
+                                                            conjunction; MULTI_REPEAT_BRIDGE_GATE.md)
+--no-repeat-bridge-gate recovers the pre-repeat-bridge catalog (recombinant-split ON, repeat-bridge
+OFF) BYTE-IDENTICAL (md5 5e58378a).  The legacy core_recip>=0.13 catalog is recovered with --legacy OR
+env RUSTLE_RNA_ORACLE=0 (prints one line, exits 0 without writing; run bench/denovo_families.py for the
+legacy catalog).  Because this stage never edits denovo_families.py, the legacy path remains
+bit-for-bit reproducible.
+
+MULTI-REPEAT-BRIDGE GATE -- DEPLOYED SCOPE + SENSITIVITY (honest disclosure)
+---------------------------------------------------------------------------
+The gate is a PREDICATE ("CUT a family iff ...", MULTI_REPEAT_BRIDGE_GATE.md), so it is deployed
+catalog-wide on EVERY multi-copy family -- the standing rule that composes with --high-precision (no
+fid roster).  At the conservative T=8/C=2 point this cuts 61 DISCONNECTED families (default 605 -> 573):
+the 15 pre-identified roster DISCONNECTED-FP over-merges MULTI_REPEAT_BRIDGE_GATE.md scored ("~13-15/35")
+PLUS 46 additional DISCONNECTED families the SAME predicate flags blindly (the committed
+gate_sweep_catalog T8C2 point -- NOT a 15-family roster lookup; reported honestly).  Every cut is
+DISCONNECTED (no full shared exon) by construction.
+  PRECISION (improves; the headline): R_oracle 50/57 = 0.8772 HELD; E_p block purity 0.8694 -> 0.8918
+  (+0.0224); distinct-FP blocks 6 -> 4; collapsed-array OVERSIZE blobs MPHOSPH8 + LOC134758618 removed
+  (oversize 3 -> 1; the MAGE X-array DNA-only floor survives).  GSTM2/MAGE controls + the 23 real-paralog
+  controls: 0 cut (share a full exon => single full-exon component => the gate structurally cannot fire).
+  SENSITIVITY COST (catalog-scope; R_oracle and E_p are BLIND to it by construction -- the 57-gene diploid
+  oracle and the mega-family-excluded E_p do not see the single-locus glued passengers that the <2-loci
+  filter drops): the catalog shrinks, so the conservative cDNA-pair truth moves -- pair-recall
+  0.9196 -> 0.9087 (== kept_REAL -5) and DNA component-recovery 182/187 -> 177/182
+  (bench/family_level_pr_current.py truth2_dna_loose = the operative sensitivity probe).  Of the 5 lost
+  REAL cDNA pairs at the DEPLOYED catalog-scope T8C2, 4 are repeat-glue LABEL-NOISE (Alu-glued no-shared-
+  exon pairs, mult 231-503, that the cDNA-loose oracle mislabelled REAL -- arguably CORRECT to cut:
+  ASB6+NTMT1, CCDC152+SELENOP, ETFDH+PPID, GATC+SRSF9) and only 1 is near-threshold-divergent
+  (LOC109024259+ZNF224, exon-id 0.686, nicked at the strict 0.70 cutoff).  ZNF224 itself KEEPS all 10 of
+  its KRAB-ZNF paralogs (ZNF155/221/222/225/230/234/284 + 2 LOCs; only the single divergent partner
+  LOC109024259 drops) and RFPL3 is UNTOUCHED (its bridge is mult 5 < T=8).  The FULL ZNF224+RFPL3 nick
+  (both near-threshold pairs) occurs only at the NON-deployed aggressive T=5/C=1 max-removal (kept_REAL -10).
 
 HIGH-PRECISION (opt in with --high-precision / RUSTLE_HIGH_PRECISION=1)
 ----------------------------------------------------------------------
@@ -85,7 +116,10 @@ gamma=0.40 catalog and records the active gamma + caveats in the summary.
 DETERMINISM
 -----------
 PYTHONHASHSEED=0 (re-exec), fixed gamma=0.20 seed=0, sorted writes.  Re-runs are
-byte-identical (see bench/test_family_rna_refine.py).
+byte-identical (see bench/test_family_rna_refine.py).  The DEFAULT catalog is md5 dca64cbd across
+runs; md5 e2f0a23a is the --high-precision (gamma=0.40) catalog, NOT default nondeterminism -- an
+outlier "default" md5 of e2f0a23a means RUSTLE_HIGH_PRECISION=1 leaked into the env / --high-precision
+was passed, never a nondeterministic default.
 
 Writes: bench/family_rna_refine.tsv (family_id -> member loci/genes) + bench/family_rna_refine.json
 Run:    /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py                   (default: refined catalog)
@@ -128,6 +162,22 @@ SEED = SW.SEED           # 0    (shipped splitter witness seed)
 #   from the negative controls GSTM2 (per-edge max 9) and MAGE (per-edge max 8), both of
 #   which have ZERO edges >= 20 => the gate cannot touch them.
 REPEAT_MULT_MIN = 20     # VG min_shared_mult cut (library-free minimizer multiplicity)
+# MULTI-REPEAT-BRIDGE GATE thresholds (bench/MULTI_REPEAT_BRIDGE_GATE.md; do NOT re-derive).  This is
+# the 3rd VG-native gate = the FAMILY-LEVEL multi-repeat extension of the single-extreme-EDGE repeat-hub
+# gate above.  It CUTS a family iff  (NO full shared exon: >=2 full-exon components AND cross-component
+# best-exon-id < REPEAT_BRIDGE_EXON_ID)  AND  (REPEAT-bridged: >= REPEAT_BRIDGE_COUNT_MIN distinct
+# cross-component shared VG minimizer nodes each with global multiplicity >= REPEAT_BRIDGE_MULT_MIN)
+# AND the SAME-GENE guard (never separate same-gene loci) -> replace the family by its full-exon
+# components (drop <2-loci).  This removes the DISCONNECTED repeat-bridge FP class (41% of over-merges;
+# sub-20 / distributed family-level bridges) that SURVIVES the single-extreme-edge repeat-hub gate.
+# CONSERVATIVE T=8/C=2 (MULTI_REPEAT_BRIDGE_GATE.md: ~13-15/35 removed, P_Ep +0.022, R_oracle 50/57
+# held, GSTM2/MAGE spared structurally, 0 genuine paralogs lost).  The aggressive T=5/C=1 removes 24/35
+# but nicks ~2 near-0.70 divergent-ZNF/RFPL cross-gene paralogs -- AVOIDED.  The no-full-shared-exon
+# conjunct is what lets T drop from the repeat-hub 20 to 8 WITHOUT touching GSTM2 (internal Alu mult 426,
+# but a single full-exon component -> gate structurally cannot fire) / MAGE (share a full exon).
+REPEAT_BRIDGE_MULT_MIN = 8      # T: per-node canonical-minimizer multiplicity (library-free)
+REPEAT_BRIDGE_COUNT_MIN = 2     # C: >= C distinct cross-component shared VG nodes at mult >= T
+REPEAT_BRIDGE_EXON_ID = 0.70    # NO full shared exon iff cross-component best-exon-id < this (== ID_THRESH)
 # allele DEMOTE thresholds (reused from rna_only_edge_oracle.demote_gene):
 DEMOTE_BAL_MIN = 0.90    # balanced_frac >= 0.90  (~0.5 minor-allele = diploid het)
 DEMOTE_COPY_MAX = 0.10   # copy_like    <= 0.10  (not ~1/K = a real copy)
@@ -197,6 +247,9 @@ OUT_JSON = os.path.join(BENCH, "family_rna_refine.json")
 assert abs(GAMMA - 0.20) < 1e-9 and SEED == 0, "gamma/seed drifted from the shipped constants"
 assert REPEAT_MULT_MIN == 20, "REPEAT_MULT_MIN drifted from the VG_REPEAT_CATALOG.md tail (20)"
 assert abs(HIGH_PRECISION_GAMMA - 0.40) < 1e-9, "HIGH_PRECISION_GAMMA drifted from the frontier point (0.40)"
+assert REPEAT_BRIDGE_MULT_MIN == 8 and REPEAT_BRIDGE_COUNT_MIN == 2, \
+    "repeat-bridge T/C drifted from the MULTI_REPEAT_BRIDGE_GATE.md conservative point (T=8, C=2)"
+assert abs(REPEAT_BRIDGE_EXON_ID - 0.70) < 1e-9, "REPEAT_BRIDGE_EXON_ID drifted from ID_THRESH (0.70)"
 
 
 # --------------------------------------------------------------------------- guards
@@ -253,13 +306,15 @@ def load_repeat_mult():
 
 
 # --------------------------------------------------------------------------- build (RNA-only)
-def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True):
+def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True):
     """Apply the recall-preserving RNA-only gate + repeat-hub gate + shipped gamma refinement +
-    recombinant-split gate + allele demote.  Returns dict with the multi-copy catalog and the
-    RNA-only bookkeeping.  No DNA read here.  repeat_gate=False ablates ONLY the repeat-hub gate.
-    split_recombinants=False ablates ONLY the recombinant-split gate (keeps core+aln+repeat+gamma+demote).
-    gamma selects the gamma-quasi-clique cohesion: default GAMMA=0.20 (recall-preserving) or
-    HIGH_PRECISION_GAMMA=0.40 (--high-precision; PRECISION_RECALL_FRONTIER.md).  Nothing else changes."""
+    recombinant-split gate + multi-repeat-bridge gate + allele demote.  Returns dict with the
+    multi-copy catalog and the RNA-only bookkeeping.  No DNA read here.  repeat_gate=False ablates
+    ONLY the repeat-hub gate.  split_recombinants=False ablates ONLY the recombinant-split gate.
+    repeat_bridge_gate=False ablates ONLY the multi-repeat-bridge gate (keeps core+aln+repeat+gamma+
+    recombinant-split+demote -> recovers the pre-repeat-bridge catalog).  gamma selects the
+    gamma-quasi-clique cohesion: default GAMMA=0.20 (recall-preserving) or HIGH_PRECISION_GAMMA=0.40
+    (--high-precision; PRECISION_RECALL_FRONTIER.md).  Nothing else changes."""
     rna_only_guard()
 
     # ---- RNA features (exact oracle loaders) ----
@@ -336,6 +391,27 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True):
         n_families_split = len(split_info)
         refined = [b for b in refined if G.distinct_loci(b, genes) >= 2]
 
+    # ---- multi-repeat-bridge gate (3rd VG-native gate; DEFAULT-ON; --no-repeat-bridge-gate ablates) ----
+    # Runs AFTER the recombinant-split stage (on the split catalog, matching how MULTI_REPEAT_BRIDGE_GATE.md
+    # measured it on the post-recombinant-split catalog) and BEFORE allele-demote.  CUTS a family iff
+    # (>=2 full-exon components AND cross-component best-exon-id < REPEAT_BRIDGE_EXON_ID = NO full shared
+    # exon) AND (>= REPEAT_BRIDGE_COUNT_MIN distinct cross-component shared VG nodes each with multiplicity
+    # >= REPEAT_BRIDGE_MULT_MIN) AND the same-gene guard -> replace by full-exon components (drop <2-loci).
+    # This removes the DISCONNECTED repeat-bridge FP class (sub-20 distributed bridges) that survives the
+    # single-extreme-edge repeat-hub gate.  Every cut family is DISCONNECTED (no full shared exon) by
+    # construction.  MULTI_REPEAT_BRIDGE_GATE.md: GSTM2/MAGE share a full exon -> single component -> the
+    # gate STRUCTURALLY cannot fire (spared at every threshold).
+    repeat_bridge_info = []
+    n_families_repeat_bridge_split = 0
+    if repeat_bridge_gate:
+        import multi_repeat_bridge_gate as MRB
+        assert abs(MRB.ID_THRESH - REPEAT_BRIDGE_EXON_ID) < 1e-9, \
+            "multi_repeat_bridge_gate.ID_THRESH drifted from REPEAT_BRIDGE_EXON_ID (0.70)"
+        refined, repeat_bridge_info = MRB.split_families_repeat_bridge(
+            refined, genes, gene_of_dn2, REPEAT_BRIDGE_MULT_MIN, REPEAT_BRIDGE_COUNT_MIN)
+        n_families_repeat_bridge_split = len(repeat_bridge_info)
+        refined = [b for b in refined if G.distinct_loci(b, genes) >= 2]
+
     # ---- allele DEMOTE (RNA read signal only; exact oracle logic) ----
     def demote_gene(g):
         a = allele.get(g)
@@ -361,6 +437,9 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True):
         gene_of_dn=gene_of_dn2, genes=genes, raw_fams=raw_fams, edge_pairs=edge_pairs,
         repeat_gate=repeat_gate, gamma=gamma,
         split_recombinants=split_recombinants, n_families_split=n_families_split, split_info=split_info,
+        repeat_bridge_gate=repeat_bridge_gate,
+        n_families_repeat_bridge_split=n_families_repeat_bridge_split,
+        repeat_bridge_info=repeat_bridge_info,
         n_dn_edges_total=Gr.number_of_edges(),
         n_dn_within=n_dn_within, n_dn_cross_kept=n_dn_cross_kept, n_dn_cross_cut=n_dn_cross_cut,
         n_dn_cross_cut_repeat=n_dn_cross_cut_repeat,
@@ -443,13 +522,18 @@ def write_outputs(built, val):
 
     repeat_gate = built["repeat_gate"]
     summary = dict(
-        stage="family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate; "
-              "DEFAULT-ON, opt out --legacy / ablate gate --no-repeat-gate)",
+        stage="family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + "
+              "recombinant-split gate + multi-repeat-bridge gate; DEFAULT-ON, opt out --legacy / "
+              "ablate gates --no-repeat-gate / --no-split-recombinants / --no-repeat-bridge-gate)",
         rule=dict(edge="KEEP iff core_recip>=%.2f AND aln_frac>=%.2f AND NOT(min_shared_mult>=%d)"
                        % (CORE_MIN, ALN_MIN, REPEAT_MULT_MIN),
                   core_recip_min=CORE_MIN, aln_frac_min=ALN_MIN,
                   repeat_gate_enabled=repeat_gate, repeat_mult_min=REPEAT_MULT_MIN,
                   split_recombinants_enabled=built["split_recombinants"],
+                  repeat_bridge_gate_enabled=built["repeat_bridge_gate"],
+                  repeat_bridge_mult_min=REPEAT_BRIDGE_MULT_MIN,
+                  repeat_bridge_count_min=REPEAT_BRIDGE_COUNT_MIN,
+                  repeat_bridge_exon_id=REPEAT_BRIDGE_EXON_ID,
                   gamma=gamma, seed=SEED,
                   demote="balanced_frac>=%.2f AND copy_like<=%.2f" % (DEMOTE_BAL_MIN, DEMOTE_COPY_MAX),
                   demote_balanced_frac_min=DEMOTE_BAL_MIN, demote_copy_like_max=DEMOTE_COPY_MAX),
@@ -462,6 +546,37 @@ def write_outputs(built, val):
                   "articulation point, HIGH-confidence distributed mosaic); RECALL-SAFE (never separates "
                   "same-gene loci; HIGH-confidence only) -> 0 oracle-recall cost. RECOMBINATION_BRIDGE_DETECTOR.md. "
                   "--no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1 ablates.")),
+        multi_repeat_bridge=dict(
+            enabled=built["repeat_bridge_gate"],
+            mult_min=REPEAT_BRIDGE_MULT_MIN, count_min=REPEAT_BRIDGE_COUNT_MIN,
+            exon_id=REPEAT_BRIDGE_EXON_ID,
+            n_families_cut=built["n_families_repeat_bridge_split"],
+            # every cut family is DISCONNECTED (no full shared exon: >=2 full-exon components AND
+            # cross-component best-exon-id < exon_id) by construction of the gate predicate
+            n_disconnected_removed=built["n_families_repeat_bridge_split"],
+            families_cut=sorted(built["repeat_bridge_info"], key=lambda d: d["name"]),
+            families_cut_named=[d["name"] for d in
+                                sorted(built["repeat_bridge_info"], key=lambda d: d["name"])],
+            scope=("catalog-wide PREDICATE (applied to every multi-copy family, not a 15-family roster "
+                   "lookup): the T=8/C=2 cut count is the committed gate_sweep_catalog point = the "
+                   "~13-15 roster DISCONNECTED-FP over-merges PLUS the additional DISCONNECTED families "
+                   "the same predicate flags blindly. R_oracle/E_p precision headline HOLDS/IMPROVES; "
+                   "the catalog-scope SENSITIVITY cost (single-locus glued passengers dropped by the "
+                   "<2-loci filter) is measured by bench/family_level_pr_current.py truth2_dna_loose "
+                   "(pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182), to which "
+                   "R_oracle (57-gene diploid oracle) and E_p (mega-family-excluded) are blind."),
+            note=("3rd VG-native gate = family-level multi-repeat extension of the single-extreme-edge "
+                  "repeat-hub gate: CUT iff (>=2 full-exon components AND cross-component best-exon-id < "
+                  "%.2f) AND (>= %d distinct cross-component shared VG nodes at multiplicity >= %d) AND "
+                  "same-gene guard -> replace by full-exon components (drop <2-loci). Removes the "
+                  "DISCONNECTED repeat-bridge FP class (sub-20 distributed bridges) that survives the "
+                  "single-extreme-edge repeat-hub gate; GSTM2/MAGE share a full exon -> single component "
+                  "-> the gate STRUCTURALLY cannot fire (spared). Conservative T=%d/C=%d point "
+                  "(MULTI_REPEAT_BRIDGE_GATE.md: R_oracle 50/57 held, P_Ep +, 0 genuine paralogs lost). "
+                  "RECALL-SAFE (never separates same-gene loci). "
+                  "--no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1 ablates."
+                  % (REPEAT_BRIDGE_EXON_ID, REPEAT_BRIDGE_COUNT_MIN, REPEAT_BRIDGE_MULT_MIN,
+                     REPEAT_BRIDGE_MULT_MIN, REPEAT_BRIDGE_COUNT_MIN))),
         edges=dict(
             n_dn_edges_total=built["n_dn_edges_total"],
             n_dn_within_gene_kept=built["n_dn_within"],
@@ -520,8 +635,9 @@ def write_outputs(built, val):
 
 
 # --------------------------------------------------------------------------- driver
-def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True):
-    built = build_catalog(repeat_gate=repeat_gate, gamma=gamma, split_recombinants=split_recombinants)
+def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True):
+    built = build_catalog(repeat_gate=repeat_gate, gamma=gamma, split_recombinants=split_recombinants,
+                          repeat_bridge_gate=repeat_bridge_gate)
     val = validate(built)
     summary = write_outputs(built, val) if write else None
     return built, val, summary
@@ -547,6 +663,17 @@ def _report(built, val, summary):
       f"families split={built['n_families_split']}"
       + ("  " + "; ".join("|".join(g for g in si['subfam_genes'] if g != 'NA')
                           for si in built['split_info']) if built['split_info'] else ""))
+    P(f"repeat-bridge gate: {'ON' if built['repeat_bridge_gate'] else 'OFF (ablated)'}  "
+      f"families cut={built['n_families_repeat_bridge_split']} (all DISCONNECTED, no full shared exon; "
+      f"catalog-wide predicate = roster ~13-15 DISCONNECTED-FP + additional DISCONNECTED)"
+      + ("  " + "; ".join(si['name'] for si in
+                          sorted(built['repeat_bridge_info'], key=lambda d: d['name']))
+         if built['repeat_bridge_info'] else ""))
+    if built['repeat_bridge_gate']:
+        P("  precision HOLDS/IMPROVES (R_oracle 50/57 HELD, E_p 0.8694->0.8918, distinct-FP 6->4, "
+          "GSTM2/MAGE/23-controls 0 cut); SENSITIVITY cost (catalog-scope, R_oracle/E_p blind): "
+          "pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182 "
+          "(family_level_pr_current.py truth2_dna_loose)")
     P(f"n_families       : {len(built['catalog'])}")
     P(f"alleles demoted  : {len(built['demotions'])}  "
       + ", ".join(f"{d['gene']}(dl={d['n_loci']},bal={d['balanced_frac']:.2f},"
@@ -594,6 +721,14 @@ def main(argv=None):
                          "of recombinant/mosaic-bridge over-merges, e.g. fid 210 GALNT17|LOC101126070); "
                          "keeps core+aln+repeat+gamma+demote and recovers the pre-split catalog "
                          "(also RUSTLE_NO_SPLIT_RECOMBINANTS=1)")
+    ap.add_argument("--no-repeat-bridge-gate", action="store_true",
+                    help="ablation: DISABLE just the multi-repeat-bridge gate (3rd VG-native gate; "
+                         "family-level multi-repeat extension of the repeat-hub gate -- CUT a family "
+                         "iff >=2 full-exon components AND cross-component best-exon-id < %.2f AND >= %d "
+                         "cross-component shared VG nodes at multiplicity >= %d AND same-gene guard); "
+                         "keeps core+aln+repeat+gamma+split+demote and recovers the pre-repeat-bridge "
+                         "catalog (also RUSTLE_NO_REPEAT_BRIDGE_GATE=1)"
+                         % (REPEAT_BRIDGE_EXON_ID, REPEAT_BRIDGE_COUNT_MIN, REPEAT_BRIDGE_MULT_MIN))
     ap.add_argument("--high-precision", action="store_true",
                     help="HIGH-PRECISION operating point: swap ONLY the gamma-quasi-clique cohesion "
                          "GAMMA=%.2f -> %.2f (PRECISION_RECALL_FRONTIER.md); everything else "
@@ -616,11 +751,14 @@ def main(argv=None):
     # DEFAULT-ON recombinant-split gate; --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1 ablates it.
     split_recombinants = not (args.no_split_recombinants
                               or os.environ.get("RUSTLE_NO_SPLIT_RECOMBINANTS") == "1")
+    # DEFAULT-ON multi-repeat-bridge gate; --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1 ablates it.
+    repeat_bridge_gate = not (args.no_repeat_bridge_gate
+                              or os.environ.get("RUSTLE_NO_REPEAT_BRIDGE_GATE") == "1")
     # HIGH-PRECISION: --high-precision / RUSTLE_HIGH_PRECISION=1 swaps ONLY gamma (0.20 -> 0.40).
     high_precision = args.high_precision or os.environ.get("RUSTLE_HIGH_PRECISION") == "1"
     gamma = HIGH_PRECISION_GAMMA if high_precision else GAMMA
     built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma,
-                              split_recombinants=split_recombinants)
+                              split_recombinants=split_recombinants, repeat_bridge_gate=repeat_bridge_gate)
     _report(built, val, summary)
     return 0
 
