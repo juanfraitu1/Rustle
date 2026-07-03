@@ -1,0 +1,1454 @@
+{
+ "DECISIVE_divergent_real_paralogs": {
+  "definition": "truthbar = E_p-confirmed real paralogs DNA did NOT confirm (the divergent reals)",
+  "real_paralogs_meanid_lt_0_80_colinear_ge2_pct": 37.21,
+  "real_paralogs_meanid_lt_0_80_n": 2099,
+  "real_paralogs_meanid_lt_0_90_colinear_ge2_pct": 45.27,
+  "real_paralogs_meanid_lt_0_90_n": 3342,
+  "truthbar_colinear_eq1_pct": 34.68,
+  "truthbar_colinear_ge2_pct": 46.33,
+  "truthbar_stratified_by_exon_identity": {
+   "0.70-0.80": {
+    "colinear_eq1_pct": 45.33,
+    "colinear_ge2_pct": 54.67,
+    "median_colinear": 2,
+    "median_n_exon_min": 4,
+    "n": 1423
+   },
+   "0.80-0.90": {
+    "colinear_eq1_pct": 41.51,
+    "colinear_ge2_pct": 58.49,
+    "median_colinear": 2,
+    "median_n_exon_min": 4,
+    "n": 1207
+   },
+   "0.90-0.95": {
+    "colinear_eq1_pct": 25.93,
+    "colinear_ge2_pct": 74.07,
+    "median_colinear": 2,
+    "median_n_exon_min": 4,
+    "n": 81
+   },
+   "<0.70": {
+    "colinear_eq1_pct": 0.0,
+    "colinear_ge2_pct": 0.0,
+    "median_colinear": 0,
+    "median_n_exon_min": 2,
+    "n": 642
+   },
+   "id>=0.95": {
+    "colinear_eq1_pct": 20.69,
+    "colinear_ge2_pct": 79.31,
+    "median_colinear": 4,
+    "median_n_exon_min": 5,
+    "n": 29
+   }
+  }
+ },
+ "class_colinear_distribution": {
+  "TP": {
+   "colinear_eq1_pct": 9.38,
+   "colinear_ge2_pct": 83.41,
+   "colinear_ge3_pct": 74.28,
+   "colinear_hist": {
+    "0": 30,
+    "1": 39,
+    "2": 38,
+    "3": 49,
+    "4": 55,
+    "5": 51,
+    "6+": 154
+   },
+   "median_colinear": 4,
+   "median_n_exon_min": 6,
+   "n": 416
+  },
+  "genuine": {
+   "colinear_eq1_pct": 20.08,
+   "colinear_ge2_pct": 34.4,
+   "colinear_ge3_pct": 25.61,
+   "colinear_hist": {
+    "0": 807,
+    "1": 356,
+    "2": 156,
+    "3": 195,
+    "4": 104,
+    "5": 44,
+    "6+": 111
+   },
+   "median_colinear": 1,
+   "median_n_exon_min": 4,
+   "n": 1773
+  },
+  "truthbar": {
+   "colinear_eq1_pct": 34.68,
+   "colinear_ge2_pct": 46.33,
+   "colinear_ge3_pct": 23.51,
+   "colinear_hist": {
+    "0": 642,
+    "1": 1173,
+    "2": 772,
+    "3": 380,
+    "4": 137,
+    "5": 46,
+    "6+": 232
+   },
+   "median_colinear": 1,
+   "median_n_exon_min": 4,
+   "n": 3382
+  }
+ },
+ "controls_GSTM2_MAGE": {
+  "GSTM2": {
+   "cls_mix": {
+    "TP": 6,
+    "genuine": 29,
+    "truthbar": 9
+   },
+   "colinear_ge2_pct": 77.27,
+   "cut_K1_pct": 22.73,
+   "median_colinear": 8,
+   "median_n_exon_min": 13,
+   "n": 44
+  },
+  "MAGE": {
+   "cls_mix": {
+    "TP": 8,
+    "truthbar": 17
+   },
+   "colinear_ge2_pct": 88.0,
+   "cut_K1_pct": 12.0,
+   "median_colinear": 2,
+   "median_n_exon_min": 3,
+   "n": 25
+  }
+ },
+ "ep_impure_edges": {
+  "cls_mix": {
+   "TP": 19,
+   "genuine": 58
+  },
+  "colinear_eq1_pct": 22.08,
+  "cut_K1_pct": 45.45,
+  "n": 77,
+  "note": "ep_impure roster is IMPURE: includes DNA-confirmed TP pairs (e.g. ABCD1/LOC...); cls_mix shows the genuine-FP vs TP/truthbar split"
+ },
+ "gate_outcomes_by_K": {
+  "FP_genuine": {
+   "cut_K1": 1163,
+   "cut_K1_pct": 65.6,
+   "cut_K2": 1319,
+   "cut_K2_pct": 74.39,
+   "n": 1773
+  },
+  "REAL_TP": {
+   "cut_K1": 69,
+   "cut_K1_pct": 16.59,
+   "cut_K2": 107,
+   "cut_K2_pct": 25.72,
+   "n": 416
+  },
+  "REAL_TP_plus_truthbar": {
+   "cut_K1": 1884,
+   "cut_K1_pct": 49.61,
+   "cut_K2": 2694,
+   "cut_K2_pct": 70.93,
+   "n": 3798
+  },
+  "REAL_truthbar_DIVERGENT": {
+   "cut_K1": 1815,
+   "cut_K1_pct": 53.67,
+   "cut_K2": 2587,
+   "cut_K2_pct": 76.49,
+   "n": 3382
+  }
+ },
+ "gate_stage": {
+  "best_K": 0,
+  "best_K_note": "K=0: highest E_p among K that HOLD R_oracle 50/57. Note the recall-safe K only cut ZERO-shared-colinear-exon edges; it does NOT implement the user's 'require >=2 colinear' proposal (that is K=1, which fails the R_oracle bar).",
+  "catalog_reference": {
+   "E_p": 0.8918,
+   "R_oracle": "50/57",
+   "n_families": 573
+  },
+  "colinear_coverage": {
+   "covered_by_colinear_substrate": 1812,
+   "distinct_gene_pairs": 1817,
+   "intra_family_crossgene_edges": 2229
+  },
+  "operationalization": "locus subgraph per catalog family + same-gene backbone (guard); cut cross-gene edge iff gene-pair colinear<=K; re-derive components; drop <2 distinct loci; re-eval via shipped eval_partition + oracle_residuals + gene-projection relabel",
+  "per_K": {
+   "0": {
+    "E_p": 0.9078,
+    "E_p_delta_vs_catalog_0_8918": 0.016,
+    "E_p_delta_vs_rederive_baseline": 0.0162,
+    "FP_ep_impure_split": 11,
+    "FP_genuine_split": 72,
+    "GSTM2": {
+     "genes_present": [
+      "GSTM2",
+      "LOC101129940",
+      "LOC115930164",
+      "LOC115930576"
+     ],
+     "n_families": 5
+    },
+    "GSTM2_spared": true,
+    "K": 0,
+    "MAGE": {
+     "genes_present": [
+      "LOC129529978",
+      "LOC129529986",
+      "MAGEA9"
+     ],
+     "n_families": 2
+    },
+    "MAGE_spared": true,
+    "REAL_TP_split": 16,
+    "REAL_divergent_meanid_lt_0_90_split": 11,
+    "REAL_split_total": 27,
+    "REAL_truthbar_divergent_split": 11,
+    "R_oracle": "50/57",
+    "R_oracle_held_50_57": true,
+    "TP_real_cut_named": [
+     "ATP6V1C2+PDIA6(id0.00,col0)",
+     "CRMP1+EVC(id0.00,col0)",
+     "DNAJC17+GCHFR(id0.00,col0)",
+     "EEF1A1+LOC109023808(id0.00,col0)",
+     "EIF1AX+LOC101137900(id0.00,col0)",
+     "FGF2+NUDT6(id0.00,col0)",
+     "GLUD1+GLUD2(id0.00,col0)",
+     "IGBP1+IGBP1C(id0.00,col0)",
+     "JMJD8+STUB1(id0.00,col0)",
+     "LOC101130542+TCEAL5(id0.00,col0)",
+     "LOC101132325+MKRN1(id0.00,col0)",
+     "LOC101135168+LOC115933002(id0.00,col0)",
+     "LOC101150533+MSL3(id0.00,col0)",
+     "LOC129525654+RPL7(id0.00,col0)",
+     "NKIRAS1+UBE2E1(id0.00,col0)",
+     "TCEAL5+TCEAL6(id0.00,col0)"
+    ],
+    "divergent_real_cut_named": [
+     "DCAF4+DCAF4L1(id0.00,col0)",
+     "HNRNPH1+HNRNPH2(id0.00,col0)",
+     "LOC101126280+PCDHB15(id0.00,col0)",
+     "LOC101143714+SLFN12(id0.00,col0)",
+     "PCDHB15+PCDHB16(id0.00,col0)",
+     "PCDHB15+PCDHB2(id0.00,col0)",
+     "PCDHB15+PCDHB5(id0.00,col0)",
+     "RPL10+RPL10L(id0.00,col0)",
+     "ZNF41+ZNF84(id0.00,col0)",
+     "ZNF585A+ZNF84(id0.00,col0)",
+     "ZNF585B+ZNF84(id0.00,col0)"
+    ],
+    "ep_impure_FP_removed_named": [
+     "B3GAT2+SMAP1(col=0)",
+     "CANX+HMGB3(col=0)",
+     "CEP57+MTMR2(col=0)",
+     "CPSF2+NDUFB1(col=0)",
+     "ESRRA+TPTE2(col=0)",
+     "HDGFL3+TM6SF1(col=0)",
+     "LOC101144552+SNRNP25(col=0)",
+     "LOC115931054+PSMD7(col=0)",
+     "LOC115935989+RHEB(col=0)",
+     "MOV10+RHOC(col=0)",
+     "MTREX+PLPP1(col=0)"
+    ],
+    "exemplar_status": {
+     "ABITRAM+CTNNAL1": "kept(col=1,genuine)",
+     "DEDD+NIT1": "kept(col=1,genuine)",
+     "KMT2C+TMEM128": "absent",
+     "LOC129532935+SORT1": "kept(col=8,genuine)",
+     "MOV10+RHOC": "SPLIT(col=0,genuine)",
+     "RBBP4+SYNC": "kept(col=1,genuine)",
+     "RHD+SDHD": "kept(col=1,genuine)"
+    },
+    "gate": "cut cross-gene edge iff colinear_shared_exons <= 0 (== require >= 1 colinear exons to KEEP)",
+    "impure_blocks": 46,
+    "n_families": 499,
+    "named_domain_share_FP_removed": [
+     "MOV10+RHOC(col=0)"
+    ],
+    "oracle_genes_gained": [],
+    "oracle_genes_lost": [],
+    "split_FP_fraction_pct": 72.7
+   },
+   "1": {
+    "E_p": 0.9346,
+    "E_p_delta_vs_catalog_0_8918": 0.0428,
+    "E_p_delta_vs_rederive_baseline": 0.043,
+    "FP_ep_impure_split": 26,
+    "FP_genuine_split": 164,
+    "GSTM2": {
+     "genes_present": [
+      "GSTM2",
+      "LOC101129940",
+      "LOC115930164",
+      "LOC115930576"
+     ],
+     "n_families": 5
+    },
+    "GSTM2_spared": true,
+    "K": 1,
+    "MAGE": {
+     "genes_present": [
+      "LOC129529978",
+      "LOC129529986",
+      "MAGEA9"
+     ],
+     "n_families": 2
+    },
+    "MAGE_spared": true,
+    "REAL_TP_split": 40,
+    "REAL_divergent_meanid_lt_0_90_split": 24,
+    "REAL_split_total": 67,
+    "REAL_truthbar_divergent_split": 27,
+    "R_oracle": "49/57",
+    "R_oracle_held_50_57": false,
+    "TP_real_cut_named": [
+     "ACSBG1+IDH3A(id1.00,col1)",
+     "ATP6V1C2+PDIA6(id0.00,col0)",
+     "CENPP+IPPK(id1.00,col1)",
+     "CRMP1+EVC(id0.00,col0)",
+     "CTSA+NEURL2(id1.00,col1)",
+     "DCAF12L1+DCAF12L2(id0.85,col1)",
+     "DNAJC17+GCHFR(id0.00,col0)",
+     "EEF1A1+LOC109023808(id0.00,col0)",
+     "EIF1AX+LOC101137900(id0.00,col0)",
+     "ERCC1+POLR1G(id0.96,col1)",
+     "FGF2+NUDT6(id0.00,col0)",
+     "GLUD1+GLUD2(id0.00,col0)",
+     "IFITM2+LOC101128980(id0.91,col1)",
+     "IGBP1+IGBP1C(id0.00,col0)",
+     "JMJD8+STUB1(id0.00,col0)",
+     "LOC101127631+ZNF569(id1.00,col1)",
+     "LOC101130542+TCEAL5(id0.00,col0)",
+     "LOC101132325+MKRN1(id0.00,col0)",
+     "LOC101135168+LOC115933002(id0.00,col0)",
+     "LOC101141171+NUDT10(id0.90,col1)",
+     "LOC101142859+LOC134758545(id0.99,col1)",
+     "LOC101150533+MSL3(id0.00,col0)",
+     "LOC115932756+XRCC2(id0.00,col0)",
+     "LOC115932794+LOC129529083(id0.94,col1)",
+     "LOC115932954+XRCC2(id0.89,col1)",
+     "LOC115933349+LOC134757427(id1.00,col1)",
+     "LOC115934550+WDR45B(id0.91,col1)",
+     "LOC129525654+RPL7(id0.00,col0)",
+     "LOC129527626+LOC134757427(id0.99,col1)",
+     "LOC129529456+NCAPH2(id1.00,col1)",
+     "LOC134756368+XRCC2(id0.89,col1)",
+     "LOC134757427+LOC134757432(id0.99,col1)",
+     "MAGEB6+MAGEB6B(id0.87,col1)",
+     "MPDU1+MPDU1-AS1(id1.00,col1)",
+     "NKIRAS1+UBE2E1(id0.00,col0)",
+     "PYROXD1+RECQL(id0.89,col1)",
+     "SARM1+SLC46A1(id1.00,col1)",
+     "SLC7A6+SLC7A6OS(id1.00,col1)",
+     "SURF2+SURF4(id1.00,col1)",
+     "TCEAL5+TCEAL6(id0.00,col0)"
+    ],
+    "divergent_real_cut_named": [
+     "DCAF4+DCAF4L1(id0.00,col0)",
+     "HNRNPH1+HNRNPH2(id0.00,col0)",
+     "HSPA1L+HSPA2(id0.00,col0)",
+     "LOC101126280+PCDHB15(id0.00,col0)",
+     "LOC101126280+PCDHB2(id0.00,col0)",
+     "LOC101126280+PCDHB5(id0.00,col0)",
+     "LOC101143714+SLFN12(id0.00,col0)",
+     "PCDHB15+PCDHB16(id0.00,col0)",
+     "PCDHB15+PCDHB2(id0.00,col0)",
+     "PCDHB15+PCDHB5(id0.00,col0)",
+     "PCDHB2+PCDHB5(id0.00,col0)",
+     "RPL10+RPL10L(id0.00,col0)",
+     "ZNF41+ZNF84(id0.00,col0)",
+     "ZNF585A+ZNF84(id0.00,col0)",
+     "ZNF585B+ZNF84(id0.00,col0)",
+     "PCDHB16+PCDHB5(id0.73,col1)",
+     "LOC101126280+PCDHB16(id0.73,col1)",
+     "HSPA2+LOC101131586(id0.75,col1)",
+     "PCDHB16+PCDHB2(id0.76,col1)",
+     "IFITM1+LOC101128980(id0.78,col1)",
+     "PNMA6E+PNMA6F(id0.79,col1)",
+     "APOL2+APOL3(id0.81,col1)",
+     "NR2F1+NR2F2(id0.87,col1)",
+     "APOL3+APOL4(id0.88,col1)",
+     "TCEAL2+TCEAL4(id0.97,col1)",
+     "IFITM1+IFITM2(id0.98,col1)",
+     "ZBTB26+ZBTB6(id1.00,col1)"
+    ],
+    "ep_impure_FP_removed_named": [
+     "ARL17A+LOC101135168(col=0)",
+     "ARL17A+LOC115934626(col=1)",
+     "B3GAT2+SMAP1(col=0)",
+     "BMAL1+BTBD10(col=1)",
+     "CANX+HMGB3(col=0)",
+     "CDK4+TSPAN31(col=1)",
+     "CEP57+MTMR2(col=0)",
+     "CPSF2+NDUFB1(col=0)",
+     "DDX11+LOC109029264(col=1)",
+     "DEDD+NIT1(col=1)",
+     "DIMT1+KIF2A(col=1)",
+     "ESRRA+TPTE2(col=0)",
+     "GRTP1+LAMP1(col=1)",
+     "HDGFL3+TM6SF1(col=0)",
+     "LOC101144552+SNRNP25(col=0)",
+     "LOC101148457+TRAF5(col=1)",
+     "LOC115931054+PSMD7(col=0)",
+     "LOC115935989+RHEB(col=0)",
+     "MKRN2+RAF1(col=1)",
+     "MOV10+RHOC(col=0)",
+     "MTREX+PLPP1(col=0)",
+     "NHP2+RMND5B(col=1)",
+     "NT5C1B+RDH14(col=1)",
+     "RBBP4+SYNC(col=1)",
+     "RHD+SDHD(col=1)",
+     "RPL31+TBC1D8(col=1)"
+    ],
+    "exemplar_status": {
+     "ABITRAM+CTNNAL1": "SPLIT(col=1,genuine)",
+     "DEDD+NIT1": "SPLIT(col=1,genuine)",
+     "KMT2C+TMEM128": "absent",
+     "LOC129532935+SORT1": "kept(col=8,genuine)",
+     "MOV10+RHOC": "SPLIT(col=0,genuine)",
+     "RBBP4+SYNC": "SPLIT(col=1,genuine)",
+     "RHD+SDHD": "SPLIT(col=1,genuine)"
+    },
+    "gate": "cut cross-gene edge iff colinear_shared_exons <= 1 (== require >= 2 colinear exons to KEEP)",
+    "impure_blocks": 28,
+    "n_families": 428,
+    "named_domain_share_FP_removed": [
+     "MOV10+RHOC(col=0)",
+     "RBBP4+SYNC(col=1)",
+     "RHD+SDHD(col=1)",
+     "DEDD+NIT1(col=1)",
+     "ABITRAM+CTNNAL1(col=1)"
+    ],
+    "oracle_genes_gained": [],
+    "oracle_genes_lost": [
+     "FOXO1"
+    ],
+    "split_FP_fraction_pct": 71.0
+   },
+   "2": {
+    "E_p": 0.9332,
+    "E_p_delta_vs_catalog_0_8918": 0.0414,
+    "E_p_delta_vs_rederive_baseline": 0.0416,
+    "FP_ep_impure_split": 30,
+    "FP_genuine_split": 222,
+    "GSTM2": {
+     "genes_present": [
+      "GSTM2",
+      "LOC101129940",
+      "LOC115930164",
+      "LOC115930576"
+     ],
+     "n_families": 5
+    },
+    "GSTM2_spared": true,
+    "K": 2,
+    "MAGE": {
+     "genes_present": [
+      "LOC129529978",
+      "LOC129529986",
+      "MAGEA9"
+     ],
+     "n_families": 2
+    },
+    "MAGE_spared": true,
+    "REAL_TP_split": 72,
+    "REAL_divergent_meanid_lt_0_90_split": 83,
+    "REAL_split_total": 162,
+    "REAL_truthbar_divergent_split": 90,
+    "R_oracle": "46/57",
+    "R_oracle_held_50_57": false,
+    "TP_real_cut_named": [
+     "ACSBG1+IDH3A(id1.00,col1)",
+     "ALDH1B1+LOC115935842(id0.92,col2)",
+     "ALDH1B1+LOC129524687(id0.98,col2)",
+     "ATP6V1C2+PDIA6(id0.00,col0)",
+     "CENPP+IPPK(id1.00,col1)",
+     "CRMP1+EVC(id0.00,col0)",
+     "CTSA+NEURL2(id1.00,col1)",
+     "DCAF12L1+DCAF12L2(id0.85,col1)",
+     "DNAJC17+GCHFR(id0.00,col0)",
+     "DPY19L2+LOC115935244(id0.86,col2)",
+     "EEF1A1+LOC109023808(id0.00,col0)",
+     "EIF1AX+LOC101137900(id0.00,col0)",
+     "ERCC1+POLR1G(id0.96,col1)",
+     "FGF2+NUDT6(id0.00,col0)",
+     "GLUD1+GLUD2(id0.00,col0)",
+     "IFITM2+LOC101128980(id0.91,col1)",
+     "IGBP1+IGBP1C(id0.00,col0)",
+     "JMJD8+STUB1(id0.00,col0)",
+     "LINC02693+LOC109025320(id0.95,col2)",
+     "LOC101127500+MYL12B(id0.93,col2)",
+     "LOC101127631+ZNF569(id1.00,col1)",
+     "LOC101130542+TCEAL5(id0.00,col0)",
+     "LOC101130542+TCEAL6(id0.89,col2)",
+     "LOC101131768+RGPD8(id0.98,col2)",
+     "LOC101132325+MKRN1(id0.00,col0)",
+     "LOC101135168+LOC115933002(id0.00,col0)",
+     "LOC101136398+LOC115932241(id0.89,col2)",
+     "LOC101136398+LOC115932281(id0.97,col2)",
+     "LOC101136398+LOC129529790(id0.96,col2)",
+     "LOC101138066+LOC115930840(id0.88,col2)",
+     "LOC101141171+NUDT10(id0.90,col1)",
+     "LOC101142859+LOC134758545(id0.99,col1)",
+     "LOC101143875+LOC115933307(id0.99,col2)",
+     "LOC101144634+LOC115930073(id0.99,col2)",
+     "LOC101150533+MSL3(id0.00,col0)",
+     "LOC109025447+RGPD8(id0.98,col1)",
+     "LOC109027782+LOC129523694(id0.99,col2)",
+     "LOC109027782+PSPH(id0.86,col2)",
+     "LOC115932281+LOC129529790(id0.93,col2)",
+     "LOC115932756+XRCC2(id0.00,col0)",
+     "LOC115932794+LOC129529083(id0.94,col1)",
+     "LOC115932954+XRCC2(id0.89,col1)",
+     "LOC115933349+LOC134757427(id1.00,col1)",
+     "LOC115933429+MPHOSPH8(id0.99,col2)",
+     "LOC115934550+WDR45B(id0.91,col1)",
+     "LOC115935842+LOC129524687(id0.96,col2)",
+     "LOC129523646+LOC129523647(id1.00,col2)",
+     "LOC129525654+RPL7(id0.00,col0)",
+     "LOC129526398+TMEM128(id0.97,col2)",
+     "LOC129527626+LOC134757427(id0.99,col1)",
+     "LOC129529112+LOC129529113(id0.95,col2)",
+     "LOC129529456+NCAPH2(id1.00,col1)",
+     "LOC129529976+MAGEA12(id0.84,col1)",
+     "LOC129529978+MAGEA12(id0.97,col1)",
+     "LOC129529983+MAGEA12(id0.97,col1)",
+     "LOC129529986+MAGEA12(id0.87,col2)",
+     "LOC129530020+TMEM185A(id1.00,col2)",
+     "LOC129530473+LOC129530554(id1.00,col2)",
+     "LOC129531666+RGPD8(id0.98,col2)",
+     "LOC129531667+RGPD8(id0.98,col2)",
+     "LOC129531752+LOC129532807(id1.00,col2)",
+     "LOC134756368+XRCC2(id0.89,col1)",
+     "LOC134757427+LOC134757432(id0.99,col1)",
+     "MAGEB6+MAGEB6B(id0.87,col1)",
+     "MPDU1+MPDU1-AS1(id1.00,col1)",
+     "NKIRAS1+UBE2E1(id0.00,col0)",
+     "POM121+POM121C(id0.95,col2)",
+     "PYROXD1+RECQL(id0.89,col1)",
+     "SARM1+SLC46A1(id1.00,col1)",
+     "SLC7A6+SLC7A6OS(id1.00,col1)",
+     "SURF2+SURF4(id1.00,col1)",
+     "TCEAL5+TCEAL6(id0.00,col0)"
+    ],
+    "divergent_real_cut_named": [
+     "DCAF4+DCAF4L1(id0.00,col0)",
+     "HNRNPH1+HNRNPH2(id0.00,col0)",
+     "HSPA1L+HSPA2(id0.00,col0)",
+     "LOC101126280+PCDHB15(id0.00,col0)",
+     "LOC101126280+PCDHB2(id0.00,col0)",
+     "LOC101126280+PCDHB5(id0.00,col0)",
+     "LOC101133657+ZNF823(id0.00,col0)",
+     "LOC101143714+SLFN12(id0.00,col0)",
+     "LOC101145690+ZNF418(id0.00,col0)",
+     "PCDHB15+PCDHB16(id0.00,col0)",
+     "PCDHB15+PCDHB2(id0.00,col0)",
+     "PCDHB15+PCDHB5(id0.00,col0)",
+     "PCDHB2+PCDHB5(id0.00,col0)",
+     "RPL10+RPL10L(id0.00,col0)",
+     "ZNF41+ZNF84(id0.00,col0)",
+     "ZNF43+ZNF626(id0.00,col0)",
+     "ZNF585A+ZNF84(id0.00,col0)",
+     "ZNF585B+ZNF84(id0.00,col0)",
+     "ZNF626+ZNF678(id0.00,col0)",
+     "ZNF626+ZNF92(id0.00,col0)",
+     "LOC101153126+ZNF626(id0.70,col1)",
+     "ZNF254+ZNF626(id0.72,col2)",
+     "ZNF799+ZNF823(id0.72,col1)",
+     "ZNF626+ZNF681(id0.72,col2)",
+     "LOC101144838+ZNF626(id0.72,col2)",
+     "PCDHB16+PCDHB5(id0.73,col1)",
+     "LOC101142646+ZNF626(id0.73,col1)",
+     "ZNF563+ZNF823(id0.73,col2)",
+     "ZNF429+ZNF626(id0.73,col2)",
+     "LOC101126280+PCDHB16(id0.73,col1)",
+     "ZNF626+ZNF675(id0.73,col2)",
+     "ZNF430+ZNF626(id0.73,col2)",
+     "LOC101136009+ZNF626(id0.74,col1)",
+     "ZNF506+ZNF626(id0.74,col2)",
+     "ZNF626+ZNF680(id0.74,col1)",
+     "ZNF626+ZNF723(id0.74,col2)",
+     "ZNF443+ZNF823(id0.74,col2)",
+     "HSPA2+LOC101131586(id0.75,col1)",
+     "LOC115931568+ZNF626(id0.75,col1)",
+     "LOC101154200+ZNF823(id0.75,col2)",
+     "LOC101123988+ZNF626(id0.75,col1)",
+     "LOC101131674+TUBB8(id0.76,col2)",
+     "ZNF486+ZNF626(id0.76,col1)",
+     "LOC101141027+ZNF626(id0.76,col2)",
+     "LOC101137462+ZNF626(id0.76,col1)",
+     "LOC115931576+ZNF626(id0.76,col1)",
+     "ZNF273+ZNF626(id0.76,col1)",
+     "LOC101129171+ZNF626(id0.76,col2)",
+     "PCDHB16+PCDHB2(id0.76,col1)",
+     "LOC129529976+MAGEA4(id0.76,col2)",
+     "ZNF585A+ZNF81(id0.77,col2)",
+     "LOC129529976+MAGEA1(id0.77,col2)",
+     "ZNF41+ZNF585A(id0.77,col2)",
+     "TUBB2A+TUBB8(id0.77,col2)",
+     "LOC129529986+MAGEA4(id0.77,col2)",
+     "IFITM1+LOC101128980(id0.78,col1)",
+     "LOC101130137+ZNF583(id0.78,col2)",
+     "LOC129529986+MAGEA1(id0.78,col2)",
+     "LOC101128351+LOC109025073(id0.78,col2)",
+     "MAGEA1+MAGEA12(id0.79,col1)",
+     "PNMA6E+PNMA6F(id0.79,col1)",
+     "LOC129529983+MAGEA1(id0.80,col2)",
+     "MAGEA12+MAGEA4(id0.80,col1)",
+     "LOC101130507+LOC109025073(id0.80,col2)",
+     "TUBB+TUBB8(id0.80,col2)",
+     "LOC129529983+MAGEA4(id0.80,col2)",
+     "LOC101124732+ZNF418(id0.80,col2)",
+     "TUBB4A+TUBB8(id0.80,col2)",
+     "ZNF41+ZNF585B(id0.80,col1)",
+     "LOC129529978+MAGEA1(id0.80,col2)",
+     "LOC129529978+MAGEA4(id0.80,col2)",
+     "LOC109025073+ZNF440(id0.80,col2)",
+     "APOL2+APOL3(id0.81,col1)",
+     "LOC109025073+ZNF433(id0.81,col2)",
+     "ZNF585B+ZNF81(id0.82,col1)",
+     "TUBB4B+TUBB8(id0.84,col2)",
+     "LOC101128712+LOC109025073(id0.85,col1)",
+     "ZNF41+ZNF81(id0.85,col2)",
+     "BEX1+BEX2(id0.86,col2)",
+     "ZCCHC12+ZCCHC18(id0.87,col2)",
+     "NR2F1+NR2F2(id0.87,col1)",
+     "LOC115932241+LOC129529790(id0.88,col2)",
+     "APOL3+APOL4(id0.88,col1)",
+     "TCEAL2+TCEAL4(id0.97,col1)",
+     "IFITM1+IFITM2(id0.98,col1)",
+     "LOC129526566+LOC129532807(id0.99,col2)",
+     "LOC129526566+LOC129531752(id1.00,col2)",
+     "LOC101137311+PSPC1(id1.00,col2)",
+     "LOC129531205+LOC129531501(id1.00,col1)",
+     "ZBTB26+ZBTB6(id1.00,col1)"
+    ],
+    "ep_impure_FP_removed_named": [
+     "APOBEC3C+APOBEC3D(col=2)",
+     "APOBEC3C+APOBEC3F(col=2)",
+     "ARL17A+LOC101135168(col=0)",
+     "ARL17A+LOC115934626(col=1)",
+     "B3GAT2+SMAP1(col=0)",
+     "BMAL1+BTBD10(col=1)",
+     "CANX+HMGB3(col=0)",
+     "CDK4+TSPAN31(col=1)",
+     "CEP57+MTMR2(col=0)",
+     "CPSF2+NDUFB1(col=0)",
+     "DDX11+LOC109029264(col=1)",
+     "DEDD+NIT1(col=1)",
+     "DIMT1+KIF2A(col=1)",
+     "ESRRA+TPTE2(col=0)",
+     "GRTP1+LAMP1(col=1)",
+     "HDGFL3+TM6SF1(col=0)",
+     "LOC101144552+SNRNP25(col=0)",
+     "LOC101148457+TRAF5(col=1)",
+     "LOC115931054+PSMD7(col=0)",
+     "LOC115935989+RHEB(col=0)",
+     "LOC129532709+LOC134759133(col=2)",
+     "LOC134759133+NDUFA8(col=2)",
+     "MKRN2+RAF1(col=1)",
+     "MOV10+RHOC(col=0)",
+     "MTREX+PLPP1(col=0)",
+     "NHP2+RMND5B(col=1)",
+     "NT5C1B+RDH14(col=1)",
+     "RBBP4+SYNC(col=1)",
+     "RHD+SDHD(col=1)",
+     "RPL31+TBC1D8(col=1)"
+    ],
+    "exemplar_status": {
+     "ABITRAM+CTNNAL1": "SPLIT(col=1,genuine)",
+     "DEDD+NIT1": "SPLIT(col=1,genuine)",
+     "KMT2C+TMEM128": "absent",
+     "LOC129532935+SORT1": "kept(col=8,genuine)",
+     "MOV10+RHOC": "SPLIT(col=0,genuine)",
+     "RBBP4+SYNC": "SPLIT(col=1,genuine)",
+     "RHD+SDHD": "SPLIT(col=1,genuine)"
+    },
+    "gate": "cut cross-gene edge iff colinear_shared_exons <= 2 (== require >= 3 colinear exons to KEEP)",
+    "impure_blocks": 27,
+    "n_families": 404,
+    "named_domain_share_FP_removed": [
+     "MOV10+RHOC(col=0)",
+     "RBBP4+SYNC(col=1)",
+     "RHD+SDHD(col=1)",
+     "DEDD+NIT1(col=1)",
+     "ABITRAM+CTNNAL1(col=1)"
+    ],
+    "oracle_genes_gained": [],
+    "oracle_genes_lost": [
+     "FOXO1",
+     "LOC129523647",
+     "LOC129530554",
+     "LOC129531752"
+    ],
+    "split_FP_fraction_pct": 57.8
+   }
+  },
+  "rederive_baseline_K_none": {
+   "E_p": 0.8916,
+   "R_oracle": "50/57",
+   "impure_blocks": 62,
+   "n_families": 572,
+   "note": "1 quasi-clique-only-connected block / 2 loci lost by re-derivation, NOT by the gate; ALL gate deltas are measured against THIS baseline"
+  },
+  "substrate_pairs_comembered_in_baseline": 1812
+ },
+ "identity_floor_sensitivity": {
+  "note": "colinear>=2 %% per class as the exon-match identity floor varies; 0.70 == the specified gate. If divergent-real recovery jumps as the floor drops, the 0.70 'erosion to a single domain' is a NUCLEOTIDE-FLOOR artifact, not lost structure.",
+  "per_class": {
+   "TP": {
+    "colinear_ge2_pct_at_identity_floor": {
+     "id>=0.50": 93.75,
+     "id>=0.60": 84.62,
+     "id>=0.65": 83.89,
+     "id>=0.70": 83.41,
+     "id>=0.75": 83.17,
+     "id>=0.80": 82.21
+    },
+    "n": 416
+   },
+   "genuine": {
+    "colinear_ge2_pct_at_identity_floor": {
+     "id>=0.50": 82.23,
+     "id>=0.60": 45.8,
+     "id>=0.65": 37.62,
+     "id>=0.70": 34.4,
+     "id>=0.75": 31.92,
+     "id>=0.80": 27.47
+    },
+    "n": 1773
+   },
+   "truthbar": {
+    "colinear_ge2_pct_at_identity_floor": {
+     "id>=0.50": 95.42,
+     "id>=0.60": 74.57,
+     "id>=0.65": 57.92,
+     "id>=0.70": 46.33,
+     "id>=0.75": 35.01,
+     "id>=0.80": 21.61
+    },
+    "n": 3382
+   }
+  }
+ },
+ "named_exemplars": [
+  {
+   "aln_frac": 0.506,
+   "cls": "genuine",
+   "colinear": 0,
+   "core_recip": 0.536,
+   "cut_K1": 1,
+   "in_dna_loose": 0,
+   "n_exon_min": 6,
+   "pair": "MOV10+RHOC"
+  },
+  {
+   "aln_frac": 0.6047,
+   "cls": "genuine",
+   "colinear": 1,
+   "core_recip": 0.6067,
+   "cut_K1": 1,
+   "in_dna_loose": 0,
+   "n_exon_min": 3,
+   "pair": "RBBP4+SYNC"
+  },
+  {
+   "aln_frac": 0.9108,
+   "cls": "genuine",
+   "colinear": 1,
+   "core_recip": 0.4522,
+   "cut_K1": 1,
+   "in_dna_loose": 0,
+   "n_exon_min": 2,
+   "pair": "RHD+SDHD"
+  },
+  {
+   "aln_frac": 0.6884,
+   "cls": "genuine",
+   "colinear": 1,
+   "core_recip": 0.6935,
+   "cut_K1": 1,
+   "in_dna_loose": 0,
+   "n_exon_min": 6,
+   "pair": "DEDD+NIT1"
+  },
+  {
+   "note": "no direct multi-exon E_r edge in substrate",
+   "pair": "KMT2C+TMEM128"
+  },
+  {
+   "aln_frac": 0.3647,
+   "cls": "genuine",
+   "colinear": 8,
+   "core_recip": 0.3095,
+   "cut_K1": 0,
+   "in_dna_loose": 0,
+   "n_exon_min": 11,
+   "pair": "LOC129532935+SORT1"
+  },
+  {
+   "aln_frac": 0.7599,
+   "cls": "genuine",
+   "colinear": 1,
+   "core_recip": 0.7593,
+   "cut_K1": 1,
+   "in_dna_loose": 0,
+   "n_exon_min": 6,
+   "pair": "ABITRAM+CTNNAL1"
+  }
+ ],
+ "out_tsv": "/mnt/c/Users/jfris/Desktop/Rustle/bench/colinear_multiexon_gate.tsv",
+ "params": {
+  "ID_THRESH": 0.7,
+  "MIN_EXON": 30,
+  "PYTHONHASHSEED": "0"
+ },
+ "recall_casualties": {
+  "TP_cut_at_K1": [
+   {
+    "aln_frac": 0.513,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "ACSBG1",
+    "gene_b": "IDH3A",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 11
+   },
+   {
+    "aln_frac": 0.5114,
+    "best_exon_id": 0.9656,
+    "colinear": 1,
+    "gene_a": "ANKRD18A",
+    "gene_b": "LOC115933254",
+    "mean_matched_id": 0.9656,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.7066,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "ASB6",
+    "gene_b": "NTMT1",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 4
+   },
+   {
+    "aln_frac": 0.38,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "ATP6V1C2",
+    "gene_b": "PDIA6",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 10
+   },
+   {
+    "aln_frac": 0.4768,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "CCDC152",
+    "gene_b": "SELENOP",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 5
+   },
+   {
+    "aln_frac": 0.8865,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "CENPP",
+    "gene_b": "IPPK",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.3472,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "CRMP1",
+    "gene_b": "EVC",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.8099,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "CTSA",
+    "gene_b": "NEURL2",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.3869,
+    "best_exon_id": 0.8492,
+    "colinear": 1,
+    "gene_a": "DCAF12L1",
+    "gene_b": "DCAF12L2",
+    "mean_matched_id": 0.8492,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.9308,
+    "best_exon_id": 0.7087,
+    "colinear": 1,
+    "gene_a": "DHFR",
+    "gene_b": "DHFR2",
+    "mean_matched_id": 0.7087,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.3242,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "DNAJC17",
+    "gene_b": "GCHFR",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.6488,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "EEF1A1",
+    "gene_b": "LOC109023808",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.8687,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "EIF1AX",
+    "gene_b": "LOC101137900",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.6722,
+    "best_exon_id": 0.9607,
+    "colinear": 1,
+    "gene_a": "ERCC1",
+    "gene_b": "POLR1G",
+    "mean_matched_id": 0.9607,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.3861,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "ETFDH",
+    "gene_b": "PPID",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 10
+   },
+   {
+    "aln_frac": 0.4208,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "FGF2",
+    "gene_b": "NUDT6",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.0,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "FRG1",
+    "gene_b": "LOC129532222",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.4406,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "GATC",
+    "gene_b": "SRSF9",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 4
+   },
+   {
+    "aln_frac": 0.8402,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "GLUD1",
+    "gene_b": "GLUD2",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.8394,
+    "best_exon_id": 0.9107,
+    "colinear": 1,
+    "gene_a": "IFITM2",
+    "gene_b": "LOC101128980",
+    "mean_matched_id": 0.9107,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.7309,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "IGBP1",
+    "gene_b": "IGBP1C",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.465,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "JMJD8",
+    "gene_b": "STUB1",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 7
+   },
+   {
+    "aln_frac": 0.0,
+    "best_exon_id": 0.8651,
+    "colinear": 1,
+    "gene_a": "LOC101124732",
+    "gene_b": "ZNF552",
+    "mean_matched_id": 0.8651,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.8963,
+    "best_exon_id": 0.9952,
+    "colinear": 1,
+    "gene_a": "LOC101127631",
+    "gene_b": "ZNF569",
+    "mean_matched_id": 0.9952,
+    "n_exon_min": 4
+   },
+   {
+    "aln_frac": 0.2299,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC101130542",
+    "gene_b": "TCEAL5",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.468,
+    "best_exon_id": 0.9812,
+    "colinear": 1,
+    "gene_a": "LOC101131768",
+    "gene_b": "LOC109025447",
+    "mean_matched_id": 0.9812,
+    "n_exon_min": 4
+   },
+   {
+    "aln_frac": 0.4466,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC101132325",
+    "gene_b": "MKRN1",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.3828,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC101133699",
+    "gene_b": "NUTF2",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.4235,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC101135168",
+    "gene_b": "LOC115933002",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 6
+   },
+   {
+    "aln_frac": 0.2274,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC101137900",
+    "gene_b": "LOC129530234",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.5069,
+    "best_exon_id": 0.8998,
+    "colinear": 1,
+    "gene_a": "LOC101141171",
+    "gene_b": "NUDT10",
+    "mean_matched_id": 0.8998,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.493,
+    "best_exon_id": 0.9709,
+    "colinear": 1,
+    "gene_a": "LOC101142783",
+    "gene_b": "LOC115933254",
+    "mean_matched_id": 0.9709,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 1.1398,
+    "best_exon_id": 0.9884,
+    "colinear": 1,
+    "gene_a": "LOC101142859",
+    "gene_b": "LOC134758545",
+    "mean_matched_id": 0.9884,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.0,
+    "best_exon_id": 0.8492,
+    "colinear": 1,
+    "gene_a": "LOC101145690",
+    "gene_b": "ZNF552",
+    "mean_matched_id": 0.8492,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.8121,
+    "best_exon_id": 0.8357,
+    "colinear": 1,
+    "gene_a": "LOC101145839",
+    "gene_b": "PTEN",
+    "mean_matched_id": 0.8357,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.8795,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC101150533",
+    "gene_b": "MSL3",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.5996,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC109024259",
+    "gene_b": "ZNF224",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.5032,
+    "best_exon_id": 0.9955,
+    "colinear": 1,
+    "gene_a": "LOC109025447",
+    "gene_b": "LOC129531666",
+    "mean_matched_id": 0.9955,
+    "n_exon_min": 4
+   },
+   {
+    "aln_frac": 0.5344,
+    "best_exon_id": 0.9814,
+    "colinear": 1,
+    "gene_a": "LOC109025447",
+    "gene_b": "RGPD8",
+    "mean_matched_id": 0.9814,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.7303,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC115932756",
+    "gene_b": "XRCC2",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.9538,
+    "best_exon_id": 0.9431,
+    "colinear": 1,
+    "gene_a": "LOC115932794",
+    "gene_b": "LOC129529083",
+    "mean_matched_id": 0.9431,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.7303,
+    "best_exon_id": 0.8924,
+    "colinear": 1,
+    "gene_a": "LOC115932954",
+    "gene_b": "XRCC2",
+    "mean_matched_id": 0.8924,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.295,
+    "best_exon_id": 0.997,
+    "colinear": 1,
+    "gene_a": "LOC115933349",
+    "gene_b": "LOC134757427",
+    "mean_matched_id": 0.997,
+    "n_exon_min": 8
+   },
+   {
+    "aln_frac": 0.8795,
+    "best_exon_id": 0.9107,
+    "colinear": 1,
+    "gene_a": "LOC115934550",
+    "gene_b": "WDR45B",
+    "mean_matched_id": 0.9107,
+    "n_exon_min": 6
+   },
+   {
+    "aln_frac": 0.6588,
+    "best_exon_id": 0.9119,
+    "colinear": 1,
+    "gene_a": "LOC129525008",
+    "gene_b": "TIMM23B",
+    "mean_matched_id": 0.9119,
+    "n_exon_min": 8
+   },
+   {
+    "aln_frac": 0.3249,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC129525654",
+    "gene_b": "RPL7",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 1.0,
+    "best_exon_id": 0.9972,
+    "colinear": 1,
+    "gene_a": "LOC129526395",
+    "gene_b": "LOC129527278",
+    "mean_matched_id": 0.9928,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.4928,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC129526395",
+    "gene_b": "LOC129532222",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.5469,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC129527278",
+    "gene_b": "LOC129532222",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.9882,
+    "best_exon_id": 0.9926,
+    "colinear": 1,
+    "gene_a": "LOC129527626",
+    "gene_b": "LOC134757427",
+    "mean_matched_id": 0.9926,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.8247,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "LOC129529456",
+    "gene_b": "NCAPH2",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.9359,
+    "best_exon_id": 0.8421,
+    "colinear": 1,
+    "gene_a": "LOC129529976",
+    "gene_b": "MAGEA12",
+    "mean_matched_id": 0.8421,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.958,
+    "best_exon_id": 0.9709,
+    "colinear": 1,
+    "gene_a": "LOC129529978",
+    "gene_b": "MAGEA12",
+    "mean_matched_id": 0.9709,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.958,
+    "best_exon_id": 0.9709,
+    "colinear": 1,
+    "gene_a": "LOC129529983",
+    "gene_b": "MAGEA12",
+    "mean_matched_id": 0.9709,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.0,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "LOC129531752",
+    "gene_b": "MORN5",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.0,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "LOC129532807",
+    "gene_b": "MORN5",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.7303,
+    "best_exon_id": 0.8924,
+    "colinear": 1,
+    "gene_a": "LOC134756368",
+    "gene_b": "XRCC2",
+    "mean_matched_id": 0.8924,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.9902,
+    "best_exon_id": 0.9872,
+    "colinear": 1,
+    "gene_a": "LOC134757427",
+    "gene_b": "LOC134757432",
+    "mean_matched_id": 0.9872,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.4108,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "LOC134758217",
+    "gene_b": "RFPL3",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.7594,
+    "best_exon_id": 0.8674,
+    "colinear": 1,
+    "gene_a": "MAGEB6",
+    "gene_b": "MAGEB6B",
+    "mean_matched_id": 0.8674,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.3456,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "MMP24OS",
+    "gene_b": "SPC25",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 4
+   },
+   {
+    "aln_frac": 0.6061,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "MPDU1",
+    "gene_b": "MPDU1-AS1",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 2
+   },
+   {
+    "aln_frac": 0.6885,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "NKIRAS1",
+    "gene_b": "UBE2E1",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 5
+   },
+   {
+    "aln_frac": 0.4487,
+    "best_exon_id": 0.8886,
+    "colinear": 1,
+    "gene_a": "PYROXD1",
+    "gene_b": "RECQL",
+    "mean_matched_id": 0.8886,
+    "n_exon_min": 12
+   },
+   {
+    "aln_frac": 0.7245,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "SARM1",
+    "gene_b": "SLC46A1",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 5
+   },
+   {
+    "aln_frac": 0.7977,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "SLC7A6",
+    "gene_b": "SLC7A6OS",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 5
+   },
+   {
+    "aln_frac": 0.7381,
+    "best_exon_id": 1.0,
+    "colinear": 1,
+    "gene_a": "SURF2",
+    "gene_b": "SURF4",
+    "mean_matched_id": 1.0,
+    "n_exon_min": 6
+   },
+   {
+    "aln_frac": 0.499,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "TCEAL5",
+    "gene_b": "TCEAL6",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 3
+   },
+   {
+    "aln_frac": 0.0,
+    "best_exon_id": 0.0,
+    "colinear": 0,
+    "gene_a": "ZNF586",
+    "gene_b": "ZNF776",
+    "mean_matched_id": 0.0,
+    "n_exon_min": 2
+   }
+  ],
+  "TP_cut_at_K1_n": 69,
+  "truthbar_cut_at_K1_n": 1815
+ },
+ "residual_vs_shipped_rule": {
+  "genuine_FP_shipped_keeps": 619,
+  "of_those_colinear_cut_K1": 315,
+  "of_those_colinear_cut_K1_pct": 50.89,
+  "real_of_those_colinear_cut_K1": 103,
+  "real_of_those_colinear_cut_K1_pct": 12.29,
+  "real_shipped_keeps": 838
+ },
+ "substrate": {
+  "class_counts": {
+   "TP": 416,
+   "genuine": 1773,
+   "truthbar": 3382
+  },
+  "n_pairs": 5571,
+  "note": "MULTI-exon core-present direct E_r edges; TP=DNA-confirmed near-identical, truthbar=E_p-protein-confirmed DIVERGENT real paralogs, genuine=over-merge FP"
+ }
+}
