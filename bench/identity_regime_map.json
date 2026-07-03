@@ -1,0 +1,380 @@
+{
+  "a_precision_curve_core_recip": [
+    {
+      "bin": "0.00-0.30",
+      "bin_hi": 0.3,
+      "bin_lo": 0,
+      "frac_cardinality": 0.0241,
+      "frac_ep_oversplit": 0.2562,
+      "frac_overmerge": 0.7197,
+      "g_cardinality": 30,
+      "g_ep_oversplit": 319,
+      "g_overmerge": 896,
+      "mid": 0.15,
+      "n_edges": 3660,
+      "n_genuine": 1245,
+      "n_real": 2415,
+      "n_sedef_overmerge": 35,
+      "precision_corrected": 0.7552,
+      "precision_raw": 0.6598
+    },
+    {
+      "bin": "0.30-0.50",
+      "bin_hi": 0.5,
+      "bin_lo": 0.3,
+      "frac_cardinality": 0.0264,
+      "frac_ep_oversplit": 0.4399,
+      "frac_overmerge": 0.5337,
+      "g_cardinality": 9,
+      "g_ep_oversplit": 150,
+      "g_overmerge": 182,
+      "mid": 0.4,
+      "n_edges": 1298,
+      "n_genuine": 341,
+      "n_real": 957,
+      "n_sedef_overmerge": 20,
+      "precision_corrected": 0.8598,
+      "precision_raw": 0.7373
+    },
+    {
+      "bin": "0.50-0.70",
+      "bin_hi": 0.7,
+      "bin_lo": 0.5,
+      "frac_cardinality": 0.045,
+      "frac_ep_oversplit": 0.4685,
+      "frac_overmerge": 0.4865,
+      "g_cardinality": 5,
+      "g_ep_oversplit": 52,
+      "g_overmerge": 54,
+      "mid": 0.6,
+      "n_edges": 320,
+      "n_genuine": 111,
+      "n_real": 209,
+      "n_sedef_overmerge": 9,
+      "precision_corrected": 0.8313,
+      "precision_raw": 0.6531
+    },
+    {
+      "bin": "0.70-0.80",
+      "bin_hi": 0.8,
+      "bin_lo": 0.7,
+      "frac_cardinality": 0.0938,
+      "frac_ep_oversplit": 0.625,
+      "frac_overmerge": 0.2812,
+      "g_cardinality": 3,
+      "g_ep_oversplit": 20,
+      "g_overmerge": 9,
+      "mid": 0.75,
+      "n_edges": 106,
+      "n_genuine": 32,
+      "n_real": 74,
+      "n_sedef_overmerge": 1,
+      "precision_corrected": 0.9151,
+      "precision_raw": 0.6981
+    },
+    {
+      "bin": "0.80-0.90",
+      "bin_hi": 0.9,
+      "bin_lo": 0.8,
+      "frac_cardinality": 0.0625,
+      "frac_ep_oversplit": 0.5625,
+      "frac_overmerge": 0.375,
+      "g_cardinality": 1,
+      "g_ep_oversplit": 9,
+      "g_overmerge": 6,
+      "mid": 0.85,
+      "n_edges": 67,
+      "n_genuine": 16,
+      "n_real": 51,
+      "n_sedef_overmerge": 1,
+      "precision_corrected": 0.9104,
+      "precision_raw": 0.7612
+    },
+    {
+      "bin": "0.90-0.95",
+      "bin_hi": 0.95,
+      "bin_lo": 0.9,
+      "frac_cardinality": 0.0,
+      "frac_ep_oversplit": 0.5,
+      "frac_overmerge": 0.5,
+      "g_cardinality": 0,
+      "g_ep_oversplit": 2,
+      "g_overmerge": 2,
+      "mid": 0.925,
+      "n_edges": 17,
+      "n_genuine": 4,
+      "n_real": 13,
+      "n_sedef_overmerge": 0,
+      "precision_corrected": 0.8824,
+      "precision_raw": 0.7647
+    },
+    {
+      "bin": "0.95-1.00",
+      "bin_hi": 1.0001,
+      "bin_lo": 0.95,
+      "frac_cardinality": 0.1667,
+      "frac_ep_oversplit": 0.7083,
+      "frac_overmerge": 0.125,
+      "g_cardinality": 4,
+      "g_ep_oversplit": 17,
+      "g_overmerge": 3,
+      "mid": 0.975,
+      "n_edges": 103,
+      "n_genuine": 24,
+      "n_real": 79,
+      "n_sedef_overmerge": 1,
+      "precision_corrected": 0.9709,
+      "precision_raw": 0.767
+    }
+  ],
+  "axes": {
+    "segment": "mean_matched_id / best_exon_id (O2 read-CONFUSABILITY axis)",
+    "whole_copy": "core_recip (O1 family-DEFINITION / floor axis)"
+  },
+  "b_fp_composition_shift": {
+    "axis": "core_recip",
+    "frac_overmerge_by_bin": [
+      0.7197,
+      0.5337,
+      0.4865,
+      0.2812,
+      0.375,
+      0.5,
+      0.125
+    ],
+    "frac_overmerge_high_bin": 0.125,
+    "frac_overmerge_low_bin": 0.7197,
+    "monotone": false,
+    "n_genuine_by_bin": [
+      1245,
+      341,
+      111,
+      32,
+      16,
+      4,
+      24
+    ],
+    "precision_corrected_high_bin": 0.9709,
+    "precision_corrected_low_bin": 0.7552,
+    "precision_raw_by_bin": [
+      0.6598,
+      0.7373,
+      0.6531,
+      0.6981,
+      0.7612,
+      0.7647,
+      0.767
+    ],
+    "precision_raw_note": "RAW edge precision is FLAT across all identity bins (0.65-0.77, no two-regime structure); the two-regime precision RISE (0.76->0.97) is ENTIRELY in the CORRECTED precision, i.e. a product of the reclassification that credits cardinality + colinear>=2 ep_oversplit as truth-artifacts. That credit is 21/21 (100%) SEDEF-backed in the near-identical top bin but only ~47% SEDEF-backed in the divergent regime (structural inference).",
+    "shift": "genuine single-domain over-merge 0.72 (divergent, bin0) -> 0.12 (near-identical, top bin); remainder becomes E_p-oversplit + cardinality (truth-artifacts, SEDEF-confirmed). NOT MONOTONE: the per-bin series is 0.72,0.53,0.49,0.28,0.38,0.50,0.12 (dips at 0.70-0.80, rises through 0.80-0.95, then drops); the trend is DOWNWARD but noisy and SMALL-N in the near-identical bins (>=0.80 has only 44 genuine-FP edges; the 0.12 rests on the single top bin n_genuine=24)."
+  },
+  "c_floor_knob_O1": {
+    "metric": "whole-transcript reciprocal identity (recip_id_best)",
+    "off": {
+      "E_p_purity": 0.8918,
+      "R_oracle": 0.8772,
+      "n_families": 573
+    },
+    "shipped": {
+      "E_p_purity": 0.9674,
+      "R_oracle": 0.5614,
+      "domain_shares_excluded": "4/4",
+      "edges_cut": 1523,
+      "n_families": 307
+    },
+    "shipped_floor": 0.8,
+    "sweep": [
+      {
+        "E_p_purity": 0.8918,
+        "R_oracle": 0.8772,
+        "domain_shares_excluded": "0/4",
+        "edges_cut": 0,
+        "floor": 0.0,
+        "floor_label": "off",
+        "n_families": 573
+      },
+      {
+        "E_p_purity": 0.9612,
+        "R_oracle": 0.5965,
+        "domain_shares_excluded": "3/4",
+        "edges_cut": 1436,
+        "floor": 0.7,
+        "floor_label": "0.70",
+        "n_families": 335
+      },
+      {
+        "E_p_purity": 0.9656,
+        "R_oracle": 0.5789,
+        "domain_shares_excluded": "3/4",
+        "edges_cut": 1488,
+        "floor": 0.75,
+        "floor_label": "0.75",
+        "n_families": 320
+      },
+      {
+        "E_p_purity": 0.9674,
+        "R_oracle": 0.5614,
+        "domain_shares_excluded": "4/4",
+        "edges_cut": 1523,
+        "floor": 0.8,
+        "floor_label": "0.80",
+        "n_families": 307
+      },
+      {
+        "E_p_purity": 0.9761,
+        "R_oracle": 0.5088,
+        "domain_shares_excluded": "4/4",
+        "edges_cut": 1556,
+        "floor": 0.85,
+        "floor_label": "0.85",
+        "n_families": 293
+      },
+      {
+        "E_p_purity": 0.9789,
+        "R_oracle": 0.4912,
+        "domain_shares_excluded": "4/4",
+        "edges_cut": 1581,
+        "floor": 0.9,
+        "floor_label": "0.90",
+        "n_families": 284
+      }
+    ],
+    "trade": "purity 0.892->0.967 but recall HALVES 0.877->0.561 (monotone; no interior F1 optimum) = an O1 PRECISION knob, not wired"
+  },
+  "coincidence": {
+    "coincide_with_conf_core_bam": false,
+    "coincide_with_conf_segment": false,
+    "gap_handoff_to_conf_core_bam": 0.15,
+    "gap_handoff_to_conf_segment": 0.24,
+    "o1_handoff_center": 0.75,
+    "o1_handoff_vs_floor_gap": 0.05,
+    "o1_objects_colocate": true,
+    "o1_shipped_floor": 0.8,
+    "o2_confusability_core_bam": 0.9,
+    "o2_confusability_segment": 0.99,
+    "verdict": "DO NOT COINCIDE: the O1 family-DEFINITION handoff (core_recip ~0.70-0.80) co-locates with the shipped O1 purity floor (0.80) but sits BELOW the O2 read-confusability boundary (0.90 core_recip bam / 0.99 per-segment). Definition (O1, whole-copy identity ~0.75) and resolvability (O2, per-segment identity ~0.99) are separate objects on different axes at different values."
+  },
+  "d_read_confusability_O2": {
+    "boundary_core_recip_bam": 0.9,
+    "boundary_core_recip_margin": 0.99,
+    "boundary_segment_best_exon": 0.99,
+    "boundary_segment_meanmatch": 0.99,
+    "curve_core_recip": [
+      {
+        "bam": 0.002822770347469588,
+        "margin": 0.03692170818505338,
+        "mid": 0.25,
+        "n_reads": 133911
+      },
+      {
+        "bam": 0.012220798652486717,
+        "margin": 0.08455513155252059,
+        "mid": 0.675,
+        "n_reads": 111613
+      },
+      {
+        "bam": 0.004191114836546521,
+        "margin": 0.08955223880597014,
+        "mid": 0.875,
+        "n_reads": 2386
+      },
+      {
+        "bam": 0.2396694214876033,
+        "margin": 0.42783505154639173,
+        "mid": 0.925,
+        "n_reads": 1089
+      },
+      {
+        "bam": 0.005756578947368421,
+        "margin": 0.0948905109489051,
+        "mid": 0.965,
+        "n_reads": 1216
+      },
+      {
+        "bam": 0.01107011070110701,
+        "margin": 0.0375,
+        "mid": 0.985,
+        "n_reads": 271
+      },
+      {
+        "bam": 0.11146924523233952,
+        "margin": 0.4672897196261682,
+        "mid": 0.995,
+        "n_reads": 7446
+      }
+    ],
+    "headline_per_segment": 0.99,
+    "note": "O2 boundary is a PER-SEGMENT/PER-READ resolvability property (best_exon/mean_matched=0.99); weakly correlated with whole-transcript identity (r_conf_identity=0.140)"
+  },
+  "determinism": {
+    "cardinality_genes_dipCN_ge4": 28,
+    "no_rng": true,
+    "pythonhashseed": "0",
+    "reproducibility_note": "The TSV/JSON/PNG are byte-reproducible ONLY against the PINNED 57-block roster snapshot (bench/identity_regime_map.flpr_frozen.json, md5 495909b6). The live family_level_pr_current.json is regenerated by a separate pipeline and DRIFTS (a transient 9/10-block state was observed); the frozen snapshot decouples this characterization from that drift. The core-axis EDGE finding (precision + FP composition) is independent of the roster and reproduces from the gate substrate alone.",
+    "roster_n_blocks": 57,
+    "roster_source": "frozen",
+    "roster_source_md5": "495909b6b1a4b363de836633170e7edc",
+    "roster_source_path": "/mnt/c/Users/jfris/Desktop/Rustle/bench/identity_regime_map.flpr_frozen.json",
+    "sedef_records_ge_0.90": 69803,
+    "tsv_md5": "e8941b7875157ba499792ac6b6a92e4f"
+  },
+  "figure_path": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_identity_regime_map.png",
+  "fp_per_regime": {
+    "divergent_lt_0.80_core_recip": {
+      "cardinality": 47,
+      "ep_oversplit": 541,
+      "ep_oversplit_dna_confirmed": 255,
+      "ep_oversplit_sedef_frac": 0.4713,
+      "ep_oversplit_structural_only": 286,
+      "frac_overmerge": 0.6599,
+      "genuine_overmerge": 1141,
+      "n_edges": 5384,
+      "n_genuine_fp": 1729,
+      "n_real": 3655,
+      "overmerge_frac_of_all_edges": 0.2119,
+      "precision_corrected": 0.7881,
+      "precision_raw": 0.6789
+    },
+    "honest_note": "Divergent regime is NOT perfectly clean and is where the genuine residual FP LIVES: raw edge precision 0.679, corrected 0.788; GENUINE single-conserved-domain over-merge is 1141/1729 = ~66% of that regime's FP MASS (and ~21% of ALL its edges) -- the real residual O1 FP, mostly non-segdup. NOTE the corrected credit there is only PARTLY DNA-validated: ep_oversplit is 47% SEDEF-backed (255/541), the rest structural inference. Near-identical regime corrected precision 0.941: apparent FPs are dominated by E_p-oversplit-of-real-dup + cardinality (86% SEDEF-backed, 24/28), so the raw E_p FP rate OVERSTATES real over-merges there.",
+    "near_identical_ge_0.80_core_recip": {
+      "cardinality": 5,
+      "ep_oversplit": 28,
+      "ep_oversplit_dna_confirmed": 24,
+      "ep_oversplit_sedef_frac": 0.8571,
+      "ep_oversplit_structural_only": 4,
+      "frac_overmerge": 0.25,
+      "genuine_overmerge": 11,
+      "n_edges": 187,
+      "n_genuine_fp": 44,
+      "n_real": 143,
+      "overmerge_frac_of_all_edges": 0.0588,
+      "precision_corrected": 0.9412,
+      "precision_raw": 0.7647
+    },
+    "raw_precision_flat_note": "RAW edge precision does NOT show two-regime structure (0.65-0.77 across all bins). The two-regime precision claim is a CORRECTED/reclassification result, DNA-validated (SEDEF) only in the near-identical regime (~86-100%); in the divergent regime the ep_oversplit credit is ~47% SEDEF-backed, so the divergent corrected precision (0.788) is optimistic."
+  },
+  "handoff": {
+    "axis": "core_recip (whole-copy identity)",
+    "composition_crossover_frac_overmerge_0.5": 0.5428,
+    "criterion": "first core_recip bin with corrected precision >=0.90 AND genuine-over-merge < 0.5 of FP mass",
+    "handoff_center": 0.75,
+    "handoff_hi": 0.8,
+    "handoff_lo": 0.7,
+    "interpretation": "O1(definition) below the handoff: over-merge dominates the residual FP (the homology task's genuine error). O2(assignment) above it: FP mass is E_p-oversplit-of-real-dup + cardinality (truth-artifacts), i.e. copies the RNA groups but E_p/parCN disputes.",
+    "saturation_bin": "0.70-0.80"
+  },
+  "roster_spotcheck": {
+    "RHD+SDHD": "block 36: colinear=1, core_recip 0.452, a real 973bp/96%% SINGLE-exon segdup -> distinct genes sharing ONE duplicated domain = GENUINE over-merge at RNA-family level (SEDEF confirms the shared domain is real, not an alignment artifact; a real segdup != a real paralog family)",
+    "SORT1+LOC129532935": "block 9: colinear=8, 77.5kb/98.7%% segdup -> real multi-exon dup E_p over-splits = ep_oversplit",
+    "cardinality_arrays": "HERC2/LOC (colinear15), 17q21 ARL17A/LRRC37A, BCR/22q11, APOBEC3C/D/F -- all real duplications E_p fragments; every ep_oversplit & cardinality roster block is SEDEF-confirmed"
+  },
+  "roster_verdicts": {
+    "cardinality": 14,
+    "ep_oversplit": 9,
+    "genuine_overmerge": 32,
+    "no_multiexon_edge": 2
+  },
+  "scope_statement": "TWO-REGIME SCOPE. The RNA family-DEFINITION (E_r homology) operates cleanly in the DIVERGENT regime (core_recip < ~0.80): copies are aligner-resolvable, O1(definition) is the operative task, and the genuine residual FP is single-conserved-domain over-merge (~66%% of that regime's FP mass = 1141/1729, ~21%% of all its edges, largely non-segdup -- this is where the true residual FP lives). The NEAR-IDENTICAL regime (core_recip > ~0.90) is the ASSIGNMENT regime (O2): copies collapse/confuse, and the apparent E_p 'FPs' are dominated by E_p-OVER-SPLIT-of-real-duplications (colinear>=2, all SEDEF-confirmed) + CARDINALITY (over-counted near-identical copies) -- truth-artifacts, not genuine over-merges -- so the raw E_p FP rate OVERSTATES real over-merges (corrected precision 0.97). The O1->O2 HANDOFF sits at core_recip ~0.70-0.80 (FP-composition flip + corrected-precision saturation), co-located with the shipped O1 purity floor (0.80) but DISTINCT from and BELOW the O2 read-confusability boundary (0.90 core_recip / 0.99 per-segment). O2 assignment machinery (per-read PSV/SUN) is needed above ~0.99 per-segment identity. HONEST CAVEAT: this two-regime split holds on the WHOLE-COPY axis (core_recip); on the requested per-SEGMENT axis (mean_matched_id) it is contaminated by confusability (raw precision dips at 0.95-0.99 and re-spikes to 34 single-domain over-merges at 100%% segment id), independently reproducing 'confusability is per-segment, not a family property'.",
+  "substrate": "colinear_multiexon_gate.tsv :: 5571 multi-exon core-present E_r edges; real=TP+truthbar, FP=E_p over-merge",
+  "tsv_path": "/mnt/c/Users/jfris/Desktop/Rustle/bench/identity_regime_map.tsv"
+}
