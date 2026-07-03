@@ -4,6 +4,11 @@ You are picking up a bioinformatics research codebase mid-thesis. Read this firs
 the project is, where the data lives, the conventions, and the ground rules. **Work on the branch
 `collaborator` (see "Branch discipline" below) so your changes never undo the committed progress.**
 
+> Also read **`AGENTS.md`** (general git-safety notes for this repo). Note: its "safe checkpoint"
+> SHA/branch info is **stale** — the live thesis work is on `vg/flow-capacity-apportionment` (and now
+> your `collaborator` branch), far ahead of the SHA it names. Its *safety conventions* still hold; its
+> *specific pointers* are superseded by this document.
+
 ---
 
 ## 0. Branch discipline (do this first)
@@ -130,6 +135,12 @@ finding (often a *negative* result) is documented. Don't re-run a settled experi
   (SEDEF, mGorGor1 CN). DNA calibrates and validates; it never decides. Keep this firewall.
 - **Honesty discipline:** this project keeps negative results and states caveats plainly. When something
   doesn't work, say so and commit the finding; don't spin a wash as a win.
+- **⚠ `.gitignore` is a WHITELIST** (`*` then `!/bench/`, `!/src/`, `!/docs/`, … + individual root
+  files). New files **inside** whitelisted dirs (`bench/`, `src/`, `docs/`, `scripts/`, `tests/`,
+  `tools/`) are tracked normally. But a new **root-level file, or a file in a non-whitelisted dir, is
+  silently ignored** — `git add newfile` does nothing and no warning is obvious. Fix by adding a
+  `!/path` line to `.gitignore`, or `git add -f newfile`. (This is why `AGENT_HANDOFF.md` needed a
+  whitelist entry.) **Prefer creating new work under `bench/`.**
 
 ---
 
