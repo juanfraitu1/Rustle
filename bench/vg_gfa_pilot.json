@@ -1,0 +1,195 @@
+{
+  "a_copies": {
+    "custom": 5,
+    "match": true,
+    "vg_distinct_paths": 5
+  },
+  "b_psvs": {
+    "custom_bubbles": 235,
+    "custom_sun": 195,
+    "expanded_shared_partitions": 9,
+    "haplotype_only_cols": 29,
+    "haplotype_only_distinct_bubbles": 106,
+    "interpretation": "HONEST recall = 22/235 distinct GT bubbles recovered by literal position+haplotype match (9.4%); vg emits 29 base-level SNP columns, the rest of the 235 lost to copy drop-out / indel-masked snarls. PRECISION is high (all vg partitions subset-of-ours) but per-position RECALL is low -- keep custom column machinery. (partition-pattern overlap 92.3% is degeneracy-inflated, NOT recall.)",
+    "literal_bubbles_recovered": 22,
+    "literal_pos_tolerance_bp": 2,
+    "literal_recall_pct": 9.4,
+    "literal_systematic_offset_bp": -1,
+    "partition_pattern_overlap_bubbles": 217,
+    "partition_pattern_overlap_pct": 92.3,
+    "site_level_shared_partitions": 9,
+    "vg_complex_sites": 10,
+    "vg_deconstruct_sites": 39,
+    "vg_expanded_distinct_partitions": 9,
+    "vg_expanded_partitions_all_subset_of_ours": true,
+    "vg_expanded_substitution_cols": 29,
+    "vg_expanded_sun_per_copy": {
+      "copy0": 2,
+      "copy1": 3,
+      "copy2": 1,
+      "copy3": 13,
+      "copy4": 5
+    },
+    "vg_expanded_sun_total": 24,
+    "vg_full_copy_sites": 22,
+    "vg_sites_dropping_a_copy": 17,
+    "vg_snarls": 62,
+    "vg_snp_sites": 29
+  },
+  "c_assignment": {
+    "agree": 97,
+    "agree_pct": 63.8,
+    "agree_pct_incl_ties": 50.8,
+    "gate_assigned": 191,
+    "gate_unassigned_reads_present": 14,
+    "graph_placed_copy_on_unassigned": 12,
+    "graph_vote_per_copy": {
+      "_ambiguous": 18,
+      "_no_private_node": 23,
+      "copy0": 12,
+      "copy1": 65,
+      "copy2": 35,
+      "copy3": 15,
+      "copy4": 37
+    },
+    "gt_reads": 222,
+    "shared_assigned_incl_ties": 191,
+    "shared_assigned_reads": 152,
+    "vg_ships_assignment": false
+  },
+  "concordance_table": [
+    {
+      "concordance": "MATCH",
+      "custom": 5,
+      "metric": "(a) copies as distinct paths",
+      "vg": 5
+    },
+    {
+      "concordance": "vg reports snarl SITES not per-column PSVs",
+      "custom": 235,
+      "metric": "(b) PSVs: vg snarl SITES",
+      "vg": 62
+    },
+    {
+      "concordance": "29 SNP + 10 complex; aggregated",
+      "custom": 235,
+      "metric": "(b) PSVs: vg deconstruct SITES",
+      "vg": 39
+    },
+    {
+      "concordance": "29 base-level SNP columns emitted (from 17/39 sites that keep all copies + snarl expansion); rest lost to copy drop-out / indel masking",
+      "custom": 235,
+      "metric": "(b) PSVs: vg base-level substitution cols",
+      "vg": 29
+    },
+    {
+      "concordance": "vg column matched a GT bubble at the SAME genomic pos (+-2bp) with an IDENTICAL 5-copy haplotype (minus-strand complemented) -- HONEST recall. (partition-pattern overlap 92.3% is degeneracy-inflated, NOT recall.)",
+      "custom": "235 bubbles",
+      "metric": "(b) PSVs: LITERAL per-position recall",
+      "vg": "22/235 (9.4%)"
+    },
+    {
+      "concordance": "9/9 vg patterns subset-of-ours (all_subset=True) -- every variant vg calls is one we also call",
+      "custom": "16 patterns",
+      "metric": "(b) allele-partition PRECISION",
+      "vg": "9 patterns"
+    },
+    {
+      "concordance": "63.8% (excl vg ties) / 50.8% (97/191 incl ties); vg ships NO assignment (naive private-node vote, biased)",
+      "custom": "191/222 gate",
+      "metric": "(c) read->copy assignment agreement",
+      "vg": "97/152 node-vote"
+    },
+    {
+      "concordance": "NEW capability (custom has none); WEAK -- rho on n=5 copies is not statistically significant",
+      "custom": "read counts",
+      "metric": "(d) ASE per-copy (Spearman vs gate)",
+      "vg": "pack mean rho=0.1 / total rho=0.5"
+    }
+  ],
+  "d_ase": {
+    "gate_read_counts": {
+      "copy0": 41,
+      "copy1": 31,
+      "copy2": 52,
+      "copy3": 19,
+      "copy4": 48
+    },
+    "note": "NEW capability our machinery lacks; WEAK signal -- Spearman rho on n=5 copies is not statistically significant, and needs SNP-only private markers + length-normalization to match gate read counts",
+    "spearman_mean_vs_gate": 0.1,
+    "spearman_total_vs_gate": 0.5,
+    "vg_pack_mean_private_cov": {
+      "copy0": 15.33,
+      "copy1": 25.52,
+      "copy2": 28.5,
+      "copy3": 19.9,
+      "copy4": 14.38
+    },
+    "vg_pack_private_bases_per_copy": {
+      "copy0": 6,
+      "copy1": 23,
+      "copy2": 167,
+      "copy3": 104,
+      "copy4": 341
+    },
+    "vg_pack_private_nodes_per_copy": {
+      "copy0": 6,
+      "copy1": 15,
+      "copy2": 12,
+      "copy3": 19,
+      "copy4": 20
+    },
+    "vg_pack_total_private_cov": {
+      "copy0": 92,
+      "copy1": 587,
+      "copy2": 4760,
+      "copy3": 2070,
+      "copy4": 4905
+    }
+  },
+  "deterministic": true,
+  "family": 39,
+  "gene": "RABL2",
+  "graph": {
+    "copy_paths": 5,
+    "edges": 366,
+    "length_bp": 3970,
+    "nodes": 304,
+    "private_bases_per_copy": {
+      "copy0": 6,
+      "copy1": 23,
+      "copy2": 167,
+      "copy3": 104,
+      "copy4": 341
+    },
+    "private_nodes_per_copy": {
+      "copy0": 6,
+      "copy1": 15,
+      "copy2": 12,
+      "copy3": 19,
+      "copy4": 20
+    }
+  },
+  "graph_tool": "vg msga",
+  "gt": {
+    "K": 5,
+    "gate_ambiguous": 4,
+    "gate_assigned": 191,
+    "gate_no_cover": 27,
+    "gate_per_copy": {
+      "copy0": 41,
+      "copy1": 31,
+      "copy2": 52,
+      "copy3": 19,
+      "copy4": 48
+    },
+    "n_bubbles": 235,
+    "n_copies": 5,
+    "n_reads": 222,
+    "n_sun_bubbles": 195
+  },
+  "pairwise_identity_pct": {
+    "copy0|copy2": 99.37
+  },
+  "verdict": "PARTIAL REPRODUCE + REAL EXTENSION. vg REPRODUCES the graph substrate: 5 copies = 5 distinct named paths, and every allele-partition pattern vg emits is one we also call (precision 9/9 vg patterns subset-of-ours). But vg does NOT reproduce out-of-the-box at PSV RESOLUTION: it collapses the 235 per-column PSVs into 39 multiallelic snarl SITES; expanded to base level it emits 29 SNP columns, of which a LITERAL position+haplotype match recovers only 22/235 distinct GT bubbles (9.4% recall) -- because 17/39 sites drop a copy whose divergent/short transcript does not co-traverse (isoform heterogeneity, esp. copy4/RABL2B) and big snarls bury co-located SNPs behind indels. vg also ships NO read->copy assignment (naive private-node vote agrees with the gate only 63.8% excl ties / 50.8% incl ties, biased by unequal private-marker counts). vg ADDS vg-pack per-copy coverage = allele-specific EXPRESSION (a NEW capability our machinery lacks; Spearman total-cov vs gate rho=0.5 -- WEAK/not significant at n=5 copies, needs SNP-only markers + normalization). ADOPT vg as the standardized graph substrate + ASE layer; KEEP the custom significance gate + PSV-column machinery on top (vg does not do per-column PSV discovery or read->copy assignment). HARD PREREQ: build at transcript level with matched isoforms or a gene-level exon union (else isoform heterogeneity drops copies and manufactures spurious snarls); migrate off deprecated vg msga."
+}
