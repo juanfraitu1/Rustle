@@ -1,0 +1,98 @@
+{
+  "dna": {
+    "name": "DNA(E_a segdup)",
+    "n_families_total": 708,
+    "n_families_multicopy": 703,
+    "n_distinct_genes": 4961,
+    "n_within_family_pairs": 91002,
+    "ep_evaluable_families": 493,
+    "ep_impure_families": 128,
+    "ep_impure_rate": 0.2596,
+    "ep_pure_rate": 0.7404,
+    "ep_evaluable_families_incl_mega": 555,
+    "ep_impure_families_incl_mega": 137,
+    "ep_impure_rate_incl_mega": 0.2468,
+    "ep_pair_prec_allpairs": 0.1452,
+    "ep_hom_pairs": 13209,
+    "ep_evaluable_pairs": 36907,
+    "ep_pair_prec_evaluable": 0.3579,
+    "ep_hom_pairs_evaluable": 13209,
+    "cdna_tp_allpairs": 11726,
+    "cdna_pair_prec_allpairs": 0.1289,
+    "cdna_pairs_in_truthfile": 12262,
+    "cdna_tp_evaluable": 11726,
+    "cdna_pair_prec_evaluable": 0.9563,
+    "annot_single_root_rate": 0.0512,
+    "annot_root_purity_mean": 0.3711,
+    "annot_named_families": 141,
+    "annot_named_single_root_rate": 0.461,
+    "annot_named_root_purity_mean": 0.6945
+  },
+  "rna": {
+    "name": "RNA(E_r transcript)",
+    "n_families_total": 573,
+    "n_families_multicopy": 436,
+    "n_distinct_genes": 1237,
+    "n_within_family_pairs": 2112,
+    "ep_evaluable_families": 211,
+    "ep_impure_families": 62,
+    "ep_impure_rate": 0.2938,
+    "ep_pure_rate": 0.7062,
+    "ep_evaluable_families_incl_mega": 240,
+    "ep_impure_families_incl_mega": 68,
+    "ep_impure_rate_incl_mega": 0.2833,
+    "ep_pair_prec_allpairs": 0.5331,
+    "ep_hom_pairs": 1126,
+    "ep_evaluable_pairs": 1327,
+    "ep_pair_prec_evaluable": 0.8485,
+    "ep_hom_pairs_evaluable": 1126,
+    "cdna_tp_allpairs": 418,
+    "cdna_pair_prec_allpairs": 0.1979,
+    "cdna_pairs_in_truthfile": 483,
+    "cdna_tp_evaluable": 418,
+    "cdna_pair_prec_evaluable": 0.8654,
+    "annot_single_root_rate": 0.1078,
+    "annot_root_purity_mean": 0.5121,
+    "annot_named_families": 210,
+    "annot_named_single_root_rate": 0.2905,
+    "annot_named_root_purity_mean": 0.6444
+  },
+  "dna_recall": {
+    "paralog_pairs_captured": 11726,
+    "paralog_pair_recall_abs": 0.6735,
+    "dna_loose_genes_covered": 3510,
+    "dna_loose_gene_coverage": 0.6362,
+    "reachable_pairs": 13731,
+    "captured_of_reachable": 11726,
+    "recall_on_reachable": 0.854
+  },
+  "rna_recall": {
+    "paralog_pairs_captured": 418,
+    "paralog_pair_recall_abs": 0.024,
+    "dna_loose_genes_covered": 592,
+    "dna_loose_gene_coverage": 0.1073,
+    "reachable_pairs": 449,
+    "captured_of_reachable": 418,
+    "recall_on_reachable": 0.931
+  },
+  "dna_ep_family_recall": {
+    "ep_mc_families": 3104,
+    "ep_mc_recovered": 565,
+    "ep_mc_recall": 0.182
+  },
+  "rna_ep_family_recall": {
+    "ep_mc_families": 3104,
+    "ep_mc_recovered": 144,
+    "ep_mc_recall": 0.0464
+  },
+  "truth": {
+    "dna_loose_pairs": 17410,
+    "dna_loose_genes": 5517,
+    "truth_rows": 18417,
+    "ep_direct_edges": 275477,
+    "mega_ep": [
+      "PRFAM0",
+      "PRFAM1"
+    ]
+  }
+}

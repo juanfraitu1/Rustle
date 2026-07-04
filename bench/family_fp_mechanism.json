@@ -1,0 +1,461 @@
+{
+  "part1_dna": {
+    "name": "DNA",
+    "total_pairs": 91002,
+    "hom_pairs": 15809,
+    "fp_pairs": 75193,
+    "fp_class": {
+      "1_repeat_bridge_blob": 59975,
+      "3_noncoding_element": 11267,
+      "4_domain_share_pc": 3951
+    },
+    "fp_class_families": {
+      "1_repeat_bridge_blob": 33,
+      "3_noncoding_element": 244,
+      "4_domain_share_pc": 152
+    },
+    "fp_examples": {
+      "1_repeat_bridge_blob": [
+        [
+          "GRFAM0",
+          "DGCR6",
+          "protein_coding",
+          "GGT1",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "LOC101123878",
+          "protein_coding",
+          "DGCR6",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "DGCR6",
+          "protein_coding",
+          "LOC101129069",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "LOC101130998",
+          "protein_coding",
+          "DGCR6",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "LOC101134637",
+          "protein_coding",
+          "DGCR6",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "LOC101135732",
+          "protein_coding",
+          "DGCR6",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "LOC101139703",
+          "protein_coding",
+          "DGCR6",
+          "protein_coding"
+        ],
+        [
+          "GRFAM0",
+          "LOC101150852",
+          "protein_coding",
+          "DGCR6",
+          "protein_coding"
+        ]
+      ],
+      "3_noncoding_element": [
+        [
+          "GRFAM2",
+          "TRNAE-CUC",
+          "tRNA",
+          "TRNAD-GUC",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAG-GCC",
+          "tRNA",
+          "TRNAD-GUC",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAG-UCC",
+          "tRNA",
+          "TRNAD-GUC",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAL-CAG",
+          "tRNA",
+          "TRNAD-GUC",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAE-CUC",
+          "tRNA",
+          "TRNAG-GCC",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAE-CUC",
+          "tRNA",
+          "TRNAG-UCC",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAE-CUC",
+          "tRNA",
+          "TRNAL-CAG",
+          "tRNA"
+        ],
+        [
+          "GRFAM2",
+          "TRNAG-GCC",
+          "tRNA",
+          "TRNAG-UCC",
+          "tRNA"
+        ]
+      ],
+      "4_domain_share_pc": [
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC101123968",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC101128508",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC101149396",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC115932853",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "LOC115932855",
+          "protein_coding",
+          "FRG2C",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC129523578",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC129532360",
+          "protein_coding"
+        ],
+        [
+          "GRFAM6",
+          "FRG2C",
+          "protein_coding",
+          "LOC129532377",
+          "protein_coding"
+        ]
+      ]
+    },
+    "n_blob_families": 33
+  },
+  "part1_rna": {
+    "name": "RNA",
+    "total_pairs": 2112,
+    "hom_pairs": 1210,
+    "fp_pairs": 902,
+    "fp_class": {
+      "2_pseudogene_retrocopy": 357,
+      "3_noncoding_element": 155,
+      "4_domain_share_pc": 307,
+      "5_unannotated_other": 83
+    },
+    "fp_class_families": {
+      "2_pseudogene_retrocopy": 56,
+      "3_noncoding_element": 50,
+      "4_domain_share_pc": 144,
+      "5_unannotated_other": 46
+    },
+    "fp_examples": {
+      "2_pseudogene_retrocopy": [
+        [
+          "4",
+          "TRNAQ-CUG",
+          "tRNA",
+          "LOC134756743",
+          "pseudogene"
+        ],
+        [
+          "6",
+          "GSTM2",
+          "protein_coding",
+          "LOC115933241",
+          "pseudogene"
+        ],
+        [
+          "6",
+          "LOC101131274",
+          "protein_coding",
+          "LOC115933241",
+          "pseudogene"
+        ],
+        [
+          "6",
+          "LOC115933241",
+          "pseudogene",
+          "LOC101135585",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "LOC115933241",
+          "pseudogene",
+          "LOC115930164",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "LOC115930576",
+          "protein_coding",
+          "LOC115933241",
+          "pseudogene"
+        ],
+        [
+          "6",
+          "LOC115933241",
+          "pseudogene",
+          "LOC115932984",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "LOC115933235",
+          "protein_coding",
+          "LOC115933241",
+          "pseudogene"
+        ]
+      ],
+      "3_noncoding_element": [
+        [
+          "5",
+          "NA",
+          "NA",
+          "LOC129525730",
+          "lncRNA"
+        ],
+        [
+          "14",
+          "PDCD5",
+          "protein_coding",
+          "LOC109025730",
+          "lncRNA"
+        ],
+        [
+          "14",
+          "SPC25",
+          "protein_coding",
+          "LOC109025730",
+          "lncRNA"
+        ],
+        [
+          "16",
+          "LOC101136036",
+          "lncRNA",
+          "LOC101148457",
+          "protein_coding"
+        ],
+        [
+          "16",
+          "LOC101136036",
+          "lncRNA",
+          "LOC109025592",
+          "lncRNA"
+        ],
+        [
+          "16",
+          "LOC101136036",
+          "lncRNA",
+          "TRAF5",
+          "protein_coding"
+        ],
+        [
+          "16",
+          "LOC101148457",
+          "protein_coding",
+          "LOC109025592",
+          "lncRNA"
+        ],
+        [
+          "16",
+          "TRAF5",
+          "protein_coding",
+          "LOC109025592",
+          "lncRNA"
+        ]
+      ],
+      "4_domain_share_pc": [
+        [
+          "0",
+          "GLMP",
+          "protein_coding",
+          "TMEM79",
+          "protein_coding"
+        ],
+        [
+          "1",
+          "GON4L",
+          "protein_coding",
+          "DAP3",
+          "protein_coding"
+        ],
+        [
+          "3",
+          "SCNM1",
+          "protein_coding",
+          "LYSMD1",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "GSTM2",
+          "protein_coding",
+          "LOC101131274",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "GSTM2",
+          "protein_coding",
+          "LOC101135585",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "GSTM2",
+          "protein_coding",
+          "LOC115930164",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "GSTM2",
+          "protein_coding",
+          "LOC115930576",
+          "protein_coding"
+        ],
+        [
+          "6",
+          "GSTM2",
+          "protein_coding",
+          "LOC115932984",
+          "protein_coding"
+        ]
+      ],
+      "5_unannotated_other": [
+        [
+          "12",
+          "LOC101134045",
+          "protein_coding",
+          "NA",
+          "NA"
+        ],
+        [
+          "19",
+          "GSTM1",
+          "protein_coding",
+          "NA",
+          "NA"
+        ],
+        [
+          "20",
+          "GSTM2",
+          "protein_coding",
+          "NA",
+          "NA"
+        ],
+        [
+          "21",
+          "NOSTRIN",
+          "protein_coding",
+          "NA",
+          "NA"
+        ],
+        [
+          "21",
+          "WDR64",
+          "protein_coding",
+          "NA",
+          "NA"
+        ],
+        [
+          "22",
+          "NA",
+          "NA",
+          "RPAP2",
+          "protein_coding"
+        ],
+        [
+          "22",
+          "ZNF208",
+          "protein_coding",
+          "NA",
+          "NA"
+        ],
+        [
+          "26",
+          "NA",
+          "NA",
+          "AVEN",
+          "protein_coding"
+        ]
+      ]
+    },
+    "n_blob_families": 0
+  },
+  "part2": {
+    "dna_mc": 703,
+    "recovered": 119,
+    "miss_no_cogroup": 584,
+    "miss_no_overlap": 537,
+    "miss_real": 379,
+    "miss_real_noov": 347,
+    "missed_genes": 2895,
+    "silent": 2782,
+    "expressed_ungrouped": 113,
+    "ep_tp": 353,
+    "ep_divergent_grouped": 6153
+  }
+}
