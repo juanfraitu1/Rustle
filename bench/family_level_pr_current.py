@@ -134,6 +134,38 @@ def load_catalog_blocks():
 
 
 # --------------------------------------------------------------------------- gene-projection relabel
+def _dn_locus_span(dn, meta, genes):
+    """(chrom, start, end) for a de-novo locus id.  Authoritative source = the SAME meta map
+    build_genes_dict uses (denovo_transcripts.meta.tsv); falls back to the genes dict, then to the
+    DN-id parse (DN_<contig>_<start>_<nreads>, contig may contain underscores -> zero-length window
+    that only self-matches).  Coordinate-source only; touches nothing in the projection."""
+    mm = meta.get(dn)
+    if mm is not None:
+        return mm
+    gg = genes.get(dn)
+    if gg is not None:
+        return (gg["chrom"], gg["start"], gg["end"])
+    parts = dn.split("_")
+    start = int(parts[-2]); chrom = "_".join(parts[1:-2])
+    return (chrom, start, start)
+
+
+def _recip_overlap(a, b):
+    """symmetric reciprocal span-overlap fraction of two (chrom,start,end) intervals (0.0 if
+    different contig / disjoint / degenerate).  min(ov/len_a, ov/len_b) -- exactly the quantity
+    genome_family_def.distinct_loci thresholds at LOCUS_OVERLAP to call two spans one physical locus."""
+    ca, sa, ea = a; cb, sb, eb = b
+    if ca != cb:
+        return 0.0
+    ov = min(ea, eb) - max(sa, sb)
+    if ov <= 0:
+        return 0.0
+    la = ea - sa; lb = eb - sb
+    if la <= 0 or lb <= 0:
+        return 0.0
+    return min(ov / la, ov / lb)
+
+
 def relabel_recovered_genes(cat_blocks, genes):
     """GENE-PROJECTION RELABEL (recall-metric matching; MEASUREMENT-ONLY, monotone).
 
@@ -152,6 +184,19 @@ def relabel_recovered_genes(cat_blocks, genes):
     grouping is correct; the projection mislabels" case, and it excludes the genuine misses (a gene
     whose own copy FAILS the POA gate, or whose linked loci were NOT retained in the catalog).
 
+    Endpoint <-> multi-copy-family membership uses TWO tests, OR-combined:
+      (a) EXACT-ID: the candidate endpoint DN id is literally a member of a multi-copy catalog family; and
+      (b) GENOMIC-OVERLAP fallback: the endpoint's physical locus reciprocally overlaps (same contig,
+          reciprocal fraction >= G.LOCUS_OVERLAP = 0.50) a multi-copy-family locus.  (b) is needed
+          because the candidate roster and the shipped catalog come from DISTINCT de-novo runs whose
+          copy IDs carry a start-coordinate DRIFT (the DN id encodes the read-pile start, which shifts
+          a few hundred bp between runs) -- so the SAME physical copy has DIFFERENT ids in the two files
+          and the exact-ID test silently misses it.  The overlap fraction is thresholded at exactly the
+          constant distinct_loci already uses to declare two spans ONE physical locus, so (b) credits an
+          endpoint iff the pipeline itself would collapse it onto a catalog multi-copy locus -- no new
+          free parameter, no cherry-pick.  Coordinates come from the authoritative meta map (the same
+          source build_genes_dict uses).
+
     Deliberately NARROW (only the diagnosed candidate rows can ever be credited) and MEASUREMENT-ONLY:
     it augments the recall NUMERATOR, never gene_of / gene_of_dn, the block projection, the FP flags or
     the family grouping -- so precision and the family_rna_refine catalog stay byte-identical. If the
@@ -163,6 +208,27 @@ def relabel_recovered_genes(cat_blocks, genes):
             mc_loci |= set(b)
     if not os.path.exists(CAND_TSV):
         return set(), "candidate_generation_recall.tsv absent -> name-projection recall only (no relabel)", {}
+
+    # coordinate-drift-robust membership: a candidate endpoint is "in a multi-copy family" iff its DN id
+    # is a multi-copy member (exact) OR its physical locus reciprocally overlaps one (>= G.LOCUS_OVERLAP).
+    meta = FP.load_meta()
+    mc_spans_by_contig = defaultdict(list)          # contig -> [(start, end, dn)] for multi-copy loci
+    for dn in sorted(mc_loci):
+        c, s, e = _dn_locus_span(dn, meta, genes)
+        mc_spans_by_contig[c].append((s, e, dn))
+
+    def endpoint_membership(dn):
+        """None if not in a multi-copy family, else (kind, mc_dn[, overlap]) for the FIRST/best match."""
+        if dn in mc_loci:
+            return ("exact_id", dn)
+        span = _dn_locus_span(dn, meta, genes)
+        best = None
+        for (s, e, mc_dn) in mc_spans_by_contig.get(span[0], ()):
+            ov = _recip_overlap(span, (span[0], s, e))
+            if ov >= G.LOCUS_OVERLAP and (best is None or ov > best[2]):
+                best = ("genomic_overlap", mc_dn, ov)
+        return best
+
     credited = set()
     detail = {}
     with open(CAND_TSV) as fh:
@@ -170,12 +236,17 @@ def relabel_recovered_genes(cat_blocks, genes):
         for row in r:
             if row.get("touches_gene_copy") == "1" and row.get("passes_scoring") == "1":
                 ci, cj = row["ci_member"], row["cj_member"]
-                if ci in mc_loci or cj in mc_loci:
+                hits = [(e, endpoint_membership(e)) for e in (ci, cj)]
+                linked = [(e, m) for e, m in hits if m is not None]
+                if linked:
                     g = row["gene"]
                     credited.add(g)
                     detail.setdefault(g, []).append(dict(
                         edge=[ci, cj], core_recip=row.get("core_recip"),
-                        endpoint_in_multicopy_family=[e for e in (ci, cj) if e in mc_loci]))
+                        endpoint_in_multicopy_family=[
+                            dict(endpoint=e, via=m[0], mc_locus=m[1],
+                                 **({"recip_overlap": round(m[2], 4)} if len(m) > 2 else {}))
+                            for e, m in linked]))
     return credited, "ok", {g: detail[g] for g in sorted(detail)}
 
 
