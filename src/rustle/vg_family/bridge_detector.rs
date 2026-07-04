@@ -22,10 +22,12 @@
 //! DEFERRED (NOT the library the gates call -- TSV/JSON production + analysis):
 //!   * `analyze_family` (:299), `main` (:527), `_pure_controls`/`_control_precompute`/
 //!     `control_recall_cost` (:457-524), and the loaders `load_families` (:129) /
-//!     `target_families` (:140) / `load_strand` (:115). (`multi_repeat_bridge_gate` does
+//!     `target_families` (:140). (`multi_repeat_bridge_gate` does
 //!     call `analyze_family` in `_rederive_disconnected`, but that is a gate-DRIVER
 //!     concern; the reusable exon-graph MATH is what this module ports.) Constants
 //!     `CARD_ID` (:60) / `N_CONTROL` (:61) are used ONLY by the deferred control-recall.
+//!   * `load_strand` (:115) is now PORTED (below) -- the multi-repeat-bridge gate's
+//!     `_stage_loaders` needs it (`super::multi_repeat_bridge`).
 //!
 //! CRUX -- `aln_id` HW (infix) edit distance without edlib: RBD does
 //! `edlib.align(q, t, mode="HW", task="distance")` = the minimum edit distance of `q`
@@ -219,6 +221,36 @@ pub fn parse_skeletons(text: &str) -> HashMap<(String, i64, i64), Vec<(i64, i64)
 /// Read + parse the denovo-skeletons TSV file (see `parse_skeletons`).
 pub fn load_skeletons(path: &str) -> std::io::Result<HashMap<(String, i64, i64), Vec<(i64, i64)>>> {
     Ok(parse_skeletons(&std::fs::read_to_string(path)?))
+}
+
+// ===========================================================================
+// load_strand  (recombination_bridge_detector.py:115-123)
+// ===========================================================================
+
+/// Parse the denovo-transcripts META TSV text into `{DN id -> strand}`. Faithful
+/// port of `load_strand` (:115): skip the header (`next(f)`), split each line on
+/// `\t`, and ONLY for rows with `>= 5` fields insert `strand[t[0]] = t[4]` (the
+/// strand column). Rows with `< 5` fields are silently skipped, exactly as Python.
+///
+/// (This is the loader `multi_repeat_bridge_gate._stage_loaders` / the recombinant
+/// gate both consume via `R.load_strand`; the DEFERRED note in the module header
+/// listed it as not-yet-ported -- it is ported now for the repeat-bridge gate.)
+pub fn parse_strand(text: &str) -> HashMap<String, String> {
+    let mut strand = HashMap::new();
+    let mut lines = text.lines();
+    lines.next(); // header
+    for ln in lines {
+        let t: Vec<&str> = ln.split('\t').collect();
+        if t.len() >= 5 {
+            strand.insert(t[0].to_string(), t[4].to_string());
+        }
+    }
+    strand
+}
+
+/// Read + parse the denovo-transcripts META TSV file (see `parse_strand`).
+pub fn load_strand(path: &str) -> std::io::Result<HashMap<String, String>> {
+    Ok(parse_strand(&std::fs::read_to_string(path)?))
 }
 
 // ===========================================================================
@@ -656,6 +688,22 @@ mod tests {
         assert_eq!(fx["ID_THRESH"].as_f64().unwrap(), ID_THRESH);
         assert_eq!(fx["MIN_EXON"].as_u64().unwrap() as usize, MIN_EXON);
         assert_eq!(fx["COLINEAR_COV"].as_f64().unwrap(), COLINEAR_COV);
+    }
+
+    #[test]
+    fn parse_strand_semantics() {
+        // header skipped; only rows with >= 5 tab fields insert t[0]->t[4].
+        let text = "id\tchrom\tstart\tend\tstrand\tx\n\
+                    DN_a\tc1\t10\t20\t+\tfoo\n\
+                    DN_b\tc1\t30\t40\t-\tbar\n\
+                    DN_short\tc1\t5\n\
+                    DN_c\tc2\t1\t2\t+\n"; // exactly 5 fields -> kept
+        let s = parse_strand(text);
+        assert_eq!(s.get("DN_a").map(String::as_str), Some("+"));
+        assert_eq!(s.get("DN_b").map(String::as_str), Some("-"));
+        assert_eq!(s.get("DN_c").map(String::as_str), Some("+"));
+        assert!(!s.contains_key("DN_short")); // < 5 fields dropped
+        assert_eq!(s.len(), 3);
     }
 
     #[test]
