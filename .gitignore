@@ -77,6 +77,14 @@
 !/test_data/synthetic_family/**
 !/test_data/vg_hmm/
 !/test_data/vg_hmm/**
+
+# 7b. Byte-parity BAM fixtures for the ported vg_family modules (e.g. o2_columns.rs).
+#     These small hand-built / mined BAMs (+ .bai) are opened at test runtime, so they
+#     MUST survive a fresh checkout. They override the blanket *.bam / *.bam.bai ignores
+#     at lines 48-49 (last-match-wins), exactly like the test_data/ fixtures above.
+!/src/rustle/vg_family/testdata/*.bam
+!/src/rustle/vg_family/testdata/*.bam.bai
+
 *.log
 
 # 8. Large external dataset dumps (over GitHub's 100 MB push limit, or
