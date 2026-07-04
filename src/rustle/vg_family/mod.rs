@@ -29,6 +29,7 @@ pub mod layer2;
 pub mod psv_linkage; // Layer-2 "C": within-molecule PSV->junction linkage (PSV-column extraction).
 pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a molecule's het-SNP allele.
 pub mod asj_strand_bias; // O3 ASJ analysis layer: StrandOddsRatio (SOR) strand-bias filter over asj_calls.tsv (Rust port of asj_strand_bias.py; reuses O2 noodles indexed-BAM fetch + CIGAR walk + allele_specific_junctions::fisher_exact_2x2; byte-parity tested vs GGO_mm.bam).
+pub mod asj_verify; // O3 ASJ analysis layer: confound control (frac_mq0 MAPQ-0 fraction at the anchor + anchor->junction dist + high_confidence) over asj_calls.tsv -> asj_calls_verified.tsv (Rust port of asj_verify.py; reuses the O2 noodles indexed-BAM fetch w/ 600-cap; byte-parity tested vs GGO.bam).
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
