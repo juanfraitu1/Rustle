@@ -107,6 +107,10 @@ path = "src/bin/asj.rs"
 name = "asj_verify"
 path = "src/bin/asj_verify.rs"
 
+[[bin]]
+name = "family_define"
+path = "src/bin/family_define.rs"
+
 [[test]]
 name = "test_parity_graph_edges_dump"
 path = "tests/regression/test_parity_graph_edges_dump.rs"
