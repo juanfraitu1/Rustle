@@ -33,6 +33,7 @@ pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy can
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
 pub mod o2_margin_gate; // O2 MARGIN gate: PSV+junction logL assign-with-margin (Rust port of copy_assign.py::assign_read, the gate o2_vg_visualization.materialize_family calls; byte-parity tested). Distinct from copy_assign.rs (the min_p significance gate).
 pub mod o2_columns; // O2 VG-materialization step 2 (crux): per-column paralogous-allele extraction from a BAM on a backbone contig (Rust port of psv_graph_genomewide.py::column_alleles, the pysam-pileup parser; byte-parity tested vs real + adversarial BAMs).
+pub mod o2_materialize; // O2 VG-materialization step 3: the pre-alignment LOADERS + copy-dedup materialize_family runs first (dedup_copies/load_families/load_gene_labels/FLAGSHIP; Rust port of psv_graph_genomewide.py::dedup_copies + o2_vg_visualization.py loaders; byte-parity tested).
 pub mod recombinant_abstain; // O2 recombinant-read ABSTAIN gate: belongs-to-no-copy bi-copy switch test over the family VG (Rust port of recombinant_abstain.py; byte-parity tested).
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
