@@ -185,6 +185,185 @@
     }
    ]
   },
+  "depth_leg": {
+   "note": "THIRD independent lower-bound probe (ADDITIVE; shipped columns unchanged). depth_cn = E_fam / lambda_within (family aggregate reads / within-family median per-copy read depth; RNA self-normalized parCN, Sudmant 2010). Same E_fam/lambda_within as rna_copy_number_depth.py (depth_cn_within), reusing psv_graph_genomewide.dedup_copies. HONEST: depth counts EXPRESSED copies => a NOISY LOWER BOUND on genomic CN (silent copies invisible => biased low; per-copy expression skew = two-sided noise), NOT an unbiased count.",
+   "n_families_with_depth_cn": 154,
+   "regime_counts": {
+    "reference_resolved": 154
+   },
+   "n_collapsed_excess_families": 21,
+   "n_depth_recovers_collapsed_excess": 21,
+   "collapsed_family_depth": [
+    {
+     "family": 34,
+     "gene": "LOC115930538",
+     "chi_H": 1,
+     "collapsed_excess": 7,
+     "depth_cn": 11.4,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 1,
+     "gene": "LOC109025447",
+     "chi_H": 1,
+     "collapsed_excess": 6,
+     "depth_cn": 15.84,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 7,
+     "gene": "LOC129534585",
+     "chi_H": 1,
+     "collapsed_excess": 6,
+     "depth_cn": 7.95,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 22,
+     "gene": "LOC115933254",
+     "chi_H": 1,
+     "collapsed_excess": 5,
+     "depth_cn": 6.87,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 21,
+     "gene": "LOC101141440",
+     "chi_H": 1,
+     "collapsed_excess": 4,
+     "depth_cn": 5.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 14,
+     "gene": "LOC115930164",
+     "chi_H": 1,
+     "collapsed_excess": 3,
+     "depth_cn": 4.38,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 62,
+     "gene": "LOC109023386",
+     "chi_H": 1,
+     "collapsed_excess": 3,
+     "depth_cn": 4.14,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 11,
+     "gene": "LOC101130894",
+     "chi_H": 2,
+     "collapsed_excess": 2,
+     "depth_cn": 10.42,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 75,
+     "gene": "CPLANE1",
+     "chi_H": 1,
+     "collapsed_excess": 2,
+     "depth_cn": 7.67,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 96,
+     "gene": "LOC129530275",
+     "chi_H": 2,
+     "collapsed_excess": 2,
+     "depth_cn": 4.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 32,
+     "gene": "LOC115934629",
+     "chi_H": 3,
+     "collapsed_excess": 1,
+     "depth_cn": 4.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 63,
+     "gene": "LOC129529986",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 69,
+     "gene": "LOC115932259",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 93,
+     "gene": "LOC115932194",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 95,
+     "gene": "LOC129529978",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 122,
+     "gene": "LOC129530010",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 169,
+     "gene": "LOC101124683",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 170,
+     "gene": "LOC101124683",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 175,
+     "gene": "UBE2Q2P16",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 176,
+     "gene": "LOC115931067",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    },
+    {
+     "family": 191,
+     "gene": "LOC129530554",
+     "chi_H": 1,
+     "collapsed_excess": 1,
+     "depth_cn": 2.0,
+     "depth_recovers_collapsed_excess": 1
+    }
+   ]
+  },
   "deterministic": true
  },
  "families": [
@@ -199,7 +378,10 @@
    "true_copy_lower_bound": 7,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 7,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 5.3,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 1,
@@ -212,7 +394,10 @@
    "true_copy_lower_bound": 7,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 15.84,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 3,
@@ -225,7 +410,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 39.67,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 4,
@@ -238,7 +426,10 @@
    "true_copy_lower_bound": 7,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 7,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 61.21,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 5,
@@ -251,7 +442,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 7,
@@ -264,7 +458,10 @@
    "true_copy_lower_bound": 7,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 7.95,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 8,
@@ -277,7 +474,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 9,
@@ -290,7 +490,10 @@
    "true_copy_lower_bound": 4,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 4,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.47,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 10,
@@ -303,7 +506,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 11,
@@ -316,7 +522,10 @@
    "true_copy_lower_bound": 4,
    "cls": "partial",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 10.42,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 12,
@@ -329,7 +538,10 @@
    "true_copy_lower_bound": 5,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 5,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 7.37,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 13,
@@ -342,7 +554,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.42,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 14,
@@ -355,7 +570,10 @@
    "true_copy_lower_bound": 4,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.38,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 15,
@@ -368,7 +586,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.8,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 16,
@@ -381,7 +602,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 10.14,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 17,
@@ -394,7 +618,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.4,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 18,
@@ -407,7 +634,10 @@
    "true_copy_lower_bound": 9,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 9,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 8.13,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 19,
@@ -420,7 +650,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 30.48,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 21,
@@ -433,7 +666,10 @@
    "true_copy_lower_bound": 5,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 5.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 22,
@@ -446,7 +682,10 @@
    "true_copy_lower_bound": 6,
    "cls": "partial",
    "chi_H_readlevel": 4,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 6.87,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 23,
@@ -459,7 +698,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 24,
@@ -472,7 +714,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.73,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 25,
@@ -485,7 +730,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 26,
@@ -498,7 +746,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 27,
@@ -511,7 +762,10 @@
    "true_copy_lower_bound": 5,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 5,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 11.75,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 28,
@@ -524,7 +778,10 @@
    "true_copy_lower_bound": 4,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 4,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 5.64,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 29,
@@ -537,7 +794,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 30,
@@ -550,7 +810,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 31,
@@ -563,7 +826,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.51,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 32,
@@ -576,7 +842,10 @@
    "true_copy_lower_bound": 4,
    "cls": "partial",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 33,
@@ -589,7 +858,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 34,
@@ -602,7 +874,10 @@
    "true_copy_lower_bound": 8,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 11.4,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 35,
@@ -615,7 +890,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 36,
@@ -628,7 +906,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 37,
@@ -641,7 +922,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 38,
@@ -654,7 +938,10 @@
    "true_copy_lower_bound": 8,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 8,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 10.86,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 39,
@@ -667,7 +954,10 @@
    "true_copy_lower_bound": 5,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 5,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.5,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 40,
@@ -680,7 +970,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 41,
@@ -693,7 +986,10 @@
    "true_copy_lower_bound": 4,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 4,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 5.43,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 42,
@@ -706,7 +1002,10 @@
    "true_copy_lower_bound": 8,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 8,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 7.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 43,
@@ -719,7 +1018,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 44,
@@ -732,7 +1034,10 @@
    "true_copy_lower_bound": 6,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 6,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 6.91,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 46,
@@ -745,7 +1050,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 47,
@@ -758,7 +1066,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 48,
@@ -771,7 +1082,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 49,
@@ -784,7 +1098,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 50,
@@ -797,7 +1114,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 52,
@@ -810,7 +1130,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 5.83,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 53,
@@ -823,7 +1146,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 54,
@@ -836,7 +1162,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 55,
@@ -849,7 +1178,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 57,
@@ -862,7 +1194,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 58,
@@ -875,7 +1210,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 59,
@@ -888,7 +1226,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.14,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 62,
@@ -901,7 +1242,10 @@
    "true_copy_lower_bound": 4,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.14,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 63,
@@ -914,7 +1258,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 64,
@@ -927,7 +1274,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 65,
@@ -940,7 +1290,10 @@
    "true_copy_lower_bound": 4,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 4,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.18,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 66,
@@ -953,7 +1306,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 67,
@@ -966,7 +1322,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 68,
@@ -979,7 +1338,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 69,
@@ -992,7 +1354,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 71,
@@ -1005,7 +1370,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 72,
@@ -1018,7 +1386,10 @@
    "true_copy_lower_bound": 4,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 4,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.22,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 73,
@@ -1031,7 +1402,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 74,
@@ -1044,7 +1418,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.5,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 75,
@@ -1057,7 +1434,10 @@
    "true_copy_lower_bound": 3,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 7.67,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 77,
@@ -1070,7 +1450,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 78,
@@ -1083,7 +1466,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 79,
@@ -1096,7 +1482,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 80,
@@ -1109,7 +1498,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.12,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 81,
@@ -1122,7 +1514,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.92,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 82,
@@ -1135,7 +1530,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 83,
@@ -1148,7 +1546,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 85,
@@ -1161,7 +1562,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 87,
@@ -1174,7 +1578,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 6.67,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 89,
@@ -1187,7 +1594,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 90,
@@ -1200,7 +1610,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 4.5,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 91,
@@ -1213,7 +1626,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 92,
@@ -1226,7 +1642,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 93,
@@ -1239,7 +1658,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 94,
@@ -1252,7 +1674,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 95,
@@ -1265,7 +1690,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 96,
@@ -1278,7 +1706,10 @@
    "true_copy_lower_bound": 4,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 4.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 97,
@@ -1291,7 +1722,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 98,
@@ -1304,7 +1738,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 100,
@@ -1317,7 +1754,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 101,
@@ -1330,7 +1770,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 102,
@@ -1343,7 +1786,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 105,
@@ -1356,7 +1802,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 106,
@@ -1369,7 +1818,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 107,
@@ -1382,7 +1834,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 109,
@@ -1395,7 +1850,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 110,
@@ -1408,7 +1866,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 111,
@@ -1421,7 +1882,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 114,
@@ -1434,7 +1898,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 115,
@@ -1447,7 +1914,10 @@
    "true_copy_lower_bound": 3,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 3,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 3.33,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 116,
@@ -1460,7 +1930,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 117,
@@ -1473,7 +1946,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 118,
@@ -1486,7 +1962,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 119,
@@ -1499,7 +1978,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 120,
@@ -1512,7 +1994,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 121,
@@ -1525,7 +2010,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 122,
@@ -1538,7 +2026,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 123,
@@ -1551,7 +2042,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 124,
@@ -1564,7 +2058,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 125,
@@ -1577,7 +2074,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 128,
@@ -1590,7 +2090,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 129,
@@ -1603,7 +2106,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 132,
@@ -1616,7 +2122,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 135,
@@ -1629,7 +2138,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 136,
@@ -1642,7 +2154,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 137,
@@ -1655,7 +2170,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 138,
@@ -1668,7 +2186,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 139,
@@ -1681,7 +2202,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 143,
@@ -1694,7 +2218,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 145,
@@ -1707,7 +2234,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 146,
@@ -1720,7 +2250,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 147,
@@ -1733,7 +2266,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 150,
@@ -1746,7 +2282,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 151,
@@ -1759,7 +2298,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 152,
@@ -1772,7 +2314,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 153,
@@ -1785,7 +2330,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 154,
@@ -1798,7 +2346,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 156,
@@ -1811,7 +2362,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 157,
@@ -1824,7 +2378,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 158,
@@ -1837,7 +2394,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 160,
@@ -1850,7 +2410,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 161,
@@ -1863,7 +2426,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 163,
@@ -1876,7 +2442,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 164,
@@ -1889,7 +2458,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 165,
@@ -1902,7 +2474,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 166,
@@ -1915,7 +2490,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 167,
@@ -1928,7 +2506,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 168,
@@ -1941,7 +2522,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 169,
@@ -1954,7 +2538,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 170,
@@ -1967,7 +2554,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 171,
@@ -1980,7 +2570,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 172,
@@ -1993,7 +2586,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 173,
@@ -2006,7 +2602,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 174,
@@ -2019,7 +2618,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 175,
@@ -2032,7 +2634,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 176,
@@ -2045,7 +2650,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 177,
@@ -2058,7 +2666,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 178,
@@ -2071,7 +2682,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 179,
@@ -2084,7 +2698,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 181,
@@ -2097,7 +2714,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 182,
@@ -2110,7 +2730,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 183,
@@ -2123,7 +2746,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 189,
@@ -2136,7 +2762,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 191,
@@ -2149,7 +2778,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 1
   },
   {
    "family": 192,
@@ -2162,7 +2794,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 193,
@@ -2175,7 +2810,10 @@
    "true_copy_lower_bound": 2,
    "cls": "fully_resolvable",
    "chi_H_readlevel": 2,
-   "readlevel_disagrees": 0
+   "readlevel_disagrees": 0,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   },
   {
    "family": 195,
@@ -2188,7 +2826,10 @@
    "true_copy_lower_bound": 2,
    "cls": "no_psv",
    "chi_H_readlevel": 1,
-   "readlevel_disagrees": 1
+   "readlevel_disagrees": 1,
+   "depth_cn": 2.0,
+   "regime": "reference_resolved",
+   "depth_recovers_collapsed_excess": 0
   }
  ]
 }

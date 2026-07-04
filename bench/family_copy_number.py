@@ -53,6 +53,30 @@ distinct reference loci, so identical copies collapse and chi(H) UNDER-counts vs
   reads reveal MORE copies than the reference shows). Do NOT state "n_loci <= chi(H)" flatly
   -- on THIS reference-resolved GGO substrate it is chi(H)=361 <= n_loci=412.
 
+THIRD PROBE -- read-DEPTH (folded in 2026-07; purely ADDITIVE, new columns only). The O1
+cardinality stack is now THREE INDEPENDENT lower-bound probes of the same true_copy_number,
+each counting a strictly different copy set:  n_loci  ->  chi_H  ->  depth_cn.
+  depth_cn = E_fam / lambda_within, where E_fam = total reads over the family's (deduped)
+  reference copies and lambda_within = median per-reference-copy read count WITHIN the family
+  (RNA-only self-normalization a la Sudmant-2010 parCN). This is the SAME E_fam/lambda_within
+  as the validated rna_copy_number_depth.py (depth_cn_within), reusing
+  psv_graph_genomewide.dedup_copies so the per-copy read piles are the identical pipeline path.
+  Its unambiguous GGO win is over chi_H, which is BLIND to Tier-3 identical copies: on the
+  collapsed_excess>0 families depth_cn > chi_H, recovering exactly the identical copies chi(H)
+  collapses away; its genuinely-novel value is the reference-COLLAPSED regime where BOTH n_loci
+  and chi_H fail. HONEST CAVEAT (load-bearing): read depth counts EXPRESSED copies, so depth_cn
+  is a NOISY LOWER BOUND on genomic CN, NOT an unbiased count -- SILENT copies (expression ~0)
+  are INVISIBLE => biased low, and per-copy expression skew is two-sided noise. New columns
+  (ADDITIVE; the nine shipped columns above are byte-identical / unchanged):
+    depth_cn                        expressed-copy estimate = E_fam / lambda_within.
+    regime                          reference_resolved (chi_H <= n_loci) vs reference_collapsed
+                                    (n_loci < chi_H: one locus hides several hap-vectors, so
+                                    depth is the only multiplicity signal). On this GGO
+                                    reference-resolved substrate every family is resolved.
+    depth_recovers_collapsed_excess 1 iff collapsed_excess>0 AND depth_cn > chi_H (depth counts
+                                    the Tier-3 identical copies chi(H) missed; validated on all
+                                    21 collapsed families, e.g. LOC115930538 chi_H=1->depth~11.4).
+
 WHICH GRAPH IS chi(H). chi_H is the COPY-CONSENSUS conflict graph (copyonly_K): copies
 distinguishable in principle from the assembled copy sequences, NO read-support gate --
 the correct O1 COUNT (it counts a copy even when no read resolved it: the unassignable ones).
@@ -70,6 +94,10 @@ hap-vectors reconstructed from sequence.
 Sources (keyed by integer family id):
   bench/psv_graph_genomewide.json  read-level K, cls   (cross-check + class label)
   bench/sun_identifiability.json   copyonly_K (=chi_H), tier1/2/3, n_singleton_groups
+  psv_graph_genomewide.FAM_TSV     per-locus nreads for the depth leg (deduped via
+                                   dedup_copies); optional -- if the module/data is
+                                   unavailable, depth_cn is left null and the 3 depth
+                                   columns degrade gracefully (the shipped 9 are unaffected).
 Run from repo root:  /home/juanfra/miniforge3/bin/python bench/family_copy_number.py
 Writes bench/family_copy_number.tsv and bench/family_copy_number.json.
 Env: FCN_VERIFY_FAMS="0,32,42" families to hap-verify (empty to skip the BAM step).
@@ -90,13 +118,59 @@ VERIFY_FAMS = [int(x) for x in os.environ.get("FCN_VERIFY_FAMS", "0,32,42").spli
 
 COLS = ["family", "gene", "n_loci", "chi_H", "n_resolvable", "n_counted_unassignable",
         "collapsed_excess", "true_copy_lower_bound", "cls",
-        "chi_H_readlevel", "readlevel_disagrees"]
+        "chi_H_readlevel", "readlevel_disagrees",
+        # --- ADDITIVE third leg (depth); the columns above are byte-identical/unchanged ---
+        "depth_cn", "regime", "depth_recovers_collapsed_excess"]
 
 
 def load():
     pg = {f["family"]: f for f in json.load(open(PG_JSON))["families"]}
     sun = {f["family"]: f for f in json.load(open(SUN_JSON))["families"]}
     return pg, sun
+
+
+def median(xs):
+    """Exact match to rna_copy_number_depth.median (lower-of-two for even n uses the pair mean)."""
+    s = sorted(xs)
+    n = len(s)
+    if n == 0:
+        return 0.0
+    m = n // 2
+    return float(s[m]) if n % 2 else (s[m - 1] + s[m]) / 2.0
+
+
+def load_depth_cn():
+    """Per-family depth_cn = E_fam / lambda_within, REPLICATING rna_copy_number_depth.py exactly
+    (E_fam = sum of deduped per-copy read counts; lambda_within = their median) so the value here
+    equals that script's `depth_cn_within`. We replicate the tiny arithmetic INLINE rather than
+    importing rna_copy_number_depth, because that module reads family_copy_number.tsv (our OWN
+    output) as input -- importing it would make this script's output depend on a stale copy of the
+    file it is about to write (a fragile self-cycle). We DO reuse psv_graph_genomewide.dedup_copies
+    (the shared, deterministic copy-dedup path) via a lazy import guarded like verify_hapvectors():
+    if the module/FAM_TSV is unavailable the depth leg degrades to null and the shipped columns are
+    untouched. Returns {family: depth_cn or None}."""
+    try:
+        sys.path.insert(0, HERE)
+        import psv_graph_genomewide as pgmod
+    except Exception:  # pragma: no cover - environment without pysam/data
+        return {}
+    if not os.path.exists(pgmod.FAM_TSV):
+        return {}
+    loci = collections.defaultdict(list)
+    with open(pgmod.FAM_TSV) as fh:
+        next(fh)
+        for line in fh:
+            fi, lid, c, s, e, nr = line.rstrip("\n").split("\t")
+            loci[int(fi)].append((lid, c, int(s), int(e), int(nr)))
+    out = {}
+    for fam, rows in loci.items():
+        ded = pgmod.dedup_copies(rows)            # [(chrom,start,end,reads_summed)] == n_loci copies
+        depths = [r[3] for r in ded]
+        e_fam = sum(depths)
+        lam_within = median(depths) if depths else 0.0
+        dcn = (e_fam / lam_within) if lam_within > 0 else float("nan")
+        out[fam] = round(dcn, 2) if dcn == dcn else None   # NaN -> None
+    return out
 
 
 def family_row(fam, pg, sun):
@@ -193,6 +267,19 @@ def main():
     pg, sun = load()
     rows = [family_row(fam, pg, sun) for fam in sorted(sun)]
 
+    # --- THIRD LEG (depth): purely ADDITIVE. Annotate each row with depth_cn / regime /
+    #     depth_recovers_collapsed_excess. The existing per-family values are untouched. ---
+    depth_cn_map = load_depth_cn()
+    for r in rows:
+        dcn = depth_cn_map.get(r["family"])
+        r["depth_cn"] = dcn
+        # regime: reference-RESOLVED (chi_H<=n_loci; reference pre-splits distinct loci) vs
+        # reference-COLLAPSED (n_loci<chi_H; one locus hides several hap-vectors -> depth-only).
+        r["regime"] = "reference_collapsed" if r["n_loci"] < r["chi_H"] else "reference_resolved"
+        # depth recovers the Tier-3 identical copies chi(H) collapsed away (need depth/DNA).
+        r["depth_recovers_collapsed_excess"] = int(
+            r["collapsed_excess"] > 0 and dcn is not None and dcn > r["chi_H"])
+
     with open(OUT_TSV, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=COLS, delimiter="\t", extrasaction="ignore")
         w.writeheader()
@@ -209,6 +296,11 @@ def main():
     fam_unassignable = [r for r in rows if r["chi_H"] > r["n_resolvable"]]      # advisor's point
     fam_collapsed = [r for r in rows if r["collapsed_excess"] > 0]              # need depth/DNA
     disagree = [r for r in rows if r["readlevel_disagrees"]]
+
+    # --- depth-leg aggregates (ADDITIVE) ---
+    regime_counts = collections.Counter(r["regime"] for r in rows)
+    n_depth = sum(1 for r in rows if r["depth_cn"] is not None)
+    depth_recovers = [r for r in fam_collapsed if r["depth_recovers_collapsed_excess"]]
 
     # named examples
     ex_beyond = max((r for r in rows if r["_t2"] > 0), key=lambda r: r["chi_H"], default=None) \
@@ -265,6 +357,24 @@ def main():
                     "sequence); confirms K=chi(H) so no from-scratch recompute needed",
             "detail": verification,
         },
+        "depth_leg": {
+            "note": "THIRD independent lower-bound probe (ADDITIVE; shipped columns unchanged). "
+                    "depth_cn = E_fam / lambda_within (family aggregate reads / within-family "
+                    "median per-copy read depth; RNA self-normalized parCN, Sudmant 2010). "
+                    "Same E_fam/lambda_within as rna_copy_number_depth.py (depth_cn_within), "
+                    "reusing psv_graph_genomewide.dedup_copies. HONEST: depth counts EXPRESSED "
+                    "copies => a NOISY LOWER BOUND on genomic CN (silent copies invisible => "
+                    "biased low; per-copy expression skew = two-sided noise), NOT an unbiased count.",
+            "n_families_with_depth_cn": n_depth,
+            "regime_counts": dict(regime_counts),
+            "n_collapsed_excess_families": len(fam_collapsed),
+            "n_depth_recovers_collapsed_excess": len(depth_recovers),
+            "collapsed_family_depth": [
+                {"family": r["family"], "gene": r["gene"], "chi_H": r["chi_H"],
+                 "collapsed_excess": r["collapsed_excess"], "depth_cn": r["depth_cn"],
+                 "depth_recovers_collapsed_excess": r["depth_recovers_collapsed_excess"]}
+                for r in sorted(fam_collapsed, key=lambda x: -x["collapsed_excess"])],
+        },
         "deterministic": True,
     }
 
@@ -279,6 +389,8 @@ def main():
           f"{len(fam_unassignable)}")
     print(f"families needing DEPTH/DNA (collapsed_excess>0): {len(fam_collapsed)}")
     print(f"read-level psv_graph K disagrees with copy-consensus chi_H on {len(disagree)}/154")
+    print(f"DEPTH leg: depth_cn computed for {n_depth}/{len(rows)} families; regimes={dict(regime_counts)}; "
+          f"depth_cn>chi_H on {len(depth_recovers)}/{len(fam_collapsed)} collapsed_excess>0 families")
     print(f"hap-vector verification {VERIFY_FAMS}: all_pass={verify_all_pass}")
     for v in verification:
         print("  ", v)

@@ -1,155 +1,155 @@
-family	gene	n_loci	chi_H	n_resolvable	n_counted_unassignable	collapsed_excess	true_copy_lower_bound	cls	chi_H_readlevel	readlevel_disagrees
-0	GSTM2	7	7	7	0	0	7	fully_resolvable	7	0
-1	LOC109025447	7	1	0	1	6	7	no_psv	1	0
-3	SORL1	3	3	3	0	0	3	fully_resolvable	3	0
-4	LOC129523503	7	7	7	0	0	7	fully_resolvable	7	0
-5	TUBGCP5	2	2	2	0	0	2	fully_resolvable	2	0
-7	LOC129534585	7	1	0	1	6	7	no_psv	1	0
-8	DAPK1	2	2	2	0	0	2	fully_resolvable	2	0
-9	LOC129526957	4	4	4	0	0	4	fully_resolvable	4	0
-10	LOC115930576	2	2	2	0	0	2	fully_resolvable	2	0
-11	LOC101130894	4	2	0	2	2	4	partial	2	0
-12	SMG1	5	5	5	0	0	5	fully_resolvable	5	0
-13	GSTM2	3	3	3	0	0	3	fully_resolvable	3	0
-14	LOC115930164	4	1	0	1	3	4	no_psv	1	0
-15	LOC115932756	3	3	3	0	0	3	fully_resolvable	3	0
-16	LOC101143406	3	3	3	0	0	3	fully_resolvable	3	0
-17	LOC101146782	3	3	3	0	0	3	fully_resolvable	3	0
-18	LOC134757299	9	9	9	0	0	9	fully_resolvable	9	0
-19	LOC115933250	3	3	3	0	0	3	fully_resolvable	3	0
-21	LOC101141440	5	1	0	1	4	5	no_psv	1	0
-22	LOC115933254	6	1	0	1	5	6	partial	4	1
-23	LOC101124683	2	2	2	0	0	2	fully_resolvable	2	0
-24	LOC101129940	3	3	3	0	0	3	fully_resolvable	3	0
-25	LOC134756941	2	2	2	0	0	2	fully_resolvable	2	0
-26	C4B	2	2	2	0	0	2	fully_resolvable	2	0
-27	LOC129526550	5	5	5	0	0	5	fully_resolvable	5	0
-28	LOC115930161	4	4	4	0	0	4	fully_resolvable	4	0
-29	CD99	2	2	2	0	0	2	fully_resolvable	2	0
-30	IKBKG	2	2	2	0	0	2	no_psv	1	1
-31	LOC109025132	3	3	3	0	0	3	fully_resolvable	3	0
-32	LOC115934629	4	3	2	1	1	4	partial	3	0
-33	PPIF	2	2	2	0	0	2	fully_resolvable	2	0
-34	LOC115930538	8	1	0	1	7	8	no_psv	1	0
-35	LOC101143448	2	2	2	0	0	2	fully_resolvable	2	0
-36	LOC129523519	2	2	2	0	0	2	fully_resolvable	2	0
-37	BFAR	2	2	2	0	0	2	fully_resolvable	2	0
-38	LOC129530205	8	8	8	0	0	8	fully_resolvable	8	0
-39	LOC134756389	5	5	5	0	0	5	fully_resolvable	5	0
-40	LOC101143223	2	2	2	0	0	2	fully_resolvable	2	0
-41	SAFB2	4	4	4	0	0	4	fully_resolvable	4	0
-42	LOC129529768	8	8	7	1	0	8	fully_resolvable	8	0
-43	TMEM185A	2	2	2	0	0	2	fully_resolvable	2	0
-44	LOC129532625	6	6	6	0	0	6	fully_resolvable	6	0
-46	LOC101145461	2	2	2	0	0	2	no_psv	1	1
-47	LOC101139703	2	2	2	0	0	2	fully_resolvable	2	0
-48	LOC101145975	2	2	2	0	0	2	fully_resolvable	2	0
-49	LOC129526403	2	2	2	0	0	2	fully_resolvable	2	0
-50	MPHOSPH8	2	2	2	0	0	2	fully_resolvable	2	0
-52	LOC115932749	3	3	3	0	0	3	fully_resolvable	3	0
-53	EOLA1	2	2	2	0	0	2	fully_resolvable	2	0
-54	LOC134758386	2	2	2	0	0	2	fully_resolvable	2	0
-55	LOC115933189	2	2	2	0	0	2	fully_resolvable	2	0
-57	LOC101143038	2	2	2	0	0	2	fully_resolvable	2	0
-58	DHRSX	2	2	2	0	0	2	fully_resolvable	2	0
-59	LOC134757427	3	3	3	0	0	3	fully_resolvable	3	0
-62	LOC109023386	4	1	0	1	3	4	no_psv	1	0
-63	LOC129529986	2	1	0	1	1	2	no_psv	1	0
-64	LOC101128637	2	2	2	0	0	2	fully_resolvable	2	0
-65	ZNF425	4	4	4	0	0	4	fully_resolvable	4	0
-66	LOC101124545	2	2	2	0	0	2	fully_resolvable	2	0
-67	LOC101149946	2	2	2	0	0	2	fully_resolvable	2	0
-68	LOC129523521	2	2	2	0	0	2	no_psv	1	1
-69	LOC115932259	2	1	0	1	1	2	no_psv	1	0
-71	PLEKHM1	2	2	2	0	0	2	fully_resolvable	2	0
-72	LOC129526479	4	4	4	0	0	4	fully_resolvable	4	0
-73	LOC101131460	2	2	2	0	0	2	fully_resolvable	2	0
-74	LOC134758618	3	3	3	0	0	3	fully_resolvable	3	0
-75	CPLANE1	3	1	0	1	2	3	no_psv	1	0
-77	LOC129523694	2	2	2	0	0	2	fully_resolvable	2	0
-78	LOC129525065	2	2	2	0	0	2	fully_resolvable	2	0
-79	SNRNP25	2	2	2	0	0	2	fully_resolvable	2	0
-80	LOC129526471	3	3	3	0	0	3	fully_resolvable	3	0
-81	LOC115935842	3	3	3	0	0	3	fully_resolvable	3	0
-82	FOXO1	2	2	2	0	0	2	fully_resolvable	2	0
-83	LOC101137311	3	3	3	0	0	3	fully_resolvable	3	0
-85	LOC101135984	2	2	2	0	0	2	fully_resolvable	2	0
-87	LOC101130854	3	3	3	0	0	3	fully_resolvable	3	0
-89	LOC129530550	3	3	3	0	0	3	fully_resolvable	3	0
-90	LOC101143142	3	3	3	0	0	3	fully_resolvable	3	0
-91	LOC129530050	2	2	2	0	0	2	fully_resolvable	2	0
-92	LOC101146541	2	2	2	0	0	2	fully_resolvable	2	0
-93	LOC115932194	2	1	0	1	1	2	no_psv	1	0
-94	MAGEA9	2	2	2	0	0	2	no_psv	1	1
-95	LOC129529978	2	1	0	1	1	2	no_psv	1	0
-96	LOC129530275	4	2	1	1	2	4	no_psv	1	1
-97	LOC101144634	2	2	2	0	0	2	fully_resolvable	2	0
-98	LOC101142904	2	2	2	0	0	2	fully_resolvable	2	0
-100	LOC101137455	2	2	2	0	0	2	fully_resolvable	2	0
-101	LOC129534200	2	2	2	0	0	2	no_psv	1	1
-102	HSPA1L	2	2	2	0	0	2	fully_resolvable	2	0
-105	LOC109029264	2	2	2	0	0	2	fully_resolvable	2	0
-106	LOC115933728	2	2	2	0	0	2	fully_resolvable	2	0
-107	LOC129531864	2	2	2	0	0	2	fully_resolvable	2	0
-109	LOC129523567	2	2	2	0	0	2	fully_resolvable	2	0
-110	LOC134757821	2	2	2	0	0	2	fully_resolvable	2	0
-111	LOC129526434	2	2	2	0	0	2	fully_resolvable	2	0
-114	LOC129527053	2	2	2	0	0	2	fully_resolvable	2	0
-115	LOC129527023	3	3	3	0	0	3	fully_resolvable	3	0
-116	LOC115931857	2	2	2	0	0	2	fully_resolvable	2	0
-117	LOC101123970	2	2	2	0	0	2	fully_resolvable	2	0
-118	LOC129527341	2	2	2	0	0	2	fully_resolvable	2	0
-119	LOC115931729	2	2	2	0	0	2	fully_resolvable	2	0
-120	LOC115931590	2	2	2	0	0	2	fully_resolvable	2	0
-121	ASMTL	2	2	2	0	0	2	fully_resolvable	2	0
-122	LOC129530010	2	1	0	1	1	2	no_psv	1	0
-123	LOC129533124	2	2	2	0	0	2	fully_resolvable	2	0
-124	LOC101127437	2	2	2	0	0	2	fully_resolvable	2	0
-125	SORT1	2	2	2	0	0	2	fully_resolvable	2	0
-128	GSTM2	2	2	2	0	0	2	fully_resolvable	2	0
-129	GSTM2	2	2	2	0	0	2	fully_resolvable	2	0
-132	LOC115930576	2	2	2	0	0	2	fully_resolvable	2	0
-135	LOC101138917	2	2	2	0	0	2	fully_resolvable	2	0
-136	TNK2	2	2	2	0	0	2	fully_resolvable	2	0
-137	LOC101147313	2	2	2	0	0	2	fully_resolvable	2	0
-138	LOC134757564	2	2	2	0	0	2	fully_resolvable	2	0
-139	LOC129531752	2	2	2	0	0	2	fully_resolvable	2	0
-143	LOC134758545	2	2	2	0	0	2	fully_resolvable	2	0
-145	LOC115935025	2	2	2	0	0	2	no_psv	1	1
-146	LOC101143855	2	2	2	0	0	2	fully_resolvable	2	0
-147	LOC129523491	2	2	2	0	0	2	fully_resolvable	2	0
-150	LOC129523854	2	2	2	0	0	2	fully_resolvable	2	0
-151	LOC129523647	2	2	2	0	0	2	no_psv	1	1
-152	PARG	2	2	2	0	0	2	fully_resolvable	2	0
-153	SHLD2	2	2	2	0	0	2	fully_resolvable	2	0
-154	LOC115936005	2	2	2	0	0	2	fully_resolvable	2	0
-156	RHBDF1	2	2	2	0	0	2	fully_resolvable	2	0
-157	LOC101151284	2	2	2	0	0	2	fully_resolvable	2	0
-158	LOC129527809	2	2	2	0	0	2	fully_resolvable	2	0
-160	LOC115935867	2	2	2	0	0	2	fully_resolvable	2	0
-161	LOC101124026	2	2	2	0	0	2	fully_resolvable	2	0
-163	LOC101137734	2	2	2	0	0	2	fully_resolvable	2	0
-164	MPHOSPH8	2	2	2	0	0	2	fully_resolvable	2	0
-165	LOC101144919	2	2	2	0	0	2	fully_resolvable	2	0
-166	LOC101144919	2	2	2	0	0	2	fully_resolvable	2	0
-167	LOC101124683	2	2	2	0	0	2	fully_resolvable	2	0
-168	LOC101124683	2	2	2	0	0	2	no_psv	1	1
-169	LOC101124683	2	1	0	1	1	2	no_psv	1	0
-170	LOC101124683	2	1	0	1	1	2	no_psv	1	0
-171	LOC115933240	2	2	2	0	0	2	fully_resolvable	2	0
-172	LOC101136352	2	2	2	0	0	2	fully_resolvable	2	0
-173	LOC101149946	2	2	2	0	0	2	fully_resolvable	2	0
-174	LOC115930831	2	2	2	0	0	2	fully_resolvable	2	0
-175	UBE2Q2P16	2	1	0	1	1	2	no_psv	1	0
-176	LOC115931067	2	1	0	1	1	2	no_psv	1	0
-177	PDPK1	2	2	2	0	0	2	fully_resolvable	2	0
-178	LOC115933250	2	2	2	0	0	2	fully_resolvable	2	0
-179	BMERB1	2	2	2	0	0	2	fully_resolvable	2	0
-181	LOC134757438	2	2	2	0	0	2	fully_resolvable	2	0
-182	LOC129527663	2	2	2	0	0	2	fully_resolvable	2	0
-183	LOC115933369	2	2	2	0	0	2	fully_resolvable	2	0
-189	LOC115931590	2	2	2	0	0	2	fully_resolvable	2	0
-191	LOC129530554	2	1	0	1	1	2	no_psv	1	0
-192	LOC101142904	2	2	2	0	0	2	fully_resolvable	2	0
-193	LOC115932281	2	2	2	0	0	2	fully_resolvable	2	0
-195	LOC129529923	2	2	2	0	0	2	no_psv	1	1
+family	gene	n_loci	chi_H	n_resolvable	n_counted_unassignable	collapsed_excess	true_copy_lower_bound	cls	chi_H_readlevel	readlevel_disagrees	depth_cn	regime	depth_recovers_collapsed_excess
+0	GSTM2	7	7	7	0	0	7	fully_resolvable	7	0	5.3	reference_resolved	0
+1	LOC109025447	7	1	0	1	6	7	no_psv	1	0	15.84	reference_resolved	1
+3	SORL1	3	3	3	0	0	3	fully_resolvable	3	0	39.67	reference_resolved	0
+4	LOC129523503	7	7	7	0	0	7	fully_resolvable	7	0	61.21	reference_resolved	0
+5	TUBGCP5	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+7	LOC129534585	7	1	0	1	6	7	no_psv	1	0	7.95	reference_resolved	1
+8	DAPK1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+9	LOC129526957	4	4	4	0	0	4	fully_resolvable	4	0	4.47	reference_resolved	0
+10	LOC115930576	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+11	LOC101130894	4	2	0	2	2	4	partial	2	0	10.42	reference_resolved	1
+12	SMG1	5	5	5	0	0	5	fully_resolvable	5	0	7.37	reference_resolved	0
+13	GSTM2	3	3	3	0	0	3	fully_resolvable	3	0	3.42	reference_resolved	0
+14	LOC115930164	4	1	0	1	3	4	no_psv	1	0	4.38	reference_resolved	1
+15	LOC115932756	3	3	3	0	0	3	fully_resolvable	3	0	2.8	reference_resolved	0
+16	LOC101143406	3	3	3	0	0	3	fully_resolvable	3	0	10.14	reference_resolved	0
+17	LOC101146782	3	3	3	0	0	3	fully_resolvable	3	0	2.4	reference_resolved	0
+18	LOC134757299	9	9	9	0	0	9	fully_resolvable	9	0	8.13	reference_resolved	0
+19	LOC115933250	3	3	3	0	0	3	fully_resolvable	3	0	30.48	reference_resolved	0
+21	LOC101141440	5	1	0	1	4	5	no_psv	1	0	5.0	reference_resolved	1
+22	LOC115933254	6	1	0	1	5	6	partial	4	1	6.87	reference_resolved	1
+23	LOC101124683	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+24	LOC101129940	3	3	3	0	0	3	fully_resolvable	3	0	2.73	reference_resolved	0
+25	LOC134756941	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+26	C4B	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+27	LOC129526550	5	5	5	0	0	5	fully_resolvable	5	0	11.75	reference_resolved	0
+28	LOC115930161	4	4	4	0	0	4	fully_resolvable	4	0	5.64	reference_resolved	0
+29	CD99	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+30	IKBKG	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+31	LOC109025132	3	3	3	0	0	3	fully_resolvable	3	0	3.51	reference_resolved	0
+32	LOC115934629	4	3	2	1	1	4	partial	3	0	4.0	reference_resolved	1
+33	PPIF	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+34	LOC115930538	8	1	0	1	7	8	no_psv	1	0	11.4	reference_resolved	1
+35	LOC101143448	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+36	LOC129523519	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+37	BFAR	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+38	LOC129530205	8	8	8	0	0	8	fully_resolvable	8	0	10.86	reference_resolved	0
+39	LOC134756389	5	5	5	0	0	5	fully_resolvable	5	0	4.5	reference_resolved	0
+40	LOC101143223	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+41	SAFB2	4	4	4	0	0	4	fully_resolvable	4	0	5.43	reference_resolved	0
+42	LOC129529768	8	8	7	1	0	8	fully_resolvable	8	0	7.0	reference_resolved	0
+43	TMEM185A	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+44	LOC129532625	6	6	6	0	0	6	fully_resolvable	6	0	6.91	reference_resolved	0
+46	LOC101145461	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+47	LOC101139703	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+48	LOC101145975	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+49	LOC129526403	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+50	MPHOSPH8	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+52	LOC115932749	3	3	3	0	0	3	fully_resolvable	3	0	5.83	reference_resolved	0
+53	EOLA1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+54	LOC134758386	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+55	LOC115933189	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+57	LOC101143038	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+58	DHRSX	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+59	LOC134757427	3	3	3	0	0	3	fully_resolvable	3	0	3.14	reference_resolved	0
+62	LOC109023386	4	1	0	1	3	4	no_psv	1	0	4.14	reference_resolved	1
+63	LOC129529986	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+64	LOC101128637	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+65	ZNF425	4	4	4	0	0	4	fully_resolvable	4	0	4.18	reference_resolved	0
+66	LOC101124545	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+67	LOC101149946	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+68	LOC129523521	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+69	LOC115932259	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+71	PLEKHM1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+72	LOC129526479	4	4	4	0	0	4	fully_resolvable	4	0	4.22	reference_resolved	0
+73	LOC101131460	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+74	LOC134758618	3	3	3	0	0	3	fully_resolvable	3	0	3.5	reference_resolved	0
+75	CPLANE1	3	1	0	1	2	3	no_psv	1	0	7.67	reference_resolved	1
+77	LOC129523694	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+78	LOC129525065	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+79	SNRNP25	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+80	LOC129526471	3	3	3	0	0	3	fully_resolvable	3	0	3.12	reference_resolved	0
+81	LOC115935842	3	3	3	0	0	3	fully_resolvable	3	0	2.92	reference_resolved	0
+82	FOXO1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+83	LOC101137311	3	3	3	0	0	3	fully_resolvable	3	0	3.0	reference_resolved	0
+85	LOC101135984	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+87	LOC101130854	3	3	3	0	0	3	fully_resolvable	3	0	6.67	reference_resolved	0
+89	LOC129530550	3	3	3	0	0	3	fully_resolvable	3	0	3.0	reference_resolved	0
+90	LOC101143142	3	3	3	0	0	3	fully_resolvable	3	0	4.5	reference_resolved	0
+91	LOC129530050	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+92	LOC101146541	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+93	LOC115932194	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+94	MAGEA9	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+95	LOC129529978	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+96	LOC129530275	4	2	1	1	2	4	no_psv	1	1	4.0	reference_resolved	1
+97	LOC101144634	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+98	LOC101142904	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+100	LOC101137455	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+101	LOC129534200	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+102	HSPA1L	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+105	LOC109029264	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+106	LOC115933728	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+107	LOC129531864	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+109	LOC129523567	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+110	LOC134757821	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+111	LOC129526434	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+114	LOC129527053	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+115	LOC129527023	3	3	3	0	0	3	fully_resolvable	3	0	3.33	reference_resolved	0
+116	LOC115931857	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+117	LOC101123970	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+118	LOC129527341	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+119	LOC115931729	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+120	LOC115931590	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+121	ASMTL	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+122	LOC129530010	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+123	LOC129533124	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+124	LOC101127437	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+125	SORT1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+128	GSTM2	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+129	GSTM2	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+132	LOC115930576	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+135	LOC101138917	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+136	TNK2	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+137	LOC101147313	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+138	LOC134757564	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+139	LOC129531752	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+143	LOC134758545	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+145	LOC115935025	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+146	LOC101143855	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+147	LOC129523491	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+150	LOC129523854	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+151	LOC129523647	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+152	PARG	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+153	SHLD2	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+154	LOC115936005	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+156	RHBDF1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+157	LOC101151284	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+158	LOC129527809	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+160	LOC115935867	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+161	LOC101124026	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+163	LOC101137734	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+164	MPHOSPH8	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+165	LOC101144919	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+166	LOC101144919	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+167	LOC101124683	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+168	LOC101124683	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
+169	LOC101124683	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+170	LOC101124683	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+171	LOC115933240	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+172	LOC101136352	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+173	LOC101149946	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+174	LOC115930831	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+175	UBE2Q2P16	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+176	LOC115931067	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+177	PDPK1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+178	LOC115933250	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+179	BMERB1	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+181	LOC134757438	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+182	LOC129527663	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+183	LOC115933369	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+189	LOC115931590	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+191	LOC129530554	2	1	0	1	1	2	no_psv	1	0	2.0	reference_resolved	1
+192	LOC101142904	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+193	LOC115932281	2	2	2	0	0	2	fully_resolvable	2	0	2.0	reference_resolved	0
+195	LOC129529923	2	2	2	0	0	2	no_psv	1	1	2.0	reference_resolved	0
