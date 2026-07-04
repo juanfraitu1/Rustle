@@ -31,6 +31,7 @@ pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a mo
 pub mod copy_split; // Joint read-coherence + PSV decomposition into (copy, isoform) units.
 pub mod absent_copy; // Admission gate for reference-ABSENT (collapsed) copy candidates.
 pub mod copy_assign; // Copy ASSIGNMENT: resolve a read to a known copy via PSV + junction likelihood.
+pub mod recombinant_abstain; // O2 recombinant-read ABSTAIN gate: belongs-to-no-copy bi-copy switch test over the family VG (Rust port of recombinant_abstain.py; byte-parity tested).
 pub mod family_rescue; // Family-aware copy RESCUE: borrow-strength POA confirm of under-assembled copies.
 pub mod family_detect; // Strand-aware de-novo family DETECTION: loci collapse + kmer prefilter + POA edges.
 pub mod family_split; // De-novo family DECOMPOSITION: connected components + weighted-modularity Louvain.
