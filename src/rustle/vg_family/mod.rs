@@ -7,6 +7,7 @@
 
 pub mod family_definition; // O1 multi-copy predicate `distinct_loci` (Rust port of genome_family_def.py; byte-parity tested).
 pub mod family_loaders; // O1 family-definition LOADERS (meta/annot/edges/families + gene_of projection; Rust port of family_er_pr.py loaders; byte-parity tested).
+pub mod edge_oracle; // O1 RNA-only EDGE-ORACLE loaders (pair_core/universal_aln/allele) + allele-demote decision (Rust port of rna_only_edge_oracle.py; byte-parity tested).
 pub mod family_graph;
 pub mod rescue;
 pub mod diagnostic;
