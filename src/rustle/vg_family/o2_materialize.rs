@@ -27,15 +27,24 @@
 //! `bench/gen_o2_readfetch_fixture.py`, PYTHONHASHSEED=0) by the `#[test]`s below.
 
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::io::Write as _;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use anyhow::Result;
 use noodles_sam::alignment::record::data::field::Tag;
 use noodles_sam::alignment::record::Cigar as _;
 use noodles_sam::alignment::record_buf::data::field::Value as BufValue;
 use noodles_sam::alignment::RecordBuf;
+use serde_json::{json, Map, Value};
+
+use super::o2_columns::column_alleles;
+use super::o2_margin_gate::{assign_read_margin, BTOL, ERR, JW, MARGIN};
+use super::recombinant_abstain::{apply_abstain_to_vg, FamilyVg, VgBubble, VgCopy, VgRead};
+use super::repeat_catalog::IndexedFasta;
 
 /// De-novo loci with reciprocal overlap STRICTLY GREATER than this fraction of the
 /// shorter locus are the same genomic copy (isoforms) and get merged; distinct tandem
@@ -400,6 +409,711 @@ pub fn fetch_reads<P: AsRef<Path>>(
         seqs.truncate(read_cap);
     }
     Ok((best, seqs))
+}
+
+// ===========================================================================
+// assemble_vg  (the deterministic assembly core of
+// bench/o2_vg_visualization.py::materialize_family, lines ~168-284)
+// ===========================================================================
+
+/// Default genome FASTA, the `materialize_family` copy-extraction input. Python
+/// `bench/psv_graph_genomewide.py:30  GENOME = "/home/juanfra/winloci_scratch/GGO.fasta"`.
+pub const GENOME_DEFAULT: &str = "/home/juanfra/winloci_scratch/GGO.fasta";
+
+/// A PSV bubble must recur across at least this many reads (not a one-read error).
+/// Python `bench/psv_graph_genomewide.py:34  MIN_READS_PSV = 3`.
+pub const MIN_READS_PSV: usize = 3;
+
+/// Default VG cache directory. Python `bench/o2_vg_visualization.py:59
+/// CACHE = "/home/juanfra/winloci_scratch/o2vg"`.
+pub const CACHE_DIR_DEFAULT: &str = "/home/juanfra/winloci_scratch/o2vg";
+
+/// The pre- and post-abstain materialized-VG JSON objects: `pre_abstain` is what the
+/// Python dumps to the cache (`json.dump(vg, ...)` BEFORE the abstain leg);
+/// `post_abstain` is what `materialize_family` RETURNS (after
+/// `ra.apply_abstain_to_vg(vg)`). They differ only by the recombinant-abstain flips
+/// (identical when no read flips, e.g. `< 2` bubbles or the leg opted out).
+#[derive(Clone, Debug)]
+pub struct VgPair {
+    /// The pre-abstain VG (Python cache dump).
+    pub pre_abstain: Value,
+    /// The post-abstain VG (Python `materialize_family` return value).
+    pub post_abstain: Value,
+}
+
+/// Python `round(float(x), 2)`, bit-for-bit.
+///
+/// CPython's `float.__round__(ndigits=2)` produces the correctly-rounded (round-half-to-
+/// even) 2-decimal string via David Gay's dtoa, then converts it back to the nearest
+/// `double`. `format!("{:.2}", x)` in Rust is likewise correctly-rounded round-half-to-
+/// even on the exact binary value, and `parse::<f64>()` is a correct `strtod`, so the
+/// composition yields the identical `f64`. `x` is always finite and non-negative here
+/// (`margin = logL[best] - logL[runner-up] >= 0`; the `+inf` single-copy case never
+/// reaches a read row because a lone copy admits no `>= 2`-allele bubble).
+fn round2(x: f64) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    format!("{x:.2}").parse::<f64>().expect("round2 reparse")
+}
+
+/// A finite `f64` as a JSON number (mirrors `json.dump(float)` -> a JSON float that
+/// serde parses back to the same `Float`). Non-finite -> `null` (never hit here).
+fn f64_num(x: f64) -> Value {
+    serde_json::Number::from_f64(x).map(Value::Number).unwrap_or(Value::Null)
+}
+
+/// `dict(counter)` as a JSON object `{key: count}` (order-independent; the Python
+/// Counter/`dict` order is irrelevant to the semantic-map comparison).
+fn counter_to_value(c: &BTreeMap<String, i64>) -> Value {
+    let mut m = Map::new();
+    for (k, v) in c {
+        m.insert(k.clone(), json!(v));
+    }
+    Value::Object(m)
+}
+
+/// One kept PSV bubble: the parallel state (`pos`, `hap`) the downstream assembly needs
+/// plus the emitted JSON object.
+struct KeptBubble {
+    pos: i64,
+    hap: BTreeMap<String, char>, // name -> allele, EVERY copy present (kept-bubble invariant)
+    json: Value,
+}
+
+/// Assemble the per-family variation-graph object from already-extracted columns — the
+/// deterministic core of `bench/o2_vg_visualization.py::materialize_family` (lines
+/// ~168-284), FACTORED OUT so it is fixture-testable WITHOUT running minimap2/samtools.
+///
+/// Inputs are exactly what the recompute path computes before the assembly:
+///  * `regions` — dedup'd copy regions, ALREADY sorted by `-(end-start)` (Python
+///    `sorted(..., key=lambda r: -(r[2]-r[1]))`); `regions[i]` is copy `i`.
+///  * `backbone` — `(chrom, start, end)` of `regions[0]` after clamping (`backbone_*`).
+///  * `refseq` — the UPPERCASED backbone bytes (`genome.fetch(bc,bs,be).upper()`).
+///  * `names` — `["copy0", .., "copyN"]`.
+///  * `copy_cols` / `read_cols` — [`column_alleles`] over the copies / reads BAM on
+///    `copy0`.
+///  * `best_names` — the read names in `sorted(best)` order (`n_reads == best_names.len`).
+///  * `gene_lbl` — `(chrom, start) -> gene`.
+///
+/// Returns both the pre-abstain VG (Python cache dump) and the post-abstain VG (return
+/// value): the recombinant-abstain leg [`apply_abstain_to_vg`] is applied to a
+/// [`FamilyVg`] view and merged back (flipped reads get `status="recombinant"`,
+/// `best_copy=null`, and the `gate_status_pre_abstain` / `recombinant_kind` keys; the
+/// top-level `assignment` / `per_copy` counters move; `copies[*].n_assigned_reads` stays
+/// the PRE-abstain quant, exactly as the Python `copies_out` captured it before the leg).
+#[allow(clippy::too_many_arguments)]
+pub fn assemble_vg(
+    fam_id: i64,
+    regions: &[(String, i64, i64, i64)],
+    backbone: (&str, i64, i64),
+    refseq: &[u8],
+    names: &[String],
+    copy_cols: &BTreeMap<i64, BTreeMap<String, char>>,
+    read_cols: &BTreeMap<i64, BTreeMap<String, char>>,
+    best_names: &[String],
+    gene_lbl: &BTreeMap<(String, i64), String>,
+) -> VgPair {
+    let nnames = names.len();
+
+    // ---- PSV bubbles: all copies defined, >=2 distinct alleles, read-supported ----
+    let mut bubbles: Vec<KeptBubble> = Vec::new();
+    let mut n_sun_bubbles = 0usize;
+    for p in 0..refseq.len() {
+        let mut hap: BTreeMap<String, char> = BTreeMap::new();
+        hap.insert(names[0].clone(), refseq[p] as char);
+        let cc = copy_cols.get(&(p as i64));
+        for nm in &names[1..] {
+            if let Some(m) = cc {
+                if let Some(&b) = m.get(nm) {
+                    hap.insert(nm.clone(), b);
+                }
+            }
+        }
+        if hap.len() != nnames {
+            continue; // not every copy is defined at this column
+        }
+        let distinct: BTreeSet<char> = hap.values().copied().collect();
+        if distinct.len() < 2 {
+            continue; // no variation -> not a PSV
+        }
+        let n_read_support = read_cols.get(&(p as i64)).map(|m| m.len()).unwrap_or(0);
+        if n_read_support < MIN_READS_PSV {
+            continue; // one-read error, not a recurrent PSV
+        }
+
+        // allele -> [copies], in names order (list order is load-bearing); allele KEY
+        // order is irrelevant (JSON object).
+        let mut alleles: Vec<(char, Vec<String>)> = Vec::new();
+        // char -> count for the SUN (private-allele) test.
+        let mut count: BTreeMap<char, usize> = BTreeMap::new();
+        for nm in names {
+            let a = hap[nm];
+            *count.entry(a).or_insert(0) += 1;
+            if let Some(e) = alleles.iter_mut().find(|(k, _)| *k == a) {
+                e.1.push(nm.clone());
+            } else {
+                alleles.push((a, vec![nm.clone()]));
+            }
+        }
+        // sun_copy = FIRST copy (names order) whose allele is unique among the copies.
+        let mut sun_copy: Option<String> = None;
+        for nm in names {
+            if count[&hap[nm]] == 1 {
+                sun_copy = Some(nm.clone());
+                break;
+            }
+        }
+        if sun_copy.is_some() {
+            n_sun_bubbles += 1;
+        }
+
+        let col = bubbles.len();
+        let mut hap_json = Map::new();
+        for nm in names {
+            hap_json.insert(nm.clone(), Value::String(hap[nm].to_string()));
+        }
+        let mut alleles_json = Map::new();
+        for (a, mem) in &alleles {
+            alleles_json.insert(
+                a.to_string(),
+                Value::Array(mem.iter().map(|m| Value::String(m.clone())).collect()),
+            );
+        }
+        let bjson = json!({
+            "col": col,
+            "pos": p,
+            "hap": Value::Object(hap_json),
+            "alleles": Value::Object(alleles_json),
+            "is_sun": sun_copy.is_some(),
+            "sun_copy": sun_copy.clone().map(Value::String).unwrap_or(Value::Null),
+            "n_read_support": n_read_support,
+        });
+        bubbles.push(KeptBubble { pos: p as i64, hap, json: bjson });
+    }
+
+    // ---- hap-rows -> groups (first-seen order) -> group_id (stable sort by -size) ----
+    let hap_rows: Vec<Vec<char>> = names
+        .iter()
+        .map(|nm| bubbles.iter().map(|b| b.hap[nm]).collect())
+        .collect();
+    let mut group_order: Vec<(Vec<char>, Vec<usize>)> = Vec::new();
+    for ni in 0..nnames {
+        let hr = &hap_rows[ni];
+        if let Some(g) = group_order.iter_mut().find(|(k, _)| k == hr) {
+            g.1.push(ni);
+        } else {
+            group_order.push((hr.clone(), vec![ni]));
+        }
+    }
+    let k_groups = group_order.len();
+    let mut group_sizes: Vec<usize> = group_order.iter().map(|(_, m)| m.len()).collect();
+    group_sizes.sort_by(|a, b| b.cmp(a)); // descending
+    // group_id: enumerate groups sorted by -len (STABLE -> ties keep first-seen order).
+    let mut order_idx: Vec<usize> = (0..group_order.len()).collect();
+    order_idx.sort_by_key(|&i| std::cmp::Reverse(group_order[i].1.len()));
+    let mut group_id = vec![0usize; nnames];
+    let mut group_size_of = vec![0usize; nnames];
+    for (gi, &oi) in order_idx.iter().enumerate() {
+        for &ni in &group_order[oi].1 {
+            group_id[ni] = gi;
+        }
+    }
+    for (_, mem) in &group_order {
+        for &ni in mem {
+            group_size_of[ni] = mem.len();
+        }
+    }
+
+    // ---- per-copy SUN columns + tier ----
+    let mut sun_cols: Vec<Vec<usize>> = vec![Vec::new(); nnames];
+    for (j, b) in bubbles.iter().enumerate() {
+        let mut count: BTreeMap<char, usize> = BTreeMap::new();
+        for nm in names {
+            *count.entry(b.hap[nm]).or_insert(0) += 1;
+        }
+        for (ni, nm) in names.iter().enumerate() {
+            if count[&b.hap[nm]] == 1 {
+                sun_cols[ni].push(j);
+            }
+        }
+    }
+    let mut tier = vec![0i64; nnames];
+    for ni in 0..nnames {
+        tier[ni] = if group_size_of[ni] > 1 {
+            3 // hap-row collapses with another copy -> K-frontier
+        } else if !sun_cols[ni].is_empty() {
+            1 // >=1 private column -> single-read SUN-identifiable
+        } else {
+            2 // unique hap-row but no SUN -> needs PSV linkage
+        };
+    }
+
+    // ---- copy allele vectors in COLUMN space (names order) for the real gate ----
+    let copy_vecs: Vec<(String, BTreeMap<usize, char>)> = names
+        .iter()
+        .map(|nm| {
+            let m: BTreeMap<usize, char> =
+                bubbles.iter().enumerate().map(|(j, b)| (j, b.hap[nm])).collect();
+            (nm.clone(), m)
+        })
+        .collect();
+
+    // ---- thread every read through the graph via the REAL gate ----
+    let mut reads_pre: Vec<Map<String, Value>> = Vec::with_capacity(best_names.len());
+    let mut fvg_reads: Vec<VgRead> = Vec::with_capacity(best_names.len());
+    let mut cats: BTreeMap<String, i64> = BTreeMap::new();
+    let mut per_copy: BTreeMap<String, i64> = BTreeMap::new();
+    for r in best_names {
+        let mut obs: BTreeMap<usize, char> = BTreeMap::new();
+        for (j, b) in bubbles.iter().enumerate() {
+            if let Some(m) = read_cols.get(&b.pos) {
+                if let Some(&base) = m.get(r) {
+                    obs.insert(j, base);
+                }
+            }
+        }
+        if obs.is_empty() {
+            *cats.entry("no_cover".to_string()).or_insert(0) += 1;
+            let mut rm = Map::new();
+            rm.insert("name".to_string(), Value::String(r.clone()));
+            rm.insert("best_copy".to_string(), Value::Null);
+            rm.insert("status".to_string(), Value::String("no_cover".to_string()));
+            rm.insert("margin".to_string(), json!(0.0));
+            rm.insert("n_span".to_string(), json!(0));
+            rm.insert("n_decisive".to_string(), json!(0));
+            rm.insert("span_cols".to_string(), Value::Null);
+            rm.insert("obs".to_string(), Value::Object(Map::new()));
+            reads_pre.push(rm);
+            fvg_reads.push(VgRead {
+                name: r.clone(),
+                obs: BTreeMap::new(),
+                status: "no_cover".to_string(),
+                best_copy: None,
+                gate_status_pre_abstain: None,
+                recombinant_kind: None,
+            });
+            continue;
+        }
+        let obs_opt: BTreeMap<usize, Option<char>> =
+            obs.iter().map(|(&k, &v)| (k, Some(v))).collect();
+        let res = assign_read_margin(&obs_opt, &copy_vecs, None, None, ERR, JW, BTOL);
+        let spanned: Vec<usize> = obs.keys().copied().collect(); // ascending (BTreeMap)
+        let span0 = spanned[0];
+        let span1 = spanned[spanned.len() - 1];
+        let (status, best_copy): (&str, Option<String>) =
+            if res.n_decisive >= 1 && res.margin >= MARGIN {
+                ("assigned", Some(res.best.clone()))
+            } else if res.n_decisive >= 1 {
+                ("ambiguous", None)
+            } else {
+                ("tied", None)
+            };
+        match status {
+            "assigned" => {
+                *cats.entry("assigned".to_string()).or_insert(0) += 1;
+                *per_copy.entry(res.best.clone()).or_insert(0) += 1;
+            }
+            "ambiguous" => {
+                *cats.entry("ambiguous".to_string()).or_insert(0) += 1;
+            }
+            _ => {
+                *cats.entry("tied".to_string()).or_insert(0) += 1;
+            }
+        }
+        let mut obs_json = Map::new();
+        for (&k, &v) in &obs {
+            obs_json.insert(k.to_string(), Value::String(v.to_string()));
+        }
+        let mut rm = Map::new();
+        rm.insert("name".to_string(), Value::String(r.clone()));
+        rm.insert(
+            "best_copy".to_string(),
+            best_copy.clone().map(Value::String).unwrap_or(Value::Null),
+        );
+        rm.insert("status".to_string(), Value::String(status.to_string()));
+        rm.insert("margin".to_string(), f64_num(round2(res.margin)));
+        rm.insert("n_span".to_string(), json!(res.n_span));
+        rm.insert("n_decisive".to_string(), json!(res.n_decisive));
+        rm.insert("span_cols".to_string(), json!([span0, span1]));
+        rm.insert("obs".to_string(), Value::Object(obs_json));
+        reads_pre.push(rm);
+        fvg_reads.push(VgRead {
+            name: r.clone(),
+            obs,
+            status: status.to_string(),
+            best_copy,
+            gate_status_pre_abstain: None,
+            recombinant_kind: None,
+        });
+    }
+
+    // ---- classification ----
+    let cls = if bubbles.is_empty() {
+        "no_psv (K-FRONTIER floor)"
+    } else if k_groups == 1 {
+        "collapsed (K-FRONTIER floor)" // unreachable in practice (a bubble forces K>=2)
+    } else if k_groups == nnames {
+        "fully_resolvable"
+    } else {
+        "partial (mixed resolvable / collapsed)"
+    };
+
+    // ---- copies (n_assigned_reads is the PRE-abstain quant, captured now) ----
+    let mut copies_json: Vec<Value> = Vec::with_capacity(nnames);
+    for (i, (c, s, e, _nr)) in regions.iter().enumerate() {
+        let nm = &names[i];
+        let gene = gene_lbl
+            .get(&(c.clone(), *s))
+            .cloned()
+            .unwrap_or_else(|| "?".to_string());
+        let n_assigned = *per_copy.get(nm).unwrap_or(&0);
+        let mut cm = Map::new();
+        cm.insert("name".to_string(), Value::String(nm.clone()));
+        cm.insert("chrom".to_string(), Value::String(c.clone()));
+        cm.insert("start".to_string(), json!(s));
+        cm.insert("end".to_string(), json!(e));
+        cm.insert("length".to_string(), json!(e - s));
+        cm.insert("gene".to_string(), Value::String(gene));
+        cm.insert("hap_group".to_string(), json!(group_id[i]));
+        cm.insert("tier".to_string(), json!(tier[i]));
+        cm.insert("n_sun".to_string(), json!(sun_cols[i].len()));
+        cm.insert("sun_cols".to_string(), json!(sun_cols[i]));
+        cm.insert("n_assigned_reads".to_string(), json!(n_assigned));
+        copies_json.push(Value::Object(cm));
+    }
+
+    // ---- tiers Counter ----
+    let mut tiers_count: BTreeMap<i64, i64> = BTreeMap::new();
+    for &t in &tier {
+        *tiers_count.entry(t).or_insert(0) += 1;
+    }
+    let mut tiers_json = Map::new();
+    for (t, cnt) in &tiers_count {
+        tiers_json.insert(t.to_string(), json!(cnt));
+    }
+
+    // ---- top-level scalar fields (shared by pre + post) ----
+    let (gene_flag, role_flag) = FLAGSHIP
+        .iter()
+        .find(|(id, _, _)| *id == fam_id)
+        .map(|(_, g, r)| (*g, *r))
+        .unwrap_or(("?", "?"));
+    let chroms: BTreeSet<String> = regions.iter().map(|r| r.0.clone()).collect();
+    let cross_chrom = chroms.len() >= 2;
+    let chroms_vec: Vec<String> = chroms.into_iter().collect();
+
+    let mut base = Map::new();
+    base.insert("family".to_string(), json!(fam_id));
+    base.insert("gene".to_string(), Value::String(gene_flag.to_string()));
+    base.insert("role".to_string(), Value::String(role_flag.to_string()));
+    base.insert("n_copies".to_string(), json!(nnames));
+    base.insert("backbone_len".to_string(), json!(refseq.len()));
+    base.insert("backbone_chrom".to_string(), Value::String(backbone.0.to_string()));
+    base.insert("backbone_start".to_string(), json!(backbone.1));
+    base.insert("backbone_end".to_string(), json!(backbone.2));
+    base.insert("cross_chrom".to_string(), json!(cross_chrom));
+    base.insert("chroms".to_string(), json!(chroms_vec));
+    base.insert("n_bubbles".to_string(), json!(bubbles.len()));
+    base.insert("n_sun_bubbles".to_string(), json!(n_sun_bubbles));
+    base.insert("K".to_string(), json!(k_groups));
+    base.insert("cls".to_string(), Value::String(cls.to_string()));
+    base.insert("group_sizes".to_string(), json!(group_sizes));
+    base.insert("tiers".to_string(), Value::Object(tiers_json));
+    base.insert("copies".to_string(), Value::Array(copies_json));
+    base.insert(
+        "bubbles".to_string(),
+        Value::Array(bubbles.iter().map(|b| b.json.clone()).collect()),
+    );
+    base.insert("n_reads".to_string(), json!(best_names.len()));
+
+    // ---- pre-abstain VG (the cache dump) ----
+    let mut pre = base.clone();
+    pre.insert(
+        "reads".to_string(),
+        Value::Array(reads_pre.iter().map(|m| Value::Object(m.clone())).collect()),
+    );
+    pre.insert("assignment".to_string(), counter_to_value(&cats));
+    pre.insert("per_copy".to_string(), counter_to_value(&per_copy));
+    let pre_abstain = Value::Object(pre);
+
+    // ---- recombinant-abstain leg over a FamilyVg view, then merge back ----
+    let mut fvg = FamilyVg {
+        family: fam_id,
+        copies: names.iter().map(|nm| VgCopy { name: nm.clone() }).collect(),
+        bubbles: bubbles
+            .iter()
+            .map(|b| VgBubble { hap: b.hap.clone() })
+            .collect(),
+        reads: fvg_reads,
+        assignment: cats.clone(),
+        per_copy: per_copy.clone(),
+    };
+    let _flipped = apply_abstain_to_vg(&mut fvg);
+
+    let mut reads_post: Vec<Value> = Vec::with_capacity(reads_pre.len());
+    for (i, rm) in reads_pre.iter().enumerate() {
+        let fr = &fvg.reads[i];
+        if fr.gate_status_pre_abstain.is_some() {
+            // flipped: status -> recombinant, drop best_copy, add the two abstain keys.
+            let mut m = rm.clone();
+            m.insert("status".to_string(), Value::String(fr.status.clone()));
+            m.insert("best_copy".to_string(), Value::Null);
+            m.insert(
+                "gate_status_pre_abstain".to_string(),
+                Value::String(fr.gate_status_pre_abstain.clone().unwrap()),
+            );
+            m.insert(
+                "recombinant_kind".to_string(),
+                Value::String(fr.recombinant_kind.clone().unwrap()),
+            );
+            reads_post.push(Value::Object(m));
+        } else {
+            reads_post.push(Value::Object(rm.clone()));
+        }
+    }
+
+    let mut post = base;
+    post.insert("reads".to_string(), Value::Array(reads_post));
+    post.insert("assignment".to_string(), counter_to_value(&fvg.assignment));
+    post.insert("per_copy".to_string(), counter_to_value(&fvg.per_copy));
+    let post_abstain = Value::Object(post);
+
+    VgPair { pre_abstain, post_abstain }
+}
+
+// ===========================================================================
+// materialize_family  (the full recompute path, use_cache=False)
+// ===========================================================================
+
+/// Paths + tunables the recompute path needs. [`MaterializeConfig::defaults`] fills the
+/// Python constants (`pg.GENOME`, `pg.BAM`, `pg.FAM_TSV`, `SUN_TSV`, `CACHE`, `pg.PAD`,
+/// `pg.READ_CAP`); tests override `cache_dir` / `tmp_dir` / `write_cache` to avoid
+/// touching the real cache.
+#[derive(Clone, Debug)]
+pub struct MaterializeConfig {
+    /// Genome FASTA (`.fai` sidecar required), `genome.fetch` + contig lengths.
+    pub genome: String,
+    /// Genome BAM (`.bai` required), the multimapper read pool.
+    pub bam: String,
+    /// Validated-families TSV.
+    pub fam_tsv: String,
+    /// SUN-identifiability TSV (gene labels).
+    pub sun_tsv: String,
+    /// VG cache directory (the `fam{id}.json` pre-abstain dump destination).
+    pub cache_dir: String,
+    /// Working directory for the per-family FASTAs/BAMs; `None` -> `{cache_dir}/tmp_fam{id}_rs`.
+    pub tmp_dir: Option<String>,
+    /// `minimap2` executable.
+    pub minimap2: String,
+    /// `samtools` executable.
+    pub samtools: String,
+    /// Fetch pad (`pg.PAD`).
+    pub pad: i64,
+    /// Read-sequence pool cap (`pg.READ_CAP`).
+    pub read_cap: usize,
+    /// Write the pre-abstain VG to `{cache_dir}/fam{id}.json` (Python `json.dump`).
+    pub write_cache: bool,
+}
+
+impl MaterializeConfig {
+    /// The shipped defaults (Python constants). `sun_tsv` must point at the `bench/`
+    /// copy (the caller supplies the absolute path, as Python's `HERE`-relative join).
+    pub fn defaults(sun_tsv: impl Into<String>) -> Self {
+        MaterializeConfig {
+            genome: GENOME_DEFAULT.to_string(),
+            bam: BAM_DEFAULT.to_string(),
+            fam_tsv: fam_tsv_path(),
+            sun_tsv: sun_tsv.into(),
+            cache_dir: CACHE_DIR_DEFAULT.to_string(),
+            tmp_dir: None,
+            minimap2: "minimap2".to_string(),
+            samtools: "samtools".to_string(),
+            pad: PAD,
+            read_cap: READ_CAP,
+            write_cache: true,
+        }
+    }
+}
+
+/// Read `name -> length` from a `.fai` sidecar (`contig_len` in Python:
+/// `dict(zip(genome.references, genome.lengths))`).
+fn read_contig_lengths(fai_path: &str) -> Result<BTreeMap<String, i64>> {
+    let text = std::fs::read_to_string(fai_path)?;
+    let mut out = BTreeMap::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 2 {
+            continue;
+        }
+        let len: i64 = f[1].parse().unwrap_or(0);
+        out.insert(f[0].to_string(), len);
+    }
+    Ok(out)
+}
+
+/// Write a multi-record FASTA (`>{name}\n{seq}\n` per record; `seq` bytes verbatim).
+fn write_fasta_records(path: &str, records: &[(String, &[u8])]) -> Result<()> {
+    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+    for (name, seq) in records {
+        f.write_all(b">")?;
+        f.write_all(name.as_bytes())?;
+        f.write_all(b"\n")?;
+        f.write_all(seq)?;
+        f.write_all(b"\n")?;
+    }
+    f.flush()?;
+    Ok(())
+}
+
+/// `samtools faidx {fa}` (stdout/stderr silenced, like `pg.sh`).
+fn run_samtools_faidx(cfg: &MaterializeConfig, fa: &str) -> Result<()> {
+    let status = Command::new(&cfg.samtools)
+        .args(["faidx", fa])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    anyhow::ensure!(status.success(), "samtools faidx {fa} failed: {status}");
+    Ok(())
+}
+
+/// `minimap2 -ax {preset} {ref} {query} 2>/dev/null | samtools sort -o {out_bam} - &&
+/// samtools index {out_bam}` — the exact Python pipeline, wired via a direct OS pipe
+/// (minimap2 stdout -> samtools sort stdin) rather than a shell string.
+fn run_minimap2_sort(
+    cfg: &MaterializeConfig,
+    preset: &str,
+    ref_fa: &str,
+    query_fa: &str,
+    out_bam: &str,
+) -> Result<()> {
+    let mut mm = Command::new(&cfg.minimap2)
+        .args(["-ax", preset, ref_fa, query_fa])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mm_stdout = mm.stdout.take().expect("minimap2 stdout piped");
+    let sort_status = Command::new(&cfg.samtools)
+        .args(["sort", "-o", out_bam, "-"])
+        .stdin(Stdio::from(mm_stdout))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    let mm_status = mm.wait()?;
+    anyhow::ensure!(mm_status.success(), "minimap2 -ax {preset} failed: {mm_status}");
+    anyhow::ensure!(sort_status.success(), "samtools sort -> {out_bam} failed: {sort_status}");
+    let idx = Command::new(&cfg.samtools)
+        .args(["index", out_bam])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    anyhow::ensure!(idx.success(), "samtools index {out_bam} failed: {idx}");
+    Ok(())
+}
+
+/// The FULL `materialize_family` recompute path (`use_cache=False`): copy extraction +
+/// minimap2/samtools orchestration + [`fetch_reads`] + [`column_alleles`] + [`assemble_vg`].
+///
+/// Byte-faithful port of `bench/o2_vg_visualization.py::materialize_family` lines
+/// ~116-284. Returns the [`VgPair`] (pre-abstain cache dump + post-abstain return); when
+/// `cfg.write_cache` the pre-abstain VG is written to `{cache_dir}/fam{id}.json` exactly
+/// as the Python `json.dump`.
+pub fn materialize_family(fam_id: i64, cfg: &MaterializeConfig) -> Result<VgPair> {
+    std::fs::create_dir_all(&cfg.cache_dir)?;
+    let tmp = cfg
+        .tmp_dir
+        .clone()
+        .unwrap_or_else(|| format!("{}/tmp_fam{}_rs", cfg.cache_dir, fam_id));
+    std::fs::create_dir_all(&tmp)?;
+
+    let genome = IndexedFasta::open(&cfg.genome)
+        .map_err(|e| anyhow::anyhow!("open genome {}: {e}", cfg.genome))?;
+    let contig_len = read_contig_lengths(&format!("{}.fai", cfg.genome))?;
+    let gene_lbl = load_gene_labels(&cfg.sun_tsv)?;
+    let fams = load_families(&cfg.fam_tsv)?;
+    let fam_loci = fams.get(&fam_id).cloned().unwrap_or_default();
+
+    // regions = dedup_copies sorted by -(e-s)  (STABLE sort keeps dedup return order on ties)
+    let mut regions = dedup_copies(&fam_loci);
+    regions.sort_by(|a, b| (b.2 - b.1).cmp(&(a.2 - a.1)));
+    anyhow::ensure!(!regions.is_empty(), "family {fam_id} has no regions");
+    let names: Vec<String> = (0..regions.len()).map(|i| format!("copy{i}")).collect();
+
+    let (bc, s0, e0, _) = regions[0].clone();
+    let bs = s0.max(0);
+    let be = contig_len.get(&bc).copied().unwrap_or(e0).min(e0);
+    let refseq: Vec<u8> = genome
+        .fetch(&bc, bs, be)
+        .ok_or_else(|| anyhow::anyhow!("fetch backbone {bc}:{bs}-{be}"))?
+        .iter()
+        .map(|b| b.to_ascii_uppercase())
+        .collect();
+
+    // ref.fa (>copy0) + faidx
+    write_fasta_records(&format!("{tmp}/ref.fa"), &[(names[0].clone(), &refseq)])?;
+    run_samtools_faidx(cfg, &format!("{tmp}/ref.fa"))?;
+
+    // copies.fa (>copyN for each region[1:])
+    let mut copy_seqs: Vec<(String, Vec<u8>)> = Vec::new();
+    for (i, nm) in names.iter().enumerate().skip(1) {
+        let (c, s, e, _) = &regions[i];
+        let s2 = (*s).max(0);
+        let e2 = contig_len.get(c).copied().unwrap_or(*e).min(*e);
+        let seq: Vec<u8> = genome
+            .fetch(c, s2, e2)
+            .unwrap_or_default()
+            .iter()
+            .map(|b| b.to_ascii_uppercase())
+            .collect();
+        copy_seqs.push((nm.clone(), seq));
+    }
+    let copy_recs: Vec<(String, &[u8])> =
+        copy_seqs.iter().map(|(n, s)| (n.clone(), s.as_slice())).collect();
+    write_fasta_records(&format!("{tmp}/copies.fa"), &copy_recs)?;
+    run_minimap2_sort(
+        cfg,
+        "asm20",
+        &format!("{tmp}/ref.fa"),
+        &format!("{tmp}/copies.fa"),
+        &format!("{tmp}/copies.bam"),
+    )?;
+
+    // reads from all copy loci -> best-mapping copy; reads.fa (insertion order)
+    let (best, seqs) = fetch_reads(&cfg.bam, &regions, &contig_len, cfg.pad, cfg.read_cap)?;
+    let read_recs: Vec<(String, &[u8])> =
+        seqs.iter().map(|(n, s)| (n.clone(), s.as_bytes())).collect();
+    write_fasta_records(&format!("{tmp}/reads.fa"), &read_recs)?;
+    run_minimap2_sort(
+        cfg,
+        "splice:hq",
+        &format!("{tmp}/ref.fa"),
+        &format!("{tmp}/reads.fa"),
+        &format!("{tmp}/reads.bam"),
+    )?;
+
+    let copy_cols = column_alleles(format!("{tmp}/copies.bam"), &names[0])?;
+    let read_cols = column_alleles(format!("{tmp}/reads.bam"), &names[0])?;
+    let best_names: Vec<String> = best.keys().cloned().collect(); // sorted(best)
+
+    let pair = assemble_vg(
+        fam_id,
+        &regions,
+        (&bc, bs, be),
+        &refseq,
+        &names,
+        &copy_cols,
+        &read_cols,
+        &best_names,
+        &gene_lbl,
+    );
+
+    if cfg.write_cache {
+        std::fs::write(
+            format!("{}/fam{}.json", cfg.cache_dir, fam_id),
+            serde_json::to_string(&pair.pre_abstain)?,
+        )?;
+    }
+    Ok(pair)
 }
 
 #[cfg(test)]
@@ -842,5 +1556,305 @@ mod tests {
             total_seqs,
             n_truncated
         );
+    }
+
+    // =====================================================================
+    // assemble_vg + materialize_family parity
+    // =====================================================================
+
+    fn load_assemble_fixture() -> Value {
+        let raw = include_str!("testdata/o2_assemble_fixture.json");
+        serde_json::from_str(raw).expect("parse o2_assemble fixture json")
+    }
+
+    fn parse_regions4(v: &Value) -> Vec<(String, i64, i64, i64)> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                let a = r.as_array().unwrap();
+                (
+                    a[0].as_str().unwrap().to_string(),
+                    a[1].as_i64().unwrap(),
+                    a[2].as_i64().unwrap(),
+                    a[3].as_i64().unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn parse_str_vec(v: &Value) -> Vec<String> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn parse_cols(v: &Value) -> BTreeMap<i64, BTreeMap<String, char>> {
+        v.as_object()
+            .unwrap()
+            .iter()
+            .map(|(p, inner)| {
+                let pos = p.parse::<i64>().unwrap();
+                let m: BTreeMap<String, char> = inner
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(nm, b)| (nm.clone(), b.as_str().unwrap().chars().next().unwrap()))
+                    .collect();
+                (pos, m)
+            })
+            .collect()
+    }
+
+    /// fixture gene_lbl keys are `"chrom\tstart"` -> gene.
+    fn parse_gene_lbl(v: &Value) -> BTreeMap<(String, i64), String> {
+        v.as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, gene)| {
+                let mut it = k.splitn(2, '\t');
+                let chrom = it.next().unwrap().to_string();
+                let start: i64 = it.next().unwrap().parse().unwrap();
+                ((chrom, start), gene.as_str().unwrap().to_string())
+            })
+            .collect()
+    }
+
+    /// Semantic JSON comparison localizing the FIRST divergence (key-order-independent;
+    /// numbers compared by `as_f64`, so `PosInt(5)` == `Float(5.0)`). Returns a
+    /// human-readable path on divergence, else `None`.
+    fn first_json_diff(a: &Value, b: &Value, path: &str) -> Option<String> {
+        match (a, b) {
+            (Value::Object(am), Value::Object(bm)) => {
+                let mut keys: Vec<&String> = am.keys().chain(bm.keys()).collect();
+                keys.sort();
+                keys.dedup();
+                for k in keys {
+                    match (am.get(k), bm.get(k)) {
+                        (Some(x), Some(y)) => {
+                            if let Some(d) = first_json_diff(x, y, &format!("{path}.{k}")) {
+                                return Some(d);
+                            }
+                        }
+                        (Some(x), None) => {
+                            return Some(format!("{path}.{k}: present in RUST ({x}), missing in PYTHON"))
+                        }
+                        (None, Some(y)) => {
+                            return Some(format!("{path}.{k}: missing in RUST, present in PYTHON ({y})"))
+                        }
+                        (None, None) => {}
+                    }
+                }
+                None
+            }
+            (Value::Array(ax), Value::Array(bx)) => {
+                if ax.len() != bx.len() {
+                    return Some(format!(
+                        "{path}: array len rust={} python={}",
+                        ax.len(),
+                        bx.len()
+                    ));
+                }
+                for (i, (x, y)) in ax.iter().zip(bx).enumerate() {
+                    if let Some(d) = first_json_diff(x, y, &format!("{path}[{i}]")) {
+                        return Some(d);
+                    }
+                }
+                None
+            }
+            (Value::Number(_), Value::Number(_)) => {
+                if a.as_f64() != b.as_f64() {
+                    Some(format!("{path}: number rust={a} python={b}"))
+                } else {
+                    None
+                }
+            }
+            _ => {
+                if a != b {
+                    Some(format!("{path}: rust={a} python={b}"))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// FAST: `assemble_vg` == the Python assembly EXACTLY on every fixture family, for
+    /// BOTH the pre-abstain VG (cache dump) and the post-abstain VG (return) — bubbles /
+    /// tiers / groups / gate loop / round2 margins / obs str-keys / first-seen orders /
+    /// copies / counters / the recombinant-abstain flip merge. No minimap2/BAM/genome
+    /// needed (columns are baked into the fixture).
+    #[test]
+    fn assemble_vg_parity() {
+        // DEFAULT-ON abstain (matches the Python fixture generation). Mirrors the
+        // established pattern in recombinant_abstain's env-sensitive tests.
+        std::env::remove_var(super::super::recombinant_abstain::OPTOUT_ENV);
+
+        let fx = load_assemble_fixture();
+        let fams = fx["families"].as_array().expect("families array");
+        assert!(fams.len() >= 3, "expected >=3 fixture families, got {}", fams.len());
+
+        let (mut tot_bubbles, mut tot_reads, mut tot_flips) = (0usize, 0usize, 0usize);
+        let (mut n_no_psv, mut n_partial, mut n_full) = (0usize, 0usize, 0usize);
+        let mut tiers_seen: BTreeSet<i64> = BTreeSet::new();
+
+        for fam in fams {
+            let fam_id = fam["fam_id"].as_i64().unwrap();
+            let regions = parse_regions4(&fam["regions"]);
+            let bb = fam["backbone"].as_array().unwrap();
+            let bc = bb[0].as_str().unwrap();
+            let bs = bb[1].as_i64().unwrap();
+            let be = bb[2].as_i64().unwrap();
+            let refseq = fam["refseq"].as_str().unwrap().as_bytes().to_vec();
+            let names = parse_str_vec(&fam["names"]);
+            let copy_cols = parse_cols(&fam["copy_cols"]);
+            let read_cols = parse_cols(&fam["read_cols"]);
+            let best_names = parse_str_vec(&fam["best_names"]);
+            let gene_lbl = parse_gene_lbl(&fam["gene_lbl"]);
+
+            let got = assemble_vg(
+                fam_id,
+                &regions,
+                (bc, bs, be),
+                &refseq,
+                &names,
+                &copy_cols,
+                &read_cols,
+                &best_names,
+                &gene_lbl,
+            );
+
+            if let Some(loc) = first_json_diff(&got.pre_abstain, &fam["vg_pre"], "vg_pre") {
+                panic!("fam {fam_id}: PRE-abstain VG diverges from Python at {loc}");
+            }
+            if let Some(loc) = first_json_diff(&got.post_abstain, &fam["vg_post"], "vg_post") {
+                panic!("fam {fam_id}: POST-abstain VG diverges from Python at {loc}");
+            }
+
+            // fixture-composition accounting
+            let nb = fam["vg_pre"]["n_bubbles"].as_u64().unwrap() as usize;
+            tot_bubbles += nb;
+            tot_reads += best_names.len();
+            tot_flips += fam["n_flipped"].as_u64().unwrap() as usize;
+            match got.pre_abstain["cls"].as_str().unwrap() {
+                s if s.starts_with("no_psv") => n_no_psv += 1,
+                s if s.starts_with("fully_resolvable") => n_full += 1,
+                s if s.starts_with("partial") => n_partial += 1,
+                _ => {}
+            }
+            for t in fam["vg_pre"]["tiers"].as_object().unwrap().keys() {
+                tiers_seen.insert(t.parse().unwrap());
+            }
+        }
+
+        assert!(n_no_psv >= 1, "no no_psv (0-bubble floor) family in fixture");
+        assert!(n_full >= 1, "no fully_resolvable family in fixture");
+        assert!(n_partial >= 1, "no partial (mixed) family in fixture");
+        assert!(tot_flips >= 1, "no recombinant-abstain flip exercised");
+        assert!(
+            tiers_seen.contains(&1) && tiers_seen.contains(&3),
+            "expected tier-1 and tier-3 coverage, saw {tiers_seen:?}"
+        );
+        eprintln!(
+            "o2_materialize assemble_vg parity: {} families identical (pre+post) — \
+             {tot_bubbles} bubbles, {tot_reads} reads, {tot_flips} abstain-flips; \
+             cls {{no_psv={n_no_psv}, full={n_full}, partial={n_partial}}}, tiers {tiers_seen:?}",
+            fams.len()
+        );
+    }
+
+    /// SLOW e2e (`--ignored`): the FULL Rust `materialize_family` (live minimap2 +
+    /// samtools + genome BAM) == a FRESH Python `materialize_family(use_cache=False)` on
+    /// the same current alignments, for a few families, for BOTH the pre-abstain and
+    /// post-abstain VG. Also discloses any minimap2 drift (fresh Python pre vs the
+    /// shipped cache). Skips-with-message if minimap2/samtools/genome/BAM are absent.
+    #[test]
+    #[ignore = "needs minimap2/samtools + the multi-GB genome BAM; run with --ignored"]
+    fn materialize_family_e2e() {
+        use std::process::Command;
+
+        const E2E_FAMS: &[i64] = &[39, 96, 90];
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let py = "/home/juanfra/miniforge3/bin/python";
+        let mm2 = "/home/juanfra/miniforge3/bin/minimap2";
+        let sam = "/home/juanfra/miniforge3/bin/samtools";
+        let emit = format!("{manifest}/bench/o2_emit_materialize.py");
+        let sun = format!("{manifest}/bench/sun_identifiability.tsv");
+
+        let required: Vec<String> = vec![
+            GENOME_DEFAULT.to_string(),
+            format!("{GENOME_DEFAULT}.fai"),
+            BAM_DEFAULT.to_string(),
+            format!("{BAM_DEFAULT}.bai"),
+            mm2.to_string(),
+            sam.to_string(),
+            py.to_string(),
+            emit.clone(),
+            sun.clone(),
+        ];
+        let missing: Vec<&String> = required.iter().filter(|p| !Path::new(p).exists()).collect();
+        if !missing.is_empty() {
+            eprintln!("materialize_family_e2e SKIPPED: missing {missing:?}");
+            return;
+        }
+
+        // private scratch cache/tmp so the shipped o2vg cache is untouched.
+        let scratch = std::env::temp_dir().join(format!("rustle_o2vg_e2e_{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::env::remove_var(super::super::recombinant_abstain::OPTOUT_ENV); // default-ON
+
+        let mut cfg = MaterializeConfig::defaults(sun.clone());
+        cfg.minimap2 = mm2.to_string();
+        cfg.samtools = sam.to_string();
+        cfg.cache_dir = scratch.to_string_lossy().to_string();
+        cfg.write_cache = true;
+
+        for &fam in E2E_FAMS {
+            let rust = materialize_family(fam, &cfg)
+                .unwrap_or_else(|e| panic!("Rust materialize_family(fam {fam}) failed: {e}"));
+
+            let out = Command::new(py)
+                .env("PYTHONHASHSEED", "0")
+                .arg(&emit)
+                .arg(fam.to_string())
+                .output()
+                .unwrap_or_else(|e| panic!("python emit(fam {fam}) spawn failed: {e}"));
+            assert!(
+                out.status.success(),
+                "python emit(fam {fam}) failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let pyj: Value = serde_json::from_slice(&out.stdout)
+                .unwrap_or_else(|e| panic!("parse python emit(fam {fam}) json failed: {e}"));
+
+            // post-abstain: Rust == fresh Python
+            if let Some(loc) = first_json_diff(&rust.post_abstain, &pyj["post"], "post") {
+                panic!("fam {fam}: Rust POST-abstain != fresh Python at {loc}");
+            }
+            // pre-abstain: Rust == fresh Python (both pre-abstain, same minimap2)
+            if let Some(loc) = first_json_diff(&rust.pre_abstain, &pyj["pre_fresh"], "pre") {
+                panic!("fam {fam}: Rust PRE-abstain != fresh Python at {loc}");
+            }
+            // minimap2 drift disclosure (informational): fresh Python pre vs shipped cache.
+            let drift = if pyj["cached_stale"].is_null() {
+                "no shipped cache".to_string()
+            } else {
+                match first_json_diff(&pyj["pre_fresh"], &pyj["cached_stale"], "cache") {
+                    None => "IDENTICAL (no minimap2 drift)".to_string(),
+                    Some(loc) => format!("DRIFT at {loc}"),
+                }
+            };
+            let post = &rust.post_abstain;
+            eprintln!(
+                "fam {fam}: Rust materialize == fresh Python (pre+post) — copies={} bubbles={} \
+                 K={} cls={:?} reads={} assign={:?}; cache-vs-fresh: {drift}",
+                post["n_copies"], post["n_bubbles"], post["K"], post["cls"].as_str().unwrap(),
+                post["n_reads"], post["assignment"]
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 }
