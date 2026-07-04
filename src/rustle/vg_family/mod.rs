@@ -11,6 +11,7 @@ pub mod family_definition; // O1 multi-copy predicate `distinct_loci` (Rust port
 pub mod family_loaders; // O1 family-definition LOADERS (meta/annot/edges/families + gene_of projection; Rust port of family_er_pr.py loaders; byte-parity tested).
 pub mod edge_oracle; // O1 RNA-only EDGE-ORACLE loaders (pair_core/universal_aln/allele) + allele-demote decision (Rust port of rna_only_edge_oracle.py; byte-parity tested).
 pub mod bridge_detector; // O1 over-merge-gate SHARED LIBRARY: exon graph (family_exons/exon_match_tensor/build_graph/colinear_cov/subfams + aln_id HW-DP; Rust port of recombination_bridge_detector.py library core; byte-parity tested).
+pub mod recombinant_split; // O1 over-merge-gate: recombinant-bridge SPLIT gate (articulation_points/_recombinant_bridges/split_block; Rust port of recombinant_split.py; byte-parity tested).
 pub mod family_graph;
 pub mod rescue;
 pub mod diagnostic;
