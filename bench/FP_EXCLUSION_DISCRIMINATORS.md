@@ -2,9 +2,11 @@
 
 **Question.** Fresh FP percentages by type for the current catalog (`family_rna_refine.tsv`, md5
 `dca64cbd`, 573 families), and *clean* ways to exclude the identifiable FPs — especially the
-domain-sharers. Verdict: **no RNA-derivable axis cleanly excludes the domain-share residual; it is
-provably DNA-copy-number-bound.** But the investigation *corrected the precision upward* and characterized
-the residual completely.
+domain-sharers. Verdict: **the dispersed domain-share residual is provably
+DNA-copy-number-bound — five axes fail (four *similarity* axes + VG topology).** One genuinely new axis
+(genome *architecture* — coordinates + strand, §6) cleanly clips the antisense/nested-overlap corner (wired
+as a 4th gate); the dispersed bulk stays DNA-bound. The investigation also *corrected the precision upward*
+and characterized the residual completely.
 
 ## 1. Fresh FP breakdown by type (902 FP pairs — but the pair count is misleading)
 
@@ -58,6 +60,51 @@ criterion failure**: "these are separable only by DNA copy-number, and DNA is th
 only actionable output is a **manual-review flag** (`E_p-impure AND colinear≤1 AND both-coding`, ~30
 blocks), with the caveat that ~11 are DNA-backed reals needing a per-edge (not family) split.
 
+## 6. A FIFTH axis — genome architecture — yields the one clean new rule
+
+The four exhausted axes are all **similarity** axes ("how *similar* are the copies?"). A fifth, un-tapped
+axis is **genome architecture** ("*where* are they, and which *orientation*?") — coordinates + strand,
+**zero sequence similarity**. Within it there is exactly one clean lever:
+
+**ANTISENSE / RECIPROCAL-OVERLAP rule** — cut a within-family cross-gene edge iff the two genes are
+`same_contig ∧ opposite strand ∧ reciprocal_overlap (overlap_bp / min(span)) ≥ 0.50`, after mega-span
+array-flagging. Two distinct genes reciprocally overlapping ≥50% on *opposite* strands occupy the **same
+genomic region** (sense/antisense or nested-gene) and **cannot be two copies of one gene** — a geometric
+impossibility, not a similarity threshold.
+
+- **9 genuine over-merges excluded** (`RASA1+CCNH`, `RNASEH2C+KAT5`, `ARHGEF39+CCDC107`, `HDGFL3+TM6SF1`,
+  `TRMT10B+EXOSC3`, +4) at **0 confirmed-paralog / 0 diploid-oracle collateral** (`SAME_Ep`=0 at every
+  threshold; the 2 DNA-loose "reals" are overlap-induced spurious neighbor edges, correctly flagged).
+- **New beyond the 3 shipped gates:** 8/9 are protein×protein (the purity flag can't fire), the gates
+  never use coordinate/strand, and ≥6 are 2-node single-edge families the mosaic gate can't touch.
+- **Principled threshold:** the real antisense pair `MPDU1/MPDU1-AS1` sits at 0.49, just below 0.50 — so
+  lowering the cut would start eating genuine antisense-transcript pairs.
+- **Honest limit:** scope-limited (~9 pairs) — it clips one clean corner of the domain-share residual, it
+  does **not** dissolve the dispersed bulk, which stays DNA-CN-bound.
+
+Rules that FAILED independent-truth validation: **biotype-consistency** as a hard gate (~19% collateral —
+lncRNA is where biotype-decayed *real* copies hide; kept as the reported purity flag); **terminal/
+single-shared-exon** (the falsified colinear gate re-skinned, cuts divergent reals); **strand-orientation**
+(0 FP are inverted-orientation edges).
+
+## 7. The complete per-FP-class rule taxonomy
+
+| FP class | rule | status |
+|---|---|---|
+| repeat-hub / repeat-bridge | repeat-hub + multi-repeat-bridge gates | **shipped** |
+| mosaic / recombinant | recombinant-split gate | **shipped** |
+| **antisense / reciprocal-overlap** | **opp-strand + recip-overlap ≥ 0.50 (coordinate axis)** | **NEW-clean — 9 FP, 0 collateral (wired as 4th gate)** |
+| noncoding-bridge (protein × lncRNA) | hard biotype gate | not clean (~19% collateral) → reported purity flag |
+| retrocopy / pseudogene | — | truth-blind (untranslated; retrocopies are real DNA copies) |
+| **single-domain-share (dispersed bulk)** | — | **IRREDUCIBLE, DNA-copy-number-bound** (5 axes fail) |
+| EP_OVERSPLIT / cardinality-array | — | truth-artifact (real dups, not FPs) |
+| terminal / single-shared-exon | — | reject (falsified colinear gate) |
+
+**Room remaining:** the FP space is now fully mapped. Everything is either **gated** (repeat/mosaic/
+antisense), a **truth-artifact** (~49% of the "902 FP pairs" are real dups the protein truth over-splits),
+or the **irreducible domain-share residual** (DNA-CN-bound, proven across 5 axes). No further clean
+RNA-derivable rule exists.
+
 Scripts: `family_dna_vs_rna_headtohead.py`, `family_fp_mechanism.py`, `fp_by_type.py`,
-`protein_discriminator.py`, `block_gate.py`, `a4_topology_dive.py` (+ the a4 refutes). Deterministic
-(`PYTHONHASHSEED=0`); every "win" adversarially audited against independent DNA/cDNA/protein truth.
+`protein_discriminator.py`, `block_gate.py`, `a4_topology_dive.py`, `fp_new_rules.py` (+ the a4 refutes).
+Deterministic (`PYTHONHASHSEED=0`); every "win" adversarially audited against independent DNA/cDNA/protein truth.

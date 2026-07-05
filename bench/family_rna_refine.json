@@ -22,17 +22,51 @@
    "n_loci": 2
   }
  ],
+ "antisense_overlap_gate": {
+  "axis": "genome_architecture (annotation coordinates + strand; zero sequence similarity)",
+  "enabled": true,
+  "mega_span_max": 500000,
+  "n_cross_gene_pairs_cut": 16,
+  "note": "4th default-on FP gate = the ONE clean NEW rule from FP_EXCLUSION_DISCRIMINATORS.md, orthogonal to the 4 exhausted similarity axes (nucleotide/protein/TE/VG-topology). Cuts the 9 validated genuine over-merges (RASA1+CCNH, RNASEH2C+KAT5, ARHGEF39+CCDC107, HDGFL3+TM6SF1, TRMT10B+EXOSC3, +4) at 0 confirmed-paralog / 0 diploid-oracle collateral; the real antisense pair MPDU1/MPDU1-AS1 sits at reciprocal-overlap 0.4855 (< 0.50) and is SPARED; the MEGA-SPAN guard leaves the GSTM2 (1.18 Mb array span) + MAGE CARDINALITY_ARRAY truth-artifacts byte-identical. RECALL-NEUTRAL (never a copy-of-one-gene edge). --no-antisense-gate / RUSTLE_NO_ANTISENSE_GATE=1 ablates (byte-identical to the pre-antisense golden).",
+  "pairs_cut": [
+   "ARHGEF39+CCDC107",
+   "ARL17A+LOC101135168",
+   "CCNH+RASA1",
+   "DMTF1+LOC115935379",
+   "DNAJC17+GCHFR",
+   "EMG1+LPCAT3",
+   "EPCIP+LOC101137472",
+   "ERCC1+POLR1G",
+   "EXOSC3+TRMT10B",
+   "HDGFL3+TM6SF1",
+   "KAT5+RNASEH2C",
+   "LOC101154556+TOM1L1",
+   "LOC109024129+ZNF473",
+   "LOC109024259+ZNF224",
+   "LOC109024269+ZNF433",
+   "LOC115931054+PSMD7"
+  ],
+  "recip_overlap_min": 0.5,
+  "scope": "catalog-wide EDGE-LEVEL predicate (same placement as the repeat-hub gate): a within-family cross-gene DN edge is CUT iff its projected gene pair is same-contig, OPPOSITE-strand, reciprocal span-overlap >= 0.50, and NEITHER gene is a >= 500000 bp MEGA-SPAN array locus. Two genes at one locus on opposite strands (sense/antisense or nested gene) cannot be two copies of one gene."
+ },
  "edges": {
-  "n_cross_gene_pairs_cut": 7036,
+  "n_cross_gene_pairs_cut": 7052,
+  "n_cross_gene_pairs_cut_by_antisense_gate": 16,
   "n_cross_gene_pairs_cut_by_repeat_gate": 9,
-  "n_cross_gene_pairs_kept": 1448,
-  "n_dn_cross_gene_cut": 8354,
+  "n_cross_gene_pairs_kept": 1432,
+  "n_dn_cross_gene_cut": 8370,
+  "n_dn_cross_gene_cut_by_antisense_gate": 16,
   "n_dn_cross_gene_cut_by_repeat_gate": 11,
-  "n_dn_cross_gene_kept": 1751,
+  "n_dn_cross_gene_kept": 1735,
   "n_dn_edges_total": 11400,
   "n_dn_within_gene_kept": 1295
  },
  "guards": {
+  "antisense_gate_features": [
+   "gene_strand",
+   "gene_span"
+  ],
+  "antisense_gate_genome_architecture": true,
   "demote_features": [
    "balanced_frac",
    "copy_like"
@@ -42,6 +76,7 @@
    "aln_frac"
   ],
   "gamma": 0.2,
+  "no_dna_in_antisense_gate": true,
   "no_dna_in_inference": true,
   "no_softmask_in_repeat_gate": true,
   "repeat_gate_features": [
@@ -55,6 +90,7 @@
   "allele": "bench/a1_read_consensus_o1.tsv",
   "aln_frac": "bench/ri_sharedlen_universal.tsv",
   "edges": "bench/denovo_family_edges.tsv",
+  "gene_strand": "/mnt/c/Users/jfris/Desktop/Rustle/bench/gene_meta_strand.tsv (per-gene annotation span + strand from the GGO_genomic.gff 'gene' features; genome architecture only)",
   "repeat_mult": "bench/vg_repeat_catalog.tsv (min_shared_mult; library-free VG multiplicity)"
  },
  "multi_repeat_bridge": {
@@ -476,20 +512,6 @@
     ]
    },
    {
-    "dominant": "EMG1",
-    "genes": [
-     "EMG1",
-     "LPCAT3"
-    ],
-    "n_loci": 2,
-    "n_parts": 2,
-    "name": "EMG1+LPCAT3",
-    "subfam_genes": [
-     "EMG1",
-     "LPCAT3"
-    ]
-   },
-   {
     "dominant": "ETFDH",
     "genes": [
      "ETFDH",
@@ -858,20 +880,6 @@
     ]
    },
    {
-    "dominant": "LOC101154556",
-    "genes": [
-     "LOC101154556",
-     "TOM1L1"
-    ],
-    "n_loci": 2,
-    "n_parts": 2,
-    "name": "LOC101154556+TOM1L1",
-    "subfam_genes": [
-     "LOC101154556",
-     "TOM1L1"
-    ]
-   },
-   {
     "dominant": "LOC129532854",
     "genes": [
      "LOC109023261",
@@ -1104,7 +1112,6 @@
    "DCP1B+KLHL33+LOC109028669+LOC129530131+LOC134756589+SLC11A2+SMYD3+TSPAN8",
    "ECSIT+EXOG+RPL18A",
    "EIF2AK4+SRP14",
-   "EMG1+LPCAT3",
    "ETFDH+PPID",
    "FAM228B+IQUB+LOC129526638+LOC134757313+MTHFD2L+ZNF626",
    "FBXO17+LOC101126300+LOC101138261+LOC101145660+LOC101152741+LOC109027124+LOC129527173+LOC129528096+MPHOSPH8+SVBP",
@@ -1126,7 +1133,6 @@
    "LOC101137900+LOC109027212+LOC115934041+LOC129528278+LOC129528791+SERPINA3+SSBP1",
    "LOC101144919+LOC115930536+RPAP2+ZNF208",
    "LOC101150774+LOC109028376+LOC115934025+LOC129527656+LOC134757969+PGM3",
-   "LOC101154556+TOM1L1",
    "LOC109023261+LOC109029389+LOC129526123+LOC129532145+LOC129532854",
    "LOC115932679",
    "LOC115932762+NOSTRIN+WDR64",
@@ -1143,13 +1149,13 @@
    "ZNF426"
   ],
   "mult_min": 8,
-  "n_disconnected_removed": 61,
-  "n_families_cut": 61,
+  "n_disconnected_removed": 59,
+  "n_families_cut": 59,
   "note": "3rd VG-native gate = family-level multi-repeat extension of the single-extreme-edge repeat-hub gate: CUT iff (>=2 full-exon components AND cross-component best-exon-id < 0.70) AND (>= 2 distinct cross-component shared VG nodes at multiplicity >= 8) AND same-gene guard -> replace by full-exon components (drop <2-loci). Removes the DISCONNECTED repeat-bridge FP class (sub-20 distributed bridges) that survives the single-extreme-edge repeat-hub gate; GSTM2/MAGE share a full exon -> single component -> the gate STRUCTURALLY cannot fire (spared). Conservative T=8/C=2 point (MULTI_REPEAT_BRIDGE_GATE.md: R_oracle 50/57 held, P_Ep +, 0 genuine paralogs lost). RECALL-SAFE (never separates same-gene loci). --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1 ablates.",
   "scope": "catalog-wide PREDICATE (applied to every multi-copy family, not a 15-family roster lookup): the T=8/C=2 cut count is the committed gate_sweep_catalog point = the ~13-15 roster DISCONNECTED-FP over-merges PLUS the additional DISCONNECTED families the same predicate flags blindly. R_oracle/E_p precision headline HOLDS/IMPROVES; the catalog-scope SENSITIVITY cost (single-locus glued passengers dropped by the <2-loci filter) is measured by bench/family_level_pr_current.py truth2_dna_loose (pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182), to which R_oracle (57-gene diploid oracle) and E_p (mega-family-excluded) are blind."
  },
  "n_alleles_demoted": 3,
- "n_families": 573,
+ "n_families": 566,
  "outputs": {
   "catalog_tsv": "bench/family_rna_refine.tsv",
   "summary_json": "bench/family_rna_refine.json"
@@ -1216,12 +1222,15 @@
  },
  "rule": {
   "aln_frac_min": 0.24,
+  "antisense_gate_enabled": true,
+  "antisense_recip_overlap_min": 0.5,
   "core_recip_min": 0.19,
   "demote": "balanced_frac>=0.90 AND copy_like<=0.10",
   "demote_balanced_frac_min": 0.9,
   "demote_copy_like_max": 0.1,
-  "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24 AND NOT(min_shared_mult>=20)",
+  "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24 AND NOT(min_shared_mult>=20) AND NOT(antisense_recip_overlap>=0.50)",
   "gamma": 0.2,
+  "mega_span_max": 500000,
   "repeat_bridge_count_min": 2,
   "repeat_bridge_exon_id": 0.7,
   "repeat_bridge_gate_enabled": true,
@@ -1231,5 +1240,5 @@
   "seed": 0,
   "split_recombinants_enabled": true
  },
- "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + recombinant-split gate + multi-repeat-bridge gate; DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-split-recombinants / --no-repeat-bridge-gate)"
+ "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + antisense/reciprocal-overlap gate + recombinant-split gate + multi-repeat-bridge gate; DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-antisense-gate / --no-split-recombinants / --no-repeat-bridge-gate)"
 }

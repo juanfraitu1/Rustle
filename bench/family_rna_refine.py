@@ -63,10 +63,13 @@ DNA/protein/genome/soft-mask enter ONLY the VALIDATION report, never a decision.
 
 DEFAULT-ON (opt out with --legacy; ablate the gates with --no-*)
 ---------------------------------------------------------------
-The RNA-only refinement (core+aln + repeat-hub gate + gamma + recombinant-split gate +
-multi-repeat-bridge gate + demote) is now the DEFAULT family definition -- runs by default.
-Each VG-native gate has a matching ablation flag/env (all DEFAULT-ON):
+The RNA-only refinement (core+aln + repeat-hub gate + antisense/reciprocal-overlap gate + gamma +
+recombinant-split gate + multi-repeat-bridge gate + demote) is now the DEFAULT family definition --
+runs by default.  Each gate has a matching ablation flag/env (all DEFAULT-ON):
   --no-repeat-gate        / RUSTLE_NO_REPEAT_GATE=1         (single-extreme-edge repeat-hub gate)
+  --no-antisense-gate     / RUSTLE_NO_ANTISENSE_GATE=1      (4th gate: edge-level antisense/reciprocal-
+                                                            overlap; same-locus opposite-strand nested
+                                                            gene; FP_EXCLUSION_DISCRIMINATORS.md)
   --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1  (recombinant/mosaic path-colinearity split)
   --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1  (3rd gate: family-level multi-repeat-bridge
                                                             conjunction; MULTI_REPEAT_BRIDGE_GATE.md)
@@ -116,10 +119,11 @@ gamma=0.40 catalog and records the active gamma + caveats in the summary.
 DETERMINISM
 -----------
 PYTHONHASHSEED=0 (re-exec), fixed gamma=0.20 seed=0, sorted writes.  Re-runs are
-byte-identical (see bench/test_family_rna_refine.py).  The DEFAULT catalog is md5 dca64cbd across
-runs; md5 e2f0a23a is the --high-precision (gamma=0.40) catalog, NOT default nondeterminism -- an
-outlier "default" md5 of e2f0a23a means RUSTLE_HIGH_PRECISION=1 leaked into the env / --high-precision
-was passed, never a nondeterministic default.
+byte-identical (see bench/test_family_rna_refine.py).  The DEFAULT catalog (all four gates ON) is
+md5 548029ad across runs (566 families); --no-antisense-gate recovers the pre-antisense md5 dca64cbd
+(573 families) BYTE-IDENTICAL.  An outlier "default" md5 means a gate-ablation flag / env leaked in
+(e.g. RUSTLE_HIGH_PRECISION=1 -> gamma=0.40; RUSTLE_NO_ANTISENSE_GATE=1 -> dca64cbd), never a
+nondeterministic default.
 
 Writes: bench/family_rna_refine.tsv (family_id -> member loci/genes) + bench/family_rna_refine.json
 Run:    /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py                   (default: refined catalog)
@@ -181,6 +185,26 @@ REPEAT_BRIDGE_EXON_ID = 0.70    # NO full shared exon iff cross-component best-e
 # allele DEMOTE thresholds (reused from rna_only_edge_oracle.demote_gene):
 DEMOTE_BAL_MIN = 0.90    # balanced_frac >= 0.90  (~0.5 minor-allele = diploid het)
 DEMOTE_COPY_MAX = 0.10   # copy_like    <= 0.10  (not ~1/K = a real copy)
+# ANTISENSE / RECIPROCAL-OVERLAP GATE thresholds (4th VG-external gate; bench/FP_EXCLUSION_DISCRIMINATORS.md;
+# do NOT re-derive).  This is the ONE clean NEW rule surviving the four-axis FP-exclusion investigation: a
+# pure GENOME-ARCHITECTURE axis (annotation COORDINATES + STRAND, ZERO sequence similarity), ORTHOGONAL to
+# the four exhausted similarity axes (nucleotide core/aln, protein E_p, TE/repeat multiplicity, VG topology).
+# A within-family CROSS-GENE edge is a FALSE MERGE when the two GENES occupy the SAME genomic region on
+# OPPOSITE strands (sense/antisense or nested gene) -- they cannot be two COPIES of one gene.  CUT the edge iff
+#   ga != gb  AND  same_contig(ga,gb)  AND  OPPOSITE genomic strand  AND
+#   reciprocal_overlap = overlap_bp / min(span_ga, span_gb) >= ANTISENSE_RECIP_OVERLAP_MIN  AND
+#   NEITHER gene is a MEGA-SPAN array locus (span >= MEGA_SPAN_MAX).
+# 0.50 is a PRINCIPLED floor: the REAL antisense pair MPDU1/MPDU1-AS1 sits at reciprocal-overlap 0.4855 (just
+# below) and is SPARED, while the 9 validated genuine over-merges (RASA1+CCNH, RNASEH2C+KAT5, ARHGEF39+CCDC107,
+# HDGFL3+TM6SF1, TRMT10B+EXOSC3, +4) sit at 0.55-1.00 and are CUT -- at 0 confirmed-paralog / 0 diploid-oracle
+# collateral (FP_EXCLUSION_DISCRIMINATORS.md).  The MEGA-SPAN guard (500 kb) protects CARDINALITY_ARRAY
+# truth-artifacts whose (mis-annotated) gene span spuriously "contains" nested LOCs on the opposite strand --
+# e.g. GSTM2's 1.18 Mb array span -- which are ALREADY truth-artifacts, not FPs; the guard leaves GSTM2 (and
+# MAGE) byte-identical.  Real protein-coding genes in the FP class are all <100 kb, so 500 kb excludes array
+# loci without touching a real gene; and the guard can only ever PREVENT a cut (conservative direction).
+ANTISENSE_RECIP_OVERLAP_MIN = 0.50   # reciprocal span-overlap floor (MPDU1/MPDU1-AS1 0.4855 -> spared)
+MEGA_SPAN_MAX = 500_000              # gene span >= this = CARDINALITY_ARRAY array locus, excluded from the
+                                     # antisense cut (GSTM2 1.18 Mb / MAGE spared; only ever prevents a cut)
 
 # HIGH-PRECISION operating point (bench/PRECISION_RECALL_FRONTIER.md recommended point; do NOT
 # re-derive).  --high-precision (or env RUSTLE_HIGH_PRECISION=1) swaps ONLY the gamma-quasi-clique
@@ -225,6 +249,11 @@ HIGH_PRECISION_NOTE = dict(
 EDGE_DECISION_FEATURES = ("core_recip", "aln_frac")            # alignment edge decision
 REPEAT_GATE_FEATURES = ("min_shared_mult", "cyclic")          # VG minimizer multiplicity (library-free)
 DEMOTE_FEATURES = ("balanced_frac", "copy_like")
+# ANTISENSE gate = pure GENOME-ARCHITECTURE (annotation coordinates + strand); NOT a similarity/DNA-copy-
+# number/homology feature -- orthogonal to the four exhausted similarity axes.  Asserted disjoint from the
+# DNA/protein/genome and soft-mask/library forbidden columns below (coordinates+strand are already used by
+# the gene_of projection; strand is the one extra annotation column).
+ANTISENSE_GATE_FEATURES = ("gene_strand", "gene_span")        # per-gene annotation span + strand (architecture)
 DNA_FORBIDDEN = {
     "in_dna_loose", "in_dna", "in_ep", "ep_tier", "class", "cls", "cls_auth",
     "sedef", "sedef_identity", "sedef_corr", "asm_hapCN", "hap_CN_mat", "hap_CN_pat",
@@ -241,6 +270,15 @@ LIBRARY_FORBIDDEN = {
 # LIBRARY-FREE repeat-hub multiplicity source: VG catalog per-edge rows (NOT re-derived here).
 VG_REPEAT_TSV = os.path.join(BENCH, "vg_repeat_catalog.tsv")
 
+# ANTISENSE gate GENOME-ARCHITECTURE source: per-gene annotation SPAN + STRAND, extracted from the
+# GGO_genomic.gff 'gene' features (col 7 = strand) into gene_meta_strand.tsv (chrom/start/end/strand/
+# gene/biotype).  Coordinates + strand ONLY -- no sequence, no DNA copy number, no homology label.  The
+# coordinates are byte-consistent with the annotation loader (family_er_pr.load_annot / annot_intervals.tsv,
+# same GFF); strand is the column the annotation loader drops.
+GENE_STRAND_TSV = next((p for p in (os.path.join(BENCH, "gene_meta_strand.tsv"),
+                                    "/home/juanfra/winloci_scratch/gene_meta_strand.tsv")
+                        if os.path.exists(p)), os.path.join(BENCH, "gene_meta_strand.tsv"))
+
 OUT_TSV = os.path.join(BENCH, "family_rna_refine.tsv")
 OUT_JSON = os.path.join(BENCH, "family_rna_refine.json")
 
@@ -250,6 +288,9 @@ assert abs(HIGH_PRECISION_GAMMA - 0.40) < 1e-9, "HIGH_PRECISION_GAMMA drifted fr
 assert REPEAT_BRIDGE_MULT_MIN == 8 and REPEAT_BRIDGE_COUNT_MIN == 2, \
     "repeat-bridge T/C drifted from the MULTI_REPEAT_BRIDGE_GATE.md conservative point (T=8, C=2)"
 assert abs(REPEAT_BRIDGE_EXON_ID - 0.70) < 1e-9, "REPEAT_BRIDGE_EXON_ID drifted from ID_THRESH (0.70)"
+assert abs(ANTISENSE_RECIP_OVERLAP_MIN - 0.50) < 1e-9, \
+    "ANTISENSE_RECIP_OVERLAP_MIN drifted from the principled 0.50 floor (MPDU1/MPDU1-AS1 0.4855 spared)"
+assert MEGA_SPAN_MAX == 500_000, "MEGA_SPAN_MAX drifted from the 500 kb array-locus guard (GSTM2/MAGE spared)"
 
 
 # --------------------------------------------------------------------------- guards
@@ -267,6 +308,12 @@ def rna_only_guard():
     assert rep == {"min_shared_mult", "cyclic"}, f"repeat-gate feature set drifted: {sorted(rep)}"
     leak_rep = rep & (DNA_FORBIDDEN | LIBRARY_FORBIDDEN)
     assert not leak_rep, f"soft-mask/RepeatMasker/DNA column in the repeat-hub gate: {sorted(leak_rep)}"
+    # antisense gate = pure GENOME-ARCHITECTURE (annotation coordinates + strand); NOT a similarity/DNA
+    # copy-number/homology column -- disjoint from the DNA/protein/genome + soft-mask/library forbidden sets.
+    anti = set(ANTISENSE_GATE_FEATURES)
+    assert anti == {"gene_strand", "gene_span"}, f"antisense-gate feature set drifted: {sorted(anti)}"
+    leak_anti = anti & (DNA_FORBIDDEN | LIBRARY_FORBIDDEN)
+    assert not leak_anti, f"DNA/soft-mask column in the antisense gate: {sorted(leak_anti)}"
 
 
 # --------------------------------------------------------------------------- repeat-hub multiplicity (library-free)
@@ -305,12 +352,44 @@ def load_repeat_mult():
     return out
 
 
+# --------------------------------------------------------------------------- antisense gate (genome architecture)
+def load_gene_strand():
+    """gene -> (chrom, start, end, strand) for the antisense/reciprocal-overlap gate, from the
+    external gene_meta_strand.tsv (per-gene annotation SPAN + STRAND, extracted from the GGO_genomic.gff
+    'gene' features; col 7 = strand; format chrom<TAB>start<TAB>end<TAB>strand<TAB>gene<TAB>biotype).
+    GENOME-ARCHITECTURE ONLY: coordinates + strand -- reads NO sequence / DNA-copy-number / homology
+    column.  Deterministic: a single ordered pass keeping the FIRST occurrence per gene symbol (the file
+    is coordinate-sorted; the few PAR-region duplicate symbols keep their first, lowest-coordinate locus).
+    A gene absent from the file => omitted (no antisense cut for a pair touching it)."""
+    if not os.path.exists(GENE_STRAND_TSV):
+        raise FileNotFoundError(
+            f"antisense gate is DEFAULT-ON but {GENE_STRAND_TSV} is missing; extract it from the GFF "
+            f"'gene' features, or ablate with --no-antisense-gate / RUSTLE_NO_ANTISENSE_GATE=1")
+    out = {}
+    with open(GENE_STRAND_TSV) as fh:
+        for ln in fh:
+            f = ln.rstrip("\n").split("\t")
+            if len(f) < 5:
+                continue
+            chrom, start, end, strand, gene = f[0], f[1], f[2], f[3], f[4]
+            if gene in out:
+                continue                     # first (lowest-coordinate) occurrence -- deterministic
+            try:
+                out[gene] = (chrom, int(start), int(end), strand)
+            except ValueError:
+                continue
+    return out
+
+
 # --------------------------------------------------------------------------- build (RNA-only)
-def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True):
-    """Apply the recall-preserving RNA-only gate + repeat-hub gate + shipped gamma refinement +
-    recombinant-split gate + multi-repeat-bridge gate + allele demote.  Returns dict with the
-    multi-copy catalog and the RNA-only bookkeeping.  No DNA read here.  repeat_gate=False ablates
-    ONLY the repeat-hub gate.  split_recombinants=False ablates ONLY the recombinant-split gate.
+def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True,
+                  antisense_gate=True):
+    """Apply the recall-preserving RNA-only gate + repeat-hub gate + antisense/reciprocal-overlap gate
+    + shipped gamma refinement + recombinant-split gate + multi-repeat-bridge gate + allele demote.
+    Returns dict with the multi-copy catalog and the RNA-only bookkeeping.  No DNA read here.
+    repeat_gate=False ablates ONLY the repeat-hub gate.  antisense_gate=False ablates ONLY the
+    antisense/reciprocal-overlap gate (edge-level; when OFF the catalog is BYTE-IDENTICAL to the
+    pre-antisense golden).  split_recombinants=False ablates ONLY the recombinant-split gate.
     repeat_bridge_gate=False ablates ONLY the multi-repeat-bridge gate (keeps core+aln+repeat+gamma+
     recombinant-split+demote -> recovers the pre-repeat-bridge catalog).  gamma selects the
     gamma-quasi-clique cohesion: default GAMMA=0.20 (recall-preserving) or HIGH_PRECISION_GAMMA=0.40
@@ -324,6 +403,8 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
     allele = RO.load_allele()                    # gene -> balanced_frac/copy_like/... (a1_read_consensus_o1.tsv)
     # LIBRARY-FREE repeat-hub multiplicity (VG canonical-minimizer catalog; not re-derived):
     pair_repeat_mult = load_repeat_mult() if repeat_gate else {}
+    # GENOME-ARCHITECTURE per-gene span + strand (annotation coordinates only; not re-derived):
+    gene_strand = load_gene_strand() if antisense_gate else {}
 
     # ---- shipped graph context ----
     meta = FP.load_meta(); annot = FP.load_annot(); gene_of = FP.gene_of_factory(annot)
@@ -346,6 +427,30 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
         m = pair_repeat_mult.get(k)              # absent => no repeat cut (fall through to core+aln)
         return (m is not None) and (m >= REPEAT_MULT_MIN)
 
+    # ---- antisense / reciprocal-overlap gate: the two GENES occupy the SAME genomic region on
+    #      OPPOSITE strands (sense/antisense or nested gene) -> cannot be two copies of one gene
+    #      (pure GENOME-ARCHITECTURE: coordinates + strand only; NO sequence).  Cut iff same contig
+    #      AND opposite strand AND reciprocal span-overlap >= ANTISENSE_RECIP_OVERLAP_MIN AND neither
+    #      gene is a MEGA-SPAN array locus (span >= MEGA_SPAN_MAX; GSTM2/MAGE truth-artifact guard). ----
+    def antisense_overlap(k):
+        a, b = tuple(k)
+        ia = gene_strand.get(a); ib = gene_strand.get(b)
+        if ia is None or ib is None:             # a gene span/strand unknown => no antisense cut
+            return False
+        ca, sa, ea, ta = ia
+        cb, sb, eb, tb = ib
+        if ca != cb or ta == tb:                 # require SAME contig AND OPPOSITE strand
+            return False
+        spa, spb = ea - sa, eb - sb
+        if spa <= 0 or spb <= 0:
+            return False
+        if spa >= MEGA_SPAN_MAX or spb >= MEGA_SPAN_MAX:   # MEGA-SPAN array-locus guard (GSTM2/MAGE)
+            return False
+        ov = min(ea, eb) - max(sa, sb)
+        if ov <= 0:
+            return False
+        return (ov / min(spa, spb)) >= ANTISENSE_RECIP_OVERLAP_MIN
+
     import networkx as nx
     Gr = nx.Graph(); Gr.add_nodes_from(all_nodes)
     for a, b in edge_pairs:
@@ -353,23 +458,27 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
             Gr.add_edge(a, b)
 
     kept = set()
-    kept_pairs, cut_pairs, repeat_cut_pairs = set(), set(), set()
-    n_dn_within, n_dn_cross_kept, n_dn_cross_cut, n_dn_cross_cut_repeat = 0, 0, 0, 0
+    kept_pairs, cut_pairs, repeat_cut_pairs, antisense_cut_pairs = set(), set(), set(), set()
+    n_dn_within, n_dn_cross_kept, n_dn_cross_cut = 0, 0, 0
+    n_dn_cross_cut_repeat, n_dn_cross_cut_antisense = 0, 0
     for u, v in Gr.edges():
         ga, gb = gene_of_dn2.get(u), gene_of_dn2.get(v)
         if ga is None or gb is None or ga == gb:
-            kept.add(frozenset((u, v)))          # within-gene / unannotated: never an over-merge, never repeat-gated
+            kept.add(frozenset((u, v)))          # within-gene / unannotated: never an over-merge, never gated
             n_dn_within += 1
             continue
         k = frozenset((ga, gb))
         keep_ca = core_aln_keep(k)
-        repeat_only = repeat_gate and repeat_hub(k)   # passes core+aln but shares ONLY extreme repeat
-        if keep_ca and not repeat_only:
+        repeat_only = repeat_gate and repeat_hub(k)       # passes core+aln but shares ONLY extreme repeat
+        antisense_only = antisense_gate and antisense_overlap(k)  # same-locus opposite-strand nested gene
+        if keep_ca and not repeat_only and not antisense_only:
             kept.add(frozenset((u, v))); n_dn_cross_kept += 1; kept_pairs.add(k)
         else:
             n_dn_cross_cut += 1; cut_pairs.add(k)
             if keep_ca and repeat_only:               # cut SPECIFICALLY by the repeat-hub gate
                 n_dn_cross_cut_repeat += 1; repeat_cut_pairs.add(k)
+            if keep_ca and antisense_only:            # cut SPECIFICALLY by the antisense/overlap gate
+                n_dn_cross_cut_antisense += 1; antisense_cut_pairs.add(k)
 
     # ---- shipped gamma-quasi-clique refinement (unchanged operator; gamma threaded, seed=0) ----
     comps = SW.components_from_edges(all_nodes, kept)
@@ -440,11 +549,15 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
         repeat_bridge_gate=repeat_bridge_gate,
         n_families_repeat_bridge_split=n_families_repeat_bridge_split,
         repeat_bridge_info=repeat_bridge_info,
+        antisense_gate=antisense_gate,
         n_dn_edges_total=Gr.number_of_edges(),
         n_dn_within=n_dn_within, n_dn_cross_kept=n_dn_cross_kept, n_dn_cross_cut=n_dn_cross_cut,
         n_dn_cross_cut_repeat=n_dn_cross_cut_repeat,
+        n_dn_cross_cut_antisense=n_dn_cross_cut_antisense,
         n_cross_pairs_kept=len(kept_pairs), n_cross_pairs_cut=len(cut_pairs - kept_pairs),
         n_cross_pairs_cut_repeat=len(repeat_cut_pairs - kept_pairs),
+        n_cross_pairs_cut_antisense=len(antisense_cut_pairs - kept_pairs),
+        antisense_cut_pairs=sorted("+".join(sorted(k)) for k in (antisense_cut_pairs - kept_pairs)),
     )
 
 
@@ -523,12 +636,16 @@ def write_outputs(built, val):
     repeat_gate = built["repeat_gate"]
     summary = dict(
         stage="family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + "
-              "recombinant-split gate + multi-repeat-bridge gate; DEFAULT-ON, opt out --legacy / "
-              "ablate gates --no-repeat-gate / --no-split-recombinants / --no-repeat-bridge-gate)",
-        rule=dict(edge="KEEP iff core_recip>=%.2f AND aln_frac>=%.2f AND NOT(min_shared_mult>=%d)"
-                       % (CORE_MIN, ALN_MIN, REPEAT_MULT_MIN),
+              "antisense/reciprocal-overlap gate + recombinant-split gate + multi-repeat-bridge gate; "
+              "DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-antisense-gate / "
+              "--no-split-recombinants / --no-repeat-bridge-gate)",
+        rule=dict(edge="KEEP iff core_recip>=%.2f AND aln_frac>=%.2f AND NOT(min_shared_mult>=%d) "
+                       "AND NOT(antisense_recip_overlap>=%.2f)"
+                       % (CORE_MIN, ALN_MIN, REPEAT_MULT_MIN, ANTISENSE_RECIP_OVERLAP_MIN),
                   core_recip_min=CORE_MIN, aln_frac_min=ALN_MIN,
                   repeat_gate_enabled=repeat_gate, repeat_mult_min=REPEAT_MULT_MIN,
+                  antisense_gate_enabled=built["antisense_gate"],
+                  antisense_recip_overlap_min=ANTISENSE_RECIP_OVERLAP_MIN, mega_span_max=MEGA_SPAN_MAX,
                   split_recombinants_enabled=built["split_recombinants"],
                   repeat_bridge_gate_enabled=built["repeat_bridge_gate"],
                   repeat_bridge_mult_min=REPEAT_BRIDGE_MULT_MIN,
@@ -577,15 +694,38 @@ def write_outputs(built, val):
                   "--no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1 ablates."
                   % (REPEAT_BRIDGE_EXON_ID, REPEAT_BRIDGE_COUNT_MIN, REPEAT_BRIDGE_MULT_MIN,
                      REPEAT_BRIDGE_MULT_MIN, REPEAT_BRIDGE_COUNT_MIN))),
+        antisense_overlap_gate=dict(
+            enabled=built["antisense_gate"],
+            recip_overlap_min=ANTISENSE_RECIP_OVERLAP_MIN, mega_span_max=MEGA_SPAN_MAX,
+            n_cross_gene_pairs_cut=built["n_cross_pairs_cut_antisense"],
+            pairs_cut=built["antisense_cut_pairs"],
+            axis="genome_architecture (annotation coordinates + strand; zero sequence similarity)",
+            scope=("catalog-wide EDGE-LEVEL predicate (same placement as the repeat-hub gate): a within-"
+                   "family cross-gene DN edge is CUT iff its projected gene pair is same-contig, "
+                   "OPPOSITE-strand, reciprocal span-overlap >= %.2f, and NEITHER gene is a >= %d bp "
+                   "MEGA-SPAN array locus. Two genes at one locus on opposite strands (sense/antisense or "
+                   "nested gene) cannot be two copies of one gene." % (ANTISENSE_RECIP_OVERLAP_MIN,
+                                                                       MEGA_SPAN_MAX)),
+            note=("4th default-on FP gate = the ONE clean NEW rule from FP_EXCLUSION_DISCRIMINATORS.md, "
+                  "orthogonal to the 4 exhausted similarity axes (nucleotide/protein/TE/VG-topology). "
+                  "Cuts the 9 validated genuine over-merges (RASA1+CCNH, RNASEH2C+KAT5, ARHGEF39+CCDC107, "
+                  "HDGFL3+TM6SF1, TRMT10B+EXOSC3, +4) at 0 confirmed-paralog / 0 diploid-oracle collateral; "
+                  "the real antisense pair MPDU1/MPDU1-AS1 sits at reciprocal-overlap 0.4855 (< %.2f) and "
+                  "is SPARED; the MEGA-SPAN guard leaves the GSTM2 (1.18 Mb array span) + MAGE "
+                  "CARDINALITY_ARRAY truth-artifacts byte-identical. RECALL-NEUTRAL (never a copy-of-one-"
+                  "gene edge). --no-antisense-gate / RUSTLE_NO_ANTISENSE_GATE=1 ablates (byte-identical "
+                  "to the pre-antisense golden)." % ANTISENSE_RECIP_OVERLAP_MIN)),
         edges=dict(
             n_dn_edges_total=built["n_dn_edges_total"],
             n_dn_within_gene_kept=built["n_dn_within"],
             n_dn_cross_gene_kept=built["n_dn_cross_kept"],
             n_dn_cross_gene_cut=built["n_dn_cross_cut"],
             n_dn_cross_gene_cut_by_repeat_gate=built["n_dn_cross_cut_repeat"],
+            n_dn_cross_gene_cut_by_antisense_gate=built["n_dn_cross_cut_antisense"],
             n_cross_gene_pairs_kept=built["n_cross_pairs_kept"],
             n_cross_gene_pairs_cut=built["n_cross_pairs_cut"],
-            n_cross_gene_pairs_cut_by_repeat_gate=built["n_cross_pairs_cut_repeat"]),
+            n_cross_gene_pairs_cut_by_repeat_gate=built["n_cross_pairs_cut_repeat"],
+            n_cross_gene_pairs_cut_by_antisense_gate=built["n_cross_pairs_cut_antisense"]),
         n_alleles_demoted=len(built["demotions"]),
         alleles_demoted=sorted(built["demotions"], key=lambda d: d["gene"]),
         residual_fp=dict(
@@ -601,15 +741,20 @@ def write_outputs(built, val):
         guards=dict(
             edge_decision_features=list(EDGE_DECISION_FEATURES),
             repeat_gate_features=list(REPEAT_GATE_FEATURES),
+            antisense_gate_features=list(ANTISENSE_GATE_FEATURES),
             demote_features=list(DEMOTE_FEATURES),
             no_dna_in_inference=True,
             repeat_gate_library_free=True,
             no_softmask_in_repeat_gate=True,
+            antisense_gate_genome_architecture=True,
+            no_dna_in_antisense_gate=True,
             gamma=gamma, seed=SEED),
         inputs=dict(
             edges="bench/denovo_family_edges.tsv",
             aln_frac="bench/ri_sharedlen_universal.tsv",
             repeat_mult="bench/vg_repeat_catalog.tsv (min_shared_mult; library-free VG multiplicity)",
+            gene_strand=("%s (per-gene annotation span + strand from the GGO_genomic.gff 'gene' "
+                         "features; genome architecture only)" % GENE_STRAND_TSV),
             allele="bench/a1_read_consensus_o1.tsv"),
         outputs=dict(catalog_tsv="bench/family_rna_refine.tsv",
                      summary_json="bench/family_rna_refine.json"),
@@ -635,9 +780,10 @@ def write_outputs(built, val):
 
 
 # --------------------------------------------------------------------------- driver
-def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True):
+def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True,
+        antisense_gate=True):
     built = build_catalog(repeat_gate=repeat_gate, gamma=gamma, split_recombinants=split_recombinants,
-                          repeat_bridge_gate=repeat_bridge_gate)
+                          repeat_bridge_gate=repeat_bridge_gate, antisense_gate=antisense_gate)
     val = validate(built)
     summary = write_outputs(built, val) if write else None
     return built, val, summary
@@ -659,6 +805,11 @@ def _report(built, val, summary):
       f"(of which by repeat-hub gate={built['n_dn_cross_cut_repeat']})")
     P(f"cross-gene pairs : kept={built['n_cross_pairs_kept']}  cut={built['n_cross_pairs_cut']}  "
       f"(repeat-hub-gate cut pairs={built['n_cross_pairs_cut_repeat']})")
+    P(f"antisense gate   : {'ON' if built['antisense_gate'] else 'OFF (ablated)'}  "
+      f"cross-gene pairs cut={built['n_cross_pairs_cut_antisense']} "
+      f"(same-contig opposite-strand recip-overlap>={ANTISENSE_RECIP_OVERLAP_MIN:.2f}, "
+      f"mega-span guard {MEGA_SPAN_MAX} bp -> GSTM2/MAGE spared)"
+      + ("  " + "; ".join(built['antisense_cut_pairs']) if built['antisense_cut_pairs'] else ""))
     P(f"recombinant split: {'ON' if built['split_recombinants'] else 'OFF (ablated)'}  "
       f"families split={built['n_families_split']}"
       + ("  " + "; ".join("|".join(g for g in si['subfam_genes'] if g != 'NA')
@@ -729,6 +880,13 @@ def main(argv=None):
                          "keeps core+aln+repeat+gamma+split+demote and recovers the pre-repeat-bridge "
                          "catalog (also RUSTLE_NO_REPEAT_BRIDGE_GATE=1)"
                          % (REPEAT_BRIDGE_EXON_ID, REPEAT_BRIDGE_COUNT_MIN, REPEAT_BRIDGE_MULT_MIN))
+    ap.add_argument("--no-antisense-gate", action="store_true",
+                    help="ablation: DISABLE just the antisense/reciprocal-overlap gate (4th default-on FP "
+                         "gate; edge-level GENOME-ARCHITECTURE cut -- CUT a cross-gene edge iff its gene "
+                         "pair is same-contig, OPPOSITE-strand, reciprocal span-overlap >= %.2f, and "
+                         "neither gene span >= %d bp); keeps core+aln+repeat+gamma+split+bridge+demote and "
+                         "recovers the pre-antisense catalog BYTE-IDENTICAL "
+                         "(also RUSTLE_NO_ANTISENSE_GATE=1)" % (ANTISENSE_RECIP_OVERLAP_MIN, MEGA_SPAN_MAX))
     ap.add_argument("--high-precision", action="store_true",
                     help="HIGH-PRECISION operating point: swap ONLY the gamma-quasi-clique cohesion "
                          "GAMMA=%.2f -> %.2f (PRECISION_RECALL_FRONTIER.md); everything else "
@@ -754,11 +912,15 @@ def main(argv=None):
     # DEFAULT-ON multi-repeat-bridge gate; --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1 ablates it.
     repeat_bridge_gate = not (args.no_repeat_bridge_gate
                               or os.environ.get("RUSTLE_NO_REPEAT_BRIDGE_GATE") == "1")
+    # DEFAULT-ON antisense/reciprocal-overlap gate; --no-antisense-gate / RUSTLE_NO_ANTISENSE_GATE=1 ablates it.
+    antisense_gate = not (args.no_antisense_gate
+                          or os.environ.get("RUSTLE_NO_ANTISENSE_GATE") == "1")
     # HIGH-PRECISION: --high-precision / RUSTLE_HIGH_PRECISION=1 swaps ONLY gamma (0.20 -> 0.40).
     high_precision = args.high_precision or os.environ.get("RUSTLE_HIGH_PRECISION") == "1"
     gamma = HIGH_PRECISION_GAMMA if high_precision else GAMMA
     built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma,
-                              split_recombinants=split_recombinants, repeat_bridge_gate=repeat_bridge_gate)
+                              split_recombinants=split_recombinants, repeat_bridge_gate=repeat_bridge_gate,
+                              antisense_gate=antisense_gate)
     _report(built, val, summary)
     return 0
 
