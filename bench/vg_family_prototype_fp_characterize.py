@@ -190,6 +190,18 @@ def characterize():
         else:
             max_mult = mean_mult = median_mult = 0
 
+        # shared-node coverage: fraction of each member's nodes that are shared (mult>=2)
+        shared_node_fracs = []
+        for m in members:
+            if m in locus_path_nodes:
+                nodes = locus_path_nodes[m]
+                if nodes:
+                    shared = sum(1 for node in nodes if len(node_loci.get(node, [])) >= 2)
+                    shared_node_fracs.append(shared / len(nodes))
+        mean_shared_node_frac = round(statistics.mean(shared_node_fracs), 4) if shared_node_fracs else 0.0
+        min_shared_node_frac = round(min(shared_node_fracs), 4) if shared_node_fracs else 0.0
+        max_shared_node_frac = round(max(shared_node_fracs), 4) if shared_node_fracs else 0.0
+
         # repeat fraction (soft-masked) averaged over member spans
         rfracs = [repeat_frac(fa, meta[m]["chrom"], meta[m]["start"], meta[m]["end"]) for m in members if m in meta]
         mean_rfrac = round(statistics.mean(rfracs), 4) if rfracs else 0.0
@@ -220,6 +232,9 @@ def characterize():
             mean_node_repeat_frac=round(statistics.mean(node_repeats), 4) if node_repeats else 0.0,
             max_node_repeat_frac=round(max(node_repeats), 4) if node_repeats else 0.0,
             repeat_hub_frac=repeat_hub_frac,
+            mean_shared_node_frac=mean_shared_node_frac,
+            min_shared_node_frac=min_shared_node_frac,
+            max_shared_node_frac=max_shared_node_frac,
             n_protein_families=len(prot_fams),
             ep_impure=ep_impure,
             fp_multifam=fp_multi,
@@ -256,6 +271,9 @@ def characterize():
             "mean_node_repeat_frac": round(statistics.mean(r["mean_node_repeat_frac"] for r in group), 4),
             "max_node_repeat_frac": round(statistics.mean(r["max_node_repeat_frac"] for r in group), 4),
             "repeat_hub_frac": round(statistics.mean(r["repeat_hub_frac"] for r in group), 4),
+            "mean_shared_node_frac": round(statistics.mean(r["mean_shared_node_frac"] for r in group), 4),
+            "min_shared_node_frac": round(statistics.mean(r["min_shared_node_frac"] for r in group), 4),
+            "max_shared_node_frac": round(statistics.mean(r["max_shared_node_frac"] for r in group), 4),
             "mean_n_exons": round(statistics.mean(r["mean_n_exons"] for r in group), 2),
             "n_protein_families": round(statistics.mean(r["n_protein_families"] for r in group), 2),
         }

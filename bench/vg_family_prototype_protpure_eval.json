@@ -1,0 +1,108 @@
+{
+  "determinism": {
+    "gamma": 0.2,
+    "pythonhashseed": "0",
+    "seed": 0
+  },
+  "gene_projection_relabel": {
+    "credited_genes": [
+      "LOC115934629",
+      "LOC129534585"
+    ],
+    "n_newly_credited": 2,
+    "note": "ok",
+    "recall_with_relabel": 0.8246,
+    "recall_without_relabel": 0.7895
+  },
+  "graph_level": {
+    "ge_genuine_cut": 0.9416,
+    "ge_real_kept": 0.7152,
+    "genuine_precision": 0.7031,
+    "overmerge_cut": 0.9984,
+    "tp_retention": 0.7,
+    "truthbar_retention": 0.0044
+  },
+  "n_multicopy_families": 376,
+  "n_raw_families": 630,
+  "prototype_catalog": "bench/vg_family_prototype_protpure.tsv",
+  "residual_fp_roster": {
+    "allele": [
+      {
+        "asm_hapCN": 1,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC129530050"
+        ]
+      },
+      {
+        "asm_hapCN": 1,
+        "distinct_loci": 2,
+        "genes": [
+          "DHRSX"
+        ]
+      }
+    ],
+    "ep_impure_not_dna_named": [],
+    "ep_impure_total": 0,
+    "multifam": [
+      {
+        "distinct_loci": 7,
+        "genes": [
+          "LOC101142904",
+          "LOC129526550"
+        ]
+      },
+      {
+        "distinct_loci": 5,
+        "genes": [
+          "LOC129529978",
+          "LOC129529986"
+        ]
+      }
+    ],
+    "oversize": [
+      {
+        "diploid_CN": 2,
+        "distinct_loci": 5,
+        "genes": [
+          "LOC129529978",
+          "LOC129529986"
+        ],
+        "ratio": 2.5
+      }
+    ]
+  },
+  "truth1_protein_Ep": {
+    "impure_blocks": 0,
+    "precision_Ep": 1.0,
+    "pure_blocks": 376,
+    "total_blocks": 376
+  },
+  "truth2_dna_loose": {
+    "block_overmerge_precision": 0.7063,
+    "component_recovery_recall": 0.961,
+    "n_blocks_with_genuine_pair": 79,
+    "n_components_recovered": 148,
+    "n_multigene_blocks": 274,
+    "n_real_dna_components": 154,
+    "pair_projection_precision_nonovermerge": 0.7031,
+    "pair_projection_recall_real_cdna": 0.7
+  },
+  "truth3_diploid_oracle": {
+    "distinct_fp_blocks": 4,
+    "flag_instances": 5,
+    "n_allele": 2,
+    "n_multifam": 2,
+    "n_oversize": 1,
+    "oracle_genes_recovered_multicopy": 47,
+    "oracle_mapped_families": 45,
+    "oracle_multicopy_genes": 57,
+    "precision_oracle_dedup": 0.9111,
+    "precision_oracle_taskformula": 0.8889,
+    "recall_oracle": 0.8246,
+    "relabel_credited_genes": [
+      "LOC115934629",
+      "LOC129534585"
+    ]
+  }
+}

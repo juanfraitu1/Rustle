@@ -140,6 +140,41 @@ condition is exceeded.
   (4633 → 4628 families, 5 dropped)
 - `bench/vg_family_prototype_repeatgate_eval.json` / `.tsv` / `.log` — verified eval
   for the recommended gate: P_Ep 0.8779, R_oracle 51/57 = 0.8947
+- `bench/vg_family_prototype_protpure.tsv` / `_eval.*` — family split by annotated
+  protein family (P_Ep 1.0, R_oracle 0.8246)
+- `bench/vg_family_prototype_protcov.tsv` / `_eval.*` / `.json` — family split by
+  whole-protein reciprocal coverage (P_Ep 1.0, R_oracle 0.7018)
+
+## Domain-share prevention — what works and what does not
+
+Domain-sharers are the bulk of the residual E_p-impure families (61 / 4633).  They
+are genes from different protein families that share one conserved domain and get
+merged in the VG through that domain's exons.
+
+### Tested axes
+
+| approach | mechanism | result |
+|---|---|---|
+| **Shared exon-pair coverage** | fraction of each member's nodes that are shared (`mean_shared_node_frac`, `min_shared_node_frac`) | **No signal** — domain-sharers have *higher* coverage than real families (mean 0.955 vs 0.866). The VG collapses the shared domain into a dense path that looks like a real paralog. |
+| **Antisense / reciprocal-overlap** (family-level) | same-contig opposite-strand pairs with recip overlap ≥ 0.5 | **Weak + high collateral** — 14 EP-impure flagged but 403 real families collateral. Must be applied at the edge level to be clean. |
+| **Protein-family splitting** | split every family with ≥2 annotated protein families into protein-pure sub-families | **P_Ep = 1.0, R_oracle drops 0.9123 → 0.8246** — removes all impurity but over-splits real duplications the protein truth fragments. |
+| **Whole-protein reciprocal-coverage bar** (O1 safeguard) | dissolve families where no cross-gene pair passes `min-cov ≥ 0.50, max-cov ≥ 0.70, fident ≥ 0.30` | **P_Ep = 1.0, R_oracle drops 0.9123 → 0.7018** — all 61 EP-impure families dissolve because their genes come from different protein families by definition. |
+
+### Interpretation
+
+The VG-native definition has the same fundamental domain-share boundary as the
+shipped O1 catalog: at the RNA level a real divergent paralog-with-a-domain and a
+FP domain-share are the same object.  The only clean preventions are:
+
+1. **Use whole-protein reciprocal coverage as an edge filter** (the O1 safeguard),
+   but accept the recall cost or integrate it as a pre-filter before VG construction.
+2. **Use DNA copy-number** (validation-only firewall, cannot gate the method).
+3. **Define families by full-copy architecture** rather than exon-pair sharing — a
+   research direction, not an empirical gate.
+
+The practical takeaway is that the current size + repeat-hub gate is the best
+RNA-only post-refinement available; the residual domain-sharers are a principled,
+characterized boundary rather than a tunable artifact.
 
 ## Conclusion
 
