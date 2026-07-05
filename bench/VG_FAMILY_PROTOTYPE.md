@@ -34,11 +34,14 @@ PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype_e
 4. **Cluster exons** (mode-dependent):
    - `exact` — no clustering; every canonical sequence is its own node (fastest, most stringent).
    - `cdhit` / `vsearch` — near-exact clustering at 95 % identity.
+   - `seeded` — pure-Python k-mer seed + `edlib` verification (functional but slow on the full set).
+   - `mmseqs` — fast k-mer seed + Smith-Waterman alignment via `mmseqs2 easy-cluster` (the practical
+     realization of the seeded idea).
 5. **Repeat-hub gate from VG topology** — any exon node used by >= `T` loci is labeled a repeat hub;
    splice edges incident to hubs are removed.  No minimizer repeat catalog is used.
 6. **Family linkage** (mode-dependent):
-   - `exact` / `cdhit` — graph-to-graph: two loci are linked if they share a non-repeat VG node or
-     a surviving splice edge.
+   - `exact` / `cdhit` / `mmseqs` — graph-to-graph: two loci are linked if they share a non-repeat VG
+     node or a surviving splice edge.
    - `o1vg` (default) — integrate the existing O1 transcript-homology edges
      (`bench/denovo_family_edges.tsv`, `core_recip >= 0.13`) and **gate** each edge by VG support:
      keep the O1 edge only if the two loci share a non-repeat exon node or a surviving splice edge.
@@ -58,6 +61,7 @@ PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype_e
 | **current default** (`family_rna_refine.tsv`) | 566 | **0.8940** | **0.9043** | 0.4631 | **0.9722** (175/180) | **0.9167** | 0.8947 |
 | `exact` (graph-to-graph) | 214 | 0.8879 | 0.5587 | **0.6135** | 0.9286 (104/112) | **0.9423** | 0.8596 |
 | `cdhit` (95 % exon clusters) | 237 | 0.8776 | 0.6152 | 0.5902 | 0.9630 (130/135) | 0.9020 | 0.8596 |
+| `mmseqs` (90 % k-mer seeded + align) | 255 | 0.8863 | 0.6630 | 0.6126 | 0.9786 (137/140) | 0.9000 | 0.8596 |
 | `o1vg` + exact support | 192 | 0.8958 | 0.4935 | 0.6312 | 0.9346 (100/107) | 0.9400 | 0.8070 |
 | **`o1vg` + cdhit support (default)** | 538 | 0.8866 | 0.7870 | 0.4510 | 0.9716 (171/176) | 0.9038 | **0.9123** |
 
@@ -70,6 +74,10 @@ Notes:
   separated by a few SNPs are not linked.
 - Near-exact exon clustering (`cdhit`) recovers more real edges and improves recall, at a modest
   precision cost.
+- A k-mer-seeded pure-Python implementation (`--mode seeded`) is also included, but it is too slow
+  for the full 290 k exon set (>30 min for a fraction of the reps).  `mmseqs2` mode is the practical
+  realization of the same seed-and-extend idea: it runs in ~3 min and gives better recall than
+  `cdhit` while keeping oracle precision at 0.90.
 - Using VG support on top of O1 edges (`o1vg`) gives the best recall (R_oracle = 0.9123) of any
   mode tested, with precision close to the shipped default.
 
@@ -95,6 +103,9 @@ Notes:
 - `vsearch` was tested but `--cluster_fast` on this many short sequences was slower in practice,
   and its default `--minseqlength 32` discarded short exons.  The code now passes
   `--minseqlength 1` and guards against missing representatives.
+- A pure-Python `--mode seeded` (k-mer index + `edlib` verification) is implemented as a reference,
+  but it is too slow for the full 290 k exon set.  `--mode mmseqs` uses the same biological
+  operation but executes it via `mmseqs2 easy-cluster` and finishes in ~3 min.
 - The prototype output files are `bench/vg_family_prototype.tsv` and
   `bench/vg_family_prototype.json`.  The eval script writes
   `bench/vg_family_prototype_eval.tsv` and `bench/vg_family_prototype_eval.json`.

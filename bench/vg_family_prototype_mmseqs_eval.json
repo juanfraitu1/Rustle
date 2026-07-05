@@ -1,0 +1,653 @@
+{
+  "determinism": {
+    "gamma": 0.2,
+    "pythonhashseed": "0",
+    "seed": 0
+  },
+  "gene_projection_relabel": {
+    "credited_genes": [
+      "LOC101141440",
+      "LOC115934629",
+      "LOC129534585"
+    ],
+    "n_newly_credited": 3,
+    "note": "ok",
+    "recall_with_relabel": 0.8596,
+    "recall_without_relabel": 0.807
+  },
+  "graph_level": {
+    "ge_genuine_cut": 0.9056,
+    "ge_real_kept": 0.6308,
+    "genuine_precision": 0.5326,
+    "overmerge_cut": 0.9973,
+    "tp_retention": 0.663,
+    "truthbar_retention": 0.0021
+  },
+  "n_multicopy_families": 255,
+  "n_raw_families": 755,
+  "prototype_catalog": "/mnt/c/Users/jfris/Desktop/Rustle/bench/vg_family_prototype.tsv",
+  "residual_fp_roster": {
+    "allele": [
+      {
+        "asm_hapCN": 1,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC129530050"
+        ]
+      },
+      {
+        "asm_hapCN": 1,
+        "distinct_loci": 2,
+        "genes": [
+          "DHRSX"
+        ]
+      }
+    ],
+    "ep_impure_not_dna_named": [
+      {
+        "block_index": 0,
+        "distinct_loci": 7,
+        "genes": [
+          "LOC101131768",
+          "LOC101136692",
+          "LOC101137060",
+          "LOC109025447",
+          "LOC129531666",
+          "LOC129531667"
+        ],
+        "n_genes": 6,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2193": [
+            "LOC101137060"
+          ],
+          "PRFAM450": [
+            "LOC101131768",
+            "LOC101136692",
+            "LOC109025447",
+            "LOC129531666",
+            "LOC129531667"
+          ]
+        }
+      },
+      {
+        "block_index": 1,
+        "distinct_loci": 7,
+        "genes": [
+          "LOC101128092",
+          "LOC101135168",
+          "LOC115933002",
+          "LOC115934550",
+          "LOC115934626",
+          "LOC115934680",
+          "LRRC37A3"
+        ],
+        "n_genes": 7,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM362": [
+            "LOC101128092",
+            "LOC101135168",
+            "LOC115933002",
+            "LOC115934626",
+            "LRRC37A3"
+          ],
+          "PRFAM494": [
+            "LOC115934550"
+          ]
+        }
+      },
+      {
+        "block_index": 2,
+        "distinct_loci": 9,
+        "genes": [
+          "LOC101125339",
+          "LOC101130894",
+          "LOC101146405",
+          "LOC115933167",
+          "LOC115935268",
+          "LOC115935376",
+          "LOC129523494",
+          "LOC129534750"
+        ],
+        "n_genes": 8,
+        "n_protein_families": 4,
+        "protein_families": {
+          "PRFAM322": [
+            "LOC101146405"
+          ],
+          "PRFAM446": [
+            "LOC115935268"
+          ],
+          "PRFAM490": [
+            "LOC129534750"
+          ],
+          "PRFAM563": [
+            "LOC101130894",
+            "LOC115933167",
+            "LOC115935376",
+            "LOC129523494"
+          ]
+        }
+      },
+      {
+        "block_index": 3,
+        "distinct_loci": 9,
+        "genes": [
+          "HERC2",
+          "LOC101149946",
+          "LOC109023386",
+          "LOC115930830",
+          "LOC129527072",
+          "LOC134757229",
+          "LOC134757265",
+          "PDCD6IP"
+        ],
+        "n_genes": 8,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2044": [
+            "HERC2"
+          ],
+          "PRFAM277": [
+            "LOC109023386",
+            "LOC115930830"
+          ]
+        }
+      },
+      {
+        "block_index": 6,
+        "distinct_loci": 8,
+        "genes": [
+          "ABCD1",
+          "KMT2C",
+          "LOC129526391",
+          "LOC129526403",
+          "LOC129526471",
+          "LOC129531453",
+          "LOC134756951"
+        ],
+        "n_genes": 7,
+        "n_protein_families": 4,
+        "protein_families": {
+          "PRFAM2125": [
+            "KMT2C"
+          ],
+          "PRFAM556": [
+            "LOC129526391",
+            "LOC129531453"
+          ],
+          "PRFAM652": [
+            "ABCD1"
+          ],
+          "PRFAM83": [
+            "LOC129526471"
+          ]
+        }
+      },
+      {
+        "block_index": 8,
+        "distinct_loci": 4,
+        "genes": [
+          "CDR2",
+          "LOC101131923",
+          "LOC101142371",
+          "RRN3"
+        ],
+        "n_genes": 4,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1729": [
+            "CDR2"
+          ],
+          "PRFAM2772": [
+            "LOC101142371",
+            "RRN3"
+          ]
+        }
+      },
+      {
+        "block_index": 10,
+        "distinct_loci": 4,
+        "genes": [
+          "LOC129530593",
+          "LOC129531205",
+          "LOC129531501",
+          "SAFB2"
+        ],
+        "n_genes": 4,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1451": [
+            "SAFB2"
+          ],
+          "PRFAM827": [
+            "LOC129531205",
+            "LOC129531501"
+          ]
+        }
+      },
+      {
+        "block_index": 11,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC129532935",
+          "SORT1"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1248": [
+            "LOC129532935"
+          ],
+          "PRFAM920": [
+            "SORT1"
+          ]
+        }
+      },
+      {
+        "block_index": 12,
+        "distinct_loci": 3,
+        "genes": [
+          "LOC115933144",
+          "LOC129527341",
+          "MYH11"
+        ],
+        "n_genes": 3,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2321": [
+            "LOC115933144",
+            "LOC129527341"
+          ],
+          "PRFAM88": [
+            "MYH11"
+          ]
+        }
+      },
+      {
+        "block_index": 34,
+        "distinct_loci": 3,
+        "genes": [
+          "GGT1",
+          "IGSF3",
+          "LOC129526379"
+        ],
+        "n_genes": 3,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM117": [
+            "GGT1"
+          ],
+          "PRFAM38": [
+            "IGSF3",
+            "LOC129526379"
+          ]
+        }
+      },
+      {
+        "block_index": 40,
+        "distinct_loci": 7,
+        "genes": [
+          "LOC101130728",
+          "LOC129523520",
+          "LOC129529226",
+          "LOC129531982",
+          "LOC134756437",
+          "LOC134758712",
+          "LOC134758754"
+        ],
+        "n_genes": 7,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM140": [
+            "LOC101130728",
+            "LOC129523520",
+            "LOC134756437",
+            "LOC134758712",
+            "LOC134758754"
+          ],
+          "PRFAM215": [
+            "LOC129529226",
+            "LOC129531982"
+          ]
+        }
+      },
+      {
+        "block_index": 47,
+        "distinct_loci": 16,
+        "genes": [
+          "LOC129523822",
+          "LOC129525064",
+          "LOC129525175",
+          "LOC129527285",
+          "LOC129527429",
+          "LOC129528751",
+          "LOC129531751",
+          "LOC129532625",
+          "LOC129532709",
+          "LOC129532808",
+          "LOC129533287",
+          "LOC129534552",
+          "LOC134756415",
+          "LOC134757299",
+          "LOC134759133",
+          "NDUFA8"
+        ],
+        "n_genes": 16,
+        "n_protein_families": 3,
+        "protein_families": {
+          "PRFAM2313": [
+            "NDUFA8"
+          ],
+          "PRFAM2340": [
+            "LOC129532709"
+          ],
+          "PRFAM313": [
+            "LOC134759133"
+          ]
+        }
+      },
+      {
+        "block_index": 51,
+        "distinct_loci": 4,
+        "genes": [
+          "BCR",
+          "LOC101132434",
+          "LOC101135843",
+          "LOC115932815"
+        ],
+        "n_genes": 4,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1552": [
+            "BCR"
+          ],
+          "PRFAM269": [
+            "LOC101132434",
+            "LOC101135843",
+            "LOC115932815"
+          ]
+        }
+      },
+      {
+        "block_index": 57,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC101138066",
+          "UBE2Q2"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM3026": [
+            "UBE2Q2"
+          ],
+          "PRFAM33": [
+            "LOC101138066"
+          ]
+        }
+      },
+      {
+        "block_index": 59,
+        "distinct_loci": 3,
+        "genes": [
+          "LOC101130854",
+          "LOC115932779",
+          "LOC115932992"
+        ],
+        "n_genes": 3,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM119": [
+            "LOC101130854"
+          ],
+          "PRFAM67": [
+            "LOC115932779"
+          ]
+        }
+      },
+      {
+        "block_index": 63,
+        "distinct_loci": 4,
+        "genes": [
+          "GALNT17",
+          "LOC101126070",
+          "LOC115935264",
+          "PMS2"
+        ],
+        "n_genes": 4,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2156": [
+            "LOC101126070"
+          ],
+          "PRFAM86": [
+            "GALNT17"
+          ]
+        }
+      },
+      {
+        "block_index": 122,
+        "distinct_loci": 2,
+        "genes": [
+          "SPSB2",
+          "TPI1"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2218": [
+            "TPI1"
+          ],
+          "PRFAM927": [
+            "SPSB2"
+          ]
+        }
+      },
+      {
+        "block_index": 131,
+        "distinct_loci": 2,
+        "genes": [
+          "B3GAT2",
+          "SMAP1"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1007": [
+            "B3GAT2"
+          ],
+          "PRFAM2854": [
+            "SMAP1"
+          ]
+        }
+      },
+      {
+        "block_index": 141,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC115932787",
+          "MAP2K3"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2271": [
+            "LOC115932787"
+          ],
+          "PRFAM35": [
+            "MAP2K3"
+          ]
+        }
+      },
+      {
+        "block_index": 143,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC101136154",
+          "LRP5"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1263": [
+            "LRP5"
+          ],
+          "PRFAM1868": [
+            "LOC101136154"
+          ]
+        }
+      },
+      {
+        "block_index": 161,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC115933187",
+          "SH3KBP1"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM244": [
+            "LOC115933187"
+          ],
+          "PRFAM857": [
+            "SH3KBP1"
+          ]
+        }
+      },
+      {
+        "block_index": 163,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC101149428",
+          "LOC115932259"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2283": [
+            "LOC115932259"
+          ],
+          "PRFAM2289": [
+            "LOC101149428"
+          ]
+        }
+      },
+      {
+        "block_index": 187,
+        "distinct_loci": 2,
+        "genes": [
+          "LOC115931432",
+          "LOC129525065"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM2339": [
+            "LOC129525065"
+          ],
+          "PRFAM313": [
+            "LOC115931432"
+          ]
+        }
+      },
+      {
+        "block_index": 227,
+        "distinct_loci": 2,
+        "genes": [
+          "FAM236B",
+          "LOC129530010"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1832": [
+            "LOC129530010"
+          ],
+          "PRFAM1928": [
+            "FAM236B"
+          ]
+        }
+      },
+      {
+        "block_index": 254,
+        "distinct_loci": 2,
+        "genes": [
+          "ALG1L1P",
+          "LOC101127338"
+        ],
+        "n_genes": 2,
+        "n_protein_families": 2,
+        "protein_families": {
+          "PRFAM1181": [
+            "LOC101127338"
+          ],
+          "PRFAM396": [
+            "ALG1L1P"
+          ]
+        }
+      }
+    ],
+    "ep_impure_total": 29,
+    "multifam": [
+      {
+        "distinct_loci": 12,
+        "genes": [
+          "LOC101142904",
+          "LOC129526550"
+        ]
+      },
+      {
+        "distinct_loci": 3,
+        "genes": [
+          "GSTM2",
+          "LOC101129940"
+        ]
+      },
+      {
+        "distinct_loci": 2,
+        "genes": [
+          "FOXO1",
+          "LOC115933254"
+        ]
+      }
+    ],
+    "oversize": []
+  },
+  "truth1_protein_Ep": {
+    "impure_blocks": 29,
+    "precision_Ep": 0.8863,
+    "pure_blocks": 226,
+    "total_blocks": 255
+  },
+  "truth2_dna_loose": {
+    "block_overmerge_precision": 0.6126,
+    "component_recovery_recall": 0.9786,
+    "n_blocks_with_genuine_pair": 86,
+    "n_components_recovered": 137,
+    "n_multigene_blocks": 225,
+    "n_real_dna_components": 140,
+    "pair_projection_precision_nonovermerge": 0.5326,
+    "pair_projection_recall_real_cdna": 0.663
+  },
+  "truth3_diploid_oracle": {
+    "distinct_fp_blocks": 5,
+    "flag_instances": 5,
+    "n_allele": 2,
+    "n_multifam": 3,
+    "n_oversize": 0,
+    "oracle_genes_recovered_multicopy": 49,
+    "oracle_mapped_families": 50,
+    "oracle_multicopy_genes": 57,
+    "precision_oracle_dedup": 0.9,
+    "precision_oracle_taskformula": 0.9,
+    "recall_oracle": 0.8596,
+    "relabel_credited_genes": [
+      "LOC101141440",
+      "LOC115934629",
+      "LOC129534585"
+    ]
+  }
+}

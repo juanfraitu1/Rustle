@@ -1,0 +1,17 @@
+{
+  "n_edges": 161780,
+  "n_edges_after_gate": 156853,
+  "n_exon_occurrences": 1260927,
+  "n_hub_nodes": 2921,
+  "n_loci": 110237,
+  "n_nodes": 157841,
+  "n_raw_components": 10421,
+  "n_refined_families": 4563,
+  "params": {
+    "gamma": 0.2,
+    "identity": 0.9,
+    "mode": "mmseqs",
+    "o1_edge_thresh": 0.13,
+    "repeat_thresh": 30
+  }
+}
