@@ -11,6 +11,7 @@ machinery used for the shipped family_rna_refine.tsv:
 
 Run: PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype_eval.py
 """
+import argparse
 import os
 import sys
 
@@ -85,6 +86,24 @@ def oracle_pr(res, mc_oracle, extra_credit=frozenset()):
 
 
 def main():
+    global PROTOTYPE_TSV, OUT_JSON, OUT_TSV
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", default=PROTOTYPE_TSV,
+                        help="prototype catalog TSV to evaluate (default: vg_family_prototype.tsv)")
+    parser.add_argument("--output-prefix", default=None,
+                        help="prefix for output JSON/TSV (default: same base as input)")
+    args = parser.parse_args()
+
+    PROTOTYPE_TSV = args.input
+    if args.output_prefix:
+        OUT_JSON = args.output_prefix + ".json"
+        OUT_TSV = args.output_prefix + ".tsv"
+    else:
+        base, _ = os.path.splitext(PROTOTYPE_TSV)
+        OUT_JSON = base + "_eval.json"
+        OUT_TSV = base + "_eval.tsv"
+
     if not os.path.exists(PROTOTYPE_TSV):
         print(f"[!] prototype catalog not found: {PROTOTYPE_TSV}", flush=True)
         print("    run bench/vg_family_prototype.py first", flush=True)

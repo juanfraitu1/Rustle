@@ -15,6 +15,7 @@ import argparse
 import csv
 import json
 import re
+import statistics
 import subprocess
 import tempfile
 from collections import defaultdict
@@ -36,8 +37,8 @@ VSEARCH = "/home/juanfra/miniforge3/bin/vsearch"
 CDHITEST = "/home/juanfra/miniforge3/bin/cd-hit-est"
 MMSEQS = "/home/juanfra/miniforge3/bin/mmseqs"
 
-OUT_TSV = os.path.join(BENCH, "vg_family_prototype.tsv")
-OUT_JSON = os.path.join(BENCH, "vg_family_prototype.json")
+DEFAULT_OUT_TSV = os.path.join(BENCH, "vg_family_prototype.tsv")
+DEFAULT_OUT_JSON = os.path.join(BENCH, "vg_family_prototype.json")
 O1_EDGE_TSV = os.path.join(BENCH, "denovo_family_edges.tsv")
 
 RC = str.maketrans("ACGTNacgtn", "TGCANtgcan")
@@ -722,6 +723,61 @@ def build_genes_array(loci_list, locus_info):
     return genes, name_to_idx
 
 
+def compute_family_fp_features(family_idx_lists, genes, locus_path_nodes, node_loci, repeat_thresh=30):
+    """Compute method-computable features used by the empirical FP gate.
+
+    Returns list of dicts aligned to family_idx_lists.
+    """
+    features = []
+    for members in family_idx_lists:
+        member_lids = [genes[idx]["name"] for idx in members]
+        node_mults = []
+        for lid in member_lids:
+            if lid in locus_path_nodes:
+                for node in locus_path_nodes[lid]:
+                    node_mults.append(len(node_loci.get(node, [])))
+        if node_mults:
+            mean_mult = round(statistics.mean(node_mults), 2)
+            hub_frac = round(sum(1 for x in node_mults if x >= repeat_thresh) / len(node_mults), 4)
+        else:
+            mean_mult = 0.0
+            hub_frac = 0.0
+        features.append(dict(
+            n_members=len(members),
+            mean_pair_mult=mean_mult,
+            pair_hub_frac=hub_frac,
+        ))
+    return features
+
+
+def apply_fp_gate(family_idx_lists, genes, locus_path_nodes, node_loci,
+                  max_members=None, mean_pair_mult=None, pair_hub_frac=None,
+                  repeat_thresh=30):
+    """Return (kept_families, dropped_families, n_dropped).
+
+    A family is dropped only if every supplied threshold is exceeded (AND semantics),
+    which lets the user build precise conjunctive gates.
+    """
+    feats = compute_family_fp_features(
+        family_idx_lists, genes, locus_path_nodes, node_loci, repeat_thresh)
+    kept = []
+    dropped = []
+    for members, feat in zip(family_idx_lists, feats):
+        conditions = []
+        if max_members is not None:
+            conditions.append(feat["n_members"] >= max_members)
+        if mean_pair_mult is not None:
+            conditions.append(feat["mean_pair_mult"] >= mean_pair_mult)
+        if pair_hub_frac is not None:
+            conditions.append(feat["pair_hub_frac"] >= pair_hub_frac)
+        drop = bool(conditions) and all(conditions)
+        if drop:
+            dropped.append(members)
+        else:
+            kept.append(members)
+    return kept, dropped, len(dropped)
+
+
 def main():
     if os.environ.get("PYTHONHASHSEED") != "0":
         os.environ["PYTHONHASHSEED"] = "0"
@@ -744,7 +800,15 @@ def main():
                         help="node multiplicity threshold for repeat-hub gate (default 30)")
     parser.add_argument("--gamma", type=float, default=0.20,
                         help="gamma-quasi-clique cohesion threshold (default 0.20)")
+    parser.add_argument("--fp-gate-members", type=int, default=None,
+                        help="FP gate: drop families with >= this many members")
+    parser.add_argument("--fp-gate-mean-pair-mult", type=float, default=None,
+                        help="FP gate: drop families with mean pair-node multiplicity >= threshold")
+    parser.add_argument("--fp-gate-pair-hub-frac", type=float, default=None,
+                        help="FP gate: drop families with pair-node hub fraction >= threshold")
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--output", default=DEFAULT_OUT_TSV,
+                        help="output catalog TSV path (default: vg_family_prototype.tsv)")
     args = parser.parse_args()
 
     print("[*] loading meta + skeletons ...", flush=True)
@@ -852,18 +916,42 @@ def main():
                 vi = name_to_idx[other]
                 all_edges.add((ui, vi))
     refined = refine_families(idx_comps, all_edges, genes, args.gamma, seed=0)
-    print(f"    refined families (>=2 loci): {len(refined)}", flush=True)
+    n_refined_before = len(refined)
+    print(f"    refined families (>=2 loci): {n_refined_before}", flush=True)
+
+    # empirical FP gate (optional, AND semantics across supplied thresholds)
+    if args.fp_gate_members is not None or args.fp_gate_mean_pair_mult is not None or args.fp_gate_pair_hub_frac is not None:
+        print("[*] applying empirical FP gate ...", flush=True)
+        kept, dropped, n_dropped = apply_fp_gate(
+            refined, genes, locus_path_nodes, node_loci,
+            max_members=args.fp_gate_members,
+            mean_pair_mult=args.fp_gate_mean_pair_mult,
+            pair_hub_frac=args.fp_gate_pair_hub_frac,
+            repeat_thresh=args.repeat_thresh)
+        print(f"    dropped families: {n_dropped} / {len(refined)}", flush=True)
+        refined = kept
+        gate_params = dict(
+            fp_gate_members=args.fp_gate_members,
+            fp_gate_mean_pair_mult=args.fp_gate_mean_pair_mult,
+            fp_gate_pair_hub_frac=args.fp_gate_pair_hub_frac,
+            fp_gate_dropped=n_dropped,
+        )
+    else:
+        gate_params = dict(fp_gate_members=None, fp_gate_mean_pair_mult=None,
+                           fp_gate_pair_hub_frac=None, fp_gate_dropped=0)
 
     # write catalog
-    with open(OUT_TSV, "w", newline="") as fh:
+    out_tsv = args.output
+    with open(out_tsv, "w", newline="") as fh:
         w = csv.writer(fh, delimiter="\t")
         w.writerow(["fam_id", "member"])
         for fid, members in enumerate(refined):
             for idx in members:
                 w.writerow([fid, genes[idx]["name"]])
-    print(f"[+] wrote {OUT_TSV}", flush=True)
+    print(f"[+] wrote {out_tsv}", flush=True)
 
     # summary JSON
+    out_json = os.path.splitext(out_tsv)[0] + ".json"
     metrics = dict(
         n_loci=len(loci),
         n_exon_occurrences=len(exons),
@@ -872,13 +960,14 @@ def main():
         n_hub_nodes=len(bad_nodes),
         n_edges_after_gate=len(kept_edges),
         n_raw_components=len(raw_comps),
+        n_refined_families_before_gate=n_refined_before,
         n_refined_families=len(refined),
         params=dict(mode=args.mode, identity=args.identity, o1_edge_thresh=args.o1_edge_thresh,
-                    repeat_thresh=args.repeat_thresh, gamma=args.gamma),
+                    repeat_thresh=args.repeat_thresh, gamma=args.gamma, **gate_params),
     )
-    with open(OUT_JSON, "w") as fh:
+    with open(out_json, "w") as fh:
         json.dump(metrics, fh, indent=2, sort_keys=True)
-    print(f"[+] wrote {OUT_JSON}", flush=True)
+    print(f"[+] wrote {out_json}", flush=True)
     print("\n=== SUMMARY ===")
     for k, v in metrics.items():
         if k != "params":

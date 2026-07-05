@@ -1,0 +1,12 @@
+Gate sweep summary
+gate                                            kept  drop  multi    P_Ep  R_orac P_orac_dedup     FP a/o/m
+baseline                                        4633     0    471  0.8705  0.9123  0.8868 2/1/4
+members>=80                                     4629     4    468  0.8761  0.8947  0.8846 2/1/4
+members>=70                                     4625     8    465  0.8796  0.8772  0.8824 2/1/4
+members>=60                                     4619    14    462  0.8810  0.8596  0.8800 2/1/4
+mean_pair_mult>=25                              4560    73    463  0.8726  0.8596  0.8776 2/1/4
+pair_hub_frac>=0.4                              4555    78    463  0.8726  0.8596  0.8776 2/1/4
+members>=60_AND_mean_pair_mult>=25              4630     3    471  0.8705  0.9123  0.8868 2/1/4
+members>=50_AND_mean_pair_mult>=20              4617    16    469  0.8721  0.8772  0.8824 2/1/4
+mean_pair_mult>=20_AND_pair_hub_frac>=0.3       4539    94    461  0.8742  0.8246  0.8723 2/1/4
+members>=40_AND_mean_pair_mult>=18_AND_pair_hub_frac>=0.2   4599    34    467  0.8715  0.8772  0.8824 2/1/4
