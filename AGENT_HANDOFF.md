@@ -72,15 +72,37 @@ it's the wrong layer — the answer is in `vg_family/` or `bench/`.
 - vg: `/home/juanfra/miniforge3/bin/vg`  ·  GraphAligner: `/home/juanfra/miniforge3/bin/GraphAligner`
 - Install new deps with **mamba** (`/home/juanfra/miniforge3/bin/mamba install ...`), not pip-into-system.
 
-**Data (big files) live in `/home/juanfra/winloci_scratch/`, NOT `/mnt/c`** (see disk note below):
+**Big files live in `/home/juanfra/winloci_scratch/`, NOT `/mnt/c`** (see disk note below). All absolute
+paths below are exact.
+
+**Genomes** (`/home/juanfra/winloci_scratch/`):
 | file | what it is |
 |---|---|
-| `GGO.fasta` (3.4 G) | the reference genome = **GCF_029281585.2** (the RNA reference the reads are aligned to) |
-| `GGO_mm.bam` (11 G) | the aligned IsoSeq reads. Alignment cmd: `minimap2 -ax splice:hq -uf --eqx -Y -N50 -p0.1 --secondary=yes` (the `-N50 -p0.1 --secondary=yes` forces secondaries for copy-assignment; note it depresses MAPQ — use the AS-margin for a clean read-confusability signal) |
-| `mGorGor1.mat.cur.20231122.fasta.gz` (926 M) + `mGorGor1.pat.cur...pat...gz` (880 M) | the **phased diploid genome** (maternal + paternal haplotypes) of the same individual. DNA is for **validation/calibration only** — the thesis is RNA-primary; DNA never gates a family/copy decision. |
-| `denovo_skeletons.tsv` (37 M) | per-de-novo-locus exon/intron structure |
-| `validated_families.tsv` (72 K) | per-copy loci of the validated families |
-| `/mnt/c/Users/jfris/Desktop/final.bed` (103 M) | **SEDEF segmental-duplication map** (WGAC ≥90% id); DNA duplication truth |
+| `GGO.fasta` (3.6 G) + `GGO.fasta.fai` | the reference genome = **GCF_029281585.2** (the RNA reference the reads map to). **Soft-masked** (lowercase = repeats/TEs — the family gates read this). |
+| `GGO_genomic.gff` (693 M) | NCBI RefSeq **gene annotation** (coords, strand, biotype). Source of `bench/gene_meta_strand.tsv` (the antisense gate) + the annotation loader. |
+| `mGorGor1.mat.cur.20231122.fasta.gz` (971 M) + `mGorGor1.pat.cur.20231122.fasta.gz` (923 M) | the **phased diploid genome** (maternal + paternal) of the same individual. DNA is **validation/calibration ONLY** — the thesis is RNA-primary; DNA never gates a family/copy decision. |
+
+**Read alignments — BAMs** (`/home/juanfra/winloci_scratch/`):
+| file | what it is |
+|---|---|
+| `GGO_mm.bam` (11.7 G) + `GGO_mm.bam.bai` | the aligned IsoSeq reads. Cmd: `minimap2 -ax splice:hq -uf --eqx -Y -N50 -p0.1 --secondary=yes` (`-N50 -p0.1 --secondary=yes` forces secondaries for copy-assignment; it depresses MAPQ, and expresses multimapping as **secondary** alignments not MAPQ-0 — use the AS-margin / the 0x100 flag). `-N50` is the shipped choice (bumping `-N` only enriches KRAB-ZNF repeat-fragmentation — `bench/MINIMAP2_N_SWEEP.md`). |
+| `GGO.bam` + `.bai` | **symlink → `GGO_mm.bam`** (same 11.7 G file). Some scripts (`psv_graph_genomewide.BAM`, the O2 read-fetch) reference `GGO.bam`; identical data. |
+
+**De-novo + derived data** (`/home/juanfra/winloci_scratch/`):
+| file | what it is |
+|---|---|
+| `denovo_skeletons.tsv` (38 M) | per-de-novo-locus intron chain (exons = complement) |
+| `denovo_transcripts.meta.tsv` (6.6 M) | per-DN-locus metadata (chrom/start/end) — the coordinate source for `dn_exons` / `load_meta` |
+| `validated_families.tsv` (71 K) | per-copy loci of the validated families (the `FAM_TSV` input) |
+| `o2vg/` (154 × `fam<N>.json`) | cached **materialized O2 variation graphs** (`o2_vg_visualization` / the Rust `materialize_family` reproduce these) |
+
+**Precomputed family-definition inputs — committed in `bench/`** (small; the def READS these, does not recompute them here):
+`denovo_family_edges.tsv` (core_recip edges) · `ri_sharedlen_universal.tsv` (aln_frac) · `vg_repeat_catalog.tsv`
+(canonical-minimizer multiplicity — repeat/multi-repeat gates) · `a1_read_consensus_o1.tsv` (allele signal, demote) ·
+`gene_meta_strand.tsv` (gene strand — antisense gate) · `denovo_families.tsv` (raw single-linkage families).
+
+**DNA duplication truth:** `/mnt/c/Users/jfris/Desktop/final.bed` (107 M) — **SEDEF segmental-duplication map**
+(WGAC ≥90% id). Validation-only.
 
 **Disk situation (important):** `/mnt/c` is a 477 GB Windows drive, **~80% full (~96 GB free)**. Put all
 large intermediates in `/home/juanfra/winloci_scratch/` (a larger Linux disk), **never** in `/mnt/c`.
