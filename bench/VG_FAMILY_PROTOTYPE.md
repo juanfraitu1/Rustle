@@ -11,7 +11,7 @@ graph.
 - `bench/vg_family_prototype_eval.py` — evaluate against the same P/R truths used for the shipped
   `family_rna_refine.tsv` catalog.
 
-Run the default O1+VG mode:
+Run the default colinear-exon-pair mode:
 
 ```bash
 cd /mnt/c/Users/jfris/Desktop/Rustle
@@ -31,18 +31,20 @@ PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype_e
    occurrences).
 3. **Build a pan-exon VG.**  Each distinct canonical exon sequence is a node; consecutive exons in
    a locus are connected by a splice edge; each locus is a path through the graph.
-4. **Cluster exons** (mode-dependent):
+4. **Cluster exons / exon pairs** (mode-dependent):
+   - `mmseqs-pairs` (default) — cluster **colinear exon pairs** with `mmseqs2 easy-cluster`.  A locus
+     with N exons becomes a path of N-1 pair-nodes.  This is the most intuitive, advisor-friendly
+     mode: two copies are related iff they share a similar pair of consecutive exons.
    - `exact` — no clustering; every canonical sequence is its own node (fastest, most stringent).
    - `cdhit` / `vsearch` — near-exact clustering at 95 % identity.
    - `seeded` — pure-Python k-mer seed + `edlib` verification (functional but slow on the full set).
-   - `mmseqs` — fast k-mer seed + Smith-Waterman alignment via `mmseqs2 easy-cluster` (the practical
-     realization of the seeded idea).
+   - `mmseqs` — fast k-mer seed + Smith-Waterman alignment of individual exons via `mmseqs2`.
 5. **Repeat-hub gate from VG topology** — any exon node used by >= `T` loci is labeled a repeat hub;
    splice edges incident to hubs are removed.  No minimizer repeat catalog is used.
 6. **Family linkage** (mode-dependent):
-   - `exact` / `cdhit` / `mmseqs` — graph-to-graph: two loci are linked if they share a non-repeat VG
-     node or a surviving splice edge.
-   - `o1vg` (default) — integrate the existing O1 transcript-homology edges
+   - `mmseqs-pairs` / `exact` / `cdhit` / `mmseqs` — graph-to-graph: two loci are linked if they share
+     a non-repeat VG node (exon or exon-pair) or a surviving splice edge.
+   - `o1vg` — integrate the existing O1 transcript-homology edges
      (`bench/denovo_family_edges.tsv`, `core_recip >= 0.13`) and **gate** each edge by VG support:
      keep the O1 edge only if the two loci share a non-repeat exon node or a surviving splice edge.
      This replaces the minimizer-based repeat gate with a VG-topology support check and directly
@@ -62,13 +64,16 @@ PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype_e
 | `exact` (graph-to-graph) | 214 | 0.8879 | 0.5587 | **0.6135** | 0.9286 (104/112) | **0.9423** | 0.8596 |
 | `cdhit` (95 % exon clusters) | 237 | 0.8776 | 0.6152 | 0.5902 | 0.9630 (130/135) | 0.9020 | 0.8596 |
 | `mmseqs` (90 % k-mer seeded + align) | 255 | 0.8863 | 0.6630 | 0.6126 | 0.9786 (137/140) | 0.9000 | 0.8596 |
+| `mmseqs-pairs` 90 % | 471 | 0.8705 | 0.8174 | 0.4750 | 0.9828 (171/174) | 0.8868 | **0.9123** |
+| **`mmseqs-pairs` 85 % (default)** | 519 | 0.8805 | **0.8326** | 0.4975 | 0.9831 (174/177) | 0.9038 | 0.8947 |
 | `o1vg` + exact support | 192 | 0.8958 | 0.4935 | 0.6312 | 0.9346 (100/107) | 0.9400 | 0.8070 |
-| **`o1vg` + cdhit support (default)** | 538 | 0.8866 | 0.7870 | 0.4510 | 0.9716 (171/176) | 0.9038 | **0.9123** |
+| `o1vg` + cdhit support | 538 | 0.8866 | 0.7870 | 0.4510 | 0.9716 (171/176) | 0.9038 | **0.9123** |
 
 Notes:
-- The **default `o1vg` mode** is competitive with the shipped catalog while being fully VG-native:
-  it uses the O1 homology graph for signal and the VG for repeat gating, with no minimizer
-  repeat catalog.
+- The **default `mmseqs-pairs` mode** is the most intuitive and advisor-friendly: copies are linked
+  when they share a similar **colinear exon pair**.  At 85 % identity it recovers 83 % of real cDNA
+  families (close to the shipped 90 %) and matches the shipped oracle recall, all without the O1
+  edge oracle or minimizer repeat catalog.
 - Pure graph-to-graph (`exact`) is extremely fast (~1–2 min) and gives the highest oracle
   precision, but it under-merges because it requires an *exact* shared exon sequence; paralogs
   separated by a few SNPs are not linked.
@@ -78,20 +83,23 @@ Notes:
   for the full 290 k exon set (>30 min for a fraction of the reps).  `mmseqs2` mode is the practical
   realization of the same seed-and-extend idea: it runs in ~3 min and gives better recall than
   `cdhit` while keeping oracle precision at 0.90.
-- Using VG support on top of O1 edges (`o1vg`) gives the best recall (R_oracle = 0.9123) of any
-  mode tested, with precision close to the shipped default.
+- Using colinear **pairs** instead of single exons is the key fix for the under-merge problem: it
+  gives a stronger structural signal, so more real families survive the γ refinement.
+- The `o1vg` mode still exists for the highest-recall integration (R_oracle = 0.9123), using O1
+  homology edges gated by VG support.
 
-### Residual false-positive roster (`o1vg` + cdhit default)
+### Residual false-positive roster (`mmseqs-pairs` 85 % default)
 
 - **multifam** (block spans >= 2 oracle genes): 3 blocks.
-  - `LOC101142904 + LOC129526550` (dl=13)
-  - `FOXO1 + LOC115933254` (dl=9)
+  - `LOC101142904 + LOC129526550` (dl=12)
+  - `LOC129529978 + LOC129529986` (dl=5)
   - `GSTM2 + LOC101129940` (dl=3)
-- **oversize** (RNA loci > 1.5× diploid CN): 0.
+- **oversize** (RNA loci > 1.5× diploid CN): 1.
+  - `LOC129529978 + LOC129529986` (dl=5, dipCN=2, 2.5×)
 - **allele-as-copy** (RNA multi-locus, DNA CN = 1): 2.
   - `DHRSX` (dl=2, hapCN=1)
   - `LOC129530050` (dl=2, hapCN=1)
-- **E_p-impure not named by DNA oracle**: 56 blocks (the usual conserved-domain residual).
+- **E_p-impure not named by DNA oracle**: 57 blocks (the usual conserved-domain residual).
 
 ---
 

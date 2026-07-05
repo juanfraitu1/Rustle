@@ -477,6 +477,82 @@ def cluster_exons_mmseqs(exons, identity=0.90, threads=4):
         return oid_to_rep, rep_to_cluster
 
 
+def build_pair_vg(exons, locus_paths, identity=0.90, threads=4):
+    """Build a colinear-exon-pair VG using mmseqs2 to cluster pair sequences.
+
+    Each node is a cluster of similar consecutive exon pairs.  A locus with N
+    exons becomes a path of N-1 pair-nodes.  Loci are linked later if they share
+    a non-repeat pair-node.
+
+    Returns (node_seq, node_loci, locus_path_nodes).
+    """
+    # exon oid -> canonical sequence
+    seq_of = {ex["oid"]: ex["canon"] for ex in exons}
+    # build pair occurrences
+    pair_seq = []
+    pair_locus = []  # parallel: lid for each pair occurrence
+    pair_index = []  # position in locus path
+    lid_to_pair_indices = defaultdict(list)
+    occ = 0
+    for lid, oids in locus_paths.items():
+        for i in range(len(oids) - 1):
+            s = seq_of[oids[i]] + seq_of[oids[i + 1]]
+            pair_seq.append(s)
+            pair_locus.append(lid)
+            pair_index.append(i)
+            lid_to_pair_indices[lid].append(occ)
+            occ += 1
+    print(f"    exon-pair occurrences: {occ}", flush=True)
+    with tempfile.TemporaryDirectory(prefix="vgfp_pair_") as td:
+        in_fa = os.path.join(td, "pairs.fa")
+        out_pref = os.path.join(td, "out")
+        tmp = os.path.join(td, "tmp")
+        with open(in_fa, "w") as fh:
+            for i, s in enumerate(pair_seq):
+                fh.write(f">{i}\n{s}\n")
+        cmd = [
+            MMSEQS,
+            "easy-cluster",
+            in_fa,
+            out_pref,
+            tmp,
+            "--min-seq-id", str(identity),
+            "-c", "0.80",
+            "--cov-mode", "1",
+            "--threads", str(threads),
+            "-v", "0",
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cluster_tsv = out_pref + "_cluster.tsv"
+        pair_to_node = {}
+        with open(cluster_tsv) as fh:
+            for line in fh:
+                f = line.rstrip("\n").split("\t")
+                if len(f) < 2:
+                    continue
+                rep_occ = int(f[0])
+                mem_occ = int(f[1])
+                pair_to_node[mem_occ] = rep_occ
+        next_node = max(pair_to_node.values(), default=-1) + 1
+        for i in range(occ):
+            if i not in pair_to_node:
+                pair_to_node[i] = next_node
+                next_node += 1
+        node_seq = {}
+        for i, node in pair_to_node.items():
+            if node not in node_seq:
+                node_seq[node] = pair_seq[i]
+        node_loci = defaultdict(set)
+        locus_path_nodes = {}
+        for lid, occs in lid_to_pair_indices.items():
+            nodes = [pair_to_node[i] for i in occs]
+            locus_path_nodes[lid] = nodes
+            for n in nodes:
+                node_loci[n].add(lid)
+        print(f"    pair clusters (nodes): {len(node_seq)}", flush=True)
+        return dict(node_seq), dict(node_loci), locus_path_nodes
+
+
 def build_graph(exons, locus_paths, oid_to_rep, rep_to_cluster):
     """Build exon-splice VG.  Returns:
         node_seq: dict node_id -> canonical sequence
@@ -652,10 +728,10 @@ def main():
         os.execv(sys.executable, [sys.executable] + sys.argv)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["exact", "seeded", "mmseqs", "vsearch", "cdhit", "o1vg"], default="o1vg",
-                        help="family-linkage mode: O1+VG (default), kmer-seeded edlib/mmseqs, vsearch/cdhit, or exact shared-exon graph")
-    parser.add_argument("--identity", type=float, default=0.95,
-                        help="cd-hit-est/vsearch/seeded exon clustering identity (used with --mode vsearch/cdhit/seeded; default 0.95)")
+    parser.add_argument("--mode", choices=["exact", "seeded", "mmseqs", "mmseqs-pairs", "vsearch", "cdhit", "o1vg"], default="mmseqs-pairs",
+                        help="family-linkage mode: mmseqs colinear exon pairs (default), O1+VG, kmer-seeded edlib/mmseqs, vsearch/cdhit, or exact shared-exon graph")
+    parser.add_argument("--identity", type=float, default=0.90,
+                        help="exon/exon-pair clustering identity (default 0.90 for mmseqs-pairs; tune lower for more recall)")
     parser.add_argument("--k", type=int, default=15,
                         help="kmer length for --mode seeded (default 15)")
     parser.add_argument("--max-occ", type=int, default=50,
@@ -681,34 +757,69 @@ def main():
     exons, locus_paths = extract_exon_paths(fa, loci)
     print(f"    exon occurrences: {len(exons)}", flush=True)
 
-    if args.mode == "exact":
+    if args.mode == "mmseqs-pairs":
+        print("[*] building colinear-exon-pair VG with mmseqs2 (identity={}) ...".format(args.identity), flush=True)
+        node_seq, node_loci, locus_path_nodes = build_pair_vg(
+            exons, locus_paths, identity=args.identity, threads=args.threads)
+        n_nodes = len(node_seq)
+        edge_loci = {}
+        print(f"    pair clusters (nodes): {n_nodes}", flush=True)
+    elif args.mode == "exact":
         print("[*] building exact pan-exon graph (graph-to-graph, no external clustering) ...", flush=True)
         oid_to_rep, rep_to_cluster = cluster_exons_exact(exons)
+        n_nodes = len(set(rep_to_cluster.values()))
+        print(f"    exon clusters (nodes): {n_nodes}", flush=True)
+        print("[*] building VG ...", flush=True)
+        node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
+            exons, locus_paths, oid_to_rep, rep_to_cluster)
+        print(f"    intron edges: {len(edge_loci)}", flush=True)
     elif args.mode == "seeded":
         print("[*] clustering exons with kmer-seeded edlib (k={}, identity={}) ...".format(args.k, args.identity), flush=True)
         oid_to_rep, rep_to_cluster = cluster_exons_seeded(
             exons, k=args.k, identity=args.identity, max_occ=args.max_occ, min_seed=args.min_seed)
+        n_nodes = len(set(rep_to_cluster.values()))
+        print(f"    exon clusters (nodes): {n_nodes}", flush=True)
+        print("[*] building VG ...", flush=True)
+        node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
+            exons, locus_paths, oid_to_rep, rep_to_cluster)
+        print(f"    intron edges: {len(edge_loci)}", flush=True)
     elif args.mode == "mmseqs":
         print("[*] clustering exons with mmseqs2 (identity={}) ...".format(args.identity), flush=True)
         oid_to_rep, rep_to_cluster = cluster_exons_mmseqs(exons, identity=args.identity, threads=args.threads)
+        n_nodes = len(set(rep_to_cluster.values()))
+        print(f"    exon clusters (nodes): {n_nodes}", flush=True)
+        print("[*] building VG ...", flush=True)
+        node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
+            exons, locus_paths, oid_to_rep, rep_to_cluster)
+        print(f"    intron edges: {len(edge_loci)}", flush=True)
     elif args.mode == "vsearch":
         print("[*] clustering exons with vsearch (identity={}) ...".format(args.identity), flush=True)
         oid_to_rep, rep_to_cluster = cluster_exons_vsearch(exons, identity=args.identity, threads=args.threads)
+        n_nodes = len(set(rep_to_cluster.values()))
+        print(f"    exon clusters (nodes): {n_nodes}", flush=True)
+        print("[*] building VG ...", flush=True)
+        node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
+            exons, locus_paths, oid_to_rep, rep_to_cluster)
+        print(f"    intron edges: {len(edge_loci)}", flush=True)
     elif args.mode == "cdhit":
         print("[*] clustering exons with cd-hit-est (identity={}) ...".format(args.identity), flush=True)
         oid_to_rep, rep_to_cluster = cluster_exons_cdhit(exons, identity=args.identity, threads=args.threads)
+        n_nodes = len(set(rep_to_cluster.values()))
+        print(f"    exon clusters (nodes): {n_nodes}", flush=True)
+        print("[*] building VG ...", flush=True)
+        node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
+            exons, locus_paths, oid_to_rep, rep_to_cluster)
+        print(f"    intron edges: {len(edge_loci)}", flush=True)
     else:
         # o1vg uses near-exact exon clustering to decide VG support for O1 edges
         print("[*] clustering exons with cd-hit-est for O1+VG support (identity={}) ...".format(args.identity), flush=True)
         oid_to_rep, rep_to_cluster = cluster_exons_cdhit(exons, identity=args.identity, threads=args.threads)
-    n_nodes = len(set(rep_to_cluster.values()))
-    print(f"    representative sequences: {len(set(oid_to_rep.values()))}", flush=True)
-    print(f"    exon clusters (nodes): {n_nodes}", flush=True)
-
-    print("[*] building VG ...", flush=True)
-    node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
-        exons, locus_paths, oid_to_rep, rep_to_cluster)
-    print(f"    intron edges: {len(edge_loci)}", flush=True)
+        n_nodes = len(set(rep_to_cluster.values()))
+        print(f"    exon clusters (nodes): {n_nodes}", flush=True)
+        print("[*] building VG ...", flush=True)
+        node_seq, node_loci, edge_loci, locus_path_nodes = build_graph(
+            exons, locus_paths, oid_to_rep, rep_to_cluster)
+        print(f"    intron edges: {len(edge_loci)}", flush=True)
 
     print("[*] repeat-hub gate (threshold={}) ...".format(args.repeat_thresh), flush=True)
     kept_edges, bad_nodes = apply_repeat_hub_gate(
@@ -717,7 +828,7 @@ def main():
     print(f"    edges after gate: {len(kept_edges)} / {len(edge_loci)}", flush=True)
 
     print("[*] building locus graph ...", flush=True)
-    if args.mode == "exact":
+    if args.mode in ("exact", "mmseqs-pairs"):
         locus_adj = locus_graph_from_vg(node_loci, edge_loci, kept_edges, bad_nodes)
     elif args.mode == "o1vg":
         print("[*] loading O1 homology edges ...", flush=True)
