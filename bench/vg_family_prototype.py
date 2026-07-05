@@ -57,6 +57,33 @@ def canonical(seq):
     return rc, True
 
 
+def recip_overlap_interval(a, b):
+    ca, sa, ea = a; cb, sb, eb = b
+    if ca != cb:
+        return 0.0
+    ov = min(ea, eb) - max(sa, sb)
+    if ov <= 0:
+        return 0.0
+    la = ea - sa; lb = eb - sb
+    if la <= 0 or lb <= 0:
+        return 0.0
+    return min(ov / la, ov / lb)
+
+
+def is_antisense_reciprocal(lid1, lid2, meta, thresh=0.5):
+    """True iff two loci are on the same contig, opposite strands, and reciprocally overlap >= thresh."""
+    m1 = meta.get(lid1); m2 = meta.get(lid2)
+    if not m1 or not m2:
+        return False
+    if m1["chrom"] != m2["chrom"]:
+        return False
+    if m1["strand"] == m2["strand"]:
+        return False
+    return recip_overlap_interval(
+        (m1["chrom"], m1["start"], m1["end"]),
+        (m2["chrom"], m2["start"], m2["end"])) >= thresh
+
+
 def load_meta():
     """DN id -> {chrom,start,end,strand,n_exon,n_reads}."""
     d = {}
@@ -597,37 +624,46 @@ def apply_repeat_hub_gate(node_loci, edge_loci, locus_path_nodes, threshold):
     return kept_edges, bad_nodes
 
 
-def locus_graph_from_edges(locus_path_nodes, kept_edges):
-    """Build locus-locus graph: edge if two loci share a surviving edge in the VG."""
+def locus_graph_from_edges(locus_path_nodes, kept_edges, min_shared=1, meta=None, antisense_gate=False):
+    """Build locus-locus graph: edge if two loci share >=min_shared surviving edges in the VG."""
     edge_to_loci = defaultdict(set)
     for lid, nodes in locus_path_nodes.items():
         for i in range(len(nodes) - 1):
             e = (nodes[i], nodes[i + 1])
             if e in kept_edges:
                 edge_to_loci[e].add(lid)
-    locus_adj = defaultdict(set)
+    pair_counts = defaultdict(int)
     for loci in edge_to_loci.values():
-        for a in loci:
-            for b in loci:
-                if a != b:
-                    locus_adj[a].add(b)
+        loci = sorted(loci)
+        for i in range(len(loci)):
+            for j in range(i + 1, len(loci)):
+                a, b = loci[i], loci[j]
+                if antisense_gate and is_antisense_reciprocal(a, b, meta):
+                    continue
+                pair_counts[tuple(sorted((a, b)))] += 1
+    locus_adj = defaultdict(set)
+    for (a, b), c in pair_counts.items():
+        if c >= min_shared:
+            locus_adj[a].add(b)
+            locus_adj[b].add(a)
     return locus_adj
 
 
-def locus_graph_from_vg(node_loci, edge_loci, kept_edges, bad_nodes):
-    """Graph-to-graph linkage: connect two loci if they share a non-repeat VG node (exon)
-    OR a surviving splice edge.  This is the direct graph-of-graphs family edge."""
-    locus_adj = defaultdict(set)
+def locus_graph_from_vg(node_loci, edge_loci, kept_edges, bad_nodes, min_shared=1, meta=None, antisense_gate=False):
+    """Graph-to-graph linkage: connect two loci if they share >=min_shared non-repeat VG nodes (exons)
+    and/or surviving splice edges.  This is the direct graph-of-graphs family edge."""
+    pair_counts = defaultdict(int)
     # shared exon nodes
     for node, loci in node_loci.items():
         if node in bad_nodes:
             continue
-        loci = list(loci)
+        loci = sorted(loci)
         for i in range(len(loci)):
             for j in range(i + 1, len(loci)):
                 a, b = loci[i], loci[j]
-                locus_adj[a].add(b)
-                locus_adj[b].add(a)
+                if antisense_gate and is_antisense_reciprocal(a, b, meta):
+                    continue
+                pair_counts[tuple(sorted((a, b)))] += 1
     # shared surviving splice edges
     edge_to_loci = defaultdict(set)
     for e, loci in edge_loci.items():
@@ -635,12 +671,18 @@ def locus_graph_from_vg(node_loci, edge_loci, kept_edges, bad_nodes):
             for lid in loci:
                 edge_to_loci[e].add(lid)
     for loci in edge_to_loci.values():
-        loci = list(loci)
+        loci = sorted(loci)
         for i in range(len(loci)):
             for j in range(i + 1, len(loci)):
                 a, b = loci[i], loci[j]
-                locus_adj[a].add(b)
-                locus_adj[b].add(a)
+                if antisense_gate and is_antisense_reciprocal(a, b, meta):
+                    continue
+                pair_counts[tuple(sorted((a, b)))] += 1
+    locus_adj = defaultdict(set)
+    for (a, b), c in pair_counts.items():
+        if c >= min_shared:
+            locus_adj[a].add(b)
+            locus_adj[b].add(a)
     return locus_adj
 
 
@@ -655,7 +697,7 @@ def load_o1_edges(threshold=0.13):
     return edges
 
 
-def locus_graph_o1vg(edge_pairs, locus_path_nodes, node_loci, bad_nodes, kept_edges):
+def locus_graph_o1vg(edge_pairs, locus_path_nodes, node_loci, bad_nodes, kept_edges, meta=None, antisense_gate=False):
     """O1+VG integration: keep an O1 homology edge only if the two loci share a
     non-repeat VG exon node OR a surviving splice edge.  This replaces the
     minimizer-based repeat gate with a VG-topology support check."""
@@ -664,6 +706,8 @@ def locus_graph_o1vg(edge_pairs, locus_path_nodes, node_loci, bad_nodes, kept_ed
     locus_adj = defaultdict(set)
     for a, b in edge_pairs:
         if a not in locus_path_nodes or b not in locus_path_nodes:
+            continue
+        if antisense_gate and is_antisense_reciprocal(a, b, meta):
             continue
         path_a = locus_path_nodes[a]
         path_b = locus_path_nodes[b]
@@ -839,6 +883,10 @@ def main():
                         help="node multiplicity threshold for repeat-hub gate (default 30)")
     parser.add_argument("--gamma", type=float, default=0.20,
                         help="gamma-quasi-clique cohesion threshold (default 0.20)")
+    parser.add_argument("--min-shared-pairs", type=int, default=1,
+                        help="require >= this many shared VG pair-nodes (or exon nodes+edges) to link two loci (default 1)")
+    parser.add_argument("--antisense-gate", action="store_true",
+                        help="drop graph edges between same-contig opposite-strand loci with reciprocal overlap >= 0.5")
     parser.add_argument("--fp-gate-members", type=int, default=None,
                         help="FP gate: drop families with >= this many members")
     parser.add_argument("--fp-gate-mean-pair-mult", type=float, default=None,
@@ -917,8 +965,8 @@ def main():
         print(f"    intron edges: {len(edge_loci)}", flush=True)
     else:
         # o1vg uses near-exact exon clustering to decide VG support for O1 edges
-        print("[*] clustering exons with cd-hit-est for O1+VG support (identity={}) ...".format(args.identity), flush=True)
-        oid_to_rep, rep_to_cluster = cluster_exons_cdhit(exons, identity=args.identity, threads=args.threads)
+        print("[*] clustering exons with mmseqs2 for O1+VG support (identity={}) ...".format(args.identity), flush=True)
+        oid_to_rep, rep_to_cluster = cluster_exons_mmseqs(exons, identity=args.identity, threads=args.threads)
         n_nodes = len(set(rep_to_cluster.values()))
         print(f"    exon clusters (nodes): {n_nodes}", flush=True)
         print("[*] building VG ...", flush=True)
@@ -940,16 +988,22 @@ def main():
     else:
         node_repeat_frac = None
 
-    print("[*] building locus graph ...", flush=True)
+    print("[*] building locus graph (min_shared_pairs={}) ...".format(args.min_shared_pairs), flush=True)
     if args.mode in ("exact", "mmseqs-pairs"):
-        locus_adj = locus_graph_from_vg(node_loci, edge_loci, kept_edges, bad_nodes)
+        locus_adj = locus_graph_from_vg(
+            node_loci, edge_loci, kept_edges, bad_nodes, min_shared=args.min_shared_pairs,
+            meta=meta, antisense_gate=args.antisense_gate)
     elif args.mode == "o1vg":
         print("[*] loading O1 homology edges ...", flush=True)
         o1_edges = load_o1_edges(args.o1_edge_thresh)
         print(f"    O1 edges (core_recip >= {args.o1_edge_thresh}): {len(o1_edges)}", flush=True)
-        locus_adj = locus_graph_o1vg(o1_edges, locus_path_nodes, node_loci, bad_nodes, kept_edges)
+        locus_adj = locus_graph_o1vg(
+            o1_edges, locus_path_nodes, node_loci, bad_nodes, kept_edges,
+            meta=meta, antisense_gate=args.antisense_gate)
     else:
-        locus_adj = locus_graph_from_edges(locus_path_nodes, kept_edges)
+        locus_adj = locus_graph_from_edges(
+            locus_path_nodes, kept_edges, min_shared=args.min_shared_pairs,
+            meta=meta, antisense_gate=args.antisense_gate)
     loci_list = sorted(locus_paths.keys())
     raw_comps = extract_components(locus_adj, loci_list)
     print(f"    raw components (>=2 loci): {len(raw_comps)}", flush=True)

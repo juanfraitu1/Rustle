@@ -6,9 +6,14 @@
     "max_shared_node_frac": 0.9779,
     "mean_chrom": 1.05,
     "mean_distinct_loci": 0.25,
+    "mean_exon_jaccard": 0.3205,
+    "mean_family_shared_node_frac": 0.8701,
     "mean_genes": 0.23,
+    "mean_intron_jaccard": 0.2497,
+    "mean_max_unshared_run": 1.3782,
     "mean_n_exons": 9.42,
     "mean_node_repeat_frac": 0.0655,
+    "mean_pair_jaccard": 0.4224,
     "mean_pair_mult": 6.74,
     "mean_recip_overlap": 0.4982,
     "mean_repeat_frac": 0.3081,
@@ -27,9 +32,14 @@
     "max_shared_node_frac": 1.0,
     "mean_chrom": 1,
     "mean_distinct_loci": 4.33,
+    "mean_exon_jaccard": 0.4114,
+    "mean_family_shared_node_frac": 0.9502,
     "mean_genes": 4,
+    "mean_intron_jaccard": 0.3628,
+    "mean_max_unshared_run": 0.9416,
     "mean_n_exons": 17.4,
     "mean_node_repeat_frac": 0.0546,
+    "mean_pair_jaccard": 0.4362,
     "mean_pair_mult": 20.14,
     "mean_recip_overlap": 0.4967,
     "mean_repeat_frac": 0.2903,
@@ -48,9 +58,14 @@
     "max_shared_node_frac": 1.0,
     "mean_chrom": 1.31,
     "mean_distinct_loci": 3.62,
+    "mean_exon_jaccard": 0.3559,
+    "mean_family_shared_node_frac": 0.9555,
     "mean_genes": 3.54,
+    "mean_intron_jaccard": 0.3128,
+    "mean_max_unshared_run": 0.9447,
     "mean_n_exons": 15.93,
     "mean_node_repeat_frac": 0.0598,
+    "mean_pair_jaccard": 0.4003,
     "mean_pair_mult": 22.53,
     "mean_recip_overlap": 0.4659,
     "mean_repeat_frac": 0.3229,
@@ -69,9 +84,14 @@
     "max_shared_node_frac": 0.9777,
     "mean_chrom": 1.04,
     "mean_distinct_loci": 0.21,
+    "mean_exon_jaccard": 0.3201,
+    "mean_family_shared_node_frac": 0.8691,
     "mean_genes": 0.19,
+    "mean_intron_jaccard": 0.249,
+    "mean_max_unshared_run": 1.3834,
     "mean_n_exons": 9.35,
     "mean_node_repeat_frac": 0.0656,
+    "mean_pair_jaccard": 0.4228,
     "mean_pair_mult": 6.54,
     "mean_recip_overlap": 0.4986,
     "mean_repeat_frac": 0.3078,
@@ -95,6 +115,48 @@
       "flagged": 4220,
       "removed_dna_fp": 6,
       "removed_ep_impure": 61
+    },
+    "mean_exon_jaccard<=0.5": {
+      "collateral_real": 4050,
+      "flagged": 4105,
+      "removed_dna_fp": 5,
+      "removed_ep_impure": 50
+    },
+    "mean_exon_jaccard<=0.6 AND mean_max_unshared_run>=3": {
+      "collateral_real": 249,
+      "flagged": 249,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "mean_family_shared_node_frac<=0.5": {
+      "collateral_real": 110,
+      "flagged": 110,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "mean_intron_jaccard<=0.3": {
+      "collateral_real": 2897,
+      "flagged": 2929,
+      "removed_dna_fp": 3,
+      "removed_ep_impure": 29
+    },
+    "mean_max_unshared_run>=5": {
+      "collateral_real": 93,
+      "flagged": 93,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "mean_pair_jaccard<=0.5": {
+      "collateral_real": 3379,
+      "flagged": 3428,
+      "removed_dna_fp": 4,
+      "removed_ep_impure": 45
+    },
+    "mean_pair_jaccard<=0.7 AND mean_max_unshared_run>=3": {
+      "collateral_real": 250,
+      "flagged": 250,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
     },
     "mean_pair_mult>=80": {
       "collateral_real": 0,

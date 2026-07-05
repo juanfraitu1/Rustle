@@ -131,6 +131,25 @@ def characterize():
                         fracs.append(exon_repeat_frac.get(oid, 0.0))
         node_repeat_frac[node] = round(statistics.mean(fracs), 4) if fracs else 0.0
 
+    # RNA-only exact-exon-node architecture (no clustering, no protein truth)
+    print("[*] building exact exon-node architecture map ...", flush=True)
+    canon_to_exon_node = {}
+    oid_to_exon_node = {}
+    for ex in exons:
+        c = ex["canon"]
+        if c not in canon_to_exon_node:
+            canon_to_exon_node[c] = ex["oid"]
+        oid_to_exon_node[ex["oid"]] = canon_to_exon_node[c]
+
+    locus_exon_nodes = {}
+    locus_exon_path = {}
+    locus_intron_adj = {}
+    for lid, oids in locus_paths.items():
+        nodes = [oid_to_exon_node[oid] for oid in oids]
+        locus_exon_nodes[lid] = set(nodes)
+        locus_exon_path[lid] = tuple(nodes)
+        locus_intron_adj[lid] = set(zip(nodes[:-1], nodes[1:]))
+
     print("[*] computing per-family features ...", flush=True)
     features = []
     for fid, members in fam_members.items():
@@ -202,6 +221,64 @@ def characterize():
         min_shared_node_frac = round(min(shared_node_fracs), 4) if shared_node_fracs else 0.0
         max_shared_node_frac = round(max(shared_node_fracs), 4) if shared_node_fracs else 0.0
 
+        # within-family pair-node coverage and Jaccard (does the family co-thread, or just share one hub?)
+        fam_pair_lids = [m for m in members if m in locus_path_nodes]
+        family_pair_counts = Counter()
+        for lid in fam_pair_lids:
+            family_pair_counts.update(locus_path_nodes[lid])
+        family_shared_node_fracs = []
+        pair_jaccs = []
+        if fam_pair_lids:
+            for lid in fam_pair_lids:
+                nodes = locus_path_nodes[lid]
+                if nodes:
+                    shared = sum(1 for node in nodes if family_pair_counts[node] >= 2)
+                    family_shared_node_fracs.append(shared / len(nodes))
+            for i, a in enumerate(fam_pair_lids):
+                sa = set(locus_path_nodes[a])
+                for b in fam_pair_lids[i + 1:]:
+                    sb = set(locus_path_nodes[b])
+                    inter = len(sa & sb)
+                    uni = len(sa | sb)
+                    pair_jaccs.append(inter / uni if uni else 0.0)
+        mean_family_shared_node_frac = round(statistics.mean(family_shared_node_fracs), 4) if family_shared_node_fracs else 0.0
+        mean_pair_jaccard = round(statistics.mean(pair_jaccs), 4) if pair_jaccs else 0.0
+
+        # RNA-only exon architecture signals for domain-share prevention
+        fam_lids = [m for m in members if m in locus_exon_nodes]
+        exon_jaccs = []
+        intron_jaccs = []
+        max_unshared_runs = []
+        if len(fam_lids) >= 2:
+            family_exon_counts = Counter()
+            for lid in fam_lids:
+                family_exon_counts.update(locus_exon_nodes[lid])
+            for i, a in enumerate(fam_lids):
+                sa = locus_exon_nodes[a]
+                ia = locus_intron_adj[a]
+                path_a = locus_exon_path[a]
+                cur_run = 0
+                max_run = 0
+                for n in path_a:
+                    if family_exon_counts[n] == 1:
+                        cur_run += 1
+                        max_run = max(max_run, cur_run)
+                    else:
+                        cur_run = 0
+                max_unshared_runs.append(max_run)
+                for b in fam_lids[i + 1:]:
+                    sb = locus_exon_nodes[b]
+                    ib = locus_intron_adj[b]
+                    inter = len(sa & sb)
+                    uni = len(sa | sb)
+                    exon_jaccs.append(inter / uni if uni else 0.0)
+                    inter_i = len(ia & ib)
+                    uni_i = len(ia | ib)
+                    intron_jaccs.append(inter_i / uni_i if uni_i else 0.0)
+        mean_exon_jaccard = round(statistics.mean(exon_jaccs), 4) if exon_jaccs else 0.0
+        mean_intron_jaccard = round(statistics.mean(intron_jaccs), 4) if intron_jaccs else 0.0
+        mean_max_unshared_run = round(statistics.mean(max_unshared_runs), 4) if max_unshared_runs else 0.0
+
         # repeat fraction (soft-masked) averaged over member spans
         rfracs = [repeat_frac(fa, meta[m]["chrom"], meta[m]["start"], meta[m]["end"]) for m in members if m in meta]
         mean_rfrac = round(statistics.mean(rfracs), 4) if rfracs else 0.0
@@ -235,6 +312,11 @@ def characterize():
             mean_shared_node_frac=mean_shared_node_frac,
             min_shared_node_frac=min_shared_node_frac,
             max_shared_node_frac=max_shared_node_frac,
+            mean_family_shared_node_frac=mean_family_shared_node_frac,
+            mean_pair_jaccard=mean_pair_jaccard,
+            mean_exon_jaccard=mean_exon_jaccard,
+            mean_intron_jaccard=mean_intron_jaccard,
+            mean_max_unshared_run=mean_max_unshared_run,
             n_protein_families=len(prot_fams),
             ep_impure=ep_impure,
             fp_multifam=fp_multi,
@@ -274,6 +356,11 @@ def characterize():
             "mean_shared_node_frac": round(statistics.mean(r["mean_shared_node_frac"] for r in group), 4),
             "min_shared_node_frac": round(statistics.mean(r["min_shared_node_frac"] for r in group), 4),
             "max_shared_node_frac": round(statistics.mean(r["max_shared_node_frac"] for r in group), 4),
+            "mean_family_shared_node_frac": round(statistics.mean(r["mean_family_shared_node_frac"] for r in group), 4),
+            "mean_pair_jaccard": round(statistics.mean(r["mean_pair_jaccard"] for r in group), 4),
+            "mean_exon_jaccard": round(statistics.mean(r["mean_exon_jaccard"] for r in group), 4),
+            "mean_intron_jaccard": round(statistics.mean(r["mean_intron_jaccard"] for r in group), 4),
+            "mean_max_unshared_run": round(statistics.mean(r["mean_max_unshared_run"] for r in group), 4),
             "mean_n_exons": round(statistics.mean(r["mean_n_exons"] for r in group), 2),
             "n_protein_families": round(statistics.mean(r["n_protein_families"] for r in group), 2),
         }
@@ -310,6 +397,16 @@ def characterize():
         "mean_recip_overlap>=0.3": apply_rule(lambda r: r["mean_recip_overlap"] >= 0.3),
         "strand_majority<1.0 AND n_chrom==1": apply_rule(
             lambda r: r["strand_majority"] < 1.0 and r["n_chrom"] == 1),
+        "mean_exon_jaccard<=0.5": apply_rule(lambda r: r["mean_exon_jaccard"] <= 0.5),
+        "mean_intron_jaccard<=0.3": apply_rule(lambda r: r["mean_intron_jaccard"] <= 0.3),
+        "mean_max_unshared_run>=5": apply_rule(lambda r: r["mean_max_unshared_run"] >= 5),
+        "mean_exon_jaccard<=0.6 AND mean_max_unshared_run>=3": apply_rule(
+            lambda r: r["mean_exon_jaccard"] <= 0.6 and r["mean_max_unshared_run"] >= 3),
+        "mean_family_shared_node_frac<=0.5": apply_rule(
+            lambda r: r["mean_family_shared_node_frac"] <= 0.5),
+        "mean_pair_jaccard<=0.5": apply_rule(lambda r: r["mean_pair_jaccard"] <= 0.5),
+        "mean_pair_jaccard<=0.7 AND mean_max_unshared_run>=3": apply_rule(
+            lambda r: r["mean_pair_jaccard"] <= 0.7 and r["mean_max_unshared_run"] >= 3),
     }
     summary["rule_sweeps"] = rules
 

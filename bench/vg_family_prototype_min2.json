@@ -1,0 +1,23 @@
+{
+  "n_edges": 0,
+  "n_edges_after_gate": 0,
+  "n_exon_occurrences": 1260927,
+  "n_hub_nodes": 2342,
+  "n_loci": 110237,
+  "n_nodes": 188371,
+  "n_raw_components": 9543,
+  "n_refined_families": 3283,
+  "n_refined_families_before_gate": 3283,
+  "params": {
+    "fp_gate_dropped": 0,
+    "fp_gate_mean_pair_mult": null,
+    "fp_gate_members": null,
+    "fp_gate_pair_hub_frac": null,
+    "fp_gate_repeat_hub_frac": null,
+    "gamma": 0.2,
+    "identity": 0.9,
+    "mode": "mmseqs-pairs",
+    "o1_edge_thresh": 0.13,
+    "repeat_thresh": 30
+  }
+}

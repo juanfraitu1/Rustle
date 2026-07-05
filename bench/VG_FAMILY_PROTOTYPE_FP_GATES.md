@@ -121,6 +121,16 @@ PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype.p
     --mode mmseqs-pairs --identity 0.90 \
     --fp-gate-members 60 --fp-gate-mean-pair-mult 25 \
     --output bench/vg_family_prototype_gate.tsv
+
+# require >=2 shared colinear exon-pair nodes to link two loci
+PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype.py \
+    --mode mmseqs-pairs --identity 0.90 --min-shared-pairs 2 \
+    --output bench/vg_family_prototype_min2.tsv
+
+# add the edge-level antisense / reciprocal-overlap gate
+PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/vg_family_prototype.py \
+    --mode mmseqs-pairs --identity 0.90 --antisense-gate \
+    --output bench/vg_family_prototype_antisense.tsv
 ```
 
 When multiple thresholds are supplied, a family is dropped if **any** supplied
@@ -144,6 +154,13 @@ condition is exceeded.
   protein family (P_Ep 1.0, R_oracle 0.8246)
 - `bench/vg_family_prototype_protcov.tsv` / `_eval.*` / `.json` — family split by
   whole-protein reciprocal coverage (P_Ep 1.0, R_oracle 0.7018)
+- `bench/vg_family_prototype_fp_features.tsv` — per-family feature table, now with
+  RNA-only exon-architecture columns (exact-exon Jaccard, intron Jaccard, unshared run,
+  within-family pair-node Jaccard)
+- `bench/vg_family_prototype_id95_*` — stricter `--identity 0.95` catalog / eval
+- `bench/vg_family_prototype_exact_*` — exact graph-to-graph catalog / eval
+- `bench/vg_family_prototype_min2_*` — `--min-shared-pairs 2` catalog / eval
+- `bench/vg_family_prototype_antisense_*` — `--antisense-gate` catalog / eval
 
 ## Domain-share prevention — what works and what does not
 
@@ -159,6 +176,7 @@ merged in the VG through that domain's exons.
 | **Antisense / reciprocal-overlap** (family-level) | same-contig opposite-strand pairs with recip overlap ≥ 0.5 | **Weak + high collateral** — 14 EP-impure flagged but 403 real families collateral. Must be applied at the edge level to be clean. |
 | **Protein-family splitting** | split every family with ≥2 annotated protein families into protein-pure sub-families | **P_Ep = 1.0, R_oracle drops 0.9123 → 0.8246** — removes all impurity but over-splits real duplications the protein truth fragments. |
 | **Whole-protein reciprocal-coverage bar** (O1 safeguard) | dissolve families where no cross-gene pair passes `min-cov ≥ 0.50, max-cov ≥ 0.70, fident ≥ 0.30` | **P_Ep = 1.0, R_oracle drops 0.9123 → 0.7018** — all 61 EP-impure families dissolve because their genes come from different protein families by definition. |
+| **RNA-only exon architecture** (new) | exact-exon Jaccard, intron-adjacency Jaccard, max unshared exon run, within-family pair-node Jaccard | **Inverted / no signal** — EP-impure families have *higher* exact-exon Jaccard (0.356 vs 0.320), higher intron Jaccard (0.313 vs 0.249), *lower* max unshared run (0.94 vs 1.38), and nearly identical pair-node Jaccard (0.400 vs 0.423). The shared conserved domain is more exact-similar than the divergent exons of real paralogs, so these features flag real families, not domain-sharers. |
 
 ### Interpretation
 
@@ -176,17 +194,55 @@ The practical takeaway is that the current size + repeat-hub gate is the best
 RNA-only post-refinement available; the residual domain-sharers are a principled,
 characterized boundary rather than a tunable artifact.
 
+### New linkage knobs tested
+
+| knob | setting | families | P_Ep | R_oracle | comment |
+|---|---|---:|---:|---:|---|
+| baseline | `--identity 0.90` | 4633 / 471 multi-copy | 0.8705 | 51/57 = 0.8947 | default pair-node VG |
+| stricter identity | `--identity 0.95` | 4589 / 417 multi-copy | 0.8681 | 52/57 = 0.9123 | tiny shift; not a domain-share fix |
+| exact graph-to-graph | `--mode exact` | 4279 / 214 multi-copy | **0.8879** | 49/57 = 0.8596 | higher purity but cDNA pair-recall crashes (0.56) |
+| min-shared-pairs 2 | `--min-shared-pairs 2` | 3283 / 186 multi-copy | 0.8710 | **40/57 = 0.7018** | removes domain-sharers but catastrophically under-merges real paralogs |
+| antisense gate | `--antisense-gate` | 4633 / 471 multi-copy | 0.8705 | 52/57 = 0.9123 | neutral on headline P/R; reshuffles the FP roster |
+| O1+VG integration | `--mode o1vg --identity 0.90 --antisense-gate` | 611 / 611 multi-copy | **0.8871** | 51/57 = 0.8947 | higher purity **without recall loss**; fewer but cleaner families |
+
+- **`--min-shared-pairs 2`**: requiring ≥2 shared colinear exon-pair nodes is too
+  stringent for divergent real paralogs (recall drops 0.89 → 0.70).  Domain-sharers
+  often share a multi-exon domain block, so this is not the hoped-for separator.
+- **`--antisense-gate`**: edge-level reciprocal-overlap / opposite-strand pruning
+  (same geometric rule as the shipped O1 4th gate), wired directly into the VG-native
+  locus graph.  Neutral on headline P_Ep / R_oracle in the prototype; it reshuffles
+  the FP roster without improving the domain-share residual.
+- **`--mode o1vg`**: O1 transcript-homology edges are kept only when supported by a
+  shared non-repeat VG exon node or splice edge.  This is the most promising
+  integration: P_Ep rises from 0.8705 to **0.8871** while R_oracle stays at 51/57,
+  and cDNA pair-recall improves slightly (0.817 → 0.822).  The trade-off is fewer
+  total families (611 vs 4633 raw) because the O1 edge set is sparse, but the
+  resulting families are cleaner.
+
+### Additional repeat/TE sweeps
+
+A simple per-node repeat-fraction threshold (`max_node_repeat_frac >= 0.5`)
+flagged 21 EP-impure families but also 537 real families.  Combining with size
+(`max_node_repeat_frac >= 0.5 AND n_members >= 50`) still incurred 10 real
+families of collateral for 6 EP-impure removed — worse than the existing
+`repeat_hub_frac >= 0.05` gate, which catches the same repeat-bridge class with
+zero collateral.  The repeat/TE signal is therefore best captured by the
+multiplicity + repeat-richness conjunction already in place.
+
 ## Conclusion
 
 Empirical FP gates give a small but clean improvement in protein purity.  The best
-combination is a disjunction of large family size (`n_members >= 80`) and
-repeat-rich hub nodes (`repeat_hub_frac >= 0.05`).  The repeat-hub condition is the
-key new differentiator: it identifies a family whose members are glued together by a
-repeat-rich exon-pair node, even when the family is not large enough to trigger the
-size gate.
+standalone gate remains the disjunction of large family size (`n_members >= 80`) and
+repeat-rich hub nodes (`repeat_hub_frac >= 0.05`).
 
-However, the residual DNA-confirmed false positives in the VG-native catalog are
-still not dominated by large repeat-like families; they are small, low-multiplicity
-merges that remain indistinguishable from real paralogs at the RNA level.  Removing
-them will require either DNA copy-number information or a fundamentally different
-definition signal (e.g. full-copy architecture rather than exon-pair sharing).
+The most important new finding is that **O1+VG integration (`--mode o1vg`) improves
+P_Ep from 0.8705 to 0.8871 with no loss in diploid-oracle recall (51/57 = 0.8947)**.
+It keeps an O1 transcript-homology edge only when the two loci share a non-repeat VG
+exon node or splice edge, making the definition both more mechanistic and more
+self-contained.
+
+Domain-sharers remain the hard residual: every RNA-only architecture axis tested
+(exact-exon Jaccard, intron conservation, unshared flanking runs, pair-node Jaccard,
+min-shared-pairs, antisense gate) either has no signal or costs too much recall.  The
+remaining small, low-multiplicity DNA-confirmed FPs are still only separable with DNA
+copy-number information or a fundamentally different definition signal.
