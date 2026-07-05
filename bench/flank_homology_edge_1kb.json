@@ -1,0 +1,68 @@
+{
+  "baseline_core_aln_oof_auc": 0.903848,
+  "n_edges": 5571,
+  "n_neg": 5155,
+  "n_pos": 416,
+  "oof_combinations": {
+    "max_flank_aln_frac": {
+      "auc": 0.919885,
+      "lift": 0.016037
+    },
+    "mean_flank_aln_frac": {
+      "auc": 0.920065,
+      "lift": 0.016217
+    },
+    "min_flank_aln_frac": {
+      "auc": 0.920117,
+      "lift": 0.016269
+    }
+  },
+  "params": {
+    "flank_bp": 1000,
+    "minimap_preset": "asm20"
+  },
+  "residual_crack": {
+    "max_flank_aln_frac": {
+      "auc": 0.803476,
+      "n_neg": 22,
+      "n_pos": 17
+    },
+    "mean_flank_aln_frac": {
+      "auc": 0.695187,
+      "n_neg": 22,
+      "n_pos": 17
+    }
+  },
+  "univariate": {
+    "best_flank_id": {
+      "auc": 0.655879,
+      "n_neg": 555,
+      "n_pos": 309
+    },
+    "down_aln_frac": {
+      "auc": 0.591914,
+      "n_neg": 283,
+      "n_pos": 214
+    },
+    "max_flank_aln_frac": {
+      "auc": 0.632727,
+      "n_neg": 555,
+      "n_pos": 309
+    },
+    "mean_flank_aln_frac": {
+      "auc": 0.577845,
+      "n_neg": 555,
+      "n_pos": 309
+    },
+    "min_flank_aln_frac": {
+      "auc": 0.548847,
+      "n_neg": 555,
+      "n_pos": 309
+    },
+    "up_aln_frac": {
+      "auc": 0.55962,
+      "n_neg": 377,
+      "n_pos": 236
+    }
+  }
+}
