@@ -43,11 +43,22 @@ Four objectives:
 - **O3 — allele-specific junctions (ASJ).**
 - **O4 — reference-absent copies** (copies missing from the primary assembly).
 
-⚠ **We are moving AWAY from the StringTie-like engine, but NOT removing it yet.** The Rust transcript-
-assembly engine (`src/rustle/`, ~65 `.rs` files) is legacy/parity-era. Leave it in place — do not delete
-or gut it — but new thesis work happens in the family/copy-assignment layer, mostly under `bench/`
-(Python) and `src/rustle/vg_family/` (Rust). If a task seems to call for extending the assembler, check
-with the human first; it's probably the wrong layer.
+⚠ **The StringTie-like assembler + network-flow + HMM machinery is DEAD CODE — already marked, do NOT hunt
+for it or extend it.** As of 2026-07 the whole legacy transcript-assembly engine (`src/rustle/*.rs` at the
+top level: `pipeline.rs` 952 KB, `max_flow.rs`/`global_flow.rs` = the network flow, `transcript_filter.rs`,
+`path_extract.rs`, the `*_st.rs` StringTie modules, `bundle*`, `transfrag*`, the `rustle` binary
+`src/rustle/main.rs`, `treepat.rs`/any HMM-ish path scoring, `tracing/`, `parity/`, `graph.rs`,
+`junction*`, etc.) carries a `//! DEAD CODE — StringTie-era …` banner at the top of each file, and
+`src/rustle/lib.rs` tags every `pub mod` line `[KEEP]` / `[DEAD]` / `[SHARED-tendril]`. **Do not read it to
+"understand the pipeline", do not fix its warnings, do not extend it — it is slated for removal.** The full
+map + removal order is in **`docs/RETIREMENT_AND_MIGRATION.md`** (+ `bench/RETIREMENT_MAP.tsv`, 89 modules
+classified). The only reason it still compiles is that the LIVE code borrows a few symbols from 4
+"SHARED-tendril" files (`vg.rs`/`graph.rs`/`path_extract.rs`/`bundle.rs`) — those get extracted before the
+assembler is deleted; don't build new work on them.
+
+✅ **The LIVE thesis code is `src/rustle/vg_family/` (Rust) + `bench/` (Python analyses).** The whole O1
+family-definition pipeline is now **migrated to Rust** (see §3). If a task points you at the assembler,
+it's the wrong layer — the answer is in `vg_family/` or `bench/`.
 
 ---
 
@@ -79,29 +90,60 @@ Small analysis outputs (TSV/JSON/PNG/MD, a few MB) go in `bench/` in the repo.
 
 ## 3. The shipped state (what "the definition" is right now)
 
-**Family definition = `bench/family_rna_refine.py`.** It builds the multi-copy family catalog from the
-RNA read-conflict/homology graph with **three composable, default-on VG-native over-merge gates**, each
-with a `--no-*` opt-out, each byte-identical when disabled:
+**Family definition (spec) = `bench/family_rna_refine.py`.** It builds the multi-copy family catalog from
+the RNA homology graph (edge oracle `core_recip≥0.19 AND aln_frac≥0.24`) → γ-quasi-clique refine (γ=0.20)
+→ **FOUR composable, default-on over-merge gates** (each `--no-*` opt-out, byte-identical when disabled)
+→ allele-demote:
 
 1. **repeat-hub gate** (`--no-repeat-gate`): cuts single extreme-multiplicity repeat/Alu-bridge edges.
 2. **recombinant-split gate** (`--no-split-recombinants`): splits mosaic/exon-shuffled bridge families.
 3. **multi-repeat-bridge gate** (`--no-repeat-bridge-gate`): family-level "repeat-bridged AND no full
-   shared exon" conjunction (the dominant FP class).
+   shared exon" conjunction.
+4. **antisense/reciprocal-overlap gate** (`--no-antisense-gate`): NEW (2026-07). A *genome-architecture*
+   axis (coords+strand) — cuts edges between same-contig, opposite-strand, ≥50%-reciprocally-overlapping
+   genes (can't be two copies of one gene), mega-span-guarded. Strand from `bench/gene_meta_strand.tsv`.
 
 Regenerate + verify:
 ```bash
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py
-# default catalog md5 must be dca64cbd... (573 families). Golden is in test_family_rna_refine.py.
+# default catalog md5 = 548029ad... (566 families). Golden is in test_family_rna_refine.py.
+# --no-antisense-gate reproduces the PRIOR default dca64cbd... (573 fam) byte-identical.
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/test_family_rna_refine.py   # full self-check
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/family_level_pr_current.py  # P/R metrics
 ```
-Current metrics vs the diploid-CN gold oracle: **R_oracle 50/57 = 0.877, P_oracle(dedup) 0.917,
-E_p protein-purity 0.892, distinct-FP 4.**
+Current metrics vs the diploid-CN gold oracle: **R_oracle 51/57 = 0.895, P_oracle(dedup) 0.917,
+E_p protein-purity 0.894, distinct-FP 4.** (Recall 51 not 50 = a genomic-linkage relabel-credit fix for a
+captured-but-mislabelled gene; measurement-only, precision byte-identical.)
 
-**Copy assignment (O2):** the IsoCon-style significance gate (`min_p` certificate; per-read Poisson-
-binomial p-value; abstains on unresolvable reads) + the **recombinant-read abstain gate**
-(`bench/recombinant_abstain.py`, default-on) that refuses reads carrying two copies' SUNs. Shipped
-Rust path: `src/rustle/vg_family/copy_assign.rs`. VG visualization: `bench/o2_vg_visualization.py`.
+⭐ **The O1 pipeline is now MIGRATED to Rust** (byte-parity per module, `PYTHONHASHSEED=0` golden fixtures):
+`src/rustle/vg_family/{family_definition,family_loaders,edge_oracle,minimizers,repeat_catalog,
+bridge_detector,recombinant_split,multi_repeat_bridge}.rs` + the **`family_define` binary**
+(`src/bin/family_define.rs`) which reproduces `dca64cbd` **570/573 families byte-identical** (the 3 differ
+only in the one NP-hard γ-quasi-clique-splitter blob — a documented, accepted non-parity: networkx-Louvain
+witness vs the deterministic Rust splitter). networkx is fully retired from the O1 core. See
+`docs/RETIREMENT_AND_MIGRATION.md`. The Python `family_rna_refine.py` remains the canonical spec + is where
+the antisense gate currently lives (not yet ported).
+
+**FP boundary is PROVEN, not asserted** (`bench/FP_EXCLUSION_DISCRIMINATORS.md`): the residual domain-share
+over-merges (~21 blocks, ~3–4%) are separable ONLY by DNA copy-number — nucleotide / protein-E_p / TE /
+VG-topology / (architecture, the antisense corner) all tested adversarially; the dispersed bulk is
+DNA-CN-bound because an FP domain-share ≡ a real conserved-domain paralog at the RNA level. Do NOT re-run
+those exclusion axes on domain-shares — it's settled.
+
+**Copy assignment (O2) — also migrated to Rust.** The `min_p` significance gate (`copy_assign.rs`) + the
+recombinant-read **abstain gate** (`recombinant_abstain.rs`, refuses reads carrying two copies' SUNs) + the
+full **VG-materialization** (`o2_materialize.rs`: copy-extraction, minimap2/samtools orchestration,
+`o2_columns.rs` = a pysam-pileup byte-parity port, `o2_margin_gate.rs` = the margin gate) — the Rust
+`materialize_family` reproduces a fresh Python `o2_vg_visualization.materialize_family` end-to-end (zero
+field divergence, no minimap2 drift). The Python `bench/o2_vg_visualization.py` / `recombinant_abstain.py`
+remain the specs. **O3 (ASJ):** core is Rust (`allele_specific_junctions.rs` + `asj` bin); the analysis
+layer `asj_strand_bias.rs` / `asj_verify.rs` / `asj_genetic_core.rs` (the shipped 54-call SOR-clean core)
+are ported byte-parity; `asj_motif_check`/`aggregate`/`evidence` remain Python. **O1 copy-NUMBER:**
+`bench/family_copy_number.py` now reports a 3-probe cardinality stack `n_loci → χ(H) → depth_cn` — the
+depth leg (`rna_copy_number_depth.py`, expressed-copy estimate) counts the K=0 identical copies χ(H) is
+blind to (validated Spearman 0.907 vs DNA CN on collapsed families; a noisy lower bound, silent copies
+invisible). See `bench/NONEXPRESSED_MULTIMAPPING.md` + `bench/DNA_VS_RNA_SPECIFICITY.md` for two recent
+advisor-question findings.
 
 **Two-regime finding (read this — it frames the whole scope):** `bench/IDENTITY_REGIME_MAP.md`. The
 family DEFINITION (O1) is a whole-copy-identity homology problem, clean; the copy ASSIGNMENT (O2) is a
