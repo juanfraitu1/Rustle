@@ -1,0 +1,11 @@
+{
+  "families_with_flag": 60,
+  "flag_counts": {
+    "annotated_pseudogene": 91,
+    "intronless_in_spliced_family": 4,
+    "intronless_pseudogene": 7
+  },
+  "flagged_members": 95,
+  "total_families": 4633,
+  "total_members": 50387
+}

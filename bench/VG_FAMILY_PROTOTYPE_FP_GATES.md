@@ -229,6 +229,31 @@ families of collateral for 6 EP-impure removed — worse than the existing
 zero collateral.  The repeat/TE signal is therefore best captured by the
 multiplicity + repeat-richness conjunction already in place.
 
+## Retrocopy / pseudogene marking
+
+Because the de-novo skeleton pipeline is spliced-only, classic intronless
+retrocopies are largely dropped upstream.  The ones that survive in the VG-native
+catalog are mostly annotated pseudogenes that the assembler recruited as multi-exon
+transcripts.  A dedicated marker (`bench/vg_family_prototype_retrocopy_mark.py`)
+flags two classes:
+
+1. **annotated_pseudogene** — mapped gene has `gene_biotype = pseudogene` or
+   `transcribed_pseudogene` (91 member occurrences in 55 families).
+2. **intronless_in_spliced_family** — mapped gene is annotated as `protein_coding`
+   but has 0 introns and sits in a family whose other mapped genes are spliced
+   (4 occurrences, including the known retrocopy **GLUD2** and the intronless
+   oracle gene **LOC134758386**).
+
+Result: **60 / 4633 families carry at least one flag**.  Flagged families are
+enriched for E_p-impurity (26.3% vs 13.0% overall), but dropping them costs too
+much recall (`R_oracle` falls from 51/57 to 43/57).  So the right use is as a
+**review flag**, not a hard gate.
+
+Outputs:
+- `bench/vg_family_prototype_retrocopy_member_flags.tsv`
+- `bench/vg_family_prototype_retrocopy_family_flags.tsv`
+- `bench/vg_family_prototype_retrocopy_mark.json`
+
 ## Conclusion
 
 Empirical FP gates give a small but clean improvement in protein purity.  The best
