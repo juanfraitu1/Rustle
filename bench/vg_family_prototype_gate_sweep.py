@@ -73,12 +73,16 @@ def main():
     features = load_features(FEATURES_TSV)
     catalog = load_catalog(CATALOG_TSV)
 
-    # candidate gates (AND semantics across conditions)
+    # candidate gates (OR semantics across conditions)
     gates = [
         ("baseline", []),
         ("members>=80", [("n_members", 80)]),
         ("members>=70", [("n_members", 70)]),
         ("members>=60", [("n_members", 60)]),
+        ("pair_hub_frac>=0.05", [("pair_hub_frac", 0.05)]),
+        ("repeat_hub_frac>=0.05", [("repeat_hub_frac", 0.05)]),
+        ("members>=80_OR_pair_hub_frac>=0.05", [("n_members", 80), ("pair_hub_frac", 0.05)]),
+        ("members>=80_OR_repeat_hub_frac>=0.05", [("n_members", 80), ("repeat_hub_frac", 0.05)]),
         ("mean_pair_mult>=25", [("mean_pair_mult", 25)]),
         ("pair_hub_frac>=0.4", [("pair_hub_frac", 0.4)]),
         ("members>=60_AND_mean_pair_mult>=25", [("n_members", 60), ("mean_pair_mult", 25)]),
@@ -94,7 +98,7 @@ def main():
         dropped = 0
         for fid, members in catalog.items():
             feat = features[fid]
-            drop = bool(conds) and all(feat[k] >= v for k, v in conds)
+            drop = any(feat[k] >= v for k, v in conds)
             if drop:
                 dropped += 1
             else:

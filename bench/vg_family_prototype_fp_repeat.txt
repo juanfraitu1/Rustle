@@ -1,0 +1,22 @@
+Repeat/TE-aware feature distributions
+feature                       real_mean   real_med    ep_mean     ep_med    fp_mean     fp_med
+mean_repeat_frac                 0.3078     0.3090     0.3229     0.3446     0.2903     0.2875
+mean_exon_repeat_frac            0.0781     0.0683     0.0689     0.0605     0.0596     0.0301
+max_exon_repeat_frac             0.1406     0.1229     0.1756     0.1610     0.1397     0.1160
+median_exon_repeat_frac          0.0709     0.0606     0.0636     0.0529     0.0503     0.0260
+repeat_rich_frac_0.5             0.0013     0.0000     0.0000     0.0000     0.0000     0.0000
+repeat_rich_frac_0.3             0.0131     0.0000     0.0064     0.0000     0.0000     0.0000
+repeat_weighted_mult             0.4864     0.3367     1.5990     1.2904     0.9838     0.7377
+high_repeat_hub_proxy            0.0000     0.0000     0.0000     0.0000     0.0000     0.0000
+
+Repeat-aware rule sweeps
+rule                                                     flag   bad   FP   EP  real$
+mean_exon_repeat_frac>=0.5                                  2     0    0    0      2
+max_exon_repeat_frac>=0.8                                   1     0    0    0      1
+repeat_rich_frac_0.5>=0.5                                   2     0    0    0      2
+repeat_weighted_mult>=10                                    1     1    0    1      0
+high_repeat_hub_proxy>=0.1                                  0     0    0    0      0
+mean_pair_mult>=20 AND mean_exon_repeat_frac>=0.3           0     0    0    0      0
+pair_hub_frac>=0.3 AND repeat_rich_frac_0.5>=0.3            0     0    0    0      0
+n_members>=60 AND mean_exon_repeat_frac>=0.3                0     0    0    0      0
+n_members>=50 AND repeat_weighted_mult>=5                   1     0    0    0      1

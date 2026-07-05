@@ -1,0 +1,66 @@
+Total families: 4633  bad: 64
+
+=== Top 40 repeat-aware rules by score ===
+rank rule                                                          flag   bad   FP   EP  real$   prec    rec  score
+   1 n_members>=80                                                    4     4    0    4      0  1.000  0.062    4.0
+   2 mean_repeat_frac>=0.2 AND n_members>=80                          4     4    0    4      0  1.000  0.062    4.0
+   3 mean_repeat_frac>=0.25 AND n_members>=80                         4     4    0    4      0  1.000  0.062    4.0
+   4 mean_exon_repeat_frac>=0.05 AND n_members>=80                    4     4    0    4      0  1.000  0.062    4.0
+   5 mean_exon_repeat_frac>=0.08 AND n_members>=80                    4     4    0    4      0  1.000  0.062    4.0
+   6 max_exon_repeat_frac>=0.1 AND n_members>=80                      4     4    0    4      0  1.000  0.062    4.0
+   7 max_exon_repeat_frac>=0.15 AND n_members>=80                     4     4    0    4      0  1.000  0.062    4.0
+   8 max_exon_repeat_frac>=0.2 AND n_members>=80                      4     4    0    4      0  1.000  0.062    4.0
+   9 mean_node_repeat_frac>=0.05 AND n_members>=80                    4     4    0    4      0  1.000  0.062    4.0
+  10 max_node_repeat_frac>=0.1 AND n_members>=80                      4     4    0    4      0  1.000  0.062    4.0
+  11 max_node_repeat_frac>=0.15 AND n_members>=80                     4     4    0    4      0  1.000  0.062    4.0
+  12 max_node_repeat_frac>=0.2 AND n_members>=80                      4     4    0    4      0  1.000  0.062    4.0
+  13 max_node_repeat_frac>=0.25 AND n_members>=80                     4     4    0    4      0  1.000  0.062    4.0
+  14 max_node_repeat_frac>=0.3 AND n_members>=80                      4     4    0    4      0  1.000  0.062    4.0
+  15 repeat_weighted_mult>=1 AND n_members>=80                        4     4    0    4      0  1.000  0.062    4.0
+  16 max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.1 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  17 max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.15 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  18 max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.2 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  19 max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.25 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  20 max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.3 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  21 max_exon_repeat_frac>=0.1 AND mean_exon_repeat_frac>=0.05 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  22 max_exon_repeat_frac>=0.1 AND mean_exon_repeat_frac>=0.08 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  23 max_exon_repeat_frac>=0.1 AND mean_node_repeat_frac>=0.05 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  24 max_exon_repeat_frac>=0.1 AND mean_pair_mult>=15 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  25 max_exon_repeat_frac>=0.1 AND mean_repeat_frac>=0.2 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  26 max_exon_repeat_frac>=0.1 AND mean_repeat_frac>=0.25 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  27 max_exon_repeat_frac>=0.1 AND n_members>=80 AND repeat_weighted_mult>=1     4     4    0    4      0  1.000  0.062    4.0
+  28 max_exon_repeat_frac>=0.15 AND max_node_repeat_frac>=0.1 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  29 max_exon_repeat_frac>=0.15 AND max_node_repeat_frac>=0.15 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  30 max_exon_repeat_frac>=0.15 AND max_node_repeat_frac>=0.2 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  31 max_exon_repeat_frac>=0.15 AND max_node_repeat_frac>=0.25 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  32 max_exon_repeat_frac>=0.15 AND max_node_repeat_frac>=0.3 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  33 max_exon_repeat_frac>=0.15 AND mean_exon_repeat_frac>=0.05 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  34 max_exon_repeat_frac>=0.15 AND mean_exon_repeat_frac>=0.08 AND n_members>=70     6     5    0    5      1  0.833  0.078    4.0
+  35 max_exon_repeat_frac>=0.15 AND mean_exon_repeat_frac>=0.08 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  36 max_exon_repeat_frac>=0.15 AND mean_node_repeat_frac>=0.05 AND n_members>=70     6     5    0    5      1  0.833  0.078    4.0
+  37 max_exon_repeat_frac>=0.15 AND mean_node_repeat_frac>=0.05 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  38 max_exon_repeat_frac>=0.15 AND mean_pair_mult>=15 AND n_members>=70     6     5    0    5      1  0.833  0.078    4.0
+  39 max_exon_repeat_frac>=0.15 AND mean_pair_mult>=15 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+  40 max_exon_repeat_frac>=0.15 AND mean_repeat_frac>=0.2 AND n_members>=80     4     4    0    4      0  1.000  0.062    4.0
+
+=== Zero-collateral rules catching the most bad families ===
+n_members>=80                                                bad=  4 FP=0 EP=4
+mean_repeat_frac>=0.2 AND n_members>=80                      bad=  4 FP=0 EP=4
+mean_repeat_frac>=0.25 AND n_members>=80                     bad=  4 FP=0 EP=4
+mean_exon_repeat_frac>=0.05 AND n_members>=80                bad=  4 FP=0 EP=4
+mean_exon_repeat_frac>=0.08 AND n_members>=80                bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.1 AND n_members>=80                  bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.15 AND n_members>=80                 bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.2 AND n_members>=80                  bad=  4 FP=0 EP=4
+mean_node_repeat_frac>=0.05 AND n_members>=80                bad=  4 FP=0 EP=4
+max_node_repeat_frac>=0.1 AND n_members>=80                  bad=  4 FP=0 EP=4
+max_node_repeat_frac>=0.15 AND n_members>=80                 bad=  4 FP=0 EP=4
+max_node_repeat_frac>=0.2 AND n_members>=80                  bad=  4 FP=0 EP=4
+max_node_repeat_frac>=0.25 AND n_members>=80                 bad=  4 FP=0 EP=4
+max_node_repeat_frac>=0.3 AND n_members>=80                  bad=  4 FP=0 EP=4
+repeat_weighted_mult>=1 AND n_members>=80                    bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.1 AND n_members>=80 bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.15 AND n_members>=80 bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.2 AND n_members>=80 bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.25 AND n_members>=80 bad=  4 FP=0 EP=4
+max_exon_repeat_frac>=0.1 AND max_node_repeat_frac>=0.3 AND n_members>=80 bad=  4 FP=0 EP=4

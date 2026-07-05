@@ -723,7 +723,8 @@ def build_genes_array(loci_list, locus_info):
     return genes, name_to_idx
 
 
-def compute_family_fp_features(family_idx_lists, genes, locus_path_nodes, node_loci, repeat_thresh=30):
+def compute_family_fp_features(family_idx_lists, genes, locus_path_nodes, node_loci,
+                               node_repeat_frac=None, repeat_thresh=30):
     """Compute method-computable features used by the empirical FP gate.
 
     Returns list of dicts aligned to family_idx_lists.
@@ -732,45 +733,83 @@ def compute_family_fp_features(family_idx_lists, genes, locus_path_nodes, node_l
     for members in family_idx_lists:
         member_lids = [genes[idx]["name"] for idx in members]
         node_mults = []
+        repeat_hubs = 0
         for lid in member_lids:
             if lid in locus_path_nodes:
                 for node in locus_path_nodes[lid]:
-                    node_mults.append(len(node_loci.get(node, [])))
+                    mult = len(node_loci.get(node, []))
+                    node_mults.append(mult)
+                    if mult >= repeat_thresh:
+                        nr = node_repeat_frac.get(node, 0.0) if node_repeat_frac else 0.0
+                        if nr >= 0.5:
+                            repeat_hubs += 1
         if node_mults:
             mean_mult = round(statistics.mean(node_mults), 2)
             hub_frac = round(sum(1 for x in node_mults if x >= repeat_thresh) / len(node_mults), 4)
+            repeat_hub_frac = round(repeat_hubs / len(node_mults), 4)
         else:
             mean_mult = 0.0
             hub_frac = 0.0
+            repeat_hub_frac = 0.0
         features.append(dict(
             n_members=len(members),
             mean_pair_mult=mean_mult,
             pair_hub_frac=hub_frac,
+            repeat_hub_frac=repeat_hub_frac,
         ))
     return features
 
 
+def compute_node_repeat_frac(exons, locus_paths, node_loci, locus_path_nodes, fa):
+    """Return dict node_id -> mean soft-mask fraction over its member exons."""
+    exon_repeat_frac = {}
+    for ex in exons:
+        seq = fa.fetch(ex["chrom"], ex["start"], ex["end"])
+        exon_repeat_frac[ex["oid"]] = sum(1 for c in seq if c.islower()) / len(seq) if seq else 0.0
+
+    node_repeat_frac = {}
+    for node, loci_set in node_loci.items():
+        fracs = []
+        for lid in loci_set:
+            if lid not in locus_path_nodes:
+                continue
+            nodes = locus_path_nodes[lid]
+            for pos, n in enumerate(nodes):
+                if n != node:
+                    continue
+                oids = locus_paths[lid]
+                if pos < len(oids) - 1:
+                    for epos in (pos, pos + 1):
+                        oid = oids[epos]
+                        fracs.append(exon_repeat_frac.get(oid, 0.0))
+        node_repeat_frac[node] = round(statistics.mean(fracs), 4) if fracs else 0.0
+    return node_repeat_frac
+
+
 def apply_fp_gate(family_idx_lists, genes, locus_path_nodes, node_loci,
+                  node_repeat_frac=None,
                   max_members=None, mean_pair_mult=None, pair_hub_frac=None,
-                  repeat_thresh=30):
+                  repeat_hub_frac=None, repeat_thresh=30):
     """Return (kept_families, dropped_families, n_dropped).
 
-    A family is dropped only if every supplied threshold is exceeded (AND semantics),
-    which lets the user build precise conjunctive gates.
+    A family is dropped if ANY supplied threshold is exceeded (OR semantics),
+    so each condition is an independent FP signature.
     """
     feats = compute_family_fp_features(
-        family_idx_lists, genes, locus_path_nodes, node_loci, repeat_thresh)
+        family_idx_lists, genes, locus_path_nodes, node_loci,
+        node_repeat_frac=node_repeat_frac, repeat_thresh=repeat_thresh)
     kept = []
     dropped = []
     for members, feat in zip(family_idx_lists, feats):
-        conditions = []
-        if max_members is not None:
-            conditions.append(feat["n_members"] >= max_members)
-        if mean_pair_mult is not None:
-            conditions.append(feat["mean_pair_mult"] >= mean_pair_mult)
-        if pair_hub_frac is not None:
-            conditions.append(feat["pair_hub_frac"] >= pair_hub_frac)
-        drop = bool(conditions) and all(conditions)
+        drop = False
+        if max_members is not None and feat["n_members"] >= max_members:
+            drop = True
+        if mean_pair_mult is not None and feat["mean_pair_mult"] >= mean_pair_mult:
+            drop = True
+        if pair_hub_frac is not None and feat["pair_hub_frac"] >= pair_hub_frac:
+            drop = True
+        if repeat_hub_frac is not None and feat["repeat_hub_frac"] >= repeat_hub_frac:
+            drop = True
         if drop:
             dropped.append(members)
         else:
@@ -806,6 +845,8 @@ def main():
                         help="FP gate: drop families with mean pair-node multiplicity >= threshold")
     parser.add_argument("--fp-gate-pair-hub-frac", type=float, default=None,
                         help="FP gate: drop families with pair-node hub fraction >= threshold")
+    parser.add_argument("--fp-gate-repeat-hub-frac", type=float, default=None,
+                        help="FP gate: drop families with repeat-rich hub-node fraction >= threshold")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--output", default=DEFAULT_OUT_TSV,
                         help="output catalog TSV path (default: vg_family_prototype.tsv)")
@@ -891,6 +932,14 @@ def main():
     print(f"    hub nodes: {len(bad_nodes)} / {len(node_loci)}", flush=True)
     print(f"    edges after gate: {len(kept_edges)} / {len(edge_loci)}", flush=True)
 
+    # precompute per-node repeat fraction for the FP gate
+    if args.fp_gate_repeat_hub_frac is not None:
+        print("[*] computing per-node repeat fractions for FP gate ...", flush=True)
+        node_repeat_frac = compute_node_repeat_frac(
+            exons, locus_paths, node_loci, locus_path_nodes, fa)
+    else:
+        node_repeat_frac = None
+
     print("[*] building locus graph ...", flush=True)
     if args.mode in ("exact", "mmseqs-pairs"):
         locus_adj = locus_graph_from_vg(node_loci, edge_loci, kept_edges, bad_nodes)
@@ -919,14 +968,17 @@ def main():
     n_refined_before = len(refined)
     print(f"    refined families (>=2 loci): {n_refined_before}", flush=True)
 
-    # empirical FP gate (optional, AND semantics across supplied thresholds)
-    if args.fp_gate_members is not None or args.fp_gate_mean_pair_mult is not None or args.fp_gate_pair_hub_frac is not None:
+    # empirical FP gate (optional, OR semantics across supplied thresholds)
+    if args.fp_gate_members is not None or args.fp_gate_mean_pair_mult is not None or \
+            args.fp_gate_pair_hub_frac is not None or args.fp_gate_repeat_hub_frac is not None:
         print("[*] applying empirical FP gate ...", flush=True)
         kept, dropped, n_dropped = apply_fp_gate(
             refined, genes, locus_path_nodes, node_loci,
+            node_repeat_frac=node_repeat_frac,
             max_members=args.fp_gate_members,
             mean_pair_mult=args.fp_gate_mean_pair_mult,
             pair_hub_frac=args.fp_gate_pair_hub_frac,
+            repeat_hub_frac=args.fp_gate_repeat_hub_frac,
             repeat_thresh=args.repeat_thresh)
         print(f"    dropped families: {n_dropped} / {len(refined)}", flush=True)
         refined = kept
@@ -934,11 +986,13 @@ def main():
             fp_gate_members=args.fp_gate_members,
             fp_gate_mean_pair_mult=args.fp_gate_mean_pair_mult,
             fp_gate_pair_hub_frac=args.fp_gate_pair_hub_frac,
+            fp_gate_repeat_hub_frac=args.fp_gate_repeat_hub_frac,
             fp_gate_dropped=n_dropped,
         )
     else:
         gate_params = dict(fp_gate_members=None, fp_gate_mean_pair_mult=None,
-                           fp_gate_pair_hub_frac=None, fp_gate_dropped=0)
+                           fp_gate_pair_hub_frac=None, fp_gate_repeat_hub_frac=None,
+                           fp_gate_dropped=0)
 
     # write catalog
     out_tsv = args.output

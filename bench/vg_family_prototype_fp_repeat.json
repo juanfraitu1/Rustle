@@ -1,0 +1,208 @@
+{
+  "dna_fp": {
+    "high_repeat_hub_proxy": {
+      "mean": 0.0,
+      "median": 0.0,
+      "n": 6,
+      "stdev": 0.0
+    },
+    "max_exon_repeat_frac": {
+      "mean": 0.1397,
+      "median": 0.116,
+      "n": 6,
+      "stdev": 0.0819
+    },
+    "mean_exon_repeat_frac": {
+      "mean": 0.0596,
+      "median": 0.0301,
+      "n": 6,
+      "stdev": 0.0544
+    },
+    "mean_repeat_frac": {
+      "mean": 0.2903,
+      "median": 0.2875,
+      "n": 6,
+      "stdev": 0.1144
+    },
+    "median_exon_repeat_frac": {
+      "mean": 0.0503,
+      "median": 0.026,
+      "n": 6,
+      "stdev": 0.0479
+    },
+    "repeat_rich_frac_0.3": {
+      "mean": 0.0,
+      "median": 0.0,
+      "n": 6,
+      "stdev": 0.0
+    },
+    "repeat_rich_frac_0.5": {
+      "mean": 0.0,
+      "median": 0.0,
+      "n": 6,
+      "stdev": 0.0
+    },
+    "repeat_weighted_mult": {
+      "mean": 0.9838,
+      "median": 0.7377,
+      "n": 6,
+      "stdev": 0.5936
+    }
+  },
+  "ep_impure": {
+    "high_repeat_hub_proxy": {
+      "mean": 0.0,
+      "median": 0.0,
+      "n": 61,
+      "stdev": 0.0
+    },
+    "max_exon_repeat_frac": {
+      "mean": 0.1756,
+      "median": 0.161,
+      "n": 61,
+      "stdev": 0.09
+    },
+    "mean_exon_repeat_frac": {
+      "mean": 0.0689,
+      "median": 0.0605,
+      "n": 61,
+      "stdev": 0.0365
+    },
+    "mean_repeat_frac": {
+      "mean": 0.3229,
+      "median": 0.3446,
+      "n": 61,
+      "stdev": 0.0938
+    },
+    "median_exon_repeat_frac": {
+      "mean": 0.0636,
+      "median": 0.0529,
+      "n": 61,
+      "stdev": 0.0369
+    },
+    "repeat_rich_frac_0.3": {
+      "mean": 0.0064,
+      "median": 0.0,
+      "n": 61,
+      "stdev": 0.0287
+    },
+    "repeat_rich_frac_0.5": {
+      "mean": 0.0,
+      "median": 0.0,
+      "n": 61,
+      "stdev": 0.0
+    },
+    "repeat_weighted_mult": {
+      "mean": 1.599,
+      "median": 1.2904,
+      "n": 61,
+      "stdev": 1.7877
+    }
+  },
+  "real": {
+    "high_repeat_hub_proxy": {
+      "mean": 0.0,
+      "median": 0.0,
+      "n": 4569,
+      "stdev": 0.0001
+    },
+    "max_exon_repeat_frac": {
+      "mean": 0.1406,
+      "median": 0.1229,
+      "n": 4569,
+      "stdev": 0.0912
+    },
+    "mean_exon_repeat_frac": {
+      "mean": 0.0781,
+      "median": 0.0683,
+      "n": 4569,
+      "stdev": 0.0518
+    },
+    "mean_repeat_frac": {
+      "mean": 0.3078,
+      "median": 0.309,
+      "n": 4569,
+      "stdev": 0.1078
+    },
+    "median_exon_repeat_frac": {
+      "mean": 0.0709,
+      "median": 0.0606,
+      "n": 4569,
+      "stdev": 0.0515
+    },
+    "repeat_rich_frac_0.3": {
+      "mean": 0.0131,
+      "median": 0.0,
+      "n": 4569,
+      "stdev": 0.0769
+    },
+    "repeat_rich_frac_0.5": {
+      "mean": 0.0013,
+      "median": 0.0,
+      "n": 4569,
+      "stdev": 0.0228
+    },
+    "repeat_weighted_mult": {
+      "mean": 0.4864,
+      "median": 0.3367,
+      "n": 4569,
+      "stdev": 0.5421
+    }
+  },
+  "rules": {
+    "high_repeat_hub_proxy>=0.1": {
+      "collateral_real": 0,
+      "flagged": 0,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "max_exon_repeat_frac>=0.8": {
+      "collateral_real": 1,
+      "flagged": 1,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "mean_exon_repeat_frac>=0.5": {
+      "collateral_real": 2,
+      "flagged": 2,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "mean_pair_mult>=20 AND mean_exon_repeat_frac>=0.3": {
+      "collateral_real": 0,
+      "flagged": 0,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "n_members>=50 AND repeat_weighted_mult>=5": {
+      "collateral_real": 1,
+      "flagged": 1,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "n_members>=60 AND mean_exon_repeat_frac>=0.3": {
+      "collateral_real": 0,
+      "flagged": 0,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "pair_hub_frac>=0.3 AND repeat_rich_frac_0.5>=0.3": {
+      "collateral_real": 0,
+      "flagged": 0,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "repeat_rich_frac_0.5>=0.5": {
+      "collateral_real": 2,
+      "flagged": 2,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 0
+    },
+    "repeat_weighted_mult>=10": {
+      "collateral_real": 0,
+      "flagged": 1,
+      "removed_dna_fp": 0,
+      "removed_ep_impure": 1
+    }
+  }
+}

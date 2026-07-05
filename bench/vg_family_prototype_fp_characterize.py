@@ -58,6 +58,12 @@ def repeat_frac(fa, chrom, start, end):
     return sum(1 for c in seq if c.islower()) / len(seq)
 
 
+def repeat_frac_seq(seq):
+    if not seq:
+        return 0.0
+    return sum(1 for c in seq if c.islower()) / len(seq)
+
+
 def characterize():
     print("[*] building ctx (annotation / protein families) ...", flush=True)
     ctx, *_ = build_ctx()
@@ -86,9 +92,44 @@ def characterize():
     print("[*] extracting exon paths ...", flush=True)
     exons, locus_paths = extract_exon_paths(fa, loci)
 
-    print("[*] building default mmseqs-pairs VG (identity=0.85) ...", flush=True)
+    print("[*] building default mmseqs-pairs VG (identity=0.90) ...", flush=True)
     node_seq, node_loci, locus_path_nodes = build_pair_vg(
-        exons, locus_paths, identity=0.85, threads=4)
+        exons, locus_paths, identity=0.90, threads=4)
+
+    # precompute repeat fraction per exon occurrence from genomic interval
+    print("[*] computing per-exon repeat fractions ...", flush=True)
+    exon_repeat_frac = {}
+    for ex in exons:
+        seq = fa.fetch(ex["chrom"], ex["start"], ex["end"])
+        exon_repeat_frac[ex["oid"]] = repeat_frac_seq(seq) if seq else 0.0
+
+    # precompute per-node repeat fraction (mean over member exons)
+    print("[*] computing per-node repeat fractions ...", flush=True)
+    node_repeat_frac = {}
+    # mmseqs-pairs mode: node_seq is concatenation of two exon canonical seqs.
+    # Map node -> set of (lid, eidx) occurrences via locus_path_nodes and exons.
+    # Build oid -> occurrence list.
+    oid_occurrences = defaultdict(list)
+    for ex in exons:
+        oid_occurrences[ex["oid"]].append(ex)
+
+    for node, loci_set in node_loci.items():
+        fracs = []
+        for lid in loci_set:
+            if lid not in locus_path_nodes:
+                continue
+            nodes = locus_path_nodes[lid]
+            # find positions of this node in the path
+            for pos, n in enumerate(nodes):
+                if n != node:
+                    continue
+                # pair node spans exon pos and pos+1
+                oids = locus_paths[lid]
+                if pos < len(oids) - 1:
+                    for epos in (pos, pos + 1):
+                        oid = oids[epos]
+                        fracs.append(exon_repeat_frac.get(oid, 0.0))
+        node_repeat_frac[node] = round(statistics.mean(fracs), 4) if fracs else 0.0
 
     print("[*] computing per-family features ...", flush=True)
     features = []
@@ -128,17 +169,24 @@ def characterize():
 
         # pair-node multiplicity stats within family
         node_mults = []
+        node_repeats = []
         hub_frac = 0.0
+        repeat_hub_frac = 0.0
         for m in members:
             if m in locus_path_nodes:
                 for node in locus_path_nodes[m]:
-                    node_mults.append(len(node_loci.get(node, [])))
+                    mult = len(node_loci.get(node, []))
+                    node_mults.append(mult)
+                    node_repeats.append(node_repeat_frac.get(node, 0.0))
+                    if mult >= REPEAT_THRESH and node_repeat_frac.get(node, 0.0) >= 0.5:
+                        repeat_hub_frac += 1
         if node_mults:
             node_mults.sort()
             max_mult = node_mults[-1]
             mean_mult = round(statistics.mean(node_mults), 2)
             median_mult = node_mults[len(node_mults) // 2]
             hub_frac = round(sum(1 for x in node_mults if x >= REPEAT_THRESH) / len(node_mults), 4)
+            repeat_hub_frac = round(repeat_hub_frac / len(node_mults), 4)
         else:
             max_mult = mean_mult = median_mult = 0
 
@@ -169,6 +217,9 @@ def characterize():
             max_pair_mult=max_mult,
             pair_hub_frac=hub_frac,
             mean_repeat_frac=mean_rfrac,
+            mean_node_repeat_frac=round(statistics.mean(node_repeats), 4) if node_repeats else 0.0,
+            max_node_repeat_frac=round(max(node_repeats), 4) if node_repeats else 0.0,
+            repeat_hub_frac=repeat_hub_frac,
             n_protein_families=len(prot_fams),
             ep_impure=ep_impure,
             fp_multifam=fp_multi,
@@ -202,6 +253,9 @@ def characterize():
             "max_pair_mult": round(statistics.mean(r["max_pair_mult"] for r in group), 2),
             "pair_hub_frac": round(statistics.mean(r["pair_hub_frac"] for r in group), 4),
             "mean_repeat_frac": round(statistics.mean(r["mean_repeat_frac"] for r in group), 4),
+            "mean_node_repeat_frac": round(statistics.mean(r["mean_node_repeat_frac"] for r in group), 4),
+            "max_node_repeat_frac": round(statistics.mean(r["max_node_repeat_frac"] for r in group), 4),
+            "repeat_hub_frac": round(statistics.mean(r["repeat_hub_frac"] for r in group), 4),
             "mean_n_exons": round(statistics.mean(r["mean_n_exons"] for r in group), 2),
             "n_protein_families": round(statistics.mean(r["n_protein_families"] for r in group), 2),
         }
