@@ -788,24 +788,82 @@ def test_crosschrom_split_gate():
           "(n_families 551 -> 667), deterministic, env==flag : OK")
 
 
-if __name__ == "__main__":
-    test_legacy_opt_out_writes_nothing()
-    test_default_deterministic()
-    test_default_byte_identical_to_golden()
-    test_antisense_gate()
-    test_colinear_merge_gate()
-    test_allele_demote_removes_known_fp()
-    test_residual_removed_matches_recall_preserving_row()
-    test_recombinant_split_gate()
-    test_repeat_gate_shatters_fam17_spares_controls()
-    test_repeat_gate_recall_cost_is_genuine_only()
-    test_rna_only_guard()
-    test_repeat_bridge_gate()
-    test_repeat_bridge_r_oracle_held()
-    test_repeat_bridge_composes()
-    test_high_precision_gamma_040()
-    test_flags_compose()
-    test_divergent_merge_gate()
-    test_crosschrom_split_gate()
+CHUNKS = {
+    "legacy_default": [
+        test_legacy_opt_out_writes_nothing,
+        test_default_deterministic,
+        test_default_byte_identical_to_golden,
+        test_allele_demote_removes_known_fp,
+    ],
+    "residual_guard": [
+        test_residual_removed_matches_recall_preserving_row,
+        test_rna_only_guard,
+        test_repeat_gate_recall_cost_is_genuine_only,
+    ],
+    "antisense": [
+        test_antisense_gate,
+    ],
+    "colinear": [
+        test_colinear_merge_gate,
+    ],
+    "recombinant": [
+        test_recombinant_split_gate,
+    ],
+    "repeat_hub": [
+        test_repeat_gate_shatters_fam17_spares_controls,
+    ],
+    "repeat_bridge_gate": [
+        test_repeat_bridge_gate,
+    ],
+    "repeat_bridge_compose": [
+        test_repeat_bridge_composes,
+    ],
+    "metrics": [
+        test_repeat_bridge_r_oracle_held,
+    ],
+    "highprecision": [
+        test_high_precision_gamma_040,
+    ],
+    "flags_compose": [
+        test_flags_compose,
+    ],
+    "divergent": [
+        test_divergent_merge_gate,
+    ],
+    "crosschrom": [
+        test_crosschrom_split_gate,
+    ],
+}
+
+
+def _run_chunk(name):
+    if name not in CHUNKS:
+        raise SystemExit(f"Unknown chunk {name!r}. Known chunks: {', '.join(CHUNKS)}")
+    for fn in CHUNKS[name]:
+        fn()
     _run([])   # leave the DEFAULT (all-gates) catalog on disk
-    print("\nALL TESTS PASSED")
+    print(f"\nCHUNK {name!r} PASSED")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Split the family_rna_refine self-check into smaller per-ablation chunks.")
+    parser.add_argument(
+        "--chunk",
+        choices=list(CHUNKS),
+        help="Run only one chunk (each finishes in a few minutes). Omit to run the full suite.")
+    parser.add_argument("--list-chunks", action="store_true", help="List available chunks and exit.")
+    args = parser.parse_args()
+
+    if args.list_chunks:
+        for name, fns in CHUNKS.items():
+            print(f"{name}: {len(fns)} test(s)")
+        raise SystemExit(0)
+
+    if args.chunk:
+        _run_chunk(args.chunk)
+    else:
+        for name in CHUNKS:
+            _run_chunk(name)
+        print("\nALL CHUNKS PASSED")
