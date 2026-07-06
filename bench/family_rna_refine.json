@@ -545,6 +545,82 @@
   "note": "Post-demote family merge by exon colinearity: merge two families if they share >= 2 exons in colinear order (id >= 0.70) between any pair of loci, are on the same chromosome, and pass the antisense/reciprocal-overlap and repeat-hub gates. Window-only pairs (no shared gene symbol and no raw homology edge) additionally require an adaptive adjacent-junction floor (min(2, colinear_exons-1)): a 2-exon hit needs one adjacent pair, a >=3-exon hit needs two.  This blocks domain-sharer neighbours (ANKRD18 + ANKRD36C) while recovering short real split-family blocks (GSTM1/2/4/5).  Ablated by --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1.",
   "window_bp": 5000000
  },
+ "crosschrom_split": {
+  "active": false,
+  "enabled": false,
+  "id_thresh": 0.8,
+  "min_adjacent_junctions": 3,
+  "min_colinear": 4,
+  "n_families_split": 0,
+  "note": "Post-merge cross-chromosome domain-bridge split: a family spanning >1 chromosome is kept only if cross-chromosome components share >= 4 colinear exons at id >= 0.80 or share identical/related gene-symbol roots; otherwise split per chromosome. Default is OFF; enable with --crosschrom-split / RUSTLE_CROSSCHROM_SPLIT=1.",
+  "splits": []
+ },
+ "divergent_merge": {
+  "active": true,
+  "enabled": true,
+  "id_thresh": 0.55,
+  "merge_edges": [
+   {
+    "a": 344,
+    "adjacent_junctions": 6,
+    "b": 108,
+    "chrom": "NC_073224.2",
+    "colinear_exons": 6,
+    "divergent": true,
+    "genes_a": [
+     "GSTM2",
+     "LOC101131274",
+     "LOC101135585",
+     "LOC109029488",
+     "LOC115930164",
+     "LOC115930576",
+     "LOC115932735",
+     "LOC115932984",
+     "LOC115933235",
+     "LOC115933241",
+     "LOC129525330",
+     "LOC129525331",
+     "LOC129525599",
+     "LOC134756861"
+    ],
+    "genes_b": [
+     "GSTM2",
+     "LOC101126097",
+     "LOC134756922"
+    ],
+    "n_loci_a": 17,
+    "n_loci_b": 3,
+    "share_gene": true
+   },
+   {
+    "a": 375,
+    "adjacent_junctions": 5,
+    "b": 21,
+    "chrom": "NC_073240.2",
+    "colinear_exons": 5,
+    "divergent": true,
+    "genes_a": [
+     "HERC2",
+     "LOC129527054"
+    ],
+    "genes_b": [
+     "HERC2",
+     "LOC109023386",
+     "LOC115930830",
+     "LOC129527072",
+     "LOC134757229"
+    ],
+    "n_loci_a": 2,
+    "n_loci_b": 6,
+    "share_gene": true
+   }
+  ],
+  "min_adjacent_junctions": 3,
+  "min_colinear": 4,
+  "n_merge_edges": 2,
+  "note": "Post-colinear merge for divergent same-chromosome duplicons (e.g. HERC2): merge if blocks share >= 4 colinear exons at id >= 0.55 with >= 3 adjacent junctions, are on the same chromosome, and pass antisense/repeat gates.  Ablated by --no-divergent-merge / RUSTLE_NO_DIVERGENT_MERGE=1.",
+  "window_bp": 10000000
+ },
  "edges": {
   "n_cross_gene_pairs_cut": 7052,
   "n_cross_gene_pairs_cut_by_antisense_gate": 16,
@@ -1651,7 +1727,7 @@
   "scope": "catalog-wide PREDICATE (applied to every multi-copy family, not a 15-family roster lookup): the T=8/C=2 cut count is the committed gate_sweep_catalog point = the ~13-15 roster DISCONNECTED-FP over-merges PLUS the additional DISCONNECTED families the same predicate flags blindly. R_oracle/E_p precision headline HOLDS/IMPROVES; the catalog-scope SENSITIVITY cost (single-locus glued passengers dropped by the <2-loci filter) is measured by bench/family_level_pr_current.py truth2_dna_loose (pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182), to which R_oracle (57-gene diploid oracle) and E_p (mega-family-excluded) are blind."
  },
  "n_alleles_demoted": 3,
- "n_families": 553,
+ "n_families": 551,
  "outputs": {
   "catalog_tsv": "bench/family_rna_refine.tsv",
   "summary_json": "bench/family_rna_refine.json"
@@ -1694,7 +1770,7 @@
   "residual_examples": {
    "allele": [],
    "multifam": [
-    "GSTM2+LOC115930164+LOC115930576(dl=17)",
+    "GSTM2+LOC115930164+LOC115930576(dl=20)",
     "FOXO1+LOC115933254(dl=10)",
     "LOC129529978+LOC129529986+MAGEA9(dl=9)",
     "GSTM2+LOC101129940(dl=3)"
@@ -1721,9 +1797,11 @@
   "antisense_gate_enabled": true,
   "antisense_recip_overlap_min": 0.5,
   "core_recip_min": 0.19,
+  "crosschrom_split_enabled": false,
   "demote": "balanced_frac>=0.90 AND copy_like<=0.10",
   "demote_balanced_frac_min": 0.9,
   "demote_copy_like_max": 0.1,
+  "divergent_merge_enabled": true,
   "edge": "KEEP iff core_recip>=0.19 AND aln_frac>=0.24 AND NOT(min_shared_mult>=20) AND NOT(antisense_recip_overlap>=0.50)",
   "gamma": 0.2,
   "mega_span_max": 500000,
@@ -1736,5 +1814,5 @@
   "seed": 0,
   "split_recombinants_enabled": true
  },
- "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + antisense/reciprocal-overlap gate + recombinant-split gate + multi-repeat-bridge gate; DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-antisense-gate / --no-split-recombinants / --no-repeat-bridge-gate)"
+ "stage": "family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + antisense/reciprocal-overlap gate + recombinant-split gate + multi-repeat-bridge gate + divergent same-chrom merge + cross-chrom domain-bridge split (default OFF); DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-antisense-gate / --no-split-recombinants / --no-repeat-bridge-gate / --no-colinear-merge / --no-divergent-merge / --crosschrom-split)"
 }

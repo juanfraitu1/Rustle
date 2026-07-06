@@ -39,6 +39,20 @@ WINDOW_BP = 5_000_000
 # edges or gene content already support them (MAGEA, GSTM).
 MIN_ADJACENT_JUNCTIONS = 2
 
+# Divergent same-chromosome duplicon merge (e.g. HERC2).  Recent segduplications can diverge
+# below the 0.70 exon-identity floor while still retaining a colinear exon backbone.  We use
+# a lower identity threshold but demand a longer colinear chain so domain-sharers stay out.
+DIVERGENT_ID_THRESH = 0.55
+DIVERGENT_MIN_COLINEAR = 4
+DIVERGENT_MIN_ADJACENT_JUNCTIONS = 3
+DIVERGENT_WINDOW_BP = 10_000_000
+
+# Cross-chromosome domain-bridge split.  Same-chromosome duplication is the common case;
+# cross-chromosome homology claims need stronger evidence or a curated annotation link.
+CROSSCHROM_ID_THRESH = 0.80
+CROSSCHROM_MIN_COLINEAR = 4
+CROSSCHROM_MIN_ADJACENT_JUNCTIONS = 3
+
 
 def load_meta():
     nreads = {}
@@ -346,6 +360,290 @@ def merge_catalog_colinear(catalog, genes, gene_of_dn, gene_strand=None, pair_re
                   f"genes_b={','.join(e['genes_b'][:5])}...")
 
     return merged, merge_edges
+
+
+def _union_find_components(n, edges):
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(x, y):
+        rx, ry = find(x), find(y)
+        if rx != ry:
+            parent[rx] = ry
+
+    for i, j in edges:
+        union(i, j)
+    groups = defaultdict(list)
+    for idx in range(n):
+        groups[find(idx)].append(idx)
+    return list(groups.values())
+
+
+def _gene_symbol_root(symbol):
+    """Strip trailing letter/digit suffixes (e.g. RABL2A->RABL2, ZNF92->ZNF).
+
+    Returns None for NA / empty / LOC symbols so different LOCs are not collapsed.
+    """
+    if not symbol or symbol == "NA" or symbol.startswith("LOC"):
+        return None
+    s = symbol.rstrip("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    return s if s else None
+
+
+def merge_catalog_divergent_samechrom(catalog, genes, gene_of_dn, gene_strand=None,
+                                      pair_repeat_mult=None, raw_edge_pairs=None,
+                                      id_thresh=DIVERGENT_ID_THRESH,
+                                      min_colinear=DIVERGENT_MIN_COLINEAR,
+                                      min_adjacent_junctions=DIVERGENT_MIN_ADJACENT_JUNCTIONS,
+                                      window_bp=DIVERGENT_WINDOW_BP,
+                                      antisense_recip_min=0.50, mega_span_max=500_000,
+                                      repeat_mult_min=20, verbose=True):
+    """Second merge pass for divergent same-chromosome duplicons (e.g. HERC2).
+
+    Only considers same-chromosome block pairs that share an annotated gene symbol OR are
+    connected by a raw homology edge.  Merge if they share >= ``min_colinear`` exons in colinear
+    order at ``id_thresh`` (lower than the standard pass) and the adaptive adjacent-junction
+    floor is met.  The high colinear/junction bar (4 exons / 3 adjacent junctions by default)
+    keeps short domain-sharers (e.g. the GSTM2 GST-domain hub) from merging.
+    """
+    fa = _load_fasta_once()
+    skel = _load_skeletons_once()
+    _, strand = load_meta()
+    rec_cache = {}
+
+    n = len(catalog)
+    block_meta = []
+    for idx, block in enumerate(catalog):
+        chrom, s, e = block_chrom_span(block, genes)
+        block_genes = {gene_of_dn.get(dn) for dn in block if gene_of_dn.get(dn)}
+        block_meta.append((idx, chrom, s, e, block, block_genes))
+
+    def antisense_overlap(ga, gb):
+        if not gene_strand:
+            return False
+        ia = gene_strand.get(ga)
+        ib = gene_strand.get(gb)
+        if ia is None or ib is None:
+            return False
+        ca, sa, ea, ta = ia
+        cb, sb, eb, tb = ib
+        if ca != cb or ta == tb:
+            return False
+        spa, spb = ea - sa, eb - sb
+        if spa <= 0 or spb <= 0:
+            return False
+        if spa >= mega_span_max or spb >= mega_span_max:
+            return False
+        ov = min(ea, eb) - max(sa, sb)
+        if ov <= 0:
+            return False
+        return (ov / min(spa, spb)) >= antisense_recip_min
+
+    def repeat_hub(ga, gb):
+        if not pair_repeat_mult:
+            return False
+        return pair_repeat_mult.get(frozenset((ga, gb)), 0) >= repeat_mult_min
+
+    raw_edges_between = defaultdict(set)
+    if raw_edge_pairs:
+        dn_to_idx = {}
+        for idx, block in enumerate(catalog):
+            for dn in block:
+                dn_to_idx[dn] = idx
+        for a, b in raw_edge_pairs:
+            ia = dn_to_idx.get(a)
+            ib = dn_to_idx.get(b)
+            if ia is not None and ib is not None and ia != ib:
+                raw_edges_between[min(ia, ib)].add(max(ia, ib))
+
+    merge_edges = []
+    chrom_blocks = defaultdict(list)
+    for bm in block_meta:
+        if bm[1] is not None:
+            chrom_blocks[bm[1]].append(bm)
+
+    for chrom, blist in sorted(chrom_blocks.items()):
+        blist = sorted(blist, key=lambda x: x[2])
+        m = len(blist)
+        for i in range(m):
+            idx_a, _, sa, ea, block_a, genes_a = blist[i]
+            for j in range(i + 1, m):
+                idx_b, _, sb, eb, block_b, genes_b = blist[j]
+                share_gene = bool(genes_a & genes_b)
+                # Require a shared annotated gene symbol and that the smaller block does not
+                # introduce an unrelated named gene (e.g. a GSTM2 block must not pull in TRIP13).
+                if not share_gene:
+                    continue
+                nonloc_a = {g for g in genes_a if g and g != "NA" and not g.startswith("LOC")}
+                nonloc_b = {g for g in genes_b if g and g != "NA" and not g.startswith("LOC")}
+                smaller_nonloc = nonloc_a if len(block_a) <= len(block_b) else nonloc_b
+                larger_nonloc = nonloc_b if len(block_a) <= len(block_b) else nonloc_a
+                if not (smaller_nonloc <= larger_nonloc):
+                    continue
+                # Block merging heterogeneous multi-named blocks (e.g. GSTM2 into GSTM1/2/4/5):
+                # require the larger block to have a single non-LOC gene identity, so the merge is
+                # a fragment-of-one-named-gene situation (e.g. HERC2), not a multi-paralog cluster.
+                if len(larger_nonloc) != 1:
+                    continue
+                col, junc, na, nb = best_colinear_between_blocks(
+                    block_a, block_b, genes, skel, strand, fa,
+                    id_thresh=id_thresh, rec_cache=rec_cache)
+                if col < min_colinear:
+                    continue
+                if junc < min(min_adjacent_junctions, max(0, col - 1)):
+                    continue
+                skip = False
+                for ga in sorted(genes_a):
+                    for gb in sorted(genes_b):
+                        if ga == gb:
+                            continue
+                        if antisense_overlap(ga, gb) or repeat_hub(ga, gb):
+                            skip = True
+                            break
+                    if skip:
+                        break
+                if skip:
+                    continue
+                merge_edges.append(dict(
+                    a=idx_a, b=idx_b, chrom=chrom,
+                    colinear_exons=col, adjacent_junctions=junc, n_loci_a=na, n_loci_b=nb,
+                    genes_a=sorted(genes_a)[:20], genes_b=sorted(genes_b)[:20],
+                    share_gene=share_gene,
+                    divergent=True))
+
+    components = _union_find_components(n, [(e["a"], e["b"]) for e in merge_edges])
+    merged = []
+    for comp in components:
+        combined = []
+        for idx in comp:
+            combined.extend(block_meta[idx][4])
+        merged.append(sorted(set(combined)))
+
+    if verbose:
+        print(f"[family_merge_colinear divergent] {n} blocks -> {len(merged)} blocks; "
+              f"edges={len(merge_edges)} (id_thresh={id_thresh}, min_colinear={min_colinear}, "
+              f"min_adjacent_junctions={min_adjacent_junctions}, window_bp={window_bp})")
+        for e in merge_edges:
+            need = min(min_adjacent_junctions, max(0, e["colinear_exons"] - 1))
+            print(f"   merge fam{e['a']} + fam{e['b']}  chrom={e['chrom']} "
+                  f"colinear={e['colinear_exons']} adjacent_junctions={e['adjacent_junctions']} "
+                  f"need_junc={need} reason=share_gene "
+                  f"genes_a={','.join(e['genes_a'][:5])}... "
+                  f"genes_b={','.join(e['genes_b'][:5])}...")
+
+    return merged, merge_edges
+
+
+def split_crosschrom_domain_bridges(catalog, genes, gene_of_dn,
+                                    id_thresh=CROSSCHROM_ID_THRESH,
+                                    min_colinear=CROSSCHROM_MIN_COLINEAR,
+                                    min_adjacent_junctions=CROSSCHROM_MIN_ADJACENT_JUNCTIONS,
+                                    verbose=True):
+    """Post-merge cross-chromosome domain-bridge split gate.
+
+    For each family that spans more than one chromosome, keep cross-chromosome chromosome
+    components connected only if there is strong colinear exon backbone support OR a shared
+    (or related) annotated gene symbol.  Otherwise split into per-chromosome components.
+
+    Strong support = best strict-LIS colinear shared-exon count >= ``min_colinear`` at
+    ``id_thresh`` with adjacent junctions >= min(min_adjacent_junctions, col-1).  A higher
+    identity threshold is required for cross-chrom claims because same-chrom duplication is
+    the mechanistic default.
+    """
+    fa = _load_fasta_once()
+    skel = _load_skeletons_once()
+    _, strand = load_meta()
+    rec_cache = {}
+
+    new_catalog = []
+    split_info = []
+    for block in catalog:
+        bychrom = defaultdict(list)
+        for dn in block:
+            L = genes.get(dn)
+            if L:
+                bychrom[L["chrom"]].append(dn)
+        chroms = sorted(bychrom.keys())
+        if len(chroms) <= 1:
+            new_catalog.append(block)
+            continue
+
+        n = len(chroms)
+        keep_edges = set()
+        for i in range(n):
+            for j in range(i + 1, n):
+                c1, c2 = chroms[i], chroms[j]
+                best_col, best_junc = 0, 0
+                for dn1 in bychrom[c1]:
+                    for dn2 in bychrom[c2]:
+                        col, junc, _, _ = best_colinear_between_blocks(
+                            [dn1], [dn2], genes, skel, strand, fa,
+                            id_thresh=id_thresh, rec_cache=rec_cache)
+                        if col > best_col or (col == best_col and junc > best_junc):
+                            best_col, best_junc = col, junc
+
+                syms1 = {gene_of_dn.get(dn) for dn in bychrom[c1] if gene_of_dn.get(dn)}
+                syms2 = {gene_of_dn.get(dn) for dn in bychrom[c2] if gene_of_dn.get(dn)}
+                nonloc1 = {s for s in syms1 if s and s != "NA" and not s.startswith("LOC")}
+                nonloc2 = {s for s in syms2 if s and s != "NA" and not s.startswith("LOC")}
+
+                sz1, sz2 = len(bychrom[c1]), len(bychrom[c2])
+                # Multi-locus cross-chromosome clusters are kept; we only challenge links where
+                # the smaller chromosome-side is a singleton (the classic domain-bridge pattern).
+                singleton_bridge = min(sz1, sz2) == 1
+
+                keep = False
+                if not singleton_bridge:
+                    keep = True
+                else:
+                    if nonloc1 & nonloc2:
+                        keep = True
+                    if (best_col >= min_colinear and
+                            best_junc >= min(min_adjacent_junctions, max(0, best_col - 1))):
+                        keep = True
+                    if not keep:
+                        roots1 = {_gene_symbol_root(s) for s in nonloc1}
+                        roots2 = {_gene_symbol_root(s) for s in nonloc2}
+                        if roots1 & roots2:
+                            keep = True
+
+                if keep:
+                    keep_edges.add((i, j))
+
+        components = _union_find_components(n, keep_edges)
+        if len(components) == 1:
+            new_catalog.append(block)
+            continue
+
+        for comp in components:
+            new_block = []
+            for ci in comp:
+                new_block.extend(bychrom[chroms[ci]])
+            new_catalog.append(sorted(set(new_block)))
+
+        split_info.append(dict(
+            original_n_loci=len(block),
+            chroms=chroms,
+            sizes={c: len(bychrom[c]) for c in chroms},
+            kept_edges=[(chroms[i], chroms[j]) for i, j in keep_edges],
+            split_into=[sorted(bychrom[chroms[ci]][0] for ci in comp) for comp in components]))
+
+    if verbose:
+        n_splits = len(split_info)
+        n_loci_moved = sum(len(block) for block in new_catalog) - sum(len(block) for block in catalog)
+        print(f"[family_merge_colinear crosschrom-split] {len(catalog)} blocks -> {len(new_catalog)} blocks; "
+              f"splits={n_splits} (id_thresh={id_thresh}, min_colinear={min_colinear}, "
+              f"min_adjacent_junctions={min_adjacent_junctions})")
+        for si in split_info:
+            print(f"   split n={si['original_n_loci']} chroms={si['chroms']} sizes={si['sizes']} "
+                  f"kept={si['kept_edges']}")
+
+    return new_catalog, split_info
 
 
 if __name__ == "__main__":

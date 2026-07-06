@@ -17,12 +17,13 @@ Asserts:
   (h) RNA-only / LIBRARY-FREE guard: repeat-hub features = {min_shared_mult, cyclic}, disjoint from
       every soft-mask / RepeatMasker / DNA column.
   (i) DEFAULT (no flag) catalog is BYTE-IDENTICAL to the golden TSV (md5) and its JSON records
-      gamma=0.20 with NO high_precision block.
+      gamma=0.20 with NO high_precision block (551 families).
   (j) --high-precision (== env RUSTLE_HIGH_PRECISION=1) swaps gamma 0.20 -> 0.40
       (PRECISION_RECALL_FRONTIER.md): JSON records the active gamma, the catalog is DIFFERENT +
-      deterministic, n_families -> 623 (frontier gamma=0.40 row), the collapsed-array OVERSIZE blobs
-      MPHOSPH8 + LOC134758618 are removed (oversize residual 3 -> 1), and the HONEST off-oracle
-      KRAB-ZNF + MAGE-floor caveats are carried in the JSON (not dropped).
+      deterministic, n_families -> 603 (frontier gamma=0.40 row with repeat-bridge + antisense held
+      off), the collapsed-array OVERSIZE blobs MPHOSPH8 + LOC134758618 are removed
+      (oversize residual 3 -> 1), and the HONEST off-oracle KRAB-ZNF + MAGE-floor caveats are carried
+      in the JSON (not dropped).
   (k) --legacy still opts out even with --high-precision; --high-precision composes with
       --no-repeat-gate (gamma=0.40 AND the gate ablated).
   (p) ANTISENSE / reciprocal-overlap gate (4th default-on FP gate): DEFAULT (gate ON) dissolves the
@@ -30,12 +31,18 @@ Asserts:
       TRMT10B, ARHGEF39+CCDC107, HDGFL3+TM6SF1 no longer co-membered) while SPARING the real antisense
       pair MPDU1/MPDU1-AS1 (reciprocal-overlap 0.4855 < 0.50) and, via the MEGA-SPAN guard, the GSTM2
       array (largest block byte-identical with vs without the gate).  --no-antisense-gate /
-      RUSTLE_NO_ANTISENSE_GATE=1 recovers the pre-antisense catalog (00c4ff2e) BYTE-IDENTICAL, and the
+      RUSTLE_NO_ANTISENSE_GATE=1 recovers the pre-antisense catalog (10d54492) BYTE-IDENTICAL, and the
       gate composes with every other --no-* flag.
   (q) COLINEAR-MERGE gate (5th default-on stage): post-demote family merge by exon colinearity +
       adaptive adjacent-junction floor.  --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1 recovers the
       pre-merge catalog (548029ad) BYTE-IDENTICAL.  DEFAULT keeps MAGEA9 + GSTM1/2/4/5 merged while
       blocking the ANKRD18 + ANKRD36C domain-share over-merge.
+  (r) DIVERGENT same-chromosome merge (6th default-on stage): DEFAULT-ON, recovers HERC2-style
+      duplicons.  --no-divergent-merge / RUSTLE_NO_DIVERGENT_MERGE=1 recovers the pre-divergent catalog
+      (991913da, 553 families) BYTE-IDENTICAL.
+  (s) CROSS-CHROMOSOME domain-bridge split is DEFAULT-OFF (over-splits real singleton cross-chrom
+      paralogs).  --crosschrom-split / RUSTLE_CROSSCHROM_SPLIT=1 opt-in splits 79 multi-chromosome
+      families (667 families).
 
 Run: /home/juanfra/miniforge3/bin/python bench/test_family_rna_refine.py
 """
@@ -54,27 +61,35 @@ SHIPPED = os.path.join(BENCH, "denovo_families.py")
 PY = sys.executable
 
 # md5 of the DEFAULT catalog (gamma=0.20, repeat-hub + ANTISENSE + recombinant-split + multi-repeat-bridge
-# + COLINEAR-MERGE ALL FIVE stages ON, 553 families).  The 5th stage (colinear merge) is DEFAULT-ON and
-# merges split families by exon colinearity after demote.  The --high-precision flag must NOT perturb the
-# default: `family_rna_refine.py` with no flag reproduces this.
-GOLDEN_DEFAULT_TSV_MD5 = "991913da4345e88bf56fbd939d753292"
+# + COLINEAR-MERGE + DIVERGENT-MERGE ALL ON, crosschrom-split OFF, 551 families).  The divergent merge is
+# DEFAULT-ON and recovers HERC2-style same-chromosome duplicons.  The --high-precision flag must NOT perturb
+# the default: `family_rna_refine.py` with no flag reproduces this.
+GOLDEN_DEFAULT_TSV_MD5 = "de430908775d7b07674238d2eace1fa4"
 # md5 of the PRE-COLINEAR-MERGE catalog (--no-colinear-merge: 566 families, the 4-gate default before
 # the colinear-merge stage was added).  Ablating ONLY the colinear-merge stage recovers this EXACTLY
 # (byte-for-byte) -- the byte-identical-when-OFF discipline.
 GOLDEN_NO_COLINEAR_MERGE_TSV_MD5 = "548029ade983645f71c772a9d9257334"
 # md5 of the PRE-ANTISENSE catalog (--no-antisense-gate: gamma=0.20, repeat-hub + recombinant-split +
-# multi-repeat-bridge + colinear-merge ON, antisense OFF, 560 families) = the shipped default WITHOUT the
-# antisense gate.  The antisense gate is DEFAULT-ON; ablating ONLY it must recover this EXACTLY.
-GOLDEN_NO_ANTISENSE_TSV_MD5 = "00c4ff2ea0d7afb8b8505d68487404a2"
+# multi-repeat-bridge + colinear-merge + divergent-merge ON, antisense OFF, 558 families) = the shipped
+# default WITHOUT the antisense gate.  The antisense gate is DEFAULT-ON; ablating ONLY it must recover
+# this EXACTLY.
+GOLDEN_NO_ANTISENSE_TSV_MD5 = "ff6a0e18eff1e9ca79cb06e02c8d40f5"
 # md5 of the pre-repeat-bridge catalog WITH the antisense gate ON (--no-repeat-bridge-gate: gamma=0.20,
-# repeat-hub + antisense + recombinant-split + colinear-merge ON, multi-repeat-bridge OFF, 581 families).
-GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5 = "0da31d5925e1087d051f1133660ec93e"
+# repeat-hub + antisense + recombinant-split + colinear-merge + divergent-merge ON,
+# multi-repeat-bridge OFF, 578 families).
+GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5 = "d3d055aae80698a0a4843554ea1c0740"
 # md5 of the pre-repeat-bridge catalog with BOTH the antisense AND repeat-bridge gates OFF
-# (--no-antisense-gate --no-repeat-bridge-gate: 590 families).
-GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5 = "5f438104f2f9225b734c3fba1695f1c3"
+# (--no-antisense-gate --no-repeat-bridge-gate: 588 families).
+GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5 = "d705c1f701a9a68ec34ee38ecb896095"
 # md5 of the pre-split catalog with antisense + repeat-bridge OFF (--no-antisense-gate
-# --no-split-recombinants --no-repeat-bridge-gate, gamma=0.20, repeat-hub + colinear-merge ON, 591 families).
-GOLDEN_NOSPLIT_TSV_MD5 = "8f79718a79768b45b011efd883a2b207"
+# --no-split-recombinants --no-repeat-bridge-gate, gamma=0.20, repeat-hub + colinear-merge +
+# divergent-merge ON, 589 families).
+GOLDEN_NOSPLIT_TSV_MD5 = "2fb938b28e2cce65ecdb41e394701dcb"
+# md5 of the catalog WITHOUT the divergent same-chrom merge (--no-divergent-merge: 553 families).
+# This is byte-identical to the previous default (before divergent merge was added).
+GOLDEN_NO_DIVERGENT_MERGE_TSV_MD5 = "991913da4345e88bf56fbd939d753292"
+# md5 of the catalog WITH the cross-chromosome domain-bridge split opt-in (--crosschrom-split: 667 families).
+GOLDEN_CROSSCHROM_SPLIT_TSV_MD5 = "c01d287c124bb91e168b05866ffc74ed"
 
 # fam17 = the 27-gene / 16-protein-family EXTREME repeat-bridge hub (VG_REPEAT_CATALOG.md sec 3).
 FAM17 = ["C9H11orf65", "COPS9", "DCAF16", "DCP1B", "GIMAP4", "KLHL33", "LIPA", "LOC109024560",
@@ -223,7 +238,7 @@ def test_default_deterministic():
 
 
 def test_default_byte_identical_to_golden():
-    r = _run([])            # DEFAULT: no flag (repeat-hub + antisense + recombinant-split + multi-repeat-bridge + colinear-merge ALL ON)
+    r = _run([])            # DEFAULT: no flag (repeat-hub + antisense + recombinant-split + multi-repeat-bridge + colinear-merge + divergent-merge ALL ON; crosschrom-split OFF)
     assert r.returncode == 0, r.stderr
     got = _md5(OUT_TSV)
     assert got == GOLDEN_DEFAULT_TSV_MD5, \
@@ -231,7 +246,7 @@ def test_default_byte_identical_to_golden():
     d = json.load(open(OUT_JSON))
     assert d["rule"]["gamma"] == 0.2, f"default JSON gamma != 0.20: {d['rule']['gamma']}"
     assert d["guards"]["gamma"] == 0.2, f"default guards gamma != 0.20: {d['guards']['gamma']}"
-    assert d["n_families"] == 553, f"default n_families != 553: {d['n_families']}"
+    assert d["n_families"] == 551, f"default n_families != 551: {d['n_families']}"
     assert "high_precision" not in d, "default JSON must NOT carry the high_precision block"
     # recombinant-split gate is DEFAULT-ON and splits the 2 recall-safe HIGH-confidence mosaics
     rs = d["recombinant_split"]
@@ -264,10 +279,18 @@ def test_default_byte_identical_to_golden():
     assert cm["enabled"] is True, "default colinear merge not enabled"
     assert cm["n_merge_edges"] >= 1, f"colinear merge produced no edges: {cm['n_merge_edges']}"
     assert cm["min_colinear"] == 2 and cm["min_adjacent_junctions"] == 2
+    # divergent same-chrom merge (6th default-on stage) is DEFAULT-ON and recovers HERC2
+    dm = d["divergent_merge"]
+    assert dm["enabled"] is True and dm["active"] is True, "default divergent merge not enabled/active"
+    assert dm["n_merge_edges"] >= 1, f"divergent merge produced no edges: {dm['n_merge_edges']}"
+    # cross-chromosome domain-bridge split is DEFAULT-OFF (over-splits real singleton paralogs)
+    ccs = d["crosschrom_split"]
+    assert ccs["enabled"] is False, "default crosschrom split should be OFF"
     print(f"(i) default (no flag) byte-identical to golden TSV (md5 {GOLDEN_DEFAULT_TSV_MD5}); "
           f"gamma=0.20, {d['n_families']} families, recombinant-split ON (2 split), multi-repeat-bridge ON "
           f"({mrb['n_families_cut']} cut, T=8/C=2), antisense ON ({ag['n_cross_gene_pairs_cut']} pairs cut), "
-          f"colinear-merge ON ({cm['n_merge_edges']} edges), no high_precision block : OK")
+          f"colinear-merge ON ({cm['n_merge_edges']} edges), divergent-merge ON ({dm['n_merge_edges']} edges), "
+          f"crosschrom-split OFF, no high_precision block : OK")
 
 
 def test_recombinant_split_gate():
@@ -285,7 +308,7 @@ def test_recombinant_split_gate():
         "pre-split: GALNT17 + LOC101126070 not co-membered (expected the fid-210 mosaic)"
     off = _md5(OUT_TSV);  d_off = json.load(open(OUT_JSON))
     assert off == GOLDEN_NOSPLIT_TSV_MD5, f"--no-split-recombinants drifted from pre-split golden: {off}"
-    assert d_off["n_families"] == 591 and d_off["recombinant_split"]["enabled"] is False
+    assert d_off["n_families"] == 589 and d_off["recombinant_split"]["enabled"] is False
     assert d_off["multi_repeat_bridge"]["enabled"] is False and d_off["antisense_overlap_gate"]["enabled"] is False
     # env form == flag form (byte-identical) -- proves same-gene loci never separated (recall-safe)
     r2 = _run(["--no-repeat-bridge-gate", "--no-antisense-gate"],
@@ -300,7 +323,7 @@ def test_recombinant_split_gate():
     assert d["recombinant_split"]["enabled"] is True and d["recombinant_split"]["n_families_split"] == 2
     print("(l) recombinant-split ON breaks the fid-210 mosaic (GALNT17|LOC101126070 no longer "
           "co-membered); --no-split-recombinants (+--no-repeat-bridge-gate +--no-antisense-gate) "
-          "recovers 591 pre-split golden; env==flag : OK")
+          "recovers 589 pre-split golden; env==flag : OK")
     _run([])   # restore DEFAULT
 
 
@@ -319,7 +342,7 @@ def test_antisense_gate():
     assert off_json["antisense_overlap_gate"]["enabled"] is False
     assert off_json["rule"]["antisense_gate_enabled"] is False
     assert off_json["antisense_overlap_gate"]["n_cross_gene_pairs_cut"] == 0, "ablation still cut edges"
-    assert off_json["n_families"] == 560, f"--no-antisense-gate n_families != 560: {off_json['n_families']}"
+    assert off_json["n_families"] == 558, f"--no-antisense-gate n_families != 558: {off_json['n_families']}"
     # env form == flag form (byte-identical) -- the byte-identical-when-OFF discipline
     r2 = _run([], env_extra={"RUSTLE_NO_ANTISENSE_GATE": "1"});  assert r2.returncode == 0, r2.stderr
     assert _md5(OUT_TSV) == off_tsv, "RUSTLE_NO_ANTISENSE_GATE=1 != --no-antisense-gate"
@@ -344,8 +367,8 @@ def test_antisense_gate():
     bn = max(_blocks_with(on, GSTM2), key=len)
     assert bo == bn, f"GSTM2 largest block CHANGED by the antisense gate (mega-span guard failed): {bo ^ bn}"
     ag = on_json["antisense_overlap_gate"]
-    print(f"(p) antisense gate: --no-antisense-gate recovers pre-antisense golden 00c4ff2e byte-identical "
-          f"(flag==env, 560 fam); DEFAULT dissolves the 5 named FP ({ag['n_cross_gene_pairs_cut']} pairs "
+    print(f"(p) antisense gate: --no-antisense-gate recovers pre-antisense golden {GOLDEN_NO_ANTISENSE_TSV_MD5} "
+          f"byte-identical (flag==env, 558 fam); DEFAULT dissolves the 5 named FP ({ag['n_cross_gene_pairs_cut']} pairs "
           f"cut), spares MPDU1/MPDU1-AS1 + GSTM2 (mega-span); deterministic : OK")
     _run([])   # restore DEFAULT
 
@@ -553,7 +576,7 @@ def test_high_precision_gamma_040():
     assert r3.returncode == 0, r3.stderr
     assert _md5(OUT_TSV) == hp_tsv and _md5(OUT_JSON) == hp_json, "RUSTLE_HIGH_PRECISION=1 != --high-precision"
     # (j) precision impact: n_families increases toward the frontier; oversize residual drops (blobs removed)
-    assert d["n_families"] == 606, f"high-precision n_families {d['n_families']} != 606"
+    assert d["n_families"] == 604, f"high-precision n_families {d['n_families']} != 604"
     assert d["n_families"] > d_def["n_families"], "high-precision did not split toward the frontier"
     rem_hp, rem_def = d["residual_fp"]["residual_remaining"], d_def["residual_fp"]["residual_remaining"]
     assert rem_hp["oversize"] < rem_def["oversize"], \
@@ -619,13 +642,13 @@ def test_repeat_bridge_gate():
         f"{GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5}: {off_tsv}"
     assert off_json["multi_repeat_bridge"]["enabled"] is False
     assert off_json["multi_repeat_bridge"]["n_families_cut"] == 0, "ablation still cut families"
-    assert off_json["n_families"] == 581
+    assert off_json["n_families"] == 579
     assert off_json["antisense_overlap_gate"]["enabled"] is True, "antisense gate wrongly disabled"
     # additionally ablating the antisense gate recovers the pre-repeat-bridge golden 5f438104.
     rh = _run(["--no-repeat-bridge-gate", "--no-antisense-gate"]);  assert rh.returncode == 0, rh.stderr
     assert _md5(OUT_TSV) == GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5, \
         f"--no-repeat-bridge-gate --no-antisense-gate != pre-bridge golden {GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5}"
-    assert json.load(open(OUT_JSON))["n_families"] == 590
+    assert json.load(open(OUT_JSON))["n_families"] == 588
     # (e) env form == flag form (byte-identical)
     r2 = _run([], env_extra={"RUSTLE_NO_REPEAT_BRIDGE_GATE": "1"});  assert r2.returncode == 0, r2.stderr
     assert _md5(OUT_TSV) == off_tsv, "RUSTLE_NO_REPEAT_BRIDGE_GATE=1 != --no-repeat-bridge-gate"
@@ -656,9 +679,10 @@ def test_repeat_bridge_gate():
 
 
 def test_repeat_bridge_r_oracle_held():
-    """(d) R_oracle 51/57 = 0.8947 HELD on the NEW default catalog (antisense + colinear-merge ON),
-    measured VIA bench/family_level_pr_current.py (the shipped diploid-DNA-oracle recall +
-    candidate_generation_recall relabel).  E_p purity is 0.8879; diploid distinct-FP stays 4, oversize 1."""
+    """(d) R_oracle 51/57 = 0.8947 HELD on the NEW default catalog (antisense + colinear-merge +
+    divergent-merge ON, crosschrom-split OFF), measured VIA bench/family_level_pr_current.py
+    (the shipped diploid-DNA-oracle recall + candidate_generation_recall relabel).
+    E_p purity is 0.8893; diploid distinct-FP stays 4, oversize 1."""
     r = _run([]);  assert r.returncode == 0, r.stderr          # ensure DEFAULT catalog on disk
     assert _md5(OUT_TSV) == GOLDEN_DEFAULT_TSV_MD5
     pr_json = os.path.join(BENCH, "family_level_pr_current.json")
@@ -675,7 +699,7 @@ def test_repeat_bridge_r_oracle_held():
     assert o["oracle_multicopy_genes"] == 57, o["oracle_multicopy_genes"]
     assert o["recall_oracle"] == 0.8947, f"R_oracle != 0.8947: {o['recall_oracle']}"
     # E_p purity; diploid distinct-FP stays 4, oversize 1
-    assert d["truth1_protein_Ep"]["current"]["precision_Ep"] == 0.8879, \
+    assert d["truth1_protein_Ep"]["current"]["precision_Ep"] == 0.8893, \
         d["truth1_protein_Ep"]["current"]["precision_Ep"]
     assert o["distinct_fp_blocks"] == 4, f"distinct-FP not <= 4: {o['distinct_fp_blocks']}"
     assert o["n_oversize"] == 1, f"oversize FP not 1: {o['n_oversize']}"
@@ -695,7 +719,7 @@ def test_repeat_bridge_composes():
     assert d["rule"]["repeat_gate_enabled"] is False and d["multi_repeat_bridge"]["enabled"] is True
     assert d["multi_repeat_bridge"]["n_families_cut"] >= 1, "bridge gate inert under --no-repeat-gate"
     # compose with --no-split-recombinants (split OFF, bridge + antisense ON); +--no-repeat-bridge-gate
-    # --no-antisense-gate recovers the 591 pre-split golden (8f79718a).
+    # --no-antisense-gate recovers the 589 pre-split golden (2fb938b2).
     r = _run(["--no-split-recombinants"]);  assert r.returncode == 0, r.stderr
     d = json.load(open(OUT_JSON))
     assert d["recombinant_split"]["enabled"] is False and d["multi_repeat_bridge"]["enabled"] is True
@@ -705,7 +729,7 @@ def test_repeat_bridge_composes():
     r = _run(["--no-split-recombinants", "--no-repeat-bridge-gate", "--no-antisense-gate"])
     assert r.returncode == 0, r.stderr
     assert _md5(OUT_TSV) == GOLDEN_NOSPLIT_TSV_MD5 and _md5(OUT_TSV) != on_nosplit, \
-        "--no-split-recombinants --no-repeat-bridge-gate --no-antisense-gate did not recover the 591 pre-split golden"
+        "--no-split-recombinants --no-repeat-bridge-gate --no-antisense-gate did not recover the 589 pre-split golden"
     # compose with --high-precision (gamma 0.40, bridge ON)
     r = _run(["--high-precision"]);  assert r.returncode == 0, r.stderr
     d = json.load(open(OUT_JSON))
@@ -718,6 +742,50 @@ def test_repeat_bridge_composes():
     print("(o) multi-repeat-bridge composes with --no-repeat-gate / --no-split-recombinants / "
           "--high-precision (default-ON in each; --no-repeat-bridge-gate disables only it) : OK")
     _run([])   # restore DEFAULT catalog
+
+
+def test_divergent_merge_gate():
+    """(p) DIVERGENT same-chromosome merge is DEFAULT-ON; --no-divergent-merge recovers the pre-divergent
+    catalog (553 families, the previous default) BYTE-IDENTICAL, and the env ablation matches the flag."""
+    r = _run(["--no-divergent-merge"]);  assert r.returncode == 0, r.stderr
+    off_tsv = _md5(OUT_TSV);  off_json = json.load(open(OUT_JSON))
+    assert off_tsv == GOLDEN_NO_DIVERGENT_MERGE_TSV_MD5, \
+        f"--no-divergent-merge drifted from golden {GOLDEN_NO_DIVERGENT_MERGE_TSV_MD5}: {off_tsv}"
+    assert off_json["divergent_merge"]["enabled"] is False
+    assert off_json["divergent_merge"]["active"] is False
+    assert off_json["divergent_merge"]["n_merge_edges"] == 0
+    assert off_json["n_families"] == 553, f"--no-divergent-merge n_families != 553: {off_json['n_families']}"
+    # env form == flag form
+    r2 = _run([], env_extra={"RUSTLE_NO_DIVERGENT_MERGE": "1"})
+    assert r2.returncode == 0 and _md5(OUT_TSV) == off_tsv, "RUSTLE_NO_DIVERGENT_MERGE=1 != --no-divergent-merge"
+    # DEFAULT has divergent merge ON and produces at least the HERC2 edge
+    r3 = _run([]);  d = json.load(open(OUT_JSON))
+    assert d["divergent_merge"]["enabled"] is True and d["divergent_merge"]["active"] is True
+    assert d["divergent_merge"]["n_merge_edges"] >= 1, \
+        f"default divergent merge produced no edges: {d['divergent_merge']['n_merge_edges']}"
+    print(f"(p) divergent-merge DEFAULT-ON ({d['divergent_merge']['n_merge_edges']} edges); "
+          "--no-divergent-merge recovers 553-family pre-divergent golden byte-identical : OK")
+
+
+def test_crosschrom_split_gate():
+    """(q) CROSS-CHROMOSOME domain-bridge split is DEFAULT-OFF (it over-splits real singleton
+    cross-chrom paralogs).  --crosschrom-split opt-in splits 79 multi-chromosome families and
+    increases the catalog to 667 families; env form matches flag."""
+    r = _run([]);  d = json.load(open(OUT_JSON))
+    assert d["crosschrom_split"]["enabled"] is False and d["crosschrom_split"]["active"] is False
+    assert d["crosschrom_split"]["n_families_split"] == 0
+    r2 = _run(["--crosschrom-split"]);  d2 = json.load(open(OUT_JSON));  on_tsv = _md5(OUT_TSV)
+    assert d2["crosschrom_split"]["enabled"] is True and d2["crosschrom_split"]["active"] is True
+    assert d2["crosschrom_split"]["n_families_split"] == 79, \
+        f"--crosschrom-split split {d2['crosschrom_split']['n_families_split']} families, expected 79"
+    assert d2["n_families"] == 667, f"--crosschrom-split n_families != 667: {d2['n_families']}"
+    assert on_tsv == GOLDEN_CROSSCHROM_SPLIT_TSV_MD5, \
+        f"--crosschrom-split drifted from golden {GOLDEN_CROSSCHROM_SPLIT_TSV_MD5}: {on_tsv}"
+    # env form == flag form
+    r3 = _run([], env_extra={"RUSTLE_CROSSCHROM_SPLIT": "1"})
+    assert r3.returncode == 0 and _md5(OUT_TSV) == on_tsv, "RUSTLE_CROSSCHROM_SPLIT=1 != --crosschrom-split"
+    print("(q) crosschrom-split DEFAULT-OFF; --crosschrom-split opt-in splits 79 families "
+          "(n_families 551 -> 667), deterministic, env==flag : OK")
 
 
 if __name__ == "__main__":
@@ -737,5 +805,7 @@ if __name__ == "__main__":
     test_repeat_bridge_composes()
     test_high_precision_gamma_040()
     test_flags_compose()
+    test_divergent_merge_gate()
+    test_crosschrom_split_gate()
     _run([])   # leave the DEFAULT (all-gates) catalog on disk
     print("\nALL TESTS PASSED")

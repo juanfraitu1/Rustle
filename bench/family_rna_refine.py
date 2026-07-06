@@ -61,11 +61,12 @@ MULTIPLICITY (# distinct genes traversing a node) -- read/structure-derived and 
 soft-mask is used NOWHERE in the gate (it is only VALIDATION in vg_repeat_catalog.py sec 4).
 DNA/protein/genome/soft-mask enter ONLY the VALIDATION report, never a decision.
 
-DEFAULT-ON (opt out with --legacy; ablate the gates with --no-*)
----------------------------------------------------------------
+DEFAULT-ON/OFF (opt out with --legacy; ablate the gates with --no-*)
+--------------------------------------------------------------------
 The RNA-only refinement (core+aln + repeat-hub gate + antisense/reciprocal-overlap gate + gamma +
-recombinant-split gate + multi-repeat-bridge gate + demote) is now the DEFAULT family definition --
-runs by default.  Each gate has a matching ablation flag/env (all DEFAULT-ON):
+recombinant-split gate + multi-repeat-bridge gate + demote + exon-colinearity merge +
+divergent same-chrom merge) is now the DEFAULT family definition -- runs by default.  Each gate has a
+matching ablation flag/env (all DEFAULT-ON except crosschrom-split):
   --no-repeat-gate        / RUSTLE_NO_REPEAT_GATE=1         (single-extreme-edge repeat-hub gate)
   --no-antisense-gate     / RUSTLE_NO_ANTISENSE_GATE=1      (4th gate: edge-level antisense/reciprocal-
                                                             overlap; same-locus opposite-strand nested
@@ -73,6 +74,11 @@ runs by default.  Each gate has a matching ablation flag/env (all DEFAULT-ON):
   --no-split-recombinants / RUSTLE_NO_SPLIT_RECOMBINANTS=1  (recombinant/mosaic path-colinearity split)
   --no-repeat-bridge-gate / RUSTLE_NO_REPEAT_BRIDGE_GATE=1  (3rd gate: family-level multi-repeat-bridge
                                                             conjunction; MULTI_REPEAT_BRIDGE_GATE.md)
+  --no-colinear-merge     / RUSTLE_NO_COLINEAR_MERGE=1      (post-demote family merge by exon colinearity)
+  --no-divergent-merge    / RUSTLE_NO_DIVERGENT_MERGE=1     (post-colinear divergent same-chrom duplicon
+                                                            merge, e.g. HERC2)
+  --crosschrom-split      / RUSTLE_CROSSCHROM_SPLIT=1       (DEFAULT-OFF opt-in: cross-chrom domain-bridge
+                                                            split; over-splits real singleton paralogs)
 --no-repeat-bridge-gate recovers the pre-repeat-bridge catalog (recombinant-split ON, repeat-bridge
 OFF) BYTE-IDENTICAL (md5 5e58378a).  The legacy core_recip>=0.13 catalog is recovered with --legacy OR
 env RUSTLE_RNA_ORACLE=0 (prints one line, exits 0 without writing; run bench/denovo_families.py for the
@@ -119,10 +125,12 @@ gamma=0.40 catalog and records the active gamma + caveats in the summary.
 DETERMINISM
 -----------
 PYTHONHASHSEED=0 (re-exec), fixed gamma=0.20 seed=0, sorted writes.  Re-runs are
-byte-identical (see bench/test_family_rna_refine.py).  The DEFAULT catalog (all four gates ON) is
-md5 548029ad across runs (566 families); --no-antisense-gate recovers the pre-antisense md5 dca64cbd
-(573 families) BYTE-IDENTICAL.  An outlier "default" md5 means a gate-ablation flag / env leaked in
-(e.g. RUSTLE_HIGH_PRECISION=1 -> gamma=0.40; RUSTLE_NO_ANTISENSE_GATE=1 -> dca64cbd), never a
+byte-identical (see bench/test_family_rna_refine.py).  The DEFAULT catalog (repeat-hub + antisense +
+recombinant-split + multi-repeat-bridge + colinear-merge + divergent-merge ON, crosschrom-split OFF)
+is md5 de430908 across runs (551 families); --no-divergent-merge recovers the pre-divergent md5
+991913da (553 families), --no-antisense-gate recovers the pre-antisense md5 ff6a0e18 (558 families)
+BYTE-IDENTICAL.  An outlier "default" md5 means a gate-ablation flag / env leaked in
+(e.g. RUSTLE_HIGH_PRECISION=1 -> gamma=0.40; RUSTLE_NO_DIVERGENT_MERGE=1 -> 991913da), never a
 nondeterministic default.
 
 Writes: bench/family_rna_refine.tsv (family_id -> member loci/genes) + bench/family_rna_refine.json
@@ -384,7 +392,8 @@ def load_gene_strand():
 
 # --------------------------------------------------------------------------- build (RNA-only)
 def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True,
-                  antisense_gate=True, merge_colinear=True):
+                  antisense_gate=True, merge_colinear=True, merge_divergent=True,
+                  crosschrom_split=False):
     """Apply the recall-preserving RNA-only gate + repeat-hub gate + antisense/reciprocal-overlap gate
     + shipped gamma refinement + recombinant-split gate + multi-repeat-bridge gate + allele demote +
     optional exon-colinearity family merge.
@@ -554,9 +563,31 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
             antisense_recip_min=ANTISENSE_RECIP_OVERLAP_MIN, mega_span_max=MEGA_SPAN_MAX,
             repeat_mult_min=REPEAT_MULT_MIN, verbose=False)
 
+    # ---- divergent same-chrom duplicon merge (DEFAULT-ON; --no-divergent-merge ablates)
+    divergent_merge_info = []
+    if merge_colinear and merge_divergent:
+        catalog, divergent_merge_info = FMC.merge_catalog_divergent_samechrom(
+            catalog, genes, gene_of_dn2, gene_strand, pair_repeat_mult,
+            raw_edge_pairs=set(edge_pairs),
+            id_thresh=FMC.DIVERGENT_ID_THRESH, min_colinear=FMC.DIVERGENT_MIN_COLINEAR,
+            min_adjacent_junctions=FMC.DIVERGENT_MIN_ADJACENT_JUNCTIONS,
+            window_bp=FMC.DIVERGENT_WINDOW_BP,
+            antisense_recip_min=ANTISENSE_RECIP_OVERLAP_MIN, mega_span_max=MEGA_SPAN_MAX,
+            repeat_mult_min=REPEAT_MULT_MIN, verbose=False)
+
+    # ---- cross-chromosome domain-bridge split (DEFAULT-OFF; --crosschrom-split enables)
+    crosschrom_split_info = []
+    if merge_colinear and crosschrom_split:
+        catalog, crosschrom_split_info = FMC.split_crosschrom_domain_bridges(
+            catalog, genes, gene_of_dn2,
+            id_thresh=FMC.CROSSCHROM_ID_THRESH, min_colinear=FMC.CROSSCHROM_MIN_COLINEAR,
+            min_adjacent_junctions=FMC.CROSSCHROM_MIN_ADJACENT_JUNCTIONS, verbose=False)
+
     return dict(
         catalog=catalog, demotions=demotions, merge_info=merge_info,
-        merge_colinear=merge_colinear,
+        divergent_merge_info=divergent_merge_info, crosschrom_split_info=crosschrom_split_info,
+        merge_colinear=merge_colinear, merge_divergent=merge_divergent,
+        crosschrom_split=crosschrom_split,
         gene_of_dn=gene_of_dn2, genes=genes, raw_fams=raw_fams, edge_pairs=edge_pairs,
         repeat_gate=repeat_gate, gamma=gamma,
         split_recombinants=split_recombinants, n_families_split=n_families_split, split_info=split_info,
@@ -650,9 +681,11 @@ def write_outputs(built, val):
     repeat_gate = built["repeat_gate"]
     summary = dict(
         stage="family_rna_refine (RNA-only recall-preserving refinement + repeat-hub gate + "
-              "antisense/reciprocal-overlap gate + recombinant-split gate + multi-repeat-bridge gate; "
+              "antisense/reciprocal-overlap gate + recombinant-split gate + multi-repeat-bridge gate + "
+              "divergent same-chrom merge + cross-chrom domain-bridge split (default OFF); "
               "DEFAULT-ON, opt out --legacy / ablate gates --no-repeat-gate / --no-antisense-gate / "
-              "--no-split-recombinants / --no-repeat-bridge-gate)",
+              "--no-split-recombinants / --no-repeat-bridge-gate / --no-colinear-merge / "
+              "--no-divergent-merge / --crosschrom-split)",
         rule=dict(edge="KEEP iff core_recip>=%.2f AND aln_frac>=%.2f AND NOT(min_shared_mult>=%d) "
                        "AND NOT(antisense_recip_overlap>=%.2f)"
                        % (CORE_MIN, ALN_MIN, REPEAT_MULT_MIN, ANTISENSE_RECIP_OVERLAP_MIN),
@@ -661,6 +694,8 @@ def write_outputs(built, val):
                   antisense_gate_enabled=built["antisense_gate"],
                   antisense_recip_overlap_min=ANTISENSE_RECIP_OVERLAP_MIN, mega_span_max=MEGA_SPAN_MAX,
                   split_recombinants_enabled=built["split_recombinants"],
+                  divergent_merge_enabled=built["merge_divergent"],
+                  crosschrom_split_enabled=built["crosschrom_split"],
                   repeat_bridge_gate_enabled=built["repeat_bridge_gate"],
                   repeat_bridge_mult_min=REPEAT_BRIDGE_MULT_MIN,
                   repeat_bridge_count_min=REPEAT_BRIDGE_COUNT_MIN,
@@ -687,6 +722,34 @@ def write_outputs(built, val):
                   "neighbours (ANKRD18 + ANKRD36C) while recovering short real split-family blocks "
                   "(GSTM1/2/4/5).  Ablated by --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1."
                   % (FMC.MIN_COLINEAR, FMC.ID_THRESH, FMC.MIN_ADJACENT_JUNCTIONS))),
+        divergent_merge=dict(
+            enabled=built["merge_divergent"],
+            active=built["merge_colinear"] and built["merge_divergent"],
+            id_thresh=FMC.DIVERGENT_ID_THRESH,
+            min_colinear=FMC.DIVERGENT_MIN_COLINEAR,
+            min_adjacent_junctions=FMC.DIVERGENT_MIN_ADJACENT_JUNCTIONS,
+            window_bp=FMC.DIVERGENT_WINDOW_BP,
+            n_merge_edges=len(built.get("divergent_merge_info", [])),
+            merge_edges=built.get("divergent_merge_info", []),
+            note=("Post-colinear merge for divergent same-chromosome duplicons (e.g. HERC2): merge if "
+                  "blocks share >= %d colinear exons at id >= %.2f with >= %d adjacent junctions, "
+                  "are on the same chromosome, and pass antisense/repeat gates.  Ablated by "
+                  "--no-divergent-merge / RUSTLE_NO_DIVERGENT_MERGE=1."
+                  % (FMC.DIVERGENT_MIN_COLINEAR, FMC.DIVERGENT_ID_THRESH,
+                     FMC.DIVERGENT_MIN_ADJACENT_JUNCTIONS))),
+        crosschrom_split=dict(
+            enabled=built["crosschrom_split"],
+            active=built["merge_colinear"] and built["crosschrom_split"],
+            id_thresh=FMC.CROSSCHROM_ID_THRESH,
+            min_colinear=FMC.CROSSCHROM_MIN_COLINEAR,
+            min_adjacent_junctions=FMC.CROSSCHROM_MIN_ADJACENT_JUNCTIONS,
+            n_families_split=len(built.get("crosschrom_split_info", [])),
+            splits=built.get("crosschrom_split_info", []),
+            note=("Post-merge cross-chromosome domain-bridge split: a family spanning >1 chromosome is "
+                  "kept only if cross-chromosome components share >= %d colinear exons at id >= %.2f "
+                  "or share identical/related gene-symbol roots; otherwise split per chromosome. "
+                  "Default is OFF; enable with --crosschrom-split / RUSTLE_CROSSCHROM_SPLIT=1."
+                  % (FMC.CROSSCHROM_MIN_COLINEAR, FMC.CROSSCHROM_ID_THRESH))),
         recombinant_split=dict(
             enabled=built["split_recombinants"],
             n_families_split=built["n_families_split"],
@@ -813,10 +876,11 @@ def write_outputs(built, val):
 
 # --------------------------------------------------------------------------- driver
 def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True,
-        antisense_gate=True, merge_colinear=True):
+        antisense_gate=True, merge_colinear=True, merge_divergent=True, crosschrom_split=False):
     built = build_catalog(repeat_gate=repeat_gate, gamma=gamma, split_recombinants=split_recombinants,
                           repeat_bridge_gate=repeat_bridge_gate, antisense_gate=antisense_gate,
-                          merge_colinear=merge_colinear)
+                          merge_colinear=merge_colinear, merge_divergent=merge_divergent,
+                          crosschrom_split=crosschrom_split)
     val = validate(built)
     summary = write_outputs(built, val) if write else None
     return built, val, summary
@@ -863,8 +927,26 @@ def _report(built, val, summary):
         P(f"colinear merge   : ON  id_thresh={FMC.ID_THRESH} min_colinear={FMC.MIN_COLINEAR} "
           f"min_adjacent_junctions={FMC.MIN_ADJACENT_JUNCTIONS} window_bp={FMC.WINDOW_BP}  ->  "
           f"{len(merge_info)} merge edges")
+        if built.get("merge_divergent"):
+            div = built["divergent_merge_info"]
+            P(f"divergent merge  : ON  id_thresh={FMC.DIVERGENT_ID_THRESH} "
+              f"min_colinear={FMC.DIVERGENT_MIN_COLINEAR} "
+              f"min_adjacent_junctions={FMC.DIVERGENT_MIN_ADJACENT_JUNCTIONS} "
+              f"window_bp={FMC.DIVERGENT_WINDOW_BP}  ->  {len(div)} merge edges")
+        else:
+            P("divergent merge  : OFF (ablated)")
+        if built.get("crosschrom_split"):
+            csi = built["crosschrom_split_info"]
+            P(f"crosschrom split : ON  id_thresh={FMC.CROSSCHROM_ID_THRESH} "
+              f"min_colinear={FMC.CROSSCHROM_MIN_COLINEAR} "
+              f"min_adjacent_junctions={FMC.CROSSCHROM_MIN_ADJACENT_JUNCTIONS}  ->  "
+              f"{len(csi)} families split")
+        else:
+            P("crosschrom split : OFF (default)")
     else:
         P("colinear merge   : OFF (ablated)")
+        P("divergent merge  : OFF (colinear merge ablated)")
+        P("crosschrom split : OFF (colinear merge ablated)")
     P(f"n_families       : {len(built['catalog'])}")
     P(f"alleles demoted  : {len(built['demotions'])}  "
       + ", ".join(f"{d['gene']}(dl={d['n_loci']},bal={d['balanced_frac']:.2f},"
@@ -933,6 +1015,22 @@ def main(argv=None):
                          "same chromosome and pass antisense/repeat gates); keeps all upstream gates and "
                          "recovers the pre-merge catalog (also RUSTLE_NO_COLINEAR_MERGE=1)"
                          % (FMC.MIN_COLINEAR, FMC.ID_THRESH))
+    ap.add_argument("--no-divergent-merge", action="store_true",
+                    help="ablation: DISABLE just the post-colinear divergent same-chromosome duplicon "
+                         "merge (e.g. HERC2); lower exon-identity threshold (%.2f) with a longer "
+                         "colinear-exon backbone (>= %d exons / >= %d adjacent junctions); "
+                         "keeps the standard colinear merge and all upstream gates "
+                         "(also RUSTLE_NO_DIVERGENT_MERGE=1)"
+                         % (FMC.DIVERGENT_ID_THRESH, FMC.DIVERGENT_MIN_COLINEAR,
+                            FMC.DIVERGENT_MIN_ADJACENT_JUNCTIONS))
+    ap.add_argument("--crosschrom-split", action="store_true",
+                    help="opt-in: ENABLE the cross-chromosome domain-bridge split gate; "
+                         "splits multi-chromosome families unless cross-chromosome components share "
+                         "strong homology (id >= %.2f, >= %d colinear exons) or identical/related "
+                         "gene-symbol roots. Default is OFF because the gate over-splits real "
+                         "singleton cross-chromosome paralogs. Keeps all upstream gates "
+                         "(also RUSTLE_CROSSCHROM_SPLIT=1)"
+                         % (FMC.CROSSCHROM_ID_THRESH, FMC.CROSSCHROM_MIN_COLINEAR))
     ap.add_argument("--high-precision", action="store_true",
                     help="HIGH-PRECISION operating point: swap ONLY the gamma-quasi-clique cohesion "
                          "GAMMA=%.2f -> %.2f (PRECISION_RECALL_FRONTIER.md); everything else "
@@ -964,12 +1062,19 @@ def main(argv=None):
     # DEFAULT-ON post-demote exon-colinearity family merge; --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1 ablates it.
     merge_colinear = not (args.no_colinear_merge
                           or os.environ.get("RUSTLE_NO_COLINEAR_MERGE") == "1")
+    # DEFAULT-ON divergent same-chrom duplicon merge; --no-divergent-merge / RUSTLE_NO_DIVERGENT_MERGE=1 ablates it.
+    merge_divergent = not (args.no_divergent_merge
+                           or os.environ.get("RUSTLE_NO_DIVERGENT_MERGE") == "1")
+    # DEFAULT-OFF cross-chromosome domain-bridge split; --crosschrom-split / RUSTLE_CROSSCHROM_SPLIT=1 enables it.
+    crosschrom_split = bool(args.crosschrom_split
+                            or os.environ.get("RUSTLE_CROSSCHROM_SPLIT") == "1")
     # HIGH-PRECISION: --high-precision / RUSTLE_HIGH_PRECISION=1 swaps ONLY gamma (0.20 -> 0.40).
     high_precision = args.high_precision or os.environ.get("RUSTLE_HIGH_PRECISION") == "1"
     gamma = HIGH_PRECISION_GAMMA if high_precision else GAMMA
     built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma,
                               split_recombinants=split_recombinants, repeat_bridge_gate=repeat_bridge_gate,
-                              antisense_gate=antisense_gate, merge_colinear=merge_colinear)
+                              antisense_gate=antisense_gate, merge_colinear=merge_colinear,
+                              merge_divergent=merge_divergent, crosschrom_split=crosschrom_split)
     _report(built, val, summary)
     return 0
 
