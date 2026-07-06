@@ -29,6 +29,7 @@ contains the over-merges the conflict criterion is meant to remove (e.g. DNFAM0 
 chr1..chrY). When reporting family numbers, state which criterion produced them; the de-tie genome-wide
 catalog is an open TODO.
 """
+import argparse
 import multiprocessing as mp
 import os
 import sys
@@ -44,6 +45,7 @@ META = "/home/juanfra/winloci_scratch/denovo_transcripts.meta.tsv"
 SKEL = "/home/juanfra/winloci_scratch/denovo_skeletons.tsv"
 OUT = os.path.join(os.path.dirname(__file__), "denovo_families.tsv")
 EDGES = os.path.join(os.path.dirname(__file__), "denovo_family_edges.tsv")
+GENES = os.path.join(os.path.dirname(__file__), "gene_meta_strand.tsv")
 
 # --- POA decision (THE criterion; principled, validated) ---
 T_CORE = 0.13      # contiguous-core reciprocal-coverage threshold
@@ -62,6 +64,11 @@ PAIR_CAP = 40      # skip PAIR generation from a k-mer owned by > this many reps
                    #   with CNT_MAX -- big families (> this) are rare and logged)
 K_SHARE = 6        # propose a candidate pair only if the two reps co-own >= this many informative k-mers
 MAX_PAIRS = 8_000_000  # hard guard on the distinct-pair set (prevents any OOM; logged if hit)
+
+# For annotation-aware split: a transcript is assigned to its dominant RefSeq gene only if the gene covers
+# at least this fraction of the transcript's spliced exon span.  This avoids mis-assigning a transcript to
+# a gene it merely grazes, while still splitting readthroughs that span two distinct genes.
+GENE_ASSIGN_FRAC = 0.5
 
 _CODE = np.full(256, -1, dtype=np.int64)
 for _i, _b in enumerate(b"ACGT"):
@@ -121,25 +128,107 @@ def _poa(t):
     return (a, b, round(cr, 4)) if cr >= T_CORE else None
 
 
-def main():
+def load_genes(path):
+    """Load RefSeq gene coordinates from gene_meta_strand.tsv."""
+    genes = []
+    if not os.path.exists(path):
+        return genes
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("#") or line.startswith("chrom"):
+                continue
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 6:
+                continue
+            chrom, s, e, strand, name, biotype = parts[:6]
+            genes.append((chrom, int(s), int(e), strand, name, biotype))
+    return genes
+
+
+def _exon_intervals(tid, meta, skel_introns):
+    c, s, e, _strand, _ne, _nr = meta[tid]
+    introns = skel_introns.get((c, s, e), [])
+    exons = []
+    cur = s
+    for d, a in introns:
+        exons.append((cur, d))      # half-open [cur, d)
+        cur = a
+    exons.append((cur, e + 1))      # last exon half-open [cur, e+1)
+    return exons
+
+
+def _exon_len(exons):
+    return sum(ee - es for es, ee in exons)
+
+
+def dominant_gene(tid, meta, skel_introns, genes, min_frac=GENE_ASSIGN_FRAC):
+    """Return the RefSeq gene that covers >= min_frac of tid's spliced exon span, if any."""
+    c, _s, _e, _strand, _ne, _nr = meta[tid]
+    exons = _exon_intervals(tid, meta, skel_introns)
+    total = _exon_len(exons)
+    if total == 0:
+        return None
+    best_name = None
+    best_ov = 0
+    for gc, gs, ge, gstrand, name, _bio in genes:
+        if gc != c:
+            continue
+        ov = 0
+        for es, ee in exons:
+            ov += max(0, min(ee, ge) - max(es, gs))
+        if ov > best_ov:
+            best_ov = ov
+            best_name = name
+    if best_name is not None and best_ov >= min_frac * total:
+        return best_name
+    return None
+
+
+def annotation_split_components(comp, meta, skel_introns, genes):
+    """Split collapsed components whose members are assigned to distinct RefSeq genes.
+
+    Each returned component is a list of tids.  Transcripts with no confident gene assignment are kept
+    together in an 'unassigned' sub-component per original component.
+    """
+    out = []
+    for members in comp.values():
+        by_gene = defaultdict(list)
+        for tid in members:
+            g = dominant_gene(tid, meta, skel_introns, genes)
+            by_gene[g].append(tid)
+        # Only split if there are at least two distinct assigned genes.  A single assigned gene + unassigned
+        # transcripts is kept as one component (do not create spurious splits for one stray unassigned tx).
+        assigned_genes = [g for g in by_gene if g is not None]
+        if len(assigned_genes) >= 2:
+            for g, group in by_gene.items():
+                if group:
+                    out.append(group)
+        else:
+            out.append(members)
+    return out
+
+
+def main(args=None):
+    if args is None:
+        args = parse_args()
     import time
     t0 = time.perf_counter()
 
     def tick(msg):
         print(f"[{time.perf_counter() - t0:6.1f}s] {msg}", flush=True)
 
-    seqs = P.load_fasta(FA)
+    seqs = P.load_fasta(args.fa)
     meta = {}
-    for line in open(META):
+    for line in open(args.meta):
         if line.startswith("id\t"):
             continue
         tid, c, s, e, strand, ne, nr = line.rstrip("\n").split("\t")
-        meta[tid] = (c, int(s), int(e), int(nr))
+        meta[tid] = (c, int(s), int(e), strand, int(ne), int(nr))
     n_assembly = len(seqs)
 
     # introns per skeleton, keyed by (chrom, start, end) so distinct chains at the same start don't collide
     skel_introns = {}
-    for line in open(SKEL):
+    for line in open(args.skel):
         if line.startswith("chrom\t"):
             continue
         c, s, e, ne, nr, intr = line.rstrip("\n").split("\t")
@@ -162,7 +251,7 @@ def main():
         parent[find(a)] = find(b)
 
     junc_owner = {}  # (chrom, donor, acceptor) -> a tid that uses it
-    for tid, (c, s, e, nr) in meta.items():
+    for tid, (c, s, e, _strand, _ne, nr) in meta.items():
         find(tid)  # register every tid (single-exon genes stay singletons)
         for d, a in skel_introns.get((c, s, e), []):
             key = (c, d, a)
@@ -174,10 +263,21 @@ def main():
     comp = defaultdict(list)
     for tid in meta:
         comp[find(tid)].append(tid)
+
+    # Optional annotation-aware split of readthrough components that span multiple RefSeq genes.
+    if args.annotation_split:
+        genes = load_genes(args.genes)
+        comp_groups = annotation_split_components(comp, meta, skel_introns, genes)
+        n_before = len(comp)
+        comp = {i: group for i, group in enumerate(comp_groups)}
+        tick(f"annotation-split: {n_before:,} components -> {len(comp):,} after splitting by RefSeq gene-of")
+    else:
+        comp = dict(comp)
+
     reps = []
     for members in comp.values():
         # rep = most reads, tie-break longest span
-        reps.append(max(members, key=lambda t: (meta[t][3], meta[t][2] - meta[t][1])))
+        reps.append(max(members, key=lambda t: (meta[t][5], meta[t][2] - meta[t][1])))
     reps = [r for r in reps if r in seqs]
     n_loci = len(reps)
     tick(f"collapsed {n_assembly:,} transcripts -> {n_loci:,} gene loci (intron-junction union-find)")
@@ -273,11 +373,11 @@ def main():
 
     # persist the confirmed-edge graph (a, b, core_recip) so the family decomposition can be iterated
     # WITHOUT re-running the expensive POA (community/density split reads this file).
-    with open(EDGES, "w") as eh:
+    with open(args.edges, "w") as eh:
         eh.write("a\tb\tcore_recip\n")
         for a, b, cr in conf:
             eh.write(f"{a}\t{b}\t{cr}\n")
-    tick(f"wrote {len(conf):,} confirmed edges -> {EDGES}")
+    tick(f"wrote {len(conf):,} confirmed edges -> {args.edges}")
 
     # families = connected components of POA-confirmed pairs
     fparent = {}
@@ -299,7 +399,7 @@ def main():
     fams = [c for c in fcomp.values() if len(c) >= 2]
     in_fam = sum(len(c) for c in fams)
 
-    with open(OUT, "w") as fh:
+    with open(args.out, "w") as fh:
         fh.write("family_id\tn_copies\tmembers\n")
         for i, c in enumerate(sorted(fams, key=lambda c: -len(c))):
             fh.write(f"DNFAM{i}\t{len(c)}\t{','.join(sorted(c))}\n")
@@ -326,11 +426,27 @@ def main():
                     comps[g2fam[r]] += 1
         best = max(comps.values()) if comps else 0
         print(f"  {name}: {'RECOVERED' if best >= 2 else ('partial/' + str(best))} (reps co-grouped={best})")
-    print(f"\n[wrote {OUT}]")
+    print(f"\n[wrote {args.out}]")
     print(f"FRAMING: general read-coherence assembler = {n_assembly:,} transcripts; the family/copy layer "
           f"applies to {in_fam:,} transcripts in {len(fams):,} multi-copy families; the rest are single-copy "
           f"(assembled normally).")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Genome-wide de-novo multi-copy family catalog from read-coherence transcripts.")
+    parser.add_argument("--fa", default=FA, help="de-novo transcript FASTA")
+    parser.add_argument("--meta", default=META, help="de-novo transcript metadata TSV")
+    parser.add_argument("--skel", default=SKEL, help="skeleton intron-chain TSV")
+    parser.add_argument("--out", default=OUT, help="output families TSV")
+    parser.add_argument("--edges", default=EDGES, help="output confirmed edges TSV")
+    parser.add_argument("--genes", default=GENES,
+                        help="RefSeq gene coordinate TSV (chrom start end strand name biotype)")
+    parser.add_argument("--annotation-split", action="store_true",
+                        help="split collapsed locus components whose members map to distinct RefSeq genes")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)
