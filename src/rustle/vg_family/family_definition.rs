@@ -1,5 +1,11 @@
 //! O1 multi-copy family-definition predicate `distinct_loci`.
 //!
+//! **Terminology.** This module uses "locus" in the **physical-span** sense:
+//! a `(chrom, start, end)` genomic interval. It is NOT the gene-locus / splice-
+//! junction community used to collapse isoforms (that is
+//! `family_detect::collapse_loci`). See `docs/VG_FAMILY_TERMS.md` for the
+//! canonical vocabulary.
+//!
 //! Faithful Rust port of the Python reference
 //! `bench/genome_family_def.py::distinct_loci` (LOCUS_OVERLAP = 0.50). This is
 //! the first Python->Rust migration of the family-definition layer: it counts

@@ -17,7 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use rayon::prelude::*;
 
 use super::copy_assign::{
-    assign_read, assign_read_editing, AssignParams, AssignStatus, Assignment, CopyProfile, ReadFeatures,
+    assign_read, assign_read_editing, boundary_present, copy_pair_significance, AssignParams, AssignStatus,
+    Assignment, CopyProfile, ReadFeatures,
 };
 use super::copy_split::{intron_chain_of, AlignedRead};
 use super::family_detect::DenovoTranscript;
@@ -640,6 +641,9 @@ pub struct FamilyDetail {
     /// `copy_psv_alleles[c][j]` = copy `c`'s allele at PSV column `j` (None = gapped) — the per-copy reference
     /// the reads are matched against in the genotype matrix.
     pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
+    /// Indices into the input `copies` slice that survived iterative pruning. When pruning is off this is
+    /// simply `0..copies.len()`. Callers use this to align the output detail with the original copy roster.
+    pub copy_indices: Vec<usize>,
 }
 
 /// One de-novo COPY whose PSV-allele vector is a MOSAIC of two other copies — a HISTORICAL gene conversion
@@ -835,10 +839,293 @@ pub(crate) fn detect_editing_columns(reads_obs: &[Vec<Option<u8>>], copies: &[Co
     flag
 }
 
+/// Pairwise profile distance between two copies: number of PSV columns where both are defined and differ
+/// plus the number of junction boundaries present in exactly one copy. Used for iterative pruning's
+/// nearest-neighbor computation.
+fn profile_distance(a: &CopyProfile, b: &CopyProfile) -> usize {
+    let psv_diff = a
+        .alleles
+        .iter()
+        .zip(b.alleles.iter())
+        .filter(|(x, y)| matches!((x, y), (Some(xa), Some(ya)) if xa != ya))
+        .count();
+    let mut junc_diff = 0usize;
+    for &jb in &a.junctions {
+        if !boundary_present(jb, &b.junctions, 4) {
+            junc_diff += 1;
+        }
+    }
+    for &jb in &b.junctions {
+        if !boundary_present(jb, &a.junctions, 4) {
+            junc_diff += 1;
+        }
+    }
+    psv_diff + junc_diff
+}
+
+/// For each copy, return the index of its nearest profile neighbor (smallest `profile_distance`).
+/// Ties break to the lowest index. A copy with no defined neighbor (single-copy family) returns 0.
+fn nearest_neighbor_profiles(profiles: &[CopyProfile]) -> Vec<usize> {
+    let n = profiles.len();
+    let mut out = vec![0usize; n];
+    if n < 2 {
+        return out;
+    }
+    for i in 0..n {
+        let mut best_j = if i == 0 { 1 } else { 0 };
+        let mut best_d = profile_distance(&profiles[i], &profiles[best_j]);
+        for j in 0..n {
+            if j == i {
+                continue;
+            }
+            let d = profile_distance(&profiles[i], &profiles[j]);
+            if d < best_d || (d == best_d && j < best_j) {
+                best_j = j;
+                best_d = d;
+            }
+        }
+        out[i] = best_j;
+    }
+    out
+}
+
+/// Find copies that have no read with significant evidence distinguishing them from their nearest neighbor.
+/// Returns a list of `(copy_index, merge_target_index)` pairs. The caller removes one (or more) of these
+/// copies and re-runs assignment.
+fn find_weak_copies(
+    detail: &FamilyDetail,
+    copies: &[&DenovoTranscript],
+    reads: &[AlignedRead],
+    p: &AssignParams,
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> Vec<(usize, usize)> {
+    let n = copies.len();
+    if n < 2 {
+        return Vec::new();
+    }
+    let fp = build_family_profiles(copies, genome);
+    let nn = nearest_neighbor_profiles(&fp.profiles);
+    let thr = p.alpha / (n.saturating_sub(1).max(1) as f64);
+
+    let mut sig_count = vec![0usize; n];
+    for r in &detail.results {
+        if r.combined.best_copy >= n {
+            continue;
+        }
+        let i = r.combined.best_copy;
+        let j = nn[i];
+        // Recompute read features in the current profile frame so the pairwise certificate uses the
+        // surviving copy set and its PSV columns / junction boundaries.
+        let feats = read_features(&reads[r.read_index], r.mapped_copy, &fp);
+        let (p_ij, _) = copy_pair_significance(&feats, &fp.profiles[i], &fp.profiles[j], p, &[]);
+        if p_ij < thr {
+            sig_count[i] += 1;
+        }
+    }
+
+    let mut out: Vec<(usize, usize)> = (0..n)
+        .filter(|&i| sig_count[i] == 0)
+        .map(|i| (i, nn[i]))
+        .collect();
+    // Deterministic removal order: merge the copy closest to its neighbor first (smallest profile distance),
+    // then re-evaluate. This avoids arbitrary index ordering effects.
+    out.sort_by_key(|&(i, j)| profile_distance(&fp.profiles[i], &fp.profiles[j]));
+    out
+}
+
 /// Like `assign_family` but returns the TWO-PASS detail per read so callers can report how many reads a
 /// copy-specific junction resolved that PSVs alone could not (`junction_only`), and — with read mapq — the
 /// silver-standard unique-mapper agreement. Reads overlapping no copy are skipped.
 pub fn assign_family_detailed(
+    copies: &[&DenovoTranscript],
+    reads: &[AlignedRead],
+    p: &AssignParams,
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> FamilyDetail {
+    assign_family_detailed_once(copies, reads, p, genome)
+}
+
+/// IsoCon-style iterative copy pruning: repeatedly assign reads, identify copies with no significant
+/// read-backed evidence against their nearest neighbor, merge the weakest such copy into its neighbor,
+/// and reassign until all surviving copies are defensible.
+///
+/// Returns a `FamilyDetail` whose `copy_indices` field lists the original indices (into the input `copies`
+/// slice) that survived. The caller should use those indices to align downstream bookkeeping with the
+/// reduced copy set.
+pub fn assign_family_detailed_pruned(
+    copies: &[&DenovoTranscript],
+    reads: &[AlignedRead],
+    p: &AssignParams,
+    genome: Option<&crate::genome::GenomeIndex>,
+) -> FamilyDetail {
+    // Phase 1: iteratively decide which original copies survive.  `merge_target[i]` always points from
+    // original index i to the original index that currently represents it.  Initially each copy represents
+    // itself.
+    let mut merge_target: Vec<usize> = (0..copies.len()).collect();
+    let mut current_indices: Vec<usize> = (0..copies.len()).collect();
+    let mut current_copies: Vec<&DenovoTranscript> = copies.to_vec();
+    loop {
+        let detail = assign_family_detailed_once(&current_copies, reads, p, genome);
+        let weak = find_weak_copies(&detail, &current_copies, reads, p, genome);
+        if weak.is_empty() {
+            break;
+        }
+        // `weak` is reported in *current* index space; convert back to original indices for the merge map.
+        let (remove_current, target_current) = weak[0];
+        let removed_orig = current_indices[remove_current];
+        let target_orig = current_indices[target_current];
+        // Anything currently represented by `removed_orig` now rolls up to `target_orig`.
+        for t in merge_target.iter_mut() {
+            if *t == removed_orig {
+                *t = target_orig;
+            }
+        }
+        current_indices.remove(remove_current);
+        current_copies.remove(remove_current);
+    }
+
+    if current_indices.len() == copies.len() {
+        // Nothing was pruned — use the detail from the last full-size iteration.
+        let mut detail = assign_family_detailed_once(copies, reads, p, genome);
+        detail.copy_indices = current_indices;
+        return detail;
+    }
+
+    // Phase 2: assign against the FULL original copy set so reads that only overlapped a removed copy
+    // are not dropped.  Then remap every per-copy index to its surviving output position.
+    let full_detail = assign_family_detailed_once(copies, reads, p, genome);
+
+    // Map original copy index -> output copy index (position in `current_indices`).
+    let mut orig_to_out: Vec<Option<usize>> = vec![None; copies.len()];
+    for (out_idx, &orig_idx) in current_indices.iter().enumerate() {
+        orig_to_out[orig_idx] = Some(out_idx);
+    }
+    // Resolve an original copy index through the merge chain to a surviving output index.
+    let resolve = |mut i: usize| -> Option<usize> {
+        let mut seen = BTreeSet::new();
+        while seen.insert(i) {
+            if let Some(out) = orig_to_out[i] {
+                return Some(out);
+            }
+            i = merge_target[i];
+            if i >= orig_to_out.len() {
+                return None;
+            }
+        }
+        None
+    };
+
+    // Helper: remap an Assignment from original copy space to surviving output copy space.
+    // If all copies with meaningful posterior mass collapse to the same output, the read is considered
+    // assigned to that output even if the original call was Tied among them.
+    let remap_assignment = |a: &Assignment| -> Option<Assignment> {
+        let best_out = resolve(a.best_copy)?;
+        // Sum posterior probabilities into output buckets.
+        let mut post_out: Vec<f64> = vec![0.0; current_indices.len()];
+        for (orig, &prob) in a.posterior.iter().enumerate() {
+            if let Some(out) = resolve(orig) {
+                post_out[out] += prob;
+            }
+        }
+        // After merging, a read is resolvable to an output if the bulk of its posterior mass lands in that
+        // single bucket.  Keep the original status when the mass is split across outputs.
+        let conf = post_out[best_out];
+        let (status, best_out) = if conf >= 0.9 {
+            (AssignStatus::Assigned, best_out)
+        } else {
+            (a.status, best_out)
+        };
+        // Renormalize posterior so it still sums to 1.
+        let sum: f64 = post_out.iter().sum();
+        if sum > 0.0 {
+            post_out.iter_mut().for_each(|v| *v /= sum);
+        }
+        Some(Assignment {
+            best_copy: best_out,
+            log_lr_margin: a.log_lr_margin,
+            n_decisive: a.n_decisive,
+            resolvable: a.resolvable,
+            status,
+            p_value: a.p_value,
+            min_p_value: a.min_p_value,
+            discovery_coupled: a.discovery_coupled,
+            posterior: post_out,
+        })
+    };
+
+    let mut results: Vec<ReadResult> = Vec::with_capacity(full_detail.results.len());
+    let mut read_obs_for_em: Vec<Vec<Option<u8>>> = Vec::new();
+    for r in full_detail.results {
+        let mapped_out = resolve(r.mapped_copy);
+        let psv_out = remap_assignment(&r.psv);
+        let combined_out = remap_assignment(&r.combined);
+        if mapped_out.is_none() || psv_out.is_none() || combined_out.is_none() {
+            continue;
+        }
+        // Reads whose PSV observations contributed to the EM in the full assignment still contribute after
+        // merging (the observations are in the shared canonical column frame).
+        read_obs_for_em.push(r.psv_obs.clone());
+        results.push(ReadResult {
+            read_index: r.read_index,
+            mapped_copy: mapped_out.unwrap(),
+            psv: psv_out.unwrap(),
+            combined: combined_out.unwrap(),
+            psv_obs: r.psv_obs,
+        });
+    }
+
+    // Recompute soft abundance on the surviving copy set.
+    let surviving_alleles: Vec<Vec<Option<u8>>> = current_indices
+        .iter()
+        .map(|&orig| full_detail.copy_psv_alleles[orig].clone())
+        .collect();
+    let copy_abundance = soft_quantify_em(&read_obs_for_em, &surviving_alleles, QUANT_ERROR, 100);
+    let n_eff = results.iter().filter(|r| r.combined.n_decisive >= 1).count();
+    let copy_abundance_ci: Vec<f64> = if n_eff == 0 {
+        vec![0.5; copy_abundance.len()]
+    } else {
+        let n = n_eff as f64;
+        copy_abundance
+            .iter()
+            .map(|&t| (1.96 * (t * (1.0 - t) / n).sqrt()).min(0.5))
+            .collect()
+    };
+
+    // Remap copy-level conversions to surviving output indices; drop any whose focal copy was removed.
+    let mut copy_conversions: Vec<CopyConversion> = Vec::new();
+    for cc in full_detail.copy_conversions {
+        if let (Some(c_out), Some(a_out), Some(b_out)) =
+            (resolve(cc.copy_c), resolve(cc.copy_a), resolve(cc.copy_b))
+        {
+            // Avoid self-conversions created by merging.
+            if c_out != a_out && c_out != b_out && a_out != b_out {
+                copy_conversions.push(CopyConversion {
+                    copy_c: c_out,
+                    copy_a: a_out,
+                    copy_b: b_out,
+                    breakpoint: cc.breakpoint,
+                    n_decisive: cc.n_decisive,
+                });
+            }
+        }
+    }
+
+    FamilyDetail {
+        results,
+        n_cols: full_detail.n_cols,
+        copy_abundance,
+        copy_abundance_ci,
+        mosaic_reads: full_detail.mosaic_reads,
+        conversions: full_detail.conversions,
+        conversion_class: Vec::new(),
+        copy_conversions,
+        psv_col_pos: full_detail.psv_col_pos,
+        copy_psv_alleles: surviving_alleles,
+        copy_indices: current_indices,
+    }
+}
+
+fn assign_family_detailed_once(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],
     p: &AssignParams,
@@ -856,6 +1143,7 @@ pub fn assign_family_detailed(
             copy_conversions: Vec::new(),
             psv_col_pos: Vec::new(),
             copy_psv_alleles: Vec::new(),
+            copy_indices: Vec::new(),
         };
     }
     use super::mosaic::{aggregate_family, detect_mosaic, MosaicParams, SiteObs};
@@ -1006,6 +1294,7 @@ pub fn assign_family_detailed(
         copy_conversions,
         psv_col_pos: col_canon,
         copy_psv_alleles: copy_alleles,
+        copy_indices: (0..copies.len()).collect(),
     }
 }
 
@@ -1767,5 +2056,86 @@ mod tests {
         let r = by_idx(&merged, 5);
         assert_eq!(r.combined.log_lr_margin, 7.5, "combined frozen from Stage-1");
         assert_eq!(r.psv.log_lr_margin, 3.3, "psv frozen from Stage-1");
+    }
+
+    // ---- iterative copy pruning ----
+
+    fn seq_with(base: &[u8], pos_allele: &[(usize, u8)]) -> Vec<u8> {
+        let mut s = base.to_vec();
+        for &(p, a) in pos_allele {
+            s[p] = a;
+        }
+        s
+    }
+
+    fn q40_read(ref_start: u64, cigar: Vec<(char, u64)>, seq: Vec<u8>) -> AlignedRead {
+        let qual = vec![40; seq.len()];
+        AlignedRead { ref_start, cigar, seq, qual }
+    }
+
+    #[test]
+    fn iterative_prune_merges_duplicate_copy() {
+        // Three single-exon copies. c0 differs from c1/c2 at offset 50; c1 and c2 are identical.
+        // Q40 reads carrying each allele are aligned to each copy's region. c2 has no evidence that
+        // significantly distinguishes it from c1, so it should be merged into c1.
+        let base = rand_seq(100, 0xC0D0);
+        let c0_seq = seq_with(&base, &[(50, b'A')]);
+        let c1_seq = seq_with(&base, &[(50, b'C')]);
+        let c2_seq = c1_seq.clone();
+        let c0 = copy_tx("c0", 0, 100, '+', &[], c0_seq);
+        let c1 = copy_tx("c1", 1000, 1100, '+', &[], c1_seq);
+        let c2 = copy_tx("c2", 2000, 2100, '+', &[], c2_seq);
+        let copies = [&c0, &c1, &c2];
+        let r0 = q40_read(0, vec![('M', 100)], seq_with(&base, &[(50, b'A')]));
+        let r1 = q40_read(1000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
+        let r2 = q40_read(2000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
+        let reads = [r0, r1, r2];
+        let mut p = AssignParams::default();
+        p.iterative_prune = true;
+        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None);
+        assert_eq!(detail.copy_psv_alleles.len(), 2, "duplicate c2 merged -> 2 surviving copies");
+        // The surviving copies should be c0 and c1 (c2 removed, not c0).
+        assert!(detail.results.iter().all(|r| r.combined.best_copy < 2));
+    }
+
+    #[test]
+    fn iterative_prune_keeps_distinct_supported_copies() {
+        // Three copies with a symmetric 3-column PSV design: every pair differs at two columns,
+        // and each copy's read matches its own allele at all three columns. No copy should be merged.
+        let base = rand_seq(200, 0xD150);
+        let c0_seq = seq_with(&base, &[(50, b'A'), (100, b'C'), (150, b'C')]);
+        let c1_seq = seq_with(&base, &[(50, b'C'), (100, b'A'), (150, b'C')]);
+        let c2_seq = seq_with(&base, &[(50, b'C'), (100, b'C'), (150, b'A')]);
+        let c0 = copy_tx("c0", 0, 200, '+', &[], c0_seq);
+        let c1 = copy_tx("c1", 1000, 1200, '+', &[], c1_seq);
+        let c2 = copy_tx("c2", 2000, 2200, '+', &[], c2_seq);
+        let copies = [&c0, &c1, &c2];
+        let r0 = q40_read(0, vec![('M', 200)], seq_with(&base, &[(50, b'A'), (100, b'C'), (150, b'C')]));
+        let r1 = q40_read(1000, vec![('M', 200)], seq_with(&base, &[(50, b'C'), (100, b'A'), (150, b'C')]));
+        let r2 = q40_read(2000, vec![('M', 200)], seq_with(&base, &[(50, b'C'), (100, b'C'), (150, b'A')]));
+        let reads = [r0, r1, r2];
+        let mut p = AssignParams::default();
+        p.iterative_prune = true;
+        let detail = assign_family_detailed_pruned(&copies, &reads, &p, None);
+        assert_eq!(detail.copy_psv_alleles.len(), 3, "all distinct supported copies kept");
+    }
+
+    #[test]
+    fn iterative_prune_default_off_is_unchanged() {
+        // Same setup as iterative_prune_merges_duplicate_copy, but with default params (prune off).
+        let base = rand_seq(100, 0xC0D0);
+        let c0_seq = seq_with(&base, &[(50, b'A')]);
+        let c1_seq = seq_with(&base, &[(50, b'C')]);
+        let c2_seq = c1_seq.clone();
+        let c0 = copy_tx("c0", 0, 100, '+', &[], c0_seq);
+        let c1 = copy_tx("c1", 1000, 1100, '+', &[], c1_seq);
+        let c2 = copy_tx("c2", 2000, 2100, '+', &[], c2_seq);
+        let copies = [&c0, &c1, &c2];
+        let r0 = q40_read(0, vec![('M', 100)], seq_with(&base, &[(50, b'A')]));
+        let r1 = q40_read(1000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
+        let r2 = q40_read(2000, vec![('M', 100)], seq_with(&base, &[(50, b'C')]));
+        let reads = [r0, r1, r2];
+        let detail = assign_family_detailed(&copies, &reads, &AssignParams::default(), None);
+        assert_eq!(detail.copy_psv_alleles.len(), 3, "default (prune off) keeps all 3 copies");
     }
 }

@@ -156,6 +156,11 @@ struct Args {
     /// by editing rather than sequencing error). Default 0.2.
     #[arg(long, default_value_t = 0.2)]
     edit_rate: f64,
+    /// IsoCon-style iterative copy pruning: after assignment, repeatedly merge copies that have no read with
+    /// significant evidence distinguishing them from their nearest neighbor, reassigning reads until all
+    /// surviving copies are defensible. Default OFF (byte-identical baseline).
+    #[arg(long, default_value_t = false)]
+    iterative_prune: bool,
     /// Emit FACULTATIVE long-read PHASING (dependency-free; no external phaser, no CNN). Phases reads into
     /// copy-HAPLOTYPES from their linked PSV evidence — the N-copy generalisation of read-backed phasing
     /// (min-path-cover over the PSV graph). Writes `<out>.phase_blocks.tsv` (one PHASE SET per family),
@@ -293,6 +298,7 @@ fn main() -> Result<()> {
         use_margin_gate: args.margin_gate,
         rna_editing_filter: !args.no_editing_filter,
         edit_rate: args.edit_rate,
+        iterative_prune: args.iterative_prune,
         ..AssignParams::default()
     };
     eprintln!("[copy_assign] decisive-margin tau={} error_rate={}", args.margin, args.error_rate);

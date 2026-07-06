@@ -1,11 +1,19 @@
 //! Strand-aware de-novo multi-copy FAMILY DETECTION — the `bench/denovo_families.py` core.
 //!
+//! **Terminology.** This module uses "locus" in the **gene-locus** sense: a set of
+//! isoforms collapsed by shared splice junctions. It is NOT the physical `(chrom,
+//! start, end)` span used for the ≥2-distinct-loci certificate (that is
+//! `family_definition::distinct_loci`). See `docs/VG_FAMILY_TERMS.md` for the
+//! canonical vocabulary.
+//!
 //! Annotation-free, minimizer-free. Given the de-novo assembled transcripts (built by the integration
 //! layer from BAM/FASTA), find which gene loci form multi-copy families:
 //!
 //!   1. **Collapse isoforms → gene loci** by shared intron junctions (union-find on identical
 //!      `(chrom, donor, acceptor)`). NOT raw span overlap — dense genes overlap transitively and a
-//!      span-merge chains a whole chromosome into one bogus locus.
+//!      span-merge chains a whole chromosome into one bogus locus. A span-aware recovery pass can
+//!      additionally merge isoforms with disjoint junctions but strong span homology/containment
+//!      (`collapse_loci_span_aware`).
 //!   2. **Canonical exact-k-mer ownership pre-filter** (the "counting-bloom done exactly"): a k-mer owned
 //!      by `[cnt_min, cnt_max]` distinct reps is *family-informative*; a rep with `>= k_share` informative
 //!      k-mers is a candidate. Single-copy genes (unique k-mers) are rejected here and never reach POA.
@@ -41,6 +49,13 @@ pub const PAIR_CAP: usize = 40;
 pub const K_SHARE: usize = 6;
 /// Hard guard on the distinct-pair set (prevents OOM at genome scale).
 pub const MAX_PAIRS: usize = 8_000_000;
+/// For span-aware locus collapse: a shorter transcript must be contained in the longer by at least this
+/// fraction of its own length to be merged as a same-gene isoform without running POA.
+pub const COLLAPSE_CONTAIN_FRAC: f64 = 0.5;
+/// For span-aware locus collapse: minimum POA contiguous-core coverage for two span-overlapping,
+/// same-strand transcripts with disjoint junctions to be merged as same-gene isoforms. Conservative
+/// (well above the family-detection `T_CORE` of 0.13) to avoid merging adjacent paralogs.
+pub const COLLAPSE_SPAN_CORE: f64 = 0.50;
 
 /// A de-novo assembled transcript (one isoform). Built by the integration layer from the BAM/FASTA;
 /// this module operates purely on these in-memory records.
@@ -70,6 +85,12 @@ pub struct DetectParams {
     pub t_core: f64,
     pub len_cap: usize,
     pub max_pairs: usize,
+    /// If true, `collapse_loci` additionally merges isoforms that share no junction but are
+    /// span-overlapping and either strongly contained or highly homologous. Default true.
+    pub collapse_span_aware: bool,
+    /// POA contiguous-core threshold used by span-aware collapse for disjoint-junction isoforms.
+    /// Conservative to avoid merging adjacent paralogs.
+    pub collapse_span_core: f64,
 }
 
 impl Default for DetectParams {
@@ -82,6 +103,8 @@ impl Default for DetectParams {
             t_core: T_CORE,
             len_cap: LEN_CAP,
             max_pairs: MAX_PAIRS,
+            collapse_span_aware: true,
+            collapse_span_core: COLLAPSE_SPAN_CORE,
         }
     }
 }
@@ -203,6 +226,110 @@ pub fn collapse_loci_groups(transcripts: &[DenovoTranscript]) -> Vec<usize> {
         }
     }
     group
+}
+
+/// Compute the representative index for each union-find component in `parent`, using the same tie-break
+/// as `collapse_loci`: most reads, then longest span, then earliest index. Returns rep indices sorted
+/// ascending.
+fn locus_reps(transcripts: &[DenovoTranscript], parent: &[usize]) -> Vec<usize> {
+    let n = transcripts.len();
+    let mut comp: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    let mut ptmp = parent.to_vec();
+    for i in 0..n {
+        let r = uf_find(&mut ptmp, i);
+        comp.entry(r).or_default().push(i);
+    }
+    let mut reps: Vec<usize> = comp
+        .into_values()
+        .map(|members| {
+            *members
+                .iter()
+                .max_by(|&&a, &&b| {
+                    let ka = (transcripts[a].n_reads, transcripts[a].end - transcripts[a].start);
+                    let kb = (transcripts[b].n_reads, transcripts[b].end - transcripts[b].start);
+                    // break key ties by preferring the smaller index (so it is the "maximum").
+                    ka.cmp(&kb).then_with(|| b.cmp(&a))
+                })
+                .unwrap()
+        })
+        .collect();
+    reps.sort_unstable();
+    reps
+}
+
+/// Span-aware isoform-to-gene-locus collapse.
+///
+/// First performs the standard junction-based collapse (`collapse_loci`). Then, if
+/// `p.collapse_span_aware` is true, iteratively merges locus representatives that share no junction but
+/// are on the same chromosome and strand, have overlapping spans, and satisfy either:
+///   - strong containment: the overlap covers at least `COLLAPSE_CONTAIN_FRAC` of the shorter transcript, or
+///   - high sequence homology: POA contiguous-core coverage >= `p.collapse_span_core`.
+///
+/// This recovers genuine alternative-splice isoforms whose intron sets are disjoint (e.g., alternative
+/// first/last exons) without chaining adjacent paralogs, which typically fail both the containment and
+/// the conservative core-coverage bars.
+pub fn collapse_loci_span_aware(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<usize> {
+    let n = transcripts.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    // Phase 1: junction-based collapse (identical to collapse_loci).
+    let mut parent: Vec<usize> = (0..n).collect();
+    let mut junc_owner: BTreeMap<(&str, u64, u64), usize> = BTreeMap::new();
+    for (i, t) in transcripts.iter().enumerate() {
+        for &(d, a) in &t.introns {
+            match junc_owner.get(&(t.chrom.as_str(), d, a)) {
+                Some(&owner) => uf_union(&mut parent, i, owner),
+                None => {
+                    junc_owner.insert((t.chrom.as_str(), d, a), i);
+                }
+            }
+        }
+    }
+
+    if !p.collapse_span_aware {
+        return locus_reps(transcripts, &parent);
+    }
+
+    // Phase 2: iterative span-aware merge of locus representatives.
+    loop {
+        let reps = locus_reps(transcripts, &parent);
+        let mut merged = false;
+        for i in 0..reps.len() {
+            let a = &transcripts[reps[i]];
+            for j in (i + 1)..reps.len() {
+                let b = &transcripts[reps[j]];
+                if a.chrom != b.chrom || a.strand != b.strand {
+                    continue;
+                }
+                let ov = a.end.min(b.end).saturating_sub(a.start.max(b.start));
+                if ov == 0 {
+                    continue;
+                }
+                let minlen = (a.end - a.start).min(b.end - b.start).max(1);
+                let containment = ov as f64 / minlen as f64;
+                if containment >= COLLAPSE_CONTAIN_FRAC {
+                    uf_union(&mut parent, reps[i], reps[j]);
+                    merged = true;
+                    continue;
+                }
+                // Disjoint-junction isoforms with similar length: require strong POA core coverage.
+                let au = a.seq.to_ascii_uppercase();
+                let bu = b.seq.to_ascii_uppercase();
+                let core = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
+                if core >= p.collapse_span_core {
+                    uf_union(&mut parent, reps[i], reps[j]);
+                    merged = true;
+                }
+            }
+        }
+        if !merged {
+            break;
+        }
+    }
+
+    locus_reps(transcripts, &parent)
 }
 
 /// (2) Candidate homologous rep pairs. Exact canonical-k-mer ownership pre-filter (family-informative =
@@ -615,6 +742,65 @@ mod tests {
             tx("B", "c1", 100, 500, 5, &[(200, 300)], rand_seq(400, 2)),
         ];
         assert_eq!(collapse_loci(&txs), vec![0], "full tie -> smallest index");
+    }
+
+    // ---- collapse_loci_span_aware (disjoint-junction isoform recovery) ----
+
+    #[test]
+    fn span_aware_collapse_merges_disjoint_junction_isoforms() {
+        // Two isoforms of the same gene with NO shared junction, but span-overlapping and sharing a
+        // 300 bp core (75% contiguous-core coverage). The span-aware pass should collapse them.
+        let core = rand_seq(300, 0xBEEF);
+        let iso1_seq = cat(&[&rand_seq(50, 0xA1), &core, &rand_seq(50, 0xA2)]);
+        let iso2_seq = cat(&[&rand_seq(50, 0xB1), &core, &rand_seq(50, 0xB2)]);
+        let txs = [
+            tx("iso1", "c1", 100, 600, 5, &[(200, 300)], iso1_seq),
+            tx("iso2", "c1", 250, 750, 5, &[(450, 550)], iso2_seq),
+        ];
+        let p = DetectParams::default();
+        assert_eq!(
+            collapse_loci_span_aware(&txs, &p).len(),
+            1,
+            "disjoint-junction isoforms with high span homology collapse to one locus"
+        );
+        // With span-aware disabled, they stay separate.
+        let off = DetectParams {
+            collapse_span_aware: false,
+            ..DetectParams::default()
+        };
+        assert_eq!(collapse_loci_span_aware(&txs, &off).len(), 2);
+    }
+
+    #[test]
+    fn span_aware_collapse_merges_by_containment() {
+        // A retained-intron / shorter isoform contained within a longer one, with disjoint junctions.
+        // Containment alone (no POA needed) should merge them.
+        let long_seq = rand_seq(500, 0xCAFE);
+        let short_seq = long_seq[50..350].to_vec(); // 300 bp contained within long
+        let txs = [
+            tx("long", "c1", 100, 800, 8, &[(200, 300), (500, 600)], long_seq),
+            tx("short", "c1", 200, 500, 5, &[(250, 350)], short_seq), // span 200..500 is 75% inside long
+        ];
+        assert_eq!(
+            collapse_loci_span_aware(&txs, &DetectParams::default()).len(),
+            1,
+            "contained isoform merges into the longer one"
+        );
+    }
+
+    #[test]
+    fn span_aware_collapse_preserves_adjacent_paralogs() {
+        // Two adjacent paralog copies with disjoint junctions and low sequence homology.
+        // The conservative POA core threshold should NOT merge them.
+        let txs = [
+            tx("para1", "c1", 1000, 11000, 10, &[(2000, 3000), (4000, 5000)], rand_seq(1000, 0xC1)),
+            tx("para2", "c1", 7000, 17000, 9, &[(8000, 9000), (10000, 11000)], rand_seq(1000, 0xC2)),
+        ];
+        assert_eq!(
+            collapse_loci_span_aware(&txs, &DetectParams::default()).len(),
+            2,
+            "adjacent paralogs with low homology stay as two loci"
+        );
     }
 
     // ---- candidate_pairs ----

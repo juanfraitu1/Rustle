@@ -1,5 +1,11 @@
 //! De-novo family detection DRIVER (integration stage 3): chains the ported cores into a family roster.
 //!
+//! **Terminology.** "Locus" in this module is the **gene-locus** sense unless
+//! explicitly noted: a set of isoforms collapsed by shared splice junctions
+//! (`family_detect::collapse_loci`). The physical `(chrom, start, end)` span
+//! used for the ≥2-distinct-loci certificate is `family_definition::distinct_loci`.
+//! See `docs/VG_FAMILY_TERMS.md` for the canonical vocabulary.
+//!
 //!   primary reads ─► pass1 skeletons ─► assemble gate ─► collapse loci ─► detect edges ─► decompose families
 //!
 //! This is the read-coherence-way detection pipeline end to end (rescue + per-read copy assignment are the
@@ -12,7 +18,8 @@ use anyhow::Result;
 
 use super::absent_copy::{self, AbsentCopyParams, Admission, DnaNeedsRecord};
 use super::copy_assign::{Assignment, AssignParams, AssignStatus};
-use super::copy_assign_pipeline::{assign_family_detailed, freeze_merge, read_ref_end};
+use super::copy_assign_pipeline::{assign_family_detailed, assign_family_detailed_pruned, freeze_merge, read_ref_end};
+use super::family_graph::contiguous_core_coverage_bounded;
 use super::copy_split::{
     split_locus_copies, discover_locus_psvs, AlignedRead, CollapsedCandidate, CopyIsoform,
 };
@@ -20,7 +27,7 @@ use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam, reads_in_region,
     BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
 };
-use super::family_detect::{collapse_loci, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
+use super::family_detect::{collapse_loci_span_aware, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
 use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
 use super::read_conflict::{as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, ConflictParams, Placement, ReadPlacements};
@@ -86,7 +93,8 @@ pub fn detect_families(reads: &[PrimaryRead], genome: &GenomeIndex, cfg: &Denovo
     let skeletons = pass1_skeletons(reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
     // collapse isoforms -> gene loci (rep per locus), then build the rep transcript slice.
-    let rep_idx = collapse_loci(&transcripts);
+    // Span-aware collapse recovers alternative-splice isoforms with no shared junction.
+    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     // POA-confirmed homology edges over rep-slice indices, then decompose into families.
     let edges = detect_edges(&reps, &cfg.detect);
@@ -133,11 +141,13 @@ pub struct ColocatedFamily {
 
 /// Filter decomposed families to same-chrom co-located clusters of `>= min_copies` copies spanning `<= win`.
 /// Webs are skipped. `reps` are the rep transcripts the `SplitFamily` member indices point into.
+/// `detect` configures the same-locus collapse in `prune_same_locus` (span-aware isoform recovery).
 pub fn colocated_families(
     reps: &[DenovoTranscript],
     families: &[SplitFamily],
     win: u64,
     min_copies: usize,
+    detect: &DetectParams,
 ) -> Vec<ColocatedFamily> {
     let mut out = Vec::new();
     for (fi, fam) in families.iter().enumerate() {
@@ -165,7 +175,7 @@ pub fn colocated_families(
             // a junction or one is an unspliced span of the other. Collapsing these prevents force-aligning
             // a 1-exon read-through against its own 12-exon spliced form (the CAFAM0 over-merge). Real
             // tandem paralogs have DISJOINT junction sets at distinct coords, so they survive untouched.
-            let copies = prune_same_locus(copies);
+            let copies = prune_same_locus(copies, detect);
             if copies.len() < min_copies {
                 continue;
             }
@@ -186,12 +196,16 @@ pub fn colocated_families(
 ///   (a) they **share a junction** — an intron `(donor, acceptor)` coordinate pair is an exact genomic
 ///       fingerprint of a splice site; two transcripts using it are isoforms of ONE gene, not two copies; or
 ///   (b) one is **structureless and contained** — a `<= 1`-exon transcript whose span is `>= CONTAIN_FRAC`
-///       inside a more-structured one is the unspliced / read-through version of that copy.
-/// Tandem paralog copies have DISJOINT junction sets at distinct coordinates, so neither rule fires and
-/// they are preserved. Among same-locus transcripts the most-structured representative is kept (more
-/// exons, then more reads, then longer sequence). Input may be in any order; output preserves input order
-/// of the kept representatives.
-fn prune_same_locus(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
+///       inside a more-structured one is the unspliced / read-through version of that copy; or
+///   (d) they are **span-overlapping same-strand isoforms with high homology** — even with disjoint
+///       junctions, two transcripts that overlap and have POA contiguous-core coverage >=
+///       `p.collapse_span_core` are recovered as alternative splice isoforms of one gene. This mirrors
+///       `family_detect::collapse_loci_span_aware`.
+/// Tandem paralog copies have DISJOINT junction sets at distinct coordinates and typically fail the
+/// conservative core-coverage bar, so they are preserved. Among same-locus transcripts the most-structured
+/// representative is kept (more exons, then more reads, then longer sequence). Input may be in any order;
+/// output preserves input order of the kept representatives.
+fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<DenovoTranscript> {
     const CONTAIN_FRAC: f64 = 0.5; // a structureless span this fraction inside another = the same locus
     let exon_count = |t: &DenovoTranscript| t.introns.len() + 1;
     // process best-structured first so it becomes the kept representative of its locus.
@@ -216,6 +230,9 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
                 return true;
             }
             let span_overlap = b.end.min(a.end).saturating_sub(b.start.max(a.start));
+            if span_overlap == 0 {
+                return false;
+            }
             let shorter = (a.end - a.start).min(b.end - b.start).max(1);
             let contained = span_overlap as f64 >= CONTAIN_FRAC * shorter as f64;
             // (b) structureless containment → the unspliced/read-through version of a copy.
@@ -225,7 +242,25 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
             // opposite-strand copies (cross-chrom or distant same-chrom) do NOT overlap, so this never fires
             // on a genuine inverted-duplication paralog — which is exactly what we want to keep.
             let antisense_overlap = contained && a.strand != b.strand;
-            (contained && structureless) || antisense_overlap
+            if (contained && structureless) || antisense_overlap {
+                return true;
+            }
+            // (d) span-aware homology: same-strand, span-overlapping, disjoint-junction isoforms with
+            //     strong sequence homology. Avoid re-checking structureless pairs (already handled above).
+            if p.collapse_span_aware
+                && a.strand == b.strand
+                && !structureless
+                && !a.introns.is_empty()
+                && !b.introns.is_empty()
+            {
+                let au = a.seq.to_ascii_uppercase();
+                let bu = b.seq.to_ascii_uppercase();
+                let core = contiguous_core_coverage_bounded(&au, &bu, p.len_cap);
+                if core >= p.collapse_span_core {
+                    return true;
+                }
+            }
+            false
         });
         if !same_locus {
             kept_idx.push(i);
@@ -240,6 +275,7 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
         .map(|(_, c)| c)
         .collect()
 }
+
 
 /// Per-co-located-family read-assignment summary, with the two-pass (PSV-only vs PSV+junction) breakdown
 /// and the silver-standard unique-mapper agreement (the accuracy proxy on real data — `copy_assign.py`).
@@ -453,7 +489,7 @@ pub fn detect_and_assign(
     }
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
-    let rep_idx = collapse_loci(&transcripts);
+    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     eprintln!(
         "[detect_and_assign] {} primary -> {} skeletons -> {} transcripts -> {} reps",
@@ -524,7 +560,7 @@ pub fn detect_and_assign(
     }
     let mut out = Vec::new();
     let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
-    for cf in colocated_families(&reps, &split, win, min_copies) {
+    for cf in colocated_families(&reps, &split, win, min_copies, &cfg.detect) {
         // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
         // and ADD them to the copy set, so reads can be assigned to them too. Iterative (bridge-aware).
         let members: Vec<FamilyMember> = cf
@@ -577,10 +613,13 @@ pub fn detect_and_assign(
                 region_mapq.push(br.mapq);
             }
         }
+        // Stage-1 and Stage-2 run WITHOUT iterative pruning so freeze_merge and downstream bookkeeping stay
+        // in the original index space. Pruning, when requested, is applied as a final post-process below.
+        let p_once = AssignParams { iterative_prune: false, ..*p };
         // Stage-1: assign over the reference copies only (borrow scoped so `all_copies` stays reassignable).
         let mut detail = {
             let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
-            assign_family_detailed(&copies, &region, p, Some(genome))
+            assign_family_detailed(&copies, &region, &p_once, Some(genome))
         };
         // Task 5 (opt-in): two-stage freeze for reference-ABSENT (collapsed) copies. OFF => this whole block
         // is skipped, so the loop below is byte-for-byte the pre-Task-5 path (`all_copies`/`detail` unchanged).
@@ -605,7 +644,7 @@ pub fn detect_and_assign(
                 // surviving absent-copy assignment is flagged `discovery_coupled`). Matched by read_index.
                 {
                     let copies2: Vec<&DenovoTranscript> = copies2_owned.iter().collect();
-                    let mut d2 = assign_family_detailed(&copies2, &region, p, Some(genome));
+                    let mut d2 = assign_family_detailed(&copies2, &region, &p_once, Some(genome));
                     d2.results = freeze_merge(&detail.results, std::mem::take(&mut d2.results), n_ref);
                     detail = d2;
                 }
@@ -613,6 +652,14 @@ pub fn detect_and_assign(
                 // set now drives copy_tids / abundance / by_copy below.
                 all_copies = copies2_owned;
             }
+        }
+        // IsoCon-style iterative copy pruning (opt-in): reassign all reads on the final copy set, dropping
+        // copies that have no read with significant evidence against their nearest neighbor. This is a global
+        // post-process so the output copy roster is internally consistent.
+        if p.iterative_prune && all_copies.len() >= 2 {
+            let copies: Vec<&DenovoTranscript> = all_copies.iter().collect();
+            detail = assign_family_detailed_pruned(&copies, &region, p, Some(genome));
+            all_copies = detail.copy_indices.iter().map(|&i| all_copies[i].clone()).collect();
         }
         // Unified gene-conversion-vs-artifact discriminator: tag each confirmed event by recurrence
         // (already in `confirmed`) + microhomology at the breakpoint (RT/template-switch signature,
@@ -727,7 +774,7 @@ pub fn detect_conflict_catalog_genome_wide(
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     drop(reads); // free the ~1.7M primaries before the per-chrom read load
     let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
-    let rep_idx = collapse_loci(&transcripts);
+    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
     eprintln!(
@@ -772,7 +819,7 @@ pub fn detect_conflict_catalog_genome_wide(
     // --- (3) global components → split → colocated (strand-split + disjoint-loci de-dup) ---
     let c_fams = conflict_families(reps.len(), &all_edges);
     let split = conflict_to_split_families(&c_fams, &all_edges, &cfg.split);
-    let catalog = colocated_families(&reps, &split, win, min_copies);
+    let catalog = colocated_families(&reps, &split, win, min_copies, &cfg.detect);
     eprintln!(
         "[gw-catalog] {} conflict components -> {} clean families (same-strand, disjoint-loci, >={} copies)",
         c_fams.len(),
@@ -811,7 +858,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     drop(reads);
     let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
-    let rep_idx = collapse_loci(&transcripts);
+    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
     let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
@@ -876,7 +923,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
             continue; // drop sparse over-merge webs (repeat-driven transitive blobs)
         }
         let comp_reps: Vec<DenovoTranscript> = sf.members.iter().map(|&i| reps[i].clone()).collect();
-        let clean = prune_same_locus(comp_reps); // same-locus artifacts (incl antisense); keep distinct loci
+        let clean = prune_same_locus(comp_reps, &cfg.detect); // same-locus artifacts (incl antisense); keep distinct loci
         if clean.len() >= min_copies {
             let chroms: BTreeSet<&str> = clean.iter().map(|c| c.chrom.as_str()).collect();
             if chroms.len() > 1 {
@@ -1389,6 +1436,7 @@ fn distinct_locus_reps(copies: Vec<DenovoTranscript>) -> Vec<DenovoTranscript> {
 #[cfg(test)]
 mod tests {
     use super::super::copy_split::AlignedRead;
+    use super::super::family_detect::collapse_loci;
     use super::*;
 
     struct SplitMix64(u64);
@@ -1658,12 +1706,12 @@ mod tests {
         let reps: Vec<DenovoTranscript> =
             collapse_loci(&transcripts).iter().map(|&i| transcripts[i].clone()).collect();
         let split = decompose_families(&detect_edges(&reps, &cfg.detect), &cfg.split);
-        let colo = colocated_families(&reps, &split, 5_000_000, 2);
+        let colo = colocated_families(&reps, &split, 5_000_000, 2, &cfg.detect);
         assert_eq!(colo.len(), 1);
         assert_eq!(colo[0].copies.len(), 2);
         assert_eq!(colo[0].chrom, "c1");
         // same family but min_copies=3 -> not co-located (only 2 copies)
-        assert!(colocated_families(&reps, &split, 5_000_000, 3).is_empty());
+        assert!(colocated_families(&reps, &split, 5_000_000, 3, &cfg.detect).is_empty());
     }
 
     #[test]
@@ -1902,7 +1950,7 @@ mod tests {
         let spliced = rep_s(82594889, 82620183, (0..11).map(|k| (82595000 + k * 1000, 82595500 + k * 1000)).collect(), 15);
         let unspliced = rep_s(82594891, 82781357, vec![], 4); // 1 exon, contains `spliced`
         let tandem = rep_s(82739824, 82765535, (0..7).map(|k| (82740000 + k * 1000, 82740500 + k * 1000)).collect(), 14);
-        let kept = prune_same_locus(vec![spliced.clone(), unspliced, tandem.clone()]);
+        let kept = prune_same_locus(vec![spliced.clone(), unspliced, tandem.clone()], &DetectParams::default());
         let starts: Vec<u64> = kept.iter().map(|c| c.start).collect();
         assert_eq!(starts, vec![82594889, 82739824], "unspliced read-through dropped; spliced + tandem kept");
         assert_eq!(kept[0].introns.len(), 11, "kept the 12-exon spliced representative, not the 1-exon");
@@ -1913,7 +1961,7 @@ mod tests {
         // two isoforms sharing a junction = one gene -> keep the more-structured.
         let iso_a = rep_s(100, 900, vec![(200, 300), (400, 500)], 5);
         let iso_b = rep_s(100, 700, vec![(200, 300)], 8); // shares junction (200,300)
-        let kept = prune_same_locus(vec![iso_a, iso_b]);
+        let kept = prune_same_locus(vec![iso_a, iso_b], &DetectParams::default());
         assert_eq!(kept.len(), 1, "shared-junction isoforms collapse to one locus");
         assert_eq!(kept[0].introns.len(), 2, "kept the 3-exon isoform");
     }
@@ -1982,9 +2030,12 @@ mod tests {
     #[test]
     fn prune_same_locus_preserves_disjoint_tandems_with_span_overlap() {
         // two real tandem copies, DISJOINT junctions, spans overlap ~40% — must BOTH survive.
-        let cp1 = rep_s(1000, 11000, vec![(2000, 3000), (4000, 5000)], 10);
-        let cp2 = rep_s(7000, 17000, vec![(8000, 9000), (10000, 11000)], 9); // overlaps 1000-11000 by 4000bp, disjoint junctions
-        let kept = prune_same_locus(vec![cp1, cp2]);
+        // Use divergent sequences so the span-aware homology arm does not merge them.
+        let mut cp1 = rep_s(1000, 3000, vec![(1500, 1600), (2000, 2100)], 10);
+        cp1.seq = rand_seq(2000, 0xA1);
+        let mut cp2 = rep_s(2200, 4200, vec![(2500, 2600), (3000, 3100)], 9); // overlaps 1000-3000 by 800bp
+        cp2.seq = rand_seq(2000, 0xB2);
+        let kept = prune_same_locus(vec![cp1, cp2], &DetectParams::default());
         assert_eq!(kept.len(), 2, "disjoint-junction tandem copies preserved despite span overlap");
     }
 
@@ -1998,7 +2049,7 @@ mod tests {
         let mut b = rep_s(48818440, 48832011, vec![(48819000, 48820000)], 9);
         b.chrom = "NC_086018.1".into();
         b.strand = '-'; // opposite strand, different chrom — still a genuine paralog pair
-        let kept = prune_same_locus(vec![a, b]);
+        let kept = prune_same_locus(vec![a, b], &DetectParams::default());
         assert_eq!(kept.len(), 2, "cross-chrom (even opposite-strand) copies are distinct loci → both kept");
     }
 
@@ -2010,9 +2061,40 @@ mod tests {
         plus.strand = '+';
         let mut minus = rep_s(1100, 10900, vec![(6000, 7000), (8000, 9000)], 5); // overlaps plus, opposite strand
         minus.strand = '-';
-        let kept = prune_same_locus(vec![plus, minus]);
+        let kept = prune_same_locus(vec![plus, minus], &DetectParams::default());
         assert_eq!(kept.len(), 1, "same-locus antisense overlap collapses to one");
         assert_eq!(kept[0].strand, '+', "kept the more-structured/more-read (15-read 4-exon) copy");
+    }
+
+    #[test]
+    fn prune_same_locus_span_aware_merges_disjoint_junction_isoforms() {
+        // Two same-strand isoforms with overlapping spans, disjoint junctions, and identical sequences
+        // (100% POA core). Span-aware prune should collapse them to one locus.
+        let iso_a = rep_s(1000, 3000, vec![(1500, 1600), (2000, 2100)], 15);
+        let iso_b = rep_s(2200, 4200, vec![(2500, 2600), (3000, 3100)], 9); // overlaps, same strand, disjoint junctions
+        let kept = prune_same_locus(vec![iso_a, iso_b], &DetectParams::default());
+        assert_eq!(
+            kept.len(),
+            1,
+            "span-aware prune merges disjoint-junction isoforms with high span homology"
+        );
+        assert_eq!(kept[0].introns.len(), 2, "kept the more-structured representative");
+    }
+
+    #[test]
+    fn prune_same_locus_span_aware_preserves_adjacent_paralogs() {
+        // Same geometry as above but with low sequence homology. The conservative core threshold must NOT
+        // merge the two paralogs.
+        let mut para_a = rep_s(1000, 3000, vec![(1500, 1600), (2000, 2100)], 15);
+        para_a.seq = rand_seq(2000, 0xA1); // random, not all-A
+        let mut para_b = rep_s(2200, 4200, vec![(2500, 2600), (3000, 3100)], 9);
+        para_b.seq = rand_seq(2000, 0xB2); // random, disjoint from para_a
+        let kept = prune_same_locus(vec![para_a, para_b], &DetectParams::default());
+        assert_eq!(
+            kept.len(),
+            2,
+            "adjacent paralogs with low span homology are preserved as two loci"
+        );
     }
 
     #[test]
@@ -2038,7 +2120,7 @@ mod tests {
             stats: CommunityStats { n: 4, n_edges: 0, density: 1.0, avg_core_recip: 0.0, n_articulation: 0 },
             class: FamilyClass::Family,
         };
-        let colo = colocated_families(&reps, &[fam], 5_000_000, 2);
+        let colo = colocated_families(&reps, &[fam], 5_000_000, 2, &DetectParams::default());
         assert_eq!(colo.len(), 2, "the + and - copies form two separate same-strand families");
         let mut sizes: Vec<usize> = colo.iter().map(|c| c.copies.len()).collect();
         sizes.sort();

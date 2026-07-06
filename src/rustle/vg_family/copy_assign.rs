@@ -145,6 +145,10 @@ pub struct AssignParams {
     /// allele by editing rather than sequencing error). Default 0.2 — downweights the flagged column to
     /// near-uninformative for the certificate while leaving the likelihood ranking intact.
     pub edit_rate: f64,
+    /// IsoCon-style iterative candidate pruning: after the per-read assignment, repeatedly merge copies that
+    /// have no read with significant evidence distinguishing them from their nearest neighbor, reassigning
+    /// reads until all surviving copies are defensible. Default false (byte-identical baseline).
+    pub iterative_prune: bool,
 }
 
 impl Default for AssignParams {
@@ -162,6 +166,7 @@ impl Default for AssignParams {
             use_margin_gate: false,
             rna_editing_filter: true,
             edit_rate: 0.2,
+            iterative_prune: false,
         }
     }
 }
@@ -179,8 +184,61 @@ impl AssignParams {
     }
 }
 
-fn boundary_present(jb: i64, junctions: &[i64], tol: i64) -> bool {
+pub(crate) fn boundary_present(jb: i64, junctions: &[i64], tol: i64) -> bool {
     junctions.iter().any(|&x| (jb - x).abs() <= tol)
+}
+
+/// Pairwise IsoCon significance: probability that `read`'s evidence supporting `target` over
+/// `competitor` arose by error under H0 "read came from competitor". Also returns the best
+/// attainable p-value (product of per-trial error probabilities over the distinguishing observations).
+/// This is the same computation used inside [`assign_read_editing`], exposed for iterative copy-pruning
+/// and other per-pair analyses.
+pub fn copy_pair_significance(
+    read: &ReadFeatures,
+    target: &CopyProfile,
+    competitor: &CopyProfile,
+    p: &AssignParams,
+    editing_cols: &[bool],
+) -> (f64, f64) {
+    let spanned: Vec<usize> = (0..read.psv_obs.len()).filter(|&j| read.psv_obs[j].is_some()).collect();
+    let mut eps: Vec<f64> = Vec::new();
+    let mut k = 0usize;
+    // distinguishing PSV columns the read spans
+    for &j in &spanned {
+        let obs = read.psv_obs[j].expect("spanned column carries an observation");
+        let ba = target.alleles.get(j).copied().flatten();
+        let ca = competitor.alleles.get(j).copied().flatten();
+        if let (Some(ba), Some(ca)) = (ba, ca) {
+            if ba != ca {
+                let e = match read.psv_qual.get(j).copied().flatten() {
+                    Some(q) => super::copy_split::phred_err(q),
+                    None => p.error_rate,
+                };
+                let mut eps_j = (e / 3.0).clamp(0.0, 1.0);
+                if p.rna_editing_filter && editing_cols.get(j).copied().unwrap_or(false) {
+                    eps_j = eps_j.max(p.edit_rate).clamp(0.0, 1.0);
+                }
+                eps.push(eps_j);
+                if obs == ba {
+                    k += 1;
+                }
+            }
+        }
+    }
+    // distinguishing junctions (from the read's own junction set)
+    for &jb in &read.junctions {
+        let in_target = boundary_present(jb, &target.junctions, p.boundary_tol);
+        let in_comp = boundary_present(jb, &competitor.junctions, p.boundary_tol);
+        if in_target != in_comp {
+            eps.push(p.junction_err.clamp(0.0, 1.0));
+            if in_target {
+                k += 1; // read carries a junction `target` has and `competitor` lacks -> supports target
+            }
+        }
+    }
+    let p_value = poisson_binomial_upper_tail(k, &eps);
+    let min_p = if eps.is_empty() { 1.0 } else { eps.iter().product::<f64>() };
+    (p_value, min_p)
 }
 
 /// Assign a read to its most likely copy. Returns `None` only if `copies` is empty.
@@ -285,49 +343,10 @@ pub fn assign_read_editing(
         if c == best {
             continue;
         }
-        let mut eps: Vec<f64> = Vec::new();
-        let mut k = 0usize;
-        // distinguishing PSV columns the read spans
-        for &j in &spanned {
-            let obs = read.psv_obs[j].expect("spanned column carries an observation");
-            let ba = copies[best].alleles.get(j).copied().flatten();
-            let ca = copies[c].alleles.get(j).copied().flatten();
-            if let (Some(ba), Some(ca)) = (ba, ca) {
-                if ba != ca {
-                    let e = match read.psv_qual.get(j).copied().flatten() {
-                        Some(q) => super::copy_split::phred_err(q),
-                        None => p.error_rate,
-                    };
-                    let mut eps_j = (e / 3.0).clamp(0.0, 1.0);
-                    // A-to-I editing: a flagged column's base can be edited, not just a sequencing error,
-                    // so a read showing the other allele there is weak evidence -> inflate εⱼ to edit_rate.
-                    if p.rna_editing_filter && editing_cols.get(j).copied().unwrap_or(false) {
-                        eps_j = eps_j.max(p.edit_rate).clamp(0.0, 1.0);
-                    }
-                    eps.push(eps_j);
-                    if obs == ba {
-                        k += 1;
-                    }
-                }
-            }
-        }
-        // distinguishing junctions (from the read's own junction set)
-        for &jb in &read.junctions {
-            let in_best = boundary_present(jb, &copies[best].junctions, p.boundary_tol);
-            let in_c = boundary_present(jb, &copies[c].junctions, p.boundary_tol);
-            if in_best != in_c {
-                eps.push(p.junction_err.clamp(0.0, 1.0));
-                if in_best {
-                    k += 1; // read carries a junction `best` has and `c` lacks -> supports best
-                }
-            }
-        }
-        let pbc = poisson_binomial_upper_tail(k, &eps);
+        let (pbc, attain) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
         if pbc > p_read {
             p_read = pbc;
         }
-        // best attainable p for this pair = Π ε  (empty distinguishing set -> 1.0 -> forces Tied)
-        let attain = if eps.is_empty() { 1.0 } else { eps.iter().product::<f64>() };
         if attain > min_p {
             min_p = attain;
         }
