@@ -7,7 +7,7 @@
     "edges": "denovo_family_edges.tsv",
     "sun": "sun_identifiability.tsv",
     "oracle": "diploid_cn_oracle.tsv",
-    "n_families_catalog": 573,
+    "n_families_catalog": 553,
     "n_denovo_loci": 3462
   },
   "determinism": {
@@ -24,20 +24,20 @@
   },
   "headline": {
     "n_families": 8,
-    "total_catalog_members": 92,
-    "total_annotated_members": 87,
+    "total_catalog_members": 97,
+    "total_annotated_members": 91,
     "total_genuine_over_merges": 2,
     "over_merges": [
       {
         "family": "ANKRD18",
-        "catalog_fid": "306",
+        "catalog_fid": "302",
         "members": [
           "FOXO1"
         ]
       },
       {
         "family": "ZNF92",
-        "catalog_fid": "42",
+        "catalog_fid": "39",
         "members": [
           "LOC129527827"
         ]
@@ -48,7 +48,7 @@
       "FLOOR": 2,
       "MID": 4
     },
-    "precision_note": "Only 2 genuine over-merges across 87 annotated grouped members (92 catalog members incl. unannotated de-novo loci); every other apparent impurity is E_p under-coverage of a real single-domain/partial copy."
+    "precision_note": "Only 2 genuine over-merges across 91 annotated grouped members (97 catalog members incl. unannotated de-novo loci); every other apparent impurity is E_p under-coverage of a real single-domain/partial copy."
   },
   "figures": {
     "summary": "/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_known_families_summary.png",
@@ -72,7 +72,7 @@
   "families": [
     {
       "name": "RABL2",
-      "catalog_fid": "73",
+      "catalog_fid": "70",
       "present": true,
       "note": "RAB-like GTPase; cross-chromosomal 5-copy cluster (flagship clean)",
       "n_copies_catalog": 5,
@@ -152,7 +152,7 @@
     },
     {
       "name": "APOBEC3",
-      "catalog_fid": "569",
+      "catalog_fid": "549",
       "present": true,
       "note": "APOBEC3 cytidine-deaminase tandem cluster (Bailey/Soto)",
       "n_copies_catalog": 3,
@@ -200,42 +200,42 @@
     },
     {
       "name": "MAGEA",
-      "catalog_fid": "517",
+      "catalog_fid": "496",
       "present": true,
       "note": "MAGE-A cancer/testis X-array (Xq28)",
-      "n_copies_catalog": 11,
-      "n_annot": 11,
+      "n_copies_catalog": 13,
+      "n_annot": 13,
       "n_NA": 0,
       "genes": [
         "LOC129529976",
         "LOC129529978",
         "LOC129529983",
         "LOC129529986",
+        "LOC129530018",
         "MAGEA1",
         "MAGEA12",
-        "MAGEA4"
+        "MAGEA4",
+        "MAGEA9"
       ],
       "definition_O1": {
-        "recall": 0.8462,
-        "n_copies_truth": 13,
+        "recall": 0.8667,
+        "n_copies_truth": 15,
         "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
         "recall_small_n": false,
         "precision_strict_EpDNA": 1.0,
         "precision_bio_corrected": 1.0,
         "genuine_over_merge": [],
         "missed_copies": {
-          "515": [
-            "MAGEA9"
-          ],
           "SINGLETON/not-multicopy": [
+            "LOC129529929",
             "MAGEA10"
           ]
         }
       },
       "identity_regime": {
-        "core_recip_med": 0.6847,
+        "core_recip_med": 0.4697,
         "core_recip_max": 1.0,
-        "frac_edges_near_identical": 0.1636,
+        "frac_edges_near_identical": 0.1282,
         "regime": "divergent(<0.70)",
         "regime_short": "divergent"
       },
@@ -273,7 +273,7 @@
     },
     {
       "name": "ANKRD18",
-      "catalog_fid": "306",
+      "catalog_fid": "302",
       "present": true,
       "note": "ANKRD18A/B ankyrin-repeat segdup (flagship mid / K-frontier)",
       "n_copies_catalog": 15,
@@ -356,7 +356,7 @@
     },
     {
       "name": "RGPD8",
-      "catalog_fid": "313",
+      "catalog_fid": "309",
       "present": true,
       "note": "RANBP2-paralog RGPD cluster (flagship K-frontier FLOOR)",
       "n_copies_catalog": 8,
@@ -434,7 +434,7 @@
     },
     {
       "name": "ZNF92",
-      "catalog_fid": "42",
+      "catalog_fid": "39",
       "present": true,
       "note": "KRAB-zinc-finger cluster (divergent-paralog DEFINITION regime)",
       "n_copies_catalog": 41,
@@ -497,13 +497,13 @@
             "ZNF429",
             "LOC101128106"
           ],
-          "191": [
+          "188": [
             "LOC101133668"
           ],
-          "83": [
+          "80": [
             "ZNF626"
           ],
-          "22": [
+          "20": [
             "ZNF208"
           ]
         }
@@ -535,20 +535,21 @@
     },
     {
       "name": "GSTM",
-      "catalog_fid": "18",
+      "catalog_fid": "17",
       "present": true,
       "note": "glutathione-S-transferase Mu tandem cluster; GSTM2 near-identical collapse",
-      "n_copies_catalog": 3,
-      "n_annot": 3,
-      "n_NA": 0,
+      "n_copies_catalog": 6,
+      "n_annot": 5,
+      "n_NA": 1,
       "genes": [
         "GSTM1",
+        "GSTM2",
         "GSTM4",
         "GSTM5"
       ],
       "definition_O1": {
-        "recall": 0.2727,
-        "n_copies_truth": 11,
+        "recall": 0.5,
+        "n_copies_truth": 12,
         "recall_scope": "among RNA-expressed/detected loci (NOT vs full genomic copy number)",
         "recall_small_n": false,
         "precision_strict_EpDNA": 1.0,
@@ -558,7 +559,7 @@
           "SINGLETON/not-multicopy": [
             "GSTM3"
           ],
-          "19": [
+          "18": [
             "GSTM1"
           ],
           "6": [
@@ -572,16 +573,12 @@
           ],
           "11": [
             "GSTM2"
-          ],
-          "20": [
-            "GSTM2",
-            "GSTM2"
           ]
         }
       },
       "identity_regime": {
         "core_recip_med": 0.4365,
-        "core_recip_max": 0.4402,
+        "core_recip_max": 0.8934,
         "frac_edges_near_identical": 0.0,
         "regime": "divergent(<0.70)",
         "regime_short": "divergent"
@@ -620,7 +617,7 @@
     },
     {
       "name": "HERC2",
-      "catalog_fid": "388",
+      "catalog_fid": "382",
       "present": true,
       "note": "HERC2 / HERC2P duplicon cluster, chr15 segdup (Eichler)",
       "n_copies_catalog": 6,
@@ -642,7 +639,7 @@
         "precision_bio_corrected": 1.0,
         "genuine_over_merge": [],
         "missed_copies": {
-          "387": [
+          "381": [
             "HERC2"
           ]
         }

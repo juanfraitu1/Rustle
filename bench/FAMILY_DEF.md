@@ -1186,6 +1186,8 @@ Artifacts: `family_def_artifact_filter.py` (filter + self-test) · `make_dna_fam
 
 ## family_definition_formal
 
+> **⚠ Superseded as the O1 family *definition* (2026-06-30) — see `bench/family_definition_formal.md`.** The read-conflict graph $E_c$ described below is an **ambiguity** oracle (an edge = a read that *cannot resolve* two loci), not a **homology** oracle: a multi-copy family whose copies are divergent enough to each map uniquely produces no de-tie and vanishes (measured: **~30% of multi-copy homology families / ~1/4 of copies** silently dropped). The canonical RNA family is now the **transcript-homology component $E_r$** (`bench/family_definition_formal.md`), the fourth homology oracle ($E_a$—$E_b$—$E_r$—$E_p$), which *includes* the read-resolvable copies. **Everything below is correct and retained as the within-family O2 (copy-assignment) structure**: $E_c$ / `MCC=χ(H)` / the SUN 3-tier ladder are demoted to *how copies are assigned inside a fixed $E_r$ family*, with $E_c^{\mathrm{sig}}\subseteq E_c\subseteq E_r^{\mathrm{asym}}$. Results ledger: `bench/RNA_FAMILY_HOMOLOGY_REFRAME.md`.
+
 # A formal definition of a multi-copy gene family at the RNA level — and its proof on IsoSeq reads
 
 *Advisor interest #1: can we give a full formal definition of a multi-copy gene family and find them from

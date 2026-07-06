@@ -484,8 +484,11 @@ def render_family(vg, out_png, max_bubbles=30, max_reads=60):
                f"TIED (K-frontier floor) {n_tied_floor} ({100*n_tied_floor/tot:.0f}%)   "
                f"-- no distinguishing bubble exists, so NO read is resolvable, even in principle")
     else:
+        # all five categories are listed so they SUM to n_reads (recombinant = abstain leg's
+        # belongs-to-no-copy call; previously omitted, which made the footer appear not to total).
         asg = (f"reads = {vg['n_reads']}   ASSIGNED {asn.get('assigned',0)} ({pct('assigned'):.0f}%)   "
                f"AMBIGUOUS {asn.get('ambiguous',0)} ({pct('ambiguous'):.0f}%)   "
+               f"RECOMBINANT/abstain {asn.get('recombinant',0)} ({pct('recombinant'):.0f}%)   "
                f"TIED {asn.get('tied',0)} ({pct('tied'):.0f}%)   "
                f"no-PSV-cover {asn.get('no_cover',0)} ({pct('no_cover'):.0f}%)")
     fig.suptitle(head, fontsize=13.5, fontweight="bold", y=0.985)

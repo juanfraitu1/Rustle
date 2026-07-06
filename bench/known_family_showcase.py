@@ -532,6 +532,33 @@ def render_summary(rows, out_png):
     plt.close(fig)
 
 
+# --------------------------------------------------------------------------- resolve canonical family ids
+# The catalog family_ids are not stable across pipeline iterations (gamma/gate changes shift numbering).
+# Resolve each canonical family to the catalog block that contains the most seed genes.  This keeps the
+# showcase honest even when the current prototype has reorganized the catalog.
+def resolve_spec_fids(fam, gene_of_dn):
+    """Return a dict spec_name -> best catalog fid (or None if no seed gene is found)."""
+    # gene -> set of catalog family ids that contain a locus of that gene
+    gene_to_fids = defaultdict(set)
+    for fid, members in fam.items():
+        for dn in members:
+            g = gene_of_dn.get(dn)
+            if g:
+                gene_to_fids[g].add(fid)
+    resolved = {}
+    for spec in FAMILIES:
+        scores = Counter()
+        for g in spec["seeds"]:
+            for fid in gene_to_fids.get(g, ()):
+                scores[fid] += 1
+        if scores:
+            best, _ = scores.most_common(1)[0]
+            resolved[spec["name"]] = best
+        else:
+            resolved[spec["name"]] = None
+    return resolved
+
+
 # --------------------------------------------------------------------------- main
 def main():
     print("[load] catalog / pair-truth / edges / SUN / oracle / de-novo universe ...", flush=True)
@@ -561,12 +588,17 @@ def main():
             ep1[a].add(b)
             ep1[b].add(a)
 
-    print(f"       catalog {len(fam)} families; de-novo universe {len(gene_of_dn)} loci\n")
+    spec_fids = resolve_spec_fids(fam, gene_of_dn)
+    resolved_specs = [dict(spec, fid=spec_fids[spec["name"]]) for spec in FAMILIES]
+    print(f"       catalog {len(fam)} families; de-novo universe {len(gene_of_dn)} loci")
+    for spec in resolved_specs:
+        print(f"       {spec['name']:8s} -> fam{spec['fid']}")
+    print()
 
     rows = []
-    for spec in FAMILIES:
+    for spec in resolved_specs:
         fid = spec["fid"]
-        members = fam.get(fid, [])
+        members = fam.get(fid, []) if fid else []
         present = len(members) > 0
         cr = core_recip_stats(members, E)
         prec = precision(members, genes, gene_of_dn, pair, E, spec["prefix"])
@@ -619,7 +651,7 @@ def main():
     # re-render flagship copy-assignment VGs from cache
     print("[o2_vg] re-rendering flagship copy-assignment VGs from cache ...")
     rows_by_fid = {r["fid"]: r for r in rows}
-    for spec in FAMILIES:
+    for spec in resolved_specs:
         if spec["o2_vg"] is not None:
             o2mod, vg = load_o2vg(spec["o2_vg"])
             if o2mod and vg:

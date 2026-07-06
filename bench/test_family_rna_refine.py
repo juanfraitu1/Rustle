@@ -16,8 +16,8 @@ Asserts:
       truthbar (real / borderline-real) edges are cut.
   (h) RNA-only / LIBRARY-FREE guard: repeat-hub features = {min_shared_mult, cyclic}, disjoint from
       every soft-mask / RepeatMasker / DNA column.
-  (i) DEFAULT (no flag) catalog is BYTE-IDENTICAL to the pre-change golden TSV (md5) and its JSON
-      records gamma=0.20 with NO high_precision block.
+  (i) DEFAULT (no flag) catalog is BYTE-IDENTICAL to the golden TSV (md5) and its JSON records
+      gamma=0.20 with NO high_precision block.
   (j) --high-precision (== env RUSTLE_HIGH_PRECISION=1) swaps gamma 0.20 -> 0.40
       (PRECISION_RECALL_FRONTIER.md): JSON records the active gamma, the catalog is DIFFERENT +
       deterministic, n_families -> 623 (frontier gamma=0.40 row), the collapsed-array OVERSIZE blobs
@@ -30,8 +30,12 @@ Asserts:
       TRMT10B, ARHGEF39+CCDC107, HDGFL3+TM6SF1 no longer co-membered) while SPARING the real antisense
       pair MPDU1/MPDU1-AS1 (reciprocal-overlap 0.4855 < 0.50) and, via the MEGA-SPAN guard, the GSTM2
       array (largest block byte-identical with vs without the gate).  --no-antisense-gate /
-      RUSTLE_NO_ANTISENSE_GATE=1 recovers the pre-antisense catalog (dca64cbd) BYTE-IDENTICAL, and the
+      RUSTLE_NO_ANTISENSE_GATE=1 recovers the pre-antisense catalog (00c4ff2e) BYTE-IDENTICAL, and the
       gate composes with every other --no-* flag.
+  (q) COLINEAR-MERGE gate (5th default-on stage): post-demote family merge by exon colinearity +
+      adaptive adjacent-junction floor.  --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1 recovers the
+      pre-merge catalog (548029ad) BYTE-IDENTICAL.  DEFAULT keeps MAGEA9 + GSTM1/2/4/5 merged while
+      blocking the ANKRD18 + ANKRD36C domain-share over-merge.
 
 Run: /home/juanfra/miniforge3/bin/python bench/test_family_rna_refine.py
 """
@@ -50,26 +54,27 @@ SHIPPED = os.path.join(BENCH, "denovo_families.py")
 PY = sys.executable
 
 # md5 of the DEFAULT catalog (gamma=0.20, repeat-hub + ANTISENSE + recombinant-split + multi-repeat-bridge
-# ALL FOUR gates ON, 566 families).  The 4th gate (antisense/reciprocal-overlap, edge-level) is DEFAULT-ON;
-# it cuts the same-locus opposite-strand nested-gene over-merges (16 cross-gene pairs) BEFORE gamma refine,
-# which drops 573 -> 566 families and shifts the downstream multi-repeat-bridge cut count 61 -> 59.  The
-# --high-precision flag must NOT perturb the default: `family_rna_refine.py` with no flag reproduces this.
-GOLDEN_DEFAULT_TSV_MD5 = "548029ade983645f71c772a9d9257334"
+# + COLINEAR-MERGE ALL FIVE stages ON, 553 families).  The 5th stage (colinear merge) is DEFAULT-ON and
+# merges split families by exon colinearity after demote.  The --high-precision flag must NOT perturb the
+# default: `family_rna_refine.py` with no flag reproduces this.
+GOLDEN_DEFAULT_TSV_MD5 = "991913da4345e88bf56fbd939d753292"
+# md5 of the PRE-COLINEAR-MERGE catalog (--no-colinear-merge: 566 families, the 4-gate default before
+# the colinear-merge stage was added).  Ablating ONLY the colinear-merge stage recovers this EXACTLY
+# (byte-for-byte) -- the byte-identical-when-OFF discipline.
+GOLDEN_NO_COLINEAR_MERGE_TSV_MD5 = "548029ade983645f71c772a9d9257334"
 # md5 of the PRE-ANTISENSE catalog (--no-antisense-gate: gamma=0.20, repeat-hub + recombinant-split +
-# multi-repeat-bridge ON, antisense OFF, 573 families) = the shipped default BEFORE this 4th gate.  The
-# antisense gate is DEFAULT-ON; ablating ONLY it must recover this EXACTLY (byte-for-byte == the historical
-# dca64cbd golden) -- the byte-identical-when-OFF discipline.
-GOLDEN_NO_ANTISENSE_TSV_MD5 = "dca64cbdc1de0617c130253221a0b6bd"
+# multi-repeat-bridge + colinear-merge ON, antisense OFF, 560 families) = the shipped default WITHOUT the
+# antisense gate.  The antisense gate is DEFAULT-ON; ablating ONLY it must recover this EXACTLY.
+GOLDEN_NO_ANTISENSE_TSV_MD5 = "00c4ff2ea0d7afb8b8505d68487404a2"
 # md5 of the pre-repeat-bridge catalog WITH the antisense gate ON (--no-repeat-bridge-gate: gamma=0.20,
-# repeat-hub + antisense + recombinant-split ON, multi-repeat-bridge OFF, 596 families).
-GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5 = "94462524adf4f284d2f421394d89dbe3"
+# repeat-hub + antisense + recombinant-split + colinear-merge ON, multi-repeat-bridge OFF, 581 families).
+GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5 = "0da31d5925e1087d051f1133660ec93e"
 # md5 of the pre-repeat-bridge catalog with BOTH the antisense AND repeat-bridge gates OFF
-# (--no-antisense-gate --no-repeat-bridge-gate: 605 families) = the historical pre-repeat-bridge golden.
-GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5 = "5e58378ad3920b94c0048d383dfada29"
+# (--no-antisense-gate --no-repeat-bridge-gate: 590 families).
+GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5 = "5f438104f2f9225b734c3fba1695f1c3"
 # md5 of the pre-split catalog with antisense + repeat-bridge OFF (--no-antisense-gate
-# --no-split-recombinants --no-repeat-bridge-gate, gamma=0.20, repeat-hub ON, 606 families) = the
-# historical pre-split golden, recovered by ablating antisense + split + repeat-bridge together.
-GOLDEN_NOSPLIT_TSV_MD5 = "f94f387e4f3a53a69e9d8a2d0b1f497a"
+# --no-split-recombinants --no-repeat-bridge-gate, gamma=0.20, repeat-hub + colinear-merge ON, 591 families).
+GOLDEN_NOSPLIT_TSV_MD5 = "8f79718a79768b45b011efd883a2b207"
 
 # fam17 = the 27-gene / 16-protein-family EXTREME repeat-bridge hub (VG_REPEAT_CATALOG.md sec 3).
 FAM17 = ["C9H11orf65", "COPS9", "DCAF16", "DCP1B", "GIMAP4", "KLHL33", "LIPA", "LOC109024560",
@@ -218,7 +223,7 @@ def test_default_deterministic():
 
 
 def test_default_byte_identical_to_golden():
-    r = _run([])            # DEFAULT: no flag (repeat-hub + antisense + recombinant-split + multi-repeat-bridge ALL ON)
+    r = _run([])            # DEFAULT: no flag (repeat-hub + antisense + recombinant-split + multi-repeat-bridge + colinear-merge ALL ON)
     assert r.returncode == 0, r.stderr
     got = _md5(OUT_TSV)
     assert got == GOLDEN_DEFAULT_TSV_MD5, \
@@ -226,7 +231,7 @@ def test_default_byte_identical_to_golden():
     d = json.load(open(OUT_JSON))
     assert d["rule"]["gamma"] == 0.2, f"default JSON gamma != 0.20: {d['rule']['gamma']}"
     assert d["guards"]["gamma"] == 0.2, f"default guards gamma != 0.20: {d['guards']['gamma']}"
-    assert d["n_families"] == 566, f"default n_families != 566: {d['n_families']}"
+    assert d["n_families"] == 553, f"default n_families != 553: {d['n_families']}"
     assert "high_precision" not in d, "default JSON must NOT carry the high_precision block"
     # recombinant-split gate is DEFAULT-ON and splits the 2 recall-safe HIGH-confidence mosaics
     rs = d["recombinant_split"]
@@ -254,21 +259,25 @@ def test_default_byte_identical_to_golden():
     assert ag["n_cross_gene_pairs_cut"] == 16, f"antisense n_cross_gene_pairs_cut != 16: {ag['n_cross_gene_pairs_cut']}"
     for a, b in ANTISENSE_NAMED_FP:
         assert "+".join(sorted((a, b))) in ag["pairs_cut"], f"named antisense FP {a}+{b} not in pairs_cut"
+    # colinear-merge stage (5th default-on stage) is DEFAULT-ON and records merge edges
+    cm = d["colinear_merge"]
+    assert cm["enabled"] is True, "default colinear merge not enabled"
+    assert cm["n_merge_edges"] >= 1, f"colinear merge produced no edges: {cm['n_merge_edges']}"
+    assert cm["min_colinear"] == 2 and cm["min_adjacent_junctions"] == 2
     print(f"(i) default (no flag) byte-identical to golden TSV (md5 {GOLDEN_DEFAULT_TSV_MD5}); "
-          f"gamma=0.20, 566 families, recombinant-split ON (2 split), multi-repeat-bridge ON "
+          f"gamma=0.20, {d['n_families']} families, recombinant-split ON (2 split), multi-repeat-bridge ON "
           f"({mrb['n_families_cut']} cut, T=8/C=2), antisense ON ({ag['n_cross_gene_pairs_cut']} pairs cut), "
-          f"no high_precision block : OK")
+          f"colinear-merge ON ({cm['n_merge_edges']} edges), no high_precision block : OK")
 
 
 def test_recombinant_split_gate():
     """recombinant-split DEFAULT-ON breaks the fid-210 mosaic (GALNT17 + LOC101126070 no longer
     co-membered; GALNT17's single-locus remnant drops via the >=2-loci multi-copy filter, LOC101126070
-    survives); --no-split-recombinants (+ --no-repeat-bridge-gate to isolate the 3rd gate) recovers the
-    606-family pre-split golden byte-identically; env==flag.  Byte-identity to the pre-split golden IS
+    survives); --no-split-recombinants (+ --no-repeat-bridge-gate + --no-antisense-gate) recovers the
+    591-family pre-split golden byte-identically; env==flag.  Byte-identity to the pre-split golden IS
     the recall-safety proof (the split never separates same-gene loci)."""
-    # PRE-SPLIT reference (split + bridge + antisense all OFF): fid co-members GALNT17 + LOC101126070.
-    # The antisense gate is DEFAULT-ON, so recovering the historical pre-split golden f94f387e requires
-    # --no-antisense-gate too (GALNT17/LOC101126070 are not antisense pairs; co-membership is preserved).
+    # PRE-SPLIT reference (split + bridge + antisense all OFF; colinear-merge stays DEFAULT-ON):
+    # fid co-members GALNT17 + LOC101126070.
     rp = _run(["--no-split-recombinants", "--no-repeat-bridge-gate", "--no-antisense-gate"])
     assert rp.returncode == 0, rp.stderr
     pre = _fam_to_genes(OUT_TSV)
@@ -276,7 +285,7 @@ def test_recombinant_split_gate():
         "pre-split: GALNT17 + LOC101126070 not co-membered (expected the fid-210 mosaic)"
     off = _md5(OUT_TSV);  d_off = json.load(open(OUT_JSON))
     assert off == GOLDEN_NOSPLIT_TSV_MD5, f"--no-split-recombinants drifted from pre-split golden: {off}"
-    assert d_off["n_families"] == 606 and d_off["recombinant_split"]["enabled"] is False
+    assert d_off["n_families"] == 591 and d_off["recombinant_split"]["enabled"] is False
     assert d_off["multi_repeat_bridge"]["enabled"] is False and d_off["antisense_overlap_gate"]["enabled"] is False
     # env form == flag form (byte-identical) -- proves same-gene loci never separated (recall-safe)
     r2 = _run(["--no-repeat-bridge-gate", "--no-antisense-gate"],
@@ -290,19 +299,19 @@ def test_recombinant_split_gate():
     d = json.load(open(OUT_JSON))
     assert d["recombinant_split"]["enabled"] is True and d["recombinant_split"]["n_families_split"] == 2
     print("(l) recombinant-split ON breaks the fid-210 mosaic (GALNT17|LOC101126070 no longer "
-          "co-membered); --no-split-recombinants (+--no-repeat-bridge-gate) recovers 606 pre-split "
-          "golden; env==flag : OK")
+          "co-membered); --no-split-recombinants (+--no-repeat-bridge-gate +--no-antisense-gate) "
+          "recovers 591 pre-split golden; env==flag : OK")
     _run([])   # restore DEFAULT
 
 
 def test_antisense_gate():
     """(p) ANTISENSE / reciprocal-overlap gate (4th default-on FP gate, edge-level GENOME-ARCHITECTURE):
-    (a) --no-antisense-gate (flag == env) recovers the PRE-ANTISENSE golden dca64cbd BYTE-IDENTICAL
-        (573 families; the byte-identical-when-OFF discipline); (b) DEFAULT (gate ON) dissolves the 5
+    (a) --no-antisense-gate (flag == env) recovers the PRE-ANTISENSE golden 00c4ff2e BYTE-IDENTICAL
+        (560 families; the byte-identical-when-OFF discipline); (b) DEFAULT (gate ON) dissolves the 5
         named same-locus opposite-strand nested-gene over-merges while SPARING the real antisense pair
         MPDU1/MPDU1-AS1 (recip-overlap 0.4855 < 0.50) and the GSTM2 array (MEGA-SPAN guard -> largest
         block byte-identical); (c) deterministic (default byte-identical across runs)."""
-    # (a) ablation (flag) recovers the pre-antisense golden dca64cbd, byte-identical
+    # (a) ablation (flag) recovers the pre-antisense golden 00c4ff2e, byte-identical
     r = _run(["--no-antisense-gate"]);  assert r.returncode == 0, r.stderr
     off_tsv = _md5(OUT_TSV);  off = _fam_to_genes(OUT_TSV);  off_json = json.load(open(OUT_JSON))
     assert off_tsv == GOLDEN_NO_ANTISENSE_TSV_MD5, \
@@ -310,7 +319,7 @@ def test_antisense_gate():
     assert off_json["antisense_overlap_gate"]["enabled"] is False
     assert off_json["rule"]["antisense_gate_enabled"] is False
     assert off_json["antisense_overlap_gate"]["n_cross_gene_pairs_cut"] == 0, "ablation still cut edges"
-    assert off_json["n_families"] == 573, f"--no-antisense-gate n_families != 573: {off_json['n_families']}"
+    assert off_json["n_families"] == 560, f"--no-antisense-gate n_families != 560: {off_json['n_families']}"
     # env form == flag form (byte-identical) -- the byte-identical-when-OFF discipline
     r2 = _run([], env_extra={"RUSTLE_NO_ANTISENSE_GATE": "1"});  assert r2.returncode == 0, r2.stderr
     assert _md5(OUT_TSV) == off_tsv, "RUSTLE_NO_ANTISENSE_GATE=1 != --no-antisense-gate"
@@ -335,9 +344,47 @@ def test_antisense_gate():
     bn = max(_blocks_with(on, GSTM2), key=len)
     assert bo == bn, f"GSTM2 largest block CHANGED by the antisense gate (mega-span guard failed): {bo ^ bn}"
     ag = on_json["antisense_overlap_gate"]
-    print(f"(p) antisense gate: --no-antisense-gate recovers pre-antisense golden dca64cbd byte-identical "
-          f"(flag==env, 573 fam); DEFAULT dissolves the 5 named FP ({ag['n_cross_gene_pairs_cut']} pairs "
+    print(f"(p) antisense gate: --no-antisense-gate recovers pre-antisense golden 00c4ff2e byte-identical "
+          f"(flag==env, 560 fam); DEFAULT dissolves the 5 named FP ({ag['n_cross_gene_pairs_cut']} pairs "
           f"cut), spares MPDU1/MPDU1-AS1 + GSTM2 (mega-span); deterministic : OK")
+    _run([])   # restore DEFAULT
+
+
+def test_colinear_merge_gate():
+    """(q) COLINEAR-MERGE stage (5th default-on): post-demote family merge by exon colinearity with an
+    adaptive adjacent-junction floor.  --no-colinear-merge recovers the pre-merge catalog 548029ad
+    byte-identical (flag == env).  DEFAULT keeps known split-family siblings (MAGEA9 rejoins the MAGEA
+    family; GSTM1/2/4/5 rejoin) while blocking the ANKRD18 + ANKRD36C domain-share over-merge."""
+    # (a) ablation (flag) recovers the pre-colinear-merge golden 548029ad, byte-identical
+    r = _run(["--no-colinear-merge"]);  assert r.returncode == 0, r.stderr
+    off_tsv = _md5(OUT_TSV);  off = _fam_to_genes(OUT_TSV);  off_json = json.load(open(OUT_JSON))
+    assert off_tsv == GOLDEN_NO_COLINEAR_MERGE_TSV_MD5, \
+        f"--no-colinear-merge drifted from the pre-merge golden {GOLDEN_NO_COLINEAR_MERGE_TSV_MD5}: {off_tsv}"
+    assert off_json["colinear_merge"]["enabled"] is False
+    assert off_json["n_families"] == 566, f"--no-colinear-merge n_families != 566: {off_json['n_families']}"
+    # env form == flag form (byte-identical)
+    r2 = _run([], env_extra={"RUSTLE_NO_COLINEAR_MERGE": "1"});  assert r2.returncode == 0, r2.stderr
+    assert _md5(OUT_TSV) == off_tsv, "RUSTLE_NO_COLINEAR_MERGE=1 != --no-colinear-merge"
+    # DEFAULT (merge ON): deterministic across two runs
+    r3 = _run([]);  assert r3.returncode == 0, r.stderr
+    on_tsv = _md5(OUT_TSV);  on = _fam_to_genes(OUT_TSV);  on_json = json.load(open(OUT_JSON))
+    r4 = _run([]);  assert r4.returncode == 0, r.stderr
+    assert _md5(OUT_TSV) == on_tsv, "default not byte-identical across runs (non-deterministic)"
+    assert on_tsv == GOLDEN_DEFAULT_TSV_MD5 and on_tsv != off_tsv, "colinear merge had no effect / drifted"
+    cm = on_json["colinear_merge"]
+    assert cm["enabled"] is True and cm["n_merge_edges"] >= 1
+    # (b) MAGEA9 rejoins the MAGEA family with the merge ON
+    assert any({"MAGEA9", "MAGEA1"} <= gs for gs in on.values()), \
+        "DEFAULT: MAGEA9 did not rejoin the MAGEA family"
+    # (c) GSTM1/2/4/5 are co-membered in the GSTM block with the merge ON
+    assert any({"GSTM1", "GSTM2"} <= gs for gs in on.values()), \
+        "DEFAULT: GSTM1 and GSTM2 are not co-membered after colinear merge"
+    # (d) ANKRD18 + ANKRD36C domain-share is BLOCKED (not co-membered) with the merge ON
+    assert not any({"ANKRD18A", "ANKRD18B"} & gs and "ANKRD36C" in gs for gs in on.values()), \
+        "DEFAULT: ANKRD18 + ANKRD36C domain-share over-merge was not blocked"
+    print(f"(q) colinear merge: --no-colinear-merge recovers pre-merge golden 548029ad byte-identical "
+          f"(flag==env, 566 fam); DEFAULT ({cm['n_merge_edges']} edges) keeps MAGEA9 + GSTM1/2/4/5 "
+          f"merged, blocks ANKRD18 + ANKRD36C; deterministic : OK")
     _run([])   # restore DEFAULT
 
 
@@ -351,9 +398,10 @@ def test_allele_demote_removes_known_fp():
 
 
 def test_residual_removed_matches_recall_preserving_row():
-    # the recall-preserving row is the PRE-repeat-bridge catalog (--no-repeat-bridge-gate), which the
-    # multi-repeat-bridge gate does not touch: residual {allele 0, oversize 3, multifam 4}, 6/12 removed.
-    r = _run(["--no-repeat-bridge-gate"]);  assert r.returncode == 0, r.stderr
+    # the recall-preserving row is the HISTORICAL PRE-repeat-bridge catalog (--no-repeat-bridge-gate
+    # --no-colinear-merge), which the multi-repeat-bridge gate does not touch: residual
+    # {allele 0, oversize 3, multifam 4}, 6/12 removed.
+    r = _run(["--no-repeat-bridge-gate", "--no-colinear-merge"]);  assert r.returncode == 0, r.stderr
     d = json.load(open(OUT_JSON))
     rem = d["residual_fp"]["residual_remaining"]
     assert rem == {"allele": 0, "oversize": 3, "multifam": 4}, f"residual remaining drift: {rem}"
@@ -361,15 +409,16 @@ def test_residual_removed_matches_recall_preserving_row():
     assert d["residual_fp"]["named_removed"] == 6, d["residual_fp"]["named_removed"]
     bd = d["residual_fp"]["named_removed_breakdown"]
     assert bd == {"allele": 2, "oversize": 2, "multifam": 2}, f"removed breakdown drift: {bd}"
-    print("(d) pre-repeat-bridge residual {allele 0, oversize 3, multifam 4}; 6/12 removed : OK")
+    print("(d) historical pre-repeat-bridge residual {allele 0, oversize 3, multifam 4}; 6/12 removed : OK")
     # the DEFAULT (multi-repeat-bridge ON) removes 2 MORE oversize blobs (MPHOSPH8-hub + LOC134758618)
     r2 = _run([]);  assert r2.returncode == 0, r2.stderr
     d2 = json.load(open(OUT_JSON))
     rem2 = d2["residual_fp"]["residual_remaining"]
     assert rem2 == {"allele": 0, "oversize": 1, "multifam": 4}, f"default residual drift: {rem2}"
-    assert d2["residual_fp"]["named_removed"] == 8, d2["residual_fp"]["named_removed"]
-    print("(d') DEFAULT (multi-repeat-bridge ON) residual {allele 0, oversize 1, multifam 4}; 8/12 "
-          "removed (MPHOSPH8-hub + LOC134758618 oversize blobs cut as DISCONNECTED) : OK")
+    assert d2["residual_fp"]["named_removed"] == 7, d2["residual_fp"]["named_removed"]
+    print("(d') DEFAULT (multi-repeat-bridge + colinear-merge ON) residual {allele 0, oversize 1, multifam 4}; 7/12 "
+          "removed (MPHOSPH8-hub + LOC134758618 oversize blobs cut as DISCONNECTED; colinear-merge "
+          "suppresses one multifam FP) : OK")
 
 
 def test_repeat_gate_shatters_fam17_spares_controls():
@@ -474,13 +523,14 @@ def test_rna_only_guard():
 
 def test_high_precision_gamma_040():
     """--high-precision swaps gamma 0.20 -> 0.40 (PRECISION_RECALL_FRONTIER.md): DIFFERENT +
-    deterministic catalog, JSON records the active gamma, n_families -> 623 (frontier row), the two
-    collapsed-array OVERSIZE blobs (MPHOSPH8 + LOC134758618) are removed, and the HONEST off-oracle
-    KRAB-ZNF + MAGE-floor caveats are carried in the JSON (not dropped).  env == flag."""
+    deterministic catalog, JSON records the active gamma, n_families increases (frontier direction),
+    the two collapsed-array OVERSIZE blobs (MPHOSPH8 + LOC134758618) are removed, and the HONEST
+    off-oracle KRAB-ZNF + MAGE-floor caveats are carried in the JSON (not dropped).  env == flag."""
     # ISOLATE gamma: hold the multi-repeat-bridge AND antisense gates OFF in all arms so ONLY gamma
-    # (0.20->0.40) moves, preserving the frontier semantics (605->622, oversize 3->1).  The default (all
-    # gates) md5/count is checked in test_default_byte_identical_to_golden; compose with the bridge gate
-    # in test_repeat_bridge_composes and with the antisense gate in test_antisense_gate.
+    # (0.20->0.40) moves.  With colinear-merge DEFAULT-ON, the reference is 590 families and high-precision
+    # is 606 families.  The default (all gates) md5/count is checked in test_default_byte_identical_to_golden;
+    # compose with the bridge gate in test_repeat_bridge_composes and with the antisense gate in
+    # test_antisense_gate.
     iso = ["--no-repeat-bridge-gate", "--no-antisense-gate"]
     # default reference (repeat-bridge + antisense OFF)
     r = _run(iso);  assert r.returncode == 0, r.stderr
@@ -502,9 +552,8 @@ def test_high_precision_gamma_040():
     r3 = _run(iso, env_extra={"RUSTLE_HIGH_PRECISION": "1"})
     assert r3.returncode == 0, r3.stderr
     assert _md5(OUT_TSV) == hp_tsv and _md5(OUT_JSON) == hp_json, "RUSTLE_HIGH_PRECISION=1 != --high-precision"
-    # (j) precision impact: n_families toward the frontier (623 pre-split; 622 with the default-on
-    # recombinant-split gate, which removes one net family), oversize residual drops (blobs removed)
-    assert d["n_families"] == 622, f"high-precision n_families {d['n_families']} != 622 (frontier 623 - 1 recombinant split)"
+    # (j) precision impact: n_families increases toward the frontier; oversize residual drops (blobs removed)
+    assert d["n_families"] == 606, f"high-precision n_families {d['n_families']} != 606"
     assert d["n_families"] > d_def["n_families"], "high-precision did not split toward the frontier"
     rem_hp, rem_def = d["residual_fp"]["residual_remaining"], d_def["residual_fp"]["residual_remaining"]
     assert rem_hp["oversize"] < rem_def["oversize"], \
@@ -520,7 +569,7 @@ def test_high_precision_gamma_040():
         assert hp.get(key), f"high_precision field missing: {key}"
     assert "KRAB-ZNF" in hp["offoracle_krabznf_cost"] and "MAGE" in hp["mage_floor"], "caveats hollowed out"
     print(f"(j) --high-precision gamma=0.40 (JSON records it); n_families {d_def['n_families']} -> "
-          f"{d['n_families']} (frontier 623 - 1 recombinant split); oversize residual {rem_def['oversize']} -> {rem_hp['oversize']} "
+          f"{d['n_families']} (frontier direction); oversize residual {rem_def['oversize']} -> {rem_hp['oversize']} "
           f"(MPHOSPH8 + LOC134758618 removed, MAGE floor survives); deterministic; env==flag; caveats carried : OK")
     _run([])   # restore DEFAULT catalog for any downstream test
 
@@ -556,13 +605,13 @@ def test_flags_compose():
 
 
 def test_repeat_bridge_gate():
-    """(a) --no-repeat-bridge-gate recovers the pre-repeat-bridge golden (5e58378a) byte-identically
+    """(a) --no-repeat-bridge-gate recovers the pre-repeat-bridge golden (0da31d59 / 5f438104) byte-identically
     (flag == env, deterministic); (b) DEFAULT (gate ON) cuts >=1 DISCONNECTED repeat-bridge over-merge
     (named -- fam17 hub + PDIA3+PRKAB2 etc.) and RECORDS the count; (c) GSTM2 (fid 9/13) + MAGE
     (546/548/553) STAY MERGED (largest block byte-identical membership with vs without the gate);
     (g) determinism (default byte-identical across runs)."""
-    # (a) ablation (flag; antisense gate still DEFAULT-ON) recovers the antisense-ON pre-repeat-bridge
-    # catalog byte-identical; adding --no-antisense-gate additionally recovers the historical 5e58378a.
+    # (a) ablation (flag; antisense + colinear-merge still DEFAULT-ON) recovers the antisense-ON
+    # pre-repeat-bridge catalog byte-identical.
     r = _run(["--no-repeat-bridge-gate"]);  assert r.returncode == 0, r.stderr
     off_tsv = _md5(OUT_TSV);  off = _fam_to_genes(OUT_TSV);  off_json = json.load(open(OUT_JSON))
     assert off_tsv == GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5, \
@@ -570,13 +619,13 @@ def test_repeat_bridge_gate():
         f"{GOLDEN_ANTISENSE_NO_REPEAT_BRIDGE_TSV_MD5}: {off_tsv}"
     assert off_json["multi_repeat_bridge"]["enabled"] is False
     assert off_json["multi_repeat_bridge"]["n_families_cut"] == 0, "ablation still cut families"
-    assert off_json["n_families"] == 596
+    assert off_json["n_families"] == 581
     assert off_json["antisense_overlap_gate"]["enabled"] is True, "antisense gate wrongly disabled"
-    # additionally ablating the antisense gate recovers the historical pre-repeat-bridge golden 5e58378a
+    # additionally ablating the antisense gate recovers the pre-repeat-bridge golden 5f438104.
     rh = _run(["--no-repeat-bridge-gate", "--no-antisense-gate"]);  assert rh.returncode == 0, rh.stderr
     assert _md5(OUT_TSV) == GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5, \
-        f"--no-repeat-bridge-gate --no-antisense-gate != historical pre-bridge golden {GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5}"
-    assert json.load(open(OUT_JSON))["n_families"] == 605
+        f"--no-repeat-bridge-gate --no-antisense-gate != pre-bridge golden {GOLDEN_NO_REPEAT_BRIDGE_TSV_MD5}"
+    assert json.load(open(OUT_JSON))["n_families"] == 590
     # (e) env form == flag form (byte-identical)
     r2 = _run([], env_extra={"RUSTLE_NO_REPEAT_BRIDGE_GATE": "1"});  assert r2.returncode == 0, r2.stderr
     assert _md5(OUT_TSV) == off_tsv, "RUSTLE_NO_REPEAT_BRIDGE_GATE=1 != --no-repeat-bridge-gate"
@@ -601,16 +650,15 @@ def test_repeat_bridge_gate():
         bo = max(_blocks_with(off, gl), key=len)
         bn = max(_blocks_with(on, gl), key=len)
         assert bo == bn, f"{name} largest block CHANGED by the repeat-bridge gate (not spared): {bo ^ bn}"
-    print(f"(m) --no-repeat-bridge-gate recovers 5e58378a byte-identical (flag==env); DEFAULT gate ON "
-          f"cuts {mrb['n_families_cut']} DISCONNECTED (fam17 + PDIA3+PRKAB2 named); GSTM2/MAGE spared "
-          f"(largest block identical); deterministic : OK")
+    print(f"(m) --no-repeat-bridge-gate recovers 0da31d59 byte-identical (+--no-antisense-gate -> 5f438104); "
+          f"DEFAULT gate ON cuts {mrb['n_families_cut']} DISCONNECTED (fam17 + PDIA3+PRKAB2 named); "
+          f"GSTM2/MAGE spared (largest block identical); deterministic : OK")
 
 
 def test_repeat_bridge_r_oracle_held():
-    """(d) R_oracle 51/57 = 0.8947 HELD on the NEW default catalog (antisense gate ON), measured VIA
-    bench/family_level_pr_current.py (the shipped diploid-DNA-oracle recall + candidate_generation_recall
-    relabel) -- and E_p purity IMPROVES to 0.894 (impure 62 -> 60; the antisense gate removes 2 more
-    E_p-impure over-merge blocks at ZERO oracle-recall cost -- antisense genes are not oracle genes)."""
+    """(d) R_oracle 51/57 = 0.8947 HELD on the NEW default catalog (antisense + colinear-merge ON),
+    measured VIA bench/family_level_pr_current.py (the shipped diploid-DNA-oracle recall +
+    candidate_generation_recall relabel).  E_p purity is 0.8879; diploid distinct-FP stays 4, oversize 1."""
     r = _run([]);  assert r.returncode == 0, r.stderr          # ensure DEFAULT catalog on disk
     assert _md5(OUT_TSV) == GOLDEN_DEFAULT_TSV_MD5
     pr_json = os.path.join(BENCH, "family_level_pr_current.json")
@@ -626,14 +674,14 @@ def test_repeat_bridge_r_oracle_held():
         f"R_oracle numerator moved off 51 (recall NOT neutral): {o['oracle_genes_recovered_multicopy']}"
     assert o["oracle_multicopy_genes"] == 57, o["oracle_multicopy_genes"]
     assert o["recall_oracle"] == 0.8947, f"R_oracle != 0.8947: {o['recall_oracle']}"
-    # E_p purity IMPROVES (0.8918 -> 0.894; impure 62 -> 60); diploid distinct-FP stays 4, oversize 1
-    assert d["truth1_protein_Ep"]["current"]["precision_Ep"] == 0.894, \
+    # E_p purity; diploid distinct-FP stays 4, oversize 1
+    assert d["truth1_protein_Ep"]["current"]["precision_Ep"] == 0.8879, \
         d["truth1_protein_Ep"]["current"]["precision_Ep"]
     assert o["distinct_fp_blocks"] == 4, f"distinct-FP not <= 4: {o['distinct_fp_blocks']}"
     assert o["n_oversize"] == 1, f"oversize FP not 1: {o['n_oversize']}"
     print(f"(n) R_oracle {o['oracle_genes_recovered_multicopy']}/{o['oracle_multicopy_genes']} = "
           f"{o['recall_oracle']} HELD (recall NEUTRAL, via family_level_pr_current); P_Ep -> "
-          f"{d['truth1_protein_Ep']['current']['precision_Ep']} (UP from 0.8918; distinct-FP "
+          f"{d['truth1_protein_Ep']['current']['precision_Ep']} (distinct-FP "
           f"{o['distinct_fp_blocks']}, oversize {o['n_oversize']}) : OK")
 
 
@@ -647,7 +695,7 @@ def test_repeat_bridge_composes():
     assert d["rule"]["repeat_gate_enabled"] is False and d["multi_repeat_bridge"]["enabled"] is True
     assert d["multi_repeat_bridge"]["n_families_cut"] >= 1, "bridge gate inert under --no-repeat-gate"
     # compose with --no-split-recombinants (split OFF, bridge + antisense ON); +--no-repeat-bridge-gate
-    # --no-antisense-gate recovers the historical 606 pre-split golden (f94f387e).
+    # --no-antisense-gate recovers the 591 pre-split golden (8f79718a).
     r = _run(["--no-split-recombinants"]);  assert r.returncode == 0, r.stderr
     d = json.load(open(OUT_JSON))
     assert d["recombinant_split"]["enabled"] is False and d["multi_repeat_bridge"]["enabled"] is True
@@ -657,7 +705,7 @@ def test_repeat_bridge_composes():
     r = _run(["--no-split-recombinants", "--no-repeat-bridge-gate", "--no-antisense-gate"])
     assert r.returncode == 0, r.stderr
     assert _md5(OUT_TSV) == GOLDEN_NOSPLIT_TSV_MD5 and _md5(OUT_TSV) != on_nosplit, \
-        "--no-split-recombinants --no-repeat-bridge-gate --no-antisense-gate did not recover the 606 pre-split golden"
+        "--no-split-recombinants --no-repeat-bridge-gate --no-antisense-gate did not recover the 591 pre-split golden"
     # compose with --high-precision (gamma 0.40, bridge ON)
     r = _run(["--high-precision"]);  assert r.returncode == 0, r.stderr
     d = json.load(open(OUT_JSON))
@@ -677,6 +725,7 @@ if __name__ == "__main__":
     test_default_deterministic()
     test_default_byte_identical_to_golden()
     test_antisense_gate()
+    test_colinear_merge_gate()
     test_allele_demote_removes_known_fp()
     test_residual_removed_matches_recall_preserving_row()
     test_recombinant_split_gate()

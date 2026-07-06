@@ -158,7 +158,8 @@
       "ambiguous": 104
     },
     "skipped": {
-      "<2_bubbles": 1
+      "<2_bubbles": 35,
+      "<2_copies": 42
     },
     "thresholds": {
       "MIN_INFO": 4,

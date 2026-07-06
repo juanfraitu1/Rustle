@@ -2,11 +2,15 @@
 
 **What this is.** A reviewer-facing validation showcase, *not* a cherry-pick: take 8 literature-canonical
 multi-copy gene families (a reviewer knows every name), confirm each is present in the shipped RNA
-catalog `bench/family_rna_refine.tsv` (573 multi-copy families, dca64cbd), and report the **actual**
+catalog `bench/family_rna_refine.tsv` (553 multi-copy families, 991913da), and report the **actual**
 per-family precision + recall of the family **definition** — spanning the identity-regime map we built
 (near-identical copy-**assignment** regime ⟷ divergent family-**definition** regime). The clean
 near-identical families come out high P+R; the K-frontier / collapse families are reported as the
 honest **floor**, shown not hidden.
+
+A post-demote **exon-colinearity family-merge** stage (see `bench/FAMILY_MERGE_COLINEAR.md`) recovers
+split known families: MAGEA9 rejoins the MAGEA family and the GSTM1/2/4/5 sub-tandem rejoins, while an
+adaptive adjacent-junction floor blocks the ANKRD18 + ANKRD36C domain-share over-merge.
 
 Two orthogonal axes are reported per family (they are *different* objectives):
 
@@ -28,9 +32,9 @@ Two orthogonal axes are reported per family (they are *different* objectives):
 
 ## Canonical roster — present vs absent in the catalog
 
-**Present (all 8 selected are in `family_rna_refine.tsv`):** RABL2 (fam73), APOBEC3 (fam569),
-MAGE-A (fam517), ANKRD18 (fam306), RGPD8 / RANBP2-paralog cluster (fam313), KRAB-ZNF (ZNF92, fam42),
-GSTM / GSTM2 (fam18), HERC2 (fam388).
+**Present (all 8 selected are in `family_rna_refine.tsv`):** RABL2 (fam70), APOBEC3 (fam549),
+MAGE-A (fam496), ANKRD18 (fam302), RGPD8 / RANBP2-paralog cluster (fam309), KRAB-ZNF (ZNF92, fam39),
+GSTM / GSTM2 (fam17), HERC2 (fam382).
 
 **Absent (substituted):** the `RANBP2` symbol itself (0 catalog hits — the cluster is present as its
 RGPD8/RGPD paralogs), and `TBC1D3`, `NBPF`, `SRGAP2`, `CEACAM`, `PRSS`, histone `HIST*` (0 catalog
@@ -42,18 +46,19 @@ Table 2 / Soto 2025 / Eichler 2024.
 
 | family | O1 fam | catalog cp | named genes | **RECALL** | truth cp | P_strict | **P_bio** | over-merge | regime (core_recip med/max) | **O2 K-frontier** | class |
 |--------|-------:|-----------:|-------------|-----------:|---------:|---------:|----------:|------------|-----------------------------|-------------------|-------|
-| **RABL2** | 73 | 5 | RABL2A, RABL2B (+3 LOC) | **1.00** | 5 | 1.00 | **1.00** | none | divergent 0.47 / **0.999** | VG **K=5/5** fully_resolvable | **CLEAN** |
-| **APOBEC3** | 569 | 3 | APOBEC3C/D/F | **1.00** | 3 | 0.67 | **1.00** | none | divergent 0.30 / 0.38 | def-only (small-n: 3 cp) | **CLEAN** |
-| MAGEA | 517 | 11 | MAGEA1/4/12 (+4 LOC) | 0.85 | 13 | 1.00 | 1.00 | none | divergent 0.69 / **1.00** | DNA χ_H=2, K_read=4 | MID |
-| ANKRD18 | 306 | 15 | ANKRD18A/B (+FOXO1, 4 LOC, 5 NA) | **1.00** | 15 | 0.70 | 0.90 | **FOXO1** | divergent 0.34 / 0.91 | VG **K=4/6** partial | MID (over-merge) |
-| **RGPD8** | 313 | 8 | RGPD8 (+6 LOC) | **1.00** | 8 | 0.88 | **1.00** | none | divergent 0.49 / **1.00** | VG **K=1/7** (0 SUN) | **FLOOR** (K-frontier) |
-| ZNF92 | 42 | 41 | ZNF91/92/43/430… (+18 LOC) | 0.79 | 52 | 0.90 | 0.98 | LOC129527827 | divergent 0.30 / 0.97 | def-only | MID (divergent) |
-| **GSTM** | 18 | 3 | GSTM1/4/5 | **0.27** | 11 | 1.00 | 1.00 | none | divergent 0.44 / 0.44 | DNA χ_H=7, hapCN=19, **K_read=0** | **FLOOR** (collapse) |
-| HERC2 | 388 | 6 | HERC2 (+5 LOC) | 0.86 | 7 | 0.83 | 1.00 | none | divergent 0.27 / 0.32 | def-only | MID (segdup split) |
+| **RABL2** | 70 | 5 | RABL2A, RABL2B (+3 LOC) | **1.00** | 5 | 1.00 | **1.00** | none | divergent 0.47 / **0.999** | VG **K=5/5** fully_resolvable | **CLEAN** |
+| **APOBEC3** | 549 | 3 | APOBEC3C/D/F | **1.00** | 3 | 0.67 | **1.00** | none | divergent 0.30 / 0.38 | def-only (small-n: 3 cp) | **CLEAN** |
+| MAGEA | 496 | 13 | MAGEA1/4/9/12 (+4 LOC) | 0.87 | 15 | 1.00 | 1.00 | none | divergent 0.69 / **1.00** | DNA χ_H=2, K_read=4 | MID |
+| ANKRD18 | 302 | 15 | ANKRD18A/B (+FOXO1, 4 LOC, 5 NA) | **1.00** | 15 | 0.70 | 0.90 | **FOXO1** | divergent 0.34 / 0.91 | VG **K=4/6** partial | MID (over-merge) |
+| **RGPD8** | 309 | 8 | RGPD8 (+6 LOC) | **1.00** | 8 | 0.88 | **1.00** | none | divergent 0.49 / **1.00** | VG **K=1/7** (0 SUN) | **FLOOR** (K-frontier) |
+| ZNF92 | 39 | 41 | ZNF91/92/43/430… (+18 LOC) | 0.79 | 52 | 0.90 | 0.98 | LOC129527827 | divergent 0.30 / 0.97 | def-only | MID (divergent) |
+| **GSTM** | 17 | 6 | GSTM1/2/4/5 (+2 LOC) | **0.50** | 12 | 1.00 | 1.00 | none | divergent 0.44 / 0.44 | DNA χ_H=7, hapCN=19, **K_read=0** | **FLOOR** (collapse) |
+| HERC2 | 382 | 6 | HERC2 (+5 LOC) | 0.86 | 7 | 0.83 | 1.00 | none | divergent 0.27 / 0.32 | def-only | MID (segdup split) |
 
-**Headline (computed, in `known_family_showcase.json`):** 8 families, **92 catalog members** (87
+**Headline (computed, in `known_family_showcase.json`):** 8 families, **97 catalog members** (92
 annotated), only **2 genuine over-merges** — FOXO1→ANKRD18 and one distal ZNF→ZNF92 (both
-divergent-regime domain bridges). Every other apparent impurity is E_p under-coverage of a real
+divergent-regime domain bridges). The ANKRD18 + ANKRD36C domain-share over-merge is now blocked by the
+adaptive adjacent-junction floor. Every other apparent impurity is E_p under-coverage of a real
 single-domain / partial copy (e.g. APOBEC3C, HERC2P duplicons). **Class split: 2 CLEAN / 4 MID / 2
 FLOOR.**
 
@@ -88,10 +93,11 @@ DEFINITION level, and the K-frontier / collapse limits are shown honestly, not h
     APOBEC3C: a real tandem paralog, an E_p-oversplit truth-artifact, **not** an over-merge). Small
     truth-set (3 expressed copies) — exact but low-n.
 - **MID (partial / K-frontier):**
-  - **MAGEA** — R = 0.85; the Xq28 array is split (MAGEA9 → sibling fam515, MAGEA10 → singleton), but
-    reads resolve (DNA K_read = 4). P = 1.00.
+  - **MAGEA** — R = 0.87 (up from 0.85); MAGEA9 is recovered by the exon-colinearity merge stage
+    (joined fam496). MAGEA10 remains a singleton (truth-set not expressed / not multicopy). P = 1.00.
   - **ANKRD18** — definition R = 1.00 but the **one genuine over-merge FOXO1** (an unrelated forkhead
-    TF pulled in; E_p=0, DNA=0) drops P_strict → 0.70 / P_bio → 0.90; O2 is a within-graph K-frontier,
+    TF pulled in; E_p=0, DNA=0) drops P_strict → 0.70 / P_bio → 0.90.  The previous ANKRD36C domain-share
+    over-merge is now blocked by the adaptive adjacent-junction floor. O2 is a within-graph K-frontier,
     **VG K = 4/6 partial**.
   - **HERC2** — R = 0.86 (the duplicon cluster splits fam387/388; one HERC2 duplicon → adjacent
     fam387); HERC2 is flagged by *strict* E_p only because partial HERC2P duplicons under-cover, so
@@ -105,14 +111,15 @@ DEFINITION level, and the K-frontier / collapse limits are shown honestly, not h
   - **RGPD8** — definition is clean (**R = 1.0, P = 1.0**) but the **read-level K-frontier floor**: 0
     SUN bubbles, **VG K = 1/7**, all **2075/2075 reads TIED (0% assigned)**. MCC = χ(H) = 1: no
     distinguishing bubble exists, so no read is resolvable even in principle.
-  - **GSTM** — **R = 0.27**: the near-identical **GSTM2 expansion collapses** (DNA oracle: 47 loci,
-    asm_hapCN = 19, **K_read = 0**), fragmenting the GSTM cluster across ≥ 6 homology sub-families
-    (fam6/7/10/11/19/20 + GSTM3 singleton). The divergent GSTM5/1/4 sub-tandem is cleanly recovered
-    (P = 1.0) — *correct* divergent-regime sub-family resolution, which is exactly why R is honestly low.
+  - **GSTM** — **R = 0.50** (up from 0.27): the divergent GSTM1/2/4/5 sub-tandem is now merged by the
+    exon-colinearity stage (fam17). The near-identical **GSTM2 expansion still collapses** beyond that
+    (DNA oracle: 47 loci, asm_hapCN = 19, **K_read = 0**), leaving some GSTM2 copies in separate
+    homology sub-families. P = 1.0 — no over-merge.
 
-**Precision result across the whole showcase:** 92 grouped members, 87 annotated, only **2 genuine
-over-merges**, both divergent-regime domain bridges. **Recall spans the full honest range** 0.27 → 1.00,
-with the two floor cases (GSTM2 collapse, RGPD8 K-frontier) rendered explicitly.
+**Precision result across the whole showcase:** 97 grouped members, 92 annotated, only **2 genuine
+over-merges**, both divergent-regime domain bridges. The ANKRD36C domain-share is now blocked. **Recall
+spans the full honest range** 0.50 → 1.00, with the two floor cases (GSTM2 collapse, RGPD8 K-frontier)
+rendered explicitly.
 
 ## Figures
 
@@ -144,6 +151,8 @@ footer sums all five read categories to n_reads):
 - `/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam1_RGPD8.png` (+ `_graph.png`) — K=1/7 floor
 - `/mnt/c/Users/jfris/Desktop/Rustle/bench/fig_o2_vg_fam22_ANKRD18.png` (+ `_graph.png`) — K=4/6 partial
 
+(O2 VG family ids are stable: fam39 = RABL2, fam1 = RGPD8, fam22 = ANKRD18.)
+
 **Data / build:**
 
 - Table: `/mnt/c/Users/jfris/Desktop/Rustle/bench/known_family_showcase.tsv`
@@ -158,8 +167,8 @@ footer sums all five read categories to n_reads):
    paralog was found (DNA oracle exposes the gap: RGPD8 `n_loci_ref` = 35 vs 8 expressed, GSTM2 = 47).
 2. **O2-VG family id ≠ O1 catalog family id** — the copy-assignment VG uses the O2 validated numbering
    (psv_graph fam39 = RABL2, fam1 = RGPD8, fam22 = ANKRD18), a **distinct family object** from the O1
-   catalog `family_rna_refine.tsv` numbering (fam73 / fam313 / fam306). Copy counts differ by object
-   (RGPD8: O1 fam313 = 8 copies vs O2-VG fam1 = 7 copy-paths); each is internally correct.
+   catalog `family_rna_refine.tsv` numbering (RABL2 fam70 / RGPD8 fam309 / ANKRD18 fam302). Copy counts
+   differ by object (RGPD8: O1 fam309 = 8 copies vs O2-VG fam1 = 7 copy-paths); each is internally correct.
 3. **Small-n recall** — only **APOBEC3** (3 expressed copies) has a small truth-set; its R is exact but
    low-n (flagged per-family via `recall_small_n`). GSTM is **not** small-n — its truth-set is 11
    (many expressed GSTM copies), so its R = 0.27 is a genuine collapse over a large denominator, not an

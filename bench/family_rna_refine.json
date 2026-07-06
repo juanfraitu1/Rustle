@@ -49,6 +49,502 @@
   "recip_overlap_min": 0.5,
   "scope": "catalog-wide EDGE-LEVEL predicate (same placement as the repeat-hub gate): a within-family cross-gene DN edge is CUT iff its projected gene pair is same-contig, OPPOSITE-strand, reciprocal span-overlap >= 0.50, and NEITHER gene is a >= 500000 bp MEGA-SPAN array locus. Two genes at one locus on opposite strands (sense/antisense or nested gene) cannot be two copies of one gene."
  },
+ "colinear_merge": {
+  "active": true,
+  "enabled": true,
+  "id_thresh": 0.7,
+  "merge_edges": [
+   {
+    "a": 4,
+    "adjacent_junctions": 17,
+    "b": 352,
+    "chrom": "NC_073224.2",
+    "colinear_exons": 10,
+    "genes_a": [
+     "GSTM2",
+     "LOC101131274",
+     "LOC101135585",
+     "LOC115930164",
+     "LOC115930576",
+     "LOC115932984",
+     "LOC115933235",
+     "LOC115933241",
+     "LOC129525330",
+     "LOC129525331",
+     "LOC129525599",
+     "LOC134756861"
+    ],
+    "genes_b": [
+     "LOC109029488",
+     "LOC115932735"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 15,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 109,
+    "adjacent_junctions": 1,
+    "b": 17,
+    "chrom": "NC_073224.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "GSTM1",
+     "GSTM4",
+     "GSTM5"
+    ],
+    "genes_b": [
+     "GSTM2"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 3,
+    "n_loci_b": 3,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 75,
+    "adjacent_junctions": 2,
+    "b": 261,
+    "chrom": "NC_073224.2",
+    "colinear_exons": 4,
+    "genes_a": [
+     "GBP2",
+     "GBP3",
+     "LOC101130426",
+     "LOC101137042"
+    ],
+    "genes_b": [
+     "GBP4",
+     "GBP6"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 4,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 426,
+    "adjacent_junctions": 8,
+    "b": 386,
+    "chrom": "NC_073242.2",
+    "colinear_exons": 10,
+    "genes_a": [
+     "MYH11",
+     "MYH9"
+    ],
+    "genes_b": [
+     "LOC115933144",
+     "LOC129527341"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 34,
+    "adjacent_junctions": 1,
+    "b": 33,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "LOC101133657",
+     "LOC101154200",
+     "ZNF443",
+     "ZNF563",
+     "ZNF799",
+     "ZNF823"
+    ],
+    "genes_b": [
+     "LOC101128351",
+     "LOC101128712",
+     "LOC101130507",
+     "LOC101130877",
+     "LOC109025073",
+     "ZNF433",
+     "ZNF440"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 7,
+    "n_loci_b": 7,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 557,
+    "adjacent_junctions": 1,
+    "b": 308,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "ZNF565"
+    ],
+    "genes_b": [
+     "LOC101130137",
+     "ZNF583"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 557,
+    "adjacent_junctions": 1,
+    "b": 559,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "ZNF565"
+    ],
+    "genes_b": [
+     "ZNF780A",
+     "ZNF780B"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 2,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 166,
+    "adjacent_junctions": 2,
+    "b": 331,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "ZNF616",
+     "ZNF836",
+     "ZNF841"
+    ],
+    "genes_b": [
+     "LOC101144471"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 3,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 166,
+    "adjacent_junctions": 1,
+    "b": 555,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "ZNF616",
+     "ZNF836",
+     "ZNF841"
+    ],
+    "genes_b": [
+     "LOC101150965",
+     "ZNF528"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 3,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 166,
+    "adjacent_junctions": 1,
+    "b": 2,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "ZNF616",
+     "ZNF836",
+     "ZNF841"
+    ],
+    "genes_b": [
+     "LOC101130023",
+     "LOC101133546",
+     "LOC101152401",
+     "LOC101153131",
+     "LOC109024216",
+     "LOC115931654",
+     "OSBPL10",
+     "ZNF28",
+     "ZNF468",
+     "ZNF578",
+     "ZNF600",
+     "ZNF611",
+     "ZNF701",
+     "ZNF761",
+     "ZNF808",
+     "ZNF813",
+     "ZNF888"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 3,
+    "n_loci_b": 18,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 166,
+    "adjacent_junctions": 2,
+    "b": 303,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "ZNF616",
+     "ZNF836",
+     "ZNF841"
+    ],
+    "genes_b": [
+     "LOC101126065",
+     "ZNF347"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 3,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 331,
+    "adjacent_junctions": 2,
+    "b": 555,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "LOC101144471"
+    ],
+    "genes_b": [
+     "LOC101150965",
+     "ZNF528"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 2,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 331,
+    "adjacent_junctions": 1,
+    "b": 2,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "LOC101144471"
+    ],
+    "genes_b": [
+     "LOC101130023",
+     "LOC101133546",
+     "LOC101152401",
+     "LOC101153131",
+     "LOC109024216",
+     "LOC115931654",
+     "OSBPL10",
+     "ZNF28",
+     "ZNF468",
+     "ZNF578",
+     "ZNF600",
+     "ZNF611",
+     "ZNF701",
+     "ZNF761",
+     "ZNF808",
+     "ZNF813",
+     "ZNF888"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 18,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 331,
+    "adjacent_junctions": 2,
+    "b": 303,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "LOC101144471"
+    ],
+    "genes_b": [
+     "LOC101126065",
+     "ZNF347"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 555,
+    "adjacent_junctions": 2,
+    "b": 2,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "LOC101150965",
+     "ZNF528"
+    ],
+    "genes_b": [
+     "LOC101130023",
+     "LOC101133546",
+     "LOC101152401",
+     "LOC101153131",
+     "LOC109024216",
+     "LOC115931654",
+     "OSBPL10",
+     "ZNF28",
+     "ZNF468",
+     "ZNF578",
+     "ZNF600",
+     "ZNF611",
+     "ZNF701",
+     "ZNF761",
+     "ZNF808",
+     "ZNF813",
+     "ZNF888"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 18,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 555,
+    "adjacent_junctions": 2,
+    "b": 303,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "LOC101150965",
+     "ZNF528"
+    ],
+    "genes_b": [
+     "LOC101126065",
+     "ZNF347"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 2,
+    "adjacent_junctions": 1,
+    "b": 303,
+    "chrom": "NC_073244.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "LOC101130023",
+     "LOC101133546",
+     "LOC101152401",
+     "LOC101153131",
+     "LOC109024216",
+     "LOC115931654",
+     "OSBPL10",
+     "ZNF28",
+     "ZNF468",
+     "ZNF578",
+     "ZNF600",
+     "ZNF611",
+     "ZNF701",
+     "ZNF761",
+     "ZNF808",
+     "ZNF813",
+     "ZNF888"
+    ],
+    "genes_b": [
+     "LOC101126065",
+     "ZNF347"
+    ],
+    "has_raw_edge": true,
+    "n_loci_a": 18,
+    "n_loci_b": 2,
+    "share_gene": false,
+    "weak_support": false,
+    "within_window": true
+   },
+   {
+    "a": 514,
+    "adjacent_junctions": 1,
+    "b": 154,
+    "chrom": "NC_073247.2",
+    "colinear_exons": 2,
+    "genes_a": [
+     "TCEAL2",
+     "TCEAL4"
+    ],
+    "genes_b": [
+     "LOC101130542",
+     "TCEAL5",
+     "TCEAL6"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 3,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   },
+   {
+    "a": 391,
+    "adjacent_junctions": 2,
+    "b": 10,
+    "chrom": "NC_073247.2",
+    "colinear_exons": 3,
+    "genes_a": [
+     "LOC129530018",
+     "MAGEA9"
+    ],
+    "genes_b": [
+     "LOC129529976",
+     "LOC129529978",
+     "LOC129529983",
+     "LOC129529986",
+     "MAGEA1",
+     "MAGEA12",
+     "MAGEA4"
+    ],
+    "has_raw_edge": false,
+    "n_loci_a": 2,
+    "n_loci_b": 11,
+    "share_gene": false,
+    "weak_support": true,
+    "within_window": true
+   }
+  ],
+  "min_adjacent_junctions": 2,
+  "min_colinear": 2,
+  "n_merge_edges": 19,
+  "note": "Post-demote family merge by exon colinearity: merge two families if they share >= 2 exons in colinear order (id >= 0.70) between any pair of loci, are on the same chromosome, and pass the antisense/reciprocal-overlap and repeat-hub gates. Window-only pairs (no shared gene symbol and no raw homology edge) additionally require an adaptive adjacent-junction floor (min(2, colinear_exons-1)): a 2-exon hit needs one adjacent pair, a >=3-exon hit needs two.  This blocks domain-sharer neighbours (ANKRD18 + ANKRD36C) while recovering short real split-family blocks (GSTM1/2/4/5).  Ablated by --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1.",
+  "window_bp": 5000000
+ },
  "edges": {
   "n_cross_gene_pairs_cut": 7052,
   "n_cross_gene_pairs_cut_by_antisense_gate": 16,
@@ -1155,7 +1651,7 @@
   "scope": "catalog-wide PREDICATE (applied to every multi-copy family, not a 15-family roster lookup): the T=8/C=2 cut count is the committed gate_sweep_catalog point = the ~13-15 roster DISCONNECTED-FP over-merges PLUS the additional DISCONNECTED families the same predicate flags blindly. R_oracle/E_p precision headline HOLDS/IMPROVES; the catalog-scope SENSITIVITY cost (single-locus glued passengers dropped by the <2-loci filter) is measured by bench/family_level_pr_current.py truth2_dna_loose (pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182), to which R_oracle (57-gene diploid oracle) and E_p (mega-family-excluded) are blind."
  },
  "n_alleles_demoted": 3,
- "n_families": 566,
+ "n_families": 553,
  "outputs": {
   "catalog_tsv": "bench/family_rna_refine.tsv",
   "summary_json": "bench/family_rna_refine.json"
@@ -1186,25 +1682,25 @@
   ]
  },
  "residual_fp": {
-  "named_removed": 8,
+  "named_removed": 7,
   "named_removed_breakdown": {
    "allele": 2,
    "multifam": 2,
-   "oversize": 4
+   "oversize": 3
   },
-  "note": "12 DNA-confirmed residual FP in shipped gamma (2 allele + 4 oversize + 6 multifam = 12); RNA-only recall-preserving+demote removes 8 named FP (RNA_ONLY_EDGE_ORACLE.md recall-preserving row: oracle_allele 0, oracle_oversize 1, oracle_multifam 4 remaining)",
+  "note": "12 DNA-confirmed residual FP in shipped gamma (2 allele + 4 oversize + 6 multifam = 12); RNA-only recall-preserving+demote removes 7 named FP (RNA_ONLY_EDGE_ORACLE.md recall-preserving row: oracle_allele 0, oracle_oversize 1, oracle_multifam 4 remaining)",
   "oracle_genes_recovered": 48,
   "oracle_genes_recovered_shipped": 52,
   "residual_examples": {
    "allele": [],
    "multifam": [
-    "GSTM2+LOC115930164+LOC115930576(dl=15)",
+    "GSTM2+LOC115930164+LOC115930576(dl=17)",
     "FOXO1+LOC115933254(dl=10)",
-    "LOC129529978+LOC129529986(dl=7)",
+    "LOC129529978+LOC129529986+MAGEA9(dl=9)",
     "GSTM2+LOC101129940(dl=3)"
    ],
    "oversize": [
-    "LOC129529978+LOC129529986(dl=7,dipCN=2,3.5x)"
+    "LOC129529978+LOC129529986+MAGEA9(dl=9,dipCN=2,4.5x)"
    ]
   },
   "residual_remaining": {

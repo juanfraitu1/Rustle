@@ -148,6 +148,7 @@ sys.path.insert(0, BENCH)
 # re-used modules: shipped loaders + shipped refiner + the oracle's EXACT feature loaders,
 # demote thresholds, residual roster and validation eval.  Nothing re-derived here.
 import family_er_pr as FP
+import family_merge_colinear as FMC
 import genome_family_def as G
 import graph_def_refine_sweep as SW
 import rna_only_edge_oracle as RO
@@ -383,9 +384,10 @@ def load_gene_strand():
 
 # --------------------------------------------------------------------------- build (RNA-only)
 def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True,
-                  antisense_gate=True):
+                  antisense_gate=True, merge_colinear=True):
     """Apply the recall-preserving RNA-only gate + repeat-hub gate + antisense/reciprocal-overlap gate
-    + shipped gamma refinement + recombinant-split gate + multi-repeat-bridge gate + allele demote.
+    + shipped gamma refinement + recombinant-split gate + multi-repeat-bridge gate + allele demote +
+    optional exon-colinearity family merge.
     Returns dict with the multi-copy catalog and the RNA-only bookkeeping.  No DNA read here.
     repeat_gate=False ablates ONLY the repeat-hub gate.  antisense_gate=False ablates ONLY the
     antisense/reciprocal-overlap gate (edge-level; when OFF the catalog is BYTE-IDENTICAL to the
@@ -393,7 +395,8 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
     repeat_bridge_gate=False ablates ONLY the multi-repeat-bridge gate (keeps core+aln+repeat+gamma+
     recombinant-split+demote -> recovers the pre-repeat-bridge catalog).  gamma selects the
     gamma-quasi-clique cohesion: default GAMMA=0.20 (recall-preserving) or HIGH_PRECISION_GAMMA=0.40
-    (--high-precision; PRECISION_RECALL_FRONTIER.md).  Nothing else changes."""
+    (--high-precision; PRECISION_RECALL_FRONTIER.md).  merge_colinear=False ablates ONLY the post-
+    demote exon-colinearity family merge.  Nothing else changes."""
     rna_only_guard()
 
     # ---- RNA features (exact oracle loaders) ----
@@ -541,8 +544,19 @@ def build_catalog(repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat
                 continue                          # alleles -> singletons, dropped from the catalog
         catalog.append(sorted(b))
 
+    # ---- exon-colinearity family merge (post-demote; DEFAULT-ON; --no-colinear-merge ablates)
+    merge_info = []
+    if merge_colinear:
+        catalog, merge_info = FMC.merge_catalog_colinear(
+            catalog, genes, gene_of_dn2, gene_strand, pair_repeat_mult,
+            raw_edge_pairs=set(edge_pairs),
+            min_colinear=FMC.MIN_COLINEAR, id_thresh=FMC.ID_THRESH, window_bp=FMC.WINDOW_BP,
+            antisense_recip_min=ANTISENSE_RECIP_OVERLAP_MIN, mega_span_max=MEGA_SPAN_MAX,
+            repeat_mult_min=REPEAT_MULT_MIN, verbose=False)
+
     return dict(
-        catalog=catalog, demotions=demotions,
+        catalog=catalog, demotions=demotions, merge_info=merge_info,
+        merge_colinear=merge_colinear,
         gene_of_dn=gene_of_dn2, genes=genes, raw_fams=raw_fams, edge_pairs=edge_pairs,
         repeat_gate=repeat_gate, gamma=gamma,
         split_recombinants=split_recombinants, n_families_split=n_families_split, split_info=split_info,
@@ -655,6 +669,24 @@ def write_outputs(built, val):
                   demote="balanced_frac>=%.2f AND copy_like<=%.2f" % (DEMOTE_BAL_MIN, DEMOTE_COPY_MAX),
                   demote_balanced_frac_min=DEMOTE_BAL_MIN, demote_copy_like_max=DEMOTE_COPY_MAX),
         n_families=len(catalog),
+        colinear_merge=dict(
+            enabled=built["merge_colinear"],
+            active=built["merge_colinear"],
+            id_thresh=FMC.ID_THRESH,
+            min_colinear=FMC.MIN_COLINEAR,
+            min_adjacent_junctions=FMC.MIN_ADJACENT_JUNCTIONS,
+            window_bp=FMC.WINDOW_BP,
+            n_merge_edges=len(built.get("merge_info", [])),
+            merge_edges=built.get("merge_info", []),
+            note=("Post-demote family merge by exon colinearity: merge two families if they share >= %d "
+                  "exons in colinear order (id >= %.2f) between any pair of loci, are on the same "
+                  "chromosome, and pass the antisense/reciprocal-overlap and repeat-hub gates. "
+                  "Window-only pairs (no shared gene symbol and no raw homology edge) additionally "
+                  "require an adaptive adjacent-junction floor (min(%d, colinear_exons-1)): a 2-exon "
+                  "hit needs one adjacent pair, a >=3-exon hit needs two.  This blocks domain-sharer "
+                  "neighbours (ANKRD18 + ANKRD36C) while recovering short real split-family blocks "
+                  "(GSTM1/2/4/5).  Ablated by --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1."
+                  % (FMC.MIN_COLINEAR, FMC.ID_THRESH, FMC.MIN_ADJACENT_JUNCTIONS))),
         recombinant_split=dict(
             enabled=built["split_recombinants"],
             n_families_split=built["n_families_split"],
@@ -781,9 +813,10 @@ def write_outputs(built, val):
 
 # --------------------------------------------------------------------------- driver
 def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True, repeat_bridge_gate=True,
-        antisense_gate=True):
+        antisense_gate=True, merge_colinear=True):
     built = build_catalog(repeat_gate=repeat_gate, gamma=gamma, split_recombinants=split_recombinants,
-                          repeat_bridge_gate=repeat_bridge_gate, antisense_gate=antisense_gate)
+                          repeat_bridge_gate=repeat_bridge_gate, antisense_gate=antisense_gate,
+                          merge_colinear=merge_colinear)
     val = validate(built)
     summary = write_outputs(built, val) if write else None
     return built, val, summary
@@ -791,6 +824,7 @@ def run(write=True, repeat_gate=True, gamma=GAMMA, split_recombinants=True, repe
 
 def _report(built, val, summary):
     P = print
+    merge_info = built.get("merge_info", [])
     rg = built["repeat_gate"]
     gm = built["gamma"]
     hp = abs(gm - GAMMA) > 1e-9
@@ -825,6 +859,12 @@ def _report(built, val, summary):
           "GSTM2/MAGE/23-controls 0 cut); SENSITIVITY cost (catalog-scope, R_oracle/E_p blind): "
           "pair-recall 0.9196->0.9087, DNA component-recovery 182/187->177/182 "
           "(family_level_pr_current.py truth2_dna_loose)")
+    if built.get("merge_colinear"):
+        P(f"colinear merge   : ON  id_thresh={FMC.ID_THRESH} min_colinear={FMC.MIN_COLINEAR} "
+          f"min_adjacent_junctions={FMC.MIN_ADJACENT_JUNCTIONS} window_bp={FMC.WINDOW_BP}  ->  "
+          f"{len(merge_info)} merge edges")
+    else:
+        P("colinear merge   : OFF (ablated)")
     P(f"n_families       : {len(built['catalog'])}")
     P(f"alleles demoted  : {len(built['demotions'])}  "
       + ", ".join(f"{d['gene']}(dl={d['n_loci']},bal={d['balanced_frac']:.2f},"
@@ -887,10 +927,16 @@ def main(argv=None):
                          "neither gene span >= %d bp); keeps core+aln+repeat+gamma+split+bridge+demote and "
                          "recovers the pre-antisense catalog BYTE-IDENTICAL "
                          "(also RUSTLE_NO_ANTISENSE_GATE=1)" % (ANTISENSE_RECIP_OVERLAP_MIN, MEGA_SPAN_MAX))
+    ap.add_argument("--no-colinear-merge", action="store_true",
+                    help="ablation: DISABLE just the post-demote exon-colinearity family merge (merge "
+                         "two families if they share >= %d exons in colinear order at id >= %.2f on the "
+                         "same chromosome and pass antisense/repeat gates); keeps all upstream gates and "
+                         "recovers the pre-merge catalog (also RUSTLE_NO_COLINEAR_MERGE=1)"
+                         % (FMC.MIN_COLINEAR, FMC.ID_THRESH))
     ap.add_argument("--high-precision", action="store_true",
                     help="HIGH-PRECISION operating point: swap ONLY the gamma-quasi-clique cohesion "
                          "GAMMA=%.2f -> %.2f (PRECISION_RECALL_FRONTIER.md); everything else "
-                         "(core/aln thresholds, repeat gate, demote) UNCHANGED. Removes the two "
+                         "(core/aln thresholds, repeat gate, demote, colinear merge) UNCHANGED. Removes the two "
                          "collapsed-array OVERSIZE blobs (MPHOSPH8, LOC134758618): distinct FP 6->4, "
                          "P_fixed48 0.917, recall held 48/57 (nFam 606 -> 623). HONEST costs: "
                          "off-oracle KRAB-ZNF over-split (gamma>=0.27) + MAGE X-array DNA-only floor "
@@ -915,12 +961,15 @@ def main(argv=None):
     # DEFAULT-ON antisense/reciprocal-overlap gate; --no-antisense-gate / RUSTLE_NO_ANTISENSE_GATE=1 ablates it.
     antisense_gate = not (args.no_antisense_gate
                           or os.environ.get("RUSTLE_NO_ANTISENSE_GATE") == "1")
+    # DEFAULT-ON post-demote exon-colinearity family merge; --no-colinear-merge / RUSTLE_NO_COLINEAR_MERGE=1 ablates it.
+    merge_colinear = not (args.no_colinear_merge
+                          or os.environ.get("RUSTLE_NO_COLINEAR_MERGE") == "1")
     # HIGH-PRECISION: --high-precision / RUSTLE_HIGH_PRECISION=1 swaps ONLY gamma (0.20 -> 0.40).
     high_precision = args.high_precision or os.environ.get("RUSTLE_HIGH_PRECISION") == "1"
     gamma = HIGH_PRECISION_GAMMA if high_precision else GAMMA
     built, val, summary = run(write=not args.no_write, repeat_gate=repeat_gate, gamma=gamma,
                               split_recombinants=split_recombinants, repeat_bridge_gate=repeat_bridge_gate,
-                              antisense_gate=antisense_gate)
+                              antisense_gate=antisense_gate, merge_colinear=merge_colinear)
     _report(built, val, summary)
     return 0
 

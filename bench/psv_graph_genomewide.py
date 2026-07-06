@@ -45,7 +45,12 @@ def sh(c):
 def column_alleles(bampath, ref):
     out = collections.defaultdict(dict)
     bam = pysam.AlignmentFile(bampath, "rb")
-    for col in bam.pileup(ref, min_base_quality=0, truncate=False, max_depth=300000):
+    # flag_filter 0xF04 = UNMAP|SECONDARY|QCFAIL|DUP (pysam default 0x704) PLUS SUPPLEMENTARY (0x800):
+    # a re-aligned read's supplementary alignment must not contribute a paralogous base to a column
+    # (the primary already carries the read; a supplementary is a chimeric/split fragment). The pysam
+    # default did not exclude 0x800 -> a handful of split re-alignments could leak a base per family.
+    for col in bam.pileup(ref, min_base_quality=0, truncate=False, max_depth=300000,
+                          flag_filter=0xF04):
         for pr in col.pileups:
             if pr.query_position is not None:
                 out[col.reference_pos][pr.alignment.query_name] = \

@@ -114,7 +114,7 @@ Small analysis outputs (TSV/JSON/PNG/MD, a few MB) go in `bench/` in the repo.
 
 **Family definition (spec) = `bench/family_rna_refine.py`.** It builds the multi-copy family catalog from
 the RNA homology graph (edge oracle `core_recip≥0.19 AND aln_frac≥0.24`) → γ-quasi-clique refine (γ=0.20)
-→ **FOUR composable, default-on over-merge gates** (each `--no-*` opt-out, byte-identical when disabled)
+→ **FIVE composable, default-on stages/gates** (each `--no-*` opt-out, byte-identical when disabled)
 → allele-demote:
 
 1. **repeat-hub gate** (`--no-repeat-gate`): cuts single extreme-multiplicity repeat/Alu-bridge edges.
@@ -124,18 +124,23 @@ the RNA homology graph (edge oracle `core_recip≥0.19 AND aln_frac≥0.24`) →
 4. **antisense/reciprocal-overlap gate** (`--no-antisense-gate`): NEW (2026-07). A *genome-architecture*
    axis (coords+strand) — cuts edges between same-contig, opposite-strand, ≥50%-reciprocally-overlapping
    genes (can't be two copies of one gene), mega-span-guarded. Strand from `bench/gene_meta_strand.tsv`.
+5. **exon-colinearity family merge** (`--no-colinear-merge`): NEW (2026-07). Post-demote merge of split
+   families that share ≥2 colinear exons; window-only pairs additionally require an adaptive adjacent-
+   junction floor to block domain-sharer over-merges. See `bench/FAMILY_MERGE_COLINEAR.md`.
 
 Regenerate + verify:
 ```bash
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/family_rna_refine.py
-# default catalog md5 = 548029ad... (566 families). Golden is in test_family_rna_refine.py.
-# --no-antisense-gate reproduces the PRIOR default dca64cbd... (573 fam) byte-identical.
+# default catalog md5 = 991913da... (553 families). Golden is in test_family_rna_refine.py.
+# --no-antisense-gate reproduces the pre-antisense 00c4ff2e... (560 fam) byte-identical.
+# --no-colinear-merge reproduces the pre-merge 548029ad... (566 fam) byte-identical.
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/test_family_rna_refine.py   # full self-check
 PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/family_level_pr_current.py  # P/R metrics
 ```
-Current metrics vs the diploid-CN gold oracle: **R_oracle 51/57 = 0.895, P_oracle(dedup) 0.917,
-E_p protein-purity 0.894, distinct-FP 4.** (Recall 51 not 50 = a genomic-linkage relabel-credit fix for a
-captured-but-mislabelled gene; measurement-only, precision byte-identical.)
+Current metrics vs the diploid-CN gold oracle: **R_oracle 51/57 = 0.895, P_oracle(dedup) 0.915,
+E_p protein-purity 0.888, distinct-FP 4.**  The post-demote exon-colinearity merge stage recovers
+MAGEA9 (MAGEA recall 0.85 → 0.87) and the GSTM1/2/4/5 sub-tandem (GSTM recall 0.27 → 0.50) while
+blocking the ANKRD18 + ANKRD36C domain-share over-merge via an adaptive adjacent-junction floor.
 
 ⭐ **The O1 pipeline is now MIGRATED to Rust** (byte-parity per module, `PYTHONHASHSEED=0` golden fixtures):
 `src/rustle/vg_family/{family_definition,family_loaders,edge_oracle,minimizers,repeat_catalog,
@@ -173,7 +178,8 @@ per-segment read-confusability problem (~0.99 identity). They're orthogonal. The
 "FP rate" is mostly the protein truth (E_p) over-splitting real duplications, not RNA over-merges.
 
 **Per-family validation showcase:** `bench/KNOWN_FAMILY_SHOWCASE.md` (RABL2, APOBEC3, MAGEA, ANKRD18,
-RGPD8, ZNF92, GSTM, HERC2 — P/R + graphs).
+RGPD8, ZNF92, GSTM, HERC2 — P/R + graphs).  See also `bench/FAMILY_MERGE_COLINEAR.md` for the new
+post-demote family-merge stage.
 
 There are **~54 `bench/*.md`** design/finding docs and **~335 `bench/*.py`** analyses. When starting a
 task, grep the `bench/*.md` for the topic first — most questions have already been investigated and the
