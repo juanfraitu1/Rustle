@@ -209,7 +209,7 @@ def _gene_of_exon(exon, genes, min_frac=EXON_GENE_ASSIGN_FRAC):
     return None
 
 
-def _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes):
+def _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes, span_frac=GENE_SPAN_SPLIT_FRAC):
     """Split a readthrough transcript into gene-pure sub-transcripts.
 
     Uses the exon path of the transcript and the RefSeq gene annotations.  Consecutive exons assigned to
@@ -224,14 +224,14 @@ def _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes):
     if total_exon_len == 0:
         return []
 
-    # Span gate: only split if >=2 distinct genes each cover >= GENE_SPAN_SPLIT_FRAC of spliced exon span.
+    # Span gate: only split if >=2 distinct genes each cover >= span_frac of spliced exon span.
     gene_span = defaultdict(int)
     for gc, gs, ge, _gstrand, name, _bio in genes:
         if gc != c:
             continue
         for es, ee in exons:
             gene_span[name] += max(0, min(ee, ge) - max(es, gs))
-    strong_genes = [g for g, ov in gene_span.items() if ov >= GENE_SPAN_SPLIT_FRAC * total_exon_len]
+    strong_genes = [g for g, ov in gene_span.items() if ov >= span_frac * total_exon_len]
     if len(strong_genes) < 2:
         return []
 
@@ -295,7 +295,7 @@ def _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes):
     return out
 
 
-def graph_split_transcripts(seqs, meta, skel_introns, genes):
+def graph_split_transcripts(seqs, meta, skel_introns, genes, span_frac=GENE_SPAN_SPLIT_FRAC):
     """Graph-aware readthrough split: decompose transcripts whose exon path visits >=2 distinct genes.
 
     Returns new seqs, meta, skel_introns dicts with readthrough transcripts replaced by their gene-pure
@@ -307,7 +307,7 @@ def graph_split_transcripts(seqs, meta, skel_introns, genes):
     n_split = 0
     n_sub = 0
     for tid in seqs:
-        sub = _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes)
+        sub = _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes, span_frac=span_frac)
         if not sub:
             new_seqs[tid] = seqs[tid]
             new_meta[tid] = meta[tid]
@@ -385,9 +385,11 @@ def main(args=None):
     # Optional graph-aware readthrough split: cut transcripts whose exon path visits >=2 distinct genes.
     if args.graph_split:
         genes = load_genes(args.genes)
-        seqs, meta, skel_introns, n_split, n_sub = graph_split_transcripts(seqs, meta, skel_introns, genes)
+        seqs, meta, skel_introns, n_split, n_sub = graph_split_transcripts(
+            seqs, meta, skel_introns, genes, span_frac=args.graph_split_span_frac)
         n_assembly = len(seqs)
-        tick(f"graph-split: {n_split:,} readthrough transcripts -> {n_sub:,} gene-pure sub-transcripts")
+        tick(f"graph-split (span-frac={args.graph_split_span_frac}): {n_split:,} readthrough transcripts -> "
+             f"{n_sub:,} gene-pure sub-transcripts")
 
     # ---- (1) collapse isoforms -> GENE loci by SHARED INTRON JUNCTIONS (union-find) ----
     parent = {}
@@ -611,6 +613,9 @@ def parse_args():
     parser.add_argument("--graph-split", action="store_true",
                         help="split individual readthrough transcripts whose exon path visits >=2 distinct "
                              "RefSeq genes into gene-pure sub-transcripts before locus collapse")
+    parser.add_argument("--graph-split-span-frac", type=float, default=0.40,
+                        help="minimum fraction of spliced exon span each gene must cover to trigger "
+                             "graph-split (default 0.40)")
     return parser.parse_args()
 
 
