@@ -12,6 +12,7 @@ Output: bench/family_definition_slides.pptx (+ 3 PNGs)
 import os
 import csv
 import math
+import pysam
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -31,6 +32,7 @@ FIG_DEF = os.path.join(HERE, "famdef_1_definition.png")
 FIG_BIRD = os.path.join(HERE, "famdef_2_birdseye.png")
 FIG_ISO = os.path.join(HERE, "famdef_3_isoforms.png")
 FIG_RECOMB = os.path.join(HERE, "famdef_4_recombination.png")
+FIG_IGV = os.path.join(HERE, "famdef_5_igv.png")
 OUT = os.path.join(HERE, "family_definition_slides.pptx")
 
 NAVY = RGBColor(0x1F, 0x2D, 0x5A)
@@ -570,6 +572,153 @@ def make_recombination():
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- figure 5: IGV-style read view
+def _read_blocks_and_introns(read):
+    """Return aligned blocks [(s,e),...] and introns [(s,e),...] from a pysam read."""
+    blocks = []
+    introns = []
+    pos = read.reference_start
+    block_start = pos
+    in_block = True
+    for op, length in read.cigartuples:
+        if op == 3:  # N: intron
+            if in_block:
+                blocks.append((block_start, pos))
+                in_block = False
+            introns.append((pos, pos + length))
+            pos += length
+            block_start = pos
+        elif op in (0, 7, 8):  # M, =, X: match/mismatch
+            if not in_block:
+                block_start = pos
+                in_block = True
+            pos += length
+        elif op in (1, 4, 5):  # I, S, H: no ref consumption
+            pass
+        elif op == 2:  # D: deletion consumes reference but no query
+            pos += length
+    if in_block:
+        blocks.append((block_start, pos))
+    return blocks, introns
+
+
+def _intron_chain(read):
+    _, introns = _read_blocks_and_introns(read)
+    return tuple(introns)
+
+
+def _draw_igv_locus(ax, chrom, region_start, region_end, reads, gene_exons, title):
+    """Draw one IGV-style panel (axes uses genomic x coordinates and stacked y positions)."""
+    ax.set_xlim(region_start, region_end)
+    ax.axis("off")
+
+    row_height = 0.15
+    gap = 0.05
+    gene_track_height = 0.35
+    track_y = 0.0
+
+    # --- gene track ---
+    ax.add_patch(Rectangle((region_start, track_y - 0.02), region_end - region_start, 0.04,
+                           fc="#aab7c8", ec="none", zorder=1))
+    for s, e in gene_exons:
+        ax.add_patch(FancyBboxPatch((s, track_y - gene_track_height / 2), e - s, gene_track_height,
+                     boxstyle="round,pad=0.01,rounding_size=0.02",
+                     fc=CT, ec=CN, lw=1.2, zorder=2))
+    ax.text(region_start, track_y + gene_track_height / 2 + 0.18, title,
+            ha="left", va="bottom", fontsize=10, color=CN, fontweight="bold")
+
+    # --- reads ---
+    from collections import defaultdict
+    chain_groups = defaultdict(list)
+    for r in reads:
+        if r.is_unmapped:
+            continue
+        chain_groups[_intron_chain(r)].append(r)
+
+    selected = []
+    for chain, group in sorted(chain_groups.items(), key=lambda x: -len(x[1]))[:4]:
+        selected.extend(group[:3])
+
+    selected.sort(key=lambda r: (r.reference_start, -r.reference_end))
+    row_ends = []
+    placements = []
+    for r in selected:
+        y = None
+        for i, end in enumerate(row_ends):
+            if r.reference_start > end + 5000:
+                y = track_y - gene_track_height / 2 - 0.25 - i * (row_height + gap)
+                row_ends[i] = r.reference_end
+                break
+        if y is None:
+            y = track_y - gene_track_height / 2 - 0.25 - len(row_ends) * (row_height + gap)
+            row_ends.append(r.reference_end)
+        placements.append((r, y))
+
+    for r, y in placements:
+        blocks, introns = _read_blocks_and_introns(r)
+        for s, e in introns:
+            ax.plot([s, e], [y, y], color="#7f8c8d", lw=1.0, zorder=1)
+        for s, e in blocks:
+            ax.add_patch(Rectangle((s, y - row_height / 2), e - s, row_height,
+                         fc="#5dade2" if not r.is_reverse else "#aeb6bf",
+                         ec="none", zorder=2))
+
+    bottom_y = track_y - gene_track_height / 2 - 0.25 - (len(row_ends) - 1) * (row_height + gap) - row_height
+
+    # coordinate axis
+    tick_positions = [region_start, (region_start + region_end) // 2, region_end]
+    axis_y = bottom_y - 0.12
+    ax.plot([region_start, region_end], [axis_y, axis_y], color=CG, lw=1.0)
+    for x in tick_positions:
+        ax.plot([x, x], [axis_y, axis_y - 0.05], color=CG, lw=1.0)
+        ax.text(x, axis_y - 0.10, f"{x / 1e6:.3f}M", ha="center", va="top", fontsize=8, color=CG)
+
+    ax.set_ylim(axis_y - 0.25, track_y + gene_track_height / 2 + 0.35)
+
+
+def make_igv():
+    bam_path = "/home/juanfra/winloci_scratch/GGO.bam"
+    bam = pysam.AlignmentFile(bam_path, "rb")
+
+    loci = [
+        {
+            "title": "LOC101142457  (NC_073247.2)",
+            "chrom": "NC_073247.2",
+            "start": 167707352,
+            "end": 167723174,
+            "exons": [(167707352, 167708718), (167708884, 167708968), (167709298, 167709396),
+                      (167716208, 167716288), (167717489, 167717519), (167721697, 167721857),
+                      (167723010, 167723174)],
+        },
+        {
+            "title": "RABL2B  (NC_086018.1)",
+            "chrom": "NC_086018.1",
+            "start": 48818439,
+            "end": 48832011,
+            "exons": [(48818439, 48818874), (48819040, 48819124), (48819454, 48819552),
+                      (48819898, 48820010), (48825425, 48825505), (48826332, 48826412),
+                      (48827614, 48827644), (48830502, 48830666), (48831815, 48832011)],
+        },
+    ]
+
+    fig, axes = plt.subplots(2, 1, figsize=(13.0, 6.8))
+
+    for ax, locus in zip(axes, loci):
+        reads = list(bam.fetch(locus["chrom"], locus["start"], locus["end"]))
+        _draw_igv_locus(ax, locus["chrom"], locus["start"], locus["end"],
+                        reads, locus["exons"], locus["title"])
+
+    fig.suptitle("IGV-style view: reads supporting the two loci",
+                 fontsize=14, fontweight="bold", color=CN, y=0.98)
+    fig.text(0.5, 0.01,
+             "Reads are colored by strand (blue = forward, grey = reverse); splice junctions are thin grey lines. "
+             "Each panel shows representative reads from the dominant isoform classes.",
+             ha="center", fontsize=9, color=CG, style="italic")
+
+    fig.savefig(FIG_IGV, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- pptx assembly
 def add_figure_slide(prs, title, img, caption):
     from PIL import Image
@@ -601,6 +750,7 @@ def build():
     make_birdseye()
     make_isoforms()
     make_recombination()
+    make_igv()
 
     prs = Presentation()
     prs.slide_width = Inches(13.33)
@@ -631,8 +781,19 @@ def build():
                      "Copy 1 (chromosome A) and copy 2 (chromosome B) each have E1 and E2. A spurious read that splices copy-1-E2 "
                      "into copy-2-E1 forms a non-collinear, unsupported junction; it is rejected, so the two loci stay separate.")
 
-    prs.save(OUT)
-    print(f"[+] wrote {OUT} ({len(prs.slides._sldIdLst)} slides)")
+    add_figure_slide(prs,
+                     "IGV-style read support for two family copies",
+                     FIG_IGV,
+                     "Representative RNA-seq reads from GGO.bam over LOC101142457 (NC_073247.2) and RABL2B (NC_086018.1). "
+                     "Exons are teal blocks, reads are horizontal bars, and grey lines are splice junctions.")
+
+    try:
+        prs.save(OUT)
+        print(f"[+] wrote {OUT} ({len(prs.slides._sldIdLst)} slides)")
+    except PermissionError:
+        fallback = OUT.replace(".pptx", "_new.pptx")
+        prs.save(fallback)
+        print(f"[!] {OUT} is locked (probably open in PowerPoint); wrote {fallback} instead")
 
 
 if __name__ == "__main__":
