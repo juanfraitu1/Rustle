@@ -355,15 +355,24 @@ def make_isoforms():
                     arrowprops=dict(arrowstyle="-", color=CN, lw=1.5,
                                     connectionstyle=style), zorder=1)
 
-    # draw colored path overlays
-    for path, col, label, y_legend in [(a_nodes, CT, "isoform a  (9 exons, 4 reads)", 2.25),
-                                        (b_nodes, CO, "isoform b  (10 exons, 3 reads)", -2.25)]:
+    # draw colored path overlays (thick halo + bright core so they survive behind nodes)
+    # shared backbone is offset so both paths are visible side-by-side
+    for path, col, label, y_legend, offset in [(a_nodes, CT, "isoform a  (9 exons, 4 reads)", 2.25, 0.16),
+                                                (b_nodes, CO, "isoform b  (10 exons, 3 reads)", -2.25, -0.16)]:
         xs, ys = [], []
         for idx in path:
             x, y = pos[idx]
+            owner = node_owners[idx]
+            # offset only in the shared backbone; isoform-specific nodes stay on their track
+            y_eff = y + (offset if owner == 'shared' else 0)
             xs.append(x)
-            ys.append(y)
-        ax.plot(xs, ys, color=col, lw=3.5, alpha=0.5, zorder=2)
+            ys.append(y_eff)
+        # wide translucent halo
+        ax.plot(xs, ys, color=col, lw=7.0, alpha=0.35, zorder=2,
+                solid_capstyle="round", solid_joinstyle="round")
+        # brighter core line
+        ax.plot(xs, ys, color=col, lw=3.0, alpha=0.85, zorder=2,
+                solid_capstyle="round", solid_joinstyle="round")
         # path label
         ax.text(0.35, y_legend, label, ha="left", va="center",
                 fontsize=11, color=col, fontweight="bold")
