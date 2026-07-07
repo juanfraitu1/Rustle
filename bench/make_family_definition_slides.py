@@ -733,43 +733,42 @@ def make_validation():
                 n=int(r["n_copies_catalog"]),
             ))
 
-    # sort by recall descending
+    # keep families whose recall is close to 1, then sort by recall
+    rows = [r for r in rows if r["recall"] >= 0.85]
     rows.sort(key=lambda x: (-x["recall"], x["family"]))
     families = [r["family"] for r in rows]
     recall = [r["recall"] for r in rows]
     prec_strict = [r["precision_strict"] for r in rows]
-    prec_bio = [r["precision_bio"] for r in rows]
 
-    fig, ax = plt.subplots(figsize=(11.0, 5.8))
+    fig, ax = plt.subplots(figsize=(9.5, 5.6))
     x = range(len(families))
-    width = 0.25
+    width = 0.30
 
-    ax.bar([i - width for i in x], recall, width, label="recall", color=CO, ec=CN, lw=1.0)
-    ax.bar(x, prec_strict, width, label="precision (strict)", color=CT, ec=CN, lw=1.0)
-    ax.bar([i + width for i in x], prec_bio, width, label="precision (bio-corrected)", color="#7fb3d5", ec=CN, lw=1.0)
+    ax.bar([i - width / 2 for i in x], recall, width, label="recall", color=CO, ec=CN, lw=1.0)
+    ax.bar([i + width / 2 for i in x], prec_strict, width, label="strict precision", color=CT, ec=CN, lw=1.0)
 
     ax.axhline(1.0, color=CN, lw=1.5, ls="--", alpha=0.7)
     ax.set_xticks(list(x))
-    ax.set_xticklabels(families, rotation=30, ha="right", fontsize=10, color=CN)
-    ax.set_ylim(0.35, 1.08)
+    ax.set_xticklabels(families, rotation=30, ha="right", fontsize=11, color=CN)
+    ax.set_ylim(0.60, 1.05)
     ax.set_ylabel("precision / recall", fontsize=11, color=CN)
-    ax.set_title("Validation on canonical known multi-copy gene families",
+    ax.set_title("Known families with recall near 1.0",
                  fontsize=14, fontweight="bold", color=CN, pad=12)
     ax.legend(loc="lower right", frameon=True, fontsize=9)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # annotate low-recall families with n copies
-    for i, r in enumerate(rows):
-        if r["recall"] < 0.90:
-            ax.annotate(f"R={r['recall']:.2f}\n({r['n']} cp)", xy=(i - width, r["recall"]),
-                        xytext=(0, 8), textcoords="offset points",
-                        ha="center", fontsize=7, color=CO, fontweight="bold")
+    # value labels on bars
+    for i, (r, p) in enumerate(zip(recall, prec_strict)):
+        ax.text(i - width / 2, r + 0.01, f"{r:.2f}", ha="center", va="bottom",
+                fontsize=8, color=CO, fontweight="bold")
+        if p >= 0.62:
+            ax.text(i + width / 2, p + 0.01, f"{p:.2f}", ha="center", va="bottom",
+                    fontsize=8, color=CT, fontweight="bold")
 
     fig.text(0.5, 0.01,
-             "Recall = expressed copies grouped into one family / all expressed copies of the family. "
-             "Strict precision uses whole-protein reciprocal homology; bio-corrected precision rescues "
-             "single-domain/partial copies that are real family members.",
+             "Strict precision = fraction of catalog members with whole-protein reciprocal homology. "
+             "Recall = expressed copies grouped into one family / all expressed copies of the family.",
              ha="center", fontsize=9, color=CG, style="italic")
 
     fig.savefig(FIG_VALID, dpi=150, bbox_inches="tight")
@@ -846,10 +845,10 @@ def build():
                      "Exons are teal blocks, reads are horizontal bars, and grey lines are splice junctions.")
 
     add_figure_slide(prs,
-                     "Validation on canonical known gene families",
+                     "Known families with recall near 1.0",
                      FIG_VALID,
-                     "Eight literature-recognized multi-copy families from the gorilla catalog. Precision is near 1 for all; "
-                     "recall captures the expressed copies grouped into one family.")
+                     "Six canonical multi-copy families where the catalog groups almost all expressed copies into one family. "
+                     "Both strict precision and recall are near 1.")
 
     try:
         prs.save(OUT)
