@@ -33,6 +33,7 @@ FIG_BIRD = os.path.join(HERE, "famdef_2_birdseye.png")
 FIG_ISO = os.path.join(HERE, "famdef_3_isoforms.png")
 FIG_RECOMB = os.path.join(HERE, "famdef_4_recombination.png")
 FIG_IGV = os.path.join(HERE, "famdef_5_igv.png")
+FIG_VALID = os.path.join(HERE, "famdef_6_validation.png")
 OUT = os.path.join(HERE, "family_definition_slides.pptx")
 
 NAVY = RGBColor(0x1F, 0x2D, 0x5A)
@@ -719,6 +720,62 @@ def make_igv():
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- figure 6: validation on known families
+def make_validation():
+    rows = []
+    with open(os.path.join(HERE, "known_family_showcase.tsv")) as fh:
+        for r in csv.DictReader(fh, delimiter="\t"):
+            rows.append(dict(
+                family=r["family"],
+                recall=float(r["recall"]),
+                precision_strict=float(r["precision_strict_EpDNA"]),
+                precision_bio=float(r["precision_bio_corrected"]),
+                n=int(r["n_copies_catalog"]),
+            ))
+
+    # sort by recall descending
+    rows.sort(key=lambda x: (-x["recall"], x["family"]))
+    families = [r["family"] for r in rows]
+    recall = [r["recall"] for r in rows]
+    prec_strict = [r["precision_strict"] for r in rows]
+    prec_bio = [r["precision_bio"] for r in rows]
+
+    fig, ax = plt.subplots(figsize=(11.0, 5.8))
+    x = range(len(families))
+    width = 0.25
+
+    ax.bar([i - width for i in x], recall, width, label="recall", color=CO, ec=CN, lw=1.0)
+    ax.bar(x, prec_strict, width, label="precision (strict)", color=CT, ec=CN, lw=1.0)
+    ax.bar([i + width for i in x], prec_bio, width, label="precision (bio-corrected)", color="#7fb3d5", ec=CN, lw=1.0)
+
+    ax.axhline(1.0, color=CN, lw=1.5, ls="--", alpha=0.7)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(families, rotation=30, ha="right", fontsize=10, color=CN)
+    ax.set_ylim(0.35, 1.08)
+    ax.set_ylabel("precision / recall", fontsize=11, color=CN)
+    ax.set_title("Validation on canonical known multi-copy gene families",
+                 fontsize=14, fontweight="bold", color=CN, pad=12)
+    ax.legend(loc="lower right", frameon=True, fontsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    # annotate low-recall families with n copies
+    for i, r in enumerate(rows):
+        if r["recall"] < 0.90:
+            ax.annotate(f"R={r['recall']:.2f}\n({r['n']} cp)", xy=(i - width, r["recall"]),
+                        xytext=(0, 8), textcoords="offset points",
+                        ha="center", fontsize=7, color=CO, fontweight="bold")
+
+    fig.text(0.5, 0.01,
+             "Recall = expressed copies grouped into one family / all expressed copies of the family. "
+             "Strict precision uses whole-protein reciprocal homology; bio-corrected precision rescues "
+             "single-domain/partial copies that are real family members.",
+             ha="center", fontsize=9, color=CG, style="italic")
+
+    fig.savefig(FIG_VALID, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- pptx assembly
 def add_figure_slide(prs, title, img, caption):
     from PIL import Image
@@ -751,6 +808,7 @@ def build():
     make_isoforms()
     make_recombination()
     make_igv()
+    make_validation()
 
     prs = Presentation()
     prs.slide_width = Inches(13.33)
@@ -786,6 +844,12 @@ def build():
                      FIG_IGV,
                      "Representative RNA-seq reads from GGO.bam over LOC101142457 (NC_073247.2) and RABL2B (NC_086018.1). "
                      "Exons are teal blocks, reads are horizontal bars, and grey lines are splice junctions.")
+
+    add_figure_slide(prs,
+                     "Validation on canonical known gene families",
+                     FIG_VALID,
+                     "Eight literature-recognized multi-copy families from the gorilla catalog. Precision is near 1 for all; "
+                     "recall captures the expressed copies grouped into one family.")
 
     try:
         prs.save(OUT)
