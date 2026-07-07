@@ -263,6 +263,20 @@ def main():
         by_exon = collections.Counter(x[3] for x in missed)
         print(f"{name}: n={len(missed)}  " + "  ".join(f"{k}ex:{v}" for k, v in sorted(by_exon.items())))
 
+    # Fragmentation: how many exact-chain isoforms match each StringTie isoform
+    print("\n--- exact-chain fragmentation of StringTie isoforms ---")
+    for name, fid in sorted(showcase.items(), key=lambda x: x[1]):
+        regs = family_region(members[fid])
+        exact_list = isoforms_in_regions(exact, regs)
+        st_list = isoforms_in_regions(stringtie, regs)
+        counts = []
+        for s in st_list:
+            n = sum(1 for e in exact_list if overlaps(s, e, 0.5) or shares_intron(s, e))
+            counts.append(n)
+        if counts:
+            avg = sum(counts) / len(counts)
+            print(f"{name}: ST isoforms={len(counts)}  avg exact matches per ST={avg:.2f}  max={max(counts)}  unmatched={sum(1 for c in counts if c == 0)}")
+
     with open(OUT_TSV, "w") as o:
         o.write("family\tcatalog_fid\tn_regions\texact_tx\texact_chains\tstringtie_tx\tstringtie_chains\tstringtie_missed_by_exact\texact_missed_by_stringtie\n")
         for row in rows:
