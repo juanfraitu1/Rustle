@@ -63,12 +63,20 @@ CNT_MAX = 40       # drop pervasive k-mers owned by > this many reps (mobile-ele
 PAIR_CAP = 40      # skip PAIR generation from a k-mer owned by > this many reps (cost guard; consistent
                    #   with CNT_MAX -- big families (> this) are rare and logged)
 K_SHARE = 6        # propose a candidate pair only if the two reps co-own >= this many informative k-mers
+K_SHARE_RESCUE = 2 # relaxed k-mer sharing threshold for pairs involving an annotation-rescued rep
 MAX_PAIRS = 8_000_000  # hard guard on the distinct-pair set (prevents any OOM; logged if hit)
 
 # For annotation-aware split: a transcript is assigned to its dominant RefSeq gene only if the gene covers
 # at least this fraction of the transcript's spliced exon span.  This avoids mis-assigning a transcript to
 # a gene it merely grazes, while still splitting readthroughs that span two distinct genes.
 GENE_ASSIGN_FRAC = 0.5
+
+# For graph-aware readthrough split: an exon is assigned to a RefSeq gene only if the gene covers at least
+# this fraction of the exon's length.  Exons with no confident assignment are dropped from the split.
+EXON_GENE_ASSIGN_FRAC = 0.5
+# Additional span gate: only split a transcript if >=2 distinct genes each cover at least this fraction of
+# the transcript's total spliced exon span.  This prevents cutting transcripts that merely graze a neighbor.
+GENE_SPAN_SPLIT_FRAC = 0.25
 
 _CODE = np.full(256, -1, dtype=np.int64)
 for _i, _b in enumerate(b"ACGT"):
@@ -184,13 +192,151 @@ def dominant_gene(tid, meta, skel_introns, genes, min_frac=GENE_ASSIGN_FRAC):
     return None
 
 
+def _gene_of_exon(exon, genes, min_frac=EXON_GENE_ASSIGN_FRAC):
+    """Return the RefSeq gene that best overlaps a single exon (s,e), if it covers >= min_frac of the exon."""
+    es, ee = exon
+    best_name = None
+    best_ov = 0
+    for gc, gs, ge, _gstrand, name, _bio in genes:
+        if ee <= gs or ge <= es:
+            continue
+        ov = min(ee, ge) - max(es, gs)
+        if ov > best_ov:
+            best_ov = ov
+            best_name = name
+    if best_name is not None and best_ov >= min_frac * (ee - es):
+        return best_name
+    return None
+
+
+def _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes):
+    """Split a readthrough transcript into gene-pure sub-transcripts.
+
+    Uses the exon path of the transcript and the RefSeq gene annotations.  Consecutive exons assigned to
+    the same gene become one sub-transcript; unassigned exons are skipped.  Returns a list of
+    (new_tid, new_meta_tuple, new_seq, new_introns) for every gene-pure segment.
+    """
+    c, s, e, strand, ne, nr = meta[tid]
+    introns = skel_introns.get((c, s, e), [])
+    exons = _exon_intervals(tid, meta, skel_introns)
+    seq = seqs[tid]
+    total_exon_len = _exon_len(exons)
+    if total_exon_len == 0:
+        return []
+
+    # Span gate: only split if >=2 distinct genes each cover >= GENE_SPAN_SPLIT_FRAC of spliced exon span.
+    gene_span = defaultdict(int)
+    for gc, gs, ge, _gstrand, name, _bio in genes:
+        if gc != c:
+            continue
+        for es, ee in exons:
+            gene_span[name] += max(0, min(ee, ge) - max(es, gs))
+    strong_genes = [g for g, ov in gene_span.items() if ov >= GENE_SPAN_SPLIT_FRAC * total_exon_len]
+    if len(strong_genes) < 2:
+        return []
+
+    # per-exon gene assignment (only among the strong genes to avoid noise from weak overlaps)
+    strong_set = set(strong_genes)
+
+    def gene_of_exon_restricted(exon):
+        es, ee = exon
+        best_name = None
+        best_ov = 0
+        for gc, gs, ge, _gstrand, name, _bio in genes:
+            if name not in strong_set or gc != c or ee <= gs or ge <= es:
+                continue
+            ov = min(ee, ge) - max(es, gs)
+            if ov > best_ov:
+                best_ov = ov
+                best_name = name
+        if best_name is not None and best_ov >= EXON_GENE_ASSIGN_FRAC * (ee - es):
+            return best_name
+        return None
+
+    exon_gene = [gene_of_exon_restricted(ex) for ex in exons]
+
+    # group consecutive exons with the same assigned gene
+    segments = []
+    i = 0
+    while i < len(exons):
+        if exon_gene[i] is None:
+            i += 1
+            continue
+        g = exon_gene[i]
+        j = i
+        while j < len(exons) and exon_gene[j] == g:
+            j += 1
+        segments.append((g, i, j - 1))
+        i = j
+
+    if len(segments) < 2:
+        return []  # not a readthrough by gene annotation
+
+    out = []
+    for seg_idx, (g, ei, ej) in enumerate(segments):
+        seg_exons = exons[ei:ej + 1]
+        seg_start = seg_exons[0][0]
+        seg_end = seg_exons[-1][1]
+        seg_introns = introns[ei:ej]
+        seg_ne = len(seg_exons)
+        # extract sub-sequence in transcription orientation
+        exon_lens = [ee - es for es, ee in exons]
+        seg_exon_lens = [ee - es for es, ee in seg_exons]
+        if strand == "+":
+            pre = sum(exon_lens[:ei])
+            sub_seq = seq[pre:pre + sum(seg_exon_lens)]
+        else:
+            # minus: transcription order is reverse genomic order
+            pre = sum(exon_lens[ej + 1:])
+            sub_seq = seq[pre:pre + sum(seg_exon_lens)]
+        new_tid = f"{tid}_seg{seg_idx}_{g}"
+        new_meta = (c, seg_start, seg_end - 1, strand, seg_ne, nr)
+        out.append((new_tid, new_meta, sub_seq, seg_introns))
+    return out
+
+
+def graph_split_transcripts(seqs, meta, skel_introns, genes):
+    """Graph-aware readthrough split: decompose transcripts whose exon path visits >=2 distinct genes.
+
+    Returns new seqs, meta, skel_introns dicts with readthrough transcripts replaced by their gene-pure
+    sub-transcripts.  Transcripts that do not traverse multiple genes are kept unchanged.
+    """
+    new_seqs = {}
+    new_meta = {}
+    new_skel = {}
+    n_split = 0
+    n_sub = 0
+    for tid in seqs:
+        sub = _split_transcript_by_genes(tid, meta, skel_introns, seqs, genes)
+        if not sub:
+            new_seqs[tid] = seqs[tid]
+            new_meta[tid] = meta[tid]
+            continue
+        n_split += 1
+        n_sub += len(sub)
+        for new_tid, new_meta_tuple, sub_seq, seg_introns in sub:
+            new_seqs[new_tid] = sub_seq
+            new_meta[new_tid] = new_meta_tuple
+            c, s, e, _strand, _ne, _nr = new_meta_tuple
+            new_skel[(c, s, e)] = seg_introns
+    # copy over skeletons for unsplit transcripts
+    for key, intr in skel_introns.items():
+        if key not in new_skel:
+            new_skel[key] = intr
+    return new_seqs, new_meta, new_skel, n_split, n_sub
+
+
 def annotation_split_components(comp, meta, skel_introns, genes):
     """Split collapsed components whose members are assigned to distinct RefSeq genes.
 
     Each returned component is a list of tids.  Transcripts with no confident gene assignment are kept
     together in an 'unassigned' sub-component per original component.
+
+    Returns (components, rescued) where rescued is the set of tids that landed in a component created by
+    the split (these are candidates for the downstream rescue pass).
     """
     out = []
+    rescued = set()
     for members in comp.values():
         by_gene = defaultdict(list)
         for tid in members:
@@ -203,9 +349,10 @@ def annotation_split_components(comp, meta, skel_introns, genes):
             for g, group in by_gene.items():
                 if group:
                     out.append(group)
+                    rescued.update(group)
         else:
             out.append(members)
-    return out
+    return out, rescued
 
 
 def main(args=None):
@@ -234,6 +381,13 @@ def main(args=None):
         c, s, e, ne, nr, intr = line.rstrip("\n").split("\t")
         ivs = [tuple(map(int, x.split("-"))) for x in intr.split(";")] if intr else []
         skel_introns[(c, int(s), int(e))] = ivs
+
+    # Optional graph-aware readthrough split: cut transcripts whose exon path visits >=2 distinct genes.
+    if args.graph_split:
+        genes = load_genes(args.genes)
+        seqs, meta, skel_introns, n_split, n_sub = graph_split_transcripts(seqs, meta, skel_introns, genes)
+        n_assembly = len(seqs)
+        tick(f"graph-split: {n_split:,} readthrough transcripts -> {n_sub:,} gene-pure sub-transcripts")
 
     # ---- (1) collapse isoforms -> GENE loci by SHARED INTRON JUNCTIONS (union-find) ----
     parent = {}
@@ -265,12 +419,14 @@ def main(args=None):
         comp[find(tid)].append(tid)
 
     # Optional annotation-aware split of readthrough components that span multiple RefSeq genes.
+    rescued_tids = set()
     if args.annotation_split:
         genes = load_genes(args.genes)
-        comp_groups = annotation_split_components(comp, meta, skel_introns, genes)
+        comp_groups, rescued_tids = annotation_split_components(comp, meta, skel_introns, genes)
         n_before = len(comp)
         comp = {i: group for i, group in enumerate(comp_groups)}
-        tick(f"annotation-split: {n_before:,} components -> {len(comp):,} after splitting by RefSeq gene-of")
+        tick(f"annotation-split: {n_before:,} components -> {len(comp):,} after splitting by RefSeq gene-of; "
+             f"{len(rescued_tids):,} rescued tids")
     else:
         comp = dict(comp)
 
@@ -308,18 +464,23 @@ def main(args=None):
         res[ok] = info_kmers[idx[ok]] == vals[ok]
         return res
     informative_sig = {}   # r -> (sig values sorted, sig positions)
+    rescued_candidates = set()
     for r in reps:
         vals, pos = rep_kmers[r]
         if vals.size == 0:
             continue
         m = members(vals)
-        if m.sum() >= K_SHARE:
+        sig_size = int(m.sum())
+        if sig_size >= K_SHARE or (r in rescued_tids and sig_size >= K_SHARE_RESCUE):
             informative_sig[r] = (vals[m], pos[m])
+            if r in rescued_tids and sig_size < K_SHARE:
+                rescued_candidates.add(r)
     candidates = list(informative_sig)
     del rep_kmers
     seqlen = {r: len(seqs[r]) for r in candidates}
     tick(f"candidate family-member reps: {len(candidates):,} / {n_loci:,} loci "
-         f"(single-copy genes have < {K_SHARE} informative k-mers -> rejected, never reach POA)")
+         f"({len(rescued_candidates):,} annotation-rescued); "
+         f"single-copy genes have < {K_SHARE} informative k-mers -> rejected, never reach POA")
 
     # inverted index ONLY over family-informative k-mers of CANDIDATE reps (bounded -> no OOM)
     inv = defaultdict(list)
@@ -354,7 +515,9 @@ def main(args=None):
         va, pa = informative_sig[a]
         vb, pb = informative_sig[b]
         common, ia, ib = np.intersect1d(va, vb, assume_unique=True, return_indices=True)
-        if common.size < K_SHARE:
+        rescue_pair = (a in rescued_tids or b in rescued_tids)
+        min_share = K_SHARE_RESCUE if rescue_pair else K_SHARE
+        if common.size < min_share:
             continue
         n_kshare += 1
         sa, sb = pa[ia], pb[ib]
@@ -362,7 +525,8 @@ def main(args=None):
         if core >= T_CORE * min(seqlen[a], seqlen[b]):
             cands.append((a, b))
     print(f"general assembly transcripts: {n_assembly:,}; gene loci (intron-junction collapse): {n_loci:,}; "
-          f"candidate reps: {len(candidates):,}; pairs >= {K_SHARE} shared k-mers: {n_kshare:,}; "
+          f"candidate reps: {len(candidates):,} ({len(rescued_candidates):,} annotation-rescued); "
+          f"pairs >= {K_SHARE} shared k-mers: {n_kshare:,}; "
           f"after contiguous-span filter: {len(cands):,} POA pairs")
     tick("starting POA grading")
 
@@ -444,6 +608,9 @@ def parse_args():
                         help="RefSeq gene coordinate TSV (chrom start end strand name biotype)")
     parser.add_argument("--annotation-split", action="store_true",
                         help="split collapsed locus components whose members map to distinct RefSeq genes")
+    parser.add_argument("--graph-split", action="store_true",
+                        help="split individual readthrough transcripts whose exon path visits >=2 distinct "
+                             "RefSeq genes into gene-pure sub-transcripts before locus collapse")
     return parser.parse_args()
 
 
