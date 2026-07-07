@@ -34,6 +34,7 @@ FIG_ISO = os.path.join(HERE, "famdef_3_isoforms.png")
 FIG_RECOMB = os.path.join(HERE, "famdef_4_recombination.png")
 FIG_IGV = os.path.join(HERE, "famdef_5_igv.png")
 FIG_VALID = os.path.join(HERE, "famdef_6_validation.png")
+FIG_PHASE = os.path.join(HERE, "famdef_7_phasing.png")
 OUT = os.path.join(HERE, "family_definition_slides.pptx")
 
 NAVY = RGBColor(0x1F, 0x2D, 0x5A)
@@ -787,6 +788,113 @@ def make_validation():
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- figure 7: long-read phasing / copy assignment
+def make_phasing():
+    fig, ax = plt.subplots(figsize=(12.5, 6.2))
+    ax.set_xlim(0, 12.5)
+    ax.set_ylim(0, 6.2)
+    ax.axis("off")
+
+    # Three copies, four PSV columns.  A SUN is a column where one copy's allele is private.
+    copies = [
+        ("copy 1  (RABL2A-like)", CT, ["A", "G", "C", "T"]),
+        ("copy 2  (RABL2B-like)", CO, ["A", "T", "C", "G"]),
+        ("copy 3  (paralog LOC)", CP, ["G", "T", "C", "T"]),
+    ]
+    labels = ["PSV 1", "PSV 2", "PSV 3", "PSV 4"]
+    x_pos = [2.2, 4.6, 7.0, 9.4]
+
+    # Determine SUN columns: where exactly one copy has a distinct allele.
+    sun_by_col = []
+    for col in range(4):
+        alleles = [copies[i][2][col] for i in range(3)]
+        private = None
+        for i, a in enumerate(alleles):
+            if alleles.count(a) == 1:
+                private = i
+                break
+        sun_by_col.append(private)
+
+    # Draw copy rows
+    row_y = [4.35, 3.05, 1.75]
+    for row, (name, color, alleles) in enumerate(copies):
+        y = row_y[row]
+        # track label
+        ax.text(0.35, y, name, ha="left", va="center", fontsize=11,
+                color=color, fontweight="bold")
+        # chromosome/locus bar
+        ax.add_patch(Rectangle((1.8, y - 0.12), 9.0, 0.24,
+                     fc="#dfe7f2", ec=CN, lw=1.0, zorder=1))
+        # allele boxes
+        for col, (x, a) in enumerate(zip(x_pos, alleles)):
+            is_sun = sun_by_col[col] == row
+            box_fc = color if is_sun else "#eef2f7"
+            box_ec = color if is_sun else CN
+            text_col = "white" if is_sun else CN
+            lw = 2.5 if is_sun else 1.5
+            ax.add_patch(FancyBboxPatch((x - 0.36, y - 0.34), 0.72, 0.68,
+                         boxstyle="round,pad=0.03,rounding_size=0.08",
+                         fc=box_fc, ec=box_ec, lw=lw, zorder=3))
+            ax.text(x, y, a, ha="center", va="center", fontsize=15,
+                    color=text_col, fontweight="bold", zorder=4)
+            if is_sun:
+                ax.text(x, y + 0.52, "SUN", ha="center", va="center",
+                        fontsize=7, color=color, fontweight="bold")
+
+    # Column labels
+    for x, lbl in zip(x_pos, labels):
+        ax.text(x, 5.55, lbl, ha="center", va="center",
+                fontsize=10, color=CN, fontweight="bold")
+
+    # Read row
+    read_y = 0.55
+    read_alleles = ["A", "T", "C", "G"]
+    ax.text(0.35, read_y, "long read", ha="left", va="center",
+            fontsize=11, color=CG, fontweight="bold")
+    ax.add_patch(FancyBboxPatch((1.8, read_y - 0.22), 9.0, 0.44,
+                 boxstyle="round,pad=0.03,rounding_size=0.08",
+                 fc="#f4f4f4", ec=CN, lw=1.5, zorder=1))
+    for col, (x, a) in enumerate(zip(x_pos, read_alleles)):
+        ax.add_patch(FancyBboxPatch((x - 0.32, read_y - 0.28), 0.64, 0.56,
+                     boxstyle="round,pad=0.03,rounding_size=0.08",
+                     fc="#5d6d7e", ec=CN, lw=1.5, zorder=2))
+        ax.text(x, read_y, a, ha="center", va="center", fontsize=14,
+                color="white", fontweight="bold", zorder=3)
+
+    # Bracket / assignment arrow
+    ax.annotate("", xy=(6.3, 1.05), xytext=(6.3, 2.55),
+                arrowprops=dict(arrowstyle="->", color=CO, lw=2.5))
+    ax.text(6.45, 1.8, "matches\ncopy 2", ha="left", va="center",
+            fontsize=10, color=CO, fontweight="bold", linespacing=1.1)
+
+    # Outcome box
+    ax.add_patch(FancyBboxPatch((1.2, -0.55), 10.1, 0.95,
+                 boxstyle="round,pad=0.08,rounding_size=0.10",
+                 fc="#fff8f3", ec=CO, lw=2.0, zorder=1))
+    ax.text(6.25, 0.20,
+            "A read that observes copy 2's private SUN alleles (PSV 2 and PSV 4) "
+            "is assigned deterministically to copy 2.",
+            ha="center", va="center", fontsize=11, color=CN, fontweight="bold")
+    ax.text(6.25, -0.15,
+            "No other copy carries that allele pattern, so the per-read gate returns |N(r)| = 1 — "
+            "one copy, no guess.",
+            ha="center", va="center", fontsize=10, color=CG, linespacing=1.3)
+
+    ax.set_title("Long-read copy assignment: SUNs make assignment deterministic",
+                 fontsize=14, fontweight="bold", color=CN, pad=12)
+
+    # Legend
+    ax.add_patch(FancyBboxPatch((10.2, 4.95), 0.35, 0.30,
+                 boxstyle="round,pad=0.02,rounding_size=0.05", fc=CT, ec=CT))
+    ax.text(10.7, 5.10, "private allele", ha="left", va="center", fontsize=9, color=CG)
+    ax.add_patch(FancyBboxPatch((10.2, 4.55), 0.35, 0.30,
+                 boxstyle="round,pad=0.02,rounding_size=0.05", fc="#eef2f7", ec=CN))
+    ax.text(10.7, 4.70, "shared allele", ha="left", va="center", fontsize=9, color=CG)
+
+    fig.savefig(FIG_PHASE, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- pptx assembly
 def add_figure_slide(prs, title, img, caption):
     from PIL import Image
@@ -820,6 +928,7 @@ def build():
     make_recombination()
     make_igv()
     make_validation()
+    make_phasing()
 
     prs = Presentation()
     prs.slide_width = Inches(13.33)
@@ -861,6 +970,13 @@ def build():
                      FIG_VALID,
                      "All eight literature-recognized multi-copy families from the gorilla catalog. "
                      "Point size reflects copy number; teal points pass both thresholds.")
+
+    add_figure_slide(prs,
+                     "Long-read copy assignment via SUNs",
+                     FIG_PHASE,
+                     "Each copy carries private Singly Unique Nucleotides (SUNs). A long read spanning "
+                     "a SUN observes a copy-specific allele and is assigned deterministically to that copy, "
+                     "even when the read maps equally well to several copies overall.")
 
     try:
         prs.save(OUT)
