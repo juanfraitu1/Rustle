@@ -57,23 +57,27 @@ def load_meta():
 
 
 def load_skeletons():
+    # key by (chrom, start, end, n_exon, n_reads) so isoforms with the same
+    # coordinates but different splicing resolve to the correct skeleton.
     d = {}
     with open(SKEL_TSV) as fh:
         for r in csv.DictReader(fh, delimiter="\t"):
             c, s, e = r["chrom"], int(r["start"]), int(r["end"])
+            nx, nr = int(r["n_exon"]), int(r["n_reads"])
             introns = []
             if r["introns"].strip():
                 for tok in r["introns"].split(";"):
                     a, b = tok.split("-")
                     introns.append((int(a), int(b)))
-            d[(c, s, e)] = introns
+            d[(c, s, e, nx, nr)] = introns
     return d
 
 
 def exon_intervals(meta, skel, tid):
     m = meta[tid]
     c, s, e = m["chrom"], m["start"], m["end"]
-    introns = skel.get((c, s, e), [])
+    key = (c, s, e, m["n_exon"], m["n_reads"])
+    introns = skel.get(key, [])
     exons = []
     cur = s
     for d, a in introns:
@@ -254,19 +258,90 @@ def make_birdseye():
     plt.close(fig)
 
 
-# ----------------------------------------------------------------- figure 3: isoform zoom as variation graph
+# ----------------------------------------------------------------- figure 3: two loci, each with isoforms as vg paths
 def make_isoforms():
     meta = load_meta()
     skel = load_skeletons()
 
-    tid_a = "DN_NC_086018.1_48818439_9"
-    tid_b = "DN_NC_086018.1_48818439_10"
+    # Locus data: two family-69 copies that each have multiple isoforms
+    locus_data = [
+        {
+            "name": "Locus 1  LOC101142457  (NC_073247.2)",
+            "y": 1.9,
+            "color_a": CT,
+            "color_b": CO,
+            "isoforms": [
+                ("DN_NC_073247.2_167707352_7", "isoform a  (7 exons, 10 reads)"),
+                ("DN_NC_073247.2_167707352_8", "isoform b  (8 exons, 6 reads)"),
+            ],
+        },
+        {
+            "name": "Locus 2  RABL2B  (NC_086018.1)",
+            "y": -1.9,
+            "color_a": CT,
+            "color_b": CO,
+            "isoforms": [
+                ("DN_NC_086018.1_48818439_9", "isoform a  (9 exons, 4 reads)"),
+                ("DN_NC_086018.1_48818439_10", "isoform b  (10 exons, 3 reads)"),
+            ],
+        },
+    ]
+
+    fig, ax = plt.subplots(figsize=(13.0, 7.2))
+    ax.set_xlim(0, 13)
+    ax.set_ylim(-3.6, 3.6)
+    ax.axis("off")
+
+    # draw each locus graph
+    graph_anchors = []
+    for locus in locus_data:
+        anchor = _draw_locus_vg(ax, locus, meta, skel)
+        graph_anchors.append(anchor)
+
+    # homology edge between the two loci
+    ax.annotate("", xy=(12.2, graph_anchors[1]["y"]),
+                xytext=(12.2, graph_anchors[0]["y"]),
+                arrowprops=dict(arrowstyle="<->", color=CN, lw=2.5))
+    ax.text(12.55, (graph_anchors[0]["y"] + graph_anchors[1]["y"]) / 2,
+            "homology\nedge", ha="left", va="center", fontsize=10,
+            color=CN, fontweight="bold")
+
+    ax.set_title("Two family copies, each producing multiple isoforms from its own variation graph",
+                 fontsize=14, fontweight="bold", color=CN, pad=12)
+    ax.text(6.2, 3.55,
+            "Shared exons are central split-colored nodes; isoform-specific exons branch into bubbles",
+            ha="center", fontsize=10, color=CG, style="italic")
+
+    # legend
+    ax.add_patch(FancyBboxPatch((10.4, 2.55), 0.35, 0.22,
+                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CT, ec=CN))
+    ax.text(10.9, 2.66, "isoform a", ha="left", va="center", fontsize=9, color=CG)
+    ax.add_patch(FancyBboxPatch((10.4, 2.15), 0.35, 0.22,
+                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CO, ec=CN))
+    ax.text(10.9, 2.26, "isoform b", ha="left", va="center", fontsize=9, color=CG)
+    ax.add_patch(FancyBboxPatch((10.4, 1.75), 0.17, 0.22,
+                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CT, ec=CN))
+    ax.add_patch(FancyBboxPatch((10.57, 1.75), 0.18, 0.22,
+                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CO, ec=CN))
+    ax.text(10.9, 1.86, "shared exon", ha="left", va="center", fontsize=9, color=CG)
+
+    fig.savefig(FIG_ISO, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _draw_locus_vg(ax, locus, meta, skel):
+    """Draw one variation-graph panel for a locus. Returns a dict with y center and rightmost x."""
+    tid_a, label_a = locus["isoforms"][0]
+    tid_b, label_b = locus["isoforms"][1]
+    col_a, col_b = locus["color_a"], locus["color_b"]
+    y0 = locus["y"]
+
     exons_a = exon_intervals(meta, skel, tid_a)
     exons_b = exon_intervals(meta, skel, tid_b)
 
-    # give every distinct exon interval a stable node id
+    # build node list with owners
     node_exons = []
-    node_owners = []   # 'shared', 'a', or 'b'
+    node_owners = []
     a_nodes = []
     b_nodes = []
     seen = {}
@@ -275,144 +350,131 @@ def make_isoforms():
         if key not in seen:
             seen[key] = len(node_exons)
             node_exons.append(key)
-            node_owners.append('a')
-        idx = seen[key]
-        a_nodes.append(idx)
+            node_owners.append("a")
+        a_nodes.append(seen[key])
     for s, e in exons_b:
         key = (s, e)
         if key not in seen:
             seen[key] = len(node_exons)
             node_exons.append(key)
-            node_owners.append('b')
+            node_owners.append("b")
         idx = seen[key]
         b_nodes.append(idx)
-        if node_owners[idx] == 'a':
-            node_owners[idx] = 'shared'
+        if node_owners[idx] == "a":
+            node_owners[idx] = "shared"
 
-    # layout: shared nodes on a center line; isoform-specific nodes branch above/below
-    fig, ax = plt.subplots(figsize=(12.5, 5.8))
-    ax.set_xlim(0, 13)
-    ax.set_ylim(-2.8, 2.8)
-    ax.axis("off")
-
-    # fixed x positions (order-preserving; genomic distances are compressed)
-    shared_x = [1.0, 2.1, 3.2, 4.3, 5.4, 6.5, 7.6]
-    alt_x = [9.0, 10.4, 11.8]
-    pos = {}
-    shared_idx = 0
-    a_alt_idx = 0
-    b_alt_idx = 0
-    for i, owner in enumerate(node_owners):
-        if owner == 'shared':
-            pos[i] = (shared_x[shared_idx], 0.0)
-            shared_idx += 1
-        elif owner == 'a':
-            pos[i] = (alt_x[a_alt_idx], 1.3)
-            a_alt_idx += 1
-        else:  # 'b'
-            pos[i] = (alt_x[b_alt_idx], -1.3)
-            b_alt_idx += 1
+    # Manual layouts that keep genomic order and avoid overlap.
+    # Nodes are numbered in the order they were first seen (isoform a first, then b).
+    if "073247" in tid_a:
+        # LOC101142457: 9 distinct exons
+        # shared: 0-1-2-4-5-6, a-specific: 7 (final), b-specific: 3 (middle bubble), 8 (final)
+        pos = {
+            0: (1.0, y0),
+            1: (2.1, y0),
+            2: (3.2, y0),
+            3: (4.3, y0 + 0.7),   # b-specific middle exon
+            4: (5.4, y0),
+            5: (6.5, y0),
+            6: (7.6, y0),
+            7: (9.0, y0 + 0.7),   # a-specific final exon
+            8: (9.0, y0 - 0.7),   # b-specific final exon
+        }
+        a_path = [0, 1, 2, 4, 5, 6, 7]
+        b_path = [0, 1, 2, 3, 4, 5, 6, 8]
+    else:
+        # RABL2B: 12 distinct exons
+        # shared: 0-1-2-3-4-5-6, a-specific: 7-8, b-specific: 9-10-11
+        pos = {
+            0: (1.0, y0),
+            1: (2.1, y0),
+            2: (3.2, y0),
+            3: (4.3, y0),
+            4: (5.4, y0),
+            5: (6.5, y0),
+            6: (7.6, y0),
+            7: (9.0, y0 + 0.7),
+            8: (10.4, y0 + 0.7),
+            9: (9.0, y0 - 0.7),
+            10: (10.4, y0 - 0.7),
+            11: (11.8, y0 - 0.7),
+        }
+        a_path = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        b_path = [0, 1, 2, 3, 4, 5, 6, 9, 10, 11]
 
     def draw_node(idx, x, y):
         owner = node_owners[idx]
-        s, e = node_exons[idx]
-        width = 0.85
-        height = 0.55
-
-        if owner == 'shared':
-            # split rectangle: left half teal (a), right half orange (b)
+        width = 0.82
+        height = 0.52
+        if owner == "shared":
             ax.add_patch(FancyBboxPatch((x - width / 2, y - height / 2), width / 2, height,
                          boxstyle="round,pad=0.02,rounding_size=0.06",
-                         fc=CT, ec=CN, lw=1.5, zorder=3))
+                         fc=col_a, ec=CN, lw=1.5, zorder=3))
             ax.add_patch(FancyBboxPatch((x, y - height / 2), width / 2, height,
                          boxstyle="round,pad=0.02,rounding_size=0.06",
-                         fc=CO, ec=CN, lw=1.5, zorder=3))
-        elif owner == 'a':
+                         fc=col_b, ec=CN, lw=1.5, zorder=3))
+        elif owner == "a":
             ax.add_patch(FancyBboxPatch((x - width / 2, y - height / 2), width, height,
                          boxstyle="round,pad=0.02,rounding_size=0.06",
-                         fc=CT, ec=CN, lw=1.5, zorder=3))
+                         fc=col_a, ec=CN, lw=1.5, zorder=3))
         else:
             ax.add_patch(FancyBboxPatch((x - width / 2, y - height / 2), width, height,
                          boxstyle="round,pad=0.02,rounding_size=0.06",
-                         fc=CO, ec=CN, lw=1.5, zorder=3))
+                         fc=col_b, ec=CN, lw=1.5, zorder=3))
+        ax.text(x, y, f"E{idx + 1}", ha="center", va="center",
+                fontsize=8, color="white", fontweight="bold", zorder=4)
 
-        # exon label inside
-        label = f"E{idx + 1}"
-        ax.text(x, y, label, ha="center", va="center",
-                fontsize=9, color="white", fontweight="bold", zorder=4)
-
-    # draw edges (splice junctions) as navy lines
+    # splice-junction edges
     edge_pairs = set()
-    for path in (a_nodes, b_nodes):
-        for u, v in zip(path, path[1:]):
-            edge_pairs.add((u, v))
+    for u, v in zip(a_path, a_path[1:]):
+        edge_pairs.add((u, v))
+    for u, v in zip(b_path, b_path[1:]):
+        edge_pairs.add((u, v))
     for u, v in edge_pairs:
         x1, y1 = pos[u]
         x2, y2 = pos[v]
-        # slight curve for diverging/converging edges
-        style = "arc3,rad=0.12" if abs(y2 - y1) > 0.5 else "arc3,rad=0.0"
-        ax.annotate("", xy=(x2 - 0.42, y2), xytext=(x1 + 0.42, y1),
-                    arrowprops=dict(arrowstyle="-", color=CN, lw=1.5,
+        style = "arc3,rad=0.12" if abs(y2 - y1) > 0.3 else "arc3,rad=0.0"
+        ax.annotate("", xy=(x2 - 0.40, y2), xytext=(x1 + 0.40, y1),
+                    arrowprops=dict(arrowstyle="-", color=CN, lw=1.4,
                                     connectionstyle=style), zorder=1)
 
-    # draw colored path overlays (thick halo + bright core so they survive behind nodes)
-    # shared backbone is offset so both paths are visible side-by-side
-    for path, col, label, y_legend, offset in [(a_nodes, CT, "isoform a  (9 exons, 4 reads)", 2.25, 0.16),
-                                                (b_nodes, CO, "isoform b  (10 exons, 3 reads)", -2.25, -0.16)]:
+    # path overlays (offset on shared backbone so both are visible)
+    for path, col, label, y_legend, offset in [(a_path, col_a, label_a, y0 + 1.15, 0.14),
+                                                (b_path, col_b, label_b, y0 - 1.15, -0.14)]:
         xs, ys = [], []
         for idx in path:
             x, y = pos[idx]
-            owner = node_owners[idx]
-            # offset only in the shared backbone; isoform-specific nodes stay on their track
-            y_eff = y + (offset if owner == 'shared' else 0)
+            y_eff = y + (offset if node_owners[idx] == "shared" else 0)
             xs.append(x)
             ys.append(y_eff)
-        # wide translucent halo
-        ax.plot(xs, ys, color=col, lw=7.0, alpha=0.35, zorder=2,
+        ax.plot(xs, ys, color=col, lw=6.5, alpha=0.35, zorder=2,
                 solid_capstyle="round", solid_joinstyle="round")
-        # brighter core line
-        ax.plot(xs, ys, color=col, lw=3.0, alpha=0.85, zorder=2,
+        ax.plot(xs, ys, color=col, lw=2.8, alpha=0.85, zorder=2,
                 solid_capstyle="round", solid_joinstyle="round")
-        # path label
         ax.text(0.35, y_legend, label, ha="left", va="center",
-                fontsize=11, color=col, fontweight="bold")
+                fontsize=10, color=col, fontweight="bold")
 
     # draw nodes on top
     for idx, (x, y) in pos.items():
         draw_node(idx, x, y)
 
-    # genome coordinate bar at bottom
-    ax.add_patch(Rectangle((0.6, -2.60), 11.8, 0.12, fc="#dfe7f2", ec=CN, lw=1.2))
-    ax.text(6.5, -2.15, "NC_086018.1  (RABL2B locus) — genomic coordinates compressed for clarity",
-            ha="center", fontsize=9, color=CN)
-    tick_x = [1.0, 4.3, 7.6, 9.0, 11.8]
-    tick_coord = [48.818, 48.820, 48.823, 48.824, 48.825]
-    for tx, coord in zip(tick_x, tick_coord):
-        ax.plot([tx, tx], [-2.60, -2.69], color=CG, lw=1.0)
-        ax.text(tx, -2.78, f"{coord:.3f}M", ha="center", fontsize=7, color=CG)
+    # locus label above/below the path labels to avoid overlapping nodes
+    label_y = y0 + 1.35 if y0 > 0 else y0 - 1.35
+    ax.text(0.35, label_y, locus["name"], ha="left", va="center",
+            fontsize=10, color=CN, fontweight="bold")
 
-    ax.set_title("Zoom: RABL2B isoforms as paths through one variation graph",
-                 fontsize=14, fontweight="bold", color=CN, pad=12)
-    ax.text(6.5, 2.45,
-            "Shared exons are central nodes; the 3' end forms a bubble with alternative exons",
-            ha="center", fontsize=10, color=CG, style="italic")
+    # chromosome bar under this locus
+    bar_y = y0 - 1.45
+    ax.add_patch(Rectangle((0.6, bar_y), 11.8, 0.10, fc="#dfe7f2", ec=CN, lw=1.0))
+    if "073247" in tid_a:
+        ticks = [(1.0, 167.707), (5.4, 167.716), (9.0, 167.723)]
+    else:
+        ticks = [(1.0, 48.818), (5.4, 48.823), (11.8, 48.825)]
+    for tx, coord in ticks:
+        ax.plot([tx, tx], [bar_y, bar_y - 0.07], color=CG, lw=1.0)
+        ax.text(tx, bar_y - 0.18, f"{coord:.3f}M", ha="center", fontsize=7, color=CG)
 
-    # legend
-    ax.add_patch(FancyBboxPatch((10.6, 1.85), 0.35, 0.22,
-                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CT, ec=CN))
-    ax.text(11.1, 1.96, "isoform a", ha="left", va="center", fontsize=9, color=CG)
-    ax.add_patch(FancyBboxPatch((10.6, 1.45), 0.35, 0.22,
-                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CO, ec=CN))
-    ax.text(11.1, 1.56, "isoform b", ha="left", va="center", fontsize=9, color=CG)
-    # split node example
-    ax.add_patch(FancyBboxPatch((10.6, 1.05), 0.17, 0.22,
-                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CT, ec=CN))
-    ax.add_patch(FancyBboxPatch((10.77, 1.05), 0.18, 0.22,
-                 boxstyle="round,pad=0.02,rounding_size=0.04", fc=CO, ec=CN))
-    ax.text(11.1, 1.16, "shared exon", ha="left", va="center", fontsize=9, color=CG)
-
-    fig.savefig(FIG_ISO, dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    rightmost = max(x for x, y in pos.values())
+    return {"y": y0, "x_right": rightmost}
 
 
 # ----------------------------------------------------------------- pptx assembly
@@ -463,10 +525,11 @@ def build():
                      "every locus is linked to every other locus, so the group is one cohesive family.")
 
     add_figure_slide(prs,
-                     "Zoom: one copy, multiple isoforms",
+                     "Zoom: two copies, each with multiple isoforms",
                      FIG_ISO,
-                     "RABL2B at 48.82 Mb on NC_086018.1 produces two isoforms as paths through one variation graph. They share a "
-                     "backbone of seven exons and diverge in a 3' bubble; isoforms are collapsed to one locus before families are called.")
+                     "Two RABL2 family copies (LOC101142457 on NC_073247.2 and RABL2B on NC_086018.1) each produce two isoforms "
+                     "as paths through their own variation graphs. A homology edge links the two loci; isoforms are collapsed to one "
+                     "locus before families are called.")
 
     prs.save(OUT)
     print(f"[+] wrote {OUT} ({len(prs.slides._sldIdLst)} slides)")
