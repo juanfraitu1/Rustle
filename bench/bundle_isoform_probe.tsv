@@ -1,0 +1,9 @@
+family	catalog_fid	n_regions	exact_tx	exact_chains	stringtie_tx	stringtie_chains	stringtie_missed_by_exact	exact_missed_by_stringtie
+GSTM	17	3	349	349	276	273	12	4
+ZNF92	39	1	7	7	10	10	0	0
+RABL2	70	2	23	23	24	24	0	0
+ANKRD18	302	2	355	355	354	353	28	1
+RGPD8	309	1	9	9	10	10	0	0
+HERC2	382	1	198	198	285	279	43	1
+MAGEA	496	1	4	4	6	6	0	0
+APOBEC3	549	1	2	2	4	4	0	0
