@@ -30,6 +30,7 @@ EDGES_TSV = os.path.join(HERE, "denovo_family_edges.tsv")
 FIG_DEF = os.path.join(HERE, "famdef_1_definition.png")
 FIG_BIRD = os.path.join(HERE, "famdef_2_birdseye.png")
 FIG_ISO = os.path.join(HERE, "famdef_3_isoforms.png")
+FIG_RECOMB = os.path.join(HERE, "famdef_4_recombination.png")
 OUT = os.path.join(HERE, "family_definition_slides.pptx")
 
 NAVY = RGBColor(0x1F, 0x2D, 0x5A)
@@ -477,6 +478,98 @@ def _draw_locus_vg(ax, locus, meta, skel):
     return {"y": y0, "x_right": rightmost}
 
 
+# ----------------------------------------------------------------- figure 4: recombinant reads don't merge copies
+def make_recombination():
+    fig, ax = plt.subplots(figsize=(12.5, 6.2))
+    ax.set_xlim(0, 12.5)
+    ax.set_ylim(0, 6.2)
+    ax.axis("off")
+
+    # --- top: two distinct loci on separate chromosomes ---
+    y_chrom = 5.2
+    # chromosome A strip
+    ax.add_patch(Rectangle((1.0, y_chrom - 0.08), 4.0, 0.16, fc="#dfe7f2", ec=CN, lw=1.5))
+    ax.text(3.0, y_chrom + 0.35, "chromosome A  (copy 1 locus)", ha="center", fontsize=10, color=CN)
+    # copy 1 exons
+    ax.add_patch(FancyBboxPatch((1.4, y_chrom - 0.28), 0.9, 0.56,
+                 boxstyle="round,pad=0.02,rounding_size=0.06", fc=CT, ec=CN, lw=1.5))
+    ax.text(1.85, y_chrom, "E1", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+    ax.add_patch(FancyBboxPatch((3.0, y_chrom - 0.28), 0.9, 0.56,
+                 boxstyle="round,pad=0.02,rounding_size=0.06", fc=CT, ec=CN, lw=1.5))
+    ax.text(3.45, y_chrom, "E2", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+    ax.annotate("", xy=(3.0, y_chrom), xytext=(2.3, y_chrom),
+                arrowprops=dict(arrowstyle="-", color=CN, lw=2.0))
+
+    # chromosome B strip
+    ax.add_patch(Rectangle((7.5, y_chrom - 0.08), 4.0, 0.16, fc="#dfe7f2", ec=CN, lw=1.5))
+    ax.text(9.5, y_chrom + 0.35, "chromosome B  (copy 2 locus)", ha="center", fontsize=10, color=CN)
+    # copy 2 exons
+    ax.add_patch(FancyBboxPatch((7.9, y_chrom - 0.28), 0.9, 0.56,
+                 boxstyle="round,pad=0.02,rounding_size=0.06", fc=CO, ec=CN, lw=1.5))
+    ax.text(8.35, y_chrom, "E1", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+    ax.add_patch(FancyBboxPatch((9.5, y_chrom - 0.28), 0.9, 0.56,
+                 boxstyle="round,pad=0.02,rounding_size=0.06", fc=CO, ec=CN, lw=1.5))
+    ax.text(9.95, y_chrom, "E2", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+    ax.annotate("", xy=(9.5, y_chrom), xytext=(8.8, y_chrom),
+                arrowprops=dict(arrowstyle="-", color=CN, lw=2.0))
+
+    # --- middle: combined vg view with recombinant edge ---
+    # left copy nodes
+    c1e1 = (2.5, 3.1)
+    c1e2 = (2.5, 1.5)
+    # right copy nodes
+    c2e1 = (9.0, 3.1)
+    c2e2 = (9.0, 1.5)
+
+    # valid within-copy edges
+    ax.annotate("", xy=(c1e2[0], c1e2[1] + 0.35), xytext=(c1e1[0], c1e1[1] - 0.35),
+                arrowprops=dict(arrowstyle="-", color=CN, lw=2.5))
+    ax.annotate("", xy=(c2e2[0], c2e2[1] + 0.35), xytext=(c2e1[0], c2e1[1] - 0.35),
+                arrowprops=dict(arrowstyle="-", color=CN, lw=2.5))
+
+    # invalid recombinant edge (copy1-E2 -> copy2-E1)
+    ax.annotate("", xy=(c2e1[0] - 0.42, c2e1[1]), xytext=(c1e2[0] + 0.42, c1e2[1]),
+                arrowprops=dict(arrowstyle="->", color="#C0392B", lw=2.5, ls="--",
+                                connectionstyle="arc3,rad=0.15"))
+
+    # nodes
+    for (x, y), label, col in [(c1e1, "copy 1\nE1", CT), (c1e2, "copy 1\nE2", CT),
+                                (c2e1, "copy 2\nE1", CO), (c2e2, "copy 2\nE2", CO)]:
+        ax.add_patch(FancyBboxPatch((x - 0.55, y - 0.40), 1.1, 0.8,
+                     boxstyle="round,pad=0.04,rounding_size=0.10", fc=col, ec=CN, lw=2.0, zorder=3))
+        ax.text(x, y, label, ha="center", va="center", fontsize=9, color="white",
+                fontweight="bold", linespacing=1.05, zorder=4)
+
+    # forbidden symbol on the recombinant edge
+    ax.text(5.75, 2.55, "✗", ha="center", va="center", fontsize=28, color="#C0392B",
+            fontweight="bold", zorder=5)
+    ax.text(5.75, 2.05, "recombinant\njunction", ha="center", va="center", fontsize=9,
+            color="#C0392B", fontweight="bold", linespacing=1.1)
+
+    # valid-path labels
+    ax.text(2.5, 1.35, "valid path\n(copy 1)", ha="center", va="center", fontsize=9,
+            color=CT, fontweight="bold", linespacing=1.1)
+    ax.text(9.0, 1.35, "valid path\n(copy 2)", ha="center", va="center", fontsize=9,
+            color=CO, fontweight="bold", linespacing=1.1)
+
+    # --- bottom: rule box ---
+    ax.add_patch(FancyBboxPatch((1.2, -0.35), 10.1, 1.05,
+                 boxstyle="round,pad=0.08,rounding_size=0.10", fc="#fdf2f2", ec="#C0392B",
+                 lw=2.0, zorder=1))
+    ax.text(6.25, 0.45, "A locus is defined by collinear, supported intron chains", ha="center",
+            fontsize=13, color=CN, fontweight="bold")
+    ax.text(6.25, 0.00,
+            "A read that splices copy-1-E2 into copy-2-E1 creates a non-collinear, unsupported junction. "
+            "It is not added to either locus's variation graph, so the two copies remain separate.",
+            ha="center", fontsize=10, color=CG, linespacing=1.3)
+
+    ax.set_title("Cross-locus recombinant reads do not merge distinct copies",
+                 fontsize=14, fontweight="bold", color=CN, pad=12)
+
+    fig.savefig(FIG_RECOMB, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- pptx assembly
 def add_figure_slide(prs, title, img, caption):
     from PIL import Image
@@ -507,6 +600,7 @@ def build():
     make_definition()
     make_birdseye()
     make_isoforms()
+    make_recombination()
 
     prs = Presentation()
     prs.slide_width = Inches(13.33)
@@ -530,6 +624,12 @@ def build():
                      "Two RABL2 family copies (LOC101142457 on NC_073247.2 and RABL2B on NC_086018.1) each produce two isoforms "
                      "as paths through their own variation graphs. A homology edge links the two loci; isoforms are collapsed to one "
                      "locus before families are called.")
+
+    add_figure_slide(prs,
+                     "Why recombinant reads don't merge copies",
+                     FIG_RECOMB,
+                     "Copy 1 (chromosome A) and copy 2 (chromosome B) each have E1 and E2. A spurious read that splices copy-1-E2 "
+                     "into copy-2-E1 forms a non-collinear, unsupported junction; it is rejected, so the two loci stay separate.")
 
     prs.save(OUT)
     print(f"[+] wrote {OUT} ({len(prs.slides._sldIdLst)} slides)")
