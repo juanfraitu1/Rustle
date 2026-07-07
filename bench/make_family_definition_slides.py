@@ -35,6 +35,7 @@ FIG_RECOMB = os.path.join(HERE, "famdef_4_recombination.png")
 FIG_IGV = os.path.join(HERE, "famdef_5_igv.png")
 FIG_VALID = os.path.join(HERE, "famdef_6_validation.png")
 FIG_PHASE = os.path.join(HERE, "famdef_7_phasing.png")
+FIG_SILENT = os.path.join(HERE, "famdef_8_silent_copy.png")
 OUT = os.path.join(HERE, "family_definition_slides.pptx")
 
 NAVY = RGBColor(0x1F, 0x2D, 0x5A)
@@ -902,6 +903,124 @@ def make_phasing():
     plt.close(fig)
 
 
+# ----------------------------------------------------------------- figure 8: silent copies still matter for copy-number quantification
+def make_silent_copy():
+    fig, ax = plt.subplots(figsize=(13.0, 6.8))
+    ax.set_xlim(0, 13.0)
+    ax.set_ylim(-1.0, 6.8)
+    ax.axis("off")
+
+    # Three-copy toy family: two expressed, one silent but similar.
+    copies = [
+        {"name": "copy 1\n(expressed)", "y": 5.0, "color": CT,
+         "reads": True, "n_reads": 6, "label_color": CT},
+        {"name": "copy 2\n(expressed)", "y": 3.5, "color": CT,
+         "reads": True, "n_reads": 6, "label_color": CT},
+        {"name": "copy 3\n(silent / not expressed)", "y": 2.0, "color": "#95a5a6",
+         "reads": False, "n_reads": 0, "label_color": "#7f8c8d"},
+    ]
+
+    # Copy tracks
+    strip_x = 2.2
+    strip_w = 6.0
+    for cp in copies:
+        y = cp["y"]
+        # label
+        ax.text(0.35, y, cp["name"], ha="left", va="center", fontsize=10,
+                color=cp["label_color"], fontweight="bold", linespacing=1.1)
+        # chromosome strip
+        ax.add_patch(Rectangle((strip_x, y - 0.12), strip_w, 0.24,
+                     fc="#dfe7f2", ec=CN, lw=1.0, zorder=1))
+        # gene body
+        ax.add_patch(FancyBboxPatch((strip_x + 0.2, y - 0.22), strip_w - 0.4, 0.44,
+                     boxstyle="round,pad=0.02,rounding_size=0.08",
+                     fc=cp["color"], ec=CN, lw=1.5, alpha=0.85, zorder=2))
+        # read pile
+        if cp["reads"]:
+            for i in range(cp["n_reads"]):
+                rx = strip_x + 0.4 + i * 0.88
+                ax.add_patch(Rectangle((rx, y + 0.32), 0.72, 0.16,
+                             fc="#5dade2", ec=CN, lw=0.5, zorder=3))
+            ax.text(strip_x + 0.4 + cp["n_reads"] * 0.88 + 0.15, y + 0.40, "unique reads",
+                    ha="left", va="center", fontsize=8, color=CG)
+        else:
+            # silent copy gets spillover reads instead
+            for i in range(4):
+                rx = strip_x + 0.4 + i * 0.88
+                ax.add_patch(Rectangle((rx, y + 0.32), 0.72, 0.16,
+                             fc="#e74c3c", ec="#c0392b", lw=0.5, zorder=3, alpha=0.8))
+            ax.text(strip_x + 0.4 + 4 * 0.88 + 0.15, y + 0.40, "spillover reads",
+                    ha="left", va="center", fontsize=8, color="#c0392b")
+
+    # Spillover arrows from expressed copies to silent copy
+    ax.annotate("", xy=(strip_x + 3.3, 2.48), xytext=(strip_x + 2.4, 4.65),
+                arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.8,
+                                connectionstyle="arc3,rad=0.25", ls="--"),
+                zorder=4)
+    ax.annotate("", xy=(strip_x + 4.0, 2.48), xytext=(strip_x + 4.0, 3.15),
+                arrowprops=dict(arrowstyle="->", color="#c0392b", lw=1.8,
+                                connectionstyle="arc3,rad=-0.25", ls="--"),
+                zorder=4)
+    # annotation in clear empty space on the left
+    ax.text(1.0, 4.0, "similar copies\nshare reads by\nmultimapping",
+            ha="left", va="center", fontsize=9, color="#c0392b",
+            fontweight="bold", linespacing=1.1)
+
+    # Metric cards on the right
+    card_x = 9.2
+    cards = [
+        ("n_loci = 2", "RNA definition sees\nonly expressed copies", CT),
+        ("χ(H) = 2", "distinct haplotypes\namong observed copies", CP),
+        ("depth_cn ≈ 3", "read depth estimates\nall copies, incl. silent", CO),
+    ]
+    for i, (val, desc, col) in enumerate(cards):
+        y = 5.2 - i * 1.45
+        ax.add_patch(FancyBboxPatch((card_x, y - 0.50), 3.2, 1.0,
+                     boxstyle="round,pad=0.05,rounding_size=0.10",
+                     fc="#f6f8fb", ec=col, lw=2.0, zorder=2))
+        ax.text(card_x + 1.6, y + 0.20, val, ha="center", va="center",
+                fontsize=12, color=col, fontweight="bold")
+        ax.text(card_x + 1.6, y - 0.22, desc, ha="center", va="center",
+                fontsize=8, color=CG, linespacing=1.15)
+
+    # Depth intuition bar
+    bar_y = 0.45
+    ax.text(2.8, bar_y + 0.55, "shared exon read depth",
+            ha="center", va="center", fontsize=10, color=CN, fontweight="bold")
+    # expected for 2 copies
+    ax.add_patch(Rectangle((1.5, bar_y - 0.18), 3.0, 0.28, fc="#d5dbdb", ec=CN, lw=1.0))
+    ax.text(3.0, bar_y - 0.32, "expected for 2 copies", ha="center", va="center",
+            fontsize=8, color=CG)
+    # observed (higher)
+    ax.add_patch(Rectangle((1.5, bar_y - 0.18), 5.0, 0.28, fc="#f5b041", ec=CO, lw=1.5, alpha=0.7))
+    ax.text(5.6, bar_y - 0.04, "observed depth", ha="center", va="center",
+            fontsize=8, color="white", fontweight="bold")
+    # marker for the extra portion
+    ax.plot([4.5, 4.5], [bar_y + 0.12, bar_y + 0.35], color=CO, lw=1.5)
+    ax.text(5.8, bar_y + 0.45, "extra depth from\nsilent copy spillover",
+            ha="left", va="center", fontsize=8, color=CO, linespacing=1.1)
+
+    # Bottom explanation box
+    ax.add_patch(FancyBboxPatch((0.9, -0.95), 11.2, 0.75,
+                 boxstyle="round,pad=0.08,rounding_size=0.10",
+                 fc="#fff8f3", ec=CO, lw=2.0, zorder=1))
+    ax.text(6.5, -0.55,
+            "A silent paralog receives multimapping reads from its expressed relatives. "
+            "Those spillover reads raise the family's shared exon depth, so depth_cn can estimate "
+            "a larger copy number than the RNA definition alone.",
+            ha="center", va="center", fontsize=10, color=CG, linespacing=1.3)
+    ax.text(6.5, -0.82,
+            "RNA keeps high precision; silent copies are a completeness (recall) axis that depth + DNA "
+            "help close — DNA alone sees them but is far less specific.",
+            ha="center", va="center", fontsize=9, color=CG, linespacing=1.3)
+
+    ax.set_title("Silent copies still matter: read depth reveals hidden multiplicity",
+                 fontsize=14, fontweight="bold", color=CN, pad=12)
+
+    fig.savefig(FIG_SILENT, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------- pptx assembly
 def add_figure_slide(prs, title, img, caption):
     from PIL import Image
@@ -936,6 +1055,7 @@ def build():
     make_igv()
     make_validation()
     make_phasing()
+    make_silent_copy()
 
     prs = Presentation()
     prs.slide_width = Inches(13.33)
@@ -984,6 +1104,13 @@ def build():
                      "Each copy carries private Singly Unique Nucleotides (SUNs). A long read spanning "
                      "a SUN observes a copy-specific allele and is assigned deterministically to that copy, "
                      "even when the read maps equally well to several copies overall.")
+
+    add_figure_slide(prs,
+                     "Silent copies still matter for copy-number quantification",
+                     FIG_SILENT,
+                     "A silent paralog is invisible to the RNA family definition, but it still receives "
+                     "multimapping spillover reads from expressed relatives. That extra depth raises the "
+                     "depth_cn estimate above χ(H) and n_loci, helping recover the true genomic copy number.")
 
     try:
         prs.save(OUT)
