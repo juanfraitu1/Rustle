@@ -733,42 +733,54 @@ def make_validation():
                 n=int(r["n_copies_catalog"]),
             ))
 
-    # keep families whose recall is close to 1, then sort by recall
-    rows = [r for r in rows if r["recall"] >= 0.85]
-    rows.sort(key=lambda x: (-x["recall"], x["family"]))
-    families = [r["family"] for r in rows]
-    recall = [r["recall"] for r in rows]
-    prec_strict = [r["precision_strict"] for r in rows]
+    # sort alphabetically so the plot is not ordered to look cherry-picked
+    rows.sort(key=lambda x: x["family"])
 
-    fig, ax = plt.subplots(figsize=(9.5, 5.6))
-    x = range(len(families))
-    width = 0.30
-
-    ax.bar([i - width / 2 for i in x], recall, width, label="recall", color=CO, ec=CN, lw=1.0)
-    ax.bar([i + width / 2 for i in x], prec_strict, width, label="strict precision", color=CT, ec=CN, lw=1.0)
-
-    ax.axhline(1.0, color=CN, lw=1.5, ls="--", alpha=0.7)
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(families, rotation=30, ha="right", fontsize=11, color=CN)
+    fig, ax = plt.subplots(figsize=(9.2, 6.0))
+    ax.set_xlim(0.45, 1.05)
     ax.set_ylim(0.60, 1.05)
-    ax.set_ylabel("precision / recall", fontsize=11, color=CN)
-    ax.set_title("Known families with recall near 1.0",
+
+    # quadrant thresholds
+    thr = 0.85
+    ax.axvline(thr, color=CG, lw=1.0, ls="--", alpha=0.5)
+    ax.axhline(thr, color=CG, lw=1.0, ls="--", alpha=0.5)
+
+    for r in rows:
+        fam, rec, prec, n = r["family"], r["recall"], r["precision_strict"], r["n"]
+        clean = rec >= thr and prec >= thr
+        color = CT if clean else CO
+        size = 120 + n * 35
+        ax.scatter(rec, prec, s=size, c=color, ec=CN, lw=1.5, zorder=3, alpha=0.9)
+        # label all points; nudge a few to avoid overlap
+        dx, dy = 0.015, 0.012
+        if fam == "GSTM":
+            dx, dy = -0.10, -0.025
+        elif fam == "ZNF92":
+            dx, dy = 0.015, -0.025
+        elif fam == "APOBEC3":
+            dx, dy = -0.055, 0.015
+        ax.annotate(fam, (rec + dx, prec + dy), fontsize=9, color=CN,
+                    fontweight="bold" if clean else "normal")
+
+    # reference diagonal / perfect corner
+    ax.plot([0.45, 1.0], [0.45, 1.0], color="#cccccc", lw=1.0, ls="-", zorder=1)
+
+    ax.set_xlabel("recall  (expressed copies grouped / all expressed copies)", fontsize=11, color=CN)
+    ax.set_ylabel("strict precision  (whole-protein reciprocal homology)", fontsize=11, color=CN)
+    ax.set_title("Strict precision vs recall for all 8 canonical known families",
                  fontsize=14, fontweight="bold", color=CN, pad=12)
-    ax.legend(loc="lower right", frameon=True, fontsize=9)
+
+    # legend
+    ax.scatter([], [], s=150, c=CT, ec=CN, label=f"both ≥ {thr}")
+    ax.scatter([], [], s=150, c=CO, ec=CN, label="one metric < threshold")
+    ax.legend(loc="lower left", frameon=True, fontsize=9)
+
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # value labels on bars
-    for i, (r, p) in enumerate(zip(recall, prec_strict)):
-        ax.text(i - width / 2, r + 0.01, f"{r:.2f}", ha="center", va="bottom",
-                fontsize=8, color=CO, fontweight="bold")
-        if p >= 0.62:
-            ax.text(i + width / 2, p + 0.01, f"{p:.2f}", ha="center", va="bottom",
-                    fontsize=8, color=CT, fontweight="bold")
-
     fig.text(0.5, 0.01,
-             "Strict precision = fraction of catalog members with whole-protein reciprocal homology. "
-             "Recall = expressed copies grouped into one family / all expressed copies of the family.",
+             "Each point is one literature-recognized family; point size = number of catalog copies. "
+             "Families in the top-right quadrant are clean on both strict precision and recall.",
              ha="center", fontsize=9, color=CG, style="italic")
 
     fig.savefig(FIG_VALID, dpi=150, bbox_inches="tight")
@@ -845,10 +857,10 @@ def build():
                      "Exons are teal blocks, reads are horizontal bars, and grey lines are splice junctions.")
 
     add_figure_slide(prs,
-                     "Known families with recall near 1.0",
+                     "Strict precision vs recall on canonical known families",
                      FIG_VALID,
-                     "Six canonical multi-copy families where the catalog groups almost all expressed copies into one family. "
-                     "Both strict precision and recall are near 1.")
+                     "All eight literature-recognized multi-copy families from the gorilla catalog. "
+                     "Point size reflects copy number; teal points pass both thresholds.")
 
     try:
         prs.save(OUT)
