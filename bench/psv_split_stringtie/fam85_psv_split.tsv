@@ -1,0 +1,4 @@
+transcript_id	chrom	start	end	n_reads	n_psv_assigned	n_copies_supported	copies
+STRG.4711.1	NC_073228.2	123138369	123267003	88	0	0	
+STRG.4711.2	NC_073228.2	123227431	123267003	71	0	0	
+STRG.4711.3	NC_073228.2	123227995	123267003	71	0	0	

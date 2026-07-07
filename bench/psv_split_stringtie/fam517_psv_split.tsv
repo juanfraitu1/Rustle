@@ -1,0 +1,4 @@
+transcript_id	chrom	start	end	n_reads	n_psv_assigned	n_copies_supported	copies
+STRG.2458.1	NC_086017.1	130144681	130270244	68	0	0	
+STRG.2458.2	NC_086017.1	130144681	130154588	32	0	0	
+STRG.2458.3	NC_086017.1	130196126	130270244	53	0	0	
