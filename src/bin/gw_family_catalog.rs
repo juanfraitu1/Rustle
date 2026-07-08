@@ -125,10 +125,17 @@ fn main() -> Result<()> {
         raw
     };
 
+    let supplement_active = args.cross_chrom && cfg.same_chrom_supplement_win.is_some();
+
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     let mut ch = std::fs::File::create(format!("{}.copies.tsv", args.out))?;
-    let mut supp_fh = std::fs::File::create(format!("{}.same_chrom_supplement.tsv", args.out))?;
-    writeln!(supp_fh, "family_id\tn_copies\tchroms")?;
+    let mut supp_fh = if supplement_active {
+        let mut f = std::fs::File::create(format!("{}.same_chrom_supplement.tsv", args.out))?;
+        writeln!(f, "family_id\tn_copies\tchroms")?;
+        Some(f)
+    } else {
+        None
+    };
     let mut supplement_rows: Vec<(String, usize, String)> = Vec::new();
     // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation. This is
     // the substrate for the ANNOTATION-FREE family validation: all-vs-all align a family's copies and a
@@ -204,16 +211,28 @@ fn main() -> Result<()> {
             }
         }
     }
-    for (fid, n_copies, chroms) in &supplement_rows {
-        writeln!(supp_fh, "{}\t{}\t{}", fid, n_copies, chroms)?;
+    if let Some(ref mut f) = supp_fh {
+        for (fid, n_copies, chroms) in &supplement_rows {
+            writeln!(f, "{}\t{}\t{}", fid, n_copies, chroms)?;
+        }
     }
-    eprintln!(
-        "[gw-catalog] wrote {} families ({} cross-chromosome, {} same-chrom supplement) -> {}.families.tsv + {}.copies.tsv",
-        fams.len(),
-        n_xchrom,
-        supplement_rows.len(),
-        args.out,
-        args.out
-    );
+    if supplement_active {
+        eprintln!(
+            "[gw-catalog] wrote {} families ({} cross-chromosome, {} same-chrom supplement) -> {}.families.tsv + {}.copies.tsv",
+            fams.len(),
+            n_xchrom,
+            supplement_rows.len(),
+            args.out,
+            args.out
+        );
+    } else {
+        eprintln!(
+            "[gw-catalog] wrote {} families ({} cross-chromosome) -> {}.families.tsv + {}.copies.tsv",
+            fams.len(),
+            n_xchrom,
+            args.out,
+            args.out
+        );
+    }
     Ok(())
 }
