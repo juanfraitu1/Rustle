@@ -53,6 +53,27 @@ fn homology_primary_emits_families_on_fixture() {
 }
 
 #[test]
+fn enumerate_copies_ignored_without_homology_primary() {
+    // famCN (genome-projection copy enumeration) is only meaningful over the homology-primary
+    // catalog: the conflict/default catalog's `fams` can carry same-locus duplicates (no distinct-
+    // locus reduction without `--refine`), so a "family consensus" projected back onto the genome
+    // would double-count. `--enumerate-copies` without `--homology-primary` must be a no-op: no
+    // `<out>.famcn.tsv` written.
+    let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
+    let out = "tests/fixtures/same_chrom_supplement/out_conflict_enum";
+    let famcn = format!("{}.famcn.tsv", out);
+    let _ = std::fs::remove_file(&famcn);
+    let status = Command::new(bin).args([
+        "--bam", "tests/fixtures/same_chrom_supplement/reads.bam",
+        "--fasta", "tests/fixtures/same_chrom_supplement/genome.fa",
+        "--out", out, "--cross-chrom", "--enumerate-copies",
+    ]).status().unwrap();
+    assert!(status.success());
+    assert!(std::fs::metadata(&famcn).is_err(),
+        "famcn.tsv must NOT be written when --homology-primary is absent (found {famcn})");
+}
+
+#[test]
 fn homology_primary_writes_famcn_when_enumerating() {
     let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
     let out = "tests/fixtures/same_chrom_supplement/out_famcn";

@@ -218,15 +218,21 @@ fn main() -> Result<()> {
     // true genomic copy number when copies collapse onto one locus (K=0). Project the family's
     // best-supported consensus (most-read-supported copy's exon-sum) back onto the genome and count
     // additional disjoint near-identical loci beyond the already-known copy loci.
-    let enumerate = args.enumerate_copies || args.min_identity == Some(0.98);
+    let enumerate = (args.enumerate_copies || args.min_identity == Some(0.98)) && args.homology_primary;
     if enumerate {
         let mut ff = std::fs::File::create(format!("{}.famcn.tsv", args.out))?;
         writeln!(ff, "family_id\tn_rna_copies\tfamCN\tprojection_loci")?;
         for (fi, copies) in fams.iter().enumerate() {
             let cons = copies.iter().max_by_key(|c| c.n_reads).map(|c| c.seq.clone()).unwrap_or_default();
             let known: Vec<(String, u64, u64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
-            let proj = rustle::vg_family::genome_projection::project_family_copies(
-                &cons, &args.fasta, &known, 0.98, 0.90, "minimap2", args.threads).unwrap_or_default();
+            let proj = match rustle::vg_family::genome_projection::project_family_copies(
+                &cons, &args.fasta, &known, 0.98, 0.90, &refine_params.minimap2, args.threads) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("[gw-catalog] famCN projection failed for GWFAM{fi} ({e}); famCN falls back to n_rna_copies");
+                    Vec::new()
+                }
+            };
             let famcn = copies.len() + proj.len();
             let loci = proj.iter().map(|p| format!("{}:{}-{}", p.chrom, p.start, p.end)).collect::<Vec<_>>().join(";");
             writeln!(ff, "GWFAM{fi}\t{}\t{}\t{}", copies.len(), famcn, loci)?;
