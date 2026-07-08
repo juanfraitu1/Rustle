@@ -832,6 +832,20 @@ pub fn detect_conflict_catalog_genome_wide(
     Ok(catalog)
 }
 
+/// Placeholder for same-chromosome supplement computation (Task 3).
+fn compute_same_chrom_supplement(
+    _bam_path: &str,
+    _reps: &[DenovoTranscript],
+    _cross_fams: &[Vec<DenovoTranscript>],
+    _win: usize,
+    _min_copies: usize,
+    _cfg: &DenovoConfig,
+    _threads: usize,
+    _genome: &GenomeIndex,
+) -> Result<Vec<Vec<DenovoTranscript>>> {
+    Ok(Vec::new())
+}
+
 /// CROSS-CHROMOSOME-aware genome-wide de-tie conflict family catalog. Unlike
 /// `detect_conflict_catalog_genome_wide` (same-chrom only, via `colocated_families`'s `(chrom,strand)`
 /// partition + `win`), this captures paralog families whose copies are on DIFFERENT chromosomes
@@ -845,13 +859,13 @@ pub fn detect_conflict_catalog_genome_wide(
 /// directly (no `(chrom,strand)` partition, no `win`), cleaned only of SAME-LOCUS artifacts by
 /// `prune_same_locus` (which now keeps distinct-loci opposite-strand copies = genuine inverted
 /// duplications). Returns each family's copies (possibly spanning chromosomes).
-pub fn detect_conflict_catalog_genome_wide_xchrom(
+pub fn detect_conflict_catalog_genome_wide_xchrom_with_supplement(
     bam_path: &str,
     fasta_path: &str,
     threads: usize,
     min_copies: usize,
     cfg: &DenovoConfig,
-) -> Result<Vec<Vec<DenovoTranscript>>> {
+) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<Vec<DenovoTranscript>>)> {
     use super::copy_assign_pipeline::read_ref_end;
     use super::read_conflict::Placement;
     // --- genome-wide reps (same as the same-chrom path) ---
@@ -969,7 +983,25 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
             adds.iter().filter(|a| !a.is_empty()).count()
         );
     }
-    Ok(out)
+    let supplement = if let Some(win) = cfg.same_chrom_supplement_win {
+        compute_same_chrom_supplement(bam_path, &reps, &out, win, min_copies, cfg, threads, &genome)?
+    } else {
+        Vec::new()
+    };
+    Ok((out, supplement))
+}
+
+pub fn detect_conflict_catalog_genome_wide_xchrom(
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    min_copies: usize,
+    cfg: &DenovoConfig,
+) -> Result<Vec<Vec<DenovoTranscript>>> {
+    let (cross, _supp) = detect_conflict_catalog_genome_wide_xchrom_with_supplement(
+        bam_path, fasta_path, threads, min_copies, cfg,
+    )?;
+    Ok(cross)
 }
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
