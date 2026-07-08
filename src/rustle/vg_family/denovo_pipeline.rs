@@ -996,6 +996,47 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     Ok(out)
 }
 
+/// GENOME-WIDE homology-primary (E_r) family catalog. reps → E_r edges → γ-quasi-clique blocks →
+/// ≥2 distinct loci → families. Chrom/strand-agnostic; a superset of the conflict catalog.
+pub fn detect_homology_catalog_genome_wide(
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    min_copies: usize,
+    cfg: &DenovoConfig,
+    refine: &RefineParams,
+    gamma: f64,
+) -> Result<Vec<Vec<DenovoTranscript>>> {
+    // --- reps (identical to the conflict path's rep build) ---
+    let reads = primary_reads_from_bam(bam_path, threads)?;
+    let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
+    let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
+    let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    drop(reads);
+    let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
+    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    drop(transcripts);
+    eprintln!("[gw-catalog-homology] {} skeletons -> {} reps over {} contigs", skeletons.len(), reps.len(), contigs.len());
+
+    // --- E_r edges + γ-quasi-clique blocks ---
+    let edges2 = homology_edges_all_reps(&reps, refine)?;
+    let edges3: Vec<(usize, usize, f64)> = edges2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
+    let blocks = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges3, gamma);
+
+    let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
+    for block in blocks {
+        if block.len() < min_copies { continue; }
+        let copies: Vec<DenovoTranscript> = block.iter().map(|&i| reps[i].clone()).collect();
+        let loci = distinct_locus_reps(copies); // ≥2 spatially-distinct loci certificate
+        if loci.len() >= min_copies {
+            out.push(loci);
+        }
+    }
+    eprintln!("[gw-catalog-homology] {} E_r edges -> {} families (>= {} distinct loci)", edges2.len(), out.len(), min_copies);
+    Ok(out)
+}
+
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
 /// point (`bench/validate_exon_sum.py`): minimap2 asm20, identity >= 0.80 (asm20's native divergence
 /// envelope), coverage-of-shorter >= 0.50 (more than half the shorter spliced sequence aligns).
@@ -2341,6 +2382,18 @@ mod tests {
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
         assert!(edges.contains(&(0, 1)), "the two paralog reps must be E_r-linked, got {:?}", edges);
         assert!(!edges.contains(&(0, 2)) && !edges.contains(&(1, 2)), "the unrelated rep must not link");
+    }
+
+    #[test]
+    fn homology_catalog_groups_fixture_family() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+        let fams = detect_homology_catalog_genome_wide(
+            "tests/fixtures/same_chrom_supplement/reads.bam",
+            "tests/fixtures/same_chrom_supplement/genome.fa",
+            2, 2, &DenovoConfig::default(), &RefineParams::default(), 0.20,
+        ).unwrap();
+        // the fixture's two homologous loci (c1:A + c2:X) must land in one family of >= 2 distinct loci.
+        assert!(fams.iter().any(|f| f.len() >= 2), "expected a >=2-copy homology family, got {:?}", fams.iter().map(|f| f.len()).collect::<Vec<_>>());
     }
 
 }
