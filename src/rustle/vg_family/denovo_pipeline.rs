@@ -51,8 +51,6 @@ pub struct DenovoConfig {
     /// `detect.t_core` — reaching divergent copies the conflict graph (confusable-only) misses. Bounded +
     /// seeded by the conflict families (`family_detect::poa_core_completion_adds`).
     pub complete_poa_core: bool,
-    /// Same-chromosome supplement window. None = no supplement (byte-identical cross-chrom behavior).
-    pub same_chrom_supplement_win: Option<usize>,
 }
 
 impl Default for DenovoConfig {
@@ -65,7 +63,6 @@ impl Default for DenovoConfig {
             split: SplitParams::default(),
             conflict: ConflictParams::from_env(),
             complete_poa_core: false,
-            same_chrom_supplement_win: None,
         }
     }
 }
@@ -832,71 +829,42 @@ pub fn detect_conflict_catalog_genome_wide(
     Ok(catalog)
 }
 
-/// Compute same-chromosome families from reps that are NOT already in `cross_fams`.
-/// Reuses the per-chromosome read-conflict machinery and `colocated_families`.
-fn compute_same_chrom_supplement(
-    bam_path: &str,
+/// O1 family emission from a de-tie read-conflict graph: Louvain-decompose each raw connected component
+/// into DENSE communities (`decompose_families`), drop the sparse `Web` bridges (repeat-driven transitive
+/// over-merges), then collapse SAME-LOCUS artifacts (`prune_same_locus`), keeping communities with
+/// `>= min_copies` distinct copies.
+///
+/// This is chrom- AND strand-AGNOSTIC on purpose: a same-chromosome INVERTED duplication (opposite-strand,
+/// disjoint loci), a distant intra-chromosomal segdup, and a cross-chromosome paralog pair are ALL
+/// legitimate O1 families and all survive here. Contrast `colocated_families`, which additionally partitions
+/// by `(chrom, strand)` and caps the span by `win` — those two filters are correct for building the O2
+/// copy-ASSIGNMENT input (a single-strand tight tandem array) but WRONG for the O1 catalog, because they
+/// erase inverted duplications and distant same-chrom paralogs. Routing same-chrom recovery through
+/// `colocated_families` is exactly what dropped ~half of the same-chrom families; the O1 catalog uses this
+/// helper instead.
+fn families_from_conflict_graph(
     reps: &[DenovoTranscript],
-    cross_fams: &[Vec<DenovoTranscript>],
-    win: usize,
+    edges: &[(usize, usize, usize)],
     min_copies: usize,
     cfg: &DenovoConfig,
-    threads: usize,
-    genome: &GenomeIndex,
-) -> Result<Vec<Vec<DenovoTranscript>>> {
-    // 1. Build set of rep indices already assigned to a cross-chrom family.
-    let tid_to_idx: std::collections::HashMap<&str, usize> = reps
-        .iter()
-        .enumerate()
-        .map(|(i, r)| (r.tid.as_str(), i))
-        .collect();
-    let mut assigned: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    for fam in cross_fams {
-        for c in fam {
-            if let Some(&i) = tid_to_idx.get(c.tid.as_str()) {
-                assigned.insert(i);
-            }
+) -> Vec<Vec<DenovoTranscript>> {
+    let float_edges: Vec<(usize, usize, f64)> =
+        edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+    let split = crate::vg_family::family_split::decompose_families(&float_edges, &cfg.split);
+    let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
+    for sf in &split {
+        if sf.class != FamilyClass::Family {
+            continue; // drop sparse over-merge webs (repeat-driven transitive blobs)
+        }
+        let comp_reps: Vec<DenovoTranscript> = sf.members.iter().map(|&i| reps[i].clone()).collect();
+        // same-locus artifacts (incl. same-locus antisense overlap); distinct-loci copies (incl. inverted
+        // duplications and cross-chrom) are kept.
+        let clean = prune_same_locus(comp_reps, &cfg.detect);
+        if clean.len() >= min_copies {
+            out.push(clean);
         }
     }
-
-    // 2. Group unassigned reps by chromosome.
-    let mut by_chrom: std::collections::BTreeMap<&str, Vec<usize>> =
-        std::collections::BTreeMap::new();
-    for (i, rep) in reps.iter().enumerate() {
-        if !assigned.contains(&i) {
-            by_chrom.entry(rep.chrom.as_str()).or_default().push(i);
-        }
-    }
-
-    // 3. Per-chromosome conflict edges over unassigned reps.
-    let mut all_edges: Vec<(usize, usize, usize)> = Vec::new();
-    for (chrom, glob) in &by_chrom {
-        if glob.len() < 2 {
-            continue;
-        }
-        let clen = genome.chrom_len(chrom);
-        let (_primary, bam_reads) = match reads_in_region(bam_path, chrom, 0, clen, threads) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
-        let chrom_reps: Vec<DenovoTranscript> = glob.iter().map(|&g| reps[g].clone()).collect();
-        let placements = build_read_placements(&bam_reads, &chrom_reps);
-        let edges = conflict_edges(chrom_reps.len(), &placements, &cfg.conflict);
-        for (i, j, w) in edges {
-            all_edges.push((glob[i], glob[j], w));
-        }
-    }
-
-    if all_edges.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // 4. Connected components -> split -> colocated families.
-    let components = conflict_families(reps.len(), &all_edges);
-    let split = conflict_to_split_families(&components, &all_edges, &cfg.split);
-    let catalog = colocated_families(reps, &split, win as u64, min_copies, &cfg.detect);
-
-    Ok(catalog.into_iter().map(|c| c.copies).collect())
+    out
 }
 
 /// CROSS-CHROMOSOME-aware genome-wide de-tie conflict family catalog. Unlike
@@ -912,13 +880,13 @@ fn compute_same_chrom_supplement(
 /// directly (no `(chrom,strand)` partition, no `win`), cleaned only of SAME-LOCUS artifacts by
 /// `prune_same_locus` (which now keeps distinct-loci opposite-strand copies = genuine inverted
 /// duplications). Returns each family's copies (possibly spanning chromosomes).
-pub fn detect_conflict_catalog_genome_wide_xchrom_with_supplement(
+pub fn detect_conflict_catalog_genome_wide_xchrom(
     bam_path: &str,
     fasta_path: &str,
     threads: usize,
     min_copies: usize,
     cfg: &DenovoConfig,
-) -> Result<(Vec<Vec<DenovoTranscript>>, Vec<Vec<DenovoTranscript>>)> {
+) -> Result<Vec<Vec<DenovoTranscript>>> {
     use super::copy_assign_pipeline::read_ref_end;
     use super::read_conflict::Placement;
     // --- genome-wide reps (same as the same-chrom path) ---
@@ -983,41 +951,18 @@ pub fn detect_conflict_catalog_genome_wide_xchrom_with_supplement(
     // confused with the others), a transitive bridge-chain is sparse. We keep only `Family`-class
     // communities, then prune same-locus artifacts. This is the cross-chrom analogue of the same-chrom
     // path's over-merge guard.
-    let float_edges: Vec<(usize, usize, f64)> = edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
-    let split = crate::vg_family::family_split::decompose_families(&float_edges, &cfg.split);
-    let mut out: Vec<Vec<DenovoTranscript>> = Vec::new();
-    let (mut n_xchrom, mut n_web) = (0usize, 0usize);
-    for sf in &split {
-        if sf.class != FamilyClass::Family {
-            n_web += 1;
-            continue; // drop sparse over-merge webs (repeat-driven transitive blobs)
-        }
-        let comp_reps: Vec<DenovoTranscript> = sf.members.iter().map(|&i| reps[i].clone()).collect();
-        let clean = prune_same_locus(comp_reps, &cfg.detect); // same-locus artifacts (incl antisense); keep distinct loci
-        if clean.len() >= min_copies {
-            let chroms: BTreeSet<&str> = clean.iter().map(|c| c.chrom.as_str()).collect();
-            let is_xchrom = chroms.len() > 1;
-            // When the same-chromosome supplement is active, the cross-chrom path emits only
-            // multi-chromosome families. Same-chromosome families are left unassigned and recovered
-            // by `compute_same_chrom_supplement` below. In the default configuration (no supplement)
-            // the cross-chrom path emits every family to preserve byte-identical output.
-            if cfg.same_chrom_supplement_win.is_some() {
-                if is_xchrom {
-                    n_xchrom += 1;
-                    out.push(clean);
-                }
-            } else {
-                if is_xchrom {
-                    n_xchrom += 1;
-                }
-                out.push(clean);
-            }
-        }
-    }
+    // O1 family emission (chrom/strand-agnostic Louvain + same-locus prune). Same-chromosome families —
+    // including INVERTED duplications (opposite-strand, disjoint loci) and distant intra-chromosomal
+    // segdups — are emitted here alongside cross-chromosome families. (The former `colocated_families`
+    // supplement path was removed: its `(chrom,strand)` + `win` filters, correct only for the O2
+    // copy-assignment input, structurally erased those same-chrom families.)
+    let mut out = families_from_conflict_graph(&reps, &edges, min_copies, cfg);
+    let n_xchrom = out
+        .iter()
+        .filter(|fam| fam.iter().map(|c| c.chrom.as_str()).collect::<BTreeSet<_>>().len() > 1)
+        .count();
     eprintln!(
-        "[gw-catalog-xchrom] {} communities ({} web-dropped) -> {} families (>= {} copies), of which {} CROSS-CHROMOSOME",
-        split.len(),
-        n_web,
+        "[gw-catalog-xchrom] {} families (>= {} copies), of which {} CROSS-CHROMOSOME",
         out.len(),
         min_copies,
         n_xchrom
@@ -1048,25 +993,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom_with_supplement(
             adds.iter().filter(|a| !a.is_empty()).count()
         );
     }
-    let supplement = if let Some(win) = cfg.same_chrom_supplement_win {
-        compute_same_chrom_supplement(bam_path, &reps, &out, win, min_copies, cfg, threads, &genome)?
-    } else {
-        Vec::new()
-    };
-    Ok((out, supplement))
-}
-
-pub fn detect_conflict_catalog_genome_wide_xchrom(
-    bam_path: &str,
-    fasta_path: &str,
-    threads: usize,
-    min_copies: usize,
-    cfg: &DenovoConfig,
-) -> Result<Vec<Vec<DenovoTranscript>>> {
-    let (cross, _supp) = detect_conflict_catalog_genome_wide_xchrom_with_supplement(
-        bam_path, fasta_path, threads, min_copies, cfg,
-    )?;
-    Ok(cross)
+    Ok(out)
 }
 
 /// Parameters for the exon-sum (FLNC) homology refinement. The defaults match the validated operating
@@ -2233,6 +2160,31 @@ mod tests {
     }
 
     #[test]
+    fn families_from_conflict_graph_keeps_same_chrom_inverted_duplication() {
+        // The O1-catalog regression guard for same-chromosome families. An INVERTED duplication —
+        // two homologous copies on the SAME chromosome at DISJOINT loci but OPPOSITE strands — de-ties
+        // reads (one conflict edge) and is a genuine multi-copy family. `families_from_conflict_graph`
+        // (the O1 emission) must KEEP it. This is exactly the case `colocated_families` drops via its
+        // (chrom,strand) partition (see `colocated_families_splits_by_strand`); routing the O1 same-chrom
+        // catalog through `colocated_families` is what lost inverted-dup + distant same-chrom paralogs.
+        let mut plus = rep_s(1_000, 3_000, vec![(1_500, 1_600)], 8);
+        plus.chrom = "c1".into();
+        plus.strand = '+';
+        let mut minus = rep_s(5_000, 7_000, vec![(5_500, 5_600)], 6); // disjoint span, opposite strand, same chrom
+        minus.chrom = "c1".into();
+        minus.strand = '-';
+        let reps = vec![plus, minus];
+        let edges = vec![(0usize, 1usize, 5usize)]; // reads de-tie the two copies
+        let fams = families_from_conflict_graph(&reps, &edges, 2, &DenovoConfig::default());
+        assert_eq!(fams.len(), 1, "the inverted-duplication pair forms one O1 family");
+        assert_eq!(fams[0].len(), 2, "both copies retained (no strand split, no win cap)");
+        let chroms: std::collections::BTreeSet<&str> = fams[0].iter().map(|c| c.chrom.as_str()).collect();
+        assert_eq!(chroms.len(), 1, "it is a SAME-chromosome family");
+        let strands: std::collections::BTreeSet<char> = fams[0].iter().map(|c| c.strand).collect();
+        assert_eq!(strands.len(), 2, "the two copies are on opposite strands (inverted duplication)");
+    }
+
+    #[test]
     fn build_read_placements_multimapper_forms_conflict_family() {
         let reps = vec![rep("c1", 0, 200), rep("c1", 1000, 1200)];
         let bam = vec![
@@ -2347,23 +2299,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn compute_same_chrom_supplement_links_unassigned_same_chrom_reps() {
-        // Four reps on c1. Two are already in a cross-chrom family (one on c1, one on c2).
-        // The remaining two c1 reps should form a same-chrom supplement family.
-        let r0 = rep("c1", 1000, 2000);      // assigned to cross-chrom
-        let r1 = rep("c2", 1000, 2000);      // assigned to cross-chrom
-        let r2 = rep("c1", 5000, 6000);      // unassigned
-        let r3 = rep("c1", 7000, 8000);      // unassigned
-        let _reps = vec![r0.clone(), r1.clone(), r2.clone(), r3.clone()];
-        let cross = vec![vec![r0, r1]];
-
-        // Simulate conflict edges between r2 and r3 by building reads that de-tie.
-        // Because the helper loads from a BAM, we test the internal logic through a
-        // fixture-oriented wrapper in the next task. Here we just verify the assigned-set logic.
-        let assigned_chroms: HashSet<&str> =
-            cross.iter().flatten().map(|c| c.chrom.as_str()).collect();
-        assert!(assigned_chroms.contains("c1"));
-        assert!(!assigned_chroms.contains("c2_dummy")); // placeholder; real test in Task 5
-    }
 }

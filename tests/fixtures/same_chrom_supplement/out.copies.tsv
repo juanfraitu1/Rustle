@@ -1,0 +1,5 @@
+family_id	copy_idx	tid	chrom	start	end	n_exon	strand	n_reads
+GWFAM0	0	DN_c1_0_2	c1	0	260	2	+	6
+GWFAM0	1	DN_c2_0_2	c2	0	260	2	+	3
+GWFAM1	0	DN_c1_250_2	c1	250	460	2	+	6
+GWFAM1	1	DN_c1_380_2	c1	380	550	2	+	3

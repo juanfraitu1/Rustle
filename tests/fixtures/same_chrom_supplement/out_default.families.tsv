@@ -1,0 +1,3 @@
+family_id	n_copies	n_chroms	chroms	cross_chrom	avg_reads
+GWFAM0	2	2	c1,c2	true	4.5
+GWFAM1	2	1	c1	false	4.5

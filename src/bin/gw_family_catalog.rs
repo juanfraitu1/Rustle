@@ -11,7 +11,7 @@ use clap::Parser;
 use std::io::Write;
 
 use rustle::vg_family::denovo_pipeline::{
-    detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom_with_supplement,
+    detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
     refine_families_exon_sum, DenovoConfig, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
@@ -70,35 +70,24 @@ struct Args {
     /// seeded by the conflict families. Default off.
     #[arg(long, default_value_t = false)]
     complete_core: bool,
-    /// SAME-CHROMOSOME SUPPLEMENT (cross-chrom mode only): after cross-chromosome families are built,
-    /// also emit families from UNASSIGNED reps that are linked by read-conflict on the SAME chromosome
-    /// and fit within this span (bp). This recovers same-chrom paralogs (e.g. LOC109029264 / LOC115930232)
-    /// without discarding cross-chrom families. Default off.
-    #[arg(long, value_name = "BP")]
-    same_chrom_supplement_win: Option<usize>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let mut cfg = DenovoConfig::default();
     cfg.complete_poa_core = args.complete_core;
-    cfg.same_chrom_supplement_win = args.same_chrom_supplement_win;
-    // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path.
-    let (raw, supp_tids): (Vec<Vec<DenovoTranscript>>, std::collections::HashSet<String>) = if args.cross_chrom {
-        let (cross, supp) = detect_conflict_catalog_genome_wide_xchrom_with_supplement(
+    // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path. The
+    // cross-chrom path emits same-chromosome families (incl. inverted duplications and distant paralogs)
+    // and cross-chromosome families together; the default path is the tight same-strand tandem-array view.
+    let raw: Vec<Vec<DenovoTranscript>> = if args.cross_chrom {
+        detect_conflict_catalog_genome_wide_xchrom(
             &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
-        )?;
-        let supp_tids: std::collections::HashSet<String> =
-            supp.iter().flatten().map(|c| c.tid.clone()).collect();
-        let mut raw = cross;
-        raw.extend(supp);
-        (raw, supp_tids)
+        )?
     } else {
         let catalog = detect_conflict_catalog_genome_wide(
             &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
         )?;
-        let raw: Vec<Vec<DenovoTranscript>> = catalog.into_iter().map(|c| c.copies).collect();
-        (raw, std::collections::HashSet::new())
+        catalog.into_iter().map(|c| c.copies).collect()
     };
     // Optional exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion).
     let fams: Vec<Vec<DenovoTranscript>> = if args.refine {
@@ -125,18 +114,8 @@ fn main() -> Result<()> {
         raw
     };
 
-    let supplement_active = args.cross_chrom && cfg.same_chrom_supplement_win.is_some();
-
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     let mut ch = std::fs::File::create(format!("{}.copies.tsv", args.out))?;
-    let mut supp_fh = if supplement_active {
-        let mut f = std::fs::File::create(format!("{}.same_chrom_supplement.tsv", args.out))?;
-        writeln!(f, "family_id\tn_copies\tchroms")?;
-        Some(f)
-    } else {
-        None
-    };
-    let mut supplement_rows: Vec<(String, usize, String)> = Vec::new();
     // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation. This is
     // the substrate for the ANNOTATION-FREE family validation: all-vs-all align a family's copies and a
     // copy is confirmed iff its spliced sequence aligns full-length to a sibling (independent of both the
@@ -160,11 +139,6 @@ fn main() -> Result<()> {
         let cross = chroms.len() > 1;
         if cross {
             n_xchrom += 1;
-        }
-        let is_supplement = args.cross_chrom && cfg.same_chrom_supplement_win.is_some()
-            && copies.iter().any(|c| supp_tids.contains(&c.tid));
-        if is_supplement {
-            supplement_rows.push((fid.clone(), copies.len(), chroms.iter().cloned().collect::<Vec<_>>().join(",")));
         }
         let avg_reads = if copies.is_empty() {
             0.0
@@ -211,28 +185,12 @@ fn main() -> Result<()> {
             }
         }
     }
-    if let Some(ref mut f) = supp_fh {
-        for (fid, n_copies, chroms) in &supplement_rows {
-            writeln!(f, "{}\t{}\t{}", fid, n_copies, chroms)?;
-        }
-    }
-    if supplement_active {
-        eprintln!(
-            "[gw-catalog] wrote {} families ({} cross-chromosome, {} same-chrom supplement) -> {}.families.tsv + {}.copies.tsv",
-            fams.len(),
-            n_xchrom,
-            supplement_rows.len(),
-            args.out,
-            args.out
-        );
-    } else {
-        eprintln!(
-            "[gw-catalog] wrote {} families ({} cross-chromosome) -> {}.families.tsv + {}.copies.tsv",
-            fams.len(),
-            n_xchrom,
-            args.out,
-            args.out
-        );
-    }
+    eprintln!(
+        "[gw-catalog] wrote {} families ({} cross-chromosome) -> {}.families.tsv + {}.copies.tsv",
+        fams.len(),
+        n_xchrom,
+        args.out,
+        args.out
+    );
     Ok(())
 }
