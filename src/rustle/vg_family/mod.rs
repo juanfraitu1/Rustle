@@ -46,6 +46,7 @@ pub mod denovo_assemble; // Integration: Pass-1 read-coherence skeletons + gener
 pub mod denovo_pipeline; // Integration: de-novo family DETECTION driver (pass1->gate->collapse->detect->split).
 pub mod copy_assign_pipeline; // Integration: per-read COPY ASSIGNMENT driver (PSV + junction, discover+assign).
 pub mod rescue_pipeline; // Integration: family-aware RESCUE thin-locus scan (borrow-strength copy recovery).
+pub mod genome_projection; // Liftoff-style famCN copy enumeration (spec §7): project a family consensus onto the genome via in-engine minimap2 to enumerate near-identical genomic copies, recovering K=0 collapses.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
