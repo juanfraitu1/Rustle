@@ -85,6 +85,12 @@
 !/src/rustle/vg_family/testdata/*.bam
 !/src/rustle/vg_family/testdata/*.bam.bai
 
+# 7c. Integration-test fixture for gw_family_catalog same-chromosome supplement.
+!/tests/fixtures/same_chrom_supplement/*.bam
+!/tests/fixtures/same_chrom_supplement/*.bam.bai
+!/tests/fixtures/same_chrom_supplement/*.fa
+!/tests/fixtures/same_chrom_supplement/*.fa.fai
+
 *.log
 
 # 8. Large external dataset dumps (over GitHub's 100 MB push limit, or
