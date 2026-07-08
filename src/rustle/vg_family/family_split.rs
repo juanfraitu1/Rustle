@@ -400,6 +400,25 @@ pub fn decompose_families(edges: &[(usize, usize, f64)], p: &SplitParams) -> Vec
     out
 }
 
+/// Connected components of the graph on nodes `0..n` over `edges`, INCLUDING size-1 (degree-0) singletons.
+/// Unlike `conflict_families` (which drops <2-node components), this guarantees every node in `0..n`
+/// appears in exactly one returned component, so callers can partition ALL of `0..n`. Components and their
+/// members are returned in ascending id order (deterministic).
+fn all_components(n: usize, edges: &[(usize, usize, f64)]) -> Vec<Vec<usize>> {
+    let mut parent: Vec<usize> = (0..n).collect();
+    for &(a, b, _) in edges {
+        if a < n && b < n {
+            uf_union(&mut parent, a, b);
+        }
+    }
+    let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for node in 0..n {
+        let r = uf_find(&mut parent, node);
+        groups.entry(r).or_default().push(node);
+    }
+    groups.into_values().collect()
+}
+
 /// Internal edge density of a node block over the induced subgraph: 2|E|/(|C|(|C|-1)); <=1 node = 1.0.
 fn induced_density(members: &[usize], edges: &[(usize, usize, f64)]) -> f64 {
     let set: std::collections::HashSet<usize> = members.iter().copied().collect();
@@ -438,11 +457,9 @@ fn split_once(members: &[usize], edges: &[(usize, usize, f64)]) -> Vec<Vec<usize
                 .collect();
         }
     }
-    // connected-component fallback (also catches a disconnected block).
-    let comps = crate::vg_family::read_conflict::conflict_families(
-        n,
-        &local.iter().map(|&(a, b, _)| (a, b, 1usize)).collect::<Vec<_>>(),
-    );
+    // connected-component fallback (also catches a disconnected block). Use `all_components` (NOT
+    // conflict_families) so an isolated member is kept as its own component, never dropped.
+    let comps = all_components(n, &local);
     if comps.len() >= 2 {
         return comps
             .into_iter()
@@ -458,11 +475,9 @@ fn split_once(members: &[usize], edges: &[(usize, usize, f64)]) -> Vec<Vec<usize
 /// else split (guaranteed-progress) and recurse. Blocks partition 0..n. Deterministic (Louvain is
 /// deterministic here).
 pub fn gamma_quasi_clique_partition(n: usize, edges: &[(usize, usize, f64)], gamma: f64) -> Vec<Vec<usize>> {
-    // start from raw connected components, then refine each.
-    let comps = crate::vg_family::read_conflict::conflict_families(
-        n,
-        &edges.iter().map(|&(a, b, _)| (a, b, 1usize)).collect::<Vec<_>>(),
-    );
+    // start from raw connected components (INCLUDING singletons, so the output partitions ALL of 0..n),
+    // then refine each.
+    let comps = all_components(n, edges);
     let mut out = Vec::new();
     let mut stack: Vec<Vec<usize>> = comps;
     while let Some(block) = stack.pop() {
@@ -472,7 +487,8 @@ pub fn gamma_quasi_clique_partition(n: usize, edges: &[(usize, usize, f64)], gam
         }
         let parts = split_once(&block, edges);
         if parts.len() == 1 && parts[0].len() == block.len() {
-            out.push(block); // no-progress guard (shouldn't happen)
+            // provably unreachable: split_once always returns >=2 strictly-smaller parts for len>=3.
+            out.push(block);
         } else {
             stack.extend(parts);
         }
@@ -729,6 +745,16 @@ mod tests {
         let chain: Vec<(usize, usize, f64)> = (0..11).map(|i| (i, i + 1, 1.0)).collect();
         let blocks = gamma_quasi_clique_partition(12, &chain, 0.20);
         assert!(blocks.len() >= 2, "a sparse repeat-bridge chain is split, got {:?}", blocks);
+    }
+
+    #[test]
+    fn gamma_quasi_clique_partition_preserves_isolated_nodes() {
+        // node 2 has no edge (degree 0). The partition must still COVER all of 0..3.
+        let blocks = gamma_quasi_clique_partition(3, &[(0, 1, 1.0)], 0.2);
+        let mut all: Vec<usize> = blocks.iter().flatten().copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, vec![0, 1, 2], "partition must cover all of 0..n incl isolated node 2");
+        assert!(blocks.iter().any(|b| b == &vec![2]), "isolated node 2 is its own block, got {blocks:?}");
     }
 
     #[test]
