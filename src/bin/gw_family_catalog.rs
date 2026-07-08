@@ -70,12 +70,19 @@ struct Args {
     /// seeded by the conflict families. Default off.
     #[arg(long, default_value_t = false)]
     complete_core: bool,
+    /// SAME-CHROMOSOME SUPPLEMENT (cross-chrom mode only): after cross-chromosome families are built,
+    /// also emit families from UNASSIGNED reps that are linked by read-conflict on the SAME chromosome
+    /// and fit within this span (bp). This recovers same-chrom paralogs (e.g. LOC109029264 / LOC115930232)
+    /// without discarding cross-chrom families. Default off.
+    #[arg(long, value_name = "BP")]
+    same_chrom_supplement_win: Option<usize>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let mut cfg = DenovoConfig::default();
     cfg.complete_poa_core = args.complete_core;
+    cfg.same_chrom_supplement_win = args.same_chrom_supplement_win;
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path.
     let raw: Vec<Vec<DenovoTranscript>> = if args.cross_chrom {
         detect_conflict_catalog_genome_wide_xchrom(&args.bam, &args.fasta, args.threads, args.min_copies, &cfg)?

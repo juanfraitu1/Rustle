@@ -51,6 +51,8 @@ pub struct DenovoConfig {
     /// `detect.t_core` — reaching divergent copies the conflict graph (confusable-only) misses. Bounded +
     /// seeded by the conflict families (`family_detect::poa_core_completion_adds`).
     pub complete_poa_core: bool,
+    /// Same-chromosome supplement window. None = no supplement (byte-identical cross-chrom behavior).
+    pub same_chrom_supplement_win: Option<usize>,
 }
 
 impl Default for DenovoConfig {
@@ -63,6 +65,7 @@ impl Default for DenovoConfig {
             split: SplitParams::default(),
             conflict: ConflictParams::from_env(),
             complete_poa_core: false,
+            same_chrom_supplement_win: None,
         }
     }
 }
