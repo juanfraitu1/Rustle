@@ -1021,6 +1021,10 @@ pub struct RefineParams {
     /// validated to add real families with 0 false merges (the `min_coverage` floor is the false-merge
     /// defense). DEFAULT ON (promoted into the default refinement).
     pub nucleotide_sensitive: bool,
+    /// Sensitive-tier nucleotide identity floor for the E_r homology edge (`-k11 -w5`). Lowered from the
+    /// old within-refine 0.70 to reach ancient paralogs (KRAB-ZNF ~0.62). Repeat bridges are held off by
+    /// `min_coverage`. Fixed by the family P/R sweep.
+    pub sensitive_identity: f64,
     /// Add the PROTEIN divergent tier (longest-ORF 6-frame translate → `mmseqs` all-vs-all, fident >= 0.50,
     /// qcov/tcov >= `min_coverage`) — recovers SYNONYMOUS-divergent CODING paralogs (e.g. the RABL2B retrocopy
     /// family at 87-99% protein but only 70% genomic identity) that nucleotide seeds can NEVER anchor. Additive
@@ -1041,6 +1045,7 @@ impl Default for RefineParams {
             include_introns: false,
             intron_fasta: None,
             nucleotide_sensitive: true,
+            sensitive_identity: 0.60,
             protein_tail: false,
             mmseqs: std::env::var("RUSTLE_MMSEQS").unwrap_or_else(|_| "mmseqs".to_string()),
         }
@@ -1147,7 +1152,7 @@ fn refine_copy_seq(copy: &DenovoTranscript, genome: Option<&GenomeIndex>) -> Vec
 /// whose alignment passes `identity >= min_id` AND `aligned-fraction-of-shorter >= min_cov`. One subprocess
 /// per family (all sequences written to a single temp FASTA, `-X` all-vs-all). minimap2 tries both strands,
 /// so a `+`/`-` paralog pair is still detected. Spawn failure → `Err`; alignment failure → no edges.
-fn nucleotide_edges(
+pub(crate) fn nucleotide_edges(
     seqs: &[Vec<u8>],
     mm_args: &[&str],
     min_id: f64,
@@ -1219,6 +1224,25 @@ fn nucleotide_edges(
         }
     }
     Ok(edge_set.into_iter().collect())
+}
+
+/// E_r homology edges over ALL reps' exon-sum sequences: asm20 (recent) ∪ sensitive -k11 -w5 (ancient),
+/// both gated by `min_coverage`. One minimap2 all-vs-all per tier over the whole rep set (minimap2's index
+/// is the prefilter). Protein is NOT an edge here — it is orthogonal QC (see per-family protein_coheres).
+pub(crate) fn homology_edges_all_reps(
+    reps: &[DenovoTranscript],
+    params: &RefineParams,
+) -> Result<Vec<(usize, usize)>> {
+    let seqs: Vec<Vec<u8>> = reps.iter().map(|r| r.seq.clone()).collect();
+    let mut set: BTreeSet<(usize, usize)> =
+        nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)?
+            .into_iter().collect();
+    if params.nucleotide_sensitive {
+        for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, params)? {
+            set.insert(e);
+        }
+    }
+    Ok(set.into_iter().collect())
 }
 
 /// Protein-homology tier, BATCHED across all families into ONE `mmseqs easy-search`. Each copy's longest ORF
@@ -2297,6 +2321,26 @@ mod tests {
         for sf in &split {
             assert!((sf.stats.density - 1.0).abs() < 1e-9, "2-node clique density must be 1.0");
         }
+    }
+
+    #[test]
+    fn homology_edges_links_two_similar_reps_not_divergent() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            eprintln!("minimap2 absent; skipping"); return;
+        }
+        // rep 0 and rep 1: same 900bp sequence with ~5% mismatch (an ancient paralog); rep 2: random (unrelated).
+        let base = rand_seq(900, 0x11);
+        let mut para = base.clone();
+        for k in (0..para.len()).step_by(20) { para[k] = b"ACGT"[(para[k] as usize + 1) % 4]; } // ~5% divergence
+        let reps = vec![
+            DenovoTranscript { tid: "r0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base },
+            DenovoTranscript { tid: "r1".into(), chrom: "c1".into(), start: 5000, end: 5900, n_reads: 8, strand: '+', introns: vec![], seq: para },
+            DenovoTranscript { tid: "r2".into(), chrom: "c1".into(), start: 9000, end: 9900, n_reads: 5, strand: '+', introns: vec![], seq: rand_seq(900, 0x99) },
+        ];
+        let params = RefineParams::default(); // min_identity 0.80, sensitive_identity 0.60, min_coverage 0.50
+        let edges = homology_edges_all_reps(&reps, &params).unwrap();
+        assert!(edges.contains(&(0, 1)), "the two paralog reps must be E_r-linked, got {:?}", edges);
+        assert!(!edges.contains(&(0, 2)) && !edges.contains(&(1, 2)), "the unrelated rep must not link");
     }
 
 }
