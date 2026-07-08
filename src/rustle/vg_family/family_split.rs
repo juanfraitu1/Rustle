@@ -400,6 +400,86 @@ pub fn decompose_families(edges: &[(usize, usize, f64)], p: &SplitParams) -> Vec
     out
 }
 
+/// Internal edge density of a node block over the induced subgraph: 2|E|/(|C|(|C|-1)); <=1 node = 1.0.
+fn induced_density(members: &[usize], edges: &[(usize, usize, f64)]) -> f64 {
+    let set: std::collections::HashSet<usize> = members.iter().copied().collect();
+    let n = members.len();
+    if n <= 1 {
+        return 1.0;
+    }
+    let m = edges.iter().filter(|(a, b, _)| set.contains(a) && set.contains(b)).count();
+    2.0 * m as f64 / (n as f64 * (n as f64 - 1.0))
+}
+
+/// Restrict edges to those with both endpoints in `members`, remapped to local indices 0..members.len().
+fn induced_edges(members: &[usize], edges: &[(usize, usize, f64)]) -> (usize, Vec<(usize, usize, f64)>) {
+    let idx: std::collections::HashMap<usize, usize> =
+        members.iter().enumerate().map(|(i, &g)| (g, i)).collect();
+    let local = edges
+        .iter()
+        .filter_map(|&(a, b, w)| match (idx.get(&a), idx.get(&b)) {
+            (Some(&la), Some(&lb)) => Some((la, lb, w)),
+            _ => None,
+        })
+        .collect();
+    (members.len(), local)
+}
+
+/// Guaranteed-progress splitter: adaptive-resolution Louvain, else component split, else deterministic halving.
+/// Returns global-index blocks; never a single block equal to the input when |members| > 2.
+fn split_once(members: &[usize], edges: &[(usize, usize, f64)]) -> Vec<Vec<usize>> {
+    let (n, local) = induced_edges(members, edges);
+    for res in [1.0, 2.0, 4.0, 8.0] {
+        let parts = louvain_communities(n, &local, res);
+        if parts.len() >= 2 {
+            return parts
+                .into_iter()
+                .map(|p| p.into_iter().map(|l| members[l]).collect())
+                .collect();
+        }
+    }
+    // connected-component fallback (also catches a disconnected block).
+    let comps = crate::vg_family::read_conflict::conflict_families(
+        n,
+        &local.iter().map(|&(a, b, _)| (a, b, 1usize)).collect::<Vec<_>>(),
+    );
+    if comps.len() >= 2 {
+        return comps
+            .into_iter()
+            .map(|c| c.into_iter().map(|l| members[l]).collect())
+            .collect();
+    }
+    // deterministic halving.
+    let h = members.len() / 2;
+    vec![members[..h].to_vec(), members[h..].to_vec()]
+}
+
+/// gamma-quasi-clique partition: keep a block whole iff it is already a gamma-quasi-clique (or <=2 nodes),
+/// else split (guaranteed-progress) and recurse. Blocks partition 0..n. Deterministic (Louvain is
+/// deterministic here).
+pub fn gamma_quasi_clique_partition(n: usize, edges: &[(usize, usize, f64)], gamma: f64) -> Vec<Vec<usize>> {
+    // start from raw connected components, then refine each.
+    let comps = crate::vg_family::read_conflict::conflict_families(
+        n,
+        &edges.iter().map(|&(a, b, _)| (a, b, 1usize)).collect::<Vec<_>>(),
+    );
+    let mut out = Vec::new();
+    let mut stack: Vec<Vec<usize>> = comps;
+    while let Some(block) = stack.pop() {
+        if block.len() <= 2 || induced_density(&block, edges) >= gamma {
+            out.push(block);
+            continue;
+        }
+        let parts = split_once(&block, edges);
+        if parts.len() == 1 && parts[0].len() == block.len() {
+            out.push(block); // no-progress guard (shouldn't happen)
+        } else {
+            stack.extend(parts);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,6 +709,26 @@ mod tests {
         assert_eq!(fams.len(), 1, "only the clique family survives");
         assert_eq!(fams[0].members, (0..7).collect::<Vec<_>>());
         assert!(!fams[0].members.contains(&7), "the dropped singleton node is gone");
+    }
+
+    // ---- gamma_quasi_clique_partition ----
+
+    #[test]
+    fn gamma_quasi_clique_keeps_array_whole_splits_repeat_chain() {
+        // A 5-node dense clique (a tandem array) stays ONE block.
+        let clique: Vec<(usize, usize, f64)> = {
+            let mut e = Vec::new();
+            for i in 0..5 { for j in (i + 1)..5 { e.push((i, j, 1.0)); } }
+            e
+        };
+        let blocks = gamma_quasi_clique_partition(5, &clique, 0.20);
+        assert_eq!(blocks.len(), 1, "a dense array is one gamma-quasi-clique");
+        assert_eq!(blocks[0].len(), 5);
+
+        // A LONG sparse bridge chain (12-node path: density 2*11/(12*11)=0.167 < gamma=0.20) must split.
+        let chain: Vec<(usize, usize, f64)> = (0..11).map(|i| (i, i + 1, 1.0)).collect();
+        let blocks = gamma_quasi_clique_partition(12, &chain, 0.20);
+        assert!(blocks.len() >= 2, "a sparse repeat-bridge chain is split, got {:?}", blocks);
     }
 
     #[test]
