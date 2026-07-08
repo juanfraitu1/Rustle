@@ -79,6 +79,13 @@ struct Args {
     /// E_r nucleotide identity floor (sensitive tier). Default from RefineParams (~0.60). `0.98` = Soto SD98 mode.
     #[arg(long)]
     min_identity: Option<f64>,
+    /// Enumerate genomic copy number (famCN) per family via Liftoff-style genome projection (spec §7):
+    /// project each family's best-supported consensus onto the genome (minimap2) to recover K=0 collapses
+    /// the RNA read-conflict/homology path merges into one locus. Writes `<out>.famcn.tsv`. Defaults ON
+    /// when `--min-identity 0.98` (Soto SD98 mode), since that mode targets exactly this near-identical
+    /// segdup regime.
+    #[arg(long, default_value_t = false)]
+    enumerate_copies: bool,
 }
 
 fn main() -> Result<()> {
@@ -206,5 +213,25 @@ fn main() -> Result<()> {
         args.out,
         args.out
     );
+
+    // famCN via genome projection (spec §7): a family's RNA-observed copies are a LOWER bound on its
+    // true genomic copy number when copies collapse onto one locus (K=0). Project the family's
+    // best-supported consensus (most-read-supported copy's exon-sum) back onto the genome and count
+    // additional disjoint near-identical loci beyond the already-known copy loci.
+    let enumerate = args.enumerate_copies || args.min_identity == Some(0.98);
+    if enumerate {
+        let mut ff = std::fs::File::create(format!("{}.famcn.tsv", args.out))?;
+        writeln!(ff, "family_id\tn_rna_copies\tfamCN\tprojection_loci")?;
+        for (fi, copies) in fams.iter().enumerate() {
+            let cons = copies.iter().max_by_key(|c| c.n_reads).map(|c| c.seq.clone()).unwrap_or_default();
+            let known: Vec<(String, u64, u64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
+            let proj = rustle::vg_family::genome_projection::project_family_copies(
+                &cons, &args.fasta, &known, 0.98, 0.90, "minimap2", args.threads).unwrap_or_default();
+            let famcn = copies.len() + proj.len();
+            let loci = proj.iter().map(|p| format!("{}:{}-{}", p.chrom, p.start, p.end)).collect::<Vec<_>>().join(";");
+            writeln!(ff, "GWFAM{fi}\t{}\t{}\t{}", copies.len(), famcn, loci)?;
+        }
+        eprintln!("[gw-catalog] famCN projection -> {}.famcn.tsv", args.out);
+    }
     Ok(())
 }
