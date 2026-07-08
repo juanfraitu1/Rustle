@@ -11,7 +11,7 @@ use clap::Parser;
 use std::io::Write;
 
 use rustle::vg_family::denovo_pipeline::{
-    detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
+    detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom_with_supplement,
     refine_families_exon_sum, DenovoConfig, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
@@ -84,13 +84,21 @@ fn main() -> Result<()> {
     cfg.complete_poa_core = args.complete_core;
     cfg.same_chrom_supplement_win = args.same_chrom_supplement_win;
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path.
-    let raw: Vec<Vec<DenovoTranscript>> = if args.cross_chrom {
-        detect_conflict_catalog_genome_wide_xchrom(&args.bam, &args.fasta, args.threads, args.min_copies, &cfg)?
+    let (raw, supp_tids): (Vec<Vec<DenovoTranscript>>, std::collections::HashSet<String>) = if args.cross_chrom {
+        let (cross, supp) = detect_conflict_catalog_genome_wide_xchrom_with_supplement(
+            &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
+        )?;
+        let supp_tids: std::collections::HashSet<String> =
+            supp.iter().flatten().map(|c| c.tid.clone()).collect();
+        let mut raw = cross;
+        raw.extend(supp);
+        (raw, supp_tids)
     } else {
-        detect_conflict_catalog_genome_wide(&args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg)?
-            .into_iter()
-            .map(|f| f.copies)
-            .collect()
+        let catalog = detect_conflict_catalog_genome_wide(
+            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+        )?;
+        let raw: Vec<Vec<DenovoTranscript>> = catalog.into_iter().map(|c| c.copies).collect();
+        (raw, std::collections::HashSet::new())
     };
     // Optional exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion).
     let fams: Vec<Vec<DenovoTranscript>> = if args.refine {
@@ -119,6 +127,9 @@ fn main() -> Result<()> {
 
     let mut fh = std::fs::File::create(format!("{}.families.tsv", args.out))?;
     let mut ch = std::fs::File::create(format!("{}.copies.tsv", args.out))?;
+    let mut supp_fh = std::fs::File::create(format!("{}.same_chrom_supplement.tsv", args.out))?;
+    writeln!(supp_fh, "family_id\tn_copies\tchroms")?;
+    let mut supplement_rows: Vec<(String, usize, String)> = Vec::new();
     // The exon-sum (spliced, FLNC-derived) sequence of every copy, in transcription orientation. This is
     // the substrate for the ANNOTATION-FREE family validation: all-vs-all align a family's copies and a
     // copy is confirmed iff its spliced sequence aligns full-length to a sibling (independent of both the
@@ -142,6 +153,11 @@ fn main() -> Result<()> {
         let cross = chroms.len() > 1;
         if cross {
             n_xchrom += 1;
+        }
+        let is_supplement = args.cross_chrom && cfg.same_chrom_supplement_win.is_some()
+            && copies.iter().any(|c| supp_tids.contains(&c.tid));
+        if is_supplement {
+            supplement_rows.push((fid.clone(), copies.len(), chroms.iter().cloned().collect::<Vec<_>>().join(",")));
         }
         let avg_reads = if copies.is_empty() {
             0.0
@@ -188,10 +204,14 @@ fn main() -> Result<()> {
             }
         }
     }
+    for (fid, n_copies, chroms) in &supplement_rows {
+        writeln!(supp_fh, "{}\t{}\t{}", fid, n_copies, chroms)?;
+    }
     eprintln!(
-        "[gw-catalog] wrote {} families ({} cross-chromosome) -> {}.families.tsv + {}.copies.tsv",
+        "[gw-catalog] wrote {} families ({} cross-chromosome, {} same-chrom supplement) -> {}.families.tsv + {}.copies.tsv",
         fams.len(),
         n_xchrom,
+        supplement_rows.len(),
         args.out,
         args.out
     );
