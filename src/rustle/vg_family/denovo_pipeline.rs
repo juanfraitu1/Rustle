@@ -1457,6 +1457,24 @@ fn longest_orf_aa(seq: &[u8]) -> Vec<u8> {
     }
 }
 
+/// Orthogonal protein QC (NEVER a definition edge): does each nt-defined family also cohere at the protein
+/// level? `Some(true)` = its ORFs form a connected protein-homology graph, `Some(false)` = they do not,
+/// `None` = mmseqs unavailable / protein tier off (no effect on membership).
+pub fn family_protein_coheres(families: &[Vec<DenovoTranscript>], params: &RefineParams) -> Vec<Option<bool>> {
+    if !params.protein_tail {
+        return vec![None; families.len()];
+    }
+    let edges = match batch_protein_edges(families, 0.50, params.min_coverage, params) {
+        Ok(e) => e,
+        Err(_) => return vec![None; families.len()],
+    };
+    families.iter().enumerate().map(|(fi, fam)| {
+        let fe = edges.get(fi).cloned().unwrap_or_default();
+        if fam.len() < 2 { return Some(true); }
+        Some(homology_components(fam.len(), &fe).iter().any(|c| c.len() == fam.len()))
+    }).collect()
+}
+
 /// Connected components of the homology graph over `n` copies.
 fn homology_components(n: usize, edges: &[(usize, usize)]) -> Vec<Vec<usize>> {
     let mut parent: Vec<usize> = (0..n).collect();
@@ -2139,6 +2157,19 @@ mod tests {
         assert_eq!(comps.len(), 2);
         assert!(comps.iter().any(|c| c == &vec![0, 1]));
         assert!(comps.iter().any(|c| c == &vec![2, 3]));
+    }
+
+    #[test]
+    fn protein_coheres_is_none_without_mmseqs() {
+        // With protein_tail off / mmseqs absent the flag is None (no membership effect).
+        let fam = vec![vec![
+            DenovoTranscript{tid:"a".into(),chrom:"c1".into(),start:0,end:300,n_reads:5,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec()},
+            DenovoTranscript{tid:"b".into(),chrom:"c1".into(),start:9000,end:9300,n_reads:4,strand:'+',introns:vec![],seq:b"ATGAAAGGGTTTTGTCCCAAAGGG".to_vec()},
+        ]];
+        let mut p = RefineParams::default(); p.protein_tail = false;
+        let flags = family_protein_coheres(&fam, &p);
+        assert_eq!(flags.len(), 1);
+        assert_eq!(flags[0], None, "protein QC is None when protein tier is off");
     }
 
     #[test]
