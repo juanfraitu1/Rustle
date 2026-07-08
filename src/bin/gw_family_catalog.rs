@@ -12,7 +12,7 @@ use std::io::Write;
 
 use rustle::vg_family::denovo_pipeline::{
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
-    refine_families_exon_sum, DenovoConfig, RefineParams,
+    detect_homology_catalog_genome_wide, refine_families_exon_sum, DenovoConfig, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
 
@@ -70,6 +70,14 @@ struct Args {
     /// seeded by the conflict families. Default off.
     #[arg(long, default_value_t = false)]
     complete_core: bool,
+    /// HOMOLOGY-PRIMARY (E_r) family definition: build families from exon-sum nucleotide homology
+    /// (gamma-quasi-clique), not the read-conflict graph. Captures ancient paralogs + K=0 collapses the
+    /// conflict path misses. Ships alongside --cross-chrom.
+    #[arg(long, default_value_t = false)]
+    homology_primary: bool,
+    /// E_r nucleotide identity floor (sensitive tier). Default from RefineParams (~0.60). `0.98` = Soto SD98 mode.
+    #[arg(long)]
+    min_identity: Option<f64>,
 }
 
 fn main() -> Result<()> {
@@ -79,7 +87,16 @@ fn main() -> Result<()> {
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path. The
     // cross-chrom path emits same-chromosome families (incl. inverted duplications and distant paralogs)
     // and cross-chromosome families together; the default path is the tight same-strand tandem-array view.
-    let raw: Vec<Vec<DenovoTranscript>> = if args.cross_chrom {
+    let mut refine_params = RefineParams { threads: args.threads, ..Default::default() };
+    if let Some(mi) = args.min_identity {
+        refine_params.min_identity = mi;
+        refine_params.sensitive_identity = mi.min(refine_params.sensitive_identity);
+    }
+    let raw: Vec<Vec<DenovoTranscript>> = if args.homology_primary {
+        detect_homology_catalog_genome_wide(
+            &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
+        )?
+    } else if args.cross_chrom {
         detect_conflict_catalog_genome_wide_xchrom(
             &args.bam, &args.fasta, args.threads, args.min_copies, &cfg,
         )?
