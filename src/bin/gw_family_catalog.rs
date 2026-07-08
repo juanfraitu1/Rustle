@@ -12,7 +12,8 @@ use std::io::Write;
 
 use rustle::vg_family::denovo_pipeline::{
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
-    detect_homology_catalog_genome_wide, refine_families_exon_sum, DenovoConfig, RefineParams,
+    detect_homology_catalog_genome_wide, homology_refine_params, refine_families_exon_sum,
+    DenovoConfig, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
 
@@ -87,11 +88,7 @@ fn main() -> Result<()> {
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path. The
     // cross-chrom path emits same-chromosome families (incl. inverted duplications and distant paralogs)
     // and cross-chromosome families together; the default path is the tight same-strand tandem-array view.
-    let mut refine_params = RefineParams { threads: args.threads, ..Default::default() };
-    if let Some(mi) = args.min_identity {
-        refine_params.min_identity = mi;
-        refine_params.sensitive_identity = mi.min(refine_params.sensitive_identity);
-    }
+    let refine_params = homology_refine_params(args.min_identity, args.threads);
     let raw: Vec<Vec<DenovoTranscript>> = if args.homology_primary {
         detect_homology_catalog_genome_wide(
             &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,

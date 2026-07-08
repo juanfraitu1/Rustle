@@ -996,6 +996,18 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     Ok(out)
 }
 
+/// RefineParams for the homology-primary (E_r) path. `min_identity` (if given) is the EFFECTIVE
+/// nucleotide identity floor: it sets BOTH the asm20 tier and the sensitive tier, so the union's
+/// floor is exactly `mi` (0.98 = Soto SD98 mode). None -> defaults (asm20 0.80 / sensitive 0.60).
+pub fn homology_refine_params(min_identity: Option<f64>, threads: usize) -> RefineParams {
+    let mut p = RefineParams { threads, ..Default::default() };
+    if let Some(mi) = min_identity {
+        p.min_identity = mi;
+        p.sensitive_identity = mi; // BOTH tiers -> effective floor = mi (not .min())
+    }
+    p
+}
+
 /// GENOME-WIDE homology-primary (E_r) family catalog. reps → E_r edges → γ-quasi-clique blocks →
 /// ≥2 distinct loci → families. Chrom/strand-agnostic; a superset of the conflict catalog.
 pub fn detect_homology_catalog_genome_wide(
@@ -1530,6 +1542,16 @@ mod tests {
     use super::super::copy_split::AlignedRead;
     use super::super::family_detect::collapse_loci;
     use super::*;
+
+    #[test]
+    fn homology_refine_params_min_identity_sets_both_tiers() {
+        let p = homology_refine_params(Some(0.98), 4);
+        assert_eq!(p.min_identity, 0.98);
+        assert_eq!(p.sensitive_identity, 0.98, "Soto mode: sensitive tier must also be 0.98, not left at 0.60");
+        let d = homology_refine_params(None, 4);
+        assert_eq!(d.min_identity, 0.80);
+        assert_eq!(d.sensitive_identity, 0.60);
+    }
 
     struct SplitMix64(u64);
     impl SplitMix64 {
