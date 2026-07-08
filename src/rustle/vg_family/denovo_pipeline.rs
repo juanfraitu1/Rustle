@@ -1084,6 +1084,11 @@ pub struct RefineParams {
     /// only (merges divergent copies into a family, never splits asm20's calls). DEFAULT OFF — needs `mmseqs`
     /// (absent → contributes no edges) and is the costlier tier. Batched into one `mmseqs` run across all
     /// families (within-family hits only). The qcov/tcov guard rejects lone-shared-domain merges.
+    /// USED IN TWO PLACES: (1) `refine_families_exon_sum` — within an ALREADY-formed (conflict/homology)
+    /// family, as an additional membership edge; (2) `homology_edges_all_reps` (the E_r homology-primary
+    /// catalog) — as a THIRD genome-wide definition-edge tier alongside asm20/sensitive, promoting protein
+    /// from orthogonal QC to a DEFINITION edge that groups coding paralogs past the ~0.65 nt-identity floor
+    /// where both nucleotide tiers find no edge and reads map all-primary.
     pub protein_tail: bool,
     pub mmseqs: String,
 }
@@ -1279,9 +1284,14 @@ pub(crate) fn nucleotide_edges(
     Ok(edge_set.into_iter().collect())
 }
 
-/// E_r homology edges over ALL reps' exon-sum sequences: asm20 (recent) ∪ sensitive -k11 -w5 (ancient),
-/// both gated by `min_coverage`. One minimap2 all-vs-all per tier over the whole rep set (minimap2's index
-/// is the prefilter). Protein is NOT an edge here — it is orthogonal QC (see per-family protein_coheres).
+/// E_r homology edges over ALL reps' exon-sum sequences: asm20 (recent) ∪ sensitive -k11 -w5 (ancient) ∪
+/// (opt-in) protein, all gated by `min_coverage`. One minimap2 all-vs-all per nucleotide tier over the
+/// whole rep set (minimap2's index is the prefilter). When `params.protein_tail` is set, protein homology
+/// is promoted from orthogonal QC to a THIRD definition edge: coding paralogs that have diverged past the
+/// nucleotide seeds' floor (~0.65 identity, where both nt tiers find no edge and reads map all-primary)
+/// still share a conserved protein (synonymous divergence) — this is the only way to recover that tail.
+/// `batch_protein_edges` is family-scoped, so all reps are passed as ONE family to get within-set edges
+/// over the whole rep universe (local indices == global indices since there is exactly one "family").
 pub(crate) fn homology_edges_all_reps(
     reps: &[DenovoTranscript],
     params: &RefineParams,
@@ -1293,6 +1303,14 @@ pub(crate) fn homology_edges_all_reps(
     if params.nucleotide_sensitive {
         for e in nucleotide_edges(&seqs, &["-k", "11", "-w", "5"], params.sensitive_identity, params.min_coverage, params)? {
             set.insert(e);
+        }
+    }
+    if params.protein_tail {
+        let prot = batch_protein_edges(std::slice::from_ref(&reps.to_vec()), 0.50, params.min_coverage, params)?;
+        if let Some(edges) = prot.first() {
+            for &e in edges {
+                set.insert(e);
+            }
         }
     }
     Ok(set.into_iter().collect())
@@ -2435,6 +2453,132 @@ mod tests {
         let edges = homology_edges_all_reps(&reps, &params).unwrap();
         assert!(edges.contains(&(0, 1)), "the two paralog reps must be E_r-linked, got {:?}", edges);
         assert!(!edges.contains(&(0, 2)) && !edges.contains(&(1, 2)), "the unrelated rep must not link");
+    }
+
+    // --- codon-aware fixture builder for the protein-tail rescue test ------------------------------------
+    // The standard genetic code as (amino acid, codon) pairs, excluding the 3 stop codons (TAA/TAG/TGA).
+    // Used only to build a nt-divergent / protein-conserved pair: a codon-based "random protein" plus a
+    // synonymously-recoded (+ conservative-substitution) sibling whose nucleotide sequence diverges hard
+    // while the encoded protein stays near-identical.
+    const CODON_TABLE: &[(u8, &[u8; 3])] = &[
+        (b'F', b"TTT"), (b'F', b"TTC"),
+        (b'L', b"TTA"), (b'L', b"TTG"), (b'L', b"CTT"), (b'L', b"CTC"), (b'L', b"CTA"), (b'L', b"CTG"),
+        (b'I', b"ATT"), (b'I', b"ATC"), (b'I', b"ATA"),
+        (b'M', b"ATG"),
+        (b'V', b"GTT"), (b'V', b"GTC"), (b'V', b"GTA"), (b'V', b"GTG"),
+        (b'S', b"TCT"), (b'S', b"TCC"), (b'S', b"TCA"), (b'S', b"TCG"), (b'S', b"AGT"), (b'S', b"AGC"),
+        (b'P', b"CCT"), (b'P', b"CCC"), (b'P', b"CCA"), (b'P', b"CCG"),
+        (b'T', b"ACT"), (b'T', b"ACC"), (b'T', b"ACA"), (b'T', b"ACG"),
+        (b'A', b"GCT"), (b'A', b"GCC"), (b'A', b"GCA"), (b'A', b"GCG"),
+        (b'Y', b"TAT"), (b'Y', b"TAC"),
+        (b'H', b"CAT"), (b'H', b"CAC"),
+        (b'Q', b"CAA"), (b'Q', b"CAG"),
+        (b'N', b"AAT"), (b'N', b"AAC"),
+        (b'K', b"AAA"), (b'K', b"AAG"),
+        (b'D', b"GAT"), (b'D', b"GAC"),
+        (b'E', b"GAA"), (b'E', b"GAG"),
+        (b'C', b"TGT"), (b'C', b"TGC"),
+        (b'W', b"TGG"),
+        (b'R', b"CGT"), (b'R', b"CGC"), (b'R', b"CGA"), (b'R', b"CGG"), (b'R', b"AGA"), (b'R', b"AGG"),
+        (b'G', b"GGT"), (b'G', b"GGC"), (b'G', b"GGA"), (b'G', b"GGG"),
+    ];
+    fn codons_for(aa: u8) -> Vec<&'static [u8; 3]> {
+        CODON_TABLE.iter().filter(|(a, _)| *a == aa).map(|(_, c)| *c).collect()
+    }
+    fn all_aas() -> Vec<u8> {
+        let mut v: Vec<u8> = CODON_TABLE.iter().map(|(a, _)| *a).collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+    fn hamming3(a: &[u8; 3], b: &[u8; 3]) -> usize {
+        (0..3).filter(|&i| a[i] != b[i]).count()
+    }
+    /// The codon for `aa` that differs MAXIMALLY (Hamming, over the 3 nt positions) from `from`.
+    fn max_divergent_codon(aa: u8, from: &[u8; 3]) -> [u8; 3] {
+        let opts = codons_for(aa);
+        **opts.iter().max_by_key(|c| hamming3(c, from)).expect("every table aa has >=1 codon")
+    }
+    /// A conservative (same biochemical class) amino-acid substitution group.
+    fn conservative_group(aa: u8) -> &'static [u8] {
+        match aa {
+            b'A' | b'V' | b'L' | b'I' | b'M' => b"AVLIM",
+            b'F' | b'Y' | b'W' => b"FYW",
+            b'S' | b'T' | b'N' | b'Q' => b"STNQ",
+            b'D' | b'E' => b"DE",
+            b'K' | b'R' | b'H' => b"KRH",
+            _ => b"GPC", // G, P, C (and any fallback)
+        }
+    }
+
+    #[test]
+    fn homology_edges_protein_rescues_nt_divergent_pair() {
+        if std::process::Command::new("mmseqs").arg("version").output().is_err() {
+            eprintln!("mmseqs absent; skipping (protein-tail rescue NOT verified in this environment)");
+            return;
+        }
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            eprintln!("minimap2 absent; skipping");
+            return;
+        }
+        // Build a ~250-codon (750 nt) random coding sequence (seq_a), and a sibling (seq_b) that: (i) at
+        // ~85% of codons keeps the SAME amino acid but recodes to the synonymous codon MAXIMALLY divergent
+        // from seq_a's (wobble-position + codon-family divergence), and (ii) at ~15% of codons substitutes a
+        // conservative (same biochemical class) DIFFERENT amino acid, again maximally-divergent-coded. This
+        // pushes nucleotide identity hard down (both nt tiers must miss it) while the encoded protein stays
+        // near-identical (well above mmseqs' fident>=0.50 gate) — exactly the "diverged past the nucleotide
+        // floor, still protein-conserved" coding-paralog case the protein DEFINITION edge exists to rescue.
+        let n_codons = 250;
+        let mut rng = SplitMix64(0xC0DE_C0DE_1234_5678);
+        let aas = all_aas();
+        let mut seq_a: Vec<u8> = Vec::with_capacity(n_codons * 3);
+        let mut seq_b: Vec<u8> = Vec::with_capacity(n_codons * 3);
+        for i in 0..n_codons {
+            let aa_a = aas[(rng.next_u64() as usize) % aas.len()];
+            let opts_a = codons_for(aa_a);
+            let codon_a = *opts_a[(rng.next_u64() as usize) % opts_a.len()];
+            seq_a.extend_from_slice(&codon_a);
+
+            let aa_b = if i % 7 == 0 {
+                let group = conservative_group(aa_a);
+                let alt: Vec<u8> = group.iter().copied().filter(|&a| a != aa_a).collect();
+                if alt.is_empty() { aa_a } else { alt[(rng.next_u64() as usize) % alt.len()] }
+            } else {
+                aa_a
+            };
+            let codon_b = max_divergent_codon(aa_b, &codon_a);
+            seq_b.extend_from_slice(&codon_b);
+        }
+        assert_eq!(seq_a.len(), 750);
+        assert_eq!(seq_b.len(), 750);
+
+        // Proxy identity (no indels by construction -> same length, position-wise Hamming) for reporting.
+        let same = seq_a.iter().zip(seq_b.iter()).filter(|(x, y)| x == y).count();
+        let proxy_identity = same as f64 / seq_a.len() as f64;
+        eprintln!("[test] constructed pair proxy (position-wise) nt identity = {proxy_identity:.3}");
+        assert!(proxy_identity < 0.60, "RNG did not produce enough nt divergence: proxy identity {proxy_identity:.3}");
+
+        // Confirm via the pipeline's own aligner: BOTH nt tiers must find NO edge at this divergence.
+        let p = RefineParams::default();
+        let sensitive_edges = nucleotide_edges(
+            &[seq_a.clone(), seq_b.clone()], &["-k", "11", "-w", "5"], 0.60, 0.50, &p,
+        ).unwrap();
+        assert!(sensitive_edges.is_empty(), "pair must be genuinely nt-unresolvable (< 0.60), got {:?}", sensitive_edges);
+
+        let reps = vec![
+            DenovoTranscript { tid: "protA".into(), chrom: "c1".into(), start: 1_000, end: 1_750, n_reads: 20, strand: '+', introns: vec![], seq: seq_a },
+            DenovoTranscript { tid: "protB".into(), chrom: "c1".into(), start: 50_000, end: 50_750, n_reads: 18, strand: '+', introns: vec![], seq: seq_b },
+        ];
+
+        let mut params_off = RefineParams::default();
+        params_off.protein_tail = false;
+        let edges_off = homology_edges_all_reps(&reps, &params_off).unwrap();
+        assert!(!edges_off.contains(&(0, 1)), "without protein_tail the nt-divergent pair must NOT link, got {:?}", edges_off);
+
+        let mut params_on = RefineParams::default();
+        params_on.protein_tail = true;
+        let edges_on = homology_edges_all_reps(&reps, &params_on).unwrap();
+        assert!(edges_on.contains(&(0, 1)), "protein_tail=true must RESCUE the nt-divergent, protein-conserved pair, got {:?}", edges_on);
     }
 
     #[test]

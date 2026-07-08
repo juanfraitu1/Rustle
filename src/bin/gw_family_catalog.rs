@@ -56,9 +56,12 @@ struct Args {
     /// stricter on older paralogs whose introns have diverged. Default off (exon-sum).
     #[arg(long, default_value_t = false)]
     refine_introns: bool,
-    /// With `--refine`, also add the PROTEIN divergent tier (longest-ORF -> mmseqs, fident>=0.50): recovers
-    /// synonymous-divergent CODING paralogs (RABL2B-class) that nucleotide seeds cannot reach. Batched into one
-    /// mmseqs run. Additive only. Needs `mmseqs`. Default off (the sensitive nucleotide tier is already on).
+    /// Add the PROTEIN divergent tier (longest-ORF -> mmseqs, fident>=0.50): recovers synonymous-divergent
+    /// CODING paralogs (RABL2B-class) that nucleotide seeds cannot reach. Batched into one mmseqs run.
+    /// Additive only. Needs `mmseqs`. Default off (the sensitive nucleotide tier is already on). Applies in
+    /// TWO places: with `--refine`, as an extra within-family membership edge; with `--homology-primary`,
+    /// as a THIRD genome-wide E_r DEFINITION-edge tier (alongside asm20/sensitive) that groups coding
+    /// paralogs past the ~0.65 nucleotide-identity floor where reads map all-primary.
     #[arg(long, default_value_t = false)]
     protein_tail: bool,
     /// With `--refine`, DISABLE the default sensitive nucleotide tier (`-k11 -w5`), reverting to the pure
@@ -95,7 +98,11 @@ fn main() -> Result<()> {
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path. The
     // cross-chrom path emits same-chromosome families (incl. inverted duplications and distant paralogs)
     // and cross-chromosome families together; the default path is the tight same-strand tandem-array view.
-    let refine_params = homology_refine_params(args.min_identity, args.threads);
+    let mut refine_params = homology_refine_params(args.min_identity, args.threads);
+    // `--protein-tail` also promotes protein homology to a genome-wide E_r DEFINITION edge in the
+    // homology-primary catalog (in addition to feeding the `--refine` block below): it recovers coding
+    // paralogs that have diverged past the nucleotide seeds' ~0.65 identity floor.
+    refine_params.protein_tail = args.protein_tail;
     let raw: Vec<Vec<DenovoTranscript>> = if args.homology_primary {
         detect_homology_catalog_genome_wide(
             &args.bam, &args.fasta, args.threads, args.min_copies, &cfg, &refine_params, 0.20,
