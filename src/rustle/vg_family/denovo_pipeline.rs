@@ -996,10 +996,22 @@ pub fn detect_conflict_catalog_genome_wide_xchrom_with_supplement(
         let clean = prune_same_locus(comp_reps, &cfg.detect); // same-locus artifacts (incl antisense); keep distinct loci
         if clean.len() >= min_copies {
             let chroms: BTreeSet<&str> = clean.iter().map(|c| c.chrom.as_str()).collect();
-            if chroms.len() > 1 {
-                n_xchrom += 1;
+            let is_xchrom = chroms.len() > 1;
+            // When the same-chromosome supplement is active, the cross-chrom path emits only
+            // multi-chromosome families. Same-chromosome families are left unassigned and recovered
+            // by `compute_same_chrom_supplement` below. In the default configuration (no supplement)
+            // the cross-chrom path emits every family to preserve byte-identical output.
+            if cfg.same_chrom_supplement_win.is_some() {
+                if is_xchrom {
+                    n_xchrom += 1;
+                    out.push(clean);
+                }
+            } else {
+                if is_xchrom {
+                    n_xchrom += 1;
+                }
+                out.push(clean);
             }
-            out.push(clean);
         }
     }
     eprintln!(
