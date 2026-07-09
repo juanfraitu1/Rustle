@@ -220,6 +220,15 @@ struct Args {
     /// `NA`); this file is ALWAYS written (additive; independent of every other output).
     #[arg(long)]
     lambda_global: Option<f64>,
+
+    /// VG re-align supplement (Task 5, REPORT-ONLY): for every co-located family, re-align each
+    /// poor-fit/candidate read (low MAPQ, heavy clipping, or high divergence — `vg_realign::is_candidate`)
+    /// to the family's copy-paths and record the decision (`reassigned` / `rejected` / `novel-candidate`)
+    /// to `<out>.vg_realign.tsv`. Does NOT feed corrections back into the EM/PSV assignment and does NOT
+    /// admit novel candidates into the copy set — those remain a separate follow-up. Default off; leaves
+    /// every other output byte-identical.
+    #[arg(long, default_value_t = false)]
+    vg_realign: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -331,6 +340,7 @@ fn main() -> Result<()> {
 
     let mut cfg = DenovoConfig::default();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
+    cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
     let params = AssignParams {
         margin: args.margin,
         error_rate: args.error_rate,
@@ -372,6 +382,7 @@ fn main() -> Result<()> {
     let mut gfa_paths: Vec<String> = Vec::new();
     let mut fallback_all: Vec<FallbackEdge> = Vec::new(); // family edges confirmed via the LCS fallback
     let mut dna_needs_rows: Vec<DnaNeedsRecord> = Vec::new(); // --absent-copies: candidates needing DNA validation
+    let mut vg_realign_lines: Vec<String> = Vec::new(); // --vg-realign: per-read re-align decisions (report-only)
     let mut gfam = 0usize; // global family counter (unique ids across regions)
     let mut gtf_lines: Vec<String> = Vec::new(); // --gtf: FLAIR-style isoform GTF (transcript + exon rows)
 
@@ -518,6 +529,14 @@ fn main() -> Result<()> {
                         p_value: a.p_value,
                         min_p_value: a.min_p_value,
                     });
+                }
+                // --vg-realign (report-only): the re-align supplement's per-read decisions for this family.
+                // Empty unless --vg-realign was passed (cfg.vg_realign gates run_family_realign itself).
+                for r in &fa.realign_records {
+                    vg_realign_lines.push(format!(
+                        "{}\t{}\t{}\t{}\t{:.6}\t{}",
+                        r.read_name, fid, r.action, r.target_copy, r.id_best, r.linear_copy
+                    ));
                 }
                 // soft per-copy POSTERIOR + consistent ZONE (opt-in): localize even the unassignable reads.
                 if args.posterior {
@@ -1026,6 +1045,23 @@ fn main() -> Result<()> {
         eprintln!(
             "[copy_assign] {} DNA-needs candidate(s) -> {}.dna_needs.tsv",
             dna_needs_rows.len(),
+            args.out
+        );
+    }
+
+    // --vg-realign: the re-align supplement's per-family/per-read decisions (report-only — not fed back
+    // into the assignment). Only written when --vg-realign is set so an OFF run produces exactly the same
+    // output files (cfg.vg_realign OFF also means fa.realign_records is always empty, so this is belt-
+    // and-suspenders with the flag check).
+    if args.vg_realign {
+        let mut vh = std::fs::File::create(format!("{}.vg_realign.tsv", args.out))?;
+        writeln!(vh, "read_name\tfamily_id\taction\ttarget_copy\tid_best\tlinear_copy")?;
+        for l in &vg_realign_lines {
+            writeln!(vh, "{l}")?;
+        }
+        eprintln!(
+            "[copy_assign] {} vg-realign decision(s) -> {}.vg_realign.tsv",
+            vg_realign_lines.len(),
             args.out
         );
     }

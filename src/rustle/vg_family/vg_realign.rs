@@ -4,11 +4,16 @@
 //! and route unmapped reads to candidate families by shared minimizers. Task 4: gate the
 //! re-align correction behind a min_p significance certificate (same `epsilon^delta` form as
 //! `copy_assign::read_copy_evidence`), and greedily pool reads that fit no existing copy into
-//! candidate novel-copy clusters.
+//! candidate novel-copy clusters. Task 5: wire Tasks 1/3/4 into a per-family driver
+//! (`run_family_realign`) and, behind `DenovoConfig::vg_realign`, into the pipeline -- REPORT-ONLY
+//! (see that fn's doc for the exact scope).
 
 use std::collections::HashSet;
 
 use crate::vg_family::bridge_detector::aln_id;
+use crate::vg_family::copy_assign_pipeline::best_overlap_copy;
+use crate::vg_family::denovo_assemble::BamRead;
+use crate::vg_family::family_detect::DenovoTranscript;
 use crate::vg_family::minimizers::minimizers;
 
 /// Thresholds for flagging a read as a re-align CANDIDATE (poor-fit or unmapped).
@@ -203,9 +208,113 @@ pub fn pool_novel(unfit: &[(String, Vec<u8>)], min_id: f64, min_reads: usize) ->
     clusters
 }
 
+/// One per-read decision from the per-family re-align supplement (Task 5), emitted verbatim as a row of
+/// `<out>.vg_realign.tsv` by the `copy_assign` binary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RealignRecord {
+    pub read_name: String,
+    /// `"reassigned"` (a significant correction to a different copy), `"rejected"` (a candidate that
+    /// re-aligned but didn't clear Task 4's significance certificate), or `"novel-candidate"` (fits no
+    /// existing copy-path at all -- `Task 4`'s `pool_novel`/`absent_copy` admission gate is the separate,
+    /// out-of-scope next step for these).
+    pub action: String,
+    /// The copy index the record concerns: `best_copy` when `action == "reassigned"`, else `-1` (no
+    /// correction target -- `"rejected"` keeps the read's existing linear attribution, `"novel-candidate"`
+    /// has no copy-path fit at all).
+    pub target_copy: i64,
+    /// `RealignHit::id_best` (0.0 for `"novel-candidate"`, where `realign_to_paths` found no fit at all so
+    /// no `id_best` was computed).
+    pub id_best: f64,
+    /// The copy index the read's own linear (BAM-coordinate) alignment placed it on within this family, or
+    /// `-1` if none of the family's copies overlap the read's aligned span (`best_overlap_copy` returned
+    /// `None`).
+    pub linear_copy: i64,
+}
+
+/// Task 5: run the VG re-align supplement (Tasks 1/3/4) over ONE co-located family's reads.
+///
+/// For every non-supplementary read in `bam_reads`: compute `mapq` (`read.mapq`), `clip_frac` (total
+/// soft-clipped CIGAR bases / read length -- `read.seq` keeps soft-clips per
+/// `aligned_read_from_record`'s doc, so this is exact), and `div` (`read.de`, minimap2's `de:f` gap-
+/// compressed per-base divergence tag -- already parsed onto `BamRead`, so no NM/CIGAR recomputation is
+/// needed). `linear_copy` is the copy index the read's own linear alignment overlaps most in this family
+/// (`best_overlap_copy`, the SAME greatest-ref-overlap rule `assign_family_detailed` uses internally to
+/// seed each read's `mapped_copy`).
+///
+/// Reads failing `is_candidate` produce NO record at all (clean primary fit -- nothing to reconsider).
+/// Candidates are re-aligned to every copy's spliced consensus (`DenovoTranscript::seq`, already spliced
+/// by the assembly stage -- no re-splicing needed) via `realign_to_paths`; `None` (fits no copy-path at
+/// all) is tagged `"novel-candidate"`. A hit is run through `accept_realignment`'s significance
+/// certificate: `Reassign` -> `"reassigned"`, `Reject` -> `"rejected"`.
+///
+/// REPORT-ONLY / ADDITIVE: this function only classifies reads into a decision log. It does not mutate
+/// `bam_reads`/`copies`, does not feed a `"reassigned"` verdict back into the EM/PSV assignment, and does
+/// not admit `"novel-candidate"` reads into the copy set -- that deeper wiring (`pool_novel` +
+/// `absent_copy::admit_candidate`) is an explicit follow-up, out of scope here.
+pub fn run_family_realign(
+    bam_reads: &[BamRead],
+    copies: &[DenovoTranscript],
+    params: &RealignParams,
+    error_rate: f64,
+    alpha: f64,
+) -> Vec<RealignRecord> {
+    let copy_seqs: Vec<Vec<u8>> = copies.iter().map(|c| c.seq.clone()).collect();
+    let copy_refs: Vec<&DenovoTranscript> = copies.iter().collect();
+
+    let mut out = Vec::new();
+    for br in bam_reads {
+        if br.is_supplementary {
+            continue;
+        }
+        let read_len = br.read.seq.len();
+        let clip: u64 = br.read.cigar.iter().filter(|&&(op, _)| op == 'S').map(|&(_, n)| n).sum();
+        let clip_frac = if read_len > 0 { clip as f64 / read_len as f64 } else { 0.0 };
+        let div = br.de as f64;
+
+        if !is_candidate(br.mapq, div, clip_frac, params) {
+            continue;
+        }
+
+        let linear_copy = best_overlap_copy(&br.read, &copy_refs);
+        let linear_copy_i64 = linear_copy.map(|c| c as i64).unwrap_or(-1);
+
+        let record = match realign_to_paths(&br.read.seq, &copy_seqs, linear_copy) {
+            None => RealignRecord {
+                read_name: br.name.clone(),
+                action: "novel-candidate".to_string(),
+                target_copy: -1,
+                id_best: 0.0,
+                linear_copy: linear_copy_i64,
+            },
+            Some(hit) => {
+                let id_best = hit.id_best;
+                match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
+                    RealignAction::Reassign(best_copy) => RealignRecord {
+                        read_name: br.name.clone(),
+                        action: "reassigned".to_string(),
+                        target_copy: best_copy as i64,
+                        id_best,
+                        linear_copy: linear_copy_i64,
+                    },
+                    RealignAction::Reject => RealignRecord {
+                        read_name: br.name.clone(),
+                        action: "rejected".to_string(),
+                        target_copy: -1,
+                        id_best,
+                        linear_copy: linear_copy_i64,
+                    },
+                }
+            }
+        };
+        out.push(record);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vg_family::copy_split::AlignedRead;
 
     #[test]
     fn is_candidate_flags_poor_fit() {
@@ -438,5 +547,73 @@ mod tests {
         // Only 2 mutually-identical reads, but min_reads = 3 -> nothing survives.
         let clusters = pool_novel(&unfit, 0.9, 3);
         assert!(clusters.is_empty(), "expected no clusters to meet min_reads = 3, got {clusters:?}");
+    }
+
+    /// Minimal `DenovoTranscript` builder for the `run_family_realign` tests -- unspliced (no introns),
+    /// mirroring how `copy_assign_pipeline`'s own tests construct copies.
+    fn transcript(tid: &str, chrom: &str, start: u64, seq: Vec<u8>) -> DenovoTranscript {
+        let end = start + seq.len() as u64;
+        DenovoTranscript { tid: tid.to_string(), chrom: chrom.to_string(), start, end, n_reads: 10, strand: '+', introns: vec![], seq }
+    }
+
+    fn bam_read(name: &str, chrom: &str, ref_start: u64, seq: Vec<u8>, mapq: u8, de: f32) -> BamRead {
+        let len = seq.len() as u64;
+        BamRead {
+            chrom: chrom.to_string(),
+            read: AlignedRead { ref_start, cigar: vec![('M', len)], seq, qual: vec![] },
+            mapq,
+            name: name.to_string(),
+            as_score: 0,
+            de,
+            is_supplementary: false,
+        }
+    }
+
+    #[test]
+    fn run_family_realign_reassigns_misplaced_low_mapq_read() {
+        let copy0_seq = pseudo_seq(1, 200);
+        let copy1_seq = pseudo_seq(2, 200);
+        // A substitution-variant of copy 1 (2 flipped bases) -- still >99% identical to copy 1, and only
+        // ~50% identical to the unrelated copy 0 (random same-length sequences).
+        let mut read_seq = copy1_seq.clone();
+        for &pos in &[20usize, 100usize] {
+            let orig = read_seq[pos];
+            read_seq[pos] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != orig).unwrap();
+        }
+
+        // Copy 0 at chr1:0-200, copy 1 at chr1:5000-5200 -- distinct, non-overlapping loci.
+        let copy0 = transcript("copy0", "chr1", 0, copy0_seq);
+        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq);
+        let copies = vec![copy0, copy1];
+
+        // The read is "linearly placed" (BAM ref_start) inside copy 0's span -- so its coordinate-overlap
+        // locus (linear_copy) is copy 0 -- but its SEQUENCE is really copy 1's, and its MAPQ is low
+        // (ambiguous multimapper), so it's a Task-1 candidate.
+        let br = bam_read("readA", "chr1", 0, read_seq, 3, 0.0);
+
+        let records = run_family_realign(&[br], &copies, &RealignParams::default(), 0.003, 1e-3);
+        assert_eq!(records.len(), 1, "expected exactly one record, got {records:?}");
+        let rec = &records[0];
+        assert_eq!(rec.read_name, "readA");
+        assert_eq!(rec.linear_copy, 0, "read's linear (BAM-coordinate) placement must be copy 0");
+        assert_eq!(rec.action, "reassigned");
+        assert_eq!(rec.target_copy, 1, "the read's true best-fit copy is copy 1");
+        assert!(rec.id_best > 0.9, "id_best = {} should be a strong fit to copy 1", rec.id_best);
+    }
+
+    #[test]
+    fn run_family_realign_clean_read_produces_no_record() {
+        let copy0_seq = pseudo_seq(1, 200);
+        let copy1_seq = pseudo_seq(2, 200);
+        let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
+        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq);
+        let copies = vec![copy0, copy1];
+
+        // A read that is exactly copy 0's sequence, high MAPQ, no clipping, on copy 0's own locus --
+        // a clean primary fit, not a Task-1 candidate at all.
+        let br = bam_read("readB", "chr1", 0, copy0_seq, 60, 0.0);
+
+        let records = run_family_realign(&[br], &copies, &RealignParams::default(), 0.003, 1e-3);
+        assert!(records.is_empty(), "a clean high-MAPQ read must produce no record, got {records:?}");
     }
 }

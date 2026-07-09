@@ -51,6 +51,11 @@ pub struct DenovoConfig {
     /// `detect.t_core` — reaching divergent copies the conflict graph (confusable-only) misses. Bounded +
     /// seeded by the conflict families (`family_detect::poa_core_completion_adds`).
     pub complete_poa_core: bool,
+    /// VG re-align supplement (Task 5, opt-in): default false = OFF, byte-identical. When true,
+    /// `detect_and_assign` runs `vg_realign::run_family_realign` over each co-located family's reads and
+    /// stores the resulting `Vec<RealignRecord>` on `FamilyAssignment::realign_records`. REPORT-ONLY —
+    /// does not alter the copy set, the PSV/junction assignment, or any other emitted field.
+    pub vg_realign: bool,
 }
 
 impl Default for DenovoConfig {
@@ -63,6 +68,7 @@ impl Default for DenovoConfig {
             split: SplitParams::default(),
             conflict: ConflictParams::from_env(),
             complete_poa_core: false,
+            vg_realign: false,
         }
     }
 }
@@ -332,6 +338,10 @@ pub struct FamilyAssignment {
     /// per-read intron-boundary offsets in the assigned copy's spliced space, parallel to
     /// `read_psv_obs`/`assignments` (`read_junctions[i]` aligns with `read_psv_obs[i]`/`assignments[i]`).
     pub read_junctions: Vec<Vec<i64>>,
+    /// Task 5 (opt-in via `DenovoConfig::vg_realign`, default OFF): the VG re-align supplement's per-read
+    /// decisions for this family (`vg_realign::run_family_realign`) — empty unless `vg_realign` is set.
+    /// REPORT-ONLY: not consumed by `assignments`/`copy_tids`/anything else above.
+    pub realign_records: Vec<crate::vg_family::vg_realign::RealignRecord>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
@@ -695,6 +705,21 @@ pub fn detect_and_assign(
             .iter()
             .map(|reads| split_locus_copies(reads, 3, 2, 3).len().saturating_sub(1))
             .sum();
+        // Task 5 (opt-in, additive): the VG re-align supplement's per-read decisions for this family, over
+        // the SAME `region`-filtered `BamRead`s used above. OFF (default) => this whole block is skipped,
+        // `realign_records` stays empty, and nothing else in `fa`/`detail`/`all_copies` is touched.
+        let realign_records = if cfg.vg_realign {
+            let family_bam_reads: Vec<BamRead> = idx_map.iter().map(|&i| bam_reads[i].clone()).collect();
+            super::vg_realign::run_family_realign(
+                &family_bam_reads,
+                &all_copies,
+                &super::vg_realign::RealignParams::default(),
+                p.error_rate,
+                p.alpha,
+            )
+        } else {
+            Vec::new()
+        };
         let mut fa = FamilyAssignment {
             family_id: cf.family_id,
             chrom: cf.chrom,
@@ -722,6 +747,7 @@ pub fn detect_and_assign(
             read_psv_obs: Vec::with_capacity(detail.results.len()),
             copy_junctions: detail.copy_junctions.clone(),
             read_junctions: Vec::with_capacity(detail.results.len()),
+            realign_records,
         };
         for r in detail.results {
             let resolvable_psv = r.psv.n_decisive >= 1;

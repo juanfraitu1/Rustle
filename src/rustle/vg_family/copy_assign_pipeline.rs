@@ -546,7 +546,7 @@ fn read_features(read: &AlignedRead, mc: usize, fp: &FamilyProfiles) -> ReadFeat
 }
 
 /// The copy whose genomic span the read overlaps most (`None` if it overlaps none).
-fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
+pub(crate) fn best_overlap_copy(read: &AlignedRead, copies: &[&DenovoTranscript]) -> Option<usize> {
     let r_end = read_ref_end(read);
     let mut best = None;
     let mut best_ov = 0i64;
