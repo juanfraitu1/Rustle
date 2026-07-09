@@ -107,7 +107,7 @@ pub fn revcomp(s: &[u8]) -> Vec<u8> {
 /// substring of `t` (free gaps at both ends of `t`). Equals `edlib.align(q, t,
 /// mode="HW", task="distance")["editDistance"]`. Two rolling DP rows over `t` columns
 /// (`dp[0][*]=0`, `dp[i][0]=i`, answer `= min_j dp[|q|][j]`).
-fn hw_distance(q: &[u8], t: &[u8]) -> usize {
+pub(crate) fn hw_distance(q: &[u8], t: &[u8]) -> usize {
     let lq = q.len();
     let lt = t.len();
     // dp row 0 = 0 across all t columns (a free start position in t).

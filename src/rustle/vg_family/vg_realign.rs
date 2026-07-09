@@ -7,6 +7,12 @@
 //! candidate novel-copy clusters. Task 5: wire Tasks 1/3/4 into a per-family driver
 //! (`run_family_realign`) and, behind `DenovoConfig::vg_realign`, into the pipeline -- REPORT-ONLY
 //! (see that fn's doc for the exact scope).
+//!
+//! VG re-align END-TO-END plan, Task 1: `align_traceback` + `path_obs_at`. There is no `edlib`
+//! crate; `bridge_detector::hw_distance` is a hand-rolled 2-row DP that gives the HW/infix edit
+//! DISTANCE only, no alignment path. To re-extract a read's base at a copy-path's PSV columns
+//! (follow-up (c) in `bench/VG_REALIGN.md`) we need the actual traceback, so this keeps a full DP
+//! + backtrack matrix (not the rolling 2-row form) and reconstructs the aligned columns.
 
 use std::collections::HashSet;
 
@@ -15,6 +21,123 @@ use crate::vg_family::copy_assign_pipeline::best_overlap_copy;
 use crate::vg_family::denovo_assemble::BamRead;
 use crate::vg_family::family_detect::DenovoTranscript;
 use crate::vg_family::minimizers::minimizers;
+
+/// Backtrack pointer for one DP cell of `align_traceback`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Trace {
+    /// Row 0 (free leading gap on `target`) -- backtrack terminates here.
+    Start,
+    /// From `dp[i-1][j-1]`: consumes `query[i-1]` AND `target[j-1]` (match or mismatch).
+    Diag,
+    /// From `dp[i-1][j]`: consumes `query[i-1]` only -- a gap in `target`.
+    Up,
+    /// From `dp[i][j-1]`: consumes `target[j-1]` only -- a gap in `query`.
+    Left,
+}
+
+/// HW/infix alignment of `query` against `target`, WITH the traceback path (unlike
+/// `bridge_detector::hw_distance`, which only returns the distance via a rolling 2-row DP).
+///
+/// Same semantics as `hw_distance`: `query` is rows, `target` is columns; row 0 is `0` across
+/// every target column (free leading gap on `target`); the alignment ends at the min-cost cell in
+/// the LAST query row (free trailing gap on `target`) and is backtracked to query row 0. Match
+/// cost 0, substitution/indel cost 1.
+///
+/// Returns the aligned columns in order from the start of the alignment to its end: `(Some(qi),
+/// Some(ti))` for a match/mismatch, `(Some(qi), None)` for a gap in `target`, `(None, Some(ti))`
+/// for a gap in `query`. Every `query` index `0..query.len()` appears exactly once (query has no
+/// free end-gaps under HW); `target` indices outside the aligned span (the free leading/trailing
+/// gap) never appear at all.
+pub fn align_traceback(query: &[u8], target: &[u8]) -> Vec<(Option<usize>, Option<usize>)> {
+    let lq = query.len();
+    let lt = target.len();
+    let cols = lt + 1;
+
+    let mut dp: Vec<usize> = vec![0; (lq + 1) * cols];
+    let mut back: Vec<Trace> = vec![Trace::Start; (lq + 1) * cols];
+
+    // Row 0: free leading gap on target -> cost 0 everywhere; Start marks the backtrack terminus.
+    // (dp[0][j] is already 0 from the `vec!` initializer; `back` is already `Trace::Start`.)
+
+    for i in 1..=lq {
+        dp[i * cols] = i;
+        back[i * cols] = Trace::Up; // dp[i][0] = dp[i-1][0] + 1 (gap in target, column stays 0).
+        let qi = query[i - 1];
+        for j in 1..=lt {
+            let sub = dp[(i - 1) * cols + (j - 1)] + if qi == target[j - 1] { 0 } else { 1 };
+            let up = dp[(i - 1) * cols + j] + 1;
+            let left = dp[i * cols + (j - 1)] + 1;
+
+            let (best, tr) = if sub <= up && sub <= left {
+                (sub, Trace::Diag)
+            } else if up <= left {
+                (up, Trace::Up)
+            } else {
+                (left, Trace::Left)
+            };
+            dp[i * cols + j] = best;
+            back[i * cols + j] = tr;
+        }
+    }
+
+    // Free trailing gap on target: the alignment ends at the min-cost cell of the last query row.
+    let last_row = lq * cols;
+    let mut best_j = 0usize;
+    let mut best_cost = dp[last_row];
+    for j in 1..=lt {
+        let c = dp[last_row + j];
+        if c < best_cost {
+            best_cost = c;
+            best_j = j;
+        }
+    }
+
+    let mut pairs: Vec<(Option<usize>, Option<usize>)> = Vec::new();
+    let mut i = lq;
+    let mut j = best_j;
+    while i > 0 {
+        match back[i * cols + j] {
+            Trace::Diag => {
+                pairs.push((Some(i - 1), Some(j - 1)));
+                i -= 1;
+                j -= 1;
+            }
+            Trace::Up => {
+                pairs.push((Some(i - 1), None));
+                i -= 1;
+            }
+            Trace::Left => {
+                pairs.push((None, Some(j - 1)));
+                j -= 1;
+            }
+            Trace::Start => break, // unreachable for i > 0, but avoid looping forever if it were.
+        }
+    }
+    pairs.reverse();
+    pairs
+}
+
+/// For each PSV column `t` (a position in `target`, the copy-path/consensus that `align_map` was
+/// computed against), the read's base observed there: `Some(query[qi])` when `align_map` has an
+/// aligned pair `(Some(qi), Some(t))`, or `None` when the read gaps at that column or the
+/// alignment doesn't span it at all (`t` falls in the free leading/trailing target gap, or lands
+/// on a `(None, Some(t))` query-gap column). Output length matches
+/// `psv_positions_in_consensus.len()`, in the same order.
+pub fn path_obs_at(
+    align_map: &[(Option<usize>, Option<usize>)],
+    psv_positions_in_consensus: &[usize],
+    query: &[u8],
+) -> Vec<Option<u8>> {
+    psv_positions_in_consensus
+        .iter()
+        .map(|&t| {
+            align_map
+                .iter()
+                .find(|&&(_, ti)| ti == Some(t))
+                .and_then(|&(qi, _)| qi.map(|q| query[q]))
+        })
+        .collect()
+}
 
 /// Thresholds for flagging a read as a re-align CANDIDATE (poor-fit or unmapped).
 ///
@@ -326,6 +449,7 @@ pub fn run_family_realign(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vg_family::bridge_detector::hw_distance;
     use crate::vg_family::copy_split::AlignedRead;
 
     #[test]
@@ -629,5 +753,81 @@ mod tests {
 
         let records = run_family_realign(&[br], &copies, &RealignParams::default(), 0.003, 1e-3);
         assert!(records.is_empty(), "a clean high-MAPQ read must produce no record, got {records:?}");
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Task 1 (end-to-end plan): align_traceback + path_obs_at
+    // -----------------------------------------------------------------------------------------
+
+    /// Sum of mismatched-diagonal columns + gap columns (either side) in an alignment map --
+    /// this must equal `hw_distance`'s edit distance for any valid traceback of that DP.
+    fn edits_in_map(align_map: &[(Option<usize>, Option<usize>)], query: &[u8], target: &[u8]) -> usize {
+        align_map
+            .iter()
+            .filter(|&&(qi, ti)| match (qi, ti) {
+                (Some(q), Some(t)) => query[q] != target[t],
+                (Some(_), None) | (None, Some(_)) => true,
+                (None, None) => panic!("align_traceback must never emit a (None, None) column"),
+            })
+            .count()
+    }
+
+    #[test]
+    fn traceback_edit_distance_matches_hw() {
+        let cases: Vec<(&[u8], &[u8])> = vec![
+            // exact infix: ACGT occurs verbatim inside TTACGTGG -> dist 0.
+            (b"ACGT", b"TTACGTGG"),
+            // 1 substitution: ACGT vs an infix that differs at one base (ACCT inside TT-ACCT-GG).
+            (b"ACGT", b"TTACCTGG"),
+            // 1 insertion (relative to target): query has an extra base not in any target infix.
+            (b"ACGGT", b"TTACGTGG"),
+            // 1 deletion (relative to target): query is missing a base present in the target infix.
+            (b"ACT", b"TTACGTGG"),
+            // longer query with 2 edits scattered through it.
+            (b"ACGTACGTAC", b"TTACGTACCTAGGG"),
+        ];
+
+        for (query, target) in cases {
+            let expected = hw_distance(query, target);
+            let map = align_traceback(query, target);
+            let got = edits_in_map(&map, query, target);
+            assert_eq!(
+                got, expected,
+                "query={:?} target={:?}: traceback edits {got} != hw_distance {expected}",
+                std::str::from_utf8(query).unwrap(),
+                std::str::from_utf8(target).unwrap()
+            );
+
+            // Sanity: the aligned columns must walk query positions 0..query.len() in order (every
+            // query base consumed exactly once, monotonically), since HW gives free end-gaps only on
+            // the TARGET, not the query.
+            let q_positions: Vec<usize> =
+                map.iter().filter_map(|&(qi, _)| qi).collect();
+            let expected_q_positions: Vec<usize> = (0..query.len()).collect();
+            assert_eq!(
+                q_positions, expected_q_positions,
+                "every query position must appear exactly once, in order"
+            );
+        }
+    }
+
+    #[test]
+    fn path_obs_reads_bases_at_psv_columns() {
+        // T-idx 5 = 'C', T-idx 10 = 'G' (0-based).
+        let target: Vec<u8> = b"AAAAACAAAAGAAAAA".to_vec();
+        assert_eq!(target[5], b'C');
+        assert_eq!(target[10], b'G');
+
+        // Exact full-length match -> both PSV columns are spanned and read verbatim.
+        let query = target.clone();
+        let map = align_traceback(&query, &target);
+        let obs = path_obs_at(&map, &[5, 10], &query);
+        assert_eq!(obs, vec![Some(b'C'), Some(b'G')]);
+
+        // A short read that only covers target[..8] -- doesn't reach column 12 at all.
+        let short_query: Vec<u8> = target[..8].to_vec();
+        let map2 = align_traceback(&short_query, &target);
+        let obs2 = path_obs_at(&map2, &[12], &short_query);
+        assert_eq!(obs2, vec![None]);
     }
 }
