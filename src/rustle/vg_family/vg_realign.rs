@@ -366,6 +366,28 @@ pub struct RealignRecord {
     pub linear_copy: i64,
 }
 
+/// VG re-align END-TO-END plan, Task 2: `apply_realign`'s output.
+///
+/// `admitted` reference-absent copies are NOT produced here -- see the field doc on
+/// `novel_pools` and `apply_realign`'s doc for why (this stays genome-free/testable; admission
+/// is the follow-up wiring task's job).
+pub struct RealignApply {
+    /// `read_index -> (new_copy_idx, path_obs)`: a significant correction (Task 4's
+    /// `RealignAction::Reassign`) to a DIFFERENT copy than the read's existing linear
+    /// attribution, plus the read's base at each of the new copy's PSV columns (from
+    /// `align_traceback` + `path_obs_at` against the new copy's consensus).
+    pub corrected: std::collections::HashMap<usize, (usize, Vec<Option<u8>>)>,
+    /// Clusters (each `>= rp.min_reads` members) of read INDICES (into `bam_reads`) that fit no
+    /// existing copy-path at all (`realign_to_paths` returned `None`) but are mutually similar
+    /// enough (`pool_novel`, `min_id ~= 0.9`) to be candidate novel/reference-absent copies. Not
+    /// yet admitted -- the wiring task turns each pool into a `CollapsedCandidate` and runs it
+    /// through `absent_copy::admit_candidate` with the real genome + remap.
+    pub novel_pools: Vec<Vec<usize>>,
+    /// One record per candidate read processed (`"reassigned"`, `"rejected"`, or
+    /// `"novel-candidate"`), same shape as `run_family_realign`'s output.
+    pub records: Vec<RealignRecord>,
+}
+
 /// Task 5: run the VG re-align supplement (Tasks 1/3/4) over ONE co-located family's reads.
 ///
 /// For every non-supplementary read in `bam_reads`: compute `mapq` (`read.mapq`), `clip_frac` (total
@@ -444,6 +466,115 @@ pub fn run_family_realign(
         out.push(record);
     }
     out
+}
+
+/// VG re-align END-TO-END plan, Task 2: apply the per-read decisions (Tasks 1/3/4) into a
+/// ready-to-consume correction map + novel-copy candidate pools, over reads spanning potentially
+/// SEVERAL families at once (unlike `run_family_realign`'s one-family driver).
+///
+/// `copies`/`copy_seqs` are parallel (one spliced consensus per copy, `copy_seqs[k] ==
+/// copies[k].seq` is the expected caller invariant but only `copy_seqs` is actually read here --
+/// `copies` is carried for callers/future use, e.g. locus metadata alongside the correction map).
+/// `psv_pos_per_copy[k]` are the family's PSV positions in `copy_seqs[k]`'s consensus coordinates.
+/// `linear_copy_of[i]` is read `i`'s existing linear-locus copy attribution (or `None`), parallel
+/// to `bam_reads`.
+///
+/// CORRECTIONS (must-have): a candidate read (`is_candidate`) that re-aligns to a copy-path
+/// (`realign_to_paths`) and clears `accept_realignment`'s significance certificate
+/// (`RealignAction::Reassign`) is entered into `corrected[read_index] = (new_copy, path_obs)`,
+/// where `path_obs` is the read's base at each of the new copy's PSV columns
+/// (`align_traceback` + `path_obs_at` against `copy_seqs[new_copy]`).
+///
+/// ADMISSIONS (best-effort/mechanism-only): a candidate read that fits NO copy-path at all
+/// (`realign_to_paths` returns `None`) is pooled with other such "unfit" reads by
+/// `pool_novel`; `novel_pools` holds the resulting clusters (mapped back to indices into
+/// `bam_reads`) with `>= rp.min_reads` members. This is genome-free and does NOT run
+/// `absent_copy::admit_candidate` -- turning a pool into an admitted reference-absent copy needs
+/// the real genome + remap, which is the follow-up wiring task's job, not this one's. Real yield
+/// here is data-limited (the O4 divergent frontier): most families will produce zero pools.
+///
+/// Reads failing `is_candidate` are skipped entirely (no record, no correction, no pooling) --
+/// a clean primary fit has nothing to reconsider. Supplementary alignments (`is_supplementary`)
+/// are also skipped, mirroring `run_family_realign`.
+pub fn apply_realign(
+    bam_reads: &[BamRead],
+    copies: &[DenovoTranscript],
+    copy_seqs: &[Vec<u8>],
+    psv_pos_per_copy: &[Vec<usize>],
+    linear_copy_of: &[Option<usize>],
+    rp: &RealignParams,
+    error_rate: f64,
+    alpha: f64,
+) -> RealignApply {
+    let _ = copies; // parallel to copy_seqs; not read directly here (see doc).
+
+    let mut corrected = std::collections::HashMap::new();
+    let mut records = Vec::new();
+    let mut unfit: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut unfit_idx: Vec<usize> = Vec::new();
+
+    for (i, br) in bam_reads.iter().enumerate() {
+        if br.is_supplementary {
+            continue;
+        }
+        let read_len = br.read.seq.len();
+        let clip: u64 = br.read.cigar.iter().filter(|&&(op, _)| op == 'S').map(|&(_, n)| n).sum();
+        let clip_frac = if read_len > 0 { clip as f64 / read_len as f64 } else { 0.0 };
+        let div = br.de as f64;
+
+        if !is_candidate(br.mapq, div, clip_frac, rp) {
+            continue;
+        }
+
+        let linear_copy = linear_copy_of.get(i).copied().flatten();
+        let linear_copy_i64 = linear_copy.map(|c| c as i64).unwrap_or(-1);
+
+        match realign_to_paths(&br.read.seq, copy_seqs, linear_copy) {
+            None => {
+                unfit.push((br.name.clone(), br.read.seq.clone()));
+                unfit_idx.push(i);
+                records.push(RealignRecord {
+                    read_name: br.name.clone(),
+                    action: "novel-candidate".to_string(),
+                    target_copy: -1,
+                    id_best: 0.0,
+                    linear_copy: linear_copy_i64,
+                });
+            }
+            Some(hit) => {
+                let id_best = hit.id_best;
+                match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
+                    RealignAction::Reassign(best_copy) => {
+                        let map = align_traceback(&br.read.seq, &copy_seqs[best_copy]);
+                        let obs = path_obs_at(&map, &psv_pos_per_copy[best_copy], &br.read.seq);
+                        corrected.insert(i, (best_copy, obs));
+                        records.push(RealignRecord {
+                            read_name: br.name.clone(),
+                            action: "reassigned".to_string(),
+                            target_copy: best_copy as i64,
+                            id_best,
+                            linear_copy: linear_copy_i64,
+                        });
+                    }
+                    RealignAction::Reject => {
+                        records.push(RealignRecord {
+                            read_name: br.name.clone(),
+                            action: "rejected".to_string(),
+                            target_copy: -1,
+                            id_best,
+                            linear_copy: linear_copy_i64,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    let clusters = pool_novel(&unfit, 0.9, rp.min_reads);
+    let novel_pools: Vec<Vec<usize>> =
+        clusters.into_iter().map(|c| c.into_iter().map(|j| unfit_idx[j]).collect()).collect();
+
+    RealignApply { corrected, novel_pools, records }
 }
 
 #[cfg(test)]
@@ -809,6 +940,150 @@ mod tests {
                 "every query position must appear exactly once, in order"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // VG re-align END-TO-END plan, Task 2: apply_realign orchestrator
+    // -----------------------------------------------------------------------------------------
+
+    #[test]
+    fn apply_corrects_mismapped_read() {
+        // Two distinct-consensus copies; copy 1 has a distinguishing base at consensus position
+        // `p` relative to copy 0 (guaranteed distinct at that column by construction).
+        let copy0_seq = pseudo_seq(1, 200);
+        let mut copy1_seq = pseudo_seq(2, 200);
+        let p = 50usize;
+        // Force column p to differ between the two copies (pseudo_seq draws from independent
+        // seeds so this already usually holds, but force it so the test isn't seed-lucky).
+        if copy1_seq[p] == copy0_seq[p] {
+            copy1_seq[p] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != copy0_seq[p]).unwrap();
+        }
+        let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
+        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq.clone());
+        let copies = vec![copy0, copy1];
+        let copy_seqs = vec![copy0_seq, copy1_seq.clone()];
+        let psv_pos_per_copy = vec![vec![p], vec![p]];
+
+        // Read == copy 1's consensus exactly, but low MAPQ and linearly attributed to copy 0
+        // (its BAM placement) -- a Task-1 candidate whose true source is copy 1.
+        let br = bam_read("readA", "chr1", 0, copy1_seq.clone(), 3, 0.0);
+        let linear_copy_of = vec![Some(0usize)];
+
+        let out = apply_realign(
+            &[br],
+            &copies,
+            &copy_seqs,
+            &psv_pos_per_copy,
+            &linear_copy_of,
+            &RealignParams::default(),
+            0.003,
+            1e-3,
+        );
+
+        assert_eq!(out.corrected.len(), 1, "expected exactly one correction, got {:?}", out.corrected);
+        let (new_copy, obs) = out.corrected.get(&0).expect("read 0 must be corrected");
+        assert_eq!(*new_copy, 1, "read's true best-fit copy is copy 1");
+        assert_eq!(obs, &vec![Some(copy1_seq[p])], "obs at the PSV column must equal copy 1's base");
+        assert!(out.novel_pools.is_empty());
+        assert_eq!(
+            out.records.iter().filter(|r| r.action == "reassigned").count(),
+            1,
+            "expected one reassigned record, got {:?}",
+            out.records
+        );
+    }
+
+    #[test]
+    fn apply_pools_novel_unfit() {
+        // 3 mutually near-identical reads that match NEITHER copy (id_best < MIN_ALN_ID so
+        // realign_to_paths returns None for all of them) -- candidate novel-copy material.
+        let copy0_seq = pseudo_seq(1, 80);
+        let copy1_seq = pseudo_seq(2, 80);
+        let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
+        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq.clone());
+        let copies = vec![copy0, copy1];
+        let copy_seqs = vec![copy0_seq.clone(), copy1_seq.clone()];
+        let psv_pos_per_copy = vec![vec![], vec![]];
+
+        let novel_base = pseudo_seq(69, 80);
+        assert!(
+            aln_id(&novel_base, &copy0_seq) < MIN_ALN_ID && aln_id(&novel_base, &copy1_seq) < MIN_ALN_ID,
+            "fixture assumption broken: novel_base must fit neither existing copy"
+        );
+        // Exact clones of `novel_base` (not single-base mutants): with a random ~80bp sequence
+        // sitting right at the ~0.5 "no better than chance" identity floor against the existing
+        // copies, even a 1-base mutation can nudge `aln_id` across the `MIN_ALN_ID` boundary in
+        // either direction (edit-distance realignment isn't strictly monotone in Hamming
+        // distance). Cloning keeps every read's fit to the existing copies IDENTICAL to the
+        // already-asserted `novel_base` fit, while still being "mutually near-identical"
+        // (identity 1.0) for `pool_novel`'s `>= min_id` clustering.
+        let novel1 = novel_base.clone();
+        let novel2 = novel_base.clone();
+
+        // A clean read on its correct copy (high MAPQ, no clip, low div) -- not a candidate at
+        // all, must produce no record and not enter the pool.
+        let clean = bam_read("clean", "chr1", 0, copy0_seq, 60, 0.0);
+        let n0 = bam_read("n0", "chr1", 0, novel_base, 3, 0.0);
+        let n1 = bam_read("n1", "chr1", 0, novel1, 3, 0.0);
+        let n2 = bam_read("n2", "chr1", 0, novel2, 3, 0.0);
+
+        let bam_reads = vec![clean, n0, n1, n2];
+        let linear_copy_of = vec![Some(0usize), None, None, None];
+
+        let out = apply_realign(
+            &bam_reads,
+            &copies,
+            &copy_seqs,
+            &psv_pos_per_copy,
+            &linear_copy_of,
+            &RealignParams::default(),
+            0.003,
+            1e-3,
+        );
+
+        assert!(out.corrected.is_empty(), "no corrections expected, got {:?}", out.corrected);
+        assert_eq!(out.novel_pools.len(), 1, "expected exactly one novel pool, got {:?}", out.novel_pools);
+        let mut got = out.novel_pools[0].clone();
+        got.sort_unstable();
+        assert_eq!(got, vec![1, 2, 3], "expected read indices 1,2,3 (the 3 novel reads) pooled");
+
+        let novel_records: Vec<_> = out.records.iter().filter(|r| r.action == "novel-candidate").collect();
+        assert_eq!(novel_records.len(), 3, "expected one novel-candidate record per unfit read");
+        assert!(
+            out.records.iter().all(|r| r.read_name != "clean"),
+            "the clean read must produce no record at all"
+        );
+    }
+
+    #[test]
+    fn apply_clean_family_noop() {
+        let copy0_seq = pseudo_seq(1, 200);
+        let copy1_seq = pseudo_seq(2, 200);
+        let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
+        let copy1 = transcript("copy1", "chr1", 5000, copy1_seq.clone());
+        let copies = vec![copy0, copy1];
+        let copy_seqs = vec![copy0_seq.clone(), copy1_seq.clone()];
+        let psv_pos_per_copy = vec![vec![], vec![]];
+
+        let r0 = bam_read("r0", "chr1", 0, copy0_seq, 60, 0.0);
+        let r1 = bam_read("r1", "chr1", 5000, copy1_seq, 60, 0.0);
+        let bam_reads = vec![r0, r1];
+        let linear_copy_of = vec![Some(0usize), Some(1usize)];
+
+        let out = apply_realign(
+            &bam_reads,
+            &copies,
+            &copy_seqs,
+            &psv_pos_per_copy,
+            &linear_copy_of,
+            &RealignParams::default(),
+            0.003,
+            1e-3,
+        );
+
+        assert!(out.corrected.is_empty(), "expected no corrections, got {:?}", out.corrected);
+        assert!(out.novel_pools.is_empty(), "expected no novel pools, got {:?}", out.novel_pools);
+        assert!(out.records.is_empty(), "expected no records at all, got {:?}", out.records);
     }
 
     #[test]
