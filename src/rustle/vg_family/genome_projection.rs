@@ -362,4 +362,85 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// TDD for the `gw_family_catalog --enumerate-copies` totalCN cov floor: a coverage sweep on real
+    /// families showed `min_cov=0.50` INFLATES totalCN with partial/domain-fragment hits (GWFAM18: 16 at
+    /// cov0.50 vs 12=truth at cov>=0.70), while `min_cov=0.90` is too strict and drops divergent
+    /// full-length copies (GSTM 4 vs 19 truth). `min_cov=0.80` is the sweet spot. This test proves that
+    /// policy at the `project_families_batch` call level: with `min_cov=0.80`, the planted ~50%-length
+    /// near-identical fragment (cov~0.5) must be EXCLUDED from the batch result entirely, while the
+    /// full-length divergent copies (0%/~8%/~15% divergence, cov>=0.80) are retained.
+    #[test]
+    fn project_families_batch_cov80_excludes_fragments() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+
+        let splitmix = |i: u64| -> u64 {
+            let mut z = i.wrapping_add(0x9E3779B97F4A7C15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        };
+        let bases = [b'A', b'C', b'G', b'T'];
+        let gen_seq = |seed: u64, len: u64| -> Vec<u8> {
+            (0..len)
+                .map(|i| bases[(splitmix(seed.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(i)) % 4) as usize])
+                .collect::<Vec<u8>>()
+        };
+        let mutate = |seq: &[u8], frac: f64, seed: u64| -> Vec<u8> {
+            let n = seq.len();
+            let mut idx: Vec<usize> = (0..n).collect();
+            idx.sort_by_key(|&i| splitmix(seed.wrapping_add(i as u64)));
+            let n_mut = (frac * n as f64).round() as usize;
+            let mut out = seq.to_vec();
+            for &i in idx.iter().take(n_mut) {
+                let orig = out[i];
+                let h = splitmix(seed ^ 0xABCDEF ^ i as u64);
+                let mut alt = bases[(h % 4) as usize];
+                if alt == orig { alt = bases[((h % 4) as usize + 1) % 4]; }
+                out[i] = alt;
+            }
+            out
+        };
+
+        let copy_len = 1500u64;
+        let a0 = gen_seq(1, copy_len);
+        let a8 = mutate(&a0, 0.08, 100);
+        let a15 = mutate(&a0, 0.15, 200);
+        // Same ~50%-length near-identical fragment as the sibling test: clears the old cov>=0.50 floor
+        // but must NOT clear the new cov>=0.80 floor.
+        let a_frag = mutate(&a0[..(copy_len as usize / 2)], 0.01, 400);
+
+        let dir = std::env::temp_dir().join(format!("rustle_proj_cov80_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut genome: Vec<u8> = Vec::new();
+        genome.extend_from_slice(&gen_seq(9001, 2_000));
+        genome.extend_from_slice(&a0);
+        genome.extend_from_slice(&gen_seq(9002, 20_000));
+        genome.extend_from_slice(&a8);
+        genome.extend_from_slice(&gen_seq(9003, 20_000));
+        genome.extend_from_slice(&a15);
+        genome.extend_from_slice(&gen_seq(9007, 20_000));
+        genome.extend_from_slice(&a_frag);
+        genome.extend_from_slice(&gen_seq(9004, 2_000));
+
+        let fa = dir.join("g.fa");
+        std::fs::write(&fa, format!(">chr1\n{}\n", String::from_utf8(genome).unwrap())).unwrap();
+
+        let consensuses: Vec<(String, Vec<u8>)> = vec![("F1".to_string(), a0.clone())];
+        let known: std::collections::HashMap<String, Vec<(String, u64, u64)>> = std::collections::HashMap::new();
+        let result = project_families_batch(&consensuses, fa.to_str().unwrap(), &known, 0.80, 0.80, "minimap2", 2).unwrap();
+
+        let f1 = result.get("F1").expect("F1 must be present in batch result");
+
+        // The full-length divergent copies (0%/~8%/~15%) all clear cov>=0.80 and must be present.
+        assert!(f1.len() >= 3,
+            "expected >=3 full-length loci (0%/~8%/~15% divergent) at min_cov=0.80, got {}: {:?}", f1.len(), f1);
+        assert!(f1.iter().all(|c| c.cov >= 0.80),
+            "min_cov=0.80 call must not return any sub-0.80-coverage hit: {:?}", f1);
+        // The ~50%-length fragment must be gone entirely -- no hit with cov in the fragment's ~0.5 band.
+        assert!(f1.iter().all(|c| c.cov < 0.40 || c.cov >= 0.75),
+            "min_cov=0.80 must exclude the half-length (cov~0.5) fragment hit: {:?}", f1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

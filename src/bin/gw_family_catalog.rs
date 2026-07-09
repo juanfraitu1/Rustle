@@ -237,6 +237,12 @@ fn main() -> Result<()> {
     // whole genome hundreds/thousands of times) and count additional disjoint loci beyond the already-
     // known copy loci, bucketed by identity: totalCN at the >=0.80 asm20 floor, famCN at the >=0.98 Soto
     // SD98 near-identical floor.
+    // totalCN cov>=0.80 (batch floor): full-length divergent copies without partial-domain fragment
+    // inflation; famCN keeps cov>=0.90 (near-identical, Soto SD98). A coverage sweep on real families
+    // showed cov>=0.50 inflates totalCN with partial/domain-fragment hits (GWFAM18: 16 vs 12=truth at
+    // cov>=0.70), while cov>=0.90 is too strict and drops divergent full-length copies (GSTM 4 vs 19
+    // truth); cov>=0.80 is the sweet spot (verified: GSTM 20 vs 19, RABL2 6 vs 5, GWFAM18 12 vs 11,
+    // GWFAM21 22 vs 22).
     let enumerate = (args.enumerate_copies || args.min_identity == Some(0.98)) && args.homology_primary;
     if enumerate {
         use std::collections::HashMap;
@@ -257,7 +263,7 @@ fn main() -> Result<()> {
             })
             .collect();
         let proj_by_fam = match rustle::vg_family::genome_projection::project_families_batch(
-            &consensuses, &args.fasta, &known, 0.80, 0.50, &refine_params.minimap2, args.threads,
+            &consensuses, &args.fasta, &known, 0.80, 0.80, &refine_params.minimap2, args.threads,
         ) {
             Ok(m) => m,
             Err(e) => {
@@ -271,17 +277,19 @@ fn main() -> Result<()> {
             let fid = format!("GWFAM{fi}");
             let n_rna = copies.len();
             let proj = proj_by_fam.get(&fid).cloned().unwrap_or_default();
-            // totalCN: divergent copies admitted (id>=0.80, cov>=0.50 -- divergent copies have splice gaps).
-            let n_total_loci = proj.iter().filter(|p| p.identity >= 0.80 && p.cov >= 0.50).count();
+            // totalCN: divergent copies admitted (id>=0.80; cov>=0.80 already enforced by the batch call
+            // above -- full-length divergent copies without partial/domain-fragment inflation).
+            let n_total_loci = proj.iter().filter(|p| p.identity >= 0.80).count();
             // famCN: Soto SD98 near-identical FULL-LENGTH copies only (id>=0.98 AND cov>=0.90) -- excludes
-            // half-length fragment hits that would otherwise inflate the Soto-comparable metric.
+            // fragment/partial hits that would otherwise inflate the Soto-comparable metric. cov>=0.90 is
+            // a subset of the returned cov>=0.80 loci.
             let n_fam_loci = proj.iter().filter(|p| p.identity >= 0.98 && p.cov >= 0.90).count();
             let total_cn = n_rna + n_total_loci;
             let fam_cn = n_rna + n_fam_loci;
-            // projection_loci lists only the totalCN-contributing loci (id>=0.80, cov>=0.50).
+            // projection_loci lists all totalCN-contributing loci (id>=0.80, cov>=0.80).
             let loci = proj
                 .iter()
-                .filter(|p| p.identity >= 0.80 && p.cov >= 0.50)
+                .filter(|p| p.identity >= 0.80)
                 .map(|p| format!("{}:{}-{}@{:.4}", p.chrom, p.start, p.end, p.identity))
                 .collect::<Vec<_>>()
                 .join(";");
