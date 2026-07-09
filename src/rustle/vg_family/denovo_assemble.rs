@@ -319,6 +319,48 @@ pub fn aligned_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<BamR
     Ok(out)
 }
 
+/// Whether a record's flags mark it an UNMAPPED PRIMARY read — the filter behind
+/// `unmapped_reads_from_bam`, i.e. the mirror image of `primary_read_from_record`'s mapped-primary
+/// filter: unmapped is required, secondary/supplementary are excluded (a "primary" record here means
+/// neither secondary nor supplementary, matching SAM's use of the term for unmapped records too).
+fn is_unmapped_primary(flags: noodles_sam::alignment::record::Flags) -> bool {
+    flags.is_unmapped() && !flags.is_secondary() && !flags.is_supplementary()
+}
+
+/// From a slice of records, collect `(read_name, sequence)` for every UNMAPPED PRIMARY record with a
+/// non-empty sequence — the testable transform behind `unmapped_reads_from_bam` (this is the input to
+/// the VG re-align supplement's unmapped-read minimizer routing stage). Unit-tested directly against
+/// in-memory `RecordBuf`s, without needing a BAM fixture with an unmapped record.
+fn collect_unmapped(records: &[RecordBuf]) -> Vec<(String, Vec<u8>)> {
+    records
+        .iter()
+        .filter(|r| is_unmapped_primary(r.flags()))
+        .filter_map(|r| {
+            let seq: Vec<u8> = r.sequence().as_ref().to_vec();
+            if seq.is_empty() {
+                return None;
+            }
+            let name = r.name().map(|n| n.to_string()).unwrap_or_default();
+            Some((name, seq))
+        })
+        .collect()
+}
+
+/// Scan every UNMAPPED PRIMARY record in a BAM into `(read_name, sequence)` pairs. I/O driver, mirroring
+/// `primary_reads_from_bam`'s reader setup. Unmapped reads carry no alignment position, so there is no
+/// `.bai` region query to use here — this is always a full-file scan. Applies the identical
+/// `collect_unmapped` filter to each record while streaming, so the whole BAM is never buffered.
+pub fn unmapped_reads_from_bam(bam_path: &str, threads: usize) -> Result<Vec<(String, Vec<u8>)>> {
+    let mut reader = crate::bam::open_bam(bam_path, threads.max(1))?;
+    let header = reader.read_header()?;
+    let mut record = RecordBuf::default();
+    let mut out = Vec::new();
+    while reader.read_record_buf(&header, &mut record)? > 0 {
+        out.extend(collect_unmapped(std::slice::from_ref(&record)));
+    }
+    Ok(out)
+}
+
 /// Collect BOTH the primary reads (detection input) and ALL mapped reads (assignment input, incl.
 /// secondary/supplementary multimappers) overlapping `[lo, hi)` on `chrom`. Uses the `.bai`-indexed region
 /// query when available (fast — reads only the region, not the whole file), falling back to a full scan.
@@ -980,5 +1022,48 @@ mod tests {
             aligned_read_from_record(&record).expect("mapped");
         assert!((de - 0.02).abs() < 1e-6);
         assert!(is_supp, "supplementary flag must be surfaced");
+    }
+
+    // ---- collect_unmapped (the unmapped_reads_from_bam filter, unit-tested without a BAM fixture) ----
+
+    /// Build a minimal record with the given flags, name, and sequence (no alignment position — mirrors
+    /// an unmapped record straight off a BAM).
+    fn unmapped_rec(flags: Flags, name: &str, seq: &[u8]) -> RecordBuf {
+        use noodles_sam::alignment::record_buf::Sequence;
+        RecordBuf::builder()
+            .set_flags(flags)
+            .set_name(name)
+            .set_sequence(Sequence::from(seq.to_vec()))
+            .build()
+    }
+
+    #[test]
+    fn collect_unmapped_keeps_only_unmapped_primary() {
+        let records = vec![
+            // unmapped primary -> kept.
+            unmapped_rec(Flags::UNMAPPED, "read_unmapped", b"ACGTACGT"),
+            // mapped primary -> excluded (not unmapped).
+            unmapped_rec(Flags::default(), "read_mapped", b"TTTTTTTT"),
+            // unmapped but flagged secondary -> excluded (not a primary record).
+            unmapped_rec(Flags::UNMAPPED | Flags::SECONDARY, "read_unmapped_secondary", b"GGGGGGGG"),
+            // unmapped but flagged supplementary -> excluded.
+            unmapped_rec(Flags::UNMAPPED | Flags::SUPPLEMENTARY, "read_unmapped_supp", b"CCCCCCCC"),
+            // unmapped primary with an empty sequence -> excluded.
+            unmapped_rec(Flags::UNMAPPED, "read_unmapped_noseq", b""),
+        ];
+        let out = collect_unmapped(&records);
+        assert_eq!(
+            out,
+            vec![("read_unmapped".to_string(), b"ACGTACGT".to_vec())],
+            "only the unmapped PRIMARY record with a non-empty sequence survives"
+        );
+    }
+
+    #[test]
+    fn is_unmapped_primary_flag_matrix() {
+        assert!(is_unmapped_primary(Flags::UNMAPPED));
+        assert!(!is_unmapped_primary(Flags::default()));
+        assert!(!is_unmapped_primary(Flags::UNMAPPED | Flags::SECONDARY));
+        assert!(!is_unmapped_primary(Flags::UNMAPPED | Flags::SUPPLEMENTARY));
     }
 }
