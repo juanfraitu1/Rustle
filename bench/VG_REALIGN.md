@@ -37,22 +37,30 @@ novel-candidate}`.
 
 ## What's shipped vs. what's next (honest scope)
 
-- **Shipped (T1–T5, 822 tests):** the candidate → re-align → significance-accept logic wired into the pipeline
-  (per family, over the family's region-mapped reads) and REPORTING the decisions in `.vg_realign.tsv`; PLUS
-  the `unmapped_reads_from_bam` / `route_unmapped` / `pool_novel` helpers as **unit-tested building blocks not
-  yet called from the pipeline**. Additive: with `--vg-realign` off, nothing runs and every existing output is
-  byte-identical (fixture-verified). The unit tests demonstrate the correction (a read from copy 1 linearly
-  mis-placed on copy 0, low MAPQ → `reassigned` to copy 1) and the candidate gating. **Validation currently
-  rests on these unit tests; the planned end-to-end sim (`bench/sim_vg_realign.py`, plant a divergent
-  mis-mapping copy and assert it is `reassigned`) is deferred.**
-- **Follow-up (deliberately not wired):** (a) routing unmapped reads into families (`unmapped_reads_from_bam` +
-  `route_unmapped`) so out-of-region reads become candidates; AND routing accepted `reassigned` reads back into
-  the EM assignment / `chi_H` / `famcn_readonly` (so a correction changes the counts, not just the report) —
-  invasive re-entry into the assignment, kept out to protect the byte-identical guarantee; (b) pooling
-  `novel-candidate` reads (`pool_novel`) and admitting them as reference-absent copies via
-  `absent_copy::admit_candidate` (the O4 gate) so a discovered copy enters the copy set end-to-end; (c) refining
-  the identity-based accept to per-PSV `path_obs` + `read_copy_evidence` (an edlib alignment-path walk `aln_id`
-  doesn't currently expose).
+- **Shipped END-TO-END (833 tests):** under `--vg-realign`, corrections and admissions now **change the
+  outputs**, not just the report:
+  - **Corrections:** a `reassigned` read's PSV evidence is re-extracted at the corrected copy-path via a
+    strand-oriented **traceback aligner** (`align_traceback` + `path_obs_at`; there is no edlib, so the
+    alignment path is hand-rolled and validated against `hw_distance`), its full `Assignment` is **re-derived**
+    (`assign_read_editing` over the corrected obs — status/posterior/p_value all consistent), and the family's
+    `copy_abundance` is recomputed by the EM. So `.assignments.tsv`/`.em_abundance.tsv`/`.posterior.tsv` reflect
+    the correction.
+  - **Admissions:** `pool_novel` clusters of unfit reads are turned into `CollapsedCandidate`s and admitted via
+    `absent_copy::admit_candidate` (the O4 remap gate); an admitted copy is appended to the family copy set and
+    counted by `chi_H`/`famcn_readonly`, with `copy_abundance` widened + recomputed over the new roster.
+  - **Additive & reviewed:** with `--vg-realign` off, nothing runs and every existing output is byte-identical
+    (verified by a real-fixture binary diff + the `vg_realign_off_is_byte_identical` test). A whole-feature
+    review caught + fixed a minus-strand `path_obs` corruption, an abundance-length desync on admission, stale
+    `Assignment` fields on correction, and a `.posterior.tsv` width issue.
+  - **`psv_positions_for`** derives each family PSV column's offset in a copy's spliced consensus by inverting
+    `build_family_profiles`' `copy_gpos` through `gen2off` (the consensus used for alignment IS the one the
+    offsets index).
+- **Follow-up (not wired):** (a) routing UNMAPPED reads into families (`unmapped_reads_from_bam` +
+  `route_unmapped` — the helpers exist, unit-tested) so out-of-region reads become candidates; (b) the
+  end-to-end genome sim (`bench/sim_vg_realign.py`, plant a divergent mis-mapping + a genome-absent copy and
+  assert corrected assignments + admitted-and-counted copy) — validation currently rests on the unit tests, the
+  real-fixture additivity diff, and the whole-feature review; (c) admission yield on real GGO is expected to be
+  data-limited (the O4-divergent frontier); the mechanism is wired, real yield reported not assumed.
 - **Frontier (still future):** genome-wide VG-alignment (vg-giraffe/GraphAligner) for reads that never map near
   any family — the last linear-alignment reference-bias source.
 
