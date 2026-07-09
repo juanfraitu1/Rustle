@@ -60,6 +60,12 @@ re-alignment of the same read, not extra sequence). Filtering to **primary** rec
 | secondary | 373 | 94.1% (artifact) |
 | supplementary | 1 | 100% (artifact) |
 
+The BAM was built with **`minimap2 -ax splice:hq -uf --eqx -Y -N 50 -p 0.1 --secondary=yes`** — the **`-Y`**
+flag makes secondary/supplementary alignments **soft-clipped and carry the full `SEQ`**, which is exactly why
+they show a ~94% "clip" rate. They are alternative placements of the *same* read, not extra sequence. Primary
+records always soft-clip their unaligned ends, so the **1.1% primary figure is unaffected by `-Y`.**
+**Methodological rule: filter `-F 2308` before any per-read CIGAR/clip statistic.**
+
 **Splitting the real abstained mass** (p6 run, per unique read, primary records):
 
 | | flank-bearing (≥20 bp clip) → rescuable | exon-confined → provably lost |
@@ -75,11 +81,33 @@ expected: mature mRNA ends at the polyA site and does not read through into geno
 or readthrough transcripts would. The sim establishes the *mechanism* (the wall is per-read, and flank breaks
 it); the real data establishes the *magnitude* (flank is rarely present, so the wall stands).
 
-## Honest caveats
+## ⚠ A THIRD cause of abstention, exposed by this sim: a MISSING COPY
 
-- **B was excluded from the family** (its reads map at MAPQ 60 → uniquely placed → no de-tie conflict edge).
-  This is the known `E_c`-no-edge limitation of the conflict-graph family definition — the reason the `E_r`
-  homology-primary definition exists. A family-*definition* artifact, not an assignment failure.
+**B was dropped from the family** — its reads map at MAPQ 60 (uniquely placed), so they form no de-tie conflict
+edge. This is **not acceptable behavior**: a family is defined by **homology**, not by read ambiguity. B is a
+2%-diverged copy of the same gene; it is a family member, and its reads being *easily assignable* is a virtue,
+not grounds for exclusion. This is exactly the `E_c`-no-edge flaw the `E_r` homology-primary definition was
+built to fix.
+
+**The damage is concrete:** B's 98 reads were still pulled into the family and came back **100% "tied"** — not
+because they are unassignable, but because **their true copy was never admitted to the copy set.**
+
+So abstention has **three** causes, not two:
+
+| cause | mechanism | fixable? |
+|---|---|---|
+| **K = 0** | no distinguishing column exists (copies exonically identical) | **No** — proven wall; needs DNA/longer reads |
+| **Coverage** | columns exist, the read doesn't span them | Yes — longer reads / deeper sampling |
+| **Missing copy** | the read's true copy was never admitted to the family (`E_c` conflict-graph definition drops uniquely-mappable members) | **Yes — a definition defect** |
+
+**Verified defect (not sim-only):** `copy_assign` (O2) forms families via `read_conflict::conflict_edges` /
+`conflict_families`. The `E_r` homology-primary definition (`detect_homology_catalog_genome_wide`,
+`gamma_quasi_clique_partition`) is reachable **only from `gw_family_catalog`**; `copy_assign` never references
+it. **O2 therefore still runs on the family definition O1 already replaced** — so uniquely-mappable copies
+(globin problem, GSTM1/2/4/5) are systematically dropped from assignment, and their reads become spurious
+"tied" mass. Wiring `E_r` into `copy_assign`'s family detection is the outstanding O1↔O2 harmony fix.
+
+## Other honest caveats
 - Planted flank divergence is 5% over 300 bp — generous. Recent duplicates may have near-identical flanks, in
   which case the flank carries less (or no) signal. The real-data soft-clip audit shows the sequence is *there*;
   whether it *discriminates* on GGO is the open measurement.
