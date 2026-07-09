@@ -211,16 +211,23 @@ pub(crate) fn em_assign(
 /// Clair3-RNA-style A->I editing-column filter (`copy_assign_pipeline::detect_editing_columns`) --
 /// so an editing column is downweighted here exactly as it is in the hard gate.
 ///
-/// Still PSV-only: no per-copy junctions and no per-base quality are threaded through this
-/// wrapper (both `ReadFeatures::junctions`/`psv_qual` and `CopyProfile::junctions` are left empty),
-/// mirroring `copy_assign_pipeline::soft_quantify_em`'s PSV-only abundance model. Consequently a
-/// read whose hard-gate call depends on junction or per-base-quality evidence can get a *different*
-/// per-read label here than `.assignments.tsv` reports -- the abundance estimate is a light-weight
-/// complement to the hard PSV+junction assignment, not a re-derivation of it, and is not claimed to
-/// reproduce it read-for-read.
+/// Task H2 (VG-harmony): threads O3's copy-specific JUNCTIONS through this wrapper alongside the
+/// PSV alleles, so a copy distinguished only by a novel splice (not present in the reference, and
+/// therefore not a PSV column) is resolvable by the EM exactly as it already is by the one-shot
+/// gate. `read_junctions[i]` / `copy_junctions[k]` are parallel to `read_obs[i]` / `copy_alleles[k]`;
+/// passing empty slices (`&[]`) for both reproduces the PREVIOUS PSV-only behavior byte-for-byte
+/// (`junctions.get(..).cloned().unwrap_or_default()` yields `vec![]` for every read/copy, which is
+/// exactly what this wrapper always built before). No per-base quality is threaded (`psv_qual` stays
+/// empty), mirroring `copy_assign_pipeline::soft_quantify_em`'s PSV-only abundance model -- only the
+/// junction gap this task closes is filled. Consequently a read whose hard-gate call depends on
+/// per-base-quality evidence can still get a *different* per-read label here than `.assignments.tsv`
+/// reports -- the abundance estimate is a light-weight complement to the hard PSV+junction
+/// assignment, not a re-derivation of it, and is not claimed to reproduce it read-for-read.
 pub fn em_assign_family(
     read_obs: &[Vec<Option<u8>>],
     copy_alleles: &[Vec<Option<u8>>],
+    read_junctions: &[Vec<i64>],
+    copy_junctions: &[Vec<i64>],
     params: &super::copy_assign::AssignParams,
     eps: f64,
     max_iter: usize,
@@ -231,17 +238,18 @@ pub fn em_assign_family(
         .map(|(k, alleles)| super::copy_assign::CopyProfile {
             copy_id: k,
             alleles: alleles.clone(),
-            junctions: vec![],
+            junctions: copy_junctions.get(k).cloned().unwrap_or_default(),
         })
         .collect();
     let editing = crate::vg_family::copy_assign_pipeline::detect_editing_columns(read_obs, &copies);
     let evidence: Vec<super::copy_assign::ReadEvidence> = read_obs
         .iter()
-        .map(|obs| {
+        .enumerate()
+        .map(|(i, obs)| {
             let rf = super::copy_assign::ReadFeatures {
                 psv_obs: obs.clone(),
                 psv_qual: vec![],
-                junctions: vec![],
+                junctions: read_junctions.get(i).cloned().unwrap_or_default(),
             };
             super::copy_assign::read_copy_evidence(&rf, &copies, params, &editing)
         })
@@ -268,7 +276,7 @@ mod em_assign_family_tests {
             vec![Some(b'C'), Some(b'C')],
         ];
         let params = AssignParams::for_alpha(1e-3);
-        let r = em_assign_family(&read_obs, &copy_alleles, &params, 1e-6, 200);
+        let r = em_assign_family(&read_obs, &copy_alleles, &[], &[], &params, 1e-6, 200);
 
         assert_eq!(r.posteriors.len(), 2);
         let argmax = |row: &Vec<f64>| {
@@ -279,6 +287,68 @@ mod em_assign_family_tests {
 
         let abundance_sum: f64 = r.abundances.iter().sum();
         assert!((abundance_sum - 1.0).abs() < 1e-9, "abundances must sum to 1: {abundance_sum}");
+    }
+
+    /// Task H2 TDD pin: a copy pair distinguished ONLY by a novel junction (identical PSVs, so
+    /// PSV-only evidence is a flat tie) is unresolvable when junctions are not threaded (empty
+    /// slices -- the OLD `em_assign_family` behavior, byte-identical), and becomes `Certified` /
+    /// correctly argmax'd once the real per-read/per-copy junctions are threaded through. This is
+    /// the O2<->O3 harmony this task ships: a copy defined by a splice, not a PSV, is now
+    /// resolvable by the EM exactly as the one-shot gate already resolves it
+    /// (`copy_assign::junction_only_resolves`).
+    #[test]
+    fn junction_only_copy_is_resolved_by_em() {
+        // Both copies carry the SAME allele at the one PSV column -- no PSV signal distinguishes
+        // them at all.
+        let copy_alleles: Vec<Vec<Option<u8>>> = vec![vec![Some(b'A')], vec![Some(b'A')]];
+        // Copy-specific junctions: copy 0 splices at offset 100, copy 1 at offset 200 (well outside
+        // the default boundary_tol=4, so they never cross-match).
+        let copy_junctions: Vec<Vec<i64>> = vec![vec![100], vec![200]];
+
+        // 4 reads, no PSV signal (all carry the shared allele); half carry copy 0's junction, half
+        // copy 1's.
+        let read_obs: Vec<Vec<Option<u8>>> = vec![vec![Some(b'A')]; 4];
+        let read_junctions: Vec<Vec<i64>> =
+            vec![vec![100], vec![100], vec![200], vec![200]];
+
+        let params = AssignParams::for_alpha(1e-3);
+
+        // (a) empty junction slices == the previous PSV-only behavior: PSV alleles are identical
+        // across copies, so no read has any decisive feature -> every read stays SoftZone.
+        let no_junctions = em_assign_family(&read_obs, &copy_alleles, &[], &[], &params, 1e-6, 200);
+        assert!(
+            no_junctions.labels.iter().all(|l| matches!(l, super::EmLabel::SoftZone)),
+            "PSV-only (empty junction slices) must leave an identical-PSV copy pair unresolved: {:?}",
+            no_junctions.labels
+        );
+
+        // (b) threading the real junctions resolves every read, argmax'ing the copy whose
+        // junction it carries.
+        let with_junctions = em_assign_family(
+            &read_obs,
+            &copy_alleles,
+            &read_junctions,
+            &copy_junctions,
+            &params,
+            1e-6,
+            200,
+        );
+        let argmax = |row: &Vec<f64>| {
+            row.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(k, _)| k).unwrap()
+        };
+        let expected_copy = [0usize, 0, 1, 1];
+        for (i, &exp) in expected_copy.iter().enumerate() {
+            assert!(
+                matches!(with_junctions.labels[i], super::EmLabel::Certified),
+                "read {i} must be Certified once its junction is threaded: {:?}",
+                with_junctions.labels[i]
+            );
+            assert_eq!(
+                argmax(&with_junctions.posteriors[i]),
+                exp,
+                "read {i} must argmax the copy whose junction it carries"
+            );
+        }
     }
 }
 

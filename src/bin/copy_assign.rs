@@ -630,8 +630,15 @@ fn main() -> Result<()> {
                 // assignment above. Fully gated: with `--em` absent this block never runs, so the hard
                 // outputs are untouched.
                 if args.em {
-                    let em_result =
-                        em_assign_family(&fa.read_psv_obs, &fa.copy_psv_alleles, &params, args.em_eps, args.em_max_iter);
+                    let em_result = em_assign_family(
+                        &fa.read_psv_obs,
+                        &fa.copy_psv_alleles,
+                        &fa.read_junctions,
+                        &fa.copy_junctions,
+                        &params,
+                        args.em_eps,
+                        args.em_max_iter,
+                    );
                     for (row_idx, (ri, _)) in fa.assignments.iter().enumerate() {
                         if row_idx >= em_result.posteriors.len() {
                             continue; // posterior frame must line up with the read roster (e.g. post-freeze)

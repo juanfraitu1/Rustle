@@ -571,6 +571,10 @@ pub struct ReadResult {
     /// this read's base at each PSV column (None = uncovered) — the raw per-molecule evidence the assignment
     /// is built from (for the assignment-proof genotype visualization).
     pub psv_obs: Vec<Option<u8>>,
+    /// this read's intron-boundary offsets in `mapped_copy`'s spliced space (Task H2: the same per-read
+    /// junction evidence `combined`'s junction term already used, exposed so callers can thread it into the
+    /// EM engine alongside `psv_obs`).
+    pub junctions: Vec<i64>,
 }
 
 /// Two-stage freeze for reference-ABSENT (collapsed) copy admission.
@@ -641,6 +645,10 @@ pub struct FamilyDetail {
     /// `copy_psv_alleles[c][j]` = copy `c`'s allele at PSV column `j` (None = gapped) — the per-copy reference
     /// the reads are matched against in the genotype matrix.
     pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
+    /// `copy_junctions[c]` = copy `c`'s copy-specific intron-boundary offsets (`CopyProfile.junctions`,
+    /// i.e. `copy_boundaries(c)`), parallel to `copy_psv_alleles` (Task H2: threads O3 junction evidence
+    /// into the same per-copy frame the EM engine consumes).
+    pub copy_junctions: Vec<Vec<i64>>,
     /// Indices into the input `copies` slice that survived iterative pruning. When pruning is off this is
     /// simply `0..copies.len()`. Callers use this to align the output detail with the original copy roster.
     pub copy_indices: Vec<usize>,
@@ -1071,6 +1079,7 @@ pub fn assign_family_detailed_pruned(
             psv: psv_out.unwrap(),
             combined: combined_out.unwrap(),
             psv_obs: r.psv_obs,
+            junctions: r.junctions,
         });
     }
 
@@ -1078,6 +1087,10 @@ pub fn assign_family_detailed_pruned(
     let surviving_alleles: Vec<Vec<Option<u8>>> = current_indices
         .iter()
         .map(|&orig| full_detail.copy_psv_alleles[orig].clone())
+        .collect();
+    let surviving_junctions: Vec<Vec<i64>> = current_indices
+        .iter()
+        .map(|&orig| full_detail.copy_junctions[orig].clone())
         .collect();
     let copy_abundance = soft_quantify_em(&read_obs_for_em, &surviving_alleles, QUANT_ERROR, 100);
     let n_eff = results.iter().filter(|r| r.combined.n_decisive >= 1).count();
@@ -1121,6 +1134,7 @@ pub fn assign_family_detailed_pruned(
         copy_conversions,
         psv_col_pos: full_detail.psv_col_pos,
         copy_psv_alleles: surviving_alleles,
+        copy_junctions: surviving_junctions,
         copy_indices: current_indices,
     }
 }
@@ -1143,6 +1157,7 @@ fn assign_family_detailed_once(
             copy_conversions: Vec::new(),
             psv_col_pos: Vec::new(),
             copy_psv_alleles: Vec::new(),
+            copy_junctions: Vec::new(),
             copy_indices: Vec::new(),
         };
     }
@@ -1223,6 +1238,7 @@ fn assign_family_detailed_once(
                 return Some(PerRead { mcall, obs_for_em: None, result: None });
             };
             let obs = feats.psv_obs.clone();
+            let junctions = feats.junctions.clone();
             let psv_feats = ReadFeatures { psv_obs: feats.psv_obs, psv_qual: feats.psv_qual, junctions: vec![] };
             let Some(psv) = assign_read_editing(&psv_feats, &fp.profiles, p, &editing_cols) else {
                 return Some(PerRead { mcall, obs_for_em: Some(obs), result: None });
@@ -1230,7 +1246,14 @@ fn assign_family_detailed_once(
             Some(PerRead {
                 mcall,
                 obs_for_em: Some(obs.clone()),
-                result: Some(ReadResult { read_index: ri, mapped_copy: mc, psv, combined, psv_obs: obs }),
+                result: Some(ReadResult {
+                    read_index: ri,
+                    mapped_copy: mc,
+                    psv,
+                    combined,
+                    psv_obs: obs,
+                    junctions,
+                }),
             })
         })
         .collect();
@@ -1294,6 +1317,7 @@ fn assign_family_detailed_once(
         copy_conversions,
         psv_col_pos: col_canon,
         copy_psv_alleles: copy_alleles,
+        copy_junctions: fp.profiles.iter().map(|pr| pr.junctions.clone()).collect(),
         copy_indices: (0..copies.len()).collect(),
     }
 }
@@ -1884,7 +1908,7 @@ mod tests {
         }
     }
     fn rr(read_index: usize, mapped_copy: usize, combined: Assignment) -> ReadResult {
-        ReadResult { read_index, mapped_copy, psv: combined.clone(), combined, psv_obs: vec![] }
+        ReadResult { read_index, mapped_copy, psv: combined.clone(), combined, psv_obs: vec![], junctions: vec![] }
     }
     /// fetch the merged result for a given read_index (matching is by read_index, not position).
     fn by_idx(v: &[ReadResult], idx: usize) -> &ReadResult {

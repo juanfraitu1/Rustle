@@ -90,7 +90,7 @@ mod tests {
 
         // one read per true copy, carrying that copy's exact alleles.
         let reads = distinguishable.clone();
-        let result = em_assign_family(&reads, &distinguishable, &params, 1e-6, 500);
+        let result = em_assign_family(&reads, &distinguishable, &[], &[], &params, 1e-6, 500);
         assert_eq!(
             result.abundances.len(),
             distinguishable.len(),
@@ -119,7 +119,7 @@ mod tests {
         // and one from each of the two now-identical copies.
         let collapsed_reads: Vec<Vec<Option<u8>>> =
             vec![distinguishable[0].clone(), collapsed[1].clone(), collapsed[2].clone()];
-        let collapsed_result = em_assign_family(&collapsed_reads, &collapsed, &params, 1e-6, 500);
+        let collapsed_result = em_assign_family(&collapsed_reads, &collapsed, &[], &[], &params, 1e-6, 500);
 
         assert!(
             matches!(collapsed_result.labels[0], EmLabel::Certified),
@@ -203,7 +203,7 @@ mod tests {
             copy_alleles[absent_idx].clone(),
         ];
         let params = AssignParams::for_alpha(1e-3);
-        let result = em_assign_family(&absent_reads, &copy_alleles, &params, 1e-6, 500);
+        let result = em_assign_family(&absent_reads, &copy_alleles, &[], &[], &params, 1e-6, 500);
 
         // (b) the EM assigns those reads to the absent copy, confidently.
         for (i, row) in result.posteriors.iter().enumerate() {

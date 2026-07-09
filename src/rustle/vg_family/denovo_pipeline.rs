@@ -324,6 +324,14 @@ pub struct FamilyAssignment {
     pub psv_col_pos: Vec<Option<u64>>,
     pub copy_psv_alleles: Vec<Vec<Option<u8>>>,
     pub read_psv_obs: Vec<Vec<Option<u8>>>,
+    /// Task H2 (VG-harmony): per-copy copy-specific junction offsets, parallel to `copy_psv_alleles`
+    /// (`copy_junctions[k]` aligns with `copy_psv_alleles[k]`) — threads O3's junction evidence
+    /// into the same per-copy frame the EM engine (`em_assign_family`) consumes. Empty when the
+    /// underlying `FamilyDetail` carries no junction data.
+    pub copy_junctions: Vec<Vec<i64>>,
+    /// per-read intron-boundary offsets in the assigned copy's spliced space, parallel to
+    /// `read_psv_obs`/`assignments` (`read_junctions[i]` aligns with `read_psv_obs[i]`/`assignments[i]`).
+    pub read_junctions: Vec<Vec<i64>>,
 }
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
@@ -712,6 +720,8 @@ pub fn detect_and_assign(
             psv_col_pos: detail.psv_col_pos.clone(),
             copy_psv_alleles: detail.copy_psv_alleles.clone(),
             read_psv_obs: Vec::with_capacity(detail.results.len()),
+            copy_junctions: detail.copy_junctions.clone(),
+            read_junctions: Vec::with_capacity(detail.results.len()),
         };
         for r in detail.results {
             let resolvable_psv = r.psv.n_decisive >= 1;
@@ -726,6 +736,7 @@ pub fn detect_and_assign(
                 fa.uniq_agree += (r.combined.best_copy == r.mapped_copy) as usize;
             }
             fa.read_psv_obs.push(r.psv_obs);
+            fa.read_junctions.push(r.junctions);
             fa.assignments.push((idx_map[r.read_index], r.combined));
         }
         out.push(fa);
