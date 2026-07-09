@@ -241,27 +241,34 @@ pub fn copy_pair_significance(
     (p_value, min_p)
 }
 
-/// Assign a read to its most likely copy. Returns `None` only if `copies` is empty.
-/// Deterministic: copies are scored in slice order and ties resolve to the earliest (lowest index).
-pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams) -> Option<Assignment> {
-    assign_read_editing(read, copies, p, &[])
+/// Per-read, per-copy evidence: the SAME log-likelihood + identifiability bound the one-shot gate
+/// ([`assign_read_editing`]) computes internally, extracted so the EM copy-assignment engine can reuse
+/// the exact same emission model (DRY -- no duplicated likelihood logic between the gate and EM).
+#[derive(Clone, Debug)]
+pub(crate) struct ReadEvidence {
+    /// Per-copy log-likelihood (PSV term + junction term), parallel to `copies`.
+    pub logl: Vec<f64>,
+    /// Identifiability bound: the best attainable p-value the read could achieve against its hardest
+    /// competitor (given `best = argmax(logl)`). `>= alpha` (family-wide-adjusted) ⇒ genuinely `Tied`.
+    pub min_p: f64,
+    /// Number of features (PSV columns + junction boundaries) the read observes where copies differ.
+    pub n_decisive: usize,
 }
 
-/// Like [`assign_read`], but `editing_cols[j] == true` marks PSV column `j` as an A-to-I RNA-editing site
-/// (detected by `copy_assign_pipeline::detect_editing_columns`). When `p.rna_editing_filter` is on, such a
-/// column gets its εⱼ inflated to `p.edit_rate` in the significance certificate — an edited base then cannot
-/// fake copy-support. The likelihood ranking is unchanged; only the certificate stops trusting the column.
-/// `editing_cols` may be shorter than the PSV columns (missing = not an editing site).
-pub fn assign_read_editing(
+/// Compute a read's per-copy log-likelihood, decisive-feature count, and identifiability bound against
+/// `copies`. This is the single source of the emission model: [`assign_read_editing`] (the one-shot gate)
+/// and the EM engine both go through this function, so neither can drift from the other.
+///
+/// `min_p` depends on `best = argmax(logl)`, so the three quantities are computed in the same order as
+/// the gate always has: `logl` + `n_decisive` first, then `best`, then the `copy_pair_significance`
+/// competitor loop for `min_p`.
+pub(crate) fn read_copy_evidence(
     read: &ReadFeatures,
     copies: &[CopyProfile],
     p: &AssignParams,
     editing_cols: &[bool],
-) -> Option<Assignment> {
+) -> ReadEvidence {
     let n = copies.len();
-    if n == 0 {
-        return None;
-    }
     let mut logl = vec![0.0f64; n];
     let mut n_decisive = 0usize;
 
@@ -321,6 +328,53 @@ pub fn assign_read_editing(
         }
     }
 
+    // argmax (earliest on ties) -- needed before `min_p` since the competitor loop below is best-relative.
+    let mut best = 0usize;
+    for i in 1..n {
+        if logl[i] > logl[best] {
+            best = i;
+        }
+    }
+
+    // --- IsoCon identifiability bound: `best` vs each competitor on their DISTINGUISHING obs ---
+    let mut min_p = 0.0f64;
+    for c in 0..n {
+        if c == best {
+            continue;
+        }
+        let (_pbc, attain) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
+        if attain > min_p {
+            min_p = attain;
+        }
+    }
+
+    ReadEvidence { logl, min_p, n_decisive }
+}
+
+/// Assign a read to its most likely copy. Returns `None` only if `copies` is empty.
+/// Deterministic: copies are scored in slice order and ties resolve to the earliest (lowest index).
+pub fn assign_read(read: &ReadFeatures, copies: &[CopyProfile], p: &AssignParams) -> Option<Assignment> {
+    assign_read_editing(read, copies, p, &[])
+}
+
+/// Like [`assign_read`], but `editing_cols[j] == true` marks PSV column `j` as an A-to-I RNA-editing site
+/// (detected by `copy_assign_pipeline::detect_editing_columns`). When `p.rna_editing_filter` is on, such a
+/// column gets its εⱼ inflated to `p.edit_rate` in the significance certificate — an edited base then cannot
+/// fake copy-support. The likelihood ranking is unchanged; only the certificate stops trusting the column.
+/// `editing_cols` may be shorter than the PSV columns (missing = not an editing site).
+pub fn assign_read_editing(
+    read: &ReadFeatures,
+    copies: &[CopyProfile],
+    p: &AssignParams,
+    editing_cols: &[bool],
+) -> Option<Assignment> {
+    let n = copies.len();
+    if n == 0 {
+        return None;
+    }
+    let ev = read_copy_evidence(read, copies, p, editing_cols);
+    let ReadEvidence { logl, min_p, n_decisive } = ev;
+
     // argmax (earliest on ties) + runner-up
     let mut best = 0usize;
     for i in 1..n {
@@ -337,18 +391,16 @@ pub fn assign_read_editing(
     let margin = if n > 1 { logl[best] - second } else { f64::INFINITY };
 
     // --- IsoCon significance certificate: test `best` vs each competitor on their DISTINGUISHING obs ---
-    // p_read = least-significant (max) pairwise p; min_p = identifiability bound (best attainable p).
-    let (mut p_read, mut min_p) = (0.0f64, 0.0f64);
+    // p_read = least-significant (max) pairwise p (min_p was already computed by `read_copy_evidence`,
+    // relative to the SAME `best`, so it is reused as-is here).
+    let mut p_read = 0.0f64;
     for c in 0..n {
         if c == best {
             continue;
         }
-        let (pbc, attain) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
+        let (pbc, _attain) = copy_pair_significance(read, &copies[best], &copies[c], p, editing_cols);
         if pbc > p_read {
             p_read = pbc;
-        }
-        if attain > min_p {
-            min_p = attain;
         }
     }
     let (resolvable, status) = if p.use_margin_gate {
@@ -432,6 +484,28 @@ mod tests {
     const C: u8 = b'C';
     const G: u8 = b'G';
     const T: u8 = b'T';
+
+    #[test]
+    fn read_copy_evidence_matches_assignment_internals() {
+        // two copies differ at column 0 (A vs C); read observes A -> favors copy 0.
+        let copies = vec![
+            CopyProfile { copy_id: 0, alleles: vec![Some(b'A')], junctions: vec![] },
+            CopyProfile { copy_id: 1, alleles: vec![Some(b'C')], junctions: vec![] },
+        ];
+        let read = ReadFeatures { psv_obs: vec![Some(b'A')], psv_qual: vec![], junctions: vec![] };
+        let p = AssignParams::for_alpha(1e-3);
+        let ev = read_copy_evidence(&read, &copies, &p, &[false]);
+        // logl favors copy 0; min_p equals the Assignment's identifiability bound; one decisive column.
+        assert!(ev.logl[0] > ev.logl[1]);
+        assert_eq!(ev.n_decisive, 1);
+        let a = assign_read_editing(&read, &copies, &p, &[false]).unwrap();
+        assert!((ev.min_p - a.min_p_value).abs() < 1e-12);
+        // posterior consistency: softmax(logl) == Assignment.posterior
+        let m = ev.logl.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let mut e: Vec<f64> = ev.logl.iter().map(|&l| (l - m).exp()).collect();
+        let z: f64 = e.iter().sum(); for x in &mut e { *x /= z; }
+        for (i, &pv) in a.posterior.iter().enumerate() { assert!((e[i] - pv).abs() < 1e-9); }
+    }
 
     #[test]
     fn two_copies_one_psv_resolves() {
