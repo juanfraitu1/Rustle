@@ -16,7 +16,7 @@
 
 use std::collections::HashSet;
 
-use crate::vg_family::bridge_detector::aln_id;
+use crate::vg_family::bridge_detector::{aln_id, hw_distance, revcomp};
 use crate::vg_family::copy_assign_pipeline::best_overlap_copy;
 use crate::vg_family::denovo_assemble::BamRead;
 use crate::vg_family::family_detect::DenovoTranscript;
@@ -137,6 +137,33 @@ pub fn path_obs_at(
                 .and_then(|&(qi, _)| qi.map(|q| query[q]))
         })
         .collect()
+}
+
+/// C1 fix: orient `read_seq` to match `copy_seq`'s coordinate frame before `align_traceback`.
+///
+/// Invariant (see `copy_assign_pipeline::fill_psv_obs`/`FamilyProfiles::strand`): a copy's
+/// `DenovoTranscript::seq` (and hence `copy_seqs[k]` here) is in TRANSCRIPTION-strand orientation,
+/// while a `BamRead`'s `read.seq` is FORWARD-GENOME orientation (as SAM/BAM already store it). For
+/// a `+`-strand copy the two frames coincide; for a `-`-strand copy the copy's consensus is the
+/// REVERSE COMPLEMENT of the forward-genome sequence at that locus, so aligning `read.seq` against
+/// it literally (as `align_traceback` does, byte-for-byte, no orientation search of its own --
+/// unlike `aln_id`, which tries both orientations for its identity SCORE) produces a ~0.5-identity
+/// garbage alignment: the wrong or `None` `path_obs` bases that then feed the EM as bogus PSV
+/// evidence.
+///
+/// Fix: try both `read_seq` and `revcomp(read_seq)` against `copy_seq` via `hw_distance` (the same
+/// distance `aln_id` uses internally) and return whichever orientation fits better (ties keep the
+/// forward/as-given orientation). Callers must align (and extract `path_obs_at` from) THIS
+/// returned, oriented sequence -- not the raw `read_seq` -- so the observed bases end up in the
+/// copy's own transcription-strand frame, directly comparable to `copy_psv_alleles`.
+pub fn orient_for_copy(read_seq: &[u8], copy_seq: &[u8]) -> Vec<u8> {
+    let d_fwd = hw_distance(read_seq, copy_seq);
+    let d_rev = hw_distance(&revcomp(read_seq), copy_seq);
+    if d_rev < d_fwd {
+        revcomp(read_seq)
+    } else {
+        read_seq.to_vec()
+    }
 }
 
 /// Thresholds for flagging a read as a re-align CANDIDATE (poor-fit or unmapped).
@@ -545,8 +572,13 @@ pub fn apply_realign(
                 let id_best = hit.id_best;
                 match accept_realignment(&hit, linear_copy, read_len, error_rate, alpha) {
                     RealignAction::Reassign(best_copy) => {
-                        let map = align_traceback(&br.read.seq, &copy_seqs[best_copy]);
-                        let obs = path_obs_at(&map, &psv_pos_per_copy[best_copy], &br.read.seq);
+                        // C1: orient the read to the copy's own (transcription-strand) frame
+                        // before the traceback -- a `-`-strand copy's consensus is the reverse
+                        // complement of forward-genome, so a literal forward alignment here would
+                        // produce garbage/`None` `path_obs`.
+                        let oriented = orient_for_copy(&br.read.seq, &copy_seqs[best_copy]);
+                        let map = align_traceback(&oriented, &copy_seqs[best_copy]);
+                        let obs = path_obs_at(&map, &psv_pos_per_copy[best_copy], &oriented);
                         corrected.insert(i, (best_copy, obs));
                         records.push(RealignRecord {
                             read_name: br.name.clone(),
@@ -990,6 +1022,59 @@ mod tests {
             1,
             "expected one reassigned record, got {:?}",
             out.records
+        );
+    }
+
+    /// C1: a `-`-strand copy's `copy_seqs[k]` is TRANSCRIPTION strand, i.e. the reverse complement
+    /// of the forward-genome sequence at that locus. A read is always FORWARD-GENOME (`read.seq`,
+    /// per BAM convention), so a read that is truly this copy's source material arrives as
+    /// `revcomp(copy_seq)`, not `copy_seq` itself. `realign_to_paths`/`aln_id` already handle this
+    /// (they try both orientations for the identity SCORE), so the correction is still detected --
+    /// but before the C1 fix, `apply_realign`'s `align_traceback`/`path_obs_at` aligned the raw
+    /// forward `read.seq` literally against `copy_seq`, producing a ~0.5-identity garbage
+    /// alignment and a wrong/`None` `path_obs` at the PSV column. This test pins that the
+    /// corrected `path_obs` instead equals copy 1's own TRANSCRIPTION-strand allele -- exactly what
+    /// `copy_assign_pipeline::fill_psv_obs`'s per-base `rc_base` for `-` copies would produce.
+    #[test]
+    fn apply_realign_strand_orients_path_obs_for_minus_copy() {
+        let copy0_seq = pseudo_seq(1, 200);
+        let mut copy1_seq = pseudo_seq(2, 200); // TRANSCRIPTION-strand consensus of a '-'-strand copy
+        let p = 50usize;
+        if copy1_seq[p] == copy0_seq[p] {
+            copy1_seq[p] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != copy0_seq[p]).unwrap();
+        }
+        let copy0 = transcript("copy0", "chr1", 0, copy0_seq.clone());
+        let mut copy1 = transcript("copy1", "chr1", 5000, copy1_seq.clone());
+        copy1.strand = '-';
+        let copies = vec![copy0, copy1];
+        let copy_seqs = vec![copy0_seq, copy1_seq.clone()];
+        let psv_pos_per_copy = vec![vec![p], vec![p]];
+
+        // The read is FORWARD-GENOME: the reverse complement of copy 1's transcription-strand
+        // consensus. Low MAPQ (a Task-1 candidate) and linearly misattributed to copy 0.
+        let read_seq = crate::vg_family::bridge_detector::revcomp(&copy1_seq);
+        let br = bam_read("readA", "chr1", 0, read_seq, 3, 0.0);
+        let linear_copy_of = vec![Some(0usize)];
+
+        let out = apply_realign(
+            &[br],
+            &copies,
+            &copy_seqs,
+            &psv_pos_per_copy,
+            &linear_copy_of,
+            &RealignParams::default(),
+            0.003,
+            1e-3,
+        );
+
+        assert_eq!(out.corrected.len(), 1, "expected exactly one correction, got {:?}", out.corrected);
+        let (new_copy, obs) = out.corrected.get(&0).expect("read 0 must be corrected");
+        assert_eq!(*new_copy, 1, "read's true best-fit copy is copy 1 (the '-'-strand copy)");
+        assert_eq!(
+            obs,
+            &vec![Some(copy1_seq[p])],
+            "path_obs at the PSV column must equal copy 1's TRANSCRIPTION-strand allele, not a \
+             garbage/wrong-orientation base"
         );
     }
 

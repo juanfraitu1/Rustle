@@ -17,10 +17,10 @@ use std::collections::{BTreeSet, HashSet};
 use anyhow::Result;
 
 use super::absent_copy::{self, AbsentCopyParams, Admission, DnaNeedsRecord};
-use super::copy_assign::{Assignment, AssignParams, AssignStatus};
+use super::copy_assign::{assign_read_editing, Assignment, AssignParams, AssignStatus, CopyProfile, ReadFeatures};
 use super::copy_assign_pipeline::{
     assign_family_detailed, assign_family_detailed_pruned, best_overlap_copy, build_family_profiles,
-    copy_boundaries, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
+    copy_boundaries, detect_editing_columns, freeze_merge, gen2off, read_ref_end, FamilyProfiles,
 };
 use super::family_graph::contiguous_core_coverage_bounded;
 use super::copy_split::{
@@ -531,20 +531,26 @@ fn psv_positions_for(
 }
 
 /// VG re-align END-TO-END plan, Task 3 (must-have): apply `apply_realign`'s per-read CORRECTIONS
-/// into `fa` and recompute the per-copy abundance over the corrected evidence.
+/// into `fa`.
 ///
 /// Sets `fa.realign_records` (the decision log, same as the old report-only wiring). For each
 /// `(read_idx, (new_copy, obs))` in `apply.corrected` (already in `fa.assignments`'s GLOBAL
 /// `bam_reads`-index space — the caller translates `apply_realign`'s per-family-local indices before
-/// calling this), finds the `fa.assignments` entry with that `read_idx` and overwrites its
-/// `Assignment::best_copy` to `new_copy` plus the PARALLEL `fa.read_psv_obs` entry (same position) to
-/// `obs`. A corrected read with no existing `fa.assignments` entry (the one-shot gate itself couldn't
+/// calling this), finds the `fa.assignments` entry with that `read_idx` and:
+///   * overwrites the PARALLEL `fa.read_psv_obs` entry (same position) to `obs`;
+///   * (I3 fix) RE-DERIVES the entire `Assignment` from scratch over the corrected `obs`, via the
+///     SAME gate (`copy_assign::assign_read_editing`) the one-shot pipeline uses — not just
+///     `best_copy`. Before this fix, a correction only moved `best_copy`/`read_psv_obs` and left
+///     `status`/`posterior`/`p_value`/`log_lr_margin`/`n_decisive` stale from the read's
+///     PRE-correction call (e.g. a read reassigned off a `Tied` call still printed `status=Tied`,
+///     with a stale `posterior`), making `.assignments.tsv`/`.posterior.tsv` self-inconsistent.
+///
+/// A corrected read with no existing `fa.assignments` entry (the one-shot gate itself couldn't
 /// resolve it at all) is left alone — nothing is fabricated.
 ///
-/// Then reruns the junction-aware EM (`em_copy_assign::em_assign_family`, the SAME `AssignParams` the
-/// one-shot gate used) over `fa.read_psv_obs`/`fa.copy_psv_alleles`/`fa.read_junctions`/
-/// `fa.copy_junctions` and overwrites `fa.copy_abundance`, so a correction's effect propagates into
-/// the quantification the caller reports.
+/// Does NOT recompute `fa.copy_abundance` — that must happen AFTER `admit_novel_pools` has finished
+/// widening the copy roster (I2 fix; see [`recompute_realign_abundance`]), so an admitted copy's
+/// abundance isn't computed over a stale, pre-admission `copy_psv_alleles`/`copy_junctions` frame.
 ///
 /// Returns `apply.novel_pools` (also GLOBAL-index space) for the caller to feed to
 /// `admit_novel_pools` — this function does not attempt admission itself.
@@ -552,16 +558,85 @@ pub(crate) fn apply_realign_patch(
     fa: &mut FamilyAssignment,
     apply: super::vg_realign::RealignApply,
     p: &AssignParams,
-    em_eps: f64,
-    em_max_iter: usize,
 ) -> Vec<Vec<usize>> {
     fa.realign_records = apply.records;
+
+    // Snapshot the copy roster as CopyProfiles (same shape `assign_read_editing` consumes) BEFORE
+    // any correction is applied -- corrections only ever retarget an EXISTING copy (`apply_realign`
+    // chooses `best_copy` from the family's already-known `copy_seqs`), so this frame is stable
+    // across every corrected read below.
+    let copy_profiles: Vec<CopyProfile> = fa
+        .copy_psv_alleles
+        .iter()
+        .zip(fa.copy_junctions.iter())
+        .enumerate()
+        .map(|(i, (alleles, junctions))| CopyProfile {
+            copy_id: i,
+            alleles: alleles.clone(),
+            junctions: junctions.clone(),
+        })
+        .collect();
+    // Mirrors `assign_family_detailed`'s own one-shot computation of the RNA-editing flag (from the
+    // family's PRE-correction `read_psv_obs`) so a corrected read's certificate is held to the same
+    // standard as every other read's.
+    let editing_cols: Vec<bool> = if p.rna_editing_filter {
+        detect_editing_columns(&fa.read_psv_obs, &copy_profiles)
+    } else {
+        Vec::new()
+    };
+
     for (read_idx, (new_copy, obs)) in apply.corrected {
         if let Some(pos) = fa.assignments.iter().position(|(ri, _)| *ri == read_idx) {
-            fa.assignments[pos].1.best_copy = new_copy;
+            let rf = ReadFeatures {
+                psv_obs: obs.clone(),
+                psv_qual: Vec::new(),
+                junctions: fa.read_junctions[pos].clone(),
+            };
+            fa.assignments[pos].1 = match assign_read_editing(&rf, &copy_profiles, p, &editing_cols) {
+                Some(a) => a,
+                None => {
+                    // `copy_profiles` is empty (no copies at all) -- can't happen in practice (a
+                    // correction implies >= 1 candidate copy existed), but fall back to a
+                    // consistent one-hot Assignment rather than leaving anything stale.
+                    let mut posterior = vec![0.0; copy_profiles.len()];
+                    if let Some(slot) = posterior.get_mut(new_copy) {
+                        *slot = 1.0;
+                    }
+                    Assignment {
+                        best_copy: new_copy,
+                        log_lr_margin: 0.0,
+                        n_decisive: 0,
+                        resolvable: false,
+                        status: AssignStatus::Assigned,
+                        p_value: 0.0,
+                        min_p_value: 0.0,
+                        discovery_coupled: false,
+                        posterior,
+                    }
+                }
+            };
             fa.read_psv_obs[pos] = obs;
         }
     }
+    apply.novel_pools
+}
+
+/// VG re-align END-TO-END plan, Task 3 (must-have, I2 fix): recompute the per-copy abundance over
+/// the FINAL copy roster and observation set — call this AFTER both `apply_realign_patch` (which
+/// applies corrections) and `admit_novel_pools` (which may widen `fa.copy_psv_alleles`/
+/// `copy_junctions`/`copy_tids`), never before. Reruns the junction-aware EM
+/// (`em_copy_assign::em_assign_family`, the SAME `AssignParams` the one-shot gate used) over
+/// `fa.read_psv_obs`/`fa.copy_psv_alleles`/`fa.read_junctions`/`fa.copy_junctions` and overwrites
+/// `fa.copy_abundance`, then widens `fa.copy_abundance_ci` (0.0-fill) to match, so the caller's
+/// invariant `copy_abundance.len() == copy_psv_alleles.len() == copy_tids.len()` holds even when an
+/// admission grew the roster. Running this BEFORE admission (the pre-fix ordering) left an admitted
+/// copy's abundance implicitly `0.0` and `copy_abundance` shorter than `copy_psv_alleles`.
+pub(crate) fn recompute_realign_abundance(
+    fa: &mut FamilyAssignment,
+    p: &AssignParams,
+    em_eps: f64,
+    em_max_iter: usize,
+) {
     let em = super::em_copy_assign::em_assign_family(
         &fa.read_psv_obs,
         &fa.copy_psv_alleles,
@@ -572,7 +647,10 @@ pub(crate) fn apply_realign_patch(
         em_max_iter,
     );
     fa.copy_abundance = em.abundances;
-    apply.novel_pools
+    let n = fa.copy_psv_alleles.len();
+    if fa.copy_abundance_ci.len() < n {
+        fa.copy_abundance_ci.resize(n, 0.0);
+    }
 }
 
 /// VG re-align END-TO-END plan, Task 3 (best-effort/mechanism-only): turn each `apply_realign`
@@ -601,12 +679,61 @@ pub(crate) fn apply_realign_patch(
 /// never assigned at all — appending a new `discovery_coupled` one, keeping `read_psv_obs`/
 /// `read_junctions` parallel to `assignments` and `n_reads == assignments.len()`).
 ///
-/// KNOWN CAVEAT (documented, not silently swept): every pre-existing `Assignment::posterior` vector
-/// was sized to the OLD copy count and is NOT retroactively widened/renormalized here — a consumer
-/// that indexes `posterior` by `best_copy` for an EXISTING read after an admission in this family can
-/// see a shorter vector than `n_copies`. Newly appended admitted-copy reads get a correctly-sized
-/// one-hot posterior. This is the mechanism-only / best-effort scope the task calls for; a full fix
-/// needs re-normalizing every prior read's posterior, out of proportion for this pass.
+/// M4 fix: every `Assignment::posterior` vector is widened (0.0-pad) to the FINAL copy-roster width
+/// (`fa.copy_tids.len()`) before returning, then renormalized. Without this, a posterior sized
+/// mid-loop — either a pre-existing read's posterior from BEFORE any admission in this family, or a
+/// newly-admitted-copy read's posterior sized right after ITS pool's admission but before a LATER
+/// pool admits yet another copy — stays shorter than the final roster, and the
+/// `.posterior.tsv` writer's frame-width guard (`a.posterior.len() != fa.copy_tids.len()`,
+/// `copy_assign.rs`) silently skips that read rather than reporting it.
+fn widen_posteriors_to_final_roster(fa: &mut FamilyAssignment) {
+    let final_n = fa.copy_tids.len();
+    for (_, a) in fa.assignments.iter_mut() {
+        if a.posterior.len() < final_n {
+            a.posterior.resize(final_n, 0.0);
+            let z: f64 = a.posterior.iter().sum();
+            if z > 0.0 {
+                for x in a.posterior.iter_mut() {
+                    *x /= z;
+                }
+            }
+        }
+    }
+}
+
+/// VG re-align END-TO-END plan, Task 3 (best-effort/mechanism-only): turn each `apply_realign`
+/// novel-read pool (reads fitting NO existing copy-path at all) into a `CollapsedCandidate` and run
+/// it through `absent_copy::admit_candidate` — the SAME admission gate the reference-absent-copy
+/// discovery path (`DenovoConfig`'s `absent_copies` flag) already uses.
+///
+/// `pools` holds GLOBAL `bam_reads` indices (the caller has already translated `apply_realign`'s
+/// per-family-local indices). `host` = the family's most-supported copy (max `n_reads`), matching
+/// `recover_collapsed_candidates`'s "most-supported copy is the host" convention.
+///
+/// A pool that can't be cleanly turned into an admitted copy is left alone (no panic, no fabricated
+/// admission) — it stays only as the `"novel-candidate"` rows `fa.realign_records` already carries:
+///   - too few PSV-distinguishing columns among the pool's own reads to attempt a candidate at all;
+///   - no identifiable haplotype among the pool's reads (`split_locus_copies` finds none);
+///   - the admission gate itself declines (`Admission::DnaNeeds`, e.g. remaps back to the host
+///     locus at >= 98% identity, or isn't min_p-distinct from the host).
+///
+/// On `Admission::Copy(t)`: `t` shares the HOST's genomic coordinate frame (it's an allele-overlay of
+/// the host's spliced sequence — `absent_copy::admit_candidate`'s contract), so `t`'s alleles at the
+/// family's existing PSV columns are derived the SAME way a real copy's are: the host's own
+/// `family_col_genomic_pos` (genomic positions), inverted through `t`'s own `gen2off` (since `t`'s
+/// intron chain can differ from the host's own). Appends the new copy to
+/// `copy_psv_alleles`/`copy_junctions`/`copy_tids`, bumps `n_copies`, and assigns the pool's reads to
+/// it (updating an existing `fa.assignments` entry in place, or — for a pool read the one-shot gate
+/// never assigned at all — appending a new `discovery_coupled` one, keeping `read_psv_obs`/
+/// `read_junctions` parallel to `assignments` and `n_reads == assignments.len()`).
+///
+/// (M4 fix, no longer a caveat) every `Assignment::posterior` — pre-existing or freshly appended — is
+/// widened to the FINAL copy-roster width before this returns; see [`widen_posteriors_to_final_roster`].
+///
+/// Thin wrapper over [`admit_novel_pools_with_admitter`], supplying the REAL admission gate
+/// (`absent_copy::admit_candidate`, which shells minimap2 for the remap-identity check). Tests drive
+/// the hermetic core directly with an injected admitter, mirroring `absent_copy.rs`'s own
+/// `admit_candidate`/`admit_candidate_with_remap` split.
 fn admit_novel_pools(
     fa: &mut FamilyAssignment,
     pools: &[Vec<usize>],
@@ -616,6 +743,23 @@ fn admit_novel_pools(
     fasta_path: &str,
     profiles: &FamilyProfiles,
 ) {
+    admit_novel_pools_with_admitter(fa, pools, bam_reads, all_copies, profiles, |cand, host| {
+        absent_copy::admit_candidate(cand, host, genome, fasta_path, &AbsentCopyParams::default())
+    })
+}
+
+/// Hermetic core of [`admit_novel_pools`]: identical mechanism, but the admission gate itself is
+/// injected as `admit` rather than hardcoded to the real (minimap2-shelling) `absent_copy::admit_candidate`.
+fn admit_novel_pools_with_admitter<F>(
+    fa: &mut FamilyAssignment,
+    pools: &[Vec<usize>],
+    bam_reads: &[BamRead],
+    all_copies: &[DenovoTranscript],
+    profiles: &FamilyProfiles,
+    admit: F,
+) where
+    F: Fn(&CollapsedCandidate, &DenovoTranscript) -> Admission,
+{
     if pools.is_empty() || all_copies.is_empty() {
         return;
     }
@@ -648,7 +792,7 @@ fn admit_novel_pools(
             psv_pos,
             n_clusters,
         };
-        let admitted = absent_copy::admit_candidate(&cand, host, genome, fasta_path, &AbsentCopyParams::default());
+        let admitted = admit(&cand, host);
         let t = match admitted {
             Admission::Copy(t) => t,
             Admission::DnaNeeds(_) => continue, // gate declined -- stays a "novel-candidate" record.
@@ -664,8 +808,12 @@ fn admit_novel_pools(
         fa.n_copies += 1;
 
         for &gi in pool {
-            let map = super::vg_realign::align_traceback(&bam_reads[gi].read.seq, &t.seq);
-            let obs = super::vg_realign::path_obs_at(&map, &positions, &bam_reads[gi].read.seq);
+            // C1: orient the read to `t`'s own (transcription-strand) frame before the traceback --
+            // same fix as `vg_realign::apply_realign`'s correction path, needed here too since `t`
+            // can itself be a `-`-strand copy.
+            let oriented = super::vg_realign::orient_for_copy(&bam_reads[gi].read.seq, &t.seq);
+            let map = super::vg_realign::align_traceback(&oriented, &t.seq);
+            let obs = super::vg_realign::path_obs_at(&map, &positions, &oriented);
             if let Some(pos) = fa.assignments.iter().position(|(ri, _)| *ri == gi) {
                 fa.assignments[pos].1.best_copy = new_copy;
                 fa.read_psv_obs[pos] = obs;
@@ -691,6 +839,7 @@ fn admit_novel_pools(
             }
         }
     }
+    widen_posteriors_to_final_roster(fa);
     fa.n_reads = fa.assignments.len();
 }
 
@@ -1012,14 +1161,16 @@ pub fn detect_and_assign(
             fa.read_junctions.push(r.junctions);
             fa.assignments.push((idx_map[r.read_index], r.combined));
         }
-        // VG re-align END-TO-END plan, Task 3: apply the corrections + EM recompute (must-have) and
-        // attempt admission of any novel-read pools (best-effort) now that `fa.assignments`/
-        // `read_psv_obs`/`read_junctions` are populated. No-op (and `fa` untouched from the pre-Task-3
-        // shape) when `cfg.vg_realign` is off, since `vg_realign_apply` is `None` in that case.
+        // VG re-align END-TO-END plan, Task 3: apply the corrections (must-have), attempt admission
+        // of any novel-read pools (best-effort) now that `fa.assignments`/`read_psv_obs`/
+        // `read_junctions` are populated, THEN recompute the EM abundance (I2 fix: must run AFTER
+        // admission, over the FINAL widened copy roster, or an admitted copy reports abundance 0.0
+        // and a shorter `copy_abundance` than `copy_psv_alleles`). No-op (and `fa` untouched from the
+        // pre-Task-3 shape) when `cfg.vg_realign` is off, since `vg_realign_apply` is `None` in that case.
         if let Some((apply_global, profiles)) = vg_realign_apply {
-            let novel_pools =
-                apply_realign_patch(&mut fa, apply_global, p, VG_REALIGN_EM_EPS, VG_REALIGN_EM_MAX_ITER);
+            let novel_pools = apply_realign_patch(&mut fa, apply_global, p);
             admit_novel_pools(&mut fa, &novel_pools, bam_reads, &all_copies, genome, fasta_path, &profiles);
+            recompute_realign_abundance(&mut fa, p, VG_REALIGN_EM_EPS, VG_REALIGN_EM_MAX_ITER);
         }
         out.push(fa);
     }
@@ -2254,7 +2405,7 @@ mod tests {
         };
 
         let p = AssignParams::default();
-        let novel_pools = apply_realign_patch(&mut fa, apply, &p, 1e-6, 500);
+        let novel_pools = apply_realign_patch(&mut fa, apply, &p);
         assert!(novel_pools.is_empty(), "no novel pools were planted");
         assert_eq!(fa.realign_records.len(), 1, "records must be set on fa");
         assert_eq!(fa.realign_records[0].action, "reassigned");
@@ -2265,6 +2416,16 @@ mod tests {
         // read 11 (untouched) must be unaffected.
         let pos11 = fa.assignments.iter().position(|(ri, _)| *ri == 11).unwrap();
         assert_eq!(fa.assignments[pos11].1.best_copy, 1);
+
+        // (I2 fix) `apply_realign_patch` alone no longer recomputes `copy_abundance` -- that must
+        // happen AFTER `admit_novel_pools`, via the separate `recompute_realign_abundance` step
+        // (see `admission_widens_abundance_not_left_at_zero` for the admission-ordering case).
+        assert_eq!(
+            fa.copy_abundance,
+            vec![0.5, 0.5],
+            "apply_realign_patch alone must not touch copy_abundance any more"
+        );
+        recompute_realign_abundance(&mut fa, &p, 1e-6, 500);
 
         // copy_abundance must be the EM's ACTUAL recomputed output over the corrected read_psv_obs
         // (both reads now carry copy 1's allele), not the stale pre-correction 0.5/0.5.
@@ -2284,6 +2445,214 @@ mod tests {
             "both reads now favor copy 1 post-correction: abundance = {:?}",
             fa.copy_abundance
         );
+    }
+
+    /// I3 fix: a correction must RE-DERIVE the read's entire `Assignment` (status, posterior,
+    /// p_value, margin, n_decisive) from the corrected obs, not just move `best_copy` -- else
+    /// `.assignments.tsv`/`.posterior.tsv` report a self-inconsistent story (e.g. a reassigned read
+    /// still printing `status=Tied` with its stale pre-correction posterior).
+    #[test]
+    fn correction_rederives_full_assignment_not_just_best_copy() {
+        use crate::vg_family::vg_realign::{RealignApply, RealignRecord};
+        use std::collections::HashMap;
+
+        // Two PSV columns cleanly distinguishing copy 0 ('A','A') from copy 1 ('C','C') -- well
+        // clear of the alpha=1e-3 Bonferroni bound (min_p ~= (0.003/3)^2 = 1e-6 << 1e-3), so the
+        // fresh certificate is unambiguously Assigned (not stuck on a single-column boundary tie).
+        let copy_psv_alleles = vec![vec![Some(b'A'), Some(b'A')], vec![Some(b'C'), Some(b'C')]];
+        let copy_junctions = vec![Vec::new(), Vec::new()];
+
+        // Read (global bam index) 20: the one-shot gate never spanned either column (both `None`)
+        // -> genuinely Tied, flat posterior, best_copy defaulted to 0. The vg-realign correction
+        // re-aligns it against copy 1's full consensus and DOES span both columns, matching copy 1
+        // exactly at both -- a clean, decisive correction.
+        let mut fa = FamilyAssignment {
+            family_id: "fam1".into(),
+            chrom: "c1".into(),
+            n_copies: 2,
+            n_reads: 1,
+            psv_cols: 2,
+            resolvable_psv: 0,
+            assigned_psv: 0,
+            resolvable_j: 0,
+            assigned_j: 0,
+            junction_only: 0,
+            uniq: 0,
+            uniq_agree: 0,
+            collapsed_copies: 0,
+            rescued_copies: 0,
+            assignments: vec![(
+                20,
+                Assignment {
+                    best_copy: 0,
+                    log_lr_margin: 0.0,
+                    n_decisive: 0,
+                    resolvable: false,
+                    status: AssignStatus::Tied,
+                    p_value: 1.0,
+                    min_p_value: 1.0,
+                    discovery_coupled: false,
+                    posterior: vec![0.5, 0.5],
+                },
+            )],
+            copy_tids: vec!["c0".into(), "c1".into()],
+            copy_abundance: vec![0.5, 0.5],
+            copy_abundance_ci: vec![0.5, 0.5],
+            mosaic_reads: 0,
+            conversions: Vec::new(),
+            copy_conversions: Vec::new(),
+            psv_col_pos: vec![Some(100), Some(200)],
+            copy_psv_alleles: copy_psv_alleles.clone(),
+            read_psv_obs: vec![vec![None, None]],
+            copy_junctions: copy_junctions.clone(),
+            read_junctions: vec![Vec::new()],
+            realign_records: Vec::new(),
+        };
+
+        let mut corrected = HashMap::new();
+        corrected.insert(20usize, (1usize, vec![Some(b'C'), Some(b'C')]));
+        let apply = RealignApply {
+            corrected,
+            novel_pools: Vec::new(),
+            records: vec![RealignRecord {
+                read_name: "r20".into(),
+                action: "reassigned".into(),
+                target_copy: 1,
+                id_best: 0.99,
+                linear_copy: 0,
+            }],
+        };
+
+        let p = AssignParams::default();
+        apply_realign_patch(&mut fa, apply, &p);
+
+        let pos = fa.assignments.iter().position(|(ri, _)| *ri == 20).expect("read 20 still present");
+        let a = &fa.assignments[pos].1;
+        assert_eq!(a.best_copy, 1, "must move to copy 1");
+        assert_eq!(a.status, AssignStatus::Assigned, "must NOT keep the stale Tied status");
+        assert!(a.posterior[1] > 0.9, "posterior must be one-hot-ish on copy 1, got {:?}", a.posterior);
+        assert!(a.posterior[0] < 0.1, "posterior must not keep the stale flat 0.5, got {:?}", a.posterior);
+        assert!(a.p_value < 1e-3, "p_value must reflect the fresh decisive certificate, not the stale 1.0, got {}", a.p_value);
+        assert!(a.n_decisive >= 1, "n_decisive must reflect the fresh spanned columns, not the stale 0");
+    }
+
+    /// I2 fix: `copy_abundance` must be recomputed AFTER admission widens the copy roster, not
+    /// before -- otherwise an admitted copy reports abundance 0.0 and `copy_abundance` is shorter
+    /// than `copy_psv_alleles`. Drives the hermetic `admit_novel_pools_with_admitter` (an injected
+    /// admitter bypasses the real minimap2-shelling gate -- `absent_copy.rs`'s own tests already
+    /// cover THAT gate in isolation, per its `admit_candidate`/`admit_candidate_with_remap` split)
+    /// followed by `recompute_realign_abundance`, mirroring the production `detect_and_assign`
+    /// ordering.
+    #[test]
+    fn admission_widens_abundance_not_left_at_zero() {
+        // Host copy: 80bp, '+' strand, no introns, chr1:0-80. Two positions (10, 40) will carry the
+        // pool's internal PSVs; the family already tracks column 0 at genomic position 10.
+        let backbone = rand_seq(80, 0xD00D);
+        let mut mutated = backbone.clone();
+        for &pos in &[10usize, 40usize] {
+            let orig = backbone[pos];
+            mutated[pos] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != orig).unwrap();
+        }
+
+        let host = DenovoTranscript {
+            tid: "host".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 7, strand: '+',
+            introns: vec![], seq: backbone.clone(),
+        };
+        let all_copies = vec![host.clone()];
+
+        let profiles = FamilyProfiles {
+            profiles: vec![CopyProfile { copy_id: 0, alleles: vec![Some(backbone[10])], junctions: vec![] }],
+            copy_gpos: vec![vec![(0usize, 10u64)]],
+            gen2off: vec![gen2off(&host)],
+            strand: vec!['+'],
+            n_cols: 1,
+        };
+
+        let mut fa = FamilyAssignment {
+            family_id: "famX".into(),
+            chrom: "chr1".into(),
+            n_copies: 1,
+            n_reads: 0,
+            psv_cols: 1,
+            resolvable_psv: 0,
+            assigned_psv: 0,
+            resolvable_j: 0,
+            assigned_j: 0,
+            junction_only: 0,
+            uniq: 0,
+            uniq_agree: 0,
+            collapsed_copies: 0,
+            rescued_copies: 0,
+            assignments: Vec::new(),
+            copy_tids: vec!["host".into()],
+            copy_abundance: vec![1.0],
+            copy_abundance_ci: vec![0.0],
+            mosaic_reads: 0,
+            conversions: Vec::new(),
+            copy_conversions: Vec::new(),
+            psv_col_pos: vec![Some(10)],
+            copy_psv_alleles: vec![vec![Some(backbone[10])]],
+            read_psv_obs: Vec::new(),
+            copy_junctions: vec![Vec::new()],
+            read_junctions: Vec::new(),
+            realign_records: Vec::new(),
+        };
+
+        fn mk_bam(name: &str, seq: Vec<u8>) -> BamRead {
+            let len = seq.len() as u64;
+            BamRead {
+                chrom: "chr1".into(),
+                read: AlignedRead { ref_start: 0, cigar: vec![('M', len)], seq, qual: vec![] },
+                mapq: 3,
+                name: name.into(),
+                as_score: 0,
+                de: 0.0,
+                is_supplementary: false,
+            }
+        }
+
+        // 3 reads carrying the host's own backbone (haplotype A) + 4 reads carrying the mutated
+        // haplotype (B) -- both groups clear `discover_locus_psvs`'s `min_allele_reads = 3` at
+        // BOTH columns (10, 40), so the pool splits into 2 identifiable clusters; the larger (B,
+        // n=4) is the one `admit_novel_pools_with_admitter` carries into the (mocked) admission gate.
+        let mut bam_reads = Vec::new();
+        for i in 0..3 {
+            bam_reads.push(mk_bam(&format!("hapA_{i}"), backbone.clone()));
+        }
+        for i in 0..4 {
+            bam_reads.push(mk_bam(&format!("hapB_{i}"), mutated.clone()));
+        }
+        let pools = vec![(0..7).collect::<Vec<usize>>()];
+
+        let admitted_t = DenovoTranscript {
+            tid: "admitted1".into(), chrom: "chr1".into(), start: 0, end: 80, n_reads: 4, strand: '+',
+            introns: vec![], seq: mutated.clone(),
+        };
+
+        admit_novel_pools_with_admitter(&mut fa, &pools, &bam_reads, &all_copies, &profiles, |_c, _h| {
+            Admission::Copy(admitted_t.clone())
+        });
+
+        assert_eq!(fa.n_copies, 2, "the pool must be admitted as a new copy");
+        assert_eq!(fa.copy_psv_alleles.len(), 2);
+        assert_eq!(fa.copy_tids, vec!["host".to_string(), "admitted1".to_string()]);
+        assert_eq!(fa.assignments.len(), 7, "all 7 pool reads must be assigned (none pre-existed)");
+
+        let p = AssignParams::default();
+        recompute_realign_abundance(&mut fa, &p, 1e-6, 500);
+
+        assert_eq!(
+            fa.copy_abundance.len(),
+            fa.copy_psv_alleles.len(),
+            "I2: copy_abundance must be widened to the FINAL (post-admission) copy roster"
+        );
+        assert!(
+            fa.copy_abundance[1] > 0.0,
+            "the admitted copy's abundance must be > 0 -- its 4 supporting reads carry its exact \
+             allele, got {:?}",
+            fa.copy_abundance
+        );
+        assert_eq!(fa.copy_abundance_ci.len(), 2, "copy_abundance_ci must be widened too");
     }
 
     /// Full-pipeline smoke test with `cfg.vg_realign = true`: exercises the `psv_pos_per_copy`
