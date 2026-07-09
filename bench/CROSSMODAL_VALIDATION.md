@@ -82,6 +82,14 @@ total ≈ 19 assembly**) — Soto's famCN/parCN, produced reference-free from lo
 
 ## Caveats (honest)
 
+- **`totalCN@0.80` overcounts genome-wide** and must NOT be read as a clean copy number without a repeat
+  filter. Verified on the shipped binary's genome-wide `famcn.tsv`: dispersed-repeat families inflate it
+  (GWFAM52 = 2 RNA copies → totalCN 49, its "loci" being ~870 bp units at 0.82–0.97 across every chromosome =
+  a repeat, not gene copies), and the cov ≥ 0.50 floor admits partial/domain hits (GWFAM48: famCN 11 vs
+  totalCN 44, the extra 33 being <90 %-coverage domain matches). **famCN@0.98 (full-length, cov ≥ 0.90) is the
+  trustworthy metric.** totalCN is reliable for *cohesive* gene families (GSTM totalCN 21 ≈ asm 19, full-length
+  ~85 % copies) but not for dispersed repeats. FOLLOW-UP: gate totalCN on cov ≥ 0.90 + a repeat/γ-quasi-clique
+  filter before treating it as a copy number.
 - The oracle→gene join is imperfect (RefSeq naming; 51 of 169 oracle multi-copy families matched to an RNA
   family). `asm_hapCN` is a diploid/assembly count, so ±25 % tolerance reflects real haplotype/assembly slop.
 - 80 RNA-only families (Axis B) are not independently confirmed here — some are genuine divergent/expressed
