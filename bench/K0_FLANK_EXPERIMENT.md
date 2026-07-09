@@ -47,14 +47,33 @@ flank_D): **40/40 = 100%** recover the true copy.
    reads extended the de-novo transcripts into the divergent flank, yielding 56 PSV columns there. Nothing new
    had to be built — the flank became exonic in the de-novo model.
 
-## Bearing on real GGO data
+## Bearing on real GGO data — MEASURED, and the rescue is RARE
 
-47.7% of real reads in a sampled family region carry **≥20 bp soft-clipped sequence — median 162 bp, 0% polyA,
-0% low-complexity, 100% real mixed sequence** (`samtools view` audit). That is exactly this flank material,
-currently discarded by exon-column PSV calling. The sim says: wherever a read carries it, a K=0 copy is
-recoverable. **Estimating how much of the real ~25% tied mass is flank-bearing (rescuable) vs exon-confined
-(provably lost) is the natural follow-up** — it converts a single "abstained" number into "X% provably
-impossible, Y% recoverable with the sequence already in the BAM."
+⚠ **Correction of an earlier error.** An initial audit reported "47.7% of reads carry ≥20 bp soft-clips." That
+number counted **secondary alignments**, which are clipped *by construction* (a secondary is a partial
+re-alignment of the same read, not extra sequence). Filtering to **primary** records:
+
+| record type | records | ≥20 bp soft-clip |
+|---|---|---|
+| all (unfiltered — the wrong number) | 747 | 47.7% |
+| **primary only (the read)** | 373 | **1.1%** |
+| secondary | 373 | 94.1% (artifact) |
+| supplementary | 1 | 100% (artifact) |
+
+**Splitting the real abstained mass** (p6 run, per unique read, primary records):
+
+| | flank-bearing (≥20 bp clip) → rescuable | exon-confined → provably lost |
+|---|---|---|
+| **TIED (abstained)** — 140 reads | **7 (5.0%)** | **133 (95.0%)** |
+| assigned — 636 reads | 27 (4.2%) | 609 (95.8%) |
+
+When a clip *is* present it is substantial (median 325 bp, max 1030 bp) — but it is rare.
+
+**Conclusion: on Iso-Seq the K=0 wall holds in practice.** ~95% of tied reads are exon-confined and genuinely
+carry no provenance. Only ~5% could be rescued by the flank mechanism the sim proves. This is biologically
+expected: mature mRNA ends at the polyA site and does not read through into genomic flanks; only intron-retained
+or readthrough transcripts would. The sim establishes the *mechanism* (the wall is per-read, and flank breaks
+it); the real data establishes the *magnitude* (flank is rarely present, so the wall stands).
 
 ## Honest caveats
 
