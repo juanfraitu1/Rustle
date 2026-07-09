@@ -221,30 +221,61 @@ fn main() -> Result<()> {
         args.out
     );
 
-    // famCN via genome projection (spec §7): a family's RNA-observed copies are a LOWER bound on its
-    // true genomic copy number when copies collapse onto one locus (K=0). Project the family's
-    // best-supported consensus (most-read-supported copy's exon-sum) back onto the genome and count
-    // additional disjoint near-identical loci beyond the already-known copy loci.
+    // famCN / totalCN via genome projection (spec §7): a family's RNA-observed copies are a LOWER bound
+    // on its true genomic copy number when copies collapse onto one locus (K=0). Project each family's
+    // best-supported consensus (most-read-supported copy's exon-sum) back onto the genome in ONE batched
+    // minimap2 pass (one genome-index load for ALL families, not one per family -- avoids re-indexing the
+    // whole genome hundreds/thousands of times) and count additional disjoint loci beyond the already-
+    // known copy loci, bucketed by identity: totalCN at the >=0.80 asm20 floor, famCN at the >=0.98 Soto
+    // SD98 near-identical floor.
     let enumerate = (args.enumerate_copies || args.min_identity == Some(0.98)) && args.homology_primary;
     if enumerate {
+        use std::collections::HashMap;
+        let consensuses: Vec<(String, Vec<u8>)> = fams
+            .iter()
+            .enumerate()
+            .map(|(fi, copies)| {
+                let cons = copies.iter().max_by_key(|c| c.n_reads).map(|c| c.seq.clone()).unwrap_or_default();
+                (format!("GWFAM{fi}"), cons)
+            })
+            .collect();
+        let known: HashMap<String, Vec<(String, u64, u64)>> = fams
+            .iter()
+            .enumerate()
+            .map(|(fi, copies)| {
+                let loci: Vec<(String, u64, u64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
+                (format!("GWFAM{fi}"), loci)
+            })
+            .collect();
+        let proj_by_fam = match rustle::vg_family::genome_projection::project_families_batch(
+            &consensuses, &args.fasta, &known, 0.80, 0.50, &refine_params.minimap2, args.threads,
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[gw-catalog] batch famCN projection failed ({e}); famCN/totalCN fall back to n_rna_copies");
+                HashMap::new()
+            }
+        };
         let mut ff = std::fs::File::create(format!("{}.famcn.tsv", args.out))?;
-        writeln!(ff, "family_id\tn_rna_copies\tfamCN\tprojection_loci")?;
+        writeln!(ff, "family_id\tn_rna_copies\tfamCN\ttotalCN\tprojection_loci")?;
         for (fi, copies) in fams.iter().enumerate() {
-            let cons = copies.iter().max_by_key(|c| c.n_reads).map(|c| c.seq.clone()).unwrap_or_default();
-            let known: Vec<(String, u64, u64)> = copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect();
-            let proj = match rustle::vg_family::genome_projection::project_family_copies(
-                &cons, &args.fasta, &known, 0.98, 0.90, &refine_params.minimap2, args.threads) {
-                Ok(p) => p,
-                Err(e) => {
-                    eprintln!("[gw-catalog] famCN projection failed for GWFAM{fi} ({e}); famCN falls back to n_rna_copies");
-                    Vec::new()
-                }
-            };
-            let famcn = copies.len() + proj.len();
-            let loci = proj.iter().map(|p| format!("{}:{}-{}", p.chrom, p.start, p.end)).collect::<Vec<_>>().join(";");
-            writeln!(ff, "GWFAM{fi}\t{}\t{}\t{}", copies.len(), famcn, loci)?;
+            let fid = format!("GWFAM{fi}");
+            let n_rna = copies.len();
+            let proj = proj_by_fam.get(&fid).cloned().unwrap_or_default();
+            let n_total_loci = proj.iter().filter(|p| p.identity >= 0.80).count();
+            let n_fam_loci = proj.iter().filter(|p| p.identity >= 0.98).count();
+            let total_cn = n_rna + n_total_loci;
+            let fam_cn = n_rna + n_fam_loci;
+            // projection_loci lists only the >=0.80 (totalCN-contributing) loci, per spec.
+            let loci = proj
+                .iter()
+                .filter(|p| p.identity >= 0.80)
+                .map(|p| format!("{}:{}-{}@{:.4}", p.chrom, p.start, p.end, p.identity))
+                .collect::<Vec<_>>()
+                .join(";");
+            writeln!(ff, "{fid}\t{n_rna}\t{fam_cn}\t{total_cn}\t{loci}")?;
         }
-        eprintln!("[gw-catalog] famCN projection -> {}.famcn.tsv", args.out);
+        eprintln!("[gw-catalog] famCN/totalCN batch projection -> {}.famcn.tsv", args.out);
     }
     Ok(())
 }

@@ -2,10 +2,73 @@
 //! genome to enumerate near-identical genomic copies (famCN), recovering K=0 collapses RNA merges. In-engine
 //! minimap2 (no Liftoff dependency); seeded by our own consensus, so no reference-annotation circularity.
 use anyhow::Result;
+use std::collections::HashMap;
 use std::io::Write;
 
 #[derive(Clone, Debug)]
 pub struct CopyLocus { pub chrom: String, pub start: u64, pub end: u64, pub identity: f64 }
+
+/// RAII temp-file cleanup helper shared by the single and batch projection entry points.
+struct TempFile(std::path::PathBuf);
+impl Drop for TempFile { fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); } }
+
+/// Run `minimap2 -c -x splice -N 50 -p 0.01` (query FASTA at `query_path`) against `genome_fasta` and
+/// return the raw PAF stdout. `-p 0.01`: report divergent secondaries too (default -x splice -p suppresses
+/// them, hiding all but near-identical copies); the id/cov filter downstream decides which to keep. Returns
+/// `Ok(None)` (not an error) if minimap2 exits non-zero, matching the existing graceful-degradation contract.
+fn run_minimap2_paf(
+    query_path: &std::path::Path,
+    genome_fasta: &str,
+    minimap2: &str,
+    threads: usize,
+) -> Result<Option<String>> {
+    let out = std::process::Command::new(minimap2)
+        .args(["-c", "-x", "splice", "-N", "50", "-p", "0.01", "-t"]).arg(threads.to_string())
+        .arg(genome_fasta).arg(query_path).output()
+        .map_err(|e| anyhow::anyhow!("minimap2 ('{minimap2}') projection failed: {e}"))?;
+    if !out.status.success() { return Ok(None); }
+    Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+}
+
+/// Parse PAF text into per-query-name hit lists, filtered by identity/coverage. `qlen` (PAF field 1) is
+/// read directly per-record, so this works uniformly whether the PAF came from a single-query or a
+/// multi-query (batch) minimap2 run — no external query-length bookkeeping needed.
+fn parse_paf_hits(paf: &str, min_identity: f64, min_cov: f64) -> HashMap<String, Vec<CopyLocus>> {
+    let mut by_query: HashMap<String, Vec<CopyLocus>> = HashMap::new();
+    for line in paf.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() < 12 { continue; }
+        let qname = f[0].to_string();
+        let qlen = f[1].parse::<f64>().unwrap_or(1.0).max(1.0);
+        let tname = f[5].to_string();
+        let ts = f[7].parse::<u64>().unwrap_or(0);
+        let te = f[8].parse::<u64>().unwrap_or(0);
+        let qs = f[2].parse::<f64>().unwrap_or(0.0);
+        let qe = f[3].parse::<f64>().unwrap_or(0.0);
+        let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
+        let ident = de.map(|d| 1.0 - d).unwrap_or_else(|| {
+            f[9].parse::<f64>().unwrap_or(0.0) / f[10].parse::<f64>().unwrap_or(1.0).max(1.0)
+        });
+        let cov = (qe - qs) / qlen;
+        if ident >= min_identity && cov >= min_cov {
+            by_query.entry(qname).or_default().push(CopyLocus { chrom: tname, start: ts, end: te, identity: ident });
+        }
+    }
+    by_query
+}
+
+/// Disjoint filter: sort by (chrom, start), drop hits overlapping an already-kept hit or a `known` locus.
+fn disjoint_filter(mut hits: Vec<CopyLocus>, known: &[(String, u64, u64)]) -> Vec<CopyLocus> {
+    hits.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
+    let mut kept: Vec<CopyLocus> = Vec::new();
+    let overlaps = |c: &CopyLocus, k: &(String, u64, u64)| c.chrom == k.0 && c.start < k.2 && k.1 < c.end;
+    for h in hits {
+        if kept.iter().any(|k| k.chrom == h.chrom && k.start < h.end && h.start < k.end) { continue; }
+        if known.iter().any(|k| overlaps(&h, k)) { continue; }
+        kept.push(h);
+    }
+    kept
+}
 
 /// minimap2 the consensus against the genome; keep hits with identity ≥ `min_identity`, aligned-fraction
 /// of the consensus ≥ `min_cov` (structure-preserving), disjoint from each other and from `known` loci.
@@ -20,45 +83,56 @@ pub fn project_family_copies(
 ) -> Result<Vec<CopyLocus>> {
     let dir = std::env::temp_dir();
     let q = dir.join(format!("rustle_proj_q_{}_{}.fa", std::process::id(), consensus.len()));
-    struct Cl(std::path::PathBuf); impl Drop for Cl { fn drop(&mut self) { let _ = std::fs::remove_file(&self.0); } }
-    let _c = Cl(q.clone());
+    let _c = TempFile(q.clone());
     { let mut f = std::fs::File::create(&q)?; writeln!(f, ">cons")?; f.write_all(consensus)?; writeln!(f)?; }
-    let out = std::process::Command::new(minimap2)
-        // -p 0.01: report divergent secondaries too (default -x splice -p suppresses them, hiding all but
-        // near-identical copies); the id/cov filter below decides which to keep.
-        .args(["-c", "-x", "splice", "-N", "50", "-p", "0.01", "-t"]).arg(threads.to_string())
-        .arg(genome_fasta).arg(&q).output()
-        .map_err(|e| anyhow::anyhow!("minimap2 ('{minimap2}') projection failed: {e}"))?;
-    if !out.status.success() { return Ok(Vec::new()); }
-    let clen = consensus.len() as f64;
-    let mut hits: Vec<CopyLocus> = Vec::new();
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let f: Vec<&str> = line.split('\t').collect();
-        if f.len() < 12 { continue; }
-        let tname = f[5].to_string();
-        let ts = f[7].parse::<u64>().unwrap_or(0);
-        let te = f[8].parse::<u64>().unwrap_or(0);
-        let qs = f[2].parse::<f64>().unwrap_or(0.0);
-        let qe = f[3].parse::<f64>().unwrap_or(0.0);
-        let de = f[12..].iter().find_map(|x| x.strip_prefix("de:f:").and_then(|v| v.parse::<f64>().ok()));
-        let ident = de.map(|d| 1.0 - d).unwrap_or_else(|| {
-            f[9].parse::<f64>().unwrap_or(0.0) / f[10].parse::<f64>().unwrap_or(1.0).max(1.0)
-        });
-        let cov = (qe - qs) / clen.max(1.0);
-        if ident >= min_identity && cov >= min_cov {
-            hits.push(CopyLocus { chrom: tname, start: ts, end: te, identity: ident });
+    let paf = match run_minimap2_paf(&q, genome_fasta, minimap2, threads)? {
+        Some(p) => p,
+        None => return Ok(Vec::new()),
+    };
+    let mut by_query = parse_paf_hits(&paf, min_identity, min_cov);
+    let hits = by_query.remove("cons").unwrap_or_default();
+    Ok(disjoint_filter(hits, known))
+}
+
+/// Batch variant: ONE minimap2 invocation (one genome index load) for MANY families' consensuses, instead
+/// of one invocation per family. Writes all consensuses to a single multi-record query FASTA (header =
+/// `family_id`), runs minimap2 once, groups PAF hits by query name, then applies the same per-family
+/// identity/coverage filter and disjoint+known-exclusion filter as `project_family_copies`.
+pub fn project_families_batch(
+    consensuses: &[(String, Vec<u8>)],
+    genome_fasta: &str,
+    known: &HashMap<String, Vec<(String, u64, u64)>>,
+    min_identity: f64,
+    min_cov: f64,
+    minimap2: &str,
+    threads: usize,
+) -> Result<HashMap<String, Vec<CopyLocus>>> {
+    let dir = std::env::temp_dir();
+    let q = dir.join(format!("rustle_proj_batch_{}_{}.fa", std::process::id(), consensuses.len()));
+    let _c = TempFile(q.clone());
+    {
+        let mut f = std::fs::File::create(&q)?;
+        for (fam_id, seq) in consensuses {
+            if seq.is_empty() { continue; }
+            writeln!(f, ">{fam_id}")?;
+            f.write_all(seq)?;
+            writeln!(f)?;
         }
     }
-    // disjoint filter: sort, drop hits overlapping an already-kept hit or a `known` locus.
-    hits.sort_by(|a, b| (a.chrom.as_str(), a.start).cmp(&(b.chrom.as_str(), b.start)));
-    let mut kept: Vec<CopyLocus> = Vec::new();
-    let overlaps = |c: &CopyLocus, k: &(String, u64, u64)| c.chrom == k.0 && c.start < k.2 && k.1 < c.end;
-    for h in hits {
-        if kept.iter().any(|k| k.chrom == h.chrom && k.start < h.end && h.start < k.end) { continue; }
-        if known.iter().any(|k| overlaps(&h, k)) { continue; }
-        kept.push(h);
+    let empty: HashMap<String, Vec<CopyLocus>> = consensuses.iter().map(|(id, _)| (id.clone(), Vec::new())).collect();
+    let paf = match run_minimap2_paf(&q, genome_fasta, minimap2, threads)? {
+        Some(p) => p,
+        None => return Ok(empty),
+    };
+    let by_query = parse_paf_hits(&paf, min_identity, min_cov);
+    let no_known: Vec<(String, u64, u64)> = Vec::new();
+    let mut result: HashMap<String, Vec<CopyLocus>> = HashMap::new();
+    for (fam_id, _) in consensuses {
+        let hits = by_query.get(fam_id).cloned().unwrap_or_default();
+        let k = known.get(fam_id).map(|v| v.as_slice()).unwrap_or(no_known.as_slice());
+        result.insert(fam_id.clone(), disjoint_filter(hits, k));
     }
-    Ok(kept)
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -159,6 +233,105 @@ mod tests {
             hits.len(),
             hits
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// TDD for `project_families_batch`: ONE minimap2 pass must correctly enumerate + bucket-by-identity
+    /// loci for MULTIPLE families sharing one query FASTA, without cross-family leakage.
+    #[test]
+    fn project_families_batch_one_pass_buckets_by_identity() {
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() { return; }
+
+        let splitmix = |i: u64| -> u64 {
+            let mut z = i.wrapping_add(0x9E3779B97F4A7C15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        };
+        let bases = [b'A', b'C', b'G', b'T'];
+        let gen_seq = |seed: u64, len: u64| -> Vec<u8> {
+            (0..len)
+                .map(|i| bases[(splitmix(seed.wrapping_mul(0x2545_F491_4F6C_DD1D).wrapping_add(i)) % 4) as usize])
+                .collect::<Vec<u8>>()
+        };
+        let mutate = |seq: &[u8], frac: f64, seed: u64| -> Vec<u8> {
+            let n = seq.len();
+            let mut idx: Vec<usize> = (0..n).collect();
+            idx.sort_by_key(|&i| splitmix(seed.wrapping_add(i as u64)));
+            let n_mut = (frac * n as f64).round() as usize;
+            let mut out = seq.to_vec();
+            for &i in idx.iter().take(n_mut) {
+                let orig = out[i];
+                let h = splitmix(seed ^ 0xABCDEF ^ i as u64);
+                let mut alt = bases[(h % 4) as usize];
+                if alt == orig { alt = bases[((h % 4) as usize + 1) % 4]; }
+                out[i] = alt;
+            }
+            out
+        };
+
+        let copy_len = 1500u64;
+        // Family F1: sequence "A" at 0% / ~8% / ~15% divergence.
+        let a0 = gen_seq(1, copy_len);
+        let a8 = mutate(&a0, 0.08, 100);
+        let a15 = mutate(&a0, 0.15, 200);
+        // Family F2: a DIFFERENT sequence "B" (distinct seed) at 0% / ~2% divergence.
+        let b0 = gen_seq(500_001, copy_len);
+        let b2 = mutate(&b0, 0.02, 300);
+
+        let dir = std::env::temp_dir().join(format!("rustle_proj_batch_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut genome: Vec<u8> = Vec::new();
+        genome.extend_from_slice(&gen_seq(9001, 2_000));
+        genome.extend_from_slice(&a0);
+        genome.extend_from_slice(&gen_seq(9002, 20_000));
+        genome.extend_from_slice(&a8);
+        genome.extend_from_slice(&gen_seq(9003, 20_000));
+        genome.extend_from_slice(&a15);
+        genome.extend_from_slice(&gen_seq(9004, 20_000));
+        genome.extend_from_slice(&b0);
+        genome.extend_from_slice(&gen_seq(9005, 20_000));
+        genome.extend_from_slice(&b2);
+        genome.extend_from_slice(&gen_seq(9006, 2_000));
+
+        let fa = dir.join("g.fa");
+        std::fs::write(&fa, format!(">chr1\n{}\n", String::from_utf8(genome).unwrap())).unwrap();
+
+        let consensuses: Vec<(String, Vec<u8>)> = vec![("F1".to_string(), a0.clone()), ("F2".to_string(), b0.clone())];
+        let known: std::collections::HashMap<String, Vec<(String, u64, u64)>> = std::collections::HashMap::new();
+        let result = project_families_batch(&consensuses, fa.to_str().unwrap(), &known, 0.80, 0.50, "minimap2", 2).unwrap();
+
+        let f1 = result.get("F1").expect("F1 must be present in batch result");
+        let f2 = result.get("F2").expect("F2 must be present in batch result");
+
+        assert!(f1.len() >= 3, "F1 expected >=3 loci (0%/~8%/~15% divergent), got {}: {:?}", f1.len(), f1);
+        assert!(f2.len() >= 2, "F2 expected >=2 loci (0%/~2% divergent), got {}: {:?}", f2.len(), f2);
+
+        // Identity spans: F1 should carry a near-1.0, a ~0.92, and a ~0.85 hit.
+        let f1_has = |lo: f64, hi: f64| f1.iter().any(|c| c.identity >= lo && c.identity <= hi);
+        assert!(f1_has(0.97, 1.0), "F1 missing ~1.0-identity hit: {:?}", f1);
+        assert!(f1_has(0.88, 0.96), "F1 missing ~0.92-identity hit: {:?}", f1);
+        assert!(f1_has(0.80, 0.88), "F1 missing ~0.85-identity hit: {:?}", f1);
+
+        let f2_has = |lo: f64, hi: f64| f2.iter().any(|c| c.identity >= lo && c.identity <= hi);
+        assert!(f2_has(0.97, 1.0), "F2 missing ~1.0-identity hit: {:?}", f2);
+        assert!(f2_has(0.96, 1.0), "F2 missing ~0.98-identity hit: {:?}", f2);
+
+        // No cross-family leakage: F1's loci must sit in the A-region of the contig (near a0/a8/a15
+        // offsets, well before the B region begins), and F2's loci must sit in the B region.
+        let b_region_start = 2_000 + copy_len + 20_000 + copy_len + 20_000 + copy_len + 20_000; // start of b0
+        assert!(f1.iter().all(|c| c.start < b_region_start),
+            "F1 locus leaked into the B region (query-name grouping bug): {:?}", f1);
+        assert!(f2.iter().all(|c| c.start >= b_region_start - 100),
+            "F2 locus leaked into the A region (query-name grouping bug): {:?}", f2);
+
+        // Bucketing: F1 must have >=2 loci that are >=0.80 identity but <0.98 (the divergent 8%/15%
+        // copies) -- proving totalCN (>=0.80) > famCN (>=0.98) is derivable from one projection result.
+        let f1_divergent_but_above_floor = f1.iter().filter(|c| c.identity >= 0.80 && c.identity < 0.98).count();
+        assert!(f1_divergent_but_above_floor >= 2,
+            "F1 expected >=2 loci with 0.80<=identity<0.98 (totalCN>famCN bucketing), got {}: {:?}",
+            f1_divergent_but_above_floor, f1);
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
