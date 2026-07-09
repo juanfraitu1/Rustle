@@ -153,6 +153,14 @@ pub enum RealignAction {
 ///
 /// No correction is needed (and none is offered) when the read's best copy-path already IS its
 /// linear attribution, or when there's no decisive evidence (`n_decisive < 1`) at all.
+///
+/// When `linear_copy` is `None` this always `Reject`s. The `min_p` certificate here certifies a
+/// *correction* -- that the best copy-path beats an existing linear attribution significantly
+/// enough to overturn it. `realign_to_paths` fills `id_linear` with a `0.0` sentinel when there is
+/// no linear copy to compare against, which is not a real identity and cannot serve as a
+/// baseline: certifying against it would accept any moderately-well-fitting `id_best` (even a
+/// near-random ~0.5 identity) as a "correction" of nothing. A read with no linear attribution at
+/// all isn't a correction case -- it's handled by the separate novel-copy path (`pool_novel`).
 pub fn accept_realignment(
     hit: &RealignHit,
     linear_copy: Option<usize>,
@@ -160,7 +168,11 @@ pub fn accept_realignment(
     error_rate: f64,
     alpha: f64,
 ) -> RealignAction {
-    if linear_copy == Some(hit.best_copy) {
+    let Some(linear_copy) = linear_copy else {
+        return RealignAction::Reject;
+    };
+
+    if linear_copy == hit.best_copy {
         return RealignAction::Reject;
     }
 
@@ -500,12 +512,14 @@ mod tests {
     }
 
     #[test]
-    fn accept_no_linear_copy_can_reassign() {
-        // No existing linear attribution at all (unmapped read routed by Task 3) -- id_linear is
-        // the documented 0.0 sentinel, so the full id_best * read_len counts as decisive.
+    fn accept_none_linear_rejects() {
+        // No existing linear attribution at all (unmapped read routed by Task 3) -- id_linear's
+        // 0.0 sentinel is not a real baseline, so there is nothing to "correct" against. Even a
+        // high id_best (0.99) must Reject here, not Reassign off the meaningless zero baseline;
+        // genuinely unattributed reads are handled by the separate novel-copy path.
         let hit = RealignHit { best_copy: 1, id_best: 0.99, id_linear: 0.0 };
         let action = accept_realignment(&hit, None, 1000, 0.003, 1e-3);
-        assert_eq!(action, RealignAction::Reassign(1));
+        assert_eq!(action, RealignAction::Reject);
     }
 
     #[test]
