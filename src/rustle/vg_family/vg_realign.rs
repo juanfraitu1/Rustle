@@ -1,7 +1,10 @@
 //! VG re-align supplement -- re-align poor-fit/unmapped reads to O1's family copy-paths,
 //! significance-gated (correct + discover). Task 1: candidate selection. Task 3: re-align a
 //! candidate read to the family's copy-paths (identity-based, DRY on `bridge_detector::aln_id`)
-//! and route unmapped reads to candidate families by shared minimizers.
+//! and route unmapped reads to candidate families by shared minimizers. Task 4: gate the
+//! re-align correction behind a min_p significance certificate (same `epsilon^delta` form as
+//! `copy_assign::read_copy_evidence`), and greedily pool reads that fit no existing copy into
+//! candidate novel-copy clusters.
 
 use std::collections::HashSet;
 
@@ -119,6 +122,85 @@ pub fn route_unmapped(
 
     hits.sort_unstable();
     hits
+}
+
+/// Task 4's verdict on a candidate re-alignment: either correct the read's copy attribution to
+/// `Reassign(best_copy)`, or `Reject` the correction (keep whatever attribution the caller
+/// already had -- linear, or none). Admission of genuinely novel copies (no existing attribution
+/// at all) is a separate concern, handled by `pool_novel` here and `absent_copy::admit_candidate`
+/// at wiring time -- this enum only covers correcting an EXISTING attribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealignAction {
+    Reassign(usize),
+    Reject,
+}
+
+/// Decide whether `hit` (a candidate read's re-alignment result from `realign_to_paths`) beats
+/// its existing linear-locus attribution `linear_copy` significantly enough to correct it.
+///
+/// Mirrors `copy_assign::read_copy_evidence`'s `min_p` certificate: `n_decisive` is the number of
+/// read positions (out of `read_len`) that support the best copy-path over the linear locus
+/// (`(id_best - id_linear) * read_len`, rounded), and `min_p = (error_rate / 3)^n_decisive` is the
+/// probability that all of those decisive differences arose by sequencing error alone (an
+/// `epsilon^delta` bound: each independent error has probability `error_rate / 3` of landing on
+/// the specific alternate base that agrees with the best copy-path). `min_p < alpha` certifies the
+/// correction; otherwise the evidence isn't strong enough to overturn the existing attribution.
+///
+/// No correction is needed (and none is offered) when the read's best copy-path already IS its
+/// linear attribution, or when there's no decisive evidence (`n_decisive < 1`) at all.
+pub fn accept_realignment(
+    hit: &RealignHit,
+    linear_copy: Option<usize>,
+    read_len: usize,
+    error_rate: f64,
+    alpha: f64,
+) -> RealignAction {
+    if linear_copy == Some(hit.best_copy) {
+        return RealignAction::Reject;
+    }
+
+    let n_decisive = ((hit.id_best - hit.id_linear) * read_len as f64).round() as i64;
+    if n_decisive < 1 {
+        return RealignAction::Reject;
+    }
+
+    let min_p = (error_rate / 3.0).powi(n_decisive as i32);
+    if min_p < alpha {
+        RealignAction::Reassign(hit.best_copy)
+    } else {
+        RealignAction::Reject
+    }
+}
+
+/// Greedily single-linkage cluster `unfit` reads (those `realign_to_paths` matched to NO existing
+/// copy -- candidate reference-absent/novel-copy material) by pairwise `aln_id >= min_id`.
+///
+/// Each read joins the first existing cluster whose FIRST member (the cluster's representative)
+/// it matches at `>= min_id`; if it matches no cluster's representative, it starts a new
+/// singleton cluster. This is a cheap O(n * clusters) pass, not full correlation clustering --
+/// good enough to pool obviously-related novel-copy candidates for the Task-5 wiring, which is
+/// where the actual `absent_copy::admit_candidate` admission gate (needing the genome + remap)
+/// runs. Returns only clusters with `>= min_reads` members, as index vectors into `unfit`.
+pub fn pool_novel(unfit: &[(String, Vec<u8>)], min_id: f64, min_reads: usize) -> Vec<Vec<usize>> {
+    let mut clusters: Vec<Vec<usize>> = Vec::new();
+
+    for (i, (_, seq)) in unfit.iter().enumerate() {
+        let mut joined = false;
+        for cluster in clusters.iter_mut() {
+            let rep = cluster[0];
+            if aln_id(seq, &unfit[rep].1) >= min_id {
+                cluster.push(i);
+                joined = true;
+                break;
+            }
+        }
+        if !joined {
+            clusters.push(vec![i]);
+        }
+    }
+
+    clusters.retain(|c| c.len() >= min_reads);
+    clusters
 }
 
 #[cfg(test)]
@@ -259,5 +341,102 @@ mod tests {
         assert_eq!(p.min_clip_frac, 0.20);
         assert_eq!(p.min_div, 0.05);
         assert_eq!(p.min_reads, 3);
+    }
+
+    #[test]
+    fn accept_significant_reassigns() {
+        // id diff 0.14 * read_len 1000 -> n_decisive = 140 decisive positions favoring copy 2
+        // over the read's current linear attribution (copy 0). min_p = (0.003/3)^140 is
+        // astronomically small (<< alpha = 1e-3) -- certifies the correction.
+        let hit = RealignHit { best_copy: 2, id_best: 0.99, id_linear: 0.85 };
+        let n_decisive = ((hit.id_best - hit.id_linear) * 1000.0).round() as i64;
+        assert_eq!(n_decisive, 140);
+
+        let action = accept_realignment(&hit, Some(0), 1000, 0.003, 1e-3);
+        assert_eq!(action, RealignAction::Reassign(2));
+    }
+
+    #[test]
+    fn accept_marginal_rejects() {
+        // id diff 0.001 * read_len 1000 -> n_decisive = 1 (rounds exactly to 1). With a
+        // deliberately high error_rate = 0.05, min_p = (0.05/3)^1 = 0.01666... which is >= alpha
+        // = 1e-3 -- a single decisive position isn't enough evidence to overturn the read's
+        // existing linear attribution (copy 0) under this noisy an error model.
+        let hit = RealignHit { best_copy: 2, id_best: 0.90, id_linear: 0.899 };
+        let n_decisive = ((hit.id_best - hit.id_linear) * 1000.0).round() as i64;
+        assert_eq!(n_decisive, 1);
+        let min_p = (0.05_f64 / 3.0).powi(1);
+        assert!(min_p >= 1e-3, "min_p = {min_p} should be >= alpha");
+
+        let action = accept_realignment(&hit, Some(0), 1000, 0.05, 1e-3);
+        assert_eq!(action, RealignAction::Reject);
+    }
+
+    #[test]
+    fn accept_zero_decisive_rejects() {
+        // id_best == id_linear -> n_decisive = 0 -> no decisive evidence at all -> Reject,
+        // regardless of how permissive alpha/error_rate are.
+        let hit = RealignHit { best_copy: 2, id_best: 0.95, id_linear: 0.95 };
+        let action = accept_realignment(&hit, Some(0), 1000, 0.003, 1.0);
+        assert_eq!(action, RealignAction::Reject);
+    }
+
+    #[test]
+    fn accept_best_equals_linear_rejects() {
+        // best_copy already IS the read's linear attribution -- no correction needed even
+        // though id_best/id_linear here would otherwise look decisive.
+        let hit = RealignHit { best_copy: 2, id_best: 0.99, id_linear: 0.10 };
+        let action = accept_realignment(&hit, Some(2), 1000, 0.003, 1e-3);
+        assert_eq!(action, RealignAction::Reject);
+    }
+
+    #[test]
+    fn accept_no_linear_copy_can_reassign() {
+        // No existing linear attribution at all (unmapped read routed by Task 3) -- id_linear is
+        // the documented 0.0 sentinel, so the full id_best * read_len counts as decisive.
+        let hit = RealignHit { best_copy: 1, id_best: 0.99, id_linear: 0.0 };
+        let action = accept_realignment(&hit, None, 1000, 0.003, 1e-3);
+        assert_eq!(action, RealignAction::Reassign(1));
+    }
+
+    #[test]
+    fn pool_novel_clusters_unfit() {
+        // 3 mutually near-identical reads (one exact copy + two 1-base mutants of it) plus 1
+        // unrelated random read. min_id = 0.9, min_reads = 3.
+        let base = pseudo_seq(100, 80);
+        let mut mut1 = base.clone();
+        mut1[5] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != mut1[5]).unwrap();
+        let mut mut2 = base.clone();
+        mut2[60] = [b'A', b'C', b'G', b'T'].into_iter().find(|&b| b != mut2[60]).unwrap();
+        // Unrelated: different seed, same length, chosen so its identity to `base` lands well
+        // under 0.9 (random same-length sequences under free-end-gap identity hover ~0.5).
+        let unrelated = pseudo_seq(9999, 80);
+        assert!(
+            aln_id(&base, &unrelated) < 0.9,
+            "fixture assumption broken: unrelated read too similar to base"
+        );
+
+        let unfit: Vec<(String, Vec<u8>)> = vec![
+            ("r0".to_string(), base),
+            ("r1".to_string(), mut1),
+            ("r2".to_string(), mut2),
+            ("r3".to_string(), unrelated),
+        ];
+
+        let clusters = pool_novel(&unfit, 0.9, 3);
+        assert_eq!(clusters.len(), 1, "expected exactly one cluster to survive min_reads, got {clusters:?}");
+        let mut got = clusters[0].clone();
+        got.sort_unstable();
+        assert_eq!(got, vec![0, 1, 2], "expected the 3 mutually-similar reads clustered together");
+    }
+
+    #[test]
+    fn pool_novel_below_min_reads_dropped() {
+        let a = pseudo_seq(1, 60);
+        let b = a.clone();
+        let unfit: Vec<(String, Vec<u8>)> = vec![("a".to_string(), a), ("b".to_string(), b)];
+        // Only 2 mutually-identical reads, but min_reads = 3 -> nothing survives.
+        let clusters = pool_novel(&unfit, 0.9, 3);
+        assert!(clusters.is_empty(), "expected no clusters to meet min_reads = 3, got {clusters:?}");
     }
 }
