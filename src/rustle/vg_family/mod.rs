@@ -49,6 +49,7 @@ pub mod rescue_pipeline; // Integration: family-aware RESCUE thin-locus scan (bo
 pub mod genome_projection; // Liftoff-style famCN copy enumeration (spec §7): project a family consensus onto the genome via in-engine minimap2 to enumerate near-identical genomic copies, recovering K=0 collapses.
 pub mod em_copy_assign; // EM copy-assignment CORE: pure e_step/m_step/loglik (max-likelihood soft relaxation of SDA PSV correlation-clustering, Vollger 2019, on the PSV-aware VG); logl/pi wiring to Task 1's ReadEvidence arrives separately.
 pub mod readonly_copy_number; // Reference-free per-family copy number (Task R1): chi_h (PSV conflict-structure lower bound, Rust port of family_copy_number.py's copyonly_K) + depth_cn (read-depth E_fam/lambda_global leg, recovers Tier-3 collapsed copies chi_h misses).
+pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection (is_candidate + RealignParams) for poor-fit/unmapped reads to be re-aligned to O1's family copy-paths.
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
