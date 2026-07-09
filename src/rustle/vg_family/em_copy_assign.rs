@@ -202,6 +202,81 @@ pub(crate) fn em_assign(
     }
 }
 
+/// Public entry point for running the EM engine on a family straight off `denovo_pipeline`'s
+/// already-extracted PSV data (`FamilyAssignment::read_psv_obs` / `copy_psv_alleles`), for callers
+/// outside this crate (the `copy_assign` binary's `--em` mode). `em_assign`/`read_copy_evidence`/
+/// `ReadEvidence` are `pub(crate)` and so unreachable from a binary crate; this wrapper takes only
+/// plain/public types and goes through [`super::copy_assign::read_copy_evidence`] -- the SAME gate
+/// likelihood the one-shot significance gate uses (Task 1) -- so the EM posterior can never drift
+/// from `assign_read`/`assign_read_editing`'s numbers.
+///
+/// PSV-only (no junctions, no per-base quality, no RNA-editing columns), mirroring
+/// `copy_assign_pipeline::soft_quantify_em`'s PSV-only abundance model -- the abundance estimate is
+/// meant to be a light-weight complement to the hard PSV+junction assignment, not a re-derivation of
+/// it.
+pub fn em_assign_family(
+    read_obs: &[Vec<Option<u8>>],
+    copy_alleles: &[Vec<Option<u8>>],
+    params: &super::copy_assign::AssignParams,
+    eps: f64,
+    max_iter: usize,
+) -> EmResult {
+    let copies: Vec<super::copy_assign::CopyProfile> = copy_alleles
+        .iter()
+        .enumerate()
+        .map(|(k, alleles)| super::copy_assign::CopyProfile {
+            copy_id: k,
+            alleles: alleles.clone(),
+            junctions: vec![],
+        })
+        .collect();
+    let evidence: Vec<super::copy_assign::ReadEvidence> = read_obs
+        .iter()
+        .map(|obs| {
+            let rf = super::copy_assign::ReadFeatures {
+                psv_obs: obs.clone(),
+                psv_qual: vec![],
+                junctions: vec![],
+            };
+            super::copy_assign::read_copy_evidence(&rf, &copies, params, &[])
+        })
+        .collect();
+    em_assign(&evidence, copy_alleles.len(), params.alpha, eps, max_iter)
+}
+
+#[cfg(test)]
+mod em_assign_family_tests {
+    use super::em_assign_family;
+    use super::super::copy_assign::AssignParams;
+
+    /// Planted 2-copy family, one distinguishing PSV column (A vs C): read 0 carries copy 0's
+    /// allele at both columns, read 1 carries copy 1's -- the `--em` binary flag's exact input
+    /// shape (`FamilyAssignment::read_psv_obs` / `copy_psv_alleles`, no junctions).
+    #[test]
+    fn em_assign_family_recovers_planted_copies() {
+        let copy_alleles: Vec<Vec<Option<u8>>> = vec![
+            vec![Some(b'A'), Some(b'A')],
+            vec![Some(b'C'), Some(b'C')],
+        ];
+        let read_obs: Vec<Vec<Option<u8>>> = vec![
+            vec![Some(b'A'), Some(b'A')],
+            vec![Some(b'C'), Some(b'C')],
+        ];
+        let params = AssignParams::for_alpha(1e-3);
+        let r = em_assign_family(&read_obs, &copy_alleles, &params, 1e-6, 200);
+
+        assert_eq!(r.posteriors.len(), 2);
+        let argmax = |row: &Vec<f64>| {
+            row.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).map(|(k, _)| k).unwrap()
+        };
+        assert_eq!(argmax(&r.posteriors[0]), 0, "read 0 (all-A) must favor copy 0");
+        assert_eq!(argmax(&r.posteriors[1]), 1, "read 1 (all-C) must favor copy 1");
+
+        let abundance_sum: f64 = r.abundances.iter().sum();
+        assert!((abundance_sum - 1.0).abs() < 1e-9, "abundances must sum to 1: {abundance_sum}");
+    }
+}
+
 #[cfg(test)]
 mod em_driver_tests {
     use super::{em_assign, label_read, EmLabel};

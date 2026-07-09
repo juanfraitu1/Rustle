@@ -19,6 +19,7 @@ use rayon::prelude::*;
 use rustle::genome::GenomeIndex;
 use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
+use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache,
 };
@@ -190,6 +191,20 @@ struct Args {
     /// uniform by default; set `RUSTLE_POSTERIOR_PRIOR=abundance` to weight by the EM copy abundance. Default off.
     #[arg(long, default_value_t = false)]
     posterior: bool,
+
+    /// Run the EM soft-relaxation (Vollger 2019 PSV correlation-clustering, maximum-likelihood soft
+    /// version) over each family's PSV evidence and emit `<out>.em.tsv` (per-read soft posterior +
+    /// K-frontier label) and `<out>.em_abundance.tsv` (per-copy recovered abundance). PSV-only
+    /// (goes through the same gate likelihood as the hard assignment, so it can never drift from
+    /// it), additive: leaves `.assignments.tsv`/`.families.tsv` byte-identical. Default off.
+    #[arg(long, default_value_t = false)]
+    em: bool,
+    /// Max E/M sweeps for `--em`.
+    #[arg(long, default_value_t = 500)]
+    em_max_iter: usize,
+    /// EM convergence tolerance (absolute+relative on the observed-data log-likelihood) for `--em`.
+    #[arg(long, default_value_t = 1e-6)]
+    em_eps: f64,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -319,6 +334,8 @@ fn main() -> Result<()> {
     let mut psv_read_lines: Vec<String> = Vec::new(); // --dump-psv: per-read genotype (alleles at every PSV col)
     let mut psv_copy_lines: Vec<String> = Vec::new(); // --dump-psv: per-copy PSV alleles
     let mut psv_col_lines: Vec<String> = Vec::new(); // --dump-psv: PSV column -> genome position
+    let mut em_lines: Vec<String> = Vec::new();           // --em: per-read soft posterior + K-frontier label
+    let mut em_abundance_lines: Vec<String> = Vec::new();  // --em: per-copy recovered abundance
     let mut phase_block_lines: Vec<String> = Vec::new();  // --phase: one phase set (PS) per family
     let mut phased_hap_lines: Vec<String> = Vec::new();   // --phase: each haplotype's PSV variant string
     let mut phased_read_lines: Vec<String> = Vec::new();  // --phase: read -> haplotype (HP) haplotag
@@ -581,6 +598,48 @@ fn main() -> Result<()> {
                         psv_col_lines.push(format!("{}\t{}\t{}", fid, col, pos.map(|x| x as i64).unwrap_or(-1)));
                     }
                 }
+                // EM soft-relaxation (opt-in): re-runs the family's PSV evidence through the maximum-
+                // likelihood EM engine (Task 1's exact gate likelihood, Task 4's binary wiring) for a soft
+                // posterior + recovered abundance, alongside (not instead of) the hard PSV+junction
+                // assignment above. Fully gated: with `--em` absent this block never runs, so the hard
+                // outputs are untouched.
+                if args.em {
+                    let em_result =
+                        em_assign_family(&fa.read_psv_obs, &fa.copy_psv_alleles, &params, args.em_eps, args.em_max_iter);
+                    for (row_idx, (ri, _)) in fa.assignments.iter().enumerate() {
+                        let post = &em_result.posteriors[row_idx];
+                        let argmax = post
+                            .iter()
+                            .enumerate()
+                            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                            .map(|(k, _)| k)
+                            .unwrap_or(0);
+                        let label = match em_result.labels[row_idx] {
+                            rustle::vg_family::em_copy_assign::EmLabel::Certified => "Certified",
+                            rustle::vg_family::em_copy_assign::EmLabel::SoftZone => "SoftZone",
+                        };
+                        let post_str = post
+                            .iter()
+                            .enumerate()
+                            .map(|(k, p)| format!("{}:{:.4}", k, p))
+                            .collect::<Vec<_>>()
+                            .join(";");
+                        em_lines.push(format!(
+                            "{}\t{}\t{}\t{}\t{}\t{}",
+                            bam_reads[*ri], fid, argmax, label, post_str, em_result.n_iter
+                        ));
+                    }
+                    for (ci, tid) in fa.copy_tids.iter().enumerate() {
+                        let n_reads_soft: f64 = em_result.posteriors.iter().map(|p| p.get(ci).copied().unwrap_or(0.0)).sum();
+                        em_abundance_lines.push(format!(
+                            "{}\t{}\t{:.4}\t{:.2}",
+                            fid,
+                            tid,
+                            em_result.abundances.get(ci).copied().unwrap_or(0.0),
+                            n_reads_soft
+                        ));
+                    }
+                }
                 // FACULTATIVE phasing: phase set = family; haplotypes = its copies; read->haplotype =
                 // the PSV assignment. A read is phased iff it clears the decisive-margin gate (Assigned);
                 // Ambiguous/Tied reads are emitted with haplotype = -1 (unphaseable = K-frontier).
@@ -733,6 +792,25 @@ fn main() -> Result<()> {
         }
         eprintln!("[copy_assign] wrote {}.posterior.tsv ({} reads, prior={})",
             args.out, posterior_lines.len(), if prior_abundance { "abundance" } else { "uniform" });
+    }
+
+    // EM soft-relaxation outputs (opt-in via --em): per-read soft posterior + K-frontier label, and the
+    // recovered per-copy abundance. Only written under --em; the hard outputs above are unaffected either way.
+    if args.em {
+        let mut eh = std::fs::File::create(format!("{}.em.tsv", args.out))?;
+        writeln!(eh, "read_name\tfamily_id\targmax_copy\tlabel\tposterior\tn_iter")?;
+        for l in &em_lines {
+            writeln!(eh, "{l}")?;
+        }
+        let mut eah = std::fs::File::create(format!("{}.em_abundance.tsv", args.out))?;
+        writeln!(eah, "family_id\tcopy_id\tpi_hat\tn_reads_soft")?;
+        for l in &em_abundance_lines {
+            writeln!(eah, "{l}")?;
+        }
+        eprintln!(
+            "[copy_assign] wrote {}.em.tsv ({} reads) + {}.em_abundance.tsv",
+            args.out, em_lines.len(), args.out
+        );
     }
 
     // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for
