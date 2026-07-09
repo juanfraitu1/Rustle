@@ -1961,6 +1961,134 @@ mod tests {
         assert_eq!(n_private, 2, "one private exon per copy");
         assert!(!fg.edges.is_empty(), "junction edges derived from Layer-1 adjacency");
     }
+
+    /// DEMONSTRATION (bench/VG_EXON_COMBINATIONS.md): `FamilyGraph` models
+    /// COMBINATORIAL exon usage across copies — the thing a linear reference
+    /// cannot represent without duplicating shared exons into one transcript
+    /// per combination.
+    ///
+    /// Three-copy toy family, each copy a distinct exon combination:
+    ///   copy A = exons [1,2,3]   copy B = exons [1,2,4]   copy C = exons [1,5,3]
+    /// Exon "1" is identical across all three copies; "2" is shared by A,B
+    /// only; "3" is shared by A,C only; "4" and "5" are copy-specific
+    /// (private) exons — singleton-contributor bubbles off the shared
+    /// backbone. Coordinates are chosen genomic-ascending per copy so the
+    /// Layer-1 chain order and `recover_paralog_path`'s genomic-ascending
+    /// order agree, keeping the printed paths readable.
+    #[test]
+    fn family_graph_models_exon_combinations() {
+        const EXON_1: (u64, u64) = (100, 160); // shared A,B,C
+        const EXON_2: (u64, u64) = (300, 360); // shared A,B
+        const EXON_5: (u64, u64) = (400, 460); // copy-specific: C only
+        const EXON_3: (u64, u64) = (500, 560); // shared A,C
+        const EXON_4: (u64, u64) = (700, 760); // copy-specific: B only
+
+        let g_a = tests_support::make_layer1_graph("chrT", '+', &[EXON_1, EXON_2, EXON_3]);
+        let g_b = tests_support::make_layer1_graph("chrT", '+', &[EXON_1, EXON_2, EXON_4]);
+        let g_c = tests_support::make_layer1_graph("chrT", '+', &[EXON_1, EXON_5, EXON_3]);
+        let genome = tests_support::make_two_copy_genome();
+
+        let fg = build_family_graph_from_layer1_graphs(
+            0,
+            &[
+                ("chrT".to_string(), '+', &g_a),
+                ("chrT".to_string(), '+', &g_b),
+                ("chrT".to_string(), '+', &g_c),
+            ],
+            Some(&genome),
+            0.0, 0.5, 0.0,
+        ).expect("build 3-copy combinatorial family graph");
+
+        let node_for = |span: (u64, u64)| -> &ExonClass {
+            fg.nodes.iter().find(|n| n.span == span)
+                .unwrap_or_else(|| panic!("expected an exon-class node at {span:?}"))
+        };
+
+        // --- shared exons collapse to ONE shared node each ---
+        let n1 = node_for(EXON_1);
+        assert_eq!(n1.per_copy_spans.len(), 3, "exon 1 is in all 3 copies -> 1 node, 3 contributors");
+        assert!(!n1.copy_specific);
+
+        let n2 = node_for(EXON_2);
+        assert_eq!(n2.per_copy_spans.len(), 2, "exon 2 shared by A,B only");
+        assert!(!n2.copy_specific);
+
+        let n3 = node_for(EXON_3);
+        assert_eq!(n3.per_copy_spans.len(), 2, "exon 3 shared by A,C only");
+        assert!(!n3.copy_specific);
+
+        // --- copy-specific exons are singleton bubbles ---
+        let n4 = node_for(EXON_4);
+        assert_eq!(n4.per_copy_spans.len(), 1, "exon 4 private to B");
+        assert!(n4.copy_specific, "singleton-contributor exon must be flagged copy_specific");
+
+        let n5 = node_for(EXON_5);
+        assert_eq!(n5.per_copy_spans.len(), 1, "exon 5 private to C");
+        assert!(n5.copy_specific);
+
+        // --- the compression a linear reference cannot achieve ---
+        let n_nodes = fg.n_nodes();
+        let n_edges = fg.n_edges();
+        let per_copy_exon_counts = [3usize, 3, 3]; // A, B, C each carry 3 exons
+        let summed_per_copy_exons: usize = per_copy_exon_counts.iter().sum();
+        let n_shared_nodes = fg.nodes.iter().filter(|n| !n.copy_specific).count();
+        let n_specific_nodes = fg.nodes.iter().filter(|n| n.copy_specific).count();
+
+        assert!(n_nodes < summed_per_copy_exons,
+            "shared exons must collapse: n_nodes={n_nodes} should be < summed per-copy exon count={summed_per_copy_exons}");
+        assert_eq!(n_shared_nodes, 3, "exons 1,2,3 are shared nodes");
+        assert_eq!(n_specific_nodes, 2, "exons 4,5 are copy-specific bubbles");
+
+        // --- each copy is a distinct PATH through the graph = a distinct exon combination ---
+        let path_a = fg.recover_paralog_path(0);
+        let path_b = fg.recover_paralog_path(1);
+        let path_c = fg.recover_paralog_path(2);
+        assert_eq!(path_a.len(), 3, "copy A traverses 3 exon-classes: 1,2,3");
+        assert_eq!(path_b.len(), 3, "copy B traverses 3 exon-classes: 1,2,4");
+        assert_eq!(path_c.len(), 3, "copy C traverses 3 exon-classes: 1,5,3");
+        assert_ne!(path_a, path_b, "A and B differ at the 3rd exon (3 vs 4)");
+        assert_ne!(path_a, path_c, "A and C differ at the 2nd exon (2 vs 5)");
+        assert_ne!(path_b, path_c, "B and C share only exon 1");
+        let n_distinct_paths = {
+            let mut uniq: Vec<Vec<NodeIdx>> = vec![path_a.clone(), path_b.clone(), path_c.clone()];
+            uniq.sort();
+            uniq.dedup();
+            uniq.len()
+        };
+        assert_eq!(n_distinct_paths, 3, "3 copies = 3 distinct exon combinations, all reconstructable from the one graph");
+
+        // --- print the modeling for human inspection ---
+        let label = |span: (u64, u64)| -> &'static str {
+            match span {
+                s if s == EXON_1 => "exon1 (shared A,B,C)",
+                s if s == EXON_2 => "exon2 (shared A,B)",
+                s if s == EXON_3 => "exon3 (shared A,C)",
+                s if s == EXON_4 => "exon4 (private B)",
+                s if s == EXON_5 => "exon5 (private C)",
+                _ => "?",
+            }
+        };
+        println!("\n=== FamilyGraph exon-combination demonstration ===");
+        println!("Copy A = exons [1,2,3]   Copy B = exons [1,2,4]   Copy C = exons [1,5,3]");
+        println!("--- Nodes (exon-equivalence classes) ---");
+        let mut sorted_nodes: Vec<&ExonClass> = fg.nodes.iter().collect();
+        sorted_nodes.sort_by_key(|n| n.span);
+        for n in &sorted_nodes {
+            println!("  {:<22} span={:?} copy_specific={:<5} contributors={}",
+                label(n.span), n.span, n.copy_specific, n.per_copy_spans.len());
+        }
+        println!("n_nodes = {n_nodes}   (shared={n_shared_nodes}, copy-specific bubbles={n_specific_nodes})");
+        println!("n_edges (junctions) = {n_edges}");
+        println!("--- Reconstructed per-copy paths (= exon combinations, genomic-ascending) ---");
+        println!("  copy A path: {:?}", path_a);
+        println!("  copy B path: {:?}", path_b);
+        println!("  copy C path: {:?}", path_c);
+        println!("n_distinct_paths = {n_distinct_paths}  (3 copies -> 3 exon combinations, all in ONE graph)");
+        println!("--- Linear-reference contrast ---");
+        println!("  Linear reference would need: 3 separate transcripts, {summed_per_copy_exons} total exon-instances (shared exons 1/2/3 duplicated across the copies that carry them)");
+        println!("  FamilyGraph instead needs:   {n_nodes} exon-class nodes + {n_edges} junction edges representing all 3 combinations in ONE graph");
+        println!("====================================================\n");
+    }
 }
 
 #[cfg(test)]
