@@ -262,14 +262,17 @@ fn main() -> Result<()> {
             let fid = format!("GWFAM{fi}");
             let n_rna = copies.len();
             let proj = proj_by_fam.get(&fid).cloned().unwrap_or_default();
-            let n_total_loci = proj.iter().filter(|p| p.identity >= 0.80).count();
-            let n_fam_loci = proj.iter().filter(|p| p.identity >= 0.98).count();
+            // totalCN: divergent copies admitted (id>=0.80, cov>=0.50 -- divergent copies have splice gaps).
+            let n_total_loci = proj.iter().filter(|p| p.identity >= 0.80 && p.cov >= 0.50).count();
+            // famCN: Soto SD98 near-identical FULL-LENGTH copies only (id>=0.98 AND cov>=0.90) -- excludes
+            // half-length fragment hits that would otherwise inflate the Soto-comparable metric.
+            let n_fam_loci = proj.iter().filter(|p| p.identity >= 0.98 && p.cov >= 0.90).count();
             let total_cn = n_rna + n_total_loci;
             let fam_cn = n_rna + n_fam_loci;
-            // projection_loci lists only the >=0.80 (totalCN-contributing) loci, per spec.
+            // projection_loci lists only the totalCN-contributing loci (id>=0.80, cov>=0.50).
             let loci = proj
                 .iter()
-                .filter(|p| p.identity >= 0.80)
+                .filter(|p| p.identity >= 0.80 && p.cov >= 0.50)
                 .map(|p| format!("{}:{}-{}@{:.4}", p.chrom, p.start, p.end, p.identity))
                 .collect::<Vec<_>>()
                 .join(";");

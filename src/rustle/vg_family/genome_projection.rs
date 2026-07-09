@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::io::Write;
 
 #[derive(Clone, Debug)]
-pub struct CopyLocus { pub chrom: String, pub start: u64, pub end: u64, pub identity: f64 }
+pub struct CopyLocus { pub chrom: String, pub start: u64, pub end: u64, pub identity: f64, pub cov: f64 }
 
 /// RAII temp-file cleanup helper shared by the single and batch projection entry points.
 struct TempFile(std::path::PathBuf);
@@ -51,7 +51,7 @@ fn parse_paf_hits(paf: &str, min_identity: f64, min_cov: f64) -> HashMap<String,
         });
         let cov = (qe - qs) / qlen;
         if ident >= min_identity && cov >= min_cov {
-            by_query.entry(qname).or_default().push(CopyLocus { chrom: tname, start: ts, end: te, identity: ident });
+            by_query.entry(qname).or_default().push(CopyLocus { chrom: tname, start: ts, end: te, identity: ident, cov });
         }
     }
     by_query
@@ -275,6 +275,9 @@ mod tests {
         let a0 = gen_seq(1, copy_len);
         let a8 = mutate(&a0, 0.08, 100);
         let a15 = mutate(&a0, 0.15, 200);
+        // A SHORT ~50%-length near-identical fragment of A (first half, ~1% mutated): pins the fragment
+        // concern -- it clears the totalCN floor (cov>=0.50) but must be EXCLUDED from famCN (cov<0.90).
+        let a_frag = mutate(&a0[..(copy_len as usize / 2)], 0.01, 400);
         // Family F2: a DIFFERENT sequence "B" (distinct seed) at 0% / ~2% divergence.
         let b0 = gen_seq(500_001, copy_len);
         let b2 = mutate(&b0, 0.02, 300);
@@ -288,6 +291,8 @@ mod tests {
         genome.extend_from_slice(&a8);
         genome.extend_from_slice(&gen_seq(9003, 20_000));
         genome.extend_from_slice(&a15);
+        genome.extend_from_slice(&gen_seq(9007, 20_000));
+        genome.extend_from_slice(&a_frag);
         genome.extend_from_slice(&gen_seq(9004, 20_000));
         genome.extend_from_slice(&b0);
         genome.extend_from_slice(&gen_seq(9005, 20_000));
@@ -313,13 +318,36 @@ mod tests {
         assert!(f1_has(0.88, 0.96), "F1 missing ~0.92-identity hit: {:?}", f1);
         assert!(f1_has(0.80, 0.88), "F1 missing ~0.85-identity hit: {:?}", f1);
 
-        let f2_has = |lo: f64, hi: f64| f2.iter().any(|c| c.identity >= lo && c.identity <= hi);
-        assert!(f2_has(0.97, 1.0), "F2 missing ~1.0-identity hit: {:?}", f2);
-        assert!(f2_has(0.96, 1.0), "F2 missing ~0.98-identity hit: {:?}", f2);
+        // DISJOINT identity bands for F2, so the two asserts pin two distinct hits (not one): the
+        // identical copy sits in [0.99,1.0], the ~2%-divergent copy in [0.96,0.99).
+        let f2_has = |lo: f64, hi: f64| f2.iter().any(|c| c.identity >= lo && c.identity < hi);
+        assert!(f2_has(0.99, 1.0001), "F2 missing ~1.0-identity hit: {:?}", f2);
+        assert!(f2_has(0.96, 0.99), "F2 missing ~0.98-identity hit: {:?}", f2);
 
-        // No cross-family leakage: F1's loci must sit in the A-region of the contig (near a0/a8/a15
+        // CopyLocus.cov must be populated: F1's full-length copies align (nearly) the whole query.
+        let f1_full: Vec<&CopyLocus> = f1.iter().filter(|c| c.cov >= 0.90).collect();
+        assert!(f1_full.len() >= 3,
+            "F1 expected >=3 FULL-LENGTH copies (cov>=0.90), got {}: {:?}", f1_full.len(), f1);
+        assert!(f1.iter().any(|c| c.identity >= 0.97 && c.cov >= 0.95),
+            "F1's identical copy should have cov close to 1.0: {:?}", f1);
+
+        // The planted ~50% fragment (cov~0.5, id~0.99) must appear (clears totalCN floor cov>=0.50) but
+        // must be EXCLUDED from the famCN bucket (cov<0.90), even though its identity is >=0.98.
+        let f1_famcn = f1.iter().filter(|c| c.identity >= 0.98 && c.cov >= 0.90).count();
+        let f1_frag_hits = f1.iter().filter(|c| c.cov >= 0.40 && c.cov < 0.75).count();
+        assert!(f1_frag_hits >= 1, "F1 half-length fragment (cov~0.5) should be present: {:?}", f1);
+        // famCN counts only the full-length near-identical copy (a0); the fragment must NOT inflate it.
+        assert!(f1_famcn <= f1_full.len(),
+            "famCN bucket (id>=0.98,cov>=0.90) must exclude the half-length fragment: famCN_loci={f1_famcn}, full={} {:?}",
+            f1_full.len(), f1);
+        assert!(f1.iter().any(|c| c.identity >= 0.98 && c.cov < 0.90),
+            "expected the planted fragment to be a >=0.98-identity but <0.90-cov hit (famCN-excluded): {:?}", f1);
+
+        // No cross-family leakage: F1's loci must sit in the A-region of the contig (a0/a8/a15/a_frag
         // offsets, well before the B region begins), and F2's loci must sit in the B region.
-        let b_region_start = 2_000 + copy_len + 20_000 + copy_len + 20_000 + copy_len + 20_000; // start of b0
+        // Layout: 2000 bg | a0 | 20k bg | a8 | 20k bg | a15 | 20k bg | a_frag | 20k bg | b0 | ...
+        let b_region_start =
+            2_000 + copy_len + 20_000 + copy_len + 20_000 + copy_len + 20_000 + (copy_len / 2) + 20_000;
         assert!(f1.iter().all(|c| c.start < b_region_start),
             "F1 locus leaked into the B region (query-name grouping bug): {:?}", f1);
         assert!(f2.iter().all(|c| c.start >= b_region_start - 100),
