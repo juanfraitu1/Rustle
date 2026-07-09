@@ -1,141 +1,130 @@
-# EM copy-assignment with an identifiability-gated soft posterior — Design
+# EM copy-assignment = soft SDA PSV-clustering on the PSV-aware VG — Design
 
-**Date:** 2026-07-08  **Substrate:** gorilla (GGO) HiFi Iso-Seq; existing O2 copy-assignment machinery.
+**Date:** 2026-07-08 (rev. 2 — grounded in SDA/Vollger + the PSV-aware VG per advisor steer).
+**Substrate:** gorilla (GGO) HiFi Iso-Seq; existing PSV-aware VG (`psv_linkage.rs`/`layer2.rs`) + O2 gate.
 
 ## Goal
 
-Replace the perception that per-read copy-assignment is "wishful thinking" with a **provably-consistent
-estimator plus the empirical curve that confirms it**. Build an EM (expectation–maximization) copy-assignment:
-the existing per-read PSV/junction/divergence likelihoods become the E-step, copy abundances the M-step,
-iterated to convergence, with a per-read soft posterior labeled by the `min_p` identifiability bound. The
-headline deliverable is a **consistency theorem** (assignment → truth as coverage → ∞ in the identifiable
-regime) and a **coverage sweep** on planted ground-truth that demonstrates it — i.e. "it works with enough
-data," stated and shown, not asserted.
+Make copy-assignment a mechanism the advisor already accepts, **derived from the data and anchored in the
+paper he sent** — not a fitting procedure we picked. Concretely: express read→copy assignment as the
+**maximum-likelihood soft relaxation of SDA's PSV correlation-clustering** (Vollger et al., Nat Methods 2019),
+run on the thesis's existing **PSV-aware variation graph** (copies = paths, PSVs = bubbles, assignment =
+threading). The EM adds copy abundances and soft responsibilities; the identifiability is the thesis's already-
+proven **MCC = χ(H) / Strong-Separation** theorem (the provable-conditions layer *under* SDA's heuristic). The
+headline deliverable is that this derivation is **consistent** — the assignment converges to the truth as
+coverage grows (SDA's empirical 91–93% → 100%) — stated as a theorem and shown by a coverage sweep.
 
-## Motivation
+## Prior-art grounding (why he'll believe it)
 
-The shipped O2 assignment is a one-shot, per-read significance gate (assign if the PSV p-value certifies, else
-abstain). It is statistically sound per read but never demonstrates that the **joint** solution is
-self-consistent or that it recovers a known truth. The standard, accepted approach in multimapping / transcript
-quantification (RSEM, kallisto, Salmon; the LP/facility-location cousin is Canzar's own line) is **iterative
-EM**: co-estimate the latent copy origins and the copy abundances, alternating to convergence. EM supplies the
-three things a skeptical reader accepts as evidence: (1) a monotone objective that converges; (2) errors and
-artifacts wash out because they do not cohere with any copy's model across iterations; (3) individually-
-ambiguous reads are resolved by borrowing strength through the global abundance estimate.
+- **Vollger SDA 2019** (`reference_sda_vollger`) — *the advisor sent this as prior art (2026-06-21).* SDA builds
+  a PSV graph: nodes = PSVs, reads = edges; a read carrying two PSVs on one molecule is an **attraction** edge
+  (→ same copy), mutually-exclusive PSVs a **repulsion** edge (→ different copies); **correlation-clustering**
+  assigns PSVs→copies and WhatsHap partitions reads. "Reads carrying PSVs on the same molecule" *is* SDA's
+  attraction edge. SDA hits the K=0 floor ("virtually identical duplications need >100 kb reads").
+- **Our `copy_assignment_theory.md`** — the column/allele view of the VG (columns = bubbles, allele-vectors =
+  paths, MCC = χ(H) = min path-cover, Strong-Separation = bubbles distinguish paths). Memory records it as
+  *"the provable-conditions theory UNDER SDA's heuristic."* This is where the consistency theorem lives.
+- **PSV-aware VG** (`project_psv_aware_vg`, production Rust) — copies = paths, PSVs = bubbles, assign =
+  threading; genome-wide it already resolves 90.3% of 145 families at 95.4% single-copy agreement. The EM is the
+  probabilistic layer this VG was missing.
+- **IsoCon 2018** (per-position real-vs-error test → which columns are true PSVs vs error), **Sudmant 2010 SUN**
+  (single-position private markers), **Clair3-RNA** (A→I editing filter) — the per-column filters that decide
+  which bubbles enter the graph. Already in the gate cascade; the EM reuses them unchanged.
 
-## Non-goals / scope
+## The object: one PSV-aware VG per family
 
-- **Copy-model refinement (stage 2) is DEFERRED.** This spec covers the abundance-EM core only: copy PSV/
-  junction models `θ` are FIXED from the catalog; the M-step re-estimates only the abundances `π`. Re-estimating
-  each copy's consensus/PSV profile from its assigned reads (IsoCon/SDA-like self-correction) is a documented
-  follow-up, not built here. A tight, provable core is the stronger first deliverable.
-- **Additive, non-destructive.** The EM path is a new `--em` mode. It does NOT replace or alter the validated
-  one-shot gate; both remain runnable. Default behavior is byte-identical to today.
-- No new likelihood model: the E-step reuses the existing quality-weighted PSV base likelihoods, junction
-  compatibility, and divergence terms (`copy_assign.rs`, `psv_linkage.rs`). The editing / allele / spanning
-  filters of the current gate cascade still decide which columns contribute to `L_rk`.
+A family is one variation graph: a shared backbone with **parallel paths = copies** and **bubbles = PSV
+columns**. Copy `k` is the path carrying a specific allele at each bubble — its `CopyProfile.alleles` vector
+(already built by `psv_linkage.rs` from read-supported PSV bubbles, i.e. *derived from the data*, SDA-style, not
+a handed-down catalog). A read is a **partial path**: its `psv_obs` vector = the PSV alleles it carries on one
+molecule (SDA's co-occurring PSVs). Threading = matching the read's carried alleles to a copy-path.
 
-## The model (per co-located family)
+## The model (SDA correlation → likelihood)
 
-A family has `K` copies. Each read `r` has a hidden copy-of-origin `z_r ∈ {1…K}`. Parameters:
-- **`π`** = copy abundances (mixing weights), `Σ_k π_k = 1`.
-- **`θ`** = copy models (per-copy allele at each PSV column + junction profile), FIXED from the catalog.
+Each read `r` has a hidden copy-of-origin `z_r ∈ {1…K}`. Parameters: copy **abundances** `π` (path usage) and
+the copy **paths** `θ` (PSV-bubble allele vectors, from the VG). The per-read likelihood
+`L_rk = P(read r threads copy k)` = the product over the bubbles the read spans of the quality-weighted allele-
+match probability × junction compatibility × divergence — the existing `read_copy_evidence` likelihood
+(Task 1). This likelihood **is** SDA's attraction/repulsion made continuous: a read that carries copy `k`'s
+private allele at a bubble contributes `log(1−e)` to `k` and `log(e/3)` to the others — the soft version of an
+attraction edge to `k` and repulsion from the rest. A read spanning no distinguishing bubble has `L_rk` equal
+across the copies it is compatible with (SDA's un-attractable read = our K-frontier).
 
-Per-read likelihood `L_rk = P(read r | copy k, θ_k)` = the product over the PSV columns the read spans of the
-quality-weighted per-base allele-match probability, times junction compatibility, times the divergence term —
-**the existing per-read likelihood already computed in the gate**. Reads spanning no distinguishing feature have
-`L_rk` equal across the copies they are compatible with (this is what makes them non-identifiable).
+## The EM loop (soft correlation clustering)
 
-## The EM loop
+Initialize `π` uniform (documented; SDA uses 15 random inits — abundance-from-certified-reads is a follow-up).
+- **E-step:** `γ_rk = π_k·L_rk / Σ_j π_j·L_rj` — soft assignment of the read (partial path) to a copy-path. This
+  is SDA's read-partition made soft (a fractional WhatsHap).
+- **M-step:** `π_k = (Σ_r γ_rk)/N` — re-estimate path usage (copy abundance).
+- **Convergence:** observed-data log-likelihood `ℓ = Σ_r log Σ_k π_k L_rk` is **non-decreasing** each iteration
+  (tested invariant); stop at `Δℓ < ε`.
 
-Initialize `π` from the confidently-placed reads (the current gate's certified assignments, or unique-mapping
-reads); if none, uniform. Then iterate:
-
-- **E-step (responsibilities):** `γ_rk = π_k · L_rk / Σ_j π_j · L_rj`. This is the soft posterior over copies
-  for read `r`. `γ` is an `N × K` matrix; each row sums to 1.
-- **M-step (abundances):** `π_k = (Σ_r γ_rk) / N`.
-- **Convergence:** compute the observed-data log-likelihood `ℓ = Σ_r log(Σ_k π_k L_rk)`; stop when
-  `ℓ^(t) − ℓ^(t−1) < ε` (default `ε = 1e-6·|ℓ|`) or a max-iteration cap. `ℓ` is **non-decreasing** every
-  iteration (standard EM guarantee) — this monotonicity is an assertion in the tests, and the convergence
-  certificate replaces any tuning threshold.
+*(Copy-path refinement — re-estimating `θ_k` from γ-weighted reads, the direct EM analog of SDA re-clustering —
+is DEFERRED to a follow-up. This spec fixes `θ` from the VG and estimates `π` + soft assignments only.)*
 
 ## Output: soft posterior + identifiability label
 
-For every read emit its posterior `γ_r` and a label derived from the `min_p` identifiability bound (already in
-`copy_assign.rs`):
-- **`Certified`** — the read spans ≥1 distinguishing feature AND its top posterior copy clears the identifiability
-  threshold (`min_p < α`, Bonferroni-corrected family-wide). A validatable hard call.
-- **`SoftZone`** — the posterior stays spread over the consistent zone (the copies the read cannot be
-  distinguished among). Honest; reported as a soft posterior over that zone, **never** collapsed to a hard 1/k
-  call.
-
-`<out>.em.tsv`: `read_name  family_id  argmax_copy  label  posterior(k1:p1;k2:p2;…)  n_iter`.
-`<out>.em_abundance.tsv`: `family_id  copy_id  pi_hat  n_reads_soft`.
+Per read: the posterior `γ_r` plus a label from the `min_p` bound (= the K-frontier test) — **`Certified`**
+(spans a distinguishing bubble and clears `min_p < alpha/(K−1)`; a validatable hard call) vs **`SoftZone`**
+(spread over the consistent zone; honest, never a hard 1/k). Files: `<out>.em.tsv`
+(`read_name  family_id  argmax_copy  label  posterior  n_iter`), `<out>.em_abundance.tsv`
+(`family_id  copy_id  pi_hat  n_reads_soft`).
 
 ## The consistency theorem (`bench/em_consistency.md`)
 
-**Claim.** Let a family's copies be *identifiable* iff every pair is separated by ≥1 PSV column at which the
-per-read likelihood certificate is achievable (`min_p < α`). In the identifiable regime the finite mixture over
-copies is identifiable, and the EM/MLE estimator is **consistent**: as per-copy coverage `n → ∞`,
-`π̂ → π*` and the MAP assignment `ẑ_r → z*_r` (almost surely). Non-identifiable copies (K=0: no distinguishing
-PSV) form an equivalence class on which the posterior is provably invariant to the truth and stays at the
-abundance-prior — correctly surfaced as `SoftZone`, never as a confident copy.
+**Claim.** The EM above is the ML soft relaxation of SDA's PSV correlation-clustering. In the identifiable
+regime — every copy pair separated by a bubble where `min_p < alpha/(K−1)` is achievable (Strong-Separation) —
+the mixture over copy-paths is identifiable and the EM/MLE is **consistent**: as per-copy coverage `n → ∞`,
+`π̂ → π*` and the MAP assignment `ẑ_r → z*_r`. This is exactly the regime `copy_assignment_theory.md` proves
+Strong-Separation ⟹ unique minimum path-cover (MCC = χ(H)); EM converges to that cover. Non-identifiable copies
+(K=0: no distinguishing bubble) are SDA's ">100 kb" floor — a posterior-invariant class surfaced as `SoftZone`.
 
-**Basis.** Finite-mixture identifiability + MLE consistency (Redner–Walker 1984), specialized to the discrete
-PSV emission model; the novelty is that the identifiability partition is *exactly* the `min_p` per-read
-certificate. This is the **soft/EM relaxation of the MWCA facility-location objective** already proven in the
-theory chapter (`bench/copy_assignment_theory.md`), so it slots into the existing lattice rather than standing
-alone. The write-up states the assumptions, the theorem, the proof sketch, and the identifiability partition,
-and points to the coverage sweep as the empirical confirmation.
+**Basis.** Finite-mixture identifiability + MLE consistency (Redner–Walker 1984) specialized to the discrete PSV
+emission, with the identifiability partition = the `min_p` per-read certificate = SDA's attraction/repulsion
+separability. The theorem *explains SDA's empirical accuracy floor* and predicts the coverage sweep.
 
 ## Validation harness (the demonstration)
 
-1. **Coverage sweep on planted sim** (`bench/em_coverage_sweep.py`, extends `bench/sim_genome.py` /
-   `sim_reads.py`): plant a family with known copy abundances `π*` and known per-read origins `z*`. Simulate at
-   coverage `{1,2,5,10,20,50,100}×`. At each coverage run the EM and record: (a) **assignment accuracy** vs
-   `z*` on identifiable reads; (b) **abundance L1 error** `‖π̂ − π*‖₁`; (c) the fraction of reads certified vs
-   soft-zone. Expected/asserted: accuracy → 100% and abundance L1 → 0 as coverage grows in the identifiable
-   regime; K=0 families stay at the identifiability floor (soft-zone), never wrongly forced. The resulting curve
-   IS the theorem, confirmed. Emits `bench/EM_COVERAGE_SWEEP.md` + a plot-ready TSV.
-2. **Real-data cross-checks** (reuse existing runs): EM assignments vs the **silver standard** (reads that also
-   map uniquely — independent aligner placement) and **held-out-PSV** confirmation on a real gorilla family
-   (e.g. the 8,461-read `o2_chk` family). Expected: EM certified calls agree with silver at the ~100% already
-   observed for the gate.
-3. **Head-to-head vs the one-shot gate:** on the same family, EM `Certified` calls match the gate's assignments
-   where identifiable, and EM additionally reports soft-zone posteriors where the gate abstained. Report the
-   agreement rate and the added-coverage of soft-zone localizations.
+1. **Coverage sweep on planted sim** (`bench/em_coverage_sweep.py`, extends `bench/sim_genome.py`): plant copies
+   with known paths `θ*`, abundances `π*`, per-read origins `z*`. At coverage `{1,2,5,10,20,50,100}×`, run
+   `copy_assign --em`; record assignment accuracy vs `z*` on identifiable reads, `‖π̂−π*‖₁`, certified fraction.
+   Expected/asserted: accuracy → 100% and abundance-L1 → 0 as coverage grows (the SDA 91–93% → 100% curve, now
+   *derived*); K=0 families stay soft-zone. Emits `bench/EM_COVERAGE_SWEEP.md`.
+2. **Real-data cross-checks:** EM vs the **silver standard** (independent aligner placement) + **held-out-PSV**
+   on a real gorilla family; EM `Certified` calls should match the gate/VG at the ~100% already observed.
+3. **Head-to-head vs the one-shot gate + the VG scan:** EM matches where identifiable, adds soft-zone posteriors
+   where each abstained.
+
+## Non-goals / scope
+
+- Copy-path refinement (M-step on `θ`) deferred; `θ` fixed from the VG here.
+- Additive & non-destructive: `--em` is a new mode; default output byte-identical; the one-shot gate and the
+  VG layer are unchanged.
+- No new likelihood/emission model and no new PSV caller: reuse `read_copy_evidence` (Task 1) and the existing
+  IsoCon/Clair3/SUN column filters verbatim.
 
 ## Files
 
-- **Create** `src/rustle/vg_family/em_copy_assign.rs`: `em_assign(reads, copies, likelihoods, alpha, eps,
-  max_iter) -> EmResult` with `EmResult { posteriors: Vec<Vec<f64>>, abundances: Vec<f64>, labels: Vec<EmLabel>,
-  n_iter, loglik_trace: Vec<f64> }` and `enum EmLabel { Certified, SoftZone }`. Pure functions: `e_step`,
-  `m_step`, `loglik`, `label_read` (consumes the existing `min_p`). Reuses per-read `L_rk` from the current
-  likelihood code — no new emission model.
-- **Modify** `src/bin/copy_assign.rs`: add `--em` (+ `--em-max-iter`, `--em-eps`) to run the EM path and emit
-  `<out>.em.tsv` / `<out>.em_abundance.tsv`. Off by default (existing output unchanged).
+- **Create** `src/rustle/vg_family/em_copy_assign.rs`: `e_step`, `m_step`, `loglik`, `label_read`, `em_assign`
+  (+ `EmResult`, `EmLabel`), consuming Task 1's `ReadEvidence`. No new emission model.
+- **Modify** `src/bin/copy_assign.rs`: `--em` (+ `--em-max-iter`, `--em-eps`); build `Vec<ReadEvidence>` from the
+  same family reads/copy-paths the VG/gate path constructs; emit the two TSVs. Off by default.
 - **Modify** `src/rustle/vg_family/mod.rs`: register the module.
-- **Create** `bench/em_coverage_sweep.py`, `bench/EM_COVERAGE_SWEEP.md`, `bench/em_consistency.md`.
+- **Create** `bench/em_consistency.md` (SDA-derivation + theorem), `bench/em_coverage_sweep.py`,
+  `bench/EM_COVERAGE_SWEEP.md`.
 - **Test** `src/rustle/vg_family/em_copy_assign.rs` (`#[cfg(test)]`) + `tests/em_copy_assign_integration.rs`.
 
 ## Testing (TDD)
 
-Unit (in `em_copy_assign.rs`):
-- `e_step` responsibilities sum to 1 per read and equal `π_k L_rk / Σ`.
-- `m_step` abundance = mean responsibility; recovers planted `π` on a clean 2-copy toy.
-- `loglik` is **non-decreasing** across iterations (monotonicity guarantee) — assert over a multi-iter run.
-- `label_read`: a read spanning a decisive PSV with concentrated posterior → `Certified`; a read spanning no
-  distinguishing feature → `SoftZone` with posterior ≈ abundance-proportional (K=0 stays soft).
-- Convergence: EM stops when Δℓ < ε; deterministic given a fixed seed/order.
-
-Integration (`tests/em_copy_assign_integration.rs`):
-- On a small planted 3-copy family, EM abundances match `π*` within tolerance and certified accuracy = 100%.
-- `--em` emits both TSVs with the documented columns; default (no `--em`) output byte-identical to today.
+Unit: `e_step` responsibilities sum to 1 and apply the abundance prior; `m_step` = mean responsibility; `loglik`
+non-decreasing across iterations; `label_read` Certified/SoftZone via `min_p`; K=0 stays soft (posterior ≈ π).
+Integration: planted 3-copy family → abundances match `π*` within tol, certified accuracy 100%; K=0 → all
+SoftZone; `--em` emits both TSVs; default output byte-identical.
 
 ## Reproduce
 
 ```
 cargo test --lib em_copy_assign
 copy_assign --bam GGO_mm.bam --fasta GGO.fasta --regions <family> --em --out ca_em
-python bench/em_coverage_sweep.py     # -> bench/EM_COVERAGE_SWEEP.md (accuracy/abundance vs coverage)
+python bench/em_coverage_sweep.py   # -> bench/EM_COVERAGE_SWEEP.md (SDA 91-93% -> 100% as coverage grows)
 ```
