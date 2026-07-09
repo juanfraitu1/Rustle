@@ -25,6 +25,7 @@ use rustle::vg_family::denovo_assemble::{
 };
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
 use rustle::vg_family::family_detect::collapse_loci_groups;
+use rustle::vg_family::readonly_copy_number::{chi_h, depth_cn};
 
 /// One assembled isoform (FLAIR-style intron-chain collapse), kept for the optional `--gtf` emit. `gene_tid`
 /// is the locus this isoform collapses into (shared-junction gene); a family copy is its own gene, so a
@@ -211,6 +212,14 @@ struct Args {
     /// EM convergence tolerance (absolute+relative on the observed-data log-likelihood) for `--em`.
     #[arg(long, default_value_t = 1e-6)]
     em_eps: f64,
+
+    /// Reference-free RNA single-copy expression floor (lambda_global): the genome-wide median
+    /// n_reads over single-copy transcripts, precomputed by
+    /// `bench/rna_copy_number_depth.py::global_single_copy_anchor` -- an RNA-only quantity, NOT
+    /// genomic. When given, enables the `depth_cn` column of `<out>.famcn_readonly.tsv` (else
+    /// `NA`); this file is ALWAYS written (additive; independent of every other output).
+    #[arg(long)]
+    lambda_global: Option<f64>,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -275,6 +284,16 @@ struct MosaicRow {
     dispersion: u64,
     confirmed: bool,
 }
+/// One reference-free per-family copy-number row (Task R1: `chi_h` + `depth_cn`, no genome/assembly).
+struct FamCnRow {
+    family_id: String,
+    chrom: String,
+    n_copies: usize,
+    n_reads: usize,
+    chi_h: usize,
+    depth_cn: f64, // NaN when --lambda-global was not given
+    regime: &'static str,
+}
 /// One COPY-level historical gene-conversion row (a copy that is a mosaic of two others).
 struct CopyConvRow {
     family_id: String,
@@ -336,6 +355,7 @@ fn main() -> Result<()> {
     }
     let mut quant_rows: Vec<QuantRow> = Vec::new();
     let mut mosaic_rows: Vec<MosaicRow> = Vec::new();
+    let mut famcn_rows: Vec<FamCnRow> = Vec::new(); // reference-free chi_H + depth_cn (always emitted)
     let mut copyconv_rows: Vec<CopyConvRow> = Vec::new();
     let mut psv_read_lines: Vec<String> = Vec::new(); // --dump-psv: per-read genotype (alleles at every PSV col)
     let mut psv_copy_lines: Vec<String> = Vec::new(); // --dump-psv: per-copy PSV alleles
@@ -715,6 +735,17 @@ fn main() -> Result<()> {
                         ));
                     }
                 }
+                // reference-free per-family copy number (Task R1): chi_H (PSV conflict-structure
+                // lower bound) always computed; depth_cn only when --lambda-global was given.
+                famcn_rows.push(FamCnRow {
+                    family_id: fid.clone(),
+                    chrom: fa.chrom.clone(),
+                    n_copies: fa.n_copies,
+                    n_reads: fa.n_reads,
+                    chi_h: chi_h(&fa.copy_psv_alleles),
+                    depth_cn: args.lambda_global.map(|lam| depth_cn(fa.n_reads, lam)).unwrap_or(f64::NAN),
+                    regime: if fa.collapsed_copies > 0 { "reference_collapsed" } else { "reference_resolved" },
+                });
                 family_rows.push(FamilyRow {
                     family_id: fid,
                     chrom: fa.chrom.clone(),
@@ -791,6 +822,31 @@ fn main() -> Result<()> {
             r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value
         )?;
     }
+
+    // Reference-free per-family copy number (Task R1, additive; needs no flag): chi_H (PSV
+    // conflict-structure lower bound, always computed) + depth_cn (read-depth leg, only when
+    // --lambda-global was supplied -- else "NA"). famcn_readonly = the max of the two lower
+    // bounds, so it recovers Tier-3 collapsed copies chi_H alone misses.
+    let mut cnh = std::fs::File::create(format!("{}.famcn_readonly.tsv", args.out))?;
+    writeln!(cnh, "family_id\tchrom\tn_copies\tn_reads\tchi_H\tdepth_cn\tregime\tfamcn_readonly")?;
+    for r in &famcn_rows {
+        if r.depth_cn.is_finite() {
+            let famcn = (r.chi_h as f64).max(r.depth_cn);
+            writeln!(
+                cnh,
+                "{}\t{}\t{}\t{}\t{}\t{:.3}\t{}\t{:.3}",
+                r.family_id, r.chrom, r.n_copies, r.n_reads, r.chi_h, r.depth_cn, r.regime, famcn
+            )?;
+        } else {
+            writeln!(
+                cnh,
+                "{}\t{}\t{}\t{}\t{}\tNA\t{}\t{}",
+                r.family_id, r.chrom, r.n_copies, r.n_reads, r.chi_h, r.regime, r.chi_h
+            )?;
+        }
+    }
+    eprintln!("[copy_assign] wrote {}.famcn_readonly.tsv ({} families; depth_cn={})",
+        args.out, famcn_rows.len(), if args.lambda_global.is_some() { "on" } else { "NA (pass --lambda-global)" });
 
     // per-read posterior + consistent zone (opt-in via --posterior).
     if args.posterior {
