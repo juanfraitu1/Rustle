@@ -56,6 +56,89 @@ pub fn depth_cn(e_fam: usize, lambda_global: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vg_family::copy_assign::AssignParams;
+    use crate::vg_family::em_copy_assign::{em_assign_family, EmLabel};
+
+    /// Task R2 (O1<->O2 harmony pin): `chi_h` (this module, O1's conflict-graph copy COUNT) and
+    /// `em_assign_family` (`em_copy_assign`, O2's EM ASSIGNMENT) both consume the SAME per-copy
+    /// hap-vector (`copy_alleles` / `CopyProfile.alleles`) -- there is exactly one copy object, not
+    /// two independently-tunable ones. A better O1 (every copy pairwise-conflicts, no de-tie needed)
+    /// must raise `chi_h` AND let the EM certify every read against that K; collapsing two copies to
+    /// an identical hap-vector (a worse/over-merged O1) must drop `chi_h` by exactly 1 AND make the EM
+    /// unable to separate reads from that pair -- both legs hit the K-frontier (`SoftZone`) together.
+    /// This is a REGRESSION PIN: no new behavior, just nailing down that the two already compose.
+    #[test]
+    fn o1_o2_share_one_copy_object() {
+        let argmax = |row: &Vec<f64>| {
+            row.iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .map(|(k, _)| k)
+                .unwrap()
+        };
+        let params = AssignParams::for_alpha(1e-3);
+
+        // --- Regime 1: distinguishable (good O1) -- 3 copies, each privately marked at its own
+        // column against a shared background, so every pair conflicts at 2 of the 3 columns (well
+        // clear of the K-frontier).
+        let distinguishable: Vec<Vec<Option<u8>>> = vec![
+            vec![Some(b'C'), Some(b'A'), Some(b'A')],
+            vec![Some(b'A'), Some(b'C'), Some(b'A')],
+            vec![Some(b'A'), Some(b'A'), Some(b'C')],
+        ];
+        assert_eq!(chi_h(&distinguishable), 3, "O1: 3 pairwise-conflicting copies -> chi_h = 3");
+
+        // one read per true copy, carrying that copy's exact alleles.
+        let reads = distinguishable.clone();
+        let result = em_assign_family(&reads, &distinguishable, &params, 1e-6, 500);
+        assert_eq!(
+            result.abundances.len(),
+            distinguishable.len(),
+            "O2 (EM) must sum abundance over the SAME K copies O1's chi_h counts"
+        );
+        for (true_copy, row) in result.posteriors.iter().enumerate() {
+            assert_eq!(argmax(row), true_copy, "read {true_copy} must be assigned to its true copy");
+        }
+        assert!(
+            result.labels.iter().all(|l| matches!(l, EmLabel::Certified)),
+            "good O1 (all copies pairwise-conflict) -> the EM certifies every read: {:?}",
+            result.labels
+        );
+
+        // --- Regime 2: collapsed (worse O1) -- copy 1 and copy 2 forced to the IDENTICAL hap-vector
+        // (a de-tie / over-merge failure upstream would produce exactly this).
+        let mut collapsed = distinguishable.clone();
+        collapsed[2] = collapsed[1].clone();
+        assert_eq!(
+            chi_h(&collapsed),
+            chi_h(&distinguishable) - 1,
+            "collapsing 2 copies to one hap-vector must drop chi_h by exactly 1 (3 -> 2)"
+        );
+
+        // reads carrying the POST-collapse hap-vectors: one from the untouched copy 0 (control),
+        // and one from each of the two now-identical copies.
+        let collapsed_reads: Vec<Vec<Option<u8>>> =
+            vec![distinguishable[0].clone(), collapsed[1].clone(), collapsed[2].clone()];
+        let collapsed_result = em_assign_family(&collapsed_reads, &collapsed, &params, 1e-6, 500);
+
+        assert!(
+            matches!(collapsed_result.labels[0], EmLabel::Certified),
+            "the un-collapsed copy must remain identifiable: {:?}",
+            collapsed_result.labels
+        );
+        // reads from EITHER of the two now-identical copies can no longer be separated: the EM hits
+        // the K-frontier and abstains (SoftZone) on both, in lockstep with chi_h's drop.
+        assert!(
+            matches!(collapsed_result.labels[1], EmLabel::SoftZone),
+            "read from collapsed copy 1 must go SoftZone: {:?}",
+            collapsed_result.labels
+        );
+        assert!(
+            matches!(collapsed_result.labels[2], EmLabel::SoftZone),
+            "read from collapsed copy 2 must go SoftZone: {:?}",
+            collapsed_result.labels
+        );
+    }
 
     #[test]
     fn chi_h_three_pairwise_distinct_private_alleles() {
