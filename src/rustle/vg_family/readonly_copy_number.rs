@@ -140,6 +140,91 @@ mod tests {
         );
     }
 
+    /// Task H1 (VG-harmony pin): a copy NOT in the reference genome — admitted by O4's
+    /// `absent_copy::admit_candidate` gate as a synthetic `DenovoTranscript` — must be a
+    /// first-class copy to BOTH downstream consumers, not just threaded through pipeline
+    /// plumbing that happens to compile.
+    ///
+    /// Wiring trace (verified by inspection; this test simulates the RESULT of that trace rather
+    /// than re-running it, since the genome/BAM/minimap2 machinery is exercised by
+    /// `absent_copy.rs`'s own hermetic tests):
+    /// `admit_candidate_with_remap` (`absent_copy.rs`) returns `Admission::Copy(t)` once a
+    /// candidate clears all five gates (cluster count, `min_p_distinct` from host, strand-
+    /// symmetric spectrum, placeable overlay, remap identity `< 98%`) — `t` is a synthetic
+    /// `DenovoTranscript` whose sequence bakes in the copy's distinguishing alleles.
+    /// `denovo_pipeline.rs` (~line 626-654, behind `--absent-copies`) collects every
+    /// `Admission::Copy(t)` into `admitted`, then extends the family's copy list (`all_copies`)
+    /// with it and re-runs `assign_family_detailed` (Stage-2) over the augmented set — so the
+    /// admitted copy sits at a real index alongside the reference copies, indistinguishable in
+    /// type from them. From there `assign_family_detailed` -> `build_family_profiles`
+    /// (`copy_assign_pipeline.rs`) extracts each copy's per-PSV-column allele vector
+    /// (`CopyProfile.alleles`, i.e. `copy_psv_alleles`) for every copy in the set — there is no
+    /// branch for "reference" vs "admitted-absent" once a `DenovoTranscript` exists. That shared
+    /// `copy_alleles` vector is exactly what both `chi_h` (this module — O1's reference-free
+    /// copy-number COUNT) and `em_assign_family` (`em_copy_assign` — O2's read ASSIGNMENT)
+    /// consume next. This test starts from that shared post-admission state directly: a
+    /// `copy_alleles` with 2 reference copies + 1 admitted-absent copy, and reads carrying the
+    /// absent copy's alleles.
+    #[test]
+    fn absent_copy_is_assigned_and_counted() {
+        let argmax = |row: &Vec<f64>| {
+            row.iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .map(|(k, _)| k)
+                .unwrap()
+        };
+
+        // copy 0, copy 1 = "reference" copies (present in the linear genome); copy 2 = the
+        // O4-admitted absent copy (its alleles came from `admit_candidate`'s synthetic
+        // DenovoTranscript, not from any genome coordinate). Same private-column-per-copy layout
+        // as `o1_o2_share_one_copy_object`: every pair differs at 2 of the 3 columns, well clear
+        // of the alpha=1e-3, K=3 Bonferroni bound.
+        let copy_alleles: Vec<Vec<Option<u8>>> = vec![
+            vec![Some(b'C'), Some(b'A'), Some(b'A')], // ref copy 0
+            vec![Some(b'A'), Some(b'C'), Some(b'A')], // ref copy 1
+            vec![Some(b'A'), Some(b'A'), Some(b'C')], // absent copy 2 (O4-admitted)
+        ];
+        let absent_idx = 2;
+
+        // (a) chi_h counts the absent copy as its own color: the reference-free copy number
+        // rises to 3, not 2 -- the admitted copy is not silently dropped or merged.
+        assert_eq!(
+            chi_h(&copy_alleles),
+            3,
+            "reference-free copy number must count the O4-admitted absent copy as a distinct color"
+        );
+
+        // A handful of reads carrying the absent copy's exact alleles (as if minimap2/discovery
+        // had routed them to this locus and copy_psv_alleles had extracted this vector for them).
+        let absent_reads: Vec<Vec<Option<u8>>> = vec![
+            copy_alleles[absent_idx].clone(),
+            copy_alleles[absent_idx].clone(),
+            copy_alleles[absent_idx].clone(),
+        ];
+        let params = AssignParams::for_alpha(1e-3);
+        let result = em_assign_family(&absent_reads, &copy_alleles, &params, 1e-6, 500);
+
+        // (b) the EM assigns those reads to the absent copy, confidently.
+        for (i, row) in result.posteriors.iter().enumerate() {
+            assert_eq!(
+                argmax(row),
+                absent_idx,
+                "read {i} carrying the absent copy's alleles must be assigned to the absent copy"
+            );
+            assert!(
+                matches!(result.labels[i], EmLabel::Certified),
+                "read {i} must be Certified, not stuck in the K-frontier soft zone: {:?}",
+                result.labels[i]
+            );
+        }
+        assert!(
+            result.abundances[absent_idx] > 0.0,
+            "the EM's recovered abundance for the absent copy must be > 0: {:?}",
+            result.abundances
+        );
+    }
+
     #[test]
     fn chi_h_three_pairwise_distinct_private_alleles() {
         // each copy has a private allele at its own column -> all three pairwise conflict.
