@@ -106,7 +106,7 @@ pub fn loglik(logl: &[Vec<f64>], pi: &[f64]) -> f64 {
 /// K-frontier identifiability label for a read, given its EM posterior context.
 ///
 /// This is the SAME test the one-shot gate uses to decide `Tied` vs a confident
-/// call ([`ReadEvidence::min_p`] against the family-wide Bonferroni threshold
+/// call (`ReadEvidence::min_p` against the family-wide Bonferroni threshold
 /// `alpha/(k-1)`), just attached to the EM soft-relaxation's output instead of
 /// the gate's hard decision: `Certified` reads sit outside the K-frontier
 /// (their best-vs-runner-up p-value beats the correction), `SoftZone` reads
@@ -122,7 +122,7 @@ pub enum EmLabel {
 
 /// K-frontier test: `Certified` iff `min_p < alpha/((k-1).max(1))` (family-wide Bonferroni over the
 /// `k-1` pairwise comparisons against the best copy), else `SoftZone`. Identical rule to the one-shot
-/// significance gate ([`super::significance_gate`] et al.) -- no separate threshold is introduced here.
+/// significance gate (`copy_assign::assign_read_editing` et al.) -- no separate threshold is introduced here.
 pub fn label_read(min_p: f64, alpha: f64, k: usize) -> EmLabel {
     let denom = (k.saturating_sub(1)).max(1) as f64;
     if min_p < alpha / denom {
@@ -149,15 +149,17 @@ pub struct EmResult {
 }
 
 /// EM driver: maximum-likelihood soft relaxation of SDA's PSV correlation-clustering, run to
-/// convergence on a family's [`ReadEvidence`], then labeled per-read via the K-frontier test
+/// convergence on a family's `ReadEvidence`, then labeled per-read via the K-frontier test
 /// ([`label_read`]).
 ///
 /// Starts from a uniform `pi` (abundance-from-certified-reads is a documented follow-up, not
 /// implemented here -- no extra threshold is smuggled in to warm-start it) and alternates
 /// [`e_step`]/[`m_step`], tracking [`loglik`] after every sweep. Stops when the log-likelihood
-/// improvement falls below `eps * |loglik|` (relative convergence, the only numeric tolerance this
-/// driver introduces) or after `max_iter` sweeps, whichever comes first.
-pub fn em_assign(
+/// improvement falls below `eps * (1 + |loglik|)` (absolute+relative convergence, so a fixed point at
+/// exactly `loglik == 0.0` -- e.g. a K=0 flat-evidence family -- still converges immediately instead of
+/// running to `max_iter`; the only numeric tolerance this driver introduces) or after `max_iter` sweeps,
+/// whichever comes first.
+pub(crate) fn em_assign(
     evidence: &[super::copy_assign::ReadEvidence],
     k: usize,
     alpha: f64,
@@ -179,7 +181,7 @@ pub fn em_assign(
         let ll = loglik(&logl, &pi);
         loglik_trace.push(ll);
         n_iter += 1;
-        let converged = (ll - prev_ll).abs() < eps * prev_ll.abs();
+        let converged = (ll - prev_ll).abs() < eps * (1.0 + prev_ll.abs());
         prev_ll = ll;
         if converged {
             break;
