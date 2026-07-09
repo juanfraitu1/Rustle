@@ -12,8 +12,8 @@ use std::io::Write;
 
 use rustle::vg_family::denovo_pipeline::{
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
-    detect_homology_catalog_genome_wide, homology_refine_params, refine_families_exon_sum,
-    DenovoConfig, RefineParams,
+    detect_homology_catalog_genome_wide, family_protein_coheres, homology_refine_params,
+    refine_families_exon_sum, DenovoConfig, RefineParams,
 };
 use rustle::vg_family::family_detect::DenovoTranscript;
 
@@ -149,7 +149,7 @@ fn main() -> Result<()> {
     // copy is confirmed iff its spliced sequence aligns full-length to a sibling (independent of both the
     // conflict-graph family definition AND of RefSeq gene annotation → de-circularising).
     let mut sh = std::fs::File::create(format!("{}.copies.fa", args.out))?;
-    writeln!(fh, "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads")?;
+    writeln!(fh, "family_id\tn_copies\tn_chroms\tchroms\tcross_chrom\tavg_reads\tprotein_coheres")?;
     writeln!(ch, "family_id\tcopy_idx\ttid\tchrom\tstart\tend\tn_exon\tstrand\tn_reads")?;
 
     use std::collections::BTreeSet;
@@ -160,6 +160,10 @@ fn main() -> Result<()> {
         let kb = b.iter().map(|c| (c.chrom.as_str(), c.start)).min();
         ka.cmp(&kb)
     });
+    // spec §6: orthogonal protein-coherence QC flag — does each family's ORFs form a connected
+    // protein-homology graph? `None` (emitted as "NA") when `--protein-tail` is off (no mmseqs call).
+    let qc_params = &refine_params;
+    let coheres = family_protein_coheres(&fams, qc_params);
     let mut n_xchrom = 0usize;
     for (fi, copies) in fams.iter().enumerate() {
         let fid = format!("GWFAM{fi}");
@@ -173,9 +177,14 @@ fn main() -> Result<()> {
         } else {
             copies.iter().map(|c| c.n_reads as f64).sum::<f64>() / copies.len() as f64
         };
+        let coheres_str = match coheres[fi] {
+            Some(true) => "true",
+            Some(false) => "false",
+            None => "NA",
+        };
         writeln!(
             fh,
-            "{fid}\t{}\t{}\t{}\t{}\t{:.1}",
+            "{fid}\t{}\t{}\t{}\t{}\t{:.1}\t{coheres_str}",
             copies.len(),
             chroms.len(),
             chroms.iter().cloned().collect::<Vec<_>>().join(","),

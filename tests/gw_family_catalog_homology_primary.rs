@@ -74,6 +74,40 @@ fn enumerate_copies_ignored_without_homology_primary() {
 }
 
 #[test]
+fn families_tsv_has_protein_coheres_column() {
+    // spec §6: the orthogonal protein-coherence QC flag (family_protein_coheres) must be emitted as
+    // the LAST column of `<out>.families.tsv`. Without `--protein-tail` (mmseqs off), the column must
+    // be present but "NA" for every family (no mmseqs call, no cost).
+    let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
+    let out = "tests/fixtures/same_chrom_supplement/out_hom_protein_qc";
+    let status = Command::new(bin).args([
+        "--bam", "tests/fixtures/same_chrom_supplement/reads.bam",
+        "--fasta", "tests/fixtures/same_chrom_supplement/genome.fa",
+        "--out", out, "--homology-primary",
+    ]).status().unwrap();
+    assert!(status.success());
+    let fams = std::fs::read_to_string(format!("{}.families.tsv", out)).unwrap();
+    let mut lines = fams.lines();
+    let header = lines.next().expect("families.tsv must have a header");
+    let header_cols: Vec<&str> = header.split('\t').collect();
+    assert_eq!(
+        header_cols.last().copied(), Some("protein_coheres"),
+        "families.tsv header's last column must be protein_coheres; header={header}"
+    );
+    let mut n_rows = 0;
+    for l in lines {
+        if l.is_empty() { continue; }
+        n_rows += 1;
+        let cols: Vec<&str> = l.split('\t').collect();
+        assert_eq!(
+            cols.last().copied(), Some("NA"),
+            "without --protein-tail every row's last field must be NA; row={l}"
+        );
+    }
+    assert!(n_rows > 0, "expected >=1 family row\n{}", fams);
+}
+
+#[test]
 fn homology_primary_writes_famcn_when_enumerating() {
     let bin = env!("CARGO_BIN_EXE_gw_family_catalog");
     let out = "tests/fixtures/same_chrom_supplement/out_famcn";
