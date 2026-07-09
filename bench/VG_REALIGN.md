@@ -55,8 +55,22 @@ novel-candidate}`.
   - **`psv_positions_for`** derives each family PSV column's offset in a copy's spliced consensus by inverting
     `build_family_profiles`' `copy_gpos` through `gen2off` (the consensus used for alignment IS the one the
     offsets index).
-- **Follow-up (not wired):** (a) routing UNMAPPED reads into families (`unmapped_reads_from_bam` +
-  `route_unmapped` — the helpers exist, unit-tested) so out-of-region reads become candidates; (b) the
+### Unmapped-read routing: checked, NOT worth wiring (POC, 2026-07-09)
+
+An advisor question ("copies not in the genome should be among the MAPPED reads; unmapped reads carry no
+information") was tested empirically on `GGO_mm.bam`. Result — the advisor is right:
+- **5,506 unmapped primary reads (0.12%)** of 4.4M; full-length (median 2,923 bp), NOT low-complexity.
+- **92% (5,074) do not map to the gorilla genome even in DNA mode** (`minimap2 -x map-hifi`) → not gorilla
+  sequence, not clustered → contamination / artifact, no copy information.
+- The **8% (432)** that map are gorilla reads the SPLICED aligner missed (map unspliced/partial in DNA mode) —
+  they are IN the genome, not novel copies.
+- A reference-absent copy that shares exon homology with a reference paralog **cannot be fully unmapped** — its
+  reads map at moderate identity to the paralog, i.e. **mapped-but-mis-placed** (low-MAPQ / soft-clipped),
+  exactly the candidate set the correction/admission path already targets.
+So the `unmapped_reads_from_bam` / `route_unmapped` helpers stay unit-tested but **deliberately unwired** — the
+signal isn't there. Absent copies live among the mapped reads.
+
+- **Follow-up (not wired):** (a) ~~routing UNMAPPED reads~~ — checked (above), not worth wiring; (b) the
   end-to-end genome sim (`bench/sim_vg_realign.py`, plant a divergent mis-mapping + a genome-absent copy and
   assert corrected assignments + admitted-and-counted copy) — validation currently rests on the unit tests, the
   real-fixture additivity diff, and the whole-feature review; (c) admission yield on real GGO is expected to be
