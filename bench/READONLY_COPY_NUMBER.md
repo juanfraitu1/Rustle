@@ -46,6 +46,46 @@ of `asm_hapCN`): ZNF425 sees ~4 of 26, LOC129531752 sees 2 of 22. This is the on
 does not, and it is the correct boundary of the method — `famcn_readonly` is an **expressed**-copy number, a
 reference-free proxy that is exact for the expressed multiplicity and a lower bound on the genomic count.
 
+## Real cases on GGO: copies the LINEAR reference hides (confirmed by the phased assembly)
+
+The strongest concrete result. In these families the *linear* reference collapses several copies onto one
+locus, so per-read PSV analysis distinguishes only `chi_H` of them — but **read depth (`depth_cn`) recovers the
+rest reference-free, and the phased assembly (`asm_hapCN`) independently confirms more copies than the linear
+conflict graph sees.** These are real copies present in the assembly that the reference we map to does not
+distinctly represent.
+
+**30 families where depth recovers copies `chi_H` misses; 23 confirmed** by `asm_hapCN > chi_H`. The strongest:
+
+| gene | `chi_H` (linear ref distinguishes) | `depth_cn` (reads recover) | `asm_hapCN` (phased assembly) |
+|---|---|---|---|
+| LOC109025447 | 1 | 15.8 | 11 |
+| LOC115930538 | **1** | **11.4** | 12 |
+| LOC129526550 | 5 | 11.8 | 13 |
+| LOC101130894 | 2 | 10.4 | 16 |
+| LOC129534585 | 1 | 8.0 | 7 |
+| CPLANE1 | 1 | 7.7 | 6 |
+| LOC115933254 | 1 | 6.9 | 8 |
+| LOC101130854 | 3 | 6.7 | 8 |
+| LOC115930164 | 1 | 4.4 | 13 |
+| LOC109023386 | 1 | 4.1 | 4 |
+| LOC101141440 | 1 | 5.0 | 6 |
+
+For LOC115930538, per-read assignment sees **one** copy (`chi_H=1`) but the reads pile ~11× deep — and the
+assembly has **12**. All of it recovered from reads, no genome used, assembly-confirmed. This is the headline
+"copies the linear reference hides."
+
+**Two honest caveats:** (1) `depth_cn` is an *expressed*-copy count, so it under-counts vs `asm_hapCN` where some
+copies are silent (LOC101130894 10.4 vs 16; LOC115930164 4.4 vs 13) and a few high-depth families with no
+oracle match (SORL1 39.7, LOC129523503 61.2) are more plausibly high expression than many copies — only the 23
+assembly-confirmed cases above are asserted. (2) These are *collapsed* copies (present in the phased assembly,
+merged in the linear reference), NOT copies absent from every assembly.
+
+**Copies absent from EVERY assembly: 0 confirmed on GGO.** The admission mechanism (O4 `admit_candidate` + the
+vg-realign admissions) is wired, but no copy absent from the phased assembly is confirmed on this data — the
+data-limited divergent-absent frontier (needs DNA-level ground truth to separate a novel copy from an allele;
+the unmapped-read POC in `bench/VG_REALIGN.md` reinforced that such copies are *mapped-but-mis-placed*, not
+unmapped).
+
 ## O1 ↔ O2 harmony
 
 The reads-only copy number and the EM copy-assignment consume **one family object**: `detect_families` → copies
