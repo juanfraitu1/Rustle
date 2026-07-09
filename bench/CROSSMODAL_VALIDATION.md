@@ -96,9 +96,16 @@ total ≈ 19 assembly**) — Soto's famCN/parCN, produced reference-free from lo
   | GWFAM96 | 2 | **14** | 13 |
 
   6 of 7 spot-checked families within ±1–2 (RGPD8 under-counts: 7 vs 11, copies more divergent than 0.80).
-  **Remaining limit:** *dispersed repeats* (e.g. GWFAM52 = short repeat units genome-wide) still inflate
-  totalCN — those aren't real gene families; a repeat/γ-quasi-clique filter is the follow-up for the genome-
-  wide (non-curated) number. famCN@0.98 (cov ≥ 0.90, near-identical) remains the strict Soto-comparable metric.
+  **On the residual genome-wide over-count** (some 2-copy families project to 30–50 loci): a VG-native repeat
+  test (`minimizers` + `vg_repeat_catalog` `is_repeat_m5`/`n_genes`) did NOT confirm these as repeats — the
+  per-family repeat-minimizer fraction does not separate them from real families (GWFAM52 "repeat?" = 0.00 vs
+  GSTM real = 0.79; the catalog's `n_genes` is a per-EDGE cross-locus *bridging* signal used by
+  `multi_repeat_bridge`, not a per-family aggregate — a real large family racks up shared-gene counts from its
+  own paralogs). GWFAM52's sequence is UNIQUE by the VG catalog, so its ~47 loci are most likely real
+  divergent, mostly-unannotated paralogs rather than a repeat. So the residual totalCN excess over `asm_hapCN`
+  is more plausibly genuine divergent/unannotated copies (which the diploid assembly count misses) than repeat
+  inflation. A definitive per-locus repeat filter would need RepeatMasker/Dfam, not the VG bridging catalog.
+  famCN@0.98 (cov ≥ 0.90, near-identical) remains the strict Soto-comparable metric.
 - The oracle→gene join is imperfect (RefSeq naming; 51 of 169 oracle multi-copy families matched to an RNA
   family). `asm_hapCN` is a diploid/assembly count, so ±25 % tolerance reflects real haplotype/assembly slop.
 - 80 RNA-only families (Axis B) are not independently confirmed here — some are genuine divergent/expressed
