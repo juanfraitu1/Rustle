@@ -144,11 +144,18 @@ assumptions the combinatorial theory runs on, now given a probability measure.
 
 ## §3 Theorem (consistency of the EM/MLE)
 
-Write `D_{ij} = {j : (θ_i)_j ≠ (θ_j)_j}` for the distinguishing bubbles of copies `i≠j`, and
+Write `D_{ij} = {d : (θ_i)_d ≠ (θ_j)_d}` for the distinguishing bubbles (columns `d ∈ [m]`) of copies `i≠j`, and
 `δ(r) = \min_{k≠b}|\mathrm{obs}(r)∩D_{bk}|` for the number of distinguishing bubbles read `r` spans against its
 closest competitor (`b` = its MLE copy) — the same `δ` as `bench/THEORY.md` §5b. The per-read identifiability
 certificate is `min_p(r) = ε^{δ(r)}` (Theorem 4(i)); a read is `Certified` iff `min_p(r) < α/(K−1)` and
-`SoftZone` otherwise (`label_read`).
+`SoftZone` otherwise (`label_read`).[^bonf]
+
+[^bonf]: **Denominator convention.** The shipped `label_read` uses `α/(K−1)` with `K` = number of copies —
+a per-copy Bonferroni correction over the `K−1` competitor copies of a read's MLE copy. `bench/THEORY.md`
+Theorem 4 writes the threshold as `α/(n−1)`. These are *not* silently the same symbol: the `K−1` (per-copy)
+convention is what the code applies, and the `n−1` in THEORY.md Thm 4 is flagged here as the notation to
+reconcile — do not equate them without checking which population (`K` copies vs `n` reads/comparisons) each
+Bonferroni family is over.
 
 > **Theorem (EM consistency in the identifiable regime).** Suppose the family satisfies **Strong Separation**
 > (`bench/THEORY.md` §5): for every pair `i≠j`, every read of copy `i` conflicts with every read of copy `j` —
@@ -156,8 +163,9 @@ certificate is `min_p(r) = ε^{δ(r)}` (Theorem 4(i)); a read is `Certified` iff
 > `min_p(r) < 1`) is *achievable* for every cross-copy comparison, and `min_p < α/(K−1)` is achievable at
 > sufficient coverage. Then:
 >
-> **(a) Identifiability.** The mixture `∑_k π_k L_{rk}` is identifiable up to relabelling: `π` and the
-> component labels are uniquely determined by the read distribution.
+> **(a) Identifiability.** The mixture `∑_k π_k L_{rk}` is identifiable — and, because `θ` is fixed/known from
+> the VG, the components are **pre-labelled** (each `L_{k·}` is tied to a named copy-path `θ_k`), so there is
+> **no relabelling ambiguity**: `π` and the per-copy assignments are uniquely determined by the read distribution.
 >
 > **(b) MLE consistency.** As the per-copy coverage `n → ∞` (reads per copy grow), the maximum-likelihood
 > estimate is strongly consistent, `π̂_n → π*` almost surely, and the EM sequence from a generic start converges
@@ -182,24 +190,59 @@ The two ingredients are **finite-mixture identifiability** and **MLE consistency
 Review* 26:195–239, 1984), specialized to the discrete PSV emission; the identifiability partition is the
 `min_p` per-read certificate, which is SDA's attraction/repulsion separability.
 
-**(a) Identifiability.** A finite mixture `∑_k π_k f_k` is identifiable (up to label permutation) iff the
-component laws `{f_k}` are **distinct and linearly independent** and no `π_k = 0` (Teicher 1963; Redner–Walker
-1984 §2). Here `f_k = L_{k\cdot}` is the read law under copy-path `θ_k`. Under Strong Separation each pair `i≠j`
-has a distinguishing bubble `d ∈ D_{ij}` that spanning reads observe with positive probability (assumption A3 +
-the "reads actually span" clause); at that bubble `q_d(\cdot\mid(θ_i)_d) ≠ q_d(\cdot\mid(θ_j)_d)` because the
-matched allele differs and `e_d < (|A_d|-1)/|A_d|` (A2) makes the modal base identify the copy. Hence
-`f_i ≠ f_j`, and since the copy-paths are distinct **atoms** of the discrete allele space, the family `{f_k}` is
-linearly independent (distinct product-multinomial laws are). So the mixture is identifiable — the same content
-as Strong Separation making the copies distinct, spanned allele-vectors (`bench/THEORY.md` §5, biological
-reading: "PSVs exist **plus** dense read coverage").
+**(a) Identifiability.** A finite mixture `∑_k π_k f_k` is identifiable iff the component laws `{f_k}` are
+**distinct and linearly independent** and no `π_k = 0` (Teicher 1963; Redner–Walker 1984 §2); with `θ` fixed the
+components are pre-labelled, so identifiability here carries **no label-permutation caveat**. Here
+`f_k = L_{k\cdot}` is the read law under copy-path `θ_k`. Under Strong Separation each pair `i≠j` has a
+distinguishing bubble `d ∈ D_{ij}` that spanning reads observe with positive probability (assumption A3 + the
+"reads actually span" clause); at that bubble `q_d(\cdot\mid(θ_i)_d) ≠ q_d(\cdot\mid(θ_j)_d)` because the matched
+allele differs and `e_d < (|A_d|-1)/|A_d|` (A2) makes the modal base identify the copy. Hence `f_i ≠ f_j`.
+
+For **linear independence** we do not appeal to "distinct product-multinomial laws are independent" — that is
+false in general for `K ≥ 3`. Instead, evaluate each component law at the copy-paths themselves and consider the
+`K×K` matrix `M = [\,f_k(θ_j)\,]_{k,j}`, where `f_k(θ_j) = ∏_d q_d((θ_j)_d\mid(θ_k)_d)` is the probability copy
+`k` emits exactly the allele-vector `θ_j` over the columns. Each `f_k` **peaks at its own centre** `θ_k`: for the
+full spanned column set, `f_k(θ_k) = ∏_d (1−e_d)` while any off-diagonal `f_k(θ_j)` (`j≠k`) loses a factor
+`(1−e_d) → e_d/(|A_d|-1)` at every distinguishing column `d ∈ D_{kj}` (nonempty under Strong Separation). With
+`e_d < (|A_d|-1)/|A_d|` (A2) each such factor strictly shrinks the product, so the diagonal entry strictly
+dominates its row: `f_k(θ_k) > ∑_{j≠k} f_k(θ_j)` holds once separation is strong enough (equivalently, `M` is
+**strictly diagonally dominant** in the well-separated regime). A strictly diagonally dominant matrix is
+invertible (Levy–Desplanques), so the vectors `{f_k}` are linearly independent. The mixture is therefore
+identifiable — the same content as Strong Separation making the copies distinct, spanned allele-vectors
+(`bench/THEORY.md` §5, biological reading: "PSVs exist **plus** dense read coverage").
 
 **(b) MLE consistency.** With identifiability (a), assumptions A1–A3, a compact simplex parameter space for `π`,
 and the discrete (hence bounded, continuous-in-`π`) log-likelihood, the conditions of Redner–Walker 1984 (Wald
-consistency of the MLE for identifiable mixtures) hold: `π̂_n → π*` a.s. as `n → ∞`. EM is an ascent method on
-`ℓ(π)` (`loglik` non-decreasing, §1.4); for an **identifiable** mixture the population log-likelihood has a
-unique maximizer up to labelling, so from a generic start the EM ascent lands in its basin and the sequence
-converges to the consistent MLE. (The `K=0`/flat directions where the likelihood is constant — assumption A1's
-resolvable core excludes them from `π` estimation; they surface as part (d).)
+consistency of the MLE for identifiable mixtures) hold: `π̂_n → π*` a.s. as `n → ∞`.
+
+*Global (not merely local) EM convergence — and why it is available here.* Finite-mixture EM is **not** globally
+convergent in general: the observed-data likelihood of a mixture is typically multimodal and EM can stall at a
+local maximum (this is the standard Redner–Walker caveat — EM converges to a *consistent root*, but only
+**locally**, from a start in its basin). One must not argue "the global maximizer is unique, so a generic start
+lands in its basin" — that is a non-sequitur for mixtures. The correct argument here rests on a special feature
+of **this restricted problem: `θ` is fixed**, so only the mixing proportions `π` are estimated. Then
+
+$$
+\ell(\pi) \;=\; \sum_r \log \sum_k \pi_k L_{rk}
+$$
+
+is, for each read `r`, the logarithm of a function `\sum_k \pi_k L_{rk}` that is **affine in `π`** (the `L_{rk}`
+are fixed constants when `θ` is fixed). A log of a nonnegative affine function is concave, and a sum of concave
+functions is concave, so `ℓ(π)` is **concave on the probability simplex**. For fixed `θ` the mixture-proportion
+EM is exactly coordinate ascent / an MM ascent on this concave `ℓ`; on a concave objective over a convex compact
+set every ascent sequence with the EM fixed-point/KKT stationarity converges to the **global** maximizer (unique
+whenever `ℓ` is strictly concave, i.e. under the identifiability of (a) with all `π*_k > 0`). Hence, **with `θ`
+fixed there is no local-optimum problem**: the EM ascent (`loglik` non-decreasing, §1.4) reaches the global MLE
+`π̂_n`, and by Redner–Walker `π̂_n → π*` a.s.
+
+Two honest scope statements follow. **(i)** This global-convergence guarantee **relies on `θ` being fixed** — it
+is the concavity of `ℓ` in `π` alone that removes the local maxima. **(ii)** If `θ` were **also** estimated (the
+deferred copy-path refinement of §1.4 — the direct analog of SDA re-clustering its PSVs), the joint objective
+`ℓ(π,θ)` is no longer concave and the full finite-mixture local-maximum problem returns; only the *local*
+convergence-to-a-consistent-root guarantee of Redner–Walker 1984 would then hold, from a start in the true root's
+basin. The shipped engine estimates `π` with `θ` fixed, so it lives in the concave, globally-convergent case.
+(The `K=0`/flat directions where `ℓ` is constant in some `π`-direction — assumption A1's resolvable core excludes
+them from `π` estimation; they surface as part (d).)
 
 **(c) Assignment consistency.** Fix an identifiable read `r` (`δ(r) ≥ 1`). For any wrong copy `k ≠ z*_r`, the
 likelihood ratio telescopes over the `|obs(r)∩D_{z*_r,k}| ≥ δ(r) ≥ 1` distinguishing bubbles the read spans:
@@ -216,6 +259,18 @@ could flip the argmax is if `π̂_k / π̂_{z*_r}` exceeded this ratio; by (b) `
 away from `0`, so for `n` large the prior factor is bounded and `π̂_{z*_r} L_{r,z*_r} > π̂_k L_{r,k}` for every
 `k`. Hence `ẑ_r = z*_r` and `γ_{r,z*_r} → 1`. This is Theorem 4(ii) (soundness — under completeness the unique
 consistent copy is the origin, so the argmax is correct), promoted to a limit statement via consistent `π̂`.
+
+**Coverage attribution (what the limit is, and is not, buying).** The likelihood-ratio factor
+`((1−e)/(e/3))^{≥δ(r)}` is a **per-read** quantity governed only by that read's distinguishing count `δ(r)` and
+the error rate `e`: it does **not** grow with coverage. More coverage means more *reads*, not more distinguishing
+columns *per read* — `δ(r)` is fixed by which bubbles the single molecule `r` spans. Consequently the per-read
+identifiable correctness is a **`δ`/`e` property**, and under assumption A1 (the error-free core, `e → 0`) it is
+**exact at any coverage**: for `e → 0` the ratio is `∞`, the prior cannot flip it, and the argmax is correct with
+`n = 1` copy-read as readily as with `n = 100`. What coverage `n → ∞` actually buys is the **abundance /
+family-level** consistency `π̂ → π*` of (b); it enters (c) only through the *prior factor* `π̂_k/π̂_{z*_r}`, which
+matters solely in the noisy `e > 0` regime where a badly-estimated prior at tiny `n` could momentarily overpower
+a small-`δ` read. So: assignment accuracy on identifiable reads is a `δ/e`(A1) effect (high at all coverages
+under A1); the coverage effect is `π̂ → π*` and the abundance L1 error → 0.
 
 **(d) Non-identifiable class.** If `δ(r) = 0` then `obs(r)∩D_{bk} = ∅` for `≥ 2` copies (Theorem 4(iii)): read
 `r` spans no bubble distinguishing them, so `L_{rk}` is **equal** across those copies, and the E-step gives
@@ -281,18 +336,30 @@ distinguishing signal. Two things cost it accuracy: (i) the heuristic can get st
 clustering, and (ii) hard-calling the genuinely unidentifiable mass **must** misassign a fraction of it. The
 consistency theorem decomposes exactly this:
 
-- On the **identifiable** set (Strong-Separated reads, `δ ≥ 1`), the ML soft relaxation is **consistent**:
-  accuracy → 100% as coverage grows (§4(c)) — it does not floor. SDA's shortfall there is the heuristic gap,
-  which the likelihood ascent (monotone `ℓ`) closes.
+- On the **identifiable** set (Strong-Separated reads, `δ ≥ 1`), the ML soft relaxation is **consistent**: its
+  per-read accuracy is high at every coverage (a `δ/e` property, §4(c) coverage-attribution note; → 100% under the
+  error-free core A1) — it does not floor. SDA's shortfall *on this set* is the heuristic gap, which the
+  likelihood ascent (monotone `ℓ`) closes. Note this is the EM's **identifiable-set** accuracy curve.
 - On the **unidentifiable** set (`δ = 0`, the K-frontier / K=0 mass), no method resolves the reads (§4(d),
-  Theorem 2 K-bound); SDA hard-calls it and eats a misassignment rate, whereas the EM abstains (`SoftZone`). The
-  91–93% is thus *identifiable-accuracy (→ 100%) net of the hard-called unidentifiable residue* — a **predicted**
-  number, not a mysterious empirical ceiling.
+  Theorem 2 K-bound); SDA hard-calls it and eats a misassignment rate, whereas the EM abstains (`SoftZone`).
+
+**What the theorem does — and does not — supply about the number.** The theorem explains why a floor **of this
+KIND** exists: a method that hard-calls every read scores ≈100% on the identifiable set and pays a forced error
+rate on the hard-called unidentifiable residue, so its *overall* accuracy is pinned below 100% by that residue.
+The theorem does **not** derive the specific value **91–93%** — that value is set by the *instance-specific
+unidentifiable fraction* (how much K-frontier/K=0 mass a given family carries, and how SDA splits it), a quantity
+the theory does not supply. So the mechanism is derived; the number is not. Crucially, keep the two curves
+**distinct**: the EM's **identifiable-set** accuracy → 100% is a *different curve* from SDA's **overall** 91–93%,
+which mixes in the hard-called unidentifiable mass — they are not the same measurement and must not be equated.
 
 **Prediction (Task 6 coverage sweep, `bench/em_coverage_sweep.py` → `bench/EM_COVERAGE_SWEEP.md`).** On a
-planted sim genome with known `θ*, π*, z*`, as per-copy coverage grows `{1,2,5,10,20,50,100}×`:
-- assignment accuracy on identifiable reads **→ 100%** (the SDA 91–93% curve, now *derived*, not observed);
-- abundance error `‖π̂ − π*‖₁ **→ 0`** (consistency of `π̂`, §4(b));
+planted sim genome with known `θ*, π*, z*`, as per-copy coverage grows `{1,2,5,10,20,50,100}×`, the sweep has
+**two distinct axes** (the §4(c) coverage attribution):
+- *(per-read axis, `δ/e`, not coverage-driven)* assignment accuracy on **identifiable** reads is **high at every
+  coverage** and **→ 100%** under the error-free core A1 — this is the EM's identifiable-set curve, which
+  explains (but is not numerically equal to) SDA's 91–93% overall floor;
+- *(coverage axis)* abundance error `‖π̂ − π*‖₁ **→ 0`** as coverage grows (consistency of `π̂`, §4(b)) — this is
+  the genuine coverage effect;
 - K=0 families **stay `SoftZone`** at every coverage (the boundary is a boundary, not a coverage artifact).
 
 These are the falsifiable content of the theorem; Task 6 is its demonstration.
