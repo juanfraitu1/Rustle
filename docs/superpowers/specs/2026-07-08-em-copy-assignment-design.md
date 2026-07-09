@@ -11,8 +11,11 @@ paper he sent** — not a fitting procedure we picked. Concretely: express read�
 run on the thesis's existing **PSV-aware variation graph** (copies = paths, PSVs = bubbles, assignment =
 threading). The EM adds copy abundances and soft responsibilities; the identifiability is the thesis's already-
 proven **MCC = χ(H) / Strong-Separation** theorem (the provable-conditions layer *under* SDA's heuristic). The
-headline deliverable is that this derivation is **consistent** — the assignment converges to the truth as
-coverage grows (SDA's empirical 91–93% → 100%) — stated as a theorem and shown by a coverage sweep.
+headline deliverable is that this derivation is **consistent**, on two distinct axes: per-read certified
+accuracy on the *identifiable* set is a `δ`/error-rate property that is already high at every coverage (NOT
+coverage-driven), while abundance error `‖π̂−π*‖₁ → 0` as coverage grows (MLE consistency of `π̂`) — stated as
+a theorem and shown by a coverage sweep. (The identifiable-set accuracy curve explains, but is not numerically
+equal to, SDA's overall 91–93% floor, which mixes in its hard-called unidentifiable residue — see §6.)
 
 ## Prior-art grounding (why he'll believe it)
 
@@ -70,6 +73,13 @@ Per read: the posterior `γ_r` plus a label from the `min_p` bound (= the K-fron
 (`read_name  family_id  argmax_copy  label  posterior  n_iter`), `<out>.em_abundance.tsv`
 (`family_id  copy_id  pi_hat  n_reads_soft`).
 
+`<out>.em_abundance.tsv` is the convergent, gate-likelihood EM (the estimator the consistency theorem below
+describes): it uses `params.error_rate` and a log-likelihood convergence gate. This is a *different* estimator
+from the legacy `<out>.quant.tsv` (`copy_assign_pipeline::soft_quantify_em`, fixed error rate 0.01, fixed 100
+iterations, no convergence check) that this feature does not touch, so the two files' `pi_hat` for the same
+family can legitimately differ — do not treat them as redundant. Prefer `.em_abundance.tsv` when citing the
+theorem's estimator.
+
 ## The consistency theorem (`bench/em_consistency.md`)
 
 **Claim.** The EM above is the ML soft relaxation of SDA's PSV correlation-clustering. In the identifiable
@@ -88,8 +98,12 @@ separability. The theorem *explains SDA's empirical accuracy floor* and predicts
 1. **Coverage sweep on planted sim** (`bench/em_coverage_sweep.py`, extends `bench/sim_genome.py`): plant copies
    with known paths `θ*`, abundances `π*`, per-read origins `z*`. At coverage `{1,2,5,10,20,50,100}×`, run
    `copy_assign --em`; record assignment accuracy vs `z*` on identifiable reads, `‖π̂−π*‖₁`, certified fraction.
-   Expected/asserted: accuracy → 100% and abundance-L1 → 0 as coverage grows (the SDA 91–93% → 100% curve, now
-   *derived*); K=0 families stay soft-zone. Emits `bench/EM_COVERAGE_SWEEP.md`.
+   Two distinct axes, not one: expected/asserted per-read accuracy on the *identifiable* set is **high at every
+   coverage** (a `δ`/error-rate property, not coverage-driven — this is the curve that *explains* SDA's 91–93%
+   overall floor without reproducing that number, since SDA's floor also mixes in its hard-called
+   unidentifiable residue); abundance-L1 **→ 0 as coverage grows** (the genuine coverage-driven MLE-consistency
+   effect); K=0 families stay soft-zone at every coverage (a boundary, not a coverage artifact). Emits
+   `bench/EM_COVERAGE_SWEEP.md`.
 2. **Real-data cross-checks:** EM vs the **silver standard** (independent aligner placement) + **held-out-PSV**
    on a real gorilla family; EM `Certified` calls should match the gate/VG at the ~100% already observed.
 3. **Head-to-head vs the one-shot gate + the VG scan:** EM matches where identifiable, adds soft-zone posteriors

@@ -206,14 +206,18 @@ pub(crate) fn em_assign(
 /// already-extracted PSV data (`FamilyAssignment::read_psv_obs` / `copy_psv_alleles`), for callers
 /// outside this crate (the `copy_assign` binary's `--em` mode). `em_assign`/`read_copy_evidence`/
 /// `ReadEvidence` are `pub(crate)` and so unreachable from a binary crate; this wrapper takes only
-/// plain/public types and goes through [`super::copy_assign::read_copy_evidence`] -- the SAME gate
-/// likelihood the one-shot significance gate uses (Task 1) -- so the EM posterior can never drift
-/// from `assign_read`/`assign_read_editing`'s numbers.
+/// plain/public types and goes through [`super::copy_assign::read_copy_evidence`] with the SAME
+/// per-read/per-copy likelihood the one-shot significance gate uses (Task 1), now including the
+/// Clair3-RNA-style A->I editing-column filter (`copy_assign_pipeline::detect_editing_columns`) --
+/// so an editing column is downweighted here exactly as it is in the hard gate.
 ///
-/// PSV-only (no junctions, no per-base quality, no RNA-editing columns), mirroring
-/// `copy_assign_pipeline::soft_quantify_em`'s PSV-only abundance model -- the abundance estimate is
-/// meant to be a light-weight complement to the hard PSV+junction assignment, not a re-derivation of
-/// it.
+/// Still PSV-only: no per-copy junctions and no per-base quality are threaded through this
+/// wrapper (both `ReadFeatures::junctions`/`psv_qual` and `CopyProfile::junctions` are left empty),
+/// mirroring `copy_assign_pipeline::soft_quantify_em`'s PSV-only abundance model. Consequently a
+/// read whose hard-gate call depends on junction or per-base-quality evidence can get a *different*
+/// per-read label here than `.assignments.tsv` reports -- the abundance estimate is a light-weight
+/// complement to the hard PSV+junction assignment, not a re-derivation of it, and is not claimed to
+/// reproduce it read-for-read.
 pub fn em_assign_family(
     read_obs: &[Vec<Option<u8>>],
     copy_alleles: &[Vec<Option<u8>>],
@@ -230,6 +234,7 @@ pub fn em_assign_family(
             junctions: vec![],
         })
         .collect();
+    let editing = crate::vg_family::copy_assign_pipeline::detect_editing_columns(read_obs, &copies);
     let evidence: Vec<super::copy_assign::ReadEvidence> = read_obs
         .iter()
         .map(|obs| {
@@ -238,7 +243,7 @@ pub fn em_assign_family(
                 psv_qual: vec![],
                 junctions: vec![],
             };
-            super::copy_assign::read_copy_evidence(&rf, &copies, params, &[])
+            super::copy_assign::read_copy_evidence(&rf, &copies, params, &editing)
         })
         .collect();
     em_assign(&evidence, copy_alleles.len(), params.alpha, eps, max_iter)

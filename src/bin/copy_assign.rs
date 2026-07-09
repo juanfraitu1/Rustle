@@ -194,9 +194,15 @@ struct Args {
 
     /// Run the EM soft-relaxation (Vollger 2019 PSV correlation-clustering, maximum-likelihood soft
     /// version) over each family's PSV evidence and emit `<out>.em.tsv` (per-read soft posterior +
-    /// K-frontier label) and `<out>.em_abundance.tsv` (per-copy recovered abundance). PSV-only
-    /// (goes through the same gate likelihood as the hard assignment, so it can never drift from
-    /// it), additive: leaves `.assignments.tsv`/`.families.tsv` byte-identical. Default off.
+    /// K-frontier label) and `<out>.em_abundance.tsv` (per-copy recovered abundance). This is a
+    /// PSV-only reduction of the gate likelihood (editing-filtered; junctions and per-base quality
+    /// are NOT used), so per-read labels may differ from the hard `.assignments.tsv` gate on
+    /// junction/quality-resolvable reads; the abundance estimate is robust to these. `.em_abundance.tsv`
+    /// is the convergent, gate-likelihood EM (the estimator the consistency theorem describes); it
+    /// uses `error_rate` and a convergence gate, so its `pi_hat` can differ from the legacy
+    /// `.quant.tsv` (`soft_quantify_em`, fixed error 0.01 / 100 iters) -- prefer `.em_abundance.tsv`
+    /// for the theorem's estimator. Additive: leaves `.assignments.tsv`/`.families.tsv`/`.quant.tsv`
+    /// byte-identical. Default off.
     #[arg(long, default_value_t = false)]
     em: bool,
     /// Max E/M sweeps for `--em`.
@@ -607,6 +613,9 @@ fn main() -> Result<()> {
                     let em_result =
                         em_assign_family(&fa.read_psv_obs, &fa.copy_psv_alleles, &params, args.em_eps, args.em_max_iter);
                     for (row_idx, (ri, _)) in fa.assignments.iter().enumerate() {
+                        if row_idx >= em_result.posteriors.len() {
+                            continue; // posterior frame must line up with the read roster (e.g. post-freeze)
+                        }
                         let post = &em_result.posteriors[row_idx];
                         let argmax = post
                             .iter()

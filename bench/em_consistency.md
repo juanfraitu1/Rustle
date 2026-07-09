@@ -376,7 +376,16 @@ the same per-column filters already in the cascade, reused unchanged:
   concrete `δ`-contributing attraction the theorem's part (c) relies on;
 - **Clair3-RNA** (`reference_clair3_rna`) — flags A→I editing so edited sites are not mistaken for PSVs.
 
-The EM reuses these verbatim; they decide the graph, the theorem decides what happens on it.
+The EM applies the IsoCon per-position and Clair3 A→I-editing column filters (`em_assign_family` now
+computes `detect_editing_columns` and passes it into `read_copy_evidence`, so an editing column is
+downweighted in the EM's likelihood exactly as it is in the hard gate). It does **not**, however, reuse
+everything the hard gate does: the shipped `--em` path (`em_assign_family`) is PSV-only and threads no
+copy-specific junctions and no per-base quality (`ReadFeatures::junctions`/`psv_qual` and
+`CopyProfile::junctions` are left empty), so its per-read labels can differ from the hard
+`.assignments.tsv` gate on reads whose call depends on junction or per-base-quality evidence. This does
+not affect the abundance/consistency result above: junctions, quality, and editing change only `min_p`
+and per-column weights in the likelihood, not the shape of the abundance fixed point the EM/M-step
+converges to.
 
 ---
 
