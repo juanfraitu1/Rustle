@@ -118,8 +118,14 @@ pub struct DenovoResult {
 
 /// Run the de-novo family DETECTION pipeline from parsed primary reads + a loaded genome.
 pub fn detect_families(reads: &[PrimaryRead], genome: &GenomeIndex, cfg: &DenovoConfig) -> DenovoResult {
-    let skeletons = pass1_skeletons(reads, cfg.pass1_min_reads);
-    let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
+    // Same `k` as every other path: a locus must have ONE canonical extent across objectives. The three
+    // genome-wide O1 catalogs already trim at `cfg.min_terminal_support`; this path silently used k = 1.
+    let skeletons = pass1_skeletons_robust(reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    let mut transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
+    if cfg.filter_readthrough {
+        let support = read_junction_support(reads);
+        retain_non_readthrough(&mut transcripts, &support, "detect_families");
+    }
     // collapse isoforms -> gene loci (rep per locus), then build the rep transcript slice.
     // Span-aware collapse recovers alternative-splice isoforms with no shared junction.
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
@@ -613,19 +619,56 @@ pub const READTHROUGH_MIN_SUPPORT: usize = 2;
 /// spliced parent contributes 3516 reads that cross-map onto it. `bench/READTHROUGH_RULE_VALIDATION.md`.
 pub const READTHROUGH_MIN_DISTINCT: usize = 5;
 
-/// Splice junctions observed in the reads, with the number of reads supporting each.
+/// Splice junctions observed in the PRIMARY reads, with the number of primary reads supporting each.
 /// Key is `(chrom, donor, acceptor)` in genomic coordinates.
-pub fn read_junction_support(bam_reads: &[BamRead]) -> std::collections::HashMap<(String, u64, u64), usize> {
+///
+/// Primary-only, i.e. `-F 2308`. `PrimaryRead` is secondary-free by construction
+/// (`primary_read_from_record` returns `None` for secondary and supplementary records) and its `introns` are
+/// already the CIGAR-`N` gaps. The predecessor took `&[BamRead]` and skipped only `is_supplementary`, so it
+/// **counted secondary alignments** -- on this substrate (`minimap2 -N 50`, ~63% secondary) that inflated the
+/// statistic from **56 to 154** distinct junctions at the DAZ readthrough span. The rule
+/// ([`is_unspliced_readthrough`]) was validated on primaries alone, so its input must be too.
+pub fn read_junction_support(reads: &[PrimaryRead]) -> std::collections::HashMap<(String, u64, u64), usize> {
     let mut sup = std::collections::HashMap::new();
-    for br in bam_reads {
-        if br.is_supplementary {
-            continue; // chimeric segments are not splicing evidence
-        }
-        for (d, a) in crate::vg_family::copy_assign::read_introns(&br.read) {
-            *sup.entry((br.chrom.clone(), d, a)).or_insert(0) += 1;
+    for pr in reads {
+        for &(d, a) in &pr.introns {
+            *sup.entry((pr.chrom.clone(), d, a)).or_insert(0) += 1;
         }
     }
     sup
+}
+
+/// Drop unspliced readthrough transcripts in place, logging each. Shared by every path that assembles de-novo
+/// transcripts, so O1 (the family catalogs) and O2 (assignment) agree about what a locus IS.
+///
+/// Must run on TRANSCRIPTS, before `collapse_loci_span_aware`: a readthrough is the longest object in its span,
+/// so after collapse it becomes the representative of every locus it covers, and dropping that rep deletes the
+/// real copies with it (the DAZ 298 kb span absorbed DAZ2 into DAZ1's group).
+pub fn retain_non_readthrough(
+    transcripts: &mut Vec<DenovoTranscript>,
+    support: &std::collections::HashMap<(String, u64, u64), usize>,
+    tag: &str,
+) {
+    let mut dropped = Vec::new();
+    transcripts.retain(|t| {
+        let rt = is_unspliced_readthrough(t, support, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT);
+        if rt {
+            dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
+        }
+        !rt
+    });
+    if !dropped.is_empty() {
+        eprintln!(
+            "[{tag}] readthrough filter: dropped {} single-exon transcript(s) engulfing >= {} distinct \
+             junctions (unspliced pre-mRNA, not copies) -> {} transcripts",
+            dropped.len(),
+            READTHROUGH_MIN_DISTINCT,
+            transcripts.len()
+        );
+        for d in &dropped {
+            eprintln!("[{tag}]   readthrough {d}");
+        }
+    }
 }
 
 /// Is this transcript the UNSPLICED form of a locus (intronic pileup / readthrough) rather than an mRNA?
@@ -1148,7 +1191,8 @@ pub fn detect_and_assign(
             }
         };
     }
-    let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
+    // Same `k` as the O1 catalogs: one canonical extent per locus across objectives (see `detect_families`).
+    let skeletons = pass1_skeletons_robust(primary_reads, cfg.pass1_min_reads, cfg.min_terminal_support);
     let mut transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
 
     // Unspliced readthrough spans are not transcripts, so they are removed BEFORE loci are collapsed. Filter
@@ -1158,27 +1202,8 @@ pub fn detect_and_assign(
     // span covering GSTM5 + GSTM1 sat beside GSTM3 — and it makes read alignment quadratic (a 128 kb
     // "transcript" hung assignment past 400 s). Never silent: every drop is logged.
     if cfg.filter_readthrough {
-        let support = read_junction_support(bam_reads);
-        let mut dropped = Vec::new();
-        transcripts.retain(|t| {
-            let rt = is_unspliced_readthrough(t, &support, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT);
-            if rt {
-                dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
-            }
-            !rt
-        });
-        if !dropped.is_empty() {
-            eprintln!(
-                "[detect_and_assign] readthrough filter: dropped {} single-exon transcript(s) engulfing >= {} \
-                 distinct junctions (unspliced pre-mRNA, not copies) -> {} transcripts",
-                dropped.len(),
-                READTHROUGH_MIN_DISTINCT,
-                transcripts.len()
-            );
-            for d in &dropped {
-                eprintln!("[detect_and_assign]   readthrough {d}");
-            }
-        }
+        let support = read_junction_support(primary_reads);
+        retain_non_readthrough(&mut transcripts, &support, "detect_and_assign");
     }
 
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
@@ -1600,8 +1625,15 @@ pub fn detect_conflict_catalog_genome_wide(
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    // Build the junction-support map BEFORE freeing the primaries. It is keyed by distinct junction, so it is a
+    // rounding error next to the ~1.7M reads it derives from. O1 must drop readthroughs for the same reason O2
+    // does, or the two objectives disagree about what a locus is.
+    let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
     drop(reads); // free the ~1.7M primaries before the per-chrom read load
-    let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    if let Some(sup) = &rt_support {
+        retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
+    }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
@@ -1722,8 +1754,13 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    // Support map before the free; see the same-chrom catalog for why.
+    let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
     drop(reads);
-    let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    if let Some(sup) = &rt_support {
+        retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
+    }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
@@ -1852,8 +1889,13 @@ pub fn detect_homology_catalog_genome_wide(
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
     let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
     let skeletons = pass1_skeletons_robust(&reads, cfg.pass1_min_reads, cfg.min_terminal_support);
+    // Support map before the free; see the same-chrom catalog for why.
+    let rt_support = if cfg.filter_readthrough { Some(read_junction_support(&reads)) } else { None };
     drop(reads);
-    let transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
+    if let Some(sup) = &rt_support {
+        retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
+    }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
@@ -3959,6 +4001,52 @@ mod tests {
             assert_eq!(a.status, AssignStatus::Tied);
             assert_eq!(a.min_p_value, 1.0, "no distinguishing column exists: that is the honest certificate");
         }
+    }
+
+    /// Junction support is PRIMARY-only by type: `PrimaryRead` cannot hold a secondary alignment
+    /// (`primary_read_from_record` returns `None` for them). The predecessor took `&[BamRead]` and counted
+    /// secondaries, inflating the DAZ readthrough span from 56 to 154 distinct junctions.
+    #[test]
+    fn read_junction_support_counts_each_primary_read_once() {
+        let pr = |s: u64, introns: Vec<(u64, u64)>| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: s + 400, introns };
+        let reads = vec![pr(50, vec![(100, 200)]), pr(60, vec![(100, 200)]), pr(70, vec![(300, 400)])];
+        let sup = read_junction_support(&reads);
+        assert_eq!(sup.get(&("c1".to_string(), 100, 200)), Some(&2));
+        assert_eq!(sup.get(&("c1".to_string(), 300, 400)), Some(&1));
+        assert_eq!(sup.len(), 2);
+    }
+
+    /// The shared helper O1 and O2 now both call: a single-exon transcript engulfing >= 5 supported junctions
+    /// is dropped; a spliced transcript over the same span is kept.
+    #[test]
+    fn retain_non_readthrough_drops_engulfing_single_exon_keeps_spliced() {
+        let mut support = std::collections::HashMap::new();
+        for i in 1..=6u64 {
+            support.insert(("c1".to_string(), i * 100, i * 100 + 50), 2usize);
+        }
+        let mk = |tid: &str, introns: Vec<(u64, u64)>| DenovoTranscript {
+            tid: tid.into(), chrom: "c1".into(), start: 0, end: 1000, n_reads: 5, strand: '+', introns,
+            seq: vec![b'A'; 50],
+        };
+        let mut ts = vec![mk("readthrough", vec![]), mk("spliced", vec![(100, 150)])];
+        retain_non_readthrough(&mut ts, &support, "test");
+        assert_eq!(ts.len(), 1, "the single-exon engulfer is dropped");
+        assert_eq!(ts[0].tid, "spliced");
+    }
+
+    /// One canonical extent per locus across objectives. `detect_families` and `detect_and_assign` used a
+    /// hardcoded k = 1 while the three genome-wide O1 catalogs trimmed at `cfg.min_terminal_support` = 2, so
+    /// the same locus had different boundaries in O1 and O2.
+    #[test]
+    fn skeleton_terminal_trim_is_uniform_k() {
+        let mk = |s: u64| PrimaryRead { chrom: "c1".into(), ref_start: s, ref_end: 500, introns: vec![(200, 300)] };
+        let reads = vec![mk(100), mk(100), mk(100), mk(10)]; // one runaway 5' read
+        assert_eq!(pass1_skeletons(&reads, 2)[0].start, 10, "k=1 keeps the runaway");
+        assert_eq!(
+            pass1_skeletons_robust(&reads, 2, DenovoConfig::default().min_terminal_support)[0].start,
+            100,
+            "the k every path now uses trims it"
+        );
     }
 
     #[test]

@@ -90,8 +90,18 @@ refuted, and the sequence routes need reads that do not exist. This is a data li
 
 **DAZ's 139 tied reads are the K = 0 wall**, and that number is honest: DAZ1 and DAZ2 are exonically
 near-identical (1 PSV column; DAZ2's own reads tie at median AS gap 0). What resolves the 2213 assigned reads is
-**copy-specific junction structure** — the two reps carry 31 and 16 introns — not exonic PSVs. That is the
-junction term of the assignment gate doing exactly what it exists for.
+**copy-specific junction structure**, not exonic PSVs — the junction term of the assignment gate doing exactly
+what it exists for.
+
+⚠ **Correction.** An earlier draft attributed the junction difference to the reps carrying "31 and 16 introns,"
+as though the copies differed structurally. They do not. The recovered DAZ2 model is **5′-truncated**: its rep
+starts at 42899568 against an annotated start of 42879918, covering **70.1%** of the annotated span. The 5′ gap
+has mean primary depth 0.17× and contains exactly one read with a real intron chain — one read, below
+`GATE_MIN_READS`, so the 5′ exons never assemble. The 16-vs-31 intron count is truncation, not divergence.
+
+DAZ2 is nonetheless a **genuine second copy**, not spillover: minimap2 `-x asm20` aligns DAZ2's genomic span to
+DAZ1's as a single alignment at **85.9% identity over 99.9% of DAZ1** (inverted, consistent with DAZ1 `-` /
+DAZ2 `+`), and the two reps share **0 reads and 0 junctions**.
 
 ## The honest attack surface
 

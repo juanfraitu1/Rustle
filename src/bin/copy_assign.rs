@@ -26,7 +26,7 @@ use rustle::vg_family::denovo_assemble::{
 use rustle::vg_family::denovo_pipeline::{catalog_overlaps, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
 use rustle::vg_family::family_detect::collapse_loci_groups;
 use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
-use rustle::vg_family::readonly_copy_number::{chi_h, depth_cn};
+use rustle::vg_family::readonly_copy_number::{chi_h_with_junctions, depth_cn};
 
 /// One assembled isoform (FLAIR-style intron-chain collapse), kept for the optional `--gtf` emit. `gene_tid`
 /// is the locus this isoform collapses into (shared-junction gene); a family copy is its own gene, so a
@@ -865,7 +865,7 @@ fn main() -> Result<()> {
                     chrom: fa.chrom.clone(),
                     n_copies: fa.n_copies,
                     n_reads: fa.n_reads,
-                    chi_h: chi_h(&fa.copy_psv_alleles),
+                    chi_h: chi_h_with_junctions(&fa.copy_psv_alleles, &fa.copy_junctions),
                     depth_cn: args.lambda_global.map(|lam| depth_cn(fa.n_reads, lam)).unwrap_or(f64::NAN),
                     regime: if fa.collapsed_copies > 0 { "reference_collapsed" } else { "reference_resolved" },
                 });

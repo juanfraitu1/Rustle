@@ -40,6 +40,47 @@ pub fn chi_h(copy_alleles: &[Vec<Option<u8>>]) -> usize {
     groups.len()
 }
 
+/// `chi_h`, but two copies also conflict when BOTH carry a non-empty, DIFFERING copy-specific junction set.
+///
+/// The reference-free copy COUNT must see the same evidence as the copy ASSIGNMENT it certifies. The gate and
+/// the EM assign on PSVs **and** copy-specific junctions; `chi_h` sees only PSVs. On the recovered DAZ family
+/// that contradiction is visible in the output: `n_copies = 2`, O2 assigns 2213 of 2353 placements across the
+/// two copies, and yet `chi_H = 1`, so `famcn_readonly` reports **1 copy** for a two-copy family. DAZ1 and DAZ2
+/// are near-identical exonically (one PSV column) and are separated by their junction structure.
+///
+/// The `both non-empty` guard mirrors the PSV rule's `both Some`: absence of junction evidence is not evidence
+/// of sameness, so `chi_H` remains a valid LOWER bound (`max(n_loci, chi_H) <= true`). With no junction
+/// evidence at all this is exactly [`chi_h`].
+pub fn chi_h_with_junctions(copy_alleles: &[Vec<Option<u8>>], copy_junctions: &[Vec<i64>]) -> usize {
+    fn psv_conflict(a: &[Option<u8>], b: &[Option<u8>]) -> bool {
+        a.iter().zip(b.iter()).any(|(x, y)| matches!((x, y), (Some(xa), Some(yb)) if xa != yb))
+    }
+    fn junction_conflict(a: &[i64], b: &[i64]) -> bool {
+        if a.is_empty() || b.is_empty() {
+            return false; // no evidence is not evidence of difference
+        }
+        let (sa, sb): (std::collections::BTreeSet<_>, std::collections::BTreeSet<_>) =
+            (a.iter().collect(), b.iter().collect());
+        sa != sb
+    }
+    let empty: Vec<i64> = Vec::new();
+    let junc = |i: usize| copy_junctions.get(i).unwrap_or(&empty);
+
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for i in 0..copy_alleles.len() {
+        let home = groups.iter().position(|g| {
+            g.iter().all(|&m| {
+                !psv_conflict(&copy_alleles[m], &copy_alleles[i]) && !junction_conflict(junc(m), junc(i))
+            })
+        });
+        match home {
+            Some(gi) => groups[gi].push(i),
+            None => groups.push(vec![i]),
+        }
+    }
+    groups.len()
+}
+
 /// Reference-free read-depth copy-number estimate: `E_fam / lambda_global`.
 ///
 /// `e_fam` = total reads over the family (E_fam, includes unassignable reads); `lambda_global` =
@@ -51,6 +92,51 @@ pub fn depth_cn(e_fam: usize, lambda_global: f64) -> f64 {
         return f64::NAN;
     }
     e_fam as f64 / lambda_global
+}
+
+#[cfg(test)]
+mod chi_h_junction_tests {
+    use super::*;
+
+    /// The recovered DAZ family: two copies that are exonically near-identical (one PSV column, PSV-compatible)
+    /// but carry different junction structures. chi_h alone reports 1 for a family O2 assigns across 2 copies.
+    #[test]
+    fn chi_h_with_junctions_separates_psv_compatible_junction_distinct_copies() {
+        let alleles = vec![vec![None], vec![None]];
+        assert_eq!(chi_h(&alleles), 1, "PSV-only evidence cannot see the second copy");
+        assert_eq!(chi_h_with_junctions(&alleles, &[vec![0i64], vec![7i64]]), 2, "junctions separate them");
+    }
+
+    /// Absence of junction evidence is not evidence of sameness -- chi_H stays a LOWER bound.
+    #[test]
+    fn chi_h_with_junctions_without_junction_evidence_is_exactly_chi_h() {
+        let alleles = vec![vec![Some(b'A')], vec![Some(b'C')], vec![None]];
+        assert_eq!(chi_h_with_junctions(&alleles, &[vec![], vec![], vec![]]), chi_h(&alleles));
+        // one copy has junctions, the other does not => no junction conflict is inferred
+        assert_eq!(chi_h_with_junctions(&[vec![None], vec![None]], &[vec![3i64], vec![]]), 1);
+    }
+
+    /// Identical junction sets do not manufacture a conflict, whatever the ordering.
+    #[test]
+    fn chi_h_with_junctions_ignores_order_and_identical_sets() {
+        let alleles = vec![vec![None], vec![None]];
+        assert_eq!(chi_h_with_junctions(&alleles, &[vec![5i64, 1], vec![1i64, 5]]), 1);
+    }
+
+    /// A PSV conflict still separates copies even when their junctions agree.
+    #[test]
+    fn chi_h_with_junctions_still_honours_psv_conflicts() {
+        let alleles = vec![vec![Some(b'A')], vec![Some(b'G')]];
+        assert_eq!(chi_h_with_junctions(&alleles, &[vec![2i64], vec![2i64]]), 2);
+    }
+
+    /// It can never exceed the copy count, so it remains a lower bound on true copy number.
+    #[test]
+    fn chi_h_with_junctions_never_exceeds_n_copies() {
+        let alleles = vec![vec![Some(b'A')], vec![Some(b'C')], vec![Some(b'G')]];
+        let j = vec![vec![1i64], vec![2i64], vec![3i64]];
+        assert!(chi_h_with_junctions(&alleles, &j) <= alleles.len());
+    }
 }
 
 #[cfg(test)]
