@@ -59,6 +59,9 @@ pub struct DenovoConfig {
     /// stores the resulting `Vec<RealignRecord>` on `FamilyAssignment::realign_records`. REPORT-ONLY —
     /// does not alter the copy set, the PSV/junction assignment, or any other emitted field.
     pub vg_realign: bool,
+    /// E_r homology-primary family MEMBERSHIP (opt-in). Conflict/PSV/χ(H) remain within-family. Enlarges
+    /// the copy set ⟹ stricter Bonferroni α/(K−1) ⟹ assignments shift. Requires minimap2.
+    pub homology_primary: bool,
 }
 
 impl Default for DenovoConfig {
@@ -72,6 +75,7 @@ impl Default for DenovoConfig {
             conflict: ConflictParams::from_env(),
             complete_poa_core: false,
             vg_realign: false,
+            homology_primary: false,
         }
     }
 }
@@ -889,34 +893,56 @@ pub fn detect_and_assign(
         reps.len()
     );
     lap!("pass1+gate+collapse");
-    // Conflict-graph: AUTHORITATIVE family criterion
+    // Family MEMBERSHIP oracle: default = conflict-graph (E_c, AUTHORITATIVE de-tie criterion); opt-in
+    // (`cfg.homology_primary`) = homology (E_r) — a copy whose reads all map uniquely (high MAPQ) forms
+    // no conflict edge and would otherwise be DROPPED from its family (the read-conflict oracle is an
+    // AMBIGUITY oracle, not a homology oracle). Everything downstream of `families`/`edges_f64`
+    // (colocated_families, PSV discovery, assignment, EM, chi_H) is unchanged by which oracle ran.
     let placements = build_read_placements(bam_reads, &reps);
     lap!(format!("build_read_placements ({} reads x {} reps)", bam_reads.len(), reps.len()));
-    let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
-    let c_fams = conflict_families(reps.len(), &c_edges);
-    // audit: the de-tie edge set must be a subset of the AS-tie edge set (the bake-off invariant).
-    let as_edges = as_tie_edges(reps.len(), &placements, 0.9, cfg.conflict.min_reads);
-    let de_subset = c_edges.iter().all(|&(i, j, _)| as_edges.contains(&(i, j)));
-    eprintln!(
-        "[detect_and_assign] conflict-graph (de-tie): {} edges -> {} families | de⊆AS={} (AS edges={})",
-        c_edges.len(), c_fams.len(), de_subset, as_edges.len(),
-    );
-    for (fi, fam) in c_fams.iter().enumerate() {
-        let members: Vec<&str> = fam.iter().map(|&i| reps[i].tid.as_str()).collect();
-        let coords: Vec<String> = fam.iter()
-            .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end)).collect();
-        let edge_weights: Vec<usize> = c_edges.iter()
-            .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b)).map(|&(_, _, w)| w).collect();
-        let (mq_support, mq_both0) = family_mapq0_support(&placements, fam, &cfg.conflict);
+    let (families, edges_f64): (Vec<Vec<usize>>, Vec<(usize, usize, f64)>) = if !cfg.homology_primary {
+        let c_edges = conflict_edges(reps.len(), &placements, &cfg.conflict);
+        let c_fams = conflict_families(reps.len(), &c_edges);
+        // audit: the de-tie edge set must be a subset of the AS-tie edge set (the bake-off invariant).
+        let as_edges = as_tie_edges(reps.len(), &placements, 0.9, cfg.conflict.min_reads);
+        let de_subset = c_edges.iter().all(|&(i, j, _)| as_edges.contains(&(i, j)));
         eprintln!(
-            "  conflict-fam{fi} n={} reads_linking={:?} mapq0_frac={}/{}: {} @ {}",
-            fam.len(), edge_weights, mq_both0, mq_support, members.join(","), coords.join(" | "),
+            "[detect_and_assign] conflict-graph (de-tie): {} edges -> {} families | de⊆AS={} (AS edges={})",
+            c_edges.len(), c_fams.len(), de_subset, as_edges.len(),
         );
-    }
-    let split = conflict_to_split_families(&c_fams, &c_edges, &cfg.split);
+        for (fi, fam) in c_fams.iter().enumerate() {
+            let members: Vec<&str> = fam.iter().map(|&i| reps[i].tid.as_str()).collect();
+            let coords: Vec<String> = fam.iter()
+                .map(|&i| format!("{}:{}-{}", reps[i].chrom, reps[i].start, reps[i].end)).collect();
+            let edge_weights: Vec<usize> = c_edges.iter()
+                .filter(|&&(a, b, _)| fam.contains(&a) && fam.contains(&b)).map(|&(_, _, w)| w).collect();
+            let (mq_support, mq_both0) = family_mapq0_support(&placements, fam, &cfg.conflict);
+            eprintln!(
+                "  conflict-fam{fi} n={} reads_linking={:?} mapq0_frac={}/{}: {} @ {}",
+                fam.len(), edge_weights, mq_both0, mq_support, members.join(","), coords.join(" | "),
+            );
+        }
+        let edges_f64: Vec<(usize, usize, f64)> = c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+        (c_fams, edges_f64)
+    } else {
+        // Loud abort on failure — NEVER silently fall back to E_c (precedent: the famCN
+        // `unwrap_or_default()` silent-degradation bug). `threads`: no thread count is threaded through
+        // `detect_and_assign`/`DenovoConfig` today (this is diagnostic-scale minimap2, not the BAM-reading
+        // hot path), so this uses the same default (4) `RefineParams::default()`/the existing
+        // `homology_refine_params` unit tests use, rather than inventing a new config field.
+        let refine = homology_refine_params(None, 4);
+        let e2 = homology_edges_all_reps(&reps, &refine)
+            .expect("--homology-primary: homology_edges_all_reps failed — is minimap2 on PATH or RUSTLE_MINIMAP2 set?");
+        let edges_f64: Vec<(usize, usize, f64)> = e2.iter().map(|&(a, b)| (a, b, 1.0)).collect();
+        let families = crate::vg_family::family_split::gamma_quasi_clique_partition(reps.len(), &edges_f64, 0.20);
+        eprintln!("[detect_and_assign] homology (E_r): {} edges -> {} families", e2.len(), families.len());
+        (families, edges_f64)
+    };
+    let split = to_split_families(&families, &edges_f64, &cfg.split);
 
     // POA homology edges — DIAGNOSTIC ONLY, no longer drives family membership (families come from the
-    // de-tie conflict graph at `conflict_to_split_families` above). The POA pairwise (poasta over all
+    // membership oracle above: the de-tie conflict graph by default, or E_r homology when
+    // `cfg.homology_primary` is set). The POA pairwise (poasta over all
     // candidate rep pairs) is the dominant cost on dense regions, so it is skippable with no effect on
     // the emitted families/assignments — only the diagnostic edge count and the `.fallback.tsv` report
     // are lost. Opt out with RUSTLE_SKIP_POA_DIAGNOSTIC=1 (e.g. genome-wide sweeps).
@@ -3343,6 +3369,78 @@ mod tests {
             assert_eq!(w.class, c.class);
             assert_eq!(w.stats, c.stats);
         }
+    }
+
+    #[test]
+    fn denovoconfig_default_homology_primary_is_off() {
+        assert!(!DenovoConfig::default().homology_primary, "default must be byte-identical to today (E_c oracle)");
+    }
+
+    /// Task 2 (O1<->O2 harmony): `detect_and_assign`'s `cfg.homology_primary == false` branch composes
+    /// `conflict_edges -> conflict_families -> (map to f64) -> to_split_families`. This must be identical
+    /// (per-family members/class/stats) to calling the pre-existing `conflict_to_split_families` wrapper
+    /// directly on the SAME `(c_fams, c_edges)` — i.e. the routing change in `detect_and_assign` is
+    /// behavior-preserving for the default (off) path.
+    #[test]
+    fn homology_primary_off_leaves_conflict_path_identical() {
+        let n = 5;
+        let c_edges: Vec<(usize, usize, usize)> = vec![(0, 1, 5), (1, 2, 3), (3, 4, 2)];
+        let c_fams = conflict_families(n, &c_edges);
+        let p = SplitParams::default();
+
+        // exactly the `!cfg.homology_primary` branch body in `detect_and_assign`:
+        let edges_f64: Vec<(usize, usize, f64)> = c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+        let via_off_branch = to_split_families(&c_fams, &edges_f64, &p);
+
+        // the pre-existing path:
+        let via_existing = conflict_to_split_families(&c_fams, &c_edges, &p);
+
+        assert_eq!(via_off_branch.len(), via_existing.len());
+        for (a, b) in via_off_branch.iter().zip(via_existing.iter()) {
+            assert_eq!(a.members, b.members);
+            assert_eq!(a.class, b.class);
+            assert_eq!(a.stats, b.stats);
+        }
+    }
+
+    /// Task 2's whole point: a copy pair whose reads map UNIQUELY (no conflict edge at all — the exact
+    /// shape of the drop bug) is invisible to the E_c oracle (`conflict_families` drops singletons
+    /// entirely, so BOTH copies vanish, not merely remain unlinked) but IS unioned by the E_r homology
+    /// oracle once an edge exists between them.
+    #[test]
+    fn homology_oracle_unions_uniquely_mappable_pair() {
+        // E_c: no conflict edge between the two loci at all -> conflict_families finds NO family (both
+        // copies would vanish from the family roster, the exact drop this task fixes).
+        assert!(conflict_families(2, &[]).is_empty(), "no conflict edge => E_c forms no family at all");
+
+        // The partition step (`gamma_quasi_clique_partition`) unions a homology edge into one family. This
+        // is proven with a SYNTHETIC edge first (independent of minimap2 availability), then confirmed with
+        // the real minimap2-backed `homology_edges_all_reps` when the binary is present.
+        let synthetic_edges_f64: Vec<(usize, usize, f64)> = vec![(0, 1, 1.0)];
+        let synthetic_families =
+            crate::vg_family::family_split::gamma_quasi_clique_partition(2, &synthetic_edges_f64, 0.20);
+        assert_eq!(synthetic_families, vec![vec![0, 1]], "homology edge must union both loci into ONE family");
+
+        if std::process::Command::new("minimap2").arg("--version").output().is_err() {
+            eprintln!("minimap2 absent; skipping the real homology_edges_all_reps confirmation");
+            return;
+        }
+        // Two reps, near-identical (~4% divergence, so minimap2 finds a genuine homology edge) but placed
+        // on DIFFERENT chroms so no read could ever place ambiguously between them -- a uniquely-mappable
+        // paralog pair, i.e. exactly the copies read-conflict (E_c) can never link.
+        let base = rand_seq(900, 0x22);
+        let mut para = base.clone();
+        for k in (0..para.len()).step_by(25) { para[k] = b"ACGT"[(para[k] as usize + 1) % 4]; }
+        let reps = vec![
+            DenovoTranscript { tid: "u0".into(), chrom: "c1".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: base },
+            DenovoTranscript { tid: "u1".into(), chrom: "c2".into(), start: 0, end: 900, n_reads: 10, strand: '+', introns: vec![], seq: para },
+        ];
+        let params = RefineParams::default();
+        let edges = homology_edges_all_reps(&reps, &params).unwrap();
+        assert!(edges.contains(&(0, 1)), "near-identical uniquely-mapping pair must be E_r-linked, got {:?}", edges);
+        let edges_f64: Vec<(usize, usize, f64)> = edges.iter().map(|&(a, b)| (a, b, 1.0)).collect();
+        let families = crate::vg_family::family_split::gamma_quasi_clique_partition(2, &edges_f64, 0.20);
+        assert_eq!(families, vec![vec![0, 1]], "the real homology oracle must union the uniquely-mappable pair");
     }
 
     #[test]
