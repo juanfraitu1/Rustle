@@ -163,7 +163,7 @@ loci the consensus maps to; (2) **SEDEF** segdup-partner (genome self-alignment,
   **mGorGor1 alternate haplotype** would settle — both need a data fetch on the cluster (not on disk).
 
 **QuicK-mer2 parCN — installed, builds, runs; full pipeline gated on the cluster (`bench/quickmer2_parcn.sh`).**
-QuicK-mer2 (the Soto/Eichler gold-standard parCN tool) was installed and built from source (no DNA dependency in
+QuicK-mer2 (the reference parCN tool used by Soto/Eichler) was installed and built from source (no DNA dependency in
 its own code; deps `jellyfish`/`bedtools` via mamba) and **verified to run** — `search` on a 20 Mb slice in 74 s,
 producing the single-copy-k-mer window map. Two independent off-box requirements block the full run on the dev
 box: (1) the genome `search` (read-free, reusable index) needs **~40 GB RAM** (`-s 1G` already used 10.7 GB on

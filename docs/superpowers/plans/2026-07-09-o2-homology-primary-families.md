@@ -81,7 +81,7 @@ Then, both branches: `let split_fams = to_split_families(&families, &edges_f64, 
    - copies detected (expect **3 → 4**, B admitted);
    - B's reads: `tied` count (expect **98 → ~0**, now assigned);
    - total tied mass before/after.
-2. **Real families** — 2–3 regions from `/home/juanfra/winloci_scratch/silver/probe6.txt`, same two modes. Report per region: families, copies, reads, tied fraction, and how many assignments **changed** (expected, by design).
+2. **Real families** — 2–3 regions from `/home/juanfra/winloci_scratch/uniqmap/probe6.txt`, same two modes. Report per region: families, copies, reads, tied fraction, and how many assignments **changed** (expected, by design).
 3. Write `bench/HOMOLOGY_PRIMARY_DELTA.md`: both tables; state plainly that assignments shift because the copy set grew (stricter `α/(K−1)`); recommend (or not) a default flip based on the numbers. If the sim does **not** recover B, say so — a negative result is the finding.
 
 - [ ] Commit: `bench(o2): homology-primary delta — copies recovered, spurious tied mass removed`

@@ -137,7 +137,7 @@ unchanged, so they keep working — the counts simply reflect the new gate. No c
      fixed τ-margin could only approximate;
    - the certificate must flag the K=0 (exonically-identical) reads as `Tied` via `min_p_value ≥ α`.
 2. **Real GGO**: re-run copy-assignment on the conflict-catalog substrate with the significance gate; report
-   assigned/ambiguous/tied % and silver agreement vs the τ-gate baseline.
+   assigned/ambiguous/tied % and unique-mapper agreement vs the τ-gate baseline.
 
 ## Testing
 

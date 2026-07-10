@@ -8,7 +8,7 @@ the DAZ verification + canonical-k-mer fix (`docs/experiments/DAZ_vg_verificatio
 ## 1. Problem & insight
 
 The thesis's core objective is multi-copy gene family assembly — what StringTie cannot do. Unlike the
-StringTie-parity work (measurable via gffcompare), this has no off-the-shelf gold standard, so progress
+StringTie-parity work (measurable via gffcompare), this has no off-the-shelf ground truth, so progress
 risks being anecdotal. GROUNDING REVEALED the benchmark is already ~80% built — `bench/multi_copy_eval/`
 has `OBJECTIVES_ASSESSMENT.md` (all 4 objectives, Rustle-vs-StringTie numbers), `no_absent_copy_eval.py`
 (Obj 2, re-runnable: GOLGA8 13/14, YAG 21/21 vs StringTie 71%/81%), per-family scorers, and a

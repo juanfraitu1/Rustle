@@ -83,7 +83,7 @@ A hierarchy of signals: (1) junction pattern, (2) diagnostic SNPs/INDELs (`--vg-
 
 ## Cross-cutting enabler — a MEASURABLE multi-copy benchmark (the missing oracle)
 The parity work is measurable (gffcompare vs StringTie). The multi-copy work's whole point is going
-BEYOND StringTie, so there is no off-the-shelf gold standard — which means "are we attaining the
+BEYOND StringTie, so there is no off-the-shelf ground truth — which means "are we attaining the
 objectives" is currently anecdotal (DAZ, GOLGA6L7). **The foundational avenue is a multi-copy benchmark
 + oracle:**
 - **Synthetic ground-truth** (extend `test_data/synthetic_family/`): planted copies with known

@@ -162,7 +162,7 @@ The definitive O2 run (74 co-located families, 43,239 reads) took ~2.5 h locally
 significance gate's per-read cost. A full pass (all families incl. larger arrays, the divergent-tail catalog,
 abundance EM) is cluster work. Driver: `copy_assign --regions <regions> --min-copies 2` (per-region, OOM-safe);
 parallelize across regions on the cluster. The local headline (75.1% assigned / 24.8% certified-tied / 99.9%
-of decisive / silver 99.9%) is the validated method; the cluster run scales it + the divergent-tail.
+of decisive / unique-mapper agreement 99.9%) is the validated method; the cluster run scales it + the divergent-tail.
 
 ## 3. Positive demonstrations on real data (items L20 / editing)
 Both the gene-conversion discriminator and the RNA-editing filter are unit-validated and conservative

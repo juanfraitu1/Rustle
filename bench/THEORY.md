@@ -102,7 +102,7 @@ This note develops the combinatorial foundation for copy-assignment in three par
 
 The recovery condition's threshold — positive distinguishing PSV count ($K_{ij} \geq 1$, plausibly $K_{ij}
 \geq 2$ for dense coverage) — matches the empirically measured K-bound from the sim5x PSV ladder and the GGO
-silver-standard panel (§7). This correspondence between the theoretical sufficient condition and the observed
+unique-mapper agreement panel (§7). This correspondence between the theoretical sufficient condition and the observed
 empirical boundary is the main finding: the K-quantity simultaneously governs detection (interest #1),
 assignment (interest #2), and the utility of allele-specific junction evidence (interest #3).
 
@@ -1058,7 +1058,7 @@ This section cites existing experimental results that illustrate the theoretical
 claim the experiments prove the theorems; they are independent measurements that are consistent with the theory
 and illuminate where in the K-landscape each regime lies.
 
-### 7.1 Theorem 2 / K ≥ 2: sim5x K-ladder and GGO silver standard
+### 7.1 Theorem 2 / K ≥ 2: sim5x K-ladder and GGO unique-mapper agreement
 
 **Sim5x K-ladder.** The synthetic benchmark (`bench/sim_reads.py`,
 `/home/juanfra/winloci_scratch/sim5x/`) constructs five near-identical tandem copies of a target gene and
@@ -1075,13 +1075,13 @@ The empirical threshold $K \geq 2$ is consistent with Theorem 2: with two or mor
 copy pair and sufficient read coverage, Strong Separation plausibly holds and the unique minimum cover equals
 the truth.
 
-**GGO silver standard.** On the real GGO HiFi IsoSeq panel, the `detect_and_assign` MAGEA smoke run reports
+**GGO unique-mapper agreement.** On the real GGO HiFi IsoSeq panel, the `detect_and_assign` MAGEA smoke run reports
 **1026/1026 (100%)** reads correctly assigned in the K ≥ 2 families (RABL2, AK6, CCDC196). These families are
 all in the well-separated regime (MAPQ > 0, divergence-gap decisive), where Strong Separation holds by the
 aligner's own evidence; the coverage condition is met at ≥ 47 de-conflict reads per family.
 
 > ⚠ **What this figure is and is NOT.** It is a *consistency check in the EASY (MAPQ > 0) regime* — and
-> the "silver" truth is the aligner's own primary placement, so the metric is **circular by construction**
+> the "unique-mapper agreement" truth is the aligner's own primary placement, so the metric is **circular by construction**
 > (it confirms the resolver agrees with minimap2 exactly where minimap2 was already confident). It says
 > nothing about the hard MAPQ-0 regime the thesis is actually about, and 100% here is expected, not
 > impressive. The **load-bearing identifiability evidence is the sim5x labeled-truth K-ladder above**

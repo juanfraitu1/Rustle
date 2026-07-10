@@ -602,7 +602,7 @@ pub(crate) fn freeze_merge(stage1: &[ReadResult], stage2: Vec<ReadResult>, n_ref
                 let r1 = s1[&r2.read_index];
                 // Stage-1 only saw the ref copies (`best_copy < n_ref`), so the frozen decision is valid in
                 // the copies2 frame; never `discovery_coupled` (it predates the absent copy). Restore the WHOLE
-                // assignment side — combined, psv AND mapped_copy — to Stage-1's, so the silver/collapsed
+                // assignment side — combined, psv AND mapped_copy — to Stage-1's, so the uniq-agreement/collapsed
                 // diagnostics (`best_copy == mapped_copy`, `by_copy[mapped_copy]`) stay Stage-1-consistent and
                 // a frozen read's mapped_copy can't flip to a Stage-2 absent index.
                 r2.combined = r1.combined.clone();
@@ -943,7 +943,7 @@ fn find_weak_copies(
 
 /// Like `assign_family` but returns the TWO-PASS detail per read so callers can report how many reads a
 /// copy-specific junction resolved that PSVs alone could not (`junction_only`), and — with read mapq — the
-/// silver-standard unique-mapper agreement. Reads overlapping no copy are skipped.
+/// unique-mapper agreement. Reads overlapping no copy are skipped.
 pub fn assign_family_detailed(
     copies: &[&DenovoTranscript],
     reads: &[AlignedRead],

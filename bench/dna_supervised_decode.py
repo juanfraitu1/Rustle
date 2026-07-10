@@ -3,7 +3,7 @@
 DNA pre-phases PSVs->copies, turning the NP-hard unsupervised phasing into a supervised nearest-signature decode),
 and measure NON-CIRCULAR accuracy.
 
-Why: the O2 'silver standard' is circular (agreement with minimap2's own primary) and uses RNA-assembled copy
+Why: the O2 unique-mapper agreement check is circular (agreement with minimap2's own primary) and uses RNA-assembled copy
 profiles. The DNA-derived PSV catalog (T2T reference) defines each copy's distinguishing alleles INDEPENDENTLY of
 the RNA reads. So we can (1) build per-copy signatures from DNA, (2) decode RNA reads against them, and (3)
 validate with a HELD-OUT-DNA-COLUMN cross-validation: split each read's DNA-defined PSV columns into a TRAIN half
@@ -218,13 +218,13 @@ def main():
     if tot_cv:
         chance = 100 * chance_acc / tot_cv
         conf = 100 * tot_confirm / tot_cv
-        print(f"\nHELD-OUT-DNA-COLUMN cross-validation (DNA defines copies AND columns; no RNA self-ref, no silver):")
+        print(f"\nHELD-OUT-DNA-COLUMN cross-validation (DNA defines copies AND columns; no RNA self-ref, no unique-mapper agreement):")
         print(f"  reads with >=2 DNA PSV cols: {tot_cv}")
         print(f"  held-out confirmation: {tot_confirm}/{tot_cv} = {conf:.1f}%")
         print(f"  weighted 1/K chance baseline: {chance:.1f}%   ->   enrichment {conf/chance:.1f}x")
         print(f"\n  => DNA-supervised decoding is corroborated by held-out DNA columns at {conf/chance:.1f}x chance,")
         print(f"     using a reference (copies + distinguishing columns) built entirely from DNA, independent of")
-        print(f"     the RNA reads and of minimap2's primary placement (the circular silver standard).")
+        print(f"     the RNA reads and of minimap2's primary placement (the circular unique-mapper agreement check).")
     print(f"\nper-family (top by reads): fid K cv confirm conf%")
     for r in sorted(per, key=lambda x: -x[2])[:20]:
         print(f"  {r[0]:>10} K={r[1]} cv={r[2]} confirm={r[3]} {r[4]}%")

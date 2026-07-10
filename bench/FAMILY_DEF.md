@@ -48,7 +48,7 @@ mmseqs all-vs-all on 22,614 representative proteins → measured on family-bar e
   term (−56 edges, −9 spurious families, **0 real families lost**, max comp unchanged).
 
 So the family edges are provably whole-protein homology. (No Pfam/InterPro/hmmer installed; the
-reciprocal-coverage bars are the safeguard. Domain-architecture matching would be the gold standard
+reciprocal-coverage bars are the safeguard. Domain-architecture matching would be the strongest available check
 if a domain annotator becomes available.)
 
 ## Why this is principled (not threshold-fitting)

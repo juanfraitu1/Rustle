@@ -10,7 +10,7 @@ carries no copy-distinguishing variant). Inputs are `copy_assign --dump-psv` out
      a left ribbon shows the ASSIGNED copy. Uniform ribbon within each block = assigned == truth.
   C  sim5x assignment accuracy vs PSV density K: 100% where assignable (K≥2); collapses to chance (1/5) at K=0
      where the copies are byte-identical — not failure, impossibility.
-  D  REAL DSFAM788 read disposition: assignable vs TIED (no PSV), and silver-standard agreement with the
+  D  REAL DSFAM788 read disposition: assignable vs TIED (no PSV), and unique-mapper agreement with the
      aligner on the uniquely-mappable subset.
 
 Run with /home/juanfra/miniforge3/bin/python (matplotlib)."""
@@ -212,7 +212,7 @@ def panel_disposition(ax):
     ax.set_ylabel("reads")
     ax.set_title(f"D.  REAL DSFAM788 disposition (n={n}).\n"
                  f"Of the uniquely-mappable reads the assignment AGREES with the aligner\n"
-                 f"{agree}/{uniq} = {agree/uniq*100:.0f}% (silver standard). The {tied} 'tied' carry no "
+                 f"{agree}/{uniq} = {agree/uniq*100:.0f}% (unique-mapper agreement). The {tied} 'tied' carry no "
                  f"distinguishing variant.", fontsize=8.5, loc="left")
     ax.margins(y=0.18)
 

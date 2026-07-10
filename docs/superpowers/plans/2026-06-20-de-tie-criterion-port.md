@@ -671,7 +671,7 @@ cargo test --release --lib -- --ignored smoke_detect_and_assign_real --nocapture
 ```
 Expected: `conflict-graph (de-tie): 0 edges -> 0 families | de⊆AS=true`, `co-located families: 0`.
 
-- [ ] **Step 2: MAGEA region (expect families fire, de⊆AS holds, silver-standard preserved)**
+- [ ] **Step 2: MAGEA region (expect families fire, de⊆AS holds, unique-mapper agreement preserved)**
 
 ```bash
 RUSTLE_DENOVO_SMOKE_BAM=/home/juanfra/winloci_scratch/GGO.bam \
@@ -680,15 +680,15 @@ RUSTLE_DENOVO_SMOKE_REGION=NC_073247.2:161251228-164865959 \
 cargo test --release --lib -- --ignored smoke_detect_and_assign_real --nocapture 2>&1 \
   | grep -E "conflict-fam|conflict-graph|co-located|AGGREGATE"
 ```
-Expected: conflict-graph fires families (the MAGEA de-novo sub-loci pairs from the bake-off cross-map at de < 0.05); `de⊆AS=true`; AGGREGATE silver-standard ≥ 95% (was 100% under AS — confirm no regression).
+Expected: conflict-graph fires families (the MAGEA de-novo sub-loci pairs from the bake-off cross-map at de < 0.05); `de⊆AS=true`; AGGREGATE unique-mapper agreement ≥ 95% (was 100% under AS — confirm no regression).
 
 - [ ] **Step 3: Record results + commit**
 
 ```bash
-git commit --allow-empty -m "smoke(de-tie): RFPL 0 families, MAGEA fires, de⊆AS holds, silver-standard preserved"
+git commit --allow-empty -m "smoke(de-tie): RFPL 0 families, MAGEA fires, de⊆AS holds, unique-mapper agreement preserved"
 ```
 
-If MAGEA conflict families drop vs the AS run, that is EXPECTED where AS was over-firing; confirm against `bench/family_criterion_bakeoff.md` that any dropped edge is an AS false positive, not a real loss. If the silver-standard regresses, STOP and investigate (supplementary exclusion changing the assignment read set is the prime suspect — it should not, since assignment reads come from `region`/`bam_reads`, not the conflict placements).
+If MAGEA conflict families drop vs the AS run, that is EXPECTED where AS was over-firing; confirm against `bench/family_criterion_bakeoff.md` that any dropped edge is an AS false positive, not a real loss. If the unique-mapper agreement regresses, STOP and investigate (supplementary exclusion changing the assignment read set is the prime suspect — it should not, since assignment reads come from `region`/`bam_reads`, not the conflict placements).
 
 ---
 
@@ -701,7 +701,7 @@ If MAGEA conflict families drop vs the AS run, that is EXPECTED where AS was ove
 - ✓ both-mapq0 / de⊆AS logging (Task 4)
 - ✓ `nm` not carried; `nintron`/`ms`/`cm`/`s1`/`s2`/`ts` not ported
 - ✓ no 200bp guard (architecturally unnecessary in Rust — documented)
-- ✓ smoke validation incl. silver-standard regression guard (Task 5)
+- ✓ smoke validation incl. unique-mapper agreement regression guard (Task 5)
 
 **Placeholder scan:** none — all steps carry concrete code.
 

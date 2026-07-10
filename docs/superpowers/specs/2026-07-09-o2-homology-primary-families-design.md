@@ -81,7 +81,7 @@ literally untouched ⟹ byte-identical** (modulo the separate `min_copies` defau
    - *without* the flag: 3 copies, **B dropped**, B's **98 reads 100% `tied`**.
    - *with* the flag: **4 copies, B admitted**, B's reads **assigned** (not tied); tied mass drops by ~98.
    This isolates cause-3 (missing copy) from causes 1–2 (K=0, coverage) — the sim already contains the fixture.
-2. **Real families** — a few probe regions (`winloci_scratch/silver/probe6.txt`), **foreground, serial, small
+2. **Real families** — a few probe regions (`winloci_scratch/uniqmap/probe6.txt`), **foreground, serial, small
    batches, outputs under `winloci_scratch`** (background sweeps crash this WSL2 box; see the crash rule).
    Report: copies recovered, families gained, tied-mass reduction, and any assignment that *changed* (expected).
 3. Emit `bench/HOMOLOGY_PRIMARY_DELTA.md` with both tables + the honest note that assignments shift by design.

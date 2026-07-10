@@ -104,7 +104,7 @@ separability. The theorem *explains SDA's empirical accuracy floor* and predicts
    unidentifiable residue); abundance-L1 **→ 0 as coverage grows** (the genuine coverage-driven MLE-consistency
    effect); K=0 families stay soft-zone at every coverage (a boundary, not a coverage artifact). Emits
    `bench/EM_COVERAGE_SWEEP.md`.
-2. **Real-data cross-checks:** EM vs the **silver standard** (independent aligner placement) + **held-out-PSV**
+2. **Real-data cross-checks:** EM vs **unique-mapper agreement** (independent aligner placement) + **held-out-PSV**
    on a real gorilla family; EM `Certified` calls should match the gate/VG at the ~100% already observed.
 3. **Head-to-head vs the one-shot gate + the VG scan:** EM matches where identifiable, adds soft-zone posteriors
    where each abstained.

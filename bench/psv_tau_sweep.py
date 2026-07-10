@@ -10,7 +10,7 @@ log-LR margin >= tau. tau = the one calibrated knob replacing (min_psv=3, vote_m
   - tau -> inf  : the production min_psv=3 conservative corner (discard the tail)
 
 Substrate 1 (RIGOROUS, true labels): sim5x K-ladder. Read name K{K}_c{c}_r{r} => true copy c.
-Substrate 2 (real, silver standard): GGO families (added in run_ggo if data present).
+Substrate 2 (real, unique-mapper agreement): GGO families (added in run_ggo if data present).
 
 For each read we assign ONCE (recording true_c, best_c, margin, n_dec) then threshold many tau.
 """
@@ -81,8 +81,8 @@ TAUS = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.9, 9.0, 12.0, 16.0, 25.0]
 
 def collect_ggo(limit=120):
     """Per-read tuples over real GGO co-located families, recording the PSV+junction margin ONCE so
-    tau can be swept. 'silver' = the read's best-overlap copy (mc); agreement = PSV-assigned best==mc
-    among MQ>0 reads (the same silver standard assign_family uses). Returns list of
+    tau can be swept. 'uniq' = the read's best-overlap copy (mc); agreement = PSV-assigned best==mc
+    among MQ>0 reads (the same unique-mapper agreement check assign_family uses). Returns list of
     (margin_j, agree, mq_pos, nd_p_ge1, nd_j_ge1)."""
     meta = CA.load_meta()
     skel = CA.load_skel()
@@ -152,7 +152,7 @@ def collect_ggo(limit=120):
 
 
 def ggo_pr_at_tau(rows, tau):
-    """recall = assigned / all ; silver_agreement = (best==mc) among ASSIGNED & MQ>0."""
+    """recall = assigned / all ; uniq_agreement = (best==mc) among ASSIGNED & MQ>0."""
     n = len(rows)
     n_assigned = n_uniq = n_uniq_agree = n_resolvable = 0
     for m_j, agree, mq_pos, nd_p, nd_j in rows:
@@ -166,7 +166,7 @@ def ggo_pr_at_tau(rows, tau):
     rec = n_assigned / n if n else float("nan")
     agr = n_uniq_agree / n_uniq if n_uniq else float("nan")
     return dict(tau=tau, n=n, n_resolvable=n_resolvable, n_assigned=n_assigned,
-                recall=rec, n_uniq=n_uniq, silver_agreement=agr)
+                recall=rec, n_uniq=n_uniq, uniq_agreement=agr)
 
 
 def main():
@@ -186,18 +186,18 @@ def main():
             print(f"   {r['tau']:>5.1f} {r['recall']:>7.3f} {r['precision']:>9.4f} "
                   f"{r['n_assigned']:>8d} {r['correct']:>7d}")
         print()
-    # --- real GGO families (silver-standard agreement vs tau) ---
+    # --- real GGO families (unique-mapper agreement vs tau) ---
     try:
         limit = int(os.environ.get("GGO_FAM_LIMIT", "120"))
-        print(f"=== real GGO co-located families: silver-standard agreement vs tau (<= {limit} families) ===")
+        print(f"=== real GGO co-located families: unique-mapper agreement vs tau (<= {limit} families) ===")
         grows, nfam = collect_ggo(limit=limit)
         gcurve = [ggo_pr_at_tau(grows, t) for t in TAUS]
         result["ggo"] = dict(n_reads=len(grows), n_families=nfam, curve=gcurve)
         print(f"   {len(grows)} reads over {nfam} families")
-        print(f"   {'tau':>5} {'recall':>7} {'assigned':>8} {'uniqMQ>0':>8} {'silver_agree':>12}")
+        print(f"   {'tau':>5} {'recall':>7} {'assigned':>8} {'uniqMQ>0':>8} {'uniq_agree':>12}")
         for r in gcurve:
             print(f"   {r['tau']:>5.1f} {r['recall']:>7.3f} {r['n_assigned']:>8d} "
-                  f"{r['n_uniq']:>8d} {r['silver_agreement']:>12.4f}")
+                  f"{r['n_uniq']:>8d} {r['uniq_agreement']:>12.4f}")
         print()
     except Exception as e:
         print(f"   [GGO real sweep skipped: {e}]")

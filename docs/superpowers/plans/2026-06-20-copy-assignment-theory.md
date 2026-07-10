@@ -413,7 +413,7 @@ Expand the intro stub: copy assignment is the unit downstream of family detectio
 
 - [ ] **Step 2: Write §7 (empirical corroboration), citing — not producing — the existing results**
 
-> - **Theorem 2 / `K≥2`:** sim5x K-ladder (`bench/sim_reads.py`, `/home/juanfra/winloci_scratch/sim5x/`), K≥2 → 100% correct assignment; GGO silver-standard = 100% (`detect_and_assign` MAGEA smoke run, 1026/1026).
+> - **Theorem 2 / `K≥2`:** sim5x K-ladder (`bench/sim_reads.py`, `/home/juanfra/winloci_scratch/sim5x/`), K≥2 → 100% correct assignment; GGO unique-mapper agreement = 100% (`detect_and_assign` MAGEA smoke run, 1026/1026).
 > - **Theorem 2 boundary / `K=0`:** MAGEA co-located arrays, resolvable fraction 0/494; copies sequence-identical over the transcribed exon (`bench/resolution_improvement_bound.md`).
 > - **Shared condition with detection (#1):** the family is the conflict-graph component (`bench/family_definition_formal.md`).
 

@@ -196,7 +196,7 @@ METHODS = [
     ("Ensembl Compara", "phylogenetic", "gene-tree ↔ species-tree reconciliation", "fails on recent near-identical paralogs"),
     ("Mash / minimizer-Jaccard", "alignment-free", "MinHash / minimizer distance", "cannot separate domain-sharers"),
     ("SEDEF / BISER", "DNA self-align", "Jaccard + chaining → segdup pairs", "strong on recent SDs; DNA only, no expression"),
-    ("Soto 2025 (HSD)", "DNA + copy-number", "SD98 + shared-exon + famCN grouping", "human gold standard; DNA, no RNA/isoform"),
+    ("Soto 2025 (HSD)", "DNA + copy-number", "SD98 + shared-exon + famCN grouping", "reference human catalog; DNA, no RNA/isoform"),
     ("Eichler 2024 (TBC1D3)", "long-read RNA", "map FLNC; assign read iff AS ≥ 10", "ONE family; not de-novo / genome-wide"),
     ("longcallR", "long-read RNA", "CNN SNP + MEC phasing + ASE/ASJ", "uniquely-mappable only; never assigns to COPIES"),
     ("RSEM / Salmon / kallisto", "RNA quant (EM)", "EM apportions multireads", "needs a PRE-DEFINED transcript set; no discovery"),

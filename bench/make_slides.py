@@ -242,7 +242,7 @@ def build(figs):
     bullets_slide("Honest scope & limitations", [
         ("No single EXTERNAL real-data true-origin accuracy for O2: every real-data route loops through minimap2 or the RNA catalog.", 0, True, (200, 30, 30)),
         ("Support is by TRIANGULATION of differently-biased partial witnesses — planted sim (synthetic), DNA-derived signatures (held-out, 2.2× chance), and a source-orthogonal SEDEF segdup map (grouping only).", 0, False, (20, 20, 20)),
-        ("'Silver' (minimap2-primary agreement) is NOT accuracy — it is easy-regime (MAPQ>0) consistency with the very aligner we improve on.", 0, False, (20, 20, 20)),
+        ("Unique-mapper agreement (minimap2-primary agreement) is NOT accuracy — it is easy-regime (MAPQ>0) consistency with the very aligner we improve on.", 0, False, (20, 20, 20)),
         ("The definition removes the ABSOLUTE-similarity bar but retains tuned constants (δ, de_max, min_reads) — named, not eliminated.", 0, False, (20, 20, 20)),
         ("Outstanding: a true-origin external oracle (cluster SEDEF/BISER or gorilla Compara) + DNA parCN for copy-vs-allele.", 0, True, (20, 40, 90)),
     ])

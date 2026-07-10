@@ -245,7 +245,7 @@ def validate_sim5x():
 def crossval_sim5x():
     """HELD-OUT-PSV CROSS-VALIDATION (rebuts the O2 circularity objection).
 
-    The silver-standard "accuracy" on real data is circular: it scores the gate against minimap2's primary,
+    The unique-mapper agreement "accuracy" on real data is circular: it scores the gate against minimap2's primary,
     and the gate uses the same PSVs that defined the copies. This test breaks that loop WITHOUT ground truth:
     for each read, split the distinguishing PSV columns it spans into two DISJOINT halves (even/odd by column
     index) -- TRAIN and TEST. Assign the read using TRAIN columns only, then ask whether the TEST columns,
@@ -559,7 +559,7 @@ def validate_real(limit=25):
     print(f"  PSV+junction:  resolvable={100*agg['resolvable_j']/N:.0f}%  assigned={100*agg['assigned_j']/N:.0f}%"
           f"  (+{agg['junction_only']:,} reads resolved by a copy-specific junction where PSVs alone could not)")
     print(f"  unique-mapper agreement (PSV+junction): {agg['uniq_agree_j']:,}/{agg['uniq_j']:,} "
-          f"({100*agg['uniq_agree_j']/max(agg['uniq_j'],1):.1f}%)  <- silver = CIRCULAR self-consistency w/ minimap2 primary, NOT accuracy")
+          f"({100*agg['uniq_agree_j']/max(agg['uniq_j'],1):.1f}%)  <- CIRCULAR self-consistency w/ minimap2 primary, NOT accuracy")
 
 
 if __name__ == "__main__":

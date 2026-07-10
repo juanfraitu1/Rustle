@@ -16,7 +16,7 @@ unmapped reads) is explicitly **deferred** to a later milestone.
 Wire the **already-built read-covariation copy discovery** (`split_locus_copies` →
 `CopyIsoform{allele_vector}`) into the **assignment path** so a collapsed paralog that is *absent from the
 assembly* becomes a first-class copy reads can be assigned to — **without regressing the frozen O2 headline**
-(75.1% assigned / 24.8% certified-tied / 99.9% of decisive / silver 99.9%), and **without fabricating a copy
+(75.1% assigned / 24.8% certified-tied / 99.9% of decisive / unique-mapper agreement 99.9%), and **without fabricating a copy
 out of a diploid allele, RNA edit, or alignment artifact.**
 
 The unifying idea (sound, and the target architecture): a reference-PRESENT copy and a reference-ABSENT copy
@@ -61,8 +61,8 @@ the codebase's own results (hidden-copy real headroom ≈0 on GGO; O4 FP bound 7
 Single-stage addition of an absent copy **can regress O2**: raising `n` tightens the Bonferroni threshold
 `thr = alpha/(n-1)` (`copy_assign.rs:338`) **and** adds a competitor, so `min_p` and `p_read` can only rise →
 a correctly-Assigned read can demote to Tied/Ambiguous (**recall loss**); and a phantom copy can become argmax
-for a uniquely-mapped read truly from a reference copy, flipping `best_copy != mapped_copy` (**silver loss**).
-So additivity is **precision-safe-per-read but recall-fragile and silver-unsafe** unless we freeze:
+for a uniquely-mapped read truly from a reference copy, flipping `best_copy != mapped_copy` (**unique-mapper agreement loss**).
+So additivity is **precision-safe-per-read but recall-fragile and unique-mapper-agreement-unsafe** unless we freeze:
 
 - **Stage 1 — reference-only assignment.** Run `assign_family_detailed` exactly as today (ref copies only).
   This reproduces O2 **byte-identically** (it IS today's path). Record each read's Stage-1 status.
@@ -71,8 +71,8 @@ So additivity is **precision-safe-per-read but recall-fragile and silver-unsafe*
   (b) reads at **single-ref-copy collapsed loci** (where Stage 1 had no PSVs at all). **Freeze** every
   Stage-1 **Assigned** read at a multi-ref-copy family — its result is carried through unchanged.
 - **Guarantee:** the O2 *assignment set* is a literal subset of the output by construction. Recall can only
-  grow (abstained reads may now resolve). **But aggregate silver and %-assigned must be MEASURED** (§6) — the
-  freeze does not by itself prove silver non-decreasing, because Stage 2 can still misassign a newly-captured
+  grow (abstained reads may now resolve). **But aggregate unique-mapper agreement and %-assigned must be MEASURED** (§6) — the
+  freeze does not by itself prove unique-mapper agreement non-decreasing, because Stage 2 can still misassign a newly-captured
   unique-mapper at a single-ref-copy locus to a phantom copy.
 
 ### 4.2 The consensus-`.seq` + synthetic-`DenovoTranscript` primitive (new code)
@@ -150,10 +150,10 @@ measured, not assumed**:
 
 1. Run the co-located O2 substrate (the 74-family `o2_regions.txt`) **with absent-copy wiring OFF** → must be
    byte-identical to the current `o2_definitive.assignments.tsv` (regression guard on the Stage-1 path).
-2. Run **with wiring ON** and require: **silver non-decreasing**; **%-assigned non-decreasing**; the assigned
+2. Run **with wiring ON** and require: **unique-mapper agreement non-decreasing**; **%-assigned non-decreasing**; the assigned
    set a near-superset of O2 (report every O2-Assigned→Tied/Ambiguous flip — should be ∅ given the freeze).
 3. Report: # absent copies admitted vs # routed to DNA-needs; # reads newly resolved from the abstain pool;
-   any `best_copy != mapped_copy` silver flips at single-ref-copy loci (the freeze's blind spot).
+   any `best_copy != mapped_copy` unique-mapper agreement flips at single-ref-copy loci (the freeze's blind spot).
 4. Sim5x labeled-truth check: inject a known collapsed copy; require it is admitted and its reads correctly
    assigned, and that a planted **diploid het** (not a copy) is routed to DNA-needs, not admitted.
 
@@ -200,7 +200,7 @@ reuses `discover_psvs`'s existing ref-vs-ref alignment output directly or recomp
 | Certificate anti-conservative on own reads | §4.5 hold-out/flag | flag-only v1 still anti-conservative; disclose |
 | RNA editing → fake copy-private column | §4.4.3 strand-symmetry in discovery | A→I only; other editing types uncovered |
 | Correlated alignment error (homopolymer/STR) | §4.4.5 indel/QV mask | needs the mask actually ported |
-| O2 recall/silver regression | §4.1 freeze + §6 measurement | single-ref-copy locus silver flip (measured, §6.3) |
+| O2 recall/unique-mapper agreement regression | §4.1 freeze + §6 measurement | single-ref-copy locus unique-mapper agreement flip (measured, §6.3) |
 
 ---
 

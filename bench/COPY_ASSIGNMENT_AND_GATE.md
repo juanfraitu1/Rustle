@@ -1091,9 +1091,9 @@ A single clean HiFi PSV gives margin = ln(3·0.997/0.003) = **6.90**, so **τ=6.
 the one-confident-PSV knife-edge** — an independent calibration check that τ = ln((1−p)/p) is the right
 parameterisation.
 
-## Real GGO co-located families — 47,732 reads / 70 families (silver-standard agreement)
+## Real GGO co-located families — 47,732 reads / 70 families (unique-mapper agreement)
 
-| τ | recall (assigned/all) | silver-standard agreement |
+| τ | recall (assigned/all) | unique-mapper agreement |
 |---|---|---|
 | 0.0 (argmax) | 0.976 | 0.9340 |
 | 0.5 | 0.964 | 0.9411 |
@@ -1121,7 +1121,7 @@ AS≥10 criterion your advisor cites. The curve is the evidence; the point is ro
 
 ## Honest caveats
 
-- "Silver-standard agreement" treats each read's best-overlap copy as truth — exactly what is unreliable
+- "Unique-mapper agreement" treats each read's best-overlap copy as truth — exactly what is unreliable
   for hard multimappers — so ~94% is a *proxy*; some of the ~6% disagreement is PSV *correcting* the
   overlap call, not error. The sim panel (true labels) is the rigorous anchor.
 - 70 families (≥2 valid copies after the spliced-length filter), not genome-wide; capped at 150
@@ -1308,7 +1308,7 @@ tubulins, APOBEC, APOL, BTN2A — are all in the *resolvable* majority.
 The copies carry exonic PSVs; a read covering one fits its true copy better (`NM_A ≠ NM_B`). This is the regime
 of **Theorem 2/3** (`copy_assignment_theory.md`): under the identifiability condition the true copies are the
 unique minimum cover and are recovered in polynomial time. The shipped per-read PSV + junction assigner handles
-this tier (sim K-ladder K≥2 → 100%, GGO silver-standard 100%). **This is the headline: the method works.**
+this tier (sim K-ladder K≥2 → 100%, GGO unique-mapper agreement 100%). **This is the headline: the method works.**
 
 ### Tier 2 — K=0 residual: splice divergence is real in the reference but per-read-masked (~13% of pairs)
 
@@ -1436,7 +1436,7 @@ Simulated reads from a known copy over 6 Q30 PSVs (n=2), 20k reads per α ∈ {1
 ~100% with **0 realized misassignments** at both α (the bound holds with slack). Confirms the certificate is
 conservative and high-recall when PSVs are present.
 
-## 2. sim5x labeled-truth ladder (ground truth, NOT the circular silver standard)
+## 2. sim5x labeled-truth ladder (ground truth, NOT the circular unique-mapper agreement check)
 
 `bench/build_sim5x.py` builds a 5-copy tandem gene with a private-exonic-PSV ladder K=0..8 and reads named
 with their true copy (`K{K}_c{copy}_r{n}`). Per-read assignment scored against the label (detected→true copy
@@ -1469,7 +1469,7 @@ via `--alpha`.
 
 ## Status / follow-ups
 - The labeled sim5x ladder (ground truth) is the load-bearing validation here; a genome-wide GGO re-run
-  would only add circular silver-standard numbers and is deferred (runnable via `copy_assign --regions … `
+  would only add circular unique-mapper agreement numbers and is deferred (runnable via `copy_assign --regions … `
   with/without `--margin-gate`).
 - **L17 closed:** `<out>.assignments.tsv` now emits `p_value` and `min_p_value` (the per-read certificate +
   identifiability bound) as the final two columns.
@@ -1615,8 +1615,8 @@ over-split guard is a 0 % no-op — confirming the fix subsumes it.
 
 **1. Per-copy read attribution (the real, unique capability).**
 `copy_assign.py real` over 25 co-located families / 30,709 reads:
-- **Unique-mapper agreement = 28,704/28,726 = 99.9 %** — this is the *silver-standard*,
-  but it is on the **confident unique-mappers** (minimap2's MAPQ>0 reads, ~97 % here). It
+- **Unique-mapper agreement = 28,704/28,726 = 99.9 %** — this is measured only
+  on the **confident unique-mappers** (minimap2's MAPQ>0 reads, ~97 % here). It
   validates that our per-copy labels agree with minimap2 where minimap2 is already confident.
 - **Hard reads:** 95 % of all reads get a confident copy assignment; these are *not*
   independently validated (no orthogonal ground truth) — reported, not claimed as proven.
@@ -1767,13 +1767,13 @@ families within their spans, 206,186 reads; data `p1_conflict_o2.*`):
 | ambiguous | 0.5% | 0.0% |
 | certified-tied | **35.7%** | 24.8% |
 | of **decisive** reads assigned | **99.3%** | 99.9% |
-| silver-standard | 99.8% | 99.9% |
+| unique-mapper agreement | 99.8% | 99.9% |
 
 **Reading (the honest claim).** The DECISION RULE is identical on both catalogs — **99.3–99.9% of reads carrying
 any copy-distinguishing evidence are assigned with a calibrated per-read certificate; the rest are
 certified-tied (abstained, not guessed; no 1/k).** Only the *tied fraction* moves: the unrefined principled
 catalog keeps more genuinely-unresolvable (K=0 / exonically-identical) families. Therefore:
-- **Genome-wide, principled (the headline): 63.9% assigned / 35.7% certified-tied / 99.3% of decisive / silver 99.8%.**
+- **Genome-wide, principled (the headline): 63.9% assigned / 35.7% certified-tied / 99.3% of decisive / unique-mapper agreement 99.8%.**
 - The **75.1%** is the *annotation-refined co-located SUBSET* (refinement drops Alu-bridge over-merges + harder
   families → fewer tied). Label it as such — **NOT** "the genome-wide O2." (Subset data: `o2_definitive.*`.)
 
@@ -1782,7 +1782,7 @@ distinguishing feature spanned) is an **impossibility certificate** — the read
 band `α/(n−1) ≤ min_p < 1.0` is **power-limited abstention** (the read *does* distinguish, but below significance
 α). Report these two separately; do not call the whole tied mass "certified-unresolvable."
 
-**Silver is a CIRCULAR consistency check, NOT accuracy** — it measures agreement with minimap2's own primary
+**Unique-mapper agreement is a CIRCULAR consistency check, NOT accuracy** — it measures agreement with minimap2's own primary
 placement where minimap2 was already confident. The **NON-circular accuracy** is the CI-pinned sim5x labeled
 ladder (`bench/P1_P4_RESULTS.md`): K≥2 → **acc|assigned = 1.000** on the ~20% of reads that are *resolvable*;
 K=0 → 100% Tied. ("100%" there is accuracy on the resolvable reads, never "all reads resolve.")
@@ -1794,7 +1794,7 @@ into two **disjoint** halves (even/odd by index); assign using only the TRAIN ha
 half — which played **no** role in the call — independently ranks the same copy first. No ground truth is
 used. On sim5x the held-out half confirms the train-only call at **80%** across K∈{2,4,8}, i.e. **1.6× / 3.2×
 / 6.4× above the 1/K chance baseline** (50% / 25% / 12.5%). Disjoint evidence corroborating the call at up to
-6.4× chance is the non-circular signal the silver standard cannot give. (The absolute rate is ~80% rather than
+6.4× chance is the non-circular signal unique-mapper agreement cannot give. (The absolute rate is ~80% rather than
 ~100% because each half carries only half the PSVs; the point is the enrichment over chance, from columns the
 call never saw.)
 
@@ -1833,7 +1833,7 @@ copy-assignment numbers:
    read-through). TDD'd (drop-readthrough / dedup-shared-junction / preserve-disjoint-tandems).
 
 **Validation that the fixes are not over-aggressive** (the key check): real same-strand disjoint families
-SURVIVE intact — a 2-copy `−/−` pair (silver 100/100), a 5-copy tandem recovered to 8 copies (silver
+SURVIVE intact — a 2-copy `−/−` pair (unique-mapper agreement 100/100), a 5-copy tandem recovered to 8 copies (unique-mapper agreement
 7/7) — while only the over-merges (antisense pairs, spliced/unspliced) collapse.
 
 ## Genome-wide result (281 family regions → clean families)
@@ -1889,7 +1889,7 @@ disjoint-loci fixes):
 - **Of the decisive reads (those carrying ≥1 PSV/junction), 88.0% were assigned.**
 - **collapsed copies recovered: 1,406** (`--recover-copies`).
 
-**Silver standard** (unique-mapper agreement; a *circular* proxy): **31,443 / 32,081 = 98.0%**. Per-copy
+**Unique-mapper agreement** (a *circular* proxy): **31,443 / 32,081 = 98.0%**. Per-copy
 abundance median 0.49. (78/82 regions; the 4 densest tandem arrays timed out at 150 s and are logged.)
 
 > Note: the higher TIED fraction here (46.7%) vs the earlier **58-substrate** run (23.1% tied, 72.3%
@@ -1900,10 +1900,10 @@ abundance median 0.49. (78/82 regions; the 4 densest tandem arrays timed out at 
 > above are the principled, same-substrate result.
 
 ### Flagship clean families (the honest replacements for the retired over-merged ones)
-- **NC_073236.2 ~46.6 Mb — 4-copy, silver 1235/1235 (100%)**, 1,181 junction-resolved reads, 55 PSV cols.
-- **NC_073224.2 ~129.2 Mb — 4-copy**, 9,193 reads, 62 PSV cols, 3,072 junction-resolved, silver 279/290.
-- **NC_073247.2 ~59.7 Mb — 9-copy tandem** (the largest), 2,357 reads, silver 57/57.
-- **NC_073228.2 / NC_073239.2 ~122–145 Mb — 5-copy**, 83–109 PSV cols, silver 418/439 & 447/448.
+- **NC_073236.2 ~46.6 Mb — 4-copy, unique-mapper agreement 1235/1235 (100%)**, 1,181 junction-resolved reads, 55 PSV cols.
+- **NC_073224.2 ~129.2 Mb — 4-copy**, 9,193 reads, 62 PSV cols, 3,072 junction-resolved, unique-mapper agreement 279/290.
+- **NC_073247.2 ~59.7 Mb — 9-copy tandem** (the largest), 2,357 reads, unique-mapper agreement 57/57.
+- **NC_073228.2 / NC_073239.2 ~122–145 Mb — 5-copy**, 83–109 PSV cols, unique-mapper agreement 418/439 & 447/448.
 
 ## ⭐⭐ Cross-chromosome paralog families + exon-sum (FLNC) validation (L3)
 
@@ -2071,8 +2071,8 @@ a new 10-copy array appears.
   assigned" and "CAFAM0 = 213 assigned @ 99.1%" were on OVER-MERGED false families (antisense +
   spliced/unspliced) that poasta's force-alignment masked with thousands of spurious PSVs. Do not cite
   them; cite the clean families above.
-- The **silver standard is circular** (agrees with minimap2 where minimap2 was already confident); the
-  load-bearing identifiability evidence is the sim5x labeled-truth ladder, not silver.
+- **Unique-mapper agreement is circular** (agrees with minimap2 where minimap2 was already confident); the
+  load-bearing identifiability evidence is the sim5x labeled-truth ladder, not unique-mapper agreement.
 - The 281 family **regions** come from the older de-novo catalog (coordinate windows only); `copy_assign`
   re-detects copies per region on `GGO_mm.bam`. A fully clean pass would re-derive families genome-wide
   with the conflict graph + these fixes (the remaining O1 step). 1/281 regions timed out (150 s).

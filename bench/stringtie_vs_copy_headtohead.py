@@ -304,7 +304,7 @@ def main():
     print(f"  overlap (zero-ST loci that are also rescue-flagged)     : {overlap}")
     print(f"\n-- per-copy attribution capability (copy_assign real) --")
     if resolv is not None:
-        print(f"  99.9% silver-standard is UNIQUE-MAPPER agreement (easy ~80% of reads),")
+        print(f"  99.9% unique-mapper agreement (easy ~80% of reads),")
         print(f"  not proof on the hard ambiguous reads. See copy_assign_real.out.")
     print(f"\ngenuine-family collapses by family (gene | extra | validated?):")
     for f, v in sorted(genuine.items(), key=lambda x: -x[1])[:14]:

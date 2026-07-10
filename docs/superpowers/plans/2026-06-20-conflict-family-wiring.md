@@ -522,17 +522,17 @@ cargo test --release --lib -- --ignored smoke_detect_and_assign_real --nocapture
   | grep -E "conflict-fam|co-located|AGGREGATE"
 ```
 
-Expected: 2–4 conflict families, co-located families ≥ 2, AGGREGATE silver-standard ≥ 95%.
+Expected: 2–4 conflict families, co-located families ≥ 2, AGGREGATE unique-mapper agreement ≥ 95%.
 
-- [ ] **Step 3: Confirm silver-standard holds**
+- [ ] **Step 3: Confirm unique-mapper agreement holds**
 
-The AGGREGATE silver-standard unique-mapper agreement was 100% (52/52) before the wiring change. Verify it is still ≥ 95% after (conflict families may be slightly different from POA families, but assignment within families should be equally accurate).
+The AGGREGATE unique-mapper agreement was 100% (52/52) before the wiring change. Verify it is still ≥ 95% after (conflict families may be slightly different from POA families, but assignment within families should be equally accurate).
 
 - [ ] **Step 4: Commit smoke results as a note in the plan or as a commit message annotation**
 
 No code change — just document in the commit message:
 ```bash
-git commit --allow-empty -m "smoke(denovo_pipeline): conflict-graph families validated on MAGEA (≥95% silver) and RFPL (0 edges) regions"
+git commit --allow-empty -m "smoke(denovo_pipeline): conflict-graph families validated on MAGEA (≥95% unique-mapper agreement) and RFPL (0 edges) regions"
 ```
 
 ---

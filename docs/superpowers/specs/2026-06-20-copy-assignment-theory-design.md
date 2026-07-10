@@ -14,7 +14,7 @@ interests — family detection (#1), copy assignment (#2), and the identifiabili
 ## Non-goals (deferred to a follow-up)
 
 - Building the explicit constrained-flow / LP path-cover solver, or any new code.
-- Fresh empirical validation (we cite the existing sim5x K-ladder and GGO silver-standard results).
+- Fresh empirical validation (we cite the existing sim5x K-ladder and GGO unique-mapper agreement results).
 - The abundance/quantification coupling (per-copy expression as a constraint), polyploid/>2-allele extensions
   beyond what the proofs require, and read-error models richer than the single error-tolerant variant noted below.
 
@@ -122,7 +122,7 @@ object inherits uniqueness/recovery — or identify the extra condition junction
 ## Empirical evidence (cited, not produced here)
 
 - **THM 2 / `K≥2` regime:** sim5x K-ladder (`bench/sim_reads.py`, `/home/juanfra/winloci_scratch/sim5x/`),
-  K≥2 → 100% correct assignment; GGO silver-standard (resolution vs uniquely-mapped reads) = 100%
+  K≥2 → 100% correct assignment; GGO unique-mapper agreement (resolution vs uniquely-mapped reads) = 100%
   (`detect_and_assign` smoke run, MAGEA region: 1026/1026).
 - **THM 2 boundary / `K=0`:** MAGEA co-located arrays, resolvable fraction 0/494; copies sequence-identical over
   the transcribed exon (`NM_A == NM_B`). (`bench/resolution_improvement_bound.md`.)

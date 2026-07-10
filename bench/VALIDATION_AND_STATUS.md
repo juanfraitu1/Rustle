@@ -65,7 +65,7 @@ longcallR, Sahlin 2018 IsoCon, Zheng 2025 Clair3-RNA, family-detection prior-art
 > **DONE — `bench/dna_supervised_decode.py`.** Decode RNA reads against DNA-derived per-copy PSV signatures
 > (copies + distinguishing columns from the T2T DNA catalog, not RNA), validated by held-out-DNA-column CV.
 > Result genome-wide in `bench/PAPER_REVIEW_ACTIONS.md` (validation subset: **95.6% held-out confirmation = 3.9×
-> the 1/K chance** — non-circular: no RNA self-assembly, no minimap2-primary silver).
+> the 1/K chance** — non-circular: no RNA self-assembly, no minimap2-primary unique-mapper agreement).
 
 - **Paper:** Vollger SDA 2019 — DNA reads pre-phase PSVs→paralogs by correlation clustering; our identifiability
   theory proves the conditions under which that recovery is *exact*. The natural consequence (noted in memory):
@@ -75,7 +75,7 @@ longcallR, Sahlin 2018 IsoCon, Zheng 2025 Clair3-RNA, family-detection prior-art
   assignment uses only the read's own PSVs vs RNA-built profiles — never the DNA signatures as a prior.
 - **Action:** wire Phase 2 — assign each RNA read to the DNA-defined copy whose PSV signature it matches
   (supervised), and report accuracy against the DNA labels. This is the **genuinely non-circular accuracy** the
-  defense audit asked for (silver is circular; sim5x is synthetic; DNA labels are an independent oracle). Heavier
+  defense audit asked for (unique-mapper agreement is circular; sim5x is synthetic; DNA labels are an independent oracle). Heavier
   than F1/F2, but it's the cleanest answer to "what's your real-data accuracy?"
 
 ### F4 — Theory: the Canzar-shaped capstone (LP-rounding approximation for the NP-hard cover)  **[GAP]  value HIGH (advisor) · effort HIGH**
@@ -123,11 +123,11 @@ longcallR, Sahlin 2018 IsoCon, Zheng 2025 Clair3-RNA, family-detection prior-art
   neighbour and reassigns its reads. Connects directly to the K-frontier and to F3 (a copy with no DNA signature
   shouldn't be a separate copy). Tightens copy *count* (the precision axis the gate alone doesn't bound).
 
-### F8 — Clair3-RNA DP/AD callable-region benchmarking (replace circular silver)  **[PARTIAL]  value MED · effort LOW-MED**
+### F8 — Clair3-RNA DP/AD callable-region benchmarking (replace circular unique-mapper agreement)  **[PARTIAL]  value MED · effort LOW-MED**
 - **Paper:** Clair3-RNA 2025 — evaluate only in **callable ∩ adequate-coverage ∩ GIAB** regions, report by **DP
   (depth) + AD (allele depth)** at min 4×/10×; normalize for uneven RNA coverage. The editing filter we already
   shipped is from this paper.
-- **Code-state:** PARTIAL — editing filter DONE; abundance/accuracy still leans on circular silver. The held-out
+- **Code-state:** PARTIAL — editing filter DONE; abundance/accuracy still leans on circular unique-mapper agreement. The held-out
   CV (H3) is a good start.
 - **Action:** report copy-assignment accuracy stratified by DP/AD in callable regions, as the honest non-circular
   evaluation frame (complements sim5x + the H3 held-out CV).
@@ -300,10 +300,10 @@ route: assemble the collapsed pile and call it a distinct copy even with one ref
 > 2.2× over 1/K chance", never as "real-data O2 accuracy".
 **Paper:** Vollger/SDA 2019 — DNA pre-phases PSVs→copies; our identifiability theory gives the conditions under
 which that recovery is exact. The consequence (and the answer to the defense audit's "what's your real-data
-accuracy?", since silver is circular and sim5x is synthetic): build per-copy PSV **signatures from the T2T DNA
+accuracy?", since unique-mapper agreement is circular and sim5x is synthetic): build per-copy PSV **signatures from the T2T DNA
 catalog** (copies AND their distinguishing columns defined independently of the RNA reads), decode RNA reads
 against them, and validate with a **held-out-DNA-column cross-validation** — split each read's DNA-defined PSV
-columns into a TRAIN half (drives the call) and a TEST half (confirms it). Much **less** circular than silver:
+columns into a TRAIN half (drives the call) and a TEST half (confirms it). Much **less** circular than unique-mapper agreement:
 the columns are DNA-derived (not RNA-discovered) and there is no minimap2-primary label — but it is still a
 **self-consistency** check (train/test halves of the same read) over the catalog's copies, not a true-origin accuracy.
 
@@ -322,15 +322,15 @@ projection), read each read's allele at each PSV position, decode with the produ
   the hardest, DNFAM19 (K=8) 77.2% (more copies → more competitors → lower per-column confirmation, as expected).
 
 **Why it matters:** this is the **strongest real-data *confirmation*** we have (DNA-derived columns, held out),
-and it is much less circular than silver — but it is **NOT a true-origin accuracy** (see the scope warning above:
-self-consistency over a read's own columns, no external true-copy label). The silver standard (99.9%) is weaker
+and it is much less circular than unique-mapper agreement — but it is **NOT a true-origin accuracy** (see the scope warning above:
+self-consistency over a read's own columns, no external true-copy label). Unique-mapper agreement (99.9%) is weaker
 still: it only shows agreement with minimap2 where minimap2 was already confident (MAPQ>0), using RNA-assembled
 profiles — circular on both the profile and the label. Here the reference columns are built from DNA, and held-out
 DNA columns confirm the per-read call at **97.2% (= 2.2× chance)**. It also realises the SDA/Vollger "supervised nearest-signature decode" the DNA-
 catalog spec deferred as Phase 2 — turning NP-hard unsupervised phasing into a supervised classification when a
 DNA reference exists. Honest scope: co-located DNA-catalog families with ≥2 exonic PSVs; the DNA signatures and
 the RNA reads share exon sequence (not orthogonal to *sequence*), but the held-out split + DNA-defined copies/
-columns remove the RNA-self-assembly and silver-label circularity that the audit flagged.
+columns remove the RNA-self-assembly and unique-mapper-agreement circularity that the audit flagged.
 
 
 ---
@@ -346,9 +346,9 @@ it runs on the cluster.
 | # | Sev | Objective | Finding | Fix | Verified by |
 |---|-----|-----------|---------|-----|-------------|
 | **M1** | must | O3 ASJ | The flagship splice-mechanism claim — PSMD2/DAXX SNPs "on the canonical GT-AG dinucleotide", "creates/destroys the splice motif" — is **genome-FALSE by one base**. | Retracted; reframed as **splice-REGION (extended-consensus) variants**; anchors at donor−1 / exon boundary; **0/475 on a core dinucleotide**, GT-AG intact. | `bench/asj_motif_check.py` (re-derives from `GGO.fasta`, green) |
-| **M2** | must | O2/O3 consistency | Stale strings: `copy_assign.py:487` "silver-standard accuracy"; `OBJECTIVES_STATUS.md` "120 genetic … thesis headline"; `DEFENSE_READINESS_AUDIT.md` "masquerade separator never run / airtight ≈ 20". | One-line corrections: silver = CIRCULAR; genetic core **~77**; O3 row marked **RESOLVED (P4)** + **CORRECTED (M1)**. | grep sweep clean |
+| **M2** | must | O2/O3 consistency | Stale strings: `copy_assign.py:487` "unique-mapper agreement accuracy"; `OBJECTIVES_STATUS.md` "120 genetic … thesis headline"; `DEFENSE_READINESS_AUDIT.md` "masquerade separator never run / airtight ≈ 20". | One-line corrections: unique-mapper agreement = CIRCULAR; genetic core **~77**; O3 row marked **RESOLVED (P4)** + **CORRECTED (M1)**. | grep sweep clean |
 | **H2** | high | THEORY | Theorem 4(ii) soundness silently assumed `origin(r) ∈ C`; false in the O4 reference-absent regime (a partial read can be confidently MISassigned to a wrong copy). | Made the **completeness precondition explicit** in statement + proof + scope note; added machine-checks **B6** (precondition necessity) and **B7** (recombinant-cover orthogonality). | `bench/bridge_theorem_check.py` (B1–B7 green); integrated into `copy_assignment_theory_checks.py` |
-| **H3** | high | O2 | "Accuracy" is circular: the gate uses the same PSVs that defined the copies; silver = agreement with minimap2 primary. | Added **held-out-PSV cross-validation** (`copy_assign.py crossval`): assign on a disjoint TRAIN half of PSVs, confirm on the TEST half — no ground truth. | sim5x: **80% held-out confirmation = 1.6× / 3.2× / 6.4× over 1/K chance** (K=2/4/8) |
+| **H3** | high | O2 | "Accuracy" is circular: the gate uses the same PSVs that defined the copies; unique-mapper agreement = agreement with minimap2 primary. | Added **held-out-PSV cross-validation** (`copy_assign.py crossval`): assign on a disjoint TRAIN half of PSVs, confirm on the TEST half — no ground truth. | sim5x: **80% held-out confirmation = 1.6× / 3.2× / 6.4× over 1/K chance** (K=2/4/8) |
 | **H4** | high | O4 | Genome-wide O4 re-indexes the 3 Gb genome on every candidate (minutes/call); no real bounded run had been done. | Added `RUSTLE_ABSENT_MMI` env-gate (pre-built splice `.mmi` target; byte-identical when unset) + bounded real `--absent-copies` run over the 82 principled-catalog regions. | compiles; bounded run → see below |
 
 ## M1 — the genome facts (0-based, as stored in `bench/asj_calls.tsv`)
@@ -376,7 +376,7 @@ gate stays sound *within each fixed C* — Theorem 4 is per-read-given-C, not co
  8      200            80.0%         12.5%    6.4x             79.0%
 ```
 The disjoint held-out PSVs — which played no role in the call — rank the TRAIN-assigned copy first at 80%,
-up to **6.4× above chance**, with **no ground truth used**. This is the non-circular signal silver cannot give.
+up to **6.4× above chance**, with **no ground truth used**. This is the non-circular signal unique-mapper agreement cannot give.
 (Absolute rate ~80% not ~100% because each half carries only half the evidence; the enrichment is the point.)
 
 ## H4 — `.mmi` pre-index + bounded real run
@@ -387,7 +387,7 @@ up to **6.4× above chance**, with **no ground truth used**. This is the non-cir
   `RUSTLE_ABSENT_MMI=GGO.splice.mmi`. Result: **0 reference-absent copies admitted** (no `AC_` in the
   assignments), **25 candidates all routed to DNA-needs** (fails-safe — none force-admitted as a copy). Rejection
   reasons: **15× ≥98% remap identity** (the MAPQ-0 paralog-leak / het the gate is built to catch), 6× host
-  sequence unbuildable, 3× not min_p-distinct from host, 1× consensus unplaceable. Silver 188/188 (100%).
+  sequence unbuildable, 3× not min_p-distinct from host, 1× consensus unplaceable. Unique-mapper agreement 188/188 (100%).
 - **This empirically confirms the standing "mechanism-only / real-headroom ≈ 0 on GGO" finding on real data** with
   the *corrected* (`-x splice`) admission gate: the gate sees these reads-only clusters, remaps them, finds they
   match the reference at ≥98%, and correctly declines to invent a copy. 0 real reference-absent copies in GGO RNA;
@@ -460,9 +460,9 @@ consequential structural claims (L1, default-off assignment) were additionally h
 - **L8 — abundance CI FIXED.** `copy_assign_pipeline.rs` now bases the CI on INFORMATIVE (decisive)
   coverage, not raw N: `n_eff = #reads with n_decisive≥1`; CI clamped to 0.5 and `=0.5` (full simplex)
   when `n_eff=0` (the K=0 unidentifiable regime). Test `abundance_ci_is_full_simplex_when_unidentifiable`.
-- **L9 — silver reconciled.** FLAGSHIP DSFAM817 fixed: was "silver 3/3=100%", measured is **2/3=0.67**
+- **L9 — unique-mapper agreement reconciled.** FLAGSHIP DSFAM817 fixed: was "unique-mapper agreement 3/3=100%", measured is **2/3=0.67**
   (circular + thin, 3 unique-mappers); the load-bearing evidence is now stated as the sim5x oracle, not
-  the silver. DSFAM102 0/4 already raw.
+  unique-mapper agreement. DSFAM102 0/4 already raw.
 - **L10 / genome-wide — BLOCKED on L4** (production GGO.bam missing/repointed). Documented as a
   per-family/CLI + sim-validated capability, not a default genome-wide output. `gw_psvlink.sh` built/unrun.
 
@@ -479,7 +479,7 @@ over-merges); (2) **same-strand-only** family gate (motif-validated: DSFAM817 = 
 antisense pair, NOT a family); (3) **disjoint-loci** de-dup (`prune_same_locus`: drops unspliced
 read-throughs, tandem-safe). Genome-wide result: **58 real same-strand disjoint-loci families** (was 281
 over-merged "families"), 144 copies, 978 collapsed recovered, **72.3% of 108k multimap reads assigned
-(93.9% of decisive reads), 23% abstained at the identifiability floor (no 1/k), silver 99.8%**. ⚠ The OLD
+(93.9% of decisive reads), 23% abstained at the identifiability floor (no 1/k), unique-mapper agreement 99.8%**. ⚠ The OLD
 flagship/headline numbers (DSFAM817 90%, CAFAM0 213) were on OVER-MERGED false families — RETIRED. See
 `bench/COPY_ASSIGN_RECOMPUTE.md`. **L10 closed** (genome-wide run done on the right substrate). **L1
 CLOSED**: the de-tie READ-CONFLICT-GRAPH family definition (no similarity threshold) was RUN GENOME-WIDE
@@ -505,7 +505,7 @@ were produced by the *older, threshold-based* methods those artifacts were meant
   similarity threshold (`T_CORE=0.13`) that produces a 728-member chr1→chrY over-merge — the exact
   failure the principled conflict-graph criterion exists to fix; the conflict graph never ran at scale.
 - **O2 (copy-assignment, Interest II)** — headline numbers from a non-production engine; a post-hoc τ
-  that governs no operative gate; a silver standard that is circular and empty in the hard MAPQ-0 regime.
+  that governs no operative gate; a unique-mapper agreement check that is circular and empty in the hard MAPQ-0 regime.
 - **O3 (ASJ)** — attained on mechanism; phrasing over-reaches (see L11/L13).
 - **O4 (reference-absent)** — stands only on the 4 protein-BLAST-confirmed MHC copies; the larger pool
   has no measured FP rate and cannot separate an absent copy from a hyperdivergent allele.
@@ -546,7 +546,7 @@ defensible at scale,"** and several headline phrasings over-reach their evidence
 - **L8 (major).** Emitted per-copy abundance CI `1.96·√(θ(1−θ)/N)` shrinks with N exactly in the K=0
   regime the theory proves unidentifiable → false precision on a default user-facing output. **Fix:** make
   the CI track informative-PSV coverage, not raw N; report full-simplex uncertainty below threshold. *(moderate)*
-- **L9 (major).** Copy-assignment silver standard is circular (truth = minimap2's own placement) and
+- **L9 (major).** Copy-assignment unique-mapper agreement is circular (truth = minimap2's own placement) and
   empty in the hard regime (denominators 3–15; DSFAM102 = 0/4); DSFAM817 listed as both 0.67 and 3/3.
   **Fix:** report raw fractions inline, reconcile the discrepancy, promote the sim5x read-name oracle as
   the load-bearing test. *(moderate)*
@@ -610,8 +610,8 @@ defensible at scale,"** and several headline phrasings over-reach their evidence
    State `denovo_families.tsv` came from T_CORE=0.13, report the de-tie size distribution alongside (L1),
    and re-derive the family count from a BAM that still exists (L4).
 4. **Pick ONE copy-assignment engine and run it genome-wide (moderate, the O2 spine).** Resolve the
-   three-engine/τ tangle (L7), make the abundance CI track informative-PSV coverage (L8), report silver as
-   raw fractions with hard-regime denominators visible (L9).
+   three-engine/τ tangle (L7), make the abundance CI track informative-PSV coverage (L8), report unique-mapper
+   agreement as raw fractions with hard-regime denominators visible (L9).
 5. **Close the theorem-vs-implementation seam (moderate, the O5 point Canzar will probe).** Port
    `is_disjoint_clique_union` as a per-family abstain guard so the refuse-when-non-unique guarantee fires
    in `--vg` (L17), or state plainly production runs a per-read calibrated-margin heuristic.
@@ -625,7 +625,7 @@ defensible at scale,"** and several headline phrasings over-reach their evidence
   from a hyperdivergent MHC allele; DNA parCN never run. (L16)
 - "475 ASJ, collapsed-paralog masquerade ruled out (0 collapsed)" — control removed 0/475; 36% are
   paralog loci; defensible headline = the 120 transversion / ~20 splice-proximal core. (L11/L13)
-- "The difficult MAPQ-0 case is usually solved, validated" — circular silver standard, empty in the
+- "The difficult MAPQ-0 case is usually solved, validated" — circular unique-mapper agreement, empty in the
   MAPQ-0 regime; 94%/67% from a Python prototype. (L7/L9)
 - "Theorems 1–3 proven AND executable [in production]" — the abstain certificate is Python-only; the
   shipped `--vg` path silently assigns in the K≥3 regime the theorem exists to refuse. (L17)
@@ -685,7 +685,7 @@ denser PSVs the resolvable fraction is much higher (the definitive O2 = 75% assi
 "K≥2 → 100%" must read as accuracy, never as "all reads resolve."
 
 This is a *non-circular* accuracy point: sim5x reads carry their TRUE copy in the read name (labeled ground
-truth, not the circular silver standard), and the assertion (acc|assigned ≥ 0.99) is now enforced in CI.
+truth, not the circular unique-mapper agreement check), and the assertion (acc|assigned ≥ 0.99) is now enforced in CI.
 
 ## P4 — O3 masquerade separator on the LOC* calls (DONE)
 The 120 transversion core (genetic ASJ) splits **76 at non-LOC genes + 44 at LOC\* paralog loci (18 distinct
@@ -717,18 +717,18 @@ catalog** (`gw_conflict_catalog`, 82 same-chrom families → 106 detected within
 | ambiguous | 0.5% | 0.0% |
 | certified-tied | **35.7%** | 24.8% |
 | **of DECISIVE reads assigned** | **99.3%** | 99.9% |
-| silver-standard | **99.8%** | 99.9% |
+| unique-mapper agreement | **99.8%** | 99.9% |
 
 **The catalog story (answers the "killer question").** Report the **principled number as the genome-wide
 headline: 63.9% assigned / 35.7% certified-tied** — the conflict-graph catalog is the elegant artifact (no
 similarity threshold), so the headline and the principled method are now the **same object**, closing the
 build-vs-run gap. The 75.1% is the *annotation-refined co-located subset* (cleaner because refinement drops the
 Alu-bridge over-merges and harder families → fewer tied), and must be labeled as such, not as "the genome-wide
-O2." **The DECISION RULE is identical on both** (99.3–99.9% of decisive reads assigned, silver ~99.8%, ~0%
+O2." **The DECISION RULE is identical on both** (99.3–99.9% of decisive reads assigned, unique-mapper agreement ~99.8%, ~0%
 ambiguous, no 1/k) — only the *tied* fraction moves (more genuinely unresolvable / K=0 families survive in the
 unrefined catalog). So O2's defensible genome-wide claim: **"on the principled threshold-free catalog, 99.3% of
 reads carrying any copy-distinguishing evidence are assigned with a calibrated certificate; 35.7% are
-certified-tied (abstained, not guessed); silver 99.8%."** Data: `p1_conflict_o2.*`.
+certified-tied (abstained, not guessed); unique-mapper agreement 99.8%."** Data: `p1_conflict_o2.*`.
 
 
 ---
@@ -1124,7 +1124,7 @@ Artifacts: `dsfam42_separability_features.py` · `dsfam42_separability_sklearn.p
 
 # Fully-simulated ground-truth benchmark — the airtight, non-circular validation (2026-06-29)
 
-Every prior accuracy number on real GGO data carries some circularity: the "silver" label is minimap2's own
+Every prior accuracy number on real GGO data carries some circularity: the "unique-mapper agreement" label is minimap2's own
 primary, the copies are RNA-assembled, the PSV columns are RNA-discovered. This benchmark removes *all* of it.
 We **plant** a 2-chromosome genome — positions, divergence, copy number, exon/intron structure — label every
 read with its TRUE family/copy, run the unmodified pipeline, and check whether it recovers exactly what we
@@ -1257,12 +1257,12 @@ A genome-wide scan of all 68 multi-copy families on two axes — **difficulty (M
 (≥50% MAPQ-0), **PSVs win 4** and only DSFAM42 is the floor. So the difficult case is *usually solved*;
 DSFAM42 is the rare certified exception. The flagship is the win, with DSFAM42 as the honest foil.
 
-| family | MAPQ-0 | PSV cols | reads assigned | silver |
+| family | MAPQ-0 | PSV cols | reads assigned | uniq agree |
 |---|---|---|---|---|
 | **DSFAM237 (WIN)** | 90% | 10 | **94%** | **1.0 (5 uniq)** |
 | DSFAM817 | 93% | 249 | 90% | 0.67 |
 | DSFAM238 | 70% | 1049 | 98% | 0.6 |
-| DSFAM102 | 86% | 1234 | 91% | 0.0 (silver degenerate) |
+| DSFAM102 | 86% | 1234 | 91% | 0.0 (uniq-agree degenerate) |
 | **DSFAM42 (FLOOR)** | 95% | **3** | **21%** | 1.0 |
 
 - **The WIN — DSFAM817, confirmed END-TO-END on the production engine (clean on BOTH).** 3
@@ -1271,23 +1271,23 @@ DSFAM42 is the rare certified exception. The flagship is the win, with DSFAM42 a
   **79/118 reads (67%)** confidently, **27 tied** (the honest K-frontier minority), and emits a clean
   **3-copy-path variation-graph GFA** (890 bubble nodes). The curated `assign_family` agrees (90%); both
   engines win (the 67/90 gap is the stricter de-novo operating point τ≈6.9 vs the recall-mode τ=2.0).
-  **Silver = 0.67 (2 of 3 unique-mappers agree)** — *thin and circular* (the "truth" is minimap2's own
+  **Unique-mapper agreement = 0.67 (2 of 3 unique-mappers agree)** — *thin and circular* (the "truth" is minimap2's own
   primary placement, and only 3 reads map uniquely in this MAPQ-0 locus). [Reconciliation: an earlier
-  draft said "silver 3/3 = 100%"; the measured value in `hard_loci_psv_assignment.json` is 2/3 = 0.667.]
+  draft said "unique-mapper agreement 3/3 = 100%"; the measured value in `hard_loci_psv_assignment.json` is 2/3 = 0.667.]
   *minimap2 ~0% confident → PSVs 67–90% confident, with the unresolvable minority abstained.* The
-  **load-bearing validation is the sim5x labeled-truth oracle** (below), not this circular silver.
-- **DSFAM237** (3 small copies over 162 kb): the curated family wins at 94% (silver 5/5), but the CLI's
+  **load-bearing validation is the sim5x labeled-truth oracle** (below), not this circular unique-mapper agreement.
+- **DSFAM237** (3 small copies over 162 kb): the curated family wins at 94% (unique-mapper agreement 5/5), but the CLI's
   de-novo over-merges a 42 kb neighbor → 0% — the clean illustration that *the family definition gates
   the assignment* (see the engine caveat below).
 - **The win/floor split IS the theorem.** Look at PSV count: DSFAM42 has **3** (copies near-identical →
   K-frontier → it *abstains*, 21%); every win has 10–1,234 (copies distinguishable → it *assigns*,
   90–98%). The method assigns when the copies differ and honestly abstains when they don't — DSFAM42 is
   the floor certificate, not a failure (1 of 5 hard loci; ~1.5% of families).
-- **Honest validation caveat (= the motivation):** silver rests on *few* unique-mappers in the hard
+- **Honest validation caveat (= the motivation):** unique-mapper agreement rests on *few* unique-mappers in the hard
   regime (3–15 reads) — because MAPQ-0 *means* few reads map uniquely. Strong where measurable
   (DSFAM237 5/5) but thin where not (DSFAM102 0/4, where the best-mapping "truth" is itself arbitrary).
-  The silver standard **degenerates exactly where the method is needed** — which is why the airtight
-  validation for the hard wins is DNA/orthogonal, not silver.
+  Unique-mapper agreement **degenerates exactly where the method is needed** — which is why the airtight
+  validation for the hard wins is DNA/orthogonal, not unique-mapper agreement.
 - **⚠ Engine caveat — and it is a thesis STRENGTHENER (interest I gates interest II).** The win (94%)
   is on the **curated de-tie 3-copy family** — what the family-definition pipeline and the production GTF
   `psv_linkage` path use, faithfully mirrored by `assign_family`. The standalone `copy_assign` CLI does
@@ -1310,7 +1310,7 @@ DSFAM42 is the rare certified exception. The flagship is the win, with DSFAM42 a
   operating point* set by the target per-read misassignment rate `p` — NOT an arbitrary threshold. The two
   values in the codebase are just two `p`: **τ=2.0 ≡ p≈0.12 (recall mode, default)** and **τ≈6.9 ≡ p=1e-3
   (precision mode, the PSV-space analog of Eichler's AS≥10)**. Set via `AssignParams::for_target_misassignment(p)`.
-- **⭐ NON-CIRCULAR VALIDATION — the sim5x labeled-truth oracle (the load-bearing test, not the silver).**
+- **⭐ NON-CIRCULAR VALIDATION — the sim5x labeled-truth oracle (the load-bearing test, not unique-mapper agreement).**
   Each simulated read name encodes its TRUE copy, so accuracy is measured against *planted* labels, not
   minimap2. The canonical engine on the K-ladder (`smoke_sim5x_ground_truth`, 1000 reads/level):
 
@@ -1323,7 +1323,7 @@ DSFAM42 is the rare certified exception. The flagship is the win, with DSFAM42 a
   The headline is **`acc|assigned = 1.000` at every K ≥ 1**: *when the engine commits, it is never wrong*,
   and at K=0 it commits to nothing (100% tied — no fabrication). The gap to forced-argmax (0.80 at K=1)
   is the measured *value of abstaining*. This is the identifiability theorem made empirical on a ground
-  truth that is **not** the aligner's own placement — cite this, not the circular 1026/1026 silver.
+  truth that is **not** the aligner's own placement — cite this, not the circular 1026/1026 unique-mapper agreement.
 - **Honest scope (L9/L10):** the genome-wide run of the canonical engine is **blocked** — the production
   `GGO.bam` is currently missing/repointed (loose end L4), so the per-family/CLI + sim5x results above are
   what stands; a genome-wide PSV-linkage pass (`gw_psvlink.sh`) is built but unrun. State copy-assignment
@@ -1429,7 +1429,7 @@ discipline itself (the committee credits the self-found over-claims).
 - "Your deep theorems describe RECOVER; grep shows it isn't in the code — why credit Thm 2/3 as load-bearing?"
 
 **Must be retracted/relabelled (won't survive an external check as-is):** "70.9% orthogonally confirmed"
-(→ FLOOR); "89–90% DNA-confirmed" as orthogonal (→ lower bound); "silver 99.9%" as accuracy (circular —
+(→ FLOOR); "89–90% DNA-confirmed" as orthogonal (→ lower bound); "unique-mapper agreement 99.9%" as accuracy (circular —
 agreement with minimap2's own placement); "0 false merges" as precision (reuses own homology rule); "75.1%
 definitive O2" as genome-wide (→ co-located annotation-refined subset); "4 confirmed MHC ref-absent copies"
 as O4 deliverables; "GW families WITHOUT arbitrary thresholds" (true only for the 82-family raw object, not
@@ -1465,7 +1465,7 @@ numbers (edit_rate 0.2 wholly underived, min_clusters 3, remap 0.98, coverage 0.
 sweeps.
 
 ## THE single biggest risk
-**Circularity.** Every empirical accuracy headline is self-consistency, not an external check: silver =
+**Circularity.** Every empirical accuracy headline is self-consistency, not an external check: unique-mapper agreement =
 minimap2's own placement; DNA = the span containing the building exons; 70.9% = an annotation floor rechecked
 with the catalog's own homology rule; sim5x = your own generative model. The one orthogonal check your field
 uses — a SEDEF/BISER segdup map — is the one not run. A committee cannot separate your method's accuracy from
@@ -1497,7 +1497,7 @@ ground-truth gap, one fixable input flaw, and the (fundamental) DNA het-vs-copy 
 | # | objective | status | headline gap |
 |---|---|---|---|
 | 1 | RNA-level multi-copy family detection (~R ∩ ~B) | **PARTIAL→ conflict-graph catalog now RUN genome-wide** | ⭐ The principled de-tie READ-CONFLICT-GRAPH family definition (no similarity threshold) was RUN GENOME-WIDE for the first time (`gw_family_catalog` → `detect_conflict_catalog_genome_wide`): **82 clean families / 207 copies** (0 mixed-strand, 82/82 single-chrom, real 9/8/7/6/5-copy arrays), replacing the OLD `core_recip≥0.13` catalog (281, DNFAM0=728-member chr1→chrY over-merge). Closes L1. Still: 82 excludes cross-chrom families (colocated_families is same-chrom) + needs external (gorilla Compara) validation. bench/COPY_ASSIGN_RECOMPUTE.md |
-| 2 | Copy assignment under ambiguity (PSV gate + AS-decisive) | **PARTIAL→ RECOMPUTED genome-wide on the COMPLETE BAM** | Canonical engine (L7, full PSV+junction, τ=ln((1−p)/p), assign-or-abstain) RAN GENOME-WIDE (via the `copy_assign` CLI; still `RUSTLE_VG_RECOVER_COPIES`-gated off default `--vg`) on `GGO_mm.bam`: **106 families / 206,186 reads on the principled threshold-free conflict-graph catalog (`gw_conflict_catalog`): 63.9% assigned / 0.5% ambiguous / 35.7% certified-tied / 99.3% of DECISIVE reads assigned / silver 99.8%** (silver = circular consistency check — agreement with minimap2's own primary placement, NOT accuracy; non-circular accuracy = sim5x labeled ladder K≥2 → acc\|assigned=1.000 on the ~20% of reads that are resolvable; K=0 → 100% Tied). Note: 75.1% cited elsewhere = annotation-refined co-located SUBSET, not genome-wide. Required 3 fixes that also corrected O1: minimap2 PSV-discovery (~100× faster), same-strand-only + disjoint-loci family gates (motif-validated). ⚠ OLD over-merged headlines (DSFAM817 90%, CAFAM0 213) RETIRED. bench/COPY_ASSIGN_RECOMPUTE.md |
+| 2 | Copy assignment under ambiguity (PSV gate + AS-decisive) | **PARTIAL→ RECOMPUTED genome-wide on the COMPLETE BAM** | Canonical engine (L7, full PSV+junction, τ=ln((1−p)/p), assign-or-abstain) RAN GENOME-WIDE (via the `copy_assign` CLI; still `RUSTLE_VG_RECOVER_COPIES`-gated off default `--vg`) on `GGO_mm.bam`: **106 families / 206,186 reads on the principled threshold-free conflict-graph catalog (`gw_conflict_catalog`): 63.9% assigned / 0.5% ambiguous / 35.7% certified-tied / 99.3% of DECISIVE reads assigned / unique-mapper agreement 99.8%** (unique-mapper agreement = circular consistency check — agreement with minimap2's own primary placement, NOT accuracy; non-circular accuracy = sim5x labeled ladder K≥2 → acc\|assigned=1.000 on the ~20% of reads that are resolvable; K=0 → 100% Tied). Note: 75.1% cited elsewhere = annotation-refined co-located SUBSET, not genome-wide. Required 3 fixes that also corrected O1: minimap2 PSV-discovery (~100× faster), same-strand-only + disjoint-loci family gates (motif-validated). ⚠ OLD over-merged headlines (DSFAM817 90%, CAFAM0 213) RETIRED. bench/COPY_ASSIGN_RECOMPUTE.md |
 | 3 | Allele-specific junctions | **ATTAINED** | the clean, committee-ready result — the natural headline |
 | 4 | Reference-absent copies (this milestone) | **PARTIAL** | FP rate NOW QUANTIFIED (`o4_fp_bound.py`): raw hidden-copy flag fires on **7.39%** of definitionally-single-copy genes ≈ background 7.93% → raw flag is a non-specific SCREEN (het-dominated), not a copy detector; only the 4 protein-confirmed MHC candidates survive external check; copy-vs-allele needs DNA |
 | 5 | Identifiability theorem (through-line) | **PARTIAL** | Theorems 1–4 proven + machine-checked B1–B7 (Thm 4 = bridge: production min_p gate is a sound per-read identifiability certifier for all K≥1, making theory load-bearing for the shipped method — under the explicit completeness precondition origin(r)∈C, machine-checked necessary [B6: dropping it → confident misassignment, the O4 hazard] and orthogonal to K≥3 cover non-uniqueness [B7]; RECOVER itself not run); Strong Separation is *sufficient not necessary* (true boundary = recombination-freeness, no closed form) |

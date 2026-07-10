@@ -54,7 +54,7 @@ practice**: assignment is ~1 s. The wall-clock is the two alignment stages.
 
 **Heaviest region: 537 s → 43 s = 12.5×, byte-identical.** End-to-end 79-region sweep (`o2_verify`):
 **3,854 s vs the old 8,130 s = 2.1×**, and the full result is **byte-identical** — all 74 families / 104,147
-assignments diff = 0, abundance diff = 0, silver 24,660/24,682 = 99.9% unchanged. (The 2.1× is a *conservative
+assignments diff = 0, abundance diff = 0, unique-mapper agreement 24,660/24,682 = 99.9% unchanged. (The 2.1× is a *conservative
 lower bound*: that sweep ran contended with the A\*/old-binary benchmark runs competing for the 5 cores; the
 clean per-region 12.5× is the reliable figure. A clean re-run would land between the two.)
 
@@ -66,7 +66,7 @@ traceback: on the heavy family it changed **1,254 / 8,461 assignments** and foun
 it is **not** byte-identical and is gated **off** by default (the O2 result stays exactly poasta-Dijkstra). The
 same co-optimal-traceback hazard applies to banded/WFA aligners — so the only *truly* output-identical
 `discover_psvs` speedup is the parallelization above; going faster means accepting a small, revalidate-grade
-output change (benchmark vs the poasta 3,238-col / silver-99.9 headline before adopting).
+output change (benchmark vs the poasta 3,238-col / 99.9% unique-mapper agreement headline before adopting).
 
 ## Rejected (changes output)
 
@@ -213,7 +213,7 @@ k-mers). Only the aligner differs. Assignability scored with the production engi
 
 **Result — winnowmap matches minimap2, never beats it:**
 
-| family | aligner | reads | MQ0% | clip% | PSVc | resolv% | assigned% | silver agree |
+| family | aligner | reads | MQ0% | clip% | PSVc | resolv% | assigned% | uniq agree |
 |---|---|---|---|---|---|---|---|---|
 | DSFAM10 (MAGEA) | minimap2 | 1311 | 37% | 0.1% | 2013 | 99.5 | 93.5 | 0.9939 |
 | | winnowmap | 1310 | 37% | 0.2% | 2013 | 99.6 | 93.6 | 0.9939 |

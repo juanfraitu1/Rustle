@@ -541,7 +541,7 @@ and (b) the legacy gate (`RUSTLE_*`/CLI flag for `use_margin_gate`, or `for_targ
 
 Re-run copy-assignment on the GGO conflict-catalog substrate (the per-region driver in
 `/home/juanfra/winloci_scratch/ca_gw/`) with the significance gate; record assigned/ambiguous/tied % and
-silver agreement, vs the legacy τ-gate baseline. Append to `bench/eval_significance_gate.md`.
+unique-mapper agreement, vs the legacy τ-gate baseline. Append to `bench/eval_significance_gate.md`.
 
 - [ ] **Step 4: Decide the default α**
 

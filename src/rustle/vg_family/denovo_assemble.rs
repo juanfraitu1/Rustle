@@ -249,7 +249,7 @@ fn cigar_kind_to_char(k: Kind) -> char {
 }
 
 /// A mapped alignment for copy assignment: its `AlignedRead`, reference name, mapping quality (the
-/// silver-standard "unique mapper" signal: `mapq > 0`), read name (any ground-truth label), the `AS:i`
+/// unique-mapper agreement's "unique mapper" signal: `mapq > 0`), read name (any ground-truth label), the `AS:i`
 /// alignment score (the conflict-graph tie criterion; 0 if absent from the BAM record), the `de:f`
 /// gap-compressed per-base divergence (the de-tie conflict criterion; 0.0 if absent), and
 /// `is_supplementary` (chimeric/split flag — excluded from conflict placements).

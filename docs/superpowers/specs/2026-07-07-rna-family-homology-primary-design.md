@@ -39,7 +39,8 @@ no-edge misses. Keep the family *definition* on a single nucleotide (RNA) axis, 
 the within-family layer and keeps its tight same-strand/disjoint-loci input. (b) Not *separating reads*
 onto K=0 near-identical copies (indistinguishable by definition) — but their genomic loci ARE enumerated
 by genome projection (§7 = famCN), and per-copy read assignment (parCN) is attempted where PSVs exist.
-(c) Not using protein as a definition edge. (d) Cross-modal validation (SEDEF/Soto tables, real Liftoff
+(c) ~~Not using protein as a definition edge~~ SUPERSEDED 2026-07-08: protein IS an opt-in
+definition edge (`--protein-tail`) for the divergent coding tail below the ~0.65 nt limit — see §2 tier 3. (d) Cross-modal validation (SEDEF/Soto tables, real Liftoff
 cross-check) lives in the companion spec — §7 *implements* the projection mechanism in-engine; the
 companion spec *validates* it against the published tool.
 
@@ -76,7 +77,16 @@ An `E_r` edge between two reps' exon-sum sequences, **all tiers gated by coverag
 Reuses `nucleotide_edges` in `denovo_pipeline.rs`. The tier-2 floor is the recall lever; its exact value
 is **fixed by the existing family precision/recall sweep** against the annotation oracle, not hand-picked
 — so the threshold is pinned to a measured operating point. Coverage gate + γ-quasi-clique operator (§4)
-absorb the added repeat-bridge risk. **Protein is NOT an edge here** (see §6 validation).
+absorb the added repeat-bridge risk.
+
+**Tier 3 — protein (UPDATED 2026-07-08, opt-in `--protein-tail`).** Originally protein was QC-only; a
+proof (`bench/sim_allprimary.py`) showed nt alignment gives out at ~0.65 pairwise identity — beyond that,
+copies map all-primary (no read-conflict possible) *and* nt homology fails, so a coding family in that tail
+is invisible to every nt/read signal. Protein stays conserved there, so protein is now an OPTIONAL
+**definition edge**: `homology_edges_all_reps` unions `batch_protein_edges` (longest-ORF → mmseqs, fident ≥
+0.50, cov ≥ `min_coverage`) over all reps when `--protein-tail` is set. Default OFF (needs mmseqs; nt-only
+otherwise). This reverses the earlier "protein = QC only" scope for the divergent coding tail; the separate
+orthogonal per-family `protein_coheres` QC flag (§6) still exists and is unaffected.
 
 ### §3 Tractable all-vs-all (two-source candidate prefilter)
 

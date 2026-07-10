@@ -113,7 +113,7 @@ Rescued copies merged into rosters via `load_rescued`.
 - **Known-family validation:** RABL2 ✓, APOBEC3 ✓, **RFPL ✓ (unified after strand fix + RFPL2 rescued)**.
 - **Copy assignment — synthetic (sim5x, ground truth):** K=0 → 100% tied; K>=2 → 100% accurate;
   error-floor sweep 1.0→0.805 as e→0.15. The realistic BAM-driven assigner reproduces the oracle curve.
-- **Copy assignment — real GGO (25 co-located families, 25,940 reads):** **99.9% silver-standard agreement**
+- **Copy assignment — real GGO (25 co-located families, 25,940 reads):** **99.9% unique-mapper agreement**
   (vs minimap2's confident mappings), 95% resolvable, 82% confidently assigned.
 - **Junctions are decisive for near-identical families:** DSFAM43 (5 copies, 95% MAPQ-0) goes 10% → 99%
   resolvable when copy-specific junctions are added (+167 reads PSVs alone could not resolve).

@@ -10,8 +10,11 @@ distinct genomic position.
 This avoids k-mer clustering and uses the same principled exon-sum homology
 criterion already validated in the gw_family_catalog --refine step.
 
-Run: PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/seed_extend_minimap2.py
+Run:
+  PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/seed_extend_minimap2.py
+  PYTHONHASHSEED=0 /home/juanfra/miniforge3/bin/python bench/seed_extend_minimap2.py --seed-prefix /home/juanfra/winloci_scratch/gw_refined --out-prefix gw_refined_seedext
 """
+import argparse
 import csv
 import os
 import subprocess
@@ -27,12 +30,6 @@ SCRATCH = "/home/juanfra/winloci_scratch"
 HERE = os.path.dirname(__file__)
 GGO_FA = os.path.join(SCRATCH, "GGO.fasta")
 THIN_LOCI_TSV = os.path.join(SCRATCH, "thin_loci_genome_wide.tsv")
-SEED_FAMILIES = os.path.join(SCRATCH, "gw_xcbase.families.tsv")
-SEED_COPIES = os.path.join(SCRATCH, "gw_xcbase.copies.tsv")
-SEED_FA = os.path.join(SCRATCH, "gw_xcbase.copies.fa")
-OUT_RESCUED = os.path.join(HERE, "seed_extend_minimap2.rescued.tsv")
-OUT_FAMILIES = os.path.join(SCRATCH, "gw_seedext.families.tsv")
-OUT_COPIES = os.path.join(SCRATCH, "gw_seedext.copies.tsv")
 
 MIN_IDENTITY = 0.80
 MIN_COVERAGE = 0.40  # full-length homology threshold (lenient to catch partial/fragmented copies)
@@ -60,13 +57,13 @@ def parse_copies_fa(path):
     return {k: "".join(v) for k, v in seqs.items()}
 
 
-def load_seeds():
+def load_seeds(seed_copies, seed_fa):
     copies = []
-    with open(SEED_COPIES) as fh:
+    with open(seed_copies) as fh:
         r = csv.DictReader(fh, delimiter="\t")
         for row in r:
             copies.append(row)
-    seqs = parse_copies_fa(SEED_FA)
+    seqs = parse_copies_fa(seed_fa)
     seeds = []
     for c in copies:
         key = (c["family_id"], int(c["copy_idx"]))
@@ -142,8 +139,22 @@ def parse_paf(paf_path):
 
 
 def main():
-    seeds = load_seeds()
-    print(f"Loaded {len(seeds)} seed copies from gw_xcbase", flush=True)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seed-prefix", default=os.path.join(SCRATCH, "gw_xcbase"),
+                    help="prefix for seed catalog files (.families.tsv, .copies.tsv, .copies.fa)")
+    ap.add_argument("--out-prefix", default="gw_seedext",
+                    help="output catalog prefix in SCRATCH; rescued TSV in bench/")
+    args = ap.parse_args()
+
+    seed_families = f"{args.seed_prefix}.families.tsv"
+    seed_copies = f"{args.seed_prefix}.copies.tsv"
+    seed_fa = f"{args.seed_prefix}.copies.fa"
+    out_rescued = os.path.join(HERE, f"{args.out_prefix}.rescued.tsv")
+    out_families = os.path.join(SCRATCH, f"{args.out_prefix}.families.tsv")
+    out_copies = os.path.join(SCRATCH, f"{args.out_prefix}.copies.tsv")
+
+    seeds = load_seeds(seed_copies, seed_fa)
+    print(f"Loaded {len(seeds)} seed copies from {args.seed_prefix}", flush=True)
 
     thin_loci = load_thin_loci(THIN_LOCI_TSV)
     print(f"Loaded {len(thin_loci)} thin loci", flush=True)
@@ -274,18 +285,18 @@ def main():
     rescued = sorted(rescued, key=lambda x: -(x["identity"] * x["coverage"]))
     print(f"Rescued {len(rescued)} copies after isoform collapse", flush=True)
 
-    with open(OUT_RESCUED, "w", newline="") as fh:
+    with open(out_rescued, "w", newline="") as fh:
         w = csv.writer(fh, delimiter="\t")
         w.writerow(["family_id", "seed_tid", "tid", "chrom", "start", "end", "n_exon",
                     "strand", "n_reads", "identity", "coverage"])
         for r in rescued:
             w.writerow([r["fid"], r["seed_tid"], r["tid"], r["chrom"], r["start"], r["end"],
                         r["n_exon"], r["strand"], r["support"], f"{r['identity']:.4f}", f"{r['coverage']:.4f}"])
-    print(f"Wrote {OUT_RESCUED}", flush=True)
+    print(f"Wrote {out_rescued}", flush=True)
 
-    # Build merged catalog: gw_xcbase + seed-extended copies
+    # Build merged catalog: seed catalog + seed-extended copies
     base_copies = []
-    with open(SEED_COPIES) as fh:
+    with open(seed_copies) as fh:
         r = csv.DictReader(fh, delimiter="\t")
         for row in r:
             base_copies.append(dict(row))
@@ -294,7 +305,7 @@ def main():
     for r in rescued:
         rescued_by_fam[r["fid"]].append(r)
 
-    with open(OUT_FAMILIES, "w", newline="") as ff, open(OUT_COPIES, "w", newline="") as fc:
+    with open(out_families, "w", newline="") as ff, open(out_copies, "w", newline="") as fc:
         wf = csv.writer(ff, delimiter="\t")
         wc = csv.writer(fc, delimiter="\t")
         wf.writerow(["family_id", "n_copies", "n_chroms", "chroms", "cross_chrom", "avg_reads"])
@@ -326,7 +337,7 @@ def main():
             for ci, c in enumerate(fam_copies):
                 wc.writerow([fid, ci, c["tid"], c["chrom"], c["start"], c["end"],
                              c["n_exon"], c["strand"], c["n_reads"]])
-    print(f"Wrote {OUT_FAMILIES} and {OUT_COPIES}", flush=True)
+    print(f"Wrote {out_families} and {out_copies}", flush=True)
 
 
 if __name__ == "__main__":

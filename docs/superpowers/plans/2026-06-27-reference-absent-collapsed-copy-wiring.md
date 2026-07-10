@@ -624,16 +624,16 @@ diff <(sort o2_definitive.assignments.tsv) <(sort o2_off.assignments.tsv) | wc -
 ```
 Expected: `0`.
 
-- [ ] **Step 2: Flag-ON non-regression.** Run WITH `--absent-copies`; require silver non-decreasing and the assigned set a superset:
+- [ ] **Step 2: Flag-ON non-regression.** Run WITH `--absent-copies`; require unique-mapper agreement non-decreasing and the assigned set a superset:
 
 ```bash
 /mnt/c/.../copy_assign --bam GGO_mm.bam --fasta GGO.fasta --regions o2_regions.txt --min-copies 2 \
   --skip-poa-diagnostic --absent-copies --out o2_on
-grep "silver-standard" o2_on.log   # >= 24660/24682
+grep "unique-mapper agreement" o2_on.log   # >= 24660/24682
 # every O2-Assigned read must still be Assigned (freeze guarantee): report violations (expect 0)
 python3 bench/absent_copy_check_superset.py o2_definitive.assignments.tsv o2_on.assignments.tsv
 ```
-Expected: silver ≥ old; 0 Assigned→Tied flips at frozen reads.
+Expected: unique-mapper agreement ≥ old; 0 Assigned→Tied flips at frozen reads.
 
 - [ ] **Step 3: sim5x admit/reject.** Inject a known collapsed copy and a known diploid het into the sim5x harness (`bench/sim_reads.py`); assert the collapsed copy is admitted (`AC_*` appears, its reads assigned) and the het is in `dna_needs.tsv`, NOT admitted.
 

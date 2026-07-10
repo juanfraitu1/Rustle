@@ -4,7 +4,7 @@ NC_073247.2 sub-reference. Isolates the aligner's effect (repeat-aware placement
 copy assignment. Uses the production assignment engine (copy_assign.py::assign_family).
 
 Metrics per family: reads placed, MAPQ=0 fraction, soft-clip, PSV columns, resolvable%, assigned%
-(PSV+junction), and silver-standard agreement (PSV-assigned copy == best-overlap copy, MQ>0)."""
+(PSV+junction), and unique-mapper agreement (PSV-assigned copy == best-overlap copy, MQ>0)."""
 import sys, json, os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 import copy_assign as CA
@@ -43,7 +43,7 @@ def placement_stats(bam, contig, lo, hi, copy_spans):
 
 def run():
     print(f"{'family':10s} {'aligner':9s} | {'reads':>5} {'prim':>5} {'MQ0%':>5} {'clip%':>6} "
-          f"| {'PSVc':>4} {'resolv%':>7} {'asgn%':>6} {'silver_agree':>12} {'uniq':>5}")
+          f"| {'PSVc':>4} {'resolv%':>7} {'asgn%':>6} {'uniq_agree':>12} {'uniq':>5}")
     summary = {}
     for fid, info in fam_info.items():
         contig = info["contig"]; lo = info["lo"]; hi = info["hi"]
@@ -59,7 +59,7 @@ def run():
             asgn = 100 * st["assigned_j"] / n if n else 0
             agree = (st["uniq_agree_j"] / st["uniq_j"]) if st["uniq_j"] else float("nan")
             summary[fid][aligner] = dict(placement=ps, assign=st,
-                                         resolv_pct=resolv, asgn_pct=asgn, silver=agree)
+                                         resolv_pct=resolv, asgn_pct=asgn, uniq_agreement=agree)
             print(f"{fid:10s} {aligner:9s} | {ps['distinct_reads']:>5} {ps['primaries']:>5} "
                   f"{100*ps['mq0_frac']:>4.0f}% {100*ps['mean_softclip_frac']:>5.1f}% "
                   f"| {pc:>4} {resolv:>6.1f}% {asgn:>5.1f}% {agree:>12.4f} {st['uniq_j']:>5}")
