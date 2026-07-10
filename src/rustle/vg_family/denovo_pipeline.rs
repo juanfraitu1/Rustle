@@ -409,12 +409,24 @@ fn conflict_to_split_families(
 ) -> Vec<SplitFamily> {
     let float_edges: Vec<(usize, usize, f64)> =
         c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+    to_split_families(families, &float_edges, p)
+}
+
+/// Core components->`SplitFamily` conversion shared by every membership oracle (read-conflict today,
+/// homology-primary E_r later): edges are already `f64` weights (read counts for the conflict path, a
+/// uniform `1.0` for the homology path). Class follows the same size+density rule regardless of the
+/// oracle that produced `families`/`edges`.
+fn to_split_families(
+    families: &[Vec<usize>],
+    edges: &[(usize, usize, f64)],
+    p: &SplitParams,
+) -> Vec<SplitFamily> {
     let mut out: Vec<SplitFamily> = families
         .iter()
         .map(|members| {
             let mut m = members.clone();
             m.sort_unstable();
-            let stats = community_stats(&m, &float_edges);
+            let stats = community_stats(&m, edges);
             let class = classify(stats.n, stats.density, p);
             SplitFamily { members: m, stats, class }
         })
@@ -3309,6 +3321,27 @@ mod tests {
         // density of a 2-node clique (1 edge / 1 possible) = 1.0.
         for sf in &split {
             assert!((sf.stats.density - 1.0).abs() < 1e-9, "2-node clique density must be 1.0");
+        }
+    }
+
+    #[test]
+    fn to_split_families_matches_conflict_wrapper() {
+        // Two conflict components, edges with distinct usize weights spanning both.
+        let families = vec![vec![0usize, 1, 2], vec![3usize, 4]];
+        let c_edges = vec![(0usize, 1usize, 5usize), (1, 2, 3), (3, 4, 2)];
+        let p = SplitParams::default();
+
+        let via_wrapper = conflict_to_split_families(&families, &c_edges, &p);
+
+        let float_edges: Vec<(usize, usize, f64)> =
+            c_edges.iter().map(|&(a, b, w)| (a, b, w as f64)).collect();
+        let via_core = to_split_families(&families, &float_edges, &p);
+
+        assert_eq!(via_wrapper.len(), via_core.len());
+        for (w, c) in via_wrapper.iter().zip(via_core.iter()) {
+            assert_eq!(w.members, c.members);
+            assert_eq!(w.class, c.class);
+            assert_eq!(w.stats, c.stats);
         }
     }
 
