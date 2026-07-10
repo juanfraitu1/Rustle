@@ -11,6 +11,7 @@ use clap::Parser;
 use std::io::Write;
 
 use rustle::vg_family::denovo_pipeline::{
+    detect_single_copy_baseline_genome_wide,
     detect_conflict_catalog_genome_wide, detect_conflict_catalog_genome_wide_xchrom,
     detect_homology_catalog_genome_wide, family_protein_coheres, homology_refine_params,
     refine_families_exon_sum, DenovoConfig, RefineParams,
@@ -89,12 +90,40 @@ struct Args {
     /// segdup regime.
     #[arg(long, default_value_t = false)]
     enumerate_copies: bool,
+
+    /// Emit the single-copy baseline instead of the family catalog: `<out>.single_copy.tsv` (one row per
+    /// single-copy chi(H)=1 locus) + `<out>.lambda_global.tsv` (the genome-wide median n_reads = lambda_global,
+    /// the copy-number normalizer). A TABLE, not a GTF -- this is copy-number calibration, not an isoform catalog.
+    #[arg(long, default_value_t = false)]
+    single_copy_baseline: bool,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let mut cfg = DenovoConfig::default();
     cfg.complete_poa_core = args.complete_core;
+
+    if args.single_copy_baseline {
+        use rustle::vg_family::single_copy::lambda_global;
+        let loci = detect_single_copy_baseline_genome_wide(
+            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+        )?;
+        let mut sc = std::fs::File::create(format!("{}.single_copy.tsv", args.out))?;
+        writeln!(sc, "chrom\tstart\tend\tstrand\tn_reads\tn_exons\tchi_h\tn_psv")?;
+        for l in &loci {
+            writeln!(sc, "{}\t{}\t{}\t{}\t{}\t{}\t1\t0", l.chrom, l.start, l.end, l.strand, l.n_reads, l.n_exons)?;
+        }
+        let lam = lambda_global(&loci);
+        let lam_str = lam.map(|x| format!("{x}")).unwrap_or_else(|| "NA".into());
+        let mut lf = std::fs::File::create(format!("{}.lambda_global.tsv", args.out))?;
+        writeln!(lf, "lambda_global\tn_single_copy_loci")?;
+        writeln!(lf, "{}\t{}", lam_str, loci.len())?;
+        eprintln!(
+            "[gw-catalog] single-copy baseline: {} loci -> lambda_global={} ({}.single_copy.tsv, {}.lambda_global.tsv)",
+            loci.len(), lam_str, args.out, args.out
+        );
+        return Ok(());
+    }
     // unify to `Vec<Vec<DenovoTranscript>>` (each = a family's copies) for a single emit path. The
     // cross-chrom path emits same-chromosome families (incl. inverted duplications and distant paralogs)
     // and cross-chromosome families together; the default path is the tight same-strand tandem-array view.
