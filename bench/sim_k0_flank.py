@@ -107,7 +107,9 @@ def make_reads(copies):
 
 def align():
     with open(f"{OUT}/k0.sam", "w") as sam:
-        subprocess.run([MM2, "-ax", "splice", "-uf", "-C5", "--secondary=no",
+        # -N 50: secondaries are REQUIRED. The E_c de-tie conflict graph is built from ambiguous
+        # placements, so with --secondary=no it finds zero families and the sim reports nothing.
+        subprocess.run([MM2, "-ax", "splice", "-uf", "-C5", "-N", "50",
                         f"{OUT}/k0.fasta", f"{OUT}/k0.fq"], stdout=sam,
                        stderr=subprocess.DEVNULL, check=True)
     subprocess.run(f"{SAM} sort -o {OUT}/k0.bam {OUT}/k0.sam && {SAM} index {OUT}/k0.bam",
