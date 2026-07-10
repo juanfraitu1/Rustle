@@ -62,6 +62,9 @@ pub struct DenovoConfig {
     /// E_r homology-primary family MEMBERSHIP (opt-in). Conflict/PSV/χ(H) remain within-family. Enlarges
     /// the copy set ⟹ stricter Bonferroni α/(K−1) ⟹ assignments shift. Requires minimap2.
     pub homology_primary: bool,
+    /// Drop single-exon reps that engulf >= `READTHROUGH_MIN_DISTINCT` distinct junctions: unspliced
+    /// pre-mRNA, never a copy. Default ON — see `is_unspliced_readthrough` for the validation.
+    pub filter_readthrough: bool,
 }
 
 impl Default for DenovoConfig {
@@ -76,6 +79,7 @@ impl Default for DenovoConfig {
             complete_poa_core: false,
             vg_realign: false,
             homology_primary: false,
+            filter_readthrough: true,
         }
     }
 }
@@ -483,6 +487,66 @@ pub fn copies_overlap(spans: &[(String, u64, u64)]) -> Vec<(usize, usize, f64)> 
         }
     }
     out
+}
+
+/// Reads required before a splice junction counts as real rather than alignment noise.
+pub const READTHROUGH_MIN_SUPPORT: usize = 2;
+/// Distinct junctions inside a single-exon transcript's span that mark it as unspliced pre-mRNA.
+///
+/// Read off the data, not tuned: across 30 regions every single-exon de-novo transcript (n = 15, including
+/// the GSTM, RFPL, DAZ and BPY2 readthroughs) contains **≥ 14** distinct junctions, while **no** expressed
+/// annotated intronless gene out of 260 exceeds **4** — including the EEF1A1 retrocopy `LOC109023808`, whose
+/// spliced parent contributes 3516 reads that cross-map onto it. `bench/READTHROUGH_RULE_VALIDATION.md`.
+pub const READTHROUGH_MIN_DISTINCT: usize = 5;
+
+/// Splice junctions observed in the reads, with the number of reads supporting each.
+/// Key is `(chrom, donor, acceptor)` in genomic coordinates.
+pub fn read_junction_support(bam_reads: &[BamRead]) -> std::collections::HashMap<(String, u64, u64), usize> {
+    let mut sup = std::collections::HashMap::new();
+    for br in bam_reads {
+        if br.is_supplementary {
+            continue; // chimeric segments are not splicing evidence
+        }
+        for (d, a) in crate::vg_family::copy_assign::read_introns(&br.read) {
+            *sup.entry((br.chrom.clone(), d, a)).or_insert(0) += 1;
+        }
+    }
+    sup
+}
+
+/// Is this transcript the UNSPLICED form of a locus (intronic pileup / readthrough) rather than an mRNA?
+///
+/// True iff it is **single-exon** and at least [`READTHROUGH_MIN_DISTINCT`] distinct junctions, each with
+/// [`READTHROUGH_MIN_SUPPORT`] supporting reads, lie **entirely inside** its span.
+///
+/// A readthrough engulfs whole gene structures, so it contains many distinct junctions. Three properties make
+/// the rule safe, and each was validated against a rule that failed without it:
+/// * **Distinct**, not total — TSPYL1 has 51 junction *observations* inside its span but only 4 distinct ones.
+/// * **Read-level**, not transcript-level — a rule phrased over assembled spliced transcripts misses the RFPL
+///   readthrough entirely, because that window is too sparsely expressed to assemble one.
+/// * **Entirely inside** — a gene nested in another gene's intron sees the host's junctions *flanking* it,
+///   never within it. A retrocopy is likewise safe: it has no introns, so its spliced parent's cross-mapping
+///   reads align contiguously and cannot deposit a junction inside it.
+///
+/// Rejected alternatives (all measured, `bench/READTHROUGH_RULE_VALIDATION.md`, `bench/YAG_CHECK.md`): any
+/// single read junction inside the span (drops 21% of real intronless genes); span / longest-contained-read
+/// ratio (no separation); exonic coverage breadth (the GSTM readthrough is better covered than TSPYL1).
+pub fn is_unspliced_readthrough(
+    rep: &DenovoTranscript,
+    junction_support: &std::collections::HashMap<(String, u64, u64), usize>,
+    min_support: usize,
+    min_distinct: usize,
+) -> bool {
+    if !rep.introns.is_empty() {
+        return false; // it splices; it is a transcript model, not an unspliced span
+    }
+    let engulfed = junction_support
+        .iter()
+        .filter(|((chrom, d, a), &n)| {
+            n >= min_support && chrom == &rep.chrom && rep.start <= *d && *a <= rep.end
+        })
+        .count();
+    engulfed >= min_distinct
 }
 
 /// How two copies in an emitted catalog can wrongly share genomic sequence.
@@ -973,7 +1037,7 @@ pub fn detect_and_assign(
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
     let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     eprintln!(
         "[detect_and_assign] {} primary -> {} skeletons -> {} transcripts -> {} reps",
         primary_reads.len(),
@@ -981,6 +1045,35 @@ pub fn detect_and_assign(
         transcripts.len(),
         reps.len()
     );
+
+    // Unspliced readthrough spans are not copies. Left in, one becomes a "copy" of a family: at GSTM a 30 kb
+    // single-exon span covering GSTM5+GSTM1 sat beside GSTM3, and in the DAZ/BPY2 windows a 164 kb / 298 kb
+    // span was the ONLY plus-strand model, so the homology oracle saw no mRNA to match and both families
+    // collapsed to nothing. They also make read alignment quadratic (a 128 kb "transcript" hangs assignment).
+    // Never silent: every drop is logged.
+    if cfg.filter_readthrough {
+        let support = read_junction_support(bam_reads);
+        let mut dropped = Vec::new();
+        reps.retain(|rep| {
+            let rt = is_unspliced_readthrough(rep, &support, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT);
+            if rt {
+                dropped.push(format!("{}:{}-{} ({} reads)", rep.chrom, rep.start, rep.end, rep.n_reads));
+            }
+            !rt
+        });
+        if !dropped.is_empty() {
+            eprintln!(
+                "[detect_and_assign] readthrough filter: dropped {} single-exon rep(s) engulfing >= {} \
+                 distinct junctions (unspliced pre-mRNA, not copies) -> {} reps",
+                dropped.len(),
+                READTHROUGH_MIN_DISTINCT,
+                reps.len()
+            );
+            for d in &dropped {
+                eprintln!("[detect_and_assign]   readthrough {d}");
+            }
+        }
+    }
     lap!("pass1+gate+collapse");
     // Family MEMBERSHIP oracle: default = conflict-graph (E_c, AUTHORITATIVE de-tie criterion); opt-in
     // (`cfg.homology_primary`) = homology (E_r) — a copy whose reads all map uniquely (high MAPQ) forms
@@ -3574,6 +3667,70 @@ mod tests {
         // disjoint copies on the same contig produce nothing
         let ok = vec![c("F", 100, 200), c("F", 300, 400)];
         assert!(catalog_overlaps(&ok).is_empty());
+    }
+
+    fn junc(list: &[(u64, u64, usize)]) -> std::collections::HashMap<(String, u64, u64), usize> {
+        list.iter().map(|&(d, a, n)| (("c1".to_string(), d, a), n)).collect()
+    }
+
+    /// The GSTM / DAZ / BPY2 shape: a single-exon span engulfing many distinct junctions is unspliced pre-mRNA.
+    #[test]
+    fn readthrough_single_exon_engulfing_many_junctions_is_flagged() {
+        let mut rt = rep_s(1_000, 100_000, vec![], 12);
+        rt.introns.clear();
+        let j = junc(&[(10_000, 11_000, 5), (20_000, 21_000, 4), (30_000, 31_000, 9),
+                       (40_000, 41_000, 3), (50_000, 51_000, 7)]);
+        assert!(is_unspliced_readthrough(&rt, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// A SPLICED transcript is a transcript model, never a readthrough — the rule must not touch it.
+    #[test]
+    fn readthrough_never_flags_a_spliced_transcript() {
+        let spliced = rep_s(1_000, 100_000, vec![(10_000, 11_000), (20_000, 21_000)], 40);
+        let j = junc(&[(10_000, 11_000, 5), (20_000, 21_000, 4), (30_000, 31_000, 9),
+                       (40_000, 41_000, 3), (50_000, 51_000, 7)]);
+        assert!(!is_unspliced_readthrough(&spliced, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// TSPYL1: a real intronless gene with a handful of stray junctions inside its span (4 distinct) — KEPT.
+    /// This is the closest control; the margin to the artifact minimum (14) is three junctions.
+    #[test]
+    fn readthrough_keeps_real_intronless_gene_with_stray_junctions() {
+        let mut gene = rep_s(1_000, 15_000, vec![], 2080);
+        gene.introns.clear();
+        let j = junc(&[(2_000, 2_500, 3), (3_000, 3_500, 2), (4_000, 4_500, 5), (5_000, 5_500, 4)]);
+        assert!(!is_unspliced_readthrough(&gene, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// EEF1A1 -> LOC109023808: a retrocopy has NO introns, so the spliced parent's cross-mapping reads align
+    /// contiguously and deposit no junction inside it. Measured: 0 distinct junctions, 15 reads.
+    #[test]
+    fn readthrough_keeps_an_intronless_retrocopy() {
+        let mut retro = rep_s(97_380_144, 97_381_766, vec![], 15);
+        retro.introns.clear();
+        assert!(!is_unspliced_readthrough(&retro, &junc(&[]), READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// A junction must lie ENTIRELY inside the span. A gene nested in another gene's intron sees the host's
+    /// junctions FLANKING it, so containment — not overlap — is what protects it.
+    #[test]
+    fn readthrough_ignores_junctions_that_merely_overlap_the_span() {
+        let mut nested = rep_s(10_000, 11_000, vec![], 50);
+        nested.introns.clear();
+        // the host gene's intron spans the nested gene entirely: donor before, acceptor after.
+        let j = junc(&[(9_000, 12_000, 90), (8_000, 13_000, 80), (7_000, 14_000, 70),
+                       (6_000, 15_000, 60), (5_000, 16_000, 50), (4_000, 17_000, 40)]);
+        assert!(!is_unspliced_readthrough(&nested, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// Junctions below the support floor are alignment noise, not splicing evidence.
+    #[test]
+    fn readthrough_ignores_singleton_junctions() {
+        let mut rt = rep_s(1_000, 100_000, vec![], 12);
+        rt.introns.clear();
+        let j = junc(&[(10_000, 11_000, 1), (20_000, 21_000, 1), (30_000, 31_000, 1),
+                       (40_000, 41_000, 1), (50_000, 51_000, 1), (60_000, 61_000, 1)]);
+        assert!(!is_unspliced_readthrough(&rt, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
     }
 
     #[test]

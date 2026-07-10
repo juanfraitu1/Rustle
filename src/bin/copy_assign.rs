@@ -245,6 +245,14 @@ struct Args {
     /// minimap2 (honors RUSTLE_MINIMAP2); aborts rather than falling back to the conflict graph.
     #[arg(long, default_value_t = false)]
     homology_primary: bool,
+
+    /// Keep unspliced readthrough transcripts as candidate copies. A single-exon de-novo transcript that
+    /// engulfs >= 5 distinct splice junctions (each with >= 2 reads) is intronic pileup / unspliced pre-mRNA,
+    /// not an mRNA, and is dropped by default. Validated on 15 such transcripts (minimum 14 engulfed
+    /// junctions) against 260 expressed intronless genes (maximum 4), including the EEF1A1 retrocopy whose
+    /// spliced parent cross-maps onto it. Pass this to disable the filter and reproduce the old behaviour.
+    #[arg(long, default_value_t = false)]
+    keep_readthrough: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -395,6 +403,7 @@ fn main() -> Result<()> {
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
     cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
+    cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
     let params = AssignParams {
         margin: args.margin,
         error_rate: args.error_rate,
