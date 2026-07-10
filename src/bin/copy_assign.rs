@@ -229,6 +229,12 @@ struct Args {
     #[arg(long)]
     lambda_global: Option<f64>,
 
+    /// Read lambda_global from a `gw_family_catalog --single-copy-baseline` `<prefix>.lambda_global.tsv`
+    /// instead of passing the scalar by hand. `--lambda-global <f64>` (if given) takes precedence. This makes
+    /// the copy-number normalizer an in-binary quantity rather than an external-script number.
+    #[arg(long)]
+    lambda_file: Option<String>,
+
     /// VG re-align supplement (Task 5, REPORT-ONLY): for every co-located family, re-align each
     /// poor-fit/candidate read (low MAPQ, heavy clipping, or high divergence — `vg_realign::is_candidate`)
     /// to the family's copy-paths and record the decision (`reassigned` / `rejected` / `novel-candidate`)
@@ -401,6 +407,19 @@ struct CopyConvRow {
     n_decisive: usize,
 }
 
+/// Read the `lambda_global` scalar from a `lambda_global.tsv` (header + one data row, first column). `None` if
+/// missing, unreadable, or the value is `NA`.
+fn read_lambda_file(path: &str) -> Option<f64> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let data = text.lines().nth(1)?; // skip header
+    data.split('\t').next()?.trim().parse::<f64>().ok()
+}
+
+/// Resolve lambda: explicit scalar > file > none.
+fn resolve_lambda(explicit: Option<f64>, from_file: Option<f64>) -> Option<f64> {
+    explicit.or(from_file)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -425,6 +444,7 @@ fn main() -> Result<()> {
         by_contig.len()
     );
 
+    let lambda = resolve_lambda(args.lambda_global, args.lambda_file.as_deref().and_then(read_lambda_file));
     let mut cfg = DenovoConfig::default();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
@@ -868,7 +888,7 @@ fn main() -> Result<()> {
                     n_copies: fa.n_copies,
                     n_reads: fa.n_reads,
                     chi_h: chi_h_with_junctions(&fa.copy_psv_alleles, &fa.copy_junctions),
-                    depth_cn: args.lambda_global.map(|lam| depth_cn(fa.n_reads, lam)).unwrap_or(f64::NAN),
+                    depth_cn: lambda.map(|lam| depth_cn(fa.n_reads, lam)).unwrap_or(f64::NAN),
                     regime: if fa.collapsed_copies > 0 { "reference_collapsed" } else { "reference_resolved" },
                 });
                 family_rows.push(FamilyRow {
@@ -973,7 +993,7 @@ fn main() -> Result<()> {
         }
     }
     eprintln!("[copy_assign] wrote {}.famcn_readonly.tsv ({} families; depth_cn={})",
-        args.out, famcn_rows.len(), if args.lambda_global.is_some() { "on" } else { "NA (pass --lambda-global)" });
+        args.out, famcn_rows.len(), if lambda.is_some() { "on" } else { "NA (pass --lambda-global or --lambda-file)" });
 
     // per-read posterior + consistent zone (opt-in via --posterior).
     if args.posterior {
@@ -1224,4 +1244,35 @@ fn main() -> Result<()> {
     }
     eprintln!("[copy_assign] wrote {0}.families.tsv + {0}.assignments.tsv + {0}.quant.tsv", args.out);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_lambda_file_parses_the_scalar() {
+        let dir = std::env::temp_dir();
+        let p = dir.join(format!("rustle_lam_test_{}.tsv", std::process::id()));
+        std::fs::write(&p, "lambda_global\tn_single_copy_loci\n25.5\t1234\n").unwrap();
+        assert_eq!(read_lambda_file(p.to_str().unwrap()), Some(25.5));
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn read_lambda_file_none_on_na_or_missing() {
+        let dir = std::env::temp_dir();
+        let p = dir.join(format!("rustle_lam_na_{}.tsv", std::process::id()));
+        std::fs::write(&p, "lambda_global\tn_single_copy_loci\nNA\t0\n").unwrap();
+        assert_eq!(read_lambda_file(p.to_str().unwrap()), None);
+        assert_eq!(read_lambda_file("/nonexistent/path.tsv"), None);
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn resolve_lambda_precedence_explicit_over_file() {
+        assert_eq!(resolve_lambda(Some(30.0), Some(25.0)), Some(30.0));
+        assert_eq!(resolve_lambda(None, Some(25.0)), Some(25.0));
+        assert_eq!(resolve_lambda(None, None), None);
+    }
 }
