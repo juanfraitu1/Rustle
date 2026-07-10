@@ -21,10 +21,11 @@ use rustle::vg_family::absent_copy::DnaNeedsRecord;
 use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
-    assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache,
+    assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
 };
 use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
 use rustle::vg_family::family_detect::collapse_loci_groups;
+use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
 use rustle::vg_family::readonly_copy_number::{chi_h, depth_cn};
 
 /// One assembled isoform (FLAIR-style intron-chain collapse), kept for the optional `--gtf` emit. `gene_tid`
@@ -52,6 +53,9 @@ struct RegionWork {
     lo: u64,
     hi: u64,
     read_names: Vec<String>,
+    /// Alignment-score evidence per read, parallel to `read_names`. Reported, never decisive — see
+    /// `read_conflict::AsEvidence` for why raw AS is length-confounded and `de` makes the call.
+    as_ev: Vec<AsEvidence>,
     n_mapped: usize,
     fams: Vec<FamilyAssignment>,
     fallback: Vec<FallbackEdge>,
@@ -258,6 +262,36 @@ fn parse_region(s: &str) -> Result<(String, u64, u64)> {
     Ok((chrom.to_string(), lo_s.parse().context("bad region start")?, hi_s.parse().context("bad region end")?))
 }
 
+/// Alignment-score evidence for every read in the region, indexed like the region's `bam_reads`.
+///
+/// Each `BamRead` is ONE alignment record, so a multimapper contributes several records under one name.
+/// We group by name, so `best`/`second` are that READ's top two placements anywhere in the region — the
+/// familiar "AS of the best hit vs the next best hit". Purely reported; `de` decides.
+fn as_evidence_per_read(bam_reads: &[BamRead]) -> Vec<AsEvidence> {
+    let aligned_len = |br: &BamRead| -> u32 {
+        br.read.cigar.iter().filter(|(op, _)| matches!(op, 'M' | '=' | 'X')).map(|(_, n)| *n).sum::<u64>() as u32
+    };
+    let mut by_name: std::collections::HashMap<&str, Vec<(i32, u32)>> = std::collections::HashMap::new();
+    for br in bam_reads {
+        by_name.entry(br.name.as_str()).or_default().push((br.as_score, aligned_len(br)));
+    }
+    bam_reads
+        .iter()
+        .map(|br| {
+            let placements = &by_name[br.name.as_str()];
+            as_evidence(placements).expect("read is its own placement, so the slice is non-empty")
+        })
+        .collect()
+}
+
+/// `NA` for an absent runner-up (single-placement read); otherwise the formatted value.
+fn opt_i32(v: Option<i32>) -> String {
+    v.map_or_else(|| "NA".to_string(), |x| x.to_string())
+}
+fn opt_f32(v: Option<f32>) -> String {
+    v.map_or_else(|| "NA".to_string(), |x| format!("{x:.3}"))
+}
+
 /// One assignment-table row (resolved while the region's reads are in scope).
 struct AssignRow {
     read_name: String,
@@ -268,6 +302,8 @@ struct AssignRow {
     margin: f64,
     p_value: f64,
     min_p_value: f64,
+    /// Reported alignment-score evidence (see `as_evidence_per_read`). Never feeds the decision.
+    as_ev: AsEvidence,
 }
 /// One family-table row.
 struct FamilyRow {
@@ -502,8 +538,9 @@ fn main() -> Result<()> {
             Vec::new()
         };
         let read_names: Vec<String> = bam_reads.iter().map(|r| r.name.clone()).collect();
+        let as_ev = as_evidence_per_read(&bam_reads);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, n_mapped, fams, fallback, dna_needs, transcripts })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, as_ev, n_mapped, fams, fallback, dna_needs, transcripts })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -516,7 +553,7 @@ fn main() -> Result<()> {
     // serial path, so the output is byte-identical.
     {
         for work in works {
-            let RegionWork { contig, lo, hi, read_names, n_mapped, fams, fallback, dna_needs, transcripts } = work;
+            let RegionWork { contig, lo, hi, read_names, as_ev, n_mapped, fams, fallback, dna_needs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -541,6 +578,7 @@ fn main() -> Result<()> {
                         margin: a.log_lr_margin,
                         p_value: a.p_value,
                         min_p_value: a.min_p_value,
+                        as_ev: as_ev[*ri],
                     });
                 }
                 // --vg-realign (report-only): the re-align supplement's per-read decisions for this family.
@@ -853,12 +891,14 @@ fn main() -> Result<()> {
         )?;
     }
     let mut ah = std::fs::File::create(format!("{}.assignments.tsv", args.out))?;
-    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value")?;
+    writeln!(ah, "read_name\tfamily_id\tassigned_copy\tstatus\tn_decisive\tmargin\tp_value\tmin_p_value\tas_best\tas_second\tas_margin\tas_per_base_best\tas_per_base_2nd")?;
     for r in &assign_rows {
         writeln!(
             ah,
-            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}",
-            r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value
+            "{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3e}\t{:.3e}\t{}\t{}\t{}\t{:.3}\t{}",
+            r.read_name, r.family_id, r.assigned_copy, r.status, r.n_decisive, r.margin, r.p_value, r.min_p_value,
+            r.as_ev.best, opt_i32(r.as_ev.second), opt_i32(r.as_ev.margin()),
+            r.as_ev.best_per_base, opt_f32(r.as_ev.second_per_base)
         )?;
     }
 

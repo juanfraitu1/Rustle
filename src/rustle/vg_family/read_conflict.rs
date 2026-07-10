@@ -113,6 +113,48 @@ fn tied(a: &Placement, b: &Placement, p: &ConflictParams) -> bool {
     }
 }
 
+/// A read's alignment-score evidence: the best and runner-up `AS:i` over its placements, both raw and
+/// normalized by aligned length.
+///
+/// AS is REPORTED, never decisive — `de` decides. Raw AS is an absolute score that grows with aligned
+/// length, so a genuine multimapper whose second placement is a PARTIAL alignment scores far lower there
+/// even at identical per-base quality. Measured on GGO Iso-Seq: median runner-up/best AS ratio 0.713 while
+/// the aligned-length ratio is 0.897. That length confound is why `de` (a rate) replaced AS (a total), and
+/// why `de-tie ⊆ AS-tie` does NOT hold on real data. `per_base` divides out the confound and is the value
+/// to compare across placements.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AsEvidence {
+    pub best: i32,
+    pub second: Option<i32>,
+    pub best_per_base: f32,
+    pub second_per_base: Option<f32>,
+}
+
+impl AsEvidence {
+    /// `best - second`; `None` when the read has a single placement (nothing to be ambiguous between).
+    pub fn margin(&self) -> Option<i32> {
+        self.second.map(|s| self.best - s)
+    }
+}
+
+/// Best and runner-up alignment score over one read's placements, as `(as_score, aligned_len)` pairs.
+/// Ranks on RAW `AS` (that is the quantity people quote and Eichler's `AS >= 10` rule uses); the per-base
+/// values are carried alongside for the length-fair comparison. `None` if the read has no placements.
+/// Zero-length placements get a per-base score of 0.0 rather than a division by zero.
+pub fn as_evidence(placements: &[(i32, u32)]) -> Option<AsEvidence> {
+    let per_base = |(s, l): (i32, u32)| if l == 0 { 0.0 } else { s as f32 / l as f32 };
+    let mut sorted: Vec<(i32, u32)> = placements.to_vec();
+    sorted.sort_by(|a, b| b.0.cmp(&a.0));
+    let &first = sorted.first()?;
+    let second = sorted.get(1).copied();
+    Some(AsEvidence {
+        best: first.0,
+        second: second.map(|s| s.0),
+        best_per_base: per_base(first),
+        second_per_base: second.map(per_base),
+    })
+}
+
 /// `min(a,b) >= as_tie * max(a,b)` — the legacy AS-tie predicate, kept only for the audit edge-set.
 fn as_tied(a: i32, b: i32, as_tie: f64) -> bool {
     let (hi, lo) = (a.max(b), a.min(b));
@@ -142,8 +184,12 @@ pub fn conflict_edges(n_loci: usize, reads: &[ReadPlacements], p: &ConflictParam
     weight.into_iter().filter(|&(_, w)| w >= p.min_reads).map(|((i, j), w)| (i, j, w)).collect()
 }
 
-/// AS-tie edge node-pairs over `n_loci` — the legacy criterion, used only to log that the de-tie edge set is a
-/// subset of the AS-tie edge set (`de-tie ⊆ AS-tie`, the portable regression invariant from the bake-off).
+/// AS-tie edge node-pairs over `n_loci` — the legacy criterion, kept only as a logged comparison edge-set.
+///
+/// ⚠ `de-tie ⊆ AS-tie` holds only when both placements are FULL-LENGTH (the unit tests and the planted sims).
+/// On real Iso-Seq it is FALSE: secondary placements are partial, raw AS scales with aligned length, so a
+/// de-tied pair can fail `as_tied` outright. Every real GGO region logs `de⊆AS=false`. Do not treat the
+/// audit line as a regression invariant on real data — it is a diagnostic.
 pub fn as_tie_edges(n_loci: usize, reads: &[ReadPlacements], as_tie: f64, min_reads: usize) -> std::collections::BTreeSet<(usize, usize)> {
     use std::collections::BTreeMap;
     let mut weight: BTreeMap<(usize, usize), usize> = BTreeMap::new();
@@ -435,5 +481,51 @@ mod tests {
         let as_edges = as_tie_edges(2, &reads, 0.9, 1);
         assert!(de_edges.is_empty());
         assert_eq!(as_edges, std::collections::BTreeSet::from([(0, 1)]));
+    }
+
+    #[test]
+    fn as_evidence_none_without_placements() {
+        assert_eq!(as_evidence(&[]), None);
+    }
+
+    #[test]
+    fn as_evidence_single_placement_has_no_second_or_margin() {
+        let e = as_evidence(&[(1842, 916)]).unwrap();
+        assert_eq!(e.best, 1842);
+        assert_eq!(e.second, None);
+        assert_eq!(e.second_per_base, None);
+        assert_eq!(e.margin(), None, "one placement => nothing to be ambiguous between");
+    }
+
+    #[test]
+    fn as_evidence_ranks_best_and_runner_up_over_three_placements() {
+        let e = as_evidence(&[(1310, 800), (1842, 916), (900, 500)]).unwrap();
+        assert_eq!(e.best, 1842);
+        assert_eq!(e.second, Some(1310));
+        assert_eq!(e.margin(), Some(532));
+        assert!((e.best_per_base - 1842.0 / 916.0).abs() < 1e-6);
+        assert!((e.second_per_base.unwrap() - 1310.0 / 800.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn as_evidence_zero_length_placement_does_not_divide_by_zero() {
+        let e = as_evidence(&[(50, 0)]).unwrap();
+        assert_eq!(e.best_per_base, 0.0);
+    }
+
+    /// The measured real-data confound, pinned: two placements of EQUAL per-base quality where the runner-up
+    /// is a partial alignment. Raw AS says "not a tie" (ratio 0.60 < 0.90) while per-base AS says they are
+    /// indistinguishable. This is why AS is reported and `de` decides.
+    #[test]
+    fn raw_as_misjudges_a_partial_placement_that_per_base_as_calls_equal() {
+        let (full, partial) = ((2000, 1000), (1200, 600)); // both exactly 2.0 AS per aligned base
+        let e = as_evidence(&[full, partial]).unwrap();
+        assert_eq!(e.margin(), Some(800), "raw AS shows a large margin...");
+        assert!(!as_tied(full.0, partial.0, 0.9), "...so the legacy AS-tie predicate rejects the pair");
+        assert_eq!(
+            e.best_per_base,
+            e.second_per_base.unwrap(),
+            "...yet per-aligned-base they are identical: the margin is pure length confound"
+        );
     }
 }
