@@ -5,6 +5,7 @@
 //! k-mer-based novel-copy rescue. See `docs/UNMAPPED_FAMILY_RESCUE.md` for why
 //! the aligner misses the reads this module rescues.
 
+pub mod collapse_gate; // O2: admit a COLLAPSED single-rep locus as a multi-copy family (ambiguity test, then chi(H)).
 pub mod minimizers; // O1 over-merge-gate FOUNDATION: canonical (k,w)-minimizers (Rust port of vg_repeat_catalog.py `minimizers`; byte-parity tested).
 pub mod repeat_catalog; // O1 over-merge-gate: node-multiplicity REPEAT CATALOG (load_skeletons/dn_exons/NodeCatalog; Rust port of vg_repeat_catalog.py catalog-production core; byte-parity tested).
 pub mod family_definition; // O1 multi-copy predicate `distinct_loci` (Rust port of genome_family_def.py; byte-parity tested).
