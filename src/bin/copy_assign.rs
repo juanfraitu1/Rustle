@@ -23,7 +23,7 @@ use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
 };
-use rustle::vg_family::denovo_pipeline::{copies_overlap, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
+use rustle::vg_family::denovo_pipeline::{catalog_overlaps, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
 use rustle::vg_family::family_detect::collapse_loci_groups;
 use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
 use rustle::vg_family::readonly_copy_number::{chi_h, depth_cn};
@@ -1140,32 +1140,23 @@ fn main() -> Result<()> {
     // its reads masquerade as the K=0 identifiability wall. Warn loudly rather than fail — the catalog is
     // still emitted, but its abstention must not be read as biology. `bench/artifact_audit.py` audits this.
     {
-        let mut by_fam: std::collections::BTreeMap<&str, Vec<(String, u64, u64)>> = std::collections::BTreeMap::new();
-        for r in &quant_rows {
-            by_fam.entry(&r.family_id).or_default().push((r.copy_chrom.clone(), r.copy_start, r.copy_end));
-        }
-        let flagged: Vec<String> = by_fam
+        let catalog: Vec<(String, String, u64, u64)> = quant_rows
             .iter()
-            .flat_map(|(fid, spans)| {
-                copies_overlap(spans).into_iter().map(move |(i, j, recip)| {
-                    // reciprocal ~1 => the same interval twice; small => a readthrough enclosing a fragment
-                    let kind = if recip > 0.9 { "DUPLICATE LOCUS" } else { "CONTAINMENT (readthrough?)" };
-                    format!(
-                        "{fid} {kind} recip={recip:.2}  {}:{}-{} vs {}-{}",
-                        spans[i].0, spans[i].1, spans[i].2, spans[j].1, spans[j].2
-                    )
-                })
-            })
+            .map(|r| (r.family_id.clone(), r.copy_chrom.clone(), r.copy_start, r.copy_end))
             .collect();
+        let flagged = catalog_overlaps(&catalog);
         if !flagged.is_empty() {
             eprintln!(
-                "[copy_assign] WARNING: {} overlapping copy pair(s). Copies of one family must occupy \
-                 DISJOINT loci. A DUPLICATE LOCUS makes every read score min_p == 1, so the family abstains \
+                "[copy_assign] WARNING: {} copy pair(s) share genomic sequence. Every copy must occupy its \
+                 own locus. DuplicateLocus makes every read score min_p == 1, so that family abstains \
                  wholesale and its reads masquerade as the K=0 wall — do not read that abstention as biology.",
                 flagged.len()
             );
-            for f in flagged.iter().take(10) {
-                eprintln!("[copy_assign]   {f}");
+            for &(i, j, recip, kind) in flagged.iter().take(10) {
+                eprintln!(
+                    "[copy_assign]   {kind:?} recip={recip:.2}  {}/{}:{}-{}  vs  {}/{}-{}",
+                    catalog[i].0, catalog[i].1, catalog[i].2, catalog[i].3, catalog[j].0, catalog[j].2, catalog[j].3
+                );
             }
         }
     }

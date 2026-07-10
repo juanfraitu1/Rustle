@@ -481,6 +481,52 @@ pub fn copies_overlap(spans: &[(String, u64, u64)]) -> Vec<(usize, usize, f64)> 
     out
 }
 
+/// How two copies in an emitted catalog can wrongly share genomic sequence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OverlapKind {
+    /// Same family, reciprocal overlap ≈ 1: one locus admitted twice (boundary wobble). Every read then
+    /// scores `min_p == 1` against the pair, so the family abstains wholesale and its reads masquerade as
+    /// the K=0 wall.
+    DuplicateLocus,
+    /// Same family, reciprocal overlap ≪ 1: a long readthrough transcript enclosing a shorter one. Must NOT
+    /// be merged — merging would let the readthrough absorb genuinely distinct tandem copies.
+    Containment,
+    /// Copies of DIFFERENT families sharing sequence. A locus belongs to exactly one family, so this is
+    /// always a defect: either the same family was emitted twice (overlapping input regions), or a
+    /// readthrough transcript in one family spans loci that are separate copies of another. Observed at
+    /// GSTM: a 30 kb single-intron transcript covering both GSTM5 and GSTM1 was admitted as a copy
+    /// alongside GSTM3, while a second family held GSTM5 and GSTM1 correctly as two copies.
+    SharedAcrossFamilies,
+}
+
+/// Every pair of catalog copies that wrongly shares genomic sequence, classified. Copies are
+/// `(family_id, chrom, start, end)`. Sorted sweep, so it is linear in the output size, not quadratic in
+/// the catalog. Structural: needs no annotation and no reference truth.
+pub fn catalog_overlaps(copies: &[(String, String, u64, u64)]) -> Vec<(usize, usize, f64, OverlapKind)> {
+    let mut idx: Vec<usize> = (0..copies.len()).collect();
+    idx.sort_by(|&a, &b| copies[a].1.cmp(&copies[b].1).then(copies[a].2.cmp(&copies[b].2)));
+    let mut out = Vec::new();
+    for (pos, &i) in idx.iter().enumerate() {
+        for &j in idx[pos + 1..].iter() {
+            if copies[i].1 != copies[j].1 || copies[j].2 >= copies[i].3 {
+                break; // sorted by start: no later copy on this contig can overlap i
+            }
+            let overlap = (copies[i].3.min(copies[j].3) - copies[j].2) as f64;
+            let longest = (copies[i].3 - copies[i].2).max(copies[j].3 - copies[j].2) as f64;
+            let recip = if longest > 0.0 { overlap / longest } else { 1.0 };
+            let kind = if copies[i].0 != copies[j].0 {
+                OverlapKind::SharedAcrossFamilies
+            } else if recip > 0.9 {
+                OverlapKind::DuplicateLocus
+            } else {
+                OverlapKind::Containment
+            };
+            out.push((i.min(j), i.max(j), recip, kind));
+        }
+    }
+    out
+}
+
 /// Emit every non-host identifiable collapsed copy at each locus as a [`CollapsedCandidate`].
 ///
 /// For each representative transcript in `reps`, overlapping BAM reads are collected and fed to
@@ -3451,6 +3497,42 @@ mod tests {
         // Abutting spans (end == start) touch but do not overlap.
         let abut = vec![("c1".to_string(), 100, 200), ("c1".to_string(), 200, 300)];
         assert!(copies_overlap(&abut).is_empty(), "half-open spans: end == start is not an overlap");
+    }
+
+    /// The real GSTM catalog: CAFAM1 correctly holds GSTM5 and GSTM1 as two disjoint copies, while CAFAM0
+    /// holds GSTM3 plus a 30 kb single-intron readthrough transcript spanning BOTH of them. The readthrough
+    /// shares sequence with two copies of another family — a defect no within-family check can see.
+    #[test]
+    fn catalog_overlaps_flags_readthrough_shared_across_families() {
+        let c = |f: &str, s: u64, e: u64| (f.to_string(), "NC_073224.2".to_string(), s, e);
+        let copies = vec![
+            c("CAFAM0", 129_169_623, 129_173_090), // GSTM3
+            c("CAFAM0", 129_190_708, 129_220_537), // readthrough over GSTM5+GSTM1
+            c("CAFAM1", 129_191_737, 129_198_214), // GSTM5
+            c("CAFAM1", 129_211_328, 129_222_730), // GSTM1
+        ];
+        let found = catalog_overlaps(&copies);
+        let shared: Vec<_> =
+            found.iter().filter(|f| f.3 == OverlapKind::SharedAcrossFamilies).map(|f| (f.0, f.1)).collect();
+        assert_eq!(shared, vec![(1, 2), (1, 3)], "the readthrough must be flagged against BOTH real copies");
+        // GSTM3 is disjoint, and GSTM5/GSTM1 are disjoint from each other: no other pair.
+        assert_eq!(found.len(), 2, "no spurious pairs: {found:?}");
+    }
+
+    #[test]
+    fn catalog_overlaps_separates_duplicate_locus_from_containment() {
+        let c = |f: &str, s: u64, e: u64| (f.to_string(), "c1".to_string(), s, e);
+        // wobble: same interval twice, one family
+        let dup = vec![c("F", 164_381_222, 164_384_848), c("F", 164_381_237, 164_384_845)];
+        assert_eq!(catalog_overlaps(&dup)[0].3, OverlapKind::DuplicateLocus);
+        // containment: a long readthrough enclosing a fragment, one family
+        let con = vec![c("F", 20_202_981, 20_390_694), c("F", 20_243_056, 20_379_683)];
+        let g = catalog_overlaps(&con);
+        assert_eq!(g[0].3, OverlapKind::Containment);
+        assert!(g[0].2 < 0.9);
+        // disjoint copies on the same contig produce nothing
+        let ok = vec![c("F", 100, 200), c("F", 300, 400)];
+        assert!(catalog_overlaps(&ok).is_empty());
     }
 
     #[test]

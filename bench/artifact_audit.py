@@ -14,9 +14,12 @@ of each other with wobbled boundaries survive as separate "loci".
 
 Three checks, in decreasing strength:
 
-  1. OVERLAPPING COPIES (structural, NON-CIRCULAR, decisive).
-     Two copies of one family whose genomic spans overlap are, by definition, not two loci. Needs no
-     annotation and no reference truth -- it is a self-consistency property of the emitted catalog.
+  1. OVERLAPPING COPIES, catalog-wide (structural, NON-CIRCULAR, decisive).
+     Every copy must occupy its own locus, so ANY two copies sharing sequence is a defect -- including
+     copies of DIFFERENT families. Checking only within a family misses the readthrough case: at GSTM a
+     30 kb single-intron transcript spanning both GSTM5 and GSTM1 was admitted as a copy alongside GSTM3,
+     while a second family held GSTM5 and GSTM1 correctly as two copies. No within-family check sees it,
+     and the annotation cross-check called that catalog "corroborated".
 
   2. DUPLICATE FAMILIES (structural, non-circular).
      The same copy set emitted under two family_ids. Caused by OVERLAPPING INPUT REGIONS in the sweep
@@ -94,6 +97,24 @@ def overlapping_copies(copies):
     return bad
 
 
+def shared_across_families(fam):
+    """Copies of DIFFERENT families that share sequence. A locus belongs to exactly one family, so this is
+    always a defect: either the same family was emitted twice (overlapping input regions), or a readthrough
+    transcript in one family spans loci that are separate copies of another (the GSTM case)."""
+    flat = [(fid, c) for fid, copies in fam.items() for c in copies]
+    out = []
+    for i in range(len(flat)):
+        for j in range(i + 1, len(flat)):
+            (fa, a), (fb, b) = flat[i], flat[j]
+            if fa == fb or a[1] != b[1]:
+                continue
+            lo, hi = max(a[2], b[2]), min(a[3], b[3])
+            if lo < hi:
+                longest = max(a[3] - a[2], b[3] - b[2])
+                out.append((fa, a[0], fb, b[0], hi - lo, (hi - lo) / longest if longest else 1.0))
+    return out
+
+
 def duplicate_families(fam):
     """family_ids sharing an identical copy-tid set."""
     sig = collections.defaultdict(list)
@@ -135,12 +156,15 @@ def main():
     print(f"catalog: {len(fam)} families, {sum(len(v) for v in fam.values())} copies\n")
 
     # --- check 1: overlapping copies (decisive) ---
-    print("[1] OVERLAPPING COPIES within a family (structural, non-circular)")
+    print("[1] OVERLAPPING COPIES, catalog-wide (structural, non-circular)")
     n_bad = 0
     for fid in sorted(fam):
         for a, b, ov, recip, kind in overlapping_copies(fam[fid]):
             n_bad += 1
             print(f"    {fid:10s} {kind:26s} recip={recip:.2f}  {a} <-> {b}  ({ov} bp)")
+    for fa, ta, fb, tb, ov, recip in shared_across_families(fam):
+        n_bad += 1
+        print(f"    SHARED ACROSS FAMILIES recip={recip:.2f}  {fa}/{ta} <-> {fb}/{tb}  ({ov} bp)")
     print(f"    => {n_bad} overlapping copy pair(s)\n")
 
     # --- check 2: duplicate families (structural) ---
