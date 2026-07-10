@@ -756,6 +756,10 @@ pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
 /// sequence (reverse-complemented for a `-` strand) and require its length in `[min_spliced, max_spliced]`.
 /// Returns the gated `DenovoTranscript`s in input order. Mirrors `denovo_assemble_gate.py`, except that the
 /// read-count test is applied to the locus rather than to one isoform (`p.pool_locus_support`).
+/// THE FORMAL TRANSCRIPT DEFINITION. A transcript is an exact-intron-chain cluster of primary reads whose LOCUS
+/// (the junction-incidence component, see `locus_support`) carries >= `min_reads` (GATE_MIN_READS) reads, whose
+/// junctions are all canonical + consistent-strand, and whose spliced length is in `[min_spliced, max_spliced]`.
+/// A locus is a copy family of size >= 1; single-copy is the chi(H)=1 boundary case (see the `single_copy` module).
 pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParams) -> Vec<DenovoTranscript> {
     let support: Vec<u32> =
         if p.pool_locus_support { locus_support(skeletons) } else { skeletons.iter().map(|s| s.n_reads).collect() };
