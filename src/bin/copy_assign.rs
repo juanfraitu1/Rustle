@@ -81,8 +81,10 @@ struct Args {
     /// Output prefix; writes `<out>.families.tsv` and `<out>.assignments.tsv`.
     #[arg(long)]
     out: String,
-    /// Minimum copies for a co-located family.
-    #[arg(long, default_value_t = 3)]
+    /// Minimum copies for a co-located family. Two-copy homologous families are the majority and were
+    /// invisible to assignment at the old default of 3; lowering it to 2 changes default family detection
+    /// on its own, independently of `--homology-primary`.
+    #[arg(long, default_value_t = 2)]
     min_copies: usize,
     /// Co-located window (bp): copies must cluster within this span.
     #[arg(long, default_value_t = 5_000_000)]
@@ -229,6 +231,16 @@ struct Args {
     /// every other output byte-identical.
     #[arg(long, default_value_t = false)]
     vg_realign: bool,
+
+    /// Define family MEMBERSHIP by E_r transcript homology instead of the E_c read-conflict graph. The
+    /// conflict graph links two copies only when reads map ambiguously between them, so a copy whose reads
+    /// all map uniquely is dropped from its family and its reads come back `tied` — not because they are
+    /// unassignable, but because their true copy was never admitted. Conflict, PSVs, and chi(H) remain
+    /// within-family. Admitting a dropped copy enlarges the copy set, so the Bonferroni certificate
+    /// alpha/(K-1) tightens and existing assignments shift; this is why the mode is opt-in. Requires
+    /// minimap2 (honors RUSTLE_MINIMAP2); aborts rather than falling back to the conflict graph.
+    #[arg(long, default_value_t = false)]
+    homology_primary: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -341,6 +353,7 @@ fn main() -> Result<()> {
     let mut cfg = DenovoConfig::default();
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
+    cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
     let params = AssignParams {
         margin: args.margin,
         error_rate: args.error_rate,
