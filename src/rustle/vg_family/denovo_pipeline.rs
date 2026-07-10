@@ -1612,14 +1612,18 @@ pub fn detect_families_from_files(
 /// and build the conflict edges over the chrom's reps — same-chrom only, which is exactly what
 /// `colocated_families` keeps anyway (cross-chrom components are split out there); (3) union the per-chrom
 /// edges into the genome-wide conflict graph → connected components → `colocated_families`.
-pub fn detect_conflict_catalog_genome_wide(
+/// DRY core for the genome-wide conflict catalog AND the single-copy baseline: builds genome-wide reps
+/// (skeletons -> gate -> readthrough filter -> span-aware collapse), per-chrom conflict edges, and the
+/// co-located families, and returns BOTH the reps and the family catalog. `detect_conflict_catalog_genome_wide`
+/// keeps only the families; `detect_single_copy_baseline_genome_wide` takes the reps a family does not claim.
+fn gw_reps_and_catalog(
     bam_path: &str,
     fasta_path: &str,
     threads: usize,
     win: u64,
     min_copies: usize,
     cfg: &DenovoConfig,
-) -> Result<Vec<ColocatedFamily>> {
+) -> Result<(Vec<DenovoTranscript>, Vec<ColocatedFamily>)> {
     // --- (1) genome-wide reps ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
@@ -1686,7 +1690,35 @@ pub fn detect_conflict_catalog_genome_wide(
         catalog.len(),
         min_copies
     );
+    Ok((reps, catalog))
+}
+
+/// Genome-wide multi-copy family catalog (the conflict oracle). Thin wrapper over `gw_reps_and_catalog`.
+pub fn detect_conflict_catalog_genome_wide(
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    win: u64,
+    min_copies: usize,
+    cfg: &DenovoConfig,
+) -> Result<Vec<ColocatedFamily>> {
+    let (_reps, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
     Ok(catalog)
+}
+
+/// Genome-wide single-copy baseline: the reps that no family claims, as lightweight records. Same traversal as
+/// the conflict catalog (DRY via `gw_reps_and_catalog`); a locus is single-copy iff it is not a copy of any
+/// emitted family. Feeds lambda_global and the `.single_copy.tsv` baseline table.
+pub fn detect_single_copy_baseline_genome_wide(
+    bam_path: &str,
+    fasta_path: &str,
+    threads: usize,
+    win: u64,
+    min_copies: usize,
+    cfg: &DenovoConfig,
+) -> Result<Vec<crate::vg_family::single_copy::SingleCopyLocus>> {
+    let (reps, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
+    Ok(crate::vg_family::single_copy::single_copy_loci(&reps, &catalog))
 }
 
 /// O1 family emission from a de-tie read-conflict graph: Louvain-decompose each raw connected component
@@ -3971,6 +4003,22 @@ mod tests {
 
     /// OFF by default: the ambiguity instrument detects unresolvable paralogy rather than collapse, and fires
     /// on the single-copy control EEF1A1 with chi(H) = 7. Enabling it is an explicit, informed choice.
+    #[test]
+    fn single_copy_baseline_excludes_family_copies() {
+        use crate::vg_family::single_copy::single_copy_loci;
+        let mk = |tid: &str, start: u64| DenovoTranscript {
+            tid: tid.into(), chrom: "c1".into(), start, end: start + 100, n_reads: 12, strand: '+',
+            introns: vec![], seq: vec![],
+        };
+        let (a, b, c) = (mk("a", 0), mk("b", 1000), mk("c", 2000));
+        let families = vec![ColocatedFamily {
+            family_id: "F0".into(), chrom: "c1".into(), start: 0, end: 1100, copies: vec![a.clone(), b.clone()],
+        }];
+        let sc = single_copy_loci(&[a, b, c], &families);
+        assert_eq!(sc.len(), 1);
+        assert_eq!(sc[0].start, 2000);
+    }
+
     #[test]
     fn denovoconfig_default_disables_the_collapse_gate() {
         assert!(!DenovoConfig::default().collapse_gate);
