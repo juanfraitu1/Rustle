@@ -13,6 +13,25 @@
 //! Measured on GGO Iso-Seq (primary records only): **0 MAPQ-0 primaries across 9449 reads** at five single-copy
 //! loci (TSPYL1, DERPC, ATXN7L3B, GSPT2, EEF1A1), against 19/20 at DAZ2 and 30/34 at TSPY. The statistic is
 //! expression-invariant — TSPYL1 has 2151 reads and no ambiguity; DAZ2 has 20 reads and 95%.
+//!
+//! ⚠⚠ **DEFAULT OFF. The instrument is not what this module's name claims, and a control proved it.**
+//!
+//! MAPQ 0 means "this read maps equally well somewhere else". It does NOT mean "this locus is collapsed". Run
+//! genome-wide, the gate fires on **EEF1A1** — whose MAPQ-0 reads align to its processed pseudogenes on
+//! NC_073224.2 and NC_073227.2, other chromosomes entirely — and reports `chi(H) = 7` for a locus with one copy.
+//!
+//! The logic actually inverts. If a copy were truly ABSENT from the reference, its reads would pile onto the
+//! present copy at HIGH mapping quality, giving depth excess and *no ambiguity at all*. That is precisely why
+//! SDA detects collapses by read depth and not by mapping quality. Ambiguity detects **unresolvable paralogy**
+//! (which is what `read_conflict`'s E_c oracle already does), not collapse.
+//!
+//! On DAZ the gate emits `chi(H) = 2`, matching the annotation — but DAZ2 is present in the reference 20 kb
+//! away, so even there the signal is paralogy, not collapse. What actually failed at DAZ is assembly: DAZ2 has
+//! 20 primary reads and never becomes a rep.
+//!
+//! Kept, off by default, because the machinery and its tests are sound and the p-value is correct for the
+//! question it truly answers. Do not enable it until `chi(H)` is shown to bound copies rather than haplotypes.
+//! See `bench/COLLAPSE_GATE_VALIDATION.md`.
 
 use crate::vg_family::copy_assign::poisson_binomial_upper_tail;
 use crate::vg_family::readonly_copy_number::chi_h;
@@ -64,20 +83,27 @@ pub enum CollapseVerdict {
 /// Two legs, in SDA's order. Leg 2 is NOT consulted unless leg 1 fires: a single-copy gene reports plenty of
 /// haplotypes (a het allele *is* a haplotype), and gating on them alone made TSPYL1 report 12 copies.
 ///
+/// `eps_amb` is the background per-read ambiguity rate. It must be a **genome-wide** quantity, not a
+/// region-local one: SDA estimates its background from "unique regions" of the genome, and for good reason —
+/// in the DAZ window the only reads that fall outside DAZ1's span are DAZ2's, every one of them ambiguous, so a
+/// region-local background would be ~0.95 and the gate could never fire. Measured on `GGO_mm.bam`:
+/// 5785 MAPQ-0 primaries in 4,404,440, i.e. `eps_amb = 0.0013`, itself conservative because it includes the
+/// genuinely collapsed loci. `None` ⇒ ABSTAIN; never fire on an unbounded statistic.
+///
 /// `haplotypes` are the `allele_vector`s of the **identifiable** copies at the locus.
 ///
 /// χ(H) is a **lower bound** on copy number, never an estimate: two copies × two alleles also yields four
 /// haplotypes. That is why the caller emits a copy NUMBER with reads certified tied, not an assignment.
 pub fn collapse_verdict(
     obs: Ambiguity,
-    bg: Ambiguity,
+    eps_amb: Option<f64>,
     haplotypes: &[Vec<Option<u8>>],
     alpha: f64,
     min_copies: usize,
 ) -> CollapseVerdict {
     // leg 1 — is this locus collapsed at all?
-    let Some(eps_amb) = estimate_eps_amb(bg) else {
-        return CollapseVerdict::Abstain("no uniquely-mappable rep to estimate the background ambiguity rate");
+    let Some(eps_amb) = eps_amb else {
+        return CollapseVerdict::Abstain("no background ambiguity rate (pass --eps-amb)");
     };
     let p_value = collapse_pvalue(obs, eps_amb);
     if p_value >= alpha {
@@ -91,9 +117,41 @@ pub fn collapse_verdict(
     CollapseVerdict::Fire { chi_h: chi, p_value }
 }
 
+/// Measured background on `GGO_mm.bam`: 5785 MAPQ-0 primaries out of 4,404,440. Conservative — it includes the
+/// genuinely collapsed loci, so the true unique-region rate is lower and the gate is harder to fire, not easier.
+/// Recompute per sample:
+/// `echo $(( $(samtools view -c -F 2308 b.bam) - $(samtools view -c -F 2308 -q 1 b.bam) ))`
+pub const GENOME_WIDE_EPS_AMB: f64 = 0.001313;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DAZ1 itself: 22 ambiguous of 200. Against the genome-wide background this is overwhelming.
+    #[test]
+    fn verdict_fires_on_daz1_against_the_genome_wide_background() {
+        let v = collapse_verdict(
+            Ambiguity { n: 200, k: 22 },
+            Some(GENOME_WIDE_EPS_AMB),
+            &haps(&[b"ACGT", b"ACGA"]),
+            1e-3,
+            2,
+        );
+        assert!(matches!(v, CollapseVerdict::Fire { chi_h: 2, .. }), "DAZ1 must fire, got {v:?}");
+    }
+
+    /// Three stray ambiguous reads in a well-covered locus must NOT fire at alpha = 1e-3.
+    #[test]
+    fn verdict_does_not_fire_on_a_few_stray_ambiguous_reads() {
+        let v = collapse_verdict(
+            Ambiguity { n: 500, k: 3 },
+            Some(GENOME_WIDE_EPS_AMB),
+            &haps(&[b"ACGT", b"ACGA"]),
+            1e-3,
+            2,
+        );
+        assert!(matches!(v, CollapseVerdict::NotCollapsed { .. }), "3 strays must not fire, got {v:?}");
+    }
 
     #[test]
     fn eps_amb_is_never_zero_even_when_no_background_read_is_ambiguous() {
@@ -135,7 +193,7 @@ mod tests {
     fn verdict_fires_on_a_collapsed_locus_with_two_haplotypes() {
         let v = collapse_verdict(
             Ambiguity { n: 20, k: 19 },
-            Ambiguity { n: 9449, k: 0 },
+            Some(GENOME_WIDE_EPS_AMB),
             &haps(&[b"ACGT", b"ACGA"]),
             1e-3,
             2,
@@ -151,21 +209,20 @@ mod tests {
     #[test]
     fn verdict_rejects_a_unique_locus_however_many_haplotypes_it_reports() {
         let twelve: Vec<Vec<Option<u8>>> = (0..12u8).map(|i| vec![Some(b'A' + i), Some(b'C')]).collect();
-        let v = collapse_verdict(Ambiguity { n: 2151, k: 0 }, Ambiguity { n: 9449, k: 0 }, &twelve, 1e-3, 2);
+        let v = collapse_verdict(Ambiguity { n: 2151, k: 0 }, Some(GENOME_WIDE_EPS_AMB), &twelve, 1e-3, 2);
         assert!(matches!(v, CollapseVerdict::NotCollapsed { .. }), "unique locus must never fire, got {v:?}");
     }
 
     #[test]
     fn verdict_abstains_without_a_background_estimate() {
-        let v =
-            collapse_verdict(Ambiguity { n: 20, k: 19 }, Ambiguity { n: 0, k: 0 }, &haps(&[b"AC", b"AG"]), 1e-3, 2);
+        let v = collapse_verdict(Ambiguity { n: 20, k: 19 }, None, &haps(&[b"AC", b"AG"]), 1e-3, 2);
         assert!(matches!(v, CollapseVerdict::Abstain(_)), "no background => abstain, got {v:?}");
     }
 
     /// `min_copies` applies to χ(H), not to the rep count: one haplotype is not a family.
     #[test]
     fn verdict_rejects_a_collapse_that_resolves_to_one_haplotype() {
-        let v = collapse_verdict(Ambiguity { n: 20, k: 19 }, Ambiguity { n: 9449, k: 0 }, &haps(&[b"ACGT"]), 1e-3, 2);
+        let v = collapse_verdict(Ambiguity { n: 20, k: 19 }, Some(GENOME_WIDE_EPS_AMB), &haps(&[b"ACGT"]), 1e-3, 2);
         assert!(
             matches!(v, CollapseVerdict::NotCollapsed { .. }),
             "chi_h = 1 < min_copies => no family, got {v:?}"

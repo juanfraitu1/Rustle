@@ -253,6 +253,25 @@ struct Args {
     /// spliced parent cross-maps onto it. Pass this to disable the filter and reproduce the old behaviour.
     #[arg(long, default_value_t = false)]
     keep_readthrough: bool,
+
+    /// EXPERIMENTAL, OFF BY DEFAULT. Admit a single-rep locus whose reads are ambiguously placed (MAPQ 0) at a
+    /// rate incompatible with a unique locus as a multi-copy family with `n_copies = chi(H)`, reads certified
+    /// tied, no per-copy sequence materialised.
+    ///
+    /// ⚠ The instrument detects unresolvable PARALOGY, not collapse. It fires on EEF1A1, whose MAPQ-0 reads
+    /// align to processed pseudogenes on other chromosomes, and reports chi(H) = 7 for a one-copy locus. A copy
+    /// genuinely absent from the reference would pile reads on at HIGH mapq, giving depth excess and no
+    /// ambiguity -- which is why SDA detects collapses by depth. Do not use for copy number.
+    #[arg(long, default_value_t = false)]
+    collapse_gate: bool,
+
+    /// Background per-read ambiguity rate for the collapse test (fraction of PRIMARY reads at MAPQ 0
+    /// genome-wide). Must be a genome-wide quantity: a region-local estimate is degenerate, since in a
+    /// collapsed window the reads outside the assembled rep are precisely the ambiguous ones. Default is the
+    /// value measured on GGO_mm.bam (5785 / 4404440 = 0.001313). Recompute per sample with:
+    ///   `echo $(( $(samtools view -c -F 2308 b.bam) - $(samtools view -c -F 2308 -q 1 b.bam) ))`
+    #[arg(long)]
+    eps_amb: Option<f64>,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -404,6 +423,10 @@ fn main() -> Result<()> {
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
     cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
     cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
+    cfg.collapse_gate = args.collapse_gate; // experimental; detects paralogy, not collapse (see module header)
+    if let Some(e) = args.eps_amb {
+        cfg.eps_amb = Some(e);
+    }
     let params = AssignParams {
         margin: args.margin,
         error_rate: args.error_rate,

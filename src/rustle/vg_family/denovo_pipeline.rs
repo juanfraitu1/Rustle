@@ -65,6 +65,15 @@ pub struct DenovoConfig {
     /// Drop single-exon reps that engulf >= `READTHROUGH_MIN_DISTINCT` distinct junctions: unspliced
     /// pre-mRNA, never a copy. Default ON — see `is_unspliced_readthrough` for the validation.
     pub filter_readthrough: bool,
+    /// Admit a COLLAPSED single-rep locus as a multi-copy family: `n_copies = χ(H)`, reads certified Tied, no
+    /// per-copy consensus materialised. **Default OFF**: the ambiguity instrument detects unresolvable
+    /// PARALOGY, not collapse — it fires on EEF1A1 (pseudogenes on other chromosomes) with χ(H) = 7. See the
+    /// `collapse_gate` module header.
+    pub collapse_gate: bool,
+    /// Background per-read ambiguity rate for the collapse test. Must be GENOME-WIDE, never region-local: in the
+    /// DAZ window every read outside DAZ1's span is DAZ2's and ambiguous, so a local background would be ~0.95.
+    /// `None` ⇒ the gate abstains. Default = `GENOME_WIDE_EPS_AMB` measured on `GGO_mm.bam`.
+    pub eps_amb: Option<f64>,
 }
 
 impl Default for DenovoConfig {
@@ -80,6 +89,8 @@ impl Default for DenovoConfig {
             vg_realign: false,
             homology_primary: false,
             filter_readthrough: true,
+            collapse_gate: false,
+            eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
     }
 }
@@ -365,6 +376,43 @@ pub struct FamilyAssignment {
     pub realign_records: Vec<crate::vg_family::vg_realign::RealignRecord>,
 }
 
+impl FamilyAssignment {
+    /// All-zero / all-empty. Only for constructing a family that never went through the assignment pipeline
+    /// (see `gated_family`); a normal family is built field-by-field and must not silently default anything.
+    pub fn empty() -> Self {
+        FamilyAssignment {
+            family_id: String::new(),
+            chrom: String::new(),
+            n_copies: 0,
+            n_reads: 0,
+            psv_cols: 0,
+            resolvable_psv: 0,
+            assigned_psv: 0,
+            resolvable_j: 0,
+            assigned_j: 0,
+            junction_only: 0,
+            uniq: 0,
+            uniq_agree: 0,
+            collapsed_copies: 0,
+            rescued_copies: 0,
+            assignments: Vec::new(),
+            copy_tids: Vec::new(),
+            copy_spans: Vec::new(),
+            copy_abundance: Vec::new(),
+            copy_abundance_ci: Vec::new(),
+            mosaic_reads: 0,
+            conversions: Vec::new(),
+            copy_conversions: Vec::new(),
+            psv_col_pos: Vec::new(),
+            copy_psv_alleles: Vec::new(),
+            read_psv_obs: Vec::new(),
+            copy_junctions: Vec::new(),
+            read_junctions: Vec::new(),
+            realign_records: Vec::new(),
+        }
+    }
+}
+
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
 /// a copy (PSV + copy-specific-junction likelihood, two-pass). `bam_reads` carry chrom (for region
 /// filtering) and mapq (for the unique-mapper agreement). The runnable detection + per-read copy-assignment pipeline.
@@ -487,6 +535,72 @@ pub fn copies_overlap(spans: &[(String, u64, u64)]) -> Vec<(usize, usize, f64)> 
         }
     }
     out
+}
+
+use crate::vg_family::collapse_gate::{collapse_verdict, Ambiguity, CollapseVerdict};
+
+/// Ambiguously-placed primary reads over a rep's span.
+///
+/// A read is AMBIGUOUS iff `mapq == 0`: the aligner found no reason to prefer this placement over another.
+/// Supplementary records are excluded for the same reason they are excluded from conflict edges — a chimeric
+/// segment is adjacency, not ambiguity. Secondary records never enter `bam_reads` as separate entries here.
+fn locus_ambiguity(rep: &DenovoTranscript, bam_reads: &[BamRead]) -> Ambiguity {
+    let (mut n, mut k) = (0usize, 0usize);
+    for br in bam_reads {
+        if br.is_supplementary || br.chrom != rep.chrom {
+            continue;
+        }
+        if br.read.ref_start < rep.end && read_ref_end(&br.read) > rep.start {
+            n += 1;
+            if br.mapq == 0 {
+                k += 1;
+            }
+        }
+    }
+    Ambiguity { n, k }
+}
+
+/// A family whose copies were never assembled: `n_copies` is χ(H), every read is certified `Tied`, and NO
+/// per-copy consensus exists — so no assignment can be wrong. `min_p_value = 1.0` is the honest certificate:
+/// no distinguishing column was available to this read, because no copy sequences were materialised.
+fn gated_family(rep: &DenovoTranscript, bam_reads: &[BamRead], chi: usize, family_id: String) -> FamilyAssignment {
+    let assignments: Vec<(usize, Assignment)> = bam_reads
+        .iter()
+        .enumerate()
+        .filter(|(_, br)| {
+            !br.is_supplementary
+                && br.chrom == rep.chrom
+                && br.read.ref_start < rep.end
+                && read_ref_end(&br.read) > rep.start
+        })
+        .map(|(i, _)| {
+            (
+                i,
+                Assignment {
+                    best_copy: 0,
+                    log_lr_margin: 0.0,
+                    n_decisive: 0,
+                    resolvable: false,
+                    status: AssignStatus::Tied,
+                    p_value: 1.0,
+                    min_p_value: 1.0,
+                    discovery_coupled: false,
+                    posterior: vec![1.0 / chi as f64; chi],
+                },
+            )
+        })
+        .collect();
+    FamilyAssignment {
+        family_id,
+        chrom: rep.chrom.clone(),
+        n_copies: chi,
+        n_reads: assignments.len(),
+        collapsed_copies: chi, // records HOW the count was obtained: never mistake this for an assembled family
+        assignments,
+        copy_tids: vec![rep.tid.clone()], // the one assembled rep; the other copies have no sequence
+        copy_spans: vec![(rep.chrom.clone(), rep.start, rep.end)],
+        ..FamilyAssignment::empty()
+    }
 }
 
 /// Reads required before a splice junction counts as real rather than alignment noise.
@@ -1395,6 +1509,53 @@ pub fn detect_and_assign(
         }
         out.push(fa);
     }
+
+    // COLLAPSE GATE. `colocated_families` needs >= min_copies assembled REPS, so a collapsed locus — one whose
+    // copies are near-identical, leaving the aligner to pile every read onto one of them — is dropped. On chrY
+    // that is DAZ and BPY2: both copies present in the reads, zero families emitted. Reps that no family
+    // claimed are tested here. Leg 1 asks whether the locus is collapsed at all (ambiguously-placed reads at a
+    // rate incompatible with a unique locus); ONLY then does leg 2 count PSV haplotypes. Running leg 2 alone
+    // made the single-copy gene TSPYL1 report 12 copies against DAZ's 3 (`bench/COLLAPSED_COPY_GATE.md`).
+    if cfg.collapse_gate {
+        // owned, so `out` is free to grow below
+        let familied: std::collections::HashSet<String> =
+            out.iter().flat_map(|fa| fa.copy_tids.iter().cloned()).collect();
+        for rep in reps.iter().filter(|r| !familied.contains(&r.tid)) {
+            let obs = locus_ambiguity(rep, bam_reads);
+            let reads: Vec<AlignedRead> = bam_reads
+                .iter()
+                .filter(|br| {
+                    !br.is_supplementary
+                        && br.chrom == rep.chrom
+                        && br.read.ref_start < rep.end
+                        && read_ref_end(&br.read) > rep.start
+                })
+                .map(|br| br.read.clone())
+                .collect();
+            let haplotypes: Vec<Vec<Option<u8>>> = split_locus_copies(&reads, 3, 2, 3)
+                .into_iter()
+                .filter(|c| c.identifiable)
+                .map(|c| c.allele_vector)
+                .collect();
+            match collapse_verdict(obs, cfg.eps_amb, &haplotypes, p.alpha, min_copies) {
+                CollapseVerdict::Fire { chi_h, p_value } => {
+                    eprintln!(
+                        "[detect_and_assign] collapse gate: {}:{}-{} ambiguous {}/{} p={p_value:.2e} -> \
+                         chi(H)={chi_h} copies (reads certified TIED; chi(H) is a LOWER BOUND)",
+                        rep.chrom, rep.start, rep.end, obs.k, obs.n
+                    );
+                    let fid = format!("DSFAM{}", out.len());
+                    out.push(gated_family(rep, bam_reads, chi_h, fid));
+                }
+                CollapseVerdict::Abstain(why) => eprintln!(
+                    "[detect_and_assign] collapse gate ABSTAINS at {}:{}-{}: {why}",
+                    rep.chrom, rep.start, rep.end
+                ),
+                CollapseVerdict::NotCollapsed { .. } => {}
+            }
+        }
+    }
+
     (out, fallback, dna_needs)
 }
 
@@ -3731,6 +3892,71 @@ mod tests {
         let j = junc(&[(10_000, 11_000, 1), (20_000, 21_000, 1), (30_000, 31_000, 1),
                        (40_000, 41_000, 1), (50_000, 51_000, 1), (60_000, 61_000, 1)]);
         assert!(!is_unspliced_readthrough(&rt, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// A locus contributes ambiguity only from PRIMARY reads that overlap it. Supplementary records are
+    /// adjacency, not ambiguity; reads outside the rep belong to another locus.
+    #[test]
+    fn locus_ambiguity_counts_only_mapq0_primaries_overlapping_the_rep() {
+        let rep = rep_s(1_000, 2_000, vec![], 10);
+        let mk = |start: u64, mapq: u8, supp: bool| BamRead {
+            chrom: "c1".into(),
+            read: AlignedRead {
+                ref_start: start,
+                cigar: vec![('M', 100)],
+                seq: vec![b'A'; 100],
+                qual: vec![30; 100],
+            },
+            mapq,
+            name: format!("r{start}_{mapq}"),
+            as_score: 100,
+            de: 0.01,
+            is_supplementary: supp,
+        };
+        let reads = vec![
+            mk(1_100, 0, false),  // ambiguous, inside  -> numerator + denominator
+            mk(1_200, 60, false), // unique, inside     -> denominator only
+            mk(1_300, 0, true),   // supplementary      -> ignored
+            mk(9_000, 0, false),  // outside the rep    -> ignored
+        ];
+        assert_eq!(
+            locus_ambiguity(&rep, &reads),
+            crate::vg_family::collapse_gate::Ambiguity { n: 2, k: 1 }
+        );
+    }
+
+    /// OFF by default: the ambiguity instrument detects unresolvable paralogy rather than collapse, and fires
+    /// on the single-copy control EEF1A1 with chi(H) = 7. Enabling it is an explicit, informed choice.
+    #[test]
+    fn denovoconfig_default_disables_the_collapse_gate() {
+        assert!(!DenovoConfig::default().collapse_gate);
+    }
+
+    /// A gated family reports chi(H) copies but only ONE copy tid (the single assembled rep), every read Tied
+    /// with min_p = 1.0, and `collapsed_copies` set so it can never be mistaken for an assembled family.
+    #[test]
+    fn gated_family_ties_every_read_and_materialises_no_copy_sequence() {
+        let rep = rep_s(1_000, 2_000, vec![], 10);
+        let mk = |start: u64| BamRead {
+            chrom: "c1".into(),
+            read: AlignedRead { ref_start: start, cigar: vec![('M', 100)], seq: vec![b'A'; 100], qual: vec![30; 100] },
+            mapq: 0,
+            name: format!("r{start}"),
+            as_score: 100,
+            de: 0.01,
+            is_supplementary: false,
+        };
+        let reads = vec![mk(1_100), mk(1_200), mk(9_000)];
+        let fa = gated_family(&rep, &reads, 3, "DSFAM7".into());
+        assert_eq!(fa.n_copies, 3, "n_copies is chi(H)");
+        assert_eq!(fa.collapsed_copies, 3, "records how the count was obtained");
+        assert_eq!(fa.copy_tids.len(), 1, "only the assembled rep has a sequence");
+        assert_eq!(fa.n_reads, 2, "only the two overlapping reads");
+        assert!(fa.copy_psv_alleles.is_empty(), "no per-copy consensus is materialised");
+        for (_, a) in &fa.assignments {
+            assert_eq!(a.status, AssignStatus::Tied);
+            assert_eq!(a.min_p_value, 1.0, "no distinguishing column exists: that is the honest certificate");
+        }
     }
 
     #[test]
