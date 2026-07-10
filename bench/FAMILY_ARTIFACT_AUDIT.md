@@ -55,18 +55,42 @@ recovers real ancient paralogs (GWFAM8 KRAB-ZNF, GSTM's globin problem) *and* th
 - The 30-locus sample is expression-limited: only ~6 of 30 named families are testis-expressed enough to form
   anything. A true genome-wide precision number needs the dense clusters (excluded here for cost) and is unmeasured.
 
-## The fix, if wanted
+## The coverage fix was TESTED and it FAILS — reverted
 
-The domain bridge is a **harmony gap** between `copy_assign --homology-primary` and the genome-wide E_r catalog:
-the inline path skips the de-bridging the catalog path applies. The options, in order of scope:
-1. Gate the E_r sensitive-tier edges in `copy_assign` on reciprocal **coverage** (the domain bridge is ~1%
-   coverage; a real paralog pair is > 0.50) — cheap, threshold-in-the-existing-refine-gate, and it is exactly
-   what `RefineParams` already carries but the sensitive tier apparently relaxes.
-2. Port the co-threading / community de-bridging from the genome-wide catalog into the inline branch (DRY: call
-   the same decomposition both places).
+The natural fix — **reciprocal coverage** (`min(qcov, tcov)` instead of coverage over the shorter transcript) —
+was implemented and run on the panel. It correctly shrank the ZNF bridge (3 → 2 copies), but it **destroyed four
+real families**: GSTM (3 → 0), MAGEA (2 → 0), PCDHB (5 → 0), TCEAL (5 → 0), and dropped GBP (6 → 4). Reverted.
 
-Option 1 is the minimal fix and the one to validate first: confirm the ZNF bridge is a low-coverage edge and that
-raising the sensitive-tier coverage floor drops it without dropping GSTM / DAZ / the real KRAB-ZNF families.
+The reason is fundamental. Reciprocal coverage penalises *transcript-length differences*, which are biologically
+normal — isoforms, UTR extensions, and truncated de-novo models (DAZ2 is itself a 70% model). A real paralog
+pair where one copy is longer than the other has the alignment cover the short copy fully but the long copy
+partly, so `min(qcov, tcov)` falls below 0.50 and the edge is dropped. The coverage-over-shorter metric was
+chosen deliberately to be robust to exactly this.
+
+**The measured lesson: no pairwise coverage/identity threshold separates a domain bridge from a length-divergent
+real paralog.** The ZNF bridge (shorter-coverage 0.55, identity 0.69) sits in the same pairwise cell as real
+sensitive-tier paralogs. This is precisely why the genome-wide family-definition work solved domain bridges with
+**graph structure** — co-threading + community de-bridging (weighted Louvain) — not a pairwise gate.
+
+And that graph fix **cannot be ported to `copy_assign`'s per-region path**: the ZNF over-merge is a 3-node
+complete triangle (ZNF445–ZKSCAN7–ZNF197, each pair domain-homologous), which any γ-quasi-clique accepts as a
+family. De-bridging works only with the *genome-wide* graph, where the whole KRAB-ZNF superfamily blob is visible
+and Louvain can cut it into sub-communities. A single 300 kb window with three ZNF genes has no larger structure
+to exploit.
+
+## Disposition
+
+- **Do not ship a coverage/identity threshold.** It breaks real length-divergent families (measured) and is the
+  arbitrary threshold the advisor rejects.
+- The KRAB-ZNF domain bridge is an **inherent limitation of the per-region `--homology-primary` mode**: it
+  inherits raw E_r edges with no genome-wide context to de-bridge. It is opt-in and does not affect the default
+  E_c catalog (which forms 0 families there).
+- For a clean real-family catalog, the **genome-wide de-bridged path** (`detect_homology_catalog_genome_wide` +
+  co-threading community detection) is the correct tool — `copy_assign --homology-primary` is a per-region
+  assignment mode, not a family-definition catalog.
+
+The one honest cheap improvement already in place is that the default oracle is clean; the domain bridge only
+surfaces when a user opts into per-region E_r membership on a domain-sharing superfamily.
 
 Related: `bench/CONTAINMENT_COVERAGE_FLOOR.md`, `bench/YAG_VS_ISOCON.md`, `project_rna_family_homology_primary`,
 `project_family_def_readconflict` (the domain-bridge history).
