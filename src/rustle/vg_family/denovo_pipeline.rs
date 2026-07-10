@@ -167,20 +167,24 @@ pub fn colocated_families(
         if fam.class != FamilyClass::Family {
             continue;
         }
-        // Partition by (chrom, STRAND): copies of a gene family share a strand. Opposite-strand loci that
-        // merge via inverted-repeat / antisense homology are NOT copies of each other (a read carries its
-        // own strand, so there is no copy-level ambiguity to resolve), and force-aligning a `+`-strand
-        // spliced sequence to a `-`-strand one manufactures spurious PSV columns. Splitting by strand
-        // removes that antisense over-merge from the copy-assignment input.
-        let mut by_key: std::collections::BTreeMap<(&str, char), Vec<usize>> =
-            std::collections::BTreeMap::new();
+        // Partition by CHROM only — NOT by strand. An inverted duplicate (MAGEA4 `+` / MAGEA10 `-`,
+        // RFPL2 `-` / RFPL3 `+`) is a genuine paralog pair at two disjoint loci on opposite strands. Keying
+        // on `(chrom, strand)` split every such pair into two singletons, which `min_copies` then dropped,
+        // so O2 could never assign an inverted duplicate even when the homology oracle found the edge.
+        //
+        // The strand split was really guarding against SAME-LOCUS antisense (a `+` gene and a `-` gene whose
+        // spans overlap — an inverted-repeat artifact, not two copies). `prune_same_locus` clause (c) removes
+        // exactly that, and only that: distinct-loci opposite-strand copies do not overlap, so it never fires
+        // on a real inverted duplication. Running it over the whole chromosome group — rather than within one
+        // strand, where it could never see an antisense pair at all — gives the same protection without
+        // discarding the paralogs. Mixed-strand families are safe downstream: each copy carries its own
+        // strand, `copy_assign_pipeline` reverse-complements read bases per copy, and two inverted-duplicate
+        // mRNAs are both in transcription orientation, so they align forward to each other.
+        let mut by_key: std::collections::BTreeMap<&str, Vec<usize>> = std::collections::BTreeMap::new();
         for &m in &fam.members {
-            by_key
-                .entry((reps[m].chrom.as_str(), reps[m].strand))
-                .or_default()
-                .push(m);
+            by_key.entry(reps[m].chrom.as_str()).or_default().push(m);
         }
-        for ((chrom, _strand), mut idxs) in by_key {
+        for (chrom, mut idxs) in by_key {
             idxs.sort_by_key(|&m| reps[m].start);
             let copies: Vec<DenovoTranscript> = idxs.iter().map(|&m| reps[m].clone()).collect();
             // SAME-LOCUS de-dup: copies of a multi-copy family must be at DISJOINT loci. Two transcripts
@@ -2831,6 +2835,45 @@ mod tests {
         assert!((sum - 1.0).abs() < 1e-6, "copy_abundance must sum to 1, got {:?}", fa.copy_abundance);
     }
 
+    /// MAGEA4 (`+`) / MAGEA10 (`-`) and RFPL2 (`-`) / RFPL3 (`+`) are real INVERTED DUPLICATE paralog pairs:
+    /// homologous, on one chromosome, at DISJOINT loci, on opposite strands. Partitioning `colocated_families`
+    /// by `(chrom, strand)` split each pair into two singletons, which `min_copies = 2` then dropped — so O2
+    /// could never assign an inverted duplicate, even when the homology oracle found the edge. Grouping by
+    /// chromosome alone keeps them; `prune_same_locus` clause (c) still removes SAME-LOCUS antisense overlap,
+    /// which was the only thing the strand split was actually protecting against.
+    #[test]
+    fn colocated_families_keeps_inverted_duplicate_pair() {
+        let mut plus = rep_s(1_000, 5_000, vec![(2_000, 3_000)], 20);
+        plus.strand = '+';
+        let mut minus = rep_s(50_000, 54_000, vec![(51_000, 52_000)], 18); // disjoint locus, opposite strand
+        minus.strand = '-';
+        let reps = vec![plus, minus];
+        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0 };
+        let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
+
+        let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
+        assert_eq!(out.len(), 1, "an inverted duplicate pair is ONE co-located family");
+        assert_eq!(out[0].copies.len(), 2, "both copies survive: {:?}", out[0].copies.iter().map(|c| c.strand).collect::<Vec<_>>());
+        let strands: std::collections::BTreeSet<char> = out[0].copies.iter().map(|c| c.strand).collect();
+        assert_eq!(strands, ['+', '-'].into_iter().collect(), "the family spans both strands");
+    }
+
+    /// The protection the strand split was really providing must survive: a `+` gene and a `-` gene whose
+    /// spans OVERLAP are an inverted-repeat/antisense artifact at one locus, not two copies.
+    #[test]
+    fn colocated_families_still_drops_same_locus_antisense_overlap() {
+        let mut plus = rep_s(1_000, 11_000, vec![(2_000, 3_000), (4_000, 5_000)], 15);
+        plus.strand = '+';
+        let mut minus = rep_s(1_100, 10_900, vec![(6_000, 7_000), (8_000, 9_000)], 5); // overlaps, opposite strand
+        minus.strand = '-';
+        let reps = vec![plus, minus];
+        let stats = crate::vg_family::family_split::CommunityStats { n: 2, n_edges: 1, density: 1.0, avg_core_recip: 1.0, n_articulation: 0 };
+        let fams = vec![SplitFamily { members: vec![0, 1], class: FamilyClass::Family, stats }];
+
+        let out = colocated_families(&reps, &fams, 5_000_000, 2, &DetectParams::default());
+        assert!(out.is_empty(), "antisense overlap collapses to ONE copy, which is below min_copies=2");
+    }
+
     #[test]
     fn colocated_families_filters_same_chrom_clusters() {
         // Build a family with 2 same-chrom copies (via the detect chain), assert it is co-located.
@@ -3265,11 +3308,14 @@ mod tests {
     }
 
     #[test]
-    fn colocated_families_splits_by_strand() {
+    fn colocated_families_keeps_mixed_strand_disjoint_copies_in_one_family() {
         use super::super::family_split::{CommunityStats, FamilyClass, SplitFamily};
         // 4 disjoint-locus copies on c1: two '+' and two '-' (distinct junctions, no containment), all in
-        // ONE conflict family. colocated_families must split them into TWO families by strand (the
-        // antisense fix): a '+' 2-copy family and a '-' 2-copy family.
+        // ONE conflict family. They are four copies of one inverted-duplication family, so they must stay
+        // ONE family. This test previously asserted a split into two same-strand families; that split is what
+        // made O2 blind to MAGEA4/MAGEA10 and RFPL2/RFPL3. Same-locus antisense is still removed — by
+        // `prune_same_locus` clause (c) — and is covered by
+        // `colocated_families_still_drops_same_locus_antisense_overlap`.
         let plus = |s: u64, e: u64, j: (u64, u64)| {
             let mut t = rep_s(s, e, vec![j], 5);
             t.strand = '+';
@@ -3288,15 +3334,10 @@ mod tests {
             class: FamilyClass::Family,
         };
         let colo = colocated_families(&reps, &[fam], 5_000_000, 2, &DetectParams::default());
-        assert_eq!(colo.len(), 2, "the + and - copies form two separate same-strand families");
-        let mut sizes: Vec<usize> = colo.iter().map(|c| c.copies.len()).collect();
-        sizes.sort();
-        assert_eq!(sizes, vec![2, 2], "each strand family keeps its 2 disjoint copies");
-        // every family is single-strand
-        for c in &colo {
-            let strands: std::collections::HashSet<char> = c.copies.iter().map(|x| x.strand).collect();
-            assert_eq!(strands.len(), 1, "a co-located family is single-strand");
-        }
+        assert_eq!(colo.len(), 1, "disjoint copies on one chromosome are ONE family regardless of strand");
+        assert_eq!(colo[0].copies.len(), 4, "all four disjoint copies are kept");
+        let strands: std::collections::HashSet<char> = colo[0].copies.iter().map(|x| x.strand).collect();
+        assert_eq!(strands.len(), 2, "the family spans both strands (inverted duplication)");
     }
 
     #[test]

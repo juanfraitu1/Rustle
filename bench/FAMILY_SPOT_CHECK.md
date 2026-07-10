@@ -75,6 +75,68 @@ genome-wide prevalence has **not** been measured.
   2. `colocated_families` splits on strand, so O2 cannot assign inverted duplicates.
 - Fixing either changes family membership and therefore every downstream number. Both are flagged, not fixed.
 
+---
+
+# FIX: `colocated_families` no longer splits on strand
+
+Finding 3 above is fixed. `colocated_families` now partitions family members by **chromosome only**.
+
+**Why this is safe.** The strand split was justified as protection against same-locus antisense (a `+` gene and
+a `-` gene whose spans overlap — an inverted-repeat artifact, not two copies). But `prune_same_locus`
+**clause (c)** already removes exactly that, and its own comment says so: *"distinct-loci opposite-strand
+copies do NOT overlap, so this never fires on a genuine inverted-duplication paralog — which is exactly what we
+want to keep."* Because the split ran first, every group was single-strand and clause (c) could never fire. It
+was dead code guarding against a case the split had already destroyed, along with the paralogs.
+
+Mixed-strand families are safe downstream: each copy carries its own strand, `copy_assign_pipeline`
+reverse-complements read bases per copy (`assign_minus_strand_copy_reverse_complements_read_base`), and two
+inverted-duplicate mRNAs are both in transcription orientation, so they align forward to each other.
+
+## Result
+
+| family | before | after |
+|---|---|---|
+| **MAGEA** (MAGEA4 `+` / MAGEA10 `-`) | 0 families | **1 family, 2 copies — `163590486-163600790` = MAGEA4, `163809311-163814502` = MAGEA10. 895/931 reads assigned, 35 tied, 1 ambiguous.** |
+| **GSTM** | 2 families, one of them a chimera | **1 family, 3 copies = GSTM3 + GSTM5 + GSTM1, no warning. 2656/2675 assigned (99.3%).** |
+
+Both match the annotation exactly. The GSTM readthrough artifact **also disappeared**: with the strand split
+gone, `prune_same_locus` finally compares the `+`-strand 30 kb readthrough against the `-`-strand GSTM5/GSTM1
+and prunes it. One fix, two defects closed.
+
+The pre-existing test `colocated_families_splits_by_strand` asserted the old behavior; it is replaced by
+`colocated_families_keeps_mixed_strand_disjoint_copies_in_one_family`, and the antisense protection is now
+covered directly by `colocated_families_still_drops_same_locus_antisense_overlap`. 847 tests.
+
+## ⚠ Default outputs change
+
+This is a family-membership fix, so numbers move. Measured on the probe regions:
+
+| region | before | after |
+|---|---|---|
+| `NC_073224.2:101578582-101607889` | 1 family, 665 assignments | unchanged |
+| `NC_073228.2:182473722-182663103` | 2 families, 1209 assignments | **1 family, 481 assignments** |
+
+The family that vanished on region 4 is the suspicious `CAFAM0` — 816 reads, *both* copies flagged collapsed,
+90% tied, and the outlier that once skewed the tied fraction from 25% to 44.9%. It is pruned as an artifact.
+That also retires the open question in `HOMOLOGY_PRIMARY_DELTA.md`, where region 4 looked like pure E_r
+*losing* a real family: part of what E_c had there was not a family.
+
+## ⚠ Newly exposed defect: giant single-exon readthrough transcripts
+
+RFPL (RFPL2 `-` / RFPL3 `+`) now forms its family — and then **assignment hangs (>400 s)**. The cause is not
+the strand fix. The window contains `DN_NC_086018.1_30210606_1`: a **128 kb, single-exon** de-novo transcript
+carrying 12 reads, spanning RFPL2 and SLC5A4. It is a readthrough/intronic pileup, the same artifact class as
+the GSTM one, and it is admitted as a *copy*. Aligning reads against a 128 kb "transcript" is quadratic.
+
+`prune_same_locus` misses it: clause (b) drops a structureless span only when it is *contained* (overlap ≥ 50%
+of the shorter transcript), and this giant merely straddles each neighbour partially (24.5 kb of a 53.9 kb
+copy). The defect pre-dates this fix — the strand split had simply been hiding it by dropping the family.
+
+The candidate rule is: a **single-exon transcript that overlaps any spliced transcript at all** is the
+unspliced/readthrough form of a locus, not a copy. Retrocopies stay safe under that rule — they are intronless
+but sit at a *different* locus and do not overlap their parent. Not implemented: it is a second
+membership-changing rule and deserves its own measurement.
+
 ## Reproduce
 
 ```
