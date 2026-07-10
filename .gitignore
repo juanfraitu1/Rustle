@@ -99,3 +99,6 @@
 *.tsv.gz
 *.gtf.gz
 .superpowers/
+
+# large local checkpoints (never commit)
+bench/*.npz

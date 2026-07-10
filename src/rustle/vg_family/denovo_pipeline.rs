@@ -291,7 +291,7 @@ fn prune_same_locus(copies: Vec<DenovoTranscript>, p: &DetectParams) -> Vec<Deno
 
 
 /// Per-co-located-family read-assignment summary, with the two-pass (PSV-only vs PSV+junction) breakdown
-/// and the silver-standard unique-mapper agreement (the accuracy proxy on real data — `copy_assign.py`).
+/// and the unique-mapper agreement (the accuracy proxy on real data — `copy_assign.py`).
 #[derive(Clone, Debug)]
 pub struct FamilyAssignment {
     pub family_id: String,
@@ -307,7 +307,7 @@ pub struct FamilyAssignment {
     pub assigned_j: usize,
     /// reads a copy-specific junction resolved that PSVs alone could not.
     pub junction_only: usize,
-    /// silver-standard: assigned + uniquely mapped (mapq > 0), and of those how many agree with where the
+    /// unique-mapper agreement: assigned + uniquely mapped (mapq > 0), and of those how many agree with where the
     /// read confidently mapped (the assignment-vs-mapping accuracy proxy).
     pub uniq: usize,
     pub uniq_agree: usize,
@@ -323,6 +323,12 @@ pub struct FamilyAssignment {
     /// SOFT per-copy quantification: copy transcript id, EM abundance (fraction of reads, sums to 1), and the
     /// 95% CI half-width — the probabilistic estimator (uses partial PSV evidence; uniform at the K=0 floor).
     pub copy_tids: Vec<String>,
+    /// Genomic span `(chrom, start, end)` of each copy, parallel to `copy_tids`. Emitted so a catalog can be
+    /// audited for the same-locus artifact: two copies of ONE family whose spans OVERLAP are not two loci,
+    /// they are one locus admitted twice (nested/near-duplicate de-novo transcripts). Such a family reports
+    /// `min_p == 1` for every read — the reads look unassignable when in fact the copy set is malformed.
+    /// The check is structural and needs no annotation. See `copies_overlap` and `bench/artifact_audit.py`.
+    pub copy_spans: Vec<(String, u64, u64)>,
     pub copy_abundance: Vec<f64>,
     pub copy_abundance_ci: Vec<f64>,
     /// gene-conversion mosaic: reads whose PSV path switches copy mid-molecule, and the family-confirmed
@@ -353,7 +359,7 @@ pub struct FamilyAssignment {
 
 /// END-TO-END pipeline: detect families, then for each co-located family assign every read overlapping it to
 /// a copy (PSV + copy-specific-junction likelihood, two-pass). `bam_reads` carry chrom (for region
-/// filtering) and mapq (for the silver-standard). The runnable detection + per-read copy-assignment pipeline.
+/// filtering) and mapq (for the unique-mapper agreement). The runnable detection + per-read copy-assignment pipeline.
 #[allow(clippy::too_many_arguments)]
 /// A homology-prefiltered candidate family pair whose larger transcript exceeded the poasta memory threshold
 /// (`cfg.detect.len_cap`) and was therefore confirmed via the memory-bounded longest-common-substring FALLBACK
@@ -439,6 +445,39 @@ fn to_split_families(
     out.sort_by(|a, b| {
         b.members.len().cmp(&a.members.len()).then_with(|| a.members[0].cmp(&b.members[0]))
     });
+    out
+}
+
+/// Pairs of copy indices whose genomic spans OVERLAP, with the RECIPROCAL overlap fraction.
+///
+/// Two copies of one family are, by definition, two distinct loci — distinct loci occupy disjoint genomic
+/// intervals. Any intersection therefore signals a defect, and the reciprocal fraction
+/// `overlap / max(len_i, len_j)` says which one:
+///
+/// * **≈ 1.0 — one locus admitted twice.** Two de-novo transcripts on top of each other, differing only by
+///   boundary wobble (observed: `164381222-164384848` vs `164381237-164384845`, 15 bp offset). They are
+///   sequence-identical, so every read scores `min_p == 1` against the pair, the family abstains wholesale,
+///   and its reads masquerade as the K=0 identifiability wall. `collapse_loci_groups` misses these because
+///   it unions only transcripts sharing an EXACT intron `(chrom, donor, acceptor)` and never consults
+///   positional overlap.
+/// * **≪ 1.0 — containment.** A long readthrough transcript enclosing a short one (observed: a 188 kb span
+///   containing a 3.6 kb one). Merging these would let the readthrough absorb genuinely distinct tandem
+///   copies, so they must NOT be merged — it is a separate defect in transcript construction.
+///
+/// Purely structural: no annotation, no reference truth. Returns `(i, j, reciprocal)` with `i < j`.
+pub fn copies_overlap(spans: &[(String, u64, u64)]) -> Vec<(usize, usize, f64)> {
+    let mut out = Vec::new();
+    for i in 0..spans.len() {
+        for j in (i + 1)..spans.len() {
+            let (ca, sa, ea) = (&spans[i].0, spans[i].1, spans[i].2);
+            let (cb, sb, eb) = (&spans[j].0, spans[j].1, spans[j].2);
+            if ca == cb && sa.max(sb) < ea.min(eb) {
+                let overlap = (ea.min(eb) - sa.max(sb)) as f64;
+                let longest = (ea - sa).max(eb - sb) as f64;
+                out.push((i, j, if longest > 0.0 { overlap / longest } else { 1.0 }));
+            }
+        }
+    }
     out
 }
 
@@ -1171,6 +1210,7 @@ pub fn detect_and_assign(
             rescued_copies,
             assignments: Vec::with_capacity(detail.results.len()),
             copy_tids: all_copies.iter().map(|c| c.tid.clone()).collect(),
+            copy_spans: all_copies.iter().map(|c| (c.chrom.clone(), c.start, c.end)).collect(),
             copy_abundance: detail.copy_abundance.clone(),
             copy_abundance_ci: detail.copy_abundance_ci.clone(),
             mosaic_reads: detail.mosaic_reads,
@@ -2239,7 +2279,7 @@ mod tests {
         for fa in &fas {
             let pct = |x: usize| if fa.n_reads > 0 { 100.0 * x as f64 / fa.n_reads as f64 } else { 0.0 };
             eprintln!(
-                "  {} {} copies={} reads={} PSVcols={} resolv_PSV={:.0}% resolv_+J={:.0}% J_only={} assign_+J={:.0}% silver={}/{}",
+                "  {} {} copies={} reads={} PSVcols={} resolv_PSV={:.0}% resolv_+J={:.0}% J_only={} assign_+J={:.0}% uniq_agree={}/{}",
                 fa.family_id, fa.chrom, fa.n_copies, fa.n_reads, fa.psv_cols,
                 pct(fa.resolvable_psv), pct(fa.resolvable_j), fa.junction_only,
                 pct(fa.assigned_j), fa.uniq_agree, fa.uniq,
@@ -2247,7 +2287,7 @@ mod tests {
         }
         let (tot_uniq, tot_agree): (usize, usize) = fas.iter().fold((0, 0), |(u, a), f| (u + f.uniq, a + f.uniq_agree));
         if tot_uniq > 0 {
-            eprintln!("AGGREGATE silver-standard unique-mapper agreement: {tot_agree}/{tot_uniq} ({:.1}%)", 100.0 * tot_agree as f64 / tot_uniq as f64);
+            eprintln!("AGGREGATE unique-mapper agreement: {tot_agree}/{tot_uniq} ({:.1}%)", 100.0 * tot_agree as f64 / tot_uniq as f64);
         }
     }
 
@@ -2415,6 +2455,7 @@ mod tests {
                 ),
             ],
             copy_tids: vec!["c0".into(), "c1".into()],
+            copy_spans: vec![("c".into(), 0, 10), ("c".into(), 20, 30)],
             copy_abundance: vec![0.5, 0.5],
             copy_abundance_ci: vec![0.5, 0.5],
             mosaic_reads: 0,
@@ -2534,6 +2575,7 @@ mod tests {
                 },
             )],
             copy_tids: vec!["c0".into(), "c1".into()],
+            copy_spans: vec![("c".into(), 0, 10), ("c".into(), 20, 30)],
             copy_abundance: vec![0.5, 0.5],
             copy_abundance_ci: vec![0.5, 0.5],
             mosaic_reads: 0,
@@ -2623,6 +2665,7 @@ mod tests {
             rescued_copies: 0,
             assignments: Vec::new(),
             copy_tids: vec!["host".into()],
+            copy_spans: vec![("c".into(), 0, 10)],
             copy_abundance: vec![1.0],
             copy_abundance_ci: vec![0.0],
             mosaic_reads: 0,
@@ -3369,6 +3412,45 @@ mod tests {
             assert_eq!(w.class, c.class);
             assert_eq!(w.stats, c.stats);
         }
+    }
+
+    /// The real CAFAM69 geometry: a 65 kb de-novo transcript with a shorter one nested inside it, admitted
+    /// as two "copies" of one family. Every read scored `min_p == 1` against that pair, so all 1043 reads
+    /// abstained and looked like the K=0 wall. Disjoint loci (the true paralog case) must NOT be flagged.
+    #[test]
+    fn copies_overlap_flags_nested_transcripts_not_disjoint_paralogs() {
+        let nested = vec![
+            ("NC_073247.2".to_string(), 164_381_269, 164_446_025),
+            ("NC_073247.2".to_string(), 164_430_240, 164_436_493),
+        ];
+        let got = copies_overlap(&nested);
+        assert_eq!(got.len(), 1);
+        assert_eq!((got[0].0, got[0].1), (0, 1));
+        assert!(got[0].2 < 0.2, "a 65 kb span containing a 6 kb one is CONTAINMENT, not a duplicate: {}", got[0].2);
+
+        // boundary wobble: the real CAFAM69 pair -- reciprocal ~1.0 => one locus admitted twice
+        let wobble = vec![
+            ("NC_073247.2".to_string(), 164_381_222, 164_384_848),
+            ("NC_073247.2".to_string(), 164_381_237, 164_384_845),
+        ];
+        let w = copies_overlap(&wobble);
+        assert_eq!(w.len(), 1);
+        assert!(w[0].2 > 0.99, "15 bp of wobble => reciprocal overlap ~1.0, got {}", w[0].2);
+
+        // CAFAM20: two genuinely distinct loci 43 kb apart, exonically identical (a real K=0 family).
+        let disjoint = vec![
+            ("NC_073229.2".to_string(), 136_502_891, 136_507_428),
+            ("NC_073229.2".to_string(), 136_550_623, 136_557_225),
+        ];
+        assert!(copies_overlap(&disjoint).is_empty(), "disjoint paralogs are a real family");
+
+        // Same coordinates on different contigs cannot overlap.
+        let cross = vec![("c1".to_string(), 100, 200), ("c2".to_string(), 100, 200)];
+        assert!(copies_overlap(&cross).is_empty());
+
+        // Abutting spans (end == start) touch but do not overlap.
+        let abut = vec![("c1".to_string(), 100, 200), ("c1".to_string(), 200, 300)];
+        assert!(copies_overlap(&abut).is_empty(), "half-open spans: end == start is not an overlap");
     }
 
     #[test]

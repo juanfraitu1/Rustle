@@ -4,7 +4,7 @@
 //! transcripts, detect co-located paralog families, and assign each read — including the hard multimappers
 //! minimap2 leaves at MAPQ 0 — to a specific copy via PSV bases + copy-specific junctions.
 //!
-//! Writes `<out>.families.tsv` (per-family roster + two-pass + silver-standard stats) and
+//! Writes `<out>.families.tsv` (per-family roster + two-pass + unique-mapper agreement stats) and
 //! `<out>.assignments.tsv` (per-read copy assignment). A `.bai` next to the BAM makes the region read fast.
 
 use anyhow::{Context, Result};
@@ -23,7 +23,7 @@ use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
 };
-use rustle::vg_family::denovo_pipeline::{detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
+use rustle::vg_family::denovo_pipeline::{copies_overlap, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
 use rustle::vg_family::family_detect::collapse_loci_groups;
 use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
 use rustle::vg_family::readonly_copy_number::{chi_h, depth_cn};
@@ -326,6 +326,11 @@ struct QuantRow {
     family_id: String,
     copy_index: usize,
     copy_tid: String,
+    /// Genomic span of the copy. Emitted so a catalog can be audited for the same-locus artifact:
+    /// two copies of one family whose spans overlap are one locus admitted twice, not two copies.
+    copy_chrom: String,
+    copy_start: u64,
+    copy_end: u64,
     abundance: f64,
     ci: f64,
     n_hard: usize,
@@ -637,6 +642,9 @@ fn main() -> Result<()> {
                         family_id: fid.clone(),
                         copy_index: ci,
                         copy_tid: tid.clone(),
+                        copy_chrom: fa.copy_spans.get(ci).map(|s| s.0.clone()).unwrap_or_default(),
+                        copy_start: fa.copy_spans.get(ci).map_or(0, |s| s.1),
+                        copy_end: fa.copy_spans.get(ci).map_or(0, |s| s.2),
                         abundance: fa.copy_abundance.get(ci).copied().unwrap_or(0.0),
                         ci: fa.copy_abundance_ci.get(ci).copied().unwrap_or(0.0),
                         n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
@@ -960,9 +968,10 @@ fn main() -> Result<()> {
     // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for
     // comparison. The EM uses partial PSV evidence (the benchmark: beats hard at sparse PSVs; uniform at K=0).
     let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
-    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tabundance\tci95_halfwidth\tn_reads_hard")?;
+    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard")?;
     for r in &quant_rows {
-        writeln!(qh, "{}\t{}\t{}\t{:.4}\t{:.4}\t{}", r.family_id, r.copy_index, r.copy_tid, r.abundance, r.ci, r.n_hard)?;
+        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}", r.family_id, r.copy_index, r.copy_tid,
+            r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard)?;
     }
 
     // FACULTATIVE long-read phasing output (dependency-free): phase set (PS) per family, each haplotype's
@@ -1125,9 +1134,45 @@ fn main() -> Result<()> {
         family_rows.len(),
         assign_rows.len()
     );
+
+    // Same-locus artifact: two copies of ONE family whose genomic spans OVERLAP are one locus admitted
+    // twice, not two copies. Such a family reports min_p == 1 for every read, so it abstains wholesale and
+    // its reads masquerade as the K=0 identifiability wall. Warn loudly rather than fail — the catalog is
+    // still emitted, but its abstention must not be read as biology. `bench/artifact_audit.py` audits this.
+    {
+        let mut by_fam: std::collections::BTreeMap<&str, Vec<(String, u64, u64)>> = std::collections::BTreeMap::new();
+        for r in &quant_rows {
+            by_fam.entry(&r.family_id).or_default().push((r.copy_chrom.clone(), r.copy_start, r.copy_end));
+        }
+        let flagged: Vec<String> = by_fam
+            .iter()
+            .flat_map(|(fid, spans)| {
+                copies_overlap(spans).into_iter().map(move |(i, j, recip)| {
+                    // reciprocal ~1 => the same interval twice; small => a readthrough enclosing a fragment
+                    let kind = if recip > 0.9 { "DUPLICATE LOCUS" } else { "CONTAINMENT (readthrough?)" };
+                    format!(
+                        "{fid} {kind} recip={recip:.2}  {}:{}-{} vs {}-{}",
+                        spans[i].0, spans[i].1, spans[i].2, spans[j].1, spans[j].2
+                    )
+                })
+            })
+            .collect();
+        if !flagged.is_empty() {
+            eprintln!(
+                "[copy_assign] WARNING: {} overlapping copy pair(s). Copies of one family must occupy \
+                 DISJOINT loci. A DUPLICATE LOCUS makes every read score min_p == 1, so the family abstains \
+                 wholesale and its reads masquerade as the K=0 wall — do not read that abstention as biology.",
+                flagged.len()
+            );
+            for f in flagged.iter().take(10) {
+                eprintln!("[copy_assign]   {f}");
+            }
+        }
+    }
+
     if uniq > 0 {
         eprintln!(
-            "[copy_assign] genome-wide silver-standard unique-mapper agreement: {agree}/{uniq} ({:.1}%)",
+            "[copy_assign] genome-wide unique-mapper agreement: {agree}/{uniq} ({:.1}%)",
             100.0 * agree as f64 / uniq as f64
         );
     }
