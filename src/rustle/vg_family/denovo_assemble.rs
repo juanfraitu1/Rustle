@@ -590,11 +590,15 @@ pub struct GateParams {
     pub max_span: u64,
     pub min_spliced: usize,
     pub max_spliced: usize,
+    /// Test `min_reads` against the LOCUS (junction-incidence component) rather than one isoform. Default on.
+    /// `false` reproduces the pre-fix per-isoform gate exactly. See [`locus_support`].
+    pub pool_locus_support: bool,
 }
 
 impl Default for GateParams {
     fn default() -> Self {
         GateParams {
+            pool_locus_support: true,
             min_reads: GATE_MIN_READS,
             max_span: MAX_SPAN,
             min_spliced: MIN_SPLICED,
@@ -658,14 +662,106 @@ pub fn build_spliced_seq(
     Some((seq, strand))
 }
 
-/// Assemble gate: keep skeletons with `>= min_reads` reads, span `<= max_span`, and ALL-canonical
-/// consistent-strand junctions; build the spliced sequence (reverse-complemented for a `-` strand) and
-/// require its length in `[min_spliced, max_spliced]`. Returns the gated `DenovoTranscript`s in input
-/// order. Mirrors `denovo_assemble_gate.py`.
+/// Read support of the LOCUS each skeleton belongs to: connected components of the **junction-incidence
+/// graph**, where two skeletons are adjacent iff they share an exact `(chrom, donor, acceptor)`. Returns a
+/// vector parallel to `skeletons`, each entry the summed `n_reads` of that skeleton's component.
+///
+/// Why this exists. `assemble_gate` used to test `min_reads` against a single intron chain, i.e. against ONE
+/// ISOFORM. A locus expressed as several minor isoforms is then shattered: at DAZ2 the 12 spliced primary
+/// reads fragment into 9 distinct chains whose best support is 2, so every chain died at `GATE_MIN_READS = 3`
+/// and the locus was never assembled — even though all 12 reads share the terminal junction
+/// `(42939630, 42943604)` and none of them shares a junction with DAZ1. Pooling first and gating second keeps
+/// the locus. This replaces a per-isoform threshold with a graph operation; the threshold that remains applies
+/// to a locus, which is the object it was always meant to describe.
+///
+/// A single-exon skeleton has NO junctions, so it is adjacent to nothing and forms its own component: its
+/// locus support is its own read count, exactly as before. The empty intron chain never pools — which matters,
+/// because keying on it would union every unspliced read on a chromosome.
+/// A skeleton is a CHIMERIC BRIDGE if it shares a junction with two skeletons whose genomic spans are
+/// DISJOINT — it splices across two separate loci, so it belongs to neither.
+///
+/// Without this test, junction pooling merges paralogs. At GSTM a 2-read spliced transcript spanning
+/// `129191743-129222260` carries junctions of BOTH GSTM5 (`129191742-129197751`) and GSTM1
+/// (`129216297-129222748`). It bridged them in the incidence graph, inherited their combined support, cleared
+/// the gate, and span-aware collapse then merged GSTM5 into it — destroying a real annotated copy.
+///
+/// Exact, not thresholded: two spans either intersect or they do not. Isoforms of ONE locus overlap each other,
+/// so a genuine full-length isoform — even one that is the only chain carrying some junction pair — is never
+/// flagged. DAZ2's nine chains all overlap within `42879944-42943604` and are unaffected.
+fn is_chimeric_bridge(i: usize, skeletons: &[Skeleton], neighbours: &[Vec<usize>]) -> bool {
+    let disjoint = |a: &Skeleton, b: &Skeleton| a.chrom != b.chrom || a.end <= b.start || b.end <= a.start;
+    let nb = &neighbours[i];
+    nb.iter().enumerate().any(|(x, &j)| nb[x + 1..].iter().any(|&k| disjoint(&skeletons[j], &skeletons[k])))
+}
+
+/// Read support of the LOCUS each skeleton belongs to (see the doc above). Chimeric bridges are excluded from
+/// pooling and keep only their own read count, so a 2-read chimera can never inherit a real locus's support.
+pub fn locus_support(skeletons: &[Skeleton]) -> Vec<u32> {
+    // adjacency: two skeletons share an exact (chrom, donor, acceptor)
+    let mut by_junction: std::collections::BTreeMap<(&str, u64, u64), Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, sk) in skeletons.iter().enumerate() {
+        for &(d, a) in &sk.introns {
+            by_junction.entry((sk.chrom.as_str(), d, a)).or_default().push(i);
+        }
+    }
+    let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); skeletons.len()];
+    for members in by_junction.values() {
+        for (x, &i) in members.iter().enumerate() {
+            for &j in &members[x + 1..] {
+                neighbours[i].push(j);
+                neighbours[j].push(i);
+            }
+        }
+    }
+    for nb in neighbours.iter_mut() {
+        nb.sort_unstable();
+        nb.dedup();
+    }
+    let chimeric: Vec<bool> = (0..skeletons.len()).map(|i| is_chimeric_bridge(i, skeletons, &neighbours)).collect();
+
+    let mut parent: Vec<usize> = (0..skeletons.len()).collect();
+    fn find(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    for i in 0..skeletons.len() {
+        if chimeric[i] {
+            continue; // a chimera joins nothing; it is its own locus
+        }
+        for &j in &neighbours[i] {
+            if chimeric[j] {
+                continue;
+            }
+            let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+            if ri != rj {
+                parent[ri] = rj;
+            }
+        }
+    }
+    let mut sum: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    for (i, sk) in skeletons.iter().enumerate() {
+        let r = find(&mut parent, i);
+        *sum.entry(r).or_insert(0) += sk.n_reads;
+    }
+    (0..skeletons.len())
+        .map(|i| if chimeric[i] { skeletons[i].n_reads } else { let r = find(&mut parent, i); sum[&r] })
+        .collect()
+}
+
+/// Assemble gate: keep skeletons whose **locus** (junction-incidence component, see [`locus_support`]) has
+/// `>= min_reads` reads, span `<= max_span`, and ALL-canonical consistent-strand junctions; build the spliced
+/// sequence (reverse-complemented for a `-` strand) and require its length in `[min_spliced, max_spliced]`.
+/// Returns the gated `DenovoTranscript`s in input order. Mirrors `denovo_assemble_gate.py`, except that the
+/// read-count test is applied to the locus rather than to one isoform (`p.pool_locus_support`).
 pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParams) -> Vec<DenovoTranscript> {
+    let support: Vec<u32> =
+        if p.pool_locus_support { locus_support(skeletons) } else { skeletons.iter().map(|s| s.n_reads).collect() };
     let mut out = Vec::new();
-    for sk in skeletons {
-        if sk.n_reads < p.min_reads {
+    for (i, sk) in skeletons.iter().enumerate() {
+        if support[i] < p.min_reads {
             continue;
         }
         if sk.end.saturating_sub(sk.start) > p.max_span {
@@ -691,6 +787,93 @@ pub fn assemble_gate(skeletons: &[Skeleton], genome: &GenomeIndex, p: &GateParam
         });
     }
     out
+}
+
+#[cfg(test)]
+mod locus_support_tests {
+    use super::*;
+
+    fn sk(chrom: &str, start: u64, end: u64, n_reads: u32, introns: &[(u64, u64)]) -> Skeleton {
+        Skeleton { chrom: chrom.into(), start, end, n_reads, introns: introns.to_vec() }
+    }
+
+    /// The real DAZ2 shape. Its 12 spliced primary reads fragment into 9 intron chains whose best support is
+    /// 2, so every chain died at `GATE_MIN_READS = 3`. They all share the terminal junction
+    /// (42939630, 42943604), so the junction-incidence graph pools them into one locus with support 12.
+    #[test]
+    fn locus_support_pools_isoform_fragments_sharing_a_junction() {
+        const TERMINAL: (u64, u64) = (42_939_630, 42_943_604);
+        let sks: Vec<Skeleton> = (0..3)
+            .map(|i| {
+                let d = 42_900_000 + i * 1_000;
+                sk("NC_073248.2", 42_879_944, 42_943_604, 2, &[(d, d + 500), TERMINAL])
+            })
+            .collect();
+        let sup = locus_support(&sks);
+        assert_eq!(sup, vec![6, 6, 6], "three 2-read chains sharing a junction are ONE locus with 6 reads");
+        assert!(sup.iter().all(|&s| s >= GATE_MIN_READS), "the pooled locus clears the gate that killed each chain");
+    }
+
+    /// DAZ1 and DAZ2 share ZERO junctions (measured). Pooling must not bridge them.
+    #[test]
+    fn locus_support_does_not_bridge_loci_with_no_shared_junction() {
+        let daz1 = sk("NC_073248.2", 42_783_133, 42_859_657, 44, &[(42_800_000, 42_801_000)]);
+        let daz2 = sk("NC_073248.2", 42_879_944, 42_943_604, 2, &[(42_939_630, 42_943_604)]);
+        assert_eq!(locus_support(&[daz1, daz2]), vec![44, 2], "disjoint junction sets => disjoint loci");
+    }
+
+    /// THE safety property. A single-exon skeleton has no junctions, so it is adjacent to nothing and its
+    /// locus support is its own read count. Keying on the empty intron chain would union every unspliced read
+    /// on a chromosome (measured: 746 reads across 44.3 Mbp), which is exactly what must not happen.
+    #[test]
+    fn locus_support_never_pools_single_exon_skeletons() {
+        let sks = vec![
+            sk("c1", 100, 200, 1, &[]),
+            sk("c1", 5_000_000, 5_000_100, 1, &[]),
+            sk("c1", 900, 1_000, 1, &[]),
+        ];
+        assert_eq!(locus_support(&sks), vec![1, 1, 1], "the empty intron chain must never pool");
+    }
+
+    /// The real GSTM regression. A 2-read chain carrying junctions of BOTH GSTM5 and GSTM1 -- two genes whose
+    /// spans are disjoint -- must not inherit their pooled support, or it clears the gate and span-aware
+    /// collapse merges the two real copies into one locus.
+    #[test]
+    fn locus_support_refuses_to_pool_through_a_chimeric_bridge() {
+        const J5: (u64, u64) = (129_193_000, 129_194_000);
+        const J1: (u64, u64) = (129_218_000, 129_219_000);
+        let gstm5 = sk("c1", 129_191_742, 129_197_751, 40, &[J5]);
+        let gstm1 = sk("c1", 129_216_297, 129_222_748, 90, &[J1]);
+        let bridge = sk("c1", 129_191_743, 129_222_260, 2, &[J5, J1]); // spliced GSTM5->GSTM1 readthrough
+        let sup = locus_support(&[gstm5, gstm1, bridge]);
+        assert_eq!(sup, vec![40, 90, 2], "the chimera keeps only its own 2 reads; the paralogs stay separate");
+        assert!(sup[2] < GATE_MIN_READS, "and it therefore dies at the gate");
+    }
+
+    /// A genuine full-length isoform joins chains whose spans OVERLAP, so it is not a chimera and does pool.
+    #[test]
+    fn locus_support_pools_through_a_full_length_isoform_whose_neighbours_overlap() {
+        let a = sk("c1", 1_000, 5_000, 2, &[(1_500, 2_000)]);
+        let hub = sk("c1", 1_000, 6_000, 2, &[(1_500, 2_000), (4_000, 4_500)]);
+        let b = sk("c1", 1_200, 6_000, 2, &[(4_000, 4_500)]); // overlaps `a`, so `hub` bridges nothing disjoint
+        assert_eq!(locus_support(&[a, hub, b]), vec![6, 6, 6], "one locus, three isoforms");
+    }
+
+    #[test]
+    fn locus_support_is_transitive_through_a_chain_of_shared_junctions() {
+        // a—b share J1; b—c share J2; so a, b, c are one locus even though a and c share nothing.
+        let a = sk("c1", 0, 100, 1, &[(10, 20)]);
+        let b = sk("c1", 0, 200, 2, &[(10, 20), (30, 40)]);
+        let c = sk("c1", 0, 300, 4, &[(30, 40)]);
+        assert_eq!(locus_support(&[a, b, c]), vec![7, 7, 7]);
+    }
+
+    #[test]
+    fn locus_support_keeps_same_junction_on_different_chroms_separate() {
+        let a = sk("c1", 0, 100, 3, &[(10, 20)]);
+        let b = sk("c2", 0, 100, 5, &[(10, 20)]);
+        assert_eq!(locus_support(&[a, b]), vec![3, 5], "a junction is (chrom, donor, acceptor)");
+    }
 }
 
 #[cfg(test)]

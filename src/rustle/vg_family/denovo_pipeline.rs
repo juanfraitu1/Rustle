@@ -1149,9 +1149,40 @@ pub fn detect_and_assign(
         };
     }
     let skeletons = pass1_skeletons(primary_reads, cfg.pass1_min_reads);
-    let transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
+    let mut transcripts = assemble_gate(&skeletons, genome, &cfg.gate);
+
+    // Unspliced readthrough spans are not transcripts, so they are removed BEFORE loci are collapsed. Filter
+    // the REPS instead and a readthrough becomes the representative of every locus it happens to span: at DAZ
+    // its 298 kb single-exon span absorbed DAZ2's transcripts into DAZ1's locus group, and dropping that rep
+    // then deleted DAZ2 along with it. Left in the copy set at all, one becomes a "copy" — at GSTM a 30 kb
+    // span covering GSTM5 + GSTM1 sat beside GSTM3 — and it makes read alignment quadratic (a 128 kb
+    // "transcript" hung assignment past 400 s). Never silent: every drop is logged.
+    if cfg.filter_readthrough {
+        let support = read_junction_support(bam_reads);
+        let mut dropped = Vec::new();
+        transcripts.retain(|t| {
+            let rt = is_unspliced_readthrough(t, &support, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT);
+            if rt {
+                dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
+            }
+            !rt
+        });
+        if !dropped.is_empty() {
+            eprintln!(
+                "[detect_and_assign] readthrough filter: dropped {} single-exon transcript(s) engulfing >= {} \
+                 distinct junctions (unspliced pre-mRNA, not copies) -> {} transcripts",
+                dropped.len(),
+                READTHROUGH_MIN_DISTINCT,
+                transcripts.len()
+            );
+            for d in &dropped {
+                eprintln!("[detect_and_assign]   readthrough {d}");
+            }
+        }
+    }
+
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
-    let mut reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
+    let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     eprintln!(
         "[detect_and_assign] {} primary -> {} skeletons -> {} transcripts -> {} reps",
         primary_reads.len(),
@@ -1159,35 +1190,6 @@ pub fn detect_and_assign(
         transcripts.len(),
         reps.len()
     );
-
-    // Unspliced readthrough spans are not copies. Left in, one becomes a "copy" of a family: at GSTM a 30 kb
-    // single-exon span covering GSTM5+GSTM1 sat beside GSTM3, and in the DAZ/BPY2 windows a 164 kb / 298 kb
-    // span was the ONLY plus-strand model, so the homology oracle saw no mRNA to match and both families
-    // collapsed to nothing. They also make read alignment quadratic (a 128 kb "transcript" hangs assignment).
-    // Never silent: every drop is logged.
-    if cfg.filter_readthrough {
-        let support = read_junction_support(bam_reads);
-        let mut dropped = Vec::new();
-        reps.retain(|rep| {
-            let rt = is_unspliced_readthrough(rep, &support, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT);
-            if rt {
-                dropped.push(format!("{}:{}-{} ({} reads)", rep.chrom, rep.start, rep.end, rep.n_reads));
-            }
-            !rt
-        });
-        if !dropped.is_empty() {
-            eprintln!(
-                "[detect_and_assign] readthrough filter: dropped {} single-exon rep(s) engulfing >= {} \
-                 distinct junctions (unspliced pre-mRNA, not copies) -> {} reps",
-                dropped.len(),
-                READTHROUGH_MIN_DISTINCT,
-                reps.len()
-            );
-            for d in &dropped {
-                eprintln!("[detect_and_assign]   readthrough {d}");
-            }
-        }
-    }
     lap!("pass1+gate+collapse");
     // Family MEMBERSHIP oracle: default = conflict-graph (E_c, AUTHORITATIVE de-tie criterion); opt-in
     // (`cfg.homology_primary`) = homology (E_r) — a copy whose reads all map uniquely (high MAPQ) forms

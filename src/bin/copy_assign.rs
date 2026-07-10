@@ -272,6 +272,11 @@ struct Args {
     ///   `echo $(( $(samtools view -c -F 2308 b.bam) - $(samtools view -c -F 2308 -q 1 b.bam) ))`
     #[arg(long)]
     eps_amb: Option<f64>,
+
+    /// Apply the assemble gate's `min_reads` per ISOFORM (the pre-fix behaviour) instead of per LOCUS.
+    /// Diagnostic: use to isolate the effect of junction-incidence pooling.
+    #[arg(long, default_value_t = false)]
+    no_pool_locus_support: bool,
 }
 
 fn status_str(s: AssignStatus) -> &'static str {
@@ -423,6 +428,7 @@ fn main() -> Result<()> {
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
     cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
     cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
+    cfg.gate.pool_locus_support = !args.no_pool_locus_support;
     cfg.collapse_gate = args.collapse_gate; // experimental; detects paralogy, not collapse (see module header)
     if let Some(e) = args.eps_amb {
         cfg.eps_amb = Some(e);
