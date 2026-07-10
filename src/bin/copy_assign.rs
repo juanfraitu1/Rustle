@@ -23,7 +23,9 @@ use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
 };
-use rustle::vg_family::denovo_pipeline::{catalog_overlaps, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment};
+use rustle::vg_family::denovo_pipeline::{
+    catalog_overlaps, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment, OverlapKind,
+};
 use rustle::vg_family::family_detect::collapse_loci_groups;
 use rustle::vg_family::read_conflict::{as_evidence, AsEvidence};
 use rustle::vg_family::readonly_copy_number::{chi_h_with_junctions, depth_cn};
@@ -1184,10 +1186,25 @@ fn main() -> Result<()> {
             .collect();
         let flagged = catalog_overlaps(&catalog);
         if !flagged.is_empty() {
+            // Two distinct meanings, and they should not be described the same way (verified on RFPL/r4,
+            // bench/CONTAINMENT_COVERAGE_FLOOR.md):
+            //  - DuplicateLocus (recip ~ 1): one locus admitted twice. Every read scores min_p == 1, so the
+            //    family abstains wholesale and its reads masquerade as the K=0 wall.
+            //  - Containment (recip << 1): a shorter transcript nested/staggered inside a longer one. On
+            //    low-coverage regions this is usually a fragment or a chimeric readthrough, so the COPY COUNT
+            //    is inflated — NOT the min_p == 1 masquerade. It cannot be pruned without also deleting
+            //    genuine overlapping tandem paralogs (they occupy the same feature cell), so it is reported,
+            //    not removed.
+            let n_dup = flagged.iter().filter(|f| f.3 == OverlapKind::DuplicateLocus).count();
+            let n_contain = flagged.iter().filter(|f| f.3 == OverlapKind::Containment).count();
+            let n_shared = flagged.iter().filter(|f| f.3 == OverlapKind::SharedAcrossFamilies).count();
             eprintln!(
-                "[copy_assign] WARNING: {} copy pair(s) share genomic sequence. Every copy must occupy its \
-                 own locus. DuplicateLocus makes every read score min_p == 1, so that family abstains \
-                 wholesale and its reads masquerade as the K=0 wall — do not read that abstention as biology.",
+                "[copy_assign] WARNING: {} copy pair(s) share genomic sequence \
+                 ({n_dup} DuplicateLocus, {n_contain} Containment, {n_shared} SharedAcrossFamilies). \
+                 DuplicateLocus = one locus twice, its reads abstain at min_p == 1 (not the K=0 wall). \
+                 Containment = a fragment/readthrough nested in a real copy, inflating the copy count on \
+                 low-coverage regions — reported, not pruned (it shares its feature cell with real \
+                 overlapping paralogs).",
                 flagged.len()
             );
             for &(i, j, recip, kind) in flagged.iter().take(10) {
