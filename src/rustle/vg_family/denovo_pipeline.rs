@@ -335,6 +335,11 @@ pub struct FamilyAssignment {
     pub assigned_j: usize,
     /// reads a copy-specific junction resolved that PSVs alone could not.
     pub junction_only: usize,
+    /// Per-copy junction-only support (parallel to `copy_tids`): reads a copy-specific junction pinned to each
+    /// copy where PSVs could not. A copy with `>= GATE_MIN_READS` here is identifiable by splice structure alone,
+    /// so its existence is invariant to the arbitrary primary/secondary label even without unique mappers (the
+    /// DAZ2 case). Feeds the `junction_invariant` certificate column. See `add_junction_support`.
+    pub copy_junction_support: Vec<usize>,
     /// unique-mapper agreement: assigned + uniquely mapped (mapq > 0), and of those how many agree with where the
     /// read confidently mapped (the assignment-vs-mapping accuracy proxy).
     pub uniq: usize,
@@ -400,6 +405,7 @@ impl FamilyAssignment {
             resolvable_j: 0,
             assigned_j: 0,
             junction_only: 0,
+            copy_junction_support: Vec::new(),
             uniq: 0,
             uniq_agree: 0,
             collapsed_copies: 0,
@@ -631,6 +637,20 @@ pub const READTHROUGH_MIN_DISTINCT: usize = 5;
 /// **counted secondary alignments** -- on this substrate (`minimap2 -N 50`, ~63% secondary) that inflated the
 /// statistic from **56 to 154** distinct junctions at the DAZ readthrough span. The rule
 /// ([`is_unspliced_readthrough`]) was validated on primaries alone, so its input must be too.
+/// Accumulate the per-copy JUNCTION-ONLY support that certifies a copy as invariant to the arbitrary
+/// primary/secondary label. A read is junction-only support for its assigned copy when a copy-specific junction
+/// made it decisive (`combined_decisive`) but PSVs alone could not (`!psv_decisive`) — it carries a junction
+/// distinctive to that copy, identifying it by splice structure regardless of which locus holds its primary
+/// alignment. Bucketed per `best_copy`; an out-of-range copy index is ignored. Mirrors the family-level
+/// `junction_only` tally, per copy — the DAZ2-rescue signal.
+pub fn add_junction_support(support: &mut [usize], best_copy: usize, combined_decisive: bool, psv_decisive: bool) {
+    if combined_decisive && !psv_decisive {
+        if let Some(s) = support.get_mut(best_copy) {
+            *s += 1;
+        }
+    }
+}
+
 pub fn read_junction_support(reads: &[PrimaryRead]) -> std::collections::HashMap<(String, u64, u64), usize> {
     let mut sup = std::collections::HashMap::new();
     for pr in reads {
@@ -1491,6 +1511,7 @@ pub fn detect_and_assign(
             resolvable_j: 0,
             assigned_j: 0,
             junction_only: 0,
+            copy_junction_support: vec![0; all_copies.len()],
             uniq: 0,
             uniq_agree: 0,
             collapsed_copies,
@@ -1518,6 +1539,12 @@ pub fn detect_and_assign(
             fa.resolvable_j += (r.combined.n_decisive >= 1) as usize;
             fa.assigned_j += assigned_j as usize;
             fa.junction_only += (r.combined.n_decisive >= 1 && !resolvable_psv) as usize;
+            add_junction_support(
+                &mut fa.copy_junction_support,
+                r.combined.best_copy,
+                r.combined.n_decisive >= 1,
+                resolvable_psv,
+            );
             if assigned_j && region_mapq[r.read_index] > 0 {
                 fa.uniq += 1;
                 fa.uniq_agree += (r.combined.best_copy == r.mapped_copy) as usize;
@@ -2487,6 +2514,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn add_junction_support_counts_only_pure_junction_reads_per_copy() {
+        let mut sup = vec![0usize, 0, 0];
+        // a copy-specific junction resolved this read (combined) where PSVs could not -> counts for copy 1.
+        add_junction_support(&mut sup, 1, true, false);
+        assert_eq!(sup, vec![0, 1, 0]);
+        // PSVs already resolved it -> not junction-only -> no change.
+        add_junction_support(&mut sup, 1, true, true);
+        assert_eq!(sup, vec![0, 1, 0], "PSV-decisive read is not junction-only support");
+        // combined not decisive -> no junction pinned it -> no change.
+        add_junction_support(&mut sup, 2, false, false);
+        assert_eq!(sup, vec![0, 1, 0]);
+        // out-of-range copy index is ignored (no panic).
+        add_junction_support(&mut sup, 99, true, false);
+        assert_eq!(sup, vec![0, 1, 0], "out-of-range best_copy is guarded");
+    }
+
+    #[test]
     fn homology_refine_params_min_identity_sets_both_tiers() {
         let p = homology_refine_params(Some(0.98), 4);
         assert_eq!(p.min_identity, 0.98);
@@ -2805,6 +2849,7 @@ mod tests {
             resolvable_j: 0,
             assigned_j: 0,
             junction_only: 0,
+            copy_junction_support: Vec::new(),
             uniq: 0,
             uniq_agree: 0,
             collapsed_copies: 0,
@@ -2941,6 +2986,7 @@ mod tests {
             resolvable_j: 0,
             assigned_j: 0,
             junction_only: 0,
+            copy_junction_support: Vec::new(),
             uniq: 0,
             uniq_agree: 0,
             collapsed_copies: 0,
@@ -3044,6 +3090,7 @@ mod tests {
             resolvable_j: 0,
             assigned_j: 0,
             junction_only: 0,
+            copy_junction_support: Vec::new(),
             uniq: 0,
             uniq_agree: 0,
             collapsed_copies: 0,

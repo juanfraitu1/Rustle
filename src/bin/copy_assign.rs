@@ -382,9 +382,13 @@ struct QuantRow {
     /// Tie-break invariance certificate: reads assigned to this copy that map UNIQUELY (`mapq > 0`), so their
     /// support survives any primary/secondary relabeling of tied reads. See `anchored_support`.
     anchored: usize,
-    /// `anchored >= GATE_MIN_READS`: the copy exists under every tie-break (adversarially invariant). FALSE =
-    /// not guaranteed by unique mappers alone (may still be junction-defined, e.g. DAZ2) — flagged for scrutiny.
+    /// `anchored >= GATE_MIN_READS`: the copy exists under every tie-break (adversarially invariant) via unique
+    /// mappers. FALSE = not guaranteed by unique mappers alone (may still be junction-defined, e.g. DAZ2).
     tie_invariant: bool,
+    /// `copy_junction_support >= GATE_MIN_READS`: the copy is pinned by >= 3 reads carrying a copy-specific
+    /// JUNCTION (identifies it by splice structure regardless of the primary label) — the DAZ2-rescue mechanism.
+    /// A copy is invariant overall if `tie_invariant || junction_invariant`.
+    junction_invariant: bool,
 }
 /// One family-confirmed gene-conversion row.
 struct MosaicRow {
@@ -736,6 +740,8 @@ fn main() -> Result<()> {
                         n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
                         anchored,
                         tie_invariant: anchored as u32 >= GATE_MIN_READS,
+                        junction_invariant: fa.copy_junction_support.get(ci).copied().unwrap_or(0) as u32
+                            >= GATE_MIN_READS,
                     });
                 }
                 // gene-conversion: report per-read candidate switches (RT-switch-like) vs recurrence-confirmed
@@ -1056,14 +1062,17 @@ fn main() -> Result<()> {
     // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for
     // comparison. The EM uses partial PSV evidence (the benchmark: beats hard at sparse PSVs; uniform at K=0).
     let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
-    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant")?;
+    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant\tjunction_invariant")?;
     for r in &quant_rows {
-        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}", r.family_id, r.copy_index, r.copy_tid,
-            r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard, r.anchored, r.tie_invariant)?;
+        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}", r.family_id, r.copy_index, r.copy_tid,
+            r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard, r.anchored, r.tie_invariant,
+            r.junction_invariant)?;
     }
-    let n_inv = quant_rows.iter().filter(|r| r.tie_invariant).count();
+    // A copy is invariant to the arbitrary primary/secondary label if it is pinned by unique mappers OR by a
+    // copy-specific junction (splice structure identifies it regardless of the label). Report the OR bottom line.
+    let n_inv = quant_rows.iter().filter(|r| r.tie_invariant || r.junction_invariant).count();
     eprintln!(
-        "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper reads; FALSE = leans on the arbitrary primary label or on junctions)",
+        "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper OR copy-specific-junction reads; FALSE = existence leans on the arbitrary primary label)",
         n_inv, quant_rows.len(), GATE_MIN_READS
     );
 

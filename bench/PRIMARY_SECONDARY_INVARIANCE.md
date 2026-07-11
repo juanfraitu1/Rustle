@@ -74,12 +74,27 @@ bound above is produced in-binary rather than by an offline `samtools` pass:
 
 - **anchored_reads** = assigned reads that map uniquely (`mapq > 0`) to the copy — support that survives any
   primary/secondary relabeling of tied reads.
-- **tie_invariant** = `anchored_reads ≥ GATE_MIN_READS` (3): TRUE ⟹ the copy exists under EVERY tie-break.
+- **tie_invariant** = `anchored_reads ≥ GATE_MIN_READS` (3): TRUE ⟹ the copy exists under EVERY tie-break via
+  unique mappers.
+- **junction_invariant** = the copy is pinned by ≥ 3 reads carrying a **copy-specific junction**
+  (`copy_junction_support`, the `junction_only` signal per copy): its splice structure identifies it regardless
+  of the primary label — the second relabeling-invariant mechanism, and the one that actually rescues DAZ2.
 
-Measured on the diagnostic regions (matches the table above): GSTM `3/3` invariant, DAZ `1/2` (DAZ1 anchored 178
-TRUE; DAZ2 anchored 1 FALSE — junction-defined, shown invariant by the flip but not by unique mappers alone),
-TSPY `0/5` (every copy anchored 0). The flag is the **conservative unique-mapper bound**: FALSE means "not
-guaranteed by unique support alone," not "spurious" — DAZ2 is the reference case.
+A copy is invariant **overall** iff `tie_invariant OR junction_invariant`, and the stderr summary reports that.
+
+Measured on the diagnostic regions (matches the table above), `tie / junction`:
+
+| family | per-copy `tie` / `junction` | overall |
+|---|---|---|
+| GSTM | all `true` / `false` (unique mappers, not junction-pinned) | 3/3 |
+| DAZ | DAZ1 `true`/`true`; **DAZ2 `false`/`true`** (1 unique mapper, junction-defined) | **2/2** |
+| TSPY | all `false` / `false` (exonically identical — no copy-specific junction) | 0/5 |
+| RFPL | readthroughs `true`/**`false`** (unique mappers, but single-exon ⟹ no junctions) | 4/4 |
+
+`junction_invariant` is precise: it rescues DAZ2 (`false→true` overall), and it does **not** bless RFPL's
+readthrough artifacts (single-exon ⟹ no junctions ⟹ `false`) or TSPY's exonically-identical copies (no
+*distinctive* junction ⟹ `false`). RFPL's `tie_invariant=true` reflects that its copies are relabeling-robust
+(they have unique mappers); their being artifacts is orthogonal and flagged by the Containment warning.
 
 ## Reproduce
 
