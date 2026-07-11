@@ -22,6 +22,7 @@ use rustle::vg_family::copy_assign::{AssignParams, AssignStatus};
 use rustle::vg_family::em_copy_assign::em_assign_family;
 use rustle::vg_family::denovo_assemble::{
     assemble_gate, pass1_skeletons, reads_in_region, tied_secondary_reads_in_region, BamIndexCache, BamRead,
+    GATE_MIN_READS,
 };
 use rustle::vg_family::denovo_pipeline::{
     catalog_overlaps, detect_and_assign, DenovoConfig, FallbackEdge, FamilyAssignment, OverlapKind,
@@ -55,6 +56,10 @@ struct RegionWork {
     lo: u64,
     hi: u64,
     read_names: Vec<String>,
+    /// Primary-alignment MAPQ per read, parallel to `read_names`. Kept (the read sequences are dropped) so the
+    /// output stage can compute the tie-break invariance certificate: `mapq > 0` = a unique mapper whose copy
+    /// support survives any primary/secondary relabeling. See `anchored_support`.
+    read_mapqs: Vec<u8>,
     /// Alignment-score evidence per read, parallel to `read_names`. Reported, never decisive — see
     /// `read_conflict::AsEvidence` for why raw AS is length-confounded and `de` makes the call.
     as_ev: Vec<AsEvidence>,
@@ -374,6 +379,12 @@ struct QuantRow {
     abundance: f64,
     ci: f64,
     n_hard: usize,
+    /// Tie-break invariance certificate: reads assigned to this copy that map UNIQUELY (`mapq > 0`), so their
+    /// support survives any primary/secondary relabeling of tied reads. See `anchored_support`.
+    anchored: usize,
+    /// `anchored >= GATE_MIN_READS`: the copy exists under every tie-break (adversarially invariant). FALSE =
+    /// not guaranteed by unique mappers alone (may still be junction-defined, e.g. DAZ2) — flagged for scrutiny.
+    tie_invariant: bool,
 }
 /// One family-confirmed gene-conversion row.
 struct MosaicRow {
@@ -416,6 +427,16 @@ fn read_lambda_file(path: &str) -> Option<f64> {
 }
 
 /// Resolve lambda: explicit scalar > file > none.
+/// Anchored (tie-break-invariant) support for a copy: assigned reads that map UNIQUELY (`mapq > 0`) and whose
+/// `best_copy == ci`. minimap2 sets `mapq = 0` exactly when the primary is tied/arbitrary, so a `mapq > 0` read
+/// is never a candidate for primary/secondary relabeling — its support for `ci` is fixed under every tie-break.
+/// A copy with `anchored >= GATE_MIN_READS` therefore exists under EVERY relabeling (adversarially invariant).
+/// `best_copies` and `mapqs` are parallel over the family's assignments. Reproduces, in-binary, the experiment's
+/// `samtools view -c -F 2308 -q 1 <copy_span>` bound.
+fn anchored_support(best_copies: &[usize], mapqs: &[u8], ci: usize) -> usize {
+    best_copies.iter().zip(mapqs.iter()).filter(|(&bc, &mq)| bc == ci && mq > 0).count()
+}
+
 fn resolve_lambda(explicit: Option<f64>, from_file: Option<f64>) -> Option<f64> {
     explicit.or(from_file)
 }
@@ -603,9 +624,10 @@ fn main() -> Result<()> {
             Vec::new()
         };
         let read_names: Vec<String> = bam_reads.iter().map(|r| r.name.clone()).collect();
+        let read_mapqs: Vec<u8> = bam_reads.iter().map(|r| r.mapq).collect();
         let as_ev = as_evidence_per_read(&bam_reads);
         let n_mapped = bam_reads.len();
-        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, as_ev, n_mapped, fams, fallback, dna_needs, transcripts })
+        Ok(RegionWork { contig: contig.clone(), lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, transcripts })
     };
     // Compute all regions (out-of-order across contigs when region_threads > 1), collected in the flat order.
     let works: Vec<RegionWork> = match &region_pool {
@@ -618,7 +640,7 @@ fn main() -> Result<()> {
     // serial path, so the output is byte-identical.
     {
         for work in works {
-            let RegionWork { contig, lo, hi, read_names, as_ev, n_mapped, fams, fallback, dna_needs, transcripts } = work;
+            let RegionWork { contig, lo, hi, read_names, read_mapqs, as_ev, n_mapped, fams, fallback, dna_needs, transcripts } = work;
             let contig = &contig;
             let bam_reads = &read_names; // output stage indexes read NAMES (sequences were dropped)
             fallback_all.extend(fallback);
@@ -696,8 +718,12 @@ fn main() -> Result<()> {
                         ));
                     }
                 }
-                // soft per-copy abundance (+ the hard read count for comparison)
+                // soft per-copy abundance (+ the hard read count for comparison) + the tie-break invariance
+                // certificate (anchored = unique-mapper support; see anchored_support).
+                let bcs: Vec<usize> = fa.assignments.iter().map(|(_, a)| a.best_copy).collect();
+                let mqs: Vec<u8> = fa.assignments.iter().map(|(ri, _)| read_mapqs[*ri]).collect();
                 for (ci, tid) in fa.copy_tids.iter().enumerate() {
+                    let anchored = anchored_support(&bcs, &mqs, ci);
                     quant_rows.push(QuantRow {
                         family_id: fid.clone(),
                         copy_index: ci,
@@ -708,6 +734,8 @@ fn main() -> Result<()> {
                         abundance: fa.copy_abundance.get(ci).copied().unwrap_or(0.0),
                         ci: fa.copy_abundance_ci.get(ci).copied().unwrap_or(0.0),
                         n_hard: fa.assignments.iter().filter(|(_, a)| a.best_copy == ci).count(),
+                        anchored,
+                        tie_invariant: anchored as u32 >= GATE_MIN_READS,
                     });
                 }
                 // gene-conversion: report per-read candidate switches (RT-switch-like) vs recurrence-confirmed
@@ -1028,11 +1056,16 @@ fn main() -> Result<()> {
     // soft per-copy quantification: family/copy, EM abundance ± 95% CI half-width, + the hard read count for
     // comparison. The EM uses partial PSV evidence (the benchmark: beats hard at sparse PSVs; uniform at K=0).
     let mut qh = std::fs::File::create(format!("{}.quant.tsv", args.out))?;
-    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard")?;
+    writeln!(qh, "family_id\tcopy_index\tcopy_tid\tcopy_chrom\tcopy_start\tcopy_end\tabundance\tci95_halfwidth\tn_reads_hard\tanchored_reads\ttie_invariant")?;
     for r in &quant_rows {
-        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}", r.family_id, r.copy_index, r.copy_tid,
-            r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard)?;
+        writeln!(qh, "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}", r.family_id, r.copy_index, r.copy_tid,
+            r.copy_chrom, r.copy_start, r.copy_end, r.abundance, r.ci, r.n_hard, r.anchored, r.tie_invariant)?;
     }
+    let n_inv = quant_rows.iter().filter(|r| r.tie_invariant).count();
+    eprintln!(
+        "[copy_assign] tie-break invariance: {}/{} copies invariant (>= {} unique-mapper reads; FALSE = leans on the arbitrary primary label or on junctions)",
+        n_inv, quant_rows.len(), GATE_MIN_READS
+    );
 
     // FACULTATIVE long-read phasing output (dependency-free): phase set (PS) per family, each haplotype's
     // PSV variant string, and read -> haplotype (HP) haplotag. Only written under --phase.
@@ -1274,5 +1307,34 @@ mod tests {
         assert_eq!(resolve_lambda(Some(30.0), Some(25.0)), Some(30.0));
         assert_eq!(resolve_lambda(None, Some(25.0)), Some(25.0));
         assert_eq!(resolve_lambda(None, None), None);
+    }
+
+    #[test]
+    fn anchored_support_counts_only_unique_mappers_of_the_copy() {
+        // reads: (best_copy, mapq) = (0,60) (0,0) (1,60) (0,60). Copy 0's unique-mapper support is the two
+        // mapq>0 reads (the mapq=0 read is a tie-break-arbitrary primary and does not count).
+        let bcs = [0usize, 0, 1, 0];
+        let mqs = [60u8, 0, 60, 60];
+        assert_eq!(anchored_support(&bcs, &mqs, 0), 2, "copy 0: two mapq>0 reads, the mapq=0 excluded");
+        assert_eq!(anchored_support(&bcs, &mqs, 1), 1, "copy 1: one mapq>0 read");
+        assert_eq!(anchored_support(&bcs, &mqs, 2), 0, "copy 2: no reads");
+    }
+
+    #[test]
+    fn anchored_support_is_zero_when_every_primary_is_tied() {
+        // The TSPY case: every assigned read is mapq=0 -> no copy has any anchored support -> none invariant.
+        let bcs = [0usize, 1, 2, 0, 1];
+        let mqs = [0u8, 0, 0, 0, 0];
+        for ci in 0..3 {
+            assert_eq!(anchored_support(&bcs, &mqs, ci), 0);
+        }
+    }
+
+    #[test]
+    fn tie_invariant_threshold_is_the_locus_gate() {
+        use rustle::vg_family::denovo_assemble::GATE_MIN_READS;
+        // The certificate boolean is anchored >= GATE_MIN_READS (=3): 2 -> false, 3 -> true.
+        assert!(!(2u32 >= GATE_MIN_READS));
+        assert!(3u32 >= GATE_MIN_READS);
     }
 }
