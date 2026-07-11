@@ -23,17 +23,28 @@ pub struct SingleCopyLocus {
 }
 
 /// Reps that NO family claims, as lightweight `SingleCopyLocus` records. Membership is by `tid`.
-pub fn single_copy_loci(reps: &[DenovoTranscript], families: &[ColocatedFamily]) -> Vec<SingleCopyLocus> {
+///
+/// `rep_totals[i]` is the LOCUS TOTAL read count for `reps[i]` — the summed reads over every isoform that
+/// collapsed into that rep's locus (from `collapse_loci_span_aware_with_totals`), NOT the rep isoform's own
+/// count. This is the expression basis λ_global needs: a gene's total, so it is on the same footing as the
+/// family-total `E_fam` in `depth_cn = E_fam / λ_global`.
+pub fn single_copy_loci(
+    reps: &[DenovoTranscript],
+    rep_totals: &[u32],
+    families: &[ColocatedFamily],
+) -> Vec<SingleCopyLocus> {
+    assert_eq!(reps.len(), rep_totals.len(), "rep_totals must be parallel to reps");
     let claimed: std::collections::HashSet<&str> =
         families.iter().flat_map(|f| f.copies.iter().map(|c| c.tid.as_str())).collect();
     reps.iter()
-        .filter(|r| !claimed.contains(r.tid.as_str()))
-        .map(|r| SingleCopyLocus {
+        .zip(rep_totals.iter())
+        .filter(|(r, _)| !claimed.contains(r.tid.as_str()))
+        .map(|(r, &total)| SingleCopyLocus {
             chrom: r.chrom.clone(),
             start: r.start,
             end: r.end,
             strand: r.strand,
-            n_reads: r.n_reads,
+            n_reads: total,
             n_exons: r.introns.len() + 1,
         })
         .collect()
@@ -81,7 +92,7 @@ mod tests {
         let b = tx("b", "c1", 300, 400, 20, '-', vec![]);
         let c = tx("c", "c1", 500, 600, 30, '+', vec![(520, 540), (560, 580)]);
         let families = vec![fam("F0", vec![a.clone(), b.clone()])];
-        let sc = single_copy_loci(&[a, b, c], &families);
+        let sc = single_copy_loci(&[a, b, c], &[10, 20, 30], &families);
         assert_eq!(sc.len(), 1);
         assert_eq!(sc[0].chrom, "c1");
         assert_eq!(sc[0].start, 500);
@@ -92,18 +103,31 @@ mod tests {
     }
 
     #[test]
+    fn single_copy_locus_n_reads_is_the_locus_total_not_the_rep_isoform() {
+        // A single-copy locus whose rep isoform holds 30 reads but whose locus (all collapsed isoforms) totals
+        // 62. n_reads must be the total, matching the E_fam basis in depth_cn = E_fam / lambda_global.
+        let c = tx("c", "c1", 500, 600, 30, '+', vec![(520, 540)]);
+        let sc = single_copy_loci(&[c], &[62], &[]);
+        assert_eq!(sc.len(), 1);
+        assert_eq!(sc[0].n_reads, 62, "n_reads = locus total (summed isoforms), not the rep's 30");
+    }
+
+    #[test]
     fn single_copy_loci_membership_is_by_tid() {
         let a = tx("a", "c1", 100, 200, 10, '+', vec![]);
         let claimed = tx("a", "c1", 100, 200, 10, '+', vec![]);
         let other = tx("z", "c1", 100, 200, 10, '+', vec![]);
         let families = vec![fam("F0", vec![claimed, other])];
-        assert!(single_copy_loci(&[a], &families).is_empty(), "a's tid is claimed -> not single-copy");
+        assert!(
+            single_copy_loci(&[a], &[10], &families).is_empty(),
+            "a's tid is claimed -> not single-copy"
+        );
     }
 
     #[test]
     fn single_copy_locus_carries_no_seq() {
         let a = tx("a", "c1", 1, 2, 5, '+', vec![]);
-        let sc = single_copy_loci(&[a], &[]);
+        let sc = single_copy_loci(&[a], &[5], &[]);
         let _ = SingleCopyLocus {
             chrom: sc[0].chrom.clone(),
             start: sc[0].start,

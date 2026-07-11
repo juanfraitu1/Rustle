@@ -268,14 +268,17 @@ fn locus_reps(transcripts: &[DenovoTranscript], parent: &[usize]) -> Vec<usize> 
 /// This recovers genuine alternative-splice isoforms whose intron sets are disjoint (e.g., alternative
 /// first/last exons) without chaining adjacent paralogs, which typically fail both the containment and
 /// the conservative core-coverage bars.
-pub fn collapse_loci_span_aware(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<usize> {
+/// Union-find grouping of transcripts into loci (junction-share + span-aware merge). The `parent` array is the
+/// grouping the reps are derived from; exposed so a caller can sum reads over a whole LOCUS, not just its
+/// representative isoform (see `collapse_loci_span_aware_with_totals`).
+fn collapse_parent(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<usize> {
     let n = transcripts.len();
+    let mut parent: Vec<usize> = (0..n).collect();
     if n == 0 {
-        return Vec::new();
+        return parent;
     }
 
     // Phase 1: junction-based collapse (identical to collapse_loci).
-    let mut parent: Vec<usize> = (0..n).collect();
     let mut junc_owner: BTreeMap<(&str, u64, u64), usize> = BTreeMap::new();
     for (i, t) in transcripts.iter().enumerate() {
         for &(d, a) in &t.introns {
@@ -289,7 +292,7 @@ pub fn collapse_loci_span_aware(transcripts: &[DenovoTranscript], p: &DetectPara
     }
 
     if !p.collapse_span_aware {
-        return locus_reps(transcripts, &parent);
+        return parent;
     }
 
     // Phase 2: iterative span-aware merge of locus representatives.
@@ -329,7 +332,46 @@ pub fn collapse_loci_span_aware(transcripts: &[DenovoTranscript], p: &DetectPara
         }
     }
 
+    parent
+}
+
+/// One representative transcript index per collapse locus. Behavior-preserving thin wrapper over
+/// `collapse_parent` + `locus_reps` (unchanged public signature).
+pub fn collapse_loci_span_aware(transcripts: &[DenovoTranscript], p: &DetectParams) -> Vec<usize> {
+    if transcripts.is_empty() {
+        return Vec::new();
+    }
+    let parent = collapse_parent(transcripts, p);
     locus_reps(transcripts, &parent)
+}
+
+/// Like `collapse_loci_span_aware`, but also returns, PARALLEL to the reps, the LOCUS TOTAL read count = the
+/// summed `n_reads` over ALL isoforms collapsed into each rep's locus (not just the representative isoform).
+/// This is the correct single-copy expression basis for λ_global: a gene's total expression, not its dominant
+/// isoform's count. `totals[k]` corresponds to `reps[k]`.
+pub fn collapse_loci_span_aware_with_totals(
+    transcripts: &[DenovoTranscript],
+    p: &DetectParams,
+) -> (Vec<usize>, Vec<u32>) {
+    if transcripts.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let parent = collapse_parent(transcripts, p);
+    let reps = locus_reps(transcripts, &parent);
+    let mut ptmp = parent.clone();
+    let mut sum_by_root: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
+    for (i, t) in transcripts.iter().enumerate() {
+        let r = uf_find(&mut ptmp, i);
+        *sum_by_root.entry(r).or_insert(0) += t.n_reads;
+    }
+    let totals: Vec<u32> = reps
+        .iter()
+        .map(|&rep| {
+            let r = uf_find(&mut ptmp, rep);
+            sum_by_root[&r]
+        })
+        .collect();
+    (reps, totals)
 }
 
 /// (2) Candidate homologous rep pairs. Exact canonical-k-mer ownership pre-filter (family-informative =
@@ -801,6 +843,26 @@ mod tests {
             2,
             "adjacent paralogs with low homology stay as two loci"
         );
+    }
+
+    #[test]
+    fn collapse_with_totals_sums_reads_over_the_whole_locus() {
+        // Two isoforms of one gene share junction (100,200) -> one locus; a third transcript is a disjoint
+        // locus. The locus total is the SUM of every isoform's reads (32+20=52), not the rep isoform's 32.
+        let txs = vec![
+            tx("A_iso1", "c1", 0, 300, 32, &[(100, 200)], vec![b'A'; 50]),
+            tx("A_iso2", "c1", 0, 400, 20, &[(100, 200), (250, 320)], vec![b'A'; 60]),
+            tx("B_iso1", "c1", 1000, 1300, 10, &[(1100, 1200)], vec![b'C'; 50]),
+        ];
+        let (reps, totals) = collapse_loci_span_aware_with_totals(&txs, &DetectParams::default());
+        // reps align with the behavior-preserving wrapper.
+        assert_eq!(reps, collapse_loci_span_aware(&txs, &DetectParams::default()));
+        assert_eq!(reps.len(), 2, "two loci: gene A and gene B");
+        // rep of gene A is the max-reads isoform (A_iso1, idx 0); its locus total is 32+20=52.
+        let a_pos = reps.iter().position(|&r| r == 0).expect("A_iso1 is a rep");
+        assert_eq!(totals[a_pos], 52, "locus total = sum over all isoforms of the gene");
+        let b_pos = reps.iter().position(|&r| r == 2).expect("B_iso1 is a rep");
+        assert_eq!(totals[b_pos], 10, "single-isoform locus total = its own reads");
     }
 
     // ---- candidate_pairs ----

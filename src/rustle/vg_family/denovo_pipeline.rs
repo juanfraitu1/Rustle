@@ -30,7 +30,10 @@ use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam, reads_in_region,
     BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
 };
-use super::family_detect::{collapse_loci_span_aware, detect_edges, detect_edges_reporting, DenovoTranscript, DetectParams};
+use super::family_detect::{
+    collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges, detect_edges_reporting,
+    DenovoTranscript, DetectParams,
+};
 use super::family_rescue::{FamilyMember, RescueParams};
 use super::family_split::{classify, community_stats, decompose_families, FamilyClass, SplitFamily, SplitParams};
 use super::read_conflict::{as_tie_edges, conflict_edges, conflict_families, family_mapq0_support, ConflictParams, Placement, ReadPlacements};
@@ -1623,7 +1626,7 @@ fn gw_reps_and_catalog(
     win: u64,
     min_copies: usize,
     cfg: &DenovoConfig,
-) -> Result<(Vec<DenovoTranscript>, Vec<ColocatedFamily>)> {
+) -> Result<(Vec<DenovoTranscript>, Vec<u32>, Vec<ColocatedFamily>)> {
     // --- (1) genome-wide reps ---
     let reads = primary_reads_from_bam(bam_path, threads)?;
     let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
@@ -1638,7 +1641,9 @@ fn gw_reps_and_catalog(
     if let Some(sup) = &rt_support {
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
     }
-    let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
+    // rep_totals[k] is the LOCUS TOTAL reads for reps[k] (all isoforms summed) — the single-copy expression
+    // basis for lambda_global, on the same footing as the family-total E_fam in depth_cn.
+    let (rep_idx, rep_totals) = collapse_loci_span_aware_with_totals(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
     drop(transcripts);
     eprintln!(
@@ -1690,7 +1695,7 @@ fn gw_reps_and_catalog(
         catalog.len(),
         min_copies
     );
-    Ok((reps, catalog))
+    Ok((reps, rep_totals, catalog))
 }
 
 /// Genome-wide multi-copy family catalog (the conflict oracle). Thin wrapper over `gw_reps_and_catalog`.
@@ -1702,7 +1707,7 @@ pub fn detect_conflict_catalog_genome_wide(
     min_copies: usize,
     cfg: &DenovoConfig,
 ) -> Result<Vec<ColocatedFamily>> {
-    let (_reps, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
+    let (_reps, _rep_totals, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
     Ok(catalog)
 }
 
@@ -1717,8 +1722,8 @@ pub fn detect_single_copy_baseline_genome_wide(
     min_copies: usize,
     cfg: &DenovoConfig,
 ) -> Result<Vec<crate::vg_family::single_copy::SingleCopyLocus>> {
-    let (reps, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
-    Ok(crate::vg_family::single_copy::single_copy_loci(&reps, &catalog))
+    let (reps, rep_totals, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
+    Ok(crate::vg_family::single_copy::single_copy_loci(&reps, &rep_totals, &catalog))
 }
 
 /// O1 family emission from a de-tie read-conflict graph: Louvain-decompose each raw connected component
@@ -4014,7 +4019,7 @@ mod tests {
         let families = vec![ColocatedFamily {
             family_id: "F0".into(), chrom: "c1".into(), start: 0, end: 1100, copies: vec![a.clone(), b.clone()],
         }];
-        let sc = single_copy_loci(&[a, b, c], &families);
+        let sc = single_copy_loci(&[a, b, c], &[12, 12, 12], &families);
         assert_eq!(sc.len(), 1);
         assert_eq!(sc[0].start, 2000);
     }
