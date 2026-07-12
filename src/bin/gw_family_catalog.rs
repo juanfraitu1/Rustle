@@ -161,7 +161,9 @@ fn main() -> Result<()> {
         let params = RefineParams {
             threads: args.threads,
             include_introns: args.refine_introns,
-            intron_fasta: if args.refine_introns { Some(args.fasta.clone()) } else { None },
+            // Always supply the genome: the additive genomic-span tier (recovers near-identical segdups whose
+            // partial transcript models fail the exon-sum coverage floor) needs it even without --refine-introns.
+            intron_fasta: Some(args.fasta.clone()),
             nucleotide_sensitive: !args.no_sensitive,
             protein_tail: args.protein_tail,
             ..Default::default()

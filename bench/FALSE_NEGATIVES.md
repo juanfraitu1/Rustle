@@ -50,7 +50,17 @@ correctly dropped** (repeat-bridges + gene-splits) and **13 real paralog familie
 | **Genuine divergence below the identity floor** | 5 | ARMCX1/ARMCX6 (65% aa, 0 nt alignment), IFITM cluster, FRG1-like, KRAB-C2H2 ZNF cluster (ZNF677/761/665) | partly — the true precision/recall tradeoff; ancient paralogs below asm20 0.80 / sensitive 0.70. Protein-tier (`--protein-tail`) recovers some coding ones. |
 | **Family-split logic edge case** — a real near-identical pair lost when a 3rd bridging copy is present | ~1–2 | ARHGAP23-like pair (99.2% id, 99.9% cov), PDPK1/PDPK2 (99.6%, 57% cov) | **yes** — a refine component/`distinct_locus_reps` bug: the good pair should survive on its own. |
 
-**7 of the 13 (the coverage class) are a fixable metric artifact, not a real limit** — the copies are
+**⭐FIXED (commit pending): a genomic-span homology tier** now runs alongside the exon-sum core in
+`refine_families_exon_sum` — a real segdup covers >=50% of its GENOMIC extent at high (gap-compressed) identity
+even when its partial transcript models fail the exon-sum coverage floor, while a repeat-bridge covers <50% of the
+genomic span regardless of the repeat's identity. Measured genome-wide: refined families **86 -> 100** (+14),
+**8 of the 13 measured FNs recovered** (the coverage + split classes: EOLA1/2, ZNF74, ARHGAP23, PDPK1, alpha2M,
+FRG1...), the structural audit stays CLEAN (0 giant-span, 0 cross-shared), and all spot-checked FP gene-splits/
+bridges (PBX1, EBF1, CTNNA2, HS6ST2, NNT-GHR, GARRE1-ZNF540) stay ABSENT — no FP regression. The remaining **5 FNs
+are the DIVERGENCE class** (ARMCX 65% aa, IFITM, KRAB-ZNF, RABGEF1, GRAP): below the identity floor, the genuine
+precision/recall tradeoff, recoverable only with `--protein-tail` or a lower `--min-identity` (which risks FPs).
+
+Original analysis (why the coverage class was a metric artifact): **7 of the 13 (the coverage class) are a fixable metric artifact, not a real limit** — the copies are
 homologous at 99%+ identity and only fail because the assembled transcript models are partial. The 5 divergence
 FNs are the honest cost of a high-precision gate.
 

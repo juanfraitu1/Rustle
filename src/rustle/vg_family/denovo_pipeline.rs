@@ -1269,7 +1269,10 @@ fn admit_novel_pools_with_admitter<F>(
 
 /// Rebuild a `ColocatedFamily` from a refined copy list (`refine_families_exon_sum` returns bare copy sets). The
 /// span is the min/max over the copies; the id is a placeholder — the emitting binary renumbers families on output.
-fn colocated_from_copies(idx: usize, copies: Vec<DenovoTranscript>) -> ColocatedFamily {
+fn colocated_from_copies(idx: usize, mut copies: Vec<DenovoTranscript>) -> ColocatedFamily {
+    // preserve the by-start copy ordering `colocated_families` guarantees (the assignment step indexes copies
+    // by this order); `refine_families_exon_sum`/`distinct_locus_reps` may reorder them.
+    copies.sort_by_key(|c| c.start);
     let chrom = copies.first().map(|c| c.chrom.clone()).unwrap_or_default();
     let start = copies.iter().map(|c| c.start).min().unwrap_or(0);
     let end = copies.iter().map(|c| c.end).max().unwrap_or(0);
@@ -1416,7 +1419,8 @@ pub fn detect_and_assign(
     if cfg.refine {
         let before = colocated.len();
         let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
-        let refined = refine_families_exon_sum(copysets, &RefineParams::default()).expect(
+        let refine_params = RefineParams { intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
+        let refined = refine_families_exon_sum(copysets, &refine_params).expect(
             "refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip",
         );
         eprintln!(
@@ -1862,7 +1866,9 @@ pub fn detect_single_copy_baseline_genome_wide(
     // would wrongly EXCLUDE its genuinely-single-copy reps from the baseline. `--no-refine` skips it.
     let families: Vec<ColocatedFamily> = if refine {
         let copysets: Vec<Vec<DenovoTranscript>> = catalog.iter().map(|c| c.copies.clone()).collect();
-        let refined = refine_families_exon_sum(copysets, &RefineParams { threads, ..Default::default() })?;
+        let refine_params =
+            RefineParams { threads, intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
+        let refined = refine_families_exon_sum(copysets, &refine_params)?;
         eprintln!(
             "[gw-catalog] single-copy: refined {} raw -> {} homology-gated families for the multi-copy exclusion",
             catalog.len(),
@@ -2187,16 +2193,28 @@ pub fn refine_families_exon_sum(
     families: Vec<Vec<DenovoTranscript>>,
     params: &RefineParams,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
-    // When including introns, load the genome once for the contigs present across all families.
-    let genome: Option<GenomeIndex> = if params.include_introns {
-        let path = params.intron_fasta.as_ref().ok_or_else(|| {
-            anyhow::anyhow!("include_introns set but intron_fasta (genome path) is None")
-        })?;
-        let contigs: HashSet<String> =
-            families.iter().flatten().map(|c| c.chrom.clone()).collect();
-        Some(GenomeIndex::from_fasta_contigs(path, &contigs)?)
-    } else {
-        None
+    // Load the genome once (for the families' contigs) whenever a fasta is provided — used by the include_introns
+    // core tier AND the additive genomic-span tier below. For include_introns the load MUST succeed (the core tier
+    // needs it); for the additive genomic tier it is BEST-EFFORT — a load failure (e.g. a synthetic test contig
+    // absent from the fasta) just skips that tier rather than failing the whole refine.
+    let genome: Option<GenomeIndex> = match params.intron_fasta.as_ref() {
+        Some(path) => {
+            let contigs: HashSet<String> = families.iter().flatten().map(|c| c.chrom.clone()).collect();
+            match GenomeIndex::from_fasta_contigs(path, &contigs) {
+                Ok(g) => Some(g),
+                Err(e) if params.include_introns => {
+                    return Err(e.context("include_introns: genome load failed"));
+                }
+                Err(e) => {
+                    eprintln!("[refine] genomic-span tier skipped: genome load failed ({e})");
+                    None
+                }
+            }
+        }
+        None if params.include_introns => {
+            anyhow::bail!("include_introns set but intron_fasta (genome path) is None")
+        }
+        None => None,
     };
     // PROTEIN tier (opt-in): one batched mmseqs run across ALL families' ORFs (within-family hits only),
     // instead of a subprocess per family. `fam_protein[f]` = the protein homology edges of family f.
@@ -2210,13 +2228,28 @@ pub fn refine_families_exon_sum(
         if fam.len() < 2 {
             continue;
         }
-        // exon-sum (spliced) by default; genomic span (introns INCLUDED) when include_introns is set.
-        let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, genome.as_ref())).collect();
+        // core tier: exon-sum (spliced) for a clean, intron-length-independent identity; genomic span only when
+        // include_introns is explicitly set (the genomic-span tier below is the additive default-on path).
+        let core_genome = if params.include_introns { genome.as_ref() } else { None };
+        let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, core_genome)).collect();
         // base detector: asm20 on the configured sequence (the validated, high-precision recent core).
         let mut edge_set: BTreeSet<(usize, usize)> =
             nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)?
                 .into_iter()
                 .collect();
+        // GENOMIC-SPAN tier (recall fix, `bench/FALSE_NEGATIVES.md`): a near-identical segmental-duplication whose
+        // PARTIAL de-novo transcript models fail the exon-sum coverage floor (their spliced models don't overlap
+        // enough) still covers most of its GENOMIC extent, at the same (gap-compressed) identity. A repeat-bridge
+        // covers < `min_coverage` of the genomic span regardless of the repeat's identity, so this does NOT
+        // readmit bridges/gene-splits. Skipped when include_introns already ran the core tier on genomic.
+        if let Some(g) = genome.as_ref() {
+            if !params.include_introns {
+                let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
+                for e in nucleotide_edges(&gseqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)? {
+                    edge_set.insert(e);
+                }
+            }
+        }
         // divergent tiers are computed on the EXON-SUM (protein ORFs need the spliced sequence; the
         // sensitive nucleotide seed is also cleanest on the spliced copy). Edges are UNIONed in.
         if params.nucleotide_sensitive {
