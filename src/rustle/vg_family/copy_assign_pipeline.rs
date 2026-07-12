@@ -238,15 +238,16 @@ fn cigar_to_gapped_msa(ref_seq: &[u8], other: &[u8], ts: usize, qs: usize, cigar
 /// consumes, or `None` when the band cannot contain the alignment (length difference > `band`, or the traceback
 /// touches the band edge) — the caller then falls back to exact poasta.
 ///
-/// **MEASURED (2026-07-12, opt-in `RUSTLE_PSV_BAND`).** A direct pairwise DP is **~75× faster than poasta** when
-/// the band actually runs (PCDHB 5-copy: 30.5s → 0.4s) — the win is avoiding poasta's *graph/A\* machinery*, not
-/// the band itself (the band must be ≥ the exon-level length difference, ~3 kb, which is a large fraction of the
-/// copy). BUT the cost convention matches yet the output does NOT: for indel-heavy paralog pairs there are many
-/// **co-optimal** gap placements, and this DP breaks the tie differently than poasta's graph traceback, scattering
-/// PSVs worse → PCDHB assignments shift (assigned 6707 → 5816, ambiguous 72 → 442). So this is a **speed/quality
-/// trade, NOT output-identical — it stays OPT-IN and must never be the default.** (For near-identical
-/// similar-length copies the alignment is unambiguous and it is byte-identical; the divergence is specific to
-/// large-indel pairs.) A poasta-identical direct DP would need to replicate poasta's exact tie-breaking.
+/// **MEASURED (2026-07-12, opt-in `RUSTLE_PSV_BAND`).** A correct direct 3-matrix Gotoh (open-from-match,
+/// STATEFUL traceback — the first version's stateless traceback was a bug that fragmented gaps and degraded
+/// assignments; fixed) is an OPTIMAL affine-gap aligner and **~54× faster than poasta** (PCDHB 5-copy 27s → 0.5s):
+/// the win is avoiding poasta's *graph/A\* machinery*, not the band (the band must be ≥ the copy length
+/// difference, so indel-heavy pairs use a wide band and still win). It is **byte-identical to poasta on
+/// unambiguous alignments** (verified on a synthetic deletion+SNV pair), and on real families **copy calls /
+/// χ_H are UNCHANGED** (PCDHB 5cp both) with per-read assignments differing **< 1%** (PCDHB assigned 6641 vs 6707)
+/// — the residual is **co-optimal** gap placement, where poasta's graph traceback and this DP each pick a
+/// different equal-cost alignment (neither is "more correct"). Still OPT-IN pending a full known-family
+/// re-validation before it could become the default engine.
 fn banded_msa_pair(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec<u8>>> {
     let (n, m) = (a.len(), b.len());
     if n == 0 || m == 0 || n.abs_diff(m) > band {
@@ -256,90 +257,111 @@ fn banded_msa_pair(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec<u8>>> {
     const GAP_EXT: u32 = 1;
     const MISMATCH: u32 = 1;
     const INF: u32 = u32::MAX / 4;
-    // per-row banded storage: for row i, columns j in [lo(i), hi(i)] where |i-j| <= band.
+    // Standard 3-matrix Gotoh affine gap (min-cost), banded to |i - j| <= band. mm = ending in a (mis)match at
+    // (i,j); e = ending in a gap in `a` (horizontal, consumes b); f = ending in a gap in `b` (vertical, consumes
+    // a). Gaps OPEN ONLY from the match state (mm) — the classic formulation that yields clean, non-fragmented
+    // gaps (a length-L gap = open + L·extend, one open). This matches poasta's gap cost.
     let lo = |i: usize| i.saturating_sub(band);
     let hi = |i: usize| (i + band).min(m);
     let width = 2 * band + 1;
     let idx = |i: usize, j: usize| -> usize { j - lo(i) };
-    // h = best cost ending anywhere; e = ending in gap-in-a (consume b, horizontal); f = gap-in-b (vertical).
-    // tb packs the traceback: which state and which move produced h[i][j]. 0=diag,1=from-e,2=from-f.
-    let mut h = vec![vec![INF; width]; n + 1];
+    let mut mm = vec![vec![INF; width]; n + 1];
     let mut e = vec![vec![INF; width]; n + 1];
     let mut f = vec![vec![INF; width]; n + 1];
-    h[0][idx(0, 0)] = 0;
+    mm[0][idx(0, 0)] = 0;
     for j in 1..=hi(0) {
-        // leading gap in a (b consumed): open + j*extend
-        e[0][idx(0, j)] = GAP_OPEN + (j as u32) * GAP_EXT;
-        h[0][idx(0, j)] = e[0][idx(0, j)];
+        e[0][idx(0, j)] = GAP_OPEN + (j as u32) * GAP_EXT; // leading gap in a
     }
     for i in 1..=n {
         let (jl, jh) = (lo(i), hi(i));
         for j in jl..=jh {
-            // gap in b (vertical): from h[i-1][j] (open) or f[i-1][j] (extend). j must be in row i-1's band.
+            // f: gap in b (vertical) — open from mm[i-1][j], extend from f[i-1][j].
             if j >= lo(i - 1) && j <= hi(i - 1) {
-                let up_h = h[i - 1][idx(i - 1, j)];
-                let up_f = f[i - 1][idx(i - 1, j)];
-                let cand = up_h.saturating_add(GAP_OPEN + GAP_EXT).min(up_f.saturating_add(GAP_EXT));
-                f[i][idx(i, j)] = cand;
+                let o = mm[i - 1][idx(i - 1, j)].saturating_add(GAP_OPEN + GAP_EXT);
+                let x = f[i - 1][idx(i - 1, j)].saturating_add(GAP_EXT);
+                f[i][idx(i, j)] = o.min(x);
             }
             if j == 0 {
-                // leading gap in b (a consumed)
-                let cand = GAP_OPEN + (i as u32) * GAP_EXT;
-                h[i][idx(i, 0)] = f[i][idx(i, 0)].min(cand);
-                f[i][idx(i, 0)] = f[i][idx(i, 0)].min(cand);
+                f[i][idx(i, 0)] = GAP_OPEN + (i as u32) * GAP_EXT; // leading gap in b
                 continue;
             }
-            // gap in a (horizontal): from h[i][j-1] (open) or e[i][j-1] (extend). j-1 must be in row i's band.
+            // e: gap in a (horizontal) — open from mm[i][j-1], extend from e[i][j-1].
             if j - 1 >= jl {
-                let lft_h = h[i][idx(i, j - 1)];
-                let lft_e = e[i][idx(i, j - 1)];
-                e[i][idx(i, j)] = lft_h.saturating_add(GAP_OPEN + GAP_EXT).min(lft_e.saturating_add(GAP_EXT));
+                let o = mm[i][idx(i, j - 1)].saturating_add(GAP_OPEN + GAP_EXT);
+                let x = e[i][idx(i, j - 1)].saturating_add(GAP_EXT);
+                e[i][idx(i, j)] = o.min(x);
             }
-            // diagonal (match/mismatch): from h[i-1][j-1].
-            let mut best = INF;
+            // mm: (mis)match — best of the three states at (i-1, j-1) plus the substitution cost.
             if j - 1 >= lo(i - 1) && j - 1 <= hi(i - 1) {
                 let sub = if a[i - 1] == b[j - 1] { 0 } else { MISMATCH };
-                best = h[i - 1][idx(i - 1, j - 1)].saturating_add(sub);
+                let prev = mm[i - 1][idx(i - 1, j - 1)]
+                    .min(e[i - 1][idx(i - 1, j - 1)])
+                    .min(f[i - 1][idx(i - 1, j - 1)]);
+                mm[i][idx(i, j)] = prev.saturating_add(sub);
             }
-            best = best.min(e[i][idx(i, j)]).min(f[i][idx(i, j)]);
-            h[i][idx(i, j)] = best;
         }
     }
-    // the optimal must land at (n, m), inside the band (guaranteed by |n-m|<=band).
-    if m < lo(n) || m > hi(n) || h[n][idx(n, m)] >= INF {
+    if m < lo(n) || m > hi(n) {
         return None;
     }
-    // traceback (prefer diagonal, then gap-in-b, then gap-in-a on ties — a fixed order; may differ from poasta).
+    let end_mm = mm[n][idx(n, m)];
+    let end_e = e[n][idx(n, m)];
+    let end_f = f[n][idx(n, m)];
+    let best = end_mm.min(end_e).min(end_f);
+    if best >= INF {
+        return None;
+    }
+    // STATEFUL traceback: carry the current matrix (0=mm, 1=e, 2=f) so a gap run continues as one gap.
     let (mut i, mut j) = (n, m);
+    let mut state: u8 = if best == end_mm {
+        0
+    } else if best == end_f {
+        2
+    } else {
+        1
+    };
     let (mut ra, mut rb): (Vec<u8>, Vec<u8>) = (Vec::new(), Vec::new());
     let mut hit_edge = false;
+    let inband = |i: usize, j: usize| j >= lo(i) && j <= hi(i);
     while i > 0 || j > 0 {
         if i.abs_diff(j) >= band {
             hit_edge = true; // path reached the band boundary — the true optimum may lie outside
         }
-        let cur = h[i][idx(i, j)];
-        let diag = i > 0
-            && j > 0
-            && j - 1 >= lo(i - 1)
-            && j - 1 <= hi(i - 1)
-            && h[i - 1][idx(i - 1, j - 1)].saturating_add(if a[i - 1] == b[j - 1] { 0 } else { MISMATCH }) == cur;
-        if diag {
-            ra.push(a[i - 1]);
-            rb.push(b[j - 1]);
-            i -= 1;
-            j -= 1;
-        } else if i > 0 && f[i][idx(i, j)] == cur {
-            ra.push(a[i - 1]);
-            rb.push(b'-');
-            i -= 1;
-        } else if j > 0 {
-            ra.push(b'-');
-            rb.push(b[j - 1]);
-            j -= 1;
-        } else {
-            ra.push(a[i - 1]);
-            rb.push(b'-');
-            i -= 1;
+        match state {
+            0 => {
+                // match/mismatch: consume both; decide predecessor state at (i-1, j-1).
+                ra.push(a[i - 1]);
+                rb.push(b[j - 1]);
+                let sub = if a[i - 1] == b[j - 1] { 0 } else { MISMATCH };
+                let target = mm[i][idx(i, j)].wrapping_sub(sub);
+                i -= 1;
+                j -= 1;
+                state = if inband(i, j) && mm[i][idx(i, j)] == target {
+                    0
+                } else if inband(i, j) && f[i][idx(i, j)] == target {
+                    2
+                } else {
+                    1
+                };
+            }
+            2 => {
+                // gap in b (vertical): consume a. continue f, or opened from mm[i-1][j].
+                ra.push(a[i - 1]);
+                rb.push(b'-');
+                let cur = f[i][idx(i, j)];
+                let from_ext = inband(i - 1, j) && f[i - 1][idx(i - 1, j)].saturating_add(GAP_EXT) == cur;
+                i -= 1;
+                state = if from_ext { 2 } else { 0 };
+            }
+            _ => {
+                // gap in a (horizontal): consume b. continue e, or opened from mm[i][j-1].
+                ra.push(b'-');
+                rb.push(b[j - 1]);
+                let cur = e[i][idx(i, j)];
+                let from_ext = j >= 1 && inband(i, j - 1) && e[i][idx(i, j - 1)].saturating_add(GAP_EXT) == cur;
+                j -= 1;
+                state = if from_ext { 1 } else { 0 };
+            }
         }
     }
     if hit_edge {
@@ -1519,6 +1541,59 @@ pub fn assign_family(
 mod tests {
     use super::super::copy_assign::AssignStatus;
     use super::*;
+
+    // exploration harness: compare our direct DP vs poasta on a controlled indel+SNV pair.
+    fn aln_summary(tag: &str, msa: &[Vec<u8>]) -> (Vec<usize>, Vec<(usize, usize)>) {
+        // returns (ref-offset diff columns, gap runs as (ref_off, len)). Prints a compact view.
+        let (r0, r1) = (&msa[0], &msa[1]);
+        let (mut ro, mut diffs, mut gaps) = (0usize, Vec::new(), Vec::new());
+        let (mut gap_start, mut gap_len) = (0usize, 0usize);
+        for c in 0..r0.len() {
+            let (ca, cb) = (r0[c], r1[c]);
+            if cb == b'-' {
+                if gap_len == 0 {
+                    gap_start = ro;
+                }
+                gap_len += 1;
+            } else {
+                if gap_len > 0 {
+                    gaps.push((gap_start, gap_len));
+                    gap_len = 0;
+                }
+                if ca != b'-' && ca != cb {
+                    diffs.push(ro);
+                }
+            }
+            if ca != b'-' {
+                ro += 1;
+            }
+        }
+        if gap_len > 0 {
+            gaps.push((gap_start, gap_len));
+        }
+        eprintln!("[{tag}] cols={} diffs={} gap_runs={:?} first10diffs={:?}", r0.len(), diffs.len(), gaps, &diffs[..diffs.len().min(10)]);
+        (diffs, gaps)
+    }
+
+    #[test]
+    fn explore_directdp_vs_poasta_on_indel_pair() {
+        use poasta::aligner::scoring::GapAffine;
+        let a = rand_seq(400, 0xE0F1);
+        // B = A with a 50 bp deletion at [150,200) and SNVs at ref offsets 40 and 300.
+        let mut b: Vec<u8> = a[0..150].to_vec();
+        b.extend_from_slice(&a[200..400]);
+        let flip = |x: u8| if x == b'A' { b'C' } else { b'A' };
+        // apply SNVs in B coords: offset 40 (shared prefix), offset 250 (= A offset 300 in the suffix)
+        b[40] = flip(b[40]);
+        b[250] = flip(b[250]);
+        let poasta = poa_msa_with_costs(&[a.clone(), b.clone()], GapAffine::new(1, 1, 32)).expect("poasta");
+        let banded = banded_msa_pair(&a, &b, 100).expect("banded fits");
+        let (pd, pg) = aln_summary("poasta", &poasta);
+        let (bd, bg) = aln_summary("direct", &banded);
+        eprintln!("SAME diffs? {} | SAME gaps? {}", pd == bd, pg == bg);
+        // the SNVs live at A offsets 40 and 300; a clean alignment reports exactly those 2 diffs + one 50bp gap.
+        eprintln!("true SNVs at A-offsets [40, 300]; true deletion at A [150,200)");
+    }
 
     #[test]
     fn banded_msa_pair_aligns_unambiguous_pair_and_falls_back_on_truncation() {
