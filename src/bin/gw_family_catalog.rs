@@ -52,6 +52,13 @@ struct Args {
     /// distinct locus. Strongly recommended with `--cross-chrom`.
     #[arg(long, default_value_t = false)]
     refine: bool,
+    /// DISABLE homology refinement and emit the RAW read-conflict catalog. Refinement is ON BY DEFAULT: the raw
+    /// conflict graph admits repeat-bridge (unrelated genes sharing an intronic repeat) and large-gene
+    /// mis-chain false positives (~9% of families genome-wide, `bench/GW_CATALOG_FP_AUDIT.md`); the homology +
+    /// distinct-locus gate removes them. Use `--no-refine` for the raw catalog (e.g. reproducing the pre-fix
+    /// numbers, or when minimap2 is unavailable). The `--refine` flag is now a no-op kept for back-compat.
+    #[arg(long, default_value_t = false)]
+    no_refine: bool,
     /// With `--refine`, align the GENOMIC span (introns INCLUDED) instead of the exon-sum. Captures intron
     /// divergence (separates copies that are exon-identical but intron-divergent), at the cost of being
     /// stricter on older paralogs whose introns have diverged. Default off (exon-sum).
@@ -146,8 +153,10 @@ fn main() -> Result<()> {
         )?;
         catalog.into_iter().map(|c| c.copies).collect()
     };
-    // Optional exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion).
-    let fams: Vec<Vec<DenovoTranscript>> = if args.refine {
+    // Exon-sum (FLNC) homology + distinct-locus refinement (the principled membership criterion). ON BY DEFAULT
+    // (removes repeat-bridge + large-gene mis-chain FPs); `--no-refine` opts out to the raw conflict catalog.
+    let refine = !args.no_refine;
+    let fams: Vec<Vec<DenovoTranscript>> = if refine {
         let n_raw = raw.len();
         let params = RefineParams {
             threads: args.threads,

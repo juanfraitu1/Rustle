@@ -28,7 +28,7 @@ use super::copy_split::{
 };
 use super::denovo_assemble::{
     assemble_gate, pass1_skeletons, pass1_skeletons_robust, primary_reads_from_bam, reads_in_region,
-    BamRead, GateParams, PrimaryRead, PASS1_MIN_READS,
+    BamRead, GateParams, PrimaryRead, GATE_MIN_READS, PASS1_MIN_READS,
 };
 use super::family_detect::{
     collapse_loci_span_aware, collapse_loci_span_aware_with_totals, detect_edges, detect_edges_reporting,
@@ -128,6 +128,7 @@ pub fn detect_families(reads: &[PrimaryRead], genome: &GenomeIndex, cfg: &Denovo
     if cfg.filter_readthrough {
         let support = read_junction_support(reads);
         retain_non_readthrough(&mut transcripts, &support, "detect_families");
+        retain_non_mischain(&mut transcripts, &support, "detect_families");
     }
     // collapse isoforms -> gene loci (rep per locus), then build the rep transcript slice.
     // Span-aware collapse recovers alternative-splice isoforms with no shared junction.
@@ -628,6 +629,18 @@ pub const READTHROUGH_MIN_SUPPORT: usize = 2;
 /// spliced parent contributes 3516 reads that cross-map onto it. `bench/READTHROUGH_RULE_VALIDATION.md`.
 pub const READTHROUGH_MIN_DISTINCT: usize = 5;
 
+/// An intron larger than this (bp) is "giant" and is checked for mis-chain support. Set above the largest intron
+/// seen in a real recovered paralog on this substrate (POTE's 48 kb), so genuine large-gene introns are never
+/// examined. The large-gene mis-chains (`bench/GW_CATALOG_FP_AUDIT.md`) carry giant introns of 48 kb–1.2 Mb.
+pub const MISCHAIN_GIANT_INTRON_BP: u64 = 50_000;
+
+/// A giant intron carried by fewer than this many reads (that exact junction) is a spurious splice below the
+/// locus gate — it cannot anchor a real transcript. Equal to the locus gate (`GATE_MIN_READS`), so this only
+/// removes giant introns that are already sub-threshold noise; it deliberately does NOT try to catch
+/// well-supported gene-splits (PBX1's 115 kb spurious intron has 6 reads, indistinguishable from a real
+/// low-expression intron without homology — that is `--refine`'s job).
+pub const MISCHAIN_MIN_JUNCTION_READS: usize = GATE_MIN_READS as usize;
+
 /// Splice junctions observed in the PRIMARY reads, with the number of primary reads supporting each.
 /// Key is `(chrom, donor, acceptor)` in genomic coordinates.
 ///
@@ -727,6 +740,61 @@ pub fn is_unspliced_readthrough(
         })
         .count();
     engulfed >= min_distinct
+}
+
+/// Is this transcript held together by a SUB-GATE giant intron — a spurious splice minimap2 created by
+/// mis-aligning a read's ends across a large gene's giant intron?
+///
+/// True iff any of the transcript's OWN introns is GIANT (`> giant_bp`) yet carried by fewer than
+/// `min_junction_reads` primary reads carrying that exact junction. A junction below the locus gate is noise, so
+/// a giant intron below it cannot anchor a real transcript. This removes the clearly-unsupported mis-chains
+/// (467 genome-wide) that would otherwise inflate spans and seed false loci.
+///
+/// **Scope limit (measured, `bench/GW_CATALOG_FP_AUDIT.md`):** this does NOT catch a well-supported gene-split.
+/// PBX1's 115 kb spurious intron is carried by 6 reads — above the gate — so it is intrinsically indistinguishable
+/// from a real low-expression large-gene intron by any within-transcript signal. Separating those two requires
+/// HOMOLOGY context (the copy shares no sequence with its supposed paralog), which is the `--refine` gate's job,
+/// not the assembler's. Distinct from [`is_unspliced_readthrough`] (single-exon only).
+pub fn is_giant_intron_mischain(
+    rep: &DenovoTranscript,
+    junction_support: &std::collections::HashMap<(String, u64, u64), usize>,
+    giant_bp: u64,
+    min_junction_reads: usize,
+) -> bool {
+    rep.introns.iter().any(|&(d, a)| {
+        a.saturating_sub(d) > giant_bp
+            && junction_support.get(&(rep.chrom.clone(), d, a)).copied().unwrap_or(0) < min_junction_reads
+    })
+}
+
+/// Drop de-novo transcripts that are large-gene mis-chains (see [`is_giant_intron_mischain`]). Mirrors
+/// [`retain_non_readthrough`]; reuses the same primary-read junction-support map. Emits a per-drop diagnostic.
+pub fn retain_non_mischain(
+    transcripts: &mut Vec<DenovoTranscript>,
+    support: &std::collections::HashMap<(String, u64, u64), usize>,
+    tag: &str,
+) {
+    let mut dropped = Vec::new();
+    transcripts.retain(|t| {
+        let mc = is_giant_intron_mischain(t, support, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS);
+        if mc {
+            dropped.push(format!("{}:{}-{} ({} reads)", t.chrom, t.start, t.end, t.n_reads));
+        }
+        !mc
+    });
+    if !dropped.is_empty() {
+        eprintln!(
+            "[{tag}] mis-chain filter: dropped {} transcript(s) with a giant intron (> {} bp) supported by < {} \
+             reads (spurious splice across a large gene, not a copy) -> {} transcripts",
+            dropped.len(),
+            MISCHAIN_GIANT_INTRON_BP,
+            MISCHAIN_MIN_JUNCTION_READS,
+            transcripts.len()
+        );
+        for d in &dropped {
+            eprintln!("[{tag}]   mis-chain {d}");
+        }
+    }
 }
 
 /// How two copies in an emitted catalog can wrongly share genomic sequence.
@@ -1227,6 +1295,7 @@ pub fn detect_and_assign(
     if cfg.filter_readthrough {
         let support = read_junction_support(primary_reads);
         retain_non_readthrough(&mut transcripts, &support, "detect_and_assign");
+        retain_non_mischain(&mut transcripts, &support, "detect_and_assign");
     }
 
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
@@ -1667,6 +1736,7 @@ fn gw_reps_and_catalog(
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
     if let Some(sup) = &rt_support {
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
+        retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
     // rep_totals[k] is the LOCUS TOTAL reads for reps[k] (all isoforms summed) — the single-copy expression
     // basis for lambda_global, on the same footing as the family-total E_fam in depth_cn.
@@ -1824,6 +1894,7 @@ pub fn detect_conflict_catalog_genome_wide_xchrom(
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
     if let Some(sup) = &rt_support {
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
+        retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
@@ -1959,6 +2030,7 @@ pub fn detect_homology_catalog_genome_wide(
     let mut transcripts = assemble_gate(&skeletons, &genome, &cfg.gate);
     if let Some(sup) = &rt_support {
         retain_non_readthrough(&mut transcripts, sup, "gw-catalog");
+        retain_non_mischain(&mut transcripts, sup, "gw-catalog");
     }
     let rep_idx = collapse_loci_span_aware(&transcripts, &cfg.detect);
     let reps: Vec<DenovoTranscript> = rep_idx.iter().map(|&i| transcripts[i].clone()).collect();
@@ -3989,6 +4061,41 @@ mod tests {
         gene.introns.clear();
         let j = junc(&[(2_000, 2_500, 3), (3_000, 3_500, 2), (4_000, 4_500, 5), (5_000, 5_500, 4)]);
         assert!(!is_unspliced_readthrough(&gene, &j, READTHROUGH_MIN_SUPPORT, READTHROUGH_MIN_DISTINCT));
+    }
+
+    /// A giant 115 kb intron carried by only 2 reads (below the locus gate) is a spurious splice — flagged.
+    #[test]
+    fn mischain_flags_sub_gate_giant_intron() {
+        let sub_gate = rep_s(92_076_242, 92_198_994, vec![(92_077_601, 92_193_251)], 5); // 115.6 kb intron
+        let j = junc(&[(92_077_601, 92_193_251, 2)]); // only 2 reads cross the giant intron -> below gate
+        assert!(is_giant_intron_mischain(&sub_gate, &j, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS));
+    }
+
+    /// A real large-gene paralog (POTE): its 48 kb intron is under the giant threshold AND well-supported (7
+    /// reads) — never flagged. Both properties must hold for the rule to be safe.
+    #[test]
+    fn mischain_keeps_real_large_gene_with_well_supported_intron() {
+        // 48 kb intron < 50 kb giant threshold: not even examined.
+        let pote = rep_s(32_266_748, 32_352_771, vec![(32_280_000, 32_328_000)], 6);
+        let j = junc(&[(32_280_000, 32_328_000, 7)]);
+        assert!(!is_giant_intron_mischain(&pote, &j, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS));
+        // and even a GIANT (60 kb) intron is kept when well-supported (>= 3 reads) — a real deep large gene.
+        let big = rep_s(0, 200_000, vec![(20_000, 80_000)], 643);
+        let jb = junc(&[(20_000, 80_000, 643)]);
+        assert!(!is_giant_intron_mischain(&big, &jb, MISCHAIN_GIANT_INTRON_BP, MISCHAIN_MIN_JUNCTION_READS));
+    }
+
+    /// retain_non_mischain drops the mis-chain and keeps the real large gene.
+    #[test]
+    fn retain_non_mischain_drops_only_the_mischain() {
+        let mut txs = vec![
+            rep_s(92_076_242, 92_198_994, vec![(92_077_601, 92_193_251)], 5), // mis-chain: 115kb / 2 reads
+            rep_s(0, 200_000, vec![(20_000, 80_000)], 643),                    // real: 60kb / 643 reads
+        ];
+        let j = junc(&[(92_077_601, 92_193_251, 2), (20_000, 80_000, 643)]);
+        retain_non_mischain(&mut txs, &j, "test");
+        assert_eq!(txs.len(), 1);
+        assert_eq!(txs[0].start, 0, "the well-supported large gene survives; the mis-chain is dropped");
     }
 
     /// EEF1A1 -> LOC109023808: a retrocopy has NO introns, so the spliced parent's cross-mapping reads align
