@@ -842,10 +842,13 @@ pub fn poa_msa_with_costs(
     }
 
     // Exact gap-affine global alignment. Default = AffineDijkstra (uniform-cost search). RUSTLE_POA_ASTAR=1
-    // swaps in AffineMinGapCost = the SAME optimal-cost search with an admissible min-gap-cost A* heuristic,
-    // which prunes states on near-diagonal (low-divergence) paralog pairs. A* guarantees the same optimal
-    // COST, not a unique co-optimal traceback, so the resulting columns must be diffed vs Dijkstra before
-    // trusting it as output-identical (it is a candidate speedup, gated until verified on real families).
+    // swaps in AffineMinGapCost = the SAME optimal-cost search with an admissible min-gap-cost A* heuristic.
+    // VERIFIED (2026-07-12) on real families GSTM(745 cols)/DAZ/RBMY(1542)/PCDHB(3293): A* is BYTE-IDENTICAL to
+    // Dijkstra (families/quant/assignments diff = 0) — so the co-optimal-traceback concern does not bite here —
+    // but gives NO measurable speedup (0.0/0.5/12.7s, PCDHB marginally slower): poasta's min-gap heuristic does
+    // not prune these paralog alignments. So Dijkstra stays the default; the toggle is kept for the record.
+    // (minimap2 via RUSTLE_PSV_MINIMAP2 is fast but LOSES PSVs — 109 vs 3293 on PCDHB, 0 vs 745 on GSTM — as it
+    // clips divergent flanks; not a safe default. The exact-DP cost is inherent to accurate PSV discovery.)
     let astar = std::env::var_os("RUSTLE_POA_ASTAR").is_some();
     let graph: POAGraph<u32> = if astar {
         build_poa_graph(seqs, AffineMinGapCost(gap_costs))?
