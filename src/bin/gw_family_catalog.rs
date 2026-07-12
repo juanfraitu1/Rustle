@@ -113,7 +113,7 @@ fn main() -> Result<()> {
     if args.single_copy_baseline {
         use rustle::vg_family::single_copy::lambda_global;
         let loci = detect_single_copy_baseline_genome_wide(
-            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, &cfg,
+            &args.bam, &args.fasta, args.threads, args.win, args.min_copies, !args.no_refine, &cfg,
         )?;
         let mut sc = std::fs::File::create(format!("{}.single_copy.tsv", args.out))?;
         writeln!(sc, "chrom\tstart\tend\tstrand\tn_reads\tn_exons\tchi_h\tn_psv")?;

@@ -1852,10 +1852,27 @@ pub fn detect_single_copy_baseline_genome_wide(
     threads: usize,
     win: u64,
     min_copies: usize,
+    refine: bool,
     cfg: &DenovoConfig,
 ) -> Result<Vec<crate::vg_family::single_copy::SingleCopyLocus>> {
-    let (reps, rep_totals, catalog) = gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
-    Ok(crate::vg_family::single_copy::single_copy_loci(&reps, &rep_totals, &catalog))
+    let (reps, rep_totals, catalog) =
+        gw_reps_and_catalog(bam_path, fasta_path, threads, win, min_copies, cfg)?;
+    // Single-copy = a rep that no HOMOLOGY-GATED family claims — the SAME family definition as the catalog and
+    // copy_assign. Without refining first, an FP conflict "family" (a large-gene mis-chain or repeat-bridge)
+    // would wrongly EXCLUDE its genuinely-single-copy reps from the baseline. `--no-refine` skips it.
+    let families: Vec<ColocatedFamily> = if refine {
+        let copysets: Vec<Vec<DenovoTranscript>> = catalog.iter().map(|c| c.copies.clone()).collect();
+        let refined = refine_families_exon_sum(copysets, &RefineParams { threads, ..Default::default() })?;
+        eprintln!(
+            "[gw-catalog] single-copy: refined {} raw -> {} homology-gated families for the multi-copy exclusion",
+            catalog.len(),
+            refined.len()
+        );
+        refined.into_iter().enumerate().map(|(i, c)| colocated_from_copies(i, c)).collect()
+    } else {
+        catalog
+    };
+    Ok(crate::vg_family::single_copy::single_copy_loci(&reps, &rep_totals, &families))
 }
 
 /// O1 family emission from a de-tie read-conflict graph: Louvain-decompose each raw connected component
