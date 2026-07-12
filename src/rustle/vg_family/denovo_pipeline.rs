@@ -68,6 +68,12 @@ pub struct DenovoConfig {
     /// Drop single-exon reps that engulf >= `READTHROUGH_MIN_DISTINCT` distinct junctions: unspliced
     /// pre-mRNA, never a copy. Default ON — see `is_unspliced_readthrough` for the validation.
     pub filter_readthrough: bool,
+    /// Gate each co-located family by MUTUAL HOMOLOGY (`refine_families_exon_sum`: asm20 id>=0.80,
+    /// cov-of-shorter>=0.50, + sensitive tier) across >= 2 distinct loci — the SAME criterion
+    /// `gw_family_catalog` refines by. Default ON: without it the read-conflict oracle admits large-gene
+    /// intra-gene mis-chains (PBX1) and repeat-bridges as families (`bench/GW_CATALOG_FP_AUDIT.md`). Requires
+    /// minimap2 on PATH. Off ⇒ the raw conflict/homology families are assigned as-is.
+    pub refine: bool,
     /// Admit a COLLAPSED single-rep locus as a multi-copy family: `n_copies = χ(H)`, reads certified Tied, no
     /// per-copy consensus materialised. **Default OFF**: the ambiguity instrument detects unresolvable
     /// PARALOGY, not collapse — it fires on EEF1A1 (pseudogenes on other chromosomes) with χ(H) = 7. See the
@@ -92,6 +98,7 @@ impl Default for DenovoConfig {
             vg_realign: false,
             homology_primary: false,
             filter_readthrough: true,
+            refine: true,
             collapse_gate: false,
             eps_amb: Some(crate::vg_family::collapse_gate::GENOME_WIDE_EPS_AMB),
         }
@@ -1260,6 +1267,15 @@ fn admit_novel_pools_with_admitter<F>(
     fa.n_reads = fa.assignments.len();
 }
 
+/// Rebuild a `ColocatedFamily` from a refined copy list (`refine_families_exon_sum` returns bare copy sets). The
+/// span is the min/max over the copies; the id is a placeholder — the emitting binary renumbers families on output.
+fn colocated_from_copies(idx: usize, copies: Vec<DenovoTranscript>) -> ColocatedFamily {
+    let chrom = copies.first().map(|c| c.chrom.clone()).unwrap_or_default();
+    let start = copies.iter().map(|c| c.start).min().unwrap_or(0);
+    let end = copies.iter().map(|c| c.end).max().unwrap_or(0);
+    ColocatedFamily { family_id: format!("CAFAM{idx}"), chrom, start, end, copies }
+}
+
 pub fn detect_and_assign(
     primary_reads: &[PrimaryRead],
     bam_reads: &[BamRead],
@@ -1391,7 +1407,26 @@ pub fn detect_and_assign(
     }
     let mut out = Vec::new();
     let mut dna_needs: Vec<DnaNeedsRecord> = Vec::new();
-    for cf in colocated_families(&reps, &split, win, min_copies, &cfg.detect) {
+    // Co-located families, then (default) the SAME mutual-homology + distinct-locus refinement gate that
+    // `gw_family_catalog` applies — so the per-region path and the genome-wide catalog agree on what a family is.
+    // Without it the conflict oracle admits large-gene mis-chains (PBX1) and repeat-bridges (see
+    // `bench/GW_CATALOG_FP_AUDIT.md`). `cfg.refine` off ⇒ assign the raw families (no minimap2).
+    let mut colocated: Vec<ColocatedFamily> =
+        colocated_families(&reps, &split, win, min_copies, &cfg.detect);
+    if cfg.refine {
+        let before = colocated.len();
+        let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
+        let refined = refine_families_exon_sum(copysets, &RefineParams::default()).expect(
+            "refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip",
+        );
+        eprintln!(
+            "[detect_and_assign] refine: {} co-located families -> {} homology-gated (asm20 id>=0.80, cov>=0.50, >= 2 distinct loci)",
+            before,
+            refined.len()
+        );
+        colocated = refined.into_iter().enumerate().map(|(i, c)| colocated_from_copies(i, c)).collect();
+    }
+    for cf in colocated {
         // RESCUE: recover under-assembled copies homologous to this family (below the >=3-read assembly gate)
         // and ADD them to the copy set, so reads can be assigned to them too. Iterative (bridge-aware).
         let members: Vec<FamilyMember> = cf

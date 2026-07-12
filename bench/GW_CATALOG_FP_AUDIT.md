@@ -80,6 +80,14 @@ its supposed paralog, which only `--refine` can see. So mis-chain removal for th
 *family-level homology* problem, not an assembler problem. `--refine` (item 1) is what actually removes them; the
 assembly filter (item 2) cleans the sub-gate noise.
 
+## copy_assign per-region now agrees (refine-equivalent)
+
+`copy_assign` applies the SAME homology gate by default (`DenovoConfig.refine`, `--no-refine` to opt out), so the
+per-region and genome-wide paths define a family identically. Validated: PBX1 region 1 conflict family -> **0**
+(gene-split dropped); `--no-refine` -> 1 (raw FP); DAZ -> 2 copies kept (incl. the 5'-truncated DAZ2); GSTM
+`--homology-primary` -> 3 copies kept. Refinement now also cleans the KRAB-ZNF domain bridges the E_r sensitive
+tier admits, since asm20 (0.80) is stricter.
+
 ## Bottom line
 
 The classic artifacts (readthroughs, chimeras, giant spans) are gone. The quieter FP class — large-gene

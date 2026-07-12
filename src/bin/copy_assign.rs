@@ -259,6 +259,15 @@ struct Args {
     #[arg(long, default_value_t = false)]
     homology_primary: bool,
 
+    /// DISABLE the mutual-homology + distinct-locus family gate. Refinement is ON BY DEFAULT: each co-located
+    /// family must have its copies MUTUALLY HOMOLOGOUS (asm20 id>=0.80, cov-of-shorter>=0.50, + sensitive tier)
+    /// across >= 2 distinct loci — the SAME criterion `gw_family_catalog` refines by, so the per-region and
+    /// genome-wide paths agree. Without it the conflict oracle admits large-gene mis-chains (PBX1) and
+    /// repeat-bridges as families (`bench/GW_CATALOG_FP_AUDIT.md`). `--no-refine` assigns the raw families and
+    /// needs no minimap2.
+    #[arg(long, default_value_t = false)]
+    no_refine: bool,
+
     /// Keep unspliced readthrough transcripts as candidate copies. A single-exon de-novo transcript that
     /// engulfs >= 5 distinct splice junctions (each with >= 2 reads) is intronic pileup / unspliced pre-mRNA,
     /// not an mRNA, and is dropped by default. Validated on 15 such transcripts (minimum 14 engulfed
@@ -474,6 +483,7 @@ fn main() -> Result<()> {
     cfg.detect.len_cap = args.max_poa_len; // poasta memory threshold: above it, the bounded LCS fallback
     cfg.vg_realign = args.vg_realign; // Task 5 (report-only): off by default, byte-identical otherwise
     cfg.homology_primary = args.homology_primary; // E_r membership; off => the E_c path is untouched
+    cfg.refine = !args.no_refine; // mutual-homology family gate (matches gw_family_catalog); on by default
     cfg.filter_readthrough = !args.keep_readthrough; // unspliced pre-mRNA spans are not copies
     cfg.gate.pool_locus_support = !args.no_pool_locus_support;
     cfg.collapse_gate = args.collapse_gate; // experimental; detects paralogy, not collapse (see module header)
