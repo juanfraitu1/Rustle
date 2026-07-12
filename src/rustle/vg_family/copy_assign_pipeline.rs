@@ -232,6 +232,124 @@ fn cigar_to_gapped_msa(ref_seq: &[u8], other: &[u8], ts: usize, qs: usize, cigar
     vec![rrow, orow]
 }
 
+/// Banded global affine-gap (Gotoh) alignment of two sequences, matching poasta's `GapAffine(mismatch=1,
+/// gap_extend=1, gap_open=32)` cost (poasta's length-L gap = `open + L·extend`, same as here), restricted to the
+/// diagonal band `|i - j| <= band`. Returns the same 2-row gapped MSA (`b'-'` = gap) that `discover_psvs`
+/// consumes, or `None` when the band cannot contain the alignment (length difference > `band`, or the traceback
+/// touches the band edge) — the caller then falls back to exact poasta.
+///
+/// **MEASURED (2026-07-12, opt-in `RUSTLE_PSV_BAND`).** A direct pairwise DP is **~75× faster than poasta** when
+/// the band actually runs (PCDHB 5-copy: 30.5s → 0.4s) — the win is avoiding poasta's *graph/A\* machinery*, not
+/// the band itself (the band must be ≥ the exon-level length difference, ~3 kb, which is a large fraction of the
+/// copy). BUT the cost convention matches yet the output does NOT: for indel-heavy paralog pairs there are many
+/// **co-optimal** gap placements, and this DP breaks the tie differently than poasta's graph traceback, scattering
+/// PSVs worse → PCDHB assignments shift (assigned 6707 → 5816, ambiguous 72 → 442). So this is a **speed/quality
+/// trade, NOT output-identical — it stays OPT-IN and must never be the default.** (For near-identical
+/// similar-length copies the alignment is unambiguous and it is byte-identical; the divergence is specific to
+/// large-indel pairs.) A poasta-identical direct DP would need to replicate poasta's exact tie-breaking.
+fn banded_msa_pair(a: &[u8], b: &[u8], band: usize) -> Option<Vec<Vec<u8>>> {
+    let (n, m) = (a.len(), b.len());
+    if n == 0 || m == 0 || n.abs_diff(m) > band {
+        return None; // a truncation/large-indel pair cannot stay in the band — fall back to exact
+    }
+    const GAP_OPEN: u32 = 32;
+    const GAP_EXT: u32 = 1;
+    const MISMATCH: u32 = 1;
+    const INF: u32 = u32::MAX / 4;
+    // per-row banded storage: for row i, columns j in [lo(i), hi(i)] where |i-j| <= band.
+    let lo = |i: usize| i.saturating_sub(band);
+    let hi = |i: usize| (i + band).min(m);
+    let width = 2 * band + 1;
+    let idx = |i: usize, j: usize| -> usize { j - lo(i) };
+    // h = best cost ending anywhere; e = ending in gap-in-a (consume b, horizontal); f = gap-in-b (vertical).
+    // tb packs the traceback: which state and which move produced h[i][j]. 0=diag,1=from-e,2=from-f.
+    let mut h = vec![vec![INF; width]; n + 1];
+    let mut e = vec![vec![INF; width]; n + 1];
+    let mut f = vec![vec![INF; width]; n + 1];
+    h[0][idx(0, 0)] = 0;
+    for j in 1..=hi(0) {
+        // leading gap in a (b consumed): open + j*extend
+        e[0][idx(0, j)] = GAP_OPEN + (j as u32) * GAP_EXT;
+        h[0][idx(0, j)] = e[0][idx(0, j)];
+    }
+    for i in 1..=n {
+        let (jl, jh) = (lo(i), hi(i));
+        for j in jl..=jh {
+            // gap in b (vertical): from h[i-1][j] (open) or f[i-1][j] (extend). j must be in row i-1's band.
+            if j >= lo(i - 1) && j <= hi(i - 1) {
+                let up_h = h[i - 1][idx(i - 1, j)];
+                let up_f = f[i - 1][idx(i - 1, j)];
+                let cand = up_h.saturating_add(GAP_OPEN + GAP_EXT).min(up_f.saturating_add(GAP_EXT));
+                f[i][idx(i, j)] = cand;
+            }
+            if j == 0 {
+                // leading gap in b (a consumed)
+                let cand = GAP_OPEN + (i as u32) * GAP_EXT;
+                h[i][idx(i, 0)] = f[i][idx(i, 0)].min(cand);
+                f[i][idx(i, 0)] = f[i][idx(i, 0)].min(cand);
+                continue;
+            }
+            // gap in a (horizontal): from h[i][j-1] (open) or e[i][j-1] (extend). j-1 must be in row i's band.
+            if j - 1 >= jl {
+                let lft_h = h[i][idx(i, j - 1)];
+                let lft_e = e[i][idx(i, j - 1)];
+                e[i][idx(i, j)] = lft_h.saturating_add(GAP_OPEN + GAP_EXT).min(lft_e.saturating_add(GAP_EXT));
+            }
+            // diagonal (match/mismatch): from h[i-1][j-1].
+            let mut best = INF;
+            if j - 1 >= lo(i - 1) && j - 1 <= hi(i - 1) {
+                let sub = if a[i - 1] == b[j - 1] { 0 } else { MISMATCH };
+                best = h[i - 1][idx(i - 1, j - 1)].saturating_add(sub);
+            }
+            best = best.min(e[i][idx(i, j)]).min(f[i][idx(i, j)]);
+            h[i][idx(i, j)] = best;
+        }
+    }
+    // the optimal must land at (n, m), inside the band (guaranteed by |n-m|<=band).
+    if m < lo(n) || m > hi(n) || h[n][idx(n, m)] >= INF {
+        return None;
+    }
+    // traceback (prefer diagonal, then gap-in-b, then gap-in-a on ties — a fixed order; may differ from poasta).
+    let (mut i, mut j) = (n, m);
+    let (mut ra, mut rb): (Vec<u8>, Vec<u8>) = (Vec::new(), Vec::new());
+    let mut hit_edge = false;
+    while i > 0 || j > 0 {
+        if i.abs_diff(j) >= band {
+            hit_edge = true; // path reached the band boundary — the true optimum may lie outside
+        }
+        let cur = h[i][idx(i, j)];
+        let diag = i > 0
+            && j > 0
+            && j - 1 >= lo(i - 1)
+            && j - 1 <= hi(i - 1)
+            && h[i - 1][idx(i - 1, j - 1)].saturating_add(if a[i - 1] == b[j - 1] { 0 } else { MISMATCH }) == cur;
+        if diag {
+            ra.push(a[i - 1]);
+            rb.push(b[j - 1]);
+            i -= 1;
+            j -= 1;
+        } else if i > 0 && f[i][idx(i, j)] == cur {
+            ra.push(a[i - 1]);
+            rb.push(b'-');
+            i -= 1;
+        } else if j > 0 {
+            ra.push(b'-');
+            rb.push(b[j - 1]);
+            j -= 1;
+        } else {
+            ra.push(a[i - 1]);
+            rb.push(b'-');
+            i -= 1;
+        }
+    }
+    if hit_edge {
+        return None; // fall back to exact — the band clipped the alignment
+    }
+    ra.reverse();
+    rb.reverse();
+    Some(vec![ra, rb])
+}
+
 /// Discover PSV columns by all-pairs alignment of every copy vs copy[0]: columns are ref offsets where
 /// `>= 1` copy's aligned base differs. EVERY copy gets its aligned `(genomic, base)` at a column (a copy
 /// matching the ref inherits that base, not `None` — the python bug guard). `exon_maps[c] = exon_map(copies[c])`.
@@ -249,6 +367,11 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
     // PSV-column alignment engine: poasta (exact DP, default) or minimap2 asm20 (heuristic, fast on long
     // copies — opt in RUSTLE_PSV_MINIMAP2=1). Both return the same 2-row gapped-MSA format.
     let use_mm2 = std::env::var_os("RUSTLE_PSV_MINIMAP2").is_some();
+    // EXPERIMENTAL banded-DP engine (opt-in RUSTLE_PSV_BAND=<width>): O(len·band) affine-gap alignment for the
+    // near-diagonal (similar-length) copy pairs that dominate the exact-DP cost, with an EXACT poasta fallback
+    // whenever the band cannot contain the alignment. Gated + verified before it could ever be default.
+    let psv_band: Option<usize> =
+        std::env::var("RUSTLE_PSV_BAND").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&w| w > 0);
     // Align each non-ref copy against the ref (the per-pair poasta DP is the dominant per-family cost — an
     // exact O(len^2) alignment of two long divergent transcripts). The (n-1) alignments are INDEPENDENT, so
     // run them concurrently and merge: each yields its own `amap` (ref_off -> other_off) plus the ref offsets
@@ -258,9 +381,21 @@ pub fn discover_psvs(copies: &[&DenovoTranscript], exon_maps: &[Vec<u64>]) -> Ve
     // (atomic nonce) so it is safe under the region-parallel sweep.
     let align_one = |other: usize| -> (BTreeMap<usize, usize>, BTreeSet<usize>) {
         // strong gap-open anchors the conserved core column-for-column (same config as contiguous_core_coverage).
+        let banded = psv_band.and_then(|w| banded_msa_pair(ref_seq, &copies[other].seq, w));
+        if psv_band.is_some() && std::env::var_os("RUSTLE_PSV_BAND_DEBUG").is_some() {
+            eprintln!(
+                "[psv-band] copy{other} len {} vs {}: {}",
+                ref_seq.len(),
+                copies[other].seq.len(),
+                if banded.is_some() { "BANDED" } else { "fell back to exact" }
+            );
+        }
         let aln = if use_mm2 {
             minimap2_msa_pair(ref_seq, &copies[other].seq)
+        } else if let Some(band) = banded {
+            Ok(band) // banded DP succeeded within the band
         } else {
+            // no band, or the band could not contain the alignment -> exact poasta (accuracy preserved)
             poa_msa_with_costs(&[ref_seq.clone(), copies[other].seq.clone()], GapAffine::new(1, 1, 32))
         };
         let mut amap = BTreeMap::new();
@@ -1384,6 +1519,24 @@ pub fn assign_family(
 mod tests {
     use super::super::copy_assign::AssignStatus;
     use super::*;
+
+    #[test]
+    fn banded_msa_pair_aligns_unambiguous_pair_and_falls_back_on_truncation() {
+        // Near-identical, same length, one mismatch -> unambiguous diagonal alignment, no gaps, the diff column
+        // recovered exactly. (This is the regime where the banded DP is byte-identical to poasta.)
+        let a = b"ACGTACGTACGT".to_vec();
+        let mut b = a.clone();
+        b[5] = b'A'; // single mismatch at offset 5 (C->A)
+        let msa = banded_msa_pair(&a, &b, 4).expect("similar-length pair fits the band");
+        assert_eq!(msa.len(), 2);
+        assert_eq!(msa[0], a, "no gaps in the aligned ref");
+        assert_eq!(msa[1], b, "no gaps in the aligned other");
+        // the only differing column is offset 5.
+        let diffs: Vec<usize> = (0..msa[0].len()).filter(|&c| msa[0][c] != msa[1][c]).collect();
+        assert_eq!(diffs, vec![5]);
+        // a truncation (length difference > band) cannot stay in the band -> None -> caller uses exact poasta.
+        assert!(banded_msa_pair(&a, &a[..3], 4).is_none(), "length diff 9 > band 4 -> fall back");
+    }
 
     struct SplitMix64(u64);
     impl SplitMix64 {
