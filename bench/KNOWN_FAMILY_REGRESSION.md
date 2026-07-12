@@ -99,3 +99,31 @@ exactly — GSTM 3, MAGEA 2, DAZ 2, RBMY 6, TSPY 5, PCDHB 5 — refine keeping e
 controls stay 0 (refine cleaned an E_r over-call at SRGAP2, `3 → 0`). No refine-induced false negative on the
 flagships. The genome-wide recall cost of refine (13 real families, dominated by a fixable coverage-metric
 artifact) is documented in `bench/FALSE_NEGATIVES.md`.
+
+---
+
+## Re-confirmed under the exact banded-DP PSV engine, now default (2026-07-12, `1e09de4`)
+
+`discover_psvs` now uses our own **exact banded Gotoh affine-gap DP** by default (was poasta; `RUSTLE_PSV_POASTA=1`
+restores the old engine). Re-running the panel:
+
+- **Copy calls / χ_H are unchanged on every family** — GSTM 3, MAGEA 2, DAZ 2, RBMY 6, TSPY 5, PCDHB 5, controls 0.
+  The headline counts do not move; the adaptive band never fell back; the engine is 5–6× faster (PCDHB 35 s → 6 s).
+- **Per-copy read support shifts on the divergent families, as a CORRECTION.** Auditing the alignment cost (each
+  validated to reconstruct both inputs) under poasta's own cost model showed **poasta returns SUBOPTIMAL
+  alignments** on divergent paralogs — the exact DP finds a strictly cheaper valid alignment (GSTM copy1 **1181 <
+  1331**, copy2 5045 < 5419; PCDHB copy2 **3474 < 4152**). poasta garden-paths on transcript-like
+  (repetitive/low-complexity) sequence and over-fragments gaps, mis-placing PSVs. Correcting the alignment moves
+  reads: e.g. **GSTM copy1/copy2 1196/1255 → 242/2209**. These are corrections of a suboptimal alignment, not
+  regressions — the DP alignment is provably optimal.
+- **Ground truth confirms zero regression.** The full planted-sim eval (`sim_genome.py` + `sim_eval.py`) is
+  **byte-identical DP vs poasta across every family**, including the new `hidive` repetitive high-divergence family
+  where poasta is measurably suboptimal. Where poasta is already optimal (all sim families, divergence ≤ the point
+  its heuristic holds), the DP matches it exactly; where poasta is suboptimal (real ≥7 % repetitive paralogs), the
+  DP corrects it. Optimality is locked by a unit test (`banded_dp_never_costs_more_than_poasta_on_divergent_pairs`).
+
+Caveat (disclosed): the real high-divergence per-copy splits (e.g. GSTM 242/2209) have **no independent read-level
+ground truth**, and the specific regime — a *major* poasta failure that also stays similar enough to multimap — is
+a real-sequence coincidence that a clean synthetic sim cannot reproduce (verified: synthetic repetitive pairs need
+high substitution divergence to trip poasta, which forces unique mapping). The claim rests on **provable
+optimality** of the DP alignment plus **zero regression** on the ground-truth benchmark.
