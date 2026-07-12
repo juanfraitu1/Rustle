@@ -1186,6 +1186,7 @@ fn assign_family_detailed_once(
     let mparams = MosaicParams::from_env();
     // RNA-editing filter (Clair3-RNA): a pre-pass flags A↔G columns with within-copy heterogeneity so the
     // significance certificate downweights them. Built once from all reads' PSV observations.
+    let t_edit = std::time::Instant::now(); // its own timer — reusing t_psv double-counted this as ~4.5s
     let editing_cols: Vec<bool> = if p.rna_editing_filter {
         let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
         for read in reads {
@@ -1201,7 +1202,7 @@ fn assign_family_detailed_once(
         Vec::new()
     };
     if timing {
-        eprintln!("[timing]     editing-filter pre-pass: {:.1}s", t_psv.elapsed().as_secs_f64());
+        eprintln!("[timing]     editing-filter pre-pass: {:.1}s", t_edit.elapsed().as_secs_f64());
     }
     let t_assign = std::time::Instant::now();
     // Per-read assignment is independent across reads, so compute it in parallel and merge in read order

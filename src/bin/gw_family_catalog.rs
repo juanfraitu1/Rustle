@@ -168,7 +168,7 @@ fn main() -> Result<()> {
             protein_tail: args.protein_tail,
             ..Default::default()
         };
-        let refined = refine_families_exon_sum(raw, &params)?;
+        let refined = refine_families_exon_sum(raw, &params, None)?;
         eprintln!(
             "[gw-catalog] {}{}{} refine: {} raw families -> {} refined (homology component AND >= 2 distinct loci)",
             if args.refine_introns { "genomic(intron-inclusive)" } else { "exon-sum" },

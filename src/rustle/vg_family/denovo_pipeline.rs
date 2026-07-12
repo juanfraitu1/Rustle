@@ -1420,7 +1420,7 @@ pub fn detect_and_assign(
         let before = colocated.len();
         let copysets: Vec<Vec<DenovoTranscript>> = colocated.iter().map(|c| c.copies.clone()).collect();
         let refine_params = RefineParams { intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
-        let refined = refine_families_exon_sum(copysets, &refine_params).expect(
+        let refined = refine_families_exon_sum(copysets, &refine_params, Some(genome)).expect(
             "refine (default): refine_families_exon_sum failed — is minimap2 on PATH? pass --no-refine to skip",
         );
         eprintln!(
@@ -1868,7 +1868,7 @@ pub fn detect_single_copy_baseline_genome_wide(
         let copysets: Vec<Vec<DenovoTranscript>> = catalog.iter().map(|c| c.copies.clone()).collect();
         let refine_params =
             RefineParams { threads, intron_fasta: Some(fasta_path.to_string()), ..Default::default() };
-        let refined = refine_families_exon_sum(copysets, &refine_params)?;
+        let refined = refine_families_exon_sum(copysets, &refine_params, None)?;
         eprintln!(
             "[gw-catalog] single-copy: refined {} raw -> {} homology-gated families for the multi-copy exclusion",
             catalog.len(),
@@ -2189,33 +2189,69 @@ impl Default for RefineParams {
 /// Each surviving component is emitted as a refined family of its per-locus representatives (widest span).
 /// `minimap2` is required; if it cannot be spawned this returns an error (the caller can fall back to the
 /// raw catalog). Independent of annotation → does not depend on a reference gene set.
+/// Do the `edges` connect all `n` nodes into a single component? (union-find). Used to short-circuit refine's
+/// additive homology tiers when the asm20 core already fully connects a family.
+fn edges_connect_all(n: usize, edges: &BTreeSet<(usize, usize)>) -> bool {
+    if n <= 1 {
+        return true;
+    }
+    let mut parent: Vec<usize> = (0..n).collect();
+    fn find(p: &mut [usize], x: usize) -> usize {
+        let mut r = x;
+        while p[r] != r {
+            r = p[r];
+        }
+        let mut c = x;
+        while p[c] != r {
+            let nx = p[c];
+            p[c] = r;
+            c = nx;
+        }
+        r
+    }
+    for &(a, b) in edges {
+        let ra = find(&mut parent, a);
+        let rb = find(&mut parent, b);
+        parent[ra] = rb;
+    }
+    let r0 = find(&mut parent, 0);
+    (1..n).all(|i| find(&mut parent, i) == r0)
+}
+
 pub fn refine_families_exon_sum(
     families: Vec<Vec<DenovoTranscript>>,
     params: &RefineParams,
+    passed_genome: Option<&GenomeIndex>,
 ) -> Result<Vec<Vec<DenovoTranscript>>> {
-    // Load the genome once (for the families' contigs) whenever a fasta is provided — used by the include_introns
-    // core tier AND the additive genomic-span tier below. For include_introns the load MUST succeed (the core tier
-    // needs it); for the additive genomic tier it is BEST-EFFORT — a load failure (e.g. a synthetic test contig
-    // absent from the fasta) just skips that tier rather than failing the whole refine.
-    let genome: Option<GenomeIndex> = match params.intron_fasta.as_ref() {
-        Some(path) => {
-            let contigs: HashSet<String> = families.iter().flatten().map(|c| c.chrom.clone()).collect();
-            match GenomeIndex::from_fasta_contigs(path, &contigs) {
-                Ok(g) => Some(g),
-                Err(e) if params.include_introns => {
-                    return Err(e.context("include_introns: genome load failed"));
-                }
-                Err(e) => {
-                    eprintln!("[refine] genomic-span tier skipped: genome load failed ({e})");
-                    None
+    // Genome for the include_introns core tier + the additive genomic-span tier. PREFER the caller's
+    // already-loaded `GenomeIndex` (the per-region path caches contigs in an LRU precisely to avoid reloads); only
+    // load from `intron_fasta` when none was passed. This eliminates a full-chromosome reload per region. For
+    // include_introns the genome MUST be available; for the additive genomic tier a load failure is best-effort
+    // (skip the tier — e.g. a synthetic test contig absent from the fasta).
+    let owned_genome: Option<GenomeIndex> = if passed_genome.is_some() {
+        None
+    } else {
+        match params.intron_fasta.as_ref() {
+            Some(path) => {
+                let contigs: HashSet<String> = families.iter().flatten().map(|c| c.chrom.clone()).collect();
+                match GenomeIndex::from_fasta_contigs(path, &contigs) {
+                    Ok(g) => Some(g),
+                    Err(e) if params.include_introns => {
+                        return Err(e.context("include_introns: genome load failed"));
+                    }
+                    Err(e) => {
+                        eprintln!("[refine] genomic-span tier skipped: genome load failed ({e})");
+                        None
+                    }
                 }
             }
+            None if params.include_introns => {
+                anyhow::bail!("include_introns set but intron_fasta (genome path) is None")
+            }
+            None => None,
         }
-        None if params.include_introns => {
-            anyhow::bail!("include_introns set but intron_fasta (genome path) is None")
-        }
-        None => None,
     };
+    let genome: Option<&GenomeIndex> = passed_genome.or(owned_genome.as_ref());
     // PROTEIN tier (opt-in): one batched mmseqs run across ALL families' ORFs (within-family hits only),
     // instead of a subprocess per family. `fam_protein[f]` = the protein homology edges of family f.
     let fam_protein: Vec<Vec<(usize, usize)>> = if params.protein_tail {
@@ -2230,37 +2266,44 @@ pub fn refine_families_exon_sum(
         }
         // core tier: exon-sum (spliced) for a clean, intron-length-independent identity; genomic span only when
         // include_introns is explicitly set (the genomic-span tier below is the additive default-on path).
-        let core_genome = if params.include_introns { genome.as_ref() } else { None };
+        let core_genome = if params.include_introns { genome } else { None };
         let seqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, core_genome)).collect();
         // base detector: asm20 on the configured sequence (the validated, high-precision recent core).
         let mut edge_set: BTreeSet<(usize, usize)> =
             nucleotide_edges(&seqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)?
                 .into_iter()
                 .collect();
-        // GENOMIC-SPAN tier (recall fix, `bench/FALSE_NEGATIVES.md`): a near-identical segmental-duplication whose
-        // PARTIAL de-novo transcript models fail the exon-sum coverage floor (their spliced models don't overlap
-        // enough) still covers most of its GENOMIC extent, at the same (gap-compressed) identity. A repeat-bridge
-        // covers < `min_coverage` of the genomic span regardless of the repeat's identity, so this does NOT
-        // readmit bridges/gene-splits. Skipped when include_introns already ran the core tier on genomic.
-        if let Some(g) = genome.as_ref() {
+        // The additive tiers only UNION more edges. If the asm20 exon-sum core already connects every copy into a
+        // single homology component, they are a provable no-op (`homology_components` on a superset of a connected
+        // edge set gives the same partition, and `distinct_locus_reps` runs unchanged). So skip them — and the
+        // genome fetch the genomic-span tier needs — for the common fully-connected family. This is the case for
+        // most near-identical segdup families; the tiers (and the genome touch) run only when asm20 left a gap.
+        if !edges_connect_all(fam.len(), &edge_set) {
+            // GENOMIC-SPAN tier (recall fix, `bench/FALSE_NEGATIVES.md`): a near-identical segdup whose PARTIAL
+            // de-novo transcript models fail the exon-sum coverage floor still covers most of its GENOMIC extent
+            // at the same (gap-compressed) identity; a repeat-bridge covers < min_coverage of the genomic span
+            // regardless of the repeat's identity, so this does NOT readmit bridges/gene-splits. Skipped when
+            // include_introns already ran the core tier on genomic.
             if !params.include_introns {
-                let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
-                for e in nucleotide_edges(&gseqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)? {
+                if let Some(g) = genome {
+                    let gseqs: Vec<Vec<u8>> = fam.iter().map(|c| refine_copy_seq(c, Some(g))).collect();
+                    for e in nucleotide_edges(&gseqs, &["-x", "asm20"], params.min_identity, params.min_coverage, params)? {
+                        edge_set.insert(e);
+                    }
+                }
+            }
+            // divergent tiers on the EXON-SUM (protein ORFs need the spliced sequence; the sensitive nucleotide
+            // seed is cleanest on the spliced copy). Edges are UNIONed in.
+            if params.nucleotide_sensitive {
+                let exon_seqs: Vec<Vec<u8>> = fam.iter().map(|c| c.seq.clone()).collect();
+                for e in nucleotide_edges(&exon_seqs, &["-k", "11", "-w", "5"], 0.70, params.min_coverage, params)? {
                     edge_set.insert(e);
                 }
             }
-        }
-        // divergent tiers are computed on the EXON-SUM (protein ORFs need the spliced sequence; the
-        // sensitive nucleotide seed is also cleanest on the spliced copy). Edges are UNIONed in.
-        if params.nucleotide_sensitive {
-            let exon_seqs: Vec<Vec<u8>> = fam.iter().map(|c| c.seq.clone()).collect();
-            for e in nucleotide_edges(&exon_seqs, &["-k", "11", "-w", "5"], 0.70, params.min_coverage, params)? {
-                edge_set.insert(e);
-            }
-        }
-        if params.protein_tail {
-            for &e in fam_protein.get(fi).map(|v| v.as_slice()).unwrap_or(&[]) {
-                edge_set.insert(e);
+            if params.protein_tail {
+                for &e in fam_protein.get(fi).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    edge_set.insert(e);
+                }
             }
         }
         let edges: Vec<(usize, usize)> = edge_set.into_iter().collect();

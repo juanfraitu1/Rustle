@@ -182,18 +182,11 @@ fn extract_cigar(sam_line: &str) -> Option<&str> {
 }
 
 /// Try to align `read_seq` to `ref_fasta` using minimap2 with `extra_args`.
-///
-/// Preferred minimap2 binary path (checked first; falls back to PATH lookup).
-const MINIMAP2_PREFERRED_PATH: &str = "/home/juanfra/miniforge3/bin/minimap2";
-
-/// Resolve the minimap2 command: use `MINIMAP2_PREFERRED_PATH` if it exists,
-/// otherwise fall back to `"minimap2"` (PATH lookup).
+/// Resolve the minimap2 command: honor `$RUSTLE_MINIMAP2` if set, else `"minimap2"` from PATH — the same,
+/// portable resolution every other minimap2 call site uses (no hardcoded absolute path).
 fn minimap2_cmd() -> std::process::Command {
-    if std::path::Path::new(MINIMAP2_PREFERRED_PATH).exists() {
-        std::process::Command::new(MINIMAP2_PREFERRED_PATH)
-    } else {
-        std::process::Command::new("minimap2")
-    }
+    let bin = std::env::var("RUSTLE_MINIMAP2").unwrap_or_else(|_| "minimap2".to_string());
+    std::process::Command::new(bin)
 }
 
 /// Returns `(has_primary, primary_cigar)`.
