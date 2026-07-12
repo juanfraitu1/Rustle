@@ -165,11 +165,50 @@ def main():
             for i, rq in enumerate(simulate_reads(spliced, nr, err=0.003, indel=0.0008, seed=hash((fam, ci)) & 0xffff)):
                 reads.append((f"SIMGW|{fam}|{ci}|0|{i}", rq))
 
+    def plant_rep(fam, chrom, copies):
+        """GSTM-like paralogs — the regime where the copy-vs-copy aligner CHOICE changes assignment. Two forces
+        must coexist and they pull opposite ways: (i) reads must MULTIMAP (MAPQ-0) so the PSV columns are the only
+        assignment signal — that needs HIGH overall identity; (ii) poasta must be SUBOPTIMAL so a bad alignment
+        mis-places those PSVs — that needs a locally-disruptive REPETITIVE region with a frameshift indel. Real
+        recent paralogs (GSTM3/5/1) have both: >90% identical overall, but their divergence is concentrated in
+        low-complexity stretches. Here most exons are near-identical (shared, low div -> multimap) while a few are
+        tiled from a handful of short motifs and diverged per copy with a frameshift (non-motif-length) indel ->
+        poasta garden-paths, the exact DP does not. `copies` = [(var_div, n_reads, frameshift_indel)] where the
+        indel is None or (var_exon_index, pos, "del"|"ins", length)."""
+        n_shared, n_var = 6, 2
+        shared_exons = [randseq(RNG.randint(500, 800)) for _ in range(n_shared)]      # conserved core (multimap)
+        motifs = [randseq(RNG.randint(40, 70)) for _ in range(6)]                     # only 6 motifs -> repetitive
+        var_base = ["".join(RNG.choice(motifs) for _ in range(RNG.randint(12, 16))) for _ in range(n_var)]
+        introns = [make_intron(RNG.randint(400, 1500)) for _ in range(n_shared + n_var - 1)]
+        for ci, (dvar, nr, indel) in enumerate(copies):
+            shared = [mutate(e, 0.002) for e in shared_exons]        # near-identical core across copies -> MAPQ-0
+            var = [mutate(e, dvar) for e in var_base]                # repetitive region diverged per copy
+            if indel is not None:
+                ei, pos, op, ln = indel
+                e = var[ei]
+                var[ei] = e[:pos] + e[pos + ln:] if op == "del" else e[:pos] + randseq(ln) + e[pos:]
+            # interleave so the divergent repetitive exons sit inside the conserved core
+            exons = shared[:3] + [var[0]] + shared[3:] + [var[1]]
+            intr = [mutate_intron(i, 0.005) for i in introns]
+            gseq, spliced, intr_local = copy_layout_seqs(exons, intr)
+            start = chrom.add_copy(gseq)
+            introns_g = [(start + a, start + b) for (a, b) in intr_local]
+            chrom.add_bg(RNG.randint(2000, 6000))
+            ichain = ";".join(f"{a}-{b}" for a, b in introns_g)
+            truth.append((fam, ci, chrom.name, start, start + len(gseq), ichain, dvar, nr, ""))
+            for i, rq in enumerate(simulate_reads(spliced, nr, err=0.003, indel=0.0008, seed=hash((fam, ci)) & 0xffff)):
+                reads.append((f"SIMGW|{fam}|{ci}|0|{i}", rq))
+
     # ---- planted families ----
     plant("K0tandem", chrA, [(0.0, 40), (0.0, 40), (0.0, 40)])                       # K=0 floor
     plant("ladder", chrA, [(0.0, 40), (0.003, 40), (0.008, 40), (0.015, 40)])         # resolvable ladder (multimapping)
     plant_collapsed("collapse", chrB, n_copies=5, n_psv=6, nr=40)                      # collapsed segdup: MAPQ-0 yet PSV-resolvable (the gate's regime)
     plant("cnv", chrB, [(0.0, 80), (0.005, 40), (0.005, 20)], abund=["high", "med", "low"])  # unequal expression
+    # repetitive high-divergence family: exons tiled from short motifs (low-complexity) + subs divergence + a
+    # structural motif-tile indel per copy -> the copy-vs-copy alignment regime where poasta is SUBOPTIMAL and the
+    # exact banded DP is optimal, so this family measures whether the aligner choice changes ASSIGNMENT accuracy.
+    plant_rep("hidive", chrB, [(0.0, 40, None), (0.10, 40, (0, 300, "del", 47)),
+                               (0.14, 40, (1, 250, "ins", 47)), (0.18, 40, (0, 200, "del", 93))])
     # single-copy controls
     for s in range(4):
         ch = chrA if s % 2 == 0 else chrB
