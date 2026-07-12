@@ -89,3 +89,13 @@ awk -F'\t' 'NR>1{print $2,$4":"$5"-"$6,$9}' kf_DAZ.quant.tsv    # per-copy spans
 Related: `bench/FAMILY_SPOT_CHECK.md` (the pre-fix state of GSTM/MAGEA/RFPL), `bench/YAG_CHECK.md` (the pre-DAZ2
 Y-family sweep), `bench/CONTAINMENT_COVERAGE_FLOOR.md` (why RFPL is not prunable),
 `project_daz2_locus_support`, `project_single_copy_baseline` (the λ=58 basis).
+
+---
+
+## Re-confirmed under refine-by-default (2026-07-11)
+
+After `--refine` became the default for `copy_assign` (`873d2ec`), the whole panel was re-run. All six recover
+exactly — GSTM 3, MAGEA 2, DAZ 2, RBMY 6, TSPY 5, PCDHB 5 — refine keeping every family (`1 → 1`), and both
+controls stay 0 (refine cleaned an E_r over-call at SRGAP2, `3 → 0`). No refine-induced false negative on the
+flagships. The genome-wide recall cost of refine (13 real families, dominated by a fixable coverage-metric
+artifact) is documented in `bench/FALSE_NEGATIVES.md`.
