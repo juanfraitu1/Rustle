@@ -4,6 +4,8 @@ Status: **MARKING PASS COMPLETE** (retirement side: comments only — no logic c
 **Migration side: TIER 1 root item #1 (`genome_family_def.py` → `vg_family/family_definition.rs`) MIGRATED**
 — `distinct_loci` + `refine_families`/R, option B deterministic splitter; see §5.1.
 Branch: `vg/flow-capacity-apportionment`. Machine-readable map: `bench/RETIREMENT_MAP.tsv`.
+**2026-07-13 audit pass:** safe dead code removed + `--vg-realign` docs corrected + intra-thesis
+duplication inventoried — see **§6**. §4's 12-symbol tendril list re-confirmed byte-exact (grep 2026-07-13).
 
 Rustle began as a Rust port of the StringTie long-read transcript **assembler**. The thesis has
 since moved to **multi-copy gene FAMILIES**:
@@ -226,3 +228,44 @@ RNA catalog), theory checkers (`copy_assignment_theory_checks.py`, `bridge_theor
 Rationale: bottom-up the import DAG so each Rust module compiles against ported deps;
 `rna_only_edge_oracle` (#4) is the tractability crux (POA + stats) and gates the driver (#5).
 **Item #1 (`genome_family_def.py` root: `distinct_loci` + `refine_families`/R) is MIGRATED** — see §5.1.
+
+---
+
+## 6. Intra-thesis duplication (2026-07-13 simplification audit)
+
+The assembler carve (§2–§4) is the big lever, but a 46-agent audit of `vg_family/*` itself found
+duplication *inside* the thesis code. This is a separate axis from §5 (Python→Rust) and §3 (assembler
+removal): here both sides are already LIVE Rust, so the work is unification, not porting.
+
+### 6.1 Completed this pass (committed, `cargo build` + 94 module tests green)
+- **`--vg-realign` doc truthfulness.** The `DenovoConfig::vg_realign` field doc and the `copy_assign`
+  CLI help both claimed "REPORT-ONLY … does not alter the copy set / assignment / any emitted field".
+  False: the flag runs `apply_realign_patch` (corrects assignments), `admit_novel_pools` (widens the
+  copy set), and `recompute_realign_abundance` (recomputes EM abundance) — the intended Task-3
+  end-to-end behavior. Docs corrected; **no behavior change** (OFF is still byte-identical).
+- **Dead code removed:** `copies_overlap` (superseded by `catalog_overlaps`) + its test;
+  `detect_families_from_files` (0 callers); the `RUSTLE_PSV_BAND_DEBUG` / `RUSTLE_PSV_COST_AUDIT`
+  eprintln diagnostic blocks (87 lines, no callers — functional POASTA/BAND/MINIMAP2 escapes kept);
+  `util::constants::KMER` (unreferenced).
+- **Root scratch pruned:** 8 StringTie-parity-era `PRECISION_*`/`SESSION_SUMMARY`/`GUIDED_MODE` files
+  (kept the LIVE `bench/PRECISION_RECALL_FRONTIER.*` O1 artifacts referenced by `family_define.rs`).
+
+### 6.2 Duplicate logic to unify (all verified LIVE on both sides — medium effort)
+| # | Duplication | Where | Note |
+|---|---|---|---|
+| a | **Two soft-EM abundance engines** | `copy_assign_pipeline::soft_quantify_em` (PSV-only, fixed ε=0.01, 100 iters, no convergence break) vs factored `em_copy_assign` (e_step/m_step/loglik) | both write the same `copy_abundance` column; unify on the factored engine |
+| b | **Two γ-quasi-clique refiners** | `family_definition::refine_component` (family_define path) vs `family_split::gamma_quasi_clique_partition` (gw path) | identical density-gated skeleton, each with a *private* `induced_density` + `split_once` |
+| c | **Two "≥2 distinct loci" operators, DIVERGENT policy** | `family_definition::distinct_loci` (reciprocal ≥50%) vs `denovo_pipeline::distinct_locus_reps` (any same-chrom overlap collapses) | two binaries → two definitions of "distinct locus"; a *semantic* inconsistency — pick one |
+| d | **Two `E_r` edge-oracle sourcing paths** | `driver.rs` LOADS python-precomputed TSVs (`edge_oracle.rs`) vs `family_detect`/`denovo_pipeline` COMPUTE in-engine | load path reachable only via `family_define`; retires when `family_define` folds into `gw` |
+| e | **~11 hand-rolled union-finds** | 3 of them (`uf_find`/`uf_union` in `family_split`, `family_detect`, `denovo_pipeline`) are byte-identical | hoist the identical trio to `util`; leave the struct-embedded ones |
+
+Items **b/c/d** are the same story as §5: there are two O1-definition lineages — the `E_c` read-conflict
+detector (`denovo_pipeline`/`family_detect`/`family_split`) and the γ-quasi-clique homology definition
+(`family_definition`, migrated from `genome_family_def.py`). The unification and the Python→Rust
+migration should converge on **one** O1 path (the `gw_family_catalog` genome-wide catalog).
+
+### 6.3 Keep-or-decide (not dead, not obviously wrong)
+- **`collapse_gate.rs`** — built-then-REFUTED (fires χ(H)=7 on single-copy EEF1A1), wired but
+  permanently default-OFF, 10 unit tests. Keep as a documented negative result, or remove.
+- **`o2_materialize` + `o2_columns` + `o2_margin_gate`** (2549 lines) — parity-tested O2 deliverable
+  wired to **no** binary. Decide: expose it in a binary, or shelve it.
