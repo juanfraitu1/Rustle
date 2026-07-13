@@ -2,8 +2,6 @@
 
 /// Bundle block size used by prefix-sum coverage (`get_cov`).
 pub const BSIZE: usize = 10_000;
-/// K-mer length used in overlap adjustment logic.
-pub const KMER: usize = 31;
 /// graph node cap sentinel.
 pub const MAX_NODE: i64 = 1_000_000;
 /// floating sentinel used in merge DP.

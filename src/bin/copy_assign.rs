@@ -240,12 +240,12 @@ struct Args {
     #[arg(long)]
     lambda_file: Option<String>,
 
-    /// VG re-align supplement (Task 5, REPORT-ONLY): for every co-located family, re-align each
-    /// poor-fit/candidate read (low MAPQ, heavy clipping, or high divergence — `vg_realign::is_candidate`)
-    /// to the family's copy-paths and record the decision (`reassigned` / `rejected` / `novel-candidate`)
-    /// to `<out>.vg_realign.tsv`. Does NOT feed corrections back into the EM/PSV assignment and does NOT
-    /// admit novel candidates into the copy set — those remain a separate follow-up. Default off; leaves
-    /// every other output byte-identical.
+    /// VG re-align supplement (opt-in): for every co-located family, re-align each poor-fit/candidate
+    /// read (low MAPQ, heavy clipping, or high divergence — `vg_realign::is_candidate`) to the family's
+    /// copy-paths and record the decision (`reassigned` / `rejected` / `novel-candidate`) to
+    /// `<out>.vg_realign.tsv`. FEEDS BACK into the assignment: it corrects per-read copy assignments,
+    /// admits novel-read pools as new copies (widening the copy set), and recomputes the EM copy abundance
+    /// over the widened roster. Default off; when off, every output is byte-identical.
     #[arg(long, default_value_t = false)]
     vg_realign: bool,
 

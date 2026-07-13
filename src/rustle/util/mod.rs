@@ -3,7 +3,7 @@
 //!
 //! - `bitset`         — SmallBitset: zero-alloc u64 bitset for ≤ 64 elements.
 //! - `bitvec`         — GBitVec type alias → SmallBitset.
-//! - `constants`      — numeric constants (BSIZE, KMER, FLOW_EPSILON, …).
+//! - `constants`      — numeric constants (BSIZE, FLOW_EPSILON, …).
 //! - `coord`          — coordinate / interval utilities.
 //! - `hard_counters`  — global counters for diagnostic accounting.
 

@@ -9,8 +9,8 @@
 //!   primary reads ─► pass1 skeletons ─► assemble gate ─► collapse loci ─► detect edges ─► decompose families
 //!
 //! This is the read-coherence-way detection pipeline end to end (rescue + per-read copy assignment are the
-//! next stage). `detect_families` is the testable transform over parsed reads + a loaded genome;
-//! `detect_families_from_files` is the thin I/O wrapper (BAM + FASTA).
+//! next stage). `detect_families` is the testable transform over parsed reads + a loaded genome (a
+//! single-region reference path; the genome-wide catalogs are the shipped entry points).
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -57,10 +57,13 @@ pub struct DenovoConfig {
     /// `detect.t_core` — reaching divergent copies the conflict graph (confusable-only) misses. Bounded +
     /// seeded by the conflict families (`family_detect::poa_core_completion_adds`).
     pub complete_poa_core: bool,
-    /// VG re-align supplement (Task 5, opt-in): default false = OFF, byte-identical. When true,
-    /// `detect_and_assign` runs `vg_realign::run_family_realign` over each co-located family's reads and
-    /// stores the resulting `Vec<RealignRecord>` on `FamilyAssignment::realign_records`. REPORT-ONLY —
-    /// does not alter the copy set, the PSV/junction assignment, or any other emitted field.
+    /// VG re-align supplement (opt-in): default false = OFF, byte-identical. When true,
+    /// `detect_and_assign` runs `vg_realign::apply_realign` over each co-located family's reads and then
+    /// FEEDS THE RESULT BACK into the emitted `FamilyAssignment`: `apply_realign_patch` corrects per-read
+    /// assignments, `admit_novel_pools` may admit novel-read pools as new copies (widening the copy set),
+    /// and `recompute_realign_abundance` recomputes the EM `copy_abundance` over the widened roster. The
+    /// per-read decisions are also recorded on `realign_records`. NOT report-only: it mutates the copy set,
+    /// the assignments, and abundance. OFF (default) leaves every emitted field byte-identical.
     pub vg_realign: bool,
     /// E_r homology-primary family MEMBERSHIP (opt-in). Conflict/PSV/χ(H) remain within-family. Enlarges
     /// the copy set ⟹ stricter Bonferroni α/(K−1) ⟹ assignments shift. Requires minimap2.
@@ -368,7 +371,7 @@ pub struct FamilyAssignment {
     /// audited for the same-locus artifact: two copies of ONE family whose spans OVERLAP are not two loci,
     /// they are one locus admitted twice (nested/near-duplicate de-novo transcripts). Such a family reports
     /// `min_p == 1` for every read — the reads look unassignable when in fact the copy set is malformed.
-    /// The check is structural and needs no annotation. See `copies_overlap` and `bench/artifact_audit.py`.
+    /// The check is structural and needs no annotation. See `catalog_overlaps` and `bench/artifact_audit.py`.
     pub copy_spans: Vec<(String, u64, u64)>,
     pub copy_abundance: Vec<f64>,
     pub copy_abundance_ci: Vec<f64>,
@@ -524,39 +527,6 @@ fn to_split_families(
     out.sort_by(|a, b| {
         b.members.len().cmp(&a.members.len()).then_with(|| a.members[0].cmp(&b.members[0]))
     });
-    out
-}
-
-/// Pairs of copy indices whose genomic spans OVERLAP, with the RECIPROCAL overlap fraction.
-///
-/// Two copies of one family are, by definition, two distinct loci — distinct loci occupy disjoint genomic
-/// intervals. Any intersection therefore signals a defect, and the reciprocal fraction
-/// `overlap / max(len_i, len_j)` says which one:
-///
-/// * **≈ 1.0 — one locus admitted twice.** Two de-novo transcripts on top of each other, differing only by
-///   boundary wobble (observed: `164381222-164384848` vs `164381237-164384845`, 15 bp offset). They are
-///   sequence-identical, so every read scores `min_p == 1` against the pair, the family abstains wholesale,
-///   and its reads masquerade as the K=0 identifiability wall. `collapse_loci_groups` misses these because
-///   it unions only transcripts sharing an EXACT intron `(chrom, donor, acceptor)` and never consults
-///   positional overlap.
-/// * **≪ 1.0 — containment.** A long readthrough transcript enclosing a short one (observed: a 188 kb span
-///   containing a 3.6 kb one). Merging these would let the readthrough absorb genuinely distinct tandem
-///   copies, so they must NOT be merged — it is a separate defect in transcript construction.
-///
-/// Purely structural: no annotation, no reference truth. Returns `(i, j, reciprocal)` with `i < j`.
-pub fn copies_overlap(spans: &[(String, u64, u64)]) -> Vec<(usize, usize, f64)> {
-    let mut out = Vec::new();
-    for i in 0..spans.len() {
-        for j in (i + 1)..spans.len() {
-            let (ca, sa, ea) = (&spans[i].0, spans[i].1, spans[i].2);
-            let (cb, sb, eb) = (&spans[j].0, spans[j].1, spans[j].2);
-            if ca == cb && sa.max(sb) < ea.min(eb) {
-                let overlap = (ea.min(eb) - sa.max(sb)) as f64;
-                let longest = (ea - sa).max(eb - sb) as f64;
-                out.push((i, j, if longest > 0.0 { overlap / longest } else { 1.0 }));
-            }
-        }
-    }
     out
 }
 
@@ -1722,20 +1692,6 @@ pub fn detect_and_assign(
     }
 
     (out, fallback, dna_needs)
-}
-
-/// I/O wrapper: load primary reads from a BAM and the genome from a FASTA (scoped via `.fai` to only the
-/// contigs the reads touch), then run detection.
-pub fn detect_families_from_files(
-    bam_path: &str,
-    fasta_path: &str,
-    threads: usize,
-    cfg: &DenovoConfig,
-) -> Result<DenovoResult> {
-    let reads = primary_reads_from_bam(bam_path, threads)?;
-    let contigs: HashSet<String> = reads.iter().map(|r| r.chrom.clone()).collect();
-    let genome = GenomeIndex::from_fasta_contigs(fasta_path, &contigs)?;
-    Ok(detect_families(&reads, &genome, cfg))
 }
 
 /// GENOME-WIDE de-tie READ-CONFLICT family catalog (interest I / O1) — the principled, threshold-free
@@ -4083,44 +4039,6 @@ mod tests {
         }
     }
 
-    /// The real CAFAM69 geometry: a 65 kb de-novo transcript with a shorter one nested inside it, admitted
-    /// as two "copies" of one family. Every read scored `min_p == 1` against that pair, so all 1043 reads
-    /// abstained and looked like the K=0 wall. Disjoint loci (the true paralog case) must NOT be flagged.
-    #[test]
-    fn copies_overlap_flags_nested_transcripts_not_disjoint_paralogs() {
-        let nested = vec![
-            ("NC_073247.2".to_string(), 164_381_269, 164_446_025),
-            ("NC_073247.2".to_string(), 164_430_240, 164_436_493),
-        ];
-        let got = copies_overlap(&nested);
-        assert_eq!(got.len(), 1);
-        assert_eq!((got[0].0, got[0].1), (0, 1));
-        assert!(got[0].2 < 0.2, "a 65 kb span containing a 6 kb one is CONTAINMENT, not a duplicate: {}", got[0].2);
-
-        // boundary wobble: the real CAFAM69 pair -- reciprocal ~1.0 => one locus admitted twice
-        let wobble = vec![
-            ("NC_073247.2".to_string(), 164_381_222, 164_384_848),
-            ("NC_073247.2".to_string(), 164_381_237, 164_384_845),
-        ];
-        let w = copies_overlap(&wobble);
-        assert_eq!(w.len(), 1);
-        assert!(w[0].2 > 0.99, "15 bp of wobble => reciprocal overlap ~1.0, got {}", w[0].2);
-
-        // CAFAM20: two genuinely distinct loci 43 kb apart, exonically identical (a real K=0 family).
-        let disjoint = vec![
-            ("NC_073229.2".to_string(), 136_502_891, 136_507_428),
-            ("NC_073229.2".to_string(), 136_550_623, 136_557_225),
-        ];
-        assert!(copies_overlap(&disjoint).is_empty(), "disjoint paralogs are a real family");
-
-        // Same coordinates on different contigs cannot overlap.
-        let cross = vec![("c1".to_string(), 100, 200), ("c2".to_string(), 100, 200)];
-        assert!(copies_overlap(&cross).is_empty());
-
-        // Abutting spans (end == start) touch but do not overlap.
-        let abut = vec![("c1".to_string(), 100, 200), ("c1".to_string(), 200, 300)];
-        assert!(copies_overlap(&abut).is_empty(), "half-open spans: end == start is not an overlap");
-    }
 
     /// The real GSTM catalog: CAFAM1 correctly holds GSTM5 and GSTM1 as two disjoint copies, while CAFAM0
     /// holds GSTM3 plus a 30 kb single-intron readthrough transcript spanning BOTH of them. The readthrough
