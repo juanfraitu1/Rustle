@@ -28,8 +28,8 @@ SLIDES = [
 
     ("O1  ·  WHAT IS A MULTI-COPY GENE FAMILY?",
      "What is a multi-copy gene family — for us?",
-     "A set of loci the reads cannot tell apart: a connected component of the transcribed-homology graph, over ≥ 2 distinct loci.",
-     "Copy number = χ(H): the MINIMUM number of copies that explains the ambiguity (a minimum clique cover). No “≥ X% identical” cutoff — a relational tie, annotation-free.",
+     "A set of mutually-homologous loci: a cohesive, dense cluster (a γ-quasi-clique) in the transcribed-homology graph, over ≥ 2 distinct loci.",
+     "The boundary is a relational homology tie — no “≥ X% identical” cutoff, annotation-free. Copy number = the fewest copy-paths that explain the reads (a minimum path cover; a lower bound).",
      NAVY),
 
     ("O2  ·  COPY ASSIGNMENT",
@@ -67,6 +67,37 @@ SLIDES = [
      "Planted sim (non-circular): identical copies → 0 invented PSVs (120/120 certified tied); real PSVs recovered. Independent DNA (Soto, Cell 2025): we AGREE on his human-specific families. Same code on HUMAN testis: it tracks the real expansions — MAGEA 2→11, TSPY 5→33 — not the gorilla numbers.",
      "One line: a family = read-threaded paths through one PSV-bubble graph; assignment is assign-or-abstain over provable structure (χ(H) = min copies; facility location). No thresholds, no 1/k.",
      NAVY),
+]
+
+SEQ_ROWS = [
+    ("copy", "a genomic instance of a gene — a path through the graph"),
+    ("isoform", "a splice variant of ONE gene — a path through the junctions"),
+    ("exon / intron", "kept in the mRNA  /  spliced out"),
+    ("splice junction", "where two exons join (a branch point)"),
+    ("allele", "the base at a variant position"),
+    ("PSV", "a position where copies differ (a bubble)"),
+    ("SUN", "a PSV private to ONE copy  (SUN ⊆ PSV) → one read pins it"),
+]
+METHOD_ROWS = [
+    ("variation graph", "spine + PSV bubbles + junction branches; copies/isoforms = paths"),
+    ("bubble", "where paths diverge — a PSV or a junction"),
+    ("family  (O1)", "a cohesive homology cluster of loci (γ-quasi-clique)"),
+    ("copy number  χ_H", "fewest copy-paths covering the reads — a lower bound"),
+    ("assignment  (O2)", "which copy-path a read is on (facility location; no 1/k)"),
+    ("reference-absent  (O4)", "a copy the individual has but the assembly lacks"),
+    ("allele-specific jn  (O3)", "an allele linked to its junction on one read"),
+    ("K=0 floor", "identical copies carry no PSV → certified TIED, not guessed"),
+]
+EVO_ROWS = [
+    ("paralog", "two genes related by DUPLICATION (within a lineage)"),
+    ("ortholog", "two genes related by SPECIATION (the same gene in two species)"),
+    ("multi-copy gene family", "≥ 2 paralogs present in one genome — the state we measure"),
+    ("segmental duplication (SD)", "a duplicated DNA block (≥ 1 kb, high identity); SD98 = ≥ 98%"),
+    ("expansion", "copies GAINED on a lineage vs its ancestor (needs an outgroup)"),
+    ("contraction", "copies LOST on a lineage"),
+    ("pseudogene", "a copy that lost function (processed = intronless retrocopy)"),
+    ("retrocopy / retrogene", "an mRNA-derived, intronless copy"),
+    ("exonization", "non-coding sequence (intron / Alu) becoming a new EXON"),
 ]
 
 GATES = [
@@ -120,6 +151,62 @@ def build():
         else:
             tb(s, punch, 0.85, 2.35, 11.9, 3.0, 29, NAVY, bold=True, spacing=1.05)
             tb(s, support, 0.85, 5.9, 11.9, 1.4, 15.5, GREY, italic=True, spacing=1.05)
+
+    # ---- backup slide: one framework (how the graphs relate) ----
+    import make_one_framework
+    of = os.path.join(OUT, "one_framework.png")
+    if not os.path.exists(of):
+        make_one_framework.build()
+    s = prs.slides.add_slide(blank); accent(s, NAVY)
+    tb(s, "BACKUP  ·  one framework, not four graphs", 0.85, 0.5, 11.8, 0.5, 16, NAVY, bold=True)
+    tb(s, "if asked how the graphs relate: they are ONE object — the variation graph — at different scopes / views",
+       0.85, 1.12, 11.8, 0.6, 15, GREY, italic=True)
+    from PIL import Image as _Im1
+    iw, ih = _Im1.open(of).size
+    scale = min(12.7 / (iw / 150), 5.4 / (ih / 150)); w = (iw / 150) * scale
+    s.shapes.add_picture(of, Inches((13.333 - w) / 2), Inches(1.8), width=Inches(w))
+
+    # ---- backup slide: the two formal objects ----
+    import make_formal_objects
+    fo = os.path.join(OUT, "formal_objects.png")
+    if not os.path.exists(fo):
+        make_formal_objects.build()
+    s = prs.slides.add_slide(blank); accent(s, NAVY)
+    tb(s, "BACKUP  ·  the two formal objects", 0.85, 0.5, 11.8, 0.5, 16, NAVY, bold=True)
+    tb(s, "if asked for the formalism: what exactly IS a family, and what is the copy number?",
+       0.85, 1.12, 11.8, 0.6, 15, GREY, italic=True)
+    from PIL import Image
+    iw, ih = Image.open(fo).size
+    maxw, maxh = 12.3, 4.7
+    scale = min(maxw / (iw / 150), maxh / (ih / 150)); w = (iw / 150) * scale
+    s.shapes.add_picture(fo, Inches((13.333 - w) / 2), Inches(1.95), width=Inches(w))
+    tb(s, "family = γ-quasi-clique (dense homology cluster — not a chain, not a strict clique)    ·    copy number = χ(H) = fewest copies that explain the reads = min clique cover (a lower bound)",
+       0.6, 6.75, 12.1, 0.6, 13, NAVY, align=PP_ALIGN.CENTER)
+
+    # ---- backup: glossary (two slides) ----
+    def gloss_col(slide, x, y, w, header, hcolor, rows):
+        tb(slide, header, x, y, w, 0.4, 13.5, hcolor, bold=True)
+        box = slide.shapes.add_textbox(Inches(x), Inches(y + 0.5), Inches(w), Inches(5.4))
+        tf = box.text_frame; tf.word_wrap = True
+        for i, (term, defn) in enumerate(rows):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            r1 = p.add_run(); r1.text = term; r1.font.size = Pt(12); r1.font.bold = True; r1.font.color.rgb = RGBColor(*NAVY)
+            r2 = p.add_run(); r2.text = "  —  " + defn; r2.font.size = Pt(10.5); r2.font.color.rgb = RGBColor(88, 92, 102)
+            p.space_after = Pt(7)
+
+    s = prs.slides.add_slide(blank); accent(s, NAVY)
+    tb(s, "BACKUP  ·  glossary  (1/2) — sequence & method", 0.85, 0.5, 11.8, 0.5, 16, NAVY, bold=True)
+    gloss_col(s, 0.55, 1.4, 6.0, "THE SEQUENCE WORLD", BLUE, SEQ_ROWS)
+    gloss_col(s, 6.95, 1.4, 6.1, "OUR METHOD OBJECTS", GREEN, METHOD_ROWS)
+
+    s = prs.slides.add_slide(blank); accent(s, NAVY)
+    tb(s, "BACKUP  ·  glossary  (2/2) — evolution", 0.85, 0.5, 11.8, 0.5, 16, NAVY, bold=True)
+    gloss_col(s, 0.55, 1.4, 12.4, "THE EVOLUTION WORLD", ORANGE, EVO_ROWS)
+    box = s.shapes.add_shape(1, Inches(0.5), Inches(5.7), Inches(12.4), Inches(1.35))
+    box.fill.solid(); box.fill.fore_color.rgb = RGBColor(244, 247, 251); box.line.color.rgb = RGBColor(*NAVY); box.line.width = Pt(1)
+    tb(s, "the relationships that trip people:", 0.75, 5.85, 12.0, 0.4, 12, NAVY, bold=True)
+    tb(s, "SUN ⊆ PSV     ·     paralog = the relationship,  multi-copy family = the state we measure,  SD = the DNA mechanism,  expansion = the cross-species change     ·     copy (bubbles) vs isoform (junctions) = two axes of ONE variation graph",
+       0.75, 6.28, 12.0, 0.8, 11, DARK)
 
     for path in (os.path.join(OUT, "method_punchlines.pptx"), os.path.join(OUT, "method_punchlines.new.pptx")):
         try:
