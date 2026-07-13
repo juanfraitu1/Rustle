@@ -1,4 +1,0 @@
-chrA	x	transcript	100	900	.	+	.	transcript_id "t1";
-chrA	x	exon	100	200	.	+	.	transcript_id "t1";
-chrA	x	exon	301	500	.	+	.	transcript_id "t1";
-chrA	x	exon	801	900	.	+	.	transcript_id "t1";

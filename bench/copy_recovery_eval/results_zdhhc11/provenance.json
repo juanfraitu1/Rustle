@@ -1,7 +1,0 @@
-{
-  "config_hash": "17fa7c2262267bf81e5fef5e1724740d17b26540",
-  "rustle_commit": "9238f44b843f59dae88b11f883e8ca349c4e0e71",
-  "stringtie_version": "3.0.1",
-  "chrom_subset": "NC_073243.2",
-  "bam": "/mnt/c/Users/jfris/Desktop/Rustle/bench/copy_recovery_eval/results_zdhhc11/subset.bam"
-}
