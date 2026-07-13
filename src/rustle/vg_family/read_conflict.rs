@@ -1,19 +1,22 @@
-//! Read-conflict (mutual-mappability) family criterion — the OPERATIONAL definition of a multi-copy family at
-//! the RNA level (`bench/family_def_readconflict.md`).
+//! Read-conflict (mutual-mappability) graph — the operational SCOPE for copy-resolution and the SEED for the
+//! family catalog. NOT a rival definition of a family (`bench/family_def_readconflict.md`).
 //!
-//! The de-novo pipeline currently defines a family by SEQUENCE similarity (`family_detect`: contiguous-core
-//! `>= T_CORE`). That conflates true paralogs with DOMAIN-SHARERS (genes sharing one exon) and rests on an
-//! arbitrary threshold. The operational definition instead asks the question the copy-assignment problem
-//! actually cares about: **do reads cross-map between these loci?** Two loci are linked iff some read has a
-//! placement in BOTH with TIED alignment scores (a genuine alternative placement — the multimapping conflict,
-//! Canzar's conflict graph). A family is a connected component of that graph.
+//! DEFINITION vs SCOPE. The family DEFINITION is homology: a γ-quasi-clique component of the transcribed-
+//! homology graph over ≥ 2 loci (`family_definition.rs`, the E_r oracle; `docs/RETIREMENT_AND_MIGRATION.md`,
+//! `DEFINITIONS_FORMAL.md`). This module builds a DIFFERENT graph — over the SAME loci but with a different
+//! edge — that answers the question copy-assignment actually cares about: **do reads cross-map between these
+//! loci?** Two loci are linked iff some read has a placement in BOTH with TIED alignment scores (a genuine
+//! alternative placement — the multimapping conflict). Homology says which loci ARE one family; read-conflict
+//! says how many COPIES they hide and how the assignment decomposes. So it is the SCOPE (which loci must be
+//! co-resolved) and the SEED for the catalog, not the definition of membership.
 //!
-//! Why this is the right unit: (1) no tuned similarity threshold — the boundary is the alignment-score tie, a
-//! property of the data; (2) reads never cross-map outside their component, so the assignment problem
-//! decomposes EXACTLY across families with no information lost; (3) it never groups domain-sharers (a read
-//! over a shared exon maps to one locus — no alternative placement), and it picks out exactly the families
-//! where assignment is needed (validated on Compara labels: 0 conflict on 7/7 domain-sharers, fires on
-//! RABL2/APOBEC3, silent on the resolvable RFPL).
+//! Why this is the right SCOPE: (1) no tuned similarity threshold — the boundary is the alignment-score tie
+//! (with `RUSTLE_CONFLICT_SIG`, the SAME significance level α the assignment gate uses), a property of the
+//! data; (2) reads never cross-map outside their component, so the assignment problem decomposes EXACTLY
+//! across families with no information lost; (3) it never groups domain-sharers (a read over a shared exon
+//! maps to one locus — no alternative placement), and it picks out exactly the families where assignment is
+//! needed (validated on Compara labels: 0 conflict on 7/7 domain-sharers, fires on RABL2/APOBEC3, silent on
+//! the resolvable RFPL).
 //!
 //! This is the portable KERNEL: `conflict_edges` (read placements → weighted edges) + `conflict_families`
 //! (edges → connected-component families). The remaining integration is plumbing per-locus secondary
@@ -67,12 +70,14 @@ impl ConflictParams {
         let d = Self::default();
         let f = |k: &str, v: f64| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(v);
         let u = |k: &str, v: usize| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(v);
-        // RUSTLE_CONFLICT_SIG=1 switches the edge to the significance criterion (unified with the assignment
-        // gate); eps = per-distinguishing-column error proxy (default e/3 ~ 0.001 HiFi), alpha = significance.
-        let sig = if std::env::var("RUSTLE_CONFLICT_SIG").ok().as_deref() == Some("1") {
-            Some((f("RUSTLE_CONFLICT_EPS", 0.001), f("RUSTLE_CONFLICT_ALPHA", 1e-3)))
-        } else {
+        // Significance de-tie is DEFAULT ON: the conflict edge uses the SAME IsoCon real-vs-error test (and the
+        // SAME level `alpha`) as the assignment gate, so no hand-set score-gap `delta` decides the conflict
+        // scope. eps = per-distinguishing-column error proxy (e/3 ~ 0.001 HiFi), alpha = significance.
+        // RUSTLE_CONFLICT_SIG=0 reverts to the legacy `delta` tie-width (A/B comparison / legacy reproduction).
+        let sig = if std::env::var("RUSTLE_CONFLICT_SIG").ok().as_deref() == Some("0") {
             None
+        } else {
+            Some((f("RUSTLE_CONFLICT_EPS", 0.001), f("RUSTLE_CONFLICT_ALPHA", 1e-3)))
         };
         ConflictParams {
             delta: f("RUSTLE_CONFLICT_DE_DELTA", d.delta),

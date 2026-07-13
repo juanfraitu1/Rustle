@@ -127,8 +127,10 @@ pub struct AssignParams {
     pub junction_weight: f64,
     /// Junction-boundary match tolerance (bp) for splice-site jitter.
     pub boundary_tol: i64,
-    /// Decisive log-LR threshold `τ` over the runner-up to call ASSIGNED = `tau_from_p(p)` for the
-    /// chosen target per-read misassignment rate `p`. NOT an arbitrary constant — an operating point.
+    /// Decisive log-LR threshold `τ` over the runner-up — LEGACY, INERT by default. The production gate uses
+    /// the IsoCon significance certificate (`min_p >= alpha`), not this margin; `margin`/`τ` are consulted
+    /// ONLY when `use_margin_gate` is set (the A/B comparison). `tau_from_p(p)` stays as the principled
+    /// operating-point map (`p → τ`), kept for that comparison — it is not part of the shipped decision.
     pub margin: f64,
     /// Significance level / target per-read false-assignment rate for the IsoCon gate. Default 1e-3.
     pub alpha: f64,
