@@ -127,3 +127,26 @@ ground truth**, and the specific regime — a *major* poasta failure that also s
 a real-sequence coincidence that a clean synthetic sim cannot reproduce (verified: synthetic repetitive pairs need
 high substitution divergence to trip poasta, which forces unique mapping). The claim rests on **provable
 optimality** of the DP alignment plus **zero regression** on the ground-truth benchmark.
+
+## sig-mode default flip — regression check (2026-07-13, edf7b43)
+
+The conflict-edge criterion was changed from the hand-set score-gap tie-width (`delta = 0.005`) to the
+IsoCon significance test (`ε^Δcols ≥ α`, same α = 1e-3 as the assignment gate; `RUSTLE_CONFLICT_SIG=0`
+reverts). Because sig-tie is a proven *subset* of delta-tie, flipping the default could in principle
+fragment a family. Ran `copy_assign` on the real gorilla BAM (`GGO_mm.bam`) over the known families,
+sig-on (new default) vs `RUSTLE_CONFLICT_SIG=0` (legacy), identical flags:
+
+| family | flags | copies (χ_H) sig-on / sig-off |
+|---|---|---|
+| GSTM  | `--homology-primary` | 3 / 3 |
+| PCDHB | default | 5 / 5 |
+| MAGEA | default | 2 / 2 (two families) |
+| MAGEA | `--homology-primary` | 8 / 8 |
+| DAZ   | default | 2 / 2 |
+
+**Result: BYTE-IDENTICAL.** `families.tsv` md5 matches on/off in both profiles (default `bcab271c`,
+homology-primary `8f4c17d6`); `assignments.tsv` is byte-identical per read (14 992 and 18 996 rows).
+Every column — n_copies, collapsed_copies, n_reads, assigned_j, uniq — is unchanged. The arbitrary
+`delta = 0.005` was doing nothing the principled α does not; the "one calibrated α decides the family
+scope" claim holds with no catalog change. (Covered 4 of the 6 known families with clean coordinates in
+this annotation; RBMY / TSPY-Y-array not covered here.)
