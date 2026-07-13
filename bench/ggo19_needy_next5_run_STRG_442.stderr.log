@@ -1,3 +1,0 @@
-[STRINGTIE_EXACT] Default mode: StringTie-exact (disable with RUSTLE_STRINGTIE_EXACT=0). Gated sites: junction post-good_junc merge filters, alt-junction demotion, fwd_to_sink past_seed gate, onpath_long reach relaxation, novel_splice_rescue; RunConfig: junction_canonical_tolerance forced to 0 after compat preset. See src/rustle/stringtie_parity.rs for details.
-rustle: needy-locus diagnostics: writing per-bundle summary TSV to bench/ggo19_needy_next5_run_STRG_442.needy_bundle_summary.tsv
-Error: No such file or directory (os error 2)

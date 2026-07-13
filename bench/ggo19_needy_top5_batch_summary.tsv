@@ -1,6 +1,0 @@
-locus_run	focus_refs	query_mrnas	focus_matched	focus_sn_qry_pr	trace_notes
-STRG_151	6	14	6	100.0% | 57.1%	all_focus_matched
-STRG_157	5	7	4	80.0% | 85.7%	STRG.157.7:not_extracted:junctions_present
-STRG_251	6	10	5	83.3% | 80.0%	STRG.251.5:not_extracted:junctions_present
-STRG_453	4	4	3	75.0% | 100.0%	STRG.453.5:not_extracted:junctions_present
-STRG_503	5	11	5	100.0% | 81.8%	all_focus_matched

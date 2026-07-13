@@ -1,7 +1,0 @@
-# reference_id	blocker	bundle_region	seed_diag
-STRG.157.7	not_extracted:single_exon	NC_073243.2:23290511-23306475	
-# summary:
-#   not_extracted:single_exon: 1
-# blocked by strand (refs with at least one bundle where not extracted or filtered):
-#   strand +: 0 blocked / 0 total (0.0%)
-#   strand -: 1 blocked / 7 total (14.3%)
