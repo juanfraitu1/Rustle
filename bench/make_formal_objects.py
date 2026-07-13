@@ -57,22 +57,22 @@ def build():
     axL.text(5, 0.35, "γ = 1: strict clique   ·   γ → 0: component   ·   we use γ ≈ 0.4",
              ha="center", fontsize=9.0, style="italic", color="#777")
 
-    # ================= RIGHT: COPY NUMBER = minimum path cover =================
+    # ============ RIGHT: COPY NUMBER = chromatic number of the read-conflict graph ============
     axR.add_patch(FancyBboxPatch((0.6, 5.4), 8.8, 0.55, boxstyle="round,pad=0.02,rounding_size=0.05", fc=NAVY, ec=NAVY))
-    axR.text(5, 5.67, "COPY NUMBER  =  fewest copy-paths", ha="center", va="center", fontsize=13.5, weight="bold", color="white")
-    axR.text(5, 5.22, "that cover all the reads  (a minimum path cover)", ha="center", fontsize=9.7, style="italic", color="#666")
-    # two copy-paths, with reads (grey segments) lying on them
-    for y, c, lab in [(4.35, BLUE, "copy 1"), (3.2, RED, "copy 2")]:
-        axR.plot([1.3, 8.4], [y, y], color=c, lw=3, zorder=2)
-        axR.text(8.7, y, lab, ha="left", va="center", fontsize=10, weight="bold", color=c)
-    for x0, x1, y in [(1.5, 3.1, 4.35), (3.6, 5.2, 4.35), (5.9, 8.2, 4.35),
-                      (1.8, 3.4, 3.2), (4.0, 5.6, 3.2), (6.2, 8.2, 3.2)]:
-        axR.plot([x0, x1], [y, y], color="#555", lw=6, alpha=.4, solid_capstyle="round", zorder=3)
-    axR.text(5.0, 2.35, "every read lies on ONE copy-path (or abstains)", ha="center", va="center",
-             fontsize=9.6, weight="bold", color=DARK)
-    axR.text(5.0, 1.5, "copy number = the fewest paths that cover them", ha="center", fontsize=12, weight="bold", color=NAVY)
-    axR.text(5, 0.55, "polynomial unless reads recombine  ·  a LOWER bound (identical copies collapse — K = 0 floor).",
-             ha="center", va="center", fontsize=8.6, style="italic", color="#777")
+    axR.text(5, 5.67, "COPY NUMBER  =  χ_H", ha="center", va="center", fontsize=14, weight="bold", color="white")
+    axR.text(5, 5.22, "chromatic number of the read-conflict graph  (Minimum Copy Cover; Lemma 1)", ha="center", fontsize=8.6, style="italic", color="#666")
+    # a copy = one COLOUR class of reads; reads are coloured by the copy they belong to
+    for y, c, lab in [(4.35, BLUE, "copy 1 (colour 1)"), (3.2, RED, "copy 2 (colour 2)")]:
+        axR.plot([1.3, 8.2], [y, y], color=c, lw=1.3, ls=(0, (2, 2)), alpha=.45, zorder=2)
+        axR.text(8.5, y, lab, ha="left", va="center", fontsize=8.6, weight="bold", color=c)
+    for x0, x1, y, c in [(1.5, 3.1, 4.35, BLUE), (3.6, 5.2, 4.35, BLUE), (5.9, 8.0, 4.35, BLUE),
+                         (1.8, 3.4, 3.2, RED), (4.0, 5.6, 3.2, RED), (6.2, 8.0, 3.2, RED)]:
+        axR.plot([x0, x1], [y, y], color=c, lw=6, alpha=.75, solid_capstyle="round", zorder=3)
+    axR.text(5.0, 2.35, "a copy = one COLOUR class (reads that never disagree at a PSV)", ha="center", va="center",
+             fontsize=9.0, weight="bold", color=DARK)
+    axR.text(5.0, 1.5, "copy number = fewest colours = χ_H   (MCC = χ(H))", ha="center", fontsize=12, weight="bold", color=NAVY)
+    axR.text(5, 0.55, "greedy colouring gives a LOWER bound  ·  K = 0 identical copies carry no PSV → collapse to one.",
+             ha="center", va="center", fontsize=8.4, style="italic", color="#777")
 
     p = os.path.join(OUT, "formal_objects.png")
     fig.savefig(p, bbox_inches="tight", facecolor="white", dpi=150)

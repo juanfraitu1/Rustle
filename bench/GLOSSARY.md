@@ -36,7 +36,8 @@ duplication, multi-copy family, expansion, reference-absent copy) are in `bench/
 | **Variation graph** | the family's sequence graph — a shared **backbone** (spine) + **PSV bubbles** (copy axis) + **junction branches** (isoform axis). Copies and isoforms are **paths** through it. |
 | **Bubble** | a place in the variation graph where paths diverge — a PSV (copy-distinguishing) or a junction (isoform-distinguishing). |
 | **Family (O1)** | a **cohesive homology cluster** of loci — each homologous to ≥ γ of the others (a γ-quasi-clique). |
-| **Copy number** (χ_H) | the **fewest copy-paths that cover all the reads** — a minimum path cover. Our per-genome copy count. A **lower bound**: exon-identical copies collapse to one (the K=0 floor). |
+| **Read-conflict graph** (H) | vertices = **reads**; an edge joins two reads that **disagree at a shared PSV** (they cannot come from one copy). A copy = a colour class (an independent set of mutually-compatible reads). |
+| **Copy number** (χ_H) | the **chromatic number of the read-conflict graph** = the fewest copies that explain the reads (**Minimum Copy Cover**; Lemma 1: MCC = χ(H)). Our per-genome copy count, a **lower bound** — exon-identical copies collapse to one (the K=0 floor). |
 | **Copy assignment (O2)** | which copy-path each read lies on — a max-weight **facility location**, **assign-or-abstain**, **no 1/k**. |
 | **Assign-or-abstain / no 1/k** | assign a read to a copy only when a calibrated significance test passes; otherwise **abstain** (certify it unresolvable) rather than split its weight 1/k across copies. |
 | **Reference-absent copy (O4)** | a copy present in the sequenced **individual** but collapsed/absent/too-divergent in the reference **assembly** (the fewest copies needed exceeds the annotated copies). |
@@ -48,4 +49,4 @@ duplication, multi-copy family, expansion, reference-absent copy) are in `bench/
 - **SUN ⊆ PSV** — a SUN is a PSV that is private to one copy.
 - **paralog** = the relationship · **multi-copy family** = the per-genome state (what we measure) · **segmental duplication** = a recent DNA mechanism · **expansion** = the cross-species change in the state.
 - **copy** (paralog, PSV/bubble axis) vs **isoform** (splice variant, junction axis) — two orthogonal path-structures in the same variation graph.
-- **copy number** = fewest copy-paths covering the reads (a minimum path cover / facility-location count) — *not* framed as a conflict-graph colouring.
+- **copy number** = χ_H, the **chromatic number of the read-conflict graph** = Minimum Copy Cover (Lemma 1: MCC = χ(H)). It is *not* a minimum path cover (that name belongs to the junction-augmented generalisation, CMCPC), and *not* facility location (that is the O2 read→copy **assignment**, a different problem). Keep those three names on their three objects.

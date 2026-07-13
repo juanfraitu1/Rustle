@@ -28,7 +28,8 @@ def build():
     ax.axis("off"); ax.set_xlim(0, 14); ax.set_ylim(0, 7.6)
 
     # ============== HERO: the variation graph ==============
-    ax.text(7.0, 7.15, "ONE variation graph  —  per family", ha="center", fontsize=18, weight="bold", color=NAVY)
+    ax.text(7.0, 7.15, "TWO graphs, one arrow  —  loci  →  sequence", ha="center", fontsize=18, weight="bold", color=NAVY)
+    ax.text(7.0, 6.75, "GRAPH B  ·  the variation graph over SEQUENCE (one per family)", ha="center", fontsize=10.5, style="italic", color="#666")
     sx0, sx1, sy = 4.7, 9.4, 4.25
     ax.add_patch(Rectangle((sx0, sy - 0.09), sx1 - sx0, 0.18, fc=SPINE, ec="none", zorder=1))
     ax.text((sx0 + sx1) / 2, sy - 0.42, "shared backbone (spine)", ha="center", fontsize=8.5, color="#999")
@@ -58,31 +59,31 @@ def build():
         ax.plot([loci[p][0], loci[q][0]], [loci[p][1], loci[q][1]], color=GREEN, lw=1.8, zorder=2)
     for k, (x, y) in loci.items():
         ax.add_patch(Circle((x, y), 0.2, fc=GREEN, ec="black", lw=1, zorder=3))
-    ax.text(1.55, 5.75, "FAMILY GRAPH", ha="center", fontsize=11, weight="bold", color=GREEN)
-    ax.text(1.55, 3.25, "loci that are homologous\n(γ-quasi-clique)", ha="center", va="top", fontsize=8.6, color="#555")
+    ax.text(1.55, 5.75, "GRAPH A · over LOCI", ha="center", fontsize=11, weight="bold", color=GREEN)
+    ax.text(1.55, 3.25, "homology: which loci\nare one family\n(γ-quasi-clique, O1)", ha="center", va="top", fontsize=8.6, color="#555")
     ax.add_patch(FancyArrowPatch((2.6, 4.5), (4.5, 4.4), arrowstyle="-|>", mutation_scale=18, lw=2, color=GREY))
-    ax.text(3.55, 4.85, "= the SCOPE", ha="center", fontsize=10, weight="bold", color=DARK)
-    ax.text(3.55, 4.62, "which loci share one graph", ha="center", fontsize=8.2, style="italic", color="#777")
+    ax.text(3.55, 4.9, "which loci share", ha="center", fontsize=9, weight="bold", color=DARK)
+    ax.text(3.55, 4.66, "a variation graph", ha="center", fontsize=9, weight="bold", color=DARK)
 
-    # ============== RIGHT satellite: COUNTING COPIES (min path cover) ==============
+    # ====== RIGHT satellite: COUNTING COPIES = colour the read-conflict graph (a VIEW of graph B) ======
     ax.add_patch(FancyArrowPatch((9.5, 4.4), (11.05, 4.4), arrowstyle="-|>", mutation_scale=18, lw=2, color=GREY))
-    ax.text(10.28, 4.85, "= COUNTING", ha="center", fontsize=10, weight="bold", color=DARK)
-    ax.text(10.28, 4.62, "fewest paths covering the reads", ha="center", fontsize=7.9, style="italic", color="#777")
-    # two copy-paths with reads (grey segments) lying on them
-    ax.plot([11.45, 13.65], [4.95, 4.95], color=BLUE, lw=2.2, zorder=2)
-    ax.plot([11.45, 13.65], [3.95, 3.95], color=RED, lw=2.2, zorder=2)
-    for x0, x1, y in [(11.6, 12.4, 4.95), (12.75, 13.55, 4.95), (11.6, 12.4, 3.95), (12.75, 13.55, 3.95)]:
-        ax.plot([x0, x1], [y, y], color="#555", lw=5, alpha=.45, solid_capstyle="round", zorder=3)
-    ax.text(12.55, 5.75, "COUNTING COPIES", ha="center", fontsize=11, weight="bold", color=NAVY)
-    ax.text(12.55, 3.35, "reads lie on copy-paths →\ncopy number = fewest paths\ncovering them (min path cover)", ha="center", va="top", fontsize=8.6, color="#555")
+    ax.text(10.28, 4.9, "a VIEW of", ha="center", fontsize=9, weight="bold", color=DARK)
+    ax.text(10.28, 4.66, "graph B", ha="center", fontsize=9, weight="bold", color=DARK)
+    # reads coloured by the copy (colour class) they belong to
+    ax.plot([11.45, 13.65], [4.95, 4.95], color=BLUE, lw=1.1, ls=(0, (2, 2)), alpha=.5, zorder=2)
+    ax.plot([11.45, 13.65], [3.95, 3.95], color=RED, lw=1.1, ls=(0, (2, 2)), alpha=.5, zorder=2)
+    for x0, x1, y, c in [(11.6, 12.4, 4.95, BLUE), (12.75, 13.55, 4.95, BLUE), (11.6, 12.4, 3.95, RED), (12.75, 13.55, 3.95, RED)]:
+        ax.plot([x0, x1], [y, y], color=c, lw=5, alpha=.7, solid_capstyle="round", zorder=3)
+    ax.text(12.55, 5.75, "COUNTING COPIES (χ_H)", ha="center", fontsize=10.5, weight="bold", color=NAVY)
+    ax.text(12.55, 3.35, "colour the read-conflict graph:\ncopy number = χ_H = fewest colours\n(MCC = χ(H); a lower bound)", ha="center", va="top", fontsize=8.4, color="#555")
 
     # ============== unifying caption ==============
     ax.add_patch(FancyBboxPatch((0.5, 0.55), 13.0, 1.35, boxstyle="round,pad=0.02,rounding_size=0.05",
                                 fc="#f4f7fb", ec=NAVY, lw=1.4))
-    ax.text(7.0, 1.5, "It is ONE object — the variation graph.", ha="center", fontsize=13, weight="bold", color=NAVY)
-    ax.text(7.0, 1.08, "family graph = its SCOPE (which loci)    ·    copies & isoforms = its PATHS (bubbles vs junctions)    ·    copy number = fewest paths covering the reads",
-            ha="center", fontsize=9.6, color=DARK)
-    ax.text(7.0, 0.72, "Same information — different views, not different graphs.", ha="center", fontsize=11, weight="bold", style="italic", color=GREEN)
+    ax.text(7.0, 1.5, "TWO graphs, one arrow.", ha="center", fontsize=13, weight="bold", color=NAVY)
+    ax.text(7.0, 1.08, "GRAPH A over LOCI (homology → which loci are one family)     →     GRAPH B over SEQUENCE (the variation graph → how the copies differ)",
+            ha="center", fontsize=9.4, color=DARK)
+    ax.text(7.0, 0.72, "The PSV matrix, χ_H, and copies-as-paths are all VIEWS of graph B — not separate graphs.", ha="center", fontsize=10.5, weight="bold", style="italic", color=GREEN)
 
     p = os.path.join(OUT, "one_framework.png")
     fig.savefig(p, bbox_inches="tight", facecolor="white", dpi=150)

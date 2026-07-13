@@ -29,7 +29,7 @@ SLIDES = [
     ("O1  ·  WHAT IS A MULTI-COPY GENE FAMILY?",
      "What is a multi-copy gene family — for us?",
      "A set of mutually-homologous loci: a cohesive, dense cluster (a γ-quasi-clique) in the transcribed-homology graph, over ≥ 2 distinct loci.",
-     "The boundary is a relational homology tie — no “≥ X% identical” cutoff, annotation-free. Copy number = the fewest copy-paths that explain the reads (a minimum path cover; a lower bound).",
+     "The boundary is a relational homology tie — no “≥ X% identical” cutoff, annotation-free. Copy number = χ_H, the chromatic number of the read-conflict graph (Minimum Copy Cover, Lemma 1) — a lower bound.",
      NAVY),
 
     ("O2  ·  COPY ASSIGNMENT",
@@ -82,7 +82,7 @@ METHOD_ROWS = [
     ("variation graph", "spine + PSV bubbles + junction branches; copies/isoforms = paths"),
     ("bubble", "where paths diverge — a PSV or a junction"),
     ("family  (O1)", "a cohesive homology cluster of loci (γ-quasi-clique)"),
-    ("copy number  χ_H", "fewest copy-paths covering the reads — a lower bound"),
+    ("copy number  χ_H", "chromatic number of the read-conflict graph = Minimum Copy Cover (Lemma 1); a lower bound"),
     ("assignment  (O2)", "which copy-path a read is on (facility location; no 1/k)"),
     ("reference-absent  (O4)", "a copy the individual has but the assembly lacks"),
     ("allele-specific jn  (O3)", "an allele linked to its junction on one read"),
