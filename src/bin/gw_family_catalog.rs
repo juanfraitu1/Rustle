@@ -1,10 +1,15 @@
-//! gw_family_catalog — the GENOME-WIDE de-tie read-conflict multi-copy-family catalog (interest I / O1).
+//! gw_family_catalog — the GENOME-WIDE multi-copy-gene-family catalog (interest I / O1).
 //!
-//! Replaces the shipped `denovo_families.tsv` (built by the arbitrary `core_recip≥0.13` similarity
-//! threshold over coordinate windows, which over-merges: DNFAM0 = 728 members chr1→chrY) with the
-//! PRINCIPLED, threshold-free family definition run AT SCALE: a family is a connected component of loci
-//! among which reads are genuinely confused (the de-tie read-conflict graph), with the same-strand +
-//! disjoint-loci fixes applied. Writes `<out>.families.tsv` + `<out>.copies.tsv`.
+//! DEFINITION: a family is a HOMOLOGY component — a γ-quasi-clique of the transcribed-homology graph E_r
+//! spanning ≥2 physically-distinct loci — enforced by `refine_families_exon_sum` (asm20 id≥0.80,
+//! cov-of-shorter≥0.50 + sensitive tier + ≥2-distinct-loci gate; default ON). The read-conflict graph is
+//! NOT the family definition: it SEEDS the catalog (the loci among which reads are genuinely confused = where
+//! copies must be co-resolved) and is the within-family copy-number oracle (χ_H). Homology decides
+//! membership; conflict counts copies. (`--homology-primary` makes E_r the membership proposer directly,
+//! in-engine via minimap2 — the cleanest form; the default seeds with the read-conflict graph, then the
+//! homology gate enforces the definition.) This replaces the shipped `denovo_families.tsv` (built by an
+//! arbitrary `core_recip≥0.13` similarity threshold that over-merges: DNFAM0 = 728 members chr1→chrY).
+//! Writes `<out>.families.tsv` + `<out>.copies.tsv`.
 
 use anyhow::Result;
 use clap::Parser;
