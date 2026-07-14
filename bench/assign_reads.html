@@ -297,7 +297,7 @@ document.querySelectorAll('#picker button').forEach((b,i)=>b.onclick=()=>setRead
 $('play').onclick=play;
 $('scrub').oninput=e=>{stop();shown=+e.target.value;render();};
 $('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');};
-$('foot').innerHTML='Real GSTM reads (GGO_mm.bam). Each read is genotyped at every PSV (a pileup); ε is that base’s own phred error, 10^(−Q/10), so a low-quality base is downweighted. p is the chance this much copy-specific matching is sequencing error; assign iff p &lt; α/(K−1), else certify tied. No 1/k, no arbitrary identity cutoff.';
+$('foot').innerHTML='Real GSTM reads (GGO_mm.bam). Every PSV column is first read-validated — a candidate the pileup does not back (well-covered yet monomorphic) is dropped as an assembly artifact, so no column is trusted on alignment alone. Each read is then genotyped at the surviving PSVs; ε is that base’s own phred error, 10^(−Q/10), so a low-quality base is downweighted. p is the chance this much copy-specific matching is sequencing error; assign iff p &lt; α/(K−1), else certify tied. No 1/k, no arbitrary identity cutoff.';
 
 buildSeq(); setRead(0);
 </script>
