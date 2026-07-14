@@ -1,0 +1,256 @@
+<title>How a read is assigned to a copy</title>
+<style>
+:root{
+  --bg:#eef1f4;--surface:#ffffff;--sunken:#f3f5f8;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;
+  --c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;--ok:#2f9e5f;--no:#cd4a44;--gap:#cfd6de;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0d121a;--surface:#141b25;--sunken:#101821;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;
+  --c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--ok:#4bb87b;--no:#e0776b;--gap:#2a3542;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);
+}}
+:root[data-theme="light"]{--bg:#eef1f4;--surface:#ffffff;--sunken:#f3f5f8;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;--c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;--ok:#2f9e5f;--no:#cd4a44;--gap:#cfd6de;--shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);}
+:root[data-theme="dark"]{--bg:#0d121a;--surface:#141b25;--sunken:#101821;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;--c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--ok:#4bb87b;--no:#e0776b;--gap:#2a3542;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;padding:clamp(14px,3vw,34px)}
+.wrap{max-width:1020px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--mono);font-weight:600;font-size:clamp(23px,3.8vw,34px);letter-spacing:-.01em;margin:.12em 0 .1em;text-wrap:balance}
+.sub{color:var(--muted);max-width:72ch;margin:.2em 0 0;font-size:15px}.sub b{color:var(--ink)}
+
+.picker{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 4px}
+.picker button{font-family:var(--mono);font-size:12.5px;background:var(--surface);border:1px solid var(--hair);border-radius:9px;padding:9px 13px;cursor:pointer;color:var(--ink);text-align:left;line-height:1.3}
+.picker button small{display:block;color:var(--muted);font-size:10.5px}
+.picker button.on{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}
+
+.grid{display:grid;grid-template-columns:1.25fr .95fr;gap:16px;margin-top:14px}
+@media(max-width:840px){.grid{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:16px 18px}
+.card h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 12px;color:var(--muted)}
+svg.seq{width:100%;height:auto;display:block}
+
+.controls{display:flex;align-items:center;gap:12px;margin-top:12px}
+.controls button{font-family:var(--mono);font-size:13px;background:var(--sunken);border:1px solid var(--hair);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink)}
+.controls input[type=range]{flex:1;accent-color:var(--amber)}
+.scrublab{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+
+.meter{margin-top:4px}
+.meter .mrow{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:4px}
+.mtrack{position:relative;height:34px;background:var(--sunken);border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+.mfill{position:absolute;left:0;top:0;bottom:0;border-radius:7px 0 0 7px;transition:width .35s cubic-bezier(.4,0,.2,1),background .35s}
+.mthresh{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.mthresh span{position:absolute;top:-15px;left:-16px;font-family:var(--mono);font-size:9.5px;color:var(--ink);white-space:nowrap}
+.mval{position:absolute;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:11px;font-weight:600;transition:left .35s cubic-bezier(.4,0,.2,1);pointer-events:none}
+
+.ev{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+.ev .r{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px}
+.ev .nm{width:52px;font-weight:600}
+.ev .bar{flex:1;height:11px;background:var(--sunken);border-radius:6px;overflow:hidden;position:relative}
+.ev .bf{position:absolute;left:0;top:0;bottom:0;border-radius:6px;transition:width .35s}
+.ev .kc{width:58px;text-align:right;color:var(--muted)}
+
+.decision{margin-top:16px;border-top:1px dashed var(--hair);padding-top:14px;font-family:var(--mono);min-height:96px}
+.badge{font-size:14px;font-weight:700;padding:4px 14px;border-radius:999px;letter-spacing:.03em;display:inline-block}
+.decision .line{font-size:12.5px;color:var(--muted);margin-top:9px;line-height:1.55}
+.decision .line b{color:var(--ink);font-weight:600}
+
+.legend{display:flex;flex-wrap:wrap;gap:12px 15px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:9px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.foot{margin-top:16px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
+a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
+:focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:6px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<a class="themebtn" id="themebtn">◑ theme</a>
+<div class="wrap">
+  <div class="eyebrow">Copy assignment · O2</div>
+  <h1>How a read is assigned to a copy</h1>
+  <p class="sub">A read that fits several copies (MAPQ 0) is assigned by <b>evidence, not similarity</b>. Reveal its
+     bases one PSV at a time: every position that matches only <b>one</b> copy is copy-specific evidence, and the
+     chance it arose by sequencing error, <b>p ≈ εᵏ</b>, plunges. Assign when <b>p &lt; α/(K−1)</b>; otherwise the
+     read stays <b>tied</b>. Pick a read and press play.</p>
+
+  <div class="picker" id="picker"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>The read vs the three copy fingerprints</h2>
+      <svg id="seq" class="seq" viewBox="0 0 560 190" role="img" aria-label="read genotype against three copy consensuses"></svg>
+      <div class="controls">
+        <button id="play">▶ play</button>
+        <input id="scrub" type="range" min="0" max="26" step="1" value="0" aria-label="PSV columns revealed">
+        <span class="scrublab" id="scrublab">0 / 26 columns</span>
+      </div>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--amber)"></span>copy-specific match (evidence)</span>
+        <span><span class="sw" style="background:var(--spine)"></span>matches ≥2 copies (no vote)</span>
+        <span><span class="sw" style="background:var(--gap)"></span>not covered</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>The significance test</h2>
+      <div class="meter">
+        <div class="mrow"><span>p = 1</span><span>chance it's all error →</span><span>10⁻⁹</span></div>
+        <div class="mtrack" id="mtrack">
+          <div class="mfill" id="mfill"></div>
+          <div class="mthresh" id="mthresh"><span>α/(K−1)=5×10⁻⁴</span></div>
+          <div class="mval" id="mval"></div>
+        </div>
+      </div>
+      <div class="ev" id="ev"></div>
+      <div class="decision" id="decision"></div>
+    </div>
+  </div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
+const mk=(t,a={})=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const CC=['var(--c0)','var(--c1)','var(--c2)'];
+const EPS=1e-3, ALPHA=1e-3, K=3, THRESH=ALPHA/(K-1);   // 5e-4
+
+const COPIES=[
+  {gene:'GSTM3',gt:'GGGATAAGAGTCCGAGAAATATTGTA'},
+  {gene:'GSTM5',gt:'ACTCCTCTGACAAGACGTCGTATAAT'},
+  {gene:'GSTM1',gt:'ACTCCTCTGACAAACCGGTAGTCCAA'},
+];
+const NCOL=COPIES[0].gt.length;
+const READS=[
+  {id:'69730425', gt:'GGGATAAGAGTCCGAGAAATATTGTA', note:'full coverage'},
+  {id:'53740345', gt:'ACTCCTCTGACAAGACGTCGTATAAT', note:'full coverage'},
+  {id:'18483156', gt:'...CCTCTGACAAACCGGTAGTCCAA', note:'partial (5′ clipped)'},
+  {id:'150208751',gt:'..........................', note:'spans no PSV'},
+];
+let cur=0, shown=0, timer=null;
+
+/* per-column classification for the current read */
+function classify(read){
+  const out=[];
+  for(let j=0;j<NCOL;j++){
+    const b=read.gt[j];
+    if(b==='.'){ out.push({s:'gap'}); continue; }
+    const m=[]; for(let i=0;i<3;i++) if(COPIES[i].gt[j]===b) m.push(i);
+    if(m.length===1) out.push({s:'dec',copy:m[0],b});
+    else if(m.length>=2) out.push({s:'amb',b});
+    else out.push({s:'err',b});
+  }
+  return out;
+}
+function evidence(read,upto){
+  const cl=classify(read); const kc=[0,0,0];
+  for(let j=0;j<upto;j++) if(cl[j].s==='dec') kc[cl[j].copy]++;
+  const lead=kc.indexOf(Math.max(...kc));
+  const k=Math.max(...kc);
+  const p= k===0 ? 1 : Math.pow(EPS,k);
+  return {cl,kc,lead,k,p};
+}
+
+/* ---- sequence grid ---- */
+const G={gut:58,cw:18.4,rh:24,top:16};
+function buildSeq(){
+  const svg=$('seq'); svg.innerHTML='';
+  const rows=[['GSTM3',0],['GSTM5',1],['GSTM1',2]];
+  rows.forEach(([g,i])=>{
+    const y=G.top+i*G.rh;
+    const lab=mk('text',{x:G.gut-8,y:y+G.rh-8,'text-anchor':'end',fill:CC[i],'font-family':'var(--mono)','font-size':'11','font-weight':'600'});lab.textContent=g;svg.appendChild(lab);
+    for(let j=0;j<NCOL;j++){const x=G.gut+j*G.cw;
+      svg.appendChild(mk('rect',{x:x+.6,y:y+.6,width:G.cw-1.4,height:G.rh-3,rx:3,fill:CC[i],'fill-opacity':.9}));
+      const t=mk('text',{x:x+G.cw/2,y:y+G.rh-7,'text-anchor':'middle',fill:'#fff','font-family':'var(--mono)','font-size':'10','font-weight':'600'});t.textContent=COPIES[i].gt[j];svg.appendChild(t);}
+  });
+  svg.appendChild(mk('line',{x1:8,y1:G.top+3*G.rh+5,x2:552,y2:G.top+3*G.rh+5,stroke:'var(--hair)','stroke-width':1}));
+  const ry=G.top+3*G.rh+13;
+  const rlab=mk('text',{x:G.gut-8,y:ry+G.rh-8,'text-anchor':'end',fill:'var(--ink)','font-family':'var(--mono)','font-size':'11','font-weight':'600'});rlab.textContent='read';svg.appendChild(rlab);
+  window._ry=ry;
+  drawRead();
+}
+function drawRead(){
+  const svg=$('seq'); document.querySelectorAll('#seq .rd').forEach(e=>e.remove());
+  const read=READS[cur], {cl,lead}=evidence(read,shown), ry=window._ry;
+  for(let j=0;j<NCOL;j++){
+    const x=G.gut+j*G.cw, c=cl[j];
+    const g=mk('g',{class:'rd'});
+    let fill='var(--gap)',op=.55,txt='',tcol='#fff';
+    const revealed=j<shown;
+    if(!revealed){ fill='var(--sunken)'; op=.5; }
+    else if(c.s==='gap'){ fill='var(--gap)'; op=.5; }
+    else if(c.s==='dec'){ fill=CC[c.copy]; op=.95; txt=c.b; }
+    else if(c.s==='amb'){ fill='var(--spine)'; op=.7; txt=c.b; }
+    else { fill='var(--no)'; op=.9; txt='×'; }
+    g.appendChild(mk('rect',{x:x+.6,y:ry+.6,width:G.cw-1.4,height:G.rh-3,rx:3,fill,'fill-opacity':op}));
+    if(txt){const t=mk('text',{x:x+G.cw/2,y:ry+G.rh-7,'text-anchor':'middle',fill:tcol,'font-family':'var(--mono)','font-size':'10','font-weight':'600'});t.textContent=txt;g.appendChild(t);}
+    if(revealed&&c.s==='dec'){ // star marker = copy-specific evidence
+      g.appendChild(mk('circle',{cx:x+G.cw/2,cy:ry-4,r:2.2,fill:'var(--amber)'}));
+    }
+    svg.appendChild(g);
+  }
+  // scan cursor
+  if(shown>0&&shown<=NCOL){
+    const cx=G.gut+shown*G.cw;
+    svg.appendChild(mk('line',{class:'rd',x1:cx,y1:G.top-4,x2:cx,y2:ry+G.rh,stroke:'var(--amber)','stroke-width':1.5,'stroke-opacity':.6}));
+  }
+}
+
+/* ---- meter + evidence + decision ---- */
+function render(){
+  drawRead();
+  const read=READS[cur], {kc,lead,k,p}=evidence(read,shown);
+  $('scrublab').textContent=`${shown} / ${NCOL} columns`;
+  $('scrub').value=shown;
+  // meter: x position = -log10(p)/9 (clamped)
+  const pos=Math.min(1,(p<=0?9:-Math.log10(p))/9);
+  const tpos=(-Math.log10(THRESH))/9; // ~0.365
+  const assigned = p<THRESH && k>0;
+  const col = assigned? CC[lead] : 'var(--muted)';
+  $('mfill').style.width=(pos*100)+'%';
+  $('mfill').style.background=assigned? 'color-mix(in srgb,'+CC[lead]+' 55%, transparent)' : 'color-mix(in srgb,var(--muted) 30%, transparent)';
+  $('mthresh').style.left=(tpos*100)+'%';
+  const mv=$('mval'); mv.textContent = k===0? 'p = 1' : 'p ≈ 10⁻'+(3*k);
+  mv.style.left='calc('+Math.min(pos,0.86)*100+'% + 6px)'; mv.style.color=col;
+  // evidence bars
+  const maxk=Math.max(1,...kc);
+  $('ev').innerHTML=COPIES.map((c,i)=>`<div class="r"><span class="nm" style="color:${CC[i]}">${c.gene}</span>
+     <span class="bar"><span class="bf" style="width:${(kc[i]/maxk*100)}%;background:${CC[i]}"></span></span>
+     <span class="kc">k = ${kc[i]}</span></div>`).join('');
+  // decision
+  const d=$('decision');
+  if(assigned){
+    d.innerHTML=`<span class="badge" style="background:color-mix(in srgb,${CC[lead]} 20%,transparent);color:${CC[lead]}">ASSIGNED → ${COPIES[lead].gene}</span>
+      <div class="line"><b>k = ${k}</b> copy-specific matches → <b>p ≈ 10⁻${3*k}</b> ≪ α/(K−1) = 5×10⁻⁴.
+      Even ${k} private PSV${k>1?'s':''} make error astronomically unlikely. (The full read spans ~400 — this is why the certificate is p ≈ 0.)</div>`;
+  }else if(shown>=NCOL && k===0){
+    d.innerHTML=`<span class="badge" style="background:color-mix(in srgb,var(--muted) 22%,transparent);color:var(--muted)">TIED — abstain</span>
+      <div class="line">The read spans <b>no PSV where the copies differ</b> (k = 0), so p stays at 1. It cannot be resolved even in principle — certify it <b>tied</b>, never split 1/k.</div>`;
+  }else if(k===0){
+    d.innerHTML=`<span class="badge" style="background:var(--sunken);color:var(--muted)">no evidence yet</span>
+      <div class="line">No copy-specific position revealed. Keep going →</div>`;
+  }else{
+    d.innerHTML=`<span class="badge" style="background:var(--sunken);color:var(--muted)">building… p ≈ 10⁻${3*k}</span>
+      <div class="line">Leaning <b style="color:${CC[lead]}">${COPIES[lead].gene}</b> — needs p &lt; 5×10⁻⁴ (one more private PSV).</div>`;
+  }
+}
+
+function setRead(i){ cur=i; shown=0; stop();
+  document.querySelectorAll('#picker button').forEach((b,k)=>b.classList.toggle('on',k===i));
+  render();
+}
+function step(){ if(shown<NCOL){shown++; render();} else stop(); }
+function play(){ if(timer){stop();return;} $('play').textContent='❚❚ pause';
+  timer=setInterval(()=>{ if(shown>=NCOL){stop();return;} step(); }, 260); }
+function stop(){ if(timer){clearInterval(timer);timer=null;} $('play').textContent='▶ play'; }
+
+$('picker').innerHTML=READS.map((r,i)=>`<button>…/${r.id}<small>${r.note}</small></button>`).join('');
+document.querySelectorAll('#picker button').forEach((b,i)=>b.onclick=()=>setRead(i));
+$('play').onclick=play;
+$('scrub').oninput=e=>{stop();shown=+e.target.value;render();};
+$('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');};
+$('foot').innerHTML='Real GSTM reads (GGO_mm.bam). The test is IsoCon-style: p is the chance this much copy-specific matching is sequencing error (ε ≈ e/3 per HiFi base); assign iff p &lt; α/(K−1), else certify tied. No 1/k, no arbitrary identity cutoff.';
+
+buildSeq(); setRead(0);
+</script>
