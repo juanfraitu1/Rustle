@@ -1,0 +1,177 @@
+<title>From a family to its copies</title>
+<style>
+:root{
+  --bg:#eef1f4;--surface:#ffffff;--sunken:#f3f5f8;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;
+  --c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0d121a;--surface:#141b25;--sunken:#101821;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;
+  --c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);
+}}
+:root[data-theme="light"]{--bg:#eef1f4;--surface:#ffffff;--sunken:#f3f5f8;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;--c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;--shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);}
+:root[data-theme="dark"]{--bg:#0d121a;--surface:#141b25;--sunken:#101821;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;--c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;padding:clamp(14px,3vw,34px)}
+.wrap{max-width:1000px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--mono);font-weight:600;font-size:clamp(23px,3.8vw,34px);letter-spacing:-.01em;margin:.12em 0 .1em;text-wrap:balance}
+.sub{color:var(--muted);max-width:72ch;margin:.2em 0 0;font-size:15px}.sub b{color:var(--ink)}
+.chain{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+.chain b{color:var(--amber)}
+
+.steps{display:flex;margin:22px 0 14px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+.steps button{flex:1;background:none;border:none;border-right:1px solid var(--hair);padding:11px 6px;cursor:pointer;font-family:var(--mono);color:var(--muted);transition:background .2s,color .2s}
+.steps button:last-child{border-right:none}
+.steps button .n{display:block;font-size:10px;letter-spacing:.1em}
+.steps button .t{display:block;font-size:12.5px;font-weight:600;margin-top:2px}
+.steps button.on{color:var(--ink);background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.steps button.on .t{color:var(--amber)}
+.steps button:hover:not(.on){background:color-mix(in srgb,var(--muted) 8%,transparent)}
+
+.stagecard{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px 8px}
+svg.stage{width:100%;height:auto;display:block}
+.stage .conn,.stage .track,.stage .psv,.stage .ghost,.stage .famedge,.stage .hull,.stage .refnote{transition:opacity .45s}
+.stage .tk-line,.stage .node circle{transition:stroke .5s,fill .5s}
+/* step gating */
+.stage[data-step="0"] .conn,.stage[data-step="0"] .track,.stage[data-step="0"] .psv,.stage[data-step="0"] .ghost,.stage[data-step="0"] .refnote{opacity:0}
+.stage[data-step="1"] .psv,.stage[data-step="1"] .ghost{opacity:0}
+.stage[data-step="1"] .famedge,.stage[data-step="1"] .hull{opacity:.35}
+.stage[data-step="2"] .ghost{opacity:0}
+.stage[data-step="2"] .famedge,.stage[data-step="2"] .hull,.stage[data-step="2"] .refnote{opacity:.35}
+.stage[data-step="3"] .famedge,.stage[data-step="3"] .hull,.stage[data-step="3"] .refnote{opacity:.2}
+/* colour the tracks as copy-paths only at step 4 */
+.stage[data-step="3"] .tk-line.t0{stroke:var(--c0)} .stage[data-step="3"] .tk-line.t1{stroke:var(--c1)} .stage[data-step="3"] .tk-line.t2{stroke:var(--c2)}
+
+.ctrls{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.ctrls button{font-family:var(--mono);font-size:13px;background:var(--surface);border:1px solid var(--hair);border-radius:8px;padding:8px 16px;cursor:pointer;color:var(--ink)}
+.ctrls button[disabled]{opacity:.4;cursor:default}
+.dots{display:flex;gap:7px}.dots i{width:8px;height:8px;border-radius:50%;background:var(--hair)}.dots i.on{background:var(--amber)}
+
+.caption{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:16px 18px;margin-top:14px;min-height:120px}
+.caption h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 6px;color:var(--amber)}
+.caption p{margin:0 0 8px;font-size:14.5px}
+.caption .num{font-family:var(--mono);font-size:12.5px;color:var(--muted)}.caption .num b{color:var(--ink)}
+.foot{margin-top:16px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
+a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
+:focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:6px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<a class="themebtn" id="themebtn">◑ theme</a>
+<div class="wrap">
+  <div class="eyebrow">O1 → O2 · the hand-off</div>
+  <h1>From a family to its copies</h1>
+  <p class="sub">The bridge between the two graphs: a <b>family</b> (the nodes) becomes a set of <b>copies</b>, each
+     with a reference sequence, and aligning them reveals the <b>PSVs</b> a read is later assigned by. Crucially,
+     the reference is the <b>assembly</b> — not a consensus built from the reads.</p>
+  <div class="chain">reads → loci → <b>families → copies → PSVs</b> → assign</div>
+
+  <div class="steps" id="steps">
+    <button data-s="0"><span class="n">STEP 1</span><span class="t">Family</span></button>
+    <button data-s="1"><span class="n">STEP 2</span><span class="t">Copies + reference</span></button>
+    <button data-s="2"><span class="n">STEP 3</span><span class="t">Align → PSVs</span></button>
+    <button data-s="3"><span class="n">STEP 4</span><span class="t">Variation graph</span></button>
+  </div>
+
+  <div class="stagecard">
+    <svg id="stage" class="stage" viewBox="0 0 700 250" data-step="0" role="img" aria-label="family to copies derivation"></svg>
+  </div>
+  <div class="ctrls">
+    <button id="prev">‹ back</button><div class="dots" id="dots"></div><button id="next">next ›</button>
+  </div>
+
+  <div class="caption" id="caption"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
+const mk=(t,a={})=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const CC=['var(--c0)','var(--c1)','var(--c2)'];
+const COPIES=[
+  {gene:'GSTM3',gt:'GGGATAAGAGTCCGAGAAATATTGTA'},
+  {gene:'GSTM5',gt:'ACTCCTCTGACAAGACGTCGTATAAT'},
+  {gene:'GSTM1',gt:'ACTCCTCTGACAAACCGGTAGTCCAA'},
+];
+const NCOL=COPIES[0].gt.length;
+const NY=[70,125,180], NX=78, X0=210, X1=660;
+const px=i=>X0+i*(X1-X0)/(NCOL-1);
+
+function build(){
+  const svg=$('stage'); svg.innerHTML='';
+  // family hull + edges (left nodes)
+  svg.appendChild(mk('path',{class:'hull',d:`M ${NX-28} ${NY[0]} Q ${NX-58} ${NY[1]} ${NX-28} ${NY[2]} Q ${NX+30} ${NY[1]} ${NX-28} ${NY[0]} Z`,
+    fill:'color-mix(in srgb,var(--c2) 8%,transparent)',stroke:'var(--c2)','stroke-dasharray':'5 4','stroke-width':1.3,'stroke-opacity':.7}));
+  [[0,1],[1,2],[0,2]].forEach(([a,b])=>svg.appendChild(mk('line',{class:'famedge',x1:NX,y1:NY[a],x2:NX,y2:NY[b],stroke:'var(--spine)','stroke-width':2})));
+  const fl=mk('text',{class:'famedge',x:NX,y:NY[2]+26,'text-anchor':'middle',fill:'var(--muted)','font-family':'var(--mono)','font-size':'9.5'});fl.textContent='one family (O1)';svg.appendChild(fl);
+
+  // connectors node → track
+  COPIES.forEach((c,i)=>{
+    svg.appendChild(mk('line',{class:'conn',x1:NX+16,y1:NY[i],x2:X0-6,y2:NY[i],stroke:'var(--hair)','stroke-width':1.4,'stroke-dasharray':'2 3'}));
+    const a=mk('path',{class:'conn',d:`M ${X0-10} ${NY[i]-4} L ${X0-4} ${NY[i]} L ${X0-10} ${NY[i]+4}`,fill:'none',stroke:'var(--muted)','stroke-width':1.4});svg.appendChild(a);
+  });
+
+  // tracks (reference spine per copy)
+  COPIES.forEach((c,i)=>{
+    const g=mk('g',{class:'track'});
+    g.appendChild(mk('line',{class:'tk-line t'+i,x1:X0,y1:NY[i],x2:X1,y2:NY[i],stroke:'var(--spine)','stroke-width':3,'stroke-opacity':.9}));
+    const lt=mk('text',{x:X1+6,y:NY[i]+4,fill:CC[i],'font-family':'var(--mono)','font-size':'10.5','font-weight':'600'});lt.textContent=c.gene;g.appendChild(lt);
+    svg.appendChild(g);
+  });
+
+  // PSV columns (vertical guides + alleles) — shown step 3+
+  const pg=mk('g',{class:'psv'});
+  for(let j=0;j<NCOL;j++){
+    const x=px(j);
+    pg.appendChild(mk('line',{x1:x,y1:NY[0]-13,x2:x,y2:NY[2]+13,stroke:'var(--amber)','stroke-width':1,'stroke-opacity':.28}));
+    COPIES.forEach((c,i)=>{
+      pg.appendChild(mk('circle',{cx:x,cy:NY[i],r:6.4,fill:CC[i],'fill-opacity':.95}));
+      const t=mk('text',{x,y:NY[i]+3,'text-anchor':'middle',fill:'#fff','font-family':'var(--mono)','font-size':'7.6','font-weight':'600'});t.textContent=c.gt[j];pg.appendChild(t);
+    });
+  }
+  svg.appendChild(pg);
+
+  // reference note (step 2)
+  const rn=mk('text',{class:'refnote',x:(X0+X1)/2,y:NY[2]+40,'text-anchor':'middle',fill:'var(--muted)','font-family':'var(--mono)','font-size':'10'});
+  rn.textContent='reference = assembly, spliced along the reads’ exon structure — not a read-consensus';svg.appendChild(rn);
+
+  // family nodes (always)
+  COPIES.forEach((c,i)=>{
+    const g=mk('g',{class:'node'});
+    g.appendChild(mk('circle',{cx:NX,cy:NY[i],r:15,fill:CC[i],stroke:'var(--surface)','stroke-width':2}));
+    const t=mk('text',{x:NX,y:NY[i]+3.5,'text-anchor':'middle',fill:'#fff','font-family':'var(--mono)','font-size':'8.5','font-weight':'600'});t.textContent=c.gene.replace('GSTM','M');g.appendChild(t);
+    svg.appendChild(g);
+  });
+
+  // ghost read (step 4): threads copy-0 alleles
+  const gh=mk('g',{class:'ghost'});
+  const pts=[]; for(let j=0;j<NCOL;j++) pts.push([px(j),NY[0]]);
+  gh.appendChild(mk('path',{d:pts.map((p,k)=>(k?'L':'M')+p[0]+' '+p[1]).join(' '),fill:'none',stroke:'var(--amber)','stroke-width':3,'stroke-linecap':'round','stroke-opacity':.85}));
+  const glab=mk('text',{x:X0,y:NY[0]-20,fill:'var(--amber)','font-family':'var(--mono)','font-size':'9.5'});glab.textContent='a read threads its alleles → assigned';gh.appendChild(glab);
+  svg.appendChild(gh);
+}
+
+const CAPS=[
+  {h:'Step 1 · Family',p:'O1 gave us a family: three loci that are mutually homologous. Each locus IS a copy — a node in the graph. The edges only certify "one family"; an edge is not a copy.',n:'3 loci · GSTM3 / GSTM5 / GSTM1 · pairwise ≈ 83% identical'},
+  {h:'Step 2 · Copies + reference',p:'Each copy gets a reference sequence — fetched from the assembly and spliced along the exon structure the reads defined. No read-consensus is built: the reads give the structure, the assembly gives the sequence. So a read is tested against an independent reference, and copy-private differences are preserved.',n:'reference = the assembly (consensus-correction is optional & default-off)'},
+  {h:'Step 3 · Align → PSVs',p:'Align the three copies. Wherever their reference sequences differ is a PSV — a bubble, and the only place a read can tell the copies apart. Everything between the bubbles is shared backbone.',n:'GSTM: <b>411 PSV columns</b> across the transcript — the copy-distinguishing positions'},
+  {h:'Step 4 · Variation graph',p:'Copies become paths, PSVs become bubbles: the family variation graph. Every ambiguous (MAPQ-0) read now threads its observed alleles here and is assigned to a copy — or, spanning no bubble, certified tied.',n:'<b>2,673 reads</b> to assign · χ_H = 3 copies · → the assignment viz begins exactly here'},
+];
+let step=0;
+function setStep(s){
+  step=Math.max(0,Math.min(3,s)); $('stage').setAttribute('data-step',step);
+  document.querySelectorAll('.steps button').forEach(b=>b.classList.toggle('on',+b.dataset.s===step));
+  $('dots').innerHTML=[0,1,2,3].map(i=>`<i class="${i===step?'on':''}"></i>`).join('');
+  const c=CAPS[step]; $('caption').innerHTML=`<h2>${c.h}</h2><p>${c.p}</p><div class="num">${c.n}</div>`;
+  $('prev').disabled=step===0; $('next').disabled=step===3;
+}
+$('prev').onclick=()=>setStep(step-1);$('next').onclick=()=>setStep(step+1);
+document.querySelectorAll('.steps button').forEach(b=>b.onclick=()=>setStep(+b.dataset.s));
+document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')setStep(step+1);if(e.key==='ArrowLeft')setStep(step-1);});
+$('foot').innerHTML='Sits between "from reads to families" (O1) and "how a read is assigned to a copy" (O2). The copy reference is genome-derived (build_spliced_seq), so read → copy assignment tests reads against an independent reference, avoiding circularity.';
+$('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');};
+build(); setStep(0);
+</script>
