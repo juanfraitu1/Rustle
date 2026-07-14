@@ -1,0 +1,272 @@
+<title>What is a γ-quasi-clique?</title>
+<style>
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#151d27; --muted:#5f6b79; --hair:#dde3ea; --spine:#aab2bd;
+  --c0:#d1434f; --c1:#2c7fc0; --c2:#3a9866; --amber:#c98a1a; --repeat:#b05a2a; --ok:#2f9e5f; --no:#cd4a44;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0d121a; --surface:#141b25; --ink:#e6ecf4; --muted:#8593a3; --hair:#232f3c; --spine:#3c4756;
+  --c0:#e06974; --c1:#4c9bd8; --c2:#54b585; --amber:#dCa73e; --repeat:#d1824a; --ok:#4bb87b; --no:#e0776b;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);
+}}
+:root[data-theme="light"]{--bg:#eef1f4;--surface:#ffffff;--ink:#151d27;--muted:#5f6b79;--hair:#dde3ea;--spine:#aab2bd;
+  --c0:#d1434f;--c1:#2c7fc0;--c2:#3a9866;--amber:#c98a1a;--repeat:#b05a2a;--ok:#2f9e5f;--no:#cd4a44;
+  --shadow:0 1px 2px rgba(20,30,45,.06),0 6px 22px rgba(20,30,45,.05);}
+:root[data-theme="dark"]{--bg:#0d121a;--surface:#141b25;--ink:#e6ecf4;--muted:#8593a3;--hair:#232f3c;--spine:#3c4756;
+  --c0:#e06974;--c1:#4c9bd8;--c2:#54b585;--amber:#dCa73e;--repeat:#d1824a;--ok:#4bb87b;--no:#e0776b;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.28);}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.5;-webkit-font-smoothing:antialiased;padding:clamp(14px,3vw,34px)}
+.wrap{max-width:1080px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--mono);font-weight:600;font-size:clamp(24px,4vw,36px);letter-spacing:-.01em;margin:.12em 0 .1em;text-wrap:balance}
+.sub{color:var(--muted);max-width:70ch;margin:.2em 0 0;font-size:15px}
+.sub b{color:var(--ink)}
+
+.slwrap{margin:26px 0 6px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:20px 22px 14px;box-shadow:var(--shadow)}
+.slhead{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);margin-bottom:6px;flex-wrap:wrap;gap:8px}
+.slhead .g{font-size:26px;font-weight:600}
+.slhead .g small{font-size:13px;color:var(--muted);font-weight:400}
+.slhead .regime{font-size:13px;letter-spacing:.05em;text-transform:uppercase;padding:4px 12px;border-radius:999px;border:1px solid var(--hair)}
+input[type=range]{width:100%;accent-color:var(--amber);height:26px;cursor:pointer}
+.anchors{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;margin-top:2px}
+.anchors button{background:none;border:none;color:var(--muted);font:inherit;cursor:pointer;padding:4px 2px;text-align:center;line-height:1.3}
+.anchors button b{display:block;color:var(--ink);font-size:12.5px}
+.anchors button:hover b,.anchors button.on b{color:var(--amber)}
+
+.grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:16px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:16px 18px}
+.card h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;font-weight:600;color:var(--muted)}
+svg.graph{width:100%;height:auto;display:block}
+.node text{font-family:var(--mono);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:12px 16px;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:11px;height:11px;border-radius:50%;display:inline-block}
+
+.verdict{font-family:var(--mono);font-size:13px}
+.verdict .big{font-size:15px;font-weight:600;margin-bottom:8px}
+.verdict .cons{color:var(--muted);font-size:12.5px;line-height:1.5;font-family:var(--sans)}
+.checks{margin:12px 0;display:flex;flex-direction:column;gap:6px}
+.checks .c{display:flex;gap:8px;align-items:center;font-size:12.5px}
+.checks .mk{width:18px;text-align:center;font-weight:700}
+.checks .yes{color:var(--ok)} .checks .no{color:var(--no)}
+
+.gate{margin-top:14px;border-top:1px dashed var(--hair);padding-top:12px}
+.gate .glab{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.bar{margin:9px 0}
+.bar .t{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;margin-bottom:3px}
+.bar .track{position:relative;height:12px;background:var(--hair);border-radius:6px;overflow:hidden}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;border-radius:6px;transition:width .18s,background .18s}
+.bar .gm{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.65}
+.bar .verd{font-family:var(--mono);font-size:11px;font-weight:600}
+
+.takeaway{margin-top:18px;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.takeaway h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px;color:var(--muted)}
+.takeaway p{margin:.35em 0;font-size:13.5px}
+.takeaway .k{font-family:var(--mono);color:var(--amber);font-weight:600}
+.foot{margin-top:16px;color:var(--muted);font-size:12px;font-family:var(--mono)}
+a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
+:focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:3px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<a class="themebtn" id="themebtn">◑ theme</a>
+<div class="wrap">
+  <div class="eyebrow">Multi-copy gene families · the O1 definition</div>
+  <h1>What is a γ-quasi-clique?</h1>
+  <p class="sub">A family is a <b>dense cluster</b> in the homology graph (nodes = gene loci, an edge = "these two are
+    homologous"). "Dense" is tuned by one number, <b>γ</b> — and clique, quasi-clique, and connected component are
+    the <b>same rule at three settings of γ</b>. Drag it and watch the same graph regroup.</p>
+
+  <div class="slwrap">
+    <div class="slhead">
+      <div class="g">γ = <span id="gval">0.40</span> <small id="gdef">a group is a family iff its edge density ≥ γ</small></div>
+      <div class="regime" id="regime"></div>
+    </div>
+    <input id="slider" type="range" min="0" max="1" step="0.01" value="0.4" aria-label="gamma">
+    <div class="anchors">
+      <button data-g="0"><b>0</b>connected component<br>(any path links)</button>
+      <button data-g="0.4"><b>≈ 0.4</b>γ-quasi-clique<br>(what we use)</button>
+      <button data-g="1"><b>1</b>clique<br>(every pair linked)</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>The homology graph · families = colour</h2>
+      <svg id="graph" class="graph" viewBox="0 0 560 400" role="img" aria-label="homology graph coloured by family under the current gamma"></svg>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--c0)"></span>family (a dense group ≥2)</span>
+        <span><span class="dot" style="background:var(--spine)"></span>not a family (dropped)</span>
+        <span><span class="dot" style="border:2px dashed var(--repeat);background:transparent"></span>a repeat, shared by many genes</span>
+        <span>— — a <b>missing</b> homology edge</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Verdict at this γ</h2>
+      <div class="verdict">
+        <div class="big" id="vbig"></div>
+        <div class="checks" id="checks"></div>
+        <div class="cons" id="cons"></div>
+      </div>
+      <div class="gate">
+        <div class="glab">the density gate · density = 2·edges ⁄ n(n−1) ≥ γ ?</div>
+        <div id="bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="takeaway">
+    <h2>Why the middle</h2>
+    <p><span class="k">clique (γ=1)</span> is too strict: one missing homology edge (A1–A5 here) shatters a real family.</p>
+    <p><span class="k">connected component (γ→0)</span> is too loose: a single shared repeat drags 5 unrelated genes into one false family — this is the real over-merge (a 728-member blob spanning chr1→chrY).</p>
+    <p><span class="k">γ-quasi-clique (γ≈0.4)</span> keeps a cohesive family whole even with a few missing edges, yet a sparse repeat-bridge fails the density gate and drops out. Cohesive, not brittle; no arbitrary "≥ X% identical" cutoff.</p>
+  </div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+/* ---- the example homology graph ---- */
+const LAB=['A1','A2','A3','A4','A5','R','U1','U2','U3','U4','U5','B1','B2','B3'];
+const POS=[[120,92],[68,172],[120,262],[214,240],[210,116],   // family A (pentagon; A1..A5)
+  [318,112],                                                    // R repeat hub
+  [438,50],[504,108],[506,192],[452,258],[378,232],            // U1..U5
+  [96,338],[184,356],[144,286]];                               // family B triangle
+const TYPE=LAB.map(l=>l==='R'?'repeat':'gene');
+const E=[[0,1],[0,2],[0,3],[1,2],[1,3],[1,4],[2,3],[2,4],[3,4],  // A, missing 0-4
+  [5,4],[5,6],[5,7],[5,8],[5,9],[5,10],                          // R hub
+  [11,12],[11,13],[12,13]];                                      // B
+const MISSING=[[0,4]];
+const N=LAB.length;
+const adj=Array.from({length:N},()=>new Set());
+E.forEach(([a,b])=>{adj[a].add(b);adj[b].add(a);});
+
+const FCOL=['var(--c0)','var(--c2)','var(--c1)','var(--amber)'];
+const $=id=>document.getElementById(id);
+
+/* ---- density-gated recursive partition (same rule the pipeline uses) ---- */
+function density(g){const n=g.length;if(n<2)return 1;let e=0;for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(adj[g[i]].has(g[j]))e++;return 2*e/(n*(n-1));}
+function induced(g){const s=new Set(g),o=[];for(let i=0;i<g.length;i++)for(let j=i+1;j<g.length;j++)if(adj[g[i]].has(g[j]))o.push([g[i],g[j]]);return o;}
+function emb(a,b,g){let c=0;for(const w of g)if(w!==a&&w!==b&&adj[a].has(w)&&adj[b].has(w))c++;return c;}
+function comps(g,edges){const p={};g.forEach(x=>p[x]=x);const f=x=>{while(p[x]!==x){p[x]=p[p[x]];x=p[x];}return x;};
+  edges.forEach(([a,b])=>{p[f(a)]=f(b);});const m={};g.forEach(x=>{(m[f(x)]=m[f(x)]||[]).push(x);});return Object.values(m);}
+function partition(g,gamma){
+  if(g.length<=2||density(g)>=gamma)return [g];
+  const ed=induced(g); if(!ed.length)return g.map(x=>[x]);
+  const ws=[...new Set(ed.map(([a,b])=>emb(a,b,g)))].sort((a,b)=>a-b);
+  for(const t of ws){
+    const keep=ed.filter(([a,b])=>emb(a,b,g)>t);
+    const c=comps(g,keep);
+    if(c.length>=2){let out=[];c.forEach(cc=>out=out.concat(partition(cc,gamma)));return out;}
+  }
+  return g.map(x=>[x]);
+}
+function families(gamma){
+  const all=[...Array(N).keys()];
+  let out=[];
+  comps(all,E).forEach(cc=>{out=out.concat(partition(cc,gamma));});
+  return out;
+}
+
+/* ---- render ---- */
+function nodeGroupColor(gamma){
+  const fams=families(gamma).filter(f=>f.length>=2).sort((a,b)=>b.length-a.length);
+  const col=new Array(N).fill('var(--spine)');   // singleton / dropped
+  fams.forEach((f,i)=>f.forEach(n=>col[n]=FCOL[i%FCOL.length]));
+  return {col,fams};
+}
+function edgeColor(a,b,col){ // colour an edge if both ends are in the same family colour
+  return (col[a]===col[b] && col[a]!=='var(--spine)') ? col[a] : 'var(--hair)';
+}
+function draw(gamma){
+  const {col,fams}=nodeGroupColor(gamma);
+  const svg=$('graph'); svg.innerHTML='';
+  const NS='http://www.w3.org/2000/svg', mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  MISSING.forEach(([a,b])=>svg.appendChild(mk('line',{x1:POS[a][0],y1:POS[a][1],x2:POS[b][0],y2:POS[b][1],
+     stroke:'var(--spine)','stroke-width':1.4,'stroke-dasharray':'3 5','stroke-opacity':.7})));
+  E.forEach(([a,b])=>{const c=edgeColor(a,b,col);
+    svg.appendChild(mk('line',{x1:POS[a][0],y1:POS[a][1],x2:POS[b][0],y2:POS[b][1],stroke:c,
+      'stroke-width':c==='var(--hair)'?1.6:2.6,'stroke-opacity':c==='var(--hair)'?.8:.85}));});
+  for(let i=0;i<N;i++){
+    const [x,y]=POS[i], g=mk('g',{class:'node',transform:`translate(${x},${y})`});
+    if(TYPE[i]==='repeat'){
+      g.appendChild(mk('circle',{r:17,fill:col[i],'fill-opacity':col[i]==='var(--spine)'?.25:.9,
+        stroke:'var(--repeat)','stroke-width':2.5,'stroke-dasharray':'3.5 2.6'}));
+    }else{
+      g.appendChild(mk('circle',{r:16,fill:col[i],'fill-opacity':col[i]==='var(--spine)'?.28:.95,
+        stroke:'var(--surface)','stroke-width':2}));
+    }
+    const t=mk('text',{'text-anchor':'middle',y:4,'font-size':10.5,
+      fill: col[i]==='var(--spine)'?'var(--muted)':'#fff'}); t.textContent=LAB[i]; g.appendChild(t);
+    if(TYPE[i]==='repeat'){const rt=mk('text',{'text-anchor':'middle',y:32,'font-size':9,fill:'var(--repeat)','font-family':'var(--mono)'});rt.textContent='repeat';g.appendChild(rt);}
+    svg.appendChild(g);
+  }
+  return fams;
+}
+
+/* ---- density-gate bars ---- */
+const CAND=[
+  {name:'whole A-cluster (11 genes)', set:[0,1,2,3,4,5,6,7,8,9,10]},
+  {name:'family A (5 copies)',        set:[0,1,2,3,4]},
+  {name:'repeat star (R + 5 genes)',  set:[5,6,7,8,9,10]},
+];
+function bars(gamma){
+  $('bars').innerHTML=CAND.map(c=>{
+    const d=density(c.set), pass=d>=gamma;
+    const col=pass?'var(--ok)':'var(--no)';
+    return `<div class="bar"><div class="t"><span>${c.name}</span>
+      <span class="verd" style="color:${col}">density ${d.toFixed(2)} ${pass?'≥':'<'} γ → ${pass?'is a group':'split'}</span></div>
+      <div class="track"><div class="fill" style="width:${(d*100).toFixed(0)}%;background:${col}"></div>
+        <div class="gm" style="left:${(gamma*100).toFixed(0)}%"></div></div></div>`;
+  }).join('');
+}
+
+/* ---- verdict ---- */
+function verdict(gamma,fams){
+  const big=fams.filter(f=>f.length>=2);
+  const key=f=>f.slice().sort((a,b)=>a-b).join(',');
+  const Aintact=big.some(f=>key(f)==='0,1,2,3,4');
+  const inFamily=new Set(); big.forEach(f=>f.forEach(n=>inFamily.add(n)));
+  const repeatInFam=[5,6,7,8,9,10].some(n=>inFamily.has(n));
+  let regime, big1, cons, rcol;
+  if(repeatInFam){
+    regime='over-merge'; rcol='var(--no)';
+    big1='One false family';
+    cons='The repeat R links family A to 5 unrelated genes (U1–U5) into a single 11-gene "family". A connected component cannot avoid this — one bridge is enough. (On real data this is the 728-member blob spanning chr1→chrY.)';
+  }else if(!Aintact){
+    regime='over-split'; rcol='var(--no)';
+    big1='Family A is shattered';
+    cons='γ is so strict it demands (near-)cliques, so the single missing homology edge A1–A5 breaks the real 5-copy family into fragments. A clique loses genuine paralogs.';
+  }else{
+    regime='just right'; rcol='var(--ok)';
+    big1='Family A recovered · repeat dropped';
+    cons='Family A (5 copies) stays whole despite the missing A1–A5 edge, and the sparse repeat-star fails the density gate and drops out. This is the definition we use.';
+  }
+  $('regime').textContent=regime; $('regime').style.color=rcol; $('regime').style.borderColor=rcol;
+  $('vbig').textContent=big1;
+  $('vbig').style.color=rcol;
+  $('cons').textContent=cons;
+  $('checks').innerHTML=[
+    ['family A (5 copies) intact', Aintact],
+    ['repeat-bridged genes excluded', !repeatInFam],
+    [`families found: ${big.length}`, true, true],
+  ].map(([t,ok,plain])=>`<div class="c"><span class="mk ${ok?'yes':'no'}">${plain?'·':(ok?'✓':'✗')}</span>${t}</div>`).join('');
+}
+
+/* ---- wire up ---- */
+function render(gamma){
+  $('gval').textContent=gamma.toFixed(2);
+  const fams=draw(gamma); bars(gamma); verdict(gamma,fams);
+  document.querySelectorAll('.anchors button').forEach(b=>b.classList.toggle('on',Math.abs(+b.dataset.g-gamma)<0.03));
+}
+$('slider').addEventListener('input',e=>render(+e.target.value));
+document.querySelectorAll('.anchors button').forEach(b=>b.addEventListener('click',()=>{$('slider').value=b.dataset.g;render(+b.dataset.g);}));
+$('themebtn').addEventListener('click',()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');});
+$('foot').textContent='The same recursive rule the O1 catalog uses: keep a group whole iff its density ≥ γ, else split at its weakest (least-embedded) edges and recurse. γ is the one knob.';
+render(0.4);
+</script>
