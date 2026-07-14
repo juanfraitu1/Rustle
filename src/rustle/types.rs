@@ -1163,7 +1163,7 @@ impl RunConfig {
             //
             // Skip under `RUSTLE_STRINGTIE_EXACT`: StringTie's cgroup / partition dump does not
             // apply this Rustle-specific merge before bundlenode construction.
-            if !crate::stringtie_parity::stringtie_exact() {
+            if !crate::types::stringtie_exact() {
                 self.junction_canonical_tolerance = self.junction_canonical_tolerance.max(10);
             }
         }
@@ -1178,7 +1178,7 @@ impl RunConfig {
     /// then selectively tightened for bit-identical parity work (e.g. `partition_geometry` vs
     /// `PARITY_PARTITION_TSV`).
     pub fn apply_stringtie_exact_overrides(&mut self) {
-        if !crate::stringtie_parity::stringtie_exact() {
+        if !crate::types::stringtie_exact() {
             return;
         }
         // Compat LR preset raises `junction_canonical_tolerance` to ≥10bp to merge noisy
@@ -1347,4 +1347,10 @@ mod layer2_config_tests {
             "Layer 2 reuses the existing family-merge similarity default"
         );
     }
+}
+
+/// RUSTLE_STRINGTIE_EXACT meta-flag (default ON), relocated verbatim from the retired `stringtie_parity`
+/// module during the assembler carve. `RUSTLE_STRINGTIE_EXACT=0` opts out of StringTie-exact mode.
+pub(crate) fn stringtie_exact() -> bool {
+    !matches!(std::env::var("RUSTLE_STRINGTIE_EXACT"), Ok(ref v) if v == "0")
 }

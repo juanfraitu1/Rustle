@@ -3,7 +3,6 @@ name = "rustle"
 version = "0.1.0"
 edition = "2021"
 autobins = false
-default-run = "rustle"
 
 [lib]
 path = "src/rustle/lib.rs"
@@ -72,10 +71,6 @@ codegen-units = 256 # Maximum parallelism
 panic = "unwind"
 
 [[bin]]
-name = "rustle"
-path = "src/rustle/main.rs"
-
-[[bin]]
 name = "debug_poa"
 path = "src/bin/debug_poa.rs"
 
@@ -112,40 +107,12 @@ name = "family_define"
 path = "src/bin/family_define.rs"
 
 [[test]]
-name = "test_parity_graph_edges_dump"
-path = "tests/regression/test_parity_graph_edges_dump.rs"
-
-[[test]]
-name = "test_parity_flow_iter_dump"
-path = "tests/regression/test_parity_flow_iter_dump.rs"
-
-[[test]]
 name = "vg_family_family_graph"
 path = "tests/regression/vg_family_family_graph.rs"
 
 [[test]]
 name = "vg_family_diagnostic"
 path = "tests/regression/vg_family_diagnostic.rs"
-
-[[test]]
-name = "vg_family_integration_golga"
-path = "tests/regression/vg_family_integration_golga.rs"
-
-[[test]]
-name = "vg_family_synthetic_ground_truth"
-path = "tests/regression/vg_family_synthetic_ground_truth.rs"
-
-[[test]]
-name = "vg_family_manifest"
-path = "tests/regression/vg_family_manifest.rs"
-
-[[test]]
-name = "vg_fingerprint_em_correctness"
-path = "tests/regression/vg_fingerprint_em_correctness.rs"
-
-[[test]]
-name = "g2_annotation_families"
-path = "tests/regression/g2_annotation_families.rs"
 
 [dev-dependencies]
 tempfile = "3"

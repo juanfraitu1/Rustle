@@ -14,7 +14,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::polya;
 use crate::types::{BundleRead, Junction};
 
 static NEXT_READ_UID: AtomicU64 = AtomicU64::new(1);
@@ -369,6 +368,118 @@ const POLYA_MIN_CONSEC: u32 = 5;
 const POLYA_WINDOW: usize = 20;
 const POLYA_MIN_FRAC: f64 = 0.8;
 
+// ── poly-A/T tail detection (relocated verbatim from the retired `polya` module during the assembler
+// carve; `bam` was its only live caller). ────────────────────────────────────────────────────────────
+fn is_poly_base(c: u8, good: u8) -> bool {
+    c == good || c == good.to_ascii_lowercase()
+}
+
+/// Progressive-threshold poly run over a window `[a,b)`, scanning from the boundary being tested.
+fn poly_window_meets(seq: &[u8], a: usize, b: usize, good: u8, min_count: usize, min_frac: f64, from_right: bool) -> bool {
+    if b <= a || b > seq.len() {
+        return false;
+    }
+    let n = b - a;
+    let mut matches = 0usize;
+    let mut checked = 0usize;
+
+    if !from_right {
+        for &base in &seq[a..b] {
+            if is_poly_base(base, good) {
+                matches += 1;
+            }
+            checked += 1;
+            let req = min_count.max((min_frac * checked as f64).ceil() as usize);
+            if matches >= req {
+                return true;
+            }
+            let remaining = n - checked;
+            if matches + remaining < min_count {
+                return false;
+            }
+        }
+    } else {
+        for &base in seq[a..b].iter().rev() {
+            if is_poly_base(base, good) {
+                matches += 1;
+            }
+            checked += 1;
+            let req = min_count.max((min_frac * checked as f64).ceil() as usize);
+            if matches >= req {
+                return true;
+            }
+            let remaining = n - checked;
+            if matches + remaining < min_count {
+                return false;
+            }
+        }
+    }
+
+    false
+}
+
+/// Boundary-anchored consecutive poly run of length `>= min_consec` in `[a,b)`.
+fn anchored_run_meets(seq: &[u8], a: usize, b: usize, good: u8, min_consec: usize, from_right: bool) -> bool {
+    if b <= a || b > seq.len() {
+        return false;
+    }
+    let mut run = 0usize;
+    if !from_right {
+        for &base in &seq[a..b] {
+            if is_poly_base(base, good) {
+                run += 1;
+            } else {
+                break;
+            }
+        }
+    } else {
+        for &base in seq[a..b].iter().rev() {
+            if is_poly_base(base, good) {
+                run += 1;
+            } else {
+                break;
+            }
+        }
+    }
+    run >= min_consec
+}
+
+/// Detect poly-A/T at both read ends, distinguishing aligned vs soft-clip (unaligned) evidence.
+/// Returns `(aligned_start, unaligned_start, aligned_end, unaligned_end)`.
+fn detect_polya_aligned_unaligned(seq: &[u8], clip_left: u32, clip_right: u32, min_consec: u32, window: usize, min_frac: f64) -> (bool, bool, bool, bool) {
+    let slen = seq.len();
+    let clip_l = (clip_left as usize).min(slen);
+    let clip_r = (clip_right as usize).min(slen);
+    let min_count = min_consec as usize;
+
+    let has_unaligned_start = if clip_l > 0 {
+        let a = clip_l.saturating_sub(window);
+        let b = clip_l;
+        anchored_run_meets(seq, a, b, b'T', min_count, true)
+            || poly_window_meets(seq, a, b, b'T', min_count, min_frac, true)
+    } else {
+        false
+    };
+    let astart_5 = clip_l;
+    let aend_5 = (clip_l + window).min(slen.saturating_sub(clip_r));
+    let has_aligned_start = anchored_run_meets(seq, astart_5, aend_5, b'T', min_count, false)
+        || poly_window_meets(seq, astart_5, aend_5, b'T', min_count, min_frac, false);
+    let has_unaligned_end = if clip_r > 0 {
+        let a = slen.saturating_sub(clip_r);
+        let b = (a + window).min(slen);
+        anchored_run_meets(seq, a, b, b'A', min_count, false)
+            || poly_window_meets(seq, a, b, b'A', min_count, min_frac, false)
+    } else {
+        false
+    };
+    let aend_3 = slen.saturating_sub(clip_r);
+    let astart_3 = aend_3.saturating_sub(window).max(clip_l);
+    let has_aligned_end = anchored_run_meets(seq, astart_3, aend_3, b'A', min_count, true)
+        || poly_window_meets(seq, astart_3, aend_3, b'A', min_count, min_frac, true);
+
+    (has_aligned_start, has_unaligned_start, has_aligned_end, has_unaligned_end)
+}
+
 // detect_polya_from_record removed — inlined at call site to share seq_bytes buffer.
 
 /// check_last_exon_polyA/check_first_exon_polyT:
@@ -642,7 +753,7 @@ pub fn record_to_bundle_read_with_snp_vg(
     ) = if seq_bytes.is_empty() {
         (false, false, false, false)
     } else {
-        polya::detect_polya_aligned_unaligned(
+        detect_polya_aligned_unaligned(
             &seq_bytes, clip_left, clip_right,
             POLYA_MIN_CONSEC, POLYA_WINDOW, POLYA_MIN_FRAC,
         )
@@ -1097,4 +1208,23 @@ pub fn collect_multimapper_sequences<P: AsRef<Path>>(
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod polya_tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_polya_aligned_unaligned_boundary_run() {
+        let seq = b"TTTTTACCCCCCCCCCCCC";
+        let got = detect_polya_aligned_unaligned(seq, 0, 0, 5, 20, 0.8);
+        assert_eq!(got, (true, false, false, false));
+    }
+
+    #[test]
+    fn test_detect_polya_aligned_unaligned_base_specific() {
+        let seq = b"AAAAACCCCCCCCCCCCCC";
+        let got = detect_polya_aligned_unaligned(seq, 0, 0, 5, 20, 0.8);
+        assert_eq!(got, (false, false, false, false));
+    }
 }

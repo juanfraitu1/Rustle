@@ -17,18 +17,13 @@ pub mod recombinant_split; // O1 over-merge-gate: recombinant-bridge SPLIT gate 
 pub mod multi_repeat_bridge; // O1 over-merge-gate: multi-repeat-bridge gate (characterize/gate_cut/split_families_repeat_bridge + locus_node_set/load_node_mult; Rust port of multi_repeat_bridge_gate.py WIRED path; byte-parity tested).
 pub mod driver; // O1 family-definition DRIVER: build_catalog/write_outputs/load_repeat_mult/apply_demote orchestration (Rust port of family_rna_refine.py; reproduces the shipped catalog md5 dca64cbd).
 pub mod family_graph;
-pub mod rescue;
 pub mod diagnostic;
 pub mod positional;
-pub mod tandem;
 pub mod consensus; // cross-copy consensus error-correction (subtractive precision lever)
 pub mod mosaic;
 pub mod segdup;
 pub mod hidden_copy;
 pub mod phasing;
-pub mod secondary_index;
-pub mod layer2;
-pub mod psv_linkage; // Layer-2 "C": within-molecule PSV->junction linkage (PSV-column extraction).
 pub mod allele_specific_junctions; // ASJ: junctions whose usage depends on a molecule's het-SNP allele.
 pub mod asj_strand_bias; // O3 ASJ analysis layer: StrandOddsRatio (SOR) strand-bias filter over asj_calls.tsv (Rust port of asj_strand_bias.py; reuses O2 noodles indexed-BAM fetch + CIGAR walk + allele_specific_junctions::fisher_exact_2x2; byte-parity tested vs GGO_mm.bam).
 pub mod asj_verify; // O3 ASJ analysis layer: confound control (frac_mq0 MAPQ-0 fraction at the anchor + anchor->junction dist + high_confidence) over asj_calls.tsv -> asj_calls_verified.tsv (Rust port of asj_verify.py; reuses the O2 noodles indexed-BAM fetch w/ 600-cap; byte-parity tested vs GGO.bam).
@@ -56,4 +51,3 @@ pub mod vg_realign; // VG re-align supplement (Task 1): candidate-read selection
 
 pub use family_graph::{ExonClass, FamilyGraph, JunctionEdge};
 pub use diagnostic::{RescueClass, classify_internal, classify_external, cigar_has_long_indel};  // Task 6.1
-pub use secondary_index::{SecondaryAlignment, SecondaryIndex};
