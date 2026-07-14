@@ -60,6 +60,15 @@ svg.seq{width:100%;height:auto;display:block}
 .legend{display:flex;flex-wrap:wrap;gap:12px 15px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:9px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.notation{margin-top:16px}
+.notation dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;margin:0}
+@media(max-width:660px){.notation dl{grid-template-columns:1fr}}
+.notation .item{display:flex;gap:11px;align-items:baseline;font-size:13px;padding:6px 0;border-bottom:1px solid var(--hair)}
+.notation .sym{font-family:var(--mono);font-weight:600;color:var(--amber);min-width:64px;flex-shrink:0}
+.notation .def{color:var(--muted)}.notation .def b{color:var(--ink);font-weight:600}
+.credit{margin-top:16px;font-size:13px;line-height:1.55;background:var(--sunken);border:1px solid var(--hair);border-radius:10px;padding:13px 16px}
+.credit b{color:var(--ink);font-weight:600}
+.credit .cite{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
 .foot{margin-top:16px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
 a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
 :focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:6px}
@@ -94,7 +103,7 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
     </div>
 
     <div class="card">
-      <h2>The significance test</h2>
+      <h2>The significance test · after IsoCon</h2>
       <div class="meter">
         <div class="mrow"><span>p = 1</span><span>chance it's all error →</span><span>10⁻⁹</span></div>
         <div class="mtrack" id="mtrack">
@@ -107,6 +116,31 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
       <div class="decision" id="decision"></div>
     </div>
   </div>
+  <div class="card notation">
+    <h2>Notation · what each symbol means</h2>
+    <dl>
+      <div class="item"><span class="sym">read</span><span class="def">one transcript <b>molecule</b> (a full-length HiFi / Iso-Seq read)</span></div>
+      <div class="item"><span class="sym">copy</span><span class="def">one <b>paralog</b> — a near-identical gene duplicate in the family</span></div>
+      <div class="item"><span class="sym">PSV</span><span class="def">a position where the copies <b>differ</b> (the columns above)</span></div>
+      <div class="item"><span class="sym">K</span><span class="def">number of <b>candidate copies</b> in the family — here <b>K = 3</b></span></div>
+      <div class="item"><span class="sym">k</span><span class="def">copy-specific matches the read makes to its <b>best copy</b> — the evidence it has accumulated</span></div>
+      <div class="item"><span class="sym">ε <small>(eps)</small></span><span class="def">per-position <b>error probability</b>: e/3 ≈ 10⁻³ for a HiFi base, 10⁻⁴ for a junction</span></div>
+      <div class="item"><span class="sym">α <small>(alpha)</small></span><span class="def">the <b>significance level</b> = target per-read false-assignment rate = 10⁻³. A calibrated rate, not an identity cutoff.</span></div>
+      <div class="item"><span class="sym">α/(K−1)</span><span class="def">the <b>Bonferroni</b> threshold — corrects for testing the read against the K−1 rival copies</span></div>
+      <div class="item"><span class="sym">p</span><span class="def">the <b>certificate</b>: P(this much copy-specific match is sequencing error) ≈ εᵏ &nbsp;(exactly, a Poisson-binomial upper tail)</span></div>
+      <div class="item"><span class="sym">H₀</span><span class="def">the <b>null hypothesis</b>: the read actually came from a competitor copy</span></div>
+      <div class="item"><span class="sym">rule</span><span class="def"><b>assign</b> iff p &lt; α/(K−1); otherwise certify <b>tied</b> — never split 1/k</span></div>
+    </dl>
+    <div class="credit">
+      The real-vs-error significance test is <b>adapted from IsoCon</b> (Sahlin, Tomaszkiewicz, Makova &amp; Medvedev,
+      <i>Nature Communications</i>, 2018) — which clusters and corrects long reads, then runs a threshold-free per-variant
+      test of whether each candidate transcript is a <b>real variant or a sequencing-error artifact</b> in a multicopy
+      gene family. We apply the same test to decide <b>which copy a read came from</b>. Our additions: the
+      copy-vs-allele distinction, <b>assign-or-abstain</b> (a read goes to one copy or none), and <b>no 1/k</b>.
+      <div class="cite">IsoCon · Sahlin, Tomaszkiewicz, Makova &amp; Medvedev, Nature Communications 2018 — highly similar multicopy gene families from long reads.</div>
+    </div>
+  </div>
+
   <div class="foot" id="foot"></div>
 </div>
 
