@@ -627,6 +627,78 @@ pub fn build_family_profiles(
     }
 }
 
+/// Minimum reads per allele for a column to count as a read-supported PSV (see `read_supported_columns`).
+pub const PSV_MIN_ALLELE_READS: usize = 2;
+/// Minimum coverage before a candidate column is JUDGED at all. A column with fewer reads than this is kept
+/// (we cannot invalidate what we cannot see — e.g. copy-level analysis with no reads, or a rare copy); only
+/// a WELL-covered monomorphic column is dropped as an artifact.
+pub const PSV_MIN_JUDGE_COV: usize = 4;
+
+/// Read-support PSV validation. A candidate column (from copy-vs-copy alignment in `discover_psvs`) is kept
+/// unless the READS positively contradict it — i.e. it has `>= min_judge_cov` coverage yet fewer than 2
+/// distinct alleles reach `>= min_reads` reads. This drops assembly-artifact columns where the copies'
+/// reference sequences differ but every molecule agrees (a mis-assembled base fabricates a difference no read
+/// supports), while never dropping a low-coverage column we cannot judge — so a PSV is validated by a pileup,
+/// not only by copy-vs-copy alignment. `all_obs[r][col]` = read r's observed base at `col` (`None` = uncovered).
+pub fn read_supported_columns(
+    all_obs: &[Vec<Option<u8>>],
+    n_cols: usize,
+    min_reads: usize,
+    min_judge_cov: usize,
+) -> Vec<bool> {
+    (0..n_cols)
+        .map(|col| {
+            let mut counts: BTreeMap<u8, usize> = BTreeMap::new();
+            let mut cov = 0usize;
+            for obs in all_obs {
+                if let Some(&Some(b)) = obs.get(col) {
+                    cov += 1;
+                    *counts.entry(b).or_insert(0) += 1;
+                }
+            }
+            // keep if we cannot judge (too little coverage) OR >= 2 read-supported alleles are present
+            cov < min_judge_cov || counts.values().filter(|&&c| c >= min_reads).count() >= 2
+        })
+        .collect()
+}
+
+/// Restrict `FamilyProfiles` to the columns marked `true` in `keep` (the read-support PSV filter): filters
+/// each copy's allele vector, re-indexes `copy_gpos` into the surviving-column space, and updates `n_cols`.
+/// `gen2off`/`strand` are column-independent and copied through.
+fn restrict_family_profiles(fp: &FamilyProfiles, keep: &[bool]) -> FamilyProfiles {
+    let idx: Vec<usize> = (0..fp.n_cols).filter(|&j| keep[j]).collect();
+    let mut new_of = vec![usize::MAX; fp.n_cols];
+    for (nj, &oj) in idx.iter().enumerate() {
+        new_of[oj] = nj;
+    }
+    let profiles = fp
+        .profiles
+        .iter()
+        .map(|pr| CopyProfile {
+            copy_id: pr.copy_id,
+            alleles: idx.iter().map(|&j| pr.alleles[j]).collect(),
+            junctions: pr.junctions.clone(),
+        })
+        .collect();
+    let copy_gpos = fp
+        .copy_gpos
+        .iter()
+        .map(|gp| {
+            let mut v: Vec<(usize, u64)> =
+                gp.iter().filter(|&&(c, _)| keep[c]).map(|&(c, g)| (new_of[c], g)).collect();
+            v.sort_unstable_by_key(|&(_, g)| g);
+            v
+        })
+        .collect();
+    FamilyProfiles {
+        profiles,
+        copy_gpos,
+        gen2off: fp.gen2off.clone(),
+        strand: fp.strand.clone(),
+        n_cols: idx.len(),
+    }
+}
+
 /// Assign one read to a copy, reading its PSV bases in `mapped_copy`'s genomic frame (reverse-complemented
 /// for a `-` copy) and its intron boundaries via that copy's `gen2off`.
 pub fn assign_one_read(
@@ -1327,14 +1399,49 @@ fn assign_family_detailed_once(
     const MAX_MOSAIC_SITES: usize = 250; // cap PSV sites per detect_mosaic (it is O(sites^2)); stride-sample
     let timing = std::env::var_os("RUSTLE_TIMING").is_some();
     let t_psv = std::time::Instant::now();
-    let fp = build_family_profiles(copies, genome);
+    let fp0 = build_family_profiles(copies, genome);
     if timing {
         eprintln!(
             "[timing]     build_family_profiles/discover_psvs ({} copies, {} cols): {:.1}s",
             copies.len(),
-            fp.n_cols,
+            fp0.n_cols,
             t_psv.elapsed().as_secs_f64()
         );
+    }
+    // READ-SUPPORT PSV validation. The candidate columns come from copy-vs-copy alignment (`discover_psvs`);
+    // keep a column only if the READS observe >= 2 alleles there (>= PSV_MIN_ALLELE_READS each), dropping
+    // assembly-artifact columns where the paralogs' reference sequences differ but every molecule agrees. So a
+    // PSV is validated by a per-read pileup, not by alignment alone. This pass also builds `all_obs`, reused by
+    // the editing pre-pass. DEFAULT ON; `RUSTLE_PSV_READFILTER=0` reverts to the raw copy-alignment columns (A/B).
+    let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
+    for read in reads {
+        if let Some(mc) = best_overlap_copy(read, copies) {
+            let mut psv_obs = vec![None; fp0.n_cols];
+            let mut psv_qual = vec![None; fp0.n_cols];
+            fill_psv_obs(read, &fp0.copy_gpos[mc], fp0.strand[mc] == '-', &mut psv_obs, &mut psv_qual);
+            all_obs.push(psv_obs);
+        }
+    }
+    let read_filter = std::env::var("RUSTLE_PSV_READFILTER").ok().as_deref() != Some("0");
+    let keep: Vec<bool> = if read_filter {
+        read_supported_columns(&all_obs, fp0.n_cols, PSV_MIN_ALLELE_READS, PSV_MIN_JUDGE_COV)
+    } else {
+        vec![true; fp0.n_cols]
+    };
+    let n_dropped = keep.iter().filter(|&&k| !k).count();
+    let fp = if n_dropped > 0 {
+        // reindex `all_obs` into the surviving-column space so the editing pre-pass stays aligned to `fp`
+        let idx: Vec<usize> = (0..keep.len()).filter(|&j| keep[j]).collect();
+        for obs in all_obs.iter_mut() {
+            let filtered: Vec<Option<u8>> = idx.iter().map(|&j| obs[j]).collect();
+            *obs = filtered;
+        }
+        restrict_family_profiles(&fp0, &keep)
+    } else {
+        fp0
+    };
+    if timing && n_dropped > 0 {
+        eprintln!("[timing]     read-support PSV filter: dropped {}/{} candidate columns", n_dropped, keep.len());
     }
     // canonical column -> genomic position (first copy that has the column) so every read's switch breakpoints
     // are in ONE frame and `aggregate_family` can cluster recurrences across molecules.
@@ -1346,25 +1453,12 @@ fn assign_family_detailed_once(
     }
     let mparams = MosaicParams::from_env();
     // RNA-editing filter (Clair3-RNA): a pre-pass flags A↔G columns with within-copy heterogeneity so the
-    // significance certificate downweights them. Built once from all reads' PSV observations.
-    let t_edit = std::time::Instant::now(); // its own timer — reusing t_psv double-counted this as ~4.5s
+    // significance certificate downweights them. Reuses the per-read PSV observations built above.
     let editing_cols: Vec<bool> = if p.rna_editing_filter {
-        let mut all_obs: Vec<Vec<Option<u8>>> = Vec::with_capacity(reads.len());
-        for read in reads {
-            if let Some(mc) = best_overlap_copy(read, copies) {
-                let mut psv_obs = vec![None; fp.n_cols];
-                let mut psv_qual = vec![None; fp.n_cols];
-                fill_psv_obs(read, &fp.copy_gpos[mc], fp.strand[mc] == '-', &mut psv_obs, &mut psv_qual);
-                all_obs.push(psv_obs);
-            }
-        }
         detect_editing_columns(&all_obs, &fp.profiles)
     } else {
         Vec::new()
     };
-    if timing {
-        eprintln!("[timing]     editing-filter pre-pass: {:.1}s", t_edit.elapsed().as_secs_f64());
-    }
     let t_assign = std::time::Instant::now();
     // Per-read assignment is independent across reads, so compute it in parallel and merge in read order
     // (rayon's indexed collect preserves order, keeping output identical to the serial loop). The merge
@@ -1545,6 +1639,54 @@ pub fn assign_family(
 mod tests {
     use super::super::copy_assign::AssignStatus;
     use super::*;
+
+    #[test]
+    fn read_support_keeps_two_allele_columns_drops_unbacked() {
+        // 4 reads (>= the judge-coverage floor, so every column IS judged). min_reads = 2, min_judge_cov = 3.
+        // col0: reads split A/G — a real PSV (2 alleles, each >= 2 reads) → KEEP.
+        // col1: every read shows C — the paralogs' reference "differs" but no molecule backs a 2nd allele
+        //       (an assembly artifact) → DROP.
+        // col2: only ONE read shows the minority base (T), below min_reads → DROP.
+        let all_obs = vec![
+            vec![Some(b'A'), Some(b'C'), Some(b'A')],
+            vec![Some(b'A'), Some(b'C'), Some(b'A')],
+            vec![Some(b'G'), Some(b'C'), Some(b'A')],
+            vec![Some(b'G'), Some(b'C'), Some(b'T')],
+        ];
+        assert_eq!(read_supported_columns(&all_obs, 3, 2, 3), vec![true, false, false]);
+    }
+
+    #[test]
+    fn read_support_keeps_low_coverage_columns_it_cannot_judge() {
+        // Only 2 reads cover col0 (below min_judge_cov = 4), monomorphic — but we cannot judge it, so KEEP.
+        // col1 is well-covered (4 reads) and monomorphic → an artifact → DROP.
+        let all_obs = vec![
+            vec![Some(b'A'), Some(b'C')],
+            vec![Some(b'A'), Some(b'C')],
+            vec![None, Some(b'C')],
+            vec![None, Some(b'C')],
+        ];
+        assert_eq!(read_supported_columns(&all_obs, 2, 2, 4), vec![true, false]);
+    }
+
+    #[test]
+    fn restrict_family_profiles_drops_and_reindexes() {
+        let fp = FamilyProfiles {
+            profiles: vec![
+                CopyProfile { copy_id: 0, alleles: vec![Some(b'A'), Some(b'C'), Some(b'G')], junctions: vec![] },
+                CopyProfile { copy_id: 1, alleles: vec![Some(b'T'), Some(b'C'), Some(b'A')], junctions: vec![] },
+            ],
+            copy_gpos: vec![vec![(0, 100), (1, 200), (2, 300)], vec![(0, 105), (1, 205), (2, 305)]],
+            gen2off: vec![Default::default(), Default::default()],
+            strand: vec!['+', '+'],
+            n_cols: 3,
+        };
+        let out = restrict_family_profiles(&fp, &[true, false, true]); // drop col 1
+        assert_eq!(out.n_cols, 2);
+        assert_eq!(out.profiles[0].alleles, vec![Some(b'A'), Some(b'G')]);
+        assert_eq!(out.profiles[1].alleles, vec![Some(b'T'), Some(b'A')]);
+        assert_eq!(out.copy_gpos[0], vec![(0, 100), (1, 300)]); // col 2 re-indexed to 1
+    }
 
     // exploration harness: compare our direct DP vs poasta on a controlled indel+SNV pair.
     fn aln_summary(tag: &str, msa: &[Vec<u8>]) -> (Vec<usize>, Vec<(usize, usize)>) {
