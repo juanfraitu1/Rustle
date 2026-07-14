@@ -31,11 +31,20 @@ allele-linked splicing with no phasing.
 asj --bam GGO_mm.bam --region NC_073238.2:109943482-109971515 --out abcc4   # asj.tsv; verified in asj_calls_verified.tsv
 ```
 
-**O4 — a copy not in the reference (cross-species check, human MAGEA).** When the reads resolve more copies
-than the reference annotates (χ_H or depth > reference), the surplus is a reference-absent / collapsed copy.
-Concrete corroboration: on human testis Iso-Seq the same method resolves **11 MAGEA copies** against the
-2-copy ape baseline, matching the T2T annotation (`HUMAN_CROSSSPECIES.md`). Detect-and-flag; separating a
-real extra *copy* from a heterozygous *allele* needs DNA / parental copy number.
+**O4 — a copy not in the reference (gorilla LOC115932956).** A reference-absent copy shows up as a
+*high-MAPQ* depth excess, **not** MAPQ-0 ambiguity: the sibling copies are missing from the assembly, so
+their reads pile onto the one present locus and map confidently (this is SDA's insight — collapses are
+detected by depth, not mapping quality). At NC_073236.2:139,047,584–139,177,611 the 95 reads are **all
+MAPQ 60** yet split into **3 co-segregating copy-haplotypes** (16 / 14 / 6 reads) across 46 co-segregating
+PSV columns, with a paralog-divergence base spectrum (mixed 12 substitution types, Ti:Tv ≈ 1.2) — not the
+A>G / T>C signature of RNA editing. So the reference collapsed 3 copies into 1 locus → 2 reference-absent
+copies. From the 306-hit catalog `bench/hidden_collapse_hits.tsv`; reproduce:
+```
+python bench/hidden_collapse_evidence.py --region NC_073236.2:139047584-139177611
+```
+Corroborated cross-species: the same method resolves 11 MAGEA copies in human vs the 2-copy ape baseline
+(`HUMAN_CROSSSPECIES.md`). Detect-and-flag; separating a real extra *copy* from a heterozygous *allele*
+needs DNA / parental copy number.
 
 ## The one-line story
 
