@@ -54,6 +54,12 @@ svg.stage{width:100%;height:auto;display:block}
 .caption h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 6px;color:var(--amber)}
 .caption p{margin:0 0 8px;font-size:14.5px}
 .caption .num{font-family:var(--mono);font-size:12.5px;color:var(--muted)}.caption .num b{color:var(--ink)}
+.edge{background:var(--surface);border:1px solid var(--hair);border-radius:12px;box-shadow:var(--shadow);padding:15px 18px;margin-top:14px}
+.edge h2{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 8px;color:var(--amber)}
+.edge .q{font-size:13.5px;font-weight:600;color:var(--ink);margin:0 0 8px}
+.edge p{margin:0 0 8px;font-size:13.5px;line-height:1.6;color:var(--muted)}.edge p:last-child{margin-bottom:0}
+.edge b{color:var(--ink);font-weight:600}
+.edge code{font-family:var(--mono);font-size:12px;background:var(--sunken);border:1px solid var(--hair);border-radius:5px;padding:1px 5px;color:var(--ink)}
 .foot{margin-top:16px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
 a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
 :focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:6px}
@@ -84,6 +90,28 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
   </div>
 
   <div class="caption" id="caption"></div>
+
+  <div class="edge">
+    <h2>Edge case · two copies that make the same isoform, far apart</h2>
+    <p class="q">If two distant paralogs produce identical transcripts, do we merge them, double-count them, or mis-assign their reads?</p>
+    <p><b>Definition (O1) stays correct.</b> Family membership is transcript homology, and the grouping is
+      chromosome- and strand-agnostic — so two distant copies making the same isoform are still <b>one family</b>,
+      and they are counted as <b>two distinct copies</b> because a same-locus guard (<code>prune_same_locus</code>)
+      only collapses transcripts that share a junction or are an unspliced span of one another. Distant loci have
+      disjoint junctions at distinct coordinates, so one gene is never split into two, and two copies are never
+      collapsed into one. <b>Copy number is preserved.</b></p>
+    <p><b>Assignment (O2) runs only where copies are co-located</b> — same chromosome, within a 5 Mb window (the
+      hard regime where the aligner pools the reads). For copies farther apart, the aligner is the arbiter: if the
+      transcripts are identical the reads land on both at <b>MAPQ 0</b> and stay <b>tied</b> — never split 1/k;
+      if the copies differ anywhere, minimap2 returns a unique best placement and the read anchors to its locus
+      (this is exactly why separate-chromosome RABL2 needed no resolution from us).</p>
+    <p><b>The genuinely hard case</b> is two copies that are <i>both</i> co-located <i>and</i> exonically identical
+      — the K = 0 frontier: the reads are RNA-unresolvable and certified <b>tied</b>, yet <b>χ_H still counts them
+      as ≥ 2 copies</b> (the chromatic number of the conflict graph). We report the copy number and abstain
+      per-read. Note "same isoform" means same junction structure — if the shared exons still carry a PSV we can
+      still assign; only identical <i>sequence</i> forces the tie.</p>
+  </div>
+
   <div class="foot" id="foot"></div>
 </div>
 

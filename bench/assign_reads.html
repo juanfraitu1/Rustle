@@ -69,6 +69,12 @@ svg.seq{width:100%;height:auto;display:block}
 .credit{margin-top:16px;font-size:13px;line-height:1.55;background:var(--sunken);border:1px solid var(--hair);border-radius:10px;padding:13px 16px}
 .credit b{color:var(--ink);font-weight:600}
 .credit .cite{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+.faq{display:flex;flex-direction:column;gap:12px}
+.faq .qa{background:var(--sunken);border:1px solid var(--hair);border-radius:10px;padding:12px 15px}
+.faq .q{font-size:13.5px;font-weight:600;color:var(--ink);margin-bottom:6px}
+.faq .a{font-size:13px;line-height:1.6;color:var(--muted)}
+.faq .a b{color:var(--ink);font-weight:600}
+.faq code{font-family:var(--mono);font-size:12px;background:var(--bg);border:1px solid var(--hair);border-radius:5px;padding:1px 5px;color:var(--ink)}
 .foot{margin-top:16px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
 a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface);border:1px solid var(--hair);border-radius:999px;padding:6px 12px;cursor:pointer;z-index:5}
 :focus-visible{outline:2.5px solid var(--amber);outline-offset:2px;border-radius:6px}
@@ -143,6 +149,34 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
       gene family. We apply the same test to decide <b>which copy a read came from</b>. Our additions: the
       copy-vs-allele distinction, <b>assign-or-abstain</b> (a read goes to one copy or none), and <b>no 1/k</b>.
       <div class="cite">IsoCon · Sahlin, Tomaszkiewicz, Makova &amp; Medvedev, Nature Communications 2018 — highly similar multicopy gene families from long reads.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Fine print · two questions people ask</h2>
+    <div class="faq">
+      <div class="qa">
+        <div class="q">Is the read assigned to the copy with the <i>most</i> matching PSVs?</div>
+        <div class="a">No — it is two separate steps, and neither is a count. <b>Which copy:</b> the read goes to
+        the copy of maximum likelihood — an argmax over a per-column log-likelihood ratio, each column weighted
+        by that base's own quality ε — so a single high-quality PSV can outweigh several weak agreements; it is
+        not a vote tally. <b>Whether to commit:</b> the minimum-probability certificate shown above,
+        <b>p &lt; α/(K−1)</b>, plus an identifiability gate — at least one column or junction must actually
+        separate the winner from a rival. No distinguishing column → <b>tied</b>; distinguishing but not
+        significant → <b>ambiguous</b>. The number of PSVs enters only through p (more/sharper ones ⇒ smaller p),
+        never as a hard threshold like "≥ 2 PSVs" — that is the deliberate break from vote-count / AS ≥ 10 rules.</div>
+      </div>
+      <div class="qa">
+        <div class="q">What is the <code>de</code> tag, and why it and not the alignment score?</div>
+        <div class="a"><code>de</code> is minimap2's <b>gap-compressed divergence</b> — mismatches per aligned
+        base, a rate in [0,1]. It decides the <b>conflict graph</b> that scopes the family: two placements of one
+        read conflict iff neither can significantly out-align the other, using the <i>same</i> ε<sup>δ</sup> ≥ α
+        real-vs-error test as this page (δ = the excess mismatch count) — and that graph is what χ_H counts. We
+        use <code>de</code>, not the raw alignment score <b>AS</b>, because AS is a <i>total</i> that grows with
+        aligned length: a partial second alignment scores far lower even at identical per-base quality (on GGO,
+        runner-up/best AS ratio 0.71 while the length ratio is 0.90). So <b>AS is only reported</b> (for the
+        Eichler AS ≥ 10 comparison); <b><code>de</code> decides</b>.</div>
+      </div>
     </div>
   </div>
 
