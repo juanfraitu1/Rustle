@@ -65,14 +65,14 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
   <div class="eyebrow">O1 → O2 · the hand-off</div>
   <h1>From a family to its copies</h1>
   <p class="sub">The bridge between the two graphs: a <b>family</b> (the nodes) becomes a set of <b>copies</b>, each
-     with a reference sequence, and aligning them reveals the <b>PSVs</b> a read is later assigned by. Crucially,
+     with a reference sequence; the <b>PSVs</b> a read is later assigned by are the columns where they differ — genotyped across the reads (a pileup), or, for a collapsed copy, called directly from the reads. Crucially,
      the reference is the <b>assembly</b> — not a consensus built from the reads.</p>
   <div class="chain">reads → loci → <b>families → copies → PSVs</b> → assign</div>
 
   <div class="steps" id="steps">
     <button data-s="0"><span class="n">STEP 1</span><span class="t">Family</span></button>
     <button data-s="1"><span class="n">STEP 2</span><span class="t">Copies + reference</span></button>
-    <button data-s="2"><span class="n">STEP 3</span><span class="t">Align → PSVs</span></button>
+    <button data-s="2"><span class="n">STEP 3</span><span class="t">Call the PSVs</span></button>
     <button data-s="3"><span class="n">STEP 4</span><span class="t">Variation graph</span></button>
   </div>
 
@@ -157,7 +157,7 @@ function build(){
 const CAPS=[
   {h:'Step 1 · Family',p:'O1 gave us a family: three loci that are mutually homologous. Each locus IS a copy — a node in the graph. The edges only certify "one family"; an edge is not a copy.',n:'3 loci · GSTM3 / GSTM5 / GSTM1 · pairwise ≈ 83% identical'},
   {h:'Step 2 · Copies + reference',p:'Each copy gets a reference sequence — fetched from the assembly and spliced along the exon structure the reads defined. No read-consensus is built: the reads give the structure, the assembly gives the sequence. So a read is tested against an independent reference, and copy-private differences are preserved.',n:'reference = the assembly (consensus-correction is optional & default-off)'},
-  {h:'Step 3 · Align → PSVs',p:'Align the three copies. Wherever their reference sequences differ is a PSV — a bubble, and the only place a read can tell the copies apart. Everything between the bubbles is shared backbone.',n:'GSTM: <b>411 PSV columns</b> across the transcript — the copy-distinguishing positions'},
+  {h:'Step 3 · Call the PSVs',p:'The <i>candidate</i> columns come from where the reference paralogs differ — but they are not taken on faith. Every read is <b>genotyped at each column (a pileup)</b>, and each base counts only as much as its own quality allows (ε = 10^(−Q/10)). For a COLLAPSED copy (one assembly locus — nothing to align to), the PSVs are <b>called directly from the read pileup</b>: columns with a balanced alt-allele fraction above the error rate that co-segregate on one read subset (SDA-style variant calling).',n:'GSTM: <b>411 PSV columns</b> · read-genotyped &amp; per-base-quality weighted · collapsed copies → called from the pileup'},
   {h:'Step 4 · Variation graph',p:'Copies become paths, PSVs become bubbles: the family variation graph. Every ambiguous (MAPQ-0) read now threads its observed alleles here and is assigned to a copy — or, spanning no bubble, certified tied.',n:'<b>2,673 reads</b> to assign · χ_H = 3 copies · → the assignment viz begins exactly here'},
 ];
 let step=0;

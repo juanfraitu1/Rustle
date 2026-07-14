@@ -128,7 +128,7 @@ a.themebtn{position:fixed;top:12px;right:14px;font-family:var(--mono);font-size:
       <div class="item"><span class="sym">PSV</span><span class="def">a position where the copies <b>differ</b> (the columns above)</span></div>
       <div class="item"><span class="sym">K</span><span class="def">number of <b>candidate copies</b> in the family — here <b>K = 3</b></span></div>
       <div class="item"><span class="sym">k</span><span class="def">copy-specific matches the read makes to its <b>best copy</b> — the evidence it has accumulated</span></div>
-      <div class="item"><span class="sym">ε <small>(eps)</small></span><span class="def">per-position <b>error probability</b>: e/3 ≈ 10⁻³ for a HiFi base, 10⁻⁴ for a junction</span></div>
+      <div class="item"><span class="sym">ε <small>(eps)</small></span><span class="def">per-position <b>error probability</b>, from the read's <b>own base quality</b>: ε = 10^(−Q/10) — ≈10⁻³ at HiFi Q30, ≤10⁻⁴ at Q40, capped at 0.25 for a low-Q base (so it barely counts); 10⁻⁴ for a junction</span></div>
       <div class="item"><span class="sym">α <small>(alpha)</small></span><span class="def">the <b>significance level</b> = target per-read false-assignment rate = 10⁻³. A calibrated rate, not an identity cutoff.</span></div>
       <div class="item"><span class="sym">α/(K−1)</span><span class="def">the <b>Bonferroni</b> threshold — corrects for testing the read against the K−1 rival copies</span></div>
       <div class="item"><span class="sym">p</span><span class="def">the <b>certificate</b>: P(this much copy-specific match is sequencing error) ≈ εᵏ &nbsp;(exactly, a Poisson-binomial upper tail)</span></div>
@@ -297,7 +297,7 @@ document.querySelectorAll('#picker button').forEach((b,i)=>b.onclick=()=>setRead
 $('play').onclick=play;
 $('scrub').oninput=e=>{stop();shown=+e.target.value;render();};
 $('themebtn').onclick=()=>{const c=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');};
-$('foot').innerHTML='Real GSTM reads (GGO_mm.bam). The test is IsoCon-style: p is the chance this much copy-specific matching is sequencing error (ε ≈ e/3 per HiFi base); assign iff p &lt; α/(K−1), else certify tied. No 1/k, no arbitrary identity cutoff.';
+$('foot').innerHTML='Real GSTM reads (GGO_mm.bam). Each read is genotyped at every PSV (a pileup); ε is that base’s own phred error, 10^(−Q/10), so a low-quality base is downweighted. p is the chance this much copy-specific matching is sequencing error; assign iff p &lt; α/(K−1), else certify tied. No 1/k, no arbitrary identity cutoff.';
 
 buildSeq(); setRead(0);
 </script>
